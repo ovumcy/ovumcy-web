@@ -56,3 +56,37 @@ func TestValidateRecoveryCodeFormat(t *testing.T) {
 		t.Fatalf("expected ErrAuthRecoveryCodeInvalid, got %v", err)
 	}
 }
+
+func TestNormalizeForgotPasswordCode(t *testing.T) {
+	code, err := NormalizeForgotPasswordCode("  OVUM-ABCD-2345-EFGH ")
+	if err != nil {
+		t.Fatalf("expected valid code, got %v", err)
+	}
+	if code != "OVUM-ABCD-2345-EFGH" {
+		t.Fatalf("expected trimmed code, got %q", code)
+	}
+
+	_, err = NormalizeForgotPasswordCode("   ")
+	if !errors.Is(err, ErrAuthRecoveryCodeInvalid) {
+		t.Fatalf("expected ErrAuthRecoveryCodeInvalid for empty input, got %v", err)
+	}
+}
+
+func TestNormalizeResetPasswordInput(t *testing.T) {
+	password, confirm, err := NormalizeResetPasswordInput("  StrongPass1 ", " StrongPass1  ")
+	if err != nil {
+		t.Fatalf("expected valid reset input, got %v", err)
+	}
+	if password != "StrongPass1" || confirm != "StrongPass1" {
+		t.Fatalf("expected trimmed password pair, got %q/%q", password, confirm)
+	}
+
+	_, _, err = NormalizeResetPasswordInput(" ", "StrongPass1")
+	if !errors.Is(err, ErrAuthResetInputInvalid) {
+		t.Fatalf("expected ErrAuthResetInputInvalid for empty password, got %v", err)
+	}
+	_, _, err = NormalizeResetPasswordInput("StrongPass1", " ")
+	if !errors.Is(err, ErrAuthResetInputInvalid) {
+		t.Fatalf("expected ErrAuthResetInputInvalid for empty confirm, got %v", err)
+	}
+}

@@ -1,8 +1,6 @@
 package api
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
 	"github.com/terraincognita07/ovumcy/internal/services"
@@ -14,8 +12,8 @@ func parseForgotPasswordCode(c *fiber.Ctx) (string, string) {
 		return "", "invalid input"
 	}
 
-	code := strings.TrimSpace(input.RecoveryCode)
-	if code == "" {
+	code, err := services.NormalizeForgotPasswordCode(input.RecoveryCode)
+	if err != nil {
 		return "", "invalid recovery code"
 	}
 	return code, ""
@@ -27,11 +25,12 @@ func parseResetPasswordInput(c *fiber.Ctx) (resetPasswordInput, string) {
 		return resetPasswordInput{}, "invalid input"
 	}
 
-	input.Password = strings.TrimSpace(input.Password)
-	input.ConfirmPassword = strings.TrimSpace(input.ConfirmPassword)
-	if input.Password == "" || input.ConfirmPassword == "" {
+	password, confirmPassword, err := services.NormalizeResetPasswordInput(input.Password, input.ConfirmPassword)
+	if err != nil {
 		return resetPasswordInput{}, "invalid input"
 	}
+	input.Password = password
+	input.ConfirmPassword = confirmPassword
 
 	return input, ""
 }
