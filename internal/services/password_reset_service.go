@@ -2,7 +2,6 @@ package services
 
 import (
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
@@ -56,10 +55,7 @@ func (service *PasswordResetService) StartRecovery(secretKey []byte, limiterKey 
 		now = time.Now()
 	}
 
-	key := strings.TrimSpace(limiterKey)
-	if key == "" {
-		key = "unknown"
-	}
+	key := NormalizeLimiterKey(limiterKey)
 	if service.recoveryLimiter.TooManyRecent(key, now, service.recoveryAttempts, service.recoveryAttemptWindow) {
 		return "", ErrPasswordRecoveryRateLimited
 	}
@@ -108,4 +104,3 @@ func (service *PasswordResetService) CompleteReset(secretKey []byte, rawToken st
 
 	return user, recoveryCode, nil
 }
-

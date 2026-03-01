@@ -1,6 +1,7 @@
 package services
 
 import (
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,6 +15,14 @@ func NewAttemptLimiter() *AttemptLimiter {
 	return &AttemptLimiter{
 		attempts: make(map[string][]time.Time),
 	}
+}
+
+func NormalizeLimiterKey(raw string) string {
+	key := strings.TrimSpace(raw)
+	if key == "" {
+		return "unknown"
+	}
+	return key
 }
 
 func (limiter *AttemptLimiter) TooManyRecent(key string, now time.Time, limit int, window time.Duration) bool {

@@ -18,7 +18,7 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 	handler.ensureDependencies()
 	token, err := handler.passwordResetSvc.StartRecovery(
 		handler.secretKey,
-		requestLimiterKey(c),
+		c.IP(),
 		rawRecoveryCode,
 		now,
 		30*time.Minute,

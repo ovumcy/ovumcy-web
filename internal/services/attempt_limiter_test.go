@@ -28,3 +28,28 @@ func TestAttemptLimiterWindowAndReset(t *testing.T) {
 		t.Fatal("expected no attempts after reset")
 	}
 }
+
+func TestNormalizeLimiterKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "keeps valid key", raw: "127.0.0.1", want: "127.0.0.1"},
+		{name: "trims surrounding spaces", raw: "  10.0.0.1  ", want: "10.0.0.1"},
+		{name: "empty becomes unknown", raw: "", want: "unknown"},
+		{name: "whitespace becomes unknown", raw: "   ", want: "unknown"},
+	}
+
+	for _, testCase := range tests {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NormalizeLimiterKey(testCase.raw); got != testCase.want {
+				t.Fatalf("NormalizeLimiterKey(%q) = %q, want %q", testCase.raw, got, testCase.want)
+			}
+		})
+	}
+}
