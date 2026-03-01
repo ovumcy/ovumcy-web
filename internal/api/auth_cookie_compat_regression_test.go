@@ -4,13 +4,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func TestLoginSetsSealedAuthCookieValue(t *testing.T) {
@@ -66,18 +66,7 @@ func TestAuthMiddlewareAcceptsLegacyJWTAuthCookieFallback(t *testing.T) {
 func buildLegacyJWTForUser(t *testing.T, user models.User) string {
 	t.Helper()
 
-	now := time.Now()
-	claims := authClaims{
-		UserID: user.ID,
-		Role:   user.Role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   strconv.FormatUint(uint64(user.ID), 10),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString([]byte("test-secret-key"))
+	signed, err := services.BuildAuthSessionToken([]byte("test-secret-key"), user.ID, user.Role, time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("sign legacy jwt token: %v", err)
 	}

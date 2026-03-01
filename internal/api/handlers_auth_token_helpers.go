@@ -2,12 +2,10 @@ package api
 
 import (
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/terraincognita07/ovumcy/internal/models"
 )
 
@@ -54,23 +52,14 @@ func (handler *Handler) clearAuthCookie(c *fiber.Ctx) {
 }
 
 func (handler *Handler) buildToken(user *models.User, ttl time.Duration) (string, error) {
+	if user == nil {
+		return "", errors.New("user is required")
+	}
 	if ttl <= 0 {
 		ttl = defaultAuthTokenTTL
 	}
-	now := time.Now()
-
-	claims := authClaims{
-		UserID: user.ID,
-		Role:   user.Role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   strconv.FormatUint(uint64(user.ID), 10),
-			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(handler.secretKey)
+	handler.ensureDependencies()
+	return handler.authService.BuildAuthSessionToken(handler.secretKey, user.ID, user.Role, ttl, time.Now())
 }
 
 func (handler *Handler) encodeAuthCookieToken(rawToken string) (string, error) {

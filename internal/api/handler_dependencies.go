@@ -9,6 +9,8 @@ import (
 func (handler *Handler) withDependencies(database *gorm.DB) *Handler {
 	handler.repositories = db.NewRepositories(database)
 	handler.authService = services.NewAuthService(handler.repositories.Users)
+	handler.recoveryLimiter = services.NewAttemptLimiter()
+	handler.passwordResetSvc = services.NewPasswordResetService(handler.authService, handler.recoveryLimiter)
 	handler.dayService = services.NewDayService(handler.repositories.DailyLogs, handler.repositories.Users)
 	handler.symptomService = services.NewSymptomService(handler.repositories.Symptoms, handler.repositories.DailyLogs)
 	handler.statsService = services.NewStatsService(handler.dayService, handler.symptomService)
@@ -30,6 +32,12 @@ func (handler *Handler) ensureDependencies() {
 
 	if handler.authService == nil {
 		handler.authService = services.NewAuthService(handler.repositories.Users)
+	}
+	if handler.recoveryLimiter == nil {
+		handler.recoveryLimiter = services.NewAttemptLimiter()
+	}
+	if handler.passwordResetSvc == nil {
+		handler.passwordResetSvc = services.NewPasswordResetService(handler.authService, handler.recoveryLimiter)
 	}
 	if handler.dayService == nil {
 		handler.dayService = services.NewDayService(handler.repositories.DailyLogs, handler.repositories.Users)
@@ -54,8 +62,5 @@ func (handler *Handler) ensureDependencies() {
 	}
 	if handler.setupService == nil {
 		handler.setupService = services.NewSetupService(handler.repositories.Users)
-	}
-	if handler.recoveryLimiter == nil {
-		handler.recoveryLimiter = services.NewAttemptLimiter()
 	}
 }

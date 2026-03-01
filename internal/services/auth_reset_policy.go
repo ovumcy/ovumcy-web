@@ -73,13 +73,23 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 	}
 
 	claims := &PasswordResetClaims{}
-	token, err := jwt.ParseWithClaims(rawToken, claims, func(token *jwt.Token) (interface{}, error) {
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithTimeFunc(func() time.Time { return now }),
+	)
+	token, err := parser.ParseWithClaims(rawToken, claims, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
 		return secretKey, nil
 	})
-	if err != nil || !token.Valid {
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, ErrPasswordResetTokenExpired
+		}
+		return nil, ErrPasswordResetTokenInvalid
+	}
+	if !token.Valid {
 		return nil, ErrPasswordResetTokenInvalid
 	}
 	if claims.Purpose != passwordResetTokenPurpose {

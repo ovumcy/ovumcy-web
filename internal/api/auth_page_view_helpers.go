@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -42,9 +44,20 @@ func buildForgotPasswordPageData(c *fiber.Ctx, messages map[string]string, flash
 func (handler *Handler) buildResetPasswordPageData(c *fiber.Ctx, messages map[string]string, flash FlashPayload) fiber.Map {
 	token, forcedReset := handler.readResetPasswordCookie(c)
 	invalidToken := false
-	if _, err := handler.parsePasswordResetToken(token); err != nil {
-		invalidToken = true
-		handler.clearResetPasswordCookie(c)
+	if token != "" {
+		handler.ensureDependencies()
+		parseToken := func() error {
+			if handler.passwordResetSvc != nil {
+				_, err := handler.passwordResetSvc.ParseResetToken(handler.secretKey, token, time.Now())
+				return err
+			}
+			_, err := services.ParsePasswordResetToken(handler.secretKey, token, time.Now())
+			return err
+		}
+		if err := parseToken(); err != nil {
+			invalidToken = true
+			handler.clearResetPasswordCookie(c)
+		}
 	}
 
 	return fiber.Map{

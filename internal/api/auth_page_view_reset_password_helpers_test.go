@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func TestBuildResetPasswordPageDataValidTokenAndForcedFlag(t *testing.T) {
 	t.Parallel()
 
 	handler := &Handler{secretKey: []byte("test-reset-secret")}
-	token, err := handler.buildPasswordResetToken(42, "$2a$10$testhashvaluefortokenclaims", 30*time.Minute)
+	token, err := services.BuildPasswordResetToken(handler.secretKey, 42, "$2a$10$testhashvaluefortokenclaims", 30*time.Minute, time.Now())
 	if err != nil {
 		t.Fatalf("buildPasswordResetToken returned error: %v", err)
 	}

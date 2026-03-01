@@ -152,6 +152,23 @@ func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uin
 	return BuildPasswordResetToken(secretKey, userID, passwordHash, ttl, now)
 }
 
+func (service *AuthService) BuildAuthSessionToken(secretKey []byte, userID uint, role string, ttl time.Duration, now time.Time) (string, error) {
+	return BuildAuthSessionToken(secretKey, userID, role, ttl, now)
+}
+
+func (service *AuthService) ResolveUserByAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
+	claims, err := ParseAuthSessionToken(secretKey, rawToken, now)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := service.users.FindByID(claims.UserID)
+	if err != nil {
+		return nil, ErrAuthInvalidCreds
+	}
+	return &user, nil
+}
+
 func (service *AuthService) ResolveUserByResetToken(secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
 	claims, err := ParsePasswordResetToken(secretKey, rawToken, now)
 	if err != nil {

@@ -160,7 +160,7 @@ func requestResetCookieByRecoveryCode(t *testing.T, app *fiber.App, recoveryCode
 func mustSignResetTokenForTest(t *testing.T, userID uint, passwordHash string, expiresAt time.Time, issuedAt time.Time) string {
 	t.Helper()
 
-	claims := passwordResetClaims{
+	claims := services.PasswordResetClaims{
 		UserID:        userID,
 		Purpose:       "password_reset",
 		PasswordState: services.PasswordStateFingerprint(passwordHash),

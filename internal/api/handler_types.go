@@ -4,7 +4,6 @@ import (
 	"html/template"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/terraincognita07/ovumcy/internal/db"
 	"github.com/terraincognita07/ovumcy/internal/i18n"
 	"github.com/terraincognita07/ovumcy/internal/services"
@@ -24,6 +23,7 @@ type Handler struct {
 	recoveryLimiter     *services.AttemptLimiter
 	repositories        *db.Repositories
 	authService         *services.AuthService
+	passwordResetSvc    *services.PasswordResetService
 	dayService          *services.DayService
 	symptomService      *services.SymptomService
 	statsService        *services.StatsService
@@ -71,10 +71,3 @@ const (
 	defaultAuthTokenTTL  = 7 * 24 * time.Hour
 	rememberAuthTokenTTL = 30 * 24 * time.Hour
 )
-
-type passwordResetClaims struct {
-	UserID        uint   `json:"uid"`
-	Purpose       string `json:"purpose"`
-	PasswordState string `json:"password_state"`
-	jwt.RegisteredClaims
-}

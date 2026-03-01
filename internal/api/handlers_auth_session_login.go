@@ -66,7 +66,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	}
 
 	if user.MustChangePassword {
-		token, err := handler.buildPasswordResetToken(user.ID, user.PasswordHash, 30*time.Minute)
+		token, err := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &user, 30*time.Minute, time.Now())
 		if err != nil {
 			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
 		}

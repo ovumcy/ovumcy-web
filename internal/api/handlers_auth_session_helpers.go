@@ -1,13 +1,10 @@
 package api
 
 import (
-	"errors"
 	"strings"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
-	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func parseForgotPasswordCode(c *fiber.Ctx) (string, string) {
@@ -16,8 +13,8 @@ func parseForgotPasswordCode(c *fiber.Ctx) (string, string) {
 		return "", "invalid input"
 	}
 
-	code := normalizeRecoveryCode(input.RecoveryCode)
-	if err := services.ValidateRecoveryCodeFormat(code); err != nil {
+	code := strings.TrimSpace(input.RecoveryCode)
+	if code == "" {
 		return "", "invalid recovery code"
 	}
 	return code, ""
@@ -48,15 +45,6 @@ func redirectToPath(c *fiber.Ctx, path string) error {
 		return c.SendStatus(fiber.StatusOK)
 	}
 	return c.Redirect(path, fiber.StatusSeeOther)
-}
-
-func (handler *Handler) lookupUserByResetToken(token string) (*models.User, error) {
-	handler.ensureDependencies()
-	user, err := handler.authService.ResolveUserByResetToken(handler.secretKey, token, time.Now())
-	if err != nil {
-		return nil, errors.New("invalid reset token")
-	}
-	return user, nil
 }
 
 func (handler *Handler) renderRecoveryCodeResponse(c *fiber.Ctx, user *models.User, recoveryCode string, status int) error {

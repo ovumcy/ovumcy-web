@@ -9,33 +9,31 @@ import (
 )
 
 func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
-	const recoveryAttemptsLimit = 8
-	const recoveryAttemptsWindow = 15 * time.Minute
-
 	now := time.Now().In(handler.location)
-	limiterKey := requestLimiterKey(c)
-	if handler.recoveryLimiter.TooManyRecent(limiterKey, now, recoveryAttemptsLimit, recoveryAttemptsWindow) {
-		return handler.respondAuthError(c, fiber.StatusTooManyRequests, "too many recovery attempts")
-	}
-
-	code, parseError := parseForgotPasswordCode(c)
+	rawRecoveryCode, parseError := parseForgotPasswordCode(c)
 	if parseError != "" {
-		handler.recoveryLimiter.AddFailure(limiterKey, now, recoveryAttemptsWindow)
 		return handler.respondAuthError(c, fiber.StatusBadRequest, parseError)
 	}
 
-	user, err := handler.findUserByRecoveryCode(code)
+	handler.ensureDependencies()
+	token, err := handler.passwordResetSvc.StartRecovery(
+		handler.secretKey,
+		requestLimiterKey(c),
+		rawRecoveryCode,
+		now,
+		30*time.Minute,
+	)
 	if err != nil {
-		handler.recoveryLimiter.AddFailure(limiterKey, now, recoveryAttemptsWindow)
-		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid recovery code")
-	}
-
-	token, err := handler.buildPasswordResetToken(user.ID, user.PasswordHash, 30*time.Minute)
-	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
+		switch {
+		case errors.Is(err, services.ErrPasswordRecoveryRateLimited):
+			return handler.respondAuthError(c, fiber.StatusTooManyRequests, "too many recovery attempts")
+		case errors.Is(err, services.ErrPasswordRecoveryCodeInvalid):
+			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid recovery code")
+		default:
+			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
+		}
 	}
 	handler.setResetPasswordCookie(c, token, false)
-	handler.recoveryLimiter.Reset(limiterKey)
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{
@@ -52,33 +50,34 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		return handler.respondAuthError(c, fiber.StatusBadRequest, parseError)
 	}
 
-	handler.ensureDependencies()
-	if err := handler.authService.ValidateResetPasswordInput(input.Password, input.ConfirmPassword); err != nil {
-		switch {
-		case errors.Is(err, services.ErrAuthPasswordMismatch):
-			return handler.respondAuthError(c, fiber.StatusBadRequest, "password mismatch")
-		case errors.Is(err, services.ErrAuthWeakPassword):
-			return handler.respondAuthError(c, fiber.StatusBadRequest, "weak password")
-		default:
-			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
-		}
-	}
-
 	token, _ := handler.readResetPasswordCookie(c)
 	if token == "" {
 		handler.clearResetPasswordCookie(c)
 		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid reset token")
 	}
 
-	user, err := handler.lookupUserByResetToken(token)
+	handler.ensureDependencies()
+	user, recoveryCode, err := handler.passwordResetSvc.CompleteReset(
+		handler.secretKey,
+		token,
+		input.Password,
+		input.ConfirmPassword,
+		time.Now(),
+	)
 	if err != nil {
-		handler.clearResetPasswordCookie(c)
-		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid reset token")
-	}
-
-	recoveryCode, err := handler.authService.ResetPasswordAndRotateRecoveryCode(user, input.Password)
-	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to reset password")
+		switch {
+		case errors.Is(err, services.ErrAuthPasswordMismatch):
+			return handler.respondAuthError(c, fiber.StatusBadRequest, "password mismatch")
+		case errors.Is(err, services.ErrAuthWeakPassword):
+			return handler.respondAuthError(c, fiber.StatusBadRequest, "weak password")
+		case errors.Is(err, services.ErrAuthResetInvalid):
+			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
+		case errors.Is(err, services.ErrInvalidResetToken):
+			handler.clearResetPasswordCookie(c)
+			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid reset token")
+		default:
+			return apiError(c, fiber.StatusInternalServerError, "failed to reset password")
+		}
 	}
 
 	if err := handler.setAuthCookie(c, user, true); err != nil {
