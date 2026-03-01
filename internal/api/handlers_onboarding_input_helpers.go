@@ -16,18 +16,15 @@ func (handler *Handler) parseOnboardingStep1Values(c *fiber.Ctx, today time.Time
 		return onboardingStep1Values{}, "invalid input"
 	}
 
-	rawLastPeriodStart := strings.TrimSpace(input.LastPeriodStart)
-	if rawLastPeriodStart == "" {
-		return onboardingStep1Values{}, "date is required"
-	}
-
-	parsedDay, err := parseDayParam(rawLastPeriodStart, handler.location)
-	if err != nil {
-		return onboardingStep1Values{}, "invalid last period start"
-	}
-
 	handler.ensureDependencies()
-	if err := handler.onboardingSvc.ValidateStep1StartDate(parsedDay, today, handler.location); err != nil {
+	parsedDay, err := handler.onboardingSvc.ValidateAndParseStep1StartDate(input.LastPeriodStart, today, handler.location)
+	if err != nil {
+		if errors.Is(err, services.ErrOnboardingStartDateRequired) {
+			return onboardingStep1Values{}, "date is required"
+		}
+		if errors.Is(err, services.ErrOnboardingStartDateInvalid) {
+			return onboardingStep1Values{}, "invalid last period start"
+		}
 		if errors.Is(err, services.ErrOnboardingStartDateOutOfRange) {
 			return onboardingStep1Values{}, "last period start must be within last 60 days"
 		}
@@ -39,7 +36,7 @@ func (handler *Handler) parseOnboardingStep1Values(c *fiber.Ctx, today time.Time
 	}, ""
 }
 
-func parseOnboardingStep2Input(c *fiber.Ctx) (onboardingStep2Input, string) {
+func (handler *Handler) parseOnboardingStep2Input(c *fiber.Ctx) (onboardingStep2Input, string) {
 	input := onboardingStep2Input{}
 
 	contentType := strings.ToLower(c.Get("Content-Type"))
@@ -48,22 +45,38 @@ func parseOnboardingStep2Input(c *fiber.Ctx) (onboardingStep2Input, string) {
 			return onboardingStep2Input{}, "invalid input"
 		}
 	} else {
-		cycleLength, err := strconv.Atoi(strings.TrimSpace(c.FormValue("cycle_length")))
-		if err != nil {
-			return onboardingStep2Input{}, "invalid input"
-		}
-		periodLength, err := strconv.Atoi(strings.TrimSpace(c.FormValue("period_length")))
-		if err != nil {
-			return onboardingStep2Input{}, "invalid input"
-		}
 		input = onboardingStep2Input{
-			CycleLength:    cycleLength,
-			PeriodLength:   periodLength,
+			CycleLength:    0,
+			PeriodLength:   0,
 			AutoPeriodFill: parseBoolValue(c.FormValue("auto_period_fill")),
 		}
+		handler.ensureDependencies()
+		cycleLength, periodLength, autoPeriodFill, err := handler.onboardingSvc.ParseAndNormalizeStep2Input(
+			c.FormValue("cycle_length"),
+			c.FormValue("period_length"),
+			input.AutoPeriodFill,
+		)
+		if err != nil {
+			return onboardingStep2Input{}, "invalid input"
+		}
+		input.CycleLength = cycleLength
+		input.PeriodLength = periodLength
+		input.AutoPeriodFill = autoPeriodFill
+		return input, ""
 	}
 
-	input.CycleLength, input.PeriodLength = services.SanitizeOnboardingCycleAndPeriod(input.CycleLength, input.PeriodLength)
+	handler.ensureDependencies()
+	cycleLength, periodLength, autoPeriodFill, err := handler.onboardingSvc.ParseAndNormalizeStep2Input(
+		strconv.Itoa(input.CycleLength),
+		strconv.Itoa(input.PeriodLength),
+		input.AutoPeriodFill,
+	)
+	if err != nil {
+		return onboardingStep2Input{}, "invalid input"
+	}
+	input.CycleLength = cycleLength
+	input.PeriodLength = periodLength
+	input.AutoPeriodFill = autoPeriodFill
 
 	return input, ""
 }

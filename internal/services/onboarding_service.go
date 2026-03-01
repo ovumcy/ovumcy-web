@@ -2,6 +2,8 @@ package services
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
@@ -11,6 +13,8 @@ var (
 	ErrOnboardingStepsRequired       = errors.New("complete onboarding steps first")
 	ErrOnboardingStartDateRequired   = errors.New("onboarding start date is required")
 	ErrOnboardingStartDateOutOfRange = errors.New("onboarding start date out of range")
+	ErrOnboardingStartDateInvalid    = errors.New("onboarding start date invalid")
+	ErrOnboardingStep2InputInvalid   = errors.New("onboarding step2 input invalid")
 )
 
 type OnboardingUserRepository interface {
@@ -46,12 +50,42 @@ func (service *OnboardingService) ValidateStep1StartDate(start time.Time, now ti
 	return nil
 }
 
+func (service *OnboardingService) ValidateAndParseStep1StartDate(raw string, now time.Time, location *time.Location) (time.Time, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return time.Time{}, ErrOnboardingStartDateRequired
+	}
+
+	parsed, err := time.ParseInLocation("2006-01-02", value, location)
+	if err != nil {
+		return time.Time{}, ErrOnboardingStartDateInvalid
+	}
+	if err := service.ValidateStep1StartDate(parsed, now, location); err != nil {
+		return time.Time{}, err
+	}
+	return parsed, nil
+}
+
 func (service *OnboardingService) SaveStep2(userID uint, cycleLength int, periodLength int, autoPeriodFill bool) (int, int, error) {
 	safeCycleLength, safePeriodLength := SanitizeOnboardingCycleAndPeriod(cycleLength, periodLength)
 	if err := service.users.SaveOnboardingStep2(userID, safeCycleLength, safePeriodLength, autoPeriodFill); err != nil {
 		return 0, 0, err
 	}
 	return safeCycleLength, safePeriodLength, nil
+}
+
+func (service *OnboardingService) ParseAndNormalizeStep2Input(cycleRaw string, periodRaw string, autoPeriodFill bool) (int, int, bool, error) {
+	cycleLength, err := strconv.Atoi(strings.TrimSpace(cycleRaw))
+	if err != nil {
+		return 0, 0, false, ErrOnboardingStep2InputInvalid
+	}
+	periodLength, err := strconv.Atoi(strings.TrimSpace(periodRaw))
+	if err != nil {
+		return 0, 0, false, ErrOnboardingStep2InputInvalid
+	}
+
+	safeCycleLength, safePeriodLength := SanitizeOnboardingCycleAndPeriod(cycleLength, periodLength)
+	return safeCycleLength, safePeriodLength, autoPeriodFill, nil
 }
 
 func (service *OnboardingService) CompleteOnboardingForUser(userID uint, location *time.Location) (time.Time, error) {

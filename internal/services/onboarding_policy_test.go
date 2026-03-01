@@ -88,6 +88,34 @@ func TestValidateStep1StartDate_AcceptsBoundaries(t *testing.T) {
 	}
 }
 
+func TestValidateAndParseStep1StartDate(t *testing.T) {
+	location, err := time.LoadLocation("Europe/Moscow")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+
+	service := NewOnboardingService(nil)
+	now := time.Date(2026, time.April, 15, 10, 0, 0, 0, location)
+
+	if _, err := service.ValidateAndParseStep1StartDate("", now, location); !errors.Is(err, ErrOnboardingStartDateRequired) {
+		t.Fatalf("expected ErrOnboardingStartDateRequired, got %v", err)
+	}
+	if _, err := service.ValidateAndParseStep1StartDate("invalid", now, location); !errors.Is(err, ErrOnboardingStartDateInvalid) {
+		t.Fatalf("expected ErrOnboardingStartDateInvalid, got %v", err)
+	}
+	if _, err := service.ValidateAndParseStep1StartDate("2026-02-13", now, location); !errors.Is(err, ErrOnboardingStartDateOutOfRange) {
+		t.Fatalf("expected ErrOnboardingStartDateOutOfRange, got %v", err)
+	}
+
+	parsed, err := service.ValidateAndParseStep1StartDate("2026-04-10", now, location)
+	if err != nil {
+		t.Fatalf("expected valid step1 date, got %v", err)
+	}
+	if parsed.Format("2006-01-02") != "2026-04-10" {
+		t.Fatalf("expected parsed date 2026-04-10, got %s", parsed.Format("2006-01-02"))
+	}
+}
+
 func TestResolveCycleAndPeriodDefaults(t *testing.T) {
 	t.Run("keeps valid values", func(t *testing.T) {
 		cycleLength, periodLength := ResolveCycleAndPeriodDefaults(29, 6)
@@ -102,6 +130,28 @@ func TestResolveCycleAndPeriodDefaults(t *testing.T) {
 			t.Fatalf("expected defaults %d/%d, got %d/%d", models.DefaultCycleLength, models.DefaultPeriodLength, cycleLength, periodLength)
 		}
 	})
+}
+
+func TestParseAndNormalizeStep2Input(t *testing.T) {
+	service := NewOnboardingService(nil)
+
+	if _, _, _, err := service.ParseAndNormalizeStep2Input("invalid", "5", true); !errors.Is(err, ErrOnboardingStep2InputInvalid) {
+		t.Fatalf("expected ErrOnboardingStep2InputInvalid for invalid cycle, got %v", err)
+	}
+	if _, _, _, err := service.ParseAndNormalizeStep2Input("28", "invalid", true); !errors.Is(err, ErrOnboardingStep2InputInvalid) {
+		t.Fatalf("expected ErrOnboardingStep2InputInvalid for invalid period, got %v", err)
+	}
+
+	cycleLength, periodLength, autoPeriodFill, err := service.ParseAndNormalizeStep2Input("14", "20", true)
+	if err != nil {
+		t.Fatalf("expected valid step2 input after normalize, got %v", err)
+	}
+	if cycleLength != 15 || periodLength != 7 {
+		t.Fatalf("expected normalized values 15/7, got %d/%d", cycleLength, periodLength)
+	}
+	if !autoPeriodFill {
+		t.Fatalf("expected autoPeriodFill=true")
+	}
 }
 
 func TestOnboardingRedirectPolicy(t *testing.T) {
