@@ -1,24 +1,15 @@
 package api
 
 import (
-	"fmt"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func buildCycleTrendLabels(messages map[string]string, pointCount int) []string {
-	if pointCount <= 0 {
-		return []string{}
-	}
-
 	cycleLabelPattern := translateMessage(messages, "stats.cycle_label")
 	if cycleLabelPattern == "stats.cycle_label" {
-		cycleLabelPattern = "Cycle %d"
+		cycleLabelPattern = ""
 	}
-
-	labels := make([]string, 0, pointCount)
-	for index := 0; index < pointCount; index++ {
-		labels = append(labels, fmt.Sprintf(cycleLabelPattern, index+1))
-	}
-	return labels
+	return services.BuildCycleTrendLabels(cycleLabelPattern, pointCount)
 }
 
 func localizeSymptomFrequencySummaries(language string, counts []SymptomCount) {

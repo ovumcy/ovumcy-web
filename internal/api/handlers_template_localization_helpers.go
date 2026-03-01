@@ -1,6 +1,6 @@
 package api
 
-import "strings"
+import "github.com/terraincognita07/ovumcy/internal/services"
 
 func templateTranslate(messages map[string]string, key string) string {
 	return translateMessage(messages, key)
@@ -11,20 +11,7 @@ func templatePhaseLabel(messages map[string]string, phase string) string {
 }
 
 func templatePhaseIcon(phase string) string {
-	switch strings.ToLower(strings.TrimSpace(phase)) {
-	case "menstrual":
-		return "🌙"
-	case "follicular":
-		return "🌸"
-	case "ovulation":
-		return "☀️"
-	case "fertile":
-		return "🌿"
-	case "luteal":
-		return "🍂"
-	default:
-		return "✨"
-	}
+	return services.PhaseIcon(phase)
 }
 
 func templateFlowLabel(messages map[string]string, flow string) string {
@@ -36,19 +23,7 @@ func templateSymptomLabel(messages map[string]string, name string) string {
 }
 
 func templateSymptomGroup(name string) string {
-	normalized := strings.ToLower(strings.TrimSpace(name))
-	switch normalized {
-	case "cramps", "headache", "breast tenderness", "back pain":
-		return "pain"
-	case "mood swings", "fatigue", "irritability", "insomnia":
-		return "mood"
-	case "bloating", "nausea", "diarrhea", "constipation", "swelling", "food cravings":
-		return "digestion"
-	case "acne", "spotting":
-		return "skin"
-	default:
-		return "other"
-	}
+	return services.SymptomGroup(name)
 }
 
 func templateRoleLabel(messages map[string]string, role string) string {
