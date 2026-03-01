@@ -12,11 +12,16 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 	if !ok {
 		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
 	}
-	if !services.RequiresOnboarding(user) {
-		return redirectOrJSON(c, "/dashboard")
-	}
-	if user.LastPeriodStart == nil {
-		return apiError(c, fiber.StatusBadRequest, "complete onboarding steps first")
+
+	if err := services.ValidateOnboardingCompletionEligibility(user); err != nil {
+		switch {
+		case errors.Is(err, services.ErrOnboardingCompletionNotNeeded):
+			return redirectOrJSON(c, "/dashboard")
+		case errors.Is(err, services.ErrOnboardingStepsRequired):
+			return apiError(c, fiber.StatusBadRequest, "complete onboarding steps first")
+		default:
+			return apiError(c, fiber.StatusInternalServerError, "failed to finish onboarding")
+		}
 	}
 
 	startDay, err := handler.completeOnboardingForUser(user.ID)

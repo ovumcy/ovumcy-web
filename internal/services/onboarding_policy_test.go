@@ -187,6 +187,61 @@ func TestOnboardingRedirectPolicy(t *testing.T) {
 	}
 }
 
+func TestValidateOnboardingCompletionEligibility(t *testing.T) {
+	tests := []struct {
+		name string
+		user *models.User
+		want error
+	}{
+		{
+			name: "owner pending with step1 data allowed",
+			user: &models.User{
+				Role:                models.RoleOwner,
+				OnboardingCompleted: false,
+				LastPeriodStart:     ptrTime(time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)),
+			},
+			want: nil,
+		},
+		{
+			name: "owner completed is not eligible",
+			user: &models.User{
+				Role:                models.RoleOwner,
+				OnboardingCompleted: true,
+			},
+			want: ErrOnboardingCompletionNotNeeded,
+		},
+		{
+			name: "partner is not eligible",
+			user: &models.User{
+				Role:                models.RolePartner,
+				OnboardingCompleted: false,
+			},
+			want: ErrOnboardingCompletionNotNeeded,
+		},
+		{
+			name: "owner pending without step1 data requires steps",
+			user: &models.User{
+				Role:                models.RoleOwner,
+				OnboardingCompleted: false,
+			},
+			want: ErrOnboardingStepsRequired,
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			err := ValidateOnboardingCompletionEligibility(testCase.user)
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("ValidateOnboardingCompletionEligibility() error = %v, want %v", err, testCase.want)
+			}
+		})
+	}
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
+}
+
 func TestResolveOnboardingStep(t *testing.T) {
 	tests := []struct {
 		name string

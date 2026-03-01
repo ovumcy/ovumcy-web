@@ -11,6 +11,7 @@ import (
 
 var (
 	ErrOnboardingStepsRequired       = errors.New("complete onboarding steps first")
+	ErrOnboardingCompletionNotNeeded = errors.New("onboarding completion not required")
 	ErrOnboardingStartDateRequired   = errors.New("onboarding start date is required")
 	ErrOnboardingStartDateOutOfRange = errors.New("onboarding start date out of range")
 	ErrOnboardingStartDateInvalid    = errors.New("onboarding start date invalid")
@@ -180,6 +181,16 @@ func RequiresOnboarding(user *models.User) bool {
 		return false
 	}
 	return user.Role == models.RoleOwner && !user.OnboardingCompleted
+}
+
+func ValidateOnboardingCompletionEligibility(user *models.User) error {
+	if !RequiresOnboarding(user) {
+		return ErrOnboardingCompletionNotNeeded
+	}
+	if user.LastPeriodStart == nil {
+		return ErrOnboardingStepsRequired
+	}
+	return nil
 }
 
 func PostLoginRedirectPath(user *models.User) string {
