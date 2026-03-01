@@ -9,7 +9,7 @@ import (
 )
 
 func resolveSettingsErrorKeys(notificationService *services.NotificationService, errorSource string) (string, string) {
-	translatedErrorKey := authErrorTranslationKey(errorSource)
+	translatedErrorKey := services.AuthErrorTranslationKey(errorSource)
 	if translatedErrorKey == "" {
 		return "", ""
 	}
@@ -59,7 +59,7 @@ func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, f
 		"CurrentUser":            user,
 		"ErrorKey":               errorKey,
 		"ChangePasswordErrorKey": changePasswordErrorKey,
-		"SuccessKey":             settingsStatusTranslationKey(status),
+		"SuccessKey":             services.SettingsStatusTranslationKey(status),
 		"CycleLength":            cycleLength,
 		"PeriodLength":           periodLength,
 		"AutoPeriodFill":         autoPeriodFill,

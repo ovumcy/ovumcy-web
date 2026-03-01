@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func redirectOrJSON(c *fiber.Ctx, path string) error {
@@ -22,7 +23,7 @@ func redirectOrJSON(c *fiber.Ctx, path string) error {
 func apiError(c *fiber.Ctx, status int, message string) error {
 	if isHTMX(c) {
 		rendered := message
-		if key := authErrorTranslationKey(message); key != "" {
+		if key := services.AuthErrorTranslationKey(message); key != "" {
 			if localized := translateMessage(currentMessages(c), key); localized != key {
 				rendered = localized
 			}

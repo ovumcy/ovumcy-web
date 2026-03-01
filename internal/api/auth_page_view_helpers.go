@@ -9,7 +9,7 @@ import (
 
 func authErrorKeyFromFlashOrQuery(c *fiber.Ctx, flashAuthError string) string {
 	errorSource := services.ResolveAuthErrorSource(flashAuthError, c.Query("error"))
-	return authErrorTranslationKey(errorSource)
+	return services.AuthErrorTranslationKey(errorSource)
 }
 
 func loginEmailFromFlashOrQuery(c *fiber.Ctx, flashEmail string) string {

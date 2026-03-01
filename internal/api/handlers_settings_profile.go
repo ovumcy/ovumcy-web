@@ -43,7 +43,7 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 		})
 	}
 	if isHTMX(c) {
-		messageKey := settingsStatusTranslationKey(status)
+		messageKey := services.SettingsStatusTranslationKey(status)
 		message := translateMessage(currentMessages(c), messageKey)
 		if message == "" || message == messageKey {
 			message = "Profile updated successfully."
