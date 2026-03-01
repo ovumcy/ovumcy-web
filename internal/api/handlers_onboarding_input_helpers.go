@@ -48,7 +48,7 @@ func (handler *Handler) parseOnboardingStep2Input(c *fiber.Ctx) (onboardingStep2
 		input = onboardingStep2Input{
 			CycleLength:    0,
 			PeriodLength:   0,
-			AutoPeriodFill: parseBoolValue(c.FormValue("auto_period_fill")),
+			AutoPeriodFill: services.ParseBoolLike(c.FormValue("auto_period_fill")),
 		}
 		handler.ensureDependencies()
 		cycleLength, periodLength, autoPeriodFill, err := handler.onboardingSvc.ParseAndNormalizeStep2Input(

@@ -34,7 +34,7 @@ func (handler *Handler) parseCycleSettingsInput(c *fiber.Ctx) (services.CycleSet
 		input = cycleSettingsInput{
 			CycleLength:        cycleLength,
 			PeriodLength:       periodLength,
-			AutoPeriodFill:     parseBoolValue(c.FormValue("auto_period_fill")),
+			AutoPeriodFill:     services.ParseBoolLike(c.FormValue("auto_period_fill")),
 			LastPeriodStart:    strings.TrimSpace(c.FormValue("last_period_start")),
 			LastPeriodStartSet: c.Request().PostArgs().Has("last_period_start"),
 		}

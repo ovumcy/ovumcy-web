@@ -20,7 +20,7 @@ func parseCredentials(c *fiber.Ctx) (credentialsInput, error) {
 	credentials.Email = email
 	credentials.Password = password
 	credentials.ConfirmPassword = strings.TrimSpace(credentials.ConfirmPassword)
-	credentials.RememberMe = credentials.RememberMe || parseBoolValue(c.FormValue("remember_me"))
+	credentials.RememberMe = credentials.RememberMe || services.ParseBoolLike(c.FormValue("remember_me"))
 
 	return credentials, nil
 }

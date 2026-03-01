@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func parseDayPayload(c *fiber.Ctx) (dayPayload, error) {
@@ -17,7 +18,7 @@ func parseDayPayload(c *fiber.Ctx) (dayPayload, error) {
 			return payload, err
 		}
 	} else {
-		payload.IsPeriod = parseBoolValue(c.FormValue("is_period"))
+		payload.IsPeriod = services.ParseBoolLike(c.FormValue("is_period"))
 		payload.Flow = strings.ToLower(strings.TrimSpace(c.FormValue("flow")))
 		payload.Notes = strings.TrimSpace(c.FormValue("notes"))
 
@@ -37,9 +38,4 @@ func parseDayPayload(c *fiber.Ctx) (dayPayload, error) {
 	payload.Notes = strings.TrimSpace(payload.Notes)
 
 	return payload, nil
-}
-
-func parseBoolValue(value string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	return normalized == "1" || normalized == "true" || normalized == "on" || normalized == "yes"
 }
