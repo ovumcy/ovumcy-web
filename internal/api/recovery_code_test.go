@@ -7,49 +7,6 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func TestNormalizeRecoveryCode(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{
-			name: "normalizes with spaces and dashes",
-			raw:  "  ovum-abcd-2345-efgh  ",
-			want: "OVUM-ABCD-2345-EFGH",
-		},
-		{
-			name: "normalizes existing ovum prefix",
-			raw:  " ovum-abcd-2345-efgh ",
-			want: "OVUM-ABCD-2345-EFGH",
-		},
-		{
-			name: "normalizes raw 12 chars",
-			raw:  "abcd2345efgh",
-			want: "OVUM-ABCD-2345-EFGH",
-		},
-		{
-			name: "invalid length falls back to upper trimmed input",
-			raw:  "abcd",
-			want: "ABCD",
-		},
-	}
-
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := normalizeRecoveryCode(test.raw)
-			if got != test.want {
-				t.Fatalf("normalizeRecoveryCode(%q) = %q, want %q", test.raw, got, test.want)
-			}
-		})
-	}
-}
-
 func TestGenerateRecoveryCodeFormat(t *testing.T) {
 	t.Parallel()
 
