@@ -11,10 +11,6 @@ func dayHasData(entry models.DailyLog) bool {
 	return services.DayHasData(entry)
 }
 
-func sameCalendarDay(a time.Time, b time.Time) bool {
-	return services.SameCalendarDay(a, b)
-}
-
 func dateAtLocation(value time.Time, location *time.Location) time.Time {
 	return services.DateAtLocation(value, location)
 }

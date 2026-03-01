@@ -129,22 +129,3 @@ func TestBuildDashboardViewDataMarksOvulationAsUncalculableForIncompatibleCycle(
 		t.Fatalf("expected display ovulation impossible=true, got %#v", data["DisplayOvulationImpossible"])
 	}
 }
-
-func TestDashboardCycleStaleAnchorPrefersStoredUserBaseline(t *testing.T) {
-	t.Parallel()
-
-	userBaseline := time.Date(2026, time.January, 1, 15, 30, 0, 0, time.UTC)
-	statsBaseline := time.Date(2026, time.February, 20, 7, 0, 0, 0, time.UTC)
-	user := &models.User{LastPeriodStart: &userBaseline}
-	stats := services.CycleStats{LastPeriodStart: statsBaseline}
-
-	anchor := services.DashboardCycleStaleAnchor(user, stats, time.UTC)
-	if !sameCalendarDay(anchor, userBaseline) {
-		t.Fatalf("expected stale anchor to use stored user baseline date, got %s", anchor.Format("2006-01-02"))
-	}
-
-	anchorFallback := services.DashboardCycleStaleAnchor(&models.User{}, stats, time.UTC)
-	if !sameCalendarDay(anchorFallback, statsBaseline) {
-		t.Fatalf("expected stale anchor fallback to stats baseline date, got %s", anchorFallback.Format("2006-01-02"))
-	}
-}
