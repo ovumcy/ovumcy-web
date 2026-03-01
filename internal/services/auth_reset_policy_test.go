@@ -4,6 +4,7 @@ import (
 	"errors"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,6 +101,13 @@ func TestGenerateRecoveryCodeHash(t *testing.T) {
 	}
 	if !recoveryCodePattern.MatchString(code) {
 		t.Fatalf("expected recovery code format, got %q", code)
+	}
+	if err := ValidateRecoveryCodeFormat(code); err != nil {
+		t.Fatalf("expected recovery code to pass ValidateRecoveryCodeFormat(), got %v", err)
+	}
+	randomPart := strings.TrimPrefix(strings.ReplaceAll(code, "-", ""), recoveryCodePrefix)
+	if strings.ContainsAny(randomPart, "IO10") {
+		t.Fatalf("generated code %q contains ambiguous characters", code)
 	}
 	if hash == "" {
 		t.Fatalf("expected non-empty recovery hash")
