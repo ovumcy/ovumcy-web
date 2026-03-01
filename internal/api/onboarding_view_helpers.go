@@ -10,28 +10,23 @@ import (
 
 func (handler *Handler) buildOnboardingViewData(c *fiber.Ctx, user *models.User, now time.Time) fiber.Map {
 	messages := currentMessages(c)
+	state := services.BuildOnboardingViewState(user, c.Query("step"), now, handler.location)
 
 	lastPeriodStart := ""
-	if user.LastPeriodStart != nil {
-		lastPeriodStart = dateAtLocation(*user.LastPeriodStart, handler.location).Format("2006-01-02")
+	if state.LastPeriodStart != nil {
+		lastPeriodStart = state.LastPeriodStart.Format("2006-01-02")
 	}
-
-	cycleLength := user.CycleLength
-	periodLength := user.PeriodLength
-	cycleLength, periodLength = services.ResolveCycleAndPeriodDefaults(cycleLength, periodLength)
-
-	minDate, maxDate := services.OnboardingDateBounds(now, handler.location)
 
 	return fiber.Map{
 		"Title":           localizedPageTitle(messages, "meta.title.onboarding", "Ovumcy | Onboarding"),
 		"CurrentUser":     user,
 		"HideNavigation":  true,
-		"OnboardingStep":  services.ResolveOnboardingStep(c.Query("step")),
-		"MinDate":         minDate.Format("2006-01-02"),
-		"MaxDate":         maxDate.Format("2006-01-02"),
+		"OnboardingStep":  state.Step,
+		"MinDate":         state.MinDate.Format("2006-01-02"),
+		"MaxDate":         state.MaxDate.Format("2006-01-02"),
 		"LastPeriodStart": lastPeriodStart,
-		"CycleLength":     cycleLength,
-		"PeriodLength":    periodLength,
-		"AutoPeriodFill":  user.AutoPeriodFill,
+		"CycleLength":     state.CycleLength,
+		"PeriodLength":    state.PeriodLength,
+		"AutoPeriodFill":  state.AutoPeriodFill,
 	}
 }
