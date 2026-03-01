@@ -1,10 +1,8 @@
-package api
+package services
 
 import "testing"
 
 func TestSanitizeRedirectPath(t *testing.T) {
-	t.Parallel()
-
 	fallback := "/login"
 
 	tests := []struct {
@@ -20,14 +18,10 @@ func TestSanitizeRedirectPath(t *testing.T) {
 		{name: "valid local path with query kept", raw: "/calendar?month=2026-02&day=2026-02-17", want: "/calendar?month=2026-02&day=2026-02-17"},
 	}
 
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := sanitizeRedirectPath(test.raw, fallback)
-			if got != test.want {
-				t.Fatalf("sanitizeRedirectPath(%q) = %q, want %q", test.raw, got, test.want)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := SanitizeRedirectPath(testCase.raw, fallback); got != testCase.want {
+				t.Fatalf("SanitizeRedirectPath(%q) = %q, want %q", testCase.raw, got, testCase.want)
 			}
 		})
 	}

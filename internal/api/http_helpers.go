@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"html/template"
-	"net/url"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -52,19 +51,4 @@ func localizedPageTitle(messages map[string]string, key string, fallback string)
 		return fallback
 	}
 	return title
-}
-
-func sanitizeRedirectPath(raw string, fallback string) string {
-	candidate := strings.TrimSpace(raw)
-	if candidate == "" {
-		return fallback
-	}
-	if strings.HasPrefix(candidate, "//") || !strings.HasPrefix(candidate, "/") {
-		return fallback
-	}
-	parsed, err := url.Parse(candidate)
-	if err != nil || parsed.IsAbs() {
-		return fallback
-	}
-	return candidate
 }

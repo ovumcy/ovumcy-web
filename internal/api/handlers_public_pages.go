@@ -1,6 +1,9 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
+)
 
 func (handler *Handler) SetupStatus(c *fiber.Ctx) error {
 	needsSetup, err := handler.requiresInitialSetup()
@@ -14,7 +17,7 @@ func (handler *Handler) SetLanguage(c *fiber.Ctx) error {
 	language := handler.i18n.NormalizeLanguage(c.Params("lang"))
 	handler.setLanguageCookie(c, language)
 
-	nextPath := sanitizeRedirectPath(c.Query("next"), "/")
+	nextPath := services.SanitizeRedirectPath(c.Query("next"), "/")
 	if isHTMX(c) {
 		c.Set("HX-Redirect", nextPath)
 		return c.SendStatus(fiber.StatusOK)

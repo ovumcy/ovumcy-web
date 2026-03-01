@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 const recoveryCodeCookieTTL = 20 * time.Minute
@@ -26,7 +27,7 @@ func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, rec
 	payload := recoveryCodePagePayload{
 		UserID:       userID,
 		RecoveryCode: code,
-		ContinuePath: sanitizeRedirectPath(strings.TrimSpace(continuePath), "/dashboard"),
+		ContinuePath: services.SanitizeRedirectPath(strings.TrimSpace(continuePath), "/dashboard"),
 	}
 
 	serialized, err := json.Marshal(payload)
@@ -54,7 +55,7 @@ func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, rec
 }
 
 func (handler *Handler) readRecoveryCodePageCookie(c *fiber.Ctx, userID uint, fallbackContinuePath string) (string, string) {
-	fallback := sanitizeRedirectPath(strings.TrimSpace(fallbackContinuePath), "/dashboard")
+	fallback := services.SanitizeRedirectPath(strings.TrimSpace(fallbackContinuePath), "/dashboard")
 	raw := strings.TrimSpace(c.Cookies(recoveryCodeCookieName))
 	if raw == "" {
 		return "", fallback
@@ -88,7 +89,7 @@ func (handler *Handler) readRecoveryCodePageCookie(c *fiber.Ctx, userID uint, fa
 		return "", fallback
 	}
 
-	continuePath := sanitizeRedirectPath(strings.TrimSpace(payload.ContinuePath), fallback)
+	continuePath := services.SanitizeRedirectPath(strings.TrimSpace(payload.ContinuePath), fallback)
 	return code, continuePath
 }
 
