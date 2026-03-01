@@ -5,6 +5,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func parseForgotPasswordCode(c *fiber.Ctx) (string, string) {
@@ -59,7 +60,7 @@ func (handler *Handler) renderRecoveryCodeResponse(c *fiber.Ctx, user *models.Us
 	userID := uint(0)
 	if user != nil {
 		userID = user.ID
-		continuePath = postLoginRedirectPath(user)
+		continuePath = services.PostLoginRedirectPath(user)
 	}
 	handler.setRecoveryCodePageCookie(c, userID, recoveryCode, continuePath)
 

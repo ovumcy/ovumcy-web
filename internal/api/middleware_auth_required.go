@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func (handler *Handler) AuthRequired(c *fiber.Ctx) error {
@@ -16,7 +17,7 @@ func (handler *Handler) AuthRequired(c *fiber.Ctx) error {
 	}
 
 	c.Locals(contextUserKey, user)
-	if requiresOnboarding(user) && !isOnboardingPath(c.Path()) {
+	if services.RequiresOnboarding(user) && !isOnboardingPath(c.Path()) {
 		if strings.HasPrefix(c.Path(), "/api/") {
 			if c.Path() == "/api/auth/logout" {
 				return c.Next()

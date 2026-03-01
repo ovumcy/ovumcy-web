@@ -83,7 +83,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 		return apiError(c, fiber.StatusInternalServerError, "failed to create session")
 	}
 
-	return redirectOrJSON(c, postLoginRedirectPath(&user))
+	return redirectOrJSON(c, services.PostLoginRedirectPath(&user))
 }
 
 func (handler *Handler) Logout(c *fiber.Ctx) error {

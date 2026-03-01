@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func (handler *Handler) ShowOnboarding(c *fiber.Ctx) error {
@@ -11,7 +12,7 @@ func (handler *Handler) ShowOnboarding(c *fiber.Ctx) error {
 	if !ok {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}
-	if !requiresOnboarding(user) {
+	if !services.RequiresOnboarding(user) {
 		return c.Redirect("/dashboard", fiber.StatusSeeOther)
 	}
 

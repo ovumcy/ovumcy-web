@@ -5,11 +5,12 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func (handler *Handler) redirectAuthenticatedUserIfPresent(c *fiber.Ctx) (bool, error) {
 	if user, err := handler.authenticateRequest(c); err == nil {
-		if redirectErr := c.Redirect(postLoginRedirectPath(user), fiber.StatusSeeOther); redirectErr != nil {
+		if redirectErr := c.Redirect(services.PostLoginRedirectPath(user), fiber.StatusSeeOther); redirectErr != nil {
 			return false, redirectErr
 		}
 		return true, nil

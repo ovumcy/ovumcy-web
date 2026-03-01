@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
@@ -11,7 +12,7 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 	if !ok {
 		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
 	}
-	if !requiresOnboarding(user) {
+	if !services.RequiresOnboarding(user) {
 		return redirectOrJSON(c, "/dashboard")
 	}
 	if user.LastPeriodStart == nil {

@@ -1,6 +1,9 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
+)
 
 func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
 	redirected, err := handler.redirectAuthenticatedUserIfPresent(c)
@@ -47,7 +50,7 @@ func (handler *Handler) ShowRecoveryCodePage(c *fiber.Ctx) error {
 	}
 	c.Locals(contextUserKey, user)
 
-	fallbackContinuePath := postLoginRedirectPath(user)
+	fallbackContinuePath := services.PostLoginRedirectPath(user)
 	recoveryCode, continuePath := handler.readRecoveryCodePageCookie(c, user.ID, fallbackContinuePath)
 	if recoveryCode == "" {
 		return c.Redirect(fallbackContinuePath, fiber.StatusSeeOther)

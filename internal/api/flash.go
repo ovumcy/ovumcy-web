@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func SetFlashCookie(c *fiber.Ctx, payload FlashPayload) {
@@ -25,8 +26,8 @@ func writeFlashCookie(c *fiber.Ctx, payload FlashPayload, secure bool) {
 	payload.AuthError = strings.TrimSpace(payload.AuthError)
 	payload.SettingsError = strings.TrimSpace(payload.SettingsError)
 	payload.SettingsSuccess = strings.TrimSpace(payload.SettingsSuccess)
-	payload.LoginEmail = normalizeLoginEmail(payload.LoginEmail)
-	payload.RegisterEmail = normalizeLoginEmail(payload.RegisterEmail)
+	payload.LoginEmail = services.NormalizeAuthEmail(payload.LoginEmail)
+	payload.RegisterEmail = services.NormalizeAuthEmail(payload.RegisterEmail)
 
 	if payload.AuthError == "" &&
 		payload.SettingsError == "" &&
@@ -73,8 +74,8 @@ func (handler *Handler) popFlashCookie(c *fiber.Ctx) FlashPayload {
 	payload.AuthError = strings.TrimSpace(payload.AuthError)
 	payload.SettingsError = strings.TrimSpace(payload.SettingsError)
 	payload.SettingsSuccess = strings.TrimSpace(payload.SettingsSuccess)
-	payload.LoginEmail = normalizeLoginEmail(payload.LoginEmail)
-	payload.RegisterEmail = normalizeLoginEmail(payload.RegisterEmail)
+	payload.LoginEmail = services.NormalizeAuthEmail(payload.LoginEmail)
+	payload.RegisterEmail = services.NormalizeAuthEmail(payload.RegisterEmail)
 	return payload
 }
 
