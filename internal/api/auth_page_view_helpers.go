@@ -1,25 +1,17 @@
 package api
 
 import (
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func authErrorKeyFromFlashOrQuery(c *fiber.Ctx, flashAuthError string) string {
-	errorSource := strings.TrimSpace(flashAuthError)
-	if errorSource == "" {
-		errorSource = strings.TrimSpace(c.Query("error"))
-	}
+	errorSource := services.ResolveAuthErrorSource(flashAuthError, c.Query("error"))
 	return authErrorTranslationKey(errorSource)
 }
 
 func loginEmailFromFlashOrQuery(c *fiber.Ctx, flashEmail string) string {
-	email := normalizeLoginEmail(flashEmail)
-	if email == "" {
-		email = normalizeLoginEmail(c.Query("email"))
-	}
-	return email
+	return services.ResolveAuthPageEmail(flashEmail, c.Query("email"))
 }
 
 func buildLoginPageData(c *fiber.Ctx, messages map[string]string, flash FlashPayload, needsSetup bool) fiber.Map {
