@@ -1,8 +1,6 @@
 package api
 
 import (
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -28,7 +26,7 @@ func (handler *Handler) buildOnboardingViewData(c *fiber.Ctx, user *models.User,
 		"Title":           localizedPageTitle(messages, "meta.title.onboarding", "Ovumcy | Onboarding"),
 		"CurrentUser":     user,
 		"HideNavigation":  true,
-		"OnboardingStep":  parseOnboardingStep(c.Query("step")),
+		"OnboardingStep":  services.ResolveOnboardingStep(c.Query("step")),
 		"MinDate":         minDate.Format("2006-01-02"),
 		"MaxDate":         maxDate.Format("2006-01-02"),
 		"LastPeriodStart": lastPeriodStart,
@@ -36,18 +34,4 @@ func (handler *Handler) buildOnboardingViewData(c *fiber.Ctx, user *models.User,
 		"PeriodLength":    periodLength,
 		"AutoPeriodFill":  user.AutoPeriodFill,
 	}
-}
-
-func parseOnboardingStep(raw string) int {
-	step, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil {
-		return 0
-	}
-	if step < 0 {
-		return 0
-	}
-	if step > 3 {
-		return 3
-	}
-	return step
 }

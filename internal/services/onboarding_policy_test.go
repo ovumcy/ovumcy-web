@@ -136,3 +136,25 @@ func TestOnboardingRedirectPolicy(t *testing.T) {
 		t.Fatalf("expected dashboard redirect for nil user, got %q", path)
 	}
 }
+
+func TestResolveOnboardingStep(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{name: "valid middle step", raw: "2", want: 2},
+		{name: "negative clamped to zero", raw: "-1", want: 0},
+		{name: "too large clamped to three", raw: "99", want: 3},
+		{name: "invalid defaults to zero", raw: "abc", want: 0},
+		{name: "trimmed value accepted", raw: " 3 ", want: 3},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := ResolveOnboardingStep(testCase.raw); got != testCase.want {
+				t.Fatalf("ResolveOnboardingStep(%q) = %d, want %d", testCase.raw, got, testCase.want)
+			}
+		})
+	}
+}
