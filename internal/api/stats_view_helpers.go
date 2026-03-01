@@ -14,6 +14,6 @@ func buildCycleTrendLabels(messages map[string]string, pointCount int) []string 
 
 func localizeSymptomFrequencySummaries(language string, counts []SymptomCount) {
 	for index := range counts {
-		counts[index].FrequencySummary = localizedSymptomFrequencySummary(language, counts[index].Count, counts[index].TotalDays)
+		counts[index].FrequencySummary = services.LocalizedSymptomFrequencySummary(language, counts[index].Count, counts[index].TotalDays)
 	}
 }

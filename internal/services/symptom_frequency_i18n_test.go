@@ -1,4 +1,4 @@
-package api
+package services
 
 import "testing"
 
@@ -15,7 +15,7 @@ func TestLocalizedSymptomFrequencySummary_EnglishPluralization(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			got := localizedSymptomFrequencySummary("en", testCase.count, testCase.days)
+			got := LocalizedSymptomFrequencySummary("en", testCase.count, testCase.days)
 			if got != testCase.expected {
 				t.Fatalf("expected %q, got %q", testCase.expected, got)
 			}
@@ -39,7 +39,7 @@ func TestLocalizedSymptomFrequencySummary_RussianPluralization(t *testing.T) {
 
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			got := localizedSymptomFrequencySummary("ru", testCase.count, testCase.days)
+			got := LocalizedSymptomFrequencySummary("ru", testCase.count, testCase.days)
 			if got != testCase.expected {
 				t.Fatalf("expected %q, got %q", testCase.expected, got)
 			}
