@@ -69,7 +69,9 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	}
 
 	if result.RequiresPasswordReset {
-		handler.setResetPasswordCookie(c, result.ResetToken, true)
+		if err := handler.setResetPasswordCookie(c, result.ResetToken, true); err != nil {
+			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
+		}
 		if acceptsJSON(c) {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": "password change required",

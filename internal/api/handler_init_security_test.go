@@ -6,14 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/db"
 	"github.com/terraincognita07/ovumcy/internal/i18n"
 )
 
-func newTestAppWithPrivacyRoute(t *testing.T) *fiber.App {
-	t.Helper()
-
+func TestNewHandlerRejectsEmptySecret(t *testing.T) {
 	_, testFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve current test file path")
@@ -23,7 +20,7 @@ func newTestAppWithPrivacyRoute(t *testing.T) *fiber.App {
 	internalDir := filepath.Dir(apiDir)
 	templatesDir := filepath.Join(internalDir, "templates")
 	localesDir := filepath.Join(internalDir, "i18n", "locales")
-	databasePath := filepath.Join(t.TempDir(), "ovumcy-test.db")
+	databasePath := filepath.Join(t.TempDir(), "ovumcy-handler-init-test.db")
 
 	database, err := db.OpenSQLite(databasePath)
 	if err != nil {
@@ -42,13 +39,11 @@ func newTestAppWithPrivacyRoute(t *testing.T) *fiber.App {
 		t.Fatalf("init i18n: %v", err)
 	}
 
-	handler, err := NewHandler("test-secret-key", templatesDir, time.UTC, i18nManager, false, newTestHandlerDependencies(database))
-	if err != nil {
-		t.Fatalf("init handler: %v", err)
+	_, err = NewHandler("   ", templatesDir, time.UTC, i18nManager, false, newTestHandlerDependencies(database))
+	if err == nil {
+		t.Fatal("expected error for empty secret")
 	}
-
-	app := fiber.New()
-	app.Use(handler.LanguageMiddleware)
-	RegisterRoutes(app, handler)
-	return app
+	if err.Error() != "secret key is required" {
+		t.Fatalf("expected error %q, got %q", "secret key is required", err.Error())
+	}
 }

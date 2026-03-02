@@ -95,3 +95,70 @@ func TestLoginReturnsResetTokenIssueError(t *testing.T) {
 		t.Fatalf("expected error %q, got %q", "failed to create reset token", message)
 	}
 }
+
+func TestLoginForcedResetCookieWriteFailureReturns500(t *testing.T) {
+	handler := &Handler{
+		location: time.UTC,
+		loginService: &stubLoginWorkflowService{
+			result: services.LoginResult{
+				User: models.User{
+					ID:                 1,
+					Role:               models.RoleOwner,
+					MustChangePassword: true,
+				},
+				RequiresPasswordReset: true,
+				ResetToken:            "reset-token-value",
+			},
+		},
+	}
+
+	app := fiber.New()
+	app.Post("/api/auth/login", handler.Login)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("login request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.StatusCode)
+	}
+	if message := readAPIError(t, response.Body); message != "failed to create reset token" {
+		t.Fatalf("expected error %q, got %q", "failed to create reset token", message)
+	}
+}
+
+func TestRenderRecoveryCodeResponseCookieWriteFailureReturns500(t *testing.T) {
+	handler := &Handler{
+		location: time.UTC,
+	}
+
+	app := fiber.New()
+	app.Get("/api/auth/recovery-response-test", func(c *fiber.Ctx) error {
+		user := &models.User{
+			ID:   1,
+			Role: models.RoleOwner,
+		}
+		return handler.renderRecoveryCodeResponse(c, user, "ABCD-1234", fiber.StatusCreated)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/recovery-response-test", nil)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("recovery response request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", response.StatusCode)
+	}
+	if message := readAPIError(t, response.Body); message != "failed to persist recovery code" {
+		t.Fatalf("expected error %q, got %q", "failed to persist recovery code", message)
+	}
+}

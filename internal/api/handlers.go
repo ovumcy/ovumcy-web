@@ -2,18 +2,25 @@ package api
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/i18n"
-	"gorm.io/gorm"
 )
 
-func NewHandler(database *gorm.DB, secret string, templateDir string, location *time.Location, i18nManager *i18n.Manager, cookieSecure bool) (*Handler, error) {
+func NewHandler(secret string, templateDir string, location *time.Location, i18nManager *i18n.Manager, cookieSecure bool, dependencies Dependencies) (*Handler, error) {
+	secret = strings.TrimSpace(secret)
 	if location == nil {
 		location = time.Local
 	}
+	if secret == "" {
+		return nil, errors.New("secret key is required")
+	}
 	if i18nManager == nil {
 		return nil, errors.New("i18n manager is required")
+	}
+	if err := dependencies.validate(); err != nil {
+		return nil, err
 	}
 
 	funcMap := newTemplateFuncMap()
@@ -36,5 +43,5 @@ func NewHandler(database *gorm.DB, secret string, templateDir string, location *
 		templates:    templates,
 		partials:     partials,
 	}
-	return handler.withDependencies(database), nil
+	return handler.withDependencies(dependencies), nil
 }

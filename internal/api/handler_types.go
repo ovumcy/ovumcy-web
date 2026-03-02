@@ -4,17 +4,16 @@ import (
 	"html/template"
 	"time"
 
-	"github.com/terraincognita07/ovumcy/internal/db"
 	"github.com/terraincognita07/ovumcy/internal/i18n"
 	"github.com/terraincognita07/ovumcy/internal/models"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-type registrationWorkflowService interface {
+type RegistrationWorkflowService interface {
 	RegisterOwnerAccount(email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error)
 }
 
-type loginWorkflowService interface {
+type LoginWorkflowService interface {
 	Authenticate(secretKey []byte, email string, password string, resetTokenTTL time.Duration, now time.Time) (services.LoginResult, error)
 }
 
@@ -25,11 +24,10 @@ type Handler struct {
 	i18n                 *i18n.Manager
 	templates            map[string]*template.Template
 	partials             map[string]*template.Template
-	repositories         *db.Repositories
 	authService          *services.AuthService
-	registrationService  registrationWorkflowService
+	registrationService  RegistrationWorkflowService
 	passwordResetSvc     *services.PasswordResetService
-	loginService         loginWorkflowService
+	loginService         LoginWorkflowService
 	dayService           *services.DayService
 	symptomService       *services.SymptomService
 	viewerService        *services.ViewerService

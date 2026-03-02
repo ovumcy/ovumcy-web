@@ -30,7 +30,9 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
 		}
 	}
-	handler.setResetPasswordCookie(c, token, false)
+	if err := handler.setResetPasswordCookie(c, token, false); err != nil {
+		return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
+	}
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{

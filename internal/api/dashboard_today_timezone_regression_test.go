@@ -109,7 +109,7 @@ func newOnboardingTestAppWithLocation(t *testing.T, location *time.Location) (*f
 		t.Fatalf("init i18n: %v", err)
 	}
 
-	handler, err := NewHandler(database, "test-secret-key", templatesDir, location, i18nManager, false)
+	handler, err := NewHandler("test-secret-key", templatesDir, location, i18nManager, false, newTestHandlerDependencies(database))
 	if err != nil {
 		t.Fatalf("init handler: %v", err)
 	}

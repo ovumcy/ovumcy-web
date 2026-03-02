@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/terraincognita07/ovumcy/internal/db"
 	"github.com/terraincognita07/ovumcy/internal/i18n"
+	"github.com/terraincognita07/ovumcy/internal/services"
 	"gorm.io/gorm"
 )
 
@@ -59,7 +60,7 @@ func newOnboardingTestAppWithCookieSecureAndCSRF(t *testing.T, cookieSecure bool
 		t.Fatalf("init i18n: %v", err)
 	}
 
-	handler, err := NewHandler(database, "test-secret-key", templatesDir, time.UTC, i18nManager, cookieSecure)
+	handler, err := NewHandler("test-secret-key", templatesDir, time.UTC, i18nManager, cookieSecure, newTestHandlerDependencies(database))
 	if err != nil {
 		t.Fatalf("init handler: %v", err)
 	}
@@ -72,6 +73,45 @@ func newOnboardingTestAppWithCookieSecureAndCSRF(t *testing.T, cookieSecure bool
 	RegisterRoutes(app, handler)
 	app.Use(handler.NotFound)
 	return app, database
+}
+
+func newTestHandlerDependencies(database *gorm.DB) Dependencies {
+	repositories := db.NewRepositories(database)
+	authService := services.NewAuthService(repositories.Users)
+	attemptLimiter := services.NewAttemptLimiter()
+	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
+	loginService := services.NewLoginService(authService, passwordResetService)
+	dayService := services.NewDayService(repositories.DailyLogs, repositories.Users)
+	symptomService := services.NewSymptomService(repositories.Symptoms, repositories.DailyLogs)
+	registrationService := services.NewRegistrationService(authService, repositories.Users)
+	viewerService := services.NewViewerService(dayService, symptomService)
+	statsService := services.NewStatsService(dayService, symptomService)
+	calendarViewService := services.NewCalendarViewService(dayService, statsService)
+	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
+	exportService := services.NewExportService(dayService, symptomService)
+	settingsService := services.NewSettingsService(repositories.Users)
+	notificationService := services.NewNotificationService()
+	settingsViewService := services.NewSettingsViewService(settingsService, notificationService, exportService)
+	onboardingService := services.NewOnboardingService(repositories.Users)
+	setupService := services.NewSetupService(repositories.Users)
+
+	return Dependencies{
+		AuthService:          authService,
+		RegistrationService:  registrationService,
+		PasswordResetService: passwordResetService,
+		LoginService:         loginService,
+		DayService:           dayService,
+		SymptomService:       symptomService,
+		ViewerService:        viewerService,
+		StatsService:         statsService,
+		CalendarViewService:  calendarViewService,
+		DashboardViewService: dashboardViewService,
+		ExportService:        exportService,
+		SettingsService:      settingsService,
+		SettingsViewService:  settingsViewService,
+		OnboardingService:    onboardingService,
+		SetupService:         setupService,
+	}
 }
 
 func testCSRFMiddlewareConfig(cookieSecure bool) csrf.Config {

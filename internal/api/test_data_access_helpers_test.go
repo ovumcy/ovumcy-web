@@ -37,7 +37,7 @@ func newServiceBackedHandlerForTest(database *gorm.DB, location *time.Location) 
 	handler := &Handler{
 		location: location,
 	}
-	return handler.withDependencies(database)
+	return handler.withDependencies(newTestHandlerDependencies(database))
 }
 
 func createDataAccessTestUser(t *testing.T, database *gorm.DB, email string) models.User {

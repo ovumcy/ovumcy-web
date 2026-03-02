@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -17,11 +18,11 @@ type recoveryCodePagePayload struct {
 	ContinuePath string `json:"continue_path,omitempty"`
 }
 
-func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, recoveryCode string, continuePath string) {
+func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, recoveryCode string, continuePath string) error {
 	code := strings.TrimSpace(recoveryCode)
 	if code == "" {
 		handler.clearRecoveryCodePageCookie(c)
-		return
+		return errors.New("recovery code is required")
 	}
 
 	payload := recoveryCodePagePayload{
@@ -32,15 +33,15 @@ func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, rec
 
 	serialized, err := json.Marshal(payload)
 	if err != nil {
-		return
+		return err
 	}
 	codec, err := newSecureCookieCodec(handler.secretKey)
 	if err != nil {
-		return
+		return err
 	}
 	encoded, err := codec.seal(recoveryCodeCookieName, serialized)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.Cookie(&fiber.Cookie{
@@ -52,6 +53,7 @@ func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, rec
 		SameSite: "Lax",
 		Expires:  time.Now().Add(recoveryCodeCookieTTL),
 	})
+	return nil
 }
 
 func (handler *Handler) readRecoveryCodePageCookie(c *fiber.Ctx, userID uint, fallbackContinuePath string) (string, string) {

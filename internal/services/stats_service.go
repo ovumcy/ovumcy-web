@@ -20,6 +20,8 @@ type StatsService struct {
 	symptoms StatsSymptomReader
 }
 
+const statsOverviewWindowYears = 2
+
 type StatsFlags struct {
 	HasObservedCycleData bool
 	HasTrendData         bool
@@ -43,6 +45,19 @@ func (service *StatsService) BuildCycleStatsForRange(user *models.User, from tim
 	stats := BuildCycleStats(logs, now)
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
 	return stats, logs, nil
+}
+
+func StatsOverviewRange(now time.Time) (time.Time, time.Time) {
+	return now.AddDate(-statsOverviewWindowYears, 0, 0), now
+}
+
+func (service *StatsService) BuildOverviewStats(user *models.User, now time.Time, location *time.Location) (CycleStats, error) {
+	from, to := StatsOverviewRange(now)
+	stats, _, err := service.BuildCycleStatsForRange(user, from, to, now, location)
+	if err != nil {
+		return CycleStats{}, err
+	}
+	return stats, nil
 }
 
 func TrimTrailingCycleTrendLengths(lengths []int, maxPoints int) []int {

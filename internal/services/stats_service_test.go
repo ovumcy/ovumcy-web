@@ -14,9 +14,13 @@ type stubStatsDayReader struct {
 	rangeErr       error
 	allErr         error
 	fetchAllCalled bool
+	gotFrom        time.Time
+	gotTo          time.Time
 }
 
-func (stub *stubStatsDayReader) FetchLogsForUser(uint, time.Time, time.Time, *time.Location) ([]models.DailyLog, error) {
+func (stub *stubStatsDayReader) FetchLogsForUser(_ uint, from time.Time, to time.Time, _ *time.Location) ([]models.DailyLog, error) {
+	stub.gotFrom = from
+	stub.gotTo = to
 	if stub.rangeErr != nil {
 		return nil, stub.rangeErr
 	}
@@ -107,6 +111,42 @@ func TestBuildCycleStatsForRangeAppliesOwnerBaseline(t *testing.T) {
 	}
 	if stats.MedianCycleLength != 29 {
 		t.Fatalf("expected baseline median cycle length 29, got %d", stats.MedianCycleLength)
+	}
+}
+
+func TestStatsOverviewRange(t *testing.T) {
+	now := mustParseStatsServiceDay(t, "2026-03-02")
+	from, to := StatsOverviewRange(now)
+
+	if !to.Equal(now) {
+		t.Fatalf("expected overview range to end at now, got %s", to)
+	}
+	expectedFrom := mustParseStatsServiceDay(t, "2024-03-02")
+	if !from.Equal(expectedFrom) {
+		t.Fatalf("expected overview range start %s, got %s", expectedFrom, from)
+	}
+}
+
+func TestBuildOverviewStatsUsesOverviewRange(t *testing.T) {
+	dayReader := &stubStatsDayReader{
+		logsForRange: []models.DailyLog{
+			{Date: mustParseStatsServiceDay(t, "2026-02-10"), IsPeriod: true},
+		},
+	}
+	service := NewStatsService(dayReader, &stubStatsSymptomReader{})
+	user := &models.User{ID: 3, Role: models.RoleOwner, CycleLength: 28}
+	now := mustParseStatsServiceDay(t, "2026-03-02")
+
+	if _, err := service.BuildOverviewStats(user, now, time.UTC); err != nil {
+		t.Fatalf("BuildOverviewStats() unexpected error: %v", err)
+	}
+
+	expectedFrom, expectedTo := StatsOverviewRange(now)
+	if !dayReader.gotFrom.Equal(expectedFrom) {
+		t.Fatalf("expected overview from %s, got %s", expectedFrom, dayReader.gotFrom)
+	}
+	if !dayReader.gotTo.Equal(expectedTo) {
+		t.Fatalf("expected overview to %s, got %s", expectedTo, dayReader.gotTo)
 	}
 }
 

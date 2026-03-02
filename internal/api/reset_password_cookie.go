@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -15,11 +16,11 @@ type resetPasswordCookiePayload struct {
 	Forced bool   `json:"forced,omitempty"`
 }
 
-func (handler *Handler) setResetPasswordCookie(c *fiber.Ctx, token string, forced bool) {
+func (handler *Handler) setResetPasswordCookie(c *fiber.Ctx, token string, forced bool) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		handler.clearResetPasswordCookie(c)
-		return
+		return errors.New("reset token is required")
 	}
 
 	payload := resetPasswordCookiePayload{
@@ -28,16 +29,16 @@ func (handler *Handler) setResetPasswordCookie(c *fiber.Ctx, token string, force
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
-		return
+		return err
 	}
 
 	codec, err := newSecureCookieCodec(handler.secretKey)
 	if err != nil {
-		return
+		return err
 	}
 	encoded, err := codec.seal(resetPasswordCookieName, serialized)
 	if err != nil {
-		return
+		return err
 	}
 
 	c.Cookie(&fiber.Cookie{
@@ -49,6 +50,7 @@ func (handler *Handler) setResetPasswordCookie(c *fiber.Ctx, token string, force
 		SameSite: "Lax",
 		Expires:  time.Now().Add(resetPasswordCookieTTL),
 	})
+	return nil
 }
 
 func (handler *Handler) readResetPasswordCookie(c *fiber.Ctx) (string, bool) {

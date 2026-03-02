@@ -24,6 +24,7 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/cli"
 	"github.com/terraincognita07/ovumcy/internal/db"
 	"github.com/terraincognita07/ovumcy/internal/i18n"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func main() {
@@ -79,7 +80,44 @@ func main() {
 		log.Fatalf("i18n init failed: %v", err)
 	}
 
-	handler, err := api.NewHandler(database, secretKey, filepath.Join("internal", "templates"), location, i18nManager, cookieSecure)
+	repositories := db.NewRepositories(database)
+	authService := services.NewAuthService(repositories.Users)
+	attemptLimiter := services.NewAttemptLimiter()
+	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
+	loginService := services.NewLoginService(authService, passwordResetService)
+	dayService := services.NewDayService(repositories.DailyLogs, repositories.Users)
+	symptomService := services.NewSymptomService(repositories.Symptoms, repositories.DailyLogs)
+	registrationService := services.NewRegistrationService(authService, repositories.Users)
+	viewerService := services.NewViewerService(dayService, symptomService)
+	statsService := services.NewStatsService(dayService, symptomService)
+	calendarViewService := services.NewCalendarViewService(dayService, statsService)
+	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
+	exportService := services.NewExportService(dayService, symptomService)
+	settingsService := services.NewSettingsService(repositories.Users)
+	notificationService := services.NewNotificationService()
+	settingsViewService := services.NewSettingsViewService(settingsService, notificationService, exportService)
+	onboardingService := services.NewOnboardingService(repositories.Users)
+	setupService := services.NewSetupService(repositories.Users)
+
+	dependencies := api.Dependencies{
+		AuthService:          authService,
+		RegistrationService:  registrationService,
+		PasswordResetService: passwordResetService,
+		LoginService:         loginService,
+		DayService:           dayService,
+		SymptomService:       symptomService,
+		ViewerService:        viewerService,
+		StatsService:         statsService,
+		CalendarViewService:  calendarViewService,
+		DashboardViewService: dashboardViewService,
+		ExportService:        exportService,
+		SettingsService:      settingsService,
+		SettingsViewService:  settingsViewService,
+		OnboardingService:    onboardingService,
+		SetupService:         setupService,
+	}
+
+	handler, err := api.NewHandler(secretKey, filepath.Join("internal", "templates"), location, i18nManager, cookieSecure, dependencies)
 	if err != nil {
 		log.Fatalf("handler init failed: %v", err)
 	}
