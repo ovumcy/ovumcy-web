@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/i18n"
-	"github.com/terraincognita07/ovumcy/internal/services"
 	"gorm.io/gorm"
 )
 
@@ -30,13 +29,12 @@ func NewHandler(database *gorm.DB, secret string, templateDir string, location *
 	}
 
 	handler := &Handler{
-		secretKey:       []byte(secret),
-		location:        location,
-		cookieSecure:    cookieSecure,
-		i18n:            i18nManager,
-		templates:       templates,
-		partials:        partials,
-		recoveryLimiter: services.NewAttemptLimiter(),
+		secretKey:    []byte(secret),
+		location:     location,
+		cookieSecure: cookieSecure,
+		i18n:         i18nManager,
+		templates:    templates,
+		partials:     partials,
 	}
 	return handler.withDependencies(database), nil
 }

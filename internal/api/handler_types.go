@@ -16,7 +16,6 @@ type Handler struct {
 	i18n                 *i18n.Manager
 	templates            map[string]*template.Template
 	partials             map[string]*template.Template
-	recoveryLimiter      *services.AttemptLimiter
 	repositories         *db.Repositories
 	authService          *services.AuthService
 	passwordResetSvc     *services.PasswordResetService
@@ -29,7 +28,6 @@ type Handler struct {
 	exportService        *services.ExportService
 	settingsService      *services.SettingsService
 	settingsViewService  *services.SettingsViewService
-	notificationService  *services.NotificationService
 	onboardingSvc        *services.OnboardingService
 	setupService         *services.SetupService
 }
