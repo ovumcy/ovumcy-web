@@ -6,7 +6,8 @@ import (
 )
 
 func (handler *Handler) SetupStatus(c *fiber.Ctx) error {
-	needsSetup, err := handler.requiresInitialSetup()
+	handler.ensureDependencies()
+	needsSetup, err := handler.setupService.RequiresInitialSetup()
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to load setup state")
 	}
