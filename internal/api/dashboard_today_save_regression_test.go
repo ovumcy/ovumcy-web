@@ -59,7 +59,7 @@ func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse day for assertion: %v", err)
 	}
-	entry, err := (&Handler{db: database, location: time.UTC}).fetchLogByDate(user.ID, parsedDay)
+	entry, err := fetchLogByDateForTest(&Handler{db: database, location: time.UTC}, user.ID, parsedDay)
 	if err != nil {
 		t.Fatalf("load stored day after dashboard save: %v", err)
 	}

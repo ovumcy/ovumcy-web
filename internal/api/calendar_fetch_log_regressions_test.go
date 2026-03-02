@@ -85,7 +85,7 @@ func TestFetchLogByDateFindsZuluStoredRowForLocalCalendarDay(t *testing.T) {
 		t.Fatalf("parse day: %v", err)
 	}
 
-	entry, err := handler.fetchLogByDate(user.ID, day)
+	entry, err := fetchLogByDateForTest(handler, user.ID, day)
 	if err != nil {
 		t.Fatalf("fetchLogByDate: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestFetchLogByDateIgnoresUTCShiftedRowForLocalCalendarDay(t *testing.T) {
 		t.Fatalf("parse day: %v", err)
 	}
 
-	entry, err := handler.fetchLogByDate(user.ID, day)
+	entry, err := fetchLogByDateForTest(handler, user.ID, day)
 	if err != nil {
 		t.Fatalf("fetchLogByDate: %v", err)
 	}

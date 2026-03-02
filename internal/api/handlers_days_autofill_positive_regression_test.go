@@ -59,7 +59,7 @@ func TestUpsertDayAutoFillsFollowingPeriodDays(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse day %s: %v", dateRaw, err)
 		}
-		entry, err := handler.fetchLogByDate(user.ID, day)
+		entry, err := fetchLogByDateForTest(handler, user.ID, day)
 		if err != nil {
 			t.Fatalf("fetch log for %s: %v", dateRaw, err)
 		}
@@ -72,7 +72,7 @@ func TestUpsertDayAutoFillsFollowingPeriodDays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse day after auto-fill: %v", err)
 	}
-	dayAfterEntry, err := handler.fetchLogByDate(user.ID, dayAfterAutoFill)
+	dayAfterEntry, err := fetchLogByDateForTest(handler, user.ID, dayAfterAutoFill)
 	if err != nil {
 		t.Fatalf("fetch log for day after auto-fill: %v", err)
 	}

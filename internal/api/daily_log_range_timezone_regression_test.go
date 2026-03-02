@@ -86,7 +86,7 @@ func TestFetchLogsForUserExcludesUTCShiftedRowForLocalDayRange(t *testing.T) {
 	}
 	to := from
 
-	logs, err := handler.fetchLogsForUser(user.ID, from, to)
+	logs, err := fetchLogsForUserForTest(handler, user.ID, from, to)
 	if err != nil {
 		t.Fatalf("fetchLogsForUser: %v", err)
 	}

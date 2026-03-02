@@ -57,7 +57,7 @@ func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse first day: %v", err)
 	}
-	firstEntry, err := handler.fetchLogByDate(user.ID, firstDay)
+	firstEntry, err := fetchLogByDateForTest(handler, user.ID, firstDay)
 	if err != nil {
 		t.Fatalf("fetch first day log: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse next day: %v", err)
 	}
-	nextEntry, err := handler.fetchLogByDate(user.ID, nextDay)
+	nextEntry, err := fetchLogByDateForTest(handler, user.ID, nextDay)
 	if err != nil {
 		t.Fatalf("fetch next day log: %v", err)
 	}

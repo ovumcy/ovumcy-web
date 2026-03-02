@@ -69,7 +69,7 @@ func TestUpsertDayAutoFillSkipsWhenRecentPeriodDayExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse next day: %v", err)
 	}
-	nextEntry, err := handler.fetchLogByDate(user.ID, nextDay)
+	nextEntry, err := fetchLogByDateForTest(handler, user.ID, nextDay)
 	if err != nil {
 		t.Fatalf("fetch next day log: %v", err)
 	}

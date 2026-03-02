@@ -15,7 +15,7 @@ func TestDayHasDataForDate(t *testing.T) {
 
 	day := time.Date(2026, time.February, 18, 0, 0, 0, 0, time.UTC)
 
-	hasData, err := handler.dayHasDataForDate(user.ID, day)
+	hasData, err := dayHasDataForDateForTest(handler, user.ID, day)
 	if err != nil {
 		t.Fatalf("dayHasDataForDate returned error: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestDayHasDataForDate(t *testing.T) {
 		t.Fatalf("create log: %v", err)
 	}
 
-	hasData, err = handler.dayHasDataForDate(user.ID, day)
+	hasData, err = dayHasDataForDateForTest(handler, user.ID, day)
 	if err != nil {
 		t.Fatalf("dayHasDataForDate returned error: %v", err)
 	}
