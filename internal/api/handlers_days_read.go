@@ -22,12 +22,10 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 	if to.Before(from) {
 		return apiError(c, fiber.StatusBadRequest, "invalid range")
 	}
-	logs, err := handler.dayService.FetchLogsForUser(user.ID, from, to, handler.location)
+	logs, err := handler.viewerService.FetchLogsForViewer(user, from, to, handler.location)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch logs")
 	}
-
-	services.SanitizeLogsForViewer(user, logs)
 
 	return c.JSON(logs)
 }
@@ -42,12 +40,10 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid date")
 	}
-	logEntry, err := handler.dayService.FetchLogByDate(user.ID, day, handler.location)
+	logEntry, err := handler.viewerService.FetchLogByDateForViewer(user, day, handler.location)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch day")
 	}
-
-	logEntry = services.SanitizeLogForViewer(user, logEntry)
 
 	return c.JSON(logEntry)
 }
