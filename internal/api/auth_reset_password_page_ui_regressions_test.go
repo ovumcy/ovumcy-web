@@ -9,13 +9,14 @@ import (
 	"testing"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func TestResetPasswordPageShowsPasswordTogglesAndBackToLoginLink(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "reset-page-ui@example.com", "StrongPass1", true)
 
-	recoveryCode, recoveryHash, err := generateRecoveryCodeHash()
+	recoveryCode, recoveryHash, err := services.GenerateRecoveryCodeHash()
 	if err != nil {
 		t.Fatalf("generate recovery code: %v", err)
 	}

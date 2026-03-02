@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 	"gorm.io/gorm"
 )
 
@@ -149,7 +150,7 @@ func TestLoginForcedResetDoesNotExposeResetToken(t *testing.T) {
 func mustSetRecoveryCodeForUser(t *testing.T, database *gorm.DB, userID uint) string {
 	t.Helper()
 
-	recoveryCode, recoveryHash, err := generateRecoveryCodeHash()
+	recoveryCode, recoveryHash, err := services.GenerateRecoveryCodeHash()
 	if err != nil {
 		t.Fatalf("generate recovery code: %v", err)
 	}
