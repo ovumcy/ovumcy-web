@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -12,8 +11,8 @@ import (
 func (handler *Handler) buildDashboardViewData(user *models.User, language string, messages map[string]string, now time.Time) (fiber.Map, string, error) {
 	viewData, err := handler.dashboardViewService.BuildDashboardViewData(user, language, now, handler.location)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrDashboardViewLoadTodayLog):
+		switch services.ClassifyDashboardViewError(err) {
+		case services.DashboardViewErrorLoadTodayLog:
 			return nil, "failed to load today log", err
 		default:
 			return nil, "failed to load logs", err
@@ -48,8 +47,8 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 func (handler *Handler) buildDayEditorPartialData(user *models.User, language string, messages map[string]string, day time.Time, now time.Time) (fiber.Map, string, error) {
 	viewData, err := handler.dashboardViewService.BuildDayEditorViewData(user, language, day, now, handler.location)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrDashboardViewLoadDayState):
+		switch services.ClassifyDashboardViewError(err) {
+		case services.DashboardViewErrorLoadDayState:
 			return nil, "failed to load day state", err
 		default:
 			return nil, "failed to load day", err

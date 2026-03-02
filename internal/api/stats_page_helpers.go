@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -37,8 +36,8 @@ func (handler *Handler) buildStatsPageData(user *models.User, language string, m
 		maxStatsTrendPoints,
 	)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrStatsPageViewLoadSymptoms):
+		switch services.ClassifyStatsPageViewError(err) {
+		case services.StatsPageViewErrorLoadSymptoms:
 			return nil, "failed to load symptom stats", err
 		default:
 			return nil, "failed to load stats", err

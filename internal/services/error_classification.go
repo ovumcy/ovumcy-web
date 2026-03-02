@@ -414,3 +414,54 @@ func ClassifyRecoveryCodeRegenerationError(err error) RecoveryCodeRegenerationEr
 		return RecoveryCodeRegenerationErrorUnknown
 	}
 }
+
+type CalendarViewErrorKind uint8
+
+const (
+	CalendarViewErrorUnknown CalendarViewErrorKind = iota
+	CalendarViewErrorLoadLogs
+)
+
+func ClassifyCalendarViewError(err error) CalendarViewErrorKind {
+	switch {
+	case errors.Is(err, ErrCalendarViewLoadLogs):
+		return CalendarViewErrorLoadLogs
+	default:
+		return CalendarViewErrorUnknown
+	}
+}
+
+type DashboardViewErrorKind uint8
+
+const (
+	DashboardViewErrorUnknown DashboardViewErrorKind = iota
+	DashboardViewErrorLoadTodayLog
+	DashboardViewErrorLoadDayState
+)
+
+func ClassifyDashboardViewError(err error) DashboardViewErrorKind {
+	switch {
+	case errors.Is(err, ErrDashboardViewLoadTodayLog):
+		return DashboardViewErrorLoadTodayLog
+	case errors.Is(err, ErrDashboardViewLoadDayState):
+		return DashboardViewErrorLoadDayState
+	default:
+		return DashboardViewErrorUnknown
+	}
+}
+
+type StatsPageViewErrorKind uint8
+
+const (
+	StatsPageViewErrorUnknown StatsPageViewErrorKind = iota
+	StatsPageViewErrorLoadSymptoms
+)
+
+func ClassifyStatsPageViewError(err error) StatsPageViewErrorKind {
+	switch {
+	case errors.Is(err, ErrStatsPageViewLoadSymptoms):
+		return StatsPageViewErrorLoadSymptoms
+	default:
+		return StatsPageViewErrorUnknown
+	}
+}

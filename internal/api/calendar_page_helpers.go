@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -13,8 +12,8 @@ func (handler *Handler) buildCalendarViewData(user *models.User, language string
 
 	viewData, err := handler.calendarViewService.BuildCalendarPageViewData(user, language, now, monthStart, selectedDate, handler.location)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrCalendarViewLoadLogs):
+		switch services.ClassifyCalendarViewError(err) {
+		case services.CalendarViewErrorLoadLogs:
 			return nil, "failed to load calendar", err
 		default:
 			return nil, "failed to load stats", err

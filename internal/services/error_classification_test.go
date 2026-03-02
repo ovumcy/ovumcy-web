@@ -120,3 +120,18 @@ func TestClassifyAuthSessionResolveError(t *testing.T) {
 		t.Fatalf("expected AuthSessionResolveErrorInvalid, got %v", got)
 	}
 }
+
+func TestClassifyViewBuildErrors(t *testing.T) {
+	if got := ClassifyCalendarViewError(ErrCalendarViewLoadLogs); got != CalendarViewErrorLoadLogs {
+		t.Fatalf("expected CalendarViewErrorLoadLogs, got %v", got)
+	}
+	if got := ClassifyDashboardViewError(ErrDashboardViewLoadTodayLog); got != DashboardViewErrorLoadTodayLog {
+		t.Fatalf("expected DashboardViewErrorLoadTodayLog, got %v", got)
+	}
+	if got := ClassifyDashboardViewError(ErrDashboardViewLoadDayState); got != DashboardViewErrorLoadDayState {
+		t.Fatalf("expected DashboardViewErrorLoadDayState, got %v", got)
+	}
+	if got := ClassifyStatsPageViewError(ErrStatsPageViewLoadSymptoms); got != StatsPageViewErrorLoadSymptoms {
+		t.Fatalf("expected StatsPageViewErrorLoadSymptoms, got %v", got)
+	}
+}
