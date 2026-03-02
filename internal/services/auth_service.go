@@ -17,6 +17,8 @@ var (
 	ErrRecoveryCodeGenerate = errors.New("recovery code generation failed")
 	ErrRecoveryCodeUpdate   = errors.New("recovery code update failed")
 	ErrAuthRegisterInvalid  = errors.New("auth register invalid input")
+	ErrAuthEmailExists      = errors.New("auth email already exists")
+	ErrAuthRegisterFailed   = errors.New("auth register failed")
 	ErrAuthPasswordMismatch = errors.New("auth register password mismatch")
 	ErrAuthWeakPassword     = errors.New("auth register weak password")
 	ErrAuthInvalidCreds     = errors.New("auth invalid credentials")
@@ -75,6 +77,30 @@ func (service *AuthService) ValidateRegistrationCredentials(password string, con
 		return ErrAuthWeakPassword
 	}
 	return nil
+}
+
+func (service *AuthService) RegisterOwner(email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error) {
+	if err := service.ValidateRegistrationCredentials(rawPassword, confirmPassword); err != nil {
+		return models.User{}, "", err
+	}
+
+	exists, err := service.RegistrationEmailExists(email)
+	if err != nil {
+		return models.User{}, "", ErrAuthRegisterFailed
+	}
+	if exists {
+		return models.User{}, "", ErrAuthEmailExists
+	}
+
+	user, recoveryCode, err := service.BuildOwnerUserWithRecovery(email, rawPassword, createdAt)
+	if err != nil {
+		return models.User{}, "", ErrAuthRegisterFailed
+	}
+	if err := service.CreateUser(&user); err != nil {
+		return models.User{}, "", ErrAuthEmailExists
+	}
+
+	return user, recoveryCode, nil
 }
 
 func (service *AuthService) ValidateResetPasswordInput(password string, confirmPassword string) error {

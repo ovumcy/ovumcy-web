@@ -13,31 +13,28 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
 	}
-	if err := handler.authService.ValidateRegistrationCredentials(credentials.Password, credentials.ConfirmPassword); err != nil {
+
+	user, recoveryCode, err := handler.authService.RegisterOwner(
+		credentials.Email,
+		credentials.Password,
+		credentials.ConfirmPassword,
+		time.Now().In(handler.location),
+	)
+	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrAuthPasswordMismatch):
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "password mismatch")
 		case errors.Is(err, services.ErrAuthWeakPassword):
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "weak password")
-		default:
+		case errors.Is(err, services.ErrAuthEmailExists):
+			return handler.respondAuthError(c, fiber.StatusConflict, "email already exists")
+		case errors.Is(err, services.ErrAuthRegisterInvalid):
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
+		case errors.Is(err, services.ErrAuthRegisterFailed):
+			return apiError(c, fiber.StatusInternalServerError, "failed to create account")
+		default:
+			return apiError(c, fiber.StatusInternalServerError, "failed to create account")
 		}
-	}
-
-	exists, err := handler.authService.RegistrationEmailExists(credentials.Email)
-	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to create account")
-	}
-	if exists {
-		return handler.respondAuthError(c, fiber.StatusConflict, "email already exists")
-	}
-
-	user, recoveryCode, err := handler.authService.BuildOwnerUserWithRecovery(credentials.Email, credentials.Password, time.Now().In(handler.location))
-	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to create account")
-	}
-	if err := handler.authService.CreateUser(&user); err != nil {
-		return handler.respondAuthError(c, fiber.StatusConflict, "email already exists")
 	}
 
 	if err := handler.symptomService.SeedBuiltinSymptoms(user.ID); err != nil {

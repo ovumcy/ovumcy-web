@@ -18,6 +18,8 @@ type stubAuthUserRepo struct {
 	user                  models.User
 	findByIDErr           error
 	createErr             error
+	createCalled          bool
+	createdUser           models.User
 	saveErr               error
 	updateRecoveryCodeErr error
 	listErr               error
@@ -48,10 +50,12 @@ func (stub *stubAuthUserRepo) FindByID(uint) (models.User, error) {
 	return stub.user, nil
 }
 
-func (stub *stubAuthUserRepo) Create(*models.User) error {
+func (stub *stubAuthUserRepo) Create(user *models.User) error {
 	if stub.createErr != nil {
 		return stub.createErr
 	}
+	stub.createCalled = true
+	stub.createdUser = *user
 	return nil
 }
 
@@ -100,6 +104,73 @@ func TestAuthServiceValidateRegistrationCredentials(t *testing.T) {
 	if err := service.ValidateRegistrationCredentials("StrongPass1", "StrongPass1"); err != nil {
 		t.Fatalf("expected successful validation, got %v", err)
 	}
+}
+
+func TestAuthServiceRegisterOwner(t *testing.T) {
+	createdAt := time.Date(2026, time.March, 2, 9, 0, 0, 0, time.UTC)
+
+	t.Run("success", func(t *testing.T) {
+		repo := &stubAuthUserRepo{}
+		service := NewAuthService(repo)
+
+		user, recoveryCode, err := service.RegisterOwner("owner@example.com", "StrongPass1", "StrongPass1", createdAt)
+		if err != nil {
+			t.Fatalf("RegisterOwner() unexpected error: %v", err)
+		}
+		if user.Email != "owner@example.com" {
+			t.Fatalf("expected owner@example.com, got %q", user.Email)
+		}
+		if user.Role != models.RoleOwner {
+			t.Fatalf("expected owner role, got %q", user.Role)
+		}
+		if !user.CreatedAt.Equal(createdAt) {
+			t.Fatalf("expected createdAt %s, got %s", createdAt, user.CreatedAt)
+		}
+		if recoveryCode == "" {
+			t.Fatalf("expected non-empty recovery code")
+		}
+		if !repo.createCalled {
+			t.Fatalf("expected Create() to be called")
+		}
+		if repo.createdUser.Email != "owner@example.com" {
+			t.Fatalf("expected created user email owner@example.com, got %q", repo.createdUser.Email)
+		}
+	})
+
+	t.Run("validation mismatch", func(t *testing.T) {
+		repo := &stubAuthUserRepo{}
+		service := NewAuthService(repo)
+		if _, _, err := service.RegisterOwner("owner@example.com", "StrongPass1", "WrongPass2", createdAt); !errors.Is(err, ErrAuthPasswordMismatch) {
+			t.Fatalf("expected ErrAuthPasswordMismatch, got %v", err)
+		}
+	})
+
+	t.Run("email exists", func(t *testing.T) {
+		repo := &stubAuthUserRepo{existsByEmail: true}
+		service := NewAuthService(repo)
+		if _, _, err := service.RegisterOwner("owner@example.com", "StrongPass1", "StrongPass1", createdAt); !errors.Is(err, ErrAuthEmailExists) {
+			t.Fatalf("expected ErrAuthEmailExists, got %v", err)
+		}
+		if repo.createCalled {
+			t.Fatalf("did not expect Create() when email already exists")
+		}
+	})
+
+	t.Run("exists check fails", func(t *testing.T) {
+		repo := &stubAuthUserRepo{existsByEmailErr: errors.New("db down")}
+		service := NewAuthService(repo)
+		if _, _, err := service.RegisterOwner("owner@example.com", "StrongPass1", "StrongPass1", createdAt); !errors.Is(err, ErrAuthRegisterFailed) {
+			t.Fatalf("expected ErrAuthRegisterFailed, got %v", err)
+		}
+	})
+
+	t.Run("create fails treated as duplicate", func(t *testing.T) {
+		repo := &stubAuthUserRepo{createErr: errors.New("unique constraint")}
+		service := NewAuthService(repo)
+		if _, _, err := service.RegisterOwner("owner@example.com", "StrongPass1", "StrongPass1", createdAt); !errors.Is(err, ErrAuthEmailExists) {
+			t.Fatalf("expected ErrAuthEmailExists, got %v", err)
+		}
+	})
 }
 
 func TestAuthServiceValidateResetPasswordInput(t *testing.T) {
