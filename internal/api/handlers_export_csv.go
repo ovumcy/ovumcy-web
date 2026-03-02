@@ -14,8 +14,6 @@ func (handler *Handler) ExportCSV(c *fiber.Ctx) error {
 	if status != 0 {
 		return apiError(c, status, message)
 	}
-
-	handler.ensureDependencies()
 	rows, err := handler.exportService.BuildCSVRows(user.ID, from, to, handler.location)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch logs")

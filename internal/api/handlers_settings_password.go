@@ -17,8 +17,6 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil {
 		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid settings input")
 	}
-
-	handler.ensureDependencies()
 	if err := handler.settingsService.ChangePassword(
 		user.ID,
 		user.PasswordHash,

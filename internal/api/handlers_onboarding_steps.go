@@ -21,8 +21,6 @@ func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
 	if validationError != "" {
 		return apiError(c, fiber.StatusBadRequest, validationError)
 	}
-
-	handler.ensureDependencies()
 	if err := handler.onboardingSvc.SaveStep1(user.ID, values.Start); err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to save onboarding step")
 	}
@@ -50,8 +48,6 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 	if validationError != "" {
 		return apiError(c, fiber.StatusBadRequest, validationError)
 	}
-
-	handler.ensureDependencies()
 	cycleLength, periodLength, err := handler.onboardingSvc.SaveStep2(user.ID, values.CycleLength, values.PeriodLength, values.AutoPeriodFill)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to save onboarding step")

@@ -17,8 +17,6 @@ func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 	if user.Role != models.RoleOwner {
 		return apiError(c, fiber.StatusForbidden, "owner access required")
 	}
-
-	handler.ensureDependencies()
 	symptoms, err := handler.symptomService.FetchSymptoms(user.ID)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch symptoms")
@@ -36,8 +34,6 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 	if err := c.BodyParser(&payload); err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid payload")
 	}
-
-	handler.ensureDependencies()
 	symptom, err := handler.symptomService.CreateSymptomForUser(user.ID, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
 		switch {
@@ -64,8 +60,6 @@ func (handler *Handler) DeleteSymptom(c *fiber.Ctx) error {
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid symptom id")
 	}
-
-	handler.ensureDependencies()
 	if err := handler.symptomService.DeleteSymptomForUser(user.ID, uint(id)); err != nil {
 		switch {
 		case errors.Is(err, services.ErrSymptomNotFound):

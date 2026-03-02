@@ -13,7 +13,6 @@ func (handler *Handler) GetStatsOverview(c *fiber.Ctx) error {
 	}
 
 	now := time.Now().In(handler.location)
-	handler.ensureDependencies()
 	stats, _, err := handler.statsService.BuildCycleStatsForRange(user, now.AddDate(-2, 0, 0), now, now, handler.location)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch stats")

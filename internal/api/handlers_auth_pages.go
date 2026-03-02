@@ -13,8 +13,6 @@ func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
 	if redirected {
 		return nil
 	}
-
-	handler.ensureDependencies()
 	needsSetup, err := handler.setupService.RequiresInitialSetup()
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to load setup state")
@@ -33,8 +31,6 @@ func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
 	if redirected {
 		return nil
 	}
-
-	handler.ensureDependencies()
 	needsSetup, err := handler.setupService.RequiresInitialSetup()
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to load setup state")

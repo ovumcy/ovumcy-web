@@ -14,8 +14,6 @@ func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 	if !ok {
 		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
 	}
-
-	handler.ensureDependencies()
 	if err := handler.settingsService.ClearAllData(user.ID); err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to clear data")
 	}
@@ -50,8 +48,6 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 	if input.Password == "" {
 		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid password")
 	}
-
-	handler.ensureDependencies()
 	if err := handler.settingsService.ValidateDeleteAccountPassword(user.PasswordHash, input.Password); err != nil {
 		if errors.Is(err, services.ErrSettingsPasswordMissing) {
 			return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid password")

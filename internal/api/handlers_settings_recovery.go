@@ -12,8 +12,6 @@ func (handler *Handler) RegenerateRecoveryCode(c *fiber.Ctx) error {
 	if !ok {
 		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
 	}
-
-	handler.ensureDependencies()
 	recoveryCode, err := handler.authService.RegenerateRecoveryCode(user.ID)
 	if err != nil {
 		if errors.Is(err, services.ErrRecoveryCodeGenerate) {

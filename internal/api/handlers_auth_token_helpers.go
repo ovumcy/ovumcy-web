@@ -58,7 +58,6 @@ func (handler *Handler) buildToken(user *models.User, ttl time.Duration) (string
 	if ttl <= 0 {
 		ttl = defaultAuthTokenTTL
 	}
-	handler.ensureDependencies()
 	return handler.authService.BuildAuthSessionToken(handler.secretKey, user.ID, user.Role, ttl, time.Now())
 }
 

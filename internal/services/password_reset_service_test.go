@@ -115,4 +115,3 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 		t.Fatalf("expected non-empty rotated recovery code")
 	}
 }
-

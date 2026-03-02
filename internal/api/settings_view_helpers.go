@@ -11,7 +11,6 @@ import (
 func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, flash FlashPayload) (fiber.Map, error) {
 	messages := currentMessages(c)
 	language := currentLanguage(c)
-	handler.ensureDependencies()
 
 	viewData, err := handler.settingsViewService.BuildSettingsPageViewData(
 		user,

@@ -17,8 +17,6 @@ func (handler *Handler) DeleteDailyLog(c *fiber.Ctx) error {
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid date")
 	}
-
-	handler.ensureDependencies()
 	if err := handler.dayService.DeleteDayAndRefreshLastPeriod(user.ID, day, handler.location); err != nil {
 		return deleteDayPersistenceAPIError(c, err)
 	}
@@ -53,8 +51,6 @@ func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid date")
 	}
-
-	handler.ensureDependencies()
 	if err := handler.dayService.DeleteDayAndRefreshLastPeriod(user.ID, day, handler.location); err != nil {
 		return deleteDayPersistenceAPIError(c, err)
 	}

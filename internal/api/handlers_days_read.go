@@ -22,8 +22,6 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 	if to.Before(from) {
 		return apiError(c, fiber.StatusBadRequest, "invalid range")
 	}
-
-	handler.ensureDependencies()
 	logs, err := handler.dayService.FetchLogsForUser(user.ID, from, to, handler.location)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch logs")
@@ -44,8 +42,6 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid date")
 	}
-
-	handler.ensureDependencies()
 	logEntry, err := handler.dayService.FetchLogByDate(user.ID, day, handler.location)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch day")
@@ -66,8 +62,6 @@ func (handler *Handler) CheckDayExists(c *fiber.Ctx) error {
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid date")
 	}
-
-	handler.ensureDependencies()
 	exists, err := handler.dayService.DayHasDataForDate(user.ID, day, handler.location)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch day")

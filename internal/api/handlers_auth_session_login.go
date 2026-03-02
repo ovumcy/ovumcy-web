@@ -13,8 +13,6 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
 	}
-
-	handler.ensureDependencies()
 	if err := handler.authService.ValidateRegistrationCredentials(credentials.Password, credentials.ConfirmPassword); err != nil {
 		switch {
 		case errors.Is(err, services.ErrAuthPasswordMismatch):
@@ -58,8 +56,6 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
 	}
-
-	handler.ensureDependencies()
 	user, err := handler.authService.AuthenticateCredentials(credentials.Email, credentials.Password)
 	if err != nil {
 		return handler.respondAuthError(c, fiber.StatusUnauthorized, "invalid credentials")

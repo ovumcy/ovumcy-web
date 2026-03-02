@@ -7,6 +7,5 @@ import (
 )
 
 func fetchLogByDateForTest(handler *Handler, userID uint, day time.Time) (models.DailyLog, error) {
-	handler.ensureDependencies()
 	return handler.dayService.FetchLogByDate(userID, day, handler.location)
 }

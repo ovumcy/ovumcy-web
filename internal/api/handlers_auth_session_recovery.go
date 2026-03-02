@@ -14,8 +14,6 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 	if parseError != "" {
 		return handler.respondAuthError(c, fiber.StatusBadRequest, parseError)
 	}
-
-	handler.ensureDependencies()
 	token, err := handler.passwordResetSvc.StartRecovery(
 		handler.secretKey,
 		c.IP(),
@@ -55,8 +53,6 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		handler.clearResetPasswordCookie(c)
 		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid reset token")
 	}
-
-	handler.ensureDependencies()
 	user, recoveryCode, err := handler.passwordResetSvc.CompleteReset(
 		handler.secretKey,
 		token,

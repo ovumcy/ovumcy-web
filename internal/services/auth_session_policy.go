@@ -81,4 +81,3 @@ func ParseAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*A
 	}
 	return claims, nil
 }
-

@@ -10,7 +10,6 @@ import (
 )
 
 func (handler *Handler) buildDashboardViewData(user *models.User, language string, messages map[string]string, now time.Time) (fiber.Map, string, error) {
-	handler.ensureDependencies()
 	viewData, err := handler.dashboardViewService.BuildDashboardViewData(user, language, now, handler.location)
 	if err != nil {
 		switch {
@@ -47,7 +46,6 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 }
 
 func (handler *Handler) buildDayEditorPartialData(user *models.User, language string, messages map[string]string, day time.Time, now time.Time) (fiber.Map, string, error) {
-	handler.ensureDependencies()
 	viewData, err := handler.dashboardViewService.BuildDayEditorViewData(user, language, day, now, handler.location)
 	if err != nil {
 		switch {

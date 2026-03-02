@@ -15,8 +15,6 @@ func (handler *Handler) parseOnboardingStep1Values(c *fiber.Ctx, today time.Time
 	if err := c.BodyParser(&input); err != nil {
 		return onboardingStep1Values{}, "invalid input"
 	}
-
-	handler.ensureDependencies()
 	parsedDay, err := handler.onboardingSvc.ValidateAndParseStep1StartDate(input.LastPeriodStart, today, handler.location)
 	if err != nil {
 		if errors.Is(err, services.ErrOnboardingStartDateRequired) {
@@ -50,7 +48,6 @@ func (handler *Handler) parseOnboardingStep2Input(c *fiber.Ctx) (onboardingStep2
 			PeriodLength:   0,
 			AutoPeriodFill: services.ParseBoolLike(c.FormValue("auto_period_fill")),
 		}
-		handler.ensureDependencies()
 		cycleLength, periodLength, autoPeriodFill, err := handler.onboardingSvc.ParseAndNormalizeStep2Input(
 			c.FormValue("cycle_length"),
 			c.FormValue("period_length"),
@@ -64,8 +61,6 @@ func (handler *Handler) parseOnboardingStep2Input(c *fiber.Ctx) (onboardingStep2
 		input.AutoPeriodFill = autoPeriodFill
 		return input, ""
 	}
-
-	handler.ensureDependencies()
 	cycleLength, periodLength, autoPeriodFill, err := handler.onboardingSvc.ParseAndNormalizeStep2Input(
 		strconv.Itoa(input.CycleLength),
 		strconv.Itoa(input.PeriodLength),

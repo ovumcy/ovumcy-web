@@ -18,9 +18,9 @@ var (
 )
 
 type PasswordResetService struct {
-	auth                 *AuthService
-	recoveryLimiter      *AttemptLimiter
-	recoveryAttempts     int
+	auth                  *AuthService
+	recoveryLimiter       *AttemptLimiter
+	recoveryAttempts      int
 	recoveryAttemptWindow time.Duration
 }
 

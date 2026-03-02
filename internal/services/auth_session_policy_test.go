@@ -82,4 +82,3 @@ func TestParseAuthSessionTokenRejectsWrongAlgorithm(t *testing.T) {
 		t.Fatalf("expected ErrAuthSessionTokenInvalid, got %v", err)
 	}
 }
-

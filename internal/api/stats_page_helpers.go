@@ -23,7 +23,6 @@ func mapStatsChartData(chart services.StatsChartViewData) fiber.Map {
 }
 
 func (handler *Handler) buildStatsPageData(user *models.User, language string, messages map[string]string, now time.Time) (fiber.Map, string, error) {
-	handler.ensureDependencies()
 	cycleLabelPattern := translateMessage(messages, "stats.cycle_label")
 	if cycleLabelPattern == "stats.cycle_label" {
 		cycleLabelPattern = ""

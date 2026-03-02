@@ -24,7 +24,6 @@ func TestFetchExportDataDateRangeFiltersInclusiveBoundaries(t *testing.T) {
 
 	from := time.Date(2026, time.February, 11, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, time.February, 11, 0, 0, 0, 0, time.UTC)
-	handler.ensureDependencies()
 
 	t.Run("exact day range includes target day", func(t *testing.T) {
 		filtered, _, err := handler.exportService.LoadDataForRange(user.ID, &from, &to, handler.location)
@@ -83,7 +82,6 @@ func TestFetchExportSummaryForRangeDateFiltersInclusiveBoundaries(t *testing.T) 
 
 	from := time.Date(2026, time.February, 11, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, time.February, 11, 0, 0, 0, 0, time.UTC)
-	handler.ensureDependencies()
 
 	summary, err := handler.exportService.BuildSummary(user.ID, &from, &to, handler.location)
 	if err != nil {

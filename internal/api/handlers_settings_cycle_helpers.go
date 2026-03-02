@@ -39,8 +39,6 @@ func (handler *Handler) parseCycleSettingsInput(c *fiber.Ctx) (services.CycleSet
 			LastPeriodStartSet: c.Request().PostArgs().Has("last_period_start"),
 		}
 	}
-
-	handler.ensureDependencies()
 	update, err := handler.settingsService.ValidateCycleSettings(services.CycleSettingsValidationInput{
 		CycleLength:        input.CycleLength,
 		PeriodLength:       input.PeriodLength,

@@ -23,8 +23,6 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 		}
 		tokenValue = decodedToken
 	}
-
-	handler.ensureDependencies()
 	user, err := handler.authService.ResolveUserByAuthSessionToken(handler.secretKey, tokenValue, time.Now())
 	if err != nil {
 		switch {

@@ -22,8 +22,6 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid payload")
 	}
-
-	handler.ensureDependencies()
 	cleanIDs, err := handler.symptomService.ValidateSymptomIDs(user.ID, payload.SymptomIDs)
 	if err != nil {
 		return apiError(c, fiber.StatusBadRequest, "invalid symptom ids")

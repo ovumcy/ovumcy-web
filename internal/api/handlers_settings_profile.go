@@ -17,8 +17,6 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 	if err := c.BodyParser(&input); err != nil {
 		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid profile input")
 	}
-
-	handler.ensureDependencies()
 	displayName, err := handler.settingsService.NormalizeDisplayName(input.DisplayName)
 	if err != nil {
 		if errors.Is(err, services.ErrSettingsDisplayNameTooLong) {
