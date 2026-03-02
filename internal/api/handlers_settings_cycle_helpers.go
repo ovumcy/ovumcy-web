@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -47,14 +46,14 @@ func (handler *Handler) parseCycleSettingsInput(c *fiber.Ctx) (services.CycleSet
 		LastPeriodStartSet: input.LastPeriodStartSet,
 	}, time.Now().In(handler.location), handler.location)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrSettingsCycleLengthOutOfRange):
+		switch services.ClassifySettingsCycleValidationError(err) {
+		case services.SettingsCycleValidationErrorCycleLengthOutOfRange:
 			return services.CycleSettingsUpdate{}, "cycle length must be between 15 and 90"
-		case errors.Is(err, services.ErrSettingsPeriodLengthOutOfRange):
+		case services.SettingsCycleValidationErrorPeriodLengthOutOfRange:
 			return services.CycleSettingsUpdate{}, "period length must be between 1 and 14"
-		case errors.Is(err, services.ErrSettingsPeriodLengthIncompatible):
+		case services.SettingsCycleValidationErrorPeriodLengthIncompatible:
 			return services.CycleSettingsUpdate{}, "period length is incompatible with cycle length"
-		case errors.Is(err, services.ErrSettingsCycleStartDateInvalid):
+		case services.SettingsCycleValidationErrorCycleStartDateInvalid:
 			return services.CycleSettingsUpdate{}, "invalid cycle start date"
 		default:
 			return services.CycleSettingsUpdate{}, "invalid settings input"

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -17,16 +16,16 @@ func (handler *Handler) parseOnboardingStep1Values(c *fiber.Ctx, today time.Time
 	}
 	parsedDay, err := handler.onboardingSvc.ValidateAndParseStep1StartDate(input.LastPeriodStart, today, handler.location)
 	if err != nil {
-		if errors.Is(err, services.ErrOnboardingStartDateRequired) {
+		switch services.ClassifyOnboardingStep1Error(err) {
+		case services.OnboardingStep1ErrorDateRequired:
 			return onboardingStep1Values{}, "date is required"
-		}
-		if errors.Is(err, services.ErrOnboardingStartDateInvalid) {
+		case services.OnboardingStep1ErrorDateInvalid:
 			return onboardingStep1Values{}, "invalid last period start"
-		}
-		if errors.Is(err, services.ErrOnboardingStartDateOutOfRange) {
+		case services.OnboardingStep1ErrorDateOutOfRange:
+			return onboardingStep1Values{}, "last period start must be within last 60 days"
+		default:
 			return onboardingStep1Values{}, "last period start must be within last 60 days"
 		}
-		return onboardingStep1Values{}, "last period start must be within last 60 days"
 	}
 
 	return onboardingStep1Values{

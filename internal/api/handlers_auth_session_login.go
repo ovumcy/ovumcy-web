@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -21,19 +20,19 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 		time.Now().In(handler.location),
 	)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrAuthPasswordMismatch):
+		switch services.ClassifyAuthRegisterError(err) {
+		case services.AuthRegisterErrorPasswordMismatch:
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "password mismatch")
-		case errors.Is(err, services.ErrAuthWeakPassword):
+		case services.AuthRegisterErrorWeakPassword:
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "weak password")
-		case errors.Is(err, services.ErrAuthEmailExists):
+		case services.AuthRegisterErrorEmailExists:
 			return handler.respondAuthError(c, fiber.StatusConflict, "email already exists")
-		case errors.Is(err, services.ErrAuthRegisterInvalid):
+		case services.AuthRegisterErrorInvalidInput:
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
-		case errors.Is(err, services.ErrAuthRegisterFailed):
-			return apiError(c, fiber.StatusInternalServerError, "failed to create account")
-		case errors.Is(err, services.ErrRegistrationSeedSymptoms):
+		case services.AuthRegisterErrorSeedSymptoms:
 			return apiError(c, fiber.StatusInternalServerError, "failed to seed symptoms")
+		case services.AuthRegisterErrorFailed:
+			return apiError(c, fiber.StatusInternalServerError, "failed to create account")
 		default:
 			return apiError(c, fiber.StatusInternalServerError, "failed to create account")
 		}
@@ -59,10 +58,14 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 		time.Now(),
 	)
 	if err != nil {
-		if errors.Is(err, services.ErrLoginResetTokenIssue) {
+		switch services.ClassifyAuthLoginError(err) {
+		case services.AuthLoginErrorResetTokenIssue:
 			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
+		case services.AuthLoginErrorInvalidCredentials:
+			return handler.respondAuthError(c, fiber.StatusUnauthorized, "invalid credentials")
+		default:
+			return handler.respondAuthError(c, fiber.StatusUnauthorized, "invalid credentials")
 		}
-		return handler.respondAuthError(c, fiber.StatusUnauthorized, "invalid credentials")
 	}
 
 	if result.RequiresPasswordReset {

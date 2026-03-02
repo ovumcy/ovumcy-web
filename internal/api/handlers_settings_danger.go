@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -43,13 +42,14 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid password")
 	}
 	if err := handler.settingsService.ValidateDeleteAccountPassword(user.PasswordHash, input.Password); err != nil {
-		if errors.Is(err, services.ErrSettingsPasswordMissing) {
+		switch services.ClassifySettingsDeleteAccountPasswordError(err) {
+		case services.SettingsDeleteAccountPasswordErrorMissing:
 			return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid password")
-		}
-		if errors.Is(err, services.ErrSettingsPasswordInvalid) {
+		case services.SettingsDeleteAccountPasswordErrorInvalid:
 			return handler.respondSettingsError(c, fiber.StatusUnauthorized, "invalid password")
+		default:
+			return apiError(c, fiber.StatusInternalServerError, "failed to validate password")
 		}
-		return apiError(c, fiber.StatusInternalServerError, "failed to validate password")
 	}
 
 	if err := handler.settingsService.DeleteAccount(user.ID); err != nil {

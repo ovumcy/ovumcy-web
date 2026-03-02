@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -32,12 +31,12 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 	}
 	symptom, err := handler.symptomService.CreateSymptomForUser(user.ID, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrInvalidSymptomName):
+		switch services.ClassifySymptomCreateError(err) {
+		case services.SymptomCreateErrorInvalidName:
 			return apiError(c, fiber.StatusBadRequest, "invalid symptom name")
-		case errors.Is(err, services.ErrInvalidSymptomColor):
+		case services.SymptomCreateErrorInvalidColor:
 			return apiError(c, fiber.StatusBadRequest, "invalid symptom color")
-		case errors.Is(err, services.ErrCreateSymptomFailed):
+		case services.SymptomCreateErrorFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to create symptom")
 		default:
 			return apiError(c, fiber.StatusInternalServerError, "failed to create symptom")
@@ -57,14 +56,14 @@ func (handler *Handler) DeleteSymptom(c *fiber.Ctx) error {
 		return apiError(c, fiber.StatusBadRequest, "invalid symptom id")
 	}
 	if err := handler.symptomService.DeleteSymptomForUser(user.ID, uint(id)); err != nil {
-		switch {
-		case errors.Is(err, services.ErrSymptomNotFound):
+		switch services.ClassifySymptomDeleteError(err) {
+		case services.SymptomDeleteErrorNotFound:
 			return apiError(c, fiber.StatusNotFound, "symptom not found")
-		case errors.Is(err, services.ErrBuiltinSymptomDeleteForbidden):
+		case services.SymptomDeleteErrorBuiltinForbidden:
 			return apiError(c, fiber.StatusBadRequest, "built-in symptom cannot be deleted")
-		case errors.Is(err, services.ErrDeleteSymptomFailed):
+		case services.SymptomDeleteErrorDeleteFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to delete symptom")
-		case errors.Is(err, services.ErrCleanSymptomLogsFailed):
+		case services.SymptomDeleteErrorCleanLogsFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to clean symptom logs")
 		default:
 			return apiError(c, fiber.StatusInternalServerError, "failed to delete symptom")

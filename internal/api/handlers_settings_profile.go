@@ -1,8 +1,6 @@
 package api
 
 import (
-	"errors"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -19,7 +17,7 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 	}
 	displayName, err := handler.settingsService.NormalizeDisplayName(input.DisplayName)
 	if err != nil {
-		if errors.Is(err, services.ErrSettingsDisplayNameTooLong) {
+		if services.ClassifySettingsProfileError(err) == services.SettingsProfileErrorDisplayNameTooLong {
 			return handler.respondSettingsError(c, fiber.StatusBadRequest, "display name too long")
 		}
 		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid profile input")

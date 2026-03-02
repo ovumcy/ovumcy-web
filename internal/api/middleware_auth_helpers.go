@@ -25,14 +25,12 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 	}
 	user, err := handler.authService.ResolveUserByAuthSessionToken(handler.secretKey, tokenValue, time.Now())
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrAuthSessionTokenMissing):
+		switch services.ClassifyAuthSessionResolveError(err) {
+		case services.AuthSessionResolveErrorMissing:
 			return nil, errors.New("missing auth cookie")
-		case errors.Is(err, services.ErrAuthSessionTokenExpired):
+		case services.AuthSessionResolveErrorExpired:
 			return nil, errors.New("token expired")
-		case errors.Is(err, services.ErrAuthSessionTokenInvalid),
-			errors.Is(err, services.ErrAuthSessionTokenInvalidUserID),
-			errors.Is(err, services.ErrAuthInvalidCreds):
+		case services.AuthSessionResolveErrorInvalid:
 			return nil, errors.New("invalid token")
 		default:
 			return nil, err

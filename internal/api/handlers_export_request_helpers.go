@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -13,12 +12,12 @@ import (
 func (handler *Handler) parseExportRange(c *fiber.Ctx) (*time.Time, *time.Time, string) {
 	from, to, err := services.ParseExportRange(c.Query("from"), c.Query("to"), handler.location)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrExportFromDateInvalid):
+		switch services.ClassifyExportRangeError(err) {
+		case services.ExportRangeErrorFromInvalid:
 			return nil, nil, "invalid from date"
-		case errors.Is(err, services.ErrExportToDateInvalid):
+		case services.ExportRangeErrorToInvalid:
 			return nil, nil, "invalid to date"
-		case errors.Is(err, services.ErrExportRangeInvalid):
+		case services.ExportRangeErrorInvalid:
 			return nil, nil, "invalid range"
 		default:
 			return nil, nil, "invalid range"

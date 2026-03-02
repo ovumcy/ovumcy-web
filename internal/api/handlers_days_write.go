@@ -1,8 +1,6 @@
 package api
 
 import (
-	"errors"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -33,14 +31,12 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 		SymptomIDs: cleanIDs,
 	}, handler.location)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrInvalidDayFlow):
+		switch services.ClassifyDayUpsertError(err) {
+		case services.DayUpsertErrorInvalidFlow:
 			return apiError(c, fiber.StatusBadRequest, "invalid flow value")
-		case errors.Is(err, services.ErrDayAutoFillLoadFailed), errors.Is(err, services.ErrDayAutoFillCheckFailed):
+		case services.DayUpsertErrorLoadFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to load day")
-		case errors.Is(err, services.ErrDayAutoFillApplyFailed):
-			return apiError(c, fiber.StatusInternalServerError, "failed to update day")
-		case errors.Is(err, services.ErrSyncLastPeriodFailed):
+		case services.DayUpsertErrorSyncLastPeriodFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to sync last period start")
 		default:
 			return upsertDayPersistenceAPIError(c, err)

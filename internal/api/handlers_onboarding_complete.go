@@ -1,8 +1,6 @@
 package api
 
 import (
-	"errors"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -14,10 +12,10 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 	}
 
 	if err := services.ValidateOnboardingCompletionEligibility(user); err != nil {
-		switch {
-		case errors.Is(err, services.ErrOnboardingCompletionNotNeeded):
+		switch services.ClassifyOnboardingCompletionError(err) {
+		case services.OnboardingCompletionErrorNotNeeded:
 			return redirectOrJSON(c, "/dashboard")
-		case errors.Is(err, services.ErrOnboardingStepsRequired):
+		case services.OnboardingCompletionErrorStepsRequired:
 			return apiError(c, fiber.StatusBadRequest, "complete onboarding steps first")
 		default:
 			return apiError(c, fiber.StatusInternalServerError, "failed to finish onboarding")
@@ -25,7 +23,7 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 	}
 	_, err := handler.onboardingSvc.CompleteOnboardingForUser(user.ID, handler.location)
 	if err != nil {
-		if errors.Is(err, services.ErrOnboardingStepsRequired) {
+		if services.ClassifyOnboardingCompletionError(err) == services.OnboardingCompletionErrorStepsRequired {
 			return apiError(c, fiber.StatusBadRequest, "complete onboarding steps first")
 		}
 		return apiError(c, fiber.StatusInternalServerError, "failed to finish onboarding")

@@ -1,8 +1,6 @@
 package api
 
 import (
-	"errors"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -14,10 +12,12 @@ func (handler *Handler) RegenerateRecoveryCode(c *fiber.Ctx) error {
 	}
 	recoveryCode, err := handler.authService.RegenerateRecoveryCode(user.ID)
 	if err != nil {
-		if errors.Is(err, services.ErrRecoveryCodeGenerate) {
+		switch services.ClassifyRecoveryCodeRegenerationError(err) {
+		case services.RecoveryCodeRegenerationErrorGenerateFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to create recovery code")
+		default:
+			return apiError(c, fiber.StatusInternalServerError, "failed to update recovery code")
 		}
-		return apiError(c, fiber.StatusInternalServerError, "failed to update recovery code")
 	}
 
 	if acceptsJSON(c) {

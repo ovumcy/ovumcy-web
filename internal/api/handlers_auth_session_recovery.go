@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -22,10 +21,10 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 		30*time.Minute,
 	)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrPasswordRecoveryRateLimited):
+		switch services.ClassifyPasswordRecoveryStartError(err) {
+		case services.PasswordRecoveryStartErrorRateLimited:
 			return handler.respondAuthError(c, fiber.StatusTooManyRequests, "too many recovery attempts")
-		case errors.Is(err, services.ErrPasswordRecoveryCodeInvalid):
+		case services.PasswordRecoveryStartErrorInvalidCode:
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid recovery code")
 		default:
 			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
@@ -61,14 +60,14 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		time.Now(),
 	)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrAuthPasswordMismatch):
+		switch services.ClassifyPasswordResetCompleteError(err) {
+		case services.PasswordResetCompleteErrorPasswordMismatch:
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "password mismatch")
-		case errors.Is(err, services.ErrAuthWeakPassword):
+		case services.PasswordResetCompleteErrorWeakPassword:
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "weak password")
-		case errors.Is(err, services.ErrAuthResetInvalid):
+		case services.PasswordResetCompleteErrorInvalidInput:
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
-		case errors.Is(err, services.ErrInvalidResetToken):
+		case services.PasswordResetCompleteErrorInvalidToken:
 			handler.clearResetPasswordCookie(c)
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid reset token")
 		default:

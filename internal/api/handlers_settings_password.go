@@ -1,8 +1,6 @@
 package api
 
 import (
-	"errors"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -24,20 +22,20 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 		input.NewPassword,
 		input.ConfirmPassword,
 	); err != nil {
-		switch {
-		case errors.Is(err, services.ErrSettingsPasswordChangeInvalidInput):
+		switch services.ClassifySettingsPasswordChangeError(err) {
+		case services.SettingsPasswordChangeErrorInvalidInput:
 			return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid settings input")
-		case errors.Is(err, services.ErrSettingsPasswordMismatch):
+		case services.SettingsPasswordChangeErrorPasswordMismatch:
 			return handler.respondSettingsError(c, fiber.StatusBadRequest, "password mismatch")
-		case errors.Is(err, services.ErrSettingsInvalidCurrentPassword):
+		case services.SettingsPasswordChangeErrorInvalidCurrentPassword:
 			return handler.respondSettingsError(c, fiber.StatusUnauthorized, "invalid current password")
-		case errors.Is(err, services.ErrSettingsNewPasswordMustDiffer):
+		case services.SettingsPasswordChangeErrorNewPasswordMustDiffer:
 			return handler.respondSettingsError(c, fiber.StatusBadRequest, "new password must differ")
-		case errors.Is(err, services.ErrSettingsWeakPassword):
+		case services.SettingsPasswordChangeErrorWeakPassword:
 			return handler.respondSettingsError(c, fiber.StatusBadRequest, "weak password")
-		case errors.Is(err, services.ErrSettingsPasswordHashFailed):
+		case services.SettingsPasswordChangeErrorHashFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to secure password")
-		case errors.Is(err, services.ErrSettingsPasswordUpdateFailed):
+		case services.SettingsPasswordChangeErrorUpdateFailed:
 			return apiError(c, fiber.StatusInternalServerError, "failed to update password")
 		default:
 			return apiError(c, fiber.StatusInternalServerError, "failed to update password")

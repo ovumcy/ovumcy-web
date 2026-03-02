@@ -1,8 +1,6 @@
 package api
 
 import (
-	"errors"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -15,12 +13,12 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 
 	from, to, err := services.ParseDayRange(c.Query("from"), c.Query("to"), handler.location)
 	if err != nil {
-		switch {
-		case errors.Is(err, services.ErrDayRangeFromInvalid):
+		switch services.ClassifyDayRangeError(err) {
+		case services.DayRangeErrorFromInvalid:
 			return apiError(c, fiber.StatusBadRequest, "invalid from date")
-		case errors.Is(err, services.ErrDayRangeToInvalid):
+		case services.DayRangeErrorToInvalid:
 			return apiError(c, fiber.StatusBadRequest, "invalid to date")
-		case errors.Is(err, services.ErrDayRangeInvalid):
+		case services.DayRangeErrorInvalid:
 			return apiError(c, fiber.StatusBadRequest, "invalid range")
 		default:
 			return apiError(c, fiber.StatusBadRequest, "invalid range")
