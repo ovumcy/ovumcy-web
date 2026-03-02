@@ -20,6 +20,7 @@ type Handler struct {
 	authService          *services.AuthService
 	registrationService  *services.RegistrationService
 	passwordResetSvc     *services.PasswordResetService
+	loginService         *services.LoginService
 	dayService           *services.DayService
 	symptomService       *services.SymptomService
 	viewerService        *services.ViewerService

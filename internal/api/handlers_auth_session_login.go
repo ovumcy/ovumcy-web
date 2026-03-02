@@ -51,17 +51,22 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
 	}
-	user, err := handler.authService.AuthenticateCredentials(credentials.Email, credentials.Password)
+	result, err := handler.loginService.Authenticate(
+		handler.secretKey,
+		credentials.Email,
+		credentials.Password,
+		30*time.Minute,
+		time.Now(),
+	)
 	if err != nil {
+		if errors.Is(err, services.ErrLoginResetTokenIssue) {
+			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
+		}
 		return handler.respondAuthError(c, fiber.StatusUnauthorized, "invalid credentials")
 	}
 
-	if user.MustChangePassword {
-		token, err := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &user, 30*time.Minute, time.Now())
-		if err != nil {
-			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
-		}
-		handler.setResetPasswordCookie(c, token, true)
+	if result.RequiresPasswordReset {
+		handler.setResetPasswordCookie(c, result.ResetToken, true)
 		if acceptsJSON(c) {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": "password change required",
@@ -70,6 +75,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 		return redirectToPath(c, "/reset-password")
 	}
 
+	user := result.User
 	if err := handler.setAuthCookie(c, &user, credentials.RememberMe); err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to create session")
 	}

@@ -11,6 +11,7 @@ func (handler *Handler) withDependencies(database *gorm.DB) *Handler {
 	handler.authService = services.NewAuthService(handler.repositories.Users)
 	attemptLimiter := services.NewAttemptLimiter()
 	handler.passwordResetSvc = services.NewPasswordResetService(handler.authService, attemptLimiter)
+	handler.loginService = services.NewLoginService(handler.authService, handler.passwordResetSvc)
 	handler.dayService = services.NewDayService(handler.repositories.DailyLogs, handler.repositories.Users)
 	handler.symptomService = services.NewSymptomService(handler.repositories.Symptoms, handler.repositories.DailyLogs)
 	handler.registrationService = services.NewRegistrationService(handler.authService, handler.symptomService)
