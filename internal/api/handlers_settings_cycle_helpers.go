@@ -65,8 +65,3 @@ func (handler *Handler) parseCycleSettingsInput(c *fiber.Ctx) (services.CycleSet
 
 	return update, ""
 }
-
-func (handler *Handler) saveCycleSettings(userID uint, update services.CycleSettingsUpdate) error {
-	handler.ensureDependencies()
-	return handler.settingsService.SaveCycleSettings(userID, update)
-}

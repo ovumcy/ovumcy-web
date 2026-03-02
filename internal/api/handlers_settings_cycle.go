@@ -15,7 +15,8 @@ func (handler *Handler) UpdateCycleSettings(c *fiber.Ctx) error {
 		return handler.respondSettingsError(c, fiber.StatusBadRequest, parseError)
 	}
 
-	if err := handler.saveCycleSettings(user.ID, input); err != nil {
+	handler.ensureDependencies()
+	if err := handler.settingsService.SaveCycleSettings(user.ID, input); err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to update cycle settings")
 	}
 
