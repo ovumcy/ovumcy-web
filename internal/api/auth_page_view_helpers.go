@@ -7,37 +7,31 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func authErrorKeyFromFlashOrQuery(c *fiber.Ctx, flashAuthError string) string {
-	errorSource := services.ResolveAuthErrorSource(flashAuthError, c.Query("error"))
-	return services.AuthErrorTranslationKey(errorSource)
-}
-
-func loginEmailFromFlashOrQuery(c *fiber.Ctx, flashEmail string) string {
-	return services.ResolveAuthPageEmail(flashEmail, c.Query("email"))
-}
-
 func buildLoginPageData(c *fiber.Ctx, messages map[string]string, flash FlashPayload, needsSetup bool) fiber.Map {
+	errorSource := services.ResolveAuthErrorSource(flash.AuthError, c.Query("error"))
 	return fiber.Map{
 		"Title":         localizedPageTitle(messages, "meta.title.login", "Ovumcy | Login"),
-		"ErrorKey":      authErrorKeyFromFlashOrQuery(c, flash.AuthError),
-		"Email":         loginEmailFromFlashOrQuery(c, flash.LoginEmail),
+		"ErrorKey":      services.AuthErrorTranslationKey(errorSource),
+		"Email":         services.ResolveAuthPageEmail(flash.LoginEmail, c.Query("email")),
 		"IsFirstLaunch": needsSetup,
 	}
 }
 
 func buildRegisterPageData(c *fiber.Ctx, messages map[string]string, flash FlashPayload, needsSetup bool) fiber.Map {
+	errorSource := services.ResolveAuthErrorSource(flash.AuthError, c.Query("error"))
 	return fiber.Map{
 		"Title":         localizedPageTitle(messages, "meta.title.register", "Ovumcy | Sign Up"),
-		"ErrorKey":      authErrorKeyFromFlashOrQuery(c, flash.AuthError),
-		"Email":         loginEmailFromFlashOrQuery(c, flash.RegisterEmail),
+		"ErrorKey":      services.AuthErrorTranslationKey(errorSource),
+		"Email":         services.ResolveAuthPageEmail(flash.RegisterEmail, c.Query("email")),
 		"IsFirstLaunch": needsSetup,
 	}
 }
 
 func buildForgotPasswordPageData(c *fiber.Ctx, messages map[string]string, flash FlashPayload) fiber.Map {
+	errorSource := services.ResolveAuthErrorSource(flash.AuthError, c.Query("error"))
 	return fiber.Map{
 		"Title":    localizedPageTitle(messages, "meta.title.forgot_password", "Ovumcy | Password Recovery"),
-		"ErrorKey": authErrorKeyFromFlashOrQuery(c, flash.AuthError),
+		"ErrorKey": services.AuthErrorTranslationKey(errorSource),
 	}
 }
 
@@ -51,10 +45,11 @@ func (handler *Handler) buildResetPasswordPageData(c *fiber.Ctx, messages map[st
 		}
 	}
 
+	errorSource := services.ResolveAuthErrorSource(flash.AuthError, c.Query("error"))
 	return fiber.Map{
 		"Title":        localizedPageTitle(messages, "meta.title.reset_password", "Ovumcy | Reset Password"),
 		"InvalidToken": invalidToken,
 		"ForcedReset":  forcedReset,
-		"ErrorKey":     authErrorKeyFromFlashOrQuery(c, flash.AuthError),
+		"ErrorKey":     services.AuthErrorTranslationKey(errorSource),
 	}
 }
