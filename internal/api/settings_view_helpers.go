@@ -8,17 +8,6 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func resolveSettingsErrorKeys(notificationService *services.NotificationService, errorSource string) (string, string) {
-	translatedErrorKey := services.AuthErrorTranslationKey(errorSource)
-	if translatedErrorKey == "" {
-		return "", ""
-	}
-	if notificationService.ClassifySettingsErrorSource(errorSource) == services.SettingsErrorTargetChangePassword {
-		return "", translatedErrorKey
-	}
-	return translatedErrorKey, ""
-}
-
 func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, flash FlashPayload) (fiber.Map, error) {
 	messages := currentMessages(c)
 	language := currentLanguage(c)
@@ -33,7 +22,14 @@ func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, f
 	changePasswordErrorKey := ""
 	if status == "" {
 		errorSource := handler.notificationService.ResolveSettingsErrorSource(flash.SettingsError, c.Query("error"))
-		errorKey, changePasswordErrorKey = resolveSettingsErrorKeys(handler.notificationService, errorSource)
+		translatedErrorKey := services.AuthErrorTranslationKey(errorSource)
+		if translatedErrorKey != "" {
+			if handler.notificationService.ClassifySettingsErrorSource(errorSource) == services.SettingsErrorTargetChangePassword {
+				changePasswordErrorKey = translatedErrorKey
+			} else {
+				errorKey = translatedErrorKey
+			}
+		}
 	}
 
 	persisted, err := handler.settingsService.LoadSettings(user.ID)
