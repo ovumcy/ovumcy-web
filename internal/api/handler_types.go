@@ -27,6 +27,7 @@ type Handler struct {
 	dashboardViewService *services.DashboardViewService
 	exportService        *services.ExportService
 	settingsService      *services.SettingsService
+	settingsViewService  *services.SettingsViewService
 	notificationService  *services.NotificationService
 	onboardingSvc        *services.OnboardingService
 	setupService         *services.SetupService

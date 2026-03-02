@@ -19,6 +19,7 @@ func (handler *Handler) withDependencies(database *gorm.DB) *Handler {
 	handler.exportService = services.NewExportService(handler.dayService, handler.symptomService)
 	handler.settingsService = services.NewSettingsService(handler.repositories.Users)
 	handler.notificationService = services.NewNotificationService()
+	handler.settingsViewService = services.NewSettingsViewService(handler.settingsService, handler.notificationService, handler.exportService)
 	handler.onboardingSvc = services.NewOnboardingService(handler.repositories.Users)
 	handler.setupService = services.NewSetupService(handler.repositories.Users)
 	return handler
@@ -61,6 +62,9 @@ func (handler *Handler) ensureDependencies() {
 	}
 	if handler.notificationService == nil {
 		handler.notificationService = services.NewNotificationService()
+	}
+	if handler.settingsViewService == nil {
+		handler.settingsViewService = services.NewSettingsViewService(handler.settingsService, handler.notificationService, handler.exportService)
 	}
 	if handler.onboardingSvc == nil {
 		handler.onboardingSvc = services.NewOnboardingService(handler.repositories.Users)
