@@ -42,7 +42,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 		return handler.respondAuthError(c, fiber.StatusConflict, "email already exists")
 	}
 
-	if err := handler.seedBuiltinSymptoms(user.ID); err != nil {
+	if err := handler.symptomService.SeedBuiltinSymptoms(user.ID); err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to seed symptoms")
 	}
 

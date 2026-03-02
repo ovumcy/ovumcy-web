@@ -52,7 +52,8 @@ func TestFetchSymptomsBackfillsMissingBuiltinSymptoms(t *testing.T) {
 	}
 
 	handler := &Handler{db: database}
-	symptoms, err := handler.fetchSymptoms(user.ID)
+	handler.ensureDependencies()
+	symptoms, err := handler.symptomService.FetchSymptoms(user.ID)
 	if err != nil {
 		t.Fatalf("fetch symptoms: %v", err)
 	}

@@ -18,7 +18,8 @@ func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 		return apiError(c, fiber.StatusForbidden, "owner access required")
 	}
 
-	symptoms, err := handler.fetchSymptoms(user.ID)
+	handler.ensureDependencies()
+	symptoms, err := handler.symptomService.FetchSymptoms(user.ID)
 	if err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to fetch symptoms")
 	}

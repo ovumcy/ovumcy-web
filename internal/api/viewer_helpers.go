@@ -11,7 +11,8 @@ func (handler *Handler) fetchSymptomsForViewer(user *models.User) ([]models.Symp
 	if !services.ShouldExposeSymptomsForViewer(user) {
 		return []models.SymptomType{}, nil
 	}
-	return handler.fetchSymptoms(user.ID)
+	handler.ensureDependencies()
+	return handler.symptomService.FetchSymptoms(user.ID)
 }
 
 func (handler *Handler) fetchDayLogForViewer(user *models.User, day time.Time) (models.DailyLog, []models.SymptomType, error) {
