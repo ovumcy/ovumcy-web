@@ -14,7 +14,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 		return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
 	}
 
-	user, recoveryCode, err := handler.authService.RegisterOwner(
+	user, recoveryCode, err := handler.registrationService.RegisterOwnerAccount(
 		credentials.Email,
 		credentials.Password,
 		credentials.ConfirmPassword,
@@ -32,13 +32,11 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 			return handler.respondAuthError(c, fiber.StatusBadRequest, "invalid input")
 		case errors.Is(err, services.ErrAuthRegisterFailed):
 			return apiError(c, fiber.StatusInternalServerError, "failed to create account")
+		case errors.Is(err, services.ErrRegistrationSeedSymptoms):
+			return apiError(c, fiber.StatusInternalServerError, "failed to seed symptoms")
 		default:
 			return apiError(c, fiber.StatusInternalServerError, "failed to create account")
 		}
-	}
-
-	if err := handler.symptomService.SeedBuiltinSymptoms(user.ID); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to seed symptoms")
 	}
 
 	if err := handler.setAuthCookie(c, &user, true); err != nil {

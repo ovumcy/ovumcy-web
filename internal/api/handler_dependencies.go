@@ -13,6 +13,7 @@ func (handler *Handler) withDependencies(database *gorm.DB) *Handler {
 	handler.passwordResetSvc = services.NewPasswordResetService(handler.authService, attemptLimiter)
 	handler.dayService = services.NewDayService(handler.repositories.DailyLogs, handler.repositories.Users)
 	handler.symptomService = services.NewSymptomService(handler.repositories.Symptoms, handler.repositories.DailyLogs)
+	handler.registrationService = services.NewRegistrationService(handler.authService, handler.symptomService)
 	handler.viewerService = services.NewViewerService(handler.dayService, handler.symptomService)
 	handler.statsService = services.NewStatsService(handler.dayService, handler.symptomService)
 	handler.calendarViewService = services.NewCalendarViewService(handler.dayService, handler.statsService)

@@ -18,6 +18,7 @@ type Handler struct {
 	partials             map[string]*template.Template
 	repositories         *db.Repositories
 	authService          *services.AuthService
+	registrationService  *services.RegistrationService
 	passwordResetSvc     *services.PasswordResetService
 	dayService           *services.DayService
 	symptomService       *services.SymptomService
