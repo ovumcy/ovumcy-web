@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/terraincognita07/ovumcy/internal/models"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
@@ -17,11 +16,6 @@ func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 	if err := handler.settingsService.ClearAllData(user.ID); err != nil {
 		return apiError(c, fiber.StatusInternalServerError, "failed to clear data")
 	}
-
-	user.CycleLength = models.DefaultCycleLength
-	user.PeriodLength = models.DefaultPeriodLength
-	user.AutoPeriodFill = true
-	user.LastPeriodStart = nil
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})

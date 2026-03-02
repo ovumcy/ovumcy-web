@@ -31,8 +31,6 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 
 	status := handler.settingsService.ResolveProfileUpdateStatus(user.DisplayName, displayName)
 
-	user.DisplayName = displayName
-
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{
 			"ok":           true,
