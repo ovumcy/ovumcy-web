@@ -52,12 +52,11 @@ func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	handler := newServiceBackedHandlerForTest(database, time.UTC)
 	firstDay, err := services.ParseDayDate("2026-02-10", time.UTC)
 	if err != nil {
 		t.Fatalf("parse first day: %v", err)
 	}
-	firstEntry, err := fetchLogByDateForTest(handler, user.ID, firstDay)
+	firstEntry, err := fetchLogByDateForTest(database, user.ID, firstDay, time.UTC)
 	if err != nil {
 		t.Fatalf("fetch first day log: %v", err)
 	}
@@ -69,7 +68,7 @@ func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse next day: %v", err)
 	}
-	nextEntry, err := fetchLogByDateForTest(handler, user.ID, nextDay)
+	nextEntry, err := fetchLogByDateForTest(database, user.ID, nextDay, time.UTC)
 	if err != nil {
 		t.Fatalf("fetch next day log: %v", err)
 	}

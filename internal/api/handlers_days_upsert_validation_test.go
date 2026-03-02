@@ -49,7 +49,7 @@ func TestUpsertDayNormalizesFlowWhenNotPeriod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse day for assertion: %v", err)
 	}
-	entry, err := fetchLogByDateForTest(newServiceBackedHandlerForTest(database, time.UTC), user.ID, day)
+	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
 	if err != nil {
 		t.Fatalf("load stored log: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestUpsertDayAllowsPeriodWithoutExplicitFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse day for assertion: %v", err)
 	}
-	entry, err := fetchLogByDateForTest(newServiceBackedHandlerForTest(database, time.UTC), user.ID, day)
+	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
 	if err != nil {
 		t.Fatalf("load stored log: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestUpsertDayClearsSymptomsWhenNotPeriod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse day for assertion: %v", err)
 	}
-	entry, err := fetchLogByDateForTest(newServiceBackedHandlerForTest(database, time.UTC), user.ID, day)
+	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
 	if err != nil {
 		t.Fatalf("load stored log: %v", err)
 	}

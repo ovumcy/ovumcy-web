@@ -52,14 +52,13 @@ func TestUpsertDayAutoFillsFollowingPeriodDays(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	handler := newServiceBackedHandlerForTest(database, time.UTC)
 	autoFilledDays := []string{"2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13"}
 	for _, dateRaw := range autoFilledDays {
 		day, err := services.ParseDayDate(dateRaw, time.UTC)
 		if err != nil {
 			t.Fatalf("parse day %s: %v", dateRaw, err)
 		}
-		entry, err := fetchLogByDateForTest(handler, user.ID, day)
+		entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
 		if err != nil {
 			t.Fatalf("fetch log for %s: %v", dateRaw, err)
 		}
@@ -72,7 +71,7 @@ func TestUpsertDayAutoFillsFollowingPeriodDays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse day after auto-fill: %v", err)
 	}
-	dayAfterEntry, err := fetchLogByDateForTest(handler, user.ID, dayAfterAutoFill)
+	dayAfterEntry, err := fetchLogByDateForTest(database, user.ID, dayAfterAutoFill, time.UTC)
 	if err != nil {
 		t.Fatalf("fetch log for day after auto-fill: %v", err)
 	}
