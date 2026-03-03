@@ -18,11 +18,11 @@ func buildLoginPageData(c *fiber.Ctx, messages map[string]string, flash FlashPay
 }
 
 func buildRegisterPageData(c *fiber.Ctx, messages map[string]string, flash FlashPayload, needsSetup bool) fiber.Map {
-	errorSource := services.ResolveAuthErrorSource(flash.AuthError, c.Query("error"))
+	errorSource := services.ResolveAuthErrorSource(flash.AuthError, "")
 	return fiber.Map{
 		"Title":         localizedPageTitle(messages, "meta.title.register", "Ovumcy | Sign Up"),
 		"ErrorKey":      services.AuthErrorTranslationKey(errorSource),
-		"Email":         services.ResolveAuthPageEmail(flash.RegisterEmail, c.Query("email")),
+		"Email":         services.ResolveAuthPageEmail(flash.RegisterEmail, ""),
 		"IsFirstLaunch": needsSetup,
 	}
 }

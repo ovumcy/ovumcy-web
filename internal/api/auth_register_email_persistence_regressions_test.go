@@ -30,7 +30,7 @@ func TestRegisterPageKeepsEmailAfterPasswordValidationError(t *testing.T) {
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
 	}
-	location := response.Header.Get("Location")
+	location := strings.TrimSpace(response.Header.Get("Location"))
 	if location == "" {
 		t.Fatalf("expected redirect location after register validation error")
 	}
@@ -41,14 +41,18 @@ func TestRegisterPageKeepsEmailAfterPasswordValidationError(t *testing.T) {
 	if parsedLocation.Path != "/register" {
 		t.Fatalf("expected redirect to /register, got %q", parsedLocation.Path)
 	}
-	if parsedLocation.Query().Get("error") != "weak password" {
-		t.Fatalf("expected weak password query fallback, got %q", parsedLocation.Query().Get("error"))
-	}
-	if parsedLocation.Query().Get("email") != email {
-		t.Fatalf("expected email query fallback %q, got %q", email, parsedLocation.Query().Get("email"))
+	if strings.TrimSpace(parsedLocation.RawQuery) != "" {
+		t.Fatalf("expected redirect without query params, got %q", parsedLocation.RawQuery)
 	}
 
-	registerRequest := httptest.NewRequest(http.MethodGet, location, nil)
+	flashValue := responseCookieValue(response.Cookies(), flashCookieName)
+	if flashValue == "" {
+		t.Fatalf("expected flash cookie in register redirect response")
+	}
+
+	registerRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
+	registerRequest.Header.Set("Accept-Language", "en")
+	registerRequest.Header.Set("Cookie", flashCookieName+"="+flashValue)
 	registerResponse, err := app.Test(registerRequest, -1)
 	if err != nil {
 		t.Fatalf("register page request failed: %v", err)
@@ -63,7 +67,31 @@ func TestRegisterPageKeepsEmailAfterPasswordValidationError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read register body: %v", err)
 	}
-	if !strings.Contains(string(body), `id="register-email" type="email" name="email" value="`+email+`"`) {
+	rendered := string(body)
+	if !strings.Contains(rendered, `id="register-email" type="email" name="email" value="`+email+`"`) {
 		t.Fatalf("expected register page to keep submitted email after validation error")
+	}
+	if !strings.Contains(rendered, "Use at least 8 characters with uppercase, lowercase, and a number.") {
+		t.Fatalf("expected localized weak password message from flash")
+	}
+
+	afterFlashRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
+	afterFlashRequest.Header.Set("Accept-Language", "en")
+	afterFlashResponse, err := app.Test(afterFlashRequest, -1)
+	if err != nil {
+		t.Fatalf("register request after flash consumption failed: %v", err)
+	}
+	defer afterFlashResponse.Body.Close()
+
+	afterFlashBody, err := io.ReadAll(afterFlashResponse.Body)
+	if err != nil {
+		t.Fatalf("read body after flash consumption: %v", err)
+	}
+	clean := string(afterFlashBody)
+	if strings.Contains(clean, `id="register-email" type="email" name="email" value="`+email+`"`) {
+		t.Fatalf("did not expect register email to persist after flash is consumed")
+	}
+	if strings.Contains(clean, "Use at least 8 characters with uppercase, lowercase, and a number.") {
+		t.Fatalf("did not expect weak-password error after flash is consumed")
 	}
 }

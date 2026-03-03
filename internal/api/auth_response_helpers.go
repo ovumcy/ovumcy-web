@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/url"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,12 +16,7 @@ func (handler *Handler) respondAuthError(c *fiber.Ctx, status int, message strin
 			email := services.NormalizeAuthEmail(c.FormValue("email"))
 			flash.RegisterEmail = email
 			handler.setFlashCookie(c, flash)
-			redirectValues := url.Values{}
-			redirectValues.Set("error", strings.TrimSpace(message))
-			if email != "" {
-				redirectValues.Set("email", email)
-			}
-			return c.Redirect("/register?"+redirectValues.Encode(), fiber.StatusSeeOther)
+			return c.Redirect("/register", fiber.StatusSeeOther)
 		case "/api/auth/login":
 			flash.LoginEmail = services.NormalizeAuthEmail(c.FormValue("email"))
 			handler.setFlashCookie(c, flash)

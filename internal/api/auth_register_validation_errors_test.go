@@ -236,11 +236,13 @@ func TestRegisterRejectsExactDuplicateEmailHTMLFlow(t *testing.T) {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
 	}
 	location := response.Header.Get("Location")
-	if !strings.HasPrefix(location, "/register?") {
+	if strings.TrimSpace(location) != "/register" {
 		t.Fatalf("expected redirect to /register, got %q", location)
 	}
-	if !strings.Contains(location, "error=email+already+exists") {
-		t.Fatalf("expected duplicate-email error in redirect query, got %q", location)
+
+	flashValue := responseCookieValue(response.Cookies(), flashCookieName)
+	if flashValue == "" {
+		t.Fatalf("expected flash cookie in register duplicate-email response")
 	}
 
 	var usersCount int64
