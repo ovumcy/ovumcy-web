@@ -114,4 +114,30 @@ func TestDashboardLanguageSwitchShowsVisibleRUAndENLabels(t *testing.T) {
 	if !strings.Contains(rendered, `aria-current="page">EN</a>`) {
 		t.Fatalf("expected active EN language link to expose aria-current marker")
 	}
+
+	russianRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	russianRequest.Header.Set("Accept-Language", "en")
+	russianRequest.Header.Set("Cookie", authCookie+"; ovumcy_lang=ru")
+
+	russianResponse, err := app.Test(russianRequest, -1)
+	if err != nil {
+		t.Fatalf("dashboard request with russian cookie failed: %v", err)
+	}
+	defer russianResponse.Body.Close()
+
+	if russianResponse.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 for russian dashboard, got %d", russianResponse.StatusCode)
+	}
+
+	russianBody, err := io.ReadAll(russianResponse.Body)
+	if err != nil {
+		t.Fatalf("read russian dashboard body: %v", err)
+	}
+	renderedRussian := string(russianBody)
+	if !strings.Contains(renderedRussian, `aria-current="page">RU</a>`) {
+		t.Fatalf("expected active RU language link to expose aria-current marker")
+	}
+	if strings.Contains(renderedRussian, `aria-current="page">EN</a>`) {
+		t.Fatalf("did not expect EN link to stay active when russian language cookie is set")
+	}
 }

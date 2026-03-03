@@ -135,17 +135,32 @@
     justify-content: center;
     min-width: 2.85rem;
     border-radius: 999px;
+    border: 1px solid transparent;
+    background: transparent;
     padding: 0.28rem 0.72rem;
     font-size: 0.72rem;
     line-height: 1.25;
     font-weight: 700;
     letter-spacing: 0.04em;
     color: var(--text-muted);
+    -webkit-text-fill-color: currentColor;
+    text-decoration: none;
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease,
+      border-color 160ms ease;
   }
 
   .lang-link:hover {
     color: var(--accent-strong);
     background: rgba(232, 196, 168, 0.38);
+    border-color: rgba(186, 131, 80, 0.18);
+  }
+
+  .lang-link:focus-visible {
+    outline: 2px solid rgba(186, 131, 80, 0.5);
+    outline-offset: 2px;
   }
 
   .lang-switch .lang-link-active,
@@ -153,8 +168,11 @@
     background: linear-gradient(135deg, #c78f5f, #d8aa80);
     color: #fff7ed !important;
     -webkit-text-fill-color: #fff7ed !important;
+    border-color: rgba(132, 82, 44, 0.45);
     text-shadow: 0 1px 1px rgba(89, 58, 32, 0.32);
-    box-shadow: 0 6px 12px rgba(186, 131, 80, 0.26);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 247, 237, 0.12),
+      0 6px 12px rgba(186, 131, 80, 0.26);
   }
 
   .menu-toggle {
@@ -1436,4 +1454,3 @@
     }
   }
 }
-
