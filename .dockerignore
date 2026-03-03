@@ -1,6 +1,7 @@
 .git
 .github
 .local
+.agents
 
 .env
 .env.*
@@ -8,6 +9,10 @@
 
 data/
 node_modules/
+e2e/
+docs/
+test-results/
+playwright-report/
 
 *.db
 *.sqlite
@@ -27,3 +32,12 @@ TASK-*.md
 
 .tmp_*/
 .tmp*/
+
+docker/
+web/src/
+scripts/
+package.json
+package-lock.json
+tailwind.config.js
+eslint.config.mjs
+playwright.config.ts

@@ -47,3 +47,89 @@ jobs:
       - name: Frontend build
         run: npm run build
 
+  e2e:
+    runs-on: ubuntu-latest
+    needs:
+      - test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend and e2e dependencies
+        run: npm ci
+
+      - name: Frontend build
+        run: npm run build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start app for e2e
+        run: |
+          mkdir -p .tmp
+          SECRET_KEY='0123456789abcdef0123456789abcdef' \
+          DB_PATH='.tmp/e2e.db' \
+          PORT='8080' \
+          TZ='UTC' \
+          DEFAULT_LANGUAGE='en' \
+          COOKIE_SECURE='false' \
+          RATE_LIMIT_LOGIN_MAX='500' \
+          RATE_LIMIT_FORGOT_PASSWORD_MAX='500' \
+          RATE_LIMIT_API_MAX='5000' \
+          go run ./cmd/ovumcy > .tmp/e2e-app.log 2>&1 &
+          echo $! > .tmp/e2e-app.pid
+
+      - name: Wait for app readiness
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/login >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "App did not become ready in time"
+          cat .tmp/e2e-app.log
+          exit 1
+
+      - name: Run Playwright e2e
+        run: npx playwright test --workers=2
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:8080
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report
+            test-results
+            .tmp/e2e-app.log
+          if-no-files-found: ignore
+
+      - name: Stop app
+        if: always()
+        run: |
+          if [ -f .tmp/e2e-app.pid ]; then
+            kill "$(cat .tmp/e2e-app.pid)" || true
+          fi
+
