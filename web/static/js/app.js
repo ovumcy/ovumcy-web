@@ -39,7 +39,7 @@
     if (!value || value.length > 128) {
       return false;
     }
-    return /^[A-Za-z0-9_+\-\/]+$/.test(value);
+    return /^[A-Za-z0-9_+/-]+$/.test(value);
   }
 
   function detectClientTimezone() {
