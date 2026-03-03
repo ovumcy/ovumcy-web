@@ -74,6 +74,7 @@ Help the user implement a feature in ovumcy by:
      - possible additions or tweaks to `AGENTS.md` (for example, new domain conventions, new cross-cutting rules you discovered),
      - or new/updated skills, if the feature exposed a new recurring pattern.
    - Do not modify AGENTS or SKILL files directly; only suggest text for the user to review.
+   - For auth flows, explicitly check that redirect URLs on validation errors do not contain PII (email, tokens, error messages) in the query string or fragment.
 
 ## Constraints
 
