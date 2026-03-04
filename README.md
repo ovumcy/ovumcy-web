@@ -154,20 +154,22 @@ For bugs and feature requests, open a GitHub issue:
 ### In Progress
 
 - Mobile PWA: manifest, offline mode, install prompt.
+- Reverse proxy examples: Nginx and Caddy configuration samples.
 
-### v0.2 - Self-hosting quality
+### Next (v0.3)
 
 - Custom symptoms: add and hide symptoms beyond built-in defaults.
 - Import from other trackers: Clue, Flo CSV import.
-- Reverse proxy examples: Nginx and Caddy configuration samples.
 - Web Push notifications: period predictions delivered via browser push, no third-party services.
-- Dark mode.
-
-### v0.3 - Depth
-
 - PDF export for clinical use: printable cycle summary for medical appointments.
 - Extended statistics: cycle variability, symptom heatmaps, phase correlations.
 - Partner invite via link: simplified partner onboarding without manual account setup.
+
+### Completed in v0.2.0
+
+- Dark mode with persistent client-side preference and localized toggle labels.
+- Playwright smoke coverage for theme persistence across reload and secondary page.
+- Register password mismatch UX polish (inline validation before submit, without clearing password fields).
 
 ### Considering
 
