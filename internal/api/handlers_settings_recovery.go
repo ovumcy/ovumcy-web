@@ -29,7 +29,7 @@ func (handler *Handler) RegenerateRecoveryCode(c *fiber.Ctx) error {
 
 	data, err := handler.buildSettingsViewData(c, user, FlashPayload{})
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString("failed to load settings")
+		return apiError(c, fiber.StatusInternalServerError, "failed to load settings")
 	}
 	data["SuccessKey"] = "settings.success.recovery_code_regenerated"
 	data["GeneratedRecoveryCode"] = recoveryCode

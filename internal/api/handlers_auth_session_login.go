@@ -74,9 +74,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 			return apiError(c, fiber.StatusInternalServerError, "failed to create reset token")
 		}
 		if acceptsJSON(c) {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "password change required",
-			})
+			return apiError(c, fiber.StatusForbidden, "password change required")
 		}
 		return redirectToPath(c, "/reset-password")
 	}

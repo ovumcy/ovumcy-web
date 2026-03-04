@@ -14,7 +14,7 @@ func (handler *Handler) ShowStats(c *fiber.Ctx) error {
 	language, messages, now := handler.currentPageViewContext(c)
 	data, errorMessage, err := handler.buildStatsPageData(user, language, messages, now)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(errorMessage)
+		return apiError(c, fiber.StatusInternalServerError, errorMessage)
 	}
 
 	return handler.render(c, "stats", data)

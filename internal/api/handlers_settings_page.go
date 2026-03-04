@@ -13,7 +13,7 @@ func (handler *Handler) ShowSettings(c *fiber.Ctx) error {
 
 	data, errorMessage, err := handler.buildSettingsPageData(c, user)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(errorMessage)
+		return apiError(c, fiber.StatusInternalServerError, errorMessage)
 	}
 
 	return handler.render(c, "settings", data)

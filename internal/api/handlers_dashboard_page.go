@@ -15,7 +15,7 @@ func (handler *Handler) ShowDashboard(c *fiber.Ctx) error {
 	location := handler.requestLocation(c)
 	data, errorMessage, err := handler.buildDashboardViewData(user, language, messages, now, location)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString(errorMessage)
+		return apiError(c, fiber.StatusInternalServerError, errorMessage)
 	}
 
 	return handler.render(c, "dashboard", data)
