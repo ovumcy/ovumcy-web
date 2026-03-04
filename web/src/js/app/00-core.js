@@ -7,6 +7,9 @@
   var TOAST_EXIT_MS = 220;
   var STATUS_CLEAR_MS = 2000;
   var DOWNLOAD_REVOKE_MS = 500;
+  var THEME_STORAGE_KEY = "ovumcy_theme";
+  var THEME_LIGHT = "light";
+  var THEME_DARK = "dark";
   var TIMEZONE_COOKIE_NAME = "ovumcy_tz";
   var TIMEZONE_HEADER_NAME = "X-Ovumcy-Timezone";
   var TIMEZONE_COOKIE_MAX_AGE_SECONDS = 31536000;
@@ -33,6 +36,90 @@
       return;
     }
     callback();
+  }
+
+  function normalizeTheme(value) {
+    var theme = String(value || "").trim().toLowerCase();
+    if (theme === THEME_DARK || theme === THEME_LIGHT) {
+      return theme;
+    }
+    return "";
+  }
+
+  function supportsMatchMedia() {
+    return typeof window.matchMedia === "function";
+  }
+
+  function systemPreferredTheme() {
+    if (!supportsMatchMedia()) {
+      return THEME_LIGHT;
+    }
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? THEME_DARK : THEME_LIGHT;
+  }
+
+  function resolveTheme(theme) {
+    return normalizeTheme(theme) || systemPreferredTheme();
+  }
+
+  function readStoredTheme() {
+    try {
+      return normalizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+    } catch {
+      return "";
+    }
+  }
+
+  function writeStoredTheme(theme) {
+    var normalized = normalizeTheme(theme);
+    if (!normalized) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch {
+      // Ignore storage quota and privacy mode errors.
+    }
+  }
+
+  function applyTheme(theme) {
+    var resolved = resolveTheme(theme);
+    document.documentElement.setAttribute("data-theme", resolved);
+    document.documentElement.style.colorScheme = resolved;
+    window.__ovumcyTheme = resolved;
+    return resolved;
+  }
+
+  function currentTheme() {
+    var htmlTheme = normalizeTheme(document.documentElement.getAttribute("data-theme"));
+    if (htmlTheme) {
+      return htmlTheme;
+    }
+
+    var known = normalizeTheme(window.__ovumcyTheme);
+    if (known) {
+      return known;
+    }
+
+    return applyTheme(readStoredTheme());
+  }
+
+  function initThemePreference() {
+    applyTheme(readStoredTheme());
+  }
+
+  function setThemePreference(theme) {
+    var normalized = normalizeTheme(theme);
+    if (!normalized) {
+      return currentTheme();
+    }
+    writeStoredTheme(normalized);
+    return applyTheme(normalized);
+  }
+
+  function toggleThemePreference() {
+    var nextTheme = currentTheme() === THEME_DARK ? THEME_LIGHT : THEME_DARK;
+    return setThemePreference(nextTheme);
   }
 
   function isSafeClientTimezone(value) {

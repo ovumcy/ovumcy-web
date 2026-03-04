@@ -1,4 +1,5 @@
   onDocumentReady(function () {
+    initThemePreference();
     initAuthPanelTransitions();
     initLanguageSwitcher();
     initClientTimezone();

@@ -308,7 +308,7 @@
   {{end}}
 
   {{if eq .CurrentUser.Role "owner"}}
-  <section class="journal-card border border-[rgba(196,146,74,0.38)] bg-[rgba(255,247,228,0.62)] p-5 sm:p-6">
+  <section class="journal-card danger-card-soft p-5 sm:p-6">
     <h2 class="journal-subtitle">🧹 {{t .Messages "settings.clear_data.title"}}</h2>
     <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.clear_data.subtitle"}}</p>
 
@@ -324,8 +324,8 @@
   </section>
   {{end}}
 
-  <section class="journal-card border border-red-200 p-5 sm:p-6">
-    <h2 class="journal-subtitle text-red-700">⚠️ {{t .Messages "settings.danger_zone.title"}}</h2>
+  <section class="journal-card danger-card-strong p-5 sm:p-6">
+    <h2 class="journal-subtitle danger-title">⚠️ {{t .Messages "settings.danger_zone.title"}}</h2>
     <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
 
     <form

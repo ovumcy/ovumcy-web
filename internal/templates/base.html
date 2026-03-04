@@ -8,17 +8,39 @@
   <meta name="csrf-token" content="{{.CSRFToken}}">
   <title>{{.Title}}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=20260225-3">
+  <script>
+    (function () {
+      var theme = "light";
+      try {
+        var raw = window.localStorage.getItem("ovumcy_theme");
+        if (raw === "dark" || raw === "light") {
+          theme = raw;
+        } else if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+          theme = "dark";
+        }
+      } catch (_error) {
+        theme = "light";
+      }
+
+      document.documentElement.setAttribute("data-theme", theme);
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=20260304-1">
   <script defer src="/static/js/htmx.min.js?v=20260221-2"></script>
   <script defer src="/static/js/chart-lite.js?v=20260221-2"></script>
-  <script defer src="/static/js/app.js?v=20260225-3"></script>
+  <script defer src="/static/js/app.js?v=20260304-1"></script>
   <script defer src="/static/js/alpine.min.js?v=20260221-2"></script>
 </head>
 <body
   data-confirm-cancel="{{t .Messages "confirm.no"}}"
   data-confirm-delete="{{t .Messages "confirm.yes"}}"
   data-toast-close="{{t .Messages "common.close"}}"
-  data-request-failed="{{t .Messages "common.error.request_failed"}}">
+  data-request-failed="{{t .Messages "common.error.request_failed"}}"
+  data-theme-label-dark="{{t .Messages "theme.switch_to_dark"}}"
+  data-theme-label-light="{{t .Messages "theme.switch_to_light"}}"
+  data-theme-name-dark="{{t .Messages "theme.name.dark"}}"
+  data-theme-name-light="{{t .Messages "theme.name.light"}}">
   <div class="app-shell" x-data="appShellState()">
     <header class="paper-header">
       <div class="container-main flex items-center justify-between py-4">
@@ -34,6 +56,16 @@
             <a href="/lang/ru?next={{urlquery .CurrentPath}}" class="lang-link {{if eq .Lang "ru"}}lang-link-active{{end}}" {{if eq .Lang "ru"}}aria-current="page"{{end}}>{{or (t .Messages "lang.ru") "RU"}}</a>
             <a href="/lang/en?next={{urlquery .CurrentPath}}" class="lang-link {{if eq .Lang "en"}}lang-link-active{{end}}" {{if eq .Lang "en"}}aria-current="page"{{end}}>{{or (t .Messages "lang.en") "EN"}}</a>
           </div>
+          <button
+            type="button"
+            class="theme-toggle"
+            data-theme-toggle
+            @click="toggleTheme()"
+            :aria-label="themeToggleLabel"
+            :title="themeToggleLabel">
+            <span class="theme-toggle-icon" aria-hidden="true" x-text="themeIcon">🌙</span>
+            <span class="theme-toggle-text" x-text="themeShortLabel">{{t .Messages "theme.name.dark"}}</span>
+          </button>
 
           {{if and .CurrentUser (not .HideNavigation)}}
           <button type="button" class="menu-toggle sm:hidden" @click="toggleMobileMenu()">{{t .Messages "nav.menu"}}</button>
@@ -284,5 +316,4 @@
   {{end}}
 </div>
 {{end}}
-
 

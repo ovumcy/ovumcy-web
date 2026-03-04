@@ -1,8 +1,39 @@
+  function themeMessagesFromDataset() {
+    var body = document.body;
+    var dataset = body && body.dataset ? body.dataset : {};
+    return {
+      toggleToDark: String(dataset.themeLabelDark || "Switch to dark mode"),
+      toggleToLight: String(dataset.themeLabelLight || "Switch to light mode"),
+      modeDark: String(dataset.themeNameDark || "Dark"),
+      modeLight: String(dataset.themeNameLight || "Light")
+    };
+  }
+
   window.appShellState = function () {
     return {
       mobileMenu: false,
+      theme: currentTheme(),
+      themeIcon: "\u{1F319}",
+      themeToggleLabel: "",
+      themeShortLabel: "",
+      init: function () {
+        this.syncThemeState(this.theme);
+      },
       toggleMobileMenu: function () {
         this.mobileMenu = !this.mobileMenu;
+      },
+      toggleTheme: function () {
+        var nextTheme = toggleThemePreference();
+        this.syncThemeState(nextTheme);
+      },
+      syncThemeState: function (rawTheme) {
+        this.theme = normalizeTheme(rawTheme) || currentTheme();
+        var messages = themeMessagesFromDataset();
+        var isDark = this.theme === THEME_DARK;
+
+        this.themeIcon = isDark ? "\u2600" : "\u{1F319}";
+        this.themeShortLabel = isDark ? messages.modeLight : messages.modeDark;
+        this.themeToggleLabel = isDark ? messages.toggleToLight : messages.toggleToDark;
       }
     };
   };
