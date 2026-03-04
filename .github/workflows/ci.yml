@@ -53,6 +53,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs:
       - test
 
@@ -78,12 +79,6 @@ jobs:
       - name: Frontend build
         run: npm run build
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
@@ -98,7 +93,7 @@ jobs:
           E2E_APP_PORT: 18080
 
       - name: Upload Playwright artifacts
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts
