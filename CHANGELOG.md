@@ -5,62 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-03-04
 
 ### Added
 - Security policy in `SECURITY.md`.
 - Contribution guidelines in `CONTRIBUTING.md`.
 - Code of conduct in `CODE_OF_CONDUCT.md`.
 - Public brand assets (`web/static/brand/*`) and SVG favicon.
+- Mobile quick navigation tab bar for faster section switching.
+- Dark mode with persistent client-side preference (`ovumcy_theme`) and localized theme toggle labels.
+- Playwright smoke coverage for theme persistence across reload and secondary page in one browser context.
+- Register page client-validation hooks for password-mismatch UX.
 
 ### Changed
-- Date validation hardened in onboarding and settings:
-  - step 1 onboarding date is constrained to an allowed range,
-  - settings cycle start date now enforces server-side bounds.
-- CI now pins `staticcheck` to a fixed version.
-- Docker quick start docs now support a no-clone flow (download docker-compose.yml and .env directly, then run from one folder).
-- Docker Compose now uses `pull_policy: always`, so a single `docker compose up -d` pulls the latest image.
-- Dashboard cycle-day calculation is now bounded to cycle length (no unbounded growth when the start date is stale).
-- Dashboard next period/ovulation predictions are projected into upcoming cycles, and stale-cycle warning text is shown when baseline dates are outdated.
-- Mobile calendar day badges/today pill now avoid clipping/overflow with short labels and bounded cell content.
-- Date formatting is now locale-aware in dashboard and settings export summaries (RU/EN consistency).
-- Settings cycle warnings now render contextually (DOM no longer keeps all warning variants visible at once).
-- Stats cards and chart caption now show explicit no-data states instead of misleading default cycle values.
-- Settings export range uses native `type="date"` inputs with min/max bounds; custom export calendar is skipped when native picker is available.
-- Calendar day notes now auto-save consistently with other day fields.
-- Privacy breadcrumb naming is aligned with app navigation (`Dashboard`/`Панель` for authenticated users).
-- Profile save now supports inline HTMX success feedback, matching other settings forms.
-- Mobile quick navigation tab bar was added for faster section switching.
-- Day editor symptom chips now clear visual active state immediately when `Period day` is turned off (UI state now matches saved payload).
-- Dashboard stale-cycle detection now prioritizes the owner-set cycle anchor date (`last_period_start`) to avoid showing stale data as factual.
-- Language switch active pill styling was hardened for mobile, and frontend asset cache-busting versions were bumped to force fresh JS/CSS after deploy.
-- Toast UX improved with longer visibility window and clearer close button affordance for manual dismissal.
-- Russian copy polish: public text now consistently uses `надёжный` where applicable.
-- Language switch active state now uses explicit `aria-current` styling and hard color values to avoid mobile active-pill label disappearance.
-- HTMX save-status success banners are now dismissible (`×`) and no longer rely on `status-transient` 2s fade behavior.
-- Stats page current-phase card now follows stale-cycle detection used on dashboard (shows `Unknown` with stale-phase hint when baseline is outdated).
-- Save-status dismiss behavior is now guaranteed even without timing-sensitive HTMX hooks by rendering close controls server-side and adding `afterSettle` fallback handling in app JS.
-- Desktop nav user block no longer mimics active tabs:
-  - user identity is grouped as metadata, not as a tab-like action,
-  - intrusive `Add profile name` nav hint is removed from header flow,
-  - `Logout` now has distinct destructive styling and visual separation.
-- Settings profile name field now includes localized placeholder text (RU/EN) to clarify expected input.
-- Calendar now auto-opens today's day editor when `/calendar` is opened without `day`/`month` query params (no empty right-side panel on first load).
-- Stats symptom-frequency empty/partner states now use compact informative blocks and no longer visually waste a stretched half-screen card.
-- Save feedback toast/status now renders with an explicit success icon and separated close control (`✓ message [×]`) to prevent `message.×` visual merging.
-- Cache-busting versions were bumped to `20260225-1` for `app.js`, `tailwind.css`, and `settings-export.js`.
-- Mobile layout pass (screens `< 640px`) addressed five UX regressions without changing desktop breakpoints:
-  - symptom chips now render in a single-column list on mobile to avoid 2-line clipping/wrapping conflicts,
-  - dashboard flow-intensity controls now render as a compact `2x2` grid on mobile with reduced tile height,
-  - settings auto-period-fill toggle label was shortened (RU/EN) and toggle container behavior was hardened for narrow widths,
-  - calendar short badges were tightened for mobile cells (`today_short` uses dot marker, compact short period labels, smaller badge typography/padding),
-  - stats cycle chart no longer renders an empty fixed-height chart shell when trend data is missing (shows localized no-data text instead).
-- Frontend cache-busting in `base.html` was bumped again to `20260225-2` for `app.js` and `tailwind.css` so mobile CSS/markup fixes load immediately after deploy.
-- Calendar mobile cells now rely on color-only state cues (without in-cell text badges) to avoid clipped/overlapping labels on narrow screens.
-- Calendar day-editor flow controls were tightened for mobile (`radio-tile-sm`) to reduce vertical footprint in the daily form.
-- Day editor no longer auto-saves on field changes; save now requires explicit `Save` action and hint copy was updated accordingly.
-- Symptoms are now rendered in logical grouped panels (pain, mood, digestion, skin, other) across dashboard/day-editor layouts for both mobile and desktop.
-- Frontend cache-busting in `base.html` was bumped to `20260225-3` for `app.js` and `tailwind.css` after manual-save and grouped-symptom UI updates.
+- Date validation was hardened in onboarding step 1 and settings cycle start bounds.
+- Dashboard cycle-day calculation is now bounded by cycle length, and stale-cycle detection uses owner cycle anchor (`last_period_start`) to avoid misleading stale data.
+- Dashboard predictions are projected into upcoming cycles, and stale baseline dates now show explicit warning/unknown states.
+- Date formatting is locale-aware in dashboard and settings export summaries (RU/EN consistency).
+- Settings cycle warnings now render contextually instead of keeping all variants visible in DOM.
+- Settings export range uses native `type="date"` inputs with min/max bounds where supported.
+- Calendar opens today's editor by default when `/calendar` has no `day`/`month` query parameters.
+- Calendar/day-editor mobile layout was tightened to prevent clipped badges and reduce form footprint on narrow screens.
+- Day editor now uses explicit `Save` action; field-change auto-save was removed.
+- Symptoms are grouped into logical panels across dashboard and day-editor layouts.
+- Stats cards and chart captions now show explicit no-data states; trend/symptom panels reserve stable height on large screens.
+- Stats current-phase card follows stale-cycle logic and shows unknown/stale hints when baseline is outdated.
+- Profile save supports inline HTMX success feedback; success statuses are dismissible with explicit close controls.
+- Desktop nav user block styling was refined: user identity is metadata (not tab-like), logout has clear destructive affordance, and profile-name hinting was simplified.
+- Navbar current-user label typography was softened (no all-caps emphasis).
+- Light-theme range slider thumbs have improved contrast.
+- Register password mismatch now shows inline validation before submit and keeps both password fields intact.
+- Privacy breadcrumb naming was aligned with authenticated navigation labels (`Dashboard`/`Панель`).
+- Russian copy was polished for consistent use of `надёжный`.
+- Language switch active state styling was hardened for mobile with explicit `aria-current` behavior.
 
 ## [0.1.0] - 2026-02-23
 
@@ -73,5 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/terraincognita07/ovumcy/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/terraincognita07/ovumcy/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/terraincognita07/ovumcy/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/terraincognita07/ovumcy/releases/tag/v0.1.0
