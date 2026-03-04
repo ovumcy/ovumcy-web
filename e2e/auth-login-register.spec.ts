@@ -53,7 +53,9 @@ test.describe('Auth: register, login, logout', () => {
 
     await expect(page).toHaveURL(/\/register$/);
     expectNoSensitiveAuthParams(page.url());
-    await expect(page.locator('.status-error')).toBeVisible();
+    await expect(page.locator('#register-client-status .status-error')).toBeVisible();
+    await expect(page.locator('#register-password')).toHaveValue(creds.password);
+    await expect(page.locator('#register-confirm-password')).toHaveValue('DifferentPass2');
   });
 
   test('register weak password shows validation error without leaking query params', async ({ page }) => {

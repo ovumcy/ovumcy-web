@@ -302,8 +302,8 @@
   .nav-user-label {
     font-size: 0.66rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-transform: none;
     color: var(--text-muted);
   }
 
@@ -594,9 +594,9 @@
     height: 1.22rem;
     margin-top: -0.37rem;
     border-radius: 999px;
-    border: 1px solid rgba(169, 107, 58, 0.42);
-    background: linear-gradient(145deg, #d39a67, #c57f4d);
-    box-shadow: 0 4px 9px rgba(152, 94, 49, 0.28);
+    border: 1px solid rgba(151, 88, 39, 0.56);
+    background: linear-gradient(145deg, #d79a64, #bf7140);
+    box-shadow: 0 5px 10px rgba(138, 77, 32, 0.34);
   }
 
   .range-field::-moz-range-track {
@@ -615,10 +615,10 @@
   .range-field::-moz-range-thumb {
     width: 1.22rem;
     height: 1.22rem;
-    border: 1px solid rgba(169, 107, 58, 0.42);
+    border: 1px solid rgba(151, 88, 39, 0.56);
     border-radius: 999px;
-    background: linear-gradient(145deg, #d39a67, #c57f4d);
-    box-shadow: 0 4px 9px rgba(152, 94, 49, 0.28);
+    background: linear-gradient(145deg, #d79a64, #bf7140);
+    box-shadow: 0 5px 10px rgba(138, 77, 32, 0.34);
   }
 
   .btn-primary,
@@ -982,6 +982,14 @@
     .symptom-grid-compact {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .stats-trend-panel {
+      min-height: 24rem;
+    }
+
+    .stats-symptoms-panel {
+      min-height: 24rem;
+    }
   }
 
   .choice-input:checked + .radio-tile,
@@ -1203,6 +1211,11 @@
     border: 1px solid var(--line-soft);
     background: rgba(255, 255, 255, 0.85);
     padding: 0.9rem;
+  }
+
+  .stats-trend-panel,
+  .stats-symptoms-panel {
+    min-height: 0;
   }
 
   .stats-legend-dot-actual {

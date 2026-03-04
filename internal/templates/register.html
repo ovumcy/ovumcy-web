@@ -14,7 +14,14 @@
     <div class="status-error mt-5">{{t .Messages .ErrorKey}}</div>
     {{end}}
 
-    <form action="/api/auth/register" method="post" class="mt-5 space-y-4">
+    <form
+      id="register-form"
+      action="/api/auth/register"
+      method="post"
+      class="mt-5 space-y-4"
+      data-required-message="{{t .Messages "validation.required"}}"
+      data-email-message="{{t .Messages "validation.email"}}"
+      data-password-mismatch-message="{{t .Messages "auth.error.password_mismatch"}}">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <label class="field-label" for="register-email">{{t .Messages "auth.email"}}</label>
@@ -36,6 +43,7 @@
         "Autocomplete" "new-password"
         "Required" true)}}
       <p class="journal-muted text-xs">{{t .Messages "auth.password_requirements"}}</p>
+      <div id="register-client-status" class="save-status text-sm" aria-live="polite"></div>
 
       <button type="submit" class="btn-primary w-full">{{t .Messages "auth.register"}}</button>
     </form>

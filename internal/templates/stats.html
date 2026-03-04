@@ -37,7 +37,7 @@
   </div>
 
   <div class="grid gap-6 lg:grid-cols-[2fr_1fr] lg:items-start">
-    <section class="journal-card p-5 sm:p-6">
+    <section class="journal-card p-5 sm:p-6 stats-trend-panel">
       <div class="mb-4 flex items-center justify-between gap-3">
         <h2 class="journal-subtitle">{{t .Messages "stats.cycle_trend"}}</h2>
         <span class="journal-muted text-xs">{{if .HasTrendData}}{{t .Messages "stats.recent_cycles"}}{{else}}{{t .Messages "stats.no_cycle_data"}}{{end}}</span>
@@ -68,7 +68,7 @@
       {{end}}
     </section>
 
-    <section class="journal-card p-5 sm:p-6">
+    <section class="journal-card p-5 sm:p-6 stats-symptoms-panel">
       <h2 class="journal-subtitle">{{t .Messages "stats.symptom_frequency"}}</h2>
       {{if .IsOwner}}
         {{if .SymptomCounts}}

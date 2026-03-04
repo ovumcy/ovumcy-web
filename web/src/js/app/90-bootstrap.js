@@ -5,6 +5,7 @@
     initClientTimezone();
     initPasswordToggles();
     initLoginValidation();
+    initRegisterValidation();
     initLoginPasswordPersistence();
     initConfirmModal();
     initToastAPI();

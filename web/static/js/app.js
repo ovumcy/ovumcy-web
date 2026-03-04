@@ -355,6 +355,56 @@
     });
   }
 
+  function updateFieldValidityMessage(input, requiredMessage, emailMessage) {
+    if (!input || typeof input.setCustomValidity !== "function") {
+      return;
+    }
+
+    input.setCustomValidity("");
+    if (!input.validity) {
+      return;
+    }
+
+    if (input.validity.valueMissing) {
+      input.setCustomValidity(requiredMessage);
+      return;
+    }
+    if (input.type === "email" && input.validity.typeMismatch) {
+      input.setCustomValidity(emailMessage);
+    }
+  }
+
+  function bindRequiredFieldValidation(form, requiredMessage, emailMessage) {
+    if (!form) {
+      return;
+    }
+
+    var fields = form.querySelectorAll("input[required]");
+    for (var index = 0; index < fields.length; index++) {
+      fields[index].addEventListener("invalid", function () {
+        updateFieldValidityMessage(this, requiredMessage, emailMessage);
+      });
+      fields[index].addEventListener("input", function () {
+        this.setCustomValidity("");
+      });
+      fields[index].addEventListener("blur", function () {
+        updateFieldValidityMessage(this, requiredMessage, emailMessage);
+      });
+    }
+  }
+
+  function renderFormStatusError(target, text) {
+    if (!target) {
+      return;
+    }
+
+    target.textContent = "";
+    var block = document.createElement("div");
+    block.className = "status-error";
+    block.textContent = text;
+    target.appendChild(block);
+  }
+
   function initLoginValidation() {
     var form = document.getElementById("login-form");
     if (!form) {
@@ -363,38 +413,69 @@
 
     var requiredMessage = form.getAttribute("data-required-message") || "Please fill out this field.";
     var emailMessage = form.getAttribute("data-email-message") || "Please enter a valid email address.";
+    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+  }
 
-    function updateValidityMessage(input) {
-      if (!input || typeof input.setCustomValidity !== "function") {
-        return;
-      }
-
-      input.setCustomValidity("");
-      if (!input.validity) {
-        return;
-      }
-
-      if (input.validity.valueMissing) {
-        input.setCustomValidity(requiredMessage);
-        return;
-      }
-      if (input.type === "email" && input.validity.typeMismatch) {
-        input.setCustomValidity(emailMessage);
-      }
+  function initRegisterValidation() {
+    var form = document.getElementById("register-form");
+    if (!form) {
+      return;
     }
 
-    var fields = form.querySelectorAll("input[required]");
-    for (var index = 0; index < fields.length; index++) {
-      fields[index].addEventListener("invalid", function () {
-        updateValidityMessage(this);
-      });
-      fields[index].addEventListener("input", function () {
-        this.setCustomValidity("");
-      });
-      fields[index].addEventListener("blur", function () {
-        updateValidityMessage(this);
-      });
+    var requiredMessage = form.getAttribute("data-required-message") || "Please fill out this field.";
+    var emailMessage = form.getAttribute("data-email-message") || "Please enter a valid email address.";
+    var mismatchMessage = form.getAttribute("data-password-mismatch-message") || "Passwords do not match.";
+    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+
+    var passwordField = document.getElementById("register-password");
+    var confirmField = document.getElementById("register-confirm-password");
+    if (!passwordField || !confirmField) {
+      return;
     }
+
+    var statusTarget = document.getElementById("register-client-status");
+
+    function clearStatus() {
+      if (!statusTarget) {
+        return;
+      }
+      statusTarget.textContent = "";
+    }
+
+    function isPasswordMatchValid() {
+      confirmField.setCustomValidity("");
+
+      var password = String(passwordField.value || "");
+      var confirm = String(confirmField.value || "");
+      if (!password || !confirm || password === confirm) {
+        return true;
+      }
+
+      confirmField.setCustomValidity(mismatchMessage);
+      return false;
+    }
+
+    function handlePasswordInput() {
+      clearStatus();
+      isPasswordMatchValid();
+    }
+
+    passwordField.addEventListener("input", handlePasswordInput);
+    confirmField.addEventListener("input", handlePasswordInput);
+
+    form.addEventListener("submit", function (event) {
+      clearStatus();
+      if (isPasswordMatchValid()) {
+        return;
+      }
+
+      event.preventDefault();
+      renderFormStatusError(statusTarget, mismatchMessage);
+      if (typeof confirmField.reportValidity === "function") {
+        confirmField.reportValidity();
+      }
+      focusLoginPasswordField(confirmField);
+    });
   }
 
   function loginPasswordDraftStorage() {
@@ -1442,6 +1523,7 @@
     initClientTimezone();
     initPasswordToggles();
     initLoginValidation();
+    initRegisterValidation();
     initLoginPasswordPersistence();
     initConfirmModal();
     initToastAPI();
