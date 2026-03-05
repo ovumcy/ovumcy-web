@@ -13,9 +13,9 @@ func (handler *Handler) ShowDashboard(c *fiber.Ctx) error {
 
 	language, messages, now := handler.currentPageViewContext(c)
 	location := handler.requestLocation(c)
-	data, errorMessage, err := handler.buildDashboardViewData(user, language, messages, now, location)
+	data, err := handler.buildDashboardViewData(user, language, messages, now, location)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, errorMessage)
+		return handler.respondMappedError(c, mapDashboardViewError(err))
 	}
 
 	return handler.render(c, "dashboard", data)

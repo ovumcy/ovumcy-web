@@ -32,3 +32,7 @@ func mapSymptomDeleteError(err error) APIErrorSpec {
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete symptom")
 	}
 }
+
+func symptomsFetchErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to fetch symptoms")
+}

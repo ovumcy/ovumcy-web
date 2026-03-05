@@ -180,6 +180,94 @@ func TestAuthServiceValidateResetPasswordInput(t *testing.T) {
 	}
 }
 
+func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+		if err != nil {
+			t.Fatalf("hash original password: %v", err)
+		}
+
+		repo := &stubAuthUserRepo{
+			existsByEmail: true,
+			findByEmailUser: models.User{
+				ID:                 18,
+				Email:              "owner@example.com",
+				PasswordHash:       string(originalHash),
+				MustChangePassword: false,
+			},
+		}
+		service := NewAuthService(repo)
+
+		if err := service.ForceResetPasswordByEmail(" Owner@Example.com ", "EvenStronger2"); err != nil {
+			t.Fatalf("ForceResetPasswordByEmail() unexpected error: %v", err)
+		}
+		if !repo.saveCalled {
+			t.Fatal("expected Save() to be called")
+		}
+		if !repo.user.MustChangePassword {
+			t.Fatal("expected MustChangePassword=true after forced reset")
+		}
+		if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
+			t.Fatal("expected saved password hash to match new password")
+		}
+	})
+
+	t.Run("missing password", func(t *testing.T) {
+		service := NewAuthService(&stubAuthUserRepo{})
+		if err := service.ForceResetPasswordByEmail("owner@example.com", " "); !errors.Is(err, ErrAuthResetInvalid) {
+			t.Fatalf("expected ErrAuthResetInvalid, got %v", err)
+		}
+	})
+
+	t.Run("weak password", func(t *testing.T) {
+		service := NewAuthService(&stubAuthUserRepo{})
+		if err := service.ForceResetPasswordByEmail("owner@example.com", "12345678"); !errors.Is(err, ErrAuthWeakPassword) {
+			t.Fatalf("expected ErrAuthWeakPassword, got %v", err)
+		}
+	})
+
+	t.Run("user not found", func(t *testing.T) {
+		repo := &stubAuthUserRepo{existsByEmail: false}
+		service := NewAuthService(repo)
+		if err := service.ForceResetPasswordByEmail("missing@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
+			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
+		}
+		if repo.saveCalled {
+			t.Fatal("did not expect Save() when user is missing")
+		}
+	})
+
+	t.Run("lookup failure", func(t *testing.T) {
+		repo := &stubAuthUserRepo{existsByEmailErr: errors.New("db down")}
+		service := NewAuthService(repo)
+		if err := service.ForceResetPasswordByEmail("owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserLookupFailed) {
+			t.Fatalf("expected ErrAuthUserLookupFailed, got %v", err)
+		}
+	})
+
+	t.Run("save failure", func(t *testing.T) {
+		originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+		if err != nil {
+			t.Fatalf("hash original password: %v", err)
+		}
+
+		repo := &stubAuthUserRepo{
+			existsByEmail: true,
+			findByEmailUser: models.User{
+				ID:           18,
+				Email:        "owner@example.com",
+				PasswordHash: string(originalHash),
+			},
+			saveErr: errors.New("write failed"),
+		}
+		service := NewAuthService(repo)
+
+		if err := service.ForceResetPasswordByEmail("owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthPasswordUpdate) {
+			t.Fatalf("expected ErrAuthPasswordUpdate, got %v", err)
+		}
+	})
+}
+
 func TestAuthServiceBuildOwnerUserWithRecovery(t *testing.T) {
 	service := NewAuthService(&stubAuthUserRepo{})
 	createdAt := time.Date(2026, time.March, 2, 8, 0, 0, 0, time.UTC)

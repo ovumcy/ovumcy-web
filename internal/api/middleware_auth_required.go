@@ -11,7 +11,7 @@ func (handler *Handler) AuthRequired(c *fiber.Ctx) error {
 	user, err := handler.authenticateRequest(c)
 	if err != nil {
 		if strings.HasPrefix(c.Path(), "/api/") {
-			return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+			return respondGlobalMappedError(c, unauthorizedErrorSpec())
 		}
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}
@@ -19,7 +19,7 @@ func (handler *Handler) AuthRequired(c *fiber.Ctx) error {
 	c.Locals(contextUserKey, user)
 	if services.RequiresOnboarding(user) && services.ShouldEnforceOnboardingAccess(c.Path()) {
 		if strings.HasPrefix(c.Path(), "/api/") {
-			return apiError(c, fiber.StatusForbidden, "onboarding required")
+			return respondGlobalMappedError(c, onboardingRequiredErrorSpec())
 		}
 		return c.Redirect("/onboarding", fiber.StatusSeeOther)
 	}

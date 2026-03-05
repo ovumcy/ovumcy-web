@@ -10,9 +10,7 @@ import (
 	"strings"
 
 	"github.com/terraincognita07/ovumcy/internal/db"
-	"github.com/terraincognita07/ovumcy/internal/models"
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func RunResetPasswordCommand(dbPath string, email string) error {
@@ -42,14 +40,6 @@ func runResetPasswordCommand(dbPath string, email string, prompt passwordPromptF
 		_ = sqlDB.Close()
 	}()
 
-	var user models.User
-	if err := database.Where("email = ?", normalizedEmail).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("user %s not found", normalizedEmail)
-		}
-		return fmt.Errorf("load user: %w", err)
-	}
-
 	if prompt == nil {
 		return errors.New("password prompt is required")
 	}
@@ -63,15 +53,19 @@ func runResetPasswordCommand(dbPath string, email string, prompt passwordPromptF
 		return errors.New("password is required")
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword(newPassword, bcrypt.DefaultCost)
-	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
-	}
-
-	user.PasswordHash = string(passwordHash)
-	user.MustChangePassword = true
-	if err := database.Save(&user).Error; err != nil {
-		return fmt.Errorf("update user password: %w", err)
+	repositories := db.NewRepositories(database)
+	authService := services.NewAuthService(repositories.Users)
+	if err := authService.ForceResetPasswordByEmail(normalizedEmail, string(newPassword)); err != nil {
+		switch {
+		case errors.Is(err, services.ErrAuthUserNotFound):
+			return fmt.Errorf("user %s not found", normalizedEmail)
+		case errors.Is(err, services.ErrAuthResetInvalid):
+			return errors.New("password is required")
+		case errors.Is(err, services.ErrAuthWeakPassword):
+			return errors.New("password does not meet strength requirements")
+		default:
+			return fmt.Errorf("reset password: %w", err)
+		}
 	}
 
 	if output == nil {

@@ -15,7 +15,7 @@ func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
 	}
 	needsSetup, err := handler.setupService.RequiresInitialSetup()
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to load setup state")
+		return handler.respondMappedError(c, setupStateLoadErrorSpec())
 	}
 
 	flash := handler.popFlashCookie(c)
@@ -33,7 +33,7 @@ func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
 	}
 	needsSetup, err := handler.setupService.RequiresInitialSetup()
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to load setup state")
+		return handler.respondMappedError(c, setupStateLoadErrorSpec())
 	}
 
 	flash := handler.popFlashCookie(c)

@@ -18,12 +18,12 @@ func (handler *Handler) ShowCalendar(c *fiber.Ctx) error {
 	location := handler.requestLocation(c)
 	activeMonth, selectedDate, err := services.ResolveCalendarMonthAndSelectedDate(c.Query("month"), c.Query("day"), now, location)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid month")
+		return handler.respondMappedError(c, invalidMonthErrorSpec())
 	}
 
-	data, errorMessage, err := handler.buildCalendarViewData(user, language, messages, now, activeMonth, selectedDate, location)
+	data, err := handler.buildCalendarViewData(user, language, messages, now, activeMonth, selectedDate, location)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, errorMessage)
+		return handler.respondMappedError(c, mapCalendarViewError(err))
 	}
 
 	return handler.render(c, "calendar", data)

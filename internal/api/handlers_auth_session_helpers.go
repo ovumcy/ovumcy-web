@@ -71,7 +71,7 @@ func (handler *Handler) renderRecoveryCodeResponse(c *fiber.Ctx, user *models.Us
 		continuePath = services.PostLoginRedirectPath(user)
 	}
 	if err := handler.setRecoveryCodePageCookie(c, userID, recoveryCode, continuePath); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to persist recovery code")
+		return handler.respondMappedError(c, authRecoveryCodePersistErrorSpec())
 	}
 
 	return redirectToPath(c, "/recovery-code")

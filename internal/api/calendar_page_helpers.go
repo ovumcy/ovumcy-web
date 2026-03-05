@@ -5,19 +5,12 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
-	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func (handler *Handler) buildCalendarViewData(user *models.User, language string, messages map[string]string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (fiber.Map, string, error) {
-
+func (handler *Handler) buildCalendarViewData(user *models.User, language string, messages map[string]string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (fiber.Map, error) {
 	viewData, err := handler.calendarViewService.BuildCalendarPageViewData(user, language, now, monthStart, selectedDate, location)
 	if err != nil {
-		switch services.ClassifyCalendarViewError(err) {
-		case services.CalendarViewErrorLoadLogs:
-			return nil, "failed to load calendar", err
-		default:
-			return nil, "failed to load stats", err
-		}
+		return nil, err
 	}
 
 	days := handler.buildCalendarDays(viewData.DayStates)
@@ -35,5 +28,5 @@ func (handler *Handler) buildCalendarViewData(user *models.User, language string
 		"Stats":        viewData.Stats,
 		"IsOwner":      viewData.IsOwner,
 	}
-	return data, "", nil
+	return data, nil
 }

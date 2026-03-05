@@ -9,7 +9,7 @@ import (
 
 func (handler *Handler) NotFound(c *fiber.Ctx) error {
 	if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) {
-		return apiError(c, fiber.StatusNotFound, "not found")
+		return respondGlobalMappedError(c, notFoundErrorSpec())
 	}
 
 	if isHTMX(c) {

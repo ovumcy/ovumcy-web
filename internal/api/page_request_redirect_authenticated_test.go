@@ -20,6 +20,10 @@ func TestRedirectAuthenticatedUserIfPresentRedirectsAuthenticatedRequest(t *test
 	if err != nil {
 		t.Fatalf("buildToken returned error: %v", err)
 	}
+	sealedToken, err := handler.encodeAuthCookieToken(token)
+	if err != nil {
+		t.Fatalf("encodeAuthCookieToken returned error: %v", err)
+	}
 
 	app := fiber.New()
 	app.Get("/", func(c *fiber.Ctx) error {
@@ -34,7 +38,7 @@ func TestRedirectAuthenticatedUserIfPresentRedirectsAuthenticatedRequest(t *test
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	request.AddCookie(&http.Cookie{Name: authCookieName, Value: token})
+	request.AddCookie(&http.Cookie{Name: authCookieName, Value: sealedToken})
 
 	response, err := app.Test(request)
 	if err != nil {

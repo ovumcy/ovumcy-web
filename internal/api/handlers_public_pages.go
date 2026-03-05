@@ -8,7 +8,7 @@ import (
 func (handler *Handler) SetupStatus(c *fiber.Ctx) error {
 	needsSetup, err := handler.setupService.RequiresInitialSetup()
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to load setup state")
+		return handler.respondMappedError(c, setupStateLoadErrorSpec())
 	}
 	return c.JSON(fiber.Map{"needs_setup": needsSetup})
 }

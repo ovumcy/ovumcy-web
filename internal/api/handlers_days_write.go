@@ -8,22 +8,22 @@ import (
 func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid date")
+		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 
 	payload, err := parseDayPayload(c)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid payload")
+		return handler.respondMappedError(c, invalidPayloadErrorSpec())
 	}
 	cleanIDs, err := handler.symptomService.ValidateSymptomIDs(user.ID, payload.SymptomIDs)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid symptom ids")
+		return handler.respondMappedError(c, invalidSymptomIDsErrorSpec())
 	}
 	entry, err := handler.dayService.UpsertDayEntryWithAutoFill(user.ID, day, services.DayEntryInput{
 		IsPeriod:   payload.IsPeriod,
@@ -32,16 +32,7 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 		SymptomIDs: cleanIDs,
 	}, location)
 	if err != nil {
-		switch services.ClassifyDayUpsertError(err) {
-		case services.DayUpsertErrorInvalidFlow:
-			return apiError(c, fiber.StatusBadRequest, "invalid flow value")
-		case services.DayUpsertErrorLoadFailed:
-			return apiError(c, fiber.StatusInternalServerError, "failed to load day")
-		case services.DayUpsertErrorSyncLastPeriodFailed:
-			return apiError(c, fiber.StatusInternalServerError, "failed to sync last period start")
-		default:
-			return upsertDayPersistenceAPIError(c, err)
-		}
+		return handler.respondMappedError(c, upsertDayPersistenceErrorSpec(err))
 	}
 
 	if isHTMX(c) {

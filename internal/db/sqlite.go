@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,15 +20,7 @@ func OpenSQLite(dbPath string) (*gorm.DB, error) {
 
 	dsn := fmt.Sprintf("%s?_foreign_keys=on&_busy_timeout=5000", dbPath)
 	database, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: gormlogger.New(
-			log.New(os.Stdout, "\r\n", log.LstdFlags),
-			gormlogger.Config{
-				SlowThreshold:             time.Second,
-				LogLevel:                  gormlogger.Warn,
-				IgnoreRecordNotFoundError: true,
-				Colorful:                  true,
-			},
-		),
+		Logger: newSQLiteLogger(os.Stdout),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
@@ -38,4 +31,21 @@ func OpenSQLite(dbPath string) (*gorm.DB, error) {
 	}
 
 	return database, nil
+}
+
+func newSQLiteLogger(output io.Writer) gormlogger.Interface {
+	if output == nil {
+		output = os.Stdout
+	}
+
+	return gormlogger.New(
+		log.New(output, "\r\n", log.LstdFlags),
+		gormlogger.Config{
+			SlowThreshold:             time.Second,
+			LogLevel:                  gormlogger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+			ParameterizedQueries:      true,
+		},
+	)
 }

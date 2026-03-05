@@ -7,15 +7,15 @@ import (
 func (handler *Handler) UpdateCycleSettings(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	input, parseError := handler.parseCycleSettingsInput(c)
 	if parseError != "" {
-		return handler.respondSettingsError(c, fiber.StatusBadRequest, parseError)
+		return handler.respondMappedError(c, settingsValidationErrorSpec(parseError))
 	}
 	if err := handler.settingsService.SaveCycleSettings(user.ID, input); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to update cycle settings")
+		return handler.respondMappedError(c, settingsCycleUpdateErrorSpec())
 	}
 
 	handler.settingsService.ApplyCycleSettings(user, input)

@@ -10,7 +10,7 @@ import (
 func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 	if !services.RequiresOnboarding(user) {
 		return redirectOrJSON(c, "/dashboard")
@@ -19,10 +19,10 @@ func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
 	today := services.DateAtLocation(time.Now().In(handler.location), handler.location)
 	values, validationError := handler.parseOnboardingStep1Values(c, today)
 	if validationError != "" {
-		return apiError(c, fiber.StatusBadRequest, validationError)
+		return handler.respondMappedError(c, onboardingValidationErrorSpec(validationError))
 	}
 	if err := handler.onboardingSvc.SaveStep1(user.ID, values.Start); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to save onboarding step")
+		return handler.respondMappedError(c, onboardingSaveStepErrorSpec())
 	}
 
 	if acceptsJSON(c) {
@@ -37,7 +37,7 @@ func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
 func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 	if !services.RequiresOnboarding(user) {
 		return redirectOrJSON(c, "/dashboard")
@@ -45,11 +45,11 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 
 	values, validationError := handler.parseOnboardingStep2Input(c)
 	if validationError != "" {
-		return apiError(c, fiber.StatusBadRequest, validationError)
+		return handler.respondMappedError(c, onboardingValidationErrorSpec(validationError))
 	}
 	_, _, err := handler.onboardingSvc.SaveStep2(user.ID, values.CycleLength, values.PeriodLength, values.AutoPeriodFill)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to save onboarding step")
+		return handler.respondMappedError(c, onboardingSaveStepErrorSpec())
 	}
 
 	if acceptsJSON(c) {

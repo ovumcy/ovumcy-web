@@ -7,12 +7,12 @@ import (
 func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	input := changePasswordInput{}
 	if err := c.BodyParser(&input); err != nil {
-		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid settings input")
+		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
 	if err := handler.settingsService.ChangePassword(
 		user.ID,

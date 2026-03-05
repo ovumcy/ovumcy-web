@@ -11,23 +11,20 @@ import (
 func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	input := profileSettingsInput{}
 	if err := c.BodyParser(&input); err != nil {
-		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid profile input")
+		return handler.respondMappedError(c, settingsValidationErrorSpec("invalid profile input"))
 	}
 	displayName, err := handler.settingsService.NormalizeDisplayName(input.DisplayName)
 	if err != nil {
-		if services.ClassifySettingsProfileError(err) == services.SettingsProfileErrorDisplayNameTooLong {
-			return handler.respondSettingsError(c, fiber.StatusBadRequest, "display name too long")
-		}
-		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid profile input")
+		return handler.respondMappedError(c, mapSettingsProfileNormalizeError(err))
 	}
 
 	if err := handler.settingsService.UpdateDisplayName(user.ID, displayName); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to update profile")
+		return handler.respondMappedError(c, settingsProfileUpdateErrorSpec())
 	}
 
 	status := handler.settingsService.ResolveProfileUpdateStatus(user.DisplayName, displayName)

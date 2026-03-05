@@ -9,13 +9,13 @@ import (
 func (handler *Handler) GetStatsOverview(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	now := time.Now().In(handler.location)
 	stats, err := handler.statsService.BuildOverviewStats(user, now, handler.location)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to fetch stats")
+		return handler.respondMappedError(c, statsFetchErrorSpec())
 	}
 
 	return c.JSON(stats)

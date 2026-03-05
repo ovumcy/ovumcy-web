@@ -8,10 +8,10 @@ import (
 func (handler *Handler) OwnerOnly(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return respondGlobalMappedError(c, unauthorizedErrorSpec())
 	}
 	if !services.IsOwnerUser(user) {
-		return apiError(c, fiber.StatusForbidden, "owner access required")
+		return respondGlobalMappedError(c, ownerAccessRequiredErrorSpec())
 	}
 	return c.Next()
 }

@@ -8,25 +8,16 @@ import (
 func (handler *Handler) GetDays(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	from, to, err := services.ParseDayRange(c.Query("from"), c.Query("to"), handler.location)
 	if err != nil {
-		switch services.ClassifyDayRangeError(err) {
-		case services.DayRangeErrorFromInvalid:
-			return apiError(c, fiber.StatusBadRequest, "invalid from date")
-		case services.DayRangeErrorToInvalid:
-			return apiError(c, fiber.StatusBadRequest, "invalid to date")
-		case services.DayRangeErrorInvalid:
-			return apiError(c, fiber.StatusBadRequest, "invalid range")
-		default:
-			return apiError(c, fiber.StatusBadRequest, "invalid range")
-		}
+		return handler.respondMappedError(c, mapDayRangeError(err))
 	}
 	logs, err := handler.viewerService.FetchLogsForViewer(user, from, to, handler.location)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to fetch logs")
+		return handler.respondMappedError(c, dayLogsFetchErrorSpec())
 	}
 
 	return c.JSON(logs)
@@ -35,16 +26,16 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 func (handler *Handler) GetDay(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	day, err := services.ParseDayDate(c.Params("date"), handler.location)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid date")
+		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 	logEntry, err := handler.viewerService.FetchLogByDateForViewer(user, day, handler.location)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to fetch day")
+		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}
 
 	return c.JSON(logEntry)
@@ -53,16 +44,16 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 func (handler *Handler) CheckDayExists(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	day, err := services.ParseDayDate(c.Params("date"), handler.location)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid date")
+		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 	exists, err := handler.dayService.DayHasDataForDate(user.ID, day, handler.location)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to fetch day")
+		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}
 
 	return c.JSON(fiber.Map{"exists": exists})

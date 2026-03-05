@@ -4,16 +4,15 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 	if err := handler.settingsService.ClearAllData(user.ID); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to clear data")
+		return handler.respondMappedError(c, settingsClearDataErrorSpec())
 	}
 
 	if acceptsJSON(c) {
@@ -26,12 +25,12 @@ func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	input := deleteAccountInput{}
 	if err := c.BodyParser(&input); err != nil && acceptsJSON(c) {
-		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid password")
+		return handler.respondMappedError(c, settingsMissingPasswordErrorSpec())
 	}
 
 	input.Password = strings.TrimSpace(input.Password)
@@ -39,21 +38,14 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 		input.Password = strings.TrimSpace(c.FormValue("password"))
 	}
 	if input.Password == "" {
-		return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid password")
+		return handler.respondMappedError(c, settingsMissingPasswordErrorSpec())
 	}
 	if err := handler.settingsService.ValidateDeleteAccountPassword(user.PasswordHash, input.Password); err != nil {
-		switch services.ClassifySettingsDeleteAccountPasswordError(err) {
-		case services.SettingsDeleteAccountPasswordErrorMissing:
-			return handler.respondSettingsError(c, fiber.StatusBadRequest, "invalid password")
-		case services.SettingsDeleteAccountPasswordErrorInvalid:
-			return handler.respondSettingsError(c, fiber.StatusUnauthorized, "invalid password")
-		default:
-			return apiError(c, fiber.StatusInternalServerError, "failed to validate password")
-		}
+		return handler.respondMappedError(c, mapSettingsDeleteAccountPasswordError(err))
 	}
 
 	if err := handler.settingsService.DeleteAccount(user.ID); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to delete account")
+		return handler.respondMappedError(c, settingsDeleteAccountErrorSpec())
 	}
 
 	handler.clearAuthCookie(c)

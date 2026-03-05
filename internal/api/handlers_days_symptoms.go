@@ -9,11 +9,11 @@ import (
 func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 	symptoms, err := handler.symptomService.FetchSymptoms(user.ID)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to fetch symptoms")
+		return handler.respondMappedError(c, symptomsFetchErrorSpec())
 	}
 	return c.JSON(symptoms)
 }
@@ -21,12 +21,12 @@ func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	payload := symptomPayload{}
 	if err := c.BodyParser(&payload); err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid payload")
+		return handler.respondMappedError(c, invalidPayloadErrorSpec())
 	}
 	symptom, err := handler.symptomService.CreateSymptomForUser(user.ID, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
@@ -38,12 +38,12 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 func (handler *Handler) DeleteSymptom(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid symptom id")
+		return handler.respondMappedError(c, invalidSymptomIDErrorSpec())
 	}
 	if err := handler.symptomService.DeleteSymptomForUser(user.ID, uint(id)); err != nil {
 		return handler.respondMappedError(c, mapSymptomDeleteError(err))

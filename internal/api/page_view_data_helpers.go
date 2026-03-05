@@ -5,18 +5,12 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
-	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func (handler *Handler) buildDashboardViewData(user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, string, error) {
+func (handler *Handler) buildDashboardViewData(user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
 	viewData, err := handler.dashboardViewService.BuildDashboardViewData(user, language, now, location)
 	if err != nil {
-		switch services.ClassifyDashboardViewError(err) {
-		case services.DashboardViewErrorLoadTodayLog:
-			return nil, "failed to load today log", err
-		default:
-			return nil, "failed to load logs", err
-		}
+		return nil, err
 	}
 
 	data := fiber.Map{
@@ -41,18 +35,13 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 		"SelectedSymptomID":          viewData.SelectedSymptomID,
 		"IsOwner":                    viewData.IsOwner,
 	}
-	return data, "", nil
+	return data, nil
 }
 
-func (handler *Handler) buildDayEditorPartialData(user *models.User, language string, messages map[string]string, day time.Time, now time.Time, location *time.Location) (fiber.Map, string, error) {
+func (handler *Handler) buildDayEditorPartialData(user *models.User, language string, messages map[string]string, day time.Time, now time.Time, location *time.Location) (fiber.Map, error) {
 	viewData, err := handler.dashboardViewService.BuildDayEditorViewData(user, language, day, now, location)
 	if err != nil {
-		switch services.ClassifyDashboardViewError(err) {
-		case services.DashboardViewErrorLoadDayState:
-			return nil, "failed to load day state", err
-		default:
-			return nil, "failed to load day", err
-		}
+		return nil, err
 	}
 
 	payload := fiber.Map{
@@ -67,5 +56,5 @@ func (handler *Handler) buildDayEditorPartialData(user *models.User, language st
 		"HasDayData":        viewData.HasDayData,
 		"IsOwner":           viewData.IsOwner,
 	}
-	return payload, "", nil
+	return payload, nil
 }

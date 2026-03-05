@@ -11,9 +11,9 @@ func (handler *Handler) ShowSettings(c *fiber.Ctx) error {
 		return nil
 	}
 
-	data, errorMessage, err := handler.buildSettingsPageData(c, user)
+	data, err := handler.buildSettingsPageData(c, user)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, errorMessage)
+		return handler.respondMappedError(c, settingsLoadErrorSpec())
 	}
 
 	return handler.render(c, "settings", data)

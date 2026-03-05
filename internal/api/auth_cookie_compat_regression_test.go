@@ -44,7 +44,7 @@ func TestLoginSetsSealedAuthCookieValue(t *testing.T) {
 	}
 }
 
-func TestAuthMiddlewareAcceptsLegacyJWTAuthCookieFallback(t *testing.T) {
+func TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "legacy-auth-cookie@example.com", "StrongPass1", true)
 	legacyToken := buildLegacyJWTForUser(t, user)
@@ -58,8 +58,19 @@ func TestAuthMiddlewareAcceptsLegacyJWTAuthCookieFallback(t *testing.T) {
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200 with legacy jwt cookie fallback, got %d", response.StatusCode)
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected status 303 with rejected legacy jwt cookie, got %d", response.StatusCode)
+	}
+	if location := response.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected redirect to /login, got %q", location)
+	}
+
+	clearedCookie := responseCookie(response.Cookies(), authCookieName)
+	if clearedCookie == nil {
+		t.Fatal("expected response to clear legacy auth cookie")
+	}
+	if clearedCookie.Value != "" {
+		t.Fatalf("expected cleared auth cookie value, got %q", clearedCookie.Value)
 	}
 }
 

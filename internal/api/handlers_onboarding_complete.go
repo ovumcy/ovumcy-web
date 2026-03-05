@@ -8,7 +8,7 @@ import (
 func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	if err := services.ValidateOnboardingCompletionEligibility(user); err != nil {
@@ -16,17 +16,17 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 		case services.OnboardingCompletionErrorNotNeeded:
 			return redirectOrJSON(c, "/dashboard")
 		case services.OnboardingCompletionErrorStepsRequired:
-			return apiError(c, fiber.StatusBadRequest, "complete onboarding steps first")
+			return handler.respondMappedError(c, onboardingStepsRequiredErrorSpec())
 		default:
-			return apiError(c, fiber.StatusInternalServerError, "failed to finish onboarding")
+			return handler.respondMappedError(c, onboardingFinishErrorSpec())
 		}
 	}
 	_, err := handler.onboardingSvc.CompleteOnboardingForUser(user.ID, handler.location)
 	if err != nil {
 		if services.ClassifyOnboardingCompletionError(err) == services.OnboardingCompletionErrorStepsRequired {
-			return apiError(c, fiber.StatusBadRequest, "complete onboarding steps first")
+			return handler.respondMappedError(c, onboardingStepsRequiredErrorSpec())
 		}
-		return apiError(c, fiber.StatusInternalServerError, "failed to finish onboarding")
+		return handler.respondMappedError(c, onboardingFinishErrorSpec())
 	}
 
 	return redirectOrJSON(c, "/dashboard")

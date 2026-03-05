@@ -14,6 +14,8 @@ var (
 	ErrRecoveryCodeNotFound = errors.New("recovery code not found")
 	ErrInvalidResetToken    = errors.New("invalid reset token")
 	ErrAuthUserRequired     = errors.New("auth user is required")
+	ErrAuthUserNotFound     = errors.New("auth user not found")
+	ErrAuthUserLookupFailed = errors.New("auth user lookup failed")
 	ErrRecoveryCodeGenerate = errors.New("recovery code generation failed")
 	ErrRecoveryCodeUpdate   = errors.New("recovery code update failed")
 	ErrAuthRegisterInvalid  = errors.New("auth register invalid input")
@@ -23,6 +25,8 @@ var (
 	ErrAuthWeakPassword     = errors.New("auth register weak password")
 	ErrAuthInvalidCreds     = errors.New("auth invalid credentials")
 	ErrAuthResetInvalid     = errors.New("auth reset invalid input")
+	ErrAuthPasswordHash     = errors.New("auth password hash failed")
+	ErrAuthPasswordUpdate   = errors.New("auth password update failed")
 )
 
 type AuthUserRepository interface {
@@ -113,6 +117,44 @@ func (service *AuthService) ValidateResetPasswordInput(password string, confirmP
 	if err := ValidatePasswordStrength(password); err != nil {
 		return ErrAuthWeakPassword
 	}
+	return nil
+}
+
+func (service *AuthService) ForceResetPasswordByEmail(email string, newPassword string) error {
+	normalizedEmail := NormalizeAuthEmail(email)
+	newPassword = strings.TrimSpace(newPassword)
+
+	if normalizedEmail == "" || newPassword == "" {
+		return ErrAuthResetInvalid
+	}
+	if err := ValidatePasswordStrength(newPassword); err != nil {
+		return ErrAuthWeakPassword
+	}
+
+	exists, err := service.users.ExistsByNormalizedEmail(normalizedEmail)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
+	}
+	if !exists {
+		return ErrAuthUserNotFound
+	}
+
+	user, err := service.users.FindByNormalizedEmail(normalizedEmail)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrAuthPasswordHash, err)
+	}
+
+	user.PasswordHash = string(passwordHash)
+	user.MustChangePassword = true
+	if err := service.users.Save(&user); err != nil {
+		return fmt.Errorf("%w: %v", ErrAuthPasswordUpdate, err)
+	}
+
 	return nil
 }
 

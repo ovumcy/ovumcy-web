@@ -10,16 +10,16 @@ import (
 func (handler *Handler) DeleteDailyLog(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Query("date"), location)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid date")
+		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 	if err := handler.dayService.DeleteDayAndRefreshLastPeriod(user.ID, day, location); err != nil {
-		return deleteDayPersistenceAPIError(c, err)
+		return handler.respondMappedError(c, deleteDayPersistenceErrorSpec(err))
 	}
 
 	source := strings.ToLower(strings.TrimSpace(c.Query("source")))
@@ -30,31 +30,31 @@ func (handler *Handler) DeleteDailyLog(c *fiber.Ctx) error {
 			return handler.renderDayEditorPartial(c, user, day)
 		case "dashboard":
 			c.Set("HX-Redirect", "/dashboard")
-			return c.SendStatus(fiber.StatusOK)
+			return c.SendStatus(200)
 		default:
-			return c.SendStatus(fiber.StatusNoContent)
+			return c.SendStatus(204)
 		}
 	}
 
 	if source == "dashboard" {
 		return redirectOrJSON(c, "/dashboard")
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.SendStatus(204)
 }
 
 func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return apiError(c, fiber.StatusUnauthorized, "unauthorized")
+		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
-		return apiError(c, fiber.StatusBadRequest, "invalid date")
+		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 	if err := handler.dayService.DeleteDayAndRefreshLastPeriod(user.ID, day, location); err != nil {
-		return deleteDayPersistenceAPIError(c, err)
+		return handler.respondMappedError(c, deleteDayPersistenceErrorSpec(err))
 	}
 
 	if isHTMX(c) {
@@ -62,5 +62,5 @@ func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
 		return handler.renderDayEditorPartial(c, user, day)
 	}
 
-	return c.SendStatus(fiber.StatusNoContent)
+	return c.SendStatus(204)
 }

@@ -60,6 +60,10 @@ func settingsFormErrorSpec(status int, category APIErrorCategory, key string) AP
 	}
 }
 
+func respondGlobalMappedError(c *fiber.Ctx, spec APIErrorSpec) error {
+	return apiError(c, spec.Status, spec.Key)
+}
+
 func (handler *Handler) respondMappedError(c *fiber.Ctx, spec APIErrorSpec) error {
 	switch spec.Target {
 	case APIErrorTargetAuthForm:

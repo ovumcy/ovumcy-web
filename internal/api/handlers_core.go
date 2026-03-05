@@ -13,12 +13,12 @@ func (handler *Handler) Health(c *fiber.Ctx) error {
 func (handler *Handler) render(c *fiber.Ctx, name string, data fiber.Map) error {
 	tmpl, ok := handler.templates[name]
 	if !ok {
-		return apiError(c, fiber.StatusInternalServerError, "template not found")
+		return respondGlobalMappedError(c, templateNotFoundErrorSpec())
 	}
 	payload := handler.withTemplateDefaults(c, data)
 	var output bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&output, "base", payload); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to render template")
+		return respondGlobalMappedError(c, templateRenderErrorSpec())
 	}
 	c.Type("html", "utf-8")
 	return c.Send(output.Bytes())
@@ -27,12 +27,12 @@ func (handler *Handler) render(c *fiber.Ctx, name string, data fiber.Map) error 
 func (handler *Handler) renderPartial(c *fiber.Ctx, name string, data fiber.Map) error {
 	tmpl, ok := handler.partials[name]
 	if !ok {
-		return apiError(c, fiber.StatusInternalServerError, "partial not found")
+		return respondGlobalMappedError(c, partialNotFoundErrorSpec())
 	}
 	payload := handler.withTemplateDefaults(c, data)
 	var output bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&output, name, payload); err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to render partial")
+		return respondGlobalMappedError(c, partialRenderErrorSpec())
 	}
 	c.Type("html", "utf-8")
 	return c.Send(output.Bytes())

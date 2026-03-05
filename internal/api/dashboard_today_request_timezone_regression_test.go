@@ -21,7 +21,7 @@ func TestBuildDashboardViewDataKeepsMarchThreeAtUTCBoundary(t *testing.T) {
 	location := time.FixedZone("UTC+3", 3*60*60)
 	now := time.Date(2026, time.March, 2, 21, 30, 0, 0, time.UTC)
 
-	data, _, err := handler.buildDashboardViewData(&user, "ru", map[string]string{}, now, location)
+	data, err := handler.buildDashboardViewData(&user, "ru", map[string]string{}, now, location)
 	if err != nil {
 		t.Fatalf("build dashboard view data: %v", err)
 	}

@@ -9,36 +9,29 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func (handler *Handler) parseExportRange(c *fiber.Ctx) (*time.Time, *time.Time, string) {
+func (handler *Handler) parseExportRange(c *fiber.Ctx) (*time.Time, *time.Time, error) {
 	from, to, err := services.ParseExportRange(c.Query("from"), c.Query("to"), handler.location)
 	if err != nil {
-		switch services.ClassifyExportRangeError(err) {
-		case services.ExportRangeErrorFromInvalid:
-			return nil, nil, "invalid from date"
-		case services.ExportRangeErrorToInvalid:
-			return nil, nil, "invalid to date"
-		case services.ExportRangeErrorInvalid:
-			return nil, nil, "invalid range"
-		default:
-			return nil, nil, "invalid range"
-		}
+		return nil, nil, err
 	}
 
-	return from, to, ""
+	return from, to, nil
 }
 
-func (handler *Handler) exportUserAndRange(c *fiber.Ctx) (*models.User, *time.Time, *time.Time, int, string) {
+func (handler *Handler) exportUserAndRange(c *fiber.Ctx) (*models.User, *time.Time, *time.Time, *APIErrorSpec) {
 	user, ok := currentUser(c)
 	if !ok || user == nil {
-		return nil, nil, nil, fiber.StatusUnauthorized, "unauthorized"
+		spec := unauthorizedErrorSpec()
+		return nil, nil, nil, &spec
 	}
 
-	from, to, rangeError := handler.parseExportRange(c)
-	if rangeError != "" {
-		return nil, nil, nil, fiber.StatusBadRequest, rangeError
+	from, to, err := handler.parseExportRange(c)
+	if err != nil {
+		spec := mapExportRangeError(err)
+		return nil, nil, nil, &spec
 	}
 
-	return user, from, to, 0, ""
+	return user, from, to, nil
 }
 
 func buildExportFilename(now time.Time, extension string) string {

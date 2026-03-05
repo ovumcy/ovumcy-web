@@ -21,7 +21,7 @@ func mapStatsChartData(chart services.StatsChartViewData) fiber.Map {
 	return payload
 }
 
-func (handler *Handler) buildStatsPageData(user *models.User, language string, messages map[string]string, now time.Time) (fiber.Map, string, error) {
+func (handler *Handler) buildStatsPageData(user *models.User, language string, messages map[string]string, now time.Time) (fiber.Map, error) {
 	cycleLabelPattern := translateMessage(messages, "stats.cycle_label")
 	if cycleLabelPattern == "stats.cycle_label" {
 		cycleLabelPattern = ""
@@ -36,12 +36,7 @@ func (handler *Handler) buildStatsPageData(user *models.User, language string, m
 		maxStatsTrendPoints,
 	)
 	if err != nil {
-		switch services.ClassifyStatsPageViewError(err) {
-		case services.StatsPageViewErrorLoadSymptoms:
-			return nil, "failed to load symptom stats", err
-		default:
-			return nil, "failed to load stats", err
-		}
+		return nil, err
 	}
 
 	data := fiber.Map{
@@ -58,5 +53,5 @@ func (handler *Handler) buildStatsPageData(user *models.User, language string, m
 		"SymptomCounts":        viewData.SymptomCounts,
 		"IsOwner":              viewData.IsOwner,
 	}
-	return data, "", nil
+	return data, nil
 }

@@ -8,13 +8,13 @@ import (
 )
 
 func (handler *Handler) ExportJSON(c *fiber.Ctx) error {
-	user, from, to, status, message := handler.exportUserAndRange(c)
-	if status != 0 {
-		return apiError(c, status, message)
+	user, from, to, spec := handler.exportUserAndRange(c)
+	if spec != nil {
+		return handler.respondMappedError(c, *spec)
 	}
 	entries, err := handler.exportService.BuildJSONEntries(user.ID, from, to, handler.location)
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to fetch logs")
+		return handler.respondMappedError(c, exportFetchLogsErrorSpec())
 	}
 	now := time.Now().In(handler.location)
 
@@ -25,7 +25,7 @@ func (handler *Handler) ExportJSON(c *fiber.Ctx) error {
 
 	serialized, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return apiError(c, fiber.StatusInternalServerError, "failed to build export")
+		return handler.respondMappedError(c, exportBuildErrorSpec())
 	}
 
 	setExportAttachmentHeaders(c, fiber.MIMEApplicationJSON, buildExportFilename(now, "json"))

@@ -15,22 +15,28 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 	if rawToken == "" {
 		return nil, errors.New("missing auth cookie")
 	}
-	tokenValue := rawToken
-	if strings.HasPrefix(rawToken, secureCookieVersion+".") {
-		decodedToken, err := handler.decodeSealedAuthCookieToken(rawToken)
-		if err != nil {
-			return nil, errors.New("invalid token")
-		}
-		tokenValue = decodedToken
+
+	if !strings.HasPrefix(rawToken, secureCookieVersion+".") {
+		handler.clearAuthCookie(c)
+		return nil, errors.New("invalid token")
 	}
+
+	tokenValue, err := handler.decodeSealedAuthCookieToken(rawToken)
+	if err != nil {
+		handler.clearAuthCookie(c)
+		return nil, errors.New("invalid token")
+	}
+
 	user, err := handler.authService.ResolveUserByAuthSessionToken(handler.secretKey, tokenValue, time.Now())
 	if err != nil {
 		switch services.ClassifyAuthSessionResolveError(err) {
 		case services.AuthSessionResolveErrorMissing:
 			return nil, errors.New("missing auth cookie")
 		case services.AuthSessionResolveErrorExpired:
+			handler.clearAuthCookie(c)
 			return nil, errors.New("token expired")
 		case services.AuthSessionResolveErrorInvalid:
+			handler.clearAuthCookie(c)
 			return nil, errors.New("invalid token")
 		default:
 			return nil, err
