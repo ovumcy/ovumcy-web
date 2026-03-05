@@ -524,3 +524,27 @@ func TestAuthServiceResolveUserByAuthSessionToken(t *testing.T) {
 		t.Fatalf("expected user id 42, got %d", user.ID)
 	}
 }
+
+func TestAuthServiceResolveUserByAuthSessionTokenRejectsRevokedSession(t *testing.T) {
+	secret := []byte("test-secret")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+
+	repo := &stubAuthUserRepo{
+		user: models.User{
+			ID:                 42,
+			Email:              "owner@example.com",
+			Role:               models.RoleOwner,
+			MustChangePassword: true,
+		},
+	}
+	service := NewAuthService(repo)
+
+	token, err := service.BuildAuthSessionToken(secret, 42, models.RoleOwner, 30*time.Minute, now)
+	if err != nil {
+		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
+	}
+
+	if _, err := service.ResolveUserByAuthSessionToken(secret, token, now.Add(1*time.Minute)); !errors.Is(err, ErrAuthSessionTokenRevoked) {
+		t.Fatalf("expected ErrAuthSessionTokenRevoked, got %v", err)
+	}
+}

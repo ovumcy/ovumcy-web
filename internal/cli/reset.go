@@ -72,7 +72,8 @@ func runResetPasswordCommand(dbPath string, email string, prompt passwordPromptF
 		output = os.Stdout
 	}
 	fmt.Fprintln(output, "✅ Password reset successful")
-	fmt.Fprintln(output, "User must change password on next login.")
+	fmt.Fprintln(output, "Existing auth sessions were invalidated.")
+	fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")
 
 	return nil
 }

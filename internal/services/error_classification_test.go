@@ -122,6 +122,9 @@ func TestClassifyAuthSessionResolveError(t *testing.T) {
 	if got := ClassifyAuthSessionResolveError(ErrAuthSessionTokenInvalidUserID); got != AuthSessionResolveErrorInvalid {
 		t.Fatalf("expected AuthSessionResolveErrorInvalid, got %v", got)
 	}
+	if got := ClassifyAuthSessionResolveError(ErrAuthSessionTokenRevoked); got != AuthSessionResolveErrorInvalid {
+		t.Fatalf("expected AuthSessionResolveErrorInvalid for revoked session, got %v", got)
+	}
 }
 
 func TestClassifyViewBuildErrors(t *testing.T) {

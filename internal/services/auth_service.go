@@ -247,6 +247,9 @@ func (service *AuthService) ResolveUserByAuthSessionToken(secretKey []byte, rawT
 	if err != nil {
 		return nil, ErrAuthInvalidCreds
 	}
+	if user.MustChangePassword {
+		return nil, ErrAuthSessionTokenRevoked
+	}
 	return &user, nil
 }
 

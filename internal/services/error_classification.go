@@ -116,6 +116,7 @@ func ClassifyAuthSessionResolveError(err error) AuthSessionResolveErrorKind {
 		return AuthSessionResolveErrorExpired
 	case errors.Is(err, ErrAuthSessionTokenInvalid),
 		errors.Is(err, ErrAuthSessionTokenInvalidUserID),
+		errors.Is(err, ErrAuthSessionTokenRevoked),
 		errors.Is(err, ErrAuthInvalidCreds):
 		return AuthSessionResolveErrorInvalid
 	default:

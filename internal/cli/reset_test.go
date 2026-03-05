@@ -41,6 +41,12 @@ func TestRunResetPasswordCommandUpdatesPasswordFromSecurePromptWithoutLeakingPla
 	if strings.Contains(strings.ToLower(logged), "temporary password") {
 		t.Fatalf("did not expect temporary-password message in command output: %q", logged)
 	}
+	if !strings.Contains(logged, "Existing auth sessions were invalidated.") {
+		t.Fatalf("expected output to mention auth session invalidation, got %q", logged)
+	}
+	if !strings.Contains(logged, "User must sign in again and reset the password before continuing.") {
+		t.Fatalf("expected output to describe follow-up reset flow, got %q", logged)
+	}
 
 	updatedUser := loadCLIResetUser(t, databasePath, "cli-reset@example.com")
 	if !updatedUser.MustChangePassword {

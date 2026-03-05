@@ -15,6 +15,7 @@ var (
 	ErrAuthSessionTokenInvalid       = errors.New("auth session token invalid")
 	ErrAuthSessionTokenExpired       = errors.New("auth session token expired")
 	ErrAuthSessionTokenInvalidUserID = errors.New("auth session token invalid user id")
+	ErrAuthSessionTokenRevoked       = errors.New("auth session token revoked")
 )
 
 type AuthSessionClaims struct {
