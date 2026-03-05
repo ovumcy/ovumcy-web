@@ -122,12 +122,42 @@ Operational notes:
 - Always set a strong `SECRET_KEY`.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.
 - Enable `TRUST_PROXY_ENABLED` only when running behind a trusted reverse proxy.
+- Keep the SQLite database on a persistent Docker volume or bind mount.
 
 ## Database and Migrations
 
 - Initial schema is in `migrations/001_init.sql`.
 - For post-release schema changes, add forward-only numbered migrations (`002_*.sql`, `003_*.sql`, ...).
 - Do not edit already-applied migration files after release.
+
+## Self-Hosted Operations
+
+The supported self-hosted production baseline is:
+
+- one Ovumcy instance per private deployment;
+- a persistent SQLite volume;
+- HTTPS at the edge;
+- `COOKIE_SECURE=true` under HTTPS;
+- `TRUST_PROXY_ENABLED=true` only behind your own trusted proxy;
+- a strong private `SECRET_KEY`.
+
+Before exposing Ovumcy publicly:
+
+1. Generate and store a strong `SECRET_KEY`.
+2. Confirm database persistence is backed by a Docker volume or bind mount.
+3. Enable HTTPS and set `COOKIE_SECURE=true`.
+4. Enable reverse proxy trust only when you control the proxy and have set exact `TRUSTED_PROXIES`.
+5. Verify the container becomes healthy after startup.
+
+Routine upgrade flow:
+
+1. Back up the database before upgrading.
+2. Pull the target image tag and restart the service.
+3. Confirm `docker compose ps` shows the container healthy.
+4. Confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
+5. Roll back to the previous image tag if the new version does not start cleanly.
+
+See [Self-Hosted Operations Guide](docs/self-hosted.md) for the full baseline, troubleshooting flow, and upgrade guidance.
 
 ## Development
 
