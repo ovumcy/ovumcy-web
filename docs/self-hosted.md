@@ -11,6 +11,8 @@ Supported baseline assumptions:
 - HTTPS termination at a trusted reverse proxy or load balancer.
 - `COOKIE_SECURE=true` when traffic is served over HTTPS.
 - `TRUST_PROXY_ENABLED=true` only when Ovumcy is actually behind your own trusted reverse proxy.
+- Prefer a containerized reverse proxy stack where only the proxy publishes host ports.
+- Keep Ovumcy's plain HTTP port internal to a private network or loopback-only.
 - A strong, unique `SECRET_KEY`.
 
 Out of scope for this baseline:
@@ -28,8 +30,58 @@ Before exposing Ovumcy outside localhost:
 3. Put the app behind HTTPS and set `COOKIE_SECURE=true`.
 4. Enable `TRUST_PROXY_ENABLED=true` only if the reverse proxy is under your control.
 5. Set `TRUSTED_PROXIES` to the exact proxy IPs or network ranges you trust.
-6. Restrict who can access container logs, `.env`, backups, and the SQLite data volume.
-7. Verify the container becomes healthy before relying on the deployment.
+6. Prefer a reverse proxy stack where the app service has no published host port at all.
+7. Restrict who can access container logs, `.env`, backups, and the SQLite data volume.
+8. Verify the container becomes healthy before relying on the deployment.
+
+## Reverse Proxy and HTTPS Contract
+
+The supported reverse proxy path is intentionally narrow:
+
+- TLS terminates at your own reverse proxy.
+- The preferred public deployment path is a dedicated Docker bridge network where:
+  - the `ovumcy` service has no published host port;
+  - only the reverse proxy publishes `80/443`;
+  - proxy-to-app traffic stays on the internal Docker network.
+- Ovumcy continues to listen on plain HTTP at `:8080` inside that private network.
+- `COOKIE_SECURE=true` is mandatory once the public site is HTTPS-only.
+- `TRUST_PROXY_ENABLED=true` is valid only when every trusted proxy IP or internal proxy subnet is explicitly listed in `TRUSTED_PROXIES`.
+- Keep `PROXY_HEADER=X-Forwarded-For` unless you have a concrete reason to change it.
+
+The example stacks below use dedicated internal subnets and set `TRUSTED_PROXIES` to those exact ranges. If you adapt the stacks, keep the trusted proxy range as small as the network design allows. If the sample subnet collides with your environment, change both the Docker subnet and `TRUSTED_PROXIES` together.
+
+## Reverse Proxy Examples
+
+Use one of the example stacks as the supported public deployment path:
+
+- Caddy:
+  - Compose stack: [docs/examples/reverse-proxy/caddy/docker-compose.yml](examples/reverse-proxy/caddy/docker-compose.yml)
+  - Proxy config: [docs/examples/reverse-proxy/caddy/Caddyfile](examples/reverse-proxy/caddy/Caddyfile)
+- Nginx:
+  - Compose stack: [docs/examples/reverse-proxy/nginx/docker-compose.yml](examples/reverse-proxy/nginx/docker-compose.yml)
+  - Proxy config: [docs/examples/reverse-proxy/nginx/nginx.conf](examples/reverse-proxy/nginx/nginx.conf)
+
+Both examples assume:
+
+- the public hostname is `ovumcy.example.com`;
+- you create a local `.env` file next to the example `docker-compose.yml` with at least `SECRET_KEY=...`;
+- the `ovumcy` service stays on a private Docker network and is not reachable directly from the host network;
+- public traffic reaches only the reverse proxy.
+
+Prefer the Caddy stack if you want automatic certificate management. Use the Nginx stack if you already manage TLS certificates yourself and can mount them into `./certs/fullchain.pem` and `./certs/privkey.pem`.
+
+## Health Checks by Deployment Mode
+
+Use the health check that matches your deployment path:
+
+- Public reverse-proxy stack:
+  - `docker compose ps` should show `ovumcy` as healthy;
+  - `curl -fsS https://your-domain.example/healthz` should succeed through the proxy.
+- Local/private base compose path:
+  - `docker compose ps` should show the container healthy;
+  - `curl -fsS http://127.0.0.1:8080/healthz` should succeed on the host.
+
+For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.1:8080` listener as a problem. In the preferred deployment model, that port is intentionally not published to the host at all.
 
 ## Backup and Restore Contract
 
@@ -85,18 +137,18 @@ docker run --rm \
   sh -c 'cd /target && tar xzf "/backup/$BACKUP_FILE"'
 
 docker compose up -d
-curl -fsS http://127.0.0.1:8080/healthz
 ```
 
 Before removing the existing volume, make a fresh rollback backup if you are not already holding one you trust.
 When you restore into a manually recreated named volume, Docker Compose may print a warning that the volume was not created by Compose. In this workflow that warning is expected and does not by itself mean the restore failed.
+After startup, verify the restored app using the health check appropriate for your deployment mode.
 
 ## Post-Restore Verification
 
 After restore:
 
 1. Confirm the container becomes healthy.
-2. Confirm `/healthz` responds successfully.
+2. Confirm `/healthz` responds successfully using the health check appropriate for your deployment mode.
 3. Open the main UI once and verify the app renders normally.
 4. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in.
 
@@ -108,10 +160,10 @@ Use this sequence for routine upgrades:
 2. Take a backup of the database before changing the image version.
 3. Pull the new image and restart the service.
 4. Wait for the container healthcheck to report healthy.
-5. Open `/healthz` and the main UI once to confirm the app is responding.
+5. Confirm `/healthz` through the correct deployment-mode health check and open the main UI once to confirm the app is responding.
 6. If the new version fails to start cleanly, roll back to the previous image tag and restore from backup if needed.
 
-Practical Docker flow:
+Practical Docker flow for the local/private base compose path:
 
 ```bash
 docker compose pull
@@ -119,6 +171,8 @@ docker compose up -d
 docker compose ps
 curl -fsS http://127.0.0.1:8080/healthz
 ```
+
+For the public reverse-proxy example stacks, run the same `docker compose pull`, `docker compose up -d`, and `docker compose ps` sequence inside the example directory, then verify `https://your-domain.example/healthz` through the proxy instead of expecting a host-level `127.0.0.1:8080` listener.
 
 For safer upgrades, pin `OVUMCY_IMAGE` to a concrete release tag instead of relying on `latest`.
 
@@ -138,17 +192,21 @@ docker compose ps
 docker compose logs --tail=200 ovumcy
 ```
 
-3. Check the local health endpoint:
+3. Check the health endpoint that matches your deployment mode:
 
 ```bash
+# Public reverse-proxy stack
+curl -fsS https://your-domain.example/healthz
+
+# Local/private base compose path
 curl -fsS http://127.0.0.1:8080/healthz
 ```
 
-4. If the app is healthy locally but public access fails, inspect the reverse proxy or TLS configuration first.
-5. If the app is not healthy locally, inspect environment variables, permissions on the persistent volume, and the current image tag before changing application data.
+4. If the public reverse-proxy URL fails but `docker compose ps` shows `ovumcy` healthy, inspect the proxy configuration, certificate mounts, and DNS first.
+5. If the app is not healthy, inspect environment variables, permissions on the persistent volume, and the current image tag before changing application data.
 
 Typical failure split:
 
-- App issue: container exits, `/healthz` fails locally, startup logs show application errors.
+- App issue: container exits, the container healthcheck fails, or `/healthz` fails inside the intended deployment path.
 - Config issue: container runs but startup logs show invalid env values or trusted-proxy configuration errors.
-- Proxy issue: container is healthy locally but public requests fail, loop, or lose the real client IP.
+- Proxy issue: `ovumcy` is healthy, but public requests fail, loop, or lose the real client IP.

@@ -74,6 +74,7 @@ OVUMCY_IMAGE=ghcr.io/terraincognita07/ovumcy:v0.1.0 docker compose up -d
 ```
 
 Then open `http://localhost:8080`.
+For a public HTTPS deployment, use the dedicated reverse-proxy example stacks from the self-hosted guide instead of exposing `8080` directly.
 
 ### Manual
 
@@ -122,6 +123,7 @@ Operational notes:
 - Always set a strong `SECRET_KEY`.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.
 - Enable `TRUST_PROXY_ENABLED` only when running behind a trusted reverse proxy.
+- Do not expose Ovumcy's plain HTTP port directly to the public internet.
 - Keep the SQLite database on a persistent Docker volume or bind mount.
 
 ## Database and Migrations
@@ -136,9 +138,10 @@ The supported self-hosted production baseline is:
 
 - one Ovumcy instance per private deployment;
 - a persistent SQLite volume;
-- HTTPS at the edge;
+- a dedicated reverse proxy at the edge;
 - `COOKIE_SECURE=true` under HTTPS;
 - `TRUST_PROXY_ENABLED=true` only behind your own trusted proxy;
+- no direct public publish of the plain HTTP app port;
 - a strong private `SECRET_KEY`.
 
 Before exposing Ovumcy publicly:
@@ -147,17 +150,18 @@ Before exposing Ovumcy publicly:
 2. Confirm database persistence is backed by a Docker volume or bind mount.
 3. Enable HTTPS and set `COOKIE_SECURE=true`.
 4. Enable reverse proxy trust only when you control the proxy and have set exact `TRUSTED_PROXIES`.
-5. Verify the container becomes healthy after startup.
+5. Prefer a reverse-proxy stack where the app service has no published host port at all. If you deviate, keep the plain HTTP app port internal-only.
+6. Verify the container becomes healthy after startup.
 
 Routine upgrade flow:
 
 1. Back up the database before upgrading, using the documented self-hosted backup flow.
 2. Pull the target image tag and restart the service.
 3. Confirm `docker compose ps` shows the container healthy.
-4. Confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
+4. For the public reverse-proxy stacks, confirm the app still responds through the proxy URL. For the local/private base compose path, confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
 5. Roll back to the previous image tag if the new version does not start cleanly.
 
-See [Self-Hosted Operations Guide](docs/self-hosted.md) for the full baseline, manual backup/restore flow, troubleshooting guidance, and upgrade path.
+See [Self-Hosted Operations Guide](docs/self-hosted.md) for the full baseline, manual backup/restore flow, reverse proxy examples, troubleshooting guidance, and upgrade path.
 
 ## Development
 
@@ -188,7 +192,6 @@ For bugs and feature requests, open a GitHub issue:
 ### In Progress
 
 - Mobile PWA: manifest, offline mode, install prompt.
-- Reverse proxy examples: Nginx and Caddy configuration samples.
 
 ### Next (v0.3)
 
@@ -204,6 +207,7 @@ For bugs and feature requests, open a GitHub issue:
 - Dark mode with persistent client-side preference and localized toggle labels.
 - Playwright smoke coverage for theme persistence across reload and secondary page.
 - Register password mismatch UX polish (inline validation before submit, without clearing password fields).
+- Self-hosted operations guide with healthchecks, manual backup/restore, and reverse-proxy example stacks.
 
 ### Considering
 

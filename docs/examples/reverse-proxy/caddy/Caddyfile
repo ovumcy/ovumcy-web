@@ -1,0 +1,6 @@
+# Replace the placeholder domain with your real public hostname before running this stack.
+
+ovumcy.example.com {
+	encode zstd gzip
+	reverse_proxy ovumcy:8080
+}

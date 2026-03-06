@@ -1,0 +1,67 @@
+services:
+  ovumcy:
+    image: ${OVUMCY_IMAGE:-ghcr.io/terraincognita07/ovumcy:latest}
+    pull_policy: always
+    environment:
+      TZ: ${TZ:-UTC}
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-ru}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      DB_PATH: /app/data/ovumcy.db
+      COOKIE_SECURE: "true"
+      RATE_LIMIT_LOGIN_MAX: ${RATE_LIMIT_LOGIN_MAX:-8}
+      RATE_LIMIT_LOGIN_WINDOW: ${RATE_LIMIT_LOGIN_WINDOW:-15m}
+      RATE_LIMIT_FORGOT_PASSWORD_MAX: ${RATE_LIMIT_FORGOT_PASSWORD_MAX:-8}
+      RATE_LIMIT_FORGOT_PASSWORD_WINDOW: ${RATE_LIMIT_FORGOT_PASSWORD_WINDOW:-1h}
+      RATE_LIMIT_API_MAX: ${RATE_LIMIT_API_MAX:-300}
+      RATE_LIMIT_API_WINDOW: ${RATE_LIMIT_API_WINDOW:-1m}
+      TRUST_PROXY_ENABLED: "true"
+      PROXY_HEADER: X-Forwarded-For
+      TRUSTED_PROXIES: 172.30.0.0/29
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ovumcy_data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - internal
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine
+    pull_policy: always
+    depends_on:
+      ovumcy:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/29
+
+volumes:
+  ovumcy_data:
+  caddy_data:
+  caddy_config:
