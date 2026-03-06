@@ -40,7 +40,7 @@ It runs as a single Go service with a server-rendered web UI. SQLite is the base
 - No analytics or ad trackers.
 - No third-party API dependencies for core functionality.
 - First-party cookies only (auth, CSRF, language).
-- Data stays on infrastructure you control. SQLite is the baseline default; advanced self-hosted deployments can use operator-managed Postgres.
+- Data stays on infrastructure you control. SQLite is the baseline default; advanced self-hosted deployments can use Postgres through the official bundled and reverse-proxy example stacks.
 - Role model: `owner` has full access.
 
 If you found a security issue, see [SECURITY.md](SECURITY.md).
@@ -70,7 +70,7 @@ docker compose up -d
 Pin a specific image tag if needed:
 
 ```bash
-OVUMCY_IMAGE=ghcr.io/terraincognita07/ovumcy:v0.1.0 docker compose up -d
+OVUMCY_IMAGE=ghcr.io/terraincognita07/ovumcy:v0.2.5 docker compose up -d
 ```
 
 Then open `http://localhost:8080`.
@@ -128,6 +128,7 @@ Operational notes:
 - `.env.example` defaults target the local/private base compose path, not the public internet profile.
 - `DB_DRIVER=sqlite` is the supported baseline default; `DB_DRIVER=postgres` is an advanced self-hosted path and requires `DATABASE_URL`.
 - For a turnkey local/private Postgres deployment, use the dedicated bundled stack under `docs/examples/postgres/` instead of grafting Postgres onto the baseline SQLite compose file by hand.
+- No automatic SQLite-to-Postgres migration tool is included in `v0.2.5`; choose one engine per deployment.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.
 - Enable `TRUST_PROXY_ENABLED` only when running behind a trusted reverse proxy.
 - Do not expose Ovumcy's plain HTTP port directly to the public internet.
@@ -176,7 +177,7 @@ The same guide also documents:
 - what privacy/security guarantees come from Ovumcy itself;
 - what operational safeguards the self-hoster must still provide.
 - how to evolve from the baseline path into a stricter advanced self-hosted operating model.
-- how to switch the app runtime from SQLite to an operator-managed Postgres database for advanced self-hosted deployments.
+- how to choose Postgres as the runtime for advanced self-hosted deployments.
 - how to run the official local/private bundled Postgres stack for advanced self-hosted deployments.
 - how to run the official public self-hosted Postgres reverse-proxy stacks for advanced deployments that need both HTTPS and Postgres.
 
@@ -201,7 +202,7 @@ For bugs and feature requests, open a GitHub issue:
 
 ## Releases
 
-- Initial release target: `v0.1.0`.
+- Current release: `v0.2.5`.
 - Publish release notes via GitHub Releases and keep [CHANGELOG.md](CHANGELOG.md) updated.
 
 ## Roadmap
@@ -218,6 +219,15 @@ For bugs and feature requests, open a GitHub issue:
 - PDF export for clinical use: printable cycle summary for medical appointments.
 - Extended statistics: cycle variability, symptom heatmaps, phase correlations.
 - Partner invite via link: simplified partner onboarding without manual account setup.
+
+### Completed in v0.2.5
+
+- Optional Postgres runtime support for advanced self-hosted deployments.
+- Official bundled local/private Postgres compose stack.
+- Official public self-hosted Postgres reverse-proxy examples for Caddy and Nginx.
+- Auth/session hardening for sealed cookies, forced-reset session invalidation, and privacy-safe SQL logging.
+- Stronger self-hosted operations guidance for backup/restore, config profiles, and advanced deployment paths.
+- Dedicated Postgres browser smoke lane in CI plus more stable Docker-backed Postgres test startup.
 
 ### Completed in v0.2.0
 
