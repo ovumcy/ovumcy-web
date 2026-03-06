@@ -7,7 +7,7 @@ services:
       - ./.env
     environment:
       - TZ=${TZ:-UTC}
-      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-ru}
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-en}
       - DB_PATH=/app/data/ovumcy.db
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - RATE_LIMIT_LOGIN_MAX=${RATE_LIMIT_LOGIN_MAX:-8}

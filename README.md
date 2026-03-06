@@ -98,7 +98,7 @@ Primary variables:
 ```env
 # Core
 TZ=UTC
-DEFAULT_LANGUAGE=ru
+DEFAULT_LANGUAGE=en
 SECRET_KEY=replace_with_at_least_32_random_characters
 DB_PATH=data/ovumcy.db
 PORT=8080
@@ -121,6 +121,7 @@ TRUSTED_PROXIES=127.0.0.1,::1
 Operational notes:
 
 - Always set a strong `SECRET_KEY`.
+- `.env.example` defaults target the local/private base compose path, not the public internet profile.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.
 - Enable `TRUST_PROXY_ENABLED` only when running behind a trusted reverse proxy.
 - Do not expose Ovumcy's plain HTTP port directly to the public internet.
@@ -162,6 +163,12 @@ Routine upgrade flow:
 5. Roll back to the previous image tag if the new version does not start cleanly.
 
 See [Self-Hosted Operations Guide](docs/self-hosted.md) for the full baseline, manual backup/restore flow, reverse proxy examples, troubleshooting guidance, and upgrade path.
+
+The same guide also documents:
+
+- required vs recommended vs advanced configuration;
+- what privacy/security guarantees come from Ovumcy itself;
+- what operational safeguards the self-hoster must still provide.
 
 ## Development
 

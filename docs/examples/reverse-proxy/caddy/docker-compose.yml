@@ -4,7 +4,7 @@ services:
     pull_policy: always
     environment:
       TZ: ${TZ:-UTC}
-      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-ru}
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-en}
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       DB_PATH: /app/data/ovumcy.db
       COOKIE_SECURE: "true"

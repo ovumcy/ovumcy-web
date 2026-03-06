@@ -49,7 +49,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("invalid PORT: %v", err)
 	}
-	defaultLanguage := getEnv("DEFAULT_LANGUAGE", "ru")
+	defaultLanguage := getEnv("DEFAULT_LANGUAGE", "en")
 	cookieSecure := getEnvBool("COOKIE_SECURE", false)
 
 	loginLimitMax := getEnvInt("RATE_LIMIT_LOGIN_MAX", 8)

@@ -34,6 +34,60 @@ Before exposing Ovumcy outside localhost:
 7. Restrict who can access container logs, `.env`, backups, and the SQLite data volume.
 8. Verify the container becomes healthy before relying on the deployment.
 
+## Configuration Profiles
+
+Treat configuration in three layers instead of one flat checklist.
+
+### Required in all deployments
+
+- `SECRET_KEY` must be strong, private, and backed up separately from SQLite data.
+- Persistent storage must exist for `/app/data`.
+- You must know whether you are running the local/private base compose path or a public reverse-proxy stack before changing cookie and proxy settings.
+
+### Local/private base compose path
+
+Use the repository root `docker-compose.yml` for localhost, LAN, or other private-network deployments:
+
+- `COOKIE_SECURE=false` unless you terminate HTTPS before the app.
+- `TRUST_PROXY_ENABLED=false` unless you have explicitly placed Ovumcy behind your own trusted proxy.
+- `PORT=8080` is expected to be reachable only on the host or private network you control.
+
+### Public reverse-proxy stack
+
+Use one of the example stacks under `docs/examples/reverse-proxy/` for public HTTPS deployments:
+
+- `COOKIE_SECURE=true`
+- `TRUST_PROXY_ENABLED=true`
+- `PROXY_HEADER=X-Forwarded-For`
+- `TRUSTED_PROXIES` must match the exact proxy IP or private Docker subnet used by that stack
+
+Do not start from the base compose file and then expose `8080` publicly as a shortcut. The supported public path is the dedicated proxy stack where only the reverse proxy publishes host ports.
+
+### Advanced knobs
+
+These settings are valid, but they are not required for a safe first deployment:
+
+- `TZ` and `DEFAULT_LANGUAGE` for operator preference
+- rate-limit variables if you need stricter or looser local policy
+- `PROXY_HEADER` only if your trusted proxy uses a different real-client header contract
+
+## Privacy Responsibility Split
+
+Ovumcy itself provides:
+
+- no analytics or third-party trackers in the core product;
+- first-party cookies and sealed auth-related cookies;
+- local SQLite storage under your deployment;
+- documented backup/restore and proxy patterns that avoid leaking the plain app port publicly.
+
+The self-hoster must still provide:
+
+- host, VM, or NAS security and OS patching;
+- TLS certificates, DNS, and reverse-proxy correctness for public access;
+- access control for `.env`, backups, logs, and the persistent data volume;
+- backup retention, off-host copy strategy, and recovery discipline;
+- network exposure policy, firewall rules, and any administrator access controls around the server.
+
 ## Reverse Proxy and HTTPS Contract
 
 The supported reverse proxy path is intentionally narrow:
@@ -82,6 +136,15 @@ Use the health check that matches your deployment path:
   - `curl -fsS http://127.0.0.1:8080/healthz` should succeed on the host.
 
 For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.1:8080` listener as a problem. In the preferred deployment model, that port is intentionally not published to the host at all.
+
+## Secret Handling and Rotation
+
+Treat `SECRET_KEY` as part of the deployment identity, not as an ordinary tuning variable.
+
+- Store it privately and back it up separately from the SQLite archive.
+- Rotating `SECRET_KEY` invalidates existing sealed cookies and active sign-ins.
+- Restoring SQLite data with a different `SECRET_KEY` is valid, but users should expect a fresh sign-in and new sealed-cookie state.
+- Do not paste `SECRET_KEY`, backup archives, or certificate material into issue trackers, chat logs, or shared shell history.
 
 ## Backup and Restore Contract
 
@@ -210,3 +273,14 @@ Typical failure split:
 - App issue: container exits, the container healthcheck fails, or `/healthz` fails inside the intended deployment path.
 - Config issue: container runs but startup logs show invalid env values or trusted-proxy configuration errors.
 - Proxy issue: `ovumcy` is healthy, but public requests fail, loop, or lose the real client IP.
+
+## Common Operator Scenarios
+
+- Moving from local/private to public HTTPS:
+  start from the dedicated Caddy or Nginx example stack, then migrate your existing SQLite volume into that stack instead of exposing the base compose app port directly.
+- Changing the proxy subnet or host:
+  update the Docker subnet or proxy IP and `TRUSTED_PROXIES` together; treating only one side as changed is a common source of broken real-client IP handling.
+- Rotating `SECRET_KEY`:
+  treat it as planned maintenance; active sessions and sealed cookies will stop working, which is expected.
+- Seeing healthy containers but a failing public URL:
+  check DNS, certificate mounts, and proxy config before changing application data or restoring backups.
