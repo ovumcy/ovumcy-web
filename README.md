@@ -151,13 +151,13 @@ Before exposing Ovumcy publicly:
 
 Routine upgrade flow:
 
-1. Back up the database before upgrading.
+1. Back up the database before upgrading, using the documented self-hosted backup flow.
 2. Pull the target image tag and restart the service.
 3. Confirm `docker compose ps` shows the container healthy.
 4. Confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
 5. Roll back to the previous image tag if the new version does not start cleanly.
 
-See [Self-Hosted Operations Guide](docs/self-hosted.md) for the full baseline, troubleshooting flow, and upgrade guidance.
+See [Self-Hosted Operations Guide](docs/self-hosted.md) for the full baseline, manual backup/restore flow, troubleshooting guidance, and upgrade path.
 
 ## Development
 

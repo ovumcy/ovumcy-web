@@ -31,6 +31,75 @@ Before exposing Ovumcy outside localhost:
 6. Restrict who can access container logs, `.env`, backups, and the SQLite data volume.
 7. Verify the container becomes healthy before relying on the deployment.
 
+## Backup and Restore Contract
+
+The supported self-hosted backup contract is intentionally narrow:
+
+- Back up the SQLite data volume before every upgrade and before any manual recovery work.
+- Treat every backup archive as sensitive health data.
+- Keep `.env` and `SECRET_KEY` backed up separately from the SQLite data archive.
+- Expect existing auth-related cookies to become invalid if you restore data with a different `SECRET_KEY`.
+
+Recommended baseline:
+
+- Use the default Docker named volume when possible.
+- Keep at least one recent rollback backup before replacing production data.
+- Verify a restore with `/healthz` and a normal page load before trusting it.
+
+Bind mounts are still valid, but they are an advanced operator path. For bind mounts, stop the app and back up the mounted directory with normal filesystem tools while preserving file contents and access permissions.
+
+## Docker Named Volume Backup
+
+The default compose deployment uses the `ovumcy_data` named volume. A portable manual backup flow is:
+
+```bash
+mkdir -p backups
+BACKUP_FILE="ovumcy-data-backup.tgz"
+
+docker run --rm \
+  -e BACKUP_FILE="$BACKUP_FILE" \
+  -v ovumcy_data:/source:ro \
+  -v "$PWD/backups:/backup" \
+  alpine:3.21 \
+  sh -c 'cd /source && tar czf "/backup/$BACKUP_FILE" .'
+```
+
+This archive contains sensitive user data. Store it like a secret, not like an ordinary log file.
+
+## Docker Named Volume Restore
+
+Use this restore flow only when you have already stopped the app and confirmed which backup archive should replace the current data:
+
+```bash
+BACKUP_FILE="ovumcy-data-backup.tgz"
+
+docker compose down
+docker volume rm ovumcy_data
+docker volume create ovumcy_data
+
+docker run --rm \
+  -e BACKUP_FILE="$BACKUP_FILE" \
+  -v ovumcy_data:/target \
+  -v "$PWD/backups:/backup:ro" \
+  alpine:3.21 \
+  sh -c 'cd /target && tar xzf "/backup/$BACKUP_FILE"'
+
+docker compose up -d
+curl -fsS http://127.0.0.1:8080/healthz
+```
+
+Before removing the existing volume, make a fresh rollback backup if you are not already holding one you trust.
+When you restore into a manually recreated named volume, Docker Compose may print a warning that the volume was not created by Compose. In this workflow that warning is expected and does not by itself mean the restore failed.
+
+## Post-Restore Verification
+
+After restore:
+
+1. Confirm the container becomes healthy.
+2. Confirm `/healthz` responds successfully.
+3. Open the main UI once and verify the app renders normally.
+4. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in.
+
 ## Safe Upgrade Procedure
 
 Use this sequence for routine upgrades:
