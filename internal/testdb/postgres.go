@@ -16,6 +16,14 @@ import (
 const (
 	postgresTestUser     = "ovumcy"
 	postgresTestPassword = "ovumcy"
+	postgresTestImage    = "postgres:17-alpine"
+
+	dockerCommandTimeout          = 30 * time.Second
+	dockerImagePullTimeout        = 3 * time.Minute
+	dockerRunTimeout              = 3 * time.Minute
+	postgresContainerReadyTimeout = 90 * time.Second
+	postgresHostReachableTimeout  = 90 * time.Second
+	postgresPingTimeout           = 5 * time.Second
 )
 
 // StartPostgresDSN launches an isolated Postgres container for tests and
@@ -32,11 +40,13 @@ func StartPostgresDSN(t *testing.T, databaseName string) string {
 		t.Fatal("postgres test database name is required")
 	}
 
+	ensurePostgresImageAvailable(t)
+
 	containerID := runDockerCommand(t, "run", "-d", "--rm", "-P",
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
 		"-e", "POSTGRES_DB="+databaseName,
-		"postgres:17-alpine",
+		postgresTestImage,
 	)
 
 	t.Cleanup(func() {
@@ -60,7 +70,7 @@ func StartPostgresDSN(t *testing.T, databaseName string) string {
 func waitForPostgresReadiness(t *testing.T, containerID string, databaseName string) {
 	t.Helper()
 
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := time.Now().Add(postgresContainerReadyTimeout)
 	for time.Now().Before(deadline) {
 		if _, err := runDockerCommandWithError("exec", containerID, "pg_isready", "-U", postgresTestUser, "-d", databaseName); err == nil {
 			return
@@ -92,7 +102,7 @@ func loadPostgresMappedPort(t *testing.T, containerID string) string {
 func waitForHostSQLReadiness(t *testing.T, dsn string) {
 	t.Helper()
 
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := time.Now().Add(postgresHostReachableTimeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		pingErr := pingPostgresDSN(dsn)
@@ -113,9 +123,19 @@ func pingPostgresDSN(dsn string) error {
 	}
 	defer database.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), postgresPingTimeout)
 	defer cancel()
 	return database.PingContext(ctx)
+}
+
+func ensurePostgresImageAvailable(t *testing.T) {
+	t.Helper()
+
+	if _, err := runDockerCommandWithError("image", "inspect", postgresTestImage); err == nil {
+		return
+	}
+
+	runDockerCommand(t, "pull", postgresTestImage)
 }
 
 func runDockerCommand(t *testing.T, args ...string) string {
@@ -129,7 +149,7 @@ func runDockerCommand(t *testing.T, args ...string) string {
 }
 
 func runDockerCommandWithError(args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dockerTimeoutFor(args...))
 	defer cancel()
 
 	command := exec.CommandContext(ctx, "docker", args...)
@@ -146,4 +166,19 @@ func runDockerCommandWithError(args ...string) (string, error) {
 func runDockerCommandAllowFailure(args ...string) error {
 	_, err := runDockerCommandWithError(args...)
 	return err
+}
+
+func dockerTimeoutFor(args ...string) time.Duration {
+	if len(args) == 0 {
+		return dockerCommandTimeout
+	}
+
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "pull":
+		return dockerImagePullTimeout
+	case "run":
+		return dockerRunTimeout
+	default:
+		return dockerCommandTimeout
+	}
 }

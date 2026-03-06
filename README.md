@@ -75,6 +75,7 @@ OVUMCY_IMAGE=ghcr.io/terraincognita07/ovumcy:v0.1.0 docker compose up -d
 
 Then open `http://localhost:8080`.
 For a public HTTPS deployment, use the dedicated reverse-proxy example stacks from the self-hosted guide instead of exposing `8080` directly.
+For an official advanced self-hosted Postgres stack, use [docs/examples/postgres/docker-compose.yml](docs/examples/postgres/docker-compose.yml) together with [docs/examples/postgres/.env.example](docs/examples/postgres/.env.example).
 
 ### Manual
 
@@ -125,6 +126,7 @@ Operational notes:
 - Always set a strong `SECRET_KEY`.
 - `.env.example` defaults target the local/private base compose path, not the public internet profile.
 - `DB_DRIVER=sqlite` is the supported baseline default; `DB_DRIVER=postgres` is an advanced self-hosted path and requires `DATABASE_URL`.
+- For a turnkey local/private Postgres deployment, use the dedicated bundled stack under `docs/examples/postgres/` instead of grafting Postgres onto the baseline SQLite compose file by hand.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.
 - Enable `TRUST_PROXY_ENABLED` only when running behind a trusted reverse proxy.
 - Do not expose Ovumcy's plain HTTP port directly to the public internet.
@@ -174,6 +176,7 @@ The same guide also documents:
 - what operational safeguards the self-hoster must still provide.
 - how to evolve from the baseline path into a stricter advanced self-hosted operating model.
 - how to switch the app runtime from SQLite to an operator-managed Postgres database for advanced self-hosted deployments.
+- how to run the official local/private bundled Postgres stack for advanced self-hosted deployments.
 
 ## Development
 

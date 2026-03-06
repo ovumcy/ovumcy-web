@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import net from "node:net";
 import { finished } from "node:stream/promises";
 import path from "node:path";
 import process from "node:process";
@@ -15,6 +16,9 @@ const repoRoot = path.resolve(__dirname, "..");
 
 function parseArgs(argv) {
   let mode = "stable";
+  let db = String(process.env.E2E_DB_DRIVER ?? "sqlite")
+    .trim()
+    .toLowerCase();
   const passthrough = [];
   let forcePassthrough = false;
 
@@ -32,14 +36,22 @@ function parseArgs(argv) {
       mode = String(arg.slice("--mode=".length) || "").trim().toLowerCase();
       continue;
     }
+    if (arg.startsWith("--db=")) {
+      db = String(arg.slice("--db=".length) || "").trim().toLowerCase();
+      continue;
+    }
     passthrough.push(arg);
   }
 
-  return { mode, passthrough };
+  return { mode, db, passthrough };
 }
 
 function isValidMode(mode) {
   return mode === "stable" || mode === "ci" || mode === "fast";
+}
+
+function isValidDB(db) {
+  return db === "sqlite" || db === "postgres";
 }
 
 function goBinary() {
@@ -48,6 +60,10 @@ function goBinary() {
 
 function npxBinary() {
   return process.platform === "win32" ? "cmd.exe" : "npx";
+}
+
+function dockerBinary() {
+  return process.platform === "win32" ? "docker.exe" : "docker";
 }
 
 function npxSpawnArgs(baseArgs) {
@@ -146,8 +162,13 @@ function spawnAndWait(command, args, options) {
 function printRunContext(context) {
   console.log(`[e2e] mode=${context.mode}`);
   console.log(`[e2e] base_url=${context.baseURL}`);
+  console.log(`[e2e] db_driver=${context.dbDriver}`);
   console.log(`[e2e] log_file=${context.appLogPath}`);
-  console.log(`[e2e] db_path=${context.dbPath}`);
+  if (context.dbDriver === "sqlite") {
+    console.log(`[e2e] db_path=${context.dbPath}`);
+  } else {
+    console.log("[e2e] db_runtime=temporary-docker-postgres");
+  }
   if (context.workerOverride !== null) {
     console.log(`[e2e] workers=${context.workerOverride}`);
   } else {
@@ -155,10 +176,148 @@ function printRunContext(context) {
   }
 }
 
+function createPostgresDatabaseName(runID) {
+  const normalized = runID.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  return `ovumcy_e2e_${normalized}`.slice(0, 63);
+}
+
+function onceConnect(host, port) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port });
+    const onError = (error) => {
+      socket.destroy();
+      reject(error);
+    };
+    socket.once("error", onError);
+    socket.once("connect", () => {
+      socket.end();
+      resolve();
+    });
+  });
+}
+
+function spawnAndCapture(command, args, options) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, options);
+    let stdout = "";
+    let stderr = "";
+
+    child.once("error", (error) => reject(error));
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve({ code, signal, stdout: stdout.trim(), stderr: stderr.trim() });
+        return;
+      }
+      reject(
+        new Error(
+          `${command} ${args.join(" ")} failed with exit ${code ?? "unknown"}${stderr ? `: ${stderr.trim()}` : ""}`,
+        ),
+      );
+    });
+  });
+}
+
+async function runDockerCapture(args) {
+  return spawnAndCapture(dockerBinary(), args, {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+async function waitForDockerPostgres(containerID, user, databaseName) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < RUN_TIMEOUT_MS) {
+    try {
+      await runDockerCapture(["exec", containerID, "pg_isready", "-U", user, "-d", databaseName]);
+      return;
+    } catch {
+      await delay(500);
+    }
+  }
+  throw new Error(`Postgres container ${containerID} did not become ready in time`);
+}
+
+async function loadDockerPort(containerID) {
+  const result = await runDockerCapture(["port", containerID, "5432/tcp"]);
+  const firstLine = String(result.stdout || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) {
+    throw new Error(`Docker did not publish a port for Postgres container ${containerID}`);
+  }
+  const lastColon = firstLine.lastIndexOf(":");
+  if (lastColon < 0 || lastColon === firstLine.length - 1) {
+    throw new Error(`Unexpected docker port output: ${firstLine}`);
+  }
+  return Number.parseInt(firstLine.slice(lastColon + 1), 10);
+}
+
+async function waitForHostPort(host, port) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < RUN_TIMEOUT_MS) {
+    try {
+      await onceConnect(host, port);
+      return;
+    } catch {
+      await delay(500);
+    }
+  }
+  throw new Error(`Postgres host port ${host}:${port} did not become reachable in time`);
+}
+
+async function startPostgresRuntime(runID) {
+  const databaseName = createPostgresDatabaseName(runID);
+  const user = process.env.E2E_POSTGRES_USER ?? "ovumcy";
+  const password = process.env.E2E_POSTGRES_PASSWORD ?? "ovumcy";
+  const image = process.env.E2E_POSTGRES_IMAGE ?? "postgres:17-alpine";
+
+  const result = await runDockerCapture([
+    "run",
+    "-d",
+    "--rm",
+    "-P",
+    "-e",
+    `POSTGRES_USER=${user}`,
+    "-e",
+    `POSTGRES_PASSWORD=${password}`,
+    "-e",
+    `POSTGRES_DB=${databaseName}`,
+    image,
+  ]);
+  const containerID = result.stdout.trim();
+  if (!containerID) {
+    throw new Error("Docker did not return a Postgres container ID");
+  }
+
+  try {
+    await waitForDockerPostgres(containerID, user, databaseName);
+    const port = await loadDockerPort(containerID);
+    await waitForHostPort("127.0.0.1", port);
+
+    return {
+      containerID,
+      dsn: `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@127.0.0.1:${port}/${databaseName}?sslmode=disable`,
+    };
+  } catch (error) {
+    await runDockerCapture(["rm", "-f", containerID]).catch(() => {});
+    throw error;
+  }
+}
+
 async function main() {
-  const { mode, passthrough } = parseArgs(process.argv.slice(2));
+  const { mode, db, passthrough } = parseArgs(process.argv.slice(2));
   if (!isValidMode(mode)) {
     throw new Error(`Unsupported mode "${mode}". Expected one of: stable, ci, fast`);
+  }
+  if (!isValidDB(db)) {
+    throw new Error(`Unsupported db "${db}". Expected one of: sqlite, postgres`);
   }
 
   const runID = createRunID();
@@ -188,14 +347,19 @@ async function main() {
     baseURL,
     appLogPath,
     dbPath,
+    dbDriver: db,
     workerOverride,
   };
   printRunContext(runContext);
 
+  const postgresRuntime = db === "postgres" ? await startPostgresRuntime(runID) : null;
+
   const appEnv = {
     ...process.env,
     SECRET_KEY: process.env.SECRET_KEY ?? "0123456789abcdef0123456789abcdef",
+    DB_DRIVER: db,
     DB_PATH: dbPath,
+    DATABASE_URL: postgresRuntime?.dsn ?? "",
     PORT: String(appPort),
     TZ: process.env.TZ ?? "UTC",
     DEFAULT_LANGUAGE: process.env.DEFAULT_LANGUAGE ?? "en",
@@ -241,6 +405,9 @@ async function main() {
     appProcess.stderr.unpipe(appLogStream);
     appLogStream.end();
     await finished(appLogStream);
+    if (postgresRuntime?.containerID) {
+      await runDockerCapture(["rm", "-f", postgresRuntime.containerID]).catch(() => {});
+    }
   }
 
   console.log("[e2e] completed successfully");

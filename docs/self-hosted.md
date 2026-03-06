@@ -71,7 +71,7 @@ These settings are valid, but they are not required for a safe first deployment:
 - `TZ` and `DEFAULT_LANGUAGE` for operator preference
 - rate-limit variables if you need stricter or looser local policy
 - `PROXY_HEADER` only if your trusted proxy uses a different real-client header contract
-- `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to an operator-managed Postgres database
+- `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to Postgres, either through the bundled local/private Postgres stack or an operator-managed database service
 
 ## Privacy Responsibility Split
 
@@ -88,7 +88,7 @@ The self-hoster must still provide:
 - TLS certificates, DNS, and reverse-proxy correctness for public access;
 - access control for `.env`, backups, logs, and the persistent data volume;
 - backup retention, off-host copy strategy, and recovery discipline;
-- native Postgres backup/restore tooling and operational ownership if the advanced Postgres path is used;
+- native Postgres backup/restore tooling and operational ownership if the advanced Postgres path is used, including the bundled local/private Postgres stack;
 - network exposure policy, firewall rules, and any administrator access controls around the server.
 
 ## Reverse Proxy and HTTPS Contract
@@ -127,6 +127,31 @@ Both examples assume:
 
 Prefer the Caddy stack if you want automatic certificate management. Use the Nginx stack if you already manage TLS certificates yourself and can mount them into `./certs/fullchain.pem` and `./certs/privkey.pem`.
 
+## Official Local/Private Postgres Stack
+
+If you want advanced self-hosted Postgres without building your own compose stack from scratch, use the bundled local/private example:
+
+- Compose stack: [docs/examples/postgres/docker-compose.yml](examples/postgres/docker-compose.yml)
+- Env template: [docs/examples/postgres/.env.example](examples/postgres/.env.example)
+
+This path is intentionally narrow:
+
+- it stays self-hosted and local/private;
+- it publishes `http://localhost:8080` directly;
+- it does not include HTTPS termination or a reverse proxy;
+- it is meant to give advanced operators an official `ovumcy + postgres` runtime without mixing in public-internet proxy concerns.
+
+Startup flow:
+
+1. Copy the example `docker-compose.yml` and `.env.example` into a dedicated deployment directory.
+2. Rename `.env.example` to `.env`.
+3. Set a strong `SECRET_KEY` and `POSTGRES_PASSWORD`.
+4. Start the stack with `docker compose up -d`.
+5. Confirm `docker compose ps` shows both `postgres` and `ovumcy` healthy.
+6. Confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
+
+This bundled stack is the recommended first step when you want Postgres but do not yet need a public reverse-proxy deployment path.
+
 ## Health Checks by Deployment Mode
 
 Use the health check that matches your deployment path:
@@ -157,6 +182,21 @@ The supported self-hosted backup contract is intentionally narrow:
 - Treat every backup archive as sensitive health data.
 - Keep `.env` and `SECRET_KEY` backed up separately from the SQLite data archive.
 - Expect existing auth-related cookies to become invalid if you restore data with a different `SECRET_KEY`.
+
+For the bundled local/private Postgres stack, use native PostgreSQL backup tooling instead of the SQLite archive workflow:
+
+```bash
+mkdir -p backups
+docker compose exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backups/ovumcy-postgres.sql
+```
+
+Restore with the app stopped and the target database intentionally selected:
+
+```bash
+cat backups/ovumcy-postgres.sql | docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
+```
+
+Keep the SQL dump and `.env` / `SECRET_KEY` backup separate, just as you would for the SQLite baseline.
 
 Recommended baseline:
 
@@ -307,7 +347,8 @@ Optional Postgres is part of this advanced path, not the baseline:
 
 - Set `DB_DRIVER=postgres` and provide `DATABASE_URL`.
 - Keep SQLite as the default unless you actively want an operator-managed database service.
-- The repository's SQLite backup/restore runbook does not apply to Postgres; use native Postgres backup tooling and restore drills instead.
+- The repository's SQLite backup/restore runbook does not apply to Postgres; use native Postgres backup tooling and restore drills instead, including for the bundled local/private Postgres stack.
+- Use the bundled local/private Postgres stack under `docs/examples/postgres/` when you want an official advanced deployment path without designing your own database compose topology first.
 - Existing SQLite deployments are not auto-migrated. A PostgreSQL deployment is a separate runtime choice unless and until a dedicated migration tool is introduced.
 
 This guide does not define an advanced managed platform. It still assumes one private deployment, operator-managed infrastructure, and the existing SQLite application contract.

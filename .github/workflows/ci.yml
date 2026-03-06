@@ -102,3 +102,49 @@ jobs:
             .tmp/e2e
           if-no-files-found: ignore
 
+  e2e-postgres-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend and e2e dependencies
+        run: npm ci
+
+      - name: Frontend build
+        run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright Postgres smoke
+        run: npm run e2e:ci:postgres -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
+        env:
+          E2E_APP_PORT: 18081
+
+      - name: Upload Playwright Postgres artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-postgres-artifacts
+          path: |
+            playwright-report
+            test-results
+            .tmp/e2e
+          if-no-files-found: ignore
+

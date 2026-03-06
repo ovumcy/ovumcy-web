@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    pull_policy: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ovumcy}
+      POSTGRES_USER: ${POSTGRES_USER:-ovumcy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  ovumcy:
+    image: ${OVUMCY_IMAGE:-ghcr.io/terraincognita07/ovumcy:latest}
+    pull_policy: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-UTC}
+      DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-en}
+      DB_DRIVER: postgres
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      DATABASE_URL: postgres://${POSTGRES_USER:-ovumcy}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-ovumcy}?sslmode=disable
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      RATE_LIMIT_LOGIN_MAX: ${RATE_LIMIT_LOGIN_MAX:-8}
+      RATE_LIMIT_LOGIN_WINDOW: ${RATE_LIMIT_LOGIN_WINDOW:-15m}
+      RATE_LIMIT_FORGOT_PASSWORD_MAX: ${RATE_LIMIT_FORGOT_PASSWORD_MAX:-8}
+      RATE_LIMIT_FORGOT_PASSWORD_WINDOW: ${RATE_LIMIT_FORGOT_PASSWORD_WINDOW:-1h}
+      RATE_LIMIT_API_MAX: ${RATE_LIMIT_API_MAX:-300}
+      RATE_LIMIT_API_WINDOW: ${RATE_LIMIT_API_WINDOW:-1m}
+      TRUST_PROXY_ENABLED: "false"
+      PROXY_HEADER: ${PROXY_HEADER:-X-Forwarded-For}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1,::1}
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

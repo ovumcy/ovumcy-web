@@ -10,8 +10,6 @@ import (
 )
 
 func TestOpenPostgresAppliesEmbeddedMigrationsOnCleanDatabase(t *testing.T) {
-	t.Parallel()
-
 	config := startPostgresTestConfig(t)
 	database := openPostgresForMigrationBootstrapTest(t, config)
 
@@ -22,8 +20,6 @@ func TestOpenPostgresAppliesEmbeddedMigrationsOnCleanDatabase(t *testing.T) {
 }
 
 func TestOpenPostgresMigrationBootstrapIsIdempotent(t *testing.T) {
-	t.Parallel()
-
 	config := startPostgresTestConfig(t)
 
 	firstOpen, err := OpenDatabase(config)
@@ -54,8 +50,6 @@ func TestOpenPostgresMigrationBootstrapIsIdempotent(t *testing.T) {
 }
 
 func TestUserRepositoryCreateTranslatesPostgresUniqueViolation(t *testing.T) {
-	t.Parallel()
-
 	config := startPostgresTestConfig(t)
 	database := openPostgresForMigrationBootstrapTest(t, config)
 	repo := NewUserRepository(database)

@@ -10,7 +10,10 @@
     "lint:js": "eslint --max-warnings=0 web/src/js web/static/js/chart-lite.js scripts/build-js.mjs scripts/build-css.mjs scripts/run-e2e.mjs",
     "e2e": "node ./scripts/run-e2e.mjs --mode=stable",
     "e2e:ci": "node ./scripts/run-e2e.mjs --mode=ci",
-    "e2e:fast": "node ./scripts/run-e2e.mjs --mode=fast"
+    "e2e:fast": "node ./scripts/run-e2e.mjs --mode=fast",
+    "e2e:postgres": "node ./scripts/run-e2e.mjs --mode=stable --db=postgres",
+    "e2e:ci:postgres": "node ./scripts/run-e2e.mjs --mode=ci --db=postgres",
+    "e2e:fast:postgres": "node ./scripts/run-e2e.mjs --mode=fast --db=postgres"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
