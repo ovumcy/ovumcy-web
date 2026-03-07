@@ -278,14 +278,12 @@ func installGracefulShutdown(app *fiber.App) context.CancelFunc {
 
 func logStartup(config runtimeConfig) {
 	log.Printf(
-		"Ovumcy listening on http://0.0.0.0:%s (rev: %s, tz: %s, rate_limits: login=%d/%s forgot=%d/%s api=%d/%s, trusted_proxy=%t)",
+		"Ovumcy listening on http://0.0.0.0:%s (rev: %s, tz: %s, rate_limits: login=%d/%s api=%d/%s, trusted_proxy=%t)",
 		config.Port,
 		buildRevision(),
 		config.Location.String(),
 		config.RateLimits.LoginMax,
 		config.RateLimits.LoginWindow,
-		config.RateLimits.ForgotPasswordMax,
-		config.RateLimits.ForgotPasswordWindow,
 		config.RateLimits.APIMax,
 		config.RateLimits.APIWindow,
 		config.Proxy.Enabled,

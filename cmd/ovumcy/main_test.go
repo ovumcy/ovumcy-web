@@ -282,6 +282,44 @@ func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 	}
 }
 
+func TestLogStartupDoesNotLogForgotPasswordRateLimitDetail(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	logStartup(runtimeConfig{
+		Location: time.FixedZone("UTC+3", 3*60*60),
+		Port:     "9090",
+		RateLimits: rateLimitSettings{
+			LoginMax:             12,
+			LoginWindow:          20 * time.Minute,
+			ForgotPasswordMax:    9,
+			ForgotPasswordWindow: 90 * time.Minute,
+			APIMax:               700,
+			APIWindow:            2 * time.Minute,
+		},
+		Proxy: proxySettings{
+			Enabled: false,
+		},
+	})
+
+	logLine := output.String()
+	if strings.Contains(logLine, "forgot=") {
+		t.Fatalf("did not expect forgot-password rate limit detail in startup log: %q", logLine)
+	}
+	if strings.Contains(logLine, "90m0s") {
+		t.Fatalf("did not expect forgot-password window in startup log: %q", logLine)
+	}
+	if !strings.Contains(logLine, "login=12/20m0s") {
+		t.Fatalf("expected login rate limit detail in startup log, got %q", logLine)
+	}
+	if !strings.Contains(logLine, "api=700/2m0s") {
+		t.Fatalf("expected api rate limit detail in startup log, got %q", logLine)
+	}
+}
+
 func TestRedirectWithErrorCodeKeepsLoginEmailInFlash(t *testing.T) {
 	app := fiber.New()
 	app.Post("/limited", func(c *fiber.Ctx) error {
