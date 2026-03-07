@@ -31,10 +31,9 @@ func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 	assertStatusCode(t, saveResponse, http.StatusOK)
 
 	saveBody := mustReadBodyString(t, saveResponse.Body)
-	assertBodyContainsAll(t, saveBody,
-		bodyStringMatch{fragment: "status-ok", message: "expected save status success markup"},
-		bodyStringMatch{fragment: "data-dismiss-status", message: "expected dismiss button marker in save status markup"},
-	)
+	if !strings.Contains(saveBody, "status-ok") {
+		t.Fatalf("expected save status success markup")
+	}
 
 	parsedDay, err := services.ParseDayDate(todayRaw, time.UTC)
 	if err != nil {

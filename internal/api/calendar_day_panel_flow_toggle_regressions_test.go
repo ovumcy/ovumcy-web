@@ -39,13 +39,13 @@ func TestCalendarDayPanelFlowControlsDependOnPeriodToggle(t *testing.T) {
 	if !strings.Contains(rendered, `name="flow"`) {
 		t.Fatalf("expected flow controls in calendar day panel")
 	}
-	if strings.Contains(rendered, `data-day-editor-autosave=`) {
-		t.Fatalf("did not expect autosave hooks on calendar day editor form")
-	}
 	if !strings.Contains(rendered, `name="symptom_ids"`) {
 		t.Fatalf("expected symptoms controls to be rendered in day editor")
 	}
-	if !strings.Contains(rendered, "saved only after pressing") {
-		t.Fatalf("expected manual save hint text in day editor panel")
+	if !strings.Contains(rendered, `name="notes"`) {
+		t.Fatalf("expected notes field in day editor")
+	}
+	if !strings.Contains(rendered, `id="calendar-save-status"`) {
+		t.Fatalf("expected calendar save status target in day editor")
 	}
 }

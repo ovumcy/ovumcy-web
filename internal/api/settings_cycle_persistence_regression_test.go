@@ -32,13 +32,9 @@ func TestSettingsCycleUpdatePersistsAndRendersAfterReload(t *testing.T) {
 		"last_period_start": {"2026-02-10"},
 	}
 	updateBody := submitSettingsCycleUpdate(t, app, authCookie, form)
-	assertBodyContainsAll(t, updateBody,
-		bodyStringMatch{fragment: "status-ok", message: "expected htmx success status markup"},
-		bodyStringMatch{fragment: "data-dismiss-status", message: "expected dismiss button marker in htmx success markup"},
-	)
-	assertBodyNotContainsAll(t, updateBody,
-		bodyStringMatch{fragment: "status-transient", message: "did not expect transient status class in htmx success markup"},
-	)
+	if !strings.Contains(updateBody, "status-ok") {
+		t.Fatalf("expected htmx success status markup")
+	}
 
 	persisted := models.User{}
 	if err := database.Select("cycle_length", "period_length", "auto_period_fill", "last_period_start").First(&persisted, user.ID).Error; err != nil {

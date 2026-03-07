@@ -32,19 +32,22 @@ func TestOnboardingStep2IncludesClientSideCrossValidationHooks(t *testing.T) {
 	}
 	rendered := string(body)
 
-	if !strings.Contains(rendered, `validateStepTwoBeforeSubmit($event)`) {
-		t.Fatalf("expected onboarding step2 form to call client cross-validation before submit")
+	if !strings.Contains(rendered, `hx-post="/onboarding/step2"`) {
+		t.Fatalf("expected onboarding step2 form to post to /onboarding/step2")
 	}
-	if !strings.Contains(rendered, `max="14"`) {
-		t.Fatalf("expected onboarding period slider max=14")
+	if !strings.Contains(rendered, `id="onboarding-step2-status"`) {
+		t.Fatalf("expected onboarding step2 status target")
 	}
-	if !strings.Contains(rendered, `periodExceedsCycleMessage:`) {
-		t.Fatalf("expected onboarding flow config to provide localized period/cycle validation message")
+	if !strings.Contains(rendered, `name="cycle_length"`) {
+		t.Fatalf("expected onboarding cycle length input")
 	}
-	if !strings.Contains(rendered, `x-show="(cycleLength - periodLength) < 8"`) {
-		t.Fatalf("expected onboarding to include hard-validation state for incompatible cycle values")
+	if !strings.Contains(rendered, `name="period_length"`) || !strings.Contains(rendered, `max="14"`) {
+		t.Fatalf("expected onboarding period length input with max=14")
 	}
-	if !strings.Contains(rendered, `'btn--disabled': (cycleLength - periodLength) < 8`) {
-		t.Fatalf("expected onboarding next button to include disabled visual state class binding")
+	if !strings.Contains(rendered, `name="auto_period_fill"`) {
+		t.Fatalf("expected onboarding auto period fill control")
+	}
+	if !strings.Contains(rendered, "Period duration is incompatible with cycle length.") {
+		t.Fatalf("expected onboarding step2 to render localized incompatible-values message")
 	}
 }

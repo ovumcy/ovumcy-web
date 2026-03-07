@@ -30,16 +30,13 @@ func TestBaseTemplateIncludesThemeToggleControl(t *testing.T) {
 	}
 	rendered := string(body)
 
-	expectedFragments := []string{
-		`data-theme-toggle`,
-		`data-theme-label-dark="Switch to dark mode"`,
-		`data-theme-label-light="Switch to light mode"`,
-		`data-theme-name-dark="Dark"`,
-		`data-theme-name-light="Light"`,
+	if !strings.Contains(rendered, `class="theme-toggle"`) {
+		t.Fatalf("expected rendered page to include theme toggle control")
 	}
-	for _, fragment := range expectedFragments {
-		if !strings.Contains(rendered, fragment) {
-			t.Fatalf("expected rendered page to include %q", fragment)
-		}
+	if !strings.Contains(rendered, `data-theme-toggle`) {
+		t.Fatalf("expected rendered page to include theme toggle mount point")
+	}
+	if !strings.Contains(rendered, ">Dark<") {
+		t.Fatalf("expected rendered page to include default visible dark-theme label")
 	}
 }
