@@ -31,6 +31,7 @@ It runs as a single Go service with a server-rendered web UI. SQLite is the base
 - Cycle tracking: period days, flow intensity, symptoms, notes.
 - Predictions: next period, ovulation, fertile window.
 - Calendar and statistics views.
+- Installable mobile app shell with manifest, home-screen icons, and install prompt support.
 - Single-user owner workflow (self-hosted private tracking).
 - Data export in CSV and JSON.
 - Russian and English localization.
@@ -209,7 +210,11 @@ For bugs and feature requests, open a GitHub issue:
 
 ### In Progress
 
-- Mobile PWA: manifest, offline mode, install prompt.
+- Mobile PWA offline mode only after dedicated privacy review for service-worker scope and cached health data.
+
+### Recently Completed (Unreleased)
+
+- Mobile PWA install support: manifest, home-screen icons, and install prompt without offline caching.
 
 ### Next (v0.3)
 
