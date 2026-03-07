@@ -132,6 +132,7 @@ git clone https://github.com/terraincognita07/ovumcy.git
 cd ovumcy
 npm ci
 npm run build
+export SECRET_KEY=replace_with_at_least_32_random_characters
 go run ./cmd/ovumcy
 ```
 

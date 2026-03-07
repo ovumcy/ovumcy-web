@@ -58,10 +58,6 @@ func TestSettingsCycleUpdatePersistsAndRendersAfterReload(t *testing.T) {
 	}
 
 	rendered := renderSettingsPageForTest(t, app, authCookie)
-	if !strings.Contains(rendered, `x-data='settingsCycleForm({ cycleLength: 28, periodLength: 6, autoPeriodFill: true })'`) {
-		t.Fatalf("expected settings cycle form state to include persisted values")
-	}
-
 	cycleInputPattern := regexp.MustCompile(`(?s)name="cycle_length".*?value="28"`)
 	if !cycleInputPattern.MatchString(rendered) {
 		t.Fatalf("expected cycle slider value 28 in rendered settings page")

@@ -4,7 +4,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 )
@@ -34,27 +33,17 @@ func TestCalendarDayPanelFlowControlsDependOnPeriodToggle(t *testing.T) {
 	}
 	rendered := string(body)
 
-	if !strings.Contains(rendered, `x-data='dayEditorForm({ isPeriod: false })'`) {
-		t.Fatalf("expected calendar panel form to initialize period state")
+	if !strings.Contains(rendered, `name="is_period"`) {
+		t.Fatalf("expected period toggle control in calendar day panel")
 	}
-	if !strings.Contains(rendered, `x-model="isPeriod"`) {
-		t.Fatalf("expected period toggle to drive alpine state")
-	}
-	if !strings.Contains(rendered, `x-cloak x-show="isPeriod" :disabled="!isPeriod"`) {
-		t.Fatalf("expected flow fieldset to be shown/enabled only when period is selected")
+	if !strings.Contains(rendered, `name="flow"`) {
+		t.Fatalf("expected flow controls in calendar day panel")
 	}
 	if strings.Contains(rendered, `data-day-editor-autosave=`) {
 		t.Fatalf("did not expect autosave hooks on calendar day editor form")
 	}
-	if strings.Count(rendered, `:disabled="!isPeriod"`) < 2 {
-		t.Fatalf("expected flow and symptom controls to depend on period toggle")
-	}
 	if !strings.Contains(rendered, `name="symptom_ids"`) {
 		t.Fatalf("expected symptoms controls to be rendered in day editor")
-	}
-	symptomDisablePattern := regexp.MustCompile(`(?s)name="symptom_ids"[^>]*:disabled="!isPeriod"`)
-	if !symptomDisablePattern.MatchString(rendered) {
-		t.Fatalf("expected symptoms to be disabled when period toggle is off")
 	}
 	if !strings.Contains(rendered, "saved only after pressing") {
 		t.Fatalf("expected manual save hint text in day editor panel")

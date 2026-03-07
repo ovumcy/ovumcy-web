@@ -155,6 +155,17 @@ test.describe('Auth: recovery and reset password', () => {
     await expect(page.locator('#recovery-code')).toHaveCount(0);
   });
 
+  test('recovery code page is consumed after the first successful view', async ({ page }) => {
+    const creds = createCredentials('auth-recovery-consumed');
+
+    await registerOwnerViaUI(page, creds);
+    await readRecoveryCode(page);
+
+    await page.goto('/recovery-code');
+    await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+    await expect(page.locator('#recovery-code')).toHaveCount(0);
+  });
+
   test('basic security: csrf enforcement and cookie flags for auth/recovery/reset cookies', async ({
     page,
     context,
@@ -172,10 +183,7 @@ test.describe('Auth: recovery and reset password', () => {
     expect(authCookie?.sameSite).toBe('Lax');
     expect(authCookie?.secure).toBe(false);
 
-    expect(recoveryCookie).toBeTruthy();
-    expect(recoveryCookie?.httpOnly).toBe(true);
-    expect(recoveryCookie?.sameSite).toBe('Lax');
-    expect(recoveryCookie?.secure).toBe(false);
+    expect(recoveryCookie).toBeFalsy();
 
     const csrfFailure = await page.request.post('/api/auth/logout', {
       form: {},

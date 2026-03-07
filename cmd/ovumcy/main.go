@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"log"
 	"os"
 	"os/signal"
@@ -23,7 +22,6 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/api"
 	"github.com/terraincognita07/ovumcy/internal/cli"
 	"github.com/terraincognita07/ovumcy/internal/db"
-	"github.com/terraincognita07/ovumcy/internal/httpx"
 	"github.com/terraincognita07/ovumcy/internal/i18n"
 	"github.com/terraincognita07/ovumcy/internal/services"
 	"gorm.io/gorm"
@@ -84,7 +82,7 @@ func main() {
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
 	dependencies := buildDependencies(db.NewRepositories(database))
 	handler := mustNewHandler(config, i18nManager, dependencies)
-	app := newFiberApp(config, i18nManager, handler)
+	app := newFiberApp(config, handler)
 	stopSignals := installGracefulShutdown(app)
 	defer stopSignals()
 
@@ -220,9 +218,9 @@ func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencie
 	return handler
 }
 
-func newFiberApp(config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler) *fiber.App {
+func newFiberApp(config runtimeConfig, handler *api.Handler) *fiber.App {
 	app := fiber.New(fiberConfig(config.Proxy))
-	configureFiberMiddleware(app, config, i18nManager, handler, []byte(config.SecretKey))
+	configureFiberMiddleware(app, config, handler)
 	app.Static("/static", filepath.Join("web", "static"))
 	api.RegisterRoutes(app, handler)
 	app.Use(handler.NotFound)
@@ -244,7 +242,7 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	return appConfig
 }
 
-func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler, secretKey []byte) {
+func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {
 	app.Use(securityHeadersMiddleware())
 	app.Use(recover.New())
 	app.Use(logger.New())
@@ -252,25 +250,21 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager 
 	app.Use("/api/auth/login", limiter.New(limiter.Config{
 		Max:        config.RateLimits.LoginMax,
 		Expiration: config.RateLimits.LoginWindow,
-		LimitReached: newAuthRateLimitHandler(i18nManager, authRateLimitConfig{
-			RedirectPath: "/login",
-			ErrorCode:    "too_many_login_attempts",
-			MessageKey:   "auth.error.too_many_login_attempts",
-		}, config.CookieSecure, secretKey),
+		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
+			ErrorCode: "too_many_login_attempts",
+		}),
 	}))
 	app.Use("/api/auth/forgot-password", limiter.New(limiter.Config{
 		Max:        config.RateLimits.ForgotPasswordMax,
 		Expiration: config.RateLimits.ForgotPasswordWindow,
-		LimitReached: newAuthRateLimitHandler(i18nManager, authRateLimitConfig{
-			RedirectPath: "/forgot-password",
-			ErrorCode:    "too_many_forgot_password_attempts",
-			MessageKey:   "auth.error.too_many_forgot_password_attempts",
-		}, config.CookieSecure, secretKey),
+		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
+			ErrorCode: "too_many_forgot_password_attempts",
+		}),
 	}))
 	app.Use("/api", limiter.New(limiter.Config{
 		Max:          config.RateLimits.APIMax,
 		Expiration:   config.RateLimits.APIWindow,
-		LimitReached: newAPIRateLimitHandler(i18nManager),
+		LimitReached: newAPIRateLimitHandler(handler),
 	}))
 	app.Use(handler.LanguageMiddleware)
 	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure)))
@@ -488,75 +482,20 @@ func csrfMiddlewareConfig(cookieSecure bool) csrf.Config {
 }
 
 type authRateLimitConfig struct {
-	RedirectPath string
-	ErrorCode    string
-	MessageKey   string
+	ErrorCode string
 }
 
-func newAuthRateLimitHandler(i18nManager *i18n.Manager, config authRateLimitConfig, cookieSecure bool, secretKey []byte) fiber.Handler {
+func newAuthRateLimitHandler(handler *api.Handler, config authRateLimitConfig) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		logRateLimitHit(c)
-
-		language := limiterLanguage(c, i18nManager)
-		message := i18nManager.Translate(language, config.MessageKey)
-		if message == config.MessageKey {
-			message = "Too many requests. Please wait and try again."
-		}
-
-		if httpx.IsHTMX(c) {
-			return c.Status(fiber.StatusTooManyRequests).SendString(httpx.StatusErrorMarkup(message))
-		}
-
-		if httpx.AcceptsJSON(c, httpx.JSONModeAcceptOrContentType) {
-			payload := fiber.Map{"error": message}
-			if retryAfter := retryAfterSeconds(c); retryAfter > 0 {
-				payload["retry_after_seconds"] = retryAfter
-			}
-			return c.Status(fiber.StatusTooManyRequests).JSON(payload)
-		}
-
-		return redirectWithErrorCode(c, config.RedirectPath, config.ErrorCode, cookieSecure, secretKey)
+		return handler.RespondAuthRateLimited(c, config.ErrorCode)
 	}
 }
 
-func newAPIRateLimitHandler(i18nManager *i18n.Manager) fiber.Handler {
+func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		logRateLimitHit(c)
-
-		language := limiterLanguage(c, i18nManager)
-		title := i18nManager.Translate(language, "rate_limit.title")
-		if title == "rate_limit.title" {
-			title = "Too Many Requests"
-		}
-
-		message := i18nManager.Translate(language, "common.error.too_many_requests")
-		if message == "common.error.too_many_requests" {
-			message = "Too many requests. Please wait and try again."
-		}
-
-		if httpx.IsHTMX(c) {
-			return c.Status(fiber.StatusTooManyRequests).SendString(httpx.StatusErrorMarkup(message))
-		}
-
-		if httpx.AcceptsJSON(c, httpx.JSONModeAcceptOrContentType) {
-			payload := fiber.Map{"error": message}
-			if retryAfter := retryAfterSeconds(c); retryAfter > 0 {
-				payload["retry_after_seconds"] = retryAfter
-			}
-			return c.Status(fiber.StatusTooManyRequests).JSON(payload)
-		}
-
-		return c.
-			Status(fiber.StatusTooManyRequests).
-			Type("html", "utf-8").
-			SendString(fmt.Sprintf(
-				"<!doctype html><html lang=\"%s\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>%s</title></head><body style=\"font-family: sans-serif; background: #fff9f0; color: #5a4a3a; margin: 0; display: grid; place-items: center; min-height: 100vh;\"><main style=\"max-width: 32rem; width: 100%%; padding: 1.5rem;\"><h1 style=\"margin: 0 0 0.75rem;\">%s</h1><p style=\"margin: 0 0 1rem;\">%s</p><p style=\"margin: 0;\"><a href=\"/login\">%s</a></p></main></body></html>",
-				template.HTMLEscapeString(language),
-				template.HTMLEscapeString(title),
-				template.HTMLEscapeString(title),
-				template.HTMLEscapeString(message),
-				template.HTMLEscapeString(i18nManager.Translate(language, "auth.back_to_login")),
-			))
+		return handler.RespondAPIRateLimited(c)
 	}
 }
 
@@ -572,36 +511,4 @@ func logRateLimitHit(c *fiber.Ctx) {
 	}
 
 	log.Printf("rate limit reached: method=%s path=%s ip=%s retry_after=%s", c.Method(), c.Path(), ip, retryAfter)
-}
-
-func limiterLanguage(c *fiber.Ctx, i18nManager *i18n.Manager) string {
-	language := strings.TrimSpace(c.Cookies("ovumcy_lang"))
-	if language != "" {
-		return i18nManager.NormalizeLanguage(language)
-	}
-	return i18nManager.DetectFromAcceptLanguage(c.Get("Accept-Language"))
-}
-
-func retryAfterSeconds(c *fiber.Ctx) int {
-	value := strings.TrimSpace(string(c.Response().Header.Peek(fiber.HeaderRetryAfter)))
-	if value == "" {
-		return 0
-	}
-	seconds, err := strconv.Atoi(value)
-	if err != nil || seconds < 1 {
-		return 0
-	}
-	return seconds
-}
-
-func redirectWithErrorCode(c *fiber.Ctx, path string, errorCode string, cookieSecure bool, secretKey []byte) error {
-	if strings.TrimSpace(path) == "" {
-		path = "/login"
-	}
-	flash := api.FlashPayload{AuthError: errorCode}
-	if path == "/login" {
-		flash.LoginEmail = strings.TrimSpace(c.FormValue("email"))
-	}
-	api.SetFlashCookieWithSecure(c, flash, cookieSecure, secretKey)
-	return c.Redirect(path, fiber.StatusSeeOther)
 }

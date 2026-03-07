@@ -65,3 +65,50 @@ func TestLegacyPlainFlashCookieIsIgnored(t *testing.T) {
 		bodyStringMatch{fragment: "Invalid email or password.", message: "did not expect legacy flash auth error to be rendered"},
 	)
 }
+
+func TestTamperedSealedFlashCookieIsIgnoredAndCleared(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "tampered-flash@example.com", "StrongPass1", true)
+
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(url.Values{
+		"email":    {user.Email},
+		"password": {"WrongPass1"},
+	}.Encode()))
+	loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	loginResponse := mustAppResponse(t, app, loginRequest)
+	assertStatusCode(t, loginResponse, http.StatusSeeOther)
+
+	flashCookie := responseCookie(loginResponse.Cookies(), flashCookieName)
+	if flashCookie == nil {
+		t.Fatal("expected flash cookie in login error response")
+	}
+
+	tamperedValue := flashCookie.Value
+	if strings.HasSuffix(tamperedValue, "A") {
+		tamperedValue = tamperedValue[:len(tamperedValue)-1] + "B"
+	} else {
+		tamperedValue = tamperedValue[:len(tamperedValue)-1] + "A"
+	}
+
+	pageRequest := httptest.NewRequest(http.MethodGet, "/login", nil)
+	pageRequest.Header.Set("Accept-Language", "en")
+	pageRequest.Header.Set("Cookie", flashCookieName+"="+tamperedValue)
+
+	pageResponse := mustAppResponse(t, app, pageRequest)
+	assertStatusCode(t, pageResponse, http.StatusOK)
+
+	body := mustReadBodyString(t, pageResponse.Body)
+	assertBodyNotContainsAll(t, body,
+		bodyStringMatch{fragment: "tampered-flash@example.com", message: "did not expect tampered flash email to be restored"},
+		bodyStringMatch{fragment: "Invalid email or password.", message: "did not expect tampered flash auth error to be rendered"},
+	)
+
+	clearedCookie := responseCookie(pageResponse.Cookies(), flashCookieName)
+	if clearedCookie == nil {
+		t.Fatal("expected tampered flash cookie to be cleared")
+	}
+	if clearedCookie.Value != "" {
+		t.Fatalf("expected cleared flash cookie, got %#v", clearedCookie)
+	}
+}

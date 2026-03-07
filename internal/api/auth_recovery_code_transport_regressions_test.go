@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRegisterJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
@@ -116,6 +117,56 @@ func TestRegenerateRecoveryCodeJSONDoesNotExposeRecoveryCode(t *testing.T) {
 	recoveryCookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName)
 	if recoveryCookie == "" {
 		t.Fatal("expected recovery-code page cookie after json regeneration")
+	}
+}
+
+func TestRecoveryCodePageConsumesCookieAfterFirstView(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(url.Values{
+		"email":            {"one-time-recovery@example.com"},
+		"password":         {"StrongPass1"},
+		"confirm_password": {"StrongPass1"},
+	}.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept-Language", "en")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	authCookie := responseCookieValue(response.Cookies(), authCookieName)
+	recoveryCookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName)
+	if authCookie == "" || recoveryCookie == "" {
+		t.Fatal("expected auth and recovery cookies after registration")
+	}
+
+	firstViewRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	firstViewRequest.Header.Set("Accept-Language", "en")
+	firstViewRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
+
+	firstViewResponse := mustAppResponse(t, app, firstViewRequest)
+	assertStatusCode(t, firstViewResponse, http.StatusOK)
+	body := mustReadBodyString(t, firstViewResponse.Body)
+	assertBodyContainsAll(t, body,
+		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected recovery code on first view"},
+	)
+
+	clearedCookie := responseCookie(firstViewResponse.Cookies(), recoveryCodeCookieName)
+	if clearedCookie == nil {
+		t.Fatal("expected recovery-code cookie to be cleared after first view")
+	}
+	if clearedCookie.Value != "" || !clearedCookie.Expires.Before(time.Now()) {
+		t.Fatalf("expected recovery-code cookie to be cleared, got %#v", clearedCookie)
+	}
+
+	secondViewRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	secondViewRequest.Header.Set("Accept-Language", "en")
+	secondViewRequest.Header.Set("Cookie", authCookieName+"="+authCookie)
+
+	secondViewResponse := mustAppResponse(t, app, secondViewRequest)
+	assertStatusCode(t, secondViewResponse, http.StatusSeeOther)
+	if location := secondViewResponse.Header.Get("Location"); location != "/onboarding" {
+		t.Fatalf("expected second recovery-code request to redirect to /onboarding, got %q", location)
 	}
 }
 

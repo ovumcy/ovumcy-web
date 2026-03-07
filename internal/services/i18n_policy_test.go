@@ -6,6 +6,9 @@ func TestAuthErrorTranslationKey(t *testing.T) {
 	if got := AuthErrorTranslationKey("  TOO MANY LOGIN ATTEMPTS "); got != "auth.error.too_many_login_attempts" {
 		t.Fatalf("expected normalized login attempts key, got %q", got)
 	}
+	if got := AuthErrorTranslationKey(" too many requests "); got != "common.error.too_many_requests" {
+		t.Fatalf("expected generic rate-limit key, got %q", got)
+	}
 	if got := AuthErrorTranslationKey(" PERIOD LENGTH IS INCOMPATIBLE WITH CYCLE LENGTH "); got != "settings.cycle.error_incompatible" {
 		t.Fatalf("expected settings cycle compatibility key, got %q", got)
 	}

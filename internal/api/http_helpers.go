@@ -26,6 +26,8 @@ func apiError(c *fiber.Ctx, status int, message string) error {
 			if localized := translateMessage(currentMessages(c), key); localized != key {
 				rendered = localized
 			}
+		} else if localized := translateMessage(currentMessages(c), message); localized != message {
+			rendered = localized
 		}
 		return c.Status(status).SendString(httpx.StatusErrorMarkup(rendered))
 	}

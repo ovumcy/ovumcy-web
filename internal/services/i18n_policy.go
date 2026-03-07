@@ -9,6 +9,8 @@ var authErrorTranslationKeys = map[string]string{
 	"invalid input":                                   "auth.error.invalid_input",
 	"registration disabled":                           "auth.error.registration_disabled",
 	"invalid credentials":                             "auth.error.invalid_credentials",
+	"too many requests":                               "common.error.too_many_requests",
+	"common.error.too_many_requests":                  "common.error.too_many_requests",
 	"email already exists":                            "auth.error.email_exists",
 	"weak password":                                   "auth.error.weak_password",
 	"password mismatch":                               "auth.error.password_mismatch",

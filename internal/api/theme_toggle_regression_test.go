@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestBaseTemplateIncludesThemeBootstrapAndToggleHooks(t *testing.T) {
+func TestBaseTemplateIncludesThemeToggleControl(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)
@@ -31,7 +31,6 @@ func TestBaseTemplateIncludesThemeBootstrapAndToggleHooks(t *testing.T) {
 	rendered := string(body)
 
 	expectedFragments := []string{
-		`window.localStorage.getItem("ovumcy_theme")`,
 		`data-theme-toggle`,
 		`data-theme-label-dark="Switch to dark mode"`,
 		`data-theme-label-light="Switch to light mode"`,

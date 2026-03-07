@@ -53,6 +53,7 @@ func (handler *Handler) ShowRecoveryCodePage(c *fiber.Ctx) error {
 	if recoveryCode == "" {
 		return c.Redirect(fallbackContinuePath, fiber.StatusSeeOther)
 	}
+	handler.clearRecoveryCodePageCookie(c)
 
 	return handler.render(c, "recovery_code", fiber.Map{
 		"Title":          localizedPageTitle(currentMessages(c), "meta.title.recovery_code", "Ovumcy | Recovery Code"),

@@ -371,39 +371,6 @@ func TestLogStartupDoesNotLogForgotPasswordRateLimitDetail(t *testing.T) {
 	}
 }
 
-func TestRedirectWithErrorCodeUsesSealedFlashCookie(t *testing.T) {
-	secretKey := []byte("test-secret-key-with-32-char-minimum")
-	app := fiber.New()
-	app.Post("/limited", func(c *fiber.Ctx) error {
-		return redirectWithErrorCode(c, "/login", "too_many_login_attempts", false, secretKey)
-	})
-
-	form := "email=rate-limit%40example.com"
-	request := httptest.NewRequest(http.MethodPost, "/limited", strings.NewReader(form))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("limited request failed: %v", err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected status 303, got %d", response.StatusCode)
-	}
-	if location := response.Header.Get("Location"); location != "/login" {
-		t.Fatalf("expected redirect location /login, got %q", location)
-	}
-
-	flashCookie := testResponseCookie(response.Cookies(), "ovumcy_flash")
-	if flashCookie == nil {
-		t.Fatal("expected flash cookie in rate-limit redirect response")
-	}
-	if strings.Contains(flashCookie.Value, "rate-limit@example.com") {
-		t.Fatalf("did not expect flash cookie to expose login email in plaintext: %q", flashCookie.Value)
-	}
-}
-
 func testResponseCookie(cookies []*http.Cookie, name string) *http.Cookie {
 	for _, cookie := range cookies {
 		if cookie != nil && cookie.Name == name {

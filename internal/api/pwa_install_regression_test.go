@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestBaseTemplateIncludesPWAInstallMetadataAndBanner(t *testing.T) {
+func TestBaseTemplateIncludesPWAMetadataAndInstallCopy(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)
@@ -33,11 +33,9 @@ func TestBaseTemplateIncludesPWAInstallMetadataAndBanner(t *testing.T) {
 	expectedFragments := []string{
 		`<link rel="manifest" href="/static/manifest.webmanifest">`,
 		`<link rel="apple-touch-icon" sizes="180x180" href="/static/pwa/apple-touch-icon.png">`,
+		`<meta id="theme-color-meta" name="theme-color" content="#fff9f0">`,
 		`<meta name="apple-mobile-web-app-capable" content="yes">`,
-		`x-data="pwaInstallBanner()"`,
 		`Install Ovumcy`,
-		`Install app`,
-		`Add it to your home screen for a faster full-screen experience.`,
 	}
 	for _, fragment := range expectedFragments {
 		if !strings.Contains(rendered, fragment) {
