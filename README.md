@@ -56,7 +56,7 @@ Ovumcy is designed as a self-hosted alternative for people who want simple daily
 
 - No analytics or ad trackers.
 - No third-party API dependencies for core functionality.
-- First-party cookies only (auth, CSRF, language).
+- Essential first-party cookies only (auth, CSRF, language, timezone, short-lived flash/recovery state).
 - Data stays on infrastructure you control.
 - Automated security checks cover CodeQL, gosec, Trivy filesystem/container scans, and CycloneDX SBOM generation in GitHub Actions.
 - SQLite is the baseline default; Postgres is available for advanced self-hosted deployments through official example stacks.

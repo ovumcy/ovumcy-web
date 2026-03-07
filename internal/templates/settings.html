@@ -205,14 +205,6 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <button type="submit" class="btn-secondary">{{t .Messages "settings.recovery_code.submit"}}</button>
     </form>
-
-    {{if .GeneratedRecoveryCode}}
-    <div class="mt-5 space-y-3">
-      <p class="field-label">{{t .Messages "settings.recovery_code.generated_title"}}</p>
-      <div class="recovery-code-box">{{.GeneratedRecoveryCode}}</div>
-      <p class="journal-muted text-xs">{{t .Messages "settings.recovery_code.generated_subtitle"}}</p>
-    </div>
-    {{end}}
   </section>
 
   {{if eq .CurrentUser.Role "owner"}}

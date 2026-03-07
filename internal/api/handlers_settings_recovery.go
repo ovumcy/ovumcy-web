@@ -12,18 +12,5 @@ func (handler *Handler) RegenerateRecoveryCode(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, mapRecoveryCodeRegenerationError(err))
 	}
 
-	if acceptsJSON(c) {
-		return c.JSON(fiber.Map{
-			"ok":            true,
-			"recovery_code": recoveryCode,
-		})
-	}
-
-	data, err := handler.buildSettingsViewData(c, user, FlashPayload{})
-	if err != nil {
-		return handler.respondMappedError(c, settingsLoadErrorSpec())
-	}
-	data["SuccessKey"] = "settings.success.recovery_code_regenerated"
-	data["GeneratedRecoveryCode"] = recoveryCode
-	return handler.render(c, "settings", data)
+	return handler.renderRecoveryCodeResponseWithContinuePath(c, user, recoveryCode, fiber.StatusOK, "/settings")
 }

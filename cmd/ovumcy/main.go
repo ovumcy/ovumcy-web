@@ -222,7 +222,7 @@ func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencie
 
 func newFiberApp(config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler) *fiber.App {
 	app := fiber.New(fiberConfig(config.Proxy))
-	configureFiberMiddleware(app, config, i18nManager, handler)
+	configureFiberMiddleware(app, config, i18nManager, handler, []byte(config.SecretKey))
 	app.Static("/static", filepath.Join("web", "static"))
 	api.RegisterRoutes(app, handler)
 	app.Use(handler.NotFound)
@@ -244,7 +244,7 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	return appConfig
 }
 
-func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler) {
+func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler, secretKey []byte) {
 	app.Use(securityHeadersMiddleware())
 	app.Use(recover.New())
 	app.Use(logger.New())
@@ -256,7 +256,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager 
 			RedirectPath: "/login",
 			ErrorCode:    "too_many_login_attempts",
 			MessageKey:   "auth.error.too_many_login_attempts",
-		}, config.CookieSecure),
+		}, config.CookieSecure, secretKey),
 	}))
 	app.Use("/api/auth/forgot-password", limiter.New(limiter.Config{
 		Max:        config.RateLimits.ForgotPasswordMax,
@@ -265,7 +265,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager 
 			RedirectPath: "/forgot-password",
 			ErrorCode:    "too_many_forgot_password_attempts",
 			MessageKey:   "auth.error.too_many_forgot_password_attempts",
-		}, config.CookieSecure),
+		}, config.CookieSecure, secretKey),
 	}))
 	app.Use("/api", limiter.New(limiter.Config{
 		Max:          config.RateLimits.APIMax,
@@ -493,7 +493,7 @@ type authRateLimitConfig struct {
 	MessageKey   string
 }
 
-func newAuthRateLimitHandler(i18nManager *i18n.Manager, config authRateLimitConfig, cookieSecure bool) fiber.Handler {
+func newAuthRateLimitHandler(i18nManager *i18n.Manager, config authRateLimitConfig, cookieSecure bool, secretKey []byte) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		logRateLimitHit(c)
 
@@ -515,7 +515,7 @@ func newAuthRateLimitHandler(i18nManager *i18n.Manager, config authRateLimitConf
 			return c.Status(fiber.StatusTooManyRequests).JSON(payload)
 		}
 
-		return redirectWithErrorCode(c, config.RedirectPath, config.ErrorCode, cookieSecure)
+		return redirectWithErrorCode(c, config.RedirectPath, config.ErrorCode, cookieSecure, secretKey)
 	}
 }
 
@@ -594,7 +594,7 @@ func retryAfterSeconds(c *fiber.Ctx) int {
 	return seconds
 }
 
-func redirectWithErrorCode(c *fiber.Ctx, path string, errorCode string, cookieSecure bool) error {
+func redirectWithErrorCode(c *fiber.Ctx, path string, errorCode string, cookieSecure bool, secretKey []byte) error {
 	if strings.TrimSpace(path) == "" {
 		path = "/login"
 	}
@@ -602,6 +602,6 @@ func redirectWithErrorCode(c *fiber.Ctx, path string, errorCode string, cookieSe
 	if path == "/login" {
 		flash.LoginEmail = strings.TrimSpace(c.FormValue("email"))
 	}
-	api.SetFlashCookieWithSecure(c, flash, cookieSecure)
+	api.SetFlashCookieWithSecure(c, flash, cookieSecure, secretKey)
 	return c.Redirect(path, fiber.StatusSeeOther)
 }

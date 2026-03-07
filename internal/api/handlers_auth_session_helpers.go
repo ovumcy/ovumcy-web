@@ -57,21 +57,28 @@ func redirectToPath(c *fiber.Ctx, path string) error {
 }
 
 func (handler *Handler) renderRecoveryCodeResponse(c *fiber.Ctx, user *models.User, recoveryCode string, status int) error {
-	if acceptsJSON(c) {
-		return c.Status(status).JSON(fiber.Map{
-			"ok":            true,
-			"recovery_code": recoveryCode,
-		})
-	}
-
 	continuePath := "/dashboard"
+	if user != nil {
+		continuePath = services.PostLoginRedirectPath(user)
+	}
+	return handler.renderRecoveryCodeResponseWithContinuePath(c, user, recoveryCode, status, continuePath)
+}
+
+func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c *fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string) error {
 	userID := uint(0)
 	if user != nil {
 		userID = user.ID
-		continuePath = services.PostLoginRedirectPath(user)
 	}
 	if err := handler.setRecoveryCodePageCookie(c, userID, recoveryCode, continuePath); err != nil {
 		return handler.respondMappedError(c, authRecoveryCodePersistErrorSpec())
+	}
+
+	if acceptsJSON(c) {
+		return c.Status(status).JSON(fiber.Map{
+			"ok":        true,
+			"next_step": "recovery_code",
+			"next_path": "/recovery-code",
+		})
 	}
 
 	return redirectToPath(c, "/recovery-code")

@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -13,7 +11,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/terraincognita07/ovumcy/internal/api"
 	"github.com/terraincognita07/ovumcy/internal/db"
 )
 
@@ -374,10 +371,11 @@ func TestLogStartupDoesNotLogForgotPasswordRateLimitDetail(t *testing.T) {
 	}
 }
 
-func TestRedirectWithErrorCodeKeepsLoginEmailInFlash(t *testing.T) {
+func TestRedirectWithErrorCodeUsesSealedFlashCookie(t *testing.T) {
+	secretKey := []byte("test-secret-key-with-32-char-minimum")
 	app := fiber.New()
 	app.Post("/limited", func(c *fiber.Ctx) error {
-		return redirectWithErrorCode(c, "/login", "too_many_login_attempts", false)
+		return redirectWithErrorCode(c, "/login", "too_many_login_attempts", false, secretKey)
 	})
 
 	form := "email=rate-limit%40example.com"
@@ -401,29 +399,9 @@ func TestRedirectWithErrorCodeKeepsLoginEmailInFlash(t *testing.T) {
 	if flashCookie == nil {
 		t.Fatal("expected flash cookie in rate-limit redirect response")
 	}
-
-	flash := decodeFlashPayload(t, flashCookie.Value)
-	if flash.AuthError != "too_many_login_attempts" {
-		t.Fatalf("expected auth error code in flash, got %q", flash.AuthError)
+	if strings.Contains(flashCookie.Value, "rate-limit@example.com") {
+		t.Fatalf("did not expect flash cookie to expose login email in plaintext: %q", flashCookie.Value)
 	}
-	if flash.LoginEmail != "rate-limit@example.com" {
-		t.Fatalf("expected login email to persist in flash, got %q", flash.LoginEmail)
-	}
-}
-
-func decodeFlashPayload(t *testing.T, raw string) api.FlashPayload {
-	t.Helper()
-
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
-	if err != nil {
-		t.Fatalf("decode flash payload: %v", err)
-	}
-
-	payload := api.FlashPayload{}
-	if err := json.Unmarshal(decoded, &payload); err != nil {
-		t.Fatalf("unmarshal flash payload: %v", err)
-	}
-	return payload
 }
 
 func testResponseCookie(cookies []*http.Cookie, name string) *http.Cookie {

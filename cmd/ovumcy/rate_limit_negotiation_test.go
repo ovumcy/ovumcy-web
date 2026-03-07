@@ -37,7 +37,7 @@ func TestAuthRateLimitHandlerTreatsJSONContentTypeAsJSONRequest(t *testing.T) {
 		RedirectPath: "/login",
 		ErrorCode:    "too_many_login_attempts",
 		MessageKey:   "auth.error.too_many_login_attempts",
-	}, false))
+	}, false, []byte("test-secret-key-with-32-char-minimum")))
 
 	request := httptest.NewRequest(http.MethodPost, "/limited", strings.NewReader(`{"email":"rate-limit@example.com"}`))
 	request.Header.Set("Content-Type", "application/json")

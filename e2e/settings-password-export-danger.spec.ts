@@ -37,14 +37,14 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   await registerOwnerViaUI(page, creds);
   await expect(page).toHaveURL(/\/recovery-code$/);
 
-  await readRecoveryCode(page);
+  const recoveryCode = await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);
 
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);
 
-  return creds;
+  return { ...creds, recoveryCode };
 }
 
 async function saveTodayEntry(page: Page, note: string): Promise<void> {
@@ -107,6 +107,30 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await page.locator('#settings-confirm-password').fill('weakpass');
     await submit.click();
     await expect(page.locator('#settings-change-password-status .status-error')).toBeVisible();
+  });
+
+  test('recovery code regeneration uses dedicated recovery page and returns to settings', async ({
+    page,
+  }) => {
+    const state = await registerOwnerAndOpenSettings(page, 'settings-recovery-regenerate');
+
+    await page
+      .locator('form[action="/api/settings/regenerate-recovery-code"] button[type="submit"]')
+      .click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+
+    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expect(page.locator('form[action="/settings"]')).toBeVisible();
+
+    const regeneratedRecoveryCode = await readRecoveryCode(page);
+    expect(regeneratedRecoveryCode).not.toBe(state.recoveryCode);
+
+    await page.locator('#recovery-code-saved').check();
+    await page.locator('form[action="/settings"] button[type="submit"]').click();
+
+    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+    await expect(page.locator('.recovery-code-box')).toHaveCount(0);
   });
 
   test('export CSV and JSON from settings returns attachment responses with expected structure', async ({

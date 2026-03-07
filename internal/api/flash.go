@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"time"
@@ -10,32 +9,23 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func SetFlashCookie(c *fiber.Ctx, payload FlashPayload) {
-	writeFlashCookie(c, payload, false)
+const flashCookieTTL = 5 * time.Minute
+
+func SetFlashCookie(c *fiber.Ctx, payload FlashPayload, secretKey []byte) {
+	writeFlashCookie(c, payload, false, secretKey)
 }
 
-func SetFlashCookieWithSecure(c *fiber.Ctx, payload FlashPayload, secure bool) {
-	writeFlashCookie(c, payload, secure)
+func SetFlashCookieWithSecure(c *fiber.Ctx, payload FlashPayload, secure bool, secretKey []byte) {
+	writeFlashCookie(c, payload, secure, secretKey)
 }
 
 func (handler *Handler) setFlashCookie(c *fiber.Ctx, payload FlashPayload) {
-	writeFlashCookie(c, payload, handler.cookieSecure)
+	writeFlashCookie(c, payload, handler.cookieSecure, handler.secretKey)
 }
 
-func writeFlashCookie(c *fiber.Ctx, payload FlashPayload, secure bool) {
-	payload.AuthError = strings.TrimSpace(payload.AuthError)
-	payload.SettingsError = strings.TrimSpace(payload.SettingsError)
-	payload.SettingsSuccess = strings.TrimSpace(payload.SettingsSuccess)
-	payload.LoginEmail = services.NormalizeAuthEmail(payload.LoginEmail)
-	payload.RegisterEmail = services.NormalizeAuthEmail(payload.RegisterEmail)
-	payload.ForgotEmail = services.NormalizeAuthEmail(payload.ForgotEmail)
-
-	if payload.AuthError == "" &&
-		payload.SettingsError == "" &&
-		payload.SettingsSuccess == "" &&
-		payload.LoginEmail == "" &&
-		payload.RegisterEmail == "" &&
-		payload.ForgotEmail == "" {
+func writeFlashCookie(c *fiber.Ctx, payload FlashPayload, secure bool, secretKey []byte) {
+	payload = normalizeFlashPayload(payload)
+	if flashPayloadEmpty(payload) {
 		clearFlashCookie(c, secure)
 		return
 	}
@@ -44,7 +34,14 @@ func writeFlashCookie(c *fiber.Ctx, payload FlashPayload, secure bool) {
 	if err != nil {
 		return
 	}
-	encoded := base64.RawURLEncoding.EncodeToString(serialized)
+	codec, err := newSecureCookieCodec(secretKey)
+	if err != nil {
+		return
+	}
+	encoded, err := codec.seal(flashCookieName, serialized)
+	if err != nil {
+		return
+	}
 
 	c.Cookie(&fiber.Cookie{
 		Name:     flashCookieName,
@@ -53,7 +50,7 @@ func writeFlashCookie(c *fiber.Ctx, payload FlashPayload, secure bool) {
 		HTTPOnly: true,
 		Secure:   secure,
 		SameSite: "Lax",
-		Expires:  time.Now().Add(5 * time.Minute),
+		Expires:  time.Now().Add(flashCookieTTL),
 	})
 }
 
@@ -64,7 +61,12 @@ func (handler *Handler) popFlashCookie(c *fiber.Ctx) FlashPayload {
 	}
 	clearFlashCookie(c, handler.cookieSecure)
 
-	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	codec, err := newSecureCookieCodec(handler.secretKey)
+	if err != nil {
+		return FlashPayload{}
+	}
+
+	decoded, err := codec.open(flashCookieName, raw)
 	if err != nil {
 		return FlashPayload{}
 	}
@@ -73,13 +75,7 @@ func (handler *Handler) popFlashCookie(c *fiber.Ctx) FlashPayload {
 	if err := json.Unmarshal(decoded, &payload); err != nil {
 		return FlashPayload{}
 	}
-	payload.AuthError = strings.TrimSpace(payload.AuthError)
-	payload.SettingsError = strings.TrimSpace(payload.SettingsError)
-	payload.SettingsSuccess = strings.TrimSpace(payload.SettingsSuccess)
-	payload.LoginEmail = services.NormalizeAuthEmail(payload.LoginEmail)
-	payload.RegisterEmail = services.NormalizeAuthEmail(payload.RegisterEmail)
-	payload.ForgotEmail = services.NormalizeAuthEmail(payload.ForgotEmail)
-	return payload
+	return normalizeFlashPayload(payload)
 }
 
 func clearFlashCookie(c *fiber.Ctx, secure bool) {
@@ -92,4 +88,23 @@ func clearFlashCookie(c *fiber.Ctx, secure bool) {
 		SameSite: "Lax",
 		Expires:  time.Now().Add(-1 * time.Hour),
 	})
+}
+
+func normalizeFlashPayload(payload FlashPayload) FlashPayload {
+	payload.AuthError = strings.TrimSpace(payload.AuthError)
+	payload.SettingsError = strings.TrimSpace(payload.SettingsError)
+	payload.SettingsSuccess = strings.TrimSpace(payload.SettingsSuccess)
+	payload.LoginEmail = services.NormalizeAuthEmail(payload.LoginEmail)
+	payload.RegisterEmail = services.NormalizeAuthEmail(payload.RegisterEmail)
+	payload.ForgotEmail = services.NormalizeAuthEmail(payload.ForgotEmail)
+	return payload
+}
+
+func flashPayloadEmpty(payload FlashPayload) bool {
+	return payload.AuthError == "" &&
+		payload.SettingsError == "" &&
+		payload.SettingsSuccess == "" &&
+		payload.LoginEmail == "" &&
+		payload.RegisterEmail == "" &&
+		payload.ForgotEmail == ""
 }
