@@ -63,19 +63,6 @@ Ovumcy is designed as a self-hosted alternative for people who want simple daily
 
 If you found a security issue, see [SECURITY.md](SECURITY.md).
 
-## Security Model
-
-Trusted:
-
-- the server operator
-- the reverse proxy and infrastructure you control
-
-Untrusted:
-
-- browser input
-- internet traffic before HTTPS termination
-- any third-party service not explicitly configured by the operator
-
 ## Architecture
 
 ```text
@@ -91,7 +78,7 @@ Browser / Mobile Home Screen
 SQLite (default) / PostgreSQL (advanced)
 ```
 
-- `Browser UI`: server-rendered HTML with HTMX and Alpine.js, plus a mobile install prompt and home-screen support on the current `main` branch.
+- `Browser UI`: server-rendered HTML with HTMX and Alpine.js, plus mobile home-screen install support.
 - `Go application`: a single service that handles routing, templates, i18n, and domain logic.
 - `Storage`: SQLite is the baseline default; Postgres is an advanced self-hosted option.
 - `Deployment`: one binary or container, typically behind a reverse proxy.
@@ -122,7 +109,7 @@ docker compose up -d
 Pin a specific image tag if needed:
 
 ```bash
-OVUMCY_IMAGE=ghcr.io/terraincognita07/ovumcy:v0.2.5 docker compose up -d
+OVUMCY_IMAGE=ghcr.io/terraincognita07/ovumcy:v0.3.0 docker compose up -d
 ```
 
 Then open `http://localhost:8080`.
@@ -177,19 +164,7 @@ Important notes:
 - Keep database storage persistent, whether that is a SQLite volume/bind mount or operator-managed Postgres storage.
 - Full deployment, backup, reverse-proxy, and Postgres guidance lives in [docs/self-hosted.md](docs/self-hosted.md).
 
-## Database and Migrations
-
-- Initial schema is in `migrations/001_init.sql`.
-- For post-release schema changes, add forward-only numbered migrations (`002_*.sql`, `003_*.sql`, ...).
-- Do not edit already-applied migration files after release.
-
-## Self-Hosted Deployment Paths
-
-- `Local/private baseline`: one Ovumcy instance with persistent SQLite storage.
-- `Public HTTPS baseline`: Ovumcy behind a dedicated reverse proxy with `COOKIE_SECURE=true`.
-- `Advanced self-hosted Postgres`: official bundled local/private and public reverse-proxy example stacks.
-
-For backup, restore, reverse-proxy examples, production checklist, and Postgres deployment guidance, see [docs/self-hosted.md](docs/self-hosted.md).
+For deployment paths, reverse-proxy examples, backups, restores, and advanced Postgres setups, see [docs/self-hosted.md](docs/self-hosted.md).
 
 ## Development
 
@@ -221,15 +196,11 @@ For bugs and feature requests, open a GitHub issue:
 
 ## Releases
 
-- Latest tagged release: `v0.2.5`.
+- Latest tagged release: `v0.3.0`.
 - This README tracks the current `main` branch.
 - Publish release notes via GitHub Releases and keep [CHANGELOG.md](CHANGELOG.md) updated.
 
 ## Roadmap
-
-### On Main Now (Unreleased)
-
-- Mobile PWA install support: manifest, home-screen icons, and install prompt without offline caching.
 
 ### Next Up
 

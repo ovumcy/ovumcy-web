@@ -7,12 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-07
+
 ### Added
 - Mobile PWA install support with a web app manifest, home-screen icons, and a shared install prompt for supported mobile browsers.
 - Regression coverage for the shared mobile install banner and native install-prompt wiring.
+- Baseline browser hardening headers on HTTP responses (`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options`).
 
 ### Changed
 - Mobile PWA support is currently install-only; offline mode and service workers remain intentionally deferred pending privacy review.
+- Code scanning and security automation were expanded with dedicated CodeQL, gosec, Trivy filesystem/image scans, CycloneDX SBOM generation, and Codecov coverage reporting in CI.
+- HTMX not-found responses now flow through centralized error mapping.
+- Backend complexity was reduced and regression coverage increased across startup/bootstrap, API regression tests, and cycle/export services.
+- Startup logging was hardened to avoid exposing forgot-password rate-limit details.
+- README and public project documentation were refreshed to better explain product scope and self-hosted positioning.
 
 ## [0.2.5] - 2026-03-07
 
@@ -73,7 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/terraincognita07/ovumcy/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/terraincognita07/ovumcy/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/terraincognita07/ovumcy/compare/v0.2.5...v0.3.0
 [0.2.5]: https://github.com/terraincognita07/ovumcy/compare/v0.2.0...v0.2.5
 [0.2.0]: https://github.com/terraincognita07/ovumcy/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/terraincognita07/ovumcy/releases/tag/v0.1.0
