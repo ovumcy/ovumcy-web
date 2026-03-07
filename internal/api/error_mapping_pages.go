@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/httpx"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
@@ -43,4 +44,16 @@ func mapStatsPageViewError(err error) APIErrorSpec {
 
 func statsFetchErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to fetch stats")
+}
+
+func respondNotFoundMappedError(c *fiber.Ctx) error {
+	spec := notFoundErrorSpec()
+	if isHTMX(c) {
+		message := translateMessage(currentMessages(c), "not_found.title")
+		if message == "not_found.title" {
+			message = "Page not found"
+		}
+		return c.Status(spec.Status).SendString(httpx.StatusErrorMarkup(message))
+	}
+	return respondGlobalMappedError(c, spec)
 }

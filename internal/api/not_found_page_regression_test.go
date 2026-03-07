@@ -93,3 +93,36 @@ func TestNotFoundAPIPathReturnsJSONError(t *testing.T) {
 		t.Fatalf("expected not found api error, got %q", errorMessage)
 	}
 }
+
+func TestNotFoundHTMXPathReturnsLocalizedStatusErrorMarkup(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/missing-fragment", nil)
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "ru")
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("not-found htmx request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", response.StatusCode)
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read htmx not-found body: %v", err)
+	}
+	rendered := string(body)
+	if !strings.Contains(rendered, `class="status-error"`) {
+		t.Fatalf("expected shared status-error markup, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Страница не найдена") {
+		t.Fatalf("expected localized not-found htmx message, got %q", rendered)
+	}
+	if strings.Contains(rendered, "<html") {
+		t.Fatalf("expected htmx branch to avoid full page markup, got %q", rendered)
+	}
+}
