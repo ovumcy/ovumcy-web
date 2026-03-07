@@ -55,6 +55,18 @@ type proxySettings struct {
 	TrustedProxies []string
 }
 
+const (
+	headerXContentTypeOptions = "X-Content-Type-Options"
+	headerReferrerPolicy      = "Referrer-Policy"
+	headerPermissionsPolicy   = "Permissions-Policy"
+	headerXFrameOptions       = "X-Frame-Options"
+
+	xContentTypeOptionsNoSniff = "nosniff"
+	referrerPolicyStrictOrigin = "strict-origin-when-cross-origin"
+	permissionsPolicyDefault   = "geolocation=(), camera=(), microphone=()"
+	xFrameOptionsDeny          = "DENY"
+)
+
 func main() {
 	handled, err := tryRunCLICommand()
 	if err != nil {
@@ -233,6 +245,7 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 }
 
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler) {
+	app.Use(securityHeadersMiddleware())
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(compress.New())
@@ -261,6 +274,16 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager 
 	}))
 	app.Use(handler.LanguageMiddleware)
 	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure)))
+}
+
+func securityHeadersMiddleware() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		c.Set(headerXContentTypeOptions, xContentTypeOptionsNoSniff)
+		c.Set(headerReferrerPolicy, referrerPolicyStrictOrigin)
+		c.Set(headerPermissionsPolicy, permissionsPolicyDefault)
+		c.Set(headerXFrameOptions, xFrameOptionsDeny)
+		return c.Next()
+	}
 }
 
 func installGracefulShutdown(app *fiber.App) context.CancelFunc {

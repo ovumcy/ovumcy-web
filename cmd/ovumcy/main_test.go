@@ -282,6 +282,60 @@ func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersMiddlewareSetsHeadersOnHTMLResponses(t *testing.T) {
+	app := fiber.New()
+	app.Use(securityHeadersMiddleware())
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("html request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	assertDefaultSecurityHeaders(t, response)
+}
+
+func TestSecurityHeadersMiddlewareSetsHeadersOnAPIResponses(t *testing.T) {
+	app := fiber.New()
+	app.Use(securityHeadersMiddleware())
+	app.Get("/api/ping", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"ok": true})
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("api request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	assertDefaultSecurityHeaders(t, response)
+}
+
+func assertDefaultSecurityHeaders(t *testing.T, response *http.Response) {
+	t.Helper()
+
+	if value := response.Header.Get(headerXContentTypeOptions); value != xContentTypeOptionsNoSniff {
+		t.Fatalf("expected %s=%q, got %q", headerXContentTypeOptions, xContentTypeOptionsNoSniff, value)
+	}
+	if value := response.Header.Get(headerReferrerPolicy); value != referrerPolicyStrictOrigin {
+		t.Fatalf("expected %s=%q, got %q", headerReferrerPolicy, referrerPolicyStrictOrigin, value)
+	}
+	if value := response.Header.Get(headerPermissionsPolicy); value != permissionsPolicyDefault {
+		t.Fatalf("expected %s=%q, got %q", headerPermissionsPolicy, permissionsPolicyDefault, value)
+	}
+	if value := response.Header.Get(headerXFrameOptions); value != xFrameOptionsDeny {
+		t.Fatalf("expected %s=%q, got %q", headerXFrameOptions, xFrameOptionsDeny, value)
+	}
+	if value := response.Header.Get("Access-Control-Allow-Origin"); value != "" {
+		t.Fatalf("did not expect Access-Control-Allow-Origin by default, got %q", value)
+	}
+}
+
 func TestLogStartupDoesNotLogForgotPasswordRateLimitDetail(t *testing.T) {
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
