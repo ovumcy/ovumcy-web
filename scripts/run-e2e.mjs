@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const RUN_TIMEOUT_MS = 60_000;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
+const REDACTED = "[REDACTED]";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,6 +82,30 @@ function delay(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function redactSensitiveText(value) {
+  let text = String(value ?? "");
+  const secrets = [
+    String(process.env.E2E_POSTGRES_PASSWORD ?? "").trim(),
+    String(process.env.DATABASE_URL ?? "").trim(),
+  ]
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+
+  for (const secret of secrets) {
+    text = text.split(secret).join(REDACTED);
+  }
+
+  text = text.replace(/(POSTGRES_PASSWORD=)([^\s]+)/gi, `$1${REDACTED}`);
+  text = text.replace(/(password=)([^\s]+)/gi, `$1${REDACTED}`);
+  text = text.replace(/(postgres(?:ql)?:\/\/[^:\s]+:)([^@/\s]+)(@)/gi, `$1${REDACTED}$3`);
+
+  return text;
+}
+
+function formatFailedCommand(command, args) {
+  return [command, ...args].map((arg) => redactSensitiveText(arg)).join(" ");
 }
 
 function hasWorkersArg(args) {
@@ -214,9 +239,11 @@ function spawnAndCapture(command, args, options) {
         resolve({ code, signal, stdout: stdout.trim(), stderr: stderr.trim() });
         return;
       }
+      const failedCommand = formatFailedCommand(command, args);
+      const safeStderr = redactSensitiveText(stderr.trim());
       reject(
         new Error(
-          `${command} ${args.join(" ")} failed with exit ${code ?? "unknown"}${stderr ? `: ${stderr.trim()}` : ""}`,
+          `${failedCommand} failed with exit ${code ?? "unknown"}${safeStderr ? `: ${safeStderr}` : ""}`,
         ),
       );
     });
@@ -419,7 +446,7 @@ main()
     process.exit(0);
   })
   .catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = redactSensitiveText(error instanceof Error ? error.message : String(error));
     console.error(`[e2e] failed: ${message}`);
     process.exit(1);
   });

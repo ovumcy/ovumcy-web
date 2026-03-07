@@ -10,7 +10,7 @@ import (
 )
 
 func openSQLiteConnection(dbPath string) (*gorm.DB, error) {
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o750); err != nil {
 		return nil, fmt.Errorf("create db directory: %w", err)
 	}
 

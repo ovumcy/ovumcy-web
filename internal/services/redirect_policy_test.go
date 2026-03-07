@@ -13,6 +13,7 @@ func TestSanitizeRedirectPath(t *testing.T) {
 		{name: "empty uses fallback", raw: "", want: fallback},
 		{name: "absolute url blocked", raw: "https://evil.example", want: fallback},
 		{name: "protocol relative blocked", raw: "//evil.example", want: fallback},
+		{name: "slash backslash redirect blocked", raw: "/\\evil.example", want: fallback},
 		{name: "path without leading slash blocked", raw: "dashboard", want: fallback},
 		{name: "valid local path kept", raw: "/dashboard", want: "/dashboard"},
 		{name: "valid local path with query kept", raw: "/calendar?month=2026-02&day=2026-02-17", want: "/calendar?month=2026-02&day=2026-02-17"},

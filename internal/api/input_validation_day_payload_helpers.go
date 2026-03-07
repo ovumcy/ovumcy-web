@@ -1,7 +1,6 @@
 package api
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -24,9 +23,9 @@ func parseDayPayload(c *fiber.Ctx) (dayPayload, error) {
 
 		symptomRaw := c.Context().PostArgs().PeekMulti("symptom_ids")
 		for _, value := range symptomRaw {
-			parsed, err := strconv.ParseUint(string(value), 10, 64)
+			parsed, err := parseRequestUint(string(value))
 			if err == nil {
-				payload.SymptomIDs = append(payload.SymptomIDs, uint(parsed))
+				payload.SymptomIDs = append(payload.SymptomIDs, parsed)
 			}
 		}
 	}

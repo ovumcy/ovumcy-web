@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -85,4 +86,39 @@ func TestParseDayPayloadSources(t *testing.T) {
 			t.Fatalf("unexpected symptom IDs: %#v", payload.SymptomIDs)
 		}
 	})
+
+	t.Run("ignores out of range symptom ids from form payload", func(t *testing.T) {
+		form := url.Values{}
+		form.Add("symptom_ids", "2")
+		form.Add("symptom_ids", overflowUintStringForTest())
+		form.Add("symptom_ids", "not-a-number")
+
+		req := httptest.NewRequest(http.MethodPost, "/day", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", resp.StatusCode)
+		}
+
+		var payload dayPayload
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(payload.SymptomIDs) != 1 || payload.SymptomIDs[0] != 2 {
+			t.Fatalf("expected only in-range symptom IDs, got %#v", payload.SymptomIDs)
+		}
+	})
+}
+
+func overflowUintStringForTest() string {
+	if strconv.IntSize == 32 {
+		return "4294967296"
+	}
+	return "18446744073709551616"
 }

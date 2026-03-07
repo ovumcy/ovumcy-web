@@ -12,7 +12,7 @@ const (
 	timezoneHeaderName      = "X-Ovumcy-Timezone"
 	flashCookieName         = "ovumcy_flash"
 	recoveryCodeCookieName  = "ovumcy_recovery_code"
-	resetPasswordCookieName = "ovumcy_reset_password"
+	resetPasswordCookieName = "ovumcy_reset_password" // #nosec G101 -- cookie name contains "password" but is not a secret or credential.
 	contextUserKey          = "current_user"
 	contextLanguageKey      = "current_language"
 	contextMessagesKey      = "current_messages"

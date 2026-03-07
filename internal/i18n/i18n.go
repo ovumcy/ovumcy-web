@@ -37,6 +37,7 @@ func NewManager(defaultLanguage string, localesDir string) (*Manager, error) {
 
 		language := strings.TrimSuffix(strings.ToLower(entry.Name()), filepath.Ext(entry.Name()))
 		path := filepath.Join(localesDir, entry.Name())
+		// #nosec G304 -- localesDir is application-controlled and entry.Name() comes from os.ReadDir(localesDir).
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read locale %s: %w", language, err)

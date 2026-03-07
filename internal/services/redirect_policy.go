@@ -10,7 +10,10 @@ func SanitizeRedirectPath(raw string, fallback string) string {
 	if candidate == "" {
 		return fallback
 	}
-	if strings.HasPrefix(candidate, "//") || !strings.HasPrefix(candidate, "/") {
+	if !strings.HasPrefix(candidate, "/") {
+		return fallback
+	}
+	if len(candidate) > 1 && (candidate[1] == '/' || candidate[1] == '\\') {
 		return fallback
 	}
 	parsed, err := url.Parse(candidate)

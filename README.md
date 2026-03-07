@@ -1,6 +1,7 @@
 # Ovumcy
 
 [![CI](https://github.com/terraincognita07/ovumcy/actions/workflows/ci.yml/badge.svg)](https://github.com/terraincognita07/ovumcy/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/terraincognita07/ovumcy/actions/workflows/codeql.yml/badge.svg)](https://github.com/terraincognita07/ovumcy/actions/workflows/codeql.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](https://www.docker.com/)
@@ -41,6 +42,7 @@ It runs as a single Go service with a server-rendered web UI. SQLite is the base
 - No analytics or ad trackers.
 - No third-party API dependencies for core functionality.
 - First-party cookies only (auth, CSRF, language).
+- Automated security checks cover CodeQL, gosec, Trivy filesystem/container scans, and CycloneDX SBOM artifact generation in GitHub Actions.
 - Data stays on infrastructure you control. SQLite is the baseline default; advanced self-hosted deployments can use Postgres through the official bundled and reverse-proxy example stacks.
 - Role model: `owner` has full access.
 
@@ -193,6 +195,7 @@ go run ./cmd/ovumcy
 ```
 
 CI runs staticcheck, `go vet`, tests, and frontend build on pushes and pull requests.
+Dedicated security workflows run CodeQL plus `gosec`, Trivy filesystem/container scanning, and publish a CycloneDX image SBOM artifact for each scan run.
 
 ## Contributing
 

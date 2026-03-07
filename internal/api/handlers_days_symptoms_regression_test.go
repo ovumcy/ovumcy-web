@@ -114,3 +114,26 @@ func TestDeleteSymptomRejectsBuiltinSymptom(t *testing.T) {
 		t.Fatalf("expected builtin-delete error, got %q", got)
 	}
 }
+
+func TestDeleteSymptomRejectsOutOfRangeID(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "delete-symptom-out-of-range@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/symptoms/"+overflowUintStringForTest(), nil)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("delete out-of-range symptom request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", response.StatusCode)
+	}
+	if got := readAPIError(t, response.Body); got != "invalid symptom id" {
+		t.Fatalf("expected invalid symptom id error, got %q", got)
+	}
+}

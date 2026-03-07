@@ -10,11 +10,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"golang.org/x/crypto/hkdf"
 )
 
 const (
-	secureCookieVersion       = "v1"
+	secureCookieVersion       = "v2"
 	secureCookiePurposePrefix = "ovumcy.cookie."
+	secureCookieSaltLabel     = "ovumcy.secure-cookie.salt.v2"
+	secureCookieInfoLabel     = "ovumcy.secure-cookie.key.v2"
 )
 
 var errInvalidSecureCookieValue = errors.New("invalid secure cookie value")
@@ -28,8 +32,11 @@ func newSecureCookieCodec(secretKey []byte) (*secureCookieCodec, error) {
 		return nil, errors.New("secure cookie secret key is required")
 	}
 
-	derivedKey := deriveSecureCookieKey(secretKey)
-	block, err := aes.NewCipher(derivedKey[:])
+	derivedKey, err := deriveSecureCookieKey(secretKey)
+	if err != nil {
+		return nil, err
+	}
+	block, err := aes.NewCipher(derivedKey)
 	if err != nil {
 		return nil, fmt.Errorf("init secure cookie cipher: %w", err)
 	}
@@ -41,12 +48,13 @@ func newSecureCookieCodec(secretKey []byte) (*secureCookieCodec, error) {
 	return &secureCookieCodec{aead: aead}, nil
 }
 
-func deriveSecureCookieKey(secretKey []byte) [32]byte {
-	label := []byte("ovumcy.secure-cookie.v1")
-	material := make([]byte, 0, len(label)+len(secretKey))
-	material = append(material, label...)
-	material = append(material, secretKey...)
-	return sha256.Sum256(material)
+func deriveSecureCookieKey(secretKey []byte) ([]byte, error) {
+	reader := hkdf.New(sha256.New, secretKey, []byte(secureCookieSaltLabel), []byte(secureCookieInfoLabel))
+	derivedKey := make([]byte, 32)
+	if _, err := io.ReadFull(reader, derivedKey); err != nil {
+		return nil, fmt.Errorf("derive secure cookie key: %w", err)
+	}
+	return derivedKey, nil
 }
 
 func (codec *secureCookieCodec) seal(purpose string, plaintext []byte) (string, error) {

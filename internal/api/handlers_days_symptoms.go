@@ -1,10 +1,6 @@
 package api
 
-import (
-	"strconv"
-
-	"github.com/gofiber/fiber/v2"
-)
+import "github.com/gofiber/fiber/v2"
 
 func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
@@ -41,11 +37,11 @@ func (handler *Handler) DeleteSymptom(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	id, err := strconv.ParseUint(c.Params("id"), 10, 64)
+	id, err := parseRequestUint(c.Params("id"))
 	if err != nil {
 		return handler.respondMappedError(c, invalidSymptomIDErrorSpec())
 	}
-	if err := handler.symptomService.DeleteSymptomForUser(user.ID, uint(id)); err != nil {
+	if err := handler.symptomService.DeleteSymptomForUser(user.ID, id); err != nil {
 		return handler.respondMappedError(c, mapSymptomDeleteError(err))
 	}
 

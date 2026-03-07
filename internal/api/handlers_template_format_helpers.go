@@ -39,5 +39,6 @@ func templateToJSON(value any) template.JS {
 	if err != nil {
 		return template.JS("null")
 	}
+	// #nosec G203 -- json.Marshal escapes script-breaking characters before embedding a JS literal in the template.
 	return template.JS(serialized)
 }
