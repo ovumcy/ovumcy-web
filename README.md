@@ -210,6 +210,8 @@ For bugs and feature requests, open a GitHub issue:
 
 ## Roadmap
 
+The live roadmap now also exists in GitHub Issues and the `Ovumcy Roadmap` project board, so the list below is a compact product summary rather than the only planning source.
+
 ### Next Up
 
 - Custom symptoms: add and hide symptoms beyond built-in defaults.
@@ -218,6 +220,10 @@ For bugs and feature requests, open a GitHub issue:
 - PDF export for clinical use: printable cycle summary for medical appointments.
 - Extended statistics: cycle variability, symptom heatmaps, phase correlations.
 - Partner invite via link: simplified partner onboarding without manual account setup.
+- Mobile UX improvements for calendar and day editor.
+- FAQ / comparison page for privacy-first positioning.
+- Release binaries via GoReleaser.
+- Recorded walkthrough or hero demo asset.
 
 ### Longer Term
 
