@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
 )
 
@@ -31,35 +31,14 @@ func TestSettingsCycleUpdatePersistsAndRendersAfterReload(t *testing.T) {
 		"auto_period_fill":  {"true"},
 		"last_period_start": {"2026-02-10"},
 	}
-	updateRequest := httptest.NewRequest(http.MethodPost, "/settings/cycle", strings.NewReader(form.Encode()))
-	updateRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	updateRequest.Header.Set("HX-Request", "true")
-	updateRequest.Header.Set("Accept-Language", "en")
-	updateRequest.Header.Set("Cookie", authCookie)
-
-	updateResponse, err := app.Test(updateRequest, -1)
-	if err != nil {
-		t.Fatalf("settings cycle update request failed: %v", err)
-	}
-	defer updateResponse.Body.Close()
-
-	if updateResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", updateResponse.StatusCode)
-	}
-
-	updateBody, err := io.ReadAll(updateResponse.Body)
-	if err != nil {
-		t.Fatalf("read update response: %v", err)
-	}
-	if !strings.Contains(string(updateBody), "status-ok") {
-		t.Fatalf("expected htmx success status markup, got %q", string(updateBody))
-	}
-	if strings.Contains(string(updateBody), "status-transient") {
-		t.Fatalf("did not expect transient status class in htmx success markup, got %q", string(updateBody))
-	}
-	if !strings.Contains(string(updateBody), "data-dismiss-status") {
-		t.Fatalf("expected dismiss button marker in htmx success markup, got %q", string(updateBody))
-	}
+	updateBody := submitSettingsCycleUpdate(t, app, authCookie, form)
+	assertBodyContainsAll(t, updateBody,
+		bodyStringMatch{fragment: "status-ok", message: "expected htmx success status markup"},
+		bodyStringMatch{fragment: "data-dismiss-status", message: "expected dismiss button marker in htmx success markup"},
+	)
+	assertBodyNotContainsAll(t, updateBody,
+		bodyStringMatch{fragment: "status-transient", message: "did not expect transient status class in htmx success markup"},
+	)
 
 	persisted := models.User{}
 	if err := database.Select("cycle_length", "period_length", "auto_period_fill", "last_period_start").First(&persisted, user.ID).Error; err != nil {
@@ -78,25 +57,7 @@ func TestSettingsCycleUpdatePersistsAndRendersAfterReload(t *testing.T) {
 		t.Fatalf("expected persisted last_period_start=2026-02-10, got %v", persisted.LastPeriodStart)
 	}
 
-	settingsRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
-	settingsRequest.Header.Set("Accept-Language", "en")
-	settingsRequest.Header.Set("Cookie", authCookie)
-
-	settingsResponse, err := app.Test(settingsRequest, -1)
-	if err != nil {
-		t.Fatalf("settings page request failed: %v", err)
-	}
-	defer settingsResponse.Body.Close()
-
-	if settingsResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected settings status 200, got %d", settingsResponse.StatusCode)
-	}
-
-	settingsBody, err := io.ReadAll(settingsResponse.Body)
-	if err != nil {
-		t.Fatalf("read settings page body: %v", err)
-	}
-	rendered := string(settingsBody)
+	rendered := renderSettingsPageForTest(t, app, authCookie)
 	if !strings.Contains(rendered, `x-data='settingsCycleForm({ cycleLength: 28, periodLength: 6, autoPeriodFill: true })'`) {
 		t.Fatalf("expected settings cycle form state to include persisted values")
 	}
@@ -113,4 +74,18 @@ func TestSettingsCycleUpdatePersistsAndRendersAfterReload(t *testing.T) {
 	if !lastPeriodInputPattern.MatchString(rendered) {
 		t.Fatalf("expected last_period_start date input to render persisted value")
 	}
+}
+
+func submitSettingsCycleUpdate(t *testing.T, app *fiber.App, authCookie string, form url.Values) string {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodPost, "/settings/cycle", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return mustReadBodyString(t, response.Body)
 }

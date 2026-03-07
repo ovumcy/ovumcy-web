@@ -26,7 +26,34 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/httpx"
 	"github.com/terraincognita07/ovumcy/internal/i18n"
 	"github.com/terraincognita07/ovumcy/internal/services"
+	"gorm.io/gorm"
 )
+
+type runtimeConfig struct {
+	Location        *time.Location
+	SecretKey       string
+	DatabaseConfig  db.Config
+	Port            string
+	DefaultLanguage string
+	CookieSecure    bool
+	RateLimits      rateLimitSettings
+	Proxy           proxySettings
+}
+
+type rateLimitSettings struct {
+	LoginMax             int
+	LoginWindow          time.Duration
+	ForgotPasswordMax    int
+	ForgotPasswordWindow time.Duration
+	APIMax               int
+	APIWindow            time.Duration
+}
+
+type proxySettings struct {
+	Enabled        bool
+	Header         string
+	TrustedProxies []string
+}
 
 func main() {
 	handled, err := tryRunCLICommand()
@@ -40,51 +67,105 @@ func main() {
 	location := mustLoadLocation(getEnv("TZ", "Local"))
 	time.Local = location
 
+	config := mustLoadRuntimeConfig(location)
+	database := mustOpenDatabase(config.DatabaseConfig)
+	i18nManager := mustNewI18nManager(config.DefaultLanguage)
+	dependencies := buildDependencies(db.NewRepositories(database))
+	handler := mustNewHandler(config, i18nManager, dependencies)
+	app := newFiberApp(config, i18nManager, handler)
+	stopSignals := installGracefulShutdown(app)
+	defer stopSignals()
+
+	logStartup(config)
+	if err := app.Listen(":" + config.Port); err != nil {
+		log.Fatalf("server exited: %v", err)
+	}
+}
+
+func mustLoadRuntimeConfig(location *time.Location) runtimeConfig {
+	config, err := loadRuntimeConfig(location)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return config
+}
+
+func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	secretKey, err := resolveSecretKey()
 	if err != nil {
-		log.Fatalf("invalid SECRET_KEY: %v", err)
+		return runtimeConfig{}, fmt.Errorf("invalid SECRET_KEY: %w", err)
 	}
+
 	databaseConfig, err := resolveDatabaseConfig()
 	if err != nil {
-		log.Fatalf("invalid database config: %v", err)
+		return runtimeConfig{}, fmt.Errorf("invalid database config: %w", err)
 	}
+
 	port, err := resolvePort()
 	if err != nil {
-		log.Fatalf("invalid PORT: %v", err)
-	}
-	defaultLanguage := getEnv("DEFAULT_LANGUAGE", "en")
-	cookieSecure := getEnvBool("COOKIE_SECURE", false)
-
-	loginLimitMax := getEnvInt("RATE_LIMIT_LOGIN_MAX", 8)
-	loginLimitWindow := getEnvDuration("RATE_LIMIT_LOGIN_WINDOW", 15*time.Minute)
-	forgotLimitMax := getEnvInt("RATE_LIMIT_FORGOT_PASSWORD_MAX", 8)
-	forgotLimitWindow := getEnvDuration("RATE_LIMIT_FORGOT_PASSWORD_WINDOW", time.Hour)
-	apiLimitMax := getEnvInt("RATE_LIMIT_API_MAX", 300)
-	apiLimitWindow := getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute)
-
-	trustProxyEnabled := getEnvBool("TRUST_PROXY_ENABLED", false)
-	proxyHeader := strings.TrimSpace(getEnv("PROXY_HEADER", fiber.HeaderXForwardedFor))
-	trustedProxies := parseCSV(getEnv("TRUSTED_PROXIES", "127.0.0.1,::1"))
-	if trustProxyEnabled {
-		if proxyHeader == "" {
-			proxyHeader = fiber.HeaderXForwardedFor
-		}
-		if len(trustedProxies) == 0 {
-			log.Fatal("TRUST_PROXY_ENABLED=true requires at least one TRUSTED_PROXIES entry")
-		}
+		return runtimeConfig{}, fmt.Errorf("invalid PORT: %w", err)
 	}
 
+	proxy, err := resolveProxySettings()
+	if err != nil {
+		return runtimeConfig{}, err
+	}
+
+	return runtimeConfig{
+		Location:        location,
+		SecretKey:       secretKey,
+		DatabaseConfig:  databaseConfig,
+		Port:            port,
+		DefaultLanguage: getEnv("DEFAULT_LANGUAGE", "en"),
+		CookieSecure:    getEnvBool("COOKIE_SECURE", false),
+		RateLimits: rateLimitSettings{
+			LoginMax:             getEnvInt("RATE_LIMIT_LOGIN_MAX", 8),
+			LoginWindow:          getEnvDuration("RATE_LIMIT_LOGIN_WINDOW", 15*time.Minute),
+			ForgotPasswordMax:    getEnvInt("RATE_LIMIT_FORGOT_PASSWORD_MAX", 8),
+			ForgotPasswordWindow: getEnvDuration("RATE_LIMIT_FORGOT_PASSWORD_WINDOW", time.Hour),
+			APIMax:               getEnvInt("RATE_LIMIT_API_MAX", 300),
+			APIWindow:            getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
+		},
+		Proxy: proxy,
+	}, nil
+}
+
+func resolveProxySettings() (proxySettings, error) {
+	settings := proxySettings{
+		Enabled:        getEnvBool("TRUST_PROXY_ENABLED", false),
+		Header:         strings.TrimSpace(getEnv("PROXY_HEADER", fiber.HeaderXForwardedFor)),
+		TrustedProxies: parseCSV(getEnv("TRUSTED_PROXIES", "127.0.0.1,::1")),
+	}
+
+	if !settings.Enabled {
+		return settings, nil
+	}
+	if settings.Header == "" {
+		settings.Header = fiber.HeaderXForwardedFor
+	}
+	if len(settings.TrustedProxies) == 0 {
+		return proxySettings{}, fmt.Errorf("TRUST_PROXY_ENABLED=true requires at least one TRUSTED_PROXIES entry")
+	}
+	return settings, nil
+}
+
+func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 	database, err := db.OpenDatabase(databaseConfig)
 	if err != nil {
 		log.Fatalf("database init failed: %v", err)
 	}
+	return database
+}
 
+func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
 	i18nManager, err := i18n.NewManager(defaultLanguage, filepath.Join("internal", "i18n", "locales"))
 	if err != nil {
 		log.Fatalf("i18n init failed: %v", err)
 	}
+	return i18nManager
+}
 
-	repositories := db.NewRepositories(database)
+func buildDependencies(repositories *db.Repositories) api.Dependencies {
 	authService := services.NewAuthService(repositories.Users)
 	attemptLimiter := services.NewAttemptLimiter()
 	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
@@ -99,11 +180,8 @@ func main() {
 	exportService := services.NewExportService(dayService, symptomService)
 	settingsService := services.NewSettingsService(repositories.Users)
 	notificationService := services.NewNotificationService()
-	settingsViewService := services.NewSettingsViewService(settingsService, notificationService, exportService)
-	onboardingService := services.NewOnboardingService(repositories.Users)
-	setupService := services.NewSetupService(repositories.Users)
 
-	dependencies := api.Dependencies{
+	return api.Dependencies{
 		AuthService:          authService,
 		RegistrationService:  registrationService,
 		PasswordResetService: passwordResetService,
@@ -116,64 +194,77 @@ func main() {
 		DashboardViewService: dashboardViewService,
 		ExportService:        exportService,
 		SettingsService:      settingsService,
-		SettingsViewService:  settingsViewService,
-		OnboardingService:    onboardingService,
-		SetupService:         setupService,
+		SettingsViewService:  services.NewSettingsViewService(settingsService, notificationService, exportService),
+		OnboardingService:    services.NewOnboardingService(repositories.Users),
+		SetupService:         services.NewSetupService(repositories.Users),
 	}
+}
 
-	handler, err := api.NewHandler(secretKey, filepath.Join("internal", "templates"), location, i18nManager, cookieSecure, dependencies)
+func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencies api.Dependencies) *api.Handler {
+	handler, err := api.NewHandler(config.SecretKey, filepath.Join("internal", "templates"), config.Location, i18nManager, config.CookieSecure, dependencies)
 	if err != nil {
 		log.Fatalf("handler init failed: %v", err)
 	}
+	return handler
+}
 
+func newFiberApp(config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler) *fiber.App {
+	app := fiber.New(fiberConfig(config.Proxy))
+	configureFiberMiddleware(app, config, i18nManager, handler)
+	app.Static("/static", filepath.Join("web", "static"))
+	api.RegisterRoutes(app, handler)
+	app.Use(handler.NotFound)
+	return app
+}
+
+func fiberConfig(proxy proxySettings) fiber.Config {
 	appConfig := fiber.Config{
 		AppName:               "Ovumcy",
 		DisableStartupMessage: true,
 	}
-	if trustProxyEnabled {
-		appConfig.ProxyHeader = proxyHeader
-		appConfig.EnableTrustedProxyCheck = true
-		appConfig.EnableIPValidation = true
-		appConfig.TrustedProxies = trustedProxies
+	if !proxy.Enabled {
+		return appConfig
 	}
-	app := fiber.New(appConfig)
+	appConfig.ProxyHeader = proxy.Header
+	appConfig.EnableTrustedProxyCheck = true
+	appConfig.EnableIPValidation = true
+	appConfig.TrustedProxies = proxy.TrustedProxies
+	return appConfig
+}
 
+func configureFiberMiddleware(app *fiber.App, config runtimeConfig, i18nManager *i18n.Manager, handler *api.Handler) {
 	app.Use(recover.New())
 	app.Use(logger.New())
 	app.Use(compress.New())
 	app.Use("/api/auth/login", limiter.New(limiter.Config{
-		Max:        loginLimitMax,
-		Expiration: loginLimitWindow,
+		Max:        config.RateLimits.LoginMax,
+		Expiration: config.RateLimits.LoginWindow,
 		LimitReached: newAuthRateLimitHandler(i18nManager, authRateLimitConfig{
 			RedirectPath: "/login",
 			ErrorCode:    "too_many_login_attempts",
 			MessageKey:   "auth.error.too_many_login_attempts",
-		}, cookieSecure),
+		}, config.CookieSecure),
 	}))
 	app.Use("/api/auth/forgot-password", limiter.New(limiter.Config{
-		Max:        forgotLimitMax,
-		Expiration: forgotLimitWindow,
+		Max:        config.RateLimits.ForgotPasswordMax,
+		Expiration: config.RateLimits.ForgotPasswordWindow,
 		LimitReached: newAuthRateLimitHandler(i18nManager, authRateLimitConfig{
 			RedirectPath: "/forgot-password",
 			ErrorCode:    "too_many_forgot_password_attempts",
 			MessageKey:   "auth.error.too_many_forgot_password_attempts",
-		}, cookieSecure),
+		}, config.CookieSecure),
 	}))
 	app.Use("/api", limiter.New(limiter.Config{
-		Max:          apiLimitMax,
-		Expiration:   apiLimitWindow,
+		Max:          config.RateLimits.APIMax,
+		Expiration:   config.RateLimits.APIWindow,
 		LimitReached: newAPIRateLimitHandler(i18nManager),
 	}))
 	app.Use(handler.LanguageMiddleware)
-	app.Use(csrf.New(csrfMiddlewareConfig(cookieSecure)))
+	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure)))
+}
 
-	app.Static("/static", filepath.Join("web", "static"))
-	api.RegisterRoutes(app, handler)
-	app.Use(handler.NotFound)
-
+func installGracefulShutdown(app *fiber.App) context.CancelFunc {
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stopSignals()
-
 	go func() {
 		<-sigCtx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -182,25 +273,25 @@ func main() {
 			log.Printf("server shutdown failed: %v", err)
 		}
 	}()
+	return stopSignals
+}
 
+func logStartup(config runtimeConfig) {
 	log.Printf(
 		"Ovumcy listening on http://0.0.0.0:%s (rev: %s, tz: %s, rate_limits: login=%d/%s forgot=%d/%s api=%d/%s, trusted_proxy=%t)",
-		port,
+		config.Port,
 		buildRevision(),
-		location.String(),
-		loginLimitMax,
-		loginLimitWindow,
-		forgotLimitMax,
-		forgotLimitWindow,
-		apiLimitMax,
-		apiLimitWindow,
-		trustProxyEnabled,
+		config.Location.String(),
+		config.RateLimits.LoginMax,
+		config.RateLimits.LoginWindow,
+		config.RateLimits.ForgotPasswordMax,
+		config.RateLimits.ForgotPasswordWindow,
+		config.RateLimits.APIMax,
+		config.RateLimits.APIWindow,
+		config.Proxy.Enabled,
 	)
-	if trustProxyEnabled {
-		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", proxyHeader, len(trustedProxies))
-	}
-	if err := app.Listen(":" + port); err != nil {
-		log.Fatalf("server exited: %v", err)
+	if config.Proxy.Enabled {
+		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", config.Proxy.Header, len(config.Proxy.TrustedProxies))
 	}
 }
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"reflect"
 
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -25,39 +26,50 @@ type Dependencies struct {
 }
 
 func (dependencies Dependencies) validate() error {
-	switch {
-	case dependencies.AuthService == nil:
-		return errors.New("auth service is required")
-	case dependencies.RegistrationService == nil:
-		return errors.New("registration service is required")
-	case dependencies.PasswordResetService == nil:
-		return errors.New("password reset service is required")
-	case dependencies.LoginService == nil:
-		return errors.New("login service is required")
-	case dependencies.DayService == nil:
-		return errors.New("day service is required")
-	case dependencies.SymptomService == nil:
-		return errors.New("symptom service is required")
-	case dependencies.ViewerService == nil:
-		return errors.New("viewer service is required")
-	case dependencies.StatsService == nil:
-		return errors.New("stats service is required")
-	case dependencies.CalendarViewService == nil:
-		return errors.New("calendar view service is required")
-	case dependencies.DashboardViewService == nil:
-		return errors.New("dashboard view service is required")
-	case dependencies.ExportService == nil:
-		return errors.New("export service is required")
-	case dependencies.SettingsService == nil:
-		return errors.New("settings service is required")
-	case dependencies.SettingsViewService == nil:
-		return errors.New("settings view service is required")
-	case dependencies.OnboardingService == nil:
-		return errors.New("onboarding service is required")
-	case dependencies.SetupService == nil:
-		return errors.New("setup service is required")
+	for _, requirement := range dependencies.requirements() {
+		if requirement.missing() {
+			return errors.New(requirement.message)
+		}
+	}
+	return nil
+}
+
+type dependencyRequirement struct {
+	value   any
+	message string
+}
+
+func (dependencies Dependencies) requirements() []dependencyRequirement {
+	return []dependencyRequirement{
+		{value: dependencies.AuthService, message: "auth service is required"},
+		{value: dependencies.RegistrationService, message: "registration service is required"},
+		{value: dependencies.PasswordResetService, message: "password reset service is required"},
+		{value: dependencies.LoginService, message: "login service is required"},
+		{value: dependencies.DayService, message: "day service is required"},
+		{value: dependencies.SymptomService, message: "symptom service is required"},
+		{value: dependencies.ViewerService, message: "viewer service is required"},
+		{value: dependencies.StatsService, message: "stats service is required"},
+		{value: dependencies.CalendarViewService, message: "calendar view service is required"},
+		{value: dependencies.DashboardViewService, message: "dashboard view service is required"},
+		{value: dependencies.ExportService, message: "export service is required"},
+		{value: dependencies.SettingsService, message: "settings service is required"},
+		{value: dependencies.SettingsViewService, message: "settings view service is required"},
+		{value: dependencies.OnboardingService, message: "onboarding service is required"},
+		{value: dependencies.SetupService, message: "setup service is required"},
+	}
+}
+
+func (requirement dependencyRequirement) missing() bool {
+	if requirement.value == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(requirement.value)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
 	default:
-		return nil
+		return false
 	}
 }
 

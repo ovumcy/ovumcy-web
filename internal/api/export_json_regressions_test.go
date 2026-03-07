@@ -3,9 +3,6 @@ package api
 import (
 	"encoding/json"
 	"io"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -38,38 +35,40 @@ func TestExportJSONNormalizesFlowAndMapsSymptoms(t *testing.T) {
 		t.Fatalf("create daily log: %v", err)
 	}
 
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	request := httptest.NewRequest(http.MethodGet, "/api/export/json", nil)
-	request.Header.Set("Cookie", authCookie)
+	response := exportResponseForTest(t, app, user.Email, "StrongPass1", "/api/export/json")
+	assertBodyContainsAll(t, response.Header.Get("Content-Type"),
+		bodyStringMatch{fragment: "application/json", message: "expected application/json content type"},
+	)
+	assertBodyContainsAll(t, response.Header.Get("Content-Disposition"),
+		bodyStringMatch{fragment: "attachment; filename=ovumcy-export-", message: "expected attachment filename header"},
+	)
 
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("export json request failed: %v", err)
-	}
-	defer response.Body.Close()
+	payload := decodeExportJSONPayload(t, response.Body)
+	assertExportJSONPayload(t, payload)
+}
 
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", response.StatusCode)
-	}
-	if got := response.Header.Get("Content-Type"); !strings.Contains(got, "application/json") {
-		t.Fatalf("expected application/json content type, got %q", got)
-	}
-	if got := response.Header.Get("Content-Disposition"); !strings.Contains(got, "attachment; filename=ovumcy-export-") {
-		t.Fatalf("expected attachment filename header, got %q", got)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read response body: %v", err)
-	}
+func decodeExportJSONPayload(t *testing.T, body io.Reader) struct {
+	ExportedAt string            `json:"exported_at"`
+	Entries    []exportJSONEntry `json:"entries"`
+} {
+	t.Helper()
 
 	payload := struct {
 		ExportedAt string            `json:"exported_at"`
 		Entries    []exportJSONEntry `json:"entries"`
 	}{}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
 		t.Fatalf("decode json payload: %v", err)
 	}
+	return payload
+}
+
+func assertExportJSONPayload(t *testing.T, payload struct {
+	ExportedAt string            `json:"exported_at"`
+	Entries    []exportJSONEntry `json:"entries"`
+}) {
+	t.Helper()
+
 	if payload.ExportedAt == "" {
 		t.Fatalf("expected exported_at in payload")
 	}

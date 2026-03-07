@@ -34,96 +34,20 @@ func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
 		return stats
 	}
 
-	sorted := make([]models.DailyLog, 0, len(logs))
-	sorted = append(sorted, logs...)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Date.Before(sorted[j].Date)
-	})
-
+	sorted := sortDailyLogs(logs)
 	starts := DetectCycleStarts(sorted)
 	if len(starts) == 0 {
 		return stats
 	}
 
 	cycles := buildCycles(starts, sorted)
-	lengths := cycleLengths(starts)
-	recentLengths := tailInts(lengths, 6)
-
-	if len(recentLengths) > 0 {
-		stats.AverageCycleLength = averageInts(recentLengths)
-		stats.MedianCycleLength = medianInt(recentLengths)
-	}
-
-	periodLengths := make([]int, 0, len(cycles))
-	for _, cycle := range tailCycles(cycles, 6) {
-		if cycle.PeriodLength > 0 {
-			periodLengths = append(periodLengths, cycle.PeriodLength)
-		}
-	}
-	if len(periodLengths) > 0 {
-		stats.AveragePeriodLength = averageInts(periodLengths)
-	}
-
+	populateObservedCycleStats(&stats, starts, cycles)
 	stats.LastPeriodStart = starts[len(starts)-1]
-
-	predictionCycleLength := stats.MedianCycleLength
-	if predictionCycleLength == 0 {
-		predictionCycleLength = models.DefaultCycleLength
-	}
-
-	predictedPeriodLength := int(stats.AveragePeriodLength + 0.5)
-	if predictedPeriodLength <= 0 {
-		predictedPeriodLength = models.DefaultPeriodLength
-	}
-
-	stats.NextPeriodStart = dateOnly(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength))
-	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(
-		stats.LastPeriodStart,
-		predictionCycleLength,
-		predictedPeriodLength,
-	)
-	if ovulationCalculable {
-		stats.OvulationDate = ovulationDate
-		stats.OvulationExact = ovulationExact
-		stats.OvulationImpossible = false
-		stats.FertilityWindowStart = fertilityWindowStart
-		stats.FertilityWindowEnd = fertilityWindowEnd
-	} else {
-		stats.OvulationDate = time.Time{}
-		stats.OvulationExact = false
-		stats.OvulationImpossible = true
-		stats.FertilityWindowStart = time.Time{}
-		stats.FertilityWindowEnd = time.Time{}
-	}
+	applyPredictedCycleStats(&stats)
 
 	today := dateOnly(now)
-	if !today.Before(stats.LastPeriodStart) {
-		stats.CurrentCycleDay = int(today.Sub(stats.LastPeriodStart).Hours()/24) + 1
-	}
-
-	periodByDate := make(map[string]bool, len(sorted))
-	for _, log := range sorted {
-		if log.IsPeriod {
-			periodByDate[dateOnly(log.Date).Format("2006-01-02")] = true
-		}
-	}
-
-	if periodByDate[today.Format("2006-01-02")] {
-		stats.CurrentPhase = "menstrual"
-	} else if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
-		stats.CurrentPhase = "unknown"
-	} else if betweenInclusive(today, stats.FertilityWindowStart, stats.FertilityWindowEnd) {
-		if sameDay(today, stats.OvulationDate) {
-			stats.CurrentPhase = "ovulation"
-		} else {
-			stats.CurrentPhase = "fertile"
-		}
-	} else if today.Before(stats.OvulationDate) {
-		stats.CurrentPhase = "follicular"
-	} else {
-		stats.CurrentPhase = "luteal"
-	}
-
+	stats.CurrentCycleDay = cycleDayAt(stats.LastPeriodStart, today)
+	stats.CurrentPhase = detectCyclePhase(stats, sorted, today)
 	return stats
 }
 
@@ -197,12 +121,7 @@ func DetectCycleStarts(logs []models.DailyLog) []time.Time {
 		return nil
 	}
 
-	sorted := make([]models.DailyLog, 0, len(logs))
-	sorted = append(sorted, logs...)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Date.Before(sorted[j].Date)
-	})
-
+	sorted := sortDailyLogs(logs)
 	starts := make([]time.Time, 0)
 	var previousPeriodDay time.Time
 
@@ -226,6 +145,122 @@ func DetectCycleStarts(logs []models.DailyLog) []time.Time {
 	}
 
 	return starts
+}
+
+func sortDailyLogs(logs []models.DailyLog) []models.DailyLog {
+	sorted := make([]models.DailyLog, 0, len(logs))
+	sorted = append(sorted, logs...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Date.Before(sorted[j].Date)
+	})
+	return sorted
+}
+
+func populateObservedCycleStats(stats *CycleStats, starts []time.Time, cycles []detectedCycle) {
+	recentLengths := tailInts(cycleLengths(starts), 6)
+	if len(recentLengths) > 0 {
+		stats.AverageCycleLength = averageInts(recentLengths)
+		stats.MedianCycleLength = medianInt(recentLengths)
+	}
+
+	periodLengths := recentPositivePeriodLengths(cycles, 6)
+	if len(periodLengths) > 0 {
+		stats.AveragePeriodLength = averageInts(periodLengths)
+	}
+}
+
+func recentPositivePeriodLengths(cycles []detectedCycle, limit int) []int {
+	periodLengths := make([]int, 0, len(cycles))
+	for _, cycle := range tailCycles(cycles, limit) {
+		if cycle.PeriodLength > 0 {
+			periodLengths = append(periodLengths, cycle.PeriodLength)
+		}
+	}
+	return periodLengths
+}
+
+func applyPredictedCycleStats(stats *CycleStats) {
+	predictionCycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
+	predictedPeriodLength := predictedPeriodLength(stats.AveragePeriodLength)
+
+	stats.NextPeriodStart = dateOnly(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength))
+	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(
+		stats.LastPeriodStart,
+		predictionCycleLength,
+		predictedPeriodLength,
+	)
+	if !ovulationCalculable {
+		clearPredictedCycleWindow(stats)
+		return
+	}
+
+	stats.OvulationDate = ovulationDate
+	stats.OvulationExact = ovulationExact
+	stats.OvulationImpossible = false
+	stats.FertilityWindowStart = fertilityWindowStart
+	stats.FertilityWindowEnd = fertilityWindowEnd
+}
+
+func predictedCycleLength(median int, average float64) int {
+	if median > 0 {
+		return median
+	}
+	if average > 0 {
+		return int(average + 0.5)
+	}
+	return models.DefaultCycleLength
+}
+
+func predictedPeriodLength(average float64) int {
+	length := int(average + 0.5)
+	if length > 0 {
+		return length
+	}
+	return models.DefaultPeriodLength
+}
+
+func clearPredictedCycleWindow(stats *CycleStats) {
+	stats.OvulationDate = time.Time{}
+	stats.OvulationExact = false
+	stats.OvulationImpossible = true
+	stats.FertilityWindowStart = time.Time{}
+	stats.FertilityWindowEnd = time.Time{}
+}
+
+func cycleDayAt(lastPeriodStart time.Time, today time.Time) int {
+	if today.Before(lastPeriodStart) {
+		return 0
+	}
+	return int(today.Sub(lastPeriodStart).Hours()/24) + 1
+}
+
+func detectCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time) string {
+	if periodLoggedOnDay(logs, today) {
+		return "menstrual"
+	}
+	if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
+		return "unknown"
+	}
+	if betweenInclusive(today, stats.FertilityWindowStart, stats.FertilityWindowEnd) {
+		if sameDay(today, stats.OvulationDate) {
+			return "ovulation"
+		}
+		return "fertile"
+	}
+	if today.Before(stats.OvulationDate) {
+		return "follicular"
+	}
+	return "luteal"
+}
+
+func periodLoggedOnDay(logs []models.DailyLog, day time.Time) bool {
+	dayKey := day.Format("2006-01-02")
+	for _, log := range logs {
+		if log.IsPeriod && dateOnly(log.Date).Format("2006-01-02") == dayKey {
+			return true
+		}
+	}
+	return false
 }
 
 func CycleLengths(logs []models.DailyLog) []int {

@@ -1,13 +1,12 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
-	"strings"
 	"testing"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
 )
 
@@ -23,40 +22,19 @@ func TestSettingsPageRendersPersistedCycleValues(t *testing.T) {
 	}
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("settings request failed: %v", err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", response.StatusCode)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	rendered := string(body)
-	if !strings.Contains(rendered, `x-data='settingsCycleForm({ cycleLength: 29, periodLength: 6, autoPeriodFill: true })'`) {
-		t.Fatalf("expected settings cycle form state to include persisted values")
-	}
-	if !strings.Contains(rendered, `<span x-text="cycleLength">29</span>`) {
-		t.Fatalf("expected cycle label fallback text to include persisted value")
-	}
-	if !strings.Contains(rendered, `<span x-text="periodLength">6</span>`) {
-		t.Fatalf("expected period label fallback text to include persisted value")
-	}
-	if !strings.Contains(rendered, `x-if="(cycleLength - periodLength) < 8"`) {
-		t.Fatalf("expected settings cycle form to include hard-validation state for incompatible cycle values")
-	}
-	if !strings.Contains(rendered, `'btn--disabled': (cycleLength - periodLength) < 8`) {
-		t.Fatalf("expected settings save button to include disabled visual state class binding")
-	}
+	rendered := renderSettingsPageForTest(t, app, authCookie)
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: `x-data='settingsCycleForm({ cycleLength: 29, periodLength: 6, autoPeriodFill: true })'`, message: "expected settings cycle form state to include persisted values"},
+		bodyStringMatch{fragment: `<span x-text="cycleLength">29</span>`, message: "expected cycle label fallback text to include persisted value"},
+		bodyStringMatch{fragment: `<span x-text="periodLength">6</span>`, message: "expected period label fallback text to include persisted value"},
+		bodyStringMatch{fragment: `x-if="(cycleLength - periodLength) < 8"`, message: "expected settings cycle form to include hard-validation state for incompatible cycle values"},
+		bodyStringMatch{fragment: `'btn--disabled': (cycleLength - periodLength) < 8`, message: "expected settings save button to include disabled visual state class binding"},
+		bodyStringMatch{fragment: `id="settings-period-length"`, message: "expected settings period slider max=14"},
+		bodyStringMatch{fragment: `max="14"`, message: "expected settings period slider max=14"},
+		bodyStringMatch{fragment: `id="settings-last-period-start"`, message: "expected settings cycle form to include editable last-period-start field"},
+		bodyStringMatch{fragment: `id="export-from"`, message: "expected export date range inputs to be rendered"},
+		bodyStringMatch{fragment: `id="export-to"`, message: "expected export date range inputs to be rendered"},
+	)
 
 	cycleInputPattern := regexp.MustCompile(`(?s)name="cycle_length".*?value="29"`)
 	if !cycleInputPattern.MatchString(rendered) {
@@ -66,15 +44,6 @@ func TestSettingsPageRendersPersistedCycleValues(t *testing.T) {
 	if !periodInputPattern.MatchString(rendered) {
 		t.Fatalf("expected period slider value attribute to be rendered from DB")
 	}
-	if !strings.Contains(rendered, `id="settings-period-length"`) || !strings.Contains(rendered, `max="14"`) {
-		t.Fatalf("expected settings period slider max=14")
-	}
-	if !strings.Contains(rendered, `id="settings-last-period-start"`) {
-		t.Fatalf("expected settings cycle form to include editable last-period-start field")
-	}
-	if !strings.Contains(rendered, `id="export-from"`) || !strings.Contains(rendered, `id="export-to"`) {
-		t.Fatalf("expected export date range inputs to be rendered")
-	}
 	exportInputPattern := regexp.MustCompile(`(?s)id="export-from".*?type="date".*?id="export-to".*?type="date"`)
 	if !exportInputPattern.MatchString(rendered) {
 		t.Fatalf("expected export inputs to use native date type for client-side validation")
@@ -83,4 +52,16 @@ func TestSettingsPageRendersPersistedCycleValues(t *testing.T) {
 	if !lastPeriodInputAccessibilityPattern.MatchString(rendered) {
 		t.Fatalf("expected settings last-period-start field to include localized language, aria-label, and min date attributes")
 	}
+}
+
+func renderSettingsPageForTest(t *testing.T, app *fiber.App, authCookie string) string {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return mustReadBodyString(t, response.Body)
 }

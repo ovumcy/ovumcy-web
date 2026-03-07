@@ -52,6 +52,54 @@ var exportSymptomColumnsByName = map[string]string{
 	"constipation":      "constipation",
 }
 
+var exportSymptomFlagSetters = map[string]func(*ExportSymptomFlags){
+	"cramps": func(flags *ExportSymptomFlags) {
+		flags.Cramps = true
+	},
+	"headache": func(flags *ExportSymptomFlags) {
+		flags.Headache = true
+	},
+	"acne": func(flags *ExportSymptomFlags) {
+		flags.Acne = true
+	},
+	"mood": func(flags *ExportSymptomFlags) {
+		flags.Mood = true
+	},
+	"bloating": func(flags *ExportSymptomFlags) {
+		flags.Bloating = true
+	},
+	"fatigue": func(flags *ExportSymptomFlags) {
+		flags.Fatigue = true
+	},
+	"breast_tenderness": func(flags *ExportSymptomFlags) {
+		flags.BreastTenderness = true
+	},
+	"back_pain": func(flags *ExportSymptomFlags) {
+		flags.BackPain = true
+	},
+	"nausea": func(flags *ExportSymptomFlags) {
+		flags.Nausea = true
+	},
+	"spotting": func(flags *ExportSymptomFlags) {
+		flags.Spotting = true
+	},
+	"irritability": func(flags *ExportSymptomFlags) {
+		flags.Irritability = true
+	},
+	"insomnia": func(flags *ExportSymptomFlags) {
+		flags.Insomnia = true
+	},
+	"food_cravings": func(flags *ExportSymptomFlags) {
+		flags.FoodCravings = true
+	},
+	"diarrhea": func(flags *ExportSymptomFlags) {
+		flags.Diarrhea = true
+	},
+	"constipation": func(flags *ExportSymptomFlags) {
+		flags.Constipation = true
+	},
+}
+
 type ExportDayReader interface {
 	FetchLogsForOptionalRange(userID uint, from *time.Time, to *time.Time, location *time.Location) ([]models.DailyLog, error)
 }
@@ -259,40 +307,11 @@ func buildExportSymptomFlags(symptomIDs []uint, symptomNames map[uint]string) (E
 }
 
 func setExportSymptomFlag(flags *ExportSymptomFlags, column string) bool {
-	switch column {
-	case "cramps":
-		flags.Cramps = true
-	case "headache":
-		flags.Headache = true
-	case "acne":
-		flags.Acne = true
-	case "mood":
-		flags.Mood = true
-	case "bloating":
-		flags.Bloating = true
-	case "fatigue":
-		flags.Fatigue = true
-	case "breast_tenderness":
-		flags.BreastTenderness = true
-	case "back_pain":
-		flags.BackPain = true
-	case "nausea":
-		flags.Nausea = true
-	case "spotting":
-		flags.Spotting = true
-	case "irritability":
-		flags.Irritability = true
-	case "insomnia":
-		flags.Insomnia = true
-	case "food_cravings":
-		flags.FoodCravings = true
-	case "diarrhea":
-		flags.Diarrhea = true
-	case "constipation":
-		flags.Constipation = true
-	default:
+	setter, ok := exportSymptomFlagSetters[column]
+	if !ok {
 		return false
 	}
+	setter(flags)
 	return true
 }
 

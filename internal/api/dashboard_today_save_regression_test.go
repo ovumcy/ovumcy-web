@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,32 +27,14 @@ func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 		"flow":      {models.FlowNone},
 		"notes":     {note},
 	}
-	saveRequest := httptest.NewRequest(http.MethodPost, "/api/days/"+todayRaw, strings.NewReader(form.Encode()))
-	saveRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	saveRequest.Header.Set("HX-Request", "true")
-	saveRequest.Header.Set("Accept-Language", "en")
-	saveRequest.Header.Set("Cookie", authCookie)
+	saveResponse := mustAppResponse(t, app, dashboardSaveRequest(todayRaw, form, authCookie))
+	assertStatusCode(t, saveResponse, http.StatusOK)
 
-	saveResponse, err := app.Test(saveRequest, -1)
-	if err != nil {
-		t.Fatalf("dashboard save request failed: %v", err)
-	}
-	defer saveResponse.Body.Close()
-
-	if saveResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", saveResponse.StatusCode)
-	}
-
-	saveBody, err := io.ReadAll(saveResponse.Body)
-	if err != nil {
-		t.Fatalf("read save response body: %v", err)
-	}
-	if !strings.Contains(string(saveBody), "status-ok") {
-		t.Fatalf("expected save status success markup, got %q", string(saveBody))
-	}
-	if !strings.Contains(string(saveBody), "data-dismiss-status") {
-		t.Fatalf("expected dismiss button marker in save status markup, got %q", string(saveBody))
-	}
+	saveBody := mustReadBodyString(t, saveResponse.Body)
+	assertBodyContainsAll(t, saveBody,
+		bodyStringMatch{fragment: "status-ok", message: "expected save status success markup"},
+		bodyStringMatch{fragment: "data-dismiss-status", message: "expected dismiss button marker in save status markup"},
+	)
 
 	parsedDay, err := services.ParseDayDate(todayRaw, time.UTC)
 	if err != nil {
@@ -76,22 +57,10 @@ func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	dashboardRequest.Header.Set("Accept-Language", "en")
 	dashboardRequest.Header.Set("Cookie", authCookie)
+	dashboardResponse := mustAppResponse(t, app, dashboardRequest)
+	assertStatusCode(t, dashboardResponse, http.StatusOK)
 
-	dashboardResponse, err := app.Test(dashboardRequest, -1)
-	if err != nil {
-		t.Fatalf("dashboard request failed: %v", err)
-	}
-	defer dashboardResponse.Body.Close()
-
-	if dashboardResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", dashboardResponse.StatusCode)
-	}
-
-	dashboardBody, err := io.ReadAll(dashboardResponse.Body)
-	if err != nil {
-		t.Fatalf("read dashboard body: %v", err)
-	}
-	rendered := string(dashboardBody)
+	rendered := mustReadBodyString(t, dashboardResponse.Body)
 	periodCheckedPattern := regexp.MustCompile(`(?s)name="is_period"[^>]*checked`)
 	if !periodCheckedPattern.MatchString(rendered) {
 		t.Fatalf("expected dashboard period toggle to remain checked after reload")
@@ -99,4 +68,13 @@ func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 	if !strings.Contains(rendered, note) {
 		t.Fatalf("expected dashboard notes field to include saved note %q", note)
 	}
+}
+
+func dashboardSaveRequest(todayRaw string, form url.Values, authCookie string) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, "/api/days/"+todayRaw, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+	return request
 }

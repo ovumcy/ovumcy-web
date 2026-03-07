@@ -2,13 +2,13 @@ package api
 
 import (
 	"encoding/csv"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
 )
 
@@ -38,31 +38,15 @@ func TestExportCSVIncludesKnownAndOtherSymptoms(t *testing.T) {
 		t.Fatalf("create daily log: %v", err)
 	}
 
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	request := httptest.NewRequest(http.MethodGet, "/api/export/csv", nil)
-	request.Header.Set("Cookie", authCookie)
+	response := exportResponseForTest(t, app, user.Email, "StrongPass1", "/api/export/csv")
+	assertBodyContainsAll(t, response.Header.Get("Content-Type"),
+		bodyStringMatch{fragment: "text/csv", message: "expected text/csv content type"},
+	)
+	assertBodyContainsAll(t, response.Header.Get("Content-Disposition"),
+		bodyStringMatch{fragment: "attachment; filename=ovumcy-export-", message: "expected attachment filename header"},
+	)
 
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("export csv request failed: %v", err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", response.StatusCode)
-	}
-	if got := response.Header.Get("Content-Type"); !strings.Contains(got, "text/csv") {
-		t.Fatalf("expected text/csv content type, got %q", got)
-	}
-	if got := response.Header.Get("Content-Disposition"); !strings.Contains(got, "attachment; filename=ovumcy-export-") {
-		t.Fatalf("expected attachment filename header, got %q", got)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read response body: %v", err)
-	}
-	records, err := csv.NewReader(strings.NewReader(string(body))).ReadAll()
+	records, err := csv.NewReader(strings.NewReader(mustReadBodyString(t, response.Body))).ReadAll()
 	if err != nil {
 		t.Fatalf("parse csv: %v", err)
 	}
@@ -95,4 +79,16 @@ func TestExportCSVIncludesKnownAndOtherSymptoms(t *testing.T) {
 	if got := row[indexByName["Notes"]]; got != "note" {
 		t.Fatalf("expected notes to be exported, got %q", got)
 	}
+}
+
+func exportResponseForTest(t *testing.T, app *fiber.App, email string, password string, target string) *http.Response {
+	t.Helper()
+
+	authCookie := loginAndExtractAuthCookie(t, app, email, password)
+	request := httptest.NewRequest(http.MethodGet, target, nil)
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return response
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -69,26 +70,8 @@ func TestDashboardTodayActionsUseRequestTimezoneHeaderAndCookie(t *testing.T) {
 		t.Fatalf("seed today daily log: %v", err)
 	}
 
-	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	dashboardRequest.Header.Set("Accept-Language", "ru")
-	dashboardRequest.Header.Set("Cookie", authCookie)
-	dashboardRequest.Header.Set(timezoneHeaderName, timezoneName)
-
-	dashboardResponse, err := app.Test(dashboardRequest, -1)
-	if err != nil {
-		t.Fatalf("dashboard request failed: %v", err)
-	}
-	defer dashboardResponse.Body.Close()
-
-	if dashboardResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected dashboard status 200, got %d", dashboardResponse.StatusCode)
-	}
-
-	renderedBytes, err := io.ReadAll(dashboardResponse.Body)
-	if err != nil {
-		t.Fatalf("read dashboard body: %v", err)
-	}
-	rendered := string(renderedBytes)
+	dashboardResponse := dashboardWithTimezoneResponse(t, app, authCookie, timezoneName)
+	rendered := mustReadBodyString(t, dashboardResponse.Body)
 
 	if !strings.Contains(rendered, formattedToday) {
 		t.Fatalf("expected dashboard header date %q, got different value", formattedToday)
@@ -110,20 +93,8 @@ func TestDashboardTodayActionsUseRequestTimezoneHeaderAndCookie(t *testing.T) {
 	}
 	tzCookieHeader := authCookie + "; " + timezoneCookieName + "=" + tzCookie.Value
 
-	clearRequest := httptest.NewRequest(http.MethodDelete, "/api/log/delete?date="+todayRaw+"&source=dashboard", nil)
-	clearRequest.Header.Set("HX-Request", "true")
-	clearRequest.Header.Set("Accept-Language", "ru")
-	clearRequest.Header.Set("Cookie", tzCookieHeader)
-
-	clearResponse, err := app.Test(clearRequest, -1)
-	if err != nil {
-		t.Fatalf("clear request failed: %v", err)
-	}
-	defer clearResponse.Body.Close()
-
-	if clearResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected clear status 200 for dashboard source, got %d", clearResponse.StatusCode)
-	}
+	clearResponse := dashboardTimezoneActionResponse(t, app, http.MethodDelete, "/api/log/delete?date="+todayRaw+"&source=dashboard", nil, tzCookieHeader)
+	assertStatusCode(t, clearResponse, http.StatusOK)
 	if clearResponse.Header.Get("HX-Redirect") != "/dashboard" {
 		t.Fatalf("expected HX-Redirect /dashboard on clear, got %q", clearResponse.Header.Get("HX-Redirect"))
 	}
@@ -141,21 +112,8 @@ func TestDashboardTodayActionsUseRequestTimezoneHeaderAndCookie(t *testing.T) {
 		"flow":      {models.FlowNone},
 		"notes":     {"timezone save note"},
 	}
-	saveRequest := httptest.NewRequest(http.MethodPost, "/api/days/"+todayRaw, strings.NewReader(form.Encode()))
-	saveRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	saveRequest.Header.Set("HX-Request", "true")
-	saveRequest.Header.Set("Accept-Language", "ru")
-	saveRequest.Header.Set("Cookie", tzCookieHeader)
-
-	saveResponse, err := app.Test(saveRequest, -1)
-	if err != nil {
-		t.Fatalf("save request failed: %v", err)
-	}
-	defer saveResponse.Body.Close()
-
-	if saveResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected save status 200, got %d", saveResponse.StatusCode)
-	}
+	saveResponse := dashboardTimezoneActionResponse(t, app, http.MethodPost, "/api/days/"+todayRaw, strings.NewReader(form.Encode()), tzCookieHeader)
+	assertStatusCode(t, saveResponse, http.StatusOK)
 
 	savedEntry, err := fetchLogByDateForTest(database, user.ID, today, location)
 	if err != nil {
@@ -167,6 +125,33 @@ func TestDashboardTodayActionsUseRequestTimezoneHeaderAndCookie(t *testing.T) {
 	if savedEntry.Notes != "timezone save note" {
 		t.Fatalf("expected saved notes %q, got %q", "timezone save note", savedEntry.Notes)
 	}
+}
+
+func dashboardWithTimezoneResponse(t *testing.T, app *fiber.App, authCookie string, timezoneName string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "ru")
+	request.Header.Set("Cookie", authCookie)
+	request.Header.Set(timezoneHeaderName, timezoneName)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return response
+}
+
+func dashboardTimezoneActionResponse(t *testing.T, app *fiber.App, method string, target string, body io.Reader, cookieHeader string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(method, target, body)
+	if method == http.MethodPost {
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "ru")
+	request.Header.Set("Cookie", cookieHeader)
+
+	return mustAppResponse(t, app, request)
 }
 
 func timezoneWithDifferentCalendarDay(t *testing.T, nowUTC time.Time) (string, *time.Location) {
