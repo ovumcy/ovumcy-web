@@ -16,7 +16,7 @@ It is built for people who want fast daily tracking, useful cycle insights, and 
 
 Ovumcy runs as a single Go service with a server-rendered web UI, can be installed on a phone home screen, and supports SQLite by default with Postgres as an advanced self-hosted path.
 
-This README describes the current `main` branch. The latest tagged release is `v0.2.5`.
+This README describes the current `main` branch. The latest tagged release is `v0.3.0`.
 
 ## Why Ovumcy Exists
 
