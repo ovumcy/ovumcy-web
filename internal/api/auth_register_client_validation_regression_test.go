@@ -41,4 +41,3 @@ func TestRegisterPageIncludesClientValidationHooks(t *testing.T) {
 		}
 	}
 }
-

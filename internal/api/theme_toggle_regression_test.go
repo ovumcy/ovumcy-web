@@ -44,4 +44,3 @@ func TestBaseTemplateIncludesThemeBootstrapAndToggleHooks(t *testing.T) {
 		}
 	}
 }
-
