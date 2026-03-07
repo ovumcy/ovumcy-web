@@ -16,6 +16,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -48,8 +51,15 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
-      - name: Go test
-        run: go test ./...
+      - name: Go test with coverage
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+        with:
+          files: coverage.out
+          use_oidc: true
+          fail_ci_if_error: true
 
       - name: Frontend build
         run: npm run build
@@ -150,4 +160,3 @@ jobs:
             test-results
             .tmp/e2e
           if-no-files-found: ignore
-
