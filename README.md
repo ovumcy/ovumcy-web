@@ -10,10 +10,8 @@
 [![No telemetry](https://img.shields.io/badge/Telemetry-none-2ea44f)](https://github.com/terraincognita07/ovumcy#privacy-and-security)
 
 <p align="center">
-  <img src="docs/screenshots/ovumcy-readme-hero.svg" alt="Ovumcy icon" width="220">
+  <img src="docs/screenshots/ovumcy-logo-horizontal.svg" alt="Ovumcy" width="640">
 </p>
-
-<h1 align="center">Ovumcy</h1>
 
 Ovumcy is a privacy-first, self-hosted menstrual cycle tracker.
 It is built for people who want fast daily tracking, useful cycle insights, and data that stays under their control.

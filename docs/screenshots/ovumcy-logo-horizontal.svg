@@ -1,0 +1,13 @@
+<svg width="256" height="64" viewBox="0 0 256 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ovumcyLogoTitle ovumcyLogoDesc">
+  <title id="ovumcyLogoTitle">Ovumcy</title>
+  <desc id="ovumcyLogoDesc">Minimal soft cycle symbol with offset core and Ovumcy wordmark.</desc>
+
+  <g transform="translate(8 8)">
+    <path d="M24 2C35.598 2 45.7 10.201 47.995 21.549" stroke="#A989E7" stroke-width="4.6" stroke-linecap="round"/>
+    <path d="M44.558 29.574C41.922 39.816 32.644 47.4 21.576 47.4C9.745 47.4 0.12 38.233 0.12 26.966" stroke="#A989E7" stroke-width="4.6" stroke-linecap="round"/>
+    <path d="M3.252 19.558C6.027 9.563 15.213 2.2 26.13 2.2" stroke="#FF7F93" stroke-width="3.4" stroke-linecap="round"/>
+    <circle cx="31.6" cy="18.4" r="5.8" fill="#FF7F93"/>
+  </g>
+
+  <text x="72" y="40" fill="#4A3D6A" font-family="Quicksand, Nunito, Avenir Next, Segoe UI, sans-serif" font-size="32" font-weight="700" letter-spacing="1.1">Ovumcy</text>
+</svg>
