@@ -1,17 +1,11 @@
-<svg width="960" height="360" viewBox="0 0 960 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ovumcyReadmeHeroTitle ovumcyReadmeHeroDesc">
-  <title id="ovumcyReadmeHeroTitle">Ovumcy README hero</title>
-  <desc id="ovumcyReadmeHeroDesc">A simple centered README hero for Ovumcy with the app icon and wordmark.</desc>
+<svg width="420" height="260" viewBox="0 0 420 260" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ovumcyReadmeHeroTitle ovumcyReadmeHeroDesc">
+  <title id="ovumcyReadmeHeroTitle">Ovumcy icon</title>
+  <desc id="ovumcyReadmeHeroDesc">Centered Ovumcy symbol for the README hero section.</desc>
 
-  <rect x="40" y="24" width="880" height="312" rx="28" fill="#FFFFFF" stroke="#E2DCEC" stroke-width="2"/>
-
-  <g transform="translate(352 66) scale(4)">
+  <g transform="translate(114 38) scale(3)">
     <path d="M30 8C44.359 8 56 19.641 56 34" stroke="#A989E7" stroke-width="5.2" stroke-linecap="round"/>
     <path d="M52.852 41.279C49.856 51.4 40.477 58.8 29.391 58.8C15.865 58.8 4.8 47.735 4.8 34.209" stroke="#A989E7" stroke-width="5.2" stroke-linecap="round"/>
     <path d="M8.425 26.312C11.572 16.344 20.9 9.2 31.901 9.2" stroke="#FF7F93" stroke-width="3.8" stroke-linecap="round"/>
     <circle cx="38.8" cy="24.2" r="6.8" fill="#FF7F93"/>
   </g>
-
-  <text x="480" y="270" text-anchor="middle" fill="#4A3D6A" font-family="Quicksand, Nunito, Avenir Next, Segoe UI, sans-serif" font-size="54" font-weight="700" letter-spacing="0.8">
-    Ovumcy
-  </text>
 </svg>
