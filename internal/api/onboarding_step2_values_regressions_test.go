@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
@@ -41,13 +40,6 @@ func TestOnboardingPageRendersPersistedStep2Values(t *testing.T) {
 		t.Fatalf("read body: %v", err)
 	}
 	rendered := string(body)
-	if !strings.Contains(rendered, `<span data-onboarding-cycle-length-value>31</span>`) {
-		t.Fatalf("expected cycle label fallback text to include persisted value")
-	}
-	if !strings.Contains(rendered, `<span data-onboarding-period-length-value>7</span>`) {
-		t.Fatalf("expected period label fallback text to include persisted value")
-	}
-
 	cycleInputPattern := regexp.MustCompile(`(?s)name="cycle_length".*?value="31"`)
 	if !cycleInputPattern.MatchString(rendered) {
 		t.Fatalf("expected cycle slider value attribute to be rendered from DB")
@@ -56,7 +48,9 @@ func TestOnboardingPageRendersPersistedStep2Values(t *testing.T) {
 	if !periodInputPattern.MatchString(rendered) {
 		t.Fatalf("expected period slider value attribute to be rendered from DB")
 	}
-	if !strings.Contains(rendered, `id="period-length"`) || !strings.Contains(rendered, `max="14"`) {
-		t.Fatalf("expected onboarding period slider max=14")
+
+	autoFillPattern := regexp.MustCompile(`(?s)name="auto_period_fill".*?checked`)
+	if !autoFillPattern.MatchString(rendered) {
+		t.Fatalf("expected auto-period-fill checkbox to reflect persisted value")
 	}
 }

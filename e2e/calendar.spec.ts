@@ -143,4 +143,24 @@ test.describe('Calendar page', () => {
     await expect(warningPanel).toBeVisible();
     await expect(warningPanel).not.toHaveText(/^$/);
   });
+
+  test('language switch preserves selected month/day query and visible editor', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-lang-query');
+
+    const todayISO = await todayISOFromCalendar(page);
+    const pastISO = shiftISODate(todayISO, -2);
+    const pastMonth = pastISO.slice(0, 7);
+
+    await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
+    await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${pastISO}"]`)).toBeVisible();
+
+    await page.locator('.lang-switch a[href^="/lang/ru"]').click();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+
+    const currentURL = new URL(page.url());
+    expect(currentURL.pathname).toBe('/calendar');
+    expect(currentURL.searchParams.get('month')).toBe(pastMonth);
+    expect(currentURL.searchParams.get('day')).toBe(pastISO);
+    await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${pastISO}"]`)).toBeVisible();
+  });
 });

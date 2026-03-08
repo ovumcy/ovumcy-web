@@ -191,4 +191,31 @@ test.describe('Dashboard: today editor', () => {
     await expect(notes).toHaveValue('');
     await expect(page.locator('input[name="symptom_ids"]:checked')).toHaveCount(0);
   });
+
+  test('saved dashboard entry is reflected in calendar day panel', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-calendar-sync');
+
+    const todayForm = page.locator('form[hx-post^="/api/days/"]').first();
+    const todayAction = await todayForm.getAttribute('hx-post');
+    expect(todayAction).toMatch(/^\/api\/days\/\d{4}-\d{2}-\d{2}$/);
+
+    const todayISO = String(todayAction).replace('/api/days/', '');
+    const month = todayISO.slice(0, 7);
+    const periodToggle = page.locator('input[name="is_period"]');
+    const flowMedium = page.locator('input[name="flow"][value="medium"]');
+    const notes = page.locator('#today-notes');
+    const noteText = `dashboard-calendar-sync-${Date.now()}`;
+
+    await periodToggle.check();
+    await flowMedium.check({ force: true });
+    await notes.fill(noteText);
+    await saveToday(page);
+
+    await page.goto(`/calendar?month=${month}&day=${todayISO}`);
+    const dayEditorForm = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${todayISO}"]`);
+    await expect(dayEditorForm).toBeVisible();
+    await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
+    await expect(dayEditorForm.locator('input[name="flow"][value="medium"]')).toBeChecked();
+    await expect(dayEditorForm.locator('#calendar-notes')).toHaveValue(noteText);
+  });
 });

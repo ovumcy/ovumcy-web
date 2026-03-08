@@ -1,5 +1,12 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { createCredentials, loginViaUI, logoutViaAPI, readRecoveryCode, registerOwnerViaUI } from './support/auth-helpers';
+import {
+  continueFromRecoveryCode,
+  createCredentials,
+  loginViaUI,
+  logoutViaAPI,
+  readRecoveryCode,
+  registerOwnerViaUI,
+} from './support/auth-helpers';
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -175,6 +182,28 @@ test.describe('Onboarding flow', () => {
 
     await submitStepTwo(page);
     await expect(page.locator('form[hx-post="/onboarding/complete"]')).toBeVisible();
+  });
+
+  test('step query is preserved by language switch and keeps step 2 visible', async ({ page }) => {
+    const creds = createCredentials('onboarding-step-query');
+
+    await registerOwnerViaUI(page, creds);
+    await expect(page).toHaveURL(/\/recovery-code$/);
+
+    await readRecoveryCode(page);
+    await continueFromRecoveryCode(page);
+    await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+
+    await page.goto('/onboarding?step=2');
+    await expect(page.locator('form[hx-post="/onboarding/step2"]')).toBeVisible();
+
+    await page.locator('.lang-switch a[href^="/lang/ru"]').click();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+
+    const currentURL = new URL(page.url());
+    expect(currentURL.pathname).toBe('/onboarding');
+    expect(currentURL.searchParams.get('step')).toBe('2');
+    await expect(page.locator('form[hx-post="/onboarding/step2"]')).toBeVisible();
   });
 
   test('reload during onboarding keeps progress or resets gracefully without blocking completion', async ({
