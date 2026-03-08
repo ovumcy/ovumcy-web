@@ -224,7 +224,6 @@ The live roadmap now also exists in GitHub Issues and the `Ovumcy Roadmap` proje
 - Partner invite via link: simplified partner onboarding without manual account setup.
 - Mobile UX improvements for calendar and day editor.
 - FAQ / comparison page for privacy-first positioning.
-- Release binaries via GoReleaser.
 - Recorded walkthrough or hero demo asset.
 
 ### Longer Term
