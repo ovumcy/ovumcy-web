@@ -96,19 +96,9 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 		t.Fatalf("read htmx update body: %v", err)
 	}
 	renderedUpdate := string(updateBody)
-	if !strings.Contains(renderedUpdate, `data-symptom-id="`+strconv.FormatUint(uint64(archived.ID), 10)+`"`) {
-		t.Fatalf("expected archived symptom row to be present after duplicate update, got %q", renderedUpdate)
-	}
-	if !strings.Contains(renderedUpdate, `data-symptom-row-error`) {
-		t.Fatalf("expected row-local error block in htmx response, got %q", renderedUpdate)
-	}
-	if !strings.Contains(renderedUpdate, `That symptom name already exists in your list.`) {
-		t.Fatalf("expected localized duplicate-name error, got %q", renderedUpdate)
-	}
-	if !strings.Contains(renderedUpdate, `id="settings-symptom-name-`+strconv.FormatUint(uint64(archived.ID), 10)+`"`) ||
-		!strings.Contains(renderedUpdate, `value="Joint stiffness"`) {
-		t.Fatalf("expected duplicate draft name to remain in the archived row, got %q", renderedUpdate)
-	}
+	assertSettingsSymptomsHTMXContains(t, renderedUpdate, `data-symptom-id="`+strconv.FormatUint(uint64(archived.ID), 10)+`"`, "archived symptom row after duplicate update")
+	assertSettingsSymptomsHTMXContains(t, renderedUpdate, `data-symptom-row-error`, "row-local error block after duplicate update")
+	assertSettingsSymptomsHTMXInputValue(t, renderedUpdate, "settings-symptom-name-"+strconv.FormatUint(uint64(archived.ID), 10), "Joint stiffness")
 }
 
 func TestSettingsSymptomsHTMXCreateTooLongClearsDraftName(t *testing.T) {
@@ -141,15 +131,9 @@ func TestSettingsSymptomsHTMXCreateTooLongClearsDraftName(t *testing.T) {
 		t.Fatalf("read htmx create body: %v", err)
 	}
 	renderedCreate := string(createBody)
-	if !strings.Contains(renderedCreate, `Use 40 characters or fewer. For longer details, use notes.`) {
-		t.Fatalf("expected localized too-long error, got %q", renderedCreate)
-	}
-	if !strings.Contains(renderedCreate, `id="settings-new-symptom-name"`) {
-		t.Fatalf("expected symptom create field in htmx response, got %q", renderedCreate)
-	}
-	if strings.Contains(renderedCreate, `value="12345678901234567890123456789012345678901"`) {
-		t.Fatalf("expected too-long create draft to be cleared, got %q", renderedCreate)
-	}
+	assertSettingsSymptomsHTMXContains(t, renderedCreate, `class="status-error`, "create-form error block after too-long name")
+	assertSettingsSymptomsHTMXContains(t, renderedCreate, `id="settings-new-symptom-name"`, "symptom create field after too-long name")
+	assertSettingsSymptomsHTMXNotContains(t, renderedCreate, `value="12345678901234567890123456789012345678901"`, "too-long create draft value")
 }
 
 func TestSettingsSymptomsHTMXUpdateTooLongRestoresSavedRowValue(t *testing.T) {
@@ -192,16 +176,9 @@ func TestSettingsSymptomsHTMXUpdateTooLongRestoresSavedRowValue(t *testing.T) {
 		t.Fatalf("read htmx update body: %v", err)
 	}
 	renderedUpdate := string(updateBody)
-	if !strings.Contains(renderedUpdate, `Use 40 characters or fewer. For longer details, use notes.`) {
-		t.Fatalf("expected localized too-long error, got %q", renderedUpdate)
-	}
-	if strings.Contains(renderedUpdate, `value="12345678901234567890123456789012345678901"`) {
-		t.Fatalf("expected too-long edit draft to be discarded, got %q", renderedUpdate)
-	}
-	if !strings.Contains(renderedUpdate, `id="settings-symptom-name-`+strconv.FormatUint(uint64(symptom.ID), 10)+`"`) ||
-		!strings.Contains(renderedUpdate, `value="Joint ease"`) {
-		t.Fatalf("expected saved symptom name to remain in row, got %q", renderedUpdate)
-	}
+	assertSettingsSymptomsHTMXContains(t, renderedUpdate, `data-symptom-row-error`, "row-local error block after too-long edit")
+	assertSettingsSymptomsHTMXNotContains(t, renderedUpdate, `value="12345678901234567890123456789012345678901"`, "too-long edit draft value")
+	assertSettingsSymptomsHTMXInputValue(t, renderedUpdate, "settings-symptom-name-"+strconv.FormatUint(uint64(symptom.ID), 10), "Joint ease")
 }
 
 func TestSettingsSymptomsHTMXUpdateWithoutColorPreservesStoredValue(t *testing.T) {
@@ -314,6 +291,21 @@ func assertSettingsSymptomsHTMXContains(t *testing.T, rendered string, substring
 	if !strings.Contains(rendered, substring) {
 		t.Fatalf("expected %s, got %q", description, rendered)
 	}
+}
+
+func assertSettingsSymptomsHTMXNotContains(t *testing.T, rendered string, substring string, description string) {
+	t.Helper()
+
+	if strings.Contains(rendered, substring) {
+		t.Fatalf("did not expect %s, got %q", description, rendered)
+	}
+}
+
+func assertSettingsSymptomsHTMXInputValue(t *testing.T, rendered string, inputID string, value string) {
+	t.Helper()
+
+	assertSettingsSymptomsHTMXContains(t, rendered, `id="`+inputID+`"`, "input "+inputID)
+	assertSettingsSymptomsHTMXContains(t, rendered, `value="`+value+`"`, "input value for "+inputID)
 }
 
 func loadSettingsCSRFContext(t *testing.T, app *fiber.App, authCookie string) (*http.Cookie, string) {

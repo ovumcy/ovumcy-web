@@ -71,22 +71,6 @@ async function assertNoHorizontalOverflow(page: Page): Promise<void> {
   expect(hasOverflow).toBe(false);
 }
 
-async function assertChildrenStayWithin(container: Locator, children: Locator): Promise<void> {
-  const tolerance = 2;
-  const containerBox = await container.boundingBox();
-  expect(containerBox).not.toBeNull();
-
-  const count = await children.count();
-  for (let index = 0; index < count; index += 1) {
-    const childBox = await children.nth(index).boundingBox();
-    expect(childBox).not.toBeNull();
-    expect(childBox!.x).toBeGreaterThanOrEqual(containerBox!.x - tolerance);
-    expect(childBox!.x + childBox!.width).toBeLessThanOrEqual(containerBox!.x + containerBox!.width + tolerance);
-    expect(childBox!.y).toBeGreaterThanOrEqual(containerBox!.y - tolerance);
-    expect(childBox!.y + childBox!.height).toBeLessThanOrEqual(containerBox!.y + containerBox!.height + tolerance);
-  }
-}
-
 async function selectSymptomIcon(root: Locator, icon: string): Promise<void> {
   const control = root.locator('[data-icon-control]');
   await control.locator(`[data-icon-option="${icon}"]`).click();
@@ -112,6 +96,47 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   await expect(page).toHaveURL(/\/settings$/);
 
   return creds;
+}
+
+function customSymptomRow(root: Locator, name: string, state: 'active' | 'archived'): Locator {
+  return root.locator(`[data-custom-symptom-row][data-symptom-name="${name}"][data-symptom-state="${state}"]`);
+}
+
+async function createCustomSymptom(symptomSection: Locator, name: string, icon: string): Promise<void> {
+  const createForm = symptomSection.locator('[data-symptom-create-form]');
+  await createForm.locator('#settings-new-symptom-name').fill(name);
+  await selectSymptomIcon(createForm, icon);
+  await createForm.locator('button[type="submit"]').click();
+  await expect(symptomSection.locator('.status-ok')).toBeVisible();
+}
+
+async function archiveCustomSymptom(page: Page, row: Locator): Promise<void> {
+  await row.locator('form[action$="/archive"] button[type="submit"]').click();
+  await expect(page.locator('#confirm-modal')).toBeVisible();
+  await page.locator('#confirm-modal-accept').click();
+}
+
+async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<string> {
+  await page.goto('/dashboard');
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  await page.locator('input[name="is_period"]').check();
+  const customSymptom = page.locator(`input[name="symptom_ids"][data-symptom-name="${symptomName}"]`);
+  await expect(customSymptom).toBeVisible();
+  await customSymptom.check({ force: true });
+  await page.locator('button[data-save-button]').first().click();
+  await expect(page.locator('#save-status .status-ok')).toBeVisible();
+
+  const todayAction = await page.locator('form[hx-post^="/api/days/"]').first().getAttribute('hx-post');
+  expect(todayAction).toMatch(/^\/api\/days\/\d{4}-\d{2}-\d{2}$/);
+  return String(todayAction).replace('/api/days/', '');
+}
+
+async function openCalendarDay(page: Page, isoDate: string): Promise<void> {
+  const month = isoDate.slice(0, 7);
+  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
+  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
+  await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${isoDate}"]`)).toBeVisible();
 }
 
 async function completeOnboardingWithStartDate(page: Page, startDate: string): Promise<void> {
@@ -272,7 +297,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('#settings-last-period-start')).toHaveValue(selectedStart);
   });
 
-  test('custom symptoms can be created, hidden, restored, and renamed without losing old entries', async ({
+  test('archiving a custom symptom keeps old entries while hiding it from new days', async ({
     page,
   }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptoms');
@@ -282,76 +307,53 @@ test.describe('Settings: profile and cycle', () => {
 
     const createForm = symptomSection.locator('[data-symptom-create-form]');
     await expect(createForm.locator('[data-color-control]')).toHaveCount(0);
-    await createForm.locator('#settings-new-symptom-name').fill('Joint stiffness');
-    await selectSymptomIcon(createForm, '✨');
-    await createForm.locator('button[type="submit"]').click();
+    await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'active')).toBeVisible();
 
-    await expect(symptomSection.locator('.status-ok')).toBeVisible();
-    await expect(
-      symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint stiffness"][data-symptom-state="active"]')
-    ).toBeVisible();
-
-    await page.goto('/dashboard');
-    await expect(page).toHaveURL(/\/dashboard$/);
-
-    const periodToggle = page.locator('input[name="is_period"]');
-    const customSymptom = page.locator('input[name="symptom_ids"][data-symptom-name="Joint stiffness"]');
-    await periodToggle.check();
-    await expect(customSymptom).toBeVisible();
-    await customSymptom.check({ force: true });
-    await page.locator('button[data-save-button]').first().click();
-    await expect(page.locator('#save-status .status-ok')).toBeVisible();
-
-    const todayAction = await page.locator('form[hx-post^="/api/days/"]').first().getAttribute('hx-post');
-    expect(todayAction).toMatch(/^\/api\/days\/\d{4}-\d{2}-\d{2}$/);
-    const todayISO = String(todayAction).replace('/api/days/', '');
+    const todayISO = await saveTodayWithSymptom(page, 'Joint stiffness');
     const otherISO = shiftISODate(todayISO, 3);
-    const otherMonth = otherISO.slice(0, 7);
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
 
-    const activeRow = page.locator(
-      '[data-custom-symptom-row][data-symptom-name="Joint stiffness"][data-symptom-state="active"]'
-    );
+    const activeRow = customSymptomRow(symptomSection, 'Joint stiffness', 'active');
     const saveButtonBox = await activeRow.locator('[data-symptom-edit-form] button[type="submit"]').boundingBox();
     const hideButtonBox = await activeRow.locator('form[action$="/archive"] button[type="submit"]').boundingBox();
     expect(saveButtonBox).not.toBeNull();
     expect(hideButtonBox).not.toBeNull();
     expect(hideButtonBox!.y).toBeGreaterThan(saveButtonBox!.y + 4);
 
-    await activeRow.locator('form[action$="/archive"] button[type="submit"]').click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-modal-accept').click();
-    await expect(
-      symptomSection.locator(
-        '[data-custom-symptom-row][data-symptom-name="Joint stiffness"][data-symptom-state="archived"] [data-symptom-row-success]'
-      )
-    ).toBeVisible();
-    await expect(
-      symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint stiffness"][data-symptom-state="archived"]')
-    ).toBeVisible();
-
-    await createForm.locator('#settings-new-symptom-name').fill('Joint support');
-    await selectSymptomIcon(createForm, '🔥');
-    await createForm.locator('button[type="submit"]').click();
-    await expect(symptomSection.locator('.status-ok')).toBeVisible();
+    await archiveCustomSymptom(page, activeRow);
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'archived').locator('[data-symptom-row-success]')).toBeVisible();
 
     await page.goto('/dashboard');
     await expect(page.locator('input[name="symptom_ids"][data-symptom-name="Joint stiffness"]')).toBeVisible();
     await expect(page.locator('input[name="symptom_ids"][data-symptom-name="Joint stiffness"]')).toBeChecked();
 
-    await page.goto(`/calendar?month=${otherMonth}&day=${otherISO}`);
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${otherMonth}&day=${otherISO}`));
-    await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${otherISO}"]`)).toBeVisible();
+    await openCalendarDay(page, otherISO);
     await expect(
       page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${otherISO}"] input[name="symptom_ids"][data-symptom-name="Joint stiffness"]`)
     ).toHaveCount(0);
+  });
+
+  test('archived custom symptoms can be renamed, reject duplicates, and restore cleanly', async ({
+    page,
+  }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-custom-symptoms-restore');
+
+    const symptomSection = page.locator('#settings-symptoms-section');
+    await expect(symptomSection).toBeVisible();
+
+    await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
+    await createCustomSymptom(symptomSection, 'Joint support', '🔥');
+
+    const todayISO = await saveTodayWithSymptom(page, 'Joint stiffness');
+    const otherISO = shiftISODate(todayISO, 3);
 
     await page.goto('/settings');
-    const archivedRow = page.locator(
-      '[data-custom-symptom-row][data-symptom-name="Joint stiffness"][data-symptom-state="archived"]'
-    );
+    await archiveCustomSymptom(page, customSymptomRow(symptomSection, 'Joint stiffness', 'active'));
+
+    const archivedRow = customSymptomRow(symptomSection, 'Joint stiffness', 'archived');
     await archivedRow.locator('input[name="name"]').fill('Joint support');
     await selectSymptomIcon(archivedRow.locator('[data-symptom-edit-form]'), '⚡');
     await archivedRow.locator('[data-symptom-edit-form] button[type="submit"]').click();
@@ -364,28 +366,22 @@ test.describe('Settings: profile and cycle', () => {
     await selectSymptomIcon(archivedRow.locator('[data-symptom-edit-form]'), '💧');
     await archivedRow.locator('[data-symptom-edit-form] button[type="submit"]').click();
 
-    const renamedArchivedRow = page.locator(
-      '[data-custom-symptom-row][data-symptom-name="Joint ease"][data-symptom-state="archived"]'
-    );
+    const renamedArchivedRow = customSymptomRow(symptomSection, 'Joint ease', 'archived');
     await expect(renamedArchivedRow).toBeVisible();
     await expect(renamedArchivedRow.locator('[data-symptom-row-success]')).toBeVisible();
     await renamedArchivedRow.locator('form[action$="/restore"] button[type="submit"]').click();
     await expect(
-      symptomSection.locator(
-        '[data-custom-symptom-row][data-symptom-name="Joint ease"][data-symptom-state="active"] [data-symptom-row-success]'
-      )
+      customSymptomRow(symptomSection, 'Joint ease', 'active').locator('[data-symptom-row-success]')
     ).toBeVisible();
-    await expect(
-      symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint support"][data-symptom-state="active"]')
-    ).toBeVisible();
+    await expect(customSymptomRow(symptomSection, 'Joint support', 'active')).toBeVisible();
 
-    await page.goto(`/calendar?month=${otherMonth}&day=${otherISO}`);
+    await openCalendarDay(page, otherISO);
     await expect(
       page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${otherISO}"] input[name="symptom_ids"][data-symptom-name="Joint ease"]`)
     ).toBeVisible();
   });
 
-  test('custom symptom validation blocks duplicate, built-in, invalid markup, and long names without layout overflow', async ({
+  test('custom symptom validation blocks duplicate, built-in, invalid markup, and too-long names', async ({
       page,
     }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-validation');
@@ -393,21 +389,14 @@ test.describe('Settings: profile and cycle', () => {
     const symptomSection = page.locator('#settings-symptoms-section');
     const createForm = symptomSection.locator('[data-symptom-create-form]');
 
-    await createForm.locator('#settings-new-symptom-name').fill('Joint stiffness');
-    await selectSymptomIcon(createForm, '✨');
-    await createForm.locator('button[type="submit"]').click();
-    await expect(symptomSection.locator('.status-ok')).toBeVisible();
-    await expect(
-      symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint stiffness"][data-symptom-state="active"]')
-    ).toBeVisible();
+    await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'active')).toBeVisible();
 
     await createForm.locator('#settings-new-symptom-name').fill(' joint STIFFNESS ');
     await selectSymptomIcon(createForm, '🔥');
     await createForm.locator('button[type="submit"]').click();
     await expect(symptomSection.locator('.status-error')).toContainText('That symptom name already exists in your list.');
-    await expect(
-      symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint stiffness"]')
-    ).toHaveCount(1);
+    await expect(symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint stiffness"]')).toHaveCount(1);
 
     await createForm.locator('#settings-new-symptom-name').fill('Усталость');
     await createForm.locator('button[type="submit"]').click();
@@ -426,7 +415,15 @@ test.describe('Settings: profile and cycle', () => {
       'Use 40 characters or fewer. For longer details, use notes.'
     );
     await expect(createForm.locator('#settings-new-symptom-name')).toHaveValue('');
+  });
 
+  test('long custom symptom names stay usable without layout overflow', async ({
+      page,
+    }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-overflow');
+
+    const symptomSection = page.locator('#settings-symptoms-section');
+    const createForm = symptomSection.locator('[data-symptom-create-form]');
     const longButAllowedName = 'Long symptom after evening workout';
     await createForm.locator('#settings-new-symptom-name').fill(longButAllowedName);
     await selectSymptomIcon(createForm, '⚡');
@@ -438,21 +435,21 @@ test.describe('Settings: profile and cycle', () => {
 
     await assertNoHorizontalOverflow(page);
 
-      await page.goto('/dashboard');
-      await expect(page).toHaveURL(/\/dashboard$/);
-      await page.locator('input[name="is_period"]').check();
-      await expect(
-        page.locator(`input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]`)
-      ).toBeVisible();
-      await page.locator(`input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]`).check({
-        force: true,
-      });
-      await assertSelectedSymptomChipHasNoTrailingMarker(
-        page.locator(
-          `label.choice-option:has(input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]:checked) .check-chip`
-        )
-      );
-      await assertNoHorizontalOverflow(page);
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.locator('input[name="is_period"]').check();
+    await expect(
+      page.locator(`input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]`)
+    ).toBeVisible();
+    await page.locator(`input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]`).check({
+      force: true,
+    });
+    await assertSelectedSymptomChipHasNoTrailingMarker(
+      page.locator(
+        `label.choice-option:has(input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]:checked) .check-chip`
+      )
+    );
+    await assertNoHorizontalOverflow(page);
 
     await page.goto('/calendar');
     await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
