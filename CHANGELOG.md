@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-10
+
+### Added
+- Full Spanish first-party UI localization alongside English and Russian.
+- Localized segmented date fields for onboarding, settings cycle, and export flows so day/month/year labels and picker controls remain accessible across supported locales.
+
+### Changed
+- Language switching, locale-aware server/browser date formatting, and related regression coverage were extended to cover Spanish across backend and Playwright checks.
+- Chromium-owned native date input labels were replaced in affected flows while preserving the existing ISO `YYYY-MM-DD` transport contract.
+- README now documents the supported UI languages and `DEFAULT_LANGUAGE` values for self-hosted operators.
+
 ## [0.4.0] - 2026-03-09
 
 ### Added
@@ -111,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/terraincognita07/ovumcy/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/terraincognita07/ovumcy/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/terraincognita07/ovumcy/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/terraincognita07/ovumcy/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/terraincognita07/ovumcy/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/terraincognita07/ovumcy/compare/v0.3.0...v0.3.1
