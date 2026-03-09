@@ -332,6 +332,9 @@
     var roots = document.querySelectorAll("[data-settings-cycle-form]");
     for (var index = 0; index < roots.length; index++) {
       var root = roots[index];
+      var lastPeriodStartField = typeof window.__ovumcyGetDateFieldController === "function"
+        ? window.__ovumcyGetDateFieldController(root.querySelector('[data-date-field-id="settings-last-period-start"], #settings-last-period-start'))
+        : null;
       if (root.dataset.settingsCycleBound !== "1") {
         root.dataset.settingsCycleBound = "1";
 
@@ -352,6 +355,15 @@
 
           var cycleInput = this.querySelector("[data-settings-cycle-length]");
           var periodInput = this.querySelector("[data-settings-period-length]");
+          var dateFieldController = typeof window.__ovumcyGetDateFieldController === "function"
+            ? window.__ovumcyGetDateFieldController(this.querySelector('[data-date-field-id="settings-last-period-start"], #settings-last-period-start'))
+            : null;
+          if (dateFieldController && !dateFieldController.validate()) {
+            event.preventDefault();
+            dateFieldController.reportValidity();
+            return;
+          }
+
           var guidance = cycleGuidanceState(
             clampInteger(cycleInput ? cycleInput.value : 28, 28, 15, 90),
             clampInteger(periodInput ? periodInput.value : 5, 5, 1, 14)
@@ -362,6 +374,9 @@
         });
       }
 
+      if (lastPeriodStartField) {
+        lastPeriodStartField.validate();
+      }
       syncSettingsCycleForm(root);
     }
   }
@@ -563,7 +578,9 @@
     }
 
     state.selectedDate = selectedDate ? formatDateValue(selectedDate) : "";
-    if (state.startDateInput) {
+    if (state.startDateField) {
+      state.startDateField.setValue(state.selectedDate);
+    } else if (state.startDateInput) {
       state.startDateInput.value = state.selectedDate;
     }
     renderOnboardingDayOptions(state);
@@ -639,7 +656,10 @@
           lang: String(root.getAttribute("data-lang") || "en"),
           progress: root.querySelector("[data-onboarding-progress]"),
           progressBar: root.querySelector("[data-onboarding-progress-bar]"),
-          startDateInput: root.querySelector("[data-onboarding-start-date]"),
+          startDateField: typeof window.__ovumcyGetDateFieldController === "function"
+            ? window.__ovumcyGetDateFieldController(root.querySelector("#last-period-start"))
+            : null,
+          startDateInput: root.querySelector("#last-period-start"),
           dayOptionsContainer: root.querySelector("[data-onboarding-day-options]"),
           cycleInput: root.querySelector("[data-onboarding-cycle-length]"),
           periodInput: root.querySelector("[data-onboarding-period-length]"),
@@ -701,7 +721,7 @@
             return;
           }
 
-          if (event.target.matches("[data-onboarding-start-date]")) {
+          if (currentState.startDateInput && event.target === currentState.startDateInput) {
             currentState.selectedDate = String(event.target.value || "");
             clearOnboardingStatus(currentState, "1");
             syncOnboardingStartDate(currentState);
@@ -726,6 +746,22 @@
           var form = event.target;
           var currentState = this.__ovumcyOnboardingState;
           var guidance;
+          if (form && form.matches && form.matches("form[data-onboarding-form-step='1']")) {
+            syncOnboardingTimezoneFields(currentState);
+            if (currentState.startDateField && !currentState.startDateField.validate()) {
+              event.preventDefault();
+              clearOnboardingStatus(currentState, "1");
+              if (currentState.statusTargets["1"]) {
+                renderErrorStatus(
+                  currentState.statusTargets["1"],
+                  currentState.startDateField.validationMessage()
+                );
+              }
+              currentState.startDateField.reportValidity();
+            }
+            return;
+          }
+
           if (!form || !form.matches || !form.matches("form[data-onboarding-form-step='2']")) {
             return;
           }
@@ -885,6 +921,9 @@
     bindThemeToggleButtons();
     bindMobileMenu();
     bindPWAInstallBanner();
+    if (typeof window.__ovumcyBindLocalizedDateFields === "function") {
+      window.__ovumcyBindLocalizedDateFields(document);
+    }
     bindSettingsCycleForms();
     bindIconControls();
     bindDashboardEditors();

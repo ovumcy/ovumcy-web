@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { fillDateField } from './support/date-field-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -191,7 +192,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await setRangeValue(page.locator('#settings-cycle-length'), 35);
     await setRangeValue(page.locator('#settings-period-length'), 7);
-    await page.locator('#settings-last-period-start').fill(isoDaysAgo(12));
+    await fillDateField(page.locator('#settings-last-period-start'), isoDaysAgo(12));
     await page.locator('section#settings-cycle input[name="auto_period_fill"]').uncheck();
     await page
       .locator('section#settings-cycle form[action="/settings/cycle"] button[data-save-button]')

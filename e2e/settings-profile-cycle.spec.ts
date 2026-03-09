@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -146,13 +147,13 @@ async function completeOnboardingWithStartDate(page: Page, startDate: string): P
   }
 
   const startDateInput = page.locator('#last-period-start');
-  await expect(startDateInput).toBeVisible();
+  await expect(dateFieldRoot(startDateInput)).toBeVisible();
 
   const startDateOption = page.locator(`[data-onboarding-day-option][data-onboarding-day-value="${startDate}"]`);
   if ((await startDateOption.count()) > 0) {
     await startDateOption.first().click();
   } else {
-    await startDateInput.fill(startDate);
+    await fillDateField(startDateInput, startDate);
   }
 
   await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
@@ -241,7 +242,7 @@ test.describe('Settings: profile and cycle', () => {
 
     await setRangeValue(cycleLength, targetCycleLength);
     await setRangeValue(periodLength, targetPeriodLength);
-    await lastPeriodStart.fill(targetStart);
+    await fillDateField(lastPeriodStart, targetStart);
     await autoFill.uncheck();
 
     await cycleForm.locator('button[data-save-button]').click();
@@ -267,7 +268,7 @@ test.describe('Settings: profile and cycle', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
 
-    await page.locator('#settings-last-period-start').fill(isoDaysFromNow(1));
+    await fillDateField(page.locator('#settings-last-period-start'), isoDaysFromNow(1));
     await page
       .locator('section#settings-cycle form[action="/settings/cycle"] button[data-save-button]')
       .click();

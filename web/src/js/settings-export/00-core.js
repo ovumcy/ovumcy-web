@@ -194,6 +194,90 @@
     return "en-US";
   }
 
+  function dateFieldController(target) {
+    if (typeof window.__ovumcyGetDateFieldController !== "function") {
+      return null;
+    }
+    return window.__ovumcyGetDateFieldController(target);
+  }
+
+  function dateFieldValue(field, fallbackInput) {
+    if (field && typeof field.getValue === "function") {
+      return field.getValue();
+    }
+    return fallbackInput ? String(fallbackInput.value || "").trim() : "";
+  }
+
+  function setDateFieldValue(field, fallbackInput, value) {
+    if (field && typeof field.setValue === "function") {
+      field.setValue(value);
+      return;
+    }
+    if (fallbackInput) {
+      fallbackInput.value = String(value || "");
+    }
+  }
+
+  function validateDateField(field, fallbackInput, invalidMessage) {
+    if (field && typeof field.validate === "function") {
+      return field.validate({
+        invalidMessage: invalidMessage,
+        outOfRangeMessage: invalidMessage
+      });
+    }
+
+    if (!fallbackInput) {
+      return true;
+    }
+    fallbackInput.setCustomValidity("");
+    var raw = String(fallbackInput.value || "").trim();
+    if (!raw) {
+      return true;
+    }
+    if (!parseISODate(raw)) {
+      fallbackInput.setCustomValidity(invalidMessage);
+      return false;
+    }
+    return true;
+  }
+
+  function clearDateFieldValidity(field, fallbackInput) {
+    if (field && typeof field.setCustomValidity === "function") {
+      field.setCustomValidity("");
+      return;
+    }
+    if (fallbackInput) {
+      fallbackInput.setCustomValidity("");
+    }
+  }
+
+  function dateFieldValidationMessage(field, fallbackInput) {
+    if (field && typeof field.validationMessage === "function") {
+      return field.validationMessage();
+    }
+    return fallbackInput ? String(fallbackInput.validationMessage || "") : "";
+  }
+
+  function reportDateFieldValidity(field, fallbackInput) {
+    if (field && typeof field.reportValidity === "function") {
+      return field.reportValidity();
+    }
+    if (fallbackInput && typeof fallbackInput.reportValidity === "function") {
+      return fallbackInput.reportValidity();
+    }
+    return false;
+  }
+
+  function setDateFieldDisabled(field, fallbackInput, disabled) {
+    if (field && typeof field.setDisabled === "function") {
+      field.setDisabled(disabled);
+      return;
+    }
+    if (fallbackInput) {
+      fallbackInput.disabled = !!disabled;
+    }
+  }
+
   function parseFilenameFromDisposition(disposition, fallbackName) {
     if (!disposition) {
       return fallbackName;

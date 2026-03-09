@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { fillDateField } from './support/date-field-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -140,7 +141,10 @@ test.describe('Bug regressions', () => {
 
       const cycleForm = page.locator('section#settings-cycle form[action="/settings/cycle"]');
       await expect(cycleForm).toBeVisible();
-      await cycleForm.locator('#settings-last-period-start').fill(shiftISODate(expectedToday.iso, -2));
+      await fillDateField(
+        cycleForm.locator('#settings-last-period-start'),
+        shiftISODate(expectedToday.iso, -2)
+      );
       await cycleForm.locator('button[data-save-button]').click();
       await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
       const savedStartISO = await cycleForm.locator('#settings-last-period-start').inputValue();

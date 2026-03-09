@@ -194,6 +194,90 @@
     return "en-US";
   }
 
+  function dateFieldController(target) {
+    if (typeof window.__ovumcyGetDateFieldController !== "function") {
+      return null;
+    }
+    return window.__ovumcyGetDateFieldController(target);
+  }
+
+  function dateFieldValue(field, fallbackInput) {
+    if (field && typeof field.getValue === "function") {
+      return field.getValue();
+    }
+    return fallbackInput ? String(fallbackInput.value || "").trim() : "";
+  }
+
+  function setDateFieldValue(field, fallbackInput, value) {
+    if (field && typeof field.setValue === "function") {
+      field.setValue(value);
+      return;
+    }
+    if (fallbackInput) {
+      fallbackInput.value = String(value || "");
+    }
+  }
+
+  function validateDateField(field, fallbackInput, invalidMessage) {
+    if (field && typeof field.validate === "function") {
+      return field.validate({
+        invalidMessage: invalidMessage,
+        outOfRangeMessage: invalidMessage
+      });
+    }
+
+    if (!fallbackInput) {
+      return true;
+    }
+    fallbackInput.setCustomValidity("");
+    var raw = String(fallbackInput.value || "").trim();
+    if (!raw) {
+      return true;
+    }
+    if (!parseISODate(raw)) {
+      fallbackInput.setCustomValidity(invalidMessage);
+      return false;
+    }
+    return true;
+  }
+
+  function clearDateFieldValidity(field, fallbackInput) {
+    if (field && typeof field.setCustomValidity === "function") {
+      field.setCustomValidity("");
+      return;
+    }
+    if (fallbackInput) {
+      fallbackInput.setCustomValidity("");
+    }
+  }
+
+  function dateFieldValidationMessage(field, fallbackInput) {
+    if (field && typeof field.validationMessage === "function") {
+      return field.validationMessage();
+    }
+    return fallbackInput ? String(fallbackInput.validationMessage || "") : "";
+  }
+
+  function reportDateFieldValidity(field, fallbackInput) {
+    if (field && typeof field.reportValidity === "function") {
+      return field.reportValidity();
+    }
+    if (fallbackInput && typeof fallbackInput.reportValidity === "function") {
+      return fallbackInput.reportValidity();
+    }
+    return false;
+  }
+
+  function setDateFieldDisabled(field, fallbackInput, disabled) {
+    if (field && typeof field.setDisabled === "function") {
+      field.setDisabled(disabled);
+      return;
+    }
+    if (fallbackInput) {
+      fallbackInput.disabled = !!disabled;
+    }
+  }
+
   function parseFilenameFromDisposition(disposition, fallbackName) {
     if (!disposition) {
       return fallbackName;
@@ -287,16 +371,17 @@
       successMessage: readTextAttribute(section, "data-export-success", "Data exported successfully"),
       failedMessage: readTextAttribute(section, "data-export-failed", "Failed to export data"),
       invalidRangeMessage: readTextAttribute(section, "data-export-invalid-range", "End date must be on or after start date"),
-      invalidDateMessage: readTextAttribute(section, "data-export-invalid-date", "Use YYYY-MM-DD"),
-      openCalendarLabel: readTextAttribute(section, "data-export-open-calendar", "Open calendar"),
+      invalidDateMessage: readTextAttribute(section, "data-export-invalid-date", "Use a valid date"),
       jumpTitle: readTextAttribute(section, "data-export-jump-title", "Choose month and year"),
       summaryTotalTemplate: readTextAttribute(section, "data-export-summary-total-template", "Total entries: %d"),
       summaryRangeTemplate: readTextAttribute(section, "data-export-summary-range-template", "Date range: %s to %s"),
       summaryRangeEmpty: readTextAttribute(section, "data-export-summary-range-empty", "Date range: -"),
       links: section.querySelectorAll("a[data-export-link]"),
       presetButtons: section.querySelectorAll("button[data-export-preset]"),
-      fromInput: section.querySelector("input[data-export-from]"),
-      toInput: section.querySelector("input[data-export-to]"),
+      fromInput: section.querySelector("#export-from"),
+      toInput: section.querySelector("#export-to"),
+      fromField: dateFieldController(section.querySelector("#export-from")),
+      toField: dateFieldController(section.querySelector("#export-to")),
       summaryTotalNode: section.querySelector("[data-export-summary-total]"),
       summaryRangeNode: section.querySelector("[data-export-summary-range]"),
       calendarPanel: section.querySelector("[data-export-calendar-panel]"),
@@ -333,30 +418,35 @@
       }
     }
 
-    function parseAndNormalizeInput(input) {
-      sanitizeDateInputValue(input);
-      var raw = String(input.value || "").trim();
-      input.value = raw;
+    function parseAndNormalizeInput(field, input) {
+      if (!validateDateField(field, input, context.invalidDateMessage)) {
+        return { ok: false, date: null };
+      }
 
+      var raw = dateFieldValue(field, input);
       if (!raw) {
-        input.setCustomValidity("");
+        clearDateFieldValidity(field, input);
         return { ok: true, date: null };
       }
 
       var parsed = parseISODate(raw);
       if (!parsed) {
-        input.setCustomValidity(context.invalidDateMessage);
+        if (field && typeof field.setCustomValidity === "function") {
+          field.setCustomValidity(context.invalidDateMessage);
+        } else if (input) {
+          input.setCustomValidity(context.invalidDateMessage);
+        }
         return { ok: false, date: null };
       }
 
-      input.value = formatISODate(parsed);
-      input.setCustomValidity("");
+      setDateFieldValue(field, input, formatISODate(parsed));
+      clearDateFieldValidity(field, input);
       return { ok: true, date: parsed };
     }
 
     function validate(changedSide) {
-      var fromResult = parseAndNormalizeInput(context.fromInput);
-      var toResult = parseAndNormalizeInput(context.toInput);
+      var fromResult = parseAndNormalizeInput(context.fromField, context.fromInput);
+      var toResult = parseAndNormalizeInput(context.toField, context.toInput);
       if (!fromResult.ok || !toResult.ok) {
         setExportLinksDisabled(true);
         return false;
@@ -368,28 +458,32 @@
       if (bounds.hasBounds) {
         if (!fromDate) {
           fromDate = cloneDate(bounds.minBound);
-          context.fromInput.value = formatISODate(fromDate);
+          setDateFieldValue(context.fromField, context.fromInput, formatISODate(fromDate));
         }
         if (!toDate) {
           toDate = cloneDate(bounds.maxBound);
-          context.toInput.value = formatISODate(toDate);
+          setDateFieldValue(context.toField, context.toInput, formatISODate(toDate));
         }
       }
 
       if (fromDate && toDate && dateKey(toDate) < dateKey(fromDate)) {
         if (changedSide === "to") {
-          context.toInput.value = formatISODate(fromDate);
+          setDateFieldValue(context.toField, context.toInput, formatISODate(fromDate));
           toDate = fromDate;
         } else {
-          context.fromInput.value = formatISODate(toDate);
+          setDateFieldValue(context.fromField, context.fromInput, formatISODate(toDate));
           fromDate = toDate;
         }
       }
 
-      context.fromInput.setCustomValidity("");
-      context.toInput.setCustomValidity("");
+      clearDateFieldValidity(context.fromField, context.fromInput);
+      clearDateFieldValidity(context.toField, context.toInput);
       if (fromDate && toDate && dateKey(toDate) < dateKey(fromDate)) {
-        context.toInput.setCustomValidity(context.invalidRangeMessage);
+        if (context.toField && typeof context.toField.setCustomValidity === "function") {
+          context.toField.setCustomValidity(context.invalidRangeMessage);
+        } else if (context.toInput) {
+          context.toInput.setCustomValidity(context.invalidRangeMessage);
+        }
         setExportLinksDisabled(true);
         return false;
       }
@@ -424,8 +518,8 @@
         return;
       }
 
-      var fromDate = parseISODate(context.fromInput.value);
-      var toDate = parseISODate(context.toInput.value);
+      var fromDate = parseISODate(dateFieldValue(context.fromField, context.fromInput));
+      var toDate = parseISODate(dateFieldValue(context.toField, context.toInput));
 
       for (var index = 0; index < context.presetButtons.length; index++) {
         var button = context.presetButtons[index];
@@ -444,8 +538,8 @@
       if (!range) {
         return false;
       }
-      context.fromInput.value = formatISODate(range.from);
-      context.toInput.value = formatISODate(range.to);
+      setDateFieldValue(context.fromField, context.fromInput, formatISODate(range.from));
+      setDateFieldValue(context.toField, context.toInput, formatISODate(range.to));
       validate("to");
       updatePresetState();
       return true;
@@ -456,13 +550,13 @@
         return;
       }
 
-      var fromValue = parseISODate(context.fromInput.value);
-      var toValue = parseISODate(context.toInput.value);
+      var fromValue = parseISODate(dateFieldValue(context.fromField, context.fromInput));
+      var toValue = parseISODate(dateFieldValue(context.toField, context.toInput));
       fromValue = fromValue || cloneDate(bounds.minBound);
       toValue = toValue || cloneDate(bounds.maxBound);
 
-      context.fromInput.value = formatISODate(fromValue);
-      context.toInput.value = formatISODate(toValue);
+      setDateFieldValue(context.fromField, context.fromInput, formatISODate(fromValue));
+      setDateFieldValue(context.toField, context.toInput, formatISODate(toValue));
       validate("init");
     }
 
@@ -473,7 +567,11 @@
       applyPreset: applyPreset,
       syncInitialRange: syncInitialRange,
       buildExportEndpoint: function (baseEndpoint) {
-        return buildEndpoint(baseEndpoint, context.fromInput.value, context.toInput.value);
+        return buildEndpoint(
+          baseEndpoint,
+          dateFieldValue(context.fromField, context.fromInput),
+          dateFieldValue(context.toField, context.toInput)
+        );
       }
     };
   }
@@ -512,7 +610,11 @@
     }
 
     function buildSummaryEndpoint() {
-      return buildEndpoint(SUMMARY_ENDPOINT, context.fromInput.value, context.toInput.value);
+      return buildEndpoint(
+        SUMMARY_ENDPOINT,
+        dateFieldValue(context.fromField, context.fromInput),
+        dateFieldValue(context.toField, context.toInput)
+      );
     }
 
     async function refresh() {
@@ -555,8 +657,8 @@
           payload.has_data,
           payload.date_from,
           payload.date_to,
-          context.fromInput ? context.fromInput.value : "",
-          context.toInput ? context.toInput.value : ""
+          dateFieldValue(context.fromField, context.fromInput),
+          dateFieldValue(context.toField, context.toInput)
         );
       } catch (error) {
         if (error && error.name === "AbortError") {
@@ -715,7 +817,8 @@
       var month = visibleMonth.getMonth();
       var firstWeekday = new Date(year, month, 1).getDay();
       var daysInMonth = new Date(year, month + 1, 0).getDate();
-      var selectedDate = parseISODate(activeInput.value);
+      var activeField = activeInput === context.fromInput ? context.fromField : context.toField;
+      var selectedDate = parseISODate(dateFieldValue(activeField, activeInput));
 
       for (var blank = 0; blank < firstWeekday; blank++) {
         var placeholder = document.createElement("span");
@@ -740,7 +843,9 @@
               if (!activeInput) {
                 return;
               }
-              activeInput.value = formatISODate(selectedDay);
+              var nextValue = formatISODate(selectedDay);
+              var field = activeInput === context.fromInput ? context.fromField : context.toField;
+              setDateFieldValue(field, activeInput, nextValue);
               onRangeChanged(activeInput === context.toInput ? "to" : "from");
               closeCalendar();
             });
@@ -763,7 +868,8 @@
       }
 
       activeInput = input;
-      var selectedValue = parseISODate(input.value);
+      var field = input === context.fromInput ? context.fromField : context.toField;
+      var selectedValue = parseISODate(dateFieldValue(field, input));
       var reference = selectedValue || cloneDate(bounds.maxBound);
       visibleMonth = clampMonthToBounds(bounds, reference);
       renderCalendar();
@@ -848,18 +954,20 @@
       }
 
       if (!rangeController.validate("export")) {
-        if (context.fromInput.validationMessage) {
-          context.fromInput.reportValidity();
-        } else if (context.toInput) {
-          context.toInput.reportValidity();
+        var fromMessage = dateFieldValidationMessage(context.fromField, context.fromInput);
+        var toMessage = dateFieldValidationMessage(context.toField, context.toInput);
+        if (fromMessage) {
+          reportDateFieldValidity(context.fromField, context.fromInput);
+        } else if (toMessage) {
+          reportDateFieldValidity(context.toField, context.toInput);
         }
 
         if (typeof window.showToast === "function") {
           var message = context.invalidRangeMessage;
-          if (context.fromInput.validationMessage) {
-            message = context.fromInput.validationMessage;
-          } else if (context.toInput.validationMessage) {
-            message = context.toInput.validationMessage;
+          if (fromMessage) {
+            message = fromMessage;
+          } else if (toMessage) {
+            message = toMessage;
           }
           window.showToast(message, "error");
         }
@@ -933,21 +1041,21 @@
 
   var calendarController = createCalendarController(context, bounds, onRangeChanged);
 
-  context.fromInput.title = context.openCalendarLabel;
-  context.toInput.title = context.openCalendarLabel;
   if (context.calendarTitleToggle) {
     context.calendarTitleToggle.title = context.jumpTitle;
   }
 
   if (!bounds.hasBounds) {
-    context.fromInput.disabled = true;
-    context.toInput.disabled = true;
-    context.fromInput.value = "";
-    context.toInput.value = "";
+    setDateFieldDisabled(context.fromField, context.fromInput, true);
+    setDateFieldDisabled(context.toField, context.toInput, true);
+    setDateFieldValue(context.fromField, context.fromInput, "");
+    setDateFieldValue(context.toField, context.toInput, "");
     calendarController.disableControls();
     rangeController.updatePresetState();
     rangeController.setExportLinksDisabled(false);
   } else {
+    setDateFieldDisabled(context.fromField, context.fromInput, false);
+    setDateFieldDisabled(context.toField, context.toInput, false);
     rangeController.syncInitialRange();
     rangeController.updatePresetState();
     rangeController.setExportLinksDisabled(false);
@@ -958,19 +1066,16 @@
   bindRangeInput(context.toInput, "to", onRangeChanged);
 
   if (!useNativeDatePicker) {
-    context.fromInput.addEventListener("focus", function () {
-      calendarController.openCalendarForInput(context.fromInput);
-    });
-    context.fromInput.addEventListener("click", function () {
-      calendarController.openCalendarForInput(context.fromInput);
-    });
-
-    context.toInput.addEventListener("focus", function () {
-      calendarController.openCalendarForInput(context.toInput);
-    });
-    context.toInput.addEventListener("click", function () {
-      calendarController.openCalendarForInput(context.toInput);
-    });
+    if (context.fromField && context.fromField.openButton) {
+      context.fromField.openButton.addEventListener("click", function () {
+        calendarController.openCalendarForInput(context.fromInput);
+      });
+    }
+    if (context.toField && context.toField.openButton) {
+      context.toField.openButton.addEventListener("click", function () {
+        calendarController.openCalendarForInput(context.toInput);
+      });
+    }
   }
 
   for (var presetIndex = 0; presetIndex < context.presetButtons.length; presetIndex++) {
@@ -1024,6 +1129,12 @@
         return;
       }
       if (target === context.fromInput || target === context.toInput) {
+        return;
+      }
+      if (context.fromField && context.fromField.root && context.fromField.root.contains(target)) {
+        return;
+      }
+      if (context.toField && context.toField.root && context.toField.root.contains(target)) {
         return;
       }
       calendarController.closeCalendar();

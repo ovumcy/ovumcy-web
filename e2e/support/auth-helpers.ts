@@ -1,4 +1,5 @@
 import { expect, type BrowserContext, type Page } from '@playwright/test';
+import { dateFieldRoot, fillDateField } from './date-field-helpers';
 
 export type Credentials = {
   email: string;
@@ -91,7 +92,8 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   }
 
   const startDateInput = page.locator('#last-period-start');
-  const isStepOneVisible = await startDateInput.isVisible().catch(() => false);
+  const startDateField = dateFieldRoot(startDateInput);
+  const isStepOneVisible = await startDateField.isVisible().catch(() => false);
 
   if (!isStepOneVisible) {
     const beginButton = page.locator('[data-onboarding-action="begin"]');
@@ -100,8 +102,8 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
     }
   }
 
-  await expect(startDateInput).toBeVisible();
-  await startDateInput.fill(isoDateDaysAgo(3));
+  await expect(startDateField).toBeVisible();
+  await fillDateField(startDateInput, isoDateDaysAgo(3));
   await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
 
   const stepTwoForm = page.locator('form[hx-post="/onboarding/step2"]');

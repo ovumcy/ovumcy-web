@@ -12,16 +12,17 @@
       successMessage: readTextAttribute(section, "data-export-success", "Data exported successfully"),
       failedMessage: readTextAttribute(section, "data-export-failed", "Failed to export data"),
       invalidRangeMessage: readTextAttribute(section, "data-export-invalid-range", "End date must be on or after start date"),
-      invalidDateMessage: readTextAttribute(section, "data-export-invalid-date", "Use YYYY-MM-DD"),
-      openCalendarLabel: readTextAttribute(section, "data-export-open-calendar", "Open calendar"),
+      invalidDateMessage: readTextAttribute(section, "data-export-invalid-date", "Use a valid date"),
       jumpTitle: readTextAttribute(section, "data-export-jump-title", "Choose month and year"),
       summaryTotalTemplate: readTextAttribute(section, "data-export-summary-total-template", "Total entries: %d"),
       summaryRangeTemplate: readTextAttribute(section, "data-export-summary-range-template", "Date range: %s to %s"),
       summaryRangeEmpty: readTextAttribute(section, "data-export-summary-range-empty", "Date range: -"),
       links: section.querySelectorAll("a[data-export-link]"),
       presetButtons: section.querySelectorAll("button[data-export-preset]"),
-      fromInput: section.querySelector("input[data-export-from]"),
-      toInput: section.querySelector("input[data-export-to]"),
+      fromInput: section.querySelector("#export-from"),
+      toInput: section.querySelector("#export-to"),
+      fromField: dateFieldController(section.querySelector("#export-from")),
+      toField: dateFieldController(section.querySelector("#export-to")),
       summaryTotalNode: section.querySelector("[data-export-summary-total]"),
       summaryRangeNode: section.querySelector("[data-export-summary-range]"),
       calendarPanel: section.querySelector("[data-export-calendar-panel]"),
@@ -58,30 +59,35 @@
       }
     }
 
-    function parseAndNormalizeInput(input) {
-      sanitizeDateInputValue(input);
-      var raw = String(input.value || "").trim();
-      input.value = raw;
+    function parseAndNormalizeInput(field, input) {
+      if (!validateDateField(field, input, context.invalidDateMessage)) {
+        return { ok: false, date: null };
+      }
 
+      var raw = dateFieldValue(field, input);
       if (!raw) {
-        input.setCustomValidity("");
+        clearDateFieldValidity(field, input);
         return { ok: true, date: null };
       }
 
       var parsed = parseISODate(raw);
       if (!parsed) {
-        input.setCustomValidity(context.invalidDateMessage);
+        if (field && typeof field.setCustomValidity === "function") {
+          field.setCustomValidity(context.invalidDateMessage);
+        } else if (input) {
+          input.setCustomValidity(context.invalidDateMessage);
+        }
         return { ok: false, date: null };
       }
 
-      input.value = formatISODate(parsed);
-      input.setCustomValidity("");
+      setDateFieldValue(field, input, formatISODate(parsed));
+      clearDateFieldValidity(field, input);
       return { ok: true, date: parsed };
     }
 
     function validate(changedSide) {
-      var fromResult = parseAndNormalizeInput(context.fromInput);
-      var toResult = parseAndNormalizeInput(context.toInput);
+      var fromResult = parseAndNormalizeInput(context.fromField, context.fromInput);
+      var toResult = parseAndNormalizeInput(context.toField, context.toInput);
       if (!fromResult.ok || !toResult.ok) {
         setExportLinksDisabled(true);
         return false;
@@ -93,28 +99,32 @@
       if (bounds.hasBounds) {
         if (!fromDate) {
           fromDate = cloneDate(bounds.minBound);
-          context.fromInput.value = formatISODate(fromDate);
+          setDateFieldValue(context.fromField, context.fromInput, formatISODate(fromDate));
         }
         if (!toDate) {
           toDate = cloneDate(bounds.maxBound);
-          context.toInput.value = formatISODate(toDate);
+          setDateFieldValue(context.toField, context.toInput, formatISODate(toDate));
         }
       }
 
       if (fromDate && toDate && dateKey(toDate) < dateKey(fromDate)) {
         if (changedSide === "to") {
-          context.toInput.value = formatISODate(fromDate);
+          setDateFieldValue(context.toField, context.toInput, formatISODate(fromDate));
           toDate = fromDate;
         } else {
-          context.fromInput.value = formatISODate(toDate);
+          setDateFieldValue(context.fromField, context.fromInput, formatISODate(toDate));
           fromDate = toDate;
         }
       }
 
-      context.fromInput.setCustomValidity("");
-      context.toInput.setCustomValidity("");
+      clearDateFieldValidity(context.fromField, context.fromInput);
+      clearDateFieldValidity(context.toField, context.toInput);
       if (fromDate && toDate && dateKey(toDate) < dateKey(fromDate)) {
-        context.toInput.setCustomValidity(context.invalidRangeMessage);
+        if (context.toField && typeof context.toField.setCustomValidity === "function") {
+          context.toField.setCustomValidity(context.invalidRangeMessage);
+        } else if (context.toInput) {
+          context.toInput.setCustomValidity(context.invalidRangeMessage);
+        }
         setExportLinksDisabled(true);
         return false;
       }
@@ -149,8 +159,8 @@
         return;
       }
 
-      var fromDate = parseISODate(context.fromInput.value);
-      var toDate = parseISODate(context.toInput.value);
+      var fromDate = parseISODate(dateFieldValue(context.fromField, context.fromInput));
+      var toDate = parseISODate(dateFieldValue(context.toField, context.toInput));
 
       for (var index = 0; index < context.presetButtons.length; index++) {
         var button = context.presetButtons[index];
@@ -169,8 +179,8 @@
       if (!range) {
         return false;
       }
-      context.fromInput.value = formatISODate(range.from);
-      context.toInput.value = formatISODate(range.to);
+      setDateFieldValue(context.fromField, context.fromInput, formatISODate(range.from));
+      setDateFieldValue(context.toField, context.toInput, formatISODate(range.to));
       validate("to");
       updatePresetState();
       return true;
@@ -181,13 +191,13 @@
         return;
       }
 
-      var fromValue = parseISODate(context.fromInput.value);
-      var toValue = parseISODate(context.toInput.value);
+      var fromValue = parseISODate(dateFieldValue(context.fromField, context.fromInput));
+      var toValue = parseISODate(dateFieldValue(context.toField, context.toInput));
       fromValue = fromValue || cloneDate(bounds.minBound);
       toValue = toValue || cloneDate(bounds.maxBound);
 
-      context.fromInput.value = formatISODate(fromValue);
-      context.toInput.value = formatISODate(toValue);
+      setDateFieldValue(context.fromField, context.fromInput, formatISODate(fromValue));
+      setDateFieldValue(context.toField, context.toInput, formatISODate(toValue));
       validate("init");
     }
 
@@ -198,7 +208,11 @@
       applyPreset: applyPreset,
       syncInitialRange: syncInitialRange,
       buildExportEndpoint: function (baseEndpoint) {
-        return buildEndpoint(baseEndpoint, context.fromInput.value, context.toInput.value);
+        return buildEndpoint(
+          baseEndpoint,
+          dateFieldValue(context.fromField, context.fromInput),
+          dateFieldValue(context.toField, context.toInput)
+        );
       }
     };
   }
@@ -237,7 +251,11 @@
     }
 
     function buildSummaryEndpoint() {
-      return buildEndpoint(SUMMARY_ENDPOINT, context.fromInput.value, context.toInput.value);
+      return buildEndpoint(
+        SUMMARY_ENDPOINT,
+        dateFieldValue(context.fromField, context.fromInput),
+        dateFieldValue(context.toField, context.toInput)
+      );
     }
 
     async function refresh() {
@@ -280,8 +298,8 @@
           payload.has_data,
           payload.date_from,
           payload.date_to,
-          context.fromInput ? context.fromInput.value : "",
-          context.toInput ? context.toInput.value : ""
+          dateFieldValue(context.fromField, context.fromInput),
+          dateFieldValue(context.toField, context.toInput)
         );
       } catch (error) {
         if (error && error.name === "AbortError") {

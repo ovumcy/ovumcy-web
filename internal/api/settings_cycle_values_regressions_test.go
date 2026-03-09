@@ -44,13 +44,13 @@ func TestSettingsPageRendersPersistedCycleValues(t *testing.T) {
 	if !autoPeriodFillPattern.MatchString(rendered) {
 		t.Fatalf("expected auto_period_fill checkbox to reflect persisted enabled state")
 	}
-	exportInputPattern := regexp.MustCompile(`(?s)id="export-from".*?type="date".*?id="export-to".*?type="date"`)
+	exportInputPattern := regexp.MustCompile(`(?s)data-export-from-field.*?data-date-field-id="export-from".*?data-date-field-open.*?data-export-to-field.*?data-date-field-id="export-to".*?data-date-field-open`)
 	if !exportInputPattern.MatchString(rendered) {
-		t.Fatalf("expected export inputs to use native date type for client-side validation")
+		t.Fatalf("expected export date fields to render segmented controls with explicit calendar buttons")
 	}
-	lastPeriodInputAccessibilityPattern := regexp.MustCompile(`(?s)id="settings-last-period-start".*?lang="en".*?aria-label="Last period start date".*?min="\d{4}-01-01"`)
+	lastPeriodInputAccessibilityPattern := regexp.MustCompile(`(?s)data-date-field-id="settings-last-period-start".*?id="settings-last-period-start".*?lang="en".*?min="\d{4}-01-01".*?aria-label="Day".*?aria-label="Month".*?aria-label="Year"`)
 	if !lastPeriodInputAccessibilityPattern.MatchString(rendered) {
-		t.Fatalf("expected settings last-period-start field to include localized language, aria-label, and min date attributes")
+		t.Fatalf("expected settings last-period-start field to include localized segmented accessibility labels and range attributes")
 	}
 }
 

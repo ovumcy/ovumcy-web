@@ -105,6 +105,10 @@ test.describe('Navigation and language switch', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'es');
     await expect(page.locator('h1.journal-title')).toContainText('Configuración');
     await expect(page.getByRole('link', { name: 'Panel' }).first()).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'Día' })).toHaveCount(3);
+    await expect(page.getByRole('textbox', { name: 'Mes' })).toHaveCount(3);
+    await expect(page.getByRole('textbox', { name: 'Año' })).toHaveCount(3);
+    await expect(page.getByRole('button', { name: 'Mostrar selector de fecha' })).toHaveCount(2);
 
     await page.locator('.lang-switch a[href^="/lang/ru"]').click();
     await expect(page).toHaveURL(/\/settings$/);

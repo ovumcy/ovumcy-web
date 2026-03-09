@@ -126,7 +126,8 @@
       var month = visibleMonth.getMonth();
       var firstWeekday = new Date(year, month, 1).getDay();
       var daysInMonth = new Date(year, month + 1, 0).getDate();
-      var selectedDate = parseISODate(activeInput.value);
+      var activeField = activeInput === context.fromInput ? context.fromField : context.toField;
+      var selectedDate = parseISODate(dateFieldValue(activeField, activeInput));
 
       for (var blank = 0; blank < firstWeekday; blank++) {
         var placeholder = document.createElement("span");
@@ -151,7 +152,9 @@
               if (!activeInput) {
                 return;
               }
-              activeInput.value = formatISODate(selectedDay);
+              var nextValue = formatISODate(selectedDay);
+              var field = activeInput === context.fromInput ? context.fromField : context.toField;
+              setDateFieldValue(field, activeInput, nextValue);
               onRangeChanged(activeInput === context.toInput ? "to" : "from");
               closeCalendar();
             });
@@ -174,7 +177,8 @@
       }
 
       activeInput = input;
-      var selectedValue = parseISODate(input.value);
+      var field = input === context.fromInput ? context.fromField : context.toField;
+      var selectedValue = parseISODate(dateFieldValue(field, input));
       var reference = selectedValue || cloneDate(bounds.maxBound);
       visibleMonth = clampMonthToBounds(bounds, reference);
       renderCalendar();
@@ -238,4 +242,3 @@
       disableControls: disableControls
     };
   }
-

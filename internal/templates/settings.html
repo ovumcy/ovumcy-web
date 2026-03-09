@@ -97,17 +97,18 @@
       </div>
 
       <div class="space-y-2">
-        <label class="field-label" for="settings-last-period-start">{{t .Messages "settings.cycle.last_period_start"}}</label>
-        <input
-          id="settings-last-period-start"
-          type="date"
-          name="last_period_start"
-          lang="{{.Lang}}"
-          aria-label="{{t .Messages "settings.cycle.last_period_start"}}"
-          min="{{.CycleStartMinISO}}"
-          value="{{.LastPeriodStart}}"
-          class="input-field">
-        <p class="journal-muted text-xs">{{t .Messages "settings.cycle.last_period_start_hint"}}</p>
+        <label class="field-label" id="settings-last-period-start-label" for="settings-last-period-start">{{t .Messages "settings.cycle.last_period_start"}}</label>
+        {{template "localized_date_field" (dict
+          "Messages" .Messages
+          "FieldID" "settings-last-period-start"
+          "FieldName" "last_period_start"
+          "Value" .LastPeriodStart
+          "Lang" .Lang
+          "LabelID" "settings-last-period-start-label"
+          "DescribedBy" "settings-last-period-start-hint"
+          "Min" .CycleStartMinISO
+          "Max" .TodayISO)}}
+        <p id="settings-last-period-start-hint" class="journal-muted text-xs">{{t .Messages "settings.cycle.last_period_start_hint"}}</p>
       </div>
 
       <div class="space-y-1">
@@ -211,7 +212,6 @@
     data-export-failed="{{t .Messages "settings.export_failed"}}"
     data-export-invalid-range="{{t .Messages "settings.export_invalid_range"}}"
     data-export-invalid-date="{{t .Messages "settings.export_invalid_date"}}"
-    data-export-open-calendar="{{t .Messages "settings.export_open_calendar"}}"
     data-export-jump-title="{{t .Messages "settings.export_jump_title"}}"
     data-export-summary-total-template="{{t .Messages "settings.export_summary_total"}}"
     data-export-summary-range-template="{{t .Messages "settings.export_summary_range"}}"
@@ -219,28 +219,36 @@
     <h2 class="journal-subtitle">📊 {{t .Messages "settings.export_data"}}</h2>
     <div class="grid gap-3 sm:grid-cols-2">
       <div class="space-y-1">
-        <label class="field-label" for="export-from">{{t .Messages "settings.export_from"}}</label>
-        <input
-          id="export-from"
-          type="date"
-          autocomplete="off"
-          lang="{{.Lang}}"
-          aria-label="{{t .Messages "settings.export_from"}}"
-          data-export-from
-          class="input-field w-full"
-          {{if .HasExportData}}value="{{.ExportDateFrom}}"{{end}}>
+        <label class="field-label" id="export-from-label" for="export-from">{{t .Messages "settings.export_from"}}</label>
+        <div data-export-from-field>
+          {{template "localized_date_field" (dict
+            "Messages" .Messages
+            "FieldID" "export-from"
+            "FieldName" "from"
+            "Value" .ExportDateFrom
+            "Lang" .Lang
+            "LabelID" "export-from-label"
+            "Min" .ExportDateFrom
+            "Max" .ExportDateTo
+            "ShowPickerButton" true
+            "OpenPickerLabel" (t .Messages "settings.export_open_calendar"))}}
+        </div>
       </div>
       <div class="space-y-1">
-        <label class="field-label" for="export-to">{{t .Messages "settings.export_to"}}</label>
-        <input
-          id="export-to"
-          type="date"
-          autocomplete="off"
-          lang="{{.Lang}}"
-          aria-label="{{t .Messages "settings.export_to"}}"
-          data-export-to
-          class="input-field w-full"
-          {{if .HasExportData}}value="{{.ExportDateTo}}"{{end}}>
+        <label class="field-label" id="export-to-label" for="export-to">{{t .Messages "settings.export_to"}}</label>
+        <div data-export-to-field>
+          {{template "localized_date_field" (dict
+            "Messages" .Messages
+            "FieldID" "export-to"
+            "FieldName" "to"
+            "Value" .ExportDateTo
+            "Lang" .Lang
+            "LabelID" "export-to-label"
+            "Min" .ExportDateFrom
+            "Max" .ExportDateTo
+            "ShowPickerButton" true
+            "OpenPickerLabel" (t .Messages "settings.export_open_calendar"))}}
+        </div>
       </div>
     </div>
     <div class="flex flex-wrap items-center gap-2" data-export-presets>
@@ -337,7 +345,7 @@
   </section>
 </section>
 {{if eq .CurrentUser.Role "owner"}}
-<script src="/static/js/settings-export.js?v=20260225-1"></script>
+<script defer src="/static/js/settings-export.js?v=20260310-1"></script>
 {{end}}
 {{end}}
 

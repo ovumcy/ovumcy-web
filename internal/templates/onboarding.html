@@ -49,19 +49,19 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="client_timezone" value="" data-onboarding-timezone-field>
 
-        <label class="field-label" for="last-period-start">{{t .Messages "onboarding.step1.field"}}</label>
-        <input
-          id="last-period-start"
-          type="date"
-          name="last_period_start"
-          required
-          class="input-field"
-          lang="{{.Lang}}"
-          placeholder="{{t .Messages "onboarding.step1.date_placeholder"}}"
-          value="{{.LastPeriodStart}}"
-          data-onboarding-start-date
-          min="{{.MinDate}}"
-          max="{{.MaxDate}}">
+        <label class="field-label" id="last-period-start-label" for="last-period-start">{{t .Messages "onboarding.step1.field"}}</label>
+        <div data-onboarding-start-date-field>
+          {{template "localized_date_field" (dict
+            "Messages" .Messages
+            "FieldID" "last-period-start"
+            "FieldName" "last_period_start"
+            "Value" .LastPeriodStart
+            "Lang" .Lang
+            "LabelID" "last-period-start-label"
+            "Min" .MinDate
+            "Max" .MaxDate
+            "Required" true)}}
+        </div>
 
         <div class="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6" data-onboarding-day-options></div>
 

@@ -30,16 +30,13 @@ func TestOnboardingDateInputUsesCurrentLanguage(t *testing.T) {
 		t.Fatalf("read onboarding body: %v", err)
 	}
 
-	pattern := regexp.MustCompile(`(?s)<input[^>]*id="last-period-start"[^>]*lang="en"`)
+	pattern := regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?<input[^>]*id="last-period-start"[^>]*lang="en".*?aria-label="Day".*?aria-label="Month".*?aria-label="Year"`)
 	if !pattern.Match(body) {
-		t.Fatalf("expected date input #last-period-start to render with lang=en")
-	}
-	if !regexp.MustCompile(`(?s)<input[^>]*id="last-period-start"[^>]*placeholder="dd\.mm\.yyyy"`).Match(body) {
-		t.Fatalf("expected english onboarding date placeholder")
+		t.Fatalf("expected onboarding date field #last-period-start to render english segmented accessibility labels")
 	}
 }
 
-func TestOnboardingDateInputUsesRussianPlaceholder(t *testing.T) {
+func TestOnboardingDateFieldUsesRussianLabels(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "onboarding-lang-ru@example.com", "StrongPass1", false)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
@@ -61,7 +58,34 @@ func TestOnboardingDateInputUsesRussianPlaceholder(t *testing.T) {
 		t.Fatalf("read onboarding body: %v", err)
 	}
 
-	if !regexp.MustCompile(`(?s)<input[^>]*id="last-period-start"[^>]*placeholder="дд\.мм\.гггг"`).Match(body) {
-		t.Fatalf("expected russian onboarding date placeholder")
+	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="День".*?aria-label="Месяц".*?aria-label="Год"`).Match(body) {
+		t.Fatalf("expected russian onboarding segmented date labels")
+	}
+}
+
+func TestOnboardingDateFieldUsesSpanishLabels(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "onboarding-lang-es@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=es")
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("onboarding request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read onboarding body: %v", err)
+	}
+
+	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="Día".*?aria-label="Mes".*?aria-label="Año"`).Match(body) {
+		t.Fatalf("expected spanish onboarding segmented date labels")
 	}
 }

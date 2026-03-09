@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { clearDateField, dateFieldRoot, fillDateField } from './support/date-field-helpers';
 import {
   continueFromRecoveryCode,
   createCredentials,
@@ -37,7 +38,7 @@ async function ensureOnboardingStepOneVisible(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
 
   const stepOneDateInput = page.locator('#last-period-start');
-  const stepOneVisible = await stepOneDateInput.isVisible().catch(() => false);
+  const stepOneVisible = await dateFieldRoot(stepOneDateInput).isVisible().catch(() => false);
 
   if (!stepOneVisible) {
     const beginButton = page.locator('[data-onboarding-action="begin"]');
@@ -46,7 +47,7 @@ async function ensureOnboardingStepOneVisible(page: Page): Promise<void> {
     }
   }
 
-  await expect(stepOneDateInput).toBeVisible();
+  await expect(dateFieldRoot(stepOneDateInput)).toBeVisible();
 }
 
 async function registerAndOpenOnboarding(page: Page, emailPrefix: string) {
@@ -65,7 +66,7 @@ async function registerAndOpenOnboarding(page: Page, emailPrefix: string) {
 
 async function submitStepOne(page: Page, dateISO: string): Promise<void> {
   const input = page.locator('#last-period-start');
-  await input.fill(dateISO);
+  await fillDateField(input, dateISO);
   await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
   await expect(page.locator('form[hx-post="/onboarding/step2"]')).toBeVisible();
 }
@@ -101,19 +102,17 @@ test.describe('Onboarding flow', () => {
     await registerAndOpenOnboarding(page, 'onboarding-step1-quickpick');
 
     const dateInput = page.locator('#last-period-start');
-    await dateInput.fill('');
-
-    const validWithoutDate = await dateInput.evaluate((el) => (el as HTMLInputElement).checkValidity());
-    expect(validWithoutDate).toBe(false);
+    await clearDateField(dateInput);
 
     await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+    await expect(page.locator('#onboarding-step1-status .status-error')).toBeVisible();
 
     const stepTwoForm = page.locator('form[hx-post="/onboarding/step2"]');
     const stepTwoVisible = await stepTwoForm.isVisible().catch(() => false);
     if (stepTwoVisible) {
       await stepTwoForm.locator('button.btn-secondary[type="button"]').click();
-      await expect(dateInput).toBeVisible();
+      await expect(dateFieldRoot(dateInput)).toBeVisible();
     } else {
       await expect(stepTwoForm).not.toBeVisible();
     }
@@ -140,12 +139,10 @@ test.describe('Onboarding flow', () => {
     expect(max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(min! <= max!).toBe(true);
 
-    await input.fill(shiftISODate(min!, -1));
-    await input.dispatchEvent('change');
+    await fillDateField(input, shiftISODate(min!, -1));
     await expect(input).toHaveValue(min!);
 
-    await input.fill(shiftISODate(max!, 1));
-    await input.dispatchEvent('change');
+    await fillDateField(input, shiftISODate(max!, 1));
     await expect(input).toHaveValue(max!);
   });
 
@@ -170,7 +167,7 @@ test.describe('Onboarding flow', () => {
     await page.locator('form[hx-post="/onboarding/step2"] button.btn-secondary[type="button"]').click();
 
     const stepOneInput = page.locator('#last-period-start');
-    await expect(stepOneInput).toBeVisible();
+    await expect(dateFieldRoot(stepOneInput)).toBeVisible();
     await expect(stepOneInput).toHaveValue(selectedDate);
 
     await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
@@ -229,7 +226,7 @@ test.describe('Onboarding flow', () => {
     }
 
     await ensureOnboardingStepOneVisible(page);
-    await page.locator('#last-period-start').fill(startDate);
+    await fillDateField(page.locator('#last-period-start'), startDate);
     await submitStepOne(page, startDate);
     await submitStepTwo(page);
     await submitStepThree(page);

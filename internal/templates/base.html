@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="/static/css/tailwind.css?v=20260309-4">
   <script defer src="/static/js/htmx.min.js?v=20260221-2"></script>
   <script defer src="/static/js/chart-lite.js?v=20260221-2"></script>
-  <script defer src="/static/js/app.js?v=20260309-4"></script>
+  <script defer src="/static/js/app.js?v=20260310-1"></script>
 </head>
 <body
   data-confirm-cancel="{{t .Messages "confirm.no"}}"
@@ -192,6 +192,100 @@
     data-show-label="{{t .Messages "auth.show_password"}}"
     data-hide-label="{{t .Messages "auth.hide_password"}}"
     aria-label="{{t .Messages "auth.show_password"}}">👁</button>
+</div>
+{{end}}
+{{define "localized_date_field"}}
+{{$dayLabel := t .Messages "date_field.day"}}
+{{$monthLabel := t .Messages "date_field.month"}}
+{{$yearLabel := t .Messages "date_field.year"}}
+{{$invalidMessage := .InvalidMessage}}
+{{if not $invalidMessage}}{{$invalidMessage = t .Messages "date_field.invalid"}}{{end}}
+{{$requiredMessage := .RequiredMessage}}
+{{if not $requiredMessage}}{{$requiredMessage = t .Messages "date_field.required"}}{{end}}
+{{$outOfRangeMessage := .OutOfRangeMessage}}
+{{if not $outOfRangeMessage}}{{$outOfRangeMessage = t .Messages "date_field.out_of_range"}}{{end}}
+{{$openPickerLabel := .OpenPickerLabel}}
+{{if and .ShowPickerButton (not $openPickerLabel)}}{{$openPickerLabel = t .Messages "date_field.open_picker"}}{{end}}
+<div
+  class="space-y-2"
+  role="group"
+  aria-labelledby="{{.LabelID}}"
+  {{if .DescribedBy}}aria-describedby="{{.DescribedBy}}"{{end}}
+  data-date-field
+  data-date-field-id="{{.FieldID}}"
+  data-date-field-invalid-message="{{$invalidMessage}}"
+  data-date-field-required-message="{{$requiredMessage}}"
+  data-date-field-out-of-range-message="{{$outOfRangeMessage}}">
+  <input
+    id="{{.FieldID}}"
+    type="text"
+    name="{{.FieldName}}"
+    value="{{.Value}}"
+    lang="{{.Lang}}"
+    class="hidden"
+    autocomplete="off"
+    aria-hidden="true"
+    tabindex="-1"
+    data-date-field-value
+    {{if .Required}}data-date-field-required="true"{{end}}
+    {{if .Min}}min="{{.Min}}"{{end}}
+    {{if .Max}}max="{{.Max}}"{{end}}>
+  <div class="grid grid-cols-3 gap-2">
+    <div class="space-y-1">
+      <label class="field-label text-xs" for="{{.FieldID}}-day">{{$dayLabel}}</label>
+      <input
+        id="{{.FieldID}}-day"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="2"
+        autocomplete="off"
+        placeholder="DD"
+        class="input-field"
+        aria-label="{{$dayLabel}}"
+        data-date-field-part="day">
+    </div>
+    <div class="space-y-1">
+      <label class="field-label text-xs" for="{{.FieldID}}-month">{{$monthLabel}}</label>
+      <input
+        id="{{.FieldID}}-month"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="2"
+        autocomplete="off"
+        placeholder="MM"
+        class="input-field"
+        aria-label="{{$monthLabel}}"
+        data-date-field-part="month">
+    </div>
+    <div class="space-y-1">
+      <label class="field-label text-xs" for="{{.FieldID}}-year">{{$yearLabel}}</label>
+      <input
+        id="{{.FieldID}}-year"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="4"
+        autocomplete="off"
+        placeholder="YYYY"
+        class="input-field"
+        aria-label="{{$yearLabel}}"
+        data-date-field-part="year">
+    </div>
+  </div>
+  {{if .ShowPickerButton}}
+  <div>
+    <button
+      type="button"
+      class="btn-secondary inline-flex items-center justify-center"
+      data-date-field-open
+      aria-label="{{$openPickerLabel}}"
+      title="{{$openPickerLabel}}">
+      <span aria-hidden="true">📅</span>
+    </button>
+  </div>
+  {{end}}
 </div>
 {{end}}
 {{define "readonly_log_summary"}}

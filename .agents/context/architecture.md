@@ -41,6 +41,7 @@ See `.agents/context/security.md` for auth, cookie, recovery-code, browser-harde
 
 - Frontend lives in `web/` and uses Tailwind CSS, JS, and templates.
 - Supported first-party UI locales are `en`, `ru`, and `es`. The language switcher must be driven from `internal/i18n` supported locales rather than hardcoded locale lists in templates or JS.
+- Do not rely on browser-native accessibility labels of `input[type="date"]` for localized UX in Chromium; use the shared segmented date-field pattern when translated day/month/year labels or picker buttons are required.
 - Mobile PWA support is currently limited to manifest + install prompt UX. Do not introduce service workers, offline caches, or cached HTML/data shells without explicit privacy review and dedicated tests.
 - UI appearance preference (`light`/`dark`) is a client-only concern stored in `localStorage` (`ovumcy_theme`); base layout should set `html[data-theme]` before CSS loads to avoid theme flash.
 - Register page should perform client-side password mismatch validation to avoid wiping both password fields on roundtrip; server-side validation remains authoritative.

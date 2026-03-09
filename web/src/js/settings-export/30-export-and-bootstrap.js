@@ -18,18 +18,20 @@
       }
 
       if (!rangeController.validate("export")) {
-        if (context.fromInput.validationMessage) {
-          context.fromInput.reportValidity();
-        } else if (context.toInput) {
-          context.toInput.reportValidity();
+        var fromMessage = dateFieldValidationMessage(context.fromField, context.fromInput);
+        var toMessage = dateFieldValidationMessage(context.toField, context.toInput);
+        if (fromMessage) {
+          reportDateFieldValidity(context.fromField, context.fromInput);
+        } else if (toMessage) {
+          reportDateFieldValidity(context.toField, context.toInput);
         }
 
         if (typeof window.showToast === "function") {
           var message = context.invalidRangeMessage;
-          if (context.fromInput.validationMessage) {
-            message = context.fromInput.validationMessage;
-          } else if (context.toInput.validationMessage) {
-            message = context.toInput.validationMessage;
+          if (fromMessage) {
+            message = fromMessage;
+          } else if (toMessage) {
+            message = toMessage;
           }
           window.showToast(message, "error");
         }
@@ -103,21 +105,21 @@
 
   var calendarController = createCalendarController(context, bounds, onRangeChanged);
 
-  context.fromInput.title = context.openCalendarLabel;
-  context.toInput.title = context.openCalendarLabel;
   if (context.calendarTitleToggle) {
     context.calendarTitleToggle.title = context.jumpTitle;
   }
 
   if (!bounds.hasBounds) {
-    context.fromInput.disabled = true;
-    context.toInput.disabled = true;
-    context.fromInput.value = "";
-    context.toInput.value = "";
+    setDateFieldDisabled(context.fromField, context.fromInput, true);
+    setDateFieldDisabled(context.toField, context.toInput, true);
+    setDateFieldValue(context.fromField, context.fromInput, "");
+    setDateFieldValue(context.toField, context.toInput, "");
     calendarController.disableControls();
     rangeController.updatePresetState();
     rangeController.setExportLinksDisabled(false);
   } else {
+    setDateFieldDisabled(context.fromField, context.fromInput, false);
+    setDateFieldDisabled(context.toField, context.toInput, false);
     rangeController.syncInitialRange();
     rangeController.updatePresetState();
     rangeController.setExportLinksDisabled(false);
@@ -128,19 +130,16 @@
   bindRangeInput(context.toInput, "to", onRangeChanged);
 
   if (!useNativeDatePicker) {
-    context.fromInput.addEventListener("focus", function () {
-      calendarController.openCalendarForInput(context.fromInput);
-    });
-    context.fromInput.addEventListener("click", function () {
-      calendarController.openCalendarForInput(context.fromInput);
-    });
-
-    context.toInput.addEventListener("focus", function () {
-      calendarController.openCalendarForInput(context.toInput);
-    });
-    context.toInput.addEventListener("click", function () {
-      calendarController.openCalendarForInput(context.toInput);
-    });
+    if (context.fromField && context.fromField.openButton) {
+      context.fromField.openButton.addEventListener("click", function () {
+        calendarController.openCalendarForInput(context.fromInput);
+      });
+    }
+    if (context.toField && context.toField.openButton) {
+      context.toField.openButton.addEventListener("click", function () {
+        calendarController.openCalendarForInput(context.toInput);
+      });
+    }
   }
 
   for (var presetIndex = 0; presetIndex < context.presetButtons.length; presetIndex++) {
@@ -194,6 +193,12 @@
         return;
       }
       if (target === context.fromInput || target === context.toInput) {
+        return;
+      }
+      if (context.fromField && context.fromField.root && context.fromField.root.contains(target)) {
+        return;
+      }
+      if (context.toField && context.toField.root && context.toField.root.contains(target)) {
         return;
       }
       calendarController.closeCalendar();
