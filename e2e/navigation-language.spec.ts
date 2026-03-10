@@ -32,6 +32,13 @@ async function switchLanguageViaRoute(page: Page, code: string, next: string): P
   await page.goto(`/lang/${code}?next=${encodeURIComponent(next)}`);
 }
 
+async function expectDateFieldVisible(page: Page, fieldID: string): Promise<void> {
+  const root = page.locator(`[data-date-field-id="${fieldID}"]`);
+  await expect(root.locator('[data-date-field-part="day"]')).toBeVisible();
+  await expect(root.locator('[data-date-field-part="month"]')).toBeVisible();
+  await expect(root.locator('[data-date-field-part="year"]')).toBeVisible();
+}
+
 test.describe('Navigation and language switch', () => {
   test('unauthenticated user is redirected from protected routes to /login', async ({ page }) => {
     const protectedRoutes = ['/dashboard', '/calendar', '/stats', '/settings'];
@@ -108,10 +115,11 @@ test.describe('Navigation and language switch', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'es');
     await expect(page.locator('h1.journal-title')).toContainText('Configuración');
     await expect(page.getByRole('link', { name: 'Hoy' }).first()).toBeVisible();
-    await expect(page.getByRole('textbox', { name: 'Día' })).toHaveCount(3);
-    await expect(page.getByRole('textbox', { name: 'Mes' })).toHaveCount(3);
-    await expect(page.getByRole('textbox', { name: 'Año' })).toHaveCount(3);
-    await expect(page.getByRole('button', { name: 'Mostrar selector de fecha' })).toHaveCount(2);
+    await expectDateFieldVisible(page, 'settings-last-period-start');
+    await expectDateFieldVisible(page, 'export-from');
+    await expectDateFieldVisible(page, 'export-to');
+    await expect(page.locator('[data-date-field-id="export-from"] [data-date-field-open]')).toBeVisible();
+    await expect(page.locator('[data-date-field-id="export-to"] [data-date-field-open]')).toBeVisible();
 
     await page.locator('.lang-switch a[href^="/lang/ru"]').click();
     await expect(page).toHaveURL(/\/settings$/);

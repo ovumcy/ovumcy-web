@@ -92,11 +92,13 @@ test.describe('Calendar page', () => {
   test('default month renders and navigation prev/next/today works', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-nav');
 
-    const topCard = page.locator('section.space-y-6 > div.journal-card').first();
-    const monthLabel = topCard.locator('p.journal-muted').first();
-    const prevLink = topCard.locator('a.btn-secondary').first();
-    const nextLink = topCard.locator('a.btn-secondary').nth(1);
-    const todayLink = topCard.locator('a.btn-primary[href="/calendar"]');
+    const navigationCard = page.locator('div.journal-card').filter({
+      has: page.locator('a.btn-primary[href="/calendar"]'),
+    }).first();
+    const monthLabel = navigationCard.locator('p.journal-muted').first();
+    const prevLink = navigationCard.locator('a.btn-secondary[href^="/calendar?month="]').first();
+    const nextLink = navigationCard.locator('a.btn-secondary[href^="/calendar?month="]').nth(1);
+    const todayLink = navigationCard.locator('a.btn-primary[href="/calendar"]');
 
     const initialLabel = ((await monthLabel.textContent()) ?? '').trim();
     expect(initialLabel.length).toBeGreaterThan(0);
