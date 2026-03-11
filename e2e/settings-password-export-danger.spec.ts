@@ -157,7 +157,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await expect(page.locator('.recovery-code-box')).toHaveCount(0);
   });
 
-  test('export CSV and JSON from settings returns attachment responses with expected structure', async ({
+  test('export CSV, JSON, and PDF from settings return attachment responses with expected structure', async ({
     page,
   }) => {
     await registerOwnerAndOpenSettings(page, 'settings-export');
@@ -197,6 +197,19 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     expect(typeof payload.exported_at).toBe('string');
     expect(Array.isArray(payload.entries)).toBe(true);
     expect(payload.entries?.some((entry) => String(entry.notes || '') === exportNote)).toBe(true);
+
+    const pdfResponsePromise = page.waitForResponse(
+      (response) => response.url().includes('/api/export/pdf') && response.request().method() === 'GET'
+    );
+    await page.locator('a[data-export-link][data-export-type="pdf"]').click();
+    const pdfResponse = await pdfResponsePromise;
+
+    expect(pdfResponse.status()).toBe(200);
+    expect(pdfResponse.headers()['content-type'] || '').toContain('application/pdf');
+    expect(pdfResponse.headers()['content-disposition'] || '').toContain('attachment;');
+
+    const pdfBody = await pdfResponse.body();
+    expect(pdfBody.subarray(0, 4).toString()).toBe('%PDF');
   });
 
   test('clear data removes tracked entry and resets cycle defaults', async ({ page }) => {

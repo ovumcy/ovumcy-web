@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,27 @@ import (
 )
 
 func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
+	rendered := renderStatsPageWithStaleCycleData(t)
+	if !strings.Contains(rendered, "Keep logging") {
+		t.Fatalf("expected gated empty state on stats page before enough completed cycles")
+	}
+}
+
+func TestStatsPageEmptyStateUsesDedicatedProgressMeterWithoutInlineStyle(t *testing.T) {
+	rendered := renderStatsPageWithStaleCycleData(t)
+
+	progressTag := regexp.MustCompile(`<progress[^>]*class="stats-progress-meter"[^>]*max="100"[^>]*>`).FindString(rendered)
+	if progressTag == "" {
+		t.Fatalf("expected stats empty state to render a dedicated progress meter, got %q", rendered)
+	}
+	if strings.Contains(progressTag, "style=") {
+		t.Fatalf("expected progress meter tag to avoid inline style attributes under strict CSP, got %q", progressTag)
+	}
+}
+
+func renderStatsPageWithStaleCycleData(t *testing.T) string {
+	t.Helper()
+
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "stats-stale-ui@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
@@ -44,8 +66,5 @@ func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read stats body: %v", err)
 	}
-	rendered := string(body)
-	if !strings.Contains(rendered, "Keep logging") {
-		t.Fatalf("expected gated empty state on stats page before enough completed cycles")
-	}
+	return string(body)
 }

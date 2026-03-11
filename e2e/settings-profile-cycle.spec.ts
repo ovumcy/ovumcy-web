@@ -293,6 +293,54 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('#settings-cycle-status .status-error')).toBeVisible();
   });
 
+  test('tracking toggles persist and change the owner day form', async ({ page }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-tracking');
+
+    const trackingSection = page.locator('#settings-tracking');
+    await expect(trackingSection).toBeVisible();
+
+    const trackBBT = trackingSection.locator('input[name="track_bbt"]');
+    const trackCervicalMucus = trackingSection.locator('input[name="track_cervical_mucus"]');
+    const hideSexChip = trackingSection.locator('input[name="hide_sex_chip"]');
+    const saveTrackingButton = trackingSection.locator('button[data-save-button]');
+
+    await expect(trackBBT).not.toBeChecked();
+    await expect(trackCervicalMucus).not.toBeChecked();
+    await expect(hideSexChip).not.toBeChecked();
+
+    await trackBBT.check();
+    await trackCervicalMucus.check();
+    await hideSexChip.check();
+    await saveTrackingButton.click();
+    await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
+
+    await page.reload();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(trackBBT).toBeChecked();
+    await expect(trackCervicalMucus).toBeChecked();
+    await expect(hideSexChip).toBeChecked();
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.locator('form[hx-post^="/api/days/"] input[name="bbt"]')).toBeVisible();
+    await expect(page.locator('form[hx-post^="/api/days/"] input[name="cervical_mucus"][value="dry"]')).toBeVisible();
+    await expect(page.locator('form[hx-post^="/api/days/"] details.sex-activity-details')).toHaveCount(0);
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await trackBBT.uncheck();
+    await trackCervicalMucus.uncheck();
+    await hideSexChip.uncheck();
+    await saveTrackingButton.click();
+    await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.locator('form[hx-post^="/api/days/"] input[name="bbt"]')).toHaveCount(0);
+    await expect(page.locator('form[hx-post^="/api/days/"] input[name="cervical_mucus"][value="dry"]')).toHaveCount(0);
+    await expect(page.locator('form[hx-post^="/api/days/"] details.sex-activity-details')).toBeVisible();
+  });
+
   test('onboarding selected start date persists into settings cycle field', async ({ page }) => {
     const creds = createCredentials('settings-onboarding-date');
 

@@ -56,7 +56,7 @@ func (handler *Handler) respondSymptomMutationError(c *fiber.Ctx, user *models.U
 		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
 		return c.Redirect("/settings", fiber.StatusSeeOther)
 	}
-	return apiError(c, spec.Status, spec.Key)
+	return handler.respondMappedError(c, spec)
 }
 
 func (handler *Handler) respondSymptomMutationSuccess(c *fiber.Ctx, user *models.User, statusCode int, successStatus string, state settingsSymptomSectionState) error {

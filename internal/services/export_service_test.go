@@ -88,10 +88,14 @@ func TestExportBuildJSONEntriesNormalizesFlowAndMapsSymptoms(t *testing.T) {
 		&stubExportDayReader{
 			logs: []models.DailyLog{
 				{
-					Date:       mustParseExportDay(t, "2026-02-19"),
-					Flow:       "unexpected-flow",
-					SymptomIDs: []uint{1, 2, 3, 3},
-					Notes:      "json-note",
+					Date:          mustParseExportDay(t, "2026-02-19"),
+					Flow:          "unexpected-flow",
+					Mood:          4,
+					SexActivity:   models.SexActivityProtected,
+					BBT:           36.55,
+					CervicalMucus: models.CervicalMucusEggWhite,
+					SymptomIDs:    []uint{1, 2, 3, 3},
+					Notes:         "json-note",
 				},
 			},
 		},
@@ -119,6 +123,18 @@ func TestExportBuildJSONEntriesNormalizesFlowAndMapsSymptoms(t *testing.T) {
 	if entry.Flow != models.FlowNone {
 		t.Fatalf("expected normalized flow=%q, got %q", models.FlowNone, entry.Flow)
 	}
+	if entry.MoodRating != 4 {
+		t.Fatalf("expected mood rating 4, got %d", entry.MoodRating)
+	}
+	if entry.SexActivity != models.SexActivityProtected {
+		t.Fatalf("expected protected sex activity, got %q", entry.SexActivity)
+	}
+	if entry.BBT != 36.55 {
+		t.Fatalf("expected BBT 36.55, got %.2f", entry.BBT)
+	}
+	if entry.CervicalMucus != models.CervicalMucusEggWhite {
+		t.Fatalf("expected eggwhite cervical mucus, got %q", entry.CervicalMucus)
+	}
 	if !entry.Symptoms.Mood {
 		t.Fatalf("expected mood flag=true")
 	}
@@ -135,11 +151,15 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 		&stubExportDayReader{
 			logs: []models.DailyLog{
 				{
-					Date:       mustParseExportDay(t, "2026-02-18"),
-					IsPeriod:   true,
-					Flow:       models.FlowLight,
-					SymptomIDs: []uint{1, 2},
-					Notes:      "note",
+					Date:          mustParseExportDay(t, "2026-02-18"),
+					IsPeriod:      true,
+					Flow:          models.FlowLight,
+					Mood:          5,
+					SexActivity:   models.SexActivityUnprotected,
+					BBT:           36.7,
+					CervicalMucus: models.CervicalMucusCreamy,
+					SymptomIDs:    []uint{1, 2},
+					Notes:         "note",
 				},
 			},
 		},
@@ -170,8 +190,17 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 	for index, header := range ExportCSVHeaders {
 		indexByHeader[header] = index
 	}
-	if columns[indexByHeader["Mood rating"]] != "" {
-		t.Fatalf("expected empty mood rating column, got %q", columns[indexByHeader["Mood rating"]])
+	if columns[indexByHeader["Mood rating"]] != "5" {
+		t.Fatalf("expected mood rating column 5, got %q", columns[indexByHeader["Mood rating"]])
+	}
+	if columns[indexByHeader["Sex activity"]] != "Unprotected" {
+		t.Fatalf("expected sex activity column Unprotected, got %q", columns[indexByHeader["Sex activity"]])
+	}
+	if columns[indexByHeader["BBT (C)"]] != "36.70" {
+		t.Fatalf("expected BBT column 36.70, got %q", columns[indexByHeader["BBT (C)"]])
+	}
+	if columns[indexByHeader["Cervical mucus"]] != "Creamy" {
+		t.Fatalf("expected cervical mucus column Creamy, got %q", columns[indexByHeader["Cervical mucus"]])
 	}
 	if columns[indexByHeader["Cramps"]] != "Yes" {
 		t.Fatalf("expected cramps column Yes, got %q", columns[indexByHeader["Cramps"]])

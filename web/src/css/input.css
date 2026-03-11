@@ -1254,8 +1254,36 @@
     padding-inline: 0.72rem;
   }
 
-  .stats-progress-fill {
-    height: 100%;
+  .stats-progress-meter,
+  .phase-mood-meter {
+    display: block;
+    width: 100%;
+    border: none;
+    border-radius: 999px;
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .stats-progress-meter {
+    height: 0.5rem;
+    background: rgba(232, 196, 168, 0.35);
+  }
+
+  .stats-progress-meter::-webkit-progress-bar,
+  .phase-mood-meter::-webkit-progress-bar {
+    background: rgba(232, 196, 168, 0.35);
+    border-radius: 999px;
+  }
+
+  .stats-progress-meter::-webkit-progress-value,
+  .phase-mood-meter::-webkit-progress-value {
+    border-radius: 999px;
+    background: linear-gradient(135deg, #d4a574, #e8c4a8);
+  }
+
+  .stats-progress-meter::-moz-progress-bar,
+  .phase-mood-meter::-moz-progress-bar {
     border-radius: 999px;
     background: linear-gradient(135deg, #d4a574, #e8c4a8);
   }
@@ -1551,15 +1579,7 @@
 
   .phase-mood-meter {
     height: 0.55rem;
-    overflow: hidden;
-    border-radius: 999px;
     background: rgba(232, 196, 168, 0.32);
-  }
-
-  .phase-mood-fill {
-    height: 100%;
-    border-radius: 999px;
-    background: linear-gradient(135deg, #d4a574, #e8c4a8);
   }
 
   .phase-symptom-row {

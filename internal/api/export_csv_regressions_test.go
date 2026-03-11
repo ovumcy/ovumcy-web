@@ -27,12 +27,16 @@ func TestExportCSVIncludesKnownAndOtherSymptoms(t *testing.T) {
 	}
 
 	logEntry := models.DailyLog{
-		UserID:     user.ID,
-		Date:       time.Date(2026, time.February, 18, 0, 0, 0, 0, time.UTC),
-		IsPeriod:   true,
-		Flow:       models.FlowLight,
-		SymptomIDs: []uint{symptoms[0].ID, symptoms[1].ID},
-		Notes:      "note",
+		UserID:        user.ID,
+		Date:          time.Date(2026, time.February, 18, 0, 0, 0, 0, time.UTC),
+		IsPeriod:      true,
+		Flow:          models.FlowLight,
+		Mood:          5,
+		SexActivity:   models.SexActivityUnprotected,
+		BBT:           36.70,
+		CervicalMucus: models.CervicalMucusCreamy,
+		SymptomIDs:    []uint{symptoms[0].ID, symptoms[1].ID},
+		Notes:         "note",
 	}
 	if err := database.Create(&logEntry).Error; err != nil {
 		t.Fatalf("create daily log: %v", err)
@@ -69,6 +73,18 @@ func TestExportCSVIncludesKnownAndOtherSymptoms(t *testing.T) {
 	}
 	if got := row[indexByName["Flow"]]; got != "Light" {
 		t.Fatalf("expected flow Light, got %q", got)
+	}
+	if got := row[indexByName["Mood rating"]]; got != "5" {
+		t.Fatalf("expected mood rating 5, got %q", got)
+	}
+	if got := row[indexByName["Sex activity"]]; got != "Unprotected" {
+		t.Fatalf("expected sex activity Unprotected, got %q", got)
+	}
+	if got := row[indexByName["BBT (C)"]]; got != "36.70" {
+		t.Fatalf("expected BBT 36.70, got %q", got)
+	}
+	if got := row[indexByName["Cervical mucus"]]; got != "Creamy" {
+		t.Fatalf("expected cervical mucus Creamy, got %q", got)
 	}
 	if got := row[indexByName["Cramps"]]; got != "Yes" {
 		t.Fatalf("expected Cramps Yes, got %q", got)

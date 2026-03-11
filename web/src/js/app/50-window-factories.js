@@ -24,21 +24,6 @@
     return numeric;
   }
 
-  function clearCheckedInputs(root, selector) {
-    if (!root || !root.querySelectorAll) {
-      return;
-    }
-
-    var inputs = root.querySelectorAll(selector);
-    for (var index = 0; index < inputs.length; index++) {
-      var input = inputs[index];
-      input.checked = false;
-      if (input.removeAttribute) {
-        input.removeAttribute("checked");
-      }
-    }
-  }
-
   function cycleGuidanceState(cycleLength, periodLength) {
     var gap = cycleLength - periodLength;
     return {

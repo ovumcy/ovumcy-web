@@ -10,9 +10,7 @@
     <p class="journal-subtitle">{{t .Messages "stats.empty_title"}}</p>
     <p class="journal-muted text-sm">{{t .Messages "stats.empty_body"}}</p>
     <div class="space-y-2">
-      <div class="h-2 overflow-hidden rounded-full bg-[rgba(232,196,168,0.35)]">
-        <div class="stats-progress-fill" style="width: {{.InsightProgress}}%;"></div>
-      </div>
+      <progress class="stats-progress-meter" value="{{.InsightProgress}}" max="100">{{.InsightProgress}}%</progress>
       <p class="journal-muted text-sm">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</p>
     </div>
   </section>
@@ -125,9 +123,7 @@
               <p class="field-label">{{phaseLabel $.Messages .Phase}}</p>
             </div>
             {{if .HasData}}
-            <div class="phase-mood-meter mt-3">
-              <div class="phase-mood-fill" style="width: {{formatFloat .Percentage}}%;"></div>
-            </div>
+            <progress class="phase-mood-meter mt-3" value="{{formatFloat .Percentage}}" max="100">{{formatFloat .Percentage}}%</progress>
             <p class="mt-3 text-sm">{{formatFloat .AverageMood}} / 5</p>
             <p class="journal-muted text-xs">{{printf (t $.Messages "stats.phase_mood_count") .EntryCount}}</p>
             {{else}}
