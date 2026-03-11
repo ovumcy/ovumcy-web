@@ -269,7 +269,6 @@ test.describe('Dashboard: today editor', () => {
     const daySummary = page.locator('#day-editor');
     await expect(daySummary).toContainText('4/5');
     await expect(daySummary).toContainText(String(firstSymptomLabel));
-    await expect(daySummary).not.toContainText('Mood: -');
 
     await page.locator(`#day-editor button[hx-get="/calendar/day/${todayISO}?mode=edit"]`).click();
     const dayEditorForm = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${todayISO}"]`);

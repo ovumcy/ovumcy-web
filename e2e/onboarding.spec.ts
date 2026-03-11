@@ -112,12 +112,18 @@ test.describe('Onboarding flow', () => {
     const quickPickButtons = page.locator(
       'form[hx-post="/onboarding/step1"] .grid button[data-onboarding-day-option]'
     );
-    await expect(quickPickButtons.first()).toBeVisible();
-    await expect(quickPickButtons.first()).toContainText(/Today/i);
-    await quickPickButtons.first().click();
+    const firstQuickPick = quickPickButtons.first();
+    await expect(firstQuickPick).toBeVisible();
 
-    await expect(dateInput).toHaveValue(/\d{4}-\d{2}-\d{2}/);
-    await expect(quickPickButtons.first()).toHaveClass(/choice-chip-active/);
+    const firstQuickPickValue = await firstQuickPick.getAttribute('data-onboarding-day-value');
+    expect(firstQuickPickValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    await expect(firstQuickPick).toHaveAttribute('aria-pressed', 'false');
+
+    await firstQuickPick.click();
+
+    await expect(dateInput).toHaveValue(String(firstQuickPickValue));
+    await expect(firstQuickPick).toHaveAttribute('aria-pressed', 'true');
+    await expect(firstQuickPick).toHaveClass(/choice-chip-active/);
     await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
     await expect(page.locator('form[hx-post="/onboarding/step2"]')).toBeVisible();
   });
