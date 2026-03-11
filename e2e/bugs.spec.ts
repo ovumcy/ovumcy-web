@@ -4,6 +4,7 @@ import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
+  expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
@@ -23,7 +24,7 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string) {
   const credentials = createCredentials(prefix);
 
   await registerOwnerViaUI(page, credentials);
-  await expect(page).toHaveURL(/\/recovery-code$/);
+  await expectInlineRegisterRecoveryStep(page);
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);

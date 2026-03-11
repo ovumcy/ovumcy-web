@@ -4,6 +4,7 @@ import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
+  expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
@@ -100,7 +101,7 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   const creds = createCredentials(prefix);
 
   await registerOwnerViaUI(page, creds);
-  await expect(page).toHaveURL(/\/recovery-code$/);
+  await expectInlineRegisterRecoveryStep(page);
 
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
@@ -345,7 +346,7 @@ test.describe('Settings: profile and cycle', () => {
     const creds = createCredentials('settings-onboarding-date');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
 
     await readRecoveryCode(page);
     await continueFromRecoveryCode(page);

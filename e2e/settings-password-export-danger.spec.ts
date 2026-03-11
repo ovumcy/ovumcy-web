@@ -4,6 +4,8 @@ import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
+  expectDedicatedRecoveryPage,
+  expectInlineRegisterRecoveryStep,
   loginViaUI,
   logoutViaAPI,
   readRecoveryCode,
@@ -36,7 +38,7 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   const creds = createCredentials(prefix);
 
   await registerOwnerViaUI(page, creds);
-  await expect(page).toHaveURL(/\/recovery-code$/);
+  await expectInlineRegisterRecoveryStep(page);
 
   const recoveryCode = await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
@@ -144,7 +146,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await expect(page.locator('#confirm-modal')).toBeVisible();
     await page.locator('#confirm-modal-accept').click();
 
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectDedicatedRecoveryPage(page);
     await expect(page.locator('form[action="/settings"]')).toBeVisible();
 
     const regeneratedRecoveryCode = await readRecoveryCode(page);

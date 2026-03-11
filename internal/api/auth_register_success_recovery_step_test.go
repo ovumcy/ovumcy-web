@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestRegisterSuccessSetsAuthCookieAndShowsRecoveryStep(t *testing.T) {
+func TestRegisterSuccessSetsAuthCookieAndShowsInlineRecoveryStep(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 	email := "autologin-register@example.com"
 
@@ -31,8 +31,8 @@ func TestRegisterSuccessSetsAuthCookieAndShowsRecoveryStep(t *testing.T) {
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
 	}
-	if location := response.Header.Get("Location"); location != "/recovery-code" {
-		t.Fatalf("expected redirect to /recovery-code, got %q", location)
+	if location := response.Header.Get("Location"); location != "/register" {
+		t.Fatalf("expected redirect to /register, got %q", location)
 	}
 
 	authCookie := responseCookieValue(response.Cookies(), authCookieName)
@@ -44,7 +44,7 @@ func TestRegisterSuccessSetsAuthCookieAndShowsRecoveryStep(t *testing.T) {
 		t.Fatalf("expected recovery page cookie in register response")
 	}
 
-	recoveryRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	recoveryRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
 	recoveryRequest.Header.Set("Accept-Language", "en")
 	recoveryRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
 
@@ -64,7 +64,8 @@ func TestRegisterSuccessSetsAuthCookieAndShowsRecoveryStep(t *testing.T) {
 	}
 	rendered := string(body)
 	assertBodyContainsAll(t, rendered,
-		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected dedicated recovery code page after register"},
+		bodyStringMatch{fragment: `data-auth-inline-recovery`, message: "expected inline recovery block after register"},
+		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected recovery code field after register"},
 		bodyStringMatch{fragment: `id="recovery-code-saved"`, message: "expected recovery confirmation checkbox after register"},
 		bodyStringMatch{fragment: `form action="/onboarding"`, message: "expected new-owner recovery flow to continue to onboarding"},
 	)

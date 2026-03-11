@@ -57,6 +57,16 @@ export async function registerOwnerViaUI(
   await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
 }
 
+export async function expectInlineRegisterRecoveryStep(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
+  await expect(page.locator('[data-auth-inline-recovery]')).toBeVisible();
+}
+
+export async function expectDedicatedRecoveryPage(page: Page): Promise<void> {
+  await expect(page).toHaveURL(/\/recovery-code$/);
+  await expect(page.locator('[data-recovery-code-tools]')).toBeVisible();
+}
+
 export async function loginViaUI(page: Page, credentials: Credentials, rememberMe = false): Promise<void> {
   await page.goto('/login');
   await expect(page).toHaveURL(/\/login(?:\?.*)?$/);

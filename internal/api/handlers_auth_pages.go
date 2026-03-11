@@ -24,11 +24,23 @@ func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
 }
 
 func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
-	redirected, err := handler.redirectAuthenticatedUserIfPresent(c)
-	if err != nil {
-		return err
-	}
-	if redirected {
+	if user := handler.optionalAuthenticatedUser(c); user != nil {
+		recoveryState := handler.readRecoveryCodeDisplayState(c, user.ID, services.PostLoginRedirectPath(user))
+		if recoveryState.RecoveryCode != "" && recoveryState.Surface == recoveryCodeSurfaceInlineRegister {
+			flash := handler.popFlashCookie(c)
+			handler.clearRecoveryCodePageCookie(c)
+			data := buildRegisterPageData(currentMessages(c), flash, false)
+			data["Title"] = localizedPageTitle(currentMessages(c), "meta.title.recovery_code", "Ovumcy | Recovery Code")
+			data["CurrentUser"] = user
+			data["HideNavigation"] = true
+			data["RecoveryCode"] = recoveryState.RecoveryCode
+			data["ContinuePath"] = recoveryState.ContinuePath
+			data["ShowInlineRecoveryCode"] = true
+			return handler.render(c, "register", data)
+		}
+		if redirectErr := c.Redirect(services.PostLoginRedirectPath(user), fiber.StatusSeeOther); redirectErr != nil {
+			return redirectErr
+		}
 		return nil
 	}
 	needsSetup, err := handler.setupService.RequiresInitialSetup()
@@ -49,16 +61,19 @@ func (handler *Handler) ShowRecoveryCodePage(c *fiber.Ctx) error {
 	c.Locals(contextUserKey, user)
 
 	fallbackContinuePath := services.PostLoginRedirectPath(user)
-	recoveryCode, continuePath := handler.readRecoveryCodePageCookie(c, user.ID, fallbackContinuePath)
-	if recoveryCode == "" {
+	recoveryState := handler.readRecoveryCodeDisplayState(c, user.ID, fallbackContinuePath)
+	if recoveryState.RecoveryCode == "" {
 		return c.Redirect(fallbackContinuePath, fiber.StatusSeeOther)
+	}
+	if recoveryState.Surface == recoveryCodeSurfaceInlineRegister {
+		return c.Redirect("/register", fiber.StatusSeeOther)
 	}
 	handler.clearRecoveryCodePageCookie(c)
 
 	return handler.render(c, "recovery_code", fiber.Map{
 		"Title":          localizedPageTitle(currentMessages(c), "meta.title.recovery_code", "Ovumcy | Recovery Code"),
-		"RecoveryCode":   recoveryCode,
-		"ContinuePath":   continuePath,
+		"RecoveryCode":   recoveryState.RecoveryCode,
+		"ContinuePath":   recoveryState.ContinuePath,
 		"HideNavigation": true,
 	})
 }

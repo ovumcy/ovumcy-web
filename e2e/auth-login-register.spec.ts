@@ -3,6 +3,7 @@ import {
   completeOnboardingIfPresent,
   cookieByName,
   createCredentials,
+  expectInlineRegisterRecoveryStep,
   expectNoSensitiveAuthParams,
   loginViaUI,
   logoutViaAPI,
@@ -12,7 +13,7 @@ import {
 } from './support/auth-helpers';
 
 test.describe('Auth: register, login, logout', () => {
-  test('registers valid account and lands on recovery code page without PII in URL', async ({
+  test('registers valid account and lands on inline recovery step without PII in URL', async ({
     page,
     context,
   }) => {
@@ -20,7 +21,7 @@ test.describe('Auth: register, login, logout', () => {
 
     await registerOwnerViaUI(page, creds);
 
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
     expectNoSensitiveAuthParams(page.url());
     await readRecoveryCode(page);
 
@@ -35,7 +36,7 @@ test.describe('Auth: register, login, logout', () => {
     const creds = createCredentials('auth-duplicate');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
 
     await logoutViaAPI(page);
     await registerOwnerViaUI(page, creds);
@@ -90,7 +91,7 @@ test.describe('Auth: register, login, logout', () => {
     const creds = createCredentials('auth-generic-login');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
 
     await logoutViaAPI(page);
 
@@ -120,7 +121,7 @@ test.describe('Auth: register, login, logout', () => {
     const creds = createCredentials('auth-remember');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
     await page.locator('#recovery-code-saved').check();
     await page.locator('form[action] button[type="submit"]').click();
     await completeOnboardingIfPresent(page);
@@ -165,7 +166,7 @@ test.describe('Auth: register, login, logout', () => {
 
     const creds = createCredentials('auth-toggle-settings');
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
     await page.locator('#recovery-code-saved').check();
     await page.locator('form[action] button[type="submit"]').click();
     await completeOnboardingIfPresent(page);
@@ -184,7 +185,7 @@ test.describe('Auth: register, login, logout', () => {
     const creds = createCredentials('auth-logout-ui');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
     await page.locator('#recovery-code-saved').check();
     await page.locator('form[action] button[type="submit"]').click();
     await completeOnboardingIfPresent(page);
@@ -206,7 +207,7 @@ test.describe('Auth: register, login, logout', () => {
     const creds = createCredentials('auth-redirects');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
 
     await page.goto('/login');
     await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);

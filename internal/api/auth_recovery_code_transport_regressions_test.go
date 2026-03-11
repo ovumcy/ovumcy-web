@@ -25,7 +25,7 @@ func TestRegisterJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 	assertStatusCode(t, response, http.StatusCreated)
 
 	payload := readRecoveryCodeFlowJSON(t, response)
-	assertRecoveryCodeIssuedViaDedicatedPage(t, payload)
+	assertRecoveryCodeIssuedViaSurface(t, payload, "/register")
 	assertRecoveryCodeTransportCookies(t, response)
 }
 
@@ -59,7 +59,7 @@ func TestResetPasswordJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 	assertStatusCode(t, completeResetResponse, http.StatusOK)
 
 	payload := readRecoveryCodeFlowJSON(t, completeResetResponse)
-	assertRecoveryCodeIssuedViaDedicatedPage(t, payload)
+	assertRecoveryCodeIssuedViaSurface(t, payload, "/recovery-code")
 	assertRecoveryCodeTransportCookies(t, completeResetResponse)
 }
 
@@ -112,7 +112,7 @@ func TestRegenerateRecoveryCodeJSONDoesNotExposeRecoveryCode(t *testing.T) {
 	assertStatusCode(t, response, http.StatusOK)
 
 	payload := readRecoveryCodeFlowJSON(t, response)
-	assertRecoveryCodeIssuedViaDedicatedPage(t, payload)
+	assertRecoveryCodeIssuedViaSurface(t, payload, "/recovery-code")
 
 	recoveryCookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName)
 	if recoveryCookie == "" {
@@ -120,11 +120,65 @@ func TestRegenerateRecoveryCodeJSONDoesNotExposeRecoveryCode(t *testing.T) {
 	}
 }
 
-func TestRecoveryCodePageConsumesCookieAfterFirstView(t *testing.T) {
+func TestRegisterInlineRecoveryStepConsumesCookieAfterFirstView(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(url.Values{
 		"email":            {"one-time-recovery@example.com"},
+		"password":         {"StrongPass1"},
+		"confirm_password": {"StrongPass1"},
+	}.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept-Language", "en")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/register" {
+		t.Fatalf("expected register success redirect /register, got %q", location)
+	}
+
+	authCookie := responseCookieValue(response.Cookies(), authCookieName)
+	recoveryCookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName)
+	if authCookie == "" || recoveryCookie == "" {
+		t.Fatal("expected auth and recovery cookies after registration")
+	}
+
+	firstViewRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
+	firstViewRequest.Header.Set("Accept-Language", "en")
+	firstViewRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
+
+	firstViewResponse := mustAppResponse(t, app, firstViewRequest)
+	assertStatusCode(t, firstViewResponse, http.StatusOK)
+	body := mustReadBodyString(t, firstViewResponse.Body)
+	assertBodyContainsAll(t, body,
+		bodyStringMatch{fragment: `data-auth-inline-recovery`, message: "expected inline recovery block on first view"},
+		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected recovery code on first view"},
+	)
+
+	clearedCookie := responseCookie(firstViewResponse.Cookies(), recoveryCodeCookieName)
+	if clearedCookie == nil {
+		t.Fatal("expected recovery-code cookie to be cleared after first view")
+	}
+	if clearedCookie.Value != "" || !clearedCookie.Expires.Before(time.Now()) {
+		t.Fatalf("expected recovery-code cookie to be cleared, got %#v", clearedCookie)
+	}
+
+	secondViewRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
+	secondViewRequest.Header.Set("Accept-Language", "en")
+	secondViewRequest.Header.Set("Cookie", authCookieName+"="+authCookie)
+
+	secondViewResponse := mustAppResponse(t, app, secondViewRequest)
+	assertStatusCode(t, secondViewResponse, http.StatusSeeOther)
+	if location := secondViewResponse.Header.Get("Location"); location != "/onboarding" {
+		t.Fatalf("expected second recovery-code request to redirect to /onboarding, got %q", location)
+	}
+}
+
+func TestRecoveryCodePageRedirectsInlineRegistrationSurfaceBackToRegister(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(url.Values{
+		"email":            {"inline-surface@example.com"},
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}.Encode()))
@@ -140,33 +194,14 @@ func TestRecoveryCodePageConsumesCookieAfterFirstView(t *testing.T) {
 		t.Fatal("expected auth and recovery cookies after registration")
 	}
 
-	firstViewRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
-	firstViewRequest.Header.Set("Accept-Language", "en")
-	firstViewRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
+	recoveryPageRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	recoveryPageRequest.Header.Set("Accept-Language", "en")
+	recoveryPageRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
 
-	firstViewResponse := mustAppResponse(t, app, firstViewRequest)
-	assertStatusCode(t, firstViewResponse, http.StatusOK)
-	body := mustReadBodyString(t, firstViewResponse.Body)
-	assertBodyContainsAll(t, body,
-		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected recovery code on first view"},
-	)
-
-	clearedCookie := responseCookie(firstViewResponse.Cookies(), recoveryCodeCookieName)
-	if clearedCookie == nil {
-		t.Fatal("expected recovery-code cookie to be cleared after first view")
-	}
-	if clearedCookie.Value != "" || !clearedCookie.Expires.Before(time.Now()) {
-		t.Fatalf("expected recovery-code cookie to be cleared, got %#v", clearedCookie)
-	}
-
-	secondViewRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
-	secondViewRequest.Header.Set("Accept-Language", "en")
-	secondViewRequest.Header.Set("Cookie", authCookieName+"="+authCookie)
-
-	secondViewResponse := mustAppResponse(t, app, secondViewRequest)
-	assertStatusCode(t, secondViewResponse, http.StatusSeeOther)
-	if location := secondViewResponse.Header.Get("Location"); location != "/onboarding" {
-		t.Fatalf("expected second recovery-code request to redirect to /onboarding, got %q", location)
+	recoveryPageResponse := mustAppResponse(t, app, recoveryPageRequest)
+	assertStatusCode(t, recoveryPageResponse, http.StatusSeeOther)
+	if location := recoveryPageResponse.Header.Get("Location"); location != "/register" {
+		t.Fatalf("expected inline registration recovery cookie to redirect back to /register, got %q", location)
 	}
 }
 
@@ -180,7 +215,7 @@ func readRecoveryCodeFlowJSON(t *testing.T, response *http.Response) map[string]
 	return payload
 }
 
-func assertRecoveryCodeIssuedViaDedicatedPage(t *testing.T, payload map[string]any) {
+func assertRecoveryCodeIssuedViaSurface(t *testing.T, payload map[string]any, expectedPath string) {
 	t.Helper()
 
 	if got, ok := payload["ok"].(bool); !ok || !got {
@@ -189,8 +224,8 @@ func assertRecoveryCodeIssuedViaDedicatedPage(t *testing.T, payload map[string]a
 	if got := strings.TrimSpace(stringValue(payload["next_step"])); got != "recovery_code" {
 		t.Fatalf("expected next_step recovery_code, got %#v", payload["next_step"])
 	}
-	if got := strings.TrimSpace(stringValue(payload["next_path"])); got != "/recovery-code" {
-		t.Fatalf("expected next_path /recovery-code, got %#v", payload["next_path"])
+	if got := strings.TrimSpace(stringValue(payload["next_path"])); got != expectedPath {
+		t.Fatalf("expected next_path %s, got %#v", expectedPath, payload["next_path"])
 	}
 	if _, exposed := payload["recovery_code"]; exposed {
 		t.Fatalf("did not expect recovery_code in json payload: %#v", payload)

@@ -3,6 +3,7 @@ import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
+  expectInlineRegisterRecoveryStep,
   logoutViaAPI,
   readRecoveryCode,
   registerOwnerViaUI,
@@ -15,7 +16,7 @@ async function registerAndReachDashboard(
   const credentials = createCredentials(prefix);
 
   await registerOwnerViaUI(page, credentials);
-  await expect(page).toHaveURL(/\/recovery-code$/);
+  await expectInlineRegisterRecoveryStep(page);
 
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);

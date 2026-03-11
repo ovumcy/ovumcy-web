@@ -1,5 +1,12 @@
 {{define "content"}}
 <section class="mx-auto flex min-h-[72vh] max-w-3xl items-center justify-center">
+  {{if .ShowInlineRecoveryCode}}
+  {{template "recovery_code_panel" (dict
+    "Messages" .Messages
+    "RecoveryCode" .RecoveryCode
+    "ContinuePath" .ContinuePath
+    "Inline" true)}}
+  {{else}}
   <div class="journal-card journal-hero w-full p-7 sm:p-10" data-auth-panel>
     <p class="journal-kicker">{{t .Messages "app.name"}}</p>
 
@@ -53,5 +60,6 @@
       <a href="/login" class="inline-link" data-auth-switch>{{t .Messages "auth.login"}}</a>
     </p>
   </div>
+  {{end}}
 </section>
 {{end}}

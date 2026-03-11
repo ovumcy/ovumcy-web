@@ -12,13 +12,25 @@ import (
 
 const recoveryCodeCookieTTL = 20 * time.Minute
 
+const (
+	recoveryCodeSurfaceDedicated      = "dedicated"
+	recoveryCodeSurfaceInlineRegister = "inline_register"
+)
+
+type recoveryCodeDisplayState struct {
+	RecoveryCode string
+	ContinuePath string
+	Surface      string
+}
+
 type recoveryCodePagePayload struct {
 	UserID       uint   `json:"uid"`
 	RecoveryCode string `json:"recovery_code"`
 	ContinuePath string `json:"continue_path,omitempty"`
+	Surface      string `json:"surface,omitempty"`
 }
 
-func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, recoveryCode string, continuePath string) error {
+func (handler *Handler) setRecoveryCodeIssuanceCookie(c *fiber.Ctx, userID uint, recoveryCode string, continuePath string, surface string) error {
 	code := strings.TrimSpace(recoveryCode)
 	if code == "" {
 		handler.clearRecoveryCodePageCookie(c)
@@ -29,6 +41,7 @@ func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, rec
 		UserID:       userID,
 		RecoveryCode: code,
 		ContinuePath: services.SanitizeRedirectPath(strings.TrimSpace(continuePath), "/dashboard"),
+		Surface:      sanitizeRecoveryCodeSurface(surface),
 	}
 
 	serialized, err := json.Marshal(payload)
@@ -56,43 +69,59 @@ func (handler *Handler) setRecoveryCodePageCookie(c *fiber.Ctx, userID uint, rec
 	return nil
 }
 
-func (handler *Handler) readRecoveryCodePageCookie(c *fiber.Ctx, userID uint, fallbackContinuePath string) (string, string) {
+func sanitizeRecoveryCodeSurface(surface string) string {
+	switch strings.TrimSpace(surface) {
+	case recoveryCodeSurfaceInlineRegister:
+		return recoveryCodeSurfaceInlineRegister
+	default:
+		return recoveryCodeSurfaceDedicated
+	}
+}
+
+func (handler *Handler) readRecoveryCodeDisplayState(c *fiber.Ctx, userID uint, fallbackContinuePath string) recoveryCodeDisplayState {
 	fallback := services.SanitizeRedirectPath(strings.TrimSpace(fallbackContinuePath), "/dashboard")
+	state := recoveryCodeDisplayState{
+		ContinuePath: fallback,
+		Surface:      recoveryCodeSurfaceDedicated,
+	}
+
 	raw := strings.TrimSpace(c.Cookies(recoveryCodeCookieName))
 	if raw == "" {
-		return "", fallback
+		return state
 	}
 
 	codec, err := newSecureCookieCodec(handler.secretKey)
 	if err != nil {
 		handler.clearRecoveryCodePageCookie(c)
-		return "", fallback
+		return state
 	}
 
 	decoded, err := codec.open(recoveryCodeCookieName, raw)
 	if err != nil {
 		handler.clearRecoveryCodePageCookie(c)
-		return "", fallback
+		return state
 	}
 
 	payload := recoveryCodePagePayload{}
 	if err := json.Unmarshal(decoded, &payload); err != nil {
 		handler.clearRecoveryCodePageCookie(c)
-		return "", fallback
+		return state
 	}
 
 	code := strings.TrimSpace(payload.RecoveryCode)
 	if code == "" {
 		handler.clearRecoveryCodePageCookie(c)
-		return "", fallback
+		return state
 	}
 	if payload.UserID != 0 && userID != 0 && payload.UserID != userID {
 		handler.clearRecoveryCodePageCookie(c)
-		return "", fallback
+		return state
 	}
 
-	continuePath := services.SanitizeRedirectPath(strings.TrimSpace(payload.ContinuePath), fallback)
-	return code, continuePath
+	state.RecoveryCode = code
+	state.ContinuePath = services.SanitizeRedirectPath(strings.TrimSpace(payload.ContinuePath), fallback)
+	state.Surface = sanitizeRecoveryCodeSurface(payload.Surface)
+	return state
 }
 
 func (handler *Handler) clearRecoveryCodePageCookie(c *fiber.Ctx) {

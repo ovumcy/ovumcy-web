@@ -4,6 +4,7 @@ import {
   continueFromRecoveryCode,
   cookieByName,
   createCredentials,
+  expectInlineRegisterRecoveryStep,
   loginViaUI,
   readRecoveryCode,
   registerOwnerViaUI,
@@ -29,7 +30,7 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string): Promi
   const creds = createCredentials(prefix);
 
   await registerOwnerViaUI(page, creds);
-  await expect(page).toHaveURL(/\/recovery-code$/);
+  await expectInlineRegisterRecoveryStep(page);
 
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);

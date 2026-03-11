@@ -1,41 +1,10 @@
 {{define "content"}}
 <section class="mx-auto flex min-h-[72vh] max-w-3xl items-center justify-center">
-  <div
-    class="journal-card journal-hero w-full p-7 sm:p-10"
-    data-recovery-code-tools
-    data-copy-success-message="{{t .Messages "auth.code_copied"}}"
-    data-copy-failed-message="{{t .Messages "auth.code_copy_failed"}}"
-    data-download-success-message="{{t .Messages "auth.code_downloaded"}}"
-    data-download-failed-message="{{t .Messages "auth.code_download_failed"}}">
-    <p class="journal-kicker">{{t .Messages "auth.recovery_title_short"}}</p>
-
-    <div>
-      <h1 class="journal-title">{{t .Messages "auth.recovery_code_title"}}</h1>
-      <p class="journal-muted mt-2">{{t .Messages "auth.recovery_code_subtitle"}}</p>
-    </div>
-
-    <div class="recovery-code-box mt-5" id="recovery-code" data-recovery-code-value>{{.RecoveryCode}}</div>
-
-    <div class="mt-4 flex flex-wrap gap-2">
-      <button type="button" class="btn-secondary" data-recovery-action="copy">{{t .Messages "auth.copy_code"}}</button>
-      <button type="button" class="btn-secondary" data-recovery-action="download">{{t .Messages "auth.download_code"}}</button>
-    </div>
-
-    <p class="status-ok mt-4" data-recovery-status="copied" hidden>{{t .Messages "auth.code_copied"}}</p>
-    <p class="status-error mt-4" data-recovery-status="copy-failed" hidden>{{t .Messages "auth.code_copy_failed"}}</p>
-    <p class="status-ok mt-4" data-recovery-status="downloaded" hidden>{{t .Messages "auth.code_downloaded"}}</p>
-    <p class="status-error mt-4" data-recovery-status="download-failed" hidden>{{t .Messages "auth.code_download_failed"}}</p>
-
-    <form action="{{if .ContinuePath}}{{.ContinuePath}}{{else}}/dashboard{{end}}" method="get" class="mt-5 space-y-4">
-      <label class="remember-option" for="recovery-code-saved">
-        <input id="recovery-code-saved" type="checkbox" name="saved" required class="remember-checkbox">
-        <span class="remember-copy">
-          <span class="remember-title">{{t .Messages "auth.saved_recovery_code"}}</span>
-        </span>
-      </label>
-      <button type="submit" class="btn-primary w-full">{{t .Messages "auth.continue_to_app"}}</button>
-    </form>
-  </div>
+  {{template "recovery_code_panel" (dict
+    "Messages" .Messages
+    "RecoveryCode" .RecoveryCode
+    "ContinuePath" .ContinuePath
+    "Inline" false)}}
 </section>
 
 {{end}}

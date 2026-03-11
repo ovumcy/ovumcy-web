@@ -61,25 +61,45 @@ func (handler *Handler) renderRecoveryCodeResponse(c *fiber.Ctx, user *models.Us
 	if user != nil {
 		continuePath = services.PostLoginRedirectPath(user)
 	}
-	return handler.renderRecoveryCodeResponseWithContinuePath(c, user, recoveryCode, status, continuePath)
+	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
+}
+
+func (handler *Handler) renderRegisterInlineRecoveryResponse(c *fiber.Ctx, user *models.User, recoveryCode string, status int) error {
+	continuePath := "/dashboard"
+	if user != nil {
+		continuePath = services.PostLoginRedirectPath(user)
+	}
+	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceInlineRegister)
 }
 
 func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c *fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string) error {
+	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
+}
+
+func (handler *Handler) renderRecoveryCodeResponseWithSurface(c *fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string, surface string) error {
 	userID := uint(0)
 	if user != nil {
 		userID = user.ID
 	}
-	if err := handler.setRecoveryCodePageCookie(c, userID, recoveryCode, continuePath); err != nil {
+	if err := handler.setRecoveryCodeIssuanceCookie(c, userID, recoveryCode, continuePath, surface); err != nil {
 		return handler.respondMappedError(c, authRecoveryCodePersistErrorSpec())
 	}
 
+	nextPath := recoveryCodeSurfacePath(surface)
 	if acceptsJSON(c) {
 		return c.Status(status).JSON(fiber.Map{
 			"ok":        true,
 			"next_step": "recovery_code",
-			"next_path": "/recovery-code",
+			"next_path": nextPath,
 		})
 	}
 
-	return redirectToPath(c, "/recovery-code")
+	return redirectToPath(c, nextPath)
+}
+
+func recoveryCodeSurfacePath(surface string) string {
+	if sanitizeRecoveryCodeSurface(surface) == recoveryCodeSurfaceInlineRegister {
+		return "/register"
+	}
+	return "/recovery-code"
 }

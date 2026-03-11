@@ -27,7 +27,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, authSessionCreateErrorSpec())
 	}
 
-	return handler.renderRecoveryCodeResponse(c, &user, recoveryCode, fiber.StatusCreated)
+	return handler.renderRegisterInlineRecoveryResponse(c, &user, recoveryCode, fiber.StatusCreated)
 }
 
 func (handler *Handler) Login(c *fiber.Ctx) error {

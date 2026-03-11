@@ -44,6 +44,65 @@ func TestRegisterPageKeepsEmailAfterPasswordValidationError(t *testing.T) {
 	)
 }
 
+func TestRegisterInlineRecoveryConsumesStaleFlashCookie(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+	email := "inline-flash-consume@example.com"
+
+	staleFlashResponse := mustAppResponse(t, app, weakRegisterRequest(email))
+	assertStatusCode(t, staleFlashResponse, http.StatusSeeOther)
+
+	staleFlashValue := responseCookieValue(staleFlashResponse.Cookies(), flashCookieName)
+	if staleFlashValue == "" {
+		t.Fatalf("expected flash cookie after failed register attempt")
+	}
+
+	successForm := url.Values{
+		"email":            {email},
+		"password":         {"StrongPass1"},
+		"confirm_password": {"StrongPass1"},
+	}
+	successRequest := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(successForm.Encode()))
+	successRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	successRequest.Header.Set("Accept-Language", "en")
+	successRequest.Header.Set("Cookie", flashCookieName+"="+staleFlashValue)
+
+	successResponse := mustAppResponse(t, app, successRequest)
+	assertStatusCode(t, successResponse, http.StatusSeeOther)
+	if location := successResponse.Header.Get("Location"); location != "/register" {
+		t.Fatalf("expected successful register redirect to /register, got %q", location)
+	}
+
+	authCookie := responseCookieValue(successResponse.Cookies(), authCookieName)
+	recoveryCookie := responseCookieValue(successResponse.Cookies(), recoveryCodeCookieName)
+	if authCookie == "" || recoveryCookie == "" {
+		t.Fatalf("expected auth and recovery cookies after successful register")
+	}
+
+	inlineRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
+	inlineRequest.Header.Set("Accept-Language", "en")
+	inlineRequest.Header.Set(
+		"Cookie",
+		authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie+"; "+flashCookieName+"="+staleFlashValue,
+	)
+
+	inlineResponse := mustAppResponse(t, app, inlineRequest)
+	assertStatusCode(t, inlineResponse, http.StatusOK)
+
+	rendered := mustReadBodyString(t, inlineResponse.Body)
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: `data-auth-inline-recovery`, message: "expected inline recovery block after successful register"},
+		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected recovery code field after successful register"},
+	)
+
+	clearedFlash := responseCookie(inlineResponse.Cookies(), flashCookieName)
+	if clearedFlash == nil {
+		t.Fatalf("expected inline recovery response to clear stale flash cookie")
+	}
+	if clearedFlash.Value != "" {
+		t.Fatalf("expected cleared flash cookie value, got %q", clearedFlash.Value)
+	}
+}
+
 func weakRegisterRequest(email string) *http.Request {
 	form := url.Values{
 		"email":            {email},

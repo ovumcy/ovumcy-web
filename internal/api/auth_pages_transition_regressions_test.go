@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestRecoveryCodePageRendersCopyDownloadAndContinueControls(t *testing.T) {
+func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	form := url.Values{
@@ -30,8 +30,8 @@ func TestRecoveryCodePageRendersCopyDownloadAndContinueControls(t *testing.T) {
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
 	}
-	if location := response.Header.Get("Location"); location != "/recovery-code" {
-		t.Fatalf("expected redirect to /recovery-code, got %q", location)
+	if location := response.Header.Get("Location"); location != "/register" {
+		t.Fatalf("expected redirect to /register, got %q", location)
 	}
 
 	authCookie := responseCookieValue(response.Cookies(), authCookieName)
@@ -40,7 +40,7 @@ func TestRecoveryCodePageRendersCopyDownloadAndContinueControls(t *testing.T) {
 		t.Fatalf("expected auth and recovery cookies in register response")
 	}
 
-	recoveryRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	recoveryRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
 	recoveryRequest.Header.Set("Accept-Language", "en")
 	recoveryRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
 
@@ -61,9 +61,10 @@ func TestRecoveryCodePageRendersCopyDownloadAndContinueControls(t *testing.T) {
 
 	rendered := string(body)
 	assertBodyContainsAll(t, rendered,
-		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected dedicated recovery-code field"},
-		bodyStringMatch{fragment: `Copy code`, message: "expected copy control on recovery page"},
-		bodyStringMatch{fragment: `Download code`, message: "expected download control on recovery page"},
+		bodyStringMatch{fragment: `data-auth-inline-recovery`, message: "expected inline recovery block on register page"},
+		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected inline recovery-code field"},
+		bodyStringMatch{fragment: `data-recovery-action="copy"`, message: "expected copy control on inline recovery step"},
+		bodyStringMatch{fragment: `data-recovery-action="download"`, message: "expected download control on inline recovery step"},
 		bodyStringMatch{fragment: `id="recovery-code-saved"`, message: "expected recovery confirmation checkbox"},
 	)
 }

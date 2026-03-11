@@ -3,6 +3,7 @@ import { clearDateField, dateFieldRoot, fillDateField } from './support/date-fie
 import {
   continueFromRecoveryCode,
   createCredentials,
+  expectInlineRegisterRecoveryStep,
   loginViaUI,
   logoutViaAPI,
   readRecoveryCode,
@@ -45,7 +46,7 @@ async function registerAndOpenOnboarding(page: Page, emailPrefix: string) {
   const creds = createCredentials(emailPrefix);
 
   await registerOwnerViaUI(page, creds);
-  await expect(page).toHaveURL(/\/recovery-code$/);
+  await expectInlineRegisterRecoveryStep(page);
 
   await readRecoveryCode(page);
   await page.locator('#recovery-code-saved').check();
@@ -170,7 +171,7 @@ test.describe('Onboarding flow', () => {
     const creds = createCredentials('onboarding-step-query');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
 
     await readRecoveryCode(page);
     await continueFromRecoveryCode(page);

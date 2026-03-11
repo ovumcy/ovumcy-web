@@ -5,6 +5,8 @@ import {
   continueFromRecoveryCode,
   cookieByName,
   createCredentials,
+  expectDedicatedRecoveryPage,
+  expectInlineRegisterRecoveryStep,
   expectNoSensitiveAuthParams,
   expectValueNotInWebStorage,
   loginViaUI,
@@ -15,19 +17,19 @@ import {
 } from './support/auth-helpers';
 
 test.describe('Auth: recovery and reset password', () => {
-  test('recovery code page supports copy/download and blocks continue until confirmation', async ({
+  test('post-registration recovery step supports copy/download and blocks continue until confirmation', async ({
     page,
     context,
   }) => {
     const creds = createCredentials('auth-recovery-tools');
 
     await registerOwnerViaUI(page, creds);
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
 
     const recoveryCode = await readRecoveryCode(page);
 
     await page.locator('form[action] button[type="submit"]').click();
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectInlineRegisterRecoveryStep(page);
     await expect(page.locator('#recovery-code-saved')).not.toBeChecked();
 
     const origin = new URL(page.url()).origin;
@@ -115,7 +117,7 @@ test.describe('Auth: recovery and reset password', () => {
     await page.locator('#reset-password-confirm').fill(newPassword);
     await page.locator('form[action="/api/auth/reset-password"] button[type="submit"]').click();
 
-    await expect(page).toHaveURL(/\/recovery-code$/);
+    await expectDedicatedRecoveryPage(page);
     expectNoSensitiveAuthParams(page.url());
 
     const newRecoveryCode = await readRecoveryCode(page);
@@ -159,6 +161,7 @@ test.describe('Auth: recovery and reset password', () => {
     const creds = createCredentials('auth-recovery-consumed');
 
     await registerOwnerViaUI(page, creds);
+    await expectInlineRegisterRecoveryStep(page);
     await readRecoveryCode(page);
 
     await page.goto('/recovery-code');
