@@ -69,10 +69,7 @@ async function submitStepTwo(page: Page): Promise<void> {
 }
 
 async function currentDashboardNextPeriodText(page: Page): Promise<string> {
-  const value = await page
-    .locator('.dashboard-status-line .dashboard-status-item')
-    .nth(2)
-    .textContent();
+  const value = await page.locator('[data-dashboard-next-period]').textContent();
 
   return String(value || '').trim();
 }

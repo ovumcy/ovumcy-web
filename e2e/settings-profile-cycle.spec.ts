@@ -186,10 +186,7 @@ async function completeOnboardingWithStartDate(page: Page, startDate: string): P
 }
 
 async function currentNextPeriodText(page: Page): Promise<string> {
-  const value = await page
-    .locator('.dashboard-status-line .dashboard-status-item')
-    .nth(2)
-    .textContent();
+  const value = await page.locator('[data-dashboard-next-period]').textContent();
 
   return String(value || '').trim();
 }

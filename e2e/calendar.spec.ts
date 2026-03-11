@@ -203,8 +203,17 @@ test.describe('Calendar page', () => {
 
     const manualStartButton = page.locator(`#day-editor form[hx-post="/api/days/${pastISO}/cycle-start?source=calendar"] button`);
     await expect(manualStartButton).toBeVisible();
-    await manualStartButton.click();
+    await Promise.all([
+      page.waitForLoadState('domcontentloaded'),
+      manualStartButton.click(),
+    ]);
 
-    await expect(page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`)).toBeVisible();
+    const editButton = page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`).first();
+    await expect(editButton).toBeVisible();
+    await editButton.click();
+
+    const dayEditorForm = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${pastISO}"]`);
+    await expect(dayEditorForm).toBeVisible();
+    await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
   });
 });

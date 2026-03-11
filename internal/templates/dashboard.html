@@ -10,15 +10,17 @@
       <span class="dashboard-status-item">{{t .Messages "dashboard.cycle_day"}} {{if gt .Stats.CurrentCycleDay 0}}{{if .CycleDataStale}}~{{end}}{{.Stats.CurrentCycleDay}}{{else}}{{.NoDataLabel}}{{end}}</span>
       <span class="dashboard-status-separator" aria-hidden="true">·</span>
       <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}:
-        {{if .DisplayNextPeriodUseRange}}
-          {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "short") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "short")}}
-        {{else if .DisplayNextPeriodDelayed}}
-          {{t .Messages "dashboard.next_period_delayed"}}
-        {{else if .DisplayNextPeriodStart.IsZero}}
-          {{.NoDataLabel}}
-        {{else}}
-          {{formatLocalizedDate .Lang .DisplayNextPeriodStart "short"}}
-        {{end}}
+        <span data-dashboard-next-period>
+          {{if .DisplayNextPeriodUseRange}}
+            {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "short") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "short")}}
+          {{else if .DisplayNextPeriodDelayed}}
+            {{t .Messages "dashboard.next_period_delayed"}}
+          {{else if .DisplayNextPeriodStart.IsZero}}
+            {{.NoDataLabel}}
+          {{else}}
+            {{formatLocalizedDate .Lang .DisplayNextPeriodStart "short"}}
+          {{end}}
+        </span>
       </span>
       <span class="dashboard-status-separator" aria-hidden="true">·</span>
       <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}: {{if .DisplayOvulationImpossible}}{{t .Messages "dashboard.ovulation_unavailable"}}{{else if .DisplayOvulationDate.IsZero}}{{.NoDataLabel}}{{else}}{{formatLocalizedDate .Lang .DisplayOvulationDate "short"}}{{end}}</span>

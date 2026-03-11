@@ -13,11 +13,13 @@ import (
 )
 
 func TestDashboardEnglishRendersLocalizedPredictionDates(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user := createOnboardingTestUser(t, database, "dashboard-date-localization@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -8)
+	nowUTC := time.Now().UTC()
+	timezoneName, location := timezoneWithDifferentCalendarDay(t, nowUTC)
+	lastPeriodStart := services.DateAtLocation(nowUTC.In(location), location).AddDate(0, 0, -8)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,
 		"period_length":     5,
@@ -28,7 +30,8 @@ func TestDashboardEnglishRendersLocalizedPredictionDates(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
+	request.Header.Set("Cookie", authCookie+"; "+timezoneCookieName+"="+timezoneName)
+	request.Header.Set(timezoneHeaderName, timezoneName)
 
 	response, err := app.Test(request, -1)
 	if err != nil {
@@ -46,7 +49,7 @@ func TestDashboardEnglishRendersLocalizedPredictionDates(t *testing.T) {
 	}
 	rendered := string(body)
 
-	nextPeriodPattern := regexp.MustCompile(`Next period:\s*[A-Z][a-z]{2} \d{1,2}`)
+	nextPeriodPattern := regexp.MustCompile(`(?s)<span data-dashboard-next-period>\s*([A-Z][a-z]{2} \d{1,2})\s*</span>`)
 	if !nextPeriodPattern.MatchString(rendered) {
 		t.Fatalf("expected English-localized next period short date in dashboard status line")
 	}

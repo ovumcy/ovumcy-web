@@ -13,6 +13,52 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
+func TestMarkCycleStartRequiresAuthJSON(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/days/2026-02-19/cycle-start", nil)
+	request.Header.Set("Accept", "application/json")
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("unauthenticated cycle-start request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected status 401, got %d", response.StatusCode)
+	}
+	if got := readAPIError(t, response.Body); got != "unauthorized" {
+		t.Fatalf("expected unauthorized error, got %q", got)
+	}
+}
+
+func TestMarkCycleStartRequiresOwnerRoleJSON(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "manual-cycle-start-partner@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", models.RolePartner).Error; err != nil {
+		t.Fatalf("set partner role: %v", err)
+	}
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodPost, "/api/days/2026-02-19/cycle-start", nil)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("partner cycle-start request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", response.StatusCode)
+	}
+	if got := readAPIError(t, response.Body); got != "owner access required" {
+		t.Fatalf("expected owner access required error, got %q", got)
+	}
+}
+
 func TestMarkCycleStartHTMXWithCSRFRefreshesAndPersists(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "manual-cycle-start-ui@example.com", "StrongPass1", true)
