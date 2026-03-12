@@ -46,7 +46,7 @@ func TestOnboardingPersistsLastPeriodStartUsingRequestTimezone(t *testing.T) {
 	}
 
 	settingsRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
-	settingsRequest.Header.Set("Cookie", authCookie)
+	settingsRequest.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+timezoneName))
 	settingsRequest.Header.Set(timezoneHeaderName, timezoneName)
 
 	settingsResponse := mustAppResponse(t, app, settingsRequest)
@@ -134,7 +134,7 @@ func submitOnboardingStep1WithTimezone(t *testing.T, app *fiber.App, authCookie 
 	request := httptest.NewRequest(http.MethodPost, "/onboarding/step1", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
-	request.Header.Set("Cookie", authCookie)
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+timezoneName))
 	request.Header.Set(timezoneHeaderName, timezoneName)
 
 	response := mustAppResponse(t, app, request)
@@ -147,7 +147,7 @@ func submitOnboardingStep2WithTimezone(t *testing.T, app *fiber.App, authCookie 
 	request := httptest.NewRequest(http.MethodPost, "/onboarding/step2", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
-	request.Header.Set("Cookie", authCookie)
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+timezoneName))
 	request.Header.Set(timezoneHeaderName, timezoneName)
 
 	response := mustAppResponse(t, app, request)
@@ -159,7 +159,7 @@ func submitOnboardingCompleteWithTimezone(t *testing.T, app *fiber.App, authCook
 
 	request := httptest.NewRequest(http.MethodPost, "/onboarding/complete", nil)
 	request.Header.Set("HX-Request", "true")
-	request.Header.Set("Cookie", authCookie)
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+timezoneName))
 	request.Header.Set(timezoneHeaderName, timezoneName)
 
 	response := mustAppResponse(t, app, request)

@@ -12,18 +12,9 @@ import (
 func assertSettingsFlashSuccessScenario(t *testing.T, path string, form url.Values, successLabel string) {
 	t.Helper()
 
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-user@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-user@example.com")
 
-	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("settings action request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, path, form, nil)
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusSeeOther {
@@ -40,9 +31,9 @@ func assertSettingsFlashSuccessScenario(t *testing.T, path string, form url.Valu
 
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	followRequest.Header.Set("Accept-Language", "en")
-	followRequest.Header.Set("Cookie", authCookie+"; "+flashCookieName+"="+flashValue)
+	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
 
-	followResponse, err := app.Test(followRequest, -1)
+	followResponse, err := ctx.app.Test(followRequest, -1)
 	if err != nil {
 		t.Fatalf("follow-up settings request failed: %v", err)
 	}
@@ -66,9 +57,9 @@ func assertSettingsFlashSuccessScenario(t *testing.T, path string, form url.Valu
 
 	afterFlashRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	afterFlashRequest.Header.Set("Accept-Language", "en")
-	afterFlashRequest.Header.Set("Cookie", authCookie)
+	afterFlashRequest.Header.Set("Cookie", ctx.authCookie)
 
-	afterFlashResponse, err := app.Test(afterFlashRequest, -1)
+	afterFlashResponse, err := ctx.app.Test(afterFlashRequest, -1)
 	if err != nil {
 		t.Fatalf("settings request after flash consumption failed: %v", err)
 	}

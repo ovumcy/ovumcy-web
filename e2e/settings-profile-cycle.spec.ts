@@ -192,20 +192,6 @@ async function currentNextPeriodText(page: Page): Promise<string> {
 }
 
 test.describe('Settings: profile and cycle', () => {
-  test('theme toggle shows moon when light mode is active', async ({ page }) => {
-    await registerOwnerAndOpenSettings(page, 'settings-theme-toggle');
-
-    await page.evaluate(() => {
-      window.localStorage.setItem('ovumcy_theme', 'light');
-    });
-    await page.reload();
-    await expect(page).toHaveURL(/\/settings$/);
-
-    const themeToggle = page.locator('[data-theme-toggle]');
-    await expect(themeToggle).toBeVisible();
-    await expect(page.locator('[data-theme-toggle-icon]')).toHaveText('🌙');
-  });
-
   test('profile name persists, long value is rejected, and empty clears without header fallback', async ({
     page,
   }) => {

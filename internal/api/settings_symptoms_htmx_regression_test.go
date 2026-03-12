@@ -307,33 +307,3 @@ func assertSettingsSymptomsHTMXInputValue(t *testing.T, rendered string, inputID
 	assertSettingsSymptomsHTMXContains(t, rendered, `id="`+inputID+`"`, "input "+inputID)
 	assertSettingsSymptomsHTMXContains(t, rendered, `value="`+value+`"`, "input value for "+inputID)
 }
-
-func loadSettingsCSRFContext(t *testing.T, app *fiber.App, authCookie string) (*http.Cookie, string) {
-	t.Helper()
-
-	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("settings request for csrf context failed: %v", err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read settings body for csrf context: %v", err)
-	}
-	csrfToken := extractCSRFTokenFromHTML(t, string(body))
-	csrfCookie := responseCookie(response.Cookies(), "ovumcy_csrf")
-	if csrfCookie == nil || strings.TrimSpace(csrfCookie.Value) == "" {
-		t.Fatalf("expected csrf cookie in settings response")
-	}
-
-	return csrfCookie, csrfToken
-}

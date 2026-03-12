@@ -2,9 +2,7 @@ package api
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
@@ -12,24 +10,16 @@ import (
 )
 
 func TestChangePasswordRejectsWeakNumericPassword(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "change-password@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "change-password@example.com")
 
 	form := url.Values{
 		"current_password": {"StrongPass1"},
 		"new_password":     {"12345678"},
 		"confirm_password": {"12345678"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/settings/change-password", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("change password request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/change-password", form, map[string]string{
+		"Accept": "application/json",
+	})
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusBadRequest {
@@ -42,7 +32,7 @@ func TestChangePasswordRejectsWeakNumericPassword(t *testing.T) {
 	}
 
 	var updatedUser models.User
-	if err := database.First(&updatedUser, user.ID).Error; err != nil {
+	if err := ctx.database.First(&updatedUser, ctx.user.ID).Error; err != nil {
 		t.Fatalf("load updated user: %v", err)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(updatedUser.PasswordHash), []byte("StrongPass1")) != nil {
@@ -54,24 +44,16 @@ func TestChangePasswordRejectsWeakNumericPassword(t *testing.T) {
 }
 
 func TestChangePasswordRejectsPasswordMismatch(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "change-password-mismatch@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "change-password-mismatch@example.com")
 
 	form := url.Values{
 		"current_password": {"StrongPass1"},
 		"new_password":     {"EvenStronger2"},
 		"confirm_password": {"DifferentPass3"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/settings/change-password", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("change password mismatch request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/change-password", form, map[string]string{
+		"Accept": "application/json",
+	})
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusBadRequest {
@@ -84,7 +66,7 @@ func TestChangePasswordRejectsPasswordMismatch(t *testing.T) {
 	}
 
 	var updatedUser models.User
-	if err := database.First(&updatedUser, user.ID).Error; err != nil {
+	if err := ctx.database.First(&updatedUser, ctx.user.ID).Error; err != nil {
 		t.Fatalf("load updated user: %v", err)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(updatedUser.PasswordHash), []byte("StrongPass1")) != nil {

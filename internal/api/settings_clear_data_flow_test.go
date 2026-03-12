@@ -2,24 +2,21 @@ package api
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 )
 
 func TestClearDataRemovesTrackedCalendarEntriesAndResetsCycleSettings(t *testing.T) {
 	scenario := setupClearDataScenario(t)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/settings/clear-data", strings.NewReader(url.Values{}.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", scenario.authCookie)
-
-	response, err := scenario.app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("clear data request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, settingsSecurityTestContext{
+		app:        scenario.app,
+		authCookie: scenario.authCookie,
+		csrfCookie: scenario.csrfCookie,
+		csrfToken:  scenario.csrfToken,
+	}, http.MethodPost, "/api/settings/clear-data", url.Values{}, map[string]string{
+		"Accept": "application/json",
+	})
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {

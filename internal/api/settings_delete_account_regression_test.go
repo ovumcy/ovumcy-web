@@ -2,27 +2,18 @@ package api
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"strings"
+	"net/url"
 	"testing"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
 )
 
 func TestSettingsDeleteAccountRejectsMissingPassword(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-delete-missing@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-delete-missing@example.com")
 
-	request := httptest.NewRequest(http.MethodDelete, "/api/settings/delete-account", strings.NewReader(`{}`))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("delete-account request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/settings/delete-account", url.Values{}, map[string]string{
+		"Accept": "application/json",
+	})
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusBadRequest {
@@ -33,7 +24,7 @@ func TestSettingsDeleteAccountRejectsMissingPassword(t *testing.T) {
 	}
 
 	var usersCount int64
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Count(&usersCount).Error; err != nil {
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Count(&usersCount).Error; err != nil {
 		t.Fatalf("count users: %v", err)
 	}
 	if usersCount != 1 {
@@ -42,19 +33,13 @@ func TestSettingsDeleteAccountRejectsMissingPassword(t *testing.T) {
 }
 
 func TestSettingsDeleteAccountRejectsInvalidPassword(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-delete-invalid@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-delete-invalid@example.com")
 
-	request := httptest.NewRequest(http.MethodDelete, "/api/settings/delete-account", strings.NewReader(`{"password":"WrongPass1"}`))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("delete-account request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/settings/delete-account", url.Values{
+		"password": {"WrongPass1"},
+	}, map[string]string{
+		"Accept": "application/json",
+	})
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusUnauthorized {
@@ -65,7 +50,7 @@ func TestSettingsDeleteAccountRejectsInvalidPassword(t *testing.T) {
 	}
 
 	var usersCount int64
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Count(&usersCount).Error; err != nil {
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Count(&usersCount).Error; err != nil {
 		t.Fatalf("count users: %v", err)
 	}
 	if usersCount != 1 {
@@ -74,19 +59,13 @@ func TestSettingsDeleteAccountRejectsInvalidPassword(t *testing.T) {
 }
 
 func TestSettingsDeleteAccountDeletesUserAndClearsAuthCookie(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-delete-success@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-delete-success@example.com")
 
-	request := httptest.NewRequest(http.MethodDelete, "/api/settings/delete-account", strings.NewReader(`{"password":"StrongPass1"}`))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("delete-account request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/settings/delete-account", url.Values{
+		"password": {"StrongPass1"},
+	}, map[string]string{
+		"Accept": "application/json",
+	})
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
@@ -94,7 +73,7 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthCookie(t *testing.T) {
 	}
 
 	var usersCount int64
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Count(&usersCount).Error; err != nil {
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Count(&usersCount).Error; err != nil {
 		t.Fatalf("count users: %v", err)
 	}
 	if usersCount != 0 {

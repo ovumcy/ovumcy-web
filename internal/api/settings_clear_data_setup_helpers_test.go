@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
@@ -14,14 +15,17 @@ type clearDataScenario struct {
 	database   *gorm.DB
 	user       models.User
 	authCookie string
+	csrfCookie *http.Cookie
+	csrfToken  string
 }
 
 func setupClearDataScenario(t *testing.T) clearDataScenario {
 	t.Helper()
 
-	app, database := newOnboardingTestApp(t)
+	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "clear-data@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
 
 	lastPeriodStart := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
@@ -71,5 +75,7 @@ func setupClearDataScenario(t *testing.T) clearDataScenario {
 		database:   database,
 		user:       user,
 		authCookie: authCookie,
+		csrfCookie: csrfCookie,
+		csrfToken:  csrfToken,
 	}
 }

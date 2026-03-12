@@ -64,14 +64,9 @@ func TestResetPasswordJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 }
 
 func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-regenerate@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-regenerate@example.com")
 
-	request := httptest.NewRequest(http.MethodPost, "/api/settings/regenerate-recovery-code", nil)
-	request.Header.Set("Cookie", authCookie)
-
-	response := mustAppResponse(t, app, request)
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{}, nil)
 	assertStatusCode(t, response, http.StatusSeeOther)
 	if location := response.Header.Get("Location"); location != "/recovery-code" {
 		t.Fatalf("expected redirect to /recovery-code, got %q", location)
@@ -84,9 +79,9 @@ func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
 
 	recoveryPageRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
 	recoveryPageRequest.Header.Set("Accept-Language", "en")
-	recoveryPageRequest.Header.Set("Cookie", authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
+	recoveryPageRequest.Header.Set("Cookie", ctx.authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
 
-	recoveryPageResponse := mustAppResponse(t, app, recoveryPageRequest)
+	recoveryPageResponse := mustAppResponse(t, ctx.app, recoveryPageRequest)
 	assertStatusCode(t, recoveryPageResponse, http.StatusOK)
 	recoveryPage := mustReadBodyString(t, recoveryPageResponse.Body)
 
@@ -100,15 +95,11 @@ func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
 }
 
 func TestRegenerateRecoveryCodeJSONDoesNotExposeRecoveryCode(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-regenerate-json@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-regenerate-json@example.com")
 
-	request := httptest.NewRequest(http.MethodPost, "/api/settings/regenerate-recovery-code", nil)
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cookie", authCookie)
-
-	response := mustAppResponse(t, app, request)
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{}, map[string]string{
+		"Accept": "application/json",
+	})
 	assertStatusCode(t, response, http.StatusOK)
 
 	payload := readRecoveryCodeFlowJSON(t, response)

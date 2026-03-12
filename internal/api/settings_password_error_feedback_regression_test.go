@@ -11,24 +11,16 @@ import (
 )
 
 func TestSettingsChangePasswordInvalidCurrentPasswordShowsTopErrorBanner(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-password-error@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-password-error@example.com")
 
 	form := url.Values{
 		"current_password": {"WrongPass1"},
 		"new_password":     {"EvenStronger2"},
 		"confirm_password": {"EvenStronger2"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/settings/change-password", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("change-password request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/change-password", form, map[string]string{
+		"Accept-Language": "en",
+	})
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusSeeOther {
@@ -45,8 +37,8 @@ func TestSettingsChangePasswordInvalidCurrentPasswordShowsTopErrorBanner(t *test
 
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	followRequest.Header.Set("Accept-Language", "en")
-	followRequest.Header.Set("Cookie", authCookie+"; "+flashCookieName+"="+flashValue)
-	followResponse, err := app.Test(followRequest, -1)
+	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
+	followResponse, err := ctx.app.Test(followRequest, -1)
 	if err != nil {
 		t.Fatalf("follow-up settings request failed: %v", err)
 	}

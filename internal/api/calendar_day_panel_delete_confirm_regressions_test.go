@@ -4,7 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"regexp"
 	"testing"
 	"time"
 
@@ -46,10 +46,14 @@ func TestCalendarDayPanelDeleteEntryUsesConfirmForm(t *testing.T) {
 		t.Fatalf("read panel body: %v", err)
 	}
 	rendered := string(body)
-	if !strings.Contains(rendered, `hx-delete="/api/log/delete?date=2026-02-17&source=calendar"`) {
-		t.Fatalf("expected delete endpoint in calendar edit panel")
+
+	deleteFormPattern := regexp.MustCompile(`(?s)<form[^>]+hx-delete="/api/log/delete\?date=2026-02-17&source=calendar"[^>]+hx-target="#day-editor"[^>]+data-confirm="[^"]+"[^>]+data-confirm-accept="[^"]+"`)
+	if !deleteFormPattern.MatchString(rendered) {
+		t.Fatalf("expected confirmed delete form in calendar edit panel")
 	}
-	if !strings.Contains(rendered, ">Delete entry</button>") {
-		t.Fatalf("expected visible delete entry action in calendar edit panel")
+
+	deleteButtonPattern := regexp.MustCompile(`(?s)<button[^>]+type="submit"[^>]+class="danger-link"[^>]*>[^<]+</button>`)
+	if !deleteButtonPattern.MatchString(rendered) {
+		t.Fatalf("expected visible destructive submit button in calendar edit panel")
 	}
 }

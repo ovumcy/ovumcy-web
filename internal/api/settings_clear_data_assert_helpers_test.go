@@ -30,8 +30,16 @@ func assertClearDataPostconditions(t *testing.T, database *gorm.DB, user models.
 	if err := database.Model(&models.SymptomType{}).Where("user_id = ? AND is_builtin = ?", user.ID, true).Count(&builtinCount).Error; err != nil {
 		t.Fatalf("count builtin symptoms: %v", err)
 	}
-	if builtinCount != 1 {
-		t.Fatalf("expected builtin symptoms to be preserved, got %d", builtinCount)
+	if builtinCount == 0 {
+		t.Fatalf("expected builtin symptoms to be preserved")
+	}
+
+	var preservedBuiltinCount int64
+	if err := database.Model(&models.SymptomType{}).Where("user_id = ? AND is_builtin = ? AND name = ?", user.ID, true, "Builtin").Count(&preservedBuiltinCount).Error; err != nil {
+		t.Fatalf("count preserved seeded builtin symptom: %v", err)
+	}
+	if preservedBuiltinCount != 1 {
+		t.Fatalf("expected seeded builtin symptom to be preserved, got %d", preservedBuiltinCount)
 	}
 
 	updatedUser := models.User{}

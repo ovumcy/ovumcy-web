@@ -10,23 +10,14 @@ import (
 )
 
 func TestSettingsFlashErrorTakesPrecedenceOverQueryError(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-notify-error@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-notify-error@example.com")
 
 	form := url.Values{
 		"current_password": {"WrongPass1"},
 		"new_password":     {"EvenStronger2"},
 		"confirm_password": {"EvenStronger2"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/settings/change-password", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Cookie", authCookie)
-
-	response, err := app.Test(request, -1)
-	if err != nil {
-		t.Fatalf("change-password request failed: %v", err)
-	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/change-password", form, nil)
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusSeeOther {
@@ -40,8 +31,8 @@ func TestSettingsFlashErrorTakesPrecedenceOverQueryError(t *testing.T) {
 
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings?error=invalid%20profile%20input", nil)
 	followRequest.Header.Set("Accept-Language", "en")
-	followRequest.Header.Set("Cookie", authCookie+"; "+flashCookieName+"="+flashValue)
-	followResponse, err := app.Test(followRequest, -1)
+	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
+	followResponse, err := ctx.app.Test(followRequest, -1)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -61,15 +52,13 @@ func TestSettingsFlashErrorTakesPrecedenceOverQueryError(t *testing.T) {
 }
 
 func TestSettingsStatusIgnoresQueryWhenFlashMissing(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-notify-status@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-notify-status@example.com")
 
 	request := httptest.NewRequest(http.MethodGet, "/settings?status=password_changed", nil)
 	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie)
+	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := ctx.app.Test(request, -1)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -85,16 +74,15 @@ func TestSettingsStatusIgnoresQueryWhenFlashMissing(t *testing.T) {
 }
 
 func TestSettingsFlashSuccessTakesPrecedenceOverQueryStatus(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-notify-success@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	ctx := newSettingsSecurityTestContext(t, "settings-notify-success@example.com")
 
 	form := url.Values{"display_name": {"Maya"}}
+	form.Set("csrf_token", ctx.csrfToken)
 	request := httptest.NewRequest(http.MethodPost, "/api/settings/profile", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Cookie", authCookie)
+	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
 
-	response, err := app.Test(request, -1)
+	response, err := ctx.app.Test(request, -1)
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
@@ -111,8 +99,8 @@ func TestSettingsFlashSuccessTakesPrecedenceOverQueryStatus(t *testing.T) {
 
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings?status=password_changed", nil)
 	followRequest.Header.Set("Accept-Language", "en")
-	followRequest.Header.Set("Cookie", authCookie+"; "+flashCookieName+"="+flashValue)
-	followResponse, err := app.Test(followRequest, -1)
+	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
+	followResponse, err := ctx.app.Test(followRequest, -1)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
