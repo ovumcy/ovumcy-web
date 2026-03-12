@@ -43,10 +43,10 @@ type SymptomService struct {
 }
 
 var legacyEntryPickerHiddenSymptoms = map[string]struct{}{
-	"moodswings":  {},
-	"fatigue":     {},
+	"moodswings":   {},
+	"fatigue":      {},
 	"irritability": {},
-	"insomnia":    {},
+	"insomnia":     {},
 }
 
 type SymptomFrequency struct {

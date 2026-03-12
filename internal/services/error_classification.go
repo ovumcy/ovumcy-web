@@ -37,12 +37,15 @@ type AuthLoginErrorKind uint8
 
 const (
 	AuthLoginErrorUnknown AuthLoginErrorKind = iota
+	AuthLoginErrorRateLimited
 	AuthLoginErrorInvalidCredentials
 	AuthLoginErrorResetTokenIssue
 )
 
 func ClassifyAuthLoginError(err error) AuthLoginErrorKind {
 	switch {
+	case errors.Is(err, ErrAuthLoginRateLimited):
+		return AuthLoginErrorRateLimited
 	case errors.Is(err, ErrAuthInvalidCreds):
 		return AuthLoginErrorInvalidCredentials
 	case errors.Is(err, ErrLoginResetTokenIssue):

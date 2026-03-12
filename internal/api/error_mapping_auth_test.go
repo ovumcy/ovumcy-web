@@ -58,6 +58,11 @@ func TestMapAuthLoginError(t *testing.T) {
 		want APIErrorSpec
 	}{
 		{
+			name: "rate limited",
+			err:  services.ErrAuthLoginRateLimited,
+			want: authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many login attempts"),
+		},
+		{
 			name: "invalid credentials",
 			err:  services.ErrAuthInvalidCreds,
 			want: authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials"),

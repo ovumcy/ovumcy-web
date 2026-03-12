@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -39,8 +38,7 @@ func TestExportSummaryRespectsRequestedDateRange(t *testing.T) {
 	}
 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	request := httptest.NewRequest(http.MethodGet, "/api/export/summary?from=2026-02-10&to=2026-02-19", nil)
-	request.Header.Set("Cookie", authCookie)
+	request := newExportRequestForTest(t, "/api/export/summary?from=2026-02-10&to=2026-02-19", authCookie)
 
 	response, err := app.Test(request, -1)
 	if err != nil {

@@ -81,7 +81,9 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager) De
 	authService := services.NewAuthService(repositories.Users)
 	attemptLimiter := services.NewAttemptLimiter()
 	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
-	loginService := services.NewLoginService(authService, passwordResetService)
+	passwordResetService.ConfigureRecoveryAttemptLimits(services.DefaultRecoveryAttemptsLimit, time.Hour)
+	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
+	loginService.ConfigureAttemptLimits(services.DefaultLoginAttemptsLimit, services.DefaultLoginAttemptsWindow)
 	dayService := services.NewDayService(repositories.DailyLogs, repositories.Users)
 	reservedBuiltinNames := make([]string, 0)
 	if i18nManager != nil {

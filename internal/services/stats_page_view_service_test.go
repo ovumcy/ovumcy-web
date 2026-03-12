@@ -32,33 +32,7 @@ func TestBuildStatsPageViewDataOwnerBuildsTrendBaselineAndSymptomSummaries(t *te
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
 
-	if !viewData.IsOwner {
-		t.Fatalf("expected IsOwner=true")
-	}
-	if viewData.ChartData.Kind != "bar" {
-		t.Fatalf("expected chart kind=bar, got %q", viewData.ChartData.Kind)
-	}
-	if !viewData.ChartData.HasBaseline || viewData.ChartData.Baseline != 28 {
-		t.Fatalf("expected chart baseline=28, got has=%v value=%d", viewData.ChartData.HasBaseline, viewData.ChartData.Baseline)
-	}
-	if viewData.ChartBaseline != 28 {
-		t.Fatalf("expected ChartBaseline=28, got %d", viewData.ChartBaseline)
-	}
-	if viewData.TrendPointCount != 2 {
-		t.Fatalf("expected TrendPointCount=2, got %d", viewData.TrendPointCount)
-	}
-	if len(viewData.ChartData.Labels) != 2 || viewData.ChartData.Labels[0] != "Cycle 1" || viewData.ChartData.Labels[1] != "Cycle 2" {
-		t.Fatalf("unexpected chart labels: %#v", viewData.ChartData.Labels)
-	}
-	if len(viewData.ChartData.Values) != 2 || viewData.ChartData.Values[0] != 28 || viewData.ChartData.Values[1] != 28 {
-		t.Fatalf("unexpected chart values: %#v", viewData.ChartData.Values)
-	}
-	if len(viewData.SymptomCounts) != 1 {
-		t.Fatalf("expected one symptom count entry, got %d", len(viewData.SymptomCounts))
-	}
-	if viewData.SymptomCounts[0].FrequencySummary == "" {
-		t.Fatalf("expected non-empty frequency summary")
-	}
+	assertOwnerTrendViewData(t, viewData)
 }
 
 func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
@@ -95,6 +69,38 @@ func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 	}
 	if !irregularView.IsIrregularMode {
 		t.Fatalf("expected IsIrregularMode=true for irregular user")
+	}
+}
+
+func assertOwnerTrendViewData(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
+	if !viewData.IsOwner {
+		t.Fatalf("expected IsOwner=true")
+	}
+	if viewData.ChartData.Kind != "bar" {
+		t.Fatalf("expected chart kind=bar, got %q", viewData.ChartData.Kind)
+	}
+	if !viewData.ChartData.HasBaseline || viewData.ChartData.Baseline != 28 {
+		t.Fatalf("expected chart baseline=28, got has=%v value=%d", viewData.ChartData.HasBaseline, viewData.ChartData.Baseline)
+	}
+	if viewData.ChartBaseline != 28 {
+		t.Fatalf("expected ChartBaseline=28, got %d", viewData.ChartBaseline)
+	}
+	if viewData.TrendPointCount != 2 {
+		t.Fatalf("expected TrendPointCount=2, got %d", viewData.TrendPointCount)
+	}
+	if len(viewData.ChartData.Labels) != 2 || viewData.ChartData.Labels[0] != "Cycle 1" || viewData.ChartData.Labels[1] != "Cycle 2" {
+		t.Fatalf("unexpected chart labels: %#v", viewData.ChartData.Labels)
+	}
+	if len(viewData.ChartData.Values) != 2 || viewData.ChartData.Values[0] != 28 || viewData.ChartData.Values[1] != 28 {
+		t.Fatalf("unexpected chart values: %#v", viewData.ChartData.Values)
+	}
+	if len(viewData.SymptomCounts) != 1 {
+		t.Fatalf("expected one symptom count entry, got %d", len(viewData.SymptomCounts))
+	}
+	if viewData.SymptomCounts[0].FrequencySummary == "" {
+		t.Fatalf("expected non-empty frequency summary")
 	}
 }
 

@@ -38,7 +38,7 @@ func newTemplateFuncMap() template.FuncMap {
 		"roleLabel": func(messages map[string]string, role string) string {
 			return translateMessage(messages, services.RoleTranslationKey(role))
 		},
-		"moodEmoji":      services.MoodEmoji,
+		"moodEmoji": services.MoodEmoji,
 		"hasBBT": func(value float64) bool {
 			return services.IsValidDayBBT(value) && value > 0
 		},

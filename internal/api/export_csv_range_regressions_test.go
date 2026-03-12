@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -46,8 +45,7 @@ func TestExportCSVRespectsRequestedDateRange(t *testing.T) {
 	}
 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	request := httptest.NewRequest(http.MethodGet, "/api/export/csv?from=2026-02-05&to=2026-02-12", nil)
-	request.Header.Set("Cookie", authCookie)
+	request := newExportRequestForTest(t, "/api/export/csv?from=2026-02-05&to=2026-02-12", authCookie)
 
 	response, err := app.Test(request, -1)
 	if err != nil {

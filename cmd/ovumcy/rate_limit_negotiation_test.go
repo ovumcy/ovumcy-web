@@ -79,7 +79,14 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 		time.UTC,
 		i18nManager,
 		false,
-		buildDependencies(db.NewRepositories(database), i18nManager),
+		buildDependencies(db.NewRepositories(database), i18nManager, rateLimitSettings{
+			LoginMax:             8,
+			LoginWindow:          15 * time.Minute,
+			ForgotPasswordMax:    8,
+			ForgotPasswordWindow: time.Hour,
+			APIMax:               300,
+			APIWindow:            time.Minute,
+		}),
 	)
 	if err != nil {
 		t.Fatalf("init rate-limit test handler: %v", err)

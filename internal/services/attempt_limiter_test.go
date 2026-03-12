@@ -29,6 +29,28 @@ func TestAttemptLimiterWindowAndReset(t *testing.T) {
 	}
 }
 
+func TestAttemptLimiterMultiKeyOperations(t *testing.T) {
+	t.Parallel()
+
+	limiter := NewAttemptLimiter()
+	now := time.Now().UTC()
+	window := time.Hour
+	keys := []string{"127.0.0.1", " owner@example.com ", "127.0.0.1"}
+
+	limiter.AddFailureAll(keys, now, window)
+	if !limiter.TooManyRecentAny([]string{"127.0.0.1"}, now, 1, window) {
+		t.Fatal("expected client limiter entry to be recorded")
+	}
+	if !limiter.TooManyRecentAny([]string{"owner@example.com"}, now, 1, window) {
+		t.Fatal("expected identity limiter entry to be recorded")
+	}
+
+	limiter.ResetAll(keys)
+	if limiter.TooManyRecentAny([]string{"127.0.0.1", "owner@example.com"}, now, 1, window) {
+		t.Fatal("expected no attempts after multi-key reset")
+	}
+}
+
 func TestNormalizeLimiterKey(t *testing.T) {
 	t.Parallel()
 

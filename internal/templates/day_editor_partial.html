@@ -16,7 +16,8 @@
     hx-swap="innerHTML"
     class="space-y-5 calendar-day-editor-form"
     data-save-feedback
-    data-day-editor-form>
+    data-day-editor-form
+    data-day-editor-date="{{.DateString}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
     <label class="period-toggle">
@@ -80,7 +81,7 @@
 
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if gt .Log.ID 0}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_day"}}{{end}}</button>
-      <button type="button" class="btn-secondary" hx-get="/calendar/day/{{.DateString}}" hx-target="#day-editor" hx-swap="innerHTML">{{t .Messages "common.cancel"}}</button>
+      <button type="button" class="btn-secondary" hx-get="/calendar/day/{{.DateString}}" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-cancel>{{t .Messages "common.cancel"}}</button>
       <div id="calendar-save-status" class="save-status text-sm" data-success-toast="true"></div>
     </div>
   </form>
@@ -90,9 +91,11 @@
     hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
     hx-target="#calendar-save-status"
     hx-swap="innerHTML"
-    class="pt-3">
+    class="pt-3"
+    data-day-cycle-start-form
+    data-day-cycle-start-date="{{.DateString}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <button type="submit" class="btn-secondary">{{t .Messages "dashboard.manual_cycle_start"}}</button>
+    <button type="submit" class="btn-secondary" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
   </form>
   {{end}}
 
@@ -103,8 +106,10 @@
       hx-target="#day-editor"
       hx-swap="innerHTML"
       data-confirm="{{t .Messages "confirm.delete_entry"}}"
-      data-confirm-accept="{{t .Messages "confirm.yes"}}">
-      <button type="submit" class="danger-link">{{t .Messages "calendar.delete_entry"}}</button>
+      data-confirm-accept="{{t .Messages "confirm.yes"}}"
+      data-day-delete-form
+      data-day-delete-date="{{.DateString}}">
+      <button type="submit" class="danger-link" data-day-delete-button>{{t .Messages "calendar.delete_entry"}}</button>
     </form>
   </div>
   {{end}}
@@ -112,14 +117,16 @@
     {{if .HasDayData}}
     {{template "owner_log_summary" (dict "Messages" .Messages "Log" .Log "Symptoms" .Symptoms "SelectedSymptomID" .SelectedSymptomID "NoDataLabel" .NoDataLabel)}}
     <div class="flex flex-wrap items-center gap-3">
-      <button type="button" class="btn-secondary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML">{{t .Messages "calendar.edit_entry"}}</button>
+      <button type="button" class="btn-secondary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}">{{t .Messages "calendar.edit_entry"}}</button>
       {{if not .IsFutureDate}}
       <form
         hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
         hx-target="#day-editor"
-        hx-swap="innerHTML">
+        hx-swap="innerHTML"
+        data-day-cycle-start-form
+        data-day-cycle-start-date="{{.DateString}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <button type="submit" class="btn-secondary">{{t .Messages "dashboard.manual_cycle_start"}}</button>
+        <button type="submit" class="btn-secondary" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
       </form>
       {{end}}
     </div>
@@ -127,14 +134,16 @@
     <div class="journal-panel space-y-3 text-sm">
       <p>{{t .Messages "calendar.no_entry"}}</p>
       <div class="flex flex-wrap items-center gap-3">
-        <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML">{{t .Messages "calendar.add_entry"}}</button>
+        <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}">{{t .Messages "calendar.add_entry"}}</button>
         {{if not .IsFutureDate}}
         <form
           hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
           hx-target="#day-editor"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          data-day-cycle-start-form
+          data-day-cycle-start-date="{{.DateString}}">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn-secondary">{{t .Messages "dashboard.manual_cycle_start"}}</button>
+          <button type="submit" class="btn-secondary" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
         </form>
         {{end}}
       </div>

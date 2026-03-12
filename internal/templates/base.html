@@ -423,17 +423,18 @@
 </label>
 {{end}}
 {{define "sex_activity_field"}}
-<details class="sex-activity-details" {{if ne .SelectedSexActivity "none"}}open{{end}}>
+<details class="sex-activity-details" data-sex-activity-details {{if ne .SelectedSexActivity "none"}}open{{end}}>
   <summary class="sex-chip-summary">
-    <span class="{{if .Compact}}check-chip check-chip-sm check-chip-static{{else}}check-chip check-chip-static{{end}}{{if ne .SelectedSexActivity "none"}} choice-chip-active{{end}}">
+    <span class="{{if .Compact}}check-chip check-chip-sm check-chip-static{{else}}check-chip check-chip-static{{end}} sex-chip-summary-pill{{if ne .SelectedSexActivity "none"}} choice-chip-active{{end}}">
       <span class="symptom-icon">♥</span>
       <span class="symptom-label">{{t .Messages "dashboard.sex"}}</span>
       {{if ne .SelectedSexActivity "none"}}
-      <span class="journal-muted text-[11px]">{{sexActivityLabel .Messages .SelectedSexActivity}}</span>
+      <span class="sex-chip-status">{{sexActivityLabel .Messages .SelectedSexActivity}}</span>
       {{end}}
+      <span class="sex-chip-chevron" aria-hidden="true">▼</span>
     </span>
   </summary>
-  <div class="mt-3 {{if .Compact}}flow-radio-row flow-radio-row-compact{{else}}flow-radio-row{{end}}">
+  <div class="mt-3 sex-activity-row{{if .Compact}} sex-activity-row-compact{{end}}">
     {{template "sex_activity_option" (dict "Messages" .Messages "SelectedSexActivity" .SelectedSexActivity "Value" "none" "Compact" .Compact)}}
     {{template "sex_activity_option" (dict "Messages" .Messages "SelectedSexActivity" .SelectedSexActivity "Value" "protected" "Compact" .Compact)}}
     {{template "sex_activity_option" (dict "Messages" .Messages "SelectedSexActivity" .SelectedSexActivity "Value" "unprotected" "Compact" .Compact)}}
@@ -500,7 +501,10 @@
 
   {{if .HasExtraSymptoms}}
   <details class="symptom-more-details">
-    <summary class="symptom-more-summary">{{t .Messages "dashboard.more_symptoms"}}</summary>
+    <summary class="symptom-more-summary" data-symptom-more-toggle>
+      <span class="symptom-more-label">{{t .Messages "dashboard.more_symptoms"}}</span>
+      <span class="symptom-more-chevron" aria-hidden="true">▼</span>
+    </summary>
     <div class="mt-3 {{if .Compact}}symptom-grid symptom-grid-compact{{else}}symptom-grid{{end}}">
       {{range .ExtraSymptoms}}
       {{template "symptom_option_item" (dict

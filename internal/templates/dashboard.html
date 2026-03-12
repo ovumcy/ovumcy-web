@@ -56,7 +56,14 @@
       </div>
 
       {{if .IsOwner}}
-      <form hx-post="/api/days/{{.Today}}" hx-target="#save-status" hx-swap="innerHTML" class="space-y-5" data-save-feedback>
+      <form
+        hx-post="/api/days/{{.Today}}"
+        hx-target="#save-status"
+        hx-swap="innerHTML"
+        class="space-y-5"
+        data-save-feedback
+        data-dashboard-save-form
+        data-dashboard-date="{{.Today}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
         <label class="period-toggle">
@@ -122,29 +129,36 @@
           <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if .TodayEntryExists}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_today"}}{{end}}</button>
           <div id="save-status" class="save-status text-sm" data-success-toast="true"></div>
         </div>
+      </form>
 
-        {{if .TodayHasData}}
-        <div class="dashboard-danger-actions">
-          <button
-            type="button"
-            hx-delete="/api/log/delete?date={{.Today}}&source=dashboard"
-            hx-swap="none"
-            hx-confirm="{{t .Messages "confirm.delete_entry"}}"
-            data-confirm-accept="{{t .Messages "confirm.yes"}}"
-            class="btn-danger">
-            {{t .Messages "dashboard.clear_today"}}
-          </button>
-        </div>
-        {{end}}
-      </form>
-      <form
-        hx-post="/api/days/{{.Today}}/cycle-start?source=dashboard"
-        hx-target="#save-status"
-        hx-swap="innerHTML"
-        class="pt-3">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <button type="submit" class="btn-secondary">{{t .Messages "dashboard.manual_cycle_start"}}</button>
-      </form>
+      <div class="dashboard-secondary-actions">
+        <form
+          class="dashboard-secondary-form"
+          hx-post="/api/days/{{.Today}}/cycle-start?source=dashboard"
+          hx-target="#save-status"
+          hx-swap="innerHTML"
+          data-dashboard-cycle-start-form
+          data-dashboard-date="{{.Today}}">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn-secondary" data-dashboard-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
+        </form>
+      </div>
+
+      {{if .TodayHasData}}
+      <div class="dashboard-danger-actions">
+        <button
+          type="button"
+          hx-delete="/api/log/delete?date={{.Today}}&source=dashboard"
+          hx-swap="none"
+          hx-confirm="{{t .Messages "confirm.delete_entry"}}"
+          data-confirm-accept="{{t .Messages "confirm.yes"}}"
+          data-dashboard-clear-button
+          data-dashboard-date="{{.Today}}"
+          class="btn-danger">
+          {{t .Messages "dashboard.clear_today"}}
+        </button>
+      </div>
+      {{end}}
       {{else}}
       {{template "readonly_log_summary" (dict "Messages" .Messages "Log" .TodayEntry "NoDataLabel" .NoDataLabel)}}
       {{end}}

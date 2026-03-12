@@ -128,11 +128,6 @@
     return applyTheme(normalized);
   }
 
-  function toggleThemePreference() {
-    var nextTheme = currentTheme() === THEME_DARK ? THEME_LIGHT : THEME_DARK;
-    return setThemePreference(nextTheme);
-  }
-
   function isSafeClientTimezone(value) {
     if (!value || value.length > 128) {
       return false;

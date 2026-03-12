@@ -84,7 +84,7 @@ func main() {
 	config := mustLoadRuntimeConfig(location)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
-	dependencies := buildDependencies(db.NewRepositories(database), i18nManager)
+	dependencies := buildDependencies(db.NewRepositories(database), i18nManager, config.RateLimits)
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	stopSignals := installGracefulShutdown(app)
@@ -179,11 +179,13 @@ func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
 	return i18nManager
 }
 
-func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager) api.Dependencies {
+func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager, rateLimits rateLimitSettings) api.Dependencies {
 	authService := services.NewAuthService(repositories.Users)
 	attemptLimiter := services.NewAttemptLimiter()
 	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
-	loginService := services.NewLoginService(authService, passwordResetService)
+	passwordResetService.ConfigureRecoveryAttemptLimits(rateLimits.ForgotPasswordMax, rateLimits.ForgotPasswordWindow)
+	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
+	loginService.ConfigureAttemptLimits(rateLimits.LoginMax, rateLimits.LoginWindow)
 	dayService := services.NewDayService(repositories.DailyLogs, repositories.Users)
 	symptomService := services.NewSymptomService(repositories.Symptoms, services.BuiltinSymptomReservedNames(i18nManager)...)
 	registrationService := services.NewRegistrationService(authService, repositories.Users)

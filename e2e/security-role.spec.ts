@@ -65,6 +65,12 @@ function todayISOInBrowser(): Promise<string> {
   });
 }
 
+async function readCSRFToken(page: Page): Promise<string> {
+  const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute('content');
+  expect(csrfToken).toBeTruthy();
+  return csrfToken ?? '';
+}
+
 test.describe('Security and role-based access', () => {
   test('xss in profile display name is escaped and never executes', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'security-xss-profile');
@@ -131,11 +137,16 @@ test.describe('Security and role-based access', () => {
     });
     expect(clearNoCsrf.status()).toBe(403);
 
-    const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute('content');
-    expect(csrfToken).toBeTruthy();
+    const exportNoCsrf = await page.request.post('/api/export/csv', {
+      form: {},
+      maxRedirects: 0,
+    });
+    expect(exportNoCsrf.status()).toBe(403);
+
+    const csrfToken = await readCSRFToken(page);
 
     const clearWithCsrf = await page.request.post('/api/settings/clear-data', {
-      form: { csrf_token: csrfToken ?? '' },
+      form: { csrf_token: csrfToken },
       maxRedirects: 0,
     });
     expect([200, 303]).toContain(clearWithCsrf.status());
@@ -161,7 +172,9 @@ test.describe('Security and role-based access', () => {
     await expect(page.locator('[data-export-section]')).toBeVisible();
     await expect(page.locator('form[action="/api/settings/clear-data"]')).toBeVisible();
 
-    const exportResponse = await page.request.get('/api/export/csv');
+    const exportResponse = await page.request.post('/api/export/csv', {
+      form: { csrf_token: await readCSRFToken(page) },
+    });
     expect(exportResponse.status()).toBe(200);
     expect(exportResponse.headers()['content-type'] || '').toContain('text/csv');
   });
@@ -190,16 +203,18 @@ test.describe('Security and role-based access', () => {
     await expect(page.locator('[data-export-section]')).toHaveCount(0);
     await expect(page.locator('form[action="/api/settings/clear-data"]')).toHaveCount(0);
 
-    const exportForbidden = await page.request.get('/api/export/csv');
+    const exportForbidden = await page.request.post('/api/export/csv', {
+      form: { csrf_token: await readCSRFToken(page) },
+      maxRedirects: 0,
+    });
     expect(exportForbidden.status()).toBe(403);
 
-    const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute('content');
-    expect(csrfToken).toBeTruthy();
+    const csrfToken = await readCSRFToken(page);
 
     const todayISO = await todayISOInBrowser();
     const upsertForbidden = await page.request.post(`/api/days/${todayISO}`, {
       form: {
-        csrf_token: csrfToken ?? '',
+        csrf_token: csrfToken,
         is_period: 'true',
       },
       maxRedirects: 0,

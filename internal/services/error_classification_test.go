@@ -28,6 +28,9 @@ func TestClassifyAuthRegisterError(t *testing.T) {
 }
 
 func TestClassifyAuthAndRecoveryErrors(t *testing.T) {
+	if got := ClassifyAuthLoginError(ErrAuthLoginRateLimited); got != AuthLoginErrorRateLimited {
+		t.Fatalf("expected AuthLoginErrorRateLimited, got %v", got)
+	}
 	if got := ClassifyAuthLoginError(ErrAuthInvalidCreds); got != AuthLoginErrorInvalidCredentials {
 		t.Fatalf("expected AuthLoginErrorInvalidCredentials, got %v", got)
 	}

@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/csv"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -64,47 +63,41 @@ func TestExportCSVIncludesKnownAndOtherSymptoms(t *testing.T) {
 	for index, name := range header {
 		indexByName[name] = index
 	}
-
-	if got := row[indexByName["Date"]]; got != "2026-02-18" {
-		t.Fatalf("expected date 2026-02-18, got %q", got)
-	}
-	if got := row[indexByName["Period"]]; got != "Yes" {
-		t.Fatalf("expected period Yes, got %q", got)
-	}
-	if got := row[indexByName["Flow"]]; got != "Light" {
-		t.Fatalf("expected flow Light, got %q", got)
-	}
-	if got := row[indexByName["Mood rating"]]; got != "5" {
-		t.Fatalf("expected mood rating 5, got %q", got)
-	}
-	if got := row[indexByName["Sex activity"]]; got != "Unprotected" {
-		t.Fatalf("expected sex activity Unprotected, got %q", got)
-	}
-	if got := row[indexByName["BBT (C)"]]; got != "36.70" {
-		t.Fatalf("expected BBT 36.70, got %q", got)
-	}
-	if got := row[indexByName["Cervical mucus"]]; got != "Creamy" {
-		t.Fatalf("expected cervical mucus Creamy, got %q", got)
-	}
-	if got := row[indexByName["Cramps"]]; got != "Yes" {
-		t.Fatalf("expected Cramps Yes, got %q", got)
-	}
-	if got := row[indexByName["Other"]]; got != "Custom Symptom" {
-		t.Fatalf("expected Other to include custom symptom, got %q", got)
-	}
-	if got := row[indexByName["Notes"]]; got != "note" {
-		t.Fatalf("expected notes to be exported, got %q", got)
-	}
+	assertExportCSVRowValues(t, row, indexByName, map[string]string{
+		"Date":           "2026-02-18",
+		"Period":         "Yes",
+		"Flow":           "Light",
+		"Mood rating":    "5",
+		"Sex activity":   "Unprotected",
+		"BBT (C)":        "36.70",
+		"Cervical mucus": "Creamy",
+		"Cramps":         "Yes",
+		"Other":          "Custom Symptom",
+		"Notes":          "note",
+	})
 }
 
 func exportResponseForTest(t *testing.T, app *fiber.App, email string, password string, target string) *http.Response {
 	t.Helper()
 
 	authCookie := loginAndExtractAuthCookie(t, app, email, password)
-	request := httptest.NewRequest(http.MethodGet, target, nil)
-	request.Header.Set("Cookie", authCookie)
+	request := newExportRequestForTest(t, target, authCookie)
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 	return response
+}
+
+func assertExportCSVRowValues(t *testing.T, row []string, indexByName map[string]int, expected map[string]string) {
+	t.Helper()
+
+	for column, want := range expected {
+		index, ok := indexByName[column]
+		if !ok {
+			t.Fatalf("expected column %q in exported csv header", column)
+		}
+		if got := row[index]; got != want {
+			t.Fatalf("expected %s %q, got %q", column, want, got)
+		}
+	}
 }

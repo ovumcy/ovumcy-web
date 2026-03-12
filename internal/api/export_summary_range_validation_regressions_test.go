@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 )
 
@@ -15,8 +14,7 @@ func TestExportSummaryRejectsInvalidDateRange(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "export-summary-invalid-range@example.com", "StrongPass1", true)
 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-	request := httptest.NewRequest(http.MethodGet, "/api/export/summary?from=2026-02-20&to=2026-02-10", nil)
-	request.Header.Set("Cookie", authCookie)
+	request := newExportRequestForTest(t, "/api/export/summary?from=2026-02-20&to=2026-02-10", authCookie)
 
 	response, err := app.Test(request, -1)
 	if err != nil {

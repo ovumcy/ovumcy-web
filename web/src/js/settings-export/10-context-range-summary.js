@@ -17,7 +17,7 @@
       summaryTotalTemplate: readTextAttribute(section, "data-export-summary-total-template", "Total entries: %d"),
       summaryRangeTemplate: readTextAttribute(section, "data-export-summary-range-template", "Date range: %s to %s"),
       summaryRangeEmpty: readTextAttribute(section, "data-export-summary-range-empty", "Date range: -"),
-      links: section.querySelectorAll("a[data-export-link]"),
+      actions: section.querySelectorAll("button[data-export-action]"),
       presetButtons: section.querySelectorAll("button[data-export-preset]"),
       fromInput: section.querySelector("#export-from"),
       toInput: section.querySelector("#export-to"),
@@ -44,18 +44,18 @@
       monthNames: buildMonthNames(monthNameFormatter)
     };
 
-    if (!context.links.length || !context.fromInput || !context.toInput) {
+    if (!context.actions.length || !context.fromInput || !context.toInput) {
       return null;
     }
     return context;
   }
 
   function createDateRangeController(context, bounds) {
-    function setExportLinksDisabled(disabled) {
-      for (var index = 0; index < context.links.length; index++) {
-        var link = context.links[index];
-        link.classList.toggle("export-link-disabled", disabled);
-        link.setAttribute("aria-disabled", disabled ? "true" : "false");
+    function setExportActionsDisabled(disabled) {
+      for (var index = 0; index < context.actions.length; index++) {
+        var action = context.actions[index];
+        action.classList.toggle("export-link-disabled", disabled);
+        setButtonDisabled(action, disabled);
       }
     }
 
@@ -89,7 +89,7 @@
       var fromResult = parseAndNormalizeInput(context.fromField, context.fromInput);
       var toResult = parseAndNormalizeInput(context.toField, context.toInput);
       if (!fromResult.ok || !toResult.ok) {
-        setExportLinksDisabled(true);
+        setExportActionsDisabled(true);
         return false;
       }
 
@@ -125,11 +125,11 @@
         } else if (context.toInput) {
           context.toInput.setCustomValidity(context.invalidRangeMessage);
         }
-        setExportLinksDisabled(true);
+        setExportActionsDisabled(true);
         return false;
       }
 
-      setExportLinksDisabled(false);
+      setExportActionsDisabled(false);
       return true;
     }
 
@@ -202,14 +202,13 @@
     }
 
     return {
-      setExportLinksDisabled: setExportLinksDisabled,
+      setExportActionsDisabled: setExportActionsDisabled,
       validate: validate,
       updatePresetState: updatePresetState,
       applyPreset: applyPreset,
       syncInitialRange: syncInitialRange,
-      buildExportEndpoint: function (baseEndpoint) {
-        return buildEndpoint(
-          baseEndpoint,
+      buildExportRequestBody: function () {
+        return buildExportRequestBody(
           dateFieldValue(context.fromField, context.fromInput),
           dateFieldValue(context.toField, context.toInput)
         );
@@ -219,7 +218,7 @@
   function createSummaryController(context, bounds, rangeController) {
     var summaryTimer = 0;
     var summaryRequestID = 0;
-    var lastSummaryEndpoint = "";
+    var lastSummaryBody = "";
     var summaryAbortController = null;
 
     function updateSummaryText(totalEntries, hasData, dateFrom, dateTo, selectedFrom, selectedTo) {
@@ -250,12 +249,8 @@
       }
     }
 
-    function buildSummaryEndpoint() {
-      return buildEndpoint(
-        SUMMARY_ENDPOINT,
-        dateFieldValue(context.fromField, context.fromInput),
-        dateFieldValue(context.toField, context.toInput)
-      );
+    function buildSummaryRequestBody() {
+      return rangeController.buildExportRequestBody().toString();
     }
 
     async function refresh() {
@@ -263,15 +258,15 @@
         return;
       }
       if (!rangeController.validate("summary")) {
-        lastSummaryEndpoint = "";
+        lastSummaryBody = "";
         return;
       }
 
-      var endpoint = buildSummaryEndpoint();
-      if (endpoint === lastSummaryEndpoint) {
+      var requestBody = buildSummaryRequestBody();
+      if (requestBody === lastSummaryBody) {
         return;
       }
-      lastSummaryEndpoint = endpoint;
+      lastSummaryBody = requestBody;
 
       if (summaryAbortController) {
         summaryAbortController.abort();
@@ -280,7 +275,9 @@
 
       var requestID = ++summaryRequestID;
       try {
-        var response = await fetch(endpoint, {
+        var response = await fetch(SUMMARY_ENDPOINT, {
+          method: "POST",
+          body: requestBody,
           credentials: "same-origin",
           headers: buildAcceptLanguageHeaders(),
           signal: summaryAbortController ? summaryAbortController.signal : undefined

@@ -21,17 +21,47 @@ func (stub *stubSettingsViewLoader) LoadSettings(_ uint) (models.User, error) {
 }
 
 type stubSettingsViewExportBuilder struct {
-	summary ExportSummary
-	err     error
-	called  bool
+	summary   ExportSummary
+	responses []ExportSummary
+	err       error
+	called    bool
+	callIndex int
+	calls     []settingsViewSummaryCall
 }
 
-func (stub *stubSettingsViewExportBuilder) BuildSummary(_ uint, _ *time.Time, _ *time.Time, _ *time.Location) (ExportSummary, error) {
+func (stub *stubSettingsViewExportBuilder) BuildSummary(_ uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error) {
 	stub.called = true
+	stub.calls = append(stub.calls, newSettingsViewSummaryCall(from, to, location))
 	if stub.err != nil {
 		return ExportSummary{}, stub.err
 	}
+	if stub.callIndex < len(stub.responses) {
+		response := stub.responses[stub.callIndex]
+		stub.callIndex++
+		return response, nil
+	}
 	return stub.summary, nil
+}
+
+type settingsViewSummaryCall struct {
+	HasFrom bool
+	HasTo   bool
+	From    string
+	To      string
+}
+
+func newSettingsViewSummaryCall(from *time.Time, to *time.Time, location *time.Location) settingsViewSummaryCall {
+	call := settingsViewSummaryCall{
+		HasFrom: from != nil,
+		HasTo:   to != nil,
+	}
+	if from != nil {
+		call.From = from.In(location).Format("2006-01-02")
+	}
+	if to != nil {
+		call.To = to.In(location).Format("2006-01-02")
+	}
+	return call
 }
 
 type stubSettingsViewSymptomProvider struct {
@@ -86,11 +116,9 @@ func TestBuildSettingsPageViewDataOwnerLoadsExportSummary(t *testing.T) {
 		},
 	}
 	exportBuilder := &stubSettingsViewExportBuilder{
-		summary: ExportSummary{
-			TotalEntries: 2,
-			HasData:      true,
-			DateFrom:     "2026-02-01",
-			DateTo:       "2026-02-21",
+		responses: []ExportSummary{
+			{TotalEntries: 2, HasData: true, DateFrom: "2026-02-01", DateTo: "2026-02-21"},
+			{TotalEntries: 2, HasData: true, DateFrom: "2026-02-01", DateTo: "2026-02-21"},
 		},
 	}
 	symptomProvider := &stubSettingsViewSymptomProvider{
@@ -114,23 +142,59 @@ func TestBuildSettingsPageViewDataOwnerLoadsExportSummary(t *testing.T) {
 	if !symptomProvider.called {
 		t.Fatalf("expected FetchSymptoms to be called for owner")
 	}
-	if !viewData.HasOwnerExportViewState || !viewData.Export.HasSummaryForOwner {
-		t.Fatalf("expected owner export state in view data")
+	assertSettingsViewOwnerSummaryCalls(t, exportBuilder.calls, []settingsViewSummaryCall{
+		{HasFrom: false, HasTo: false},
+		{HasFrom: true, HasTo: true, From: "2026-02-01", To: "2026-02-21"},
+	})
+	assertOwnerSymptomsViewData(t, viewData)
+	assertOwnerExportViewData(t, viewData, ownerExportViewExpectation{
+		defaultFrom:        "2026-02-01",
+		defaultTo:          "2026-02-21",
+		selectableMin:      "2026-02-01",
+		selectableMax:      "2026-02-21",
+		summaryFromDisplay: "01.02.2026",
+		summaryToDisplay:   "21.02.2026",
+	})
+}
+
+func TestBuildSettingsPageViewDataOwnerClampsExportDefaultToRequestLocalToday(t *testing.T) {
+	settingsLoader := &stubSettingsViewLoader{
+		user: models.User{
+			CycleLength:    28,
+			PeriodLength:   5,
+			AutoPeriodFill: true,
+		},
 	}
-	if !viewData.HasOwnerSymptomsView {
-		t.Fatalf("expected owner symptoms view state")
+
+	exportBuilder := &stubSettingsViewExportBuilder{
+		responses: []ExportSummary{
+			{TotalEntries: 2, HasData: true, DateFrom: "2026-03-12", DateTo: "2026-03-16"},
+			{TotalEntries: 1, HasData: true, DateFrom: "2026-03-12", DateTo: "2026-03-12"},
+		},
 	}
-	if len(viewData.Symptoms.ActiveCustomSymptoms) != 1 || viewData.Symptoms.ActiveCustomSymptoms[0].Name != "Joint stiffness" {
-		t.Fatalf("expected one active custom symptom, got %#v", viewData.Symptoms.ActiveCustomSymptoms)
+
+	service := NewSettingsViewService(settingsLoader, NewNotificationService(), exportBuilder, nil)
+	user := &models.User{ID: 5, Role: models.RoleOwner}
+	viewData, err := service.BuildSettingsPageViewData(user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
+	if err != nil {
+		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
 	}
-	if len(viewData.Symptoms.ArchivedCustomSymptoms) != 1 || viewData.Symptoms.ArchivedCustomSymptoms[0].Name != "Caffeine crash" {
-		t.Fatalf("expected one archived custom symptom, got %#v", viewData.Symptoms.ArchivedCustomSymptoms)
+
+	assertSettingsViewOwnerSummaryCalls(t, exportBuilder.calls, []settingsViewSummaryCall{
+		{HasFrom: false, HasTo: false},
+		{HasFrom: true, HasTo: true, From: "2026-03-12", To: "2026-03-12"},
+	})
+	if viewData.Export.DefaultDateTo != "2026-03-12" {
+		t.Fatalf("expected export default to date to use request-local today, got %q", viewData.Export.DefaultDateTo)
 	}
-	if viewData.Export.DateFromDisplay != "01.02.2026" {
-		t.Fatalf("expected localized from display, got %q", viewData.Export.DateFromDisplay)
+	if viewData.Export.SelectableDateMax != "2026-03-16" {
+		t.Fatalf("expected selectable max date to keep future export bound, got %q", viewData.Export.SelectableDateMax)
 	}
-	if viewData.Export.DateToDisplay != "21.02.2026" {
-		t.Fatalf("expected localized to display, got %q", viewData.Export.DateToDisplay)
+	if viewData.Export.SummaryTotalEntries != 1 {
+		t.Fatalf("expected default summary total entries 1, got %d", viewData.Export.SummaryTotalEntries)
+	}
+	if viewData.Export.SummaryDateToDisplay != "12.03.2026" {
+		t.Fatalf("expected localized summary display to use today, got %q", viewData.Export.SummaryDateToDisplay)
 	}
 }
 
@@ -210,4 +274,67 @@ func mustParseSettingsViewDay(t *testing.T, raw string) time.Time {
 
 func ptrSettingsViewTime(value time.Time) *time.Time {
 	return &value
+}
+
+type ownerExportViewExpectation struct {
+	defaultFrom        string
+	defaultTo          string
+	selectableMin      string
+	selectableMax      string
+	summaryFromDisplay string
+	summaryToDisplay   string
+}
+
+func assertSettingsViewOwnerSummaryCalls(t *testing.T, got []settingsViewSummaryCall, want []settingsViewSummaryCall) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("expected %d export summary calls, got %#v", len(want), got)
+	}
+
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("unexpected export summary call %d: got %#v want %#v", index, got[index], want[index])
+		}
+	}
+}
+
+func assertOwnerSymptomsViewData(t *testing.T, viewData SettingsPageViewData) {
+	t.Helper()
+
+	if !viewData.HasOwnerSymptomsView {
+		t.Fatalf("expected owner symptoms view state")
+	}
+	if len(viewData.Symptoms.ActiveCustomSymptoms) != 1 || viewData.Symptoms.ActiveCustomSymptoms[0].Name != "Joint stiffness" {
+		t.Fatalf("expected one active custom symptom, got %#v", viewData.Symptoms.ActiveCustomSymptoms)
+	}
+	if len(viewData.Symptoms.ArchivedCustomSymptoms) != 1 || viewData.Symptoms.ArchivedCustomSymptoms[0].Name != "Caffeine crash" {
+		t.Fatalf("expected one archived custom symptom, got %#v", viewData.Symptoms.ArchivedCustomSymptoms)
+	}
+}
+
+func assertOwnerExportViewData(t *testing.T, viewData SettingsPageViewData, expected ownerExportViewExpectation) {
+	t.Helper()
+
+	if !viewData.HasOwnerExportViewState || !viewData.Export.HasSummaryForOwner {
+		t.Fatalf("expected owner export state in view data")
+	}
+	if viewData.Export.DefaultDateFrom != expected.defaultFrom {
+		t.Fatalf("expected default from date %q, got %q", expected.defaultFrom, viewData.Export.DefaultDateFrom)
+	}
+	if viewData.Export.DefaultDateTo != expected.defaultTo {
+		t.Fatalf("expected default to date %q, got %q", expected.defaultTo, viewData.Export.DefaultDateTo)
+	}
+	if viewData.Export.SelectableDateMin != expected.selectableMin {
+		t.Fatalf("expected selectable min date %q, got %q", expected.selectableMin, viewData.Export.SelectableDateMin)
+	}
+	if viewData.Export.SelectableDateMax != expected.selectableMax {
+		t.Fatalf("expected selectable max date %q, got %q", expected.selectableMax, viewData.Export.SelectableDateMax)
+	}
+	if viewData.Export.SummaryDateFromDisplay != expected.summaryFromDisplay {
+		t.Fatalf("expected localized summary from display %q, got %q", expected.summaryFromDisplay, viewData.Export.SummaryDateFromDisplay)
+	}
+	if viewData.Export.SummaryDateToDisplay != expected.summaryToDisplay {
+		t.Fatalf("expected localized summary to display %q, got %q", expected.summaryToDisplay, viewData.Export.SummaryDateToDisplay)
+	}
 }

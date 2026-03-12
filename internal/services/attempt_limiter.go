@@ -33,6 +33,18 @@ func (limiter *AttemptLimiter) TooManyRecent(key string, now time.Time, limit in
 	return len(pruned) >= limit
 }
 
+func (limiter *AttemptLimiter) TooManyRecentAny(keys []string, now time.Time, limit int, window time.Duration) bool {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+
+	for _, key := range normalizeLimiterKeys(keys) {
+		if len(limiter.pruneLocked(key, now, window)) >= limit {
+			return true
+		}
+	}
+	return false
+}
+
 func (limiter *AttemptLimiter) AddFailure(key string, now time.Time, window time.Duration) {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
@@ -42,10 +54,51 @@ func (limiter *AttemptLimiter) AddFailure(key string, now time.Time, window time
 	limiter.attempts[key] = pruned
 }
 
+func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, window time.Duration) {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+
+	for _, key := range normalizeLimiterKeys(keys) {
+		pruned := limiter.pruneLocked(key, now, window)
+		pruned = append(pruned, now)
+		limiter.attempts[key] = pruned
+	}
+}
+
 func (limiter *AttemptLimiter) Reset(key string) {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
 	delete(limiter.attempts, key)
+}
+
+func (limiter *AttemptLimiter) ResetAll(keys []string) {
+	limiter.mu.Lock()
+	defer limiter.mu.Unlock()
+
+	for _, key := range normalizeLimiterKeys(keys) {
+		delete(limiter.attempts, key)
+	}
+}
+
+func normalizeLimiterKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return []string{NormalizeLimiterKey("")}
+	}
+
+	seen := make(map[string]struct{}, len(keys))
+	normalized := make([]string, 0, len(keys))
+	for _, key := range keys {
+		candidate := NormalizeLimiterKey(key)
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		normalized = append(normalized, candidate)
+	}
+	if len(normalized) == 0 {
+		return []string{NormalizeLimiterKey("")}
+	}
+	return normalized
 }
 
 func (limiter *AttemptLimiter) pruneLocked(key string, now time.Time, window time.Duration) []time.Time {

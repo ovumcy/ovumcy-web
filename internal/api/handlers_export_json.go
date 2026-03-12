@@ -12,13 +12,14 @@ func (handler *Handler) ExportJSON(c *fiber.Ctx) error {
 	if spec != nil {
 		return handler.respondMappedError(c, *spec)
 	}
-	entries, err := handler.exportService.BuildJSONEntries(user.ID, from, to, handler.location)
+	location := handler.requestLocation(c)
+	entries, err := handler.exportService.BuildJSONEntries(user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "json"))
 		return handler.respondMappedError(c, spec)
 	}
-	now := time.Now().In(handler.location)
+	now := time.Now().In(location)
 
 	payload := fiber.Map{
 		"exported_at": now.Format(time.RFC3339),

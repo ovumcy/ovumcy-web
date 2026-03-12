@@ -14,13 +14,14 @@ func (handler *Handler) ExportCSV(c *fiber.Ctx) error {
 	if spec != nil {
 		return handler.respondMappedError(c, *spec)
 	}
-	rows, err := handler.exportService.BuildCSVRows(user.ID, from, to, handler.location)
+	location := handler.requestLocation(c)
+	rows, err := handler.exportService.BuildCSVRows(user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "csv"))
 		return handler.respondMappedError(c, spec)
 	}
-	now := time.Now().In(handler.location)
+	now := time.Now().In(location)
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)

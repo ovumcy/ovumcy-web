@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fillDateField } from './support/date-field-helpers';
+import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -23,6 +24,13 @@ function toISODate(date: Date): string {
 
 function isoDaysAgo(days: number): string {
   return toISODate(new Date(Date.now() - days * 24 * 60 * 60 * 1000));
+}
+
+function shiftISODate(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map((part) => Number(part));
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + days);
+  return toISODate(date);
 }
 
 async function setRangeValue(locator: Locator, value: number): Promise<void> {
@@ -50,6 +58,43 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   return { ...creds, recoveryCode };
 }
 
+async function readCSRFToken(page: Page): Promise<string> {
+  const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute('content');
+  expect(csrfToken).toBeTruthy();
+  return csrfToken ?? '';
+}
+
+async function todayISOFromCalendar(page: Page): Promise<string> {
+  const todayButton = page.locator('button[data-day]:has(.calendar-today-pill)').first();
+  await expect(todayButton).toBeVisible();
+  const todayISO = await todayButton.getAttribute('data-day');
+  expect(todayISO).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  return todayISO!;
+}
+
+async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locator> {
+  const month = isoDate.slice(0, 7);
+  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
+  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
+
+  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
+  await expect(editButton).toBeVisible();
+  await editButton.click();
+
+  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
+  await expect(form).toBeVisible();
+  return form;
+}
+
+async function openCalendarNotes(form: Locator): Promise<void> {
+  const disclosure = form.locator('details.note-disclosure');
+  const isOpen = await disclosure.evaluate((element) => element.hasAttribute('open'));
+  if (!isOpen) {
+    await disclosure.locator('summary').click();
+  }
+  await expect(form.locator('#calendar-notes')).toBeVisible();
+}
+
 async function saveTodayEntry(page: Page, note: string): Promise<void> {
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
@@ -64,7 +109,7 @@ async function saveTodayEntry(page: Page, note: string): Promise<void> {
   await expect(page.locator('#today-notes')).toBeVisible();
   await page.locator('#today-notes').fill(note);
 
-  await page.locator('button[data-save-button]').first().click();
+  await page.locator('[data-dashboard-save-form] button[data-save-button]').click();
   await expect(page.locator('#save-status .status-ok')).toBeVisible();
 }
 
@@ -134,12 +179,6 @@ test.describe('Settings: password, export, clear data, delete account', () => {
   }) => {
     const state = await registerOwnerAndOpenSettings(page, 'settings-recovery-regenerate');
 
-    const advancedSecurity = page.locator('details.security-advanced');
-    const isAdvancedOpen = await advancedSecurity.evaluate((element) => element.hasAttribute('open'));
-    if (!isAdvancedOpen) {
-      await advancedSecurity.locator('summary').click();
-    }
-
     await page
       .locator('form[action="/api/settings/regenerate-recovery-code"] button[type="submit"]')
       .click();
@@ -169,23 +208,20 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
+    const csrfToken = await readCSRFToken(page);
 
-    const csvResponsePromise = page.waitForResponse(
-      (response) => response.url().includes('/api/export/csv') && response.request().method() === 'GET'
-    );
-    await page.locator('a[data-export-link][data-export-type="csv"]').click();
-    const csvResponse = await csvResponsePromise;
+    const csvResponse = await page.request.post('/api/export/csv', {
+      form: { csrf_token: csrfToken },
+    });
 
     expect(csvResponse.status()).toBe(200);
     expect(csvResponse.headers()['content-type'] || '').toContain('text/csv');
     expect(csvResponse.headers()['content-disposition'] || '').toContain('attachment;');
     expect(await csvResponse.text()).toContain(exportNote);
 
-    const jsonResponsePromise = page.waitForResponse(
-      (response) => response.url().includes('/api/export/json') && response.request().method() === 'GET'
-    );
-    await page.locator('a[data-export-link][data-export-type="json"]').click();
-    const jsonResponse = await jsonResponsePromise;
+    const jsonResponse = await page.request.post('/api/export/json', {
+      form: { csrf_token: csrfToken },
+    });
 
     expect(jsonResponse.status()).toBe(200);
     expect(jsonResponse.headers()['content-type'] || '').toContain('application/json');
@@ -200,11 +236,9 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     expect(Array.isArray(payload.entries)).toBe(true);
     expect(payload.entries?.some((entry) => String(entry.notes || '') === exportNote)).toBe(true);
 
-    const pdfResponsePromise = page.waitForResponse(
-      (response) => response.url().includes('/api/export/pdf') && response.request().method() === 'GET'
-    );
-    await page.locator('a[data-export-link][data-export-type="pdf"]').click();
-    const pdfResponse = await pdfResponsePromise;
+    const pdfResponse = await page.request.post('/api/export/pdf', {
+      form: { csrf_token: csrfToken },
+    });
 
     expect(pdfResponse.status()).toBe(200);
     expect(pdfResponse.headers()['content-type'] || '').toContain('application/pdf');
@@ -212,6 +246,26 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     const pdfBody = await pdfResponse.body();
     expect(pdfBody.subarray(0, 4).toString()).toBe('%PDF');
+  });
+
+  test('export date range defaults to browser today even when future entries exist', async ({ page }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-export-defaults');
+    await setRequestTimezoneFromBrowser(page);
+
+    await page.goto('/calendar');
+    const todayISO = await todayISOFromCalendar(page);
+    const futureISO = shiftISODate(todayISO, 4);
+
+    const dayEditorForm = await openCalendarDayEditor(page, futureISO);
+    await dayEditorForm.locator('input[name="is_period"]').check();
+    await openCalendarNotes(dayEditorForm);
+    await dayEditorForm.locator('#calendar-notes').fill(`future-export-${Date.now()}`);
+    await dayEditorForm.locator('button[data-save-button]').click();
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.locator('#export-to')).toHaveValue(todayISO);
+    await expect(page.locator('#export-to')).toHaveAttribute('max', futureISO);
   });
 
   test('clear data removes tracked entry and resets cycle defaults', async ({ page }) => {

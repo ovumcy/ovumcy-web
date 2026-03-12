@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
@@ -32,13 +33,18 @@ type SettingsViewInput struct {
 }
 
 type SettingsExportViewData struct {
-	TotalEntries       int
-	HasData            bool
-	DateFrom           string
-	DateTo             string
-	DateFromDisplay    string
-	DateToDisplay      string
-	HasSummaryForOwner bool
+	SummaryTotalEntries    int
+	HasData                bool
+	SummaryHasData         bool
+	SummaryDateFrom        string
+	SummaryDateTo          string
+	SummaryDateFromDisplay string
+	SummaryDateToDisplay   string
+	DefaultDateFrom        string
+	DefaultDateTo          string
+	SelectableDateMin      string
+	SelectableDateMax      string
+	HasSummaryForOwner     bool
 }
 
 type SettingsSymptomsViewData struct {
@@ -163,32 +169,93 @@ func (service *SettingsViewService) BuildSettingsPageViewData(user *models.User,
 		return viewData, nil
 	}
 
-	summary, err := service.export.BuildSummary(resolvedUser.ID, nil, nil, location)
+	availableSummary, err := service.export.BuildSummary(resolvedUser.ID, nil, nil, location)
 	if err != nil {
 		return SettingsPageViewData{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadExport, err)
 	}
 
-	displayFrom := summary.DateFrom
-	if parsedFrom, parseErr := ParseDayDate(summary.DateFrom, location); parseErr == nil {
-		displayFrom = LocalizedDateDisplay(language, parsedFrom)
+	if !availableSummary.HasData {
+		viewData.Export = SettingsExportViewData{HasSummaryForOwner: true}
+		viewData.HasOwnerExportViewState = true
+		return viewData, nil
 	}
-	displayTo := summary.DateTo
-	if parsedTo, parseErr := ParseDayDate(summary.DateTo, location); parseErr == nil {
-		displayTo = LocalizedDateDisplay(language, parsedTo)
+
+	todayISO := today.Format(exportDateLayout)
+	selectableMin := todayISO
+	if compareISODate(availableSummary.DateFrom, selectableMin) < 0 {
+		selectableMin = availableSummary.DateFrom
+	}
+	selectableMax := todayISO
+	if compareISODate(availableSummary.DateTo, selectableMax) > 0 {
+		selectableMax = availableSummary.DateTo
+	}
+
+	defaultFrom := selectableMin
+	defaultTo := todayISO
+	defaultSummary, err := service.export.BuildSummary(
+		resolvedUser.ID,
+		exportSummaryBound(defaultFrom, location),
+		exportSummaryBound(defaultTo, location),
+		location,
+	)
+	if err != nil {
+		return SettingsPageViewData{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadExport, err)
 	}
 
 	viewData.Export = SettingsExportViewData{
-		TotalEntries:       summary.TotalEntries,
-		HasData:            summary.HasData,
-		DateFrom:           summary.DateFrom,
-		DateTo:             summary.DateTo,
-		DateFromDisplay:    displayFrom,
-		DateToDisplay:      displayTo,
-		HasSummaryForOwner: true,
+		SummaryTotalEntries:    defaultSummary.TotalEntries,
+		HasData:                availableSummary.HasData,
+		SummaryHasData:         defaultSummary.HasData,
+		SummaryDateFrom:        defaultSummary.DateFrom,
+		SummaryDateTo:          defaultSummary.DateTo,
+		SummaryDateFromDisplay: localizedExportSummaryDate(language, defaultSummary.DateFrom, location),
+		SummaryDateToDisplay:   localizedExportSummaryDate(language, defaultSummary.DateTo, location),
+		DefaultDateFrom:        defaultFrom,
+		DefaultDateTo:          defaultTo,
+		SelectableDateMin:      selectableMin,
+		SelectableDateMax:      selectableMax,
+		HasSummaryForOwner:     true,
 	}
 	viewData.HasOwnerExportViewState = true
 
 	return viewData, nil
+}
+
+func localizedExportSummaryDate(language string, raw string, location *time.Location) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	parsed, err := ParseDayDate(trimmed, location)
+	if err != nil {
+		return trimmed
+	}
+	return LocalizedDateDisplay(language, parsed)
+}
+
+func exportSummaryBound(raw string, location *time.Location) *time.Time {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+
+	parsed, err := ParseDayDate(trimmed, location)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+func compareISODate(left string, right string) int {
+	switch {
+	case strings.TrimSpace(left) == strings.TrimSpace(right):
+		return 0
+	case left < right:
+		return -1
+	default:
+		return 1
+	}
 }
 
 func (service *SettingsViewService) BuildSettingsSymptomsViewData(user *models.User) (SettingsSymptomsViewData, error) {

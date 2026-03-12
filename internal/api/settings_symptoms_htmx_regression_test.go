@@ -24,7 +24,9 @@ func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) 
 		"icon":       {"J"},
 	}
 	renderedCreate := performSettingsSymptomsHTMXRequest(t, ctx, http.MethodPost, "/api/symptoms", createForm)
-	assertSettingsSymptomsHTMXContains(t, renderedCreate, `id="settings-symptoms-section"`, "symptom section rerender")
+	assertBodyContainsAll(t, renderedCreate,
+		bodyStringMatch{fragment: `data-settings-symptoms`, message: "expected settings symptoms section rerender"},
+	)
 
 	stored := models.SymptomType{}
 	if err := ctx.database.Where("user_id = ? AND name = ?", ctx.user.ID, "Joint stiffness").First(&stored).Error; err != nil {
@@ -36,7 +38,9 @@ func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) 
 
 	archiveForm := url.Values{"csrf_token": {ctx.csrfToken}}
 	renderedArchive := performSettingsSymptomsHTMXRequest(t, ctx, http.MethodPost, "/api/symptoms/"+strconv.FormatUint(uint64(stored.ID), 10)+"/archive", archiveForm)
-	assertSettingsSymptomsHTMXContains(t, renderedArchive, `id="settings-symptoms-section"`, "symptom section rerender after archive")
+	assertBodyContainsAll(t, renderedArchive,
+		bodyStringMatch{fragment: `data-settings-symptoms`, message: "expected settings symptoms section rerender after archive"},
+	)
 	archivedState := models.SymptomType{}
 	if err := ctx.database.First(&archivedState, stored.ID).Error; err != nil {
 		t.Fatalf("reload archived custom symptom: %v", err)
@@ -47,7 +51,9 @@ func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) 
 
 	restoreForm := url.Values{"csrf_token": {ctx.csrfToken}}
 	renderedRestore := performSettingsSymptomsHTMXRequest(t, ctx, http.MethodPost, "/api/symptoms/"+strconv.FormatUint(uint64(stored.ID), 10)+"/restore", restoreForm)
-	assertSettingsSymptomsHTMXContains(t, renderedRestore, `id="settings-symptoms-section"`, "symptom section rerender after restore")
+	assertBodyContainsAll(t, renderedRestore,
+		bodyStringMatch{fragment: `data-settings-symptoms`, message: "expected settings symptoms section rerender after restore"},
+	)
 	restoredState := models.SymptomType{}
 	if err := ctx.database.First(&restoredState, stored.ID).Error; err != nil {
 		t.Fatalf("reload restored custom symptom: %v", err)
@@ -109,7 +115,10 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 		t.Fatalf("read htmx update body: %v", err)
 	}
 	renderedUpdate := string(updateBody)
-	assertSettingsSymptomsHTMXContains(t, renderedUpdate, "That symptom name already exists in your list.", "duplicate-name validation message")
+	assertBodyContainsAll(t, renderedUpdate,
+		bodyStringMatch{fragment: `data-symptom-row-error`, message: "expected row-local duplicate-name error container"},
+		bodyStringMatch{fragment: "That symptom name already exists in your list.", message: "expected duplicate-name validation message"},
+	)
 	storedArchived := models.SymptomType{}
 	if err := database.First(&storedArchived, archived.ID).Error; err != nil {
 		t.Fatalf("reload archived symptom after duplicate update: %v", err)
@@ -119,7 +128,7 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 	}
 }
 
-func TestSettingsSymptomsHTMXCreateTooLongClearsDraftName(t *testing.T) {
+func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "settings-symptoms-htmx-too-long@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
@@ -149,8 +158,10 @@ func TestSettingsSymptomsHTMXCreateTooLongClearsDraftName(t *testing.T) {
 		t.Fatalf("read htmx create body: %v", err)
 	}
 	renderedCreate := string(createBody)
-	assertSettingsSymptomsHTMXContains(t, renderedCreate, "Use 40 characters or fewer. For longer details, use notes.", "too-long create validation message")
-	assertSettingsSymptomsHTMXNotContains(t, renderedCreate, `value="12345678901234567890123456789012345678901"`, "too-long create draft value")
+	assertBodyContainsAll(t, renderedCreate,
+		bodyStringMatch{fragment: `data-symptom-create-form`, message: "expected create form rerender after too-long validation"},
+		bodyStringMatch{fragment: "Use 40 characters or fewer. For longer details, use notes.", message: "expected too-long create validation message"},
+	)
 	var count int64
 	if err := database.Model(&models.SymptomType{}).Where("user_id = ? AND is_builtin = ?", user.ID, false).Count(&count).Error; err != nil {
 		t.Fatalf("count symptoms after too-long create: %v", err)
@@ -160,7 +171,7 @@ func TestSettingsSymptomsHTMXCreateTooLongClearsDraftName(t *testing.T) {
 	}
 }
 
-func TestSettingsSymptomsHTMXUpdateTooLongRestoresSavedRowValue(t *testing.T) {
+func TestSettingsSymptomsHTMXUpdateTooLongKeepsStoredSymptomUnchanged(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "settings-symptoms-htmx-update-too-long@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
@@ -200,8 +211,10 @@ func TestSettingsSymptomsHTMXUpdateTooLongRestoresSavedRowValue(t *testing.T) {
 		t.Fatalf("read htmx update body: %v", err)
 	}
 	renderedUpdate := string(updateBody)
-	assertSettingsSymptomsHTMXContains(t, renderedUpdate, "Use 40 characters or fewer. For longer details, use notes.", "too-long update validation message")
-	assertSettingsSymptomsHTMXNotContains(t, renderedUpdate, `value="12345678901234567890123456789012345678901"`, "too-long edit draft value")
+	assertBodyContainsAll(t, renderedUpdate,
+		bodyStringMatch{fragment: `data-symptom-row-error`, message: "expected row-local too-long update error container"},
+		bodyStringMatch{fragment: "Use 40 characters or fewer. For longer details, use notes.", message: "expected too-long update validation message"},
+	)
 	stored := models.SymptomType{}
 	if err := database.First(&stored, symptom.ID).Error; err != nil {
 		t.Fatalf("reload symptom after too-long update: %v", err)
@@ -313,20 +326,4 @@ func performSettingsSymptomsHTMXRequest(t *testing.T, ctx settingsSymptomsHTMXTe
 	}
 
 	return string(body)
-}
-
-func assertSettingsSymptomsHTMXContains(t *testing.T, rendered string, substring string, description string) {
-	t.Helper()
-
-	if !strings.Contains(rendered, substring) {
-		t.Fatalf("expected %s, got %q", description, rendered)
-	}
-}
-
-func assertSettingsSymptomsHTMXNotContains(t *testing.T, rendered string, substring string, description string) {
-	t.Helper()
-
-	if strings.Contains(rendered, substring) {
-		t.Fatalf("did not expect %s, got %q", description, rendered)
-	}
 }

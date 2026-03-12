@@ -17,8 +17,9 @@ func (handler *Handler) ExportPDF(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, *spec)
 	}
 
-	now := time.Now().In(handler.location)
-	report, err := handler.exportService.BuildPDFReport(user.ID, from, to, now, handler.location)
+	location := handler.requestLocation(c)
+	now := time.Now().In(location)
+	report, err := handler.exportService.BuildPDFReport(user.ID, from, to, now, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "pdf"))
@@ -39,21 +40,24 @@ func (handler *Handler) ExportPDF(c *fiber.Ctx) error {
 
 func buildExportPDFDocument(report services.ExportPDFReport, messages map[string]string) ([]byte, error) {
 	pdf := fpdf.New("L", "mm", "A4", "")
+	if err := configureExportPDFFonts(pdf); err != nil {
+		return nil, err
+	}
 	pdf.SetTitle(exportPDFText(messages, "export.pdf.report_title", "Ovumcy report for doctor"), false)
 	pdf.SetAuthor("Ovumcy", false)
 	pdf.SetMargins(10, 10, 10)
 	pdf.SetAutoPageBreak(true, 10)
 	pdf.AddPage()
 
-	pdf.SetFont("Helvetica", "B", 16)
+	pdf.SetFont(exportPDFFontFamily, "B", 16)
 	pdf.CellFormat(0, 10, exportPDFText(messages, "export.pdf.report_title", "Ovumcy report for doctor"), "", 1, "", false, 0, "")
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont(exportPDFFontFamily, "", 9)
 	pdf.CellFormat(0, 6, fmt.Sprintf("%s: %s", exportPDFText(messages, "export.pdf.generated_at", "Generated"), report.GeneratedAt), "", 1, "", false, 0, "")
 	pdf.Ln(2)
 
-	pdf.SetFont("Helvetica", "B", 11)
+	pdf.SetFont(exportPDFFontFamily, "B", 11)
 	pdf.CellFormat(0, 7, exportPDFText(messages, "export.pdf.summary", "Summary"), "", 1, "", false, 0, "")
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont(exportPDFFontFamily, "", 9)
 	summaryLines := []string{
 		fmt.Sprintf("%s: %d", exportPDFText(messages, "export.pdf.logged_days", "Logged days"), report.Summary.LoggedDays),
 		fmt.Sprintf("%s: %d", exportPDFText(messages, "export.pdf.completed_cycles", "Completed cycles"), report.Summary.CompletedCycles),
@@ -100,7 +104,7 @@ func buildExportPDFDocument(report services.ExportPDFReport, messages map[string
 
 	for index, cycle := range report.Cycles {
 		pdf.Ln(4)
-		pdf.SetFont("Helvetica", "B", 11)
+		pdf.SetFont(exportPDFFontFamily, "B", 11)
 		title := fmt.Sprintf(
 			"%s %d: %s - %s (%s %d, %s %d)",
 			exportPDFText(messages, "export.pdf.cycle_heading", "Cycle"),
@@ -114,13 +118,13 @@ func buildExportPDFDocument(report services.ExportPDFReport, messages map[string
 		)
 		pdf.CellFormat(0, 7, title, "", 1, "", false, 0, "")
 
-		pdf.SetFont("Helvetica", "B", 8)
+		pdf.SetFont(exportPDFFontFamily, "B", 8)
 		for headerIndex, header := range headers {
 			pdf.CellFormat(widths[headerIndex], 7, header, "1", 0, "L", false, 0, "")
 		}
 		pdf.Ln(-1)
 
-		pdf.SetFont("Helvetica", "", 8)
+		pdf.SetFont(exportPDFFontFamily, "", 8)
 		for _, entry := range cycle.Entries {
 			values := []string{
 				entry.Date,
@@ -209,11 +213,12 @@ func exportPDFSymptomList(messages map[string]string, names []string) string {
 func truncatePDFText(value string, width float64) string {
 	limit := int(width * 1.6)
 	trimmed := strings.TrimSpace(value)
-	if len(trimmed) <= limit {
+	runes := []rune(trimmed)
+	if len(runes) <= limit {
 		return trimmed
 	}
 	if limit <= 1 {
-		return trimmed[:1]
+		return string(runes[:1])
 	}
-	return trimmed[:limit-1] + "…"
+	return string(runes[:limit-1]) + "…"
 }

@@ -8,6 +8,7 @@ import (
 )
 
 var ErrLoginResetTokenIssue = errors.New("login reset token issue")
+var ErrAuthLoginRateLimited = errors.New("auth login rate limited")
 
 type LoginAuthService interface {
 	AuthenticateCredentials(email string, password string) (models.User, error)
@@ -18,8 +19,9 @@ type LoginResetTokenIssuer interface {
 }
 
 type LoginService struct {
-	auth  LoginAuthService
-	reset LoginResetTokenIssuer
+	auth          LoginAuthService
+	reset         LoginResetTokenIssuer
+	attemptPolicy *AuthAttemptPolicy
 }
 
 type LoginResult struct {
@@ -28,25 +30,40 @@ type LoginResult struct {
 	ResetToken            string
 }
 
-func NewLoginService(auth LoginAuthService, reset LoginResetTokenIssuer) *LoginService {
+func NewLoginService(auth LoginAuthService, reset LoginResetTokenIssuer, limiter *AttemptLimiter) *LoginService {
 	return &LoginService{
-		auth:  auth,
-		reset: reset,
+		auth:          auth,
+		reset:         reset,
+		attemptPolicy: NewAuthAttemptPolicy("login", limiter, DefaultLoginAttemptsLimit, DefaultLoginAttemptsWindow),
 	}
+}
+
+func (service *LoginService) ConfigureAttemptLimits(attempts int, window time.Duration) {
+	service.attemptPolicy.Configure(attempts, window)
 }
 
 func (service *LoginService) Authenticate(
 	secretKey []byte,
+	clientKey string,
 	email string,
 	password string,
 	resetTokenTTL time.Duration,
 	now time.Time,
 ) (LoginResult, error) {
+	normalizedEmail := NormalizeAuthEmail(email)
+	if service.attemptPolicy.TooManyRecent(clientKey, normalizedEmail, now) {
+		return LoginResult{}, ErrAuthLoginRateLimited
+	}
+
 	user, err := service.auth.AuthenticateCredentials(email, password)
 	if err != nil {
+		if errors.Is(err, ErrAuthInvalidCreds) {
+			service.attemptPolicy.AddFailure(clientKey, normalizedEmail, now)
+		}
 		return LoginResult{}, err
 	}
 
+	service.attemptPolicy.Reset(clientKey, normalizedEmail)
 	result := LoginResult{User: user}
 	if !user.MustChangePassword {
 		return result, nil

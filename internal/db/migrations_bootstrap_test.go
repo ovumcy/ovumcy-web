@@ -37,6 +37,13 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 	assertNormalizedEmailIndexExists(t, database)
 	assertAllEmbeddedMigrationsApplied(t, database)
 
+	assertMigratedLegacyUserDefaults(t, database)
+	assertMigratedLegacyDailyLogDefaults(t, database)
+}
+
+func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
 	var migratedUser struct {
 		Email               string `gorm:"column:email"`
 		DisplayName         string `gorm:"column:display_name"`
@@ -100,6 +107,10 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 	if migratedUser.HideSexChip {
 		t.Fatal("expected hide_sex_chip default to be false")
 	}
+}
+
+func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
+	t.Helper()
 
 	var migratedLog struct {
 		Flow          string  `gorm:"column:flow"`

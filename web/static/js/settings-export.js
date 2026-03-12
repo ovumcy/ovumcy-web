@@ -148,15 +148,27 @@
     button.setAttribute("aria-disabled", disabled ? "true" : "false");
   }
 
-  function buildEndpoint(basePath, fromValue, toValue) {
-    var url = new URL(basePath, window.location.origin);
+  function readCSRFToken() {
+    var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+    if (!tokenMeta) {
+      return "";
+    }
+    return String(tokenMeta.getAttribute("content") || "").trim();
+  }
+
+  function buildExportRequestBody(fromValue, toValue) {
+    var payload = new URLSearchParams();
+    var csrfToken = readCSRFToken();
+    if (csrfToken) {
+      payload.set("csrf_token", csrfToken);
+    }
     if (fromValue) {
-      url.searchParams.set("from", fromValue);
+      payload.set("from", fromValue);
     }
     if (toValue) {
-      url.searchParams.set("to", toValue);
+      payload.set("to", toValue);
     }
-    return url.toString();
+    return payload;
   }
 
   function buildAcceptLanguageHeaders() {
@@ -165,6 +177,7 @@
     if (currentLang) {
       headers["Accept-Language"] = currentLang;
     }
+    headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
     return headers;
   }
 
@@ -376,7 +389,7 @@
       summaryTotalTemplate: readTextAttribute(section, "data-export-summary-total-template", "Total entries: %d"),
       summaryRangeTemplate: readTextAttribute(section, "data-export-summary-range-template", "Date range: %s to %s"),
       summaryRangeEmpty: readTextAttribute(section, "data-export-summary-range-empty", "Date range: -"),
-      links: section.querySelectorAll("a[data-export-link]"),
+      actions: section.querySelectorAll("button[data-export-action]"),
       presetButtons: section.querySelectorAll("button[data-export-preset]"),
       fromInput: section.querySelector("#export-from"),
       toInput: section.querySelector("#export-to"),
@@ -403,18 +416,18 @@
       monthNames: buildMonthNames(monthNameFormatter)
     };
 
-    if (!context.links.length || !context.fromInput || !context.toInput) {
+    if (!context.actions.length || !context.fromInput || !context.toInput) {
       return null;
     }
     return context;
   }
 
   function createDateRangeController(context, bounds) {
-    function setExportLinksDisabled(disabled) {
-      for (var index = 0; index < context.links.length; index++) {
-        var link = context.links[index];
-        link.classList.toggle("export-link-disabled", disabled);
-        link.setAttribute("aria-disabled", disabled ? "true" : "false");
+    function setExportActionsDisabled(disabled) {
+      for (var index = 0; index < context.actions.length; index++) {
+        var action = context.actions[index];
+        action.classList.toggle("export-link-disabled", disabled);
+        setButtonDisabled(action, disabled);
       }
     }
 
@@ -448,7 +461,7 @@
       var fromResult = parseAndNormalizeInput(context.fromField, context.fromInput);
       var toResult = parseAndNormalizeInput(context.toField, context.toInput);
       if (!fromResult.ok || !toResult.ok) {
-        setExportLinksDisabled(true);
+        setExportActionsDisabled(true);
         return false;
       }
 
@@ -484,11 +497,11 @@
         } else if (context.toInput) {
           context.toInput.setCustomValidity(context.invalidRangeMessage);
         }
-        setExportLinksDisabled(true);
+        setExportActionsDisabled(true);
         return false;
       }
 
-      setExportLinksDisabled(false);
+      setExportActionsDisabled(false);
       return true;
     }
 
@@ -561,14 +574,13 @@
     }
 
     return {
-      setExportLinksDisabled: setExportLinksDisabled,
+      setExportActionsDisabled: setExportActionsDisabled,
       validate: validate,
       updatePresetState: updatePresetState,
       applyPreset: applyPreset,
       syncInitialRange: syncInitialRange,
-      buildExportEndpoint: function (baseEndpoint) {
-        return buildEndpoint(
-          baseEndpoint,
+      buildExportRequestBody: function () {
+        return buildExportRequestBody(
           dateFieldValue(context.fromField, context.fromInput),
           dateFieldValue(context.toField, context.toInput)
         );
@@ -578,7 +590,7 @@
   function createSummaryController(context, bounds, rangeController) {
     var summaryTimer = 0;
     var summaryRequestID = 0;
-    var lastSummaryEndpoint = "";
+    var lastSummaryBody = "";
     var summaryAbortController = null;
 
     function updateSummaryText(totalEntries, hasData, dateFrom, dateTo, selectedFrom, selectedTo) {
@@ -609,12 +621,8 @@
       }
     }
 
-    function buildSummaryEndpoint() {
-      return buildEndpoint(
-        SUMMARY_ENDPOINT,
-        dateFieldValue(context.fromField, context.fromInput),
-        dateFieldValue(context.toField, context.toInput)
-      );
+    function buildSummaryRequestBody() {
+      return rangeController.buildExportRequestBody().toString();
     }
 
     async function refresh() {
@@ -622,15 +630,15 @@
         return;
       }
       if (!rangeController.validate("summary")) {
-        lastSummaryEndpoint = "";
+        lastSummaryBody = "";
         return;
       }
 
-      var endpoint = buildSummaryEndpoint();
-      if (endpoint === lastSummaryEndpoint) {
+      var requestBody = buildSummaryRequestBody();
+      if (requestBody === lastSummaryBody) {
         return;
       }
-      lastSummaryEndpoint = endpoint;
+      lastSummaryBody = requestBody;
 
       if (summaryAbortController) {
         summaryAbortController.abort();
@@ -639,7 +647,9 @@
 
       var requestID = ++summaryRequestID;
       try {
-        var response = await fetch(endpoint, {
+        var response = await fetch(SUMMARY_ENDPOINT, {
+          method: "POST",
+          body: requestBody,
           credentials: "same-origin",
           headers: buildAcceptLanguageHeaders(),
           signal: summaryAbortController ? summaryAbortController.signal : undefined
@@ -947,8 +957,8 @@
   function createExportHandler(context, rangeController) {
     return async function handleExport(event) {
       event.preventDefault();
-      var link = event.currentTarget;
-      var baseEndpoint = link.getAttribute("href");
+      var action = event.currentTarget;
+      var baseEndpoint = action.getAttribute("data-export-endpoint");
       if (!baseEndpoint) {
         return;
       }
@@ -974,14 +984,16 @@
         return;
       }
 
-      var endpoint = rangeController.buildExportEndpoint(baseEndpoint);
-      var type = (link.getAttribute("data-export-type") || "csv").toLowerCase();
+      var requestBody = rangeController.buildExportRequestBody().toString();
+      var type = (action.getAttribute("data-export-type") || "csv").toLowerCase();
 
-      link.classList.add("btn-loading");
-      link.setAttribute("aria-disabled", "true");
+      action.classList.add("btn-loading");
+      setButtonDisabled(action, true);
 
       try {
-        var response = await fetch(endpoint, {
+        var response = await fetch(baseEndpoint, {
+          method: "POST",
+          body: requestBody,
           credentials: "same-origin",
           headers: buildAcceptLanguageHeaders()
         });
@@ -1018,8 +1030,8 @@
           window.showToast(context.failedMessage, "error");
         }
       } finally {
-        link.classList.remove("btn-loading");
-        link.removeAttribute("aria-disabled");
+        action.classList.remove("btn-loading");
+        setButtonDisabled(action, false);
       }
     };
   }
@@ -1057,13 +1069,13 @@
     setDateFieldValue(context.toField, context.toInput, "");
     calendarController.disableControls();
     rangeController.updatePresetState();
-    rangeController.setExportLinksDisabled(false);
+    rangeController.setExportActionsDisabled(false);
   } else {
     setDateFieldDisabled(context.fromField, context.fromInput, false);
     setDateFieldDisabled(context.toField, context.toInput, false);
     rangeController.syncInitialRange();
     rangeController.updatePresetState();
-    rangeController.setExportLinksDisabled(false);
+    rangeController.setExportActionsDisabled(false);
     summaryController.scheduleRefresh();
   }
 
@@ -1155,7 +1167,7 @@
   }
 
   var handleExport = createExportHandler(context, rangeController);
-  for (var linkIndex = 0; linkIndex < context.links.length; linkIndex++) {
-    context.links[linkIndex].addEventListener("click", handleExport);
+  for (var actionIndex = 0; actionIndex < context.actions.length; actionIndex++) {
+    context.actions[actionIndex].addEventListener("click", handleExport);
   }
 })();

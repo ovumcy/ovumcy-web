@@ -65,10 +65,10 @@ func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	stats.Get("/overview", handler.GetStatsOverview)
 
 	export := api.Group("/export", handler.AuthRequired, handler.OwnerOnly)
-	export.Get("/summary", handler.ExportSummary)
-	export.Get("/csv", handler.ExportCSV)
-	export.Get("/json", handler.ExportJSON)
-	export.Get("/pdf", handler.ExportPDF)
+	export.Post("/summary", handler.ExportSummary)
+	export.Post("/csv", handler.ExportCSV)
+	export.Post("/json", handler.ExportJSON)
+	export.Post("/pdf", handler.ExportPDF)
 
 	settings := api.Group("/settings", handler.AuthRequired)
 	settings.Post("/profile", handler.UpdateProfile)

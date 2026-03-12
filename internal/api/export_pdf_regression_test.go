@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"net/http"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func TestExportPDFReturnsAttachmentWithPDFPayload(t *testing.T) {
 
 	logs := []models.DailyLog{
 		{UserID: user.ID, Date: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true, Flow: models.FlowLight},
-		{UserID: user.ID, Date: time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC), Mood: 5, SexActivity: models.SexActivityProtected, BBT: 36.55, CervicalMucus: models.CervicalMucusEggWhite, Notes: "pdf-note"},
+		{UserID: user.ID, Date: time.Date(2026, time.January, 14, 0, 0, 0, 0, time.UTC), Mood: 5, SexActivity: models.SexActivityProtected, BBT: 36.55, CervicalMucus: models.CervicalMucusEggWhite, Notes: "русская заметка"},
 		{UserID: user.ID, Date: time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC), IsPeriod: true, Flow: models.FlowMedium},
 		{UserID: user.ID, Date: time.Date(2026, time.February, 26, 0, 0, 0, 0, time.UTC), IsPeriod: true, Flow: models.FlowHeavy},
 	}
@@ -24,7 +25,12 @@ func TestExportPDFReturnsAttachmentWithPDFPayload(t *testing.T) {
 		t.Fatalf("create daily logs: %v", err)
 	}
 
-	response := exportResponseForTest(t, app, user.Email, "StrongPass1", "/api/export/pdf")
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	request := newExportRequestForTest(t, "/api/export/pdf", authCookie)
+	request.Header.Set("Accept-Language", "ru")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
 	assertBodyContainsAll(t, response.Header.Get("Content-Type"),
 		bodyStringMatch{fragment: "application/pdf", message: "expected application/pdf content type"},
 	)
@@ -41,5 +47,10 @@ func TestExportPDFReturnsAttachmentWithPDFPayload(t *testing.T) {
 	}
 	if len(body) < 512 {
 		t.Fatalf("expected non-trivial pdf body, got %d bytes", len(body))
+	}
+	for _, marker := range [][]byte{[]byte("Identity-H"), []byte("ToUnicode"), []byte("CIDFontType2")} {
+		if !bytes.Contains(body, marker) {
+			t.Fatalf("expected PDF payload to include Unicode font marker %q", marker)
+		}
 	}
 }

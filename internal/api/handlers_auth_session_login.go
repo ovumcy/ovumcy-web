@@ -47,6 +47,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	}
 	result, err := handler.loginService.Authenticate(
 		handler.secretKey,
+		c.IP(),
 		credentials.Email,
 		credentials.Password,
 		30*time.Minute,

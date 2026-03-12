@@ -18,7 +18,7 @@ type stubLoginWorkflowService struct {
 	err    error
 }
 
-func (stub *stubLoginWorkflowService) Authenticate([]byte, string, string, time.Duration, time.Time) (services.LoginResult, error) {
+func (stub *stubLoginWorkflowService) Authenticate([]byte, string, string, string, time.Duration, time.Time) (services.LoginResult, error) {
 	if stub.err != nil {
 		return services.LoginResult{}, stub.err
 	}
@@ -93,6 +93,33 @@ func TestLoginReturnsResetTokenIssueError(t *testing.T) {
 	}
 	if message := readAPIError(t, response.Body); message != "failed to create reset token" {
 		t.Fatalf("expected error %q, got %q", "failed to create reset token", message)
+	}
+}
+
+func TestLoginReturnsRateLimitedError(t *testing.T) {
+	handler := &Handler{
+		location:     time.UTC,
+		loginService: &stubLoginWorkflowService{err: services.ErrAuthLoginRateLimited},
+	}
+
+	app := fiber.New()
+	app.Post("/api/auth/login", handler.Login)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("login request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d", response.StatusCode)
+	}
+	if message := readAPIError(t, response.Body); message != "too many login attempts" {
+		t.Fatalf("expected error %q, got %q", "too many login attempts", message)
 	}
 }
 

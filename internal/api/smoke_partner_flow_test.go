@@ -85,8 +85,7 @@ func TestPartnerReadOnlyFlowSmoke(t *testing.T) {
 		t.Fatalf("expected partner upsert status 403, got %d", upsertResponse.StatusCode)
 	}
 
-	exportRequest := httptest.NewRequest(http.MethodGet, "/api/export/csv?from=2026-02-01&to=2026-02-28", nil)
-	exportRequest.Header.Set("Cookie", authCookie)
+	exportRequest := newExportRequestForTest(t, "/api/export/csv?from=2026-02-01&to=2026-02-28", authCookie)
 
 	exportResponse, err := app.Test(exportRequest, -1)
 	if err != nil {

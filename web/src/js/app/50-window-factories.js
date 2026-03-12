@@ -58,32 +58,26 @@
   }
 
   function syncThemeToggleButtons() {
-    var buttons = document.querySelectorAll("[data-theme-toggle]");
+    var buttons = document.querySelectorAll("[data-theme-option]");
     var theme = currentTheme();
     var messages = themeMessagesFromDataset();
-    var isDark = theme === THEME_DARK;
-    var iconText = isDark ? "\u2600" : "\u{1F319}";
-    var nextModeLabel = isDark ? messages.modeLight : messages.modeDark;
-    var toggleLabel = isDark ? messages.toggleToLight : messages.toggleToDark;
 
     for (var index = 0; index < buttons.length; index++) {
       var button = buttons[index];
-      var icon = button.querySelector("[data-theme-toggle-icon]");
-      var text = button.querySelector("[data-theme-toggle-text]");
+      var optionTheme = normalizeTheme(button.getAttribute("data-theme-option"));
+      var selected = optionTheme !== "" && optionTheme === theme;
+      var toggleLabel = optionTheme === THEME_DARK ? messages.toggleToDark : messages.toggleToLight;
+      var currentLabel = optionTheme === THEME_DARK ? messages.modeDark : messages.modeLight;
 
-      button.setAttribute("aria-label", toggleLabel);
-      button.setAttribute("title", toggleLabel);
-      if (icon) {
-        icon.textContent = iconText;
-      }
-      if (text) {
-        text.textContent = nextModeLabel;
-      }
+      button.dataset.selected = selected ? "true" : "false";
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+      button.setAttribute("aria-label", selected ? currentLabel : toggleLabel);
+      button.setAttribute("title", selected ? currentLabel : toggleLabel);
     }
   }
 
   function bindThemeToggleButtons() {
-    var buttons = document.querySelectorAll("[data-theme-toggle]");
+    var buttons = document.querySelectorAll("[data-theme-option]");
     for (var index = 0; index < buttons.length; index++) {
       var button = buttons[index];
       if (button.dataset.themeToggleBound === "1") {
@@ -92,7 +86,11 @@
 
       button.dataset.themeToggleBound = "1";
       button.addEventListener("click", function () {
-        toggleThemePreference();
+        var nextTheme = normalizeTheme(this.getAttribute("data-theme-option"));
+        if (!nextTheme) {
+          return;
+        }
+        setThemePreference(nextTheme);
         syncThemeToggleButtons();
       });
     }

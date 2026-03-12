@@ -48,12 +48,17 @@ func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, f
 	}
 
 	if viewData.HasOwnerExportViewState {
-		data["ExportTotalEntries"] = viewData.Export.TotalEntries
+		data["ExportTotalEntries"] = viewData.Export.SummaryTotalEntries
 		data["HasExportData"] = viewData.Export.HasData
-		data["ExportDateFrom"] = viewData.Export.DateFrom
-		data["ExportDateTo"] = viewData.Export.DateTo
-		data["ExportDateFromDisplay"] = viewData.Export.DateFromDisplay
-		data["ExportDateToDisplay"] = viewData.Export.DateToDisplay
+		data["HasExportSummaryData"] = viewData.Export.SummaryHasData
+		data["ExportDateFrom"] = viewData.Export.DefaultDateFrom
+		data["ExportDateTo"] = viewData.Export.DefaultDateTo
+		data["ExportRangeMin"] = viewData.Export.SelectableDateMin
+		data["ExportRangeMax"] = viewData.Export.SelectableDateMax
+		data["ExportSummaryDateFrom"] = viewData.Export.SummaryDateFrom
+		data["ExportSummaryDateTo"] = viewData.Export.SummaryDateTo
+		data["ExportDateFromDisplay"] = viewData.Export.SummaryDateFromDisplay
+		data["ExportDateToDisplay"] = viewData.Export.SummaryDateToDisplay
 	}
 
 	if viewData.HasOwnerSymptomsView {

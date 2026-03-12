@@ -16,6 +16,49 @@
   </div>
   {{end}}
 
+  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-interface">
+    <div>
+      <h2 class="journal-subtitle">🎛️ {{t .Messages "settings.interface.title"}}</h2>
+      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.interface.subtitle"}}</p>
+    </div>
+
+    <div class="settings-interface-grid">
+      <section class="journal-panel settings-interface-panel space-y-3">
+        <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
+        <div class="lang-switch settings-switch">
+          {{range .LanguageOptions}}
+          <a href="{{.Href}}" class="lang-link{{if .Active}} lang-link-active{{end}}" {{if .Active}}aria-current="page"{{end}}>{{.Label}}</a>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="journal-panel settings-interface-panel space-y-3">
+        <div class="space-y-1">
+          <p class="field-label">{{t .Messages "settings.interface.theme"}}</p>
+          <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
+        </div>
+        <div class="theme-switch settings-switch" data-theme-switch role="group" aria-label="{{t .Messages "settings.interface.theme"}}">
+          <button
+            type="button"
+            class="theme-switch-option"
+            data-theme-option="light"
+            aria-pressed="false">
+            <span class="theme-switch-icon" aria-hidden="true">☀️</span>
+            <span>{{t .Messages "theme.name.light"}}</span>
+          </button>
+          <button
+            type="button"
+            class="theme-switch-option"
+            data-theme-option="dark"
+            aria-pressed="false">
+            <span class="theme-switch-icon" aria-hidden="true">🌙</span>
+            <span>{{t .Messages "theme.name.dark"}}</span>
+          </button>
+        </div>
+      </section>
+    </div>
+  </section>
+
   {{if eq .CurrentUser.Role "owner"}}
   <section id="settings-cycle" class="journal-card p-5 sm:p-6" data-settings-cycle-form>
     <h2 class="journal-subtitle">🗓️ {{t .Messages "settings.cycle.title"}}</h2>
@@ -134,53 +177,30 @@
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-      <label class="period-toggle">
-        <input type="checkbox" name="track_bbt" value="true" {{if .TrackBBT}}checked{{end}}>
-        <span>🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
-      </label>
+      <div class="settings-toggle-list">
+        <label class="period-toggle">
+          <input type="checkbox" name="track_bbt" value="true" {{if .TrackBBT}}checked{{end}}>
+          <span>🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
+        </label>
 
-      <label class="period-toggle">
-        <input type="checkbox" name="track_cervical_mucus" value="true" {{if .TrackCervicalMucus}}checked{{end}}>
-        <span>💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
-      </label>
+        <label class="period-toggle">
+          <input type="checkbox" name="track_cervical_mucus" value="true" {{if .TrackCervicalMucus}}checked{{end}}>
+          <span>💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
+        </label>
 
-      <label class="period-toggle">
-        <input type="checkbox" name="hide_sex_chip" value="true" {{if .HideSexChip}}checked{{end}}>
-        <span>◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
-      </label>
+        <label class="period-toggle">
+          <input type="checkbox" name="hide_sex_chip" value="true" {{if .HideSexChip}}checked{{end}}>
+          <span>◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
+        </label>
+      </div>
 
-      <button type="submit" class="btn-secondary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.tracking.save"}}</button>
-      <div id="settings-tracking-status" class="save-status text-sm"></div>
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-secondary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.tracking.save"}}</button>
+        <div id="settings-tracking-status" class="save-status text-sm"></div>
+      </div>
     </form>
   </section>
   {{end}}
-
-  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-interface">
-    <div>
-      <h2 class="journal-subtitle">🎛️ {{t .Messages "settings.interface.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.interface.subtitle"}}</p>
-    </div>
-
-    <div class="space-y-2">
-      <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
-      <div class="lang-switch">
-        {{range .LanguageOptions}}
-        <a href="{{.Href}}" class="lang-link{{if .Active}} lang-link-active{{end}}" {{if .Active}}aria-current="page"{{end}}>{{.Label}}</a>
-        {{end}}
-      </div>
-    </div>
-
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div class="space-y-1">
-        <p class="field-label">{{t .Messages "settings.interface.theme"}}</p>
-        <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
-      </div>
-      <button type="button" class="theme-toggle" data-theme-toggle>
-        <span class="theme-toggle-icon" data-theme-toggle-icon aria-hidden="true">🌙</span>
-        <span class="theme-toggle-text" data-theme-toggle-text>{{t .Messages "theme.name.dark"}}</span>
-      </button>
-    </div>
-  </section>
 
   <section class="journal-card p-5 sm:p-6 space-y-6" id="settings-account">
     <div>
@@ -188,92 +208,104 @@
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.account.subtitle"}}</p>
     </div>
 
-    <form
-      action="/api/settings/profile"
-      method="post"
-      hx-post="/api/settings/profile"
-      hx-target="#settings-profile-status"
-      hx-swap="innerHTML"
-      class="space-y-4"
-      data-save-feedback>
-      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-
-      <label class="field-label" for="settings-display-name">{{t .Messages "settings.profile.display_name"}}</label>
-      <input
-        id="settings-display-name"
-        type="text"
-        name="display_name"
-        value="{{.CurrentUser.DisplayName}}"
-        placeholder="{{t .Messages "settings.profile.display_name_placeholder"}}"
-        maxlength="64"
-        autocomplete="nickname"
-        class="input-field">
-      <p class="journal-muted text-xs">{{t .Messages "settings.profile.display_name_hint"}}</p>
-
-      <div class="journal-panel space-y-1">
-        <p class="field-label">{{t .Messages "settings.profile.email"}}</p>
-        <p class="text-sm break-all">{{.CurrentUser.Email}}</p>
-        <p class="journal-muted text-xs">{{t .Messages "settings.profile.email_locked"}}</p>
-      </div>
-
-      <button type="submit" class="btn-secondary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.profile.submit"}}</button>
-      <div id="settings-profile-status" class="save-status text-sm"></div>
-    </form>
-
-    <div id="settings-change-password" class="space-y-4">
-      <div>
-        <h3 class="field-label">{{t .Messages "settings.change_password.title"}}</h3>
-        <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.change_password.subtitle"}}</p>
-      </div>
-
-      <form
-        action="/api/settings/change-password"
-        method="post"
-        hx-post="/api/settings/change-password"
-        hx-target="#settings-change-password-status"
-        hx-swap="innerHTML"
-        class="space-y-4"
-        data-save-feedback>
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-
-        {{template "password_toggle_field" (dict
-          "Messages" .Messages
-          "LabelKey" "settings.current_password"
-          "FieldID" "settings-current-password"
-          "FieldName" "current_password"
-          "Autocomplete" "current-password"
-          "Required" true)}}
-
-        {{template "password_toggle_field" (dict
-          "Messages" .Messages
-          "LabelKey" "auth.new_password"
-          "FieldID" "settings-new-password"
-          "FieldName" "new_password"
-          "Autocomplete" "new-password"
-          "Required" true)}}
-
-        {{template "password_toggle_field" (dict
-          "Messages" .Messages
-          "LabelKey" "auth.confirm_password"
-          "FieldID" "settings-confirm-password"
-          "FieldName" "confirm_password"
-          "Autocomplete" "new-password"
-          "Required" true)}}
-        <p class="journal-muted text-xs">{{t .Messages "auth.password_requirements"}}</p>
-
-        <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.change_password.submit"}}</button>
-        <div id="settings-change-password-status" class="save-status text-sm"></div>
-      </form>
-    </div>
-
-    <details class="security-advanced">
-      <summary class="security-advanced-summary">
-        <span class="security-advanced-title">{{t .Messages "settings.security.advanced"}}</span>
-        <span class="security-advanced-hint">{{t .Messages "settings.security.advanced_hint"}}</span>
-      </summary>
-      <div class="mt-4 journal-panel space-y-4">
+    <div class="settings-account-stack">
+      <section class="journal-panel settings-account-block space-y-4">
         <div>
-          <h3 class="field-label">{{t .Messages "settings.recovery_code.title"}}</h3>
+          <h3 class="field-label">{{t .Messages "settings.profile.title"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.profile.subtitle"}}</p>
+        </div>
+
+        <form
+          action="/api/settings/profile"
+          method="post"
+          hx-post="/api/settings/profile"
+          hx-target="#settings-profile-status"
+          hx-swap="innerHTML"
+          class="space-y-4"
+          data-save-feedback>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+          <label class="field-label" for="settings-display-name">{{t .Messages "settings.profile.display_name"}}</label>
+          <input
+            id="settings-display-name"
+            type="text"
+            name="display_name"
+            value="{{.CurrentUser.DisplayName}}"
+            placeholder="{{t .Messages "settings.profile.display_name_placeholder"}}"
+            maxlength="64"
+            autocomplete="nickname"
+            class="input-field">
+          <p class="journal-muted text-xs">{{t .Messages "settings.profile.display_name_hint"}}</p>
+
+          <div class="journal-panel space-y-1" data-profile-email-panel>
+            <p class="field-label">{{t .Messages "settings.profile.email"}}</p>
+            <p class="text-sm break-all">{{.CurrentUser.Email}}</p>
+            <p class="journal-muted text-xs">{{t .Messages "settings.profile.email_locked"}}</p>
+          </div>
+
+          <div class="settings-form-actions">
+            <button type="submit" class="btn-secondary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.profile.submit"}}</button>
+            <div id="settings-profile-status" class="save-status text-sm"></div>
+          </div>
+        </form>
+      </section>
+
+      <section id="settings-change-password" class="journal-panel settings-account-block space-y-4">
+        <div>
+          <h3 class="field-label">{{t .Messages "settings.change_password.title"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.change_password.subtitle"}}</p>
+        </div>
+
+        <form
+          action="/api/settings/change-password"
+          method="post"
+          hx-post="/api/settings/change-password"
+          hx-target="#settings-change-password-status"
+          hx-swap="innerHTML"
+          class="space-y-4"
+          data-save-feedback>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "settings.current_password"
+            "FieldID" "settings-current-password"
+            "FieldName" "current_password"
+            "Autocomplete" "current-password"
+            "Required" true)}}
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "auth.new_password"
+            "FieldID" "settings-new-password"
+            "FieldName" "new_password"
+            "Autocomplete" "new-password"
+            "Required" true)}}
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "auth.confirm_password"
+            "FieldID" "settings-confirm-password"
+            "FieldName" "confirm_password"
+            "Autocomplete" "new-password"
+            "Required" true)}}
+          <p class="journal-muted text-xs">{{t .Messages "auth.password_requirements"}}</p>
+
+          <div class="settings-form-actions">
+            <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.change_password.submit"}}</button>
+            <div id="settings-change-password-status" class="save-status text-sm"></div>
+          </div>
+        </form>
+      </section>
+
+      <section class="journal-panel settings-account-block space-y-4">
+        <div>
+          <h3 class="field-label">{{t .Messages "settings.security.advanced"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.security.advanced_hint"}}</p>
+        </div>
+
+        <div>
+          <h4 class="field-label">{{t .Messages "settings.recovery_code.title"}}</h4>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.recovery_code.subtitle"}}</p>
         </div>
 
@@ -285,16 +317,16 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <button type="submit" class="btn-secondary">{{t .Messages "settings.recovery_code.submit"}}</button>
         </form>
-      </div>
-    </details>
+      </section>
+    </div>
   </section>
 
   {{if eq .CurrentUser.Role "owner"}}
   <section
     class="journal-card p-5 sm:p-6 space-y-4"
     data-export-section
-    data-export-min="{{if .HasExportData}}{{.ExportDateFrom}}{{end}}"
-    data-export-max="{{if .HasExportData}}{{.ExportDateTo}}{{end}}"
+    data-export-min="{{if .HasExportData}}{{.ExportRangeMin}}{{end}}"
+    data-export-max="{{if .HasExportData}}{{.ExportRangeMax}}{{end}}"
     data-export-success="{{t .Messages "settings.export_success"}}"
     data-export-failed="{{t .Messages "settings.export_failed"}}"
     data-export-invalid-range="{{t .Messages "settings.export_invalid_range"}}"
@@ -319,8 +351,8 @@
             "Value" .ExportDateFrom
             "Lang" .Lang
             "LabelID" "export-from-label"
-            "Min" .ExportDateFrom
-            "Max" .ExportDateTo
+            "Min" .ExportRangeMin
+            "Max" .ExportRangeMax
             "ShowPickerButton" true
             "OpenPickerLabel" (t .Messages "settings.export_open_calendar"))}}
         </div>
@@ -335,8 +367,8 @@
             "Value" .ExportDateTo
             "Lang" .Lang
             "LabelID" "export-to-label"
-            "Min" .ExportDateFrom
-            "Max" .ExportDateTo
+            "Min" .ExportRangeMin
+            "Max" .ExportRangeMax
             "ShowPickerButton" true
             "OpenPickerLabel" (t .Messages "settings.export_open_calendar"))}}
         </div>
@@ -381,13 +413,13 @@
       </div>
     </div>
     <div class="flex flex-wrap gap-2">
-      <a href="/api/export/csv" data-export-link data-export-type="csv" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">📊</span><span>{{t .Messages "settings.export_csv"}}</span></a>
-      <a href="/api/export/json" data-export-link data-export-type="json" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">🧾</span><span>{{t .Messages "settings.export_json"}}</span></a>
-      <a href="/api/export/pdf" data-export-link data-export-type="pdf" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">📄</span><span>{{t .Messages "settings.export_pdf"}}</span></a>
+      <button type="button" data-export-action data-export-endpoint="/api/export/csv" data-export-type="csv" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">📊</span><span>{{t .Messages "settings.export_csv"}}</span></button>
+      <button type="button" data-export-action data-export-endpoint="/api/export/json" data-export-type="json" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">🧾</span><span>{{t .Messages "settings.export_json"}}</span></button>
+      <button type="button" data-export-action data-export-endpoint="/api/export/pdf" data-export-type="pdf" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">📄</span><span>{{t .Messages "settings.export_pdf"}}</span></button>
     </div>
     <p class="journal-muted text-sm" data-export-summary-total>{{printf (t .Messages "settings.export_summary_total") .ExportTotalEntries}}</p>
     <p class="journal-muted text-sm" data-export-summary-range>
-      {{if .HasExportData}}{{printf (t .Messages "settings.export_summary_range") .ExportDateFromDisplay .ExportDateToDisplay}}{{else}}{{t .Messages "settings.export_summary_range_empty"}}{{end}}
+      {{if .HasExportSummaryData}}{{printf (t .Messages "settings.export_summary_range") .ExportDateFromDisplay .ExportDateToDisplay}}{{else}}{{t .Messages "settings.export_summary_range_empty"}}{{end}}
     </p>
     <p class="journal-muted mt-3 text-xs">{{t .Messages "settings.export_data_hint"}}</p>
 
@@ -441,7 +473,6 @@
   </section>
 </section>
 {{if eq .CurrentUser.Role "owner"}}
-<script defer src="/static/js/settings-export.js?v=20260310-1"></script>
+<script defer src="/static/js/settings-export.js?v=20260312-1"></script>
 {{end}}
 {{end}}
-

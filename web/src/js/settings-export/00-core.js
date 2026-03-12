@@ -148,15 +148,27 @@
     button.setAttribute("aria-disabled", disabled ? "true" : "false");
   }
 
-  function buildEndpoint(basePath, fromValue, toValue) {
-    var url = new URL(basePath, window.location.origin);
+  function readCSRFToken() {
+    var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+    if (!tokenMeta) {
+      return "";
+    }
+    return String(tokenMeta.getAttribute("content") || "").trim();
+  }
+
+  function buildExportRequestBody(fromValue, toValue) {
+    var payload = new URLSearchParams();
+    var csrfToken = readCSRFToken();
+    if (csrfToken) {
+      payload.set("csrf_token", csrfToken);
+    }
     if (fromValue) {
-      url.searchParams.set("from", fromValue);
+      payload.set("from", fromValue);
     }
     if (toValue) {
-      url.searchParams.set("to", toValue);
+      payload.set("to", toValue);
     }
-    return url.toString();
+    return payload;
   }
 
   function buildAcceptLanguageHeaders() {
@@ -165,6 +177,7 @@
     if (currentLang) {
       headers["Accept-Language"] = currentLang;
     }
+    headers["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
     return headers;
   }
 

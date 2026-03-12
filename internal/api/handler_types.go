@@ -14,7 +14,7 @@ type RegistrationWorkflowService interface {
 }
 
 type LoginWorkflowService interface {
-	Authenticate(secretKey []byte, email string, password string, resetTokenTTL time.Duration, now time.Time) (services.LoginResult, error)
+	Authenticate(secretKey []byte, clientKey string, email string, password string, resetTokenTTL time.Duration, now time.Time) (services.LoginResult, error)
 }
 
 type Handler struct {

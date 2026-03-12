@@ -18,6 +18,9 @@ func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
 	if !strings.Contains(rendered, "Keep logging") {
 		t.Fatalf("expected gated empty state on stats page before enough completed cycles")
 	}
+	if !strings.Contains(rendered, "first insights") {
+		t.Fatalf("expected empty state to explain how to unlock first insights")
+	}
 }
 
 func TestStatsPageEmptyStateUsesDedicatedProgressMeterWithoutInlineStyle(t *testing.T) {

@@ -88,13 +88,17 @@ async function ensureSymptomInputVisible(root: Locator, symptomName: string): Pr
   const input = root.locator(`input[name="symptom_ids"][data-symptom-name="${symptomName}"]`);
   const visible = await input.isVisible().catch(() => false);
   if (!visible) {
-    const moreSummary = root.locator('details.symptom-more-details summary');
+    const moreSummary = root.locator('[data-symptom-more-toggle]');
     if (await moreSummary.isVisible().catch(() => false)) {
       await moreSummary.click();
     }
   }
   await expect(input).toBeVisible();
   return input;
+}
+
+function dashboardSaveForm(page: Page): Locator {
+  return page.locator('[data-dashboard-save-form]').first();
 }
 
 async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
@@ -137,7 +141,7 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
 
   await page.locator('input[name="is_period"]').check();
   const customSymptom = await ensureSymptomInputVisible(
-    page.locator('form[data-save-feedback][hx-post^="/api/days/"]').first(),
+    dashboardSaveForm(page),
     symptomName
   );
   await customSymptom.check({ force: true });
@@ -145,7 +149,7 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
   await expect(page.locator('#save-status .status-ok')).toBeVisible();
 
   const todayAction = await page
-    .locator('form[data-save-feedback][hx-post^="/api/days/"]')
+    .locator('[data-dashboard-save-form]')
     .first()
     .getAttribute('hx-post');
   expect(todayAction).toMatch(/^\/api\/days\/\d{4}-\d{2}-\d{2}$/);
@@ -157,11 +161,11 @@ async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locat
   await page.goto(`/calendar?month=${month}&day=${isoDate}`);
   await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
 
-  const editButton = page.locator(`#day-editor button[hx-get="/calendar/day/${isoDate}?mode=edit"]`).first();
+  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
   await expect(editButton).toBeVisible();
   await editButton.click();
 
-  const form = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${isoDate}"]`);
+  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
   await expect(form).toBeVisible();
   return form;
 }
@@ -197,9 +201,7 @@ test.describe('Settings: profile and cycle', () => {
   }) => {
     const creds = await registerOwnerAndOpenSettings(page, 'settings-profile');
 
-    const profileAccountPanel = page.locator('#settings-account .journal-panel').filter({
-      hasText: creds.email,
-    });
+    const profileAccountPanel = page.locator('[data-profile-email-panel]');
     await expect(profileAccountPanel).toContainText(creds.email);
     await expect(profileAccountPanel).toContainText('Cannot be changed.');
     await expect(page.locator('#settings-account input#settings-profile-email')).toHaveCount(0);
@@ -342,9 +344,9 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.locator('form[data-save-feedback][hx-post^="/api/days/"] input[name="bbt"]')).toBeVisible();
-    await expect(page.locator('form[data-save-feedback][hx-post^="/api/days/"] input[name="cervical_mucus"][value="dry"]')).toBeVisible();
-    await expect(page.locator('form[data-save-feedback][hx-post^="/api/days/"] details.sex-activity-details')).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-save-form] input[name="bbt"]')).toBeVisible();
+    await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toBeVisible();
+    await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toHaveCount(0);
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
@@ -356,9 +358,9 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.locator('form[data-save-feedback][hx-post^="/api/days/"] input[name="bbt"]')).toHaveCount(0);
-    await expect(page.locator('form[data-save-feedback][hx-post^="/api/days/"] input[name="cervical_mucus"][value="dry"]')).toHaveCount(0);
-    await expect(page.locator('form[data-save-feedback][hx-post^="/api/days/"] details.sex-activity-details')).toBeVisible();
+    await expect(page.locator('[data-dashboard-save-form] input[name="bbt"]')).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toBeVisible();
   });
 
   test('onboarding selected start date persists into settings cycle field', async ({ page }) => {
@@ -414,14 +416,14 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.goto('/dashboard');
     const archivedDashboardSymptom = await ensureSymptomInputVisible(
-      page.locator('form[data-save-feedback][hx-post^="/api/days/"]').first(),
+      dashboardSaveForm(page),
       'Joint stiffness'
     );
     await expect(archivedDashboardSymptom).toBeChecked();
 
     await openCalendarDayEditor(page, otherISO);
     await expect(
-      page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${otherISO}"] input[name="symptom_ids"][data-symptom-name="Joint stiffness"]`)
+      page.locator(`[data-day-editor-form][data-day-editor-date="${otherISO}"] input[name="symptom_ids"][data-symptom-name="Joint stiffness"]`)
     ).toHaveCount(0);
   });
 
@@ -466,7 +468,7 @@ test.describe('Settings: profile and cycle', () => {
 
     await openCalendarDayEditor(page, otherISO);
     await expect(
-      page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${otherISO}"] input[name="symptom_ids"][data-symptom-name="Joint ease"]`)
+      page.locator(`[data-day-editor-form][data-day-editor-date="${otherISO}"] input[name="symptom_ids"][data-symptom-name="Joint ease"]`)
     ).toBeVisible();
   });
 
@@ -528,7 +530,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await page.locator('input[name="is_period"]').check();
     const longSymptomInput = await ensureSymptomInputVisible(
-      page.locator('form[data-save-feedback][hx-post^="/api/days/"]').first(),
+      dashboardSaveForm(page),
       longButAllowedName
     );
     await longSymptomInput.check({ force: true });

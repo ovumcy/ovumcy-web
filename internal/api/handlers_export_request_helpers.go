@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -10,7 +11,8 @@ import (
 )
 
 func (handler *Handler) parseExportRange(c *fiber.Ctx) (*time.Time, *time.Time, error) {
-	from, to, err := services.ParseExportRange(c.Query("from"), c.Query("to"), handler.location)
+	fromRaw, toRaw := exportRangeInputValues(c)
+	from, to, err := services.ParseExportRange(fromRaw, toRaw, handler.requestLocation(c))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -43,4 +45,16 @@ func buildExportFilename(now time.Time, extension string) string {
 func setExportAttachmentHeaders(c *fiber.Ctx, contentType string, filename string) {
 	c.Set(fiber.HeaderContentType, contentType)
 	c.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%s", filename))
+}
+
+func exportRangeInputValues(c *fiber.Ctx) (string, string) {
+	from := strings.TrimSpace(c.FormValue("from"))
+	to := strings.TrimSpace(c.FormValue("to"))
+	if from == "" {
+		from = strings.TrimSpace(c.Query("from"))
+	}
+	if to == "" {
+		to = strings.TrimSpace(c.Query("to"))
+	}
+	return from, to
 }

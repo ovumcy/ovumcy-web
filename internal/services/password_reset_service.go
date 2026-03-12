@@ -19,10 +19,8 @@ var (
 )
 
 type PasswordResetService struct {
-	auth                  *AuthService
-	recoveryLimiter       *AttemptLimiter
-	recoveryAttempts      int
-	recoveryAttemptWindow time.Duration
+	auth           *AuthService
+	recoveryPolicy *AuthAttemptPolicy
 }
 
 func NewPasswordResetService(auth *AuthService, limiter *AttemptLimiter) *PasswordResetService {
@@ -30,11 +28,13 @@ func NewPasswordResetService(auth *AuthService, limiter *AttemptLimiter) *Passwo
 		limiter = NewAttemptLimiter()
 	}
 	return &PasswordResetService{
-		auth:                  auth,
-		recoveryLimiter:       limiter,
-		recoveryAttempts:      DefaultRecoveryAttemptsLimit,
-		recoveryAttemptWindow: DefaultRecoveryAttemptsWindow,
+		auth:           auth,
+		recoveryPolicy: NewAuthAttemptPolicy("recovery", limiter, DefaultRecoveryAttemptsLimit, DefaultRecoveryAttemptsWindow),
 	}
+}
+
+func (service *PasswordResetService) ConfigureRecoveryAttemptLimits(attempts int, window time.Duration) {
+	service.recoveryPolicy.Configure(attempts, window)
 }
 
 func (service *PasswordResetService) IssueResetTokenForUser(secretKey []byte, user *models.User, ttl time.Duration, now time.Time) (string, error) {
@@ -56,26 +56,25 @@ func (service *PasswordResetService) StartRecovery(secretKey []byte, limiterKey 
 		now = time.Now()
 	}
 
-	key := NormalizeLimiterKey(limiterKey)
-	if service.recoveryLimiter.TooManyRecent(key, now, service.recoveryAttempts, service.recoveryAttemptWindow) {
+	normalizedEmail := NormalizeAuthEmail(email)
+	if service.recoveryPolicy.TooManyRecent(limiterKey, normalizedEmail, now) {
 		return "", ErrPasswordRecoveryRateLimited
 	}
-	normalizedEmail := NormalizeAuthEmail(email)
 	if normalizedEmail == "" {
-		service.recoveryLimiter.AddFailure(key, now, service.recoveryAttemptWindow)
+		service.recoveryPolicy.AddFailure(limiterKey, "", now)
 		return "", ErrPasswordRecoveryInputInvalid
 	}
 
 	code := NormalizeRecoveryCode(rawRecoveryCode)
 	if err := ValidateRecoveryCodeFormat(code); err != nil {
-		service.recoveryLimiter.AddFailure(key, now, service.recoveryAttemptWindow)
+		service.recoveryPolicy.AddFailure(limiterKey, normalizedEmail, now)
 		return "", ErrPasswordRecoveryCodeInvalid
 	}
 
 	user, err := service.auth.FindUserByEmailAndRecoveryCode(normalizedEmail, code)
 	if err != nil {
 		if errors.Is(err, ErrRecoveryCodeNotFound) {
-			service.recoveryLimiter.AddFailure(key, now, service.recoveryAttemptWindow)
+			service.recoveryPolicy.AddFailure(limiterKey, normalizedEmail, now)
 			return "", ErrPasswordRecoveryCodeInvalid
 		}
 		return "", err
@@ -86,7 +85,7 @@ func (service *PasswordResetService) StartRecovery(secretKey []byte, limiterKey 
 		return "", err
 	}
 
-	service.recoveryLimiter.Reset(key)
+	service.recoveryPolicy.Reset(limiterKey, normalizedEmail)
 	return token, nil
 }
 

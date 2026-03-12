@@ -35,16 +35,22 @@ test.describe('Theme mode', () => {
     await expect(page).toHaveURL(/\/settings$/);
 
     const html = page.locator('html');
-    const toggle = page.locator('[data-theme-toggle]');
-    await expect(toggle).toBeVisible();
+    const lightOption = page.locator('[data-theme-option="light"]');
+    const darkOption = page.locator('[data-theme-option="dark"]');
+    await expect(lightOption).toBeVisible();
+    await expect(darkOption).toBeVisible();
 
     const initialTheme = await html.getAttribute('data-theme');
     expect(initialTheme === 'light' || initialTheme === 'dark').toBeTruthy();
 
     const nextTheme = initialTheme === 'dark' ? 'light' : 'dark';
-    await toggle.click();
+    const nextOption = nextTheme === 'dark' ? darkOption : lightOption;
+    const previousOption = nextTheme === 'dark' ? lightOption : darkOption;
+    await nextOption.click();
 
     await expect(html).toHaveAttribute('data-theme', nextTheme);
+    await expect(nextOption).toHaveAttribute('data-selected', 'true');
+    await expect(previousOption).toHaveAttribute('data-selected', 'false');
     await expect
       .poll(async () => page.evaluate(() => window.localStorage.getItem('ovumcy_theme')))
       .toBe(nextTheme);

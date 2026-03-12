@@ -4,7 +4,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -47,10 +46,8 @@ func TestCalendarDayPanelEditModeRendersDeleteActionForExistingEntry(t *testing.
 	}
 	rendered := string(body)
 
-	if !strings.Contains(rendered, `/api/log/delete?date=2026-02-17&source=calendar`) {
-		t.Fatalf("expected delete action for existing calendar entry")
-	}
-	if !strings.Contains(rendered, `class="danger-link"`) {
-		t.Fatalf("expected visible destructive submit button in calendar edit panel")
-	}
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: `data-day-delete-form`, message: "expected delete form affordance for existing calendar entry"},
+		bodyStringMatch{fragment: `data-day-delete-button`, message: "expected delete button affordance for existing calendar entry"},
+	)
 }

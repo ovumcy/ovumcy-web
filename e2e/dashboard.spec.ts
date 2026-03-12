@@ -30,7 +30,7 @@ async function saveToday(page: Page): Promise<void> {
 }
 
 function todaySaveForm(page: Page) {
-  return page.locator('form[data-save-feedback][hx-post^="/api/days/"]');
+  return page.locator('[data-dashboard-save-form]');
 }
 
 async function openTodayNotes(page: Page): Promise<void> {
@@ -197,7 +197,11 @@ test.describe('Dashboard: today editor', () => {
 
     await page.reload();
 
-    const clearButton = page.locator('button[hx-delete*="/api/log/delete"][hx-delete*="source=dashboard"]');
+    const secondaryActions = page.locator('.dashboard-secondary-actions');
+    const dangerActions = page.locator('.dashboard-danger-actions');
+    await expect(secondaryActions.locator('button[type="submit"]')).toContainText('cycle');
+
+    const clearButton = dangerActions.locator('[data-dashboard-clear-button]');
     await expect(clearButton).toBeVisible();
 
     await clearButton.click();
@@ -234,8 +238,8 @@ test.describe('Dashboard: today editor', () => {
 
     await page.goto(`/calendar?month=${month}&day=${todayISO}`);
     await expect(page.locator('#day-editor')).toContainText(noteText);
-    await page.locator(`#day-editor button[hx-get="/calendar/day/${todayISO}?mode=edit"]`).click();
-    const dayEditorForm = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${todayISO}"]`);
+    await page.locator(`[data-day-editor-open="${todayISO}"]`).click();
+    const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${todayISO}"]`);
     await expect(dayEditorForm).toBeVisible();
     await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
     await expect(dayEditorForm.locator('input[name="flow"][value="medium"]')).toBeChecked();
@@ -274,8 +278,8 @@ test.describe('Dashboard: today editor', () => {
     await expect(daySummary).toContainText('4/5');
     await expect(daySummary).toContainText(String(firstSymptomLabel));
 
-    await page.locator(`#day-editor button[hx-get="/calendar/day/${todayISO}?mode=edit"]`).click();
-    const dayEditorForm = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${todayISO}"]`);
+    await page.locator(`[data-day-editor-open="${todayISO}"]`).click();
+    const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${todayISO}"]`);
     await expect(dayEditorForm).toBeVisible();
     await expect(dayEditorForm.locator('input[name="mood"][value="4"]')).toBeChecked();
     await expect(dayEditorForm.locator(`input[name="symptom_ids"][value="${firstSymptomValue}"]`)).toBeChecked();
@@ -284,18 +288,22 @@ test.describe('Dashboard: today editor', () => {
   test('manual cycle start on dashboard marks today as period and survives reload', async ({ page }) => {
     await registerOwnerOnDashboard(page, 'dashboard-manual-cycle-start');
 
-    const manualStartButton = page.locator('form[hx-post*="/cycle-start?source=dashboard"] button');
+    const manualStartButton = page.locator('.dashboard-secondary-form button[type="submit"]');
     await expect(manualStartButton).toBeVisible();
     await Promise.all([
-      page.waitForLoadState('domcontentloaded'),
+      page.waitForResponse((response) => {
+        return (
+          response.request().method() === 'POST' &&
+          response.url().includes('/cycle-start?source=dashboard')
+        );
+      }),
       manualStartButton.click(),
     ]);
 
     const periodToggle = page.locator('input[name="is_period"]');
     await expect(periodToggle).toBeChecked();
 
-    await page.goto('/dashboard');
-    await expect(page).toHaveURL(/\/dashboard$/);
+    await page.reload();
     await expect(periodToggle).toBeChecked();
   });
 });

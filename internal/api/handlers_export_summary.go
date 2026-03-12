@@ -7,7 +7,8 @@ func (handler *Handler) ExportSummary(c *fiber.Ctx) error {
 	if spec != nil {
 		return handler.respondMappedError(c, *spec)
 	}
-	summary, err := handler.exportService.BuildSummary(user.ID, from, to, handler.location)
+	location := handler.requestLocation(c)
+	summary, err := handler.exportService.BuildSummary(user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "summary"))

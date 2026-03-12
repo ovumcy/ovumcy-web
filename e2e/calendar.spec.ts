@@ -40,11 +40,11 @@ async function openCalendarDayEditor(page: Page, isoDate: string) {
   await page.goto(`/calendar?month=${month}&day=${isoDate}`);
   await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
 
-  const editButton = page.locator(`#day-editor button[hx-get="/calendar/day/${isoDate}?mode=edit"]`).first();
+  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
   await expect(editButton).toBeVisible();
   await editButton.click();
 
-  const form = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${isoDate}"]`);
+  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
   await expect(form).toBeVisible();
   return form;
 }
@@ -135,11 +135,11 @@ test.describe('Calendar page', () => {
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${pastMonth}&day=${pastISO}`));
     await expect(page.locator('#day-editor')).toContainText(noteText);
 
-    const editButton = page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`).first();
+    const editButton = page.locator(`[data-day-editor-open="${pastISO}"]`).first();
     await expect(editButton).toBeVisible();
     await editButton.click();
-    await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${pastISO}"] #calendar-notes`)).toHaveValue(noteText);
-    await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${pastISO}"] input[name="is_period"]`)).toBeChecked();
+    await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"] #calendar-notes`)).toHaveValue(noteText);
+    await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"] input[name="is_period"]`)).toBeChecked();
   });
 
   test('existing day entry can be deleted from calendar after confirmation', async ({ page }) => {
@@ -159,16 +159,16 @@ test.describe('Calendar page', () => {
     await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
     await expect(page.locator('#day-editor')).toContainText(noteText);
 
-    await page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`).first().click();
-    const deleteButton = page.locator(`#day-editor form[hx-delete="/api/log/delete?date=${pastISO}&source=calendar"] button[type="submit"]`);
+    await page.locator(`[data-day-editor-open="${pastISO}"]`).first().click();
+    const deleteButton = page.locator(`[data-day-delete-form][data-day-delete-date="${pastISO}"] [data-day-delete-button]`);
     await expect(deleteButton).toBeVisible();
     await deleteButton.click();
 
     await expect(page.locator('#confirm-modal')).toBeVisible();
     await page.locator('#confirm-modal-accept').click();
 
-    await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${pastISO}"]`)).toHaveCount(0);
-    await expect(page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`).first()).toBeVisible();
+    await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-day-editor-open="${pastISO}"]`).first()).toBeVisible();
     await expect(page.locator('#day-editor')).not.toContainText(noteText);
   });
 
@@ -185,8 +185,8 @@ test.describe('Calendar page', () => {
     const warningPanel = page.locator('#day-editor .journal-panel.text-sm').first();
     await expect(warningPanel).toBeVisible();
     await expect(warningPanel).not.toHaveText(/^$/);
-    await expect(page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${futureISO}"]`)).toHaveCount(0);
-    await expect(page.locator(`#day-editor button[hx-get="/calendar/day/${futureISO}?mode=edit"]`)).toBeVisible();
+    await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${futureISO}"]`)).toHaveCount(0);
+    await expect(page.locator(`[data-day-editor-open="${futureISO}"]`)).toBeVisible();
   });
 
   test('language route preserves selected month/day query and visible panel', async ({ page }) => {
@@ -197,7 +197,7 @@ test.describe('Calendar page', () => {
     const pastMonth = pastISO.slice(0, 7);
 
     await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
-    await expect(page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`)).toBeVisible();
+    await expect(page.locator(`[data-day-editor-open="${pastISO}"]`)).toBeVisible();
 
     await page.goto(`/lang/ru?next=${encodeURIComponent(`/calendar?month=${pastMonth}&day=${pastISO}`)}`);
     await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
@@ -206,7 +206,7 @@ test.describe('Calendar page', () => {
     expect(currentURL.pathname).toBe('/calendar');
     expect(currentURL.searchParams.get('month')).toBe(pastMonth);
     expect(currentURL.searchParams.get('day')).toBe(pastISO);
-    await expect(page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`)).toBeVisible();
+    await expect(page.locator(`[data-day-editor-open="${pastISO}"]`)).toBeVisible();
   });
 
   test('manual cycle start button in calendar creates a period entry for that day', async ({ page }) => {
@@ -219,18 +219,23 @@ test.describe('Calendar page', () => {
     await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${pastMonth}&day=${pastISO}`));
 
-    const manualStartButton = page.locator(`#day-editor form[hx-post="/api/days/${pastISO}/cycle-start?source=calendar"] button`);
+    const manualStartButton = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${pastISO}"] [data-day-cycle-start-button]`);
     await expect(manualStartButton).toBeVisible();
     await Promise.all([
-      page.waitForLoadState('domcontentloaded'),
+      page.waitForResponse((response) => {
+        return (
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/days/${pastISO}/cycle-start?source=calendar`)
+        );
+      }),
       manualStartButton.click(),
     ]);
 
-    const editButton = page.locator(`#day-editor button[hx-get="/calendar/day/${pastISO}?mode=edit"]`).first();
+    const editButton = page.locator(`[data-day-editor-open="${pastISO}"]`).first();
     await expect(editButton).toBeVisible();
     await editButton.click();
 
-    const dayEditorForm = page.locator(`form.calendar-day-editor-form[hx-post="/api/days/${pastISO}"]`);
+    const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"]`);
     await expect(dayEditorForm).toBeVisible();
     await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
   });

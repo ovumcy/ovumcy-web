@@ -11,8 +11,8 @@
   function createExportHandler(context, rangeController) {
     return async function handleExport(event) {
       event.preventDefault();
-      var link = event.currentTarget;
-      var baseEndpoint = link.getAttribute("href");
+      var action = event.currentTarget;
+      var baseEndpoint = action.getAttribute("data-export-endpoint");
       if (!baseEndpoint) {
         return;
       }
@@ -38,14 +38,16 @@
         return;
       }
 
-      var endpoint = rangeController.buildExportEndpoint(baseEndpoint);
-      var type = (link.getAttribute("data-export-type") || "csv").toLowerCase();
+      var requestBody = rangeController.buildExportRequestBody().toString();
+      var type = (action.getAttribute("data-export-type") || "csv").toLowerCase();
 
-      link.classList.add("btn-loading");
-      link.setAttribute("aria-disabled", "true");
+      action.classList.add("btn-loading");
+      setButtonDisabled(action, true);
 
       try {
-        var response = await fetch(endpoint, {
+        var response = await fetch(baseEndpoint, {
+          method: "POST",
+          body: requestBody,
           credentials: "same-origin",
           headers: buildAcceptLanguageHeaders()
         });
@@ -82,8 +84,8 @@
           window.showToast(context.failedMessage, "error");
         }
       } finally {
-        link.classList.remove("btn-loading");
-        link.removeAttribute("aria-disabled");
+        action.classList.remove("btn-loading");
+        setButtonDisabled(action, false);
       }
     };
   }
@@ -121,13 +123,13 @@
     setDateFieldValue(context.toField, context.toInput, "");
     calendarController.disableControls();
     rangeController.updatePresetState();
-    rangeController.setExportLinksDisabled(false);
+    rangeController.setExportActionsDisabled(false);
   } else {
     setDateFieldDisabled(context.fromField, context.fromInput, false);
     setDateFieldDisabled(context.toField, context.toInput, false);
     rangeController.syncInitialRange();
     rangeController.updatePresetState();
-    rangeController.setExportLinksDisabled(false);
+    rangeController.setExportActionsDisabled(false);
     summaryController.scheduleRefresh();
   }
 
@@ -219,8 +221,7 @@
   }
 
   var handleExport = createExportHandler(context, rangeController);
-  for (var linkIndex = 0; linkIndex < context.links.length; linkIndex++) {
-    context.links[linkIndex].addEventListener("click", handleExport);
+  for (var actionIndex = 0; actionIndex < context.actions.length; actionIndex++) {
+    context.actions[actionIndex].addEventListener("click", handleExport);
   }
 })();
-

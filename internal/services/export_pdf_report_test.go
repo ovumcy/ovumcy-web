@@ -35,6 +35,15 @@ func TestBuildPDFReportIncludesAdvancedTrackingAndCycleSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildPDFReport() unexpected error: %v", err)
 	}
+	assertExportPDFReportSummary(t, report, now)
+	firstCycle := report.Cycles[0]
+	assertExportPDFCycleWindow(t, firstCycle, "2026-01-01", "2026-01-28")
+	assertExportPDFAdvancedTrackingEntry(t, mustFindExportPDFEntry(t, firstCycle, "2026-01-14"))
+}
+
+func assertExportPDFReportSummary(t *testing.T, report ExportPDFReport, now time.Time) {
+	t.Helper()
+
 	if report.GeneratedAt != now.Format(time.RFC3339) {
 		t.Fatalf("expected RFC3339 generated time, got %q", report.GeneratedAt)
 	}
@@ -50,35 +59,44 @@ func TestBuildPDFReportIncludesAdvancedTrackingAndCycleSummary(t *testing.T) {
 	if len(report.Cycles) != 3 {
 		t.Fatalf("expected 3 exported cycles, got %d", len(report.Cycles))
 	}
+}
 
-	firstCycle := report.Cycles[0]
-	if firstCycle.StartDate != "2026-01-01" || firstCycle.EndDate != "2026-01-28" {
-		t.Fatalf("unexpected first cycle window: %#v", firstCycle)
+func assertExportPDFCycleWindow(t *testing.T, cycle ExportPDFCycle, wantStart string, wantEnd string) {
+	t.Helper()
+
+	if cycle.StartDate != wantStart || cycle.EndDate != wantEnd {
+		t.Fatalf("unexpected cycle window: %#v", cycle)
 	}
+}
 
-	foundAdvancedTracking := false
-	for _, entry := range firstCycle.Entries {
-		if entry.Date != "2026-01-14" {
-			continue
-		}
-		foundAdvancedTracking = true
-		if entry.SexActivity != models.SexActivityProtected {
-			t.Fatalf("expected protected sex activity, got %q", entry.SexActivity)
-		}
-		if entry.BBT != 36.55 {
-			t.Fatalf("expected BBT 36.55, got %.2f", entry.BBT)
-		}
-		if entry.CervicalMucus != models.CervicalMucusEggWhite {
-			t.Fatalf("expected eggwhite cervical mucus, got %q", entry.CervicalMucus)
-		}
-		if len(entry.Symptoms) != 2 || entry.Symptoms[0] != "Acne" || entry.Symptoms[1] != "Cramps" {
-			t.Fatalf("expected sorted symptom names, got %#v", entry.Symptoms)
-		}
-		if entry.Notes != "ovulation note" {
-			t.Fatalf("expected note to be preserved, got %q", entry.Notes)
+func mustFindExportPDFEntry(t *testing.T, cycle ExportPDFCycle, date string) ExportPDFCycleDay {
+	t.Helper()
+
+	for _, entry := range cycle.Entries {
+		if entry.Date == date {
+			return entry
 		}
 	}
-	if !foundAdvancedTracking {
-		t.Fatal("expected advanced tracking day in first exported cycle")
+	t.Fatalf("expected export pdf entry for %s", date)
+	return ExportPDFCycleDay{}
+}
+
+func assertExportPDFAdvancedTrackingEntry(t *testing.T, entry ExportPDFCycleDay) {
+	t.Helper()
+
+	if entry.SexActivity != models.SexActivityProtected {
+		t.Fatalf("expected protected sex activity, got %q", entry.SexActivity)
+	}
+	if entry.BBT != 36.55 {
+		t.Fatalf("expected BBT 36.55, got %.2f", entry.BBT)
+	}
+	if entry.CervicalMucus != models.CervicalMucusEggWhite {
+		t.Fatalf("expected eggwhite cervical mucus, got %q", entry.CervicalMucus)
+	}
+	if len(entry.Symptoms) != 2 || entry.Symptoms[0] != "Acne" || entry.Symptoms[1] != "Cramps" {
+		t.Fatalf("expected sorted symptom names, got %#v", entry.Symptoms)
+	}
+	if entry.Notes != "ovulation note" {
+		t.Fatalf("expected note to be preserved, got %q", entry.Notes)
 	}
 }

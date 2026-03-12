@@ -14,6 +14,7 @@
         <div class="stats-empty-progress-fill" {{if le .InsightProgress 0}}hidden{{end}}></div>
       </div>
       <p class="journal-muted text-sm">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</p>
+      <p class="journal-muted text-sm">{{t .Messages "stats.empty_progress_hint"}}</p>
     </div>
   </section>
   {{else}}

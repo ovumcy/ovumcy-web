@@ -42,6 +42,8 @@ func mapAuthRegisterError(err error) APIErrorSpec {
 
 func mapAuthLoginError(err error) APIErrorSpec {
 	switch services.ClassifyAuthLoginError(err) {
+	case services.AuthLoginErrorRateLimited:
+		return authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many login attempts")
 	case services.AuthLoginErrorResetTokenIssue:
 		return authResetTokenCreateErrorSpec()
 	case services.AuthLoginErrorInvalidCredentials:
