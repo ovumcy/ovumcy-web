@@ -22,12 +22,14 @@ func (handler *Handler) exportUserAndRange(c *fiber.Ctx) (*models.User, *time.Ti
 	user, ok := currentUser(c)
 	if !ok || user == nil {
 		spec := unauthorizedErrorSpec()
+		handler.logSecurityError(c, "data.export", spec)
 		return nil, nil, nil, &spec
 	}
 
 	from, to, err := handler.parseExportRange(c)
 	if err != nil {
 		spec := mapExportRangeError(err)
+		handler.logSecurityError(c, "data.export", spec)
 		return nil, nil, nil, &spec
 	}
 

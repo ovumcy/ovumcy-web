@@ -9,9 +9,12 @@ func (handler *Handler) ExportSummary(c *fiber.Ctx) error {
 	}
 	summary, err := handler.exportService.BuildSummary(user.ID, from, to, handler.location)
 	if err != nil {
-		return handler.respondMappedError(c, exportFetchLogsErrorSpec())
+		spec := exportFetchLogsErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "summary"))
+		return handler.respondMappedError(c, spec)
 	}
 
+	handler.logSecurityEvent(c, "data.export", "success", securityEventField("export_format", "summary"))
 	return c.JSON(fiber.Map{
 		"total_entries": summary.TotalEntries,
 		"has_data":      summary.HasData,

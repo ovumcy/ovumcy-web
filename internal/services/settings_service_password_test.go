@@ -95,7 +95,13 @@ func TestChangePasswordUpdatesHashedPassword(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	err = service.ChangePassword(42, string(currentHash), "StrongPass1", "EvenStronger2", "EvenStronger2")
+	user := &models.User{
+		ID:                 42,
+		PasswordHash:       string(currentHash),
+		AuthSessionVersion: 3,
+	}
+
+	err = service.ChangePassword(user, "StrongPass1", "EvenStronger2", "EvenStronger2")
 	if err != nil {
 		t.Fatalf("expected successful ChangePassword, got %v", err)
 	}
@@ -111,6 +117,9 @@ func TestChangePasswordUpdatesHashedPassword(t *testing.T) {
 	if bcrypt.CompareHashAndPassword([]byte(repo.updatedPasswordHash), []byte("EvenStronger2")) != nil {
 		t.Fatalf("expected stored hash to match new password")
 	}
+	if user.AuthSessionVersion != 4 {
+		t.Fatalf("expected auth session version to increment to 4, got %d", user.AuthSessionVersion)
+	}
 }
 
 func TestChangePasswordPropagatesValidationErrorWithoutUpdate(t *testing.T) {
@@ -122,7 +131,13 @@ func TestChangePasswordPropagatesValidationErrorWithoutUpdate(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	err = service.ChangePassword(42, string(currentHash), "WrongPass1", "EvenStronger2", "EvenStronger2")
+	user := &models.User{
+		ID:                 42,
+		PasswordHash:       string(currentHash),
+		AuthSessionVersion: 1,
+	}
+
+	err = service.ChangePassword(user, "WrongPass1", "EvenStronger2", "EvenStronger2")
 	if !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
 		t.Fatalf("expected ErrSettingsInvalidCurrentPassword, got %v", err)
 	}
@@ -142,7 +157,12 @@ func TestChangePasswordWrapsUpdateError(t *testing.T) {
 		t.Fatalf("hash password: %v", err)
 	}
 
-	err = service.ChangePassword(42, string(currentHash), "StrongPass1", "EvenStronger2", "EvenStronger2")
+	user := &models.User{
+		ID:           42,
+		PasswordHash: string(currentHash),
+	}
+
+	err = service.ChangePassword(user, "StrongPass1", "EvenStronger2", "EvenStronger2")
 	if !errors.Is(err, ErrSettingsPasswordUpdateFailed) {
 		t.Fatalf("expected ErrSettingsPasswordUpdateFailed, got %v", err)
 	}
@@ -164,7 +184,7 @@ func (stub *stubSettingsUserRepo) UpdateRecoveryCodeHash(uint, string) error {
 	return nil
 }
 
-func (stub *stubSettingsUserRepo) UpdatePassword(userID uint, passwordHash string, mustChangePassword bool) error {
+func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error {
 	stub.updatePasswordCalled = true
 	stub.updatedUserID = userID
 	stub.updatedPasswordHash = passwordHash

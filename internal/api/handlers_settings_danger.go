@@ -9,12 +9,17 @@ import (
 func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		spec := unauthorizedErrorSpec()
+		handler.logSecurityError(c, "settings.clear_data", spec)
+		return handler.respondMappedError(c, spec)
 	}
 	if err := handler.settingsService.ClearAllData(user.ID); err != nil {
-		return handler.respondMappedError(c, settingsClearDataErrorSpec())
+		spec := settingsClearDataErrorSpec()
+		handler.logSecurityError(c, "settings.clear_data", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
+	handler.logSecurityEvent(c, "settings.clear_data", "success")
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}
@@ -25,12 +30,16 @@ func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		spec := unauthorizedErrorSpec()
+		handler.logSecurityError(c, "settings.delete_account", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
 	input := deleteAccountInput{}
 	if err := c.BodyParser(&input); err != nil && acceptsJSON(c) {
-		return handler.respondMappedError(c, settingsMissingPasswordErrorSpec())
+		spec := settingsMissingPasswordErrorSpec()
+		handler.logSecurityError(c, "settings.delete_account", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
 	input.Password = strings.TrimSpace(input.Password)
@@ -38,17 +47,24 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 		input.Password = strings.TrimSpace(c.FormValue("password"))
 	}
 	if input.Password == "" {
-		return handler.respondMappedError(c, settingsMissingPasswordErrorSpec())
+		spec := settingsMissingPasswordErrorSpec()
+		handler.logSecurityError(c, "settings.delete_account", spec)
+		return handler.respondMappedError(c, spec)
 	}
 	if err := handler.settingsService.ValidateDeleteAccountPassword(user.PasswordHash, input.Password); err != nil {
-		return handler.respondMappedError(c, mapSettingsDeleteAccountPasswordError(err))
+		spec := mapSettingsDeleteAccountPasswordError(err)
+		handler.logSecurityError(c, "settings.delete_account", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
 	if err := handler.settingsService.DeleteAccount(user.ID); err != nil {
-		return handler.respondMappedError(c, settingsDeleteAccountErrorSpec())
+		spec := settingsDeleteAccountErrorSpec()
+		handler.logSecurityError(c, "settings.delete_account", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
 	handler.clearAuthCookie(c)
+	handler.logSecurityEvent(c, "settings.delete_account", "success")
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}

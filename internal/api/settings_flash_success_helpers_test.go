@@ -28,10 +28,14 @@ func assertSettingsFlashSuccessScenario(t *testing.T, path string, form url.Valu
 	if flashValue == "" {
 		t.Fatalf("expected flash cookie for settings success message")
 	}
+	authCookieHeader := ctx.authCookie
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && authCookie.Value != "" {
+		authCookieHeader = cookiePair(authCookie)
+	}
 
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	followRequest.Header.Set("Accept-Language", "en")
-	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
+	followRequest.Header.Set("Cookie", joinCookieHeader(authCookieHeader, flashCookieName+"="+flashValue))
 
 	followResponse, err := ctx.app.Test(followRequest, -1)
 	if err != nil {
@@ -57,7 +61,7 @@ func assertSettingsFlashSuccessScenario(t *testing.T, path string, form url.Valu
 
 	afterFlashRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	afterFlashRequest.Header.Set("Accept-Language", "en")
-	afterFlashRequest.Header.Set("Cookie", ctx.authCookie)
+	afterFlashRequest.Header.Set("Cookie", authCookieHeader)
 
 	afterFlashResponse, err := ctx.app.Test(afterFlashRequest, -1)
 	if err != nil {

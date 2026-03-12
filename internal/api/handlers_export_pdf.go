@@ -20,15 +20,20 @@ func (handler *Handler) ExportPDF(c *fiber.Ctx) error {
 	now := time.Now().In(handler.location)
 	report, err := handler.exportService.BuildPDFReport(user.ID, from, to, now, handler.location)
 	if err != nil {
-		return handler.respondMappedError(c, exportFetchLogsErrorSpec())
+		spec := exportFetchLogsErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "pdf"))
+		return handler.respondMappedError(c, spec)
 	}
 
 	document, err := buildExportPDFDocument(report, currentMessages(c))
 	if err != nil {
-		return handler.respondMappedError(c, exportBuildErrorSpec())
+		spec := exportBuildErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "pdf"))
+		return handler.respondMappedError(c, spec)
 	}
 
 	setExportAttachmentHeaders(c, "application/pdf", buildExportFilename(now, "pdf"))
+	handler.logSecurityEvent(c, "data.export", "success", securityEventField("export_format", "pdf"))
 	return c.Send(document)
 }
 

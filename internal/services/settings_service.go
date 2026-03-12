@@ -17,7 +17,7 @@ var (
 type SettingsUserRepository interface {
 	UpdateDisplayName(userID uint, displayName string) error
 	UpdateRecoveryCodeHash(userID uint, recoveryHash string) error
-	UpdatePassword(userID uint, passwordHash string, mustChangePassword bool) error
+	UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error
 	UpdateByID(userID uint, updates map[string]any) error
 	LoadSettingsByID(userID uint) (models.User, error)
 	ClearAllDataAndResetSettings(userID uint) error
@@ -47,10 +47,6 @@ func (service *SettingsService) UpdateDisplayName(userID uint, displayName strin
 
 func (service *SettingsService) UpdateRecoveryCodeHash(userID uint, recoveryHash string) error {
 	return service.users.UpdateRecoveryCodeHash(userID, recoveryHash)
-}
-
-func (service *SettingsService) UpdatePassword(userID uint, passwordHash string, mustChangePassword bool) error {
-	return service.users.UpdatePassword(userID, passwordHash, mustChangePassword)
 }
 
 func (service *SettingsService) ValidateDeleteAccountPassword(passwordHash string, rawPassword string) error {

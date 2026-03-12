@@ -11,7 +11,9 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 	now := time.Now().In(handler.location)
 	input, parseError := parseForgotPasswordInput(c)
 	if parseError != "" {
-		return handler.respondMappedError(c, authValidationErrorSpec(parseError))
+		spec := authValidationErrorSpec(parseError)
+		handler.logSecurityError(c, "auth.recovery_start", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
 	if strings.TrimSpace(input.RecoveryCode) == "" {
@@ -36,11 +38,16 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 		30*time.Minute,
 	)
 	if err != nil {
-		return handler.respondMappedError(c, mapPasswordRecoveryStartError(err))
+		spec := mapPasswordRecoveryStartError(err)
+		handler.logSecurityError(c, "auth.recovery_start", spec)
+		return handler.respondMappedError(c, spec)
 	}
 	if err := handler.setResetPasswordCookie(c, token, false); err != nil {
-		return handler.respondMappedError(c, authResetTokenCreateErrorSpec())
+		spec := authResetTokenCreateErrorSpec()
+		handler.logSecurityError(c, "auth.recovery_start", spec)
+		return handler.respondMappedError(c, spec)
 	}
+	handler.logSecurityEvent(c, "auth.recovery_start", "success")
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{
@@ -54,13 +61,17 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 	input, parseError := parseResetPasswordInput(c)
 	if parseError != "" {
-		return handler.respondMappedError(c, authValidationErrorSpec(parseError))
+		spec := authValidationErrorSpec(parseError)
+		handler.logSecurityError(c, "auth.reset_password", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
 	token, _ := handler.readResetPasswordCookie(c)
 	if token == "" {
 		handler.clearResetPasswordCookie(c)
-		return handler.respondMappedError(c, invalidResetTokenErrorSpec())
+		spec := invalidResetTokenErrorSpec()
+		handler.logSecurityError(c, "auth.reset_password", spec)
+		return handler.respondMappedError(c, spec)
 	}
 	user, recoveryCode, err := handler.passwordResetSvc.CompleteReset(
 		handler.secretKey,
@@ -70,16 +81,21 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		time.Now(),
 	)
 	if err != nil {
-		if spec := mapPasswordResetCompleteError(err); spec.Key == "invalid reset token" {
+		spec := mapPasswordResetCompleteError(err)
+		if spec.Key == "invalid reset token" {
 			handler.clearResetPasswordCookie(c)
 		}
-		return handler.respondMappedError(c, mapPasswordResetCompleteError(err))
+		handler.logSecurityError(c, "auth.reset_password", spec)
+		return handler.respondMappedError(c, spec)
 	}
 
 	if err := handler.setAuthCookie(c, user, true); err != nil {
-		return handler.respondMappedError(c, authSessionCreateErrorSpec())
+		spec := authSessionCreateErrorSpec()
+		handler.logSecurityError(c, "auth.reset_password", spec)
+		return handler.respondMappedError(c, spec)
 	}
 	handler.clearResetPasswordCookie(c)
+	handler.logSecurityEvent(c, "auth.reset_password", "success")
 
 	return handler.renderRecoveryCodeResponse(c, user, recoveryCode, fiber.StatusOK)
 }

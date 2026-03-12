@@ -14,7 +14,9 @@ func (handler *Handler) ExportJSON(c *fiber.Ctx) error {
 	}
 	entries, err := handler.exportService.BuildJSONEntries(user.ID, from, to, handler.location)
 	if err != nil {
-		return handler.respondMappedError(c, exportFetchLogsErrorSpec())
+		spec := exportFetchLogsErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "json"))
+		return handler.respondMappedError(c, spec)
 	}
 	now := time.Now().In(handler.location)
 
@@ -25,9 +27,12 @@ func (handler *Handler) ExportJSON(c *fiber.Ctx) error {
 
 	serialized, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return handler.respondMappedError(c, exportBuildErrorSpec())
+		spec := exportBuildErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "json"))
+		return handler.respondMappedError(c, spec)
 	}
 
 	setExportAttachmentHeaders(c, fiber.MIMEApplicationJSON, buildExportFilename(now, "json"))
+	handler.logSecurityEvent(c, "data.export", "success", securityEventField("export_format", "json"))
 	return c.Send(serialized)
 }

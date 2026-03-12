@@ -55,6 +55,50 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	}
 }
 
+func TestAuthLogoutPostRevokesPreviousSessionCookie(t *testing.T) {
+	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
+
+	form := url.Values{"csrf_token": {csrfToken}}
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	logoutRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+
+	logoutResponse, err := app.Test(logoutRequest, -1)
+	if err != nil {
+		t.Fatalf("logout POST request failed: %v", err)
+	}
+	defer logoutResponse.Body.Close()
+
+	if logoutResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected logout status 303, got %d", logoutResponse.StatusCode)
+	}
+
+	replayRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	replayRequest.Header.Set("Accept-Language", "en")
+	replayRequest.Header.Set("Cookie", authCookie)
+
+	replayResponse, err := app.Test(replayRequest, -1)
+	if err != nil {
+		t.Fatalf("dashboard replay request failed: %v", err)
+	}
+	defer replayResponse.Body.Close()
+
+	if replayResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected replayed cookie to be rejected with 303, got %d", replayResponse.StatusCode)
+	}
+	if location := replayResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected replayed cookie redirect to /login, got %q", location)
+	}
+
+	clearedCookie := responseCookie(replayResponse.Cookies(), authCookieName)
+	if clearedCookie == nil {
+		t.Fatal("expected replayed cookie response to clear auth cookie")
+	}
+	if clearedCookie.Value != "" {
+		t.Fatalf("expected cleared replayed auth cookie value, got %q", clearedCookie.Value)
+	}
+}
+
 func TestAuthLogoutPostMissingCSRFRejectedByMiddleware(t *testing.T) {
 	app, authCookie, _, _ := prepareAuthenticatedLogoutCSRFContext(t)
 

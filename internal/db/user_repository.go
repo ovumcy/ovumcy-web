@@ -96,6 +96,27 @@ func (repo *UserRepository) UpdatePassword(userID uint, passwordHash string, mus
 	}).Error
 }
 
+func (repo *UserRepository) UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error {
+	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"password_hash":        passwordHash,
+		"must_change_password": mustChangePassword,
+		"auth_session_version": gorm.Expr("auth_session_version + 1"),
+	}).Error
+}
+
+func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
+	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"password_hash":        passwordHash,
+		"recovery_code_hash":   recoveryHash,
+		"must_change_password": mustChangePassword,
+		"auth_session_version": gorm.Expr("auth_session_version + 1"),
+	}).Error
+}
+
+func (repo *UserRepository) BumpAuthSessionVersion(userID uint) error {
+	return repo.database.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
+}
+
 func (repo *UserRepository) UpdateByID(userID uint, updates map[string]any) error {
 	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
 }

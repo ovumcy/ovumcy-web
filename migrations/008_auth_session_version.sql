@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN auth_session_version INTEGER NOT NULL DEFAULT 1;

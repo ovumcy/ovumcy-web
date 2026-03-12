@@ -40,6 +40,7 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 	var migratedUser struct {
 		Email               string `gorm:"column:email"`
 		DisplayName         string `gorm:"column:display_name"`
+		AuthSessionVersion  int    `gorm:"column:auth_session_version"`
 		OnboardingCompleted bool   `gorm:"column:onboarding_completed"`
 		CycleLength         int    `gorm:"column:cycle_length"`
 		PeriodLength        int    `gorm:"column:period_length"`
@@ -54,6 +55,7 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 		Select(
 			"email",
 			"display_name",
+			"auth_session_version",
 			"onboarding_completed",
 			"cycle_length",
 			"period_length",
@@ -70,6 +72,9 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 
 	if migratedUser.DisplayName != "" {
 		t.Fatalf("expected display_name default to be empty, got %q", migratedUser.DisplayName)
+	}
+	if migratedUser.AuthSessionVersion != 1 {
+		t.Fatalf("expected auth_session_version default to be 1, got %d", migratedUser.AuthSessionVersion)
 	}
 	if migratedUser.OnboardingCompleted {
 		t.Fatal("expected onboarding_completed default to be false")
@@ -247,6 +252,7 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"cycle_length",
 		"period_length",
 		"auto_period_fill",
+		"auth_session_version",
 		"irregular_cycle",
 		"track_bbt",
 		"track_cervical_mucus",

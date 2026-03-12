@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -126,5 +127,25 @@ func testCSRFMiddlewareConfig(cookieSecure bool) csrf.Config {
 		CookieHTTPOnly: true,
 		CookieSecure:   cookieSecure,
 		ContextKey:     "csrf",
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			LogSecurityEvent(c, "csrf", "denied", SecurityEventField{
+				Key:   "reason",
+				Value: testCSRFFailureReason(err),
+			})
+			return fiber.ErrForbidden
+		},
+	}
+}
+
+func testCSRFFailureReason(err error) string {
+	switch {
+	case errors.Is(err, csrf.ErrTokenInvalid):
+		return "invalid token"
+	case errors.Is(err, csrf.ErrTokenNotFound):
+		return "missing token"
+	case errors.Is(err, csrf.ErrNoReferer), errors.Is(err, csrf.ErrBadReferer):
+		return "invalid referer"
+	default:
+		return "csrf rejected"
 	}
 }

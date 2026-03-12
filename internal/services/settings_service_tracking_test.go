@@ -89,7 +89,7 @@ func (stub *stubSettingsTrackingUserRepo) UpdateRecoveryCodeHash(uint, string) e
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdatePassword(uint, string, bool) error {
+func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(uint, string, bool) error {
 	return nil
 }
 

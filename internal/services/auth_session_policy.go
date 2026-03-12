@@ -19,12 +19,17 @@ var (
 )
 
 type AuthSessionClaims struct {
-	UserID uint   `json:"uid"`
-	Role   string `json:"role"`
+	UserID         uint   `json:"uid"`
+	Role           string `json:"role"`
+	SessionVersion int    `json:"sv,omitempty"`
 	jwt.RegisteredClaims
 }
 
 func BuildAuthSessionToken(secretKey []byte, userID uint, role string, ttl time.Duration, now time.Time) (string, error) {
+	return BuildAuthSessionTokenWithVersion(secretKey, userID, role, 1, ttl, now)
+}
+
+func BuildAuthSessionTokenWithVersion(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, error) {
 	if userID == 0 {
 		return "", ErrAuthSessionTokenInvalidUserID
 	}
@@ -36,8 +41,9 @@ func BuildAuthSessionToken(secretKey []byte, userID uint, role string, ttl time.
 	}
 
 	claims := AuthSessionClaims{
-		UserID: userID,
-		Role:   role,
+		UserID:         userID,
+		Role:           role,
+		SessionVersion: normalizeAuthSessionVersion(sessionVersion),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
@@ -80,5 +86,13 @@ func ParseAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*A
 	if claims.UserID == 0 {
 		return nil, ErrAuthSessionTokenInvalidUserID
 	}
+	claims.SessionVersion = normalizeAuthSessionVersion(claims.SessionVersion)
 	return claims, nil
+}
+
+func normalizeAuthSessionVersion(version int) int {
+	if version <= 0 {
+		return 1
+	}
+	return version
 }

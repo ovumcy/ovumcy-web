@@ -5,14 +5,6 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func (handler *Handler) SetupStatus(c *fiber.Ctx) error {
-	needsSetup, err := handler.setupService.RequiresInitialSetup()
-	if err != nil {
-		return handler.respondMappedError(c, setupStateLoadErrorSpec())
-	}
-	return c.JSON(fiber.Map{"needs_setup": needsSetup})
-}
-
 func (handler *Handler) SetLanguage(c *fiber.Ctx) error {
 	language := handler.i18n.NormalizeLanguage(c.Params("lang"))
 	handler.setLanguageCookie(c, language)

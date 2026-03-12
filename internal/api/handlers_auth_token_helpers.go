@@ -58,7 +58,7 @@ func (handler *Handler) buildToken(user *models.User, ttl time.Duration) (string
 	if ttl <= 0 {
 		ttl = defaultAuthTokenTTL
 	}
-	return handler.authService.BuildAuthSessionToken(handler.secretKey, user.ID, user.Role, ttl, time.Now())
+	return handler.authService.BuildAuthSessionToken(handler.secretKey, user.ID, user.Role, user.AuthSessionVersion, ttl, time.Now())
 }
 
 func (handler *Handler) encodeAuthCookieToken(rawToken string) (string, error) {

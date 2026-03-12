@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"mime"
@@ -489,6 +490,26 @@ func csrfMiddlewareConfig(cookieSecure bool) csrf.Config {
 		CookieHTTPOnly: true,
 		CookieSecure:   cookieSecure,
 		ContextKey:     "csrf",
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			api.LogSecurityEvent(c, "csrf", "denied", api.SecurityEventField{
+				Key:   "reason",
+				Value: csrfFailureReason(err),
+			})
+			return fiber.ErrForbidden
+		},
+	}
+}
+
+func csrfFailureReason(err error) string {
+	switch {
+	case errors.Is(err, csrf.ErrTokenInvalid):
+		return "invalid token"
+	case errors.Is(err, csrf.ErrTokenNotFound):
+		return "missing token"
+	case errors.Is(err, csrf.ErrNoReferer), errors.Is(err, csrf.ErrBadReferer):
+		return "invalid referer"
+	default:
+		return "csrf rejected"
 	}
 }
 
@@ -499,6 +520,10 @@ type authRateLimitConfig struct {
 func newAuthRateLimitHandler(handler *api.Handler, config authRateLimitConfig) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		logRateLimitHit(c)
+		api.LogSecurityEvent(c, "rate_limit", "blocked",
+			api.SecurityEventField{Key: "scope", Value: "auth"},
+			api.SecurityEventField{Key: "reason", Value: config.ErrorCode},
+		)
 		return handler.RespondAuthRateLimited(c, config.ErrorCode)
 	}
 }
@@ -506,7 +531,22 @@ func newAuthRateLimitHandler(handler *api.Handler, config authRateLimitConfig) f
 func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		logRateLimitHit(c)
+		api.LogSecurityEvent(c, "rate_limit", "blocked",
+			api.SecurityEventField{Key: "scope", Value: rateLimitScope(c)},
+			api.SecurityEventField{Key: "reason", Value: "too many requests"},
+		)
 		return handler.RespondAPIRateLimited(c)
+	}
+}
+
+func rateLimitScope(c *fiber.Ctx) string {
+	switch {
+	case strings.HasPrefix(c.Path(), "/api/settings/"), strings.HasPrefix(c.Path(), "/settings/"):
+		return "settings"
+	case strings.HasPrefix(c.Path(), "/api/auth/"):
+		return "auth"
+	default:
+		return "api"
 	}
 }
 

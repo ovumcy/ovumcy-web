@@ -164,3 +164,12 @@ func TestMapPasswordResetCompleteError(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthSessionErrorSpecs(t *testing.T) {
+	if got := authSessionCreateErrorSpec(); got != globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create session") {
+		t.Fatalf("unexpected create session error spec: %#v", got)
+	}
+	if got := authSessionRevokeErrorSpec(); got != globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to revoke session") {
+		t.Fatalf("unexpected revoke session error spec: %#v", got)
+	}
+}

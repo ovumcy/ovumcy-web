@@ -16,27 +16,36 @@ func (handler *Handler) ExportCSV(c *fiber.Ctx) error {
 	}
 	rows, err := handler.exportService.BuildCSVRows(user.ID, from, to, handler.location)
 	if err != nil {
-		return handler.respondMappedError(c, exportFetchLogsErrorSpec())
+		spec := exportFetchLogsErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "csv"))
+		return handler.respondMappedError(c, spec)
 	}
 	now := time.Now().In(handler.location)
 
 	var output bytes.Buffer
 	writer := csv.NewWriter(&output)
 	if err := writer.Write(services.ExportCSVHeaders); err != nil {
-		return handler.respondMappedError(c, exportBuildErrorSpec())
+		spec := exportBuildErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "csv"))
+		return handler.respondMappedError(c, spec)
 	}
 
 	for _, row := range rows {
 		if err := writer.Write(row.Columns()); err != nil {
-			return handler.respondMappedError(c, exportBuildErrorSpec())
+			spec := exportBuildErrorSpec()
+			handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "csv"))
+			return handler.respondMappedError(c, spec)
 		}
 	}
 
 	writer.Flush()
 	if err := writer.Error(); err != nil {
-		return handler.respondMappedError(c, exportBuildErrorSpec())
+		spec := exportBuildErrorSpec()
+		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "csv"))
+		return handler.respondMappedError(c, spec)
 	}
 
 	setExportAttachmentHeaders(c, "text/csv", buildExportFilename(now, "csv"))
+	handler.logSecurityEvent(c, "data.export", "success", securityEventField("export_format", "csv"))
 	return c.Send(output.Bytes())
 }

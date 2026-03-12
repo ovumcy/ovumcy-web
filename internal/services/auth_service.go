@@ -36,6 +36,9 @@ type AuthUserRepository interface {
 	Create(user *models.User) error
 	Save(user *models.User) error
 	UpdateRecoveryCodeHash(userID uint, recoveryHash string) error
+	UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error
+	UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
+	BumpAuthSessionVersion(userID uint) error
 	ListWithRecoveryCodeHash() ([]models.User, error)
 }
 
@@ -61,10 +64,6 @@ func (service *AuthService) FindByNormalizedEmail(email string) (models.User, er
 
 func (service *AuthService) FindByID(userID uint) (models.User, error) {
 	return service.users.FindByID(userID)
-}
-
-func (service *AuthService) SaveUser(user *models.User) error {
-	return service.users.Save(user)
 }
 
 func (service *AuthService) ValidateRegistrationCredentials(password string, confirmPassword string) error {
@@ -149,9 +148,7 @@ func (service *AuthService) ForceResetPasswordByEmail(email string, newPassword 
 		return fmt.Errorf("%w: %v", ErrAuthPasswordHash, err)
 	}
 
-	user.PasswordHash = string(passwordHash)
-	user.MustChangePassword = true
-	if err := service.users.Save(&user); err != nil {
+	if err := service.users.UpdatePasswordAndRevokeSessions(user.ID, string(passwordHash), true); err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordUpdate, err)
 	}
 
@@ -172,14 +169,15 @@ func (service *AuthService) BuildOwnerUserWithRecovery(email string, rawPassword
 	}
 
 	user := models.User{
-		Email:            email,
-		PasswordHash:     string(passwordHash),
-		RecoveryCodeHash: recoveryHash,
-		Role:             models.RoleOwner,
-		CycleLength:      models.DefaultCycleLength,
-		PeriodLength:     models.DefaultPeriodLength,
-		AutoPeriodFill:   true,
-		CreatedAt:        createdAt,
+		Email:              email,
+		PasswordHash:       string(passwordHash),
+		RecoveryCodeHash:   recoveryHash,
+		AuthSessionVersion: 1,
+		Role:               models.RoleOwner,
+		CycleLength:        models.DefaultCycleLength,
+		PeriodLength:       models.DefaultPeriodLength,
+		AutoPeriodFill:     true,
+		CreatedAt:          createdAt,
 	}
 	return user, recoveryCode, nil
 }
@@ -233,8 +231,8 @@ func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uin
 	return BuildPasswordResetToken(secretKey, userID, passwordHash, ttl, now)
 }
 
-func (service *AuthService) BuildAuthSessionToken(secretKey []byte, userID uint, role string, ttl time.Duration, now time.Time) (string, error) {
-	return BuildAuthSessionToken(secretKey, userID, role, ttl, now)
+func (service *AuthService) BuildAuthSessionToken(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, error) {
+	return BuildAuthSessionTokenWithVersion(secretKey, userID, role, sessionVersion, ttl, now)
 }
 
 func (service *AuthService) ResolveUserByAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
@@ -248,6 +246,9 @@ func (service *AuthService) ResolveUserByAuthSessionToken(secretKey []byte, rawT
 		return nil, ErrAuthInvalidCreds
 	}
 	if user.MustChangePassword {
+		return nil, ErrAuthSessionTokenRevoked
+	}
+	if normalizeAuthSessionVersion(claims.SessionVersion) != normalizeAuthSessionVersion(user.AuthSessionVersion) {
 		return nil, ErrAuthSessionTokenRevoked
 	}
 	return &user, nil
@@ -284,6 +285,13 @@ func (service *AuthService) RegenerateRecoveryCode(userID uint) (string, error) 
 	return recoveryCode, nil
 }
 
+func (service *AuthService) RevokeAuthSessions(userID uint) error {
+	if userID == 0 {
+		return ErrAuthUserRequired
+	}
+	return service.users.BumpAuthSessionVersion(userID)
+}
+
 func (service *AuthService) ResetPasswordAndRotateRecoveryCode(user *models.User, newPassword string) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired
@@ -298,12 +306,13 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCode(user *models.User
 		return "", err
 	}
 
-	user.PasswordHash = string(passwordHash)
-	user.RecoveryCodeHash = recoveryHash
-	user.MustChangePassword = false
-	if err := service.users.Save(user); err != nil {
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(user.ID, string(passwordHash), recoveryHash, false); err != nil {
 		return "", err
 	}
+	user.PasswordHash = string(passwordHash)
+	user.RecoveryCodeHash = recoveryHash
+	user.AuthSessionVersion = normalizeAuthSessionVersion(user.AuthSessionVersion) + 1
+	user.MustChangePassword = false
 
 	return recoveryCode, nil
 }

@@ -36,7 +36,6 @@ func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	api := app.Group("/api")
 
 	auth := api.Group("/auth")
-	auth.Get("/setup-status", handler.SetupStatus)
 	auth.Post("/logout", handler.AuthRequired, handler.Logout)
 	auth.Post("/register", handler.Register)
 	auth.Post("/login", handler.Login)

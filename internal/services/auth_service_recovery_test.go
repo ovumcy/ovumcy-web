@@ -20,13 +20,19 @@ type stubAuthUserRepo struct {
 	createErr             error
 	createCalled          bool
 	createdUser           models.User
-	saveErr               error
+	updatePasswordErr     error
+	updatePasswordCalled  bool
+	updateRecoveryPassErr error
+	updateRecoveryCalled  bool
+	bumpSessionErr        error
+	bumpSessionCalled     bool
 	updateRecoveryCodeErr error
 	listErr               error
 	listUsers             []models.User
 	updatedUserID         uint
 	updatedRecoveryHash   string
-	saveCalled            bool
+	updatedPasswordHash   string
+	updatedMustChange     bool
 }
 
 func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(string) (bool, error) {
@@ -60,10 +66,6 @@ func (stub *stubAuthUserRepo) Create(user *models.User) error {
 }
 
 func (stub *stubAuthUserRepo) Save(user *models.User) error {
-	if stub.saveErr != nil {
-		return stub.saveErr
-	}
-	stub.saveCalled = true
 	stub.user = *user
 	return nil
 }
@@ -74,6 +76,49 @@ func (stub *stubAuthUserRepo) UpdateRecoveryCodeHash(userID uint, recoveryHash s
 	}
 	stub.updatedUserID = userID
 	stub.updatedRecoveryHash = recoveryHash
+	return nil
+}
+
+func (stub *stubAuthUserRepo) UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error {
+	if stub.updatePasswordErr != nil {
+		return stub.updatePasswordErr
+	}
+	stub.updatePasswordCalled = true
+	stub.updatedUserID = userID
+	stub.updatedPasswordHash = passwordHash
+	stub.updatedMustChange = mustChangePassword
+	stub.user.ID = userID
+	stub.user.PasswordHash = passwordHash
+	stub.user.MustChangePassword = mustChangePassword
+	stub.user.AuthSessionVersion = normalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
+	return nil
+}
+
+func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
+	if stub.updateRecoveryPassErr != nil {
+		return stub.updateRecoveryPassErr
+	}
+	stub.updateRecoveryCalled = true
+	stub.updatedUserID = userID
+	stub.updatedPasswordHash = passwordHash
+	stub.updatedRecoveryHash = recoveryHash
+	stub.updatedMustChange = mustChangePassword
+	stub.user.ID = userID
+	stub.user.PasswordHash = passwordHash
+	stub.user.RecoveryCodeHash = recoveryHash
+	stub.user.MustChangePassword = mustChangePassword
+	stub.user.AuthSessionVersion = normalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
+	return nil
+}
+
+func (stub *stubAuthUserRepo) BumpAuthSessionVersion(userID uint) error {
+	if stub.bumpSessionErr != nil {
+		return stub.bumpSessionErr
+	}
+	stub.bumpSessionCalled = true
+	stub.updatedUserID = userID
+	stub.user.ID = userID
+	stub.user.AuthSessionVersion = normalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
 	return nil
 }
 
@@ -201,14 +246,17 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		if err := service.ForceResetPasswordByEmail(" Owner@Example.com ", "EvenStronger2"); err != nil {
 			t.Fatalf("ForceResetPasswordByEmail() unexpected error: %v", err)
 		}
-		if !repo.saveCalled {
-			t.Fatal("expected Save() to be called")
+		if !repo.updatePasswordCalled {
+			t.Fatal("expected UpdatePasswordAndRevokeSessions() to be called")
 		}
 		if !repo.user.MustChangePassword {
 			t.Fatal("expected MustChangePassword=true after forced reset")
 		}
 		if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
 			t.Fatal("expected saved password hash to match new password")
+		}
+		if repo.user.AuthSessionVersion != 2 {
+			t.Fatalf("expected auth session version to increment to 2, got %d", repo.user.AuthSessionVersion)
 		}
 	})
 
@@ -232,8 +280,8 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		if err := service.ForceResetPasswordByEmail("missing@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
 			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
 		}
-		if repo.saveCalled {
-			t.Fatal("did not expect Save() when user is missing")
+		if repo.updatePasswordCalled {
+			t.Fatal("did not expect password update when user is missing")
 		}
 	})
 
@@ -258,7 +306,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 				Email:        "owner@example.com",
 				PasswordHash: string(originalHash),
 			},
-			saveErr: errors.New("write failed"),
+			updatePasswordErr: errors.New("write failed"),
 		}
 		service := NewAuthService(repo)
 
@@ -299,6 +347,9 @@ func TestAuthServiceBuildOwnerUserWithRecovery(t *testing.T) {
 	}
 	if user.RecoveryCodeHash == "" {
 		t.Fatalf("expected non-empty recovery hash")
+	}
+	if user.AuthSessionVersion != 1 {
+		t.Fatalf("expected auth session version 1, got %d", user.AuthSessionVersion)
 	}
 }
 
@@ -465,8 +516,8 @@ func TestAuthServiceResetPasswordAndRotateRecoveryCode(t *testing.T) {
 	if recoveryCode == "" {
 		t.Fatalf("expected non-empty recovery code")
 	}
-	if !repo.saveCalled {
-		t.Fatalf("expected Save() to be called")
+	if !repo.updateRecoveryCalled {
+		t.Fatalf("expected UpdatePasswordRecoveryCodeAndRevokeSessions() to be called")
 	}
 	if repo.user.MustChangePassword {
 		t.Fatalf("expected MustChangePassword=false after reset")
@@ -476,6 +527,9 @@ func TestAuthServiceResetPasswordAndRotateRecoveryCode(t *testing.T) {
 	}
 	if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
 		t.Fatalf("expected password hash updated to new password")
+	}
+	if user.AuthSessionVersion != 2 {
+		t.Fatalf("expected auth session version to increment to 2, got %d", user.AuthSessionVersion)
 	}
 }
 
@@ -511,7 +565,7 @@ func TestAuthServiceResolveUserByAuthSessionToken(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	token, err := service.BuildAuthSessionToken(secret, 42, models.RoleOwner, 30*time.Minute, now)
+	token, err := service.BuildAuthSessionToken(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
 	}
@@ -539,12 +593,32 @@ func TestAuthServiceResolveUserByAuthSessionTokenRejectsRevokedSession(t *testin
 	}
 	service := NewAuthService(repo)
 
-	token, err := service.BuildAuthSessionToken(secret, 42, models.RoleOwner, 30*time.Minute, now)
+	token, err := service.BuildAuthSessionToken(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
 	if err != nil {
 		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
 	}
 
 	if _, err := service.ResolveUserByAuthSessionToken(secret, token, now.Add(1*time.Minute)); !errors.Is(err, ErrAuthSessionTokenRevoked) {
 		t.Fatalf("expected ErrAuthSessionTokenRevoked, got %v", err)
+	}
+}
+
+func TestAuthServiceRevokeAuthSessions(t *testing.T) {
+	repo := &stubAuthUserRepo{
+		user: models.User{
+			ID:                 42,
+			AuthSessionVersion: 1,
+		},
+	}
+	service := NewAuthService(repo)
+
+	if err := service.RevokeAuthSessions(42); err != nil {
+		t.Fatalf("RevokeAuthSessions() unexpected error: %v", err)
+	}
+	if !repo.bumpSessionCalled {
+		t.Fatal("expected BumpAuthSessionVersion() to be called")
+	}
+	if repo.user.AuthSessionVersion != 2 {
+		t.Fatalf("expected auth session version to increment to 2, got %d", repo.user.AuthSessionVersion)
 	}
 }

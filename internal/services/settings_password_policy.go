@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/terraincognita07/ovumcy/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -41,8 +42,11 @@ func (service *SettingsService) ValidatePasswordChange(passwordHash string, curr
 	return nil
 }
 
-func (service *SettingsService) ChangePassword(userID uint, passwordHash string, currentPassword string, newPassword string, confirmPassword string) error {
-	if err := service.ValidatePasswordChange(passwordHash, currentPassword, newPassword, confirmPassword); err != nil {
+func (service *SettingsService) ChangePassword(user *models.User, currentPassword string, newPassword string, confirmPassword string) error {
+	if user == nil {
+		return ErrSettingsPasswordChangeInvalidInput
+	}
+	if err := service.ValidatePasswordChange(user.PasswordHash, currentPassword, newPassword, confirmPassword); err != nil {
 		return err
 	}
 
@@ -52,8 +56,10 @@ func (service *SettingsService) ChangePassword(userID uint, passwordHash string,
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordHashFailed, err)
 	}
 
-	if err := service.users.UpdatePassword(userID, string(hashedPassword), false); err != nil {
+	if err := service.users.UpdatePasswordAndRevokeSessions(user.ID, string(hashedPassword), false); err != nil {
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordUpdateFailed, err)
 	}
+	user.PasswordHash = string(hashedPassword)
+	user.AuthSessionVersion = normalizeAuthSessionVersion(user.AuthSessionVersion) + 1
 	return nil
 }

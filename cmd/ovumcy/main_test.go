@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/terraincognita07/ovumcy/internal/db"
 )
@@ -530,5 +531,93 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 	}
 	if strings.Contains(logLine, plaintextPassword) {
 		t.Fatalf("did not expect plaintext password in rate-limit logs: %q", logLine)
+	}
+}
+
+func TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	app := fiber.New()
+	app.Use(csrf.New(csrfMiddlewareConfig(false)))
+	app.Post("/settings/change-password", func(c *fiber.Ctx) error {
+		return c.SendStatus(http.StatusOK)
+	})
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/settings/change-password?email=user@example.com",
+		strings.NewReader("password=PlaintextPassword123%21"),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("csrf request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected status 403, got %d", response.StatusCode)
+	}
+
+	logLine := output.String()
+	if !strings.Contains(logLine, `security event: action="csrf" outcome="denied"`) {
+		t.Fatalf("expected csrf security event in logs, got %q", logLine)
+	}
+	if strings.Contains(logLine, "user@example.com") {
+		t.Fatalf("did not expect email in csrf security logs: %q", logLine)
+	}
+	if strings.Contains(logLine, "PlaintextPassword123!") {
+		t.Fatalf("did not expect password in csrf security logs: %q", logLine)
+	}
+}
+
+func TestAuthRateLimitHandlerLogsSecurityEventWithoutPII(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	handler := newRateLimitTestHandler(t)
+	app := fiber.New()
+	app.Post("/api/auth/login", newAuthRateLimitHandler(handler, authRateLimitConfig{
+		ErrorCode: "too_many_login_attempts",
+	}))
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/auth/login?email=user@example.com",
+		strings.NewReader("email=user@example.com&password=PlaintextPassword123%21"),
+	)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("rate-limit handler request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected status 429, got %d", response.StatusCode)
+	}
+
+	logLine := output.String()
+	if !strings.Contains(logLine, `security event: action="rate_limit" outcome="blocked"`) {
+		t.Fatalf("expected rate-limit security event in logs, got %q", logLine)
+	}
+	if !strings.Contains(logLine, `scope="auth"`) {
+		t.Fatalf("expected auth scope in rate-limit security logs, got %q", logLine)
+	}
+	if strings.Contains(logLine, "user@example.com") {
+		t.Fatalf("did not expect email in rate-limit security logs: %q", logLine)
+	}
+	if strings.Contains(logLine, "PlaintextPassword123!") {
+		t.Fatalf("did not expect password in rate-limit security logs: %q", logLine)
 	}
 }
