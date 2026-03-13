@@ -123,6 +123,7 @@
       <div class="space-y-1">
         <p class="status-error text-sm" data-settings-cycle-message="error" hidden>{{t .Messages "settings.cycle.error_incompatible"}}</p>
         <p class="warning-amber text-sm" data-settings-cycle-message="warning" hidden>{{t .Messages "settings.cycle.warning_approximate"}}</p>
+        <p class="journal-muted text-sm" data-settings-cycle-message="adjusted" hidden>{{t .Messages "settings.cycle.info_adjusted"}}</p>
         <p class="journal-muted text-sm" data-settings-cycle-message="period-long" hidden>{{t .Messages "settings.cycle.info_period_long"}}</p>
         <p class="journal-muted text-sm" data-settings-cycle-message="cycle-short" hidden>{{t .Messages "settings.cycle.info_cycle_short"}}</p>
       </div>
@@ -309,6 +310,7 @@
             "FieldName" "current_password"
             "Autocomplete" "current-password"
             "Required" true)}}
+          <div id="settings-change-password-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
 
           {{template "password_toggle_field" (dict
             "Messages" .Messages
@@ -329,7 +331,7 @@
 
           <div class="settings-form-actions">
             <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.change_password.submit"}}</button>
-            <div id="settings-change-password-status" class="save-status text-sm" aria-live="polite"></div>
+            <div id="settings-change-password-toast" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
           </div>
         </form>
       </section>
@@ -479,7 +481,7 @@
         data-confirm="{{t .Messages "settings.confirm_clear_data"}}"
         data-confirm-accept="{{t .Messages "settings.clear_data.submit"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <button type="submit" class="btn-secondary btn-secondary-caution">{{t .Messages "settings.clear_data.submit"}}</button>
+        <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.submit"}}</button>
       </form>
     </div>
     {{end}}

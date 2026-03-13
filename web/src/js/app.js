@@ -746,6 +746,8 @@
       });
     }
 
+    window.__ovumcyOpenConfirm = openConfirm;
+
     cancelButton.addEventListener("click", function () {
       closeConfirm(false);
     });
@@ -808,6 +810,134 @@
         }
         form.submit();
       });
+    });
+  }
+
+  function formatCycleStartMessage(template, replacements) {
+    var result = String(template || "");
+    for (var index = 0; index < replacements.length; index++) {
+      result = result.replace(/%[sd]/, String(replacements[index] || ""));
+    }
+    return result;
+  }
+
+  function openCycleStartConfirm(question, acceptLabel) {
+    if (typeof window.__ovumcyOpenConfirm === "function") {
+      return window.__ovumcyOpenConfirm(question, acceptLabel);
+    }
+    return Promise.resolve(window.confirm(question));
+  }
+
+  function findCycleStartPolicyNode(form) {
+    if (!form || !form.parentElement || !form.parentElement.querySelector) {
+      return null;
+    }
+    return form.parentElement.querySelector("[data-cycle-start-policy]");
+  }
+
+  function readCycleStartPolicy(form) {
+    var policyNode = findCycleStartPolicyNode(form);
+    var shortGap;
+    if (!policyNode) {
+      return null;
+    }
+
+    shortGap = parseInt(policyNode.getAttribute("data-cycle-start-short-gap") || "0", 10);
+    if (!isFinite(shortGap)) {
+      shortGap = 0;
+    }
+
+    return {
+      hasConflict: policyNode.getAttribute("data-cycle-start-conflict") === "true",
+      conflictDate: String(policyNode.getAttribute("data-cycle-start-conflict-date") || ""),
+      targetDate: String(policyNode.getAttribute("data-cycle-start-target-date") || ""),
+      shortGap: shortGap,
+      previousDate: String(policyNode.getAttribute("data-cycle-start-previous-date") || ""),
+      replaceMessage: String(policyNode.getAttribute("data-cycle-start-replace-message") || ""),
+      replaceAccept: String(policyNode.getAttribute("data-cycle-start-replace-accept") || ""),
+      shortGapMessage: String(policyNode.getAttribute("data-cycle-start-short-gap-message") || ""),
+      shortGapAccept: String(policyNode.getAttribute("data-cycle-start-short-gap-accept") || "")
+    };
+  }
+
+  function setCycleStartHiddenValue(form, selector, value) {
+    var input = form.querySelector(selector);
+    if (!input) {
+      return;
+    }
+    input.value = value ? "true" : "false";
+  }
+
+  function submitCycleStartForm(form) {
+    if (!form) {
+      return;
+    }
+
+    form.dataset.cycleStartConfirmBypass = "1";
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+      return;
+    }
+    form.submit();
+  }
+
+  function bindCycleStartConfirmForms() {
+    document.addEventListener("submit", function (event) {
+      var form = event.target;
+      var policy;
+      if (!form || !form.matches || !form.matches("form[data-cycle-start-confirm-form]")) {
+        return;
+      }
+
+      if (form.dataset.cycleStartConfirmBypass === "1") {
+        form.dataset.cycleStartConfirmBypass = "";
+        return;
+      }
+
+      policy = readCycleStartPolicy(form);
+      if (!policy || (!policy.hasConflict && policy.shortGap <= 0)) {
+        return;
+      }
+
+      event.preventDefault();
+      setCycleStartHiddenValue(form, "[data-cycle-start-replace-input]", false);
+      setCycleStartHiddenValue(form, "[data-cycle-start-uncertain-input]", false);
+
+      Promise.resolve()
+        .then(function () {
+          if (!policy.hasConflict) {
+            return true;
+          }
+          return openCycleStartConfirm(
+            formatCycleStartMessage(policy.replaceMessage, [policy.conflictDate, policy.targetDate]),
+            policy.replaceAccept
+          ).then(function (confirmed) {
+            if (confirmed) {
+              setCycleStartHiddenValue(form, "[data-cycle-start-replace-input]", true);
+            }
+            return confirmed;
+          });
+        })
+        .then(function (confirmed) {
+          if (!confirmed || policy.shortGap <= 0) {
+            return confirmed;
+          }
+          return openCycleStartConfirm(
+            formatCycleStartMessage(policy.shortGapMessage, [policy.shortGap, policy.previousDate]),
+            policy.shortGapAccept
+          ).then(function (shortGapConfirmed) {
+            if (shortGapConfirmed) {
+              setCycleStartHiddenValue(form, "[data-cycle-start-uncertain-input]", true);
+            }
+            return shortGapConfirmed;
+          });
+        })
+        .then(function (confirmed) {
+          if (!confirmed) {
+            return;
+          }
+          submitCycleStartForm(form);
+        });
     });
   }
 
@@ -1957,12 +2087,15 @@
   }
 
   function cycleGuidanceState(cycleLength, periodLength) {
-    var gap = cycleLength - periodLength;
+    var maxPeriodLength = Math.max(1, Math.min(14, cycleLength - 10));
+    var safePeriodLength = Math.min(periodLength, maxPeriodLength);
     return {
-      invalid: gap < 8,
-      warning: gap >= 8 && gap < 15,
-      periodLong: gap >= 15 && periodLength > 8,
-      cycleShort: gap >= 15 && periodLength <= 8 && cycleLength < 24
+      invalid: false,
+      warning: false,
+      adjusted: safePeriodLength !== periodLength,
+      periodLength: safePeriodLength,
+      periodLong: safePeriodLength > 8,
+      cycleShort: cycleLength < 24
     };
   }
 
@@ -2494,6 +2627,7 @@
     var cycleLength = clampInteger(cycleInput.value, 28, 15, 90);
     var periodLength = clampInteger(periodInput.value, 5, 1, 14);
     var guidance = cycleGuidanceState(cycleLength, periodLength);
+    periodLength = guidance.periodLength;
 
     cycleInput.value = String(cycleLength);
     periodInput.value = String(periodLength);
@@ -2506,6 +2640,7 @@
 
     setNodeHidden(root.querySelector("[data-settings-cycle-message='error']"), !guidance.invalid);
     setNodeHidden(root.querySelector("[data-settings-cycle-message='warning']"), !guidance.warning);
+    setNodeHidden(root.querySelector("[data-settings-cycle-message='adjusted']"), !guidance.adjusted);
     setNodeHidden(root.querySelector("[data-settings-cycle-message='period-long']"), !guidance.periodLong);
     setNodeHidden(root.querySelector("[data-settings-cycle-message='cycle-short']"), !guidance.cycleShort);
   }
@@ -2803,6 +2938,7 @@
     state.cycleLength = clampInteger(state.cycleLength, 28, 15, 90);
     state.periodLength = clampInteger(state.periodLength, 5, 1, 14);
     guidance = cycleGuidanceState(state.cycleLength, state.periodLength);
+    state.periodLength = guidance.periodLength;
 
     if (state.cycleInput) {
       state.cycleInput.value = String(state.cycleLength);
@@ -2819,6 +2955,7 @@
 
     setNodeHidden(state.stepTwoMessages.error, !guidance.invalid);
     setNodeHidden(state.stepTwoMessages.warning, !guidance.warning);
+    setNodeHidden(state.stepTwoMessages.adjusted, !guidance.adjusted);
     setNodeHidden(state.stepTwoMessages.periodLong, !guidance.periodLong);
     setNodeHidden(state.stepTwoMessages.cycleShort, !guidance.cycleShort);
 
@@ -2878,6 +3015,7 @@
           stepTwoMessages: {
             error: root.querySelector("[data-onboarding-step2-message='error']"),
             warning: root.querySelector("[data-onboarding-step2-message='warning']"),
+            adjusted: root.querySelector("[data-onboarding-step2-message='adjusted']"),
             periodLong: root.querySelector("[data-onboarding-step2-message='period-long']"),
             cycleShort: root.querySelector("[data-onboarding-step2-message='cycle-short']")
           },
@@ -3178,6 +3316,7 @@
     initRegisterValidation();
     initLoginPasswordPersistence();
     initConfirmModal();
+    bindCycleStartConfirmForms();
     initToastAPI();
     initHTMXHooks();
     initCSPFriendlyComponents();

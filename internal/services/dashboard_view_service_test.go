@@ -201,6 +201,30 @@ func TestBuildDashboardViewDataSuggestsManualCycleStartAfterLongGap(t *testing.T
 	}
 }
 
+func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testing.T) {
+	user := &models.User{ID: 6, Role: models.RoleOwner, CycleLength: 28, TrackCervicalMucus: true}
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{},
+		&stubDashboardViewerProvider{
+			logEntry: models.DailyLog{
+				Date:          today,
+				CervicalMucus: models.CervicalMucusEggWhite,
+			},
+		},
+		&stubDashboardDayStateProvider{},
+	)
+
+	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+	if !viewData.ShowHighFertilityBadge {
+		t.Fatalf("expected high-fertility badge for egg-white mucus")
+	}
+}
+
 func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 	user := &models.User{ID: 4, Role: models.RoleOwner}
 	now := mustParseDashboardServiceDay(t, "2026-02-21")

@@ -139,7 +139,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
       .click();
 
     await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator('.status-ok')).toBeVisible();
+    await expect(page.locator('#settings-change-password-status .status-ok').first()).toBeVisible();
 
     await logoutViaAPI(page);
     await loginViaUI(page, creds);

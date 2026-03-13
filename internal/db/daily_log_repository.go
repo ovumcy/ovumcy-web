@@ -53,21 +53,13 @@ func (repo *DailyLogRepository) ListByUserDayRange(userID uint, dayStart time.Ti
 func (repo *DailyLogRepository) ListPeriodDays(userID uint) ([]models.DailyLog, error) {
 	logs := make([]models.DailyLog, 0)
 	if err := repo.database.
-		Select("date", "is_period", "cycle_start").
+		Select("date", "is_period", "cycle_start", "is_uncertain").
 		Where("user_id = ? AND is_period = ?", userID, true).
 		Order("date ASC").
 		Find(&logs).Error; err != nil {
 		return nil, err
 	}
 	return logs, nil
-}
-
-func (repo *DailyLogRepository) ClearCycleStartsExcept(userID uint, dayStart time.Time, dayEnd time.Time) error {
-	return repo.database.
-		Model(&models.DailyLog{}).
-		Where("user_id = ? AND cycle_start = ? AND NOT (date >= ? AND date < ?)", userID, true, dayStart, dayEnd).
-		Update("cycle_start", false).
-		Error
 }
 
 func (repo *DailyLogRepository) FindByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
@@ -79,6 +71,7 @@ func (repo *DailyLogRepository) FindByUserAndDayRange(userID uint, dayStart time
 			"date",
 			"is_period",
 			"cycle_start",
+			"is_uncertain",
 			"flow",
 			"mood",
 			"sex_activity",

@@ -51,6 +51,7 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 		OnboardingCompleted bool   `gorm:"column:onboarding_completed"`
 		CycleLength         int    `gorm:"column:cycle_length"`
 		PeriodLength        int    `gorm:"column:period_length"`
+		LutealPhase         int    `gorm:"column:luteal_phase"`
 		AutoPeriodFill      bool   `gorm:"column:auto_period_fill"`
 		IrregularCycle      bool   `gorm:"column:irregular_cycle"`
 		TrackBBT            bool   `gorm:"column:track_bbt"`
@@ -67,6 +68,7 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 			"onboarding_completed",
 			"cycle_length",
 			"period_length",
+			"luteal_phase",
 			"auto_period_fill",
 			"irregular_cycle",
 			"track_bbt",
@@ -94,6 +96,9 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 	if migratedUser.PeriodLength != 5 {
 		t.Fatalf("expected period_length default to be 5, got %d", migratedUser.PeriodLength)
 	}
+	if migratedUser.LutealPhase != 14 {
+		t.Fatalf("expected luteal_phase default to be 14, got %d", migratedUser.LutealPhase)
+	}
 	if !migratedUser.AutoPeriodFill {
 		t.Fatal("expected auto_period_fill default to be true")
 	}
@@ -118,6 +123,8 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 	t.Helper()
 
 	var migratedLog struct {
+		CycleStart    bool    `gorm:"column:cycle_start"`
+		IsUncertain   bool    `gorm:"column:is_uncertain"`
 		Flow          string  `gorm:"column:flow"`
 		Mood          int     `gorm:"column:mood"`
 		SexActivity   string  `gorm:"column:sex_activity"`
@@ -128,12 +135,18 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 	}
 	if err := database.
 		Table("daily_logs").
-		Select("flow", "mood", "sex_activity", "bbt", "cervical_mucus", "symptom_ids", "notes").
+		Select("cycle_start", "is_uncertain", "flow", "mood", "sex_activity", "bbt", "cervical_mucus", "symptom_ids", "notes").
 		Where("notes = ?", "legacy-log").
 		First(&migratedLog).Error; err != nil {
 		t.Fatalf("load migrated legacy daily log: %v", err)
 	}
 
+	if migratedLog.CycleStart {
+		t.Fatal("expected migrated cycle_start default to be false")
+	}
+	if migratedLog.IsUncertain {
+		t.Fatal("expected migrated is_uncertain default to be false")
+	}
 	if migratedLog.Flow != "light" {
 		t.Fatalf("expected migrated flow=light, got %q", migratedLog.Flow)
 	}
@@ -267,6 +280,7 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"onboarding_completed",
 		"cycle_length",
 		"period_length",
+		"luteal_phase",
 		"auto_period_fill",
 		"auth_session_version",
 		"irregular_cycle",
@@ -310,6 +324,12 @@ func assertDailyLogsSchemaReconciled(t *testing.T, database *gorm.DB) {
 	}
 	if _, exists := columns["symptom_ids"]; !exists {
 		t.Fatal("expected daily_logs.symptom_ids column to exist after migrations")
+	}
+	if _, exists := columns["cycle_start"]; !exists {
+		t.Fatal("expected daily_logs.cycle_start column to exist after migrations")
+	}
+	if _, exists := columns["is_uncertain"]; !exists {
+		t.Fatal("expected daily_logs.is_uncertain column to exist after migrations")
 	}
 
 	notNullFlags := loadTableColumnNotNullFlags(t, database, "daily_logs")

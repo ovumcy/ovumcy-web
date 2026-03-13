@@ -95,10 +95,10 @@ func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleS
 	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
 	preFertileStart := cycleStart.AddDate(0, 0, periodLength)
 
-	fertilityStart := DateAtLocation(stats.FertilityWindowStart, location)
+		fertilityStart := DateAtLocation(stats.FertilityWindowStart, location)
 	if fertilityStart.IsZero() {
 		cycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
-		_, computedFertilityStart, _, _, calculable := PredictCycleWindow(cycleStart, cycleLength, periodLength)
+		_, computedFertilityStart, _, _, calculable := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
 		if !calculable || computedFertilityStart.IsZero() {
 			return
 		}
@@ -136,7 +136,7 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	predictedPeriodLength := predictedPeriodLength(stats.AveragePeriodLength)
 	for cycleStart := DateAtLocation(stats.NextPeriodStart, location); !cycleStart.After(gridEnd); cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
-		appendPredictedWindow(preFertileMap, fertilityMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength)
+		appendPredictedWindow(preFertileMap, fertilityMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
 	}
 }
 
@@ -147,8 +147,8 @@ func appendPredictedPeriod(predictedPeriodMap map[string]bool, cycleStart time.T
 	}
 }
 
-func appendPredictedWindow(preFertileMap map[string]bool, fertilityMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int) {
-	ovulationDate, fertilityStart, fertilityEnd, _, calculable := PredictCycleWindow(cycleStart, predictedCycleLength, predictedPeriodLength)
+func appendPredictedWindow(preFertileMap map[string]bool, fertilityMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int, lutealPhase int) {
+	ovulationDate, fertilityStart, fertilityEnd, _, calculable := PredictCycleWindow(cycleStart, predictedCycleLength, ResolveLutealPhase(lutealPhase))
 	if !calculable {
 		return
 	}

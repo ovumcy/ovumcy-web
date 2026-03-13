@@ -67,7 +67,7 @@ func TestStatsChartExcludesCycleEndingToday(t *testing.T) {
 		return
 	}
 
-	if !strings.Contains(rendered, "Keep tracking. Your patterns will appear here.") {
+	if !strings.Contains(rendered, "Enter the start of your next period to complete your first cycle and unlock insights.") {
 		t.Fatalf("expected empty-state message when chart payload is skipped, got %q", rendered)
 	}
 }

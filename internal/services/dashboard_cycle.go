@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
@@ -14,7 +15,8 @@ type DashboardCycleContext struct {
 	DisplayNextPeriodRangeStart time.Time
 	DisplayNextPeriodRangeEnd   time.Time
 	DisplayNextPeriodUseRange   bool
-	DisplayNextPeriodDelayed    bool
+	DisplayNextPeriodPrompt     bool
+	DisplayNextPeriodNeedsData  bool
 	DisplayOvulationDate        time.Time
 	DisplayOvulationExact       bool
 	DisplayOvulationImpossible  bool
@@ -60,38 +62,36 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *ti
 	return DateAtLocation(*user.LastPeriodStart, location)
 }
 
-func DashboardPredictionRange(user *models.User, stats CycleStats, location *time.Location) (time.Time, time.Time, bool) {
-	if stats.LastPeriodStart.IsZero() {
+func predictionRangeSpanDays(stats CycleStats) int {
+	switch {
+	case stats.CompletedCycleCount < 3:
+		return 4
+	case stats.CompletedCycleCount < 6:
+		return 3
+	default:
+		span := int(math.Round(stats.CycleLengthStdDev))
+		if span < 1 {
+			span = 1
+		}
+		return span
+	}
+}
+
+func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStart time.Time, location *time.Location) (time.Time, time.Time, bool) {
+	if predictedStart.IsZero() {
 		return time.Time{}, time.Time{}, false
 	}
 
-	minCycleLength := stats.MinCycleLength
-	maxCycleLength := stats.MaxCycleLength
-	if minCycleLength <= 0 || maxCycleLength <= 0 || maxCycleLength < minCycleLength {
-		referenceLength := DashboardCycleReferenceLength(user, stats)
-		if referenceLength <= 0 {
-			return time.Time{}, time.Time{}, false
-		}
-		minCycleLength = referenceLength - irregularCycleFallbackSpan
-		if minCycleLength < 15 {
-			minCycleLength = 15
-		}
-		maxCycleLength = referenceLength + irregularCycleFallbackSpan
-		if maxCycleLength < minCycleLength {
-			maxCycleLength = minCycleLength
-		}
+	if user != nil && user.IrregularCycle && stats.CompletedCycleCount >= 3 && stats.MinCycleLength > 0 && stats.MaxCycleLength >= stats.MinCycleLength {
+		return DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, stats.MinCycleLength), location),
+			DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, stats.MaxCycleLength), location),
+			true
 	}
 
-	return DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, minCycleLength), location),
-		DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, maxCycleLength), location),
+	spanDays := predictionRangeSpanDays(stats)
+	return DateAtLocation(predictedStart.AddDate(0, 0, -spanDays), location),
+		DateAtLocation(predictedStart.AddDate(0, 0, spanDays), location),
 		true
-}
-
-func DashboardShouldHideExactPrediction(currentCycleDay int, referenceLength int) bool {
-	if currentCycleDay <= 0 || referenceLength <= 0 {
-		return false
-	}
-	return currentCycleDay > referenceLength+7
 }
 
 func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today time.Time, cycleLength int) (time.Time, time.Time, bool, bool) {
@@ -110,11 +110,10 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 	}
 
 	nextPeriodStart = DateAtLocation(cycleStart.AddDate(0, 0, cycleLength), today.Location())
-	predictedPeriodLength := DashboardPredictedPeriodLength(user, stats)
 	ovulationDate, _, _, ovulationExact, ovulationCalculable := PredictCycleWindow(
 		cycleStart,
 		cycleLength,
-		predictedPeriodLength,
+		stats.LutealPhase,
 	)
 	if ovulationCalculable && ovulationDate.Before(today) {
 		cycleStart = ShiftCycleStartToFutureOvulation(cycleStart, ovulationDate, cycleLength, today)
@@ -122,7 +121,7 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 		ovulationDate, _, _, ovulationExact, ovulationCalculable = PredictCycleWindow(
 			cycleStart,
 			cycleLength,
-			predictedPeriodLength,
+			stats.LutealPhase,
 		)
 	}
 	if !ovulationCalculable {
@@ -146,15 +145,10 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 	displayNextPeriodRangeStart := time.Time{}
 	displayNextPeriodRangeEnd := time.Time{}
 	displayNextPeriodUseRange := false
-	displayNextPeriodDelayed := false
-
-	if user != nil && user.IrregularCycle {
-		displayNextPeriodRangeStart, displayNextPeriodRangeEnd, displayNextPeriodUseRange = DashboardPredictionRange(user, stats, location)
-	}
-
-	if !displayNextPeriodUseRange && DashboardShouldHideExactPrediction(stats.CurrentCycleDay, cycleDayReference) {
-		displayNextPeriodStart = time.Time{}
-		displayNextPeriodDelayed = true
+	displayNextPeriodPrompt := stats.LastPeriodStart.IsZero()
+	displayNextPeriodNeedsData := user != nil && user.IrregularCycle && stats.CompletedCycleCount < 3 && !displayNextPeriodStart.IsZero()
+	if !displayNextPeriodPrompt && !displayNextPeriodNeedsData {
+		displayNextPeriodRangeStart, displayNextPeriodRangeEnd, displayNextPeriodUseRange = DashboardPredictionRange(user, stats, displayNextPeriodStart, location)
 	}
 
 	return DashboardCycleContext{
@@ -165,24 +159,14 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 		DisplayNextPeriodRangeStart: displayNextPeriodRangeStart,
 		DisplayNextPeriodRangeEnd:   displayNextPeriodRangeEnd,
 		DisplayNextPeriodUseRange:   displayNextPeriodUseRange,
-		DisplayNextPeriodDelayed:    displayNextPeriodDelayed,
+		DisplayNextPeriodPrompt:     displayNextPeriodPrompt,
+		DisplayNextPeriodNeedsData:  displayNextPeriodNeedsData,
 		DisplayOvulationDate:        displayOvulationDate,
 		DisplayOvulationExact:       displayOvulationExact,
 		DisplayOvulationImpossible:  displayOvulationImpossible,
-		NextPeriodInPast:            !displayNextPeriodUseRange && !displayNextPeriodStart.IsZero() && displayNextPeriodStart.Before(today),
+		NextPeriodInPast:            displayNextPeriodUseRange && !displayNextPeriodRangeEnd.IsZero() && displayNextPeriodRangeEnd.Before(today),
 		OvulationInPast:             !displayOvulationImpossible && !displayOvulationDate.IsZero() && displayOvulationDate.Before(today),
 	}
-}
-
-func DashboardPredictedPeriodLength(user *models.User, stats CycleStats) int {
-	if user != nil && IsValidOnboardingPeriodLength(user.PeriodLength) {
-		return user.PeriodLength
-	}
-	predictedPeriodLength := int(stats.AveragePeriodLength + 0.5)
-	if predictedPeriodLength > 0 {
-		return predictedPeriodLength
-	}
-	return models.DefaultPeriodLength
 }
 
 func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location *time.Location) []int {

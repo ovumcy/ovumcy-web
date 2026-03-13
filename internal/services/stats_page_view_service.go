@@ -35,13 +35,20 @@ type StatsPageViewData struct {
 	ChartBaseline                       int
 	TrendPointCount                     int
 	Flags                               StatsFlags
+	LastCycleSymptoms                   []StatsSymptomCountViewData
+	SymptomPatterns                     []StatsSymptomPatternViewData
 	SymptomCounts                       []StatsSymptomCountViewData
+	CurrentCycleBBTChart                StatsBBTChartViewData
 	PhaseMoodInsights                   []StatsPhaseMoodInsight
 	PhaseSymptomInsights                []StatsPhaseSymptomInsight
+	HasLastCycleSymptoms                bool
+	HasSymptomPatterns                  bool
+	HasCurrentCycleBBTChart             bool
 	HasPhaseMoodInsights                bool
 	HasPhaseSymptomInsights             bool
 	ShowIrregularityNotice              bool
 	ShowIrregularInsufficientDataNotice bool
+	ShowIrregularModeRecommendation     bool
 	IsIrregularMode                     bool
 	IsOwner                             bool
 }
@@ -61,10 +68,6 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 		return StatsPageViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
 	}
 	phaseMoodInsights, hasPhaseMoodInsights := service.BuildPhaseMoodInsights(user, logs, location)
-	phaseSymptomInsights, hasPhaseSymptomInsights, err := service.BuildPhaseSymptomInsights(user, logs, location)
-	if err != nil {
-		return StatsPageViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
-	}
 
 	symptomCounts := make([]StatsSymptomCountViewData, 0, len(frequencies))
 	for _, item := range frequencies {
@@ -87,19 +90,45 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 		chartData.HasBaseline = true
 	}
 
+	completedCycles := buildCompletedCycleSpans(logs, location)
+	lastCycleSymptoms := []StatsSymptomCountViewData{}
+	symptomPatterns := []StatsSymptomPatternViewData{}
+	currentCycleBBTChart := StatsBBTChartViewData{}
+	phaseSymptomInsights := []StatsPhaseSymptomInsight{}
+	hasPhaseSymptomInsights := false
+	if IsOwnerUser(user) {
+		currentCycleBBTChart = buildCurrentCycleBBTChart(stats, logs, now, location)
+	}
+	if IsOwnerUser(user) && service.symptoms != nil {
+		symptomByID, err := service.phaseInsightSymptomMap(user.ID)
+		if err != nil {
+			return StatsPageViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
+		}
+		lastCycleSymptoms = buildLastCycleSymptomCounts(language, logs, completedCycles, symptomByID, location)
+		symptomPatterns = buildSymptomPatternInsights(logs, completedCycles, symptomByID, location)
+		phaseSymptomInsights, hasPhaseSymptomInsights = buildPhaseSymptomInsightsWithMap(logs, location, symptomByID)
+	}
+
 	return StatsPageViewData{
 		Stats:                               stats,
 		ChartData:                           chartData,
 		ChartBaseline:                       baselineCycleLength,
 		TrendPointCount:                     trendPointCount,
 		Flags:                               flags,
+		LastCycleSymptoms:                   lastCycleSymptoms,
+		SymptomPatterns:                     symptomPatterns,
 		SymptomCounts:                       symptomCounts,
+		CurrentCycleBBTChart:                currentCycleBBTChart,
 		PhaseMoodInsights:                   phaseMoodInsights,
 		PhaseSymptomInsights:                phaseSymptomInsights,
+		HasLastCycleSymptoms:                len(lastCycleSymptoms) > 0,
+		HasSymptomPatterns:                  len(symptomPatterns) > 0,
+		HasCurrentCycleBBTChart:             len(currentCycleBBTChart.Labels) > 0,
 		HasPhaseMoodInsights:                hasPhaseMoodInsights,
 		HasPhaseSymptomInsights:             hasPhaseSymptomInsights,
-		ShowIrregularityNotice:              IsOwnerUser(user) && !user.IrregularCycle && IsIrregularCycleSpread(stats),
-		ShowIrregularInsufficientDataNotice: user != nil && user.IrregularCycle && flags.CompletedCycleCount < 2,
+		ShowIrregularityNotice:              IsOwnerUser(user) && !user.IrregularCycle && flags.CompletedCycleCount >= 3 && IsIrregularCycleSpread(stats),
+		ShowIrregularInsufficientDataNotice: user != nil && user.IrregularCycle && flags.CompletedCycleCount < 3,
+		ShowIrregularModeRecommendation:     IsOwnerUser(user) && !user.IrregularCycle && flags.CompletedCycleCount >= 3 && IsIrregularCycleSpread(stats),
 		IsIrregularMode:                     user != nil && user.IrregularCycle,
 		IsOwner:                             IsOwnerUser(user),
 	}, nil

@@ -323,7 +323,8 @@ test.describe('Settings: profile and cycle', () => {
 
     const nextPeriodText = await currentNextPeriodText(page);
     expect(nextPeriodText).toContain('around');
-    expect(nextPeriodText).toContain(' - ');
+    expect(nextPeriodText).toContain('3 cycles are needed');
+    expect(nextPeriodText).not.toContain(' - ');
   });
 
   test('tracking toggles and BBT unit persist and change the owner day form', async ({ page }) => {

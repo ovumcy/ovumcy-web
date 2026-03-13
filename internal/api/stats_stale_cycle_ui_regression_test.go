@@ -15,11 +15,8 @@ import (
 
 func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
 	rendered := renderStatsPageWithStaleCycleData(t)
-	if !strings.Contains(rendered, "Keep logging") {
-		t.Fatalf("expected gated empty state on stats page before enough completed cycles")
-	}
-	if !strings.Contains(rendered, "first insights") {
-		t.Fatalf("expected empty state to explain how to unlock first insights")
+	if !strings.Contains(rendered, "Enter the start of your next period to complete your first cycle and unlock insights.") {
+		t.Fatalf("expected updated empty-state guidance before the first completed cycle")
 	}
 }
 

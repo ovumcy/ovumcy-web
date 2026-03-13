@@ -15,11 +15,14 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	}
 
 	latestExplicitCycleStart := findLatestExplicitCycleStart(logs, location)
-	cycleLength, periodLength := resolveUserCycleLengths(user)
+	cycleLength, periodLength, lutealPhase := resolveUserCycleLengths(user)
+	if inferredLutealPhase, ok := InferUserLutealPhase(logs, location); ok {
+		lutealPhase = inferredLutealPhase
+	}
 	hasObservedCycleLengths := len(CycleLengths(logs)) >= 1
 	today := DateAtLocation(now.In(location), location)
 	applyObservedBaseline(&stats, user, latestExplicitCycleStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
-	applyProjectedBaseline(&stats, cycleLength, periodLength, location)
+	applyProjectedBaseline(&stats, cycleLength, periodLength, lutealPhase, location)
 
 	stats.CurrentCycleDay = baselineCurrentCycleDay(stats.LastPeriodStart, today)
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
@@ -34,7 +37,7 @@ func findLatestExplicitCycleStart(logs []models.DailyLog, location *time.Locatio
 	return DateAtLocation(explicitStarts[len(explicitStarts)-1], location)
 }
 
-func resolveUserCycleLengths(user *models.User) (int, int) {
+func resolveUserCycleLengths(user *models.User) (int, int, int) {
 	cycleLength := 0
 	if IsValidOnboardingCycleLength(user.CycleLength) {
 		cycleLength = user.CycleLength
@@ -47,7 +50,8 @@ func resolveUserCycleLengths(user *models.User) (int, int) {
 	if periodLength <= 0 {
 		periodLength = models.DefaultPeriodLength
 	}
-	return cycleLength, periodLength
+
+	return cycleLength, periodLength, ResolveLutealPhase(user.LutealPhase)
 }
 
 func applyObservedBaseline(stats *CycleStats, user *models.User, latestExplicitCycleStart time.Time, cycleLength int, periodLength int, hasObservedCycleLengths bool, today time.Time, location *time.Location) {
@@ -76,7 +80,7 @@ func baselineLastPeriodStart(user *models.User, latestExplicitCycleStart time.Ti
 	}
 	if !latestExplicitCycleStart.IsZero() {
 		latestExplicitCycleStart = DateAtLocation(latestExplicitCycleStart, location)
-		if today.IsZero() || !latestExplicitCycleStart.After(manualCycleStartMaxDate(today, location)) {
+		if today.IsZero() || !latestExplicitCycleStart.After(today) {
 			return latestExplicitCycleStart
 		}
 	}
@@ -86,7 +90,7 @@ func baselineLastPeriodStart(user *models.User, latestExplicitCycleStart time.Ti
 	return time.Time{}
 }
 
-func applyProjectedBaseline(stats *CycleStats, cycleLength int, periodLength int, location *time.Location) {
+func applyProjectedBaseline(stats *CycleStats, cycleLength int, periodLength int, lutealPhase int, location *time.Location) {
 	if stats.LastPeriodStart.IsZero() {
 		return
 	}
@@ -104,11 +108,12 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, periodLength int
 	if projectedPeriodLength <= 0 {
 		projectedPeriodLength = periodLength
 	}
+	stats.LutealPhase = ResolveLutealPhase(lutealPhase)
 
 	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(
 		stats.LastPeriodStart,
 		predictionCycleLength,
-		projectedPeriodLength,
+		stats.LutealPhase,
 	)
 	if !ovulationCalculable {
 		clearPredictedCycleWindow(stats)

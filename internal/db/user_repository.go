@@ -127,6 +127,7 @@ func (repo *UserRepository) LoadSettingsByID(userID uint) (models.User, error) {
 		Select(
 			"cycle_length",
 			"period_length",
+			"luteal_phase",
 			"auto_period_fill",
 			"irregular_cycle",
 			"track_bbt",
@@ -159,6 +160,7 @@ func (repo *UserRepository) SaveOnboardingStep2(userID uint, cycleLength int, pe
 	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"cycle_length":     cycleLength,
 		"period_length":    periodLength,
+		"luteal_phase":     14,
 		"auto_period_fill": autoPeriodFill,
 		"irregular_cycle":  irregularCycle,
 	}).Error
@@ -175,6 +177,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(userID uint) error {
 		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 			"cycle_length":         models.DefaultCycleLength,
 			"period_length":        models.DefaultPeriodLength,
+			"luteal_phase":         14,
 			"auto_period_fill":     true,
 			"irregular_cycle":      false,
 			"track_bbt":            false,

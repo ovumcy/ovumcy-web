@@ -277,6 +277,7 @@ test.describe('Onboarding flow', () => {
 
     const nextPeriodText = await currentDashboardNextPeriodText(page);
     expect(nextPeriodText).toContain('around');
-    expect(nextPeriodText).toContain(' - ');
+    expect(nextPeriodText).toContain('3 cycles are needed');
+    expect(nextPeriodText).not.toContain(' - ');
   });
 });

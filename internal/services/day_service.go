@@ -30,11 +30,15 @@ type DayEntryInput struct {
 	SymptomIDs    []uint
 }
 
+type ManualCycleStartOptions struct {
+	ReplaceExisting bool
+	MarkUncertain   bool
+}
+
 type DayLogRepository interface {
 	ListByUser(userID uint) ([]models.DailyLog, error)
 	ListByUserRange(userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error)
 	ListByUserDayRange(userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error)
-	ClearCycleStartsExcept(userID uint, dayStart time.Time, dayEnd time.Time) error
 	FindByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error)
 	Create(entry *models.DailyLog) error
 	Save(entry *models.DailyLog) error
@@ -43,6 +47,7 @@ type DayLogRepository interface {
 
 type DayUserRepository interface {
 	LoadSettingsByID(userID uint) (models.User, error)
+	UpdateByID(userID uint, updates map[string]any) error
 }
 
 type DayService struct {
@@ -133,6 +138,7 @@ func (service *DayService) UpsertDayEntry(userID uint, dayStart time.Time, paylo
 		entry.IsPeriod = payload.IsPeriod
 		if !payload.IsPeriod {
 			entry.CycleStart = false
+			entry.IsUncertain = false
 		}
 		entry.Flow = payload.Flow
 		entry.Mood = payload.Mood
@@ -199,6 +205,8 @@ func (service *DayService) UpsertDayEntryWithAutoFill(userID uint, day time.Time
 		}
 	}
 
+	service.refreshDerivedCycleSettings(userID, location)
+
 	return entry, nil
 }
 
@@ -206,12 +214,29 @@ func (service *DayService) DeleteDayEntry(userID uint, day time.Time, location *
 	if err := service.DeleteDailyLogByDate(userID, day, location); err != nil {
 		return ErrDeleteDayFailed
 	}
+	service.refreshDerivedCycleSettings(userID, location)
 	return nil
 }
 
-func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, now time.Time, location *time.Location) error {
+func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, now time.Time, location *time.Location, options ManualCycleStartOptions) error {
 	if !IsAllowedManualCycleStartDate(day, now, location) {
 		return ErrManualCycleStartDateInvalid
+	}
+
+	logs, err := service.logs.ListByUser(userID)
+	if err != nil {
+		return ErrDayEntryLoadFailed
+	}
+	userSettings, err := service.users.LoadSettingsByID(userID)
+	if err != nil {
+		return ErrDayEntryLoadFailed
+	}
+	policy := ResolveManualCycleStartPolicy(&userSettings, logs, day, now, location)
+	if !policy.ConflictDate.IsZero() && !options.ReplaceExisting {
+		return ErrManualCycleStartReplaceRequired
+	}
+	if policy.ShortGapDays > 0 && !options.MarkUncertain {
+		return ErrManualCycleStartConfirmationNeeded
 	}
 
 	existingEntry, err := service.FetchLogByDate(userID, day, location)
@@ -242,10 +267,6 @@ func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, no
 
 	dayStart, _ := DayRange(day, location)
 	dayEnd := dayStart.AddDate(0, 0, 1)
-	if err := service.logs.ClearCycleStartsExcept(userID, dayStart, dayEnd); err != nil {
-		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
-	}
-
 	entry, found, err := service.logs.FindByUserAndDayRange(userID, dayStart, dayEnd)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
@@ -254,9 +275,19 @@ func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, no
 		return ErrManualCycleStartFailed
 	}
 	entry.CycleStart = true
+	entry.IsUncertain = options.MarkUncertain && policy.ShortGapDays > 0
 	if err := service.logs.Save(&entry); err != nil {
 		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
 	}
+
+	allLogs, err := service.logs.ListByUser(userID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
+	}
+	if err := service.clearCompetingCycleStarts(userID, allLogs, entry, location); err != nil {
+		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
+	}
+	service.refreshDerivedCycleSettings(userID, location)
 
 	return nil
 }
@@ -355,4 +386,53 @@ func (service *DayService) hasPeriodInRecentDays(userID uint, day time.Time, loo
 		}
 	}
 	return false, nil
+}
+
+func (service *DayService) clearCompetingCycleStarts(userID uint, logs []models.DailyLog, selectedEntry models.DailyLog, location *time.Location) error {
+	clusterStart, clusterEnd, ok := manualCycleStartClusterBounds(logs, selectedEntry.Date, location)
+	if !ok {
+		return nil
+	}
+
+	selectedDay := DateAtLocation(selectedEntry.Date, location)
+	for _, logEntry := range logs {
+		if logEntry.UserID != userID || !logEntry.CycleStart {
+			continue
+		}
+
+		logDay := DateAtLocation(logEntry.Date, location)
+		if logDay.Before(clusterStart) || logDay.After(clusterEnd) {
+			continue
+		}
+		if sameCalendarDay(logDay, selectedDay) && logEntry.ID == selectedEntry.ID {
+			continue
+		}
+
+		logEntry.CycleStart = false
+		logEntry.IsUncertain = false
+		if err := service.logs.Save(&logEntry); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (service *DayService) refreshDerivedCycleSettings(userID uint, location *time.Location) {
+	if service == nil || service.users == nil || service.logs == nil {
+		return
+	}
+
+	logs, err := service.logs.ListByUser(userID)
+	if err != nil {
+		return
+	}
+
+	lutealPhase, ok := InferUserLutealPhase(logs, location)
+	if !ok {
+		lutealPhase = defaultLutealPhaseDays
+	}
+	_ = service.users.UpdateByID(userID, map[string]any{
+		"luteal_phase": lutealPhase,
+	})
 }

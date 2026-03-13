@@ -43,8 +43,8 @@ func TestApplyUserCycleBaselineUsesSettingsFallbackWhenNoExplicitCycleStartExist
 	if stats.CurrentCycleDay != 11 {
 		t.Fatalf("expected current cycle day 11, got %d", stats.CurrentCycleDay)
 	}
-	if stats.CurrentPhase != "luteal" {
-		t.Fatalf("expected luteal phase, got %s", stats.CurrentPhase)
+	if stats.CurrentPhase != "unknown" {
+		t.Fatalf("expected unknown phase for incompatible projected cycle, got %s", stats.CurrentPhase)
 	}
 }
 
@@ -90,6 +90,7 @@ func TestApplyUserCycleBaselineMarksIncompatibleCycleAsUncalculable(t *testing.T
 		Role:            models.RoleOwner,
 		CycleLength:     15,
 		PeriodLength:    10,
+		LutealPhase:     15,
 		LastPeriodStart: &userLastPeriod,
 	}
 

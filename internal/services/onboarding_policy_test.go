@@ -146,8 +146,8 @@ func TestParseAndNormalizeStep2Input(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected valid step2 input after normalize, got %v", err)
 	}
-	if cycleLength != 15 || periodLength != 7 {
-		t.Fatalf("expected normalized values 15/7, got %d/%d", cycleLength, periodLength)
+	if cycleLength != 15 || periodLength != 5 {
+		t.Fatalf("expected normalized values 15/5, got %d/%d", cycleLength, periodLength)
 	}
 	if !autoPeriodFill {
 		t.Fatalf("expected autoPeriodFill=true")

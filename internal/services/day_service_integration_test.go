@@ -243,7 +243,7 @@ func TestDayServiceMarkCycleStartManuallyPreservesEntryAndMarksExplicitStart(t *
 		t.Fatalf("create log: %v", err)
 	}
 
-	if err := service.MarkCycleStartManually(user.ID, targetDay, targetDay, time.UTC); err != nil {
+	if err := service.MarkCycleStartManually(user.ID, targetDay, targetDay, time.UTC, ManualCycleStartOptions{}); err != nil {
 		t.Fatalf("MarkCycleStartManually returned error: %v", err)
 	}
 
@@ -293,7 +293,7 @@ func TestDayServiceMarkCycleStartManuallyClearsPreviousExplicitStart(t *testing.
 		t.Fatalf("create logs: %v", err)
 	}
 
-	if err := service.MarkCycleStartManually(user.ID, earlierDay, laterDay, time.UTC); err != nil {
+	if err := service.MarkCycleStartManually(user.ID, earlierDay, laterDay, time.UTC, ManualCycleStartOptions{ReplaceExisting: true}); err != nil {
 		t.Fatalf("MarkCycleStartManually returned error: %v", err)
 	}
 

@@ -40,9 +40,10 @@ func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-04-20"), IsPeriod: true},
 	}
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
-	now := mustParseStatsServiceDay(t, "2026-03-20")
+	now := mustParseStatsServiceDay(t, "2026-04-25")
 
 	regularUser := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32}
 	regularView, err := service.BuildStatsPageViewData(regularUser, "en", "Cycle %d", now, time.UTC, 12)
@@ -55,8 +56,8 @@ func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 	if regularView.IsIrregularMode {
 		t.Fatalf("expected IsIrregularMode=false for regular user")
 	}
-	if regularView.ChartBaseline != 34 {
-		t.Fatalf("expected averaged chart baseline 34, got %d", regularView.ChartBaseline)
+	if regularView.ChartBaseline != 36 {
+		t.Fatalf("expected averaged chart baseline 36, got %d", regularView.ChartBaseline)
 	}
 
 	irregularUser := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32, IrregularCycle: true}
@@ -86,6 +87,75 @@ func TestBuildStatsPageViewDataShowsIrregularInsufficientDataNotice(t *testing.T
 	}
 	if !viewData.ShowIrregularInsufficientDataNotice {
 		t.Fatalf("expected ShowIrregularInsufficientDataNotice=true")
+	}
+}
+
+func TestBuildStatsPageViewDataBuildsLastCycleSymptomsPatternsAndBBTChart(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-02"), SymptomIDs: []uint{1}},
+		{Date: mustParseStatsServiceDay(t, "2026-01-05"), SymptomIDs: []uint{2}},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-30"), SymptomIDs: []uint{1}},
+		{Date: mustParseStatsServiceDay(t, "2026-02-02"), SymptomIDs: []uint{2}},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-27"), SymptomIDs: []uint{1}},
+		{Date: mustParseStatsServiceDay(t, "2026-02-28"), SymptomIDs: []uint{1}},
+		{Date: mustParseStatsServiceDay(t, "2026-03-02"), SymptomIDs: []uint{2}},
+		{Date: mustParseStatsServiceDay(t, "2026-03-04"), SymptomIDs: []uint{3}},
+		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, BBT: 36.40},
+		{Date: mustParseStatsServiceDay(t, "2026-03-27"), BBT: 36.45},
+		{Date: mustParseStatsServiceDay(t, "2026-03-28"), BBT: 36.50},
+		{Date: mustParseStatsServiceDay(t, "2026-03-29"), BBT: 36.42},
+		{Date: mustParseStatsServiceDay(t, "2026-03-30"), BBT: 36.43},
+		{Date: mustParseStatsServiceDay(t, "2026-03-31"), BBT: 36.70},
+		{Date: mustParseStatsServiceDay(t, "2026-04-01"), BBT: 36.72},
+		{Date: mustParseStatsServiceDay(t, "2026-04-02"), BBT: 36.74},
+	}
+
+	service := NewStatsService(
+		&stubStatsDayReader{logsForRange: logs, logsForAll: logs},
+		&stubStatsSymptomReader{
+			symptoms: []models.SymptomType{
+				{ID: 1, Name: "Headache", Icon: "H"},
+				{ID: 2, Name: "Cramps", Icon: "C"},
+				{ID: 3, Name: "Acne", Icon: "A"},
+			},
+		},
+	)
+
+	currentCycleStart := mustParseStatsServiceDay(t, "2026-03-26")
+	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 28, TrackBBT: true, LastPeriodStart: &currentCycleStart}
+	now := mustParseStatsServiceDay(t, "2026-04-02")
+
+	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	if err != nil {
+		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
+	}
+
+	if !viewData.HasLastCycleSymptoms || len(viewData.LastCycleSymptoms) != 3 {
+		t.Fatalf("expected last-cycle symptom summary, got %#v", viewData.LastCycleSymptoms)
+	}
+	if viewData.LastCycleSymptoms[0].Name != "Headache" {
+		t.Fatalf("expected Headache to lead last-cycle symptoms, got %#v", viewData.LastCycleSymptoms)
+	}
+	if !viewData.HasSymptomPatterns || len(viewData.SymptomPatterns) != 2 {
+		t.Fatalf("expected two symptom patterns, got %#v", viewData.SymptomPatterns)
+	}
+	if viewData.SymptomPatterns[0].Name != "Headache" || viewData.SymptomPatterns[0].DayStart != 2 || viewData.SymptomPatterns[0].DayEnd != 3 {
+		t.Fatalf("expected Headache pattern on days 2-3, got %#v", viewData.SymptomPatterns[0])
+	}
+	if !viewData.HasCurrentCycleBBTChart {
+		t.Fatalf("expected current-cycle BBT chart to be available")
+	}
+	if len(viewData.CurrentCycleBBTChart.Labels) != 8 {
+		t.Fatalf("expected eight BBT chart labels, got %#v", viewData.CurrentCycleBBTChart.Labels)
+	}
+	if !viewData.CurrentCycleBBTChart.HasMarker || viewData.CurrentCycleBBTChart.MarkerIndex != 4 {
+		t.Fatalf("expected probable ovulation marker on day 5, got %#v", viewData.CurrentCycleBBTChart)
+	}
+	if diff := viewData.CurrentCycleBBTChart.Baseline - 36.44; diff < -0.001 || diff > 0.001 {
+		t.Fatalf("expected BBT baseline 36.44, got %.2f", viewData.CurrentCycleBBTChart.Baseline)
 	}
 }
 

@@ -25,12 +25,15 @@
   }
 
   function cycleGuidanceState(cycleLength, periodLength) {
-    var gap = cycleLength - periodLength;
+    var maxPeriodLength = Math.max(1, Math.min(14, cycleLength - 10));
+    var safePeriodLength = Math.min(periodLength, maxPeriodLength);
     return {
-      invalid: gap < 8,
-      warning: gap >= 8 && gap < 15,
-      periodLong: gap >= 15 && periodLength > 8,
-      cycleShort: gap >= 15 && periodLength <= 8 && cycleLength < 24
+      invalid: false,
+      warning: false,
+      adjusted: safePeriodLength !== periodLength,
+      periodLength: safePeriodLength,
+      periodLong: safePeriodLength > 8,
+      cycleShort: cycleLength < 24
     };
   }
 
@@ -562,6 +565,7 @@
     var cycleLength = clampInteger(cycleInput.value, 28, 15, 90);
     var periodLength = clampInteger(periodInput.value, 5, 1, 14);
     var guidance = cycleGuidanceState(cycleLength, periodLength);
+    periodLength = guidance.periodLength;
 
     cycleInput.value = String(cycleLength);
     periodInput.value = String(periodLength);
@@ -574,6 +578,7 @@
 
     setNodeHidden(root.querySelector("[data-settings-cycle-message='error']"), !guidance.invalid);
     setNodeHidden(root.querySelector("[data-settings-cycle-message='warning']"), !guidance.warning);
+    setNodeHidden(root.querySelector("[data-settings-cycle-message='adjusted']"), !guidance.adjusted);
     setNodeHidden(root.querySelector("[data-settings-cycle-message='period-long']"), !guidance.periodLong);
     setNodeHidden(root.querySelector("[data-settings-cycle-message='cycle-short']"), !guidance.cycleShort);
   }
@@ -871,6 +876,7 @@
     state.cycleLength = clampInteger(state.cycleLength, 28, 15, 90);
     state.periodLength = clampInteger(state.periodLength, 5, 1, 14);
     guidance = cycleGuidanceState(state.cycleLength, state.periodLength);
+    state.periodLength = guidance.periodLength;
 
     if (state.cycleInput) {
       state.cycleInput.value = String(state.cycleLength);
@@ -887,6 +893,7 @@
 
     setNodeHidden(state.stepTwoMessages.error, !guidance.invalid);
     setNodeHidden(state.stepTwoMessages.warning, !guidance.warning);
+    setNodeHidden(state.stepTwoMessages.adjusted, !guidance.adjusted);
     setNodeHidden(state.stepTwoMessages.periodLong, !guidance.periodLong);
     setNodeHidden(state.stepTwoMessages.cycleShort, !guidance.cycleShort);
 
@@ -946,6 +953,7 @@
           stepTwoMessages: {
             error: root.querySelector("[data-onboarding-step2-message='error']"),
             warning: root.querySelector("[data-onboarding-step2-message='warning']"),
+            adjusted: root.querySelector("[data-onboarding-step2-message='adjusted']"),
             periodLong: root.querySelector("[data-onboarding-step2-message='period-long']"),
             cycleShort: root.querySelector("[data-onboarding-step2-message='cycle-short']")
           },

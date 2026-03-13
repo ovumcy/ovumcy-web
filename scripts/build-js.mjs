@@ -6,6 +6,7 @@ const appBundleSources = [
   "./web/src/js/app/20-password-toggles.js",
   "./web/src/js/app/21-login-form-ui.js",
   "./web/src/js/app/22-confirm-modal.js",
+  "./web/src/js/app/23-cycle-start-confirm.js",
   "./web/src/js/app/24-pwa-install.js",
   "./web/src/js/app/30-feedback-htmx.js",
   "./web/src/js/app/40-shared-utils.js",

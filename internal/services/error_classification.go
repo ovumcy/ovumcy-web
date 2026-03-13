@@ -154,6 +154,8 @@ type DayUpsertErrorKind uint8
 const (
 	DayUpsertErrorUnknown DayUpsertErrorKind = iota
 	DayUpsertErrorInvalidCycleStartDate
+	DayUpsertErrorCycleStartReplaceRequired
+	DayUpsertErrorCycleStartConfirmationRequired
 	DayUpsertErrorInvalidFlow
 	DayUpsertErrorInvalidMood
 	DayUpsertErrorInvalidSexActivity
@@ -168,6 +170,10 @@ func ClassifyDayUpsertError(err error) DayUpsertErrorKind {
 	switch {
 	case errors.Is(err, ErrManualCycleStartDateInvalid):
 		return DayUpsertErrorInvalidCycleStartDate
+	case errors.Is(err, ErrManualCycleStartReplaceRequired):
+		return DayUpsertErrorCycleStartReplaceRequired
+	case errors.Is(err, ErrManualCycleStartConfirmationNeeded):
+		return DayUpsertErrorCycleStartConfirmationRequired
 	case errors.Is(err, ErrInvalidDayFlow):
 		return DayUpsertErrorInvalidFlow
 	case errors.Is(err, ErrInvalidDayMood):

@@ -38,6 +38,8 @@
       });
     }
 
+    window.__ovumcyOpenConfirm = openConfirm;
+
     cancelButton.addEventListener("click", function () {
       closeConfirm(false);
     });

@@ -68,8 +68,8 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	if updated.CycleLength != 21 {
 		t.Fatalf("expected persisted cycle length 21, got %d", updated.CycleLength)
 	}
-	if updated.PeriodLength != 13 {
-		t.Fatalf("expected adjusted period length 13 for compatibility, got %d", updated.PeriodLength)
+	if updated.PeriodLength != 11 {
+		t.Fatalf("expected adjusted period length 11 for compatibility, got %d", updated.PeriodLength)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestOnboardingStep2SanitizesSliderValuesEvenWhenUnexpectedPeriodEndIsPresen
 			name:              "compatibility floor adjusts period length",
 			sliderPeriodValue: "10",
 			cycleLength:       "15",
-			wantPeriodLength:  7,
+			wantPeriodLength:  5,
 		},
 		{
 			name:              "invalid negative value clamps to min",

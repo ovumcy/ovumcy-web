@@ -55,6 +55,8 @@ type DashboardViewData struct {
 	ShowBBTField             bool
 	ShowCervicalMucus        bool
 	AllowManualCycleStart    bool
+	ManualCycleStartPolicy   ManualCycleStartPolicy
+	ShowHighFertilityBadge   bool
 	ShowCycleStartSuggestion bool
 	IsOwner                  bool
 }
@@ -75,6 +77,7 @@ type DayEditorViewData struct {
 	ShowBBTField               bool
 	ShowCervicalMucus          bool
 	AllowManualCycleStart      bool
+	ManualCycleStartPolicy     ManualCycleStartPolicy
 	ShowFutureCycleStartNotice bool
 	ShowCycleStartSuggestion   bool
 	IsOwner                    bool
@@ -102,7 +105,7 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 	}
 
 	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
-	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, showCycleStartSuggestion, err := service.buildPickerViewState(
+	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, err := service.buildPickerViewState(
 		user,
 		today,
 		now,
@@ -140,6 +143,8 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 		ShowBBTField:             IsOwnerUser(user) && user.TrackBBT,
 		ShowCervicalMucus:        IsOwnerUser(user) && user.TrackCervicalMucus,
 		AllowManualCycleStart:    allowManualCycleStart,
+		ManualCycleStartPolicy:   cycleStartPolicy,
+		ShowHighFertilityBadge:   IsOwnerUser(user) && NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite,
 		ShowCycleStartSuggestion: showCycleStartSuggestion,
 		IsOwner:                  IsOwnerUser(user),
 	}, nil
@@ -155,7 +160,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, l
 	if err != nil {
 		return DayEditorViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayLog, err)
 	}
-	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, showCycleStartSuggestion, err := service.buildPickerViewState(
+	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, err := service.buildPickerViewState(
 		user,
 		day,
 		now,
@@ -185,24 +190,25 @@ func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, l
 		ShowBBTField:               IsOwnerUser(user) && user.TrackBBT,
 		ShowCervicalMucus:          IsOwnerUser(user) && user.TrackCervicalMucus,
 		AllowManualCycleStart:      allowManualCycleStart,
+		ManualCycleStartPolicy:     cycleStartPolicy,
 		ShowFutureCycleStartNotice: isFutureDate && allowManualCycleStart,
 		ShowCycleStartSuggestion:   showCycleStartSuggestion,
 		IsOwner:                    IsOwnerUser(user),
 	}, nil
 }
 
-func (service *DashboardViewService) buildPickerViewState(user *models.User, day time.Time, now time.Time, logEntry models.DailyLog, symptoms []models.SymptomType, location *time.Location) (map[uint]bool, []models.SymptomType, []models.SymptomType, []models.SymptomType, bool, error) {
+func (service *DashboardViewService) buildPickerViewState(user *models.User, day time.Time, now time.Time, logEntry models.DailyLog, symptoms []models.SymptomType, location *time.Location) (map[uint]bool, []models.SymptomType, []models.SymptomType, []models.SymptomType, ManualCycleStartPolicy, bool, error) {
 	selectedSymptomID := SymptomIDSet(logEntry.SymptomIDs)
 	rankedSymptoms := symptoms
 	requiresLogs := len(symptoms) >= 2 || IsOwnerUser(user)
 	if !requiresLogs {
 		primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
-		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, false, nil
+		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, ManualCycleStartPolicy{}, false, nil
 	}
 
 	logs, err := service.days.FetchAllLogsForUser(user.ID)
 	if err != nil {
-		return nil, nil, nil, nil, false, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
+		return nil, nil, nil, nil, ManualCycleStartPolicy{}, false, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
 	}
 	if len(symptoms) >= 2 {
 		rankedSymptoms = RankSymptomsForEntryPicker(symptoms, logs)
@@ -210,5 +216,9 @@ func (service *DashboardViewService) buildPickerViewState(user *models.User, day
 
 	primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
 	showCycleStartSuggestion := ShouldSuggestManualCycleStart(user, logs, logEntry, day, now, location)
-	return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, showCycleStartSuggestion, nil
+	cycleStartPolicy := ManualCycleStartPolicy{}
+	if IsOwnerUser(user) {
+		cycleStartPolicy = ResolveManualCycleStartPolicy(user, logs, day, now, location)
+	}
+	return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, nil
 }

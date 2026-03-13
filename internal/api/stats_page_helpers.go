@@ -24,6 +24,26 @@ func mapStatsChartData(chart services.StatsChartViewData) fiber.Map {
 	return payload
 }
 
+func mapStatsBBTChartData(chart services.StatsBBTChartViewData, messages map[string]string) fiber.Map {
+	payload := fiber.Map{
+		"labels": chart.Labels,
+		"values": chart.Values,
+	}
+	if chart.Kind != "" {
+		payload["kind"] = chart.Kind
+	}
+	if chart.HasBaseline {
+		payload["baseline"] = chart.Baseline
+	}
+	if chart.HasMarker {
+		payload["markerIndex"] = chart.MarkerIndex
+		if chart.MarkerLabelKey != "" {
+			payload["markerLabel"] = translateMessage(messages, chart.MarkerLabelKey)
+		}
+	}
+	return payload
+}
+
 func (handler *Handler) buildStatsPageData(user *models.User, language string, messages map[string]string, now time.Time) (fiber.Map, error) {
 	cycleLabelPattern := translateMessage(messages, "stats.cycle_label")
 	if cycleLabelPattern == "stats.cycle_label" {
@@ -56,13 +76,20 @@ func (handler *Handler) buildStatsPageData(user *models.User, language string, m
 		"CycleDataStale":                      viewData.Flags.CycleDataStale,
 		"CompletedCycleCount":                 viewData.Flags.CompletedCycleCount,
 		"InsightProgress":                     viewData.Flags.InsightProgress,
+		"LastCycleSymptoms":                   viewData.LastCycleSymptoms,
+		"SymptomPatterns":                     viewData.SymptomPatterns,
 		"SymptomCounts":                       viewData.SymptomCounts,
+		"BBTChartData":                        mapStatsBBTChartData(viewData.CurrentCycleBBTChart, messages),
 		"PhaseMoodInsights":                   viewData.PhaseMoodInsights,
 		"PhaseSymptomInsights":                viewData.PhaseSymptomInsights,
+		"HasLastCycleSymptoms":                viewData.HasLastCycleSymptoms,
+		"HasSymptomPatterns":                  viewData.HasSymptomPatterns,
+		"HasCurrentCycleBBTChart":             viewData.HasCurrentCycleBBTChart,
 		"HasPhaseMoodInsights":                viewData.HasPhaseMoodInsights,
 		"HasPhaseSymptomInsights":             viewData.HasPhaseSymptomInsights,
 		"ShowIrregularityNotice":              viewData.ShowIrregularityNotice,
 		"ShowIrregularInsufficientDataNotice": viewData.ShowIrregularInsufficientDataNotice,
+		"ShowIrregularModeRecommendation":     viewData.ShowIrregularModeRecommendation,
 		"IsIrregularMode":                     viewData.IsIrregularMode,
 		"IsOwner":                             viewData.IsOwner,
 	}

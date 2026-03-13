@@ -16,7 +16,6 @@ type dayLogRepositoryStub struct {
 	findErrByDay   map[string]error
 	createErrByDay map[string]error
 	saveErrByDay   map[string]error
-	clearErr       error
 }
 
 func newDayLogRepositoryStub() *dayLogRepositoryStub {
@@ -127,22 +126,6 @@ func (stub *dayLogRepositoryStub) Save(entry *models.DailyLog) error {
 	return nil
 }
 
-func (stub *dayLogRepositoryStub) ClearCycleStartsExcept(userID uint, dayStart time.Time, dayEnd time.Time) error {
-	if stub.clearErr != nil {
-		return stub.clearErr
-	}
-	for key, entry := range stub.entries {
-		if entry.UserID != userID {
-			continue
-		}
-		if entry.Date.Before(dayStart) || !entry.Date.Before(dayEnd) {
-			entry.CycleStart = false
-			stub.entries[key] = entry
-		}
-	}
-	return nil
-}
-
 func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) error {
 	for key, entry := range stub.entries {
 		if entry.UserID != userID {
@@ -166,6 +149,18 @@ func (stub *dayUserRepositoryStub) LoadSettingsByID(uint) (models.User, error) {
 		return models.User{}, stub.loadErr
 	}
 	return stub.settings, nil
+}
+
+func (stub *dayUserRepositoryStub) UpdateByID(_ uint, updates map[string]any) error {
+	if updates == nil {
+		return nil
+	}
+	if value, exists := updates["luteal_phase"]; exists {
+		if lutealPhase, ok := value.(int); ok {
+			stub.settings.LutealPhase = lutealPhase
+		}
+	}
+	return nil
 }
 
 func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
@@ -362,7 +357,7 @@ func TestMarkCycleStartManuallyClearsOtherExplicitStarts(t *testing.T) {
 		Flow:     models.FlowLight,
 	}
 
-	if err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC); err != nil {
+	if err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{ReplaceExisting: true}); err != nil {
 		t.Fatalf("MarkCycleStartManually() unexpected error: %v", err)
 	}
 
@@ -374,6 +369,61 @@ func TestMarkCycleStartManuallyClearsOtherExplicitStarts(t *testing.T) {
 	}
 }
 
+func TestMarkCycleStartManuallyRequiresReplaceConfirmationWithinCluster(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	logs.entries["2026-02-13"] = models.DailyLog{
+		ID:         1,
+		UserID:     10,
+		Date:       time.Date(2026, time.February, 13, 0, 0, 0, 0, time.UTC),
+		IsPeriod:   true,
+		CycleStart: true,
+	}
+	logs.entries["2026-02-08"] = models.DailyLog{
+		ID:       2,
+		UserID:   10,
+		Date:     time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC),
+		IsPeriod: true,
+	}
+
+	err := service.MarkCycleStartManually(10, time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC), time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC), time.UTC, ManualCycleStartOptions{})
+	if !errors.Is(err, ErrManualCycleStartReplaceRequired) {
+		t.Fatalf("expected ErrManualCycleStartReplaceRequired, got %v", err)
+	}
+}
+
+func TestMarkCycleStartManuallyRequiresShortGapConfirmationAndMarksUncertain(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{
+		settings: models.User{
+			LastPeriodStart: ptrTime(time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)),
+		},
+	}
+	service := NewDayService(logs, users)
+
+	targetDay := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+	logs.entries["2026-02-10"] = models.DailyLog{
+		ID:       1,
+		UserID:   10,
+		Date:     targetDay,
+		IsPeriod: true,
+	}
+
+	err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{})
+	if !errors.Is(err, ErrManualCycleStartConfirmationNeeded) {
+		t.Fatalf("expected ErrManualCycleStartConfirmationNeeded, got %v", err)
+	}
+
+	if err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{MarkUncertain: true}); err != nil {
+		t.Fatalf("expected short-gap cycle start to save with confirmation, got %v", err)
+	}
+	if !logs.entries["2026-02-10"].IsUncertain {
+		t.Fatalf("expected confirmed short-gap cycle start to be marked uncertain")
+	}
+}
+
 func TestMarkCycleStartManuallyRejectsFarFutureDate(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{}
@@ -381,25 +431,25 @@ func TestMarkCycleStartManuallyRejectsFarFutureDate(t *testing.T) {
 
 	now := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
 	futureDay := time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC)
-	if err := service.MarkCycleStartManually(10, futureDay, now, time.UTC); !errors.Is(err, ErrManualCycleStartDateInvalid) {
+	if err := service.MarkCycleStartManually(10, futureDay, now, time.UTC, ManualCycleStartOptions{}); !errors.Is(err, ErrManualCycleStartDateInvalid) {
 		t.Fatalf("expected ErrManualCycleStartDateInvalid, got %v", err)
 	}
 }
 
-func TestMarkCycleStartManuallyAllowsTomorrowDate(t *testing.T) {
+func TestMarkCycleStartManuallyAllowsFutureDateWithinTwoDays(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
 	now := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
-	tomorrow := time.Date(2026, time.March, 13, 0, 0, 0, 0, time.UTC)
-	if err := service.MarkCycleStartManually(10, tomorrow, now, time.UTC); err != nil {
-		t.Fatalf("expected tomorrow cycle start to be allowed, got %v", err)
+	dayAfterTomorrow := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)
+	if err := service.MarkCycleStartManually(10, dayAfterTomorrow, now, time.UTC, ManualCycleStartOptions{}); err != nil {
+		t.Fatalf("expected future cycle start within two days to be allowed, got %v", err)
 	}
 
-	entry, ok := logs.entries["2026-03-13"]
+	entry, ok := logs.entries["2026-03-14"]
 	if !ok {
-		t.Fatal("expected tomorrow entry to be created")
+		t.Fatal("expected future entry to be created")
 	}
 	if !entry.IsPeriod || !entry.CycleStart {
 		t.Fatalf("expected tomorrow entry to be period+cycle_start, got %#v", entry)

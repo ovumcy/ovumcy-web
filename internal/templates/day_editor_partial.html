@@ -108,11 +108,26 @@
     hx-target="#calendar-save-status"
     hx-swap="innerHTML"
     class="pt-3"
+    data-cycle-start-confirm-form
     data-day-cycle-start-form
     data-day-cycle-start-date="{{.DateString}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
+    <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
     <button type="submit" class="{{if .Log.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
   </form>
+  <div
+    hidden
+    data-cycle-start-policy
+    data-cycle-start-conflict="{{if .ManualCycleStartConflict}}true{{else}}false{{end}}"
+    data-cycle-start-conflict-date="{{if .ManualCycleStartConflict}}{{formatLocalizedDate .Lang .ManualCycleStartConflictDate "display"}}{{end}}"
+    data-cycle-start-target-date="{{formatLocalizedDate .Lang .Date "display"}}"
+    data-cycle-start-short-gap="{{.ManualCycleStartShortGap}}"
+    data-cycle-start-previous-date="{{if gt .ManualCycleStartShortGap 0}}{{formatLocalizedDate .Lang .ManualCycleStartPreviousDate "display"}}{{end}}"
+    data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
+    data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
+    data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
+    data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
   {{if .ShowFutureCycleStartNotice}}
   <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
   {{end}}
@@ -145,13 +160,30 @@
         hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
         hx-target="#day-editor"
         hx-swap="innerHTML"
+        data-cycle-start-confirm-form
         data-day-cycle-start-form
         data-day-cycle-start-date="{{.DateString}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
+        <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
         <button type="submit" class="{{if .Log.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
       </form>
       {{end}}
     </div>
+    {{if .AllowManualCycleStart}}
+    <div
+      hidden
+      data-cycle-start-policy
+      data-cycle-start-conflict="{{if .ManualCycleStartConflict}}true{{else}}false{{end}}"
+      data-cycle-start-conflict-date="{{if .ManualCycleStartConflict}}{{formatLocalizedDate .Lang .ManualCycleStartConflictDate "display"}}{{end}}"
+      data-cycle-start-target-date="{{formatLocalizedDate .Lang .Date "display"}}"
+      data-cycle-start-short-gap="{{.ManualCycleStartShortGap}}"
+      data-cycle-start-previous-date="{{if gt .ManualCycleStartShortGap 0}}{{formatLocalizedDate .Lang .ManualCycleStartPreviousDate "display"}}{{end}}"
+      data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
+      data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
+      data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
+      data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
+    {{end}}
     {{if .ShowFutureCycleStartNotice}}
     <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
     {{end}}
@@ -168,13 +200,30 @@
           hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
           hx-target="#day-editor"
           hx-swap="innerHTML"
+          data-cycle-start-confirm-form
           data-day-cycle-start-form
           data-day-cycle-start-date="{{.DateString}}">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
+          <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
           <button type="submit" class="btn-secondary" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
         </form>
         {{end}}
       </div>
+      {{if .AllowManualCycleStart}}
+      <div
+        hidden
+        data-cycle-start-policy
+        data-cycle-start-conflict="{{if .ManualCycleStartConflict}}true{{else}}false{{end}}"
+        data-cycle-start-conflict-date="{{if .ManualCycleStartConflict}}{{formatLocalizedDate .Lang .ManualCycleStartConflictDate "display"}}{{end}}"
+        data-cycle-start-target-date="{{formatLocalizedDate .Lang .Date "display"}}"
+        data-cycle-start-short-gap="{{.ManualCycleStartShortGap}}"
+        data-cycle-start-previous-date="{{if gt .ManualCycleStartShortGap 0}}{{formatLocalizedDate .Lang .ManualCycleStartPreviousDate "display"}}{{end}}"
+        data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
+        data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
+        data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
+        data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
+      {{end}}
       {{if .ShowFutureCycleStartNotice}}
       <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
       {{end}}

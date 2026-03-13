@@ -69,7 +69,7 @@ func buildCompletedCyclePhaseContexts(logs []models.DailyLog, location *time.Loc
 			periodLength = models.DefaultPeriodLength
 		}
 
-		ovulationDay, _ := CalcOvulationDay(cycleLength, periodLength)
+		ovulationDay, _ := CalcOvulationDay(cycleLength, defaultLutealPhaseDays)
 		if ovulationDay <= 0 {
 			continue
 		}
@@ -177,22 +177,27 @@ func (service *StatsService) BuildPhaseSymptomInsights(user *models.User, logs [
 		return nil, false, nil
 	}
 
-	cycles := buildCompletedCyclePhaseContexts(logs, location)
-	if len(cycles) < minimumPhaseInsightCycles {
-		return nil, false, nil
-	}
-
 	symptomByID, err := service.phaseInsightSymptomMap(user.ID)
 	if err != nil {
 		return nil, false, err
 	}
 
-	counters := buildPhaseSymptomCounters(logs, cycles, location, symptomByID)
-	return buildPhaseSymptomInsightResults(counters, symptomByID), hasPhaseSymptomInsightData(counters), nil
+	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, location, symptomByID)
+	return insights, hasData, nil
 }
 
 func canBuildPhaseSymptomInsights(service *StatsService, user *models.User) bool {
 	return IsOwnerUser(user) && service != nil && service.symptoms != nil
+}
+
+func buildPhaseSymptomInsightsWithMap(logs []models.DailyLog, location *time.Location, symptomByID map[uint]models.SymptomType) ([]StatsPhaseSymptomInsight, bool) {
+	cycles := buildCompletedCyclePhaseContexts(logs, location)
+	if len(cycles) < minimumPhaseInsightCycles || len(symptomByID) == 0 {
+		return nil, false
+	}
+
+	counters := buildPhaseSymptomCounters(logs, cycles, location, symptomByID)
+	return buildPhaseSymptomInsightResults(counters, symptomByID), hasPhaseSymptomInsightData(counters)
 }
 
 func (service *StatsService) phaseInsightSymptomMap(userID uint) (map[uint]models.SymptomType, error) {

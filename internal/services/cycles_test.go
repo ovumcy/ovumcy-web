@@ -76,7 +76,7 @@ func TestBuildCycleStats(t *testing.T) {
 	}
 }
 
-func TestBuildCycleStats_ShortCycleLongPeriodDoesNotOverlapPredictions(t *testing.T) {
+func TestBuildCycleStats_ShortCycleLongPeriodAllowsOverlapPredictions(t *testing.T) {
 	logs := []models.DailyLog{}
 	periodDays := []string{
 		"2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30",
@@ -91,19 +91,20 @@ func TestBuildCycleStats_ShortCycleLongPeriodDoesNotOverlapPredictions(t *testin
 	now := mustParseDay(t, "2026-02-12")
 	stats := BuildCycleStats(logs, now)
 
-	if !stats.OvulationDate.IsZero() {
-		t.Fatalf("expected no ovulation date for incompatible cycle, got %s", stats.OvulationDate.Format("2006-01-02"))
+	if got := stats.OvulationDate.Format("2006-01-02"); got != "2026-02-10" {
+		t.Fatalf("expected ovulation date 2026-02-10, got %s", got)
 	}
-	if !stats.FertilityWindowStart.IsZero() || !stats.FertilityWindowEnd.IsZero() {
-		t.Fatalf("expected no fertile window for incompatible cycle, got %s..%s",
-			stats.FertilityWindowStart.Format("2006-01-02"),
-			stats.FertilityWindowEnd.Format("2006-01-02"))
+	if got := stats.FertilityWindowStart.Format("2006-01-02"); got != "2026-02-10" {
+		t.Fatalf("expected fertility start 2026-02-10, got %s", got)
 	}
-	if stats.OvulationExact {
-		t.Fatalf("expected ovulation exact flag=false for incompatible cycle")
+	if got := stats.FertilityWindowEnd.Format("2006-01-02"); got != "2026-02-10" {
+		t.Fatalf("expected fertility end 2026-02-10, got %s", got)
 	}
-	if !stats.OvulationImpossible {
-		t.Fatalf("expected ovulation impossible flag=true for incompatible cycle")
+	if !stats.OvulationExact {
+		t.Fatalf("expected ovulation exact flag=true for short cycle")
+	}
+	if stats.OvulationImpossible {
+		t.Fatalf("expected ovulation impossible flag=false for short cycle")
 	}
 }
 

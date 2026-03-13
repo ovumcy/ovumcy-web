@@ -61,7 +61,16 @@ func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 
-	if err := handler.dayService.MarkCycleStartManually(user.ID, day, time.Now().In(location), location); err != nil {
+	if err := handler.dayService.MarkCycleStartManually(
+		user.ID,
+		day,
+		time.Now().In(location),
+		location,
+		services.ManualCycleStartOptions{
+			ReplaceExisting: services.ParseBoolLike(c.FormValue("replace_existing")),
+			MarkUncertain:   services.ParseBoolLike(c.FormValue("mark_uncertain")),
+		},
+	); err != nil {
 		return handler.respondMappedError(c, upsertDayPersistenceErrorSpec(err))
 	}
 

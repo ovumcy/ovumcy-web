@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -14,7 +15,12 @@ type CycleStats struct {
 	MedianCycleLength    int       `json:"median_cycle_length"`
 	MinCycleLength       int       `json:"min_cycle_length"`
 	MaxCycleLength       int       `json:"max_cycle_length"`
+	CycleLengthStdDev    float64   `json:"cycle_length_std_dev"`
+	CompletedCycleCount  int       `json:"completed_cycle_count"`
 	AveragePeriodLength  float64   `json:"average_period_length"`
+	LastCycleLength      int       `json:"last_cycle_length"`
+	LastPeriodLength     int       `json:"last_period_length"`
+	LutealPhase          int       `json:"luteal_phase"`
 	LastPeriodStart      time.Time `json:"last_period_start"`
 	NextPeriodStart      time.Time `json:"next_period_start"`
 	OvulationDate        time.Time `json:"ovulation_date"`
@@ -34,26 +40,35 @@ const (
 	cyclePredictionWindow      = 6
 	irregularCycleSpreadDays   = 7
 	irregularCycleFallbackSpan = 7
+	defaultLutealPhaseDays     = 14
+	minLutealPhaseDays         = 10
+	minCycleReserveDays        = 10
 )
 
 func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
 	stats := CycleStats{CurrentPhase: "unknown"}
-	if len(logs) == 0 {
+	today := dateOnly(now)
+	sorted := sortDailyLogs(filterLogsNotAfter(logs, today))
+	if len(sorted) == 0 {
 		return stats
 	}
 
-	sorted := sortDailyLogs(logs)
-	starts := DetectCycleStarts(sorted)
-	if len(starts) == 0 {
+	detectedStarts := DetectCycleStarts(sorted)
+	if len(detectedStarts) == 0 {
 		return stats
 	}
 
-	cycles := buildCycles(starts, sorted)
-	populateObservedCycleStats(&stats, cycleLengths(starts), cycles)
-	stats.LastPeriodStart = starts[len(starts)-1]
+	observedStarts := ObservedCycleStarts(sorted)
+	if len(observedStarts) == 0 {
+		observedStarts = detectedStarts
+	}
+
+	cycles := buildCycles(observedStarts, sorted)
+	populateObservedCycleStats(&stats, cycleLengths(observedStarts), cycles)
+	stats.LastPeriodStart = detectedStarts[len(detectedStarts)-1]
+	stats.LutealPhase = defaultLutealPhaseDays
 	applyPredictedCycleStats(&stats)
 
-	today := dateOnly(now)
 	stats.CurrentCycleDay = cycleDayAt(stats.LastPeriodStart, today)
 	stats.CurrentPhase = detectCyclePhase(stats, sorted, today)
 	return stats
@@ -62,64 +77,53 @@ func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
 // PredictCycleWindow returns ovulation date and fertility window for the cycle
 // that starts at periodStart.
 // Invariants:
-// - ovulation is strictly after period end and before next period start
-// - fertility window never overlaps period days
-// - if the clamped fertility range becomes empty, it is suppressed
-func CalcOvulationDay(cycleLen, periodLen int) (int, bool) {
-	remaining := cycleLen - periodLen
-	if remaining < 8 {
+// - ovulation is strictly before next period start
+// - fertility window is the 6-day range [ovulation-5, ovulation]
+// - fertility window may overlap menstruation on short cycles
+func ResolveLutealPhase(value int) int {
+	switch {
+	case value <= 0:
+		return defaultLutealPhaseDays
+	case value < minLutealPhaseDays:
+		return minLutealPhaseDays
+	default:
+		return value
+	}
+}
+
+func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
+	resolvedLutealPhase := ResolveLutealPhase(lutealPhase)
+	if cycleLen <= resolvedLutealPhase {
 		return 0, false
 	}
-	if remaining < 15 {
-		return periodLen + 1, false
-	}
 
-	ovDay := cycleLen - 14
-	if ovDay <= periodLen {
-		ovDay = periodLen + 1
-	}
-	if ovDay >= cycleLen {
-		ovDay = cycleLen - 1
+	ovDay := cycleLen - resolvedLutealPhase
+	if ovDay < 1 {
+		return 0, false
 	}
 	return ovDay, true
 }
 
-func PredictCycleWindow(periodStart time.Time, cycleLength int, periodLength int) (time.Time, time.Time, time.Time, bool, bool) {
+func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int) (time.Time, time.Time, time.Time, bool, bool) {
 	if periodStart.IsZero() || cycleLength <= 0 {
 		return time.Time{}, time.Time{}, time.Time{}, false, false
 	}
-	if periodLength <= 0 {
-		periodLength = models.DefaultPeriodLength
-	}
-	ovulationDay, ovulationExact := CalcOvulationDay(cycleLength, periodLength)
+	ovulationDay, ovulationExact := CalcOvulationDay(cycleLength, lutealPhase)
 	if ovulationDay <= 0 {
 		return time.Time{}, time.Time{}, time.Time{}, false, false
 	}
 
 	nextPeriodStart := dateOnly(periodStart.AddDate(0, 0, cycleLength))
-	periodEnd := dateOnly(periodStart.AddDate(0, 0, periodLength-1))
-	firstNonPeriodDay := dateOnly(periodEnd.AddDate(0, 0, 1))
-	lastPrePeriodDay := dateOnly(nextPeriodStart.AddDate(0, 0, -1))
-
 	ovulationDate := dateOnly(periodStart.AddDate(0, 0, ovulationDay-1))
 	if !ovulationDate.Before(nextPeriodStart) {
-		ovulationDate = lastPrePeriodDay
-	}
-	if !ovulationDate.After(periodEnd) {
 		return time.Time{}, time.Time{}, time.Time{}, false, false
 	}
 
 	fertilityStart := dateOnly(ovulationDate.AddDate(0, 0, -5))
-	fertilityEnd := dateOnly(ovulationDate.AddDate(0, 0, 1))
-	if !fertilityStart.After(periodEnd) {
-		fertilityStart = firstNonPeriodDay
+	if fertilityStart.Before(periodStart) {
+		fertilityStart = dateOnly(periodStart)
 	}
-	if !fertilityEnd.Before(nextPeriodStart) {
-		fertilityEnd = lastPrePeriodDay
-	}
-	if fertilityStart.After(fertilityEnd) {
-		return ovulationDate, time.Time{}, time.Time{}, ovulationExact, true
-	}
+	fertilityEnd := ovulationDate
 
 	return ovulationDate, fertilityStart, fertilityEnd, ovulationExact, true
 }
@@ -155,6 +159,33 @@ func DetectCycleStarts(logs []models.DailyLog) []time.Time {
 	return starts
 }
 
+type periodCluster struct {
+	Start                time.Time
+	End                  time.Time
+	ExplicitStart        time.Time
+	HasUncertainExplicit bool
+}
+
+func ObservedCycleStarts(logs []models.DailyLog) []time.Time {
+	clusters := buildPeriodClusters(logs)
+	if len(clusters) == 0 {
+		return nil
+	}
+
+	starts := make([]time.Time, 0, len(clusters))
+	for _, cluster := range clusters {
+		switch {
+		case !cluster.ExplicitStart.IsZero():
+			starts = append(starts, cluster.ExplicitStart)
+		case cluster.HasUncertainExplicit:
+			continue
+		default:
+			starts = append(starts, cluster.Start)
+		}
+	}
+	return starts
+}
+
 func DetectExplicitCycleStarts(logs []models.DailyLog) []time.Time {
 	if len(logs) == 0 {
 		return nil
@@ -179,6 +210,47 @@ func DetectExplicitCycleStarts(logs []models.DailyLog) []time.Time {
 	return starts
 }
 
+func buildPeriodClusters(logs []models.DailyLog) []periodCluster {
+	if len(logs) == 0 {
+		return nil
+	}
+
+	sorted := sortDailyLogs(logs)
+	clusters := make([]periodCluster, 0)
+	for _, log := range sorted {
+		if !log.IsPeriod {
+			continue
+		}
+
+		day := dateOnly(log.Date)
+		if len(clusters) == 0 {
+			clusters = append(clusters, periodCluster{Start: day, End: day})
+		} else {
+			lastIndex := len(clusters) - 1
+			gapDays := int(day.Sub(clusters[lastIndex].End).Hours()/24) - 1
+			if gapDays >= 5 {
+				clusters = append(clusters, periodCluster{Start: day, End: day})
+			} else if day.After(clusters[lastIndex].End) {
+				clusters[lastIndex].End = day
+			}
+		}
+
+		cluster := &clusters[len(clusters)-1]
+		if !log.CycleStart {
+			continue
+		}
+		if log.IsUncertain {
+			cluster.HasUncertainExplicit = true
+			continue
+		}
+		if cluster.ExplicitStart.IsZero() || day.Before(cluster.ExplicitStart) {
+			cluster.ExplicitStart = day
+		}
+	}
+
+	return clusters
+}
+
 func sortDailyLogs(logs []models.DailyLog) []models.DailyLog {
 	sorted := make([]models.DailyLog, 0, len(logs))
 	sorted = append(sorted, logs...)
@@ -189,6 +261,7 @@ func sortDailyLogs(logs []models.DailyLog) []models.DailyLog {
 }
 
 func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detectedCycle) {
+	stats.CompletedCycleCount = len(lengths)
 	recentLengths := tailInts(lengths, cyclePredictionWindow)
 	if len(recentLengths) > 0 {
 		stats.AverageCycleLength = averageInts(recentLengths)
@@ -196,11 +269,17 @@ func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detec
 	}
 	if len(lengths) > 0 {
 		stats.MinCycleLength, stats.MaxCycleLength = minMaxInts(lengths)
+		stats.CycleLengthStdDev = stddevInts(lengths)
+		stats.LastCycleLength = lengths[len(lengths)-1]
 	}
 
 	periodLengths := recentPositivePeriodLengths(cycles, cyclePredictionWindow)
 	if len(periodLengths) > 0 {
 		stats.AveragePeriodLength = averageInts(periodLengths)
+	}
+	completedCycleCount := len(lengths)
+	if completedCycleCount > 0 && len(cycles) >= completedCycleCount {
+		stats.LastPeriodLength = cycles[completedCycleCount-1].PeriodLength
 	}
 }
 
@@ -216,13 +295,15 @@ func recentPositivePeriodLengths(cycles []detectedCycle, limit int) []int {
 
 func applyPredictedCycleStats(stats *CycleStats) {
 	predictionCycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
-	predictedPeriodLength := predictedPeriodLength(stats.AveragePeriodLength)
+	if stats.LutealPhase <= 0 {
+		stats.LutealPhase = defaultLutealPhaseDays
+	}
 
 	stats.NextPeriodStart = dateOnly(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength))
 	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(
 		stats.LastPeriodStart,
 		predictionCycleLength,
-		predictedPeriodLength,
+		stats.LutealPhase,
 	)
 	if !ovulationCalculable {
 		clearPredictedCycleWindow(stats)
@@ -438,4 +519,33 @@ func sameDay(a, b time.Time) bool {
 func dateOnly(t time.Time) time.Time {
 	y, m, d := t.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+func filterLogsNotAfter(logs []models.DailyLog, cutoff time.Time) []models.DailyLog {
+	if len(logs) == 0 || cutoff.IsZero() {
+		return logs
+	}
+
+	filtered := make([]models.DailyLog, 0, len(logs))
+	for _, log := range logs {
+		if dateOnly(log.Date).After(cutoff) {
+			continue
+		}
+		filtered = append(filtered, log)
+	}
+	return filtered
+}
+
+func stddevInts(values []int) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+
+	mean := averageInts(values)
+	var squared float64
+	for _, value := range values {
+		diff := float64(value) - mean
+		squared += diff * diff
+	}
+	return math.Sqrt(squared / float64(len(values)))
 }

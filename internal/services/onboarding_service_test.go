@@ -41,8 +41,8 @@ func (stub *stubOnboardingRepo) CompleteOnboarding(userID uint, startDay time.Ti
 
 func TestSanitizeOnboardingCycleAndPeriod(t *testing.T) {
 	cycle, period := SanitizeOnboardingCycleAndPeriod(20, 19)
-	if cycle != 20 || period != 12 {
-		t.Fatalf("SanitizeOnboardingCycleAndPeriod() = (%d, %d), want (20, 12)", cycle, period)
+	if cycle != 20 || period != 10 {
+		t.Fatalf("SanitizeOnboardingCycleAndPeriod() = (%d, %d), want (20, 10)", cycle, period)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	if !repo.completeCalled {
 		t.Fatal("expected CompleteOnboarding() to be called")
 	}
-	if repo.completePeriodLen != 14 {
-		t.Fatalf("expected sanitized period length 14, got %d", repo.completePeriodLen)
+	if repo.completePeriodLen != 12 {
+		t.Fatalf("expected sanitized period length 12, got %d", repo.completePeriodLen)
 	}
 	if startDay.Hour() != 0 || startDay.Minute() != 0 {
 		t.Fatalf("expected normalized start day, got %s", startDay.Format(time.RFC3339))

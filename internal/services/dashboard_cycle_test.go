@@ -68,22 +68,30 @@ func TestBuildDashboardCycleContext(t *testing.T) {
 	if !context.CycleDataStale {
 		t.Fatalf("expected stale cycle data flag")
 	}
-	if !context.DisplayNextPeriodStart.IsZero() {
-		t.Fatalf("expected exact next period date to be hidden for delayed cycle")
+	if !context.DisplayNextPeriodUseRange {
+		t.Fatalf("expected next period to be rendered as a range")
 	}
-	if !context.DisplayNextPeriodDelayed {
-		t.Fatalf("expected delayed next period marker")
+	if got := context.DisplayNextPeriodRangeStart.Format("2006-01-02"); got != "2026-04-03" {
+		t.Fatalf("expected range start 2026-04-03, got %s", got)
+	}
+	if got := context.DisplayNextPeriodRangeEnd.Format("2006-01-02"); got != "2026-04-11" {
+		t.Fatalf("expected range end 2026-04-11, got %s", got)
 	}
 }
 
 func TestBuildDashboardCycleContextUsesRangeForIrregularMode(t *testing.T) {
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{
-		LastPeriodStart:    mustParseDashboardDay(t, "2026-03-01"),
-		AverageCycleLength: 32,
-		MinCycleLength:     24,
-		MaxCycleLength:     45,
-		CurrentCycleDay:    20,
+		LastPeriodStart:      mustParseDashboardDay(t, "2026-03-01"),
+		AverageCycleLength:   32,
+		MinCycleLength:       24,
+		MaxCycleLength:       45,
+		CurrentCycleDay:      20,
+		CompletedCycleCount:  3,
+		NextPeriodStart:      mustParseDashboardDay(t, "2026-04-02"),
+		FertilityWindowStart: mustParseDashboardDay(t, "2026-03-12"),
+		FertilityWindowEnd:   mustParseDashboardDay(t, "2026-03-17"),
+		OvulationDate:        mustParseDashboardDay(t, "2026-03-17"),
 	}
 	today := mustParseDashboardDay(t, "2026-03-20")
 
@@ -97,8 +105,8 @@ func TestBuildDashboardCycleContextUsesRangeForIrregularMode(t *testing.T) {
 	if got := context.DisplayNextPeriodRangeEnd.Format("2006-01-02"); got != "2026-04-15" {
 		t.Fatalf("expected range end 2026-04-15, got %s", got)
 	}
-	if context.DisplayNextPeriodDelayed {
-		t.Fatalf("expected irregular range to avoid delayed placeholder")
+	if context.DisplayNextPeriodNeedsData {
+		t.Fatalf("expected irregular range to skip the low-data placeholder")
 	}
 }
 

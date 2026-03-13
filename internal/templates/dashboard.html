@@ -6,6 +6,9 @@
         <span aria-hidden="true">{{if .CycleDataStale}}{{phaseIcon "unknown"}}{{else}}{{phaseIcon .Stats.CurrentPhase}}{{end}}</span>
         <span>{{if .CycleDataStale}}{{phaseLabel .Messages "unknown"}}{{else}}{{phaseLabel .Messages .Stats.CurrentPhase}}{{end}}</span>
       </span>
+      {{if .ShowHighFertilityBadge}}
+      <span class="dashboard-status-item">💧 {{t .Messages "dashboard.high_fertility_badge"}}</span>
+      {{end}}
       <span class="dashboard-status-separator" aria-hidden="true">·</span>
       <span class="dashboard-status-item">{{t .Messages "dashboard.cycle_day"}} {{if gt .Stats.CurrentCycleDay 0}}{{if .CycleDataStale}}~{{end}}{{.Stats.CurrentCycleDay}}{{else}}{{.NoDataLabel}}{{end}}</span>
       <span class="dashboard-status-separator" aria-hidden="true">·</span>
@@ -13,12 +16,14 @@
         <span data-dashboard-next-period>
           {{if .DisplayNextPeriodUseRange}}
             {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "display")}}
-          {{else if .DisplayNextPeriodDelayed}}
-            {{t .Messages "dashboard.next_period_delayed"}}
+          {{else if .DisplayNextPeriodNeedsData}}
+            {{printf (t .Messages "dashboard.next_period_estimate") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display")}} · {{t .Messages "dashboard.next_period_need_cycles"}}
+          {{else if .DisplayNextPeriodPrompt}}
+            {{t .Messages "dashboard.next_period_prompt"}}
           {{else if .DisplayNextPeriodStart.IsZero}}
             {{.NoDataLabel}}
           {{else}}
-            {{formatLocalizedDate .Lang .DisplayNextPeriodStart "display"}}
+            {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display")}}
           {{end}}
         </span>
       </span>
@@ -30,7 +35,7 @@
     <div class="flex flex-wrap items-center gap-3 text-sm">
       {{if .CycleDataStale}}
       <p class="warning-amber">{{t .Messages "dashboard.cycle_day_stale_hint"}}</p>
-      {{else if and .CycleDayWarning (not .DisplayNextPeriodDelayed)}}
+      {{else if .CycleDayWarning}}
       <p class="warning-amber">{{printf (t .Messages "dashboard.cycle_day_long_hint") .CycleDayReference}}</p>
       {{end}}
       {{if or .NextPeriodInPast .OvulationInPast}}
@@ -38,9 +43,9 @@
       {{end}}
       <a href="/settings#settings-cycle" class="btn-secondary text-sm">{{t .Messages "dashboard.update_cycle_data"}}</a>
     </div>
-    {{else if and (not .DisplayOvulationImpossible) (not .DisplayOvulationDate.IsZero) (not .DisplayOvulationExact)}}
-    <p class="journal-muted text-sm">{{t .Messages "dashboard.ovulation_approximate"}}</p>
-    {{end}}
+      {{else if and (not .DisplayOvulationImpossible) (not .DisplayOvulationDate.IsZero) (not .DisplayOvulationExact)}}
+      <p class="journal-muted text-sm">{{t .Messages "dashboard.ovulation_approximate"}}</p>
+      {{end}}
   </section>
 
   <div class="grid gap-6" data-dashboard-editor>
@@ -155,10 +160,25 @@
           hx-target="#save-status"
           hx-swap="innerHTML"
           data-dashboard-cycle-start-form
+          data-cycle-start-confirm-form
           data-dashboard-date="{{.Today}}">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
+          <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
           <button type="submit" class="{{if .TodayEntry.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-dashboard-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
         </form>
+        <div
+          hidden
+          data-cycle-start-policy
+          data-cycle-start-conflict="{{if .ManualCycleStartConflict}}true{{else}}false{{end}}"
+          data-cycle-start-conflict-date="{{if .ManualCycleStartConflict}}{{formatLocalizedDate .Lang .ManualCycleStartConflictDate "display"}}{{end}}"
+          data-cycle-start-target-date="{{formatLocalizedDate .Lang .TodayDateRaw "display"}}"
+          data-cycle-start-short-gap="{{.ManualCycleStartShortGap}}"
+          data-cycle-start-previous-date="{{if gt .ManualCycleStartShortGap 0}}{{formatLocalizedDate .Lang .ManualCycleStartPreviousDate "display"}}{{end}}"
+          data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
+          data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
+          data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
+          data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
         {{if .ShowCycleStartSuggestion}}
         <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
         {{end}}

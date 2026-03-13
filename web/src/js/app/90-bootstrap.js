@@ -20,6 +20,7 @@
     initRegisterValidation();
     initLoginPasswordPersistence();
     initConfirmModal();
+    bindCycleStartConfirmForms();
     initToastAPI();
     initHTMXHooks();
     initCSPFriendlyComponents();

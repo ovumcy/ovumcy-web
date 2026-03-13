@@ -21,6 +21,16 @@
     return String(value);
   }
 
+  function numericValues(values) {
+    var result = [];
+    for (var index = 0; index < values.length; index++) {
+      if (isFiniteNumber(values[index])) {
+        result.push(values[index]);
+      }
+    }
+    return result;
+  }
+
   function cssVar(name, fallback) {
     var raw = getComputedStyle(document.documentElement).getPropertyValue(name);
     var value = raw ? raw.trim() : "";
@@ -43,15 +53,25 @@
       var valuesSource = Array.isArray(parsed.values) ? parsed.values : [];
       var values = [];
       var labels = [];
+      var kind = parsed.kind === "bar" ? "bar" : "line";
+      var valueCount = kind === "line"
+        ? Math.max(labelsSource.length, valuesSource.length)
+        : valuesSource.length;
 
-      for (var index = 0; index < valuesSource.length; index++) {
+      for (var index = 0; index < valueCount; index++) {
         var numeric = toFiniteNumber(valuesSource[index]);
+        var label = index < labelsSource.length ? toText(labelsSource[index]).trim() : "";
+
+        if (kind === "line") {
+          values.push(isFiniteNumber(numeric) ? numeric : null);
+          labels.push(label || String(index + 1));
+          continue;
+        }
+
         if (!isFiniteNumber(numeric)) {
           continue;
         }
         values.push(numeric);
-
-        var label = index < labelsSource.length ? toText(labelsSource[index]).trim() : "";
         labels.push(label || String(index + 1));
       }
 
@@ -60,11 +80,20 @@
         baseline = null;
       }
 
+      var markerIndex = toFiniteNumber(parsed.markerIndex);
+      if (!isFiniteNumber(markerIndex) || markerIndex < 0 || markerIndex >= labels.length) {
+        markerIndex = null;
+      } else {
+        markerIndex = Math.round(markerIndex);
+      }
+
       return {
         labels: labels,
         values: values,
         baseline: baseline,
-        kind: parsed.kind === "bar" ? "bar" : "line"
+        kind: kind,
+        markerIndex: markerIndex,
+        markerLabel: toText(parsed.markerLabel).trim()
       };
     } catch {
       return null;
@@ -107,7 +136,7 @@
   }
 
   function createDomain(values, baseline, kind) {
-    var rangeValues = values.slice();
+    var rangeValues = numericValues(values);
     if (isFiniteNumber(baseline)) {
       rangeValues.push(baseline);
     }
@@ -134,8 +163,15 @@
     };
   }
 
-  function formatDays(value, daySuffix) {
-    return String(Math.round(value)) + daySuffix;
+  function formatChartValue(value, suffix, decimals) {
+    var precision = Math.max(0, Math.min(2, Math.round(Number(decimals) || 0)));
+    var numeric = Number(value);
+    if (!isFiniteNumber(numeric)) {
+      return "";
+    }
+
+    var rendered = precision > 0 ? numeric.toFixed(precision) : String(Math.round(numeric));
+    return rendered + String(suffix || "");
   }
 
   function drawGrid(context, padding, width, height, color) {
@@ -152,7 +188,7 @@
     context.stroke();
   }
 
-  function drawBaseline(context, padding, width, yForValue, baseline, baselineLabel, daySuffix, color) {
+  function drawBaseline(context, padding, width, yForValue, baseline, baselineLabel, valueSuffix, valueDecimals, color) {
     var baselineY = yForValue(baseline);
 
     context.save();
@@ -171,7 +207,7 @@
       context.textAlign = "right";
       context.textBaseline = "bottom";
       context.fillText(
-        baselineLabel + " " + formatDays(baseline, daySuffix),
+        baselineLabel + " " + formatChartValue(baseline, valueSuffix, valueDecimals),
         padding.left + width - 8,
         Math.max(padding.top + 12, baselineY - 6)
       );
@@ -179,6 +215,7 @@
   }
 
   function drawValueLine(context, values, xForIndex, yForValue, color) {
+    var hasSegment = false;
     if (!values.length) {
       return;
     }
@@ -188,10 +225,15 @@
     context.beginPath();
 
     for (var index = 0; index < values.length; index++) {
+      if (!isFiniteNumber(values[index])) {
+        hasSegment = false;
+        continue;
+      }
       var x = xForIndex(index);
       var y = yForValue(values[index]);
-      if (index === 0) {
+      if (!hasSegment) {
         context.moveTo(x, y);
+        hasSegment = true;
       } else {
         context.lineTo(x, y);
       }
@@ -204,6 +246,9 @@
     context.fillStyle = color;
 
     for (var index = 0; index < values.length; index++) {
+      if (!isFiniteNumber(values[index])) {
+        continue;
+      }
       context.beginPath();
       context.arc(xForIndex(index), yForValue(values[index]), 4.2, 0, Math.PI * 2);
       context.fill();
@@ -221,6 +266,33 @@
 
       context.fillRect(box.x, box.y, box.width, box.height);
     }
+  }
+
+  function drawVerticalMarker(context, padding, height, xForIndex, markerIndex, label, color) {
+    if (!isFiniteNumber(markerIndex)) {
+      return;
+    }
+
+    var markerX = xForIndex(markerIndex);
+    context.save();
+    context.setLineDash([4, 4]);
+    context.strokeStyle = color;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.moveTo(markerX, padding.top);
+    context.lineTo(markerX, padding.top + height);
+    context.stroke();
+    context.restore();
+
+    if (!label) {
+      return;
+    }
+
+    context.fillStyle = color;
+    context.font = "10px Quicksand, Nunito, sans-serif";
+    context.textAlign = "left";
+    context.textBaseline = "top";
+    context.fillText(label, markerX + 6, padding.top + 4);
   }
 
   function drawXLabels(context, labels, xForIndex, canvasHeight, padding, color) {
@@ -246,13 +318,13 @@
     }
   }
 
-  function drawYLabels(context, domain, padding, height, daySuffix, color) {
+  function drawYLabels(context, domain, padding, height, valueSuffix, valueDecimals, color) {
     context.fillStyle = color;
     context.font = "12px Quicksand, Nunito, sans-serif";
     context.textAlign = "right";
     context.textBaseline = "middle";
-    context.fillText(formatDays(domain.max, daySuffix), padding.left - 8, padding.top + 2);
-    context.fillText(formatDays(domain.min, daySuffix), padding.left - 8, padding.top + height);
+    context.fillText(formatChartValue(domain.max, valueSuffix, valueDecimals), padding.left - 8, padding.top + 2);
+    context.fillText(formatChartValue(domain.min, valueSuffix, valueDecimals), padding.left - 8, padding.top + height);
   }
 
   function drawChart(container) {
@@ -261,7 +333,14 @@
     }
 
     var emptyText = container.getAttribute("data-empty-text") || "Not enough cycle data yet.";
-    var daySuffix = container.getAttribute("data-days-suffix") || "d";
+    var valueSuffix = container.getAttribute("data-value-suffix");
+    if (valueSuffix === null) {
+      valueSuffix = container.getAttribute("data-days-suffix") || "d";
+    }
+    var valueDecimals = Number(container.getAttribute("data-value-decimals"));
+    if (!isFiniteNumber(valueDecimals)) {
+      valueDecimals = valueSuffix === "d" ? 0 : 1;
+    }
     var baselineLabel = container.getAttribute("data-baseline-label");
     if (baselineLabel === null) {
       baselineLabel = "Baseline";
@@ -276,7 +355,7 @@
     }
 
     var hasBaseline = isFiniteNumber(chartData.baseline);
-    if (!chartData.values.length && !hasBaseline) {
+    if (!numericValues(chartData.values).length && !hasBaseline) {
       renderMessage(container, emptyText);
       return;
     }
@@ -299,13 +378,13 @@
     }
 
     var xForIndex = function (index) {
-      if (chartData.values.length <= 1) {
+      if (chartData.labels.length <= 1) {
         return padding.left + innerWidth / 2;
       }
       if (chartData.kind === "bar") {
-        return padding.left + ((index + 0.5) * innerWidth) / chartData.values.length;
+        return padding.left + ((index + 0.5) * innerWidth) / chartData.labels.length;
       }
-      return padding.left + (index * innerWidth) / (chartData.values.length - 1);
+      return padding.left + (index * innerWidth) / (chartData.labels.length - 1);
     };
 
     var yForValue = function (value) {
@@ -314,9 +393,12 @@
     };
 
     var barBaseY = yForValue(Math.max(domain.min, 0));
-    var barSlotWidth = chartData.values.length > 0 ? innerWidth / chartData.values.length : innerWidth;
+    var barSlotWidth = chartData.labels.length > 0 ? innerWidth / chartData.labels.length : innerWidth;
     var barWidth = Math.min(36, Math.max(16, barSlotWidth * 0.62));
     var getBarBox = function (index, value) {
+      if (!isFiniteNumber(value)) {
+        return null;
+      }
       var centerX = xForIndex(index);
       var topY = yForValue(value);
       var height = Math.max(4, barBaseY - topY);
@@ -341,7 +423,7 @@
     drawGrid(context, padding, innerWidth, innerHeight, colors.grid);
 
     if (hasBaseline) {
-      drawBaseline(context, padding, innerWidth, yForValue, chartData.baseline, baselineLabel, daySuffix, colors.baseline);
+      drawBaseline(context, padding, innerWidth, yForValue, chartData.baseline, baselineLabel, valueSuffix, valueDecimals, colors.baseline);
     }
 
     if (chartData.kind === "bar") {
@@ -350,8 +432,11 @@
       drawValueLine(context, chartData.values, xForIndex, yForValue, colors.line);
       drawValuePoints(context, chartData.values, xForIndex, yForValue, colors.dot);
     }
+    if (isFiniteNumber(chartData.markerIndex)) {
+      drawVerticalMarker(context, padding, innerHeight, xForIndex, chartData.markerIndex, chartData.markerLabel, colors.baseline);
+    }
     drawXLabels(context, chartData.labels, xForIndex, size.height, padding, colors.label);
-    drawYLabels(context, domain, padding, innerHeight, daySuffix, colors.label);
+    drawYLabels(context, domain, padding, innerHeight, valueSuffix, valueDecimals, colors.label);
   }
 
   function renderCharts(root) {

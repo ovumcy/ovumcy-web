@@ -190,6 +190,15 @@ func assertPostgresDailyLogsSchemaReconciled(t *testing.T, database *gorm.DB) {
 	if !database.Migrator().HasColumn("daily_logs", "cervical_mucus") {
 		t.Fatal("expected postgres daily_logs.cervical_mucus column to exist after migrations")
 	}
+	if !database.Migrator().HasColumn("daily_logs", "cycle_start") {
+		t.Fatal("expected postgres daily_logs.cycle_start column to exist after migrations")
+	}
+	if !database.Migrator().HasColumn("daily_logs", "is_uncertain") {
+		t.Fatal("expected postgres daily_logs.is_uncertain column to exist after migrations")
+	}
+	if !database.Migrator().HasColumn("users", "luteal_phase") {
+		t.Fatal("expected postgres users.luteal_phase column to exist after migrations")
+	}
 
 	if err := database.Exec(
 		`INSERT INTO daily_logs (user_id, date, is_period, flow, mood, sex_activity, bbt, cervical_mucus, symptom_ids, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

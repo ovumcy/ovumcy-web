@@ -110,14 +110,28 @@ func SanitizeOnboardingCycleAndPeriod(cycleLength int, periodLength int) (int, i
 	safeCycleLength := ClampOnboardingCycleLength(cycleLength)
 	safePeriodLength := ClampOnboardingPeriodLength(periodLength)
 
-	if safeCycleLength-safePeriodLength < 8 {
-		safePeriodLength = safeCycleLength - 8
-		if safePeriodLength < 1 {
-			safePeriodLength = 1
-		}
+	maxPeriodLength := MaxPeriodLengthForCycle(safeCycleLength)
+	if safePeriodLength > maxPeriodLength {
+		safePeriodLength = maxPeriodLength
 	}
 
 	return safeCycleLength, safePeriodLength
+}
+
+func MaxPeriodLengthForCycle(cycleLength int) int {
+	safeCycleLength := ClampOnboardingCycleLength(cycleLength)
+	maxPeriodLength := safeCycleLength - minCycleReserveDays
+	if maxPeriodLength < 1 {
+		return 1
+	}
+	if maxPeriodLength > 14 {
+		return 14
+	}
+	return maxPeriodLength
+}
+
+func IsCompatibleCycleAndPeriod(cycleLength int, periodLength int) bool {
+	return ClampOnboardingPeriodLength(periodLength) <= MaxPeriodLengthForCycle(cycleLength)
 }
 
 func ClampOnboardingCycleLength(value int) int {

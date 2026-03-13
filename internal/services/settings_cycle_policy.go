@@ -32,8 +32,7 @@ func (service *SettingsService) ValidateCycleSettings(input CycleSettingsValidat
 		return CycleSettingsUpdate{}, ErrSettingsPeriodLengthOutOfRange
 	}
 
-	ovulationDay, _ := CalcOvulationDay(input.CycleLength, input.PeriodLength)
-	if ovulationDay <= 0 {
+	if !IsCompatibleCycleAndPeriod(input.CycleLength, input.PeriodLength) {
 		return CycleSettingsUpdate{}, ErrSettingsPeriodLengthIncompatible
 	}
 
