@@ -12,7 +12,7 @@ func (handler *Handler) ShowStats(c *fiber.Ctx) error {
 	}
 
 	language, messages, now := handler.currentPageViewContext(c)
-	data, err := handler.buildStatsPageData(user, language, messages, now)
+	data, err := handler.buildStatsPageData(user, language, messages, now, handler.requestLocation(c))
 	if err != nil {
 		return handler.respondMappedError(c, mapStatsPageViewError(err))
 	}

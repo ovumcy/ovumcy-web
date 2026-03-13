@@ -12,8 +12,9 @@ func (handler *Handler) GetStatsOverview(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	now := time.Now().In(handler.location)
-	stats, err := handler.statsService.BuildOverviewStats(user, now, handler.location)
+	location := handler.requestLocation(c)
+	now := time.Now().In(location)
+	stats, err := handler.statsService.BuildOverviewStats(user, now, location)
 	if err != nil {
 		return handler.respondMappedError(c, statsFetchErrorSpec())
 	}

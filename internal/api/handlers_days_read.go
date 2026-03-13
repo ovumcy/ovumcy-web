@@ -11,11 +11,12 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	from, to, err := services.ParseDayRange(c.Query("from"), c.Query("to"), handler.location)
+	location := handler.requestLocation(c)
+	from, to, err := services.ParseDayRange(c.Query("from"), c.Query("to"), location)
 	if err != nil {
 		return handler.respondMappedError(c, mapDayRangeError(err))
 	}
-	logs, err := handler.viewerService.FetchLogsForViewer(user, from, to, handler.location)
+	logs, err := handler.viewerService.FetchLogsForViewer(user, from, to, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayLogsFetchErrorSpec())
 	}
@@ -29,11 +30,12 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	day, err := services.ParseDayDate(c.Params("date"), handler.location)
+	location := handler.requestLocation(c)
+	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	logEntry, err := handler.viewerService.FetchLogByDateForViewer(user, day, handler.location)
+	logEntry, err := handler.viewerService.FetchLogByDateForViewer(user, day, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}
@@ -47,11 +49,12 @@ func (handler *Handler) CheckDayExists(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
-	day, err := services.ParseDayDate(c.Params("date"), handler.location)
+	location := handler.requestLocation(c)
+	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	exists, err := handler.dayService.DayHasDataForDate(user.ID, day, handler.location)
+	exists, err := handler.dayService.DayHasDataForDate(user.ID, day, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}

@@ -22,7 +22,7 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	hasObservedCycleLengths := len(CycleLengths(logs)) >= 1
 	today := DateAtLocation(now.In(location), location)
 	applyObservedBaseline(&stats, user, latestExplicitCycleStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
-	applyProjectedBaseline(&stats, cycleLength, periodLength, lutealPhase, location)
+	applyProjectedBaseline(&stats, cycleLength, lutealPhase, location)
 
 	stats.CurrentCycleDay = baselineCurrentCycleDay(stats.LastPeriodStart, today)
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
@@ -90,7 +90,7 @@ func baselineLastPeriodStart(user *models.User, latestExplicitCycleStart time.Ti
 	return time.Time{}
 }
 
-func applyProjectedBaseline(stats *CycleStats, cycleLength int, periodLength int, lutealPhase int, location *time.Location) {
+func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int, location *time.Location) {
 	if stats.LastPeriodStart.IsZero() {
 		return
 	}
@@ -104,10 +104,6 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, periodLength int
 	}
 
 	stats.NextPeriodStart = DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength), location)
-	projectedPeriodLength := int(stats.AveragePeriodLength + 0.5)
-	if projectedPeriodLength <= 0 {
-		projectedPeriodLength = periodLength
-	}
 	stats.LutealPhase = ResolveLutealPhase(lutealPhase)
 
 	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(

@@ -44,7 +44,7 @@ func mapStatsBBTChartData(chart services.StatsBBTChartViewData, messages map[str
 	return payload
 }
 
-func (handler *Handler) buildStatsPageData(user *models.User, language string, messages map[string]string, now time.Time) (fiber.Map, error) {
+func (handler *Handler) buildStatsPageData(user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
 	cycleLabelPattern := translateMessage(messages, "stats.cycle_label")
 	if cycleLabelPattern == "stats.cycle_label" {
 		cycleLabelPattern = ""
@@ -55,7 +55,7 @@ func (handler *Handler) buildStatsPageData(user *models.User, language string, m
 		language,
 		cycleLabelPattern,
 		now,
-		handler.location,
+		location,
 		maxStatsTrendPoints,
 	)
 	if err != nil {
