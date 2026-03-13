@@ -561,8 +561,16 @@
         action="/api/settings/clear-data"
         method="post"
         data-confirm="{{t .Messages "settings.confirm_clear_data"}}"
-        data-confirm-accept="{{t .Messages "settings.clear_data.confirm_accept"}}">
+        data-confirm-accept="{{t .Messages "settings.clear_data.confirm_accept"}}"
+        class="space-y-4">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        {{template "password_toggle_field" (dict
+          "Messages" .Messages
+          "LabelKey" "settings.delete_account.password"
+          "FieldID" "settings-clear-data-password"
+          "FieldName" "password"
+          "Autocomplete" "current-password"
+          "Required" true)}}
         <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.submit"}}</button>
       </form>
     </div>

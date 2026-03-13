@@ -29,9 +29,12 @@ var (
 	ErrAuthPasswordUpdate   = errors.New("auth password update failed")
 )
 
+const recoveryCodeTimingEqualizationHash = "$2a$10$ReZgUuXu2GXtC.RZ/q2QyesBFX182a3ycbr78sbtgURmuOyc3ygtG"
+
 type AuthUserRepository interface {
 	ExistsByNormalizedEmail(email string) (bool, error)
 	FindByNormalizedEmail(email string) (models.User, error)
+	FindByNormalizedEmailOptional(email string) (models.User, bool, error)
 	FindByID(userID uint) (models.User, error)
 	Create(user *models.User) error
 	Save(user *models.User) error
@@ -39,7 +42,6 @@ type AuthUserRepository interface {
 	UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
 	BumpAuthSessionVersion(userID uint) error
-	ListWithRecoveryCodeHash() ([]models.User, error)
 }
 
 type AuthService struct {
@@ -193,38 +195,29 @@ func (service *AuthService) AuthenticateCredentials(email string, password strin
 	return user, nil
 }
 
-func (service *AuthService) FindUserByRecoveryCode(code string) (*models.User, error) {
-	return service.findUserByRecoveryCode(code, "")
-}
-
 func (service *AuthService) FindUserByEmailAndRecoveryCode(email string, code string) (*models.User, error) {
 	normalizedEmail := NormalizeAuthEmail(email)
 	if normalizedEmail == "" {
 		return nil, ErrRecoveryCodeNotFound
 	}
-	return service.findUserByRecoveryCode(code, normalizedEmail)
-}
-
-func (service *AuthService) findUserByRecoveryCode(code string, normalizedEmail string) (*models.User, error) {
-	users, err := service.users.ListWithRecoveryCodeHash()
+	user, found, err := service.users.FindByNormalizedEmailOptional(normalizedEmail)
 	if err != nil {
 		return nil, err
 	}
-
-	normalizedCode := NormalizeRecoveryCode(code)
-	for index := range users {
-		if normalizedEmail != "" && NormalizeAuthEmail(users[index].Email) != normalizedEmail {
-			continue
-		}
-		hash := strings.TrimSpace(users[index].RecoveryCodeHash)
-		if hash == "" {
-			continue
-		}
-		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(normalizedCode)) == nil {
-			return &users[index], nil
-		}
+	if !found {
+		equalizeRecoveryCodeLookupTiming(code)
+		return nil, ErrRecoveryCodeNotFound
 	}
-	return nil, ErrRecoveryCodeNotFound
+
+	hash := strings.TrimSpace(user.RecoveryCodeHash)
+	if hash == "" {
+		equalizeRecoveryCodeLookupTiming(code)
+		return nil, ErrRecoveryCodeNotFound
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(NormalizeRecoveryCode(code))) != nil {
+		return nil, ErrRecoveryCodeNotFound
+	}
+	return &user, nil
 }
 
 func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uint, passwordHash string, ttl time.Duration, now time.Time) (string, error) {
@@ -290,6 +283,10 @@ func (service *AuthService) RevokeAuthSessions(userID uint) error {
 		return ErrAuthUserRequired
 	}
 	return service.users.BumpAuthSessionVersion(userID)
+}
+
+func equalizeRecoveryCodeLookupTiming(code string) {
+	_ = bcrypt.CompareHashAndPassword([]byte(recoveryCodeTimingEqualizationHash), []byte(NormalizeRecoveryCode(code)))
 }
 
 func (service *AuthService) ResetPasswordAndRotateRecoveryCode(user *models.User, newPassword string) (string, error) {

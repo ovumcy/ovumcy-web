@@ -8,12 +8,16 @@ import (
 func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		spec := unauthorizedErrorSpec()
+		handler.logHealthDataMutationError(c, "settings.tracking_update", spec, "tracking_settings")
+		return handler.respondMappedError(c, spec)
 	}
 
 	input, err := parseTrackingSettingsInput(c)
 	if err != nil {
-		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
+		spec := settingsInvalidInputErrorSpec()
+		handler.logHealthDataMutationError(c, "settings.tracking_update", spec, "tracking_settings")
+		return handler.respondMappedError(c, spec)
 	}
 
 	update := services.TrackingSettingsUpdate{
@@ -23,11 +27,14 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 		HideSexChip:        input.HideSexChip,
 	}
 	if err := handler.settingsService.SaveTrackingSettings(user.ID, update); err != nil {
-		return handler.respondMappedError(c, settingsTrackingUpdateErrorSpec())
+		spec := settingsTrackingUpdateErrorSpec()
+		handler.logHealthDataMutationError(c, "settings.tracking_update", spec, "tracking_settings")
+		return handler.respondMappedError(c, spec)
 	}
 
 	handler.settingsService.ApplyTrackingSettings(user, update)
 	status := handler.settingsService.ResolveTrackingUpdateStatus()
+	handler.logHealthDataMutation(c, "settings.tracking_update", "success", "tracking_settings")
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{

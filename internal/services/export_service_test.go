@@ -213,6 +213,46 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 	}
 }
 
+func TestExportBuildCSVRowsNeutralizesFormulaLikeCells(t *testing.T) {
+	service := NewExportService(
+		&stubExportDayReader{
+			logs: []models.DailyLog{
+				{
+					Date:       mustParseExportDay(t, "2026-02-18"),
+					SymptomIDs: []uint{1},
+					Notes:      "  =cmd|' /C calc'!A0",
+				},
+			},
+		},
+		&stubExportSymptomReader{
+			symptoms: []models.SymptomType{
+				{ID: 1, Name: "@Doctor export"},
+			},
+		},
+	)
+
+	rows, err := service.BuildCSVRows(42, nil, nil, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildCSVRows() unexpected error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+
+	columns := rows[0].Columns()
+	indexByHeader := make(map[string]int, len(ExportCSVHeaders))
+	for index, header := range ExportCSVHeaders {
+		indexByHeader[header] = index
+	}
+
+	if columns[indexByHeader["Other"]] != "'@Doctor export" {
+		t.Fatalf("expected sanitized other symptom cell, got %q", columns[indexByHeader["Other"]])
+	}
+	if columns[indexByHeader["Notes"]] != "'  =cmd|' /C calc'!A0" {
+		t.Fatalf("expected sanitized notes cell, got %q", columns[indexByHeader["Notes"]])
+	}
+}
+
 func TestExportServicePropagatesDependencyErrors(t *testing.T) {
 	dayErrService := NewExportService(
 		&stubExportDayReader{err: errors.New("load failed")},

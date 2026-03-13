@@ -93,6 +93,22 @@ func (handler *Handler) logSecurityError(c *fiber.Ctx, action string, spec APIEr
 	handler.logSecurityEvent(c, action, securityEventOutcomeForSpec(spec), combined...)
 }
 
+func (handler *Handler) logHealthDataMutation(c *fiber.Ctx, action string, outcome string, target string) {
+	fields := []SecurityEventField{securityEventField("domain", "health_data")}
+	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
+		fields = append(fields, securityEventField("target", normalizedTarget))
+	}
+	handler.logSecurityEvent(c, action, outcome, fields...)
+}
+
+func (handler *Handler) logHealthDataMutationError(c *fiber.Ctx, action string, spec APIErrorSpec, target string) {
+	fields := []SecurityEventField{securityEventField("domain", "health_data")}
+	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
+		fields = append(fields, securityEventField("target", normalizedTarget))
+	}
+	handler.logSecurityError(c, action, spec, fields...)
+}
+
 func securityEventOutcomeForSpec(spec APIErrorSpec) string {
 	if spec.Status >= fiber.StatusInternalServerError {
 		return "failure"

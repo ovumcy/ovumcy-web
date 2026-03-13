@@ -10,22 +10,30 @@ import (
 func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		spec := unauthorizedErrorSpec()
+		handler.logHealthDataMutationError(c, "health.day_upsert", spec, "day_entry")
+		return handler.respondMappedError(c, spec)
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
-		return handler.respondMappedError(c, invalidDateErrorSpec())
+		spec := invalidDateErrorSpec()
+		handler.logHealthDataMutationError(c, "health.day_upsert", spec, "day_entry")
+		return handler.respondMappedError(c, spec)
 	}
 
 	payload, err := parseDayPayload(c, user)
 	if err != nil {
-		return handler.respondMappedError(c, invalidPayloadErrorSpec())
+		spec := invalidPayloadErrorSpec()
+		handler.logHealthDataMutationError(c, "health.day_upsert", spec, "day_entry")
+		return handler.respondMappedError(c, spec)
 	}
 	cleanIDs, err := handler.symptomService.ValidateSymptomIDs(user.ID, payload.SymptomIDs)
 	if err != nil {
-		return handler.respondMappedError(c, invalidSymptomIDsErrorSpec())
+		spec := invalidSymptomIDsErrorSpec()
+		handler.logHealthDataMutationError(c, "health.day_upsert", spec, "day_entry")
+		return handler.respondMappedError(c, spec)
 	}
 	entry, err := handler.dayService.UpsertDayEntryWithAutoFill(user.ID, day, services.DayEntryInput{
 		IsPeriod:      payload.IsPeriod,
@@ -38,7 +46,9 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 		SymptomIDs:    cleanIDs,
 	}, location)
 	if err != nil {
-		return handler.respondMappedError(c, upsertDayPersistenceErrorSpec(err))
+		spec := upsertDayPersistenceErrorSpec(err)
+		handler.logHealthDataMutationError(c, "health.day_upsert", spec, "day_entry")
+		return handler.respondMappedError(c, spec)
 	}
 	if !user.ShownPeriodTip && payload.IsPeriod && services.ParseBoolLike(c.FormValue("ack_period_tip")) {
 		if err := handler.dayService.AcknowledgePeriodTip(user.ID); err == nil {
@@ -53,6 +63,8 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 			user.LongPeriodWarnedAt = &warnedAt
 		}
 	}
+
+	handler.logHealthDataMutation(c, "health.day_upsert", "success", "day_entry")
 
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")
@@ -73,13 +85,17 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		spec := unauthorizedErrorSpec()
+		handler.logHealthDataMutationError(c, "health.cycle_start_mark", spec, "cycle_start")
+		return handler.respondMappedError(c, spec)
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
-		return handler.respondMappedError(c, invalidDateErrorSpec())
+		spec := invalidDateErrorSpec()
+		handler.logHealthDataMutationError(c, "health.cycle_start_mark", spec, "cycle_start")
+		return handler.respondMappedError(c, spec)
 	}
 
 	cycleStartPolicy, _ := handler.dayService.ResolveManualCycleStartPolicy(user, day, time.Now().In(location), location)
@@ -94,13 +110,17 @@ func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 			MarkUncertain:   services.ParseBoolLike(c.FormValue("mark_uncertain")),
 		},
 	); err != nil {
-		return handler.respondMappedError(c, upsertDayPersistenceErrorSpec(err))
+		spec := upsertDayPersistenceErrorSpec(err)
+		handler.logHealthDataMutationError(c, "health.cycle_start_mark", spec, "cycle_start")
+		return handler.respondMappedError(c, spec)
 	}
 	if !user.ShownPeriodTip && services.ParseBoolLike(c.FormValue("ack_period_tip")) {
 		if err := handler.dayService.AcknowledgePeriodTip(user.ID); err == nil {
 			user.ShownPeriodTip = true
 		}
 	}
+
+	handler.logHealthDataMutation(c, "health.cycle_start_mark", "success", "cycle_start")
 
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")

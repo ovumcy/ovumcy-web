@@ -63,6 +63,6 @@ type trackingSettingsInput struct {
 	HideSexChip        bool   `json:"hide_sex_chip" form:"hide_sex_chip"`
 }
 
-type deleteAccountInput struct {
+type passwordProtectedSettingsInput struct {
 	Password string `json:"password" form:"password"`
 }

@@ -52,7 +52,7 @@ func (service *SettingsService) UpdateRecoveryCodeHash(userID uint, recoveryHash
 	return service.users.UpdateRecoveryCodeHash(userID, recoveryHash)
 }
 
-func (service *SettingsService) ValidateDeleteAccountPassword(passwordHash string, rawPassword string) error {
+func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {
 	password := strings.TrimSpace(rawPassword)
 	if password == "" {
 		return ErrSettingsPasswordMissing

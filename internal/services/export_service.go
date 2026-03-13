@@ -274,6 +274,9 @@ func (service *ExportService) BuildCSVRows(userID uint, from *time.Time, to *tim
 }
 
 func (row ExportCSVRow) Columns() []string {
+	otherSymptoms := sanitizeCSVTextCell(strings.Join(row.OtherSymptoms, "; "))
+	notes := sanitizeCSVTextCell(row.Notes)
+
 	return []string{
 		row.Date,
 		csvYesNo(row.Period),
@@ -297,8 +300,8 @@ func (row ExportCSVRow) Columns() []string {
 		csvYesNo(row.Symptoms.FoodCravings),
 		csvYesNo(row.Symptoms.Diarrhea),
 		csvYesNo(row.Symptoms.Constipation),
-		strings.Join(row.OtherSymptoms, "; "),
-		row.Notes,
+		otherSymptoms,
+		notes,
 	}
 }
 

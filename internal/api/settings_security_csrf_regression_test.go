@@ -33,7 +33,9 @@ func TestSettingsRegenerateRecoveryCodeMissingCSRFRejectedByMiddleware(t *testin
 func TestSettingsClearDataMissingCSRFRejectedByMiddleware(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-clear-data-csrf@example.com")
 
-	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/settings/clear-data", url.Values{}, nil)
+	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/settings/clear-data", url.Values{
+		"password": {"StrongPass1"},
+	}, nil)
 	defer response.Body.Close()
 
 	assertStatusCode(t, response, http.StatusForbidden)

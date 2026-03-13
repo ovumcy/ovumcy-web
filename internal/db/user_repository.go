@@ -40,6 +40,17 @@ func (repo *UserRepository) FindByNormalizedEmail(email string) (models.User, er
 	return user, nil
 }
 
+func (repo *UserRepository) FindByNormalizedEmailOptional(email string) (models.User, bool, error) {
+	var user models.User
+	if err := repo.database.Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.User{}, false, nil
+		}
+		return models.User{}, false, err
+	}
+	return user, true, nil
+}
+
 func (repo *UserRepository) ExistsByNormalizedEmail(email string) (bool, error) {
 	var matched int64
 	if err := repo.database.Model(&models.User{}).
@@ -145,14 +156,6 @@ func (repo *UserRepository) LoadSettingsByID(userID uint) (models.User, error) {
 		return models.User{}, err
 	}
 	return user, nil
-}
-
-func (repo *UserRepository) ListWithRecoveryCodeHash() ([]models.User, error) {
-	users := make([]models.User, 0)
-	if err := repo.database.Where("recovery_code_hash <> ''").Find(&users).Error; err != nil {
-		return nil, err
-	}
-	return users, nil
 }
 
 func (repo *UserRepository) SaveOnboardingStep1(userID uint, start time.Time) error {

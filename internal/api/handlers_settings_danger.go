@@ -1,15 +1,21 @@
 package api
 
-import (
-	"strings"
-
-	"github.com/gofiber/fiber/v2"
-)
+import "github.com/gofiber/fiber/v2"
 
 func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		spec := unauthorizedErrorSpec()
+		handler.logSecurityError(c, "settings.clear_data", spec)
+		return handler.respondMappedError(c, spec)
+	}
+	password, spec, valid := parsePasswordProtectedSettingsAction(c)
+	if !valid {
+		handler.logSecurityError(c, "settings.clear_data", spec)
+		return handler.respondMappedError(c, spec)
+	}
+	if err := handler.settingsService.ValidateCurrentPassword(user.PasswordHash, password); err != nil {
+		spec := mapSettingsDeleteAccountPasswordError(err)
 		handler.logSecurityError(c, "settings.clear_data", spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -34,24 +40,12 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "settings.delete_account", spec)
 		return handler.respondMappedError(c, spec)
 	}
-
-	input := deleteAccountInput{}
-	if err := c.BodyParser(&input); err != nil && hasJSONBody(c) {
-		spec := settingsMissingPasswordErrorSpec()
+	password, spec, valid := parsePasswordProtectedSettingsAction(c)
+	if !valid {
 		handler.logSecurityError(c, "settings.delete_account", spec)
 		return handler.respondMappedError(c, spec)
 	}
-
-	input.Password = strings.TrimSpace(input.Password)
-	if input.Password == "" {
-		input.Password = strings.TrimSpace(c.FormValue("password"))
-	}
-	if input.Password == "" {
-		spec := settingsMissingPasswordErrorSpec()
-		handler.logSecurityError(c, "settings.delete_account", spec)
-		return handler.respondMappedError(c, spec)
-	}
-	if err := handler.settingsService.ValidateDeleteAccountPassword(user.PasswordHash, input.Password); err != nil {
+	if err := handler.settingsService.ValidateCurrentPassword(user.PasswordHash, password); err != nil {
 		spec := mapSettingsDeleteAccountPasswordError(err)
 		handler.logSecurityError(c, "settings.delete_account", spec)
 		return handler.respondMappedError(c, spec)
@@ -69,4 +63,17 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	}
 	return redirectOrJSON(c, "/login")
+}
+
+func parsePasswordProtectedSettingsAction(c *fiber.Ctx) (string, APIErrorSpec, bool) {
+	input := passwordProtectedSettingsInput{}
+	if err := c.BodyParser(&input); err != nil && hasJSONBody(c) {
+		spec := settingsMissingPasswordErrorSpec()
+		return "", spec, false
+	}
+	if input.Password == "" {
+		spec := settingsMissingPasswordErrorSpec()
+		return "", spec, false
+	}
+	return input.Password, APIErrorSpec{}, true
 }

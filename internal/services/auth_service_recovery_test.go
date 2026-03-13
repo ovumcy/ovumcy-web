@@ -11,28 +11,30 @@ import (
 )
 
 type stubAuthUserRepo struct {
-	existsByEmail         bool
-	existsByEmailErr      error
-	findByEmailUser       models.User
-	findByEmailErr        error
-	user                  models.User
-	findByIDErr           error
-	createErr             error
-	createCalled          bool
-	createdUser           models.User
-	updatePasswordErr     error
-	updatePasswordCalled  bool
-	updateRecoveryPassErr error
-	updateRecoveryCalled  bool
-	bumpSessionErr        error
-	bumpSessionCalled     bool
-	updateRecoveryCodeErr error
-	listErr               error
-	listUsers             []models.User
-	updatedUserID         uint
-	updatedRecoveryHash   string
-	updatedPasswordHash   string
-	updatedMustChange     bool
+	existsByEmail            bool
+	existsByEmailErr         error
+	findByEmailUser          models.User
+	findByEmailErr           error
+	findByEmailOptionalEmail string
+	findByEmailOptionalUser  models.User
+	findByEmailOptionalFound bool
+	findByEmailOptionalErr   error
+	user                     models.User
+	findByIDErr              error
+	createErr                error
+	createCalled             bool
+	createdUser              models.User
+	updatePasswordErr        error
+	updatePasswordCalled     bool
+	updateRecoveryPassErr    error
+	updateRecoveryCalled     bool
+	bumpSessionErr           error
+	bumpSessionCalled        bool
+	updateRecoveryCodeErr    error
+	updatedUserID            uint
+	updatedRecoveryHash      string
+	updatedPasswordHash      string
+	updatedMustChange        bool
 }
 
 func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(string) (bool, error) {
@@ -47,6 +49,22 @@ func (stub *stubAuthUserRepo) FindByNormalizedEmail(string) (models.User, error)
 		return models.User{}, stub.findByEmailErr
 	}
 	return stub.findByEmailUser, nil
+}
+
+func (stub *stubAuthUserRepo) FindByNormalizedEmailOptional(email string) (models.User, bool, error) {
+	if stub.findByEmailOptionalErr != nil {
+		return models.User{}, false, stub.findByEmailOptionalErr
+	}
+	if stub.findByEmailOptionalEmail != "" && stub.findByEmailOptionalEmail != email {
+		return models.User{}, false, nil
+	}
+	if stub.findByEmailOptionalFound {
+		return stub.findByEmailOptionalUser, true, nil
+	}
+	if stub.user.ID != 0 || stub.user.Email != "" || stub.user.RecoveryCodeHash != "" || stub.user.PasswordHash != "" {
+		return stub.user, true, nil
+	}
+	return models.User{}, false, nil
 }
 
 func (stub *stubAuthUserRepo) FindByID(uint) (models.User, error) {
@@ -120,16 +138,6 @@ func (stub *stubAuthUserRepo) BumpAuthSessionVersion(userID uint) error {
 	stub.user.ID = userID
 	stub.user.AuthSessionVersion = normalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
 	return nil
-}
-
-func (stub *stubAuthUserRepo) ListWithRecoveryCodeHash() ([]models.User, error) {
-	if stub.listErr != nil {
-		return nil, stub.listErr
-	}
-	if stub.listUsers != nil {
-		return stub.listUsers, nil
-	}
-	return []models.User{stub.user}, nil
 }
 
 var serviceRecoveryCodePattern = regexp.MustCompile(`^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$`)
@@ -393,12 +401,12 @@ func TestAuthServiceFindUserByEmailAndRecoveryCode(t *testing.T) {
 	}
 
 	repo := &stubAuthUserRepo{
-		listUsers: []models.User{
-			{
-				ID:               22,
-				Email:            "owner@example.com",
-				RecoveryCodeHash: recoveryHash,
-			},
+		findByEmailOptionalEmail: "owner@example.com",
+		findByEmailOptionalFound: true,
+		findByEmailOptionalUser: models.User{
+			ID:               22,
+			Email:            "owner@example.com",
+			RecoveryCodeHash: recoveryHash,
 		},
 	}
 	service := NewAuthService(repo)
@@ -419,18 +427,26 @@ func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMismatch(t *testing.T) 
 	}
 
 	repo := &stubAuthUserRepo{
-		listUsers: []models.User{
-			{
-				ID:               22,
-				Email:            "owner@example.com",
-				RecoveryCodeHash: recoveryHash,
-			},
+		findByEmailOptionalEmail: "owner@example.com",
+		findByEmailOptionalFound: true,
+		findByEmailOptionalUser: models.User{
+			ID:               22,
+			Email:            "owner@example.com",
+			RecoveryCodeHash: recoveryHash,
 		},
 	}
 	service := NewAuthService(repo)
 
 	if _, err := service.FindUserByEmailAndRecoveryCode("other@example.com", recoveryCode); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for mismatched email, got %v", err)
+	}
+}
+
+func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMissingUser(t *testing.T) {
+	service := NewAuthService(&stubAuthUserRepo{})
+
+	if _, err := service.FindUserByEmailAndRecoveryCode("missing@example.com", "OVUM-ABCD-2345-EFGH"); !errors.Is(err, ErrRecoveryCodeNotFound) {
+		t.Fatalf("expected ErrRecoveryCodeNotFound for missing user, got %v", err)
 	}
 }
 

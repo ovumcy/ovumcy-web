@@ -7,18 +7,25 @@ import (
 func (handler *Handler) UpdateCycleSettings(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		spec := unauthorizedErrorSpec()
+		handler.logHealthDataMutationError(c, "settings.cycle_update", spec, "cycle_settings")
+		return handler.respondMappedError(c, spec)
 	}
 
 	input, parseError := handler.parseCycleSettingsInput(c)
 	if parseError != "" {
-		return handler.respondMappedError(c, settingsValidationErrorSpec(parseError))
+		spec := settingsValidationErrorSpec(parseError)
+		handler.logHealthDataMutationError(c, "settings.cycle_update", spec, "cycle_settings")
+		return handler.respondMappedError(c, spec)
 	}
 	if err := handler.settingsService.SaveCycleSettings(user.ID, input); err != nil {
-		return handler.respondMappedError(c, settingsCycleUpdateErrorSpec())
+		spec := settingsCycleUpdateErrorSpec()
+		handler.logHealthDataMutationError(c, "settings.cycle_update", spec, "cycle_settings")
+		return handler.respondMappedError(c, spec)
 	}
 
 	handler.settingsService.ApplyCycleSettings(user, input)
+	handler.logHealthDataMutation(c, "settings.cycle_update", "success", "cycle_settings")
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
