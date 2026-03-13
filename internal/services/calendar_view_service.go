@@ -57,7 +57,8 @@ func (service *CalendarViewService) BuildCalendarPageViewData(user *models.User,
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadStats, err)
 	}
 
-	prevMonth, nextMonth := CalendarAdjacentMonthValues(monthStart)
+	minMonth := CalendarMinimumNavigableMonth(user, location)
+	prevMonth, nextMonth := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth)
 	dayStates := BuildCalendarDayStates(user, monthStart, logs, stats, now, location)
 
 	return CalendarPageViewData{

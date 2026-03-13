@@ -305,3 +305,13 @@
     focusLoginPasswordField(passwordField);
   }
 
+  function initResetPasswordValidation() {
+    var form = document.getElementById("reset-password-form");
+    if (!form) {
+      return;
+    }
+
+    form.addEventListener("input", function () {
+      clearAuthServerError(form);
+    });
+  }

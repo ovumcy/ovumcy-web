@@ -706,6 +706,17 @@
     focusLoginPasswordField(passwordField);
   }
 
+  function initResetPasswordValidation() {
+    var form = document.getElementById("reset-password-form");
+    if (!form) {
+      return;
+    }
+
+    form.addEventListener("input", function () {
+      clearAuthServerError(form);
+    });
+  }
+
   function initConfirmModal() {
     var modal = document.getElementById("confirm-modal");
     var messageNode = document.getElementById("confirm-modal-message");
@@ -2421,13 +2432,22 @@
     return true;
   }
 
-  function validateTemperatureInputs(form) {
+  function finalizeTemperatureInput(input, reveal) {
+    var valid = syncTemperatureInput(input, true);
+    if (!valid && reveal && typeof input.reportValidity === "function") {
+      input.reportValidity();
+    }
+    return valid;
+  }
+
+  function validateTemperatureInputs(form, reveal) {
     if (!form || !form.querySelectorAll) {
       return true;
     }
 
     var inputs = form.querySelectorAll("[data-temperature-input]");
     var firstInvalid = null;
+    var shouldReveal = reveal !== false;
 
     for (var index = 0; index < inputs.length; index++) {
       var input = inputs[index];
@@ -2440,7 +2460,7 @@
       return true;
     }
 
-    if (typeof firstInvalid.reportValidity === "function") {
+    if (shouldReveal && typeof firstInvalid.reportValidity === "function") {
       firstInvalid.reportValidity();
     }
     return false;
@@ -2466,18 +2486,18 @@
         });
 
         input.addEventListener("blur", function () {
-          syncTemperatureInput(this, true);
+          finalizeTemperatureInput(this, true);
         });
 
         input.addEventListener("change", function () {
-          syncTemperatureInput(this, true);
+          finalizeTemperatureInput(this, true);
         });
       }
 
       if (form && form.dataset.temperatureInputsBound !== "1") {
         form.dataset.temperatureInputsBound = "1";
         form.addEventListener("submit", function (event) {
-          if (!validateTemperatureInputs(this)) {
+          if (!validateTemperatureInputs(this, true)) {
             event.preventDefault();
           }
         });
@@ -2827,6 +2847,11 @@
     }
 
     clearDashboardAutosaveTimers(form);
+    if (!validateTemperatureInputs(form, false)) {
+      setDashboardAutosaveIndicator(form, "invalid");
+      scheduleDashboardAutosaveIdleReset(form);
+      return Promise.resolve(false);
+    }
     setDashboardAutosaveIndicator(form, "saving");
 
     requestVersion = form.__ovumcyAutosaveVersion || 0;
@@ -3761,6 +3786,7 @@
     initPasswordToggles();
     initLoginValidation();
     initRegisterValidation();
+    initResetPasswordValidation();
     initLoginPasswordPersistence();
     initConfirmModal();
     bindCycleStartConfirmForms();

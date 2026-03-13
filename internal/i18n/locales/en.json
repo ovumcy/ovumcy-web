@@ -385,6 +385,7 @@
   "dashboard.autosave_idle": "Auto-save is ready",
   "dashboard.autosave_saving": "Saving automatically...",
   "dashboard.autosave_saved": "Saved automatically",
+  "dashboard.autosave_invalid": "Fix the form errors to save",
   "dashboard.autosave_error": "Auto-save failed",
   "dashboard.save_message_self_care": "Saved. Take care of yourself today 🌸",
   "dashboard.save_message_fertile": "Saved. You are in your fertile window right now.",

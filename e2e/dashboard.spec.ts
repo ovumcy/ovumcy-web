@@ -30,6 +30,25 @@ async function saveToday(page: Page): Promise<void> {
   await expect(page.locator('#save-status .status-ok')).toBeVisible();
 }
 
+async function enableBBTTracking(page: Page): Promise<void> {
+  await page.goto('/settings');
+  await expect(page).toHaveURL(/\/settings$/);
+
+  const trackingSection = page.locator('#settings-tracking');
+  await expect(trackingSection).toBeVisible();
+
+  const trackBBT = trackingSection.locator('input[name="track_bbt"]');
+  if (!(await trackBBT.isChecked())) {
+    await trackBBT.check();
+  }
+
+  await trackingSection.locator('button[data-save-button]').click();
+  await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
+
+  await page.goto('/dashboard');
+  await expect(page).toHaveURL(/\/dashboard$/);
+}
+
 function todaySaveForm(page: Page) {
   return page.locator('[data-dashboard-save-form]');
 }
@@ -118,6 +137,31 @@ test.describe('Dashboard: today editor', () => {
 
     await page.reload();
     await expect(page.locator('#today-notes')).toHaveValue(noteText);
+  });
+
+  test('BBT blur validation blocks autosave with form guidance copy', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-bbt-inline');
+    await enableBBTTracking(page);
+
+    const bbtInput = page.locator('#dashboard-bbt');
+    const autosaveIndicator = page.locator('[data-dashboard-autosave-indicator]');
+
+    await expect(bbtInput).toBeVisible();
+    await bbtInput.fill('33.99');
+    await bbtInput.blur();
+
+    await expect(bbtInput).toHaveAttribute('aria-invalid', 'true');
+    await expect
+      .poll(async () => bbtInput.evaluate((node) => (node as HTMLInputElement).validationMessage))
+      .not.toBe('');
+
+    await expect(autosaveIndicator).toHaveAttribute('data-autosave-state', 'invalid');
+    const indicatorText = String((await autosaveIndicator.textContent()) || '').trim();
+    expect([
+      'Fix the form errors to save',
+      'Исправьте ошибки в форме для сохранения',
+      'Corrige los errores del formulario para guardar',
+    ]).toContain(indicatorText);
   });
 
   test('period/flow/symptoms/notes save and persist after reload; flow is single-select', async ({ page }) => {

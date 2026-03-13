@@ -249,6 +249,39 @@ func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 	}
 }
 
+func TestFirstMissingTrackedDayIgnoresDaysBeforeTrackingStart(t *testing.T) {
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+	trackingStart := mustParseDashboardServiceDay(t, "2026-02-18")
+	logs := []models.DailyLog{
+		{Date: mustParseDashboardServiceDay(t, "2026-02-18"), Notes: "logged"},
+		{Date: mustParseDashboardServiceDay(t, "2026-02-19"), Notes: "logged"},
+		{Date: mustParseDashboardServiceDay(t, "2026-02-20"), Notes: "logged"},
+	}
+
+	missedDay, show := firstMissingTrackedDay(logs, today, 14, trackingStart, time.UTC)
+	if show {
+		t.Fatalf("did not expect missed-days link, got missed day %s", missedDay.Format("2006-01-02"))
+	}
+}
+
+func TestFirstMissingTrackedDayFindsTrackedGap(t *testing.T) {
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+	trackingStart := mustParseDashboardServiceDay(t, "2026-02-10")
+	logs := []models.DailyLog{
+		{Date: mustParseDashboardServiceDay(t, "2026-02-10"), Notes: "logged"},
+		{Date: mustParseDashboardServiceDay(t, "2026-02-14"), Notes: "logged"},
+		{Date: mustParseDashboardServiceDay(t, "2026-02-15"), Notes: "logged"},
+	}
+
+	missedDay, show := firstMissingTrackedDay(logs, today, 14, trackingStart, time.UTC)
+	if !show {
+		t.Fatal("expected missed-days link for tracked gap")
+	}
+	if missedDay.Format("2006-01-02") != "2026-02-11" {
+		t.Fatalf("expected first missed tracked day 2026-02-11, got %s", missedDay.Format("2006-01-02"))
+	}
+}
+
 func mustParseDashboardServiceDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)

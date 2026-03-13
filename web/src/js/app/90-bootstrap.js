@@ -18,6 +18,7 @@
     initPasswordToggles();
     initLoginValidation();
     initRegisterValidation();
+    initResetPasswordValidation();
     initLoginPasswordPersistence();
     initConfirmModal();
     bindCycleStartConfirmForms();

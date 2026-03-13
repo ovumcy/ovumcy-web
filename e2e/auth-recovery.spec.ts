@@ -142,6 +142,35 @@ test.describe('Auth: recovery and reset password', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
   });
 
+  test('reset-password server error clears as soon as the user edits the password fields', async ({
+    page,
+  }) => {
+    const creds = createCredentials('auth-reset-error-clear');
+
+    await registerOwnerViaUI(page, creds);
+    const recoveryCode = await readRecoveryCode(page);
+    await logoutViaAPI(page);
+
+    await openForgotPasswordRecoveryStep(page, creds.email);
+    await page.locator('#recovery-code').fill(recoveryCode);
+    await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+
+    await expect(page).toHaveURL(/\/reset-password$/);
+
+    await page.locator('#reset-password').fill('weak');
+    await page.locator('#reset-password-confirm').fill('weak');
+    await page.locator('form[action="/api/auth/reset-password"] button[type="submit"]').click();
+
+    const serverError = page.locator('[data-auth-server-error]');
+    await expect(serverError).toBeVisible();
+
+    await page.locator('#reset-password').fill('ValidStrong2');
+    await expect(serverError).toHaveCount(0);
+
+    await page.locator('#reset-password-confirm').fill('ValidStrong2');
+    await expect(page.locator('[data-auth-server-error]')).toHaveCount(0);
+  });
+
   test('recovery code page is no longer available after re-login', async ({ page }) => {
     const creds = createCredentials('auth-recovery-once');
 

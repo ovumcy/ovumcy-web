@@ -383,7 +383,6 @@
             "FieldName" "current_password"
             "Autocomplete" "current-password"
             "Required" true)}}
-          <div id="settings-change-password-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
 
           {{template "password_toggle_field" (dict
             "Messages" .Messages
@@ -404,7 +403,7 @@
 
           <div class="settings-form-actions">
             <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.change_password.submit"}}</button>
-            <div id="settings-change-password-toast" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
+            <div id="settings-change-password-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
           </div>
         </form>
       </section>

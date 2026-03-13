@@ -385,6 +385,7 @@
   "dashboard.autosave_idle": "Autoguardado listo",
   "dashboard.autosave_saving": "Guardando automáticamente...",
   "dashboard.autosave_saved": "Guardado automáticamente",
+  "dashboard.autosave_invalid": "Corrige los errores del formulario para guardar",
   "dashboard.autosave_error": "Falló el autoguardado",
   "dashboard.save_message_self_care": "Guardado. Cuídate hoy 🌸",
   "dashboard.save_message_fertile": "Guardado. Ahora estás en tu ventana fértil.",

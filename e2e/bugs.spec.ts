@@ -131,6 +131,16 @@ async function browserLocalISODate(page: Page): Promise<string> {
   });
 }
 
+async function browserMonthYearsAgo(page: Page, years: number): Promise<string> {
+  return page.evaluate((offsetYears) => {
+    const now = new Date();
+    now.setFullYear(now.getFullYear() - offsetYears);
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    return `${yyyy}-${mm}`;
+  }, years);
+}
+
 async function openCalendarDayEditor(page: Page, isoDate: string) {
   const month = isoDate.slice(0, 7);
   await page.goto(`/calendar?month=${month}&day=${isoDate}`);
@@ -440,6 +450,54 @@ test.describe('Bug regressions', () => {
       await expect(page.locator('.toast-stack .toast-message').last()).toHaveText(
         'Мажущие выделения могут быть не днём 1. Уточни завтра.'
       );
+    });
+  });
+
+  test.describe('BUG-06: calendar backward navigation stays readable and bounded', () => {
+    test('previous-month control keeps its label and becomes disabled at the lower bound', async ({
+      page,
+    }) => {
+      await registerOwnerAndReachDashboard(page, 'bug06-calendar-prev');
+
+      await page.goto('/calendar');
+      await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
+
+      for (let index = 0; index < 6; index += 1) {
+        const navActions = page
+          .locator('section.space-y-6 > div.journal-card')
+          .first()
+          .locator('.flex.flex-wrap.items-center.gap-2')
+          .first();
+        const previousControl = navActions.locator(':scope > *').first();
+
+        await expect(previousControl).toContainText(/\S+/);
+        const width = await previousControl.evaluate((node) => {
+          return Math.round(node.getBoundingClientRect().width);
+        });
+        expect(width).toBeGreaterThan(44);
+
+        const href = await previousControl.getAttribute('href');
+        if (!href) {
+          break;
+        }
+        await previousControl.click();
+        await expect(page).toHaveURL(/\/calendar\?month=/);
+      }
+
+      const lowerBoundMonth = await browserMonthYearsAgo(page, 3);
+      await page.goto(`/calendar?month=${lowerBoundMonth}`);
+      await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${lowerBoundMonth}`));
+
+      const navActions = page
+        .locator('section.space-y-6 > div.journal-card')
+        .first()
+        .locator('.flex.flex-wrap.items-center.gap-2')
+        .first();
+      const previousControl = navActions.locator(':scope > *').first();
+
+      await expect(previousControl).toContainText(/\S+/);
+      await expect(previousControl).toHaveClass(/btn--disabled/);
+      await expect(previousControl).not.toHaveAttribute('href', /.+/);
     });
   });
 });

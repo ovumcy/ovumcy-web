@@ -16,7 +16,8 @@ func (handler *Handler) ShowCalendar(c *fiber.Ctx) error {
 
 	language, messages, now := handler.currentPageViewContext(c)
 	location := handler.requestLocation(c)
-	activeMonth, selectedDate, err := services.ResolveCalendarMonthAndSelectedDate(c.Query("month"), c.Query("day"), now, location)
+	minMonth := services.CalendarMinimumNavigableMonth(user, location)
+	activeMonth, selectedDate, err := services.ResolveCalendarMonthAndSelectedDateWithinBounds(c.Query("month"), c.Query("day"), now, location, minMonth)
 	if err != nil {
 		return handler.respondMappedError(c, invalidMonthErrorSpec())
 	}

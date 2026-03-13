@@ -91,6 +91,32 @@ func TestBuildCalendarPageViewDataReturnsTypedErrors(t *testing.T) {
 	}
 }
 
+func TestBuildCalendarPageViewDataHidesPreviousMonthAtLowerBound(t *testing.T) {
+	service := NewCalendarViewService(
+		&stubCalendarViewDayReader{},
+		&stubCalendarViewStatsProvider{},
+	)
+
+	user := &models.User{
+		ID:        9,
+		Role:      models.RoleOwner,
+		CreatedAt: time.Date(2026, time.March, 13, 12, 0, 0, 0, time.UTC),
+	}
+	now := mustParseCalendarViewDay(t, "2026-03-13")
+	monthStart := time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC)
+
+	viewData, err := service.BuildCalendarPageViewData(user, "en", now, monthStart, "", time.UTC)
+	if err != nil {
+		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
+	}
+	if viewData.PrevMonth != "" {
+		t.Fatalf("expected empty prev month at lower bound, got %q", viewData.PrevMonth)
+	}
+	if viewData.NextMonth != "2023-04" {
+		t.Fatalf("expected next month 2023-04, got %q", viewData.NextMonth)
+	}
+}
+
 func mustParseCalendarViewDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)

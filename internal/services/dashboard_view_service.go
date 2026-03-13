@@ -130,7 +130,7 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayState, err)
 	}
-	missedDay, showMissedDaysLink := firstMissingTrackedDay(logs, today, 14, location)
+	missedDay, showMissedDaysLink := firstMissingTrackedDay(logs, today, 14, user.CreatedAt, location)
 	allowManualCycleStart := IsOwnerUser(user) && IsAllowedManualCycleStartDate(today, now, location)
 
 	return DashboardViewData{
@@ -261,7 +261,7 @@ func completedCycleCountFromLogs(logs []models.DailyLog) int {
 	return len(starts) - 1
 }
 
-func firstMissingTrackedDay(logs []models.DailyLog, today time.Time, lookbackDays int, location *time.Location) (time.Time, bool) {
+func firstMissingTrackedDay(logs []models.DailyLog, today time.Time, lookbackDays int, trackingStart time.Time, location *time.Location) (time.Time, bool) {
 	if lookbackDays < 3 {
 		lookbackDays = 3
 	}
@@ -271,6 +271,15 @@ func firstMissingTrackedDay(logs []models.DailyLog, today time.Time, lookbackDay
 	}
 
 	startDay := today.AddDate(0, 0, -lookbackDays)
+	if !trackingStart.IsZero() {
+		trackingStartDay := DateAtLocation(trackingStart, location)
+		if trackingStartDay.After(startDay) {
+			startDay = trackingStartDay
+		}
+	}
+	if !startDay.Before(today) {
+		return time.Time{}, false
+	}
 	missedCount := 0
 	firstMissing := time.Time{}
 	for day := startDay; day.Before(today); day = day.AddDate(0, 0, 1) {

@@ -385,6 +385,7 @@
   "dashboard.autosave_idle": "Автосохранение готово",
   "dashboard.autosave_saving": "Сохраняем автоматически...",
   "dashboard.autosave_saved": "Сохранено автоматически",
+  "dashboard.autosave_invalid": "Исправьте ошибки в форме для сохранения",
   "dashboard.autosave_error": "Автосохранение не удалось",
   "dashboard.save_message_self_care": "Сохранено. Позаботься о себе сегодня 🌸",
   "dashboard.save_message_fertile": "Сохранено. Сейчас фертильный период.",
