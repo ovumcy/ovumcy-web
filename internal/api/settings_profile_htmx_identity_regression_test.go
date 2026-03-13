@@ -1,6 +1,7 @@
 package api
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,13 +9,13 @@ import (
 	"testing"
 )
 
-func TestProfileUpdateHTMXReturnsUpdatedIdentityHeader(t *testing.T) {
+func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "profile-htmx-owner@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	form := url.Values{
-		"display_name": {"Maya"},
+		"display_name": {"Катя"},
 	}
 	request := httptest.NewRequest(http.MethodPost, "/api/settings/profile", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -32,9 +33,20 @@ func TestProfileUpdateHTMXReturnsUpdatedIdentityHeader(t *testing.T) {
 		t.Fatalf("expected status 200 for htmx profile update, got %d", response.StatusCode)
 	}
 
-	identity := strings.TrimSpace(response.Header.Get("X-Ovumcy-Profile-Identity"))
-	if identity != "Maya" {
-		t.Fatalf("expected X-Ovumcy-Profile-Identity %q, got %q", "Maya", identity)
+	if identity := strings.TrimSpace(response.Header.Get("X-Ovumcy-Profile-Identity")); identity != "" {
+		t.Fatalf("did not expect legacy identity header, got %q", identity)
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read htmx profile update body: %v", err)
+	}
+	rendered := string(body)
+	if !strings.Contains(rendered, `hx-swap-oob="outerHTML"`) {
+		t.Fatalf("expected oob nav identity markup, got %q", rendered)
+	}
+	if !strings.Contains(rendered, ">Катя<") {
+		t.Fatalf("expected unicode display name in oob markup, got %q", rendered)
 	}
 }
 
@@ -79,8 +91,19 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 		t.Fatalf("expected status 200 for clear htmx profile update, got %d", clearResponse.StatusCode)
 	}
 
-	identity := strings.TrimSpace(clearResponse.Header.Get("X-Ovumcy-Profile-Identity"))
-	if identity != "" {
-		t.Fatalf("expected empty identity header when display name is cleared, got %q", identity)
+	if identity := strings.TrimSpace(clearResponse.Header.Get("X-Ovumcy-Profile-Identity")); identity != "" {
+		t.Fatalf("did not expect legacy identity header when display name is cleared, got %q", identity)
+	}
+
+	body, err := io.ReadAll(clearResponse.Body)
+	if err != nil {
+		t.Fatalf("read clear htmx profile body: %v", err)
+	}
+	rendered := string(body)
+	if !strings.Contains(rendered, `title="Profile settings"`) {
+		t.Fatalf("expected empty display-name nav chip to fall back to profile settings tooltip, got %q", rendered)
+	}
+	if strings.Contains(rendered, ">Add profile name<") {
+		t.Fatalf("did not expect empty display-name placeholder as visible nav label, got %q", rendered)
 	}
 }

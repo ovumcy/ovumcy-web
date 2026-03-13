@@ -195,7 +195,6 @@ test.describe('Onboarding flow', () => {
     await expect(autoFillCheckbox).not.toBeChecked();
     await expect(irregularCheckbox).not.toBeChecked();
     await expect(autoFillToggle).toHaveAttribute('data-active', 'false');
-    await expect(autoFillToggle.locator('[data-binary-toggle-state]')).toHaveText('Off');
     await expect(irregularToggle).toHaveAttribute('data-active', 'false');
 
     await page.locator('form[hx-post="/onboarding/step2"] button.btn-secondary[type="button"]').click();

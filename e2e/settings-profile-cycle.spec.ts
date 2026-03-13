@@ -105,7 +105,7 @@ function dashboardSaveForm(page: Page): Locator {
 }
 
 function navIdentityChip(page: Page): Locator {
-  return page.locator('[data-nav-account-actions] [data-current-user-identity-container]');
+  return page.locator('#nav-user-chip-desktop');
 }
 
 async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
@@ -242,7 +242,7 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.reload();
     await expect(displayNameInput).toHaveValue('');
-    await expect(navIdentityChip(page)).toContainText('Add profile name');
+    await expect(navIdentityChip(page)).toHaveAttribute('title', 'Profile settings');
     await expect(navIdentityChip(page)).not.toContainText(creds.email);
     await expect(navIdentityChip(page)).not.toContainText(creds.email.split('@')[0]);
   });
@@ -346,7 +346,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(trackCervicalMucus).not.toBeChecked();
     await expect(hideSexChip).not.toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
-    await expect(trackBBTToggle.locator('[data-binary-toggle-state]')).toHaveText('Off');
 
     await trackBBT.check();
     await trackCervicalMucus.check();
@@ -361,7 +360,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(trackCervicalMucus).toBeChecked();
     await expect(hideSexChip).toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
-    await expect(trackBBTToggle.locator('[data-binary-toggle-state]')).toHaveText('On');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
     await expect(hideSexChipToggle).toHaveAttribute('data-active', 'true');
     await expect(temperatureUnitFahrenheit).toBeChecked();
@@ -399,7 +397,6 @@ test.describe('Settings: profile and cycle', () => {
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
-    await expect(trackBBTToggle.locator('[data-binary-toggle-state]')).toHaveText('Off');
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
@@ -544,7 +541,7 @@ test.describe('Settings: profile and cycle', () => {
     ).toBeVisible();
   });
 
-  test('custom symptom validation blocks duplicate, built-in, invalid markup, and too-long names', async ({
+  test('custom symptom validation blocks duplicate, built-in, and invalid markup; maxlength guards long names', async ({
       page,
     }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-validation');
@@ -573,11 +570,8 @@ test.describe('Settings: profile and cycle', () => {
 
     const tooLongName = '12345678901234567890123456789012345678901';
     await createForm.locator('#settings-new-symptom-name').fill(tooLongName);
-    await createForm.locator('button[type="submit"]').click();
-    await expect(symptomSection.locator('.status-error')).toContainText(
-      'Use 40 characters or fewer. For longer details, use notes.'
-    );
-    await expect(createForm.locator('#settings-new-symptom-name')).toHaveValue('');
+    await expect(createForm.locator('#settings-new-symptom-name')).toHaveValue(tooLongName.slice(0, 40));
+    await expect(createForm.locator('[data-symptom-name-count]')).toHaveText('40/40');
   });
 
   test('long custom symptom names stay usable without layout overflow', async ({
@@ -622,12 +616,11 @@ test.describe('Settings: profile and cycle', () => {
     const activeRow = page.locator(
       `[data-custom-symptom-row][data-symptom-name="${longButAllowedName}"][data-symptom-state="active"]`
     );
-    await activeRow.locator('input[name="name"]').fill('12345678901234567890123456789012345678901');
-    await activeRow.locator('[data-symptom-edit-form] button[type="submit"]').click();
-    await expect(activeRow.locator('[data-symptom-row-error]')).toContainText(
-      'Use 40 characters or fewer. For longer details, use notes.'
-    );
-    await expect(activeRow.locator('input[name="name"]')).toHaveValue(longButAllowedName);
+    const editTooLongName = '12345678901234567890123456789012345678901';
+    await activeRow.locator('input[name="name"]').fill(editTooLongName);
+    await expect(activeRow.locator('input[name="name"]')).toHaveValue(editTooLongName.slice(0, 40));
+    await expect(activeRow.locator('[data-symptom-name-count]')).toHaveText('40/40');
+    await assertNoHorizontalOverflow(page);
   });
 
   test('empty custom symptom groups stay hidden until they have rows', async ({ page }) => {

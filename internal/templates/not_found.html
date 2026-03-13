@@ -9,8 +9,6 @@
       <a href="{{.PrimaryPath}}" class="btn-primary">{{t .Messages .PrimaryLabelKey}}</a>
       {{if .CurrentUser}}
       <a href="/calendar" class="btn-secondary">{{t .Messages "nav.calendar"}}</a>
-      {{else}}
-      <a href="/privacy" class="btn-secondary">{{t .Messages "nav.privacy"}}</a>
       {{end}}
     </div>
   </div>

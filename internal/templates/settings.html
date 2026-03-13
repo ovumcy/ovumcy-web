@@ -133,7 +133,6 @@
           <input type="checkbox" name="auto_period_fill" value="true" data-binary-toggle-input {{if .AutoPeriodFill}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">🩸 {{t .Messages "settings.cycle.auto_period_fill"}}</span>
-            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .AutoPeriodFill}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
           </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.cycle.auto_period_fill_hint"}}</p>
@@ -144,11 +143,9 @@
           <input type="checkbox" name="irregular_cycle" value="true" data-binary-toggle-input {{if .IrregularCycle}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">〰️ {{t .Messages "settings.cycle.irregular_cycle"}}</span>
-            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .IrregularCycle}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
           </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.cycle.irregular_cycle_hint"}}</p>
-        <p class="journal-muted text-sm">{{t .Messages "settings.cycle.irregular_cycle_explainer"}}</p>
       </div>
 
       <div class="space-y-2">
@@ -156,7 +153,6 @@
           <input type="checkbox" name="unpredictable_cycle" value="true" data-binary-toggle-input {{if .UnpredictableCycle}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">∞ {{t .Messages "settings.cycle.unpredictable_cycle"}}</span>
-            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .UnpredictableCycle}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
           </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.cycle.unpredictable_cycle_hint"}}</p>
@@ -243,7 +239,6 @@
           <input type="checkbox" name="track_bbt" value="true" data-binary-toggle-input {{if .TrackBBT}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
-            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .TrackBBT}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
           </span>
         </label>
 
@@ -251,7 +246,6 @@
           <input type="checkbox" name="track_cervical_mucus" value="true" data-binary-toggle-input {{if .TrackCervicalMucus}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
-            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .TrackCervicalMucus}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
           </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.tracking.cervical_mucus_explainer"}}</p>
@@ -260,7 +254,6 @@
           <input type="checkbox" name="hide_sex_chip" value="true" data-binary-toggle-input {{if .HideSexChip}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
-            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .HideSexChip}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
           </span>
         </label>
       </div>
@@ -362,7 +355,7 @@
 
           <div class="settings-form-actions">
             <button type="submit" class="btn-secondary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.profile.submit"}}</button>
-            <div id="settings-profile-status" class="save-status text-sm"></div>
+            <div id="settings-profile-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
           </div>
         </form>
       </section>

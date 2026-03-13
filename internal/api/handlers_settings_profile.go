@@ -37,25 +37,32 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 		})
 	}
 	if isHTMX(c) {
-		identity := userIdentityAfterProfileUpdate(user, displayName)
-		c.Set("X-Ovumcy-Profile-Identity", identity)
+		updatedUser := userAfterProfileUpdate(user, displayName)
 		messageKey := services.SettingsStatusTranslationKey(status)
 		message := translateMessage(currentMessages(c), messageKey)
 		if message == "" || message == messageKey {
 			message = "Profile updated successfully."
 		}
-		return c.SendString(htmxDismissibleSuccessStatusMarkup(currentMessages(c), message))
+		responseBody := htmxDismissibleSuccessStatusMarkup(currentMessages(c), message)
+		oobMarkup, err := handler.renderPartialString(c, "current_user_identity_oob", fiber.Map{
+			"CurrentUser": updatedUser,
+		})
+		if err == nil {
+			responseBody += oobMarkup
+		}
+		c.Type("html", "utf-8")
+		return c.SendString(responseBody)
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
 	return redirectOrJSON(c, "/settings")
 }
 
-func userIdentityAfterProfileUpdate(user *models.User, displayName string) string {
+func userAfterProfileUpdate(user *models.User, displayName string) *models.User {
 	if user == nil {
-		return ""
+		return nil
 	}
 
 	updatedUser := *user
 	updatedUser.DisplayName = strings.TrimSpace(displayName)
-	return templateUserIdentity(&updatedUser)
+	return &updatedUser
 }

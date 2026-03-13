@@ -17,10 +17,10 @@
   <meta name="apple-mobile-web-app-title" content="Ovumcy">
   <script src="/static/js/theme-bootstrap.js?v=20260308-1"></script>
   <script src="/static/js/timezone-bootstrap.js?v=20260309-1"></script>
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=20260313-1">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=20260313-2">
   <script defer src="/static/js/htmx.min.js?v=20260221-2"></script>
   <script defer src="/static/js/chart-lite.js?v=20260313-1"></script>
-  <script defer src="/static/js/app.js?v=20260313-1"></script>
+  <script defer src="/static/js/app.js?v=20260313-2"></script>
 </head>
 <body
   data-confirm-cancel="{{t .Messages "confirm.no"}}"
@@ -66,15 +66,7 @@
           </a>
 
           <div class="nav-account-actions" data-nav-account-actions>
-            <a
-              href="/settings#settings-account"
-              class="role-chip nav-user-chip{{if not (hasDisplayName .CurrentUser)}} nav-user-chip-empty{{end}}"
-              data-current-user-identity-container
-              data-placeholder-label="{{t .Messages "nav.profile_name_hint"}}"
-              title="{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}">
-              <span class="nav-user-chip-icon" aria-hidden="true">👤</span>
-              <span data-current-user-identity>{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}</span>
-            </a>
+            {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-desktop" "Block" false "SwapOOB" false)}}
             <form action="/api/auth/logout" method="post" class="nav-logout-form" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
               <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
               <button type="submit" class="nav-link nav-link-logout">{{t .Messages "nav.logout"}}</button>
@@ -87,15 +79,7 @@
           <a href="/calendar" class="nav-link block {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}">{{t .Messages "nav.calendar"}}</a>
           <a href="/stats" class="nav-link block {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}">{{t .Messages "nav.insights"}}</a>
           <a href="/settings" class="nav-link nav-link-icon block {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span aria-hidden="true">⚙️</span></a>
-          <a
-            href="/settings#settings-account"
-            class="role-chip nav-user-chip block{{if not (hasDisplayName .CurrentUser)}} nav-user-chip-empty{{end}}"
-            data-current-user-identity-container
-            data-placeholder-label="{{t .Messages "nav.profile_name_hint"}}"
-            title="{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}">
-            <span class="nav-user-chip-icon" aria-hidden="true">👤</span>
-            <span data-current-user-identity>{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}</span>
-          </a>
+          {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-mobile" "Block" true "SwapOOB" false)}}
           <form action="/api/auth/logout" method="post" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <button type="submit" class="nav-link nav-link-logout w-full text-left">{{t .Messages "nav.logout"}}</button>
@@ -131,7 +115,7 @@
       </div>
     </section>
 
-    <main class="container-main py-8 sm:py-10{{if and .CurrentUser (not .HideNavigation)}} main-with-mobile-nav{{end}}">
+    <main class="container-main flex-1 py-8 sm:py-10{{if and .CurrentUser (not .HideNavigation)}} main-with-mobile-nav{{end}}">
       {{template "content" .}}
     </main>
 
@@ -332,6 +316,20 @@
   {{end}}
 </div>
 {{end}}
+{{define "nav_user_identity_chip"}}
+<a
+  id="{{.ElementID}}"
+  href="/settings#settings-account"
+  class="role-chip nav-user-chip{{if .Block}} block{{end}}{{if not (hasDisplayName .CurrentUser)}} nav-user-chip-empty{{end}}"
+  title="{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}"
+  aria-label="{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}"
+  {{if .SwapOOB}}hx-swap-oob="outerHTML"{{end}}>
+  <span class="nav-user-chip-icon" aria-hidden="true">👤</span>
+  {{if hasDisplayName .CurrentUser}}
+  <span data-current-user-identity>{{userIdentity .CurrentUser}}</span>
+  {{end}}
+</a>
+{{end}}
 {{define "readonly_log_summary"}}
 <div class="journal-panel space-y-3 text-sm">
   <p><span class="journal-muted">{{t .Messages "dashboard.period_day"}}:</span> {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p>
@@ -355,7 +353,9 @@
   <div class="grid gap-3 sm:grid-cols-2">
     <p><span class="journal-muted">{{t .Messages "dashboard.period_day"}}:</span> {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p>
     <p><span class="journal-muted">{{t .Messages "dashboard.mood"}}:</span> {{if gt .Log.Mood 0}}{{moodEmoji .Log.Mood}} {{.Log.Mood}}/5{{else}}{{.NoDataLabel}}{{end}}</p>
+    {{if .Log.IsPeriod}}
     <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}:</span> {{if .Log.IsPeriod}}{{flowLabel .Messages .Log.Flow}}{{else}}{{.NoDataLabel}}{{end}}</p>
+    {{end}}
   </div>
 
   <div>
@@ -602,8 +602,11 @@
           type="text"
           name="name"
           value="{{.FormName}}"
+          maxlength="40"
+          data-symptom-name-input
           class="input-field"
           autocomplete="off">
+        <p class="journal-muted text-xs" data-symptom-name-count></p>
       </div>
 
       {{template "symptom_icon_control" (dict
@@ -618,7 +621,7 @@
     {{if .ErrorMessage}}
     <div class="status-error flex items-center gap-2" data-symptom-row-error><span aria-hidden="true">⚠️</span><span>{{.ErrorMessage}}</span></div>
     {{end}}
-    {{if .SuccessMessage}}{{statusOK .SuccessMessage}}{{end}}
+    {{if .SuccessMessage}}{{dismissibleStatusOK $.Messages .SuccessMessage}}{{end}}
 
     <div class="settings-symptom-action-stack">
       <button type="submit" class="btn-secondary">{{t .Messages "settings.symptoms.save"}}</button>
@@ -677,8 +680,11 @@
           name="name"
           value="{{.SymptomDraftName}}"
           placeholder="{{t .Messages "settings.symptoms.name_placeholder"}}"
+          maxlength="40"
+          data-symptom-name-input
           class="input-field"
           autocomplete="off">
+        <p class="journal-muted text-xs" data-symptom-name-count></p>
       </div>
 
       {{template "symptom_icon_control" (dict
@@ -693,7 +699,7 @@
     {{if .SymptomErrorMessage}}
     <div class="status-error flex items-center gap-2"><span aria-hidden="true">⚠️</span><span>{{.SymptomErrorMessage}}</span></div>
     {{end}}
-    {{if .SymptomStatusMessage}}{{statusOK .SymptomStatusMessage}}{{end}}
+    {{if .SymptomStatusMessage}}{{dismissibleStatusOK .Messages .SymptomStatusMessage}}{{end}}
 
     <div class="settings-symptom-action-stack">
       <button type="submit" class="btn-primary">{{t .Messages "settings.symptoms.add"}}</button>

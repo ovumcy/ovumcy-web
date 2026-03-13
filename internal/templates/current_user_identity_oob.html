@@ -1,0 +1,14 @@
+{{define "current_user_identity_oob"}}
+{{template "nav_user_identity_chip" (dict
+  "CurrentUser" .CurrentUser
+  "Messages" .Messages
+  "ElementID" "nav-user-chip-desktop"
+  "Block" false
+  "SwapOOB" true)}}
+{{template "nav_user_identity_chip" (dict
+  "CurrentUser" .CurrentUser
+  "Messages" .Messages
+  "ElementID" "nav-user-chip-mobile"
+  "Block" true
+  "SwapOOB" true)}}
+{{end}}

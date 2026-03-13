@@ -240,58 +240,6 @@
     }
   }
 
-  function syncCurrentUserIdentityContainer(container, identity) {
-    if (!container) {
-      return;
-    }
-
-    var normalized = String(identity || "").trim();
-    var placeholder = String(container.getAttribute("data-placeholder-label") || "").trim();
-    var displayText = normalized || placeholder;
-
-    container.classList.toggle("nav-user-chip-empty", normalized === "");
-    container.setAttribute("title", displayText);
-  }
-
-  function updateCurrentUserIdentity(identity) {
-    var normalized = String(identity || "").trim();
-    var containers = document.querySelectorAll("[data-current-user-identity-container]");
-    for (var containerIndex = 0; containerIndex < containers.length; containerIndex++) {
-      syncCurrentUserIdentityContainer(containers[containerIndex], normalized);
-    }
-
-    var identityNodes = document.querySelectorAll("[data-current-user-identity]");
-    for (var index = 0; index < identityNodes.length; index++) {
-      var node = identityNodes[index];
-      var container = typeof node.closest === "function" ? node.closest("[data-current-user-identity-container]") : null;
-      var placeholder = container ? String(container.getAttribute("data-placeholder-label") || "").trim() : "";
-      var displayText = normalized || placeholder;
-      node.textContent = displayText;
-      if (typeof node.setAttribute === "function") {
-        node.setAttribute("title", displayText);
-      }
-    }
-  }
-
-  function maybeRefreshCurrentUserIdentity(target, event) {
-    if (!target || target.id !== "settings-profile-status") {
-      return;
-    }
-
-    var detail = event && event.detail ? event.detail : null;
-    var xhr = detail && detail.xhr ? detail.xhr : null;
-    if (!xhr || typeof xhr.getResponseHeader !== "function") {
-      return;
-    }
-
-    var identity = xhr.getResponseHeader("X-Ovumcy-Profile-Identity");
-    if (identity === null) {
-      return;
-    }
-
-    updateCurrentUserIdentity(identity);
-  }
-
   function initHTMXHooks() {
     document.body.addEventListener("htmx:configRequest", function (event) {
       var tokenMeta = document.querySelector('meta[name="csrf-token"]');
@@ -344,7 +292,6 @@
         return;
       }
 
-      maybeRefreshCurrentUserIdentity(target, event);
       maybeRefreshDayEditor(target);
       maybeShowSuccessToast(target);
       scheduleClearSuccessStatus(target);

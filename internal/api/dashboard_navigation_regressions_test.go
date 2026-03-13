@@ -90,8 +90,11 @@ func TestDashboardNavigationShowsProfileHintWhenDisplayNameEmpty(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	rendered := mustRenderDashboard(t, app, authCookie, "en")
-	if !strings.Contains(rendered, "Add profile name") {
-		t.Fatalf("expected empty display-name navigation hint, got %q", rendered)
+	if !strings.Contains(rendered, `title="Profile settings"`) {
+		t.Fatalf("expected empty display-name navigation tooltip, got %q", rendered)
+	}
+	if strings.Contains(rendered, ">Add profile name<") {
+		t.Fatalf("did not expect empty display-name placeholder as visible nav label, got %q", rendered)
 	}
 	if strings.Contains(rendered, "identity-empty@example.com") || strings.Contains(rendered, "identity-empty") {
 		t.Fatalf("did not expect email fallback in navigation when display name is empty")

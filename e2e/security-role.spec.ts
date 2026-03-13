@@ -27,7 +27,7 @@ function partnerCredentialsFromEnv(): EnvCredentials | null {
   return { email, password };
 }
 
-async function registerOwnerAndReachDashboard(page: Page, prefix: string): Promise<void> {
+async function registerOwnerAndReachDashboard(page: Page, prefix: string) {
   const creds = createCredentials(prefix);
 
   await registerOwnerViaUI(page, creds);
@@ -39,6 +39,8 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string): Promi
 
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
+
+  return creds;
 }
 
 async function registerOwnerAndOpenSettings(page: Page, prefix: string): Promise<void> {
@@ -122,7 +124,7 @@ test.describe('Security and role-based access', () => {
   });
 
   test('csrf basics: missing token is rejected for state-changing endpoints', async ({ page }) => {
-    await registerOwnerAndReachDashboard(page, 'security-csrf');
+    const creds = await registerOwnerAndReachDashboard(page, 'security-csrf');
 
     const logoutNoCsrf = await page.request.post('/api/auth/logout', {
       form: {},
@@ -145,7 +147,10 @@ test.describe('Security and role-based access', () => {
     const csrfToken = await readCSRFToken(page);
 
     const clearWithCsrf = await page.request.post('/api/settings/clear-data', {
-      form: { csrf_token: csrfToken },
+      form: {
+        csrf_token: csrfToken,
+        password: creds.password,
+      },
       maxRedirects: 0,
     });
     expect([200, 303]).toContain(clearWithCsrf.status());

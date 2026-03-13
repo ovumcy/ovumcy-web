@@ -9,11 +9,15 @@ import (
 )
 
 func htmxDismissibleSuccessStatusMarkup(messages map[string]string, message string) string {
+	return httpx.DismissibleStatusOKMarkup(message, localizedStatusDismissLabel(messages))
+}
+
+func localizedStatusDismissLabel(messages map[string]string) string {
 	closeLabel := translateMessage(messages, "common.close")
 	if closeLabel == "" || closeLabel == "common.close" {
-		closeLabel = "Close"
+		return "Close"
 	}
-	return httpx.DismissibleStatusOKMarkup(message, closeLabel)
+	return closeLabel
 }
 
 func (handler *Handler) sendDaySaveStatus(c *fiber.Ctx, messageKey string) error {

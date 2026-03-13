@@ -17,5 +17,6 @@ var pageTemplates = []string{
 
 var partialTemplateFiles = []string{
 	"day_editor_partial.html",
+	"current_user_identity_oob.html",
 	"settings_symptoms_section.html",
 }

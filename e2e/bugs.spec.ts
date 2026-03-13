@@ -139,7 +139,7 @@ test.describe('Bug regressions', () => {
       await page.goto('/login');
       const timezone = await pickTimezoneWithDifferentUTCDate(page);
 
-      await registerOwnerAndReachDashboard(page, 'bug01-timezone');
+      const creds = await registerOwnerAndReachDashboard(page, 'bug01-timezone');
       await setTimezoneCookie(page, timezone);
 
       const expectedToday = await timezoneToday(page, timezone);
@@ -151,7 +151,10 @@ test.describe('Bug regressions', () => {
       // we set in cycle settings below.
       const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
       const clearResponse = await page.request.post('/api/settings/clear-data', {
-        form: { csrf_token: csrfToken },
+        form: {
+          csrf_token: csrfToken,
+          password: creds.password,
+        },
         maxRedirects: 0,
       });
       expect([200, 303]).toContain(clearResponse.status());
@@ -211,14 +214,17 @@ test.describe('Bug regressions', () => {
     test('calendar marks the current baseline period window before manual day logs exist', async ({
       page,
     }) => {
-      await registerOwnerAndReachDashboard(page, 'bug01-baseline-period');
+      const creds = await registerOwnerAndReachDashboard(page, 'bug01-baseline-period');
 
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
 
       const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
       const clearResponse = await page.request.post('/api/settings/clear-data', {
-        form: { csrf_token: csrfToken },
+        form: {
+          csrf_token: csrfToken,
+          password: creds.password,
+        },
         maxRedirects: 0,
       });
       expect([200, 303]).toContain(clearResponse.status());
@@ -324,9 +330,9 @@ test.describe('Bug regressions', () => {
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
 
-      const identityChip = page.locator('[data-current-user-identity-container]').first();
+      const identityChip = page.locator('#nav-user-chip-desktop');
       await expect(identityChip).toBeVisible();
-      await expect(identityChip).toContainText('Add profile name');
+      await expect(identityChip).toHaveAttribute('title', 'Profile settings');
 
       const newName = `TestUser_${Date.now()}`;
       const nameInput = page.locator('#settings-display-name');
@@ -337,7 +343,7 @@ test.describe('Bug regressions', () => {
 
       await expect(identityChip).toContainText(newName);
       const navOrderIsCorrect = await page.locator('[data-nav-account-actions]').evaluate((node) => {
-        const identity = node.querySelector('[data-current-user-identity-container]');
+        const identity = node.querySelector('#nav-user-chip-desktop');
         const logout = node.querySelector('.nav-logout-form');
         if (!identity || !logout) {
           return false;
@@ -347,7 +353,7 @@ test.describe('Bug regressions', () => {
       expect(navOrderIsCorrect).toBeTruthy();
       await page.reload();
       await expect(page.locator('#settings-display-name')).toHaveValue(newName);
-      const reloadedIdentityChip = page.locator('[data-current-user-identity-container]').first();
+      const reloadedIdentityChip = page.locator('#nav-user-chip-desktop');
       await expect(reloadedIdentityChip).toContainText(newName);
       await expect(reloadedIdentityChip).not.toContainText('@');
     });

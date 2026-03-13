@@ -147,7 +147,7 @@
 
 @layer components {
   .app-shell {
-    @apply min-h-screen;
+    @apply flex min-h-screen flex-col;
   }
 
   .container-main {

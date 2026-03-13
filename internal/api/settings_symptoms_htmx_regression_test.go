@@ -26,6 +26,9 @@ func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) 
 	renderedCreate := performSettingsSymptomsHTMXRequest(t, ctx, http.MethodPost, "/api/symptoms", createForm)
 	assertBodyContainsAll(t, renderedCreate,
 		bodyStringMatch{fragment: `data-settings-symptoms`, message: "expected settings symptoms section rerender"},
+		bodyStringMatch{fragment: `maxlength="40"`, message: "expected create form to cap symptom name at 40 characters"},
+		bodyStringMatch{fragment: `data-symptom-name-count`, message: "expected create form to render symptom name counter"},
+		bodyStringMatch{fragment: `toast-close`, message: "expected shared dismissible success status for created symptom"},
 	)
 
 	stored := models.SymptomType{}

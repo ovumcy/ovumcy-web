@@ -104,7 +104,6 @@
               data-period-toggle-label
               data-period-label-on="{{t .Messages "dashboard.period_day"}}"
               data-period-label-off="{{t .Messages "dashboard.period_day_action"}}">🩸 {{if .TodayEntry.IsPeriod}}{{t .Messages "dashboard.period_day"}}{{else}}{{t .Messages "dashboard.period_day_action"}}{{end}}</span>
-            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .TodayEntry.IsPeriod}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
           </span>
         </label>
         {{if not .CurrentUser.ShownPeriodTip}}
@@ -178,7 +177,7 @@
 
         <div class="flex flex-wrap items-center gap-3">
           <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if .TodayEntryExists}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_today"}}{{end}}</button>
-          <div id="save-status" class="save-status text-sm" data-success-toast="true"></div>
+          <div id="save-status" class="save-status text-sm"></div>
           <div class="dashboard-autosave-indicator journal-muted text-xs" data-dashboard-autosave-indicator aria-live="polite">{{t .Messages "dashboard.autosave_idle"}}</div>
         </div>
       </form>

@@ -220,6 +220,59 @@
     }
   }
 
+  function symptomNameLength(value) {
+    return Array.from(String(value || "")).length;
+  }
+
+  function syncSymptomNameCounter(field) {
+    if (!field || !field.querySelector) {
+      return;
+    }
+
+    var input = field.querySelector("[data-symptom-name-input]");
+    var counter = field.querySelector("[data-symptom-name-count]");
+    if (!input || !counter) {
+      return;
+    }
+
+    var maxLength = parseInt(input.getAttribute("maxlength") || "", 10);
+    var currentLength = symptomNameLength(input.value);
+    if (maxLength > 0) {
+      counter.textContent = String(currentLength) + "/" + String(maxLength);
+      return;
+    }
+
+    counter.textContent = String(currentLength);
+  }
+
+  function bindSymptomNameCounters(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var fields = scope.querySelectorAll("[data-symptom-name-count]");
+
+    for (var index = 0; index < fields.length; index++) {
+      var counter = fields[index];
+      var field = typeof counter.closest === "function" ? counter.closest(".settings-symptom-name-field") : null;
+      if (!field) {
+        continue;
+      }
+
+      var input = field.querySelector("[data-symptom-name-input]");
+      if (!input) {
+        continue;
+      }
+
+      if (input.dataset.symptomNameCounterBound !== "1") {
+        input.dataset.symptomNameCounterBound = "1";
+        input.addEventListener("input", function () {
+          var ownerField = typeof this.closest === "function" ? this.closest(".settings-symptom-name-field") : null;
+          syncSymptomNameCounter(ownerField);
+        });
+      }
+
+      syncSymptomNameCounter(field);
+    }
+  }
+
   function temperatureInputMaxLength(input) {
     var maxText = String(input.getAttribute("data-temperature-max") || "").trim();
     return Math.max(maxText.length, 5);
@@ -1612,6 +1665,7 @@
       window.__ovumcyBindLocalizedDateFields(document);
     }
     bindBinaryToggles(document);
+    bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
     bindSettingsCycleForms();
     bindIconControls();

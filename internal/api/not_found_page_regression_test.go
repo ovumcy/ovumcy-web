@@ -35,6 +35,9 @@ func TestNotFoundPageForGuestUsesLoginPrimaryAction(t *testing.T) {
 	if !strings.Contains(rendered, `href="/login"`) {
 		t.Fatalf("expected login primary action for guest not-found page")
 	}
+	if strings.Contains(rendered, `href="/privacy" class="btn-secondary"`) {
+		t.Fatalf("did not expect inline privacy button when footer already provides privacy navigation")
+	}
 }
 
 func TestNotFoundPageForAuthenticatedUserUsesDashboardPrimaryAction(t *testing.T) {

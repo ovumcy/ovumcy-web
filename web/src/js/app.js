@@ -1461,58 +1461,6 @@
     }
   }
 
-  function syncCurrentUserIdentityContainer(container, identity) {
-    if (!container) {
-      return;
-    }
-
-    var normalized = String(identity || "").trim();
-    var placeholder = String(container.getAttribute("data-placeholder-label") || "").trim();
-    var displayText = normalized || placeholder;
-
-    container.classList.toggle("nav-user-chip-empty", normalized === "");
-    container.setAttribute("title", displayText);
-  }
-
-  function updateCurrentUserIdentity(identity) {
-    var normalized = String(identity || "").trim();
-    var containers = document.querySelectorAll("[data-current-user-identity-container]");
-    for (var containerIndex = 0; containerIndex < containers.length; containerIndex++) {
-      syncCurrentUserIdentityContainer(containers[containerIndex], normalized);
-    }
-
-    var identityNodes = document.querySelectorAll("[data-current-user-identity]");
-    for (var index = 0; index < identityNodes.length; index++) {
-      var node = identityNodes[index];
-      var container = typeof node.closest === "function" ? node.closest("[data-current-user-identity-container]") : null;
-      var placeholder = container ? String(container.getAttribute("data-placeholder-label") || "").trim() : "";
-      var displayText = normalized || placeholder;
-      node.textContent = displayText;
-      if (typeof node.setAttribute === "function") {
-        node.setAttribute("title", displayText);
-      }
-    }
-  }
-
-  function maybeRefreshCurrentUserIdentity(target, event) {
-    if (!target || target.id !== "settings-profile-status") {
-      return;
-    }
-
-    var detail = event && event.detail ? event.detail : null;
-    var xhr = detail && detail.xhr ? detail.xhr : null;
-    if (!xhr || typeof xhr.getResponseHeader !== "function") {
-      return;
-    }
-
-    var identity = xhr.getResponseHeader("X-Ovumcy-Profile-Identity");
-    if (identity === null) {
-      return;
-    }
-
-    updateCurrentUserIdentity(identity);
-  }
-
   function initHTMXHooks() {
     document.body.addEventListener("htmx:configRequest", function (event) {
       var tokenMeta = document.querySelector('meta[name="csrf-token"]');
@@ -1565,7 +1513,6 @@
         return;
       }
 
-      maybeRefreshCurrentUserIdentity(target, event);
       maybeRefreshDayEditor(target);
       maybeShowSuccessToast(target);
       scheduleClearSuccessStatus(target);
@@ -2309,6 +2256,59 @@
       }
 
       syncBinaryToggleState(toggle);
+    }
+  }
+
+  function symptomNameLength(value) {
+    return Array.from(String(value || "")).length;
+  }
+
+  function syncSymptomNameCounter(field) {
+    if (!field || !field.querySelector) {
+      return;
+    }
+
+    var input = field.querySelector("[data-symptom-name-input]");
+    var counter = field.querySelector("[data-symptom-name-count]");
+    if (!input || !counter) {
+      return;
+    }
+
+    var maxLength = parseInt(input.getAttribute("maxlength") || "", 10);
+    var currentLength = symptomNameLength(input.value);
+    if (maxLength > 0) {
+      counter.textContent = String(currentLength) + "/" + String(maxLength);
+      return;
+    }
+
+    counter.textContent = String(currentLength);
+  }
+
+  function bindSymptomNameCounters(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var fields = scope.querySelectorAll("[data-symptom-name-count]");
+
+    for (var index = 0; index < fields.length; index++) {
+      var counter = fields[index];
+      var field = typeof counter.closest === "function" ? counter.closest(".settings-symptom-name-field") : null;
+      if (!field) {
+        continue;
+      }
+
+      var input = field.querySelector("[data-symptom-name-input]");
+      if (!input) {
+        continue;
+      }
+
+      if (input.dataset.symptomNameCounterBound !== "1") {
+        input.dataset.symptomNameCounterBound = "1";
+        input.addEventListener("input", function () {
+          var ownerField = typeof this.closest === "function" ? this.closest(".settings-symptom-name-field") : null;
+          syncSymptomNameCounter(ownerField);
+        });
+      }
+
+      syncSymptomNameCounter(field);
     }
   }
 
@@ -3704,6 +3704,7 @@
       window.__ovumcyBindLocalizedDateFields(document);
     }
     bindBinaryToggles(document);
+    bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
     bindSettingsCycleForms();
     bindIconControls();
