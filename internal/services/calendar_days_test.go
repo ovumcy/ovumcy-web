@@ -195,3 +195,67 @@ func TestBuildCalendarDayStatesMarksTentativeOvulationWhenBBTHasNoShift(t *testi
 		t.Fatalf("expected confirmed ovulation marker to be removed when no BBT shift is present")
 	}
 }
+
+func TestBuildCalendarDayStatesSeparatesFertilityEdgeAndPeak(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:      time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC),
+		OvulationDate:        time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+		FertilityWindowStart: time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
+		FertilityWindowEnd:   time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(nil, monthStart, nil, stats, now, time.UTC)
+
+	edgeDay := findCalendarDayStateByDateString(t, days, "2026-03-10")
+	if !edgeDay.IsFertilityEdge || edgeDay.IsFertilityPeak || !edgeDay.IsFertility {
+		t.Fatalf("expected 2026-03-10 to render as fertile edge, got %#v", edgeDay)
+	}
+
+	peakDay := findCalendarDayStateByDateString(t, days, "2026-03-14")
+	if peakDay.IsFertilityEdge || !peakDay.IsFertilityPeak || !peakDay.IsFertility {
+		t.Fatalf("expected 2026-03-14 to render as fertile peak, got %#v", peakDay)
+	}
+
+	ovulationDay := findCalendarDayStateByDateString(t, days, "2026-03-15")
+	if !ovulationDay.IsOvulation || !ovulationDay.IsFertilityPeak || ovulationDay.IsFertility {
+		t.Fatalf("expected ovulation day to keep the peak marker without fertile fill, got %#v", ovulationDay)
+	}
+}
+
+func TestBuildCalendarDayStatesKeepsConfirmedOvulationWhenBBTHasShift(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 17, 0, 0, 0, 0, time.UTC)
+
+	logs := []models.DailyLog{
+		{Date: time.Date(2026, time.March, 10, 7, 0, 0, 0, time.UTC), BBT: 36.40},
+		{Date: time.Date(2026, time.March, 11, 7, 0, 0, 0, time.UTC), BBT: 36.42},
+		{Date: time.Date(2026, time.March, 12, 7, 0, 0, 0, time.UTC), BBT: 36.41},
+		{Date: time.Date(2026, time.March, 13, 7, 0, 0, 0, time.UTC), BBT: 36.39},
+		{Date: time.Date(2026, time.March, 14, 7, 0, 0, 0, time.UTC), BBT: 36.43},
+		{Date: time.Date(2026, time.March, 15, 7, 0, 0, 0, time.UTC), BBT: 36.66},
+		{Date: time.Date(2026, time.March, 16, 7, 0, 0, 0, time.UTC), BBT: 36.67},
+		{Date: time.Date(2026, time.March, 17, 7, 0, 0, 0, time.UTC), BBT: 36.69},
+	}
+
+	stats := CycleStats{
+		LastPeriodStart:      time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:      time.Date(2026, time.April, 7, 0, 0, 0, 0, time.UTC),
+		OvulationDate:        time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+		FertilityWindowStart: time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
+		FertilityWindowEnd:   time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(&models.User{TrackBBT: true}, monthStart, logs, stats, now, time.UTC)
+
+	ovulationDay := findCalendarDayStateByDateString(t, days, "2026-03-15")
+	if !ovulationDay.IsOvulation {
+		t.Fatalf("expected confirmed ovulation marker to remain when BBT shift exists, got %#v", ovulationDay)
+	}
+	if ovulationDay.IsTentativeOvulation {
+		t.Fatalf("expected tentative ovulation marker to stay off when BBT shift exists")
+	}
+}

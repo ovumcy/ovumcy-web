@@ -160,6 +160,12 @@ func (stub *dayUserRepositoryStub) UpdateByID(_ uint, updates map[string]any) er
 			stub.settings.LutealPhase = lutealPhase
 		}
 	}
+	if value, exists := updates["long_period_warning_cycle_start"]; exists {
+		if warnedAt, ok := value.(time.Time); ok {
+			copyValue := warnedAt
+			stub.settings.LongPeriodWarnedAt = &copyValue
+		}
+	}
 	return nil
 }
 

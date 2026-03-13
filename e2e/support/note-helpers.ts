@@ -7,18 +7,8 @@ export async function ensureNotesFieldVisible(
   fieldSelector: string
 ): Promise<Locator> {
   const field = scope.locator(fieldSelector).first();
-  if ((await field.count()) > 0 && (await field.isVisible())) {
-    return field;
-  }
-
-  const disclosure = scope.locator('details.note-disclosure').first();
-  await expect(disclosure).toHaveCount(1);
-
-  const isOpen = await disclosure.evaluate((element) => element.hasAttribute('open'));
-  if (!isOpen) {
-    await disclosure.locator('summary').click();
-  }
-
+  await expect(field).toHaveCount(1);
+  await expect(scope.locator('details.note-disclosure')).toHaveCount(0);
   await expect(field).toBeVisible();
   return field;
 }

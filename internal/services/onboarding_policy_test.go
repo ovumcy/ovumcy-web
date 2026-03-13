@@ -163,6 +163,27 @@ func TestParseAndNormalizeStep2Input(t *testing.T) {
 	}
 }
 
+func TestParseAndNormalizeStep2InputFallsBackForUnknownOwnerPreferences(t *testing.T) {
+	service := NewOnboardingService(nil)
+
+	_, _, autoPeriodFill, irregularCycle, ageGroup, usageGoal, err := service.ParseAndNormalizeStep2Input("28", "5", false, false, "unexpected-age", "unexpected-goal")
+	if err != nil {
+		t.Fatalf("expected valid step2 input with unknown preferences, got %v", err)
+	}
+	if autoPeriodFill {
+		t.Fatalf("expected autoPeriodFill=false")
+	}
+	if irregularCycle {
+		t.Fatalf("expected irregularCycle=false")
+	}
+	if ageGroup != models.AgeGroupUnknown {
+		t.Fatalf("expected ageGroup fallback %q, got %q", models.AgeGroupUnknown, ageGroup)
+	}
+	if usageGoal != models.UsageGoalHealth {
+		t.Fatalf("expected usageGoal fallback %q, got %q", models.UsageGoalHealth, usageGoal)
+	}
+}
+
 func TestOnboardingRedirectPolicy(t *testing.T) {
 	ownerPending := &models.User{Role: models.RoleOwner, OnboardingCompleted: false}
 	if !RequiresOnboarding(ownerPending) {

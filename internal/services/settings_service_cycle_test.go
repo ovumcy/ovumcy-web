@@ -105,6 +105,32 @@ func TestValidateCycleSettingsBuildsUpdate(t *testing.T) {
 	}
 }
 
+func TestValidateCycleSettingsNormalizesOwnerPreferences(t *testing.T) {
+	service := NewSettingsService(nil)
+	now := time.Date(2026, time.February, 15, 12, 0, 0, 0, time.UTC)
+
+	update, err := service.ValidateCycleSettings(CycleSettingsValidationInput{
+		CycleLength:        28,
+		PeriodLength:       6,
+		AutoPeriodFill:     true,
+		UnpredictableCycle: true,
+		AgeGroup:           "  AGE_35_PLUS  ",
+		UsageGoal:          "  TRYING_TO_CONCEIVE  ",
+	}, now, time.UTC)
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !update.UnpredictableCycle {
+		t.Fatalf("expected unpredictable cycle mode to be preserved")
+	}
+	if update.AgeGroup != models.AgeGroup35Plus {
+		t.Fatalf("expected normalized age group %q, got %q", models.AgeGroup35Plus, update.AgeGroup)
+	}
+	if update.UsageGoal != models.UsageGoalTrying {
+		t.Fatalf("expected normalized usage goal %q, got %q", models.UsageGoalTrying, update.UsageGoal)
+	}
+}
+
 func TestApplyCycleSettings(t *testing.T) {
 	service := NewSettingsService(nil)
 	existingStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
@@ -129,5 +155,69 @@ func TestApplyCycleSettings(t *testing.T) {
 	}
 	if user.LastPeriodStart != nil {
 		t.Fatalf("expected cleared last period start, got %v", user.LastPeriodStart)
+	}
+}
+
+func TestApplyCycleSettingsUpdatesOwnerPreferences(t *testing.T) {
+	service := NewSettingsService(nil)
+	user := &models.User{}
+
+	service.ApplyCycleSettings(user, CycleSettingsUpdate{
+		CycleLength:        31,
+		PeriodLength:       6,
+		AutoPeriodFill:     false,
+		IrregularCycle:     true,
+		UnpredictableCycle: true,
+		AgeGroup:           "age_35_plus",
+		UsageGoal:          "avoid_pregnancy",
+	})
+
+	if user.CycleLength != 31 || user.PeriodLength != 6 {
+		t.Fatalf("expected updated cycle lengths, got cycle=%d period=%d", user.CycleLength, user.PeriodLength)
+	}
+	if user.AutoPeriodFill {
+		t.Fatalf("expected AutoPeriodFill=false")
+	}
+	if !user.IrregularCycle || !user.UnpredictableCycle {
+		t.Fatalf("expected irregular and unpredictable cycle flags to be updated, got irregular=%v unpredictable=%v", user.IrregularCycle, user.UnpredictableCycle)
+	}
+	if user.AgeGroup != models.AgeGroup35Plus {
+		t.Fatalf("expected normalized age group %q, got %q", models.AgeGroup35Plus, user.AgeGroup)
+	}
+	if user.UsageGoal != models.UsageGoalAvoid {
+		t.Fatalf("expected normalized usage goal %q, got %q", models.UsageGoalAvoid, user.UsageGoal)
+	}
+}
+
+func TestSaveCycleSettingsPersistsNormalizedOwnerPreferences(t *testing.T) {
+	repo := &stubSettingsTrackingUserRepo{}
+	service := NewSettingsService(repo)
+	lastPeriodStart := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+
+	err := service.SaveCycleSettings(42, CycleSettingsUpdate{
+		CycleLength:        29,
+		PeriodLength:       5,
+		AutoPeriodFill:     true,
+		IrregularCycle:     false,
+		UnpredictableCycle: true,
+		AgeGroup:           "unexpected-age",
+		UsageGoal:          "trying_to_conceive",
+		LastPeriodStartSet: true,
+		LastPeriodStart:    &lastPeriodStart,
+	})
+	if err != nil {
+		t.Fatalf("SaveCycleSettings() unexpected error: %v", err)
+	}
+	if repo.updatedUserID != 42 {
+		t.Fatalf("expected updated user id 42, got %d", repo.updatedUserID)
+	}
+	if repo.updates["unpredictable_cycle"] != true {
+		t.Fatalf("expected unpredictable_cycle=true, got %#v", repo.updates["unpredictable_cycle"])
+	}
+	if repo.updates["age_group"] != models.AgeGroupUnknown {
+		t.Fatalf("expected age_group fallback %q, got %#v", models.AgeGroupUnknown, repo.updates["age_group"])
+	}
+	if repo.updates["usage_goal"] != models.UsageGoalTrying {
+		t.Fatalf("expected usage_goal %q, got %#v", models.UsageGoalTrying, repo.updates["usage_goal"])
 	}
 }

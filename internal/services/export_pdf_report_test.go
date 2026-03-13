@@ -36,6 +36,7 @@ func TestBuildPDFReportIncludesAdvancedTrackingAndCycleSummary(t *testing.T) {
 		t.Fatalf("BuildPDFReport() unexpected error: %v", err)
 	}
 	assertExportPDFReportSummary(t, report, now)
+	assertExportPDFCalendarDays(t, report)
 	firstCycle := report.Cycles[0]
 	assertExportPDFCycleWindow(t, firstCycle, "2026-01-01", "2026-01-28")
 	assertExportPDFAdvancedTrackingEntry(t, mustFindExportPDFEntry(t, firstCycle, "2026-01-14"))
@@ -99,4 +100,37 @@ func assertExportPDFAdvancedTrackingEntry(t *testing.T, entry ExportPDFCycleDay)
 	if entry.Notes != "ovulation note" {
 		t.Fatalf("expected note to be preserved, got %q", entry.Notes)
 	}
+}
+
+func assertExportPDFCalendarDays(t *testing.T, report ExportPDFReport) {
+	t.Helper()
+
+	if len(report.CalendarDays) != 8 {
+		t.Fatalf("expected 8 calendar days from the requested range, got %d", len(report.CalendarDays))
+	}
+
+	periodDay := mustFindExportPDFCalendarDay(t, report, "2026-01-01")
+	if !periodDay.IsPeriod || !periodDay.HasData {
+		t.Fatalf("expected 2026-01-01 to be a period calendar day with data, got %#v", periodDay)
+	}
+
+	loggedOnlyDay := mustFindExportPDFCalendarDay(t, report, "2026-01-10")
+	if loggedOnlyDay.IsPeriod {
+		t.Fatalf("expected 2026-01-10 to stay a non-period logged day, got %#v", loggedOnlyDay)
+	}
+	if !loggedOnlyDay.HasData {
+		t.Fatalf("expected 2026-01-10 to stay visible in the PDF calendar, got %#v", loggedOnlyDay)
+	}
+}
+
+func mustFindExportPDFCalendarDay(t *testing.T, report ExportPDFReport, date string) ExportPDFCalendarDay {
+	t.Helper()
+
+	for _, day := range report.CalendarDays {
+		if day.Date == date {
+			return day
+		}
+	}
+	t.Fatalf("expected export pdf calendar day for %s", date)
+	return ExportPDFCalendarDay{}
 }

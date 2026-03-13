@@ -110,6 +110,23 @@ func TestBuildDashboardCycleContextUsesRangeForIrregularMode(t *testing.T) {
 	}
 }
 
+func TestDashboardPredictionRangeWidensForAge35Plus(t *testing.T) {
+	user := &models.User{AgeGroup: models.AgeGroup35Plus}
+	stats := CycleStats{CompletedCycleCount: 2}
+	predictedStart := mustParseDashboardDay(t, "2026-04-07")
+
+	rangeStart, rangeEnd, ok := DashboardPredictionRange(user, stats, predictedStart, time.UTC)
+	if !ok {
+		t.Fatal("expected prediction range to be calculable")
+	}
+	if got := rangeStart.Format("2006-01-02"); got != "2026-04-02" {
+		t.Fatalf("expected 35+ range start 2026-04-02, got %s", got)
+	}
+	if got := rangeEnd.Format("2006-01-02"); got != "2026-04-12" {
+		t.Fatalf("expected 35+ range end 2026-04-12, got %s", got)
+	}
+}
+
 func mustParseDashboardDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)

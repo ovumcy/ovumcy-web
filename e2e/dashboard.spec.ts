@@ -34,6 +34,27 @@ function todaySaveForm(page: Page) {
   return page.locator('[data-dashboard-save-form]');
 }
 
+async function todaySavePath(page: Page): Promise<string> {
+  const action = await todaySaveForm(page).first().getAttribute('hx-post');
+  expect(action).toMatch(/^\/api\/days\/\d{4}-\d{2}-\d{2}$/);
+  return String(action);
+}
+
+async function waitForDashboardAutosave(
+  page: Page,
+  savePath?: string,
+  options?: { expectIndicator?: boolean }
+): Promise<void> {
+  const path = savePath ?? (await todaySavePath(page));
+  await page.waitForResponse((response) => {
+    return response.request().method() === 'POST' && response.url().includes(path);
+  });
+  if (options?.expectIndicator === false) {
+    return;
+  }
+  await expect(page.locator('[data-dashboard-autosave-indicator]')).toHaveAttribute('data-autosave-state', 'saved');
+}
+
 function todaySymptomOptions(page: Page) {
   return page.locator('fieldset[data-dashboard-section="symptoms"] label.choice-option');
 }
@@ -303,5 +324,61 @@ test.describe('Dashboard: today editor', () => {
 
     await page.reload();
     await expect(periodToggle).toBeChecked();
+  });
+
+  test('quick period action toggles and persists via autosave', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-quick-period');
+
+    const savePath = await todaySavePath(page);
+    const periodToggle = page.locator('input[name="is_period"]');
+    const autosaveResponse = waitForDashboardAutosave(page, savePath);
+    const initiallyChecked = await periodToggle.isChecked();
+
+    await page.locator('[data-quick-action="period"]').click();
+    if (initiallyChecked) {
+      await expect(periodToggle).not.toBeChecked();
+    } else {
+      await expect(periodToggle).toBeChecked();
+    }
+
+    await autosaveResponse;
+
+    await page.reload();
+    if (initiallyChecked) {
+      await expect(periodToggle).not.toBeChecked();
+    } else {
+      await expect(periodToggle).toBeChecked();
+    }
+  });
+
+  test('notes autosave after idle without pressing update', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-autosave-idle');
+
+    const savePath = await todaySavePath(page);
+    const notes = page.locator('#today-notes');
+    const noteText = `dashboard-autosave-${Date.now()}`;
+    const autosaveResponse = waitForDashboardAutosave(page, savePath);
+
+    await notes.fill(noteText);
+    await autosaveResponse;
+
+    await page.reload();
+    await expect(notes).toHaveValue(noteText);
+  });
+
+  test('closing the page runs beforeunload autosave for dirty notes', async ({ page, context }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-autosave-beforeunload');
+
+    const noteText = `dashboard-beforeunload-${Date.now()}`;
+
+    await page.locator('#today-notes').fill(noteText);
+    await page.close({ runBeforeUnload: true });
+
+    const replacementPage = await context.newPage();
+    await replacementPage.goto('/dashboard');
+    await expect(replacementPage).toHaveURL(/\/dashboard$/);
+    await replacementPage.waitForTimeout(1000);
+    await replacementPage.reload();
+    await expect(replacementPage.locator('#today-notes')).toHaveValue(noteText);
   });
 });
