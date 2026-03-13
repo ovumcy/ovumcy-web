@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
@@ -17,7 +19,7 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 
-	payload, err := parseDayPayload(c)
+	payload, err := parseDayPayload(c, user)
 	if err != nil {
 		return handler.respondMappedError(c, invalidPayloadErrorSpec())
 	}
@@ -59,7 +61,7 @@ func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
 
-	if err := handler.dayService.MarkCycleStartManually(user.ID, day, location); err != nil {
+	if err := handler.dayService.MarkCycleStartManually(user.ID, day, time.Now().In(location), location); err != nil {
 		return handler.respondMappedError(c, upsertDayPersistenceErrorSpec(err))
 	}
 

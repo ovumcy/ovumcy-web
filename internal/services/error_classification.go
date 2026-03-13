@@ -153,6 +153,7 @@ type DayUpsertErrorKind uint8
 
 const (
 	DayUpsertErrorUnknown DayUpsertErrorKind = iota
+	DayUpsertErrorInvalidCycleStartDate
 	DayUpsertErrorInvalidFlow
 	DayUpsertErrorInvalidMood
 	DayUpsertErrorInvalidSexActivity
@@ -161,11 +162,12 @@ const (
 	DayUpsertErrorLoadFailed
 	DayUpsertErrorCreateFailed
 	DayUpsertErrorUpdateFailed
-	DayUpsertErrorSyncLastPeriodFailed
 )
 
 func ClassifyDayUpsertError(err error) DayUpsertErrorKind {
 	switch {
+	case errors.Is(err, ErrManualCycleStartDateInvalid):
+		return DayUpsertErrorInvalidCycleStartDate
 	case errors.Is(err, ErrInvalidDayFlow):
 		return DayUpsertErrorInvalidFlow
 	case errors.Is(err, ErrInvalidDayMood):
@@ -185,8 +187,6 @@ func ClassifyDayUpsertError(err error) DayUpsertErrorKind {
 	case errors.Is(err, ErrDayAutoFillApplyFailed),
 		errors.Is(err, ErrDayEntryUpdateFailed):
 		return DayUpsertErrorUpdateFailed
-	case errors.Is(err, ErrSyncLastPeriodFailed):
-		return DayUpsertErrorSyncLastPeriodFailed
 	default:
 		return DayUpsertErrorUnknown
 	}
@@ -197,15 +197,12 @@ type DayDeleteErrorKind uint8
 const (
 	DayDeleteErrorUnknown DayDeleteErrorKind = iota
 	DayDeleteErrorDeleteFailed
-	DayDeleteErrorSyncLastPeriodFailed
 )
 
 func ClassifyDayDeleteError(err error) DayDeleteErrorKind {
 	switch {
 	case errors.Is(err, ErrDeleteDayFailed):
 		return DayDeleteErrorDeleteFailed
-	case errors.Is(err, ErrSyncLastPeriodFailed):
-		return DayDeleteErrorSyncLastPeriodFailed
 	default:
 		return DayDeleteErrorUnknown
 	}

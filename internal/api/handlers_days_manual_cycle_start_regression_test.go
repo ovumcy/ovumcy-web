@@ -101,6 +101,9 @@ func TestMarkCycleStartHTMXWithCSRFRefreshesAndPersists(t *testing.T) {
 	if !entry.IsPeriod {
 		t.Fatalf("expected selected day to persist as period day")
 	}
+	if !entry.CycleStart {
+		t.Fatalf("expected selected day to persist as the explicit cycle start")
+	}
 	if entry.Notes != "keep me" {
 		t.Fatalf("expected existing notes to be preserved, got %q", entry.Notes)
 	}
@@ -109,8 +112,8 @@ func TestMarkCycleStartHTMXWithCSRFRefreshesAndPersists(t *testing.T) {
 	if err := database.First(&persisted, user.ID).Error; err != nil {
 		t.Fatalf("load updated user: %v", err)
 	}
-	if persisted.LastPeriodStart == nil || persisted.LastPeriodStart.Format("2006-01-02") != targetDay {
-		t.Fatalf("expected last_period_start=%s, got %v", targetDay, persisted.LastPeriodStart)
+	if persisted.LastPeriodStart != nil {
+		t.Fatalf("expected manual cycle start to leave settings last_period_start unchanged, got %v", persisted.LastPeriodStart)
 	}
 }
 

@@ -18,6 +18,7 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 
 	update := services.TrackingSettingsUpdate{
 		TrackBBT:           input.TrackBBT,
+		TemperatureUnit:    input.TemperatureUnit,
 		TrackCervicalMucus: input.TrackCervicalMucus,
 		HideSexChip:        input.HideSexChip,
 	}
@@ -33,6 +34,7 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 			"ok":                   true,
 			"status":               status,
 			"track_bbt":            update.TrackBBT,
+			"temperature_unit":     services.NormalizeTemperatureUnit(update.TemperatureUnit),
 			"track_cervical_mucus": update.TrackCervicalMucus,
 			"hide_sex_chip":        update.HideSexChip,
 		})
@@ -61,6 +63,7 @@ func parseTrackingSettingsInput(c *fiber.Ctx) (trackingSettingsInput, error) {
 
 	return trackingSettingsInput{
 		TrackBBT:           services.ParseBoolLike(c.FormValue("track_bbt")),
+		TemperatureUnit:    c.FormValue("temperature_unit"),
 		TrackCervicalMucus: services.ParseBoolLike(c.FormValue("track_cervical_mucus")),
 		HideSexChip:        services.ParseBoolLike(c.FormValue("hide_sex_chip")),
 	}, nil

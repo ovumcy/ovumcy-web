@@ -48,6 +48,9 @@
             hx-target="#day-editor"
             hx-swap="innerHTML"
             data-day="{{.DateString}}"
+            data-calendar-state="{{.StateKey}}"
+            data-calendar-has-data="{{if .HasData}}true{{else}}false{{end}}"
+            data-calendar-has-sex="{{if .HasSex}}true{{else}}false{{end}}"
             class="{{.CellClass}}{{if eq .DateString $.SelectedDate}} selected{{end}}">
             <div class="calendar-cell-header">
               <span class="{{.TextClass}}">{{.Day}}</span>
@@ -60,6 +63,9 @@
             </div>
 
             <div class="calendar-cell-markers">
+              {{if .HasData}}
+              <span class="calendar-data-marker" title="{{t $.Messages "calendar.data_logged"}}"></span>
+              {{end}}
               {{if .OvulationDot}}
               <span class="calendar-ovulation-dot" title="{{t $.Messages "calendar.ovulation_icon"}}"></span>
               {{end}}
@@ -76,8 +82,10 @@
       <div class="mt-4 flex flex-wrap items-center gap-3 text-xs journal-muted">
         <span class="legend-item"><span class="legend-dot legend-dot-period"></span>{{t .Messages "calendar.legend.actual_period"}}</span>
         <span class="legend-item"><span class="legend-dot legend-dot-predicted"></span>{{t .Messages "calendar.legend.predicted_period"}}</span>
+        <span class="legend-item"><span class="legend-outline"></span>{{t .Messages "calendar.legend.low_probability"}}</span>
         <span class="legend-item"><span class="legend-dot legend-dot-fertile"></span>{{t .Messages "calendar.legend.fertility"}}</span>
         <span class="legend-item"><span class="calendar-ovulation-dot"></span>{{t .Messages "calendar.legend.ovulation"}}</span>
+        <span class="legend-item"><span class="calendar-data-marker"></span>{{t .Messages "calendar.legend.logged_entry"}}</span>
         <span class="legend-item"><span class="calendar-sex-marker">♥</span>{{t .Messages "calendar.sex_logged"}}</span>
       </div>
     </section>

@@ -198,6 +198,32 @@ func TestBuildSettingsPageViewDataOwnerClampsExportDefaultToRequestLocalToday(t 
 	}
 }
 
+func TestBuildSettingsPageViewDataSanitizesFutureLastPeriodStartForForm(t *testing.T) {
+	futureStart := mustParseSettingsViewDay(t, "2026-04-05")
+	settingsLoader := &stubSettingsViewLoader{
+		user: models.User{
+			CycleLength:     28,
+			PeriodLength:    5,
+			AutoPeriodFill:  true,
+			LastPeriodStart: &futureStart,
+		},
+	}
+
+	service := NewSettingsViewService(settingsLoader, NewNotificationService(), nil, nil)
+	user := &models.User{ID: 6, Role: models.RoleOwner}
+	viewData, err := service.BuildSettingsPageViewData(user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
+	if err != nil {
+		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
+	}
+
+	if viewData.LastPeriodStart != "2026-03-12" {
+		t.Fatalf("expected sanitized last_period_start=2026-03-12, got %q", viewData.LastPeriodStart)
+	}
+	if viewData.CurrentUser.LastPeriodStart == nil || viewData.CurrentUser.LastPeriodStart.Format("2006-01-02") != "2026-03-12" {
+		t.Fatalf("expected sanitized current user last_period_start, got %#v", viewData.CurrentUser.LastPeriodStart)
+	}
+}
+
 func TestBuildSettingsPageViewDataPartnerSkipsExportSummary(t *testing.T) {
 	settingsLoader := &stubSettingsViewLoader{
 		user: models.User{

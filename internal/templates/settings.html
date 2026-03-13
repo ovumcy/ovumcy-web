@@ -5,9 +5,7 @@
     <p class="journal-muted mt-2">{{t .Messages "settings.subtitle"}}</p>
   </div>
 
-  {{if .SuccessKey}}
-  <div class="status-ok flex items-center gap-2"><span aria-hidden="true">✅</span><span>{{t .Messages .SuccessKey}}</span></div>
-  {{end}}
+  {{if .SuccessKey}}{{statusOK (t .Messages .SuccessKey)}}{{end}}
 
   {{if or .ErrorKey .ChangePasswordErrorKey}}
   <div class="status-error flex items-center gap-2">
@@ -130,17 +128,23 @@
       </div>
 
       <div class="space-y-2">
-        <label class="period-toggle">
-          <input type="checkbox" name="auto_period_fill" value="true" {{if .AutoPeriodFill}}checked{{end}}>
-          <span>🩸 {{t .Messages "settings.cycle.auto_period_fill"}}</span>
+        <label class="period-toggle" data-binary-toggle data-active="{{if .AutoPeriodFill}}true{{else}}false{{end}}">
+          <input type="checkbox" name="auto_period_fill" value="true" data-binary-toggle-input {{if .AutoPeriodFill}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">🩸 {{t .Messages "settings.cycle.auto_period_fill"}}</span>
+            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .AutoPeriodFill}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+          </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.cycle.auto_period_fill_hint"}}</p>
       </div>
 
       <div class="space-y-2">
-        <label class="period-toggle">
-          <input type="checkbox" name="irregular_cycle" value="true" {{if .IrregularCycle}}checked{{end}}>
-          <span>〰️ {{t .Messages "settings.cycle.irregular_cycle"}}</span>
+        <label class="period-toggle" data-binary-toggle data-active="{{if .IrregularCycle}}true{{else}}false{{end}}">
+          <input type="checkbox" name="irregular_cycle" value="true" data-binary-toggle-input {{if .IrregularCycle}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">〰️ {{t .Messages "settings.cycle.irregular_cycle"}}</span>
+            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .IrregularCycle}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+          </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.cycle.irregular_cycle_hint"}}</p>
       </div>
@@ -180,20 +184,50 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="settings-toggle-list">
-        <label class="period-toggle">
-          <input type="checkbox" name="track_bbt" value="true" {{if .TrackBBT}}checked{{end}}>
-          <span>🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
+        <label class="period-toggle" data-binary-toggle data-active="{{if .TrackBBT}}true{{else}}false{{end}}">
+          <input type="checkbox" name="track_bbt" value="true" data-binary-toggle-input {{if .TrackBBT}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
+            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .TrackBBT}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+          </span>
         </label>
 
-        <label class="period-toggle">
-          <input type="checkbox" name="track_cervical_mucus" value="true" {{if .TrackCervicalMucus}}checked{{end}}>
-          <span>💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
+        <label class="period-toggle" data-binary-toggle data-active="{{if .TrackCervicalMucus}}true{{else}}false{{end}}">
+          <input type="checkbox" name="track_cervical_mucus" value="true" data-binary-toggle-input {{if .TrackCervicalMucus}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
+            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .TrackCervicalMucus}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+          </span>
         </label>
 
-        <label class="period-toggle">
-          <input type="checkbox" name="hide_sex_chip" value="true" {{if .HideSexChip}}checked{{end}}>
-          <span>◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
+        <label class="period-toggle" data-binary-toggle data-active="{{if .HideSexChip}}true{{else}}false{{end}}">
+          <input type="checkbox" name="hide_sex_chip" value="true" data-binary-toggle-input {{if .HideSexChip}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
+            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .HideSexChip}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+          </span>
         </label>
+      </div>
+
+      <div class="space-y-2">
+        <p class="field-label">{{t .Messages "settings.tracking.temperature_unit"}}</p>
+        <div class="settings-unit-switch" role="radiogroup" aria-label="{{t .Messages "settings.tracking.temperature_unit"}}">
+          <label class="choice-option">
+            <input type="radio" name="temperature_unit" value="c" class="choice-input" {{if eq .TemperatureUnit "c"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>°C</span>
+              <span>{{t .Messages "settings.tracking.temperature_unit_celsius"}}</span>
+            </span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="temperature_unit" value="f" class="choice-input" {{if eq .TemperatureUnit "f"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>°F</span>
+              <span>{{t .Messages "settings.tracking.temperature_unit_fahrenheit"}}</span>
+            </span>
+          </label>
+        </div>
+        <p class="journal-muted text-sm">{{t .Messages "settings.tracking.temperature_unit_hint"}}</p>
       </div>
 
       <div class="settings-form-actions">

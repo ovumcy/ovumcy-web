@@ -18,7 +18,7 @@ func (handler *Handler) DeleteDailyLog(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	if err := handler.dayService.DeleteDayAndRefreshLastPeriod(user.ID, day, location); err != nil {
+	if err := handler.dayService.DeleteDayEntry(user.ID, day, location); err != nil {
 		return handler.respondMappedError(c, deleteDayPersistenceErrorSpec(err))
 	}
 
@@ -53,7 +53,7 @@ func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	if err := handler.dayService.DeleteDayAndRefreshLastPeriod(user.ID, day, location); err != nil {
+	if err := handler.dayService.DeleteDayEntry(user.ID, day, location); err != nil {
 		return handler.respondMappedError(c, deleteDayPersistenceErrorSpec(err))
 	}
 

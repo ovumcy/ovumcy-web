@@ -16,6 +16,7 @@ type dayLogRepositoryStub struct {
 	findErrByDay   map[string]error
 	createErrByDay map[string]error
 	saveErrByDay   map[string]error
+	clearErr       error
 }
 
 func newDayLogRepositoryStub() *dayLogRepositoryStub {
@@ -91,22 +92,6 @@ func (stub *dayLogRepositoryStub) ListByUserDayRange(userID uint, dayStart time.
 	return logs, nil
 }
 
-func (stub *dayLogRepositoryStub) ListPeriodDays(userID uint) ([]models.DailyLog, error) {
-	logs := make([]models.DailyLog, 0)
-	for _, entry := range stub.entries {
-		if entry.UserID == userID && entry.IsPeriod {
-			logs = append(logs, models.DailyLog{
-				Date:     entry.Date,
-				IsPeriod: true,
-			})
-		}
-	}
-	sort.Slice(logs, func(i, j int) bool {
-		return logs[i].Date.Before(logs[j].Date)
-	})
-	return logs, nil
-}
-
 func (stub *dayLogRepositoryStub) FindByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
 	key := stub.dayKey(dayStart)
 	if err, ok := stub.findErrByDay[key]; ok {
@@ -142,6 +127,22 @@ func (stub *dayLogRepositoryStub) Save(entry *models.DailyLog) error {
 	return nil
 }
 
+func (stub *dayLogRepositoryStub) ClearCycleStartsExcept(userID uint, dayStart time.Time, dayEnd time.Time) error {
+	if stub.clearErr != nil {
+		return stub.clearErr
+	}
+	for key, entry := range stub.entries {
+		if entry.UserID != userID {
+			continue
+		}
+		if entry.Date.Before(dayStart) || !entry.Date.Before(dayEnd) {
+			entry.CycleStart = false
+			stub.entries[key] = entry
+		}
+	}
+	return nil
+}
+
 func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) error {
 	for key, entry := range stub.entries {
 		if entry.UserID != userID {
@@ -156,10 +157,8 @@ func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(userID uint, dayStart 
 }
 
 type dayUserRepositoryStub struct {
-	settings  models.User
-	loadErr   error
-	updateErr error
-	updates   []map[string]any
+	settings models.User
+	loadErr  error
 }
 
 func (stub *dayUserRepositoryStub) LoadSettingsByID(uint) (models.User, error) {
@@ -167,18 +166,6 @@ func (stub *dayUserRepositoryStub) LoadSettingsByID(uint) (models.User, error) {
 		return models.User{}, stub.loadErr
 	}
 	return stub.settings, nil
-}
-
-func (stub *dayUserRepositoryStub) UpdateByID(_ uint, updates map[string]any) error {
-	if stub.updateErr != nil {
-		return stub.updateErr
-	}
-	copied := make(map[string]any, len(updates))
-	for key, value := range updates {
-		copied[key] = value
-	}
-	stub.updates = append(stub.updates, copied)
-	return nil
 }
 
 func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
@@ -208,15 +195,6 @@ func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
 	}
 	if len(entry.Notes) != MaxDayNotesLength {
 		t.Fatalf("expected notes length %d, got %d", MaxDayNotesLength, len(entry.Notes))
-	}
-	if len(users.updates) != 1 {
-		t.Fatalf("expected one last_period_start sync call, got %d", len(users.updates))
-	}
-	if _, ok := users.updates[0]["last_period_start"]; !ok {
-		t.Fatalf("expected last_period_start key in sync update, got %#v", users.updates[0])
-	}
-	if users.updates[0]["last_period_start"] != nil {
-		t.Fatalf("expected last_period_start nil for non-period logs, got %#v", users.updates[0]["last_period_start"])
 	}
 }
 
@@ -259,16 +237,6 @@ func TestUpsertDayEntryWithAutoFillCreatesFollowingPeriodDays(t *testing.T) {
 		}
 	}
 
-	if len(users.updates) != 1 {
-		t.Fatalf("expected one sync update, got %d", len(users.updates))
-	}
-	gotStart, ok := users.updates[0]["last_period_start"].(time.Time)
-	if !ok {
-		t.Fatalf("expected time.Time last_period_start, got %#v", users.updates[0]["last_period_start"])
-	}
-	if gotStart.Format("2006-01-02") != "2026-02-10" {
-		t.Fatalf("expected last_period_start 2026-02-10, got %s", gotStart.Format("2006-01-02"))
-	}
 }
 
 func TestUpsertDayEntryWithAutoFillReturnsTypedLoadError(t *testing.T) {
@@ -340,21 +308,100 @@ func TestUpsertDayEntryWithAutoFillReturnsTypedAutofillApplyError(t *testing.T) 
 	}
 }
 
-func TestUpsertDayEntryWithAutoFillReturnsTypedSyncError(t *testing.T) {
+func TestUpsertDayEntryWithAutoFillClearsCycleStartWhenPeriodIsRemoved(t *testing.T) {
 	logs := newDayLogRepositoryStub()
-	users := &dayUserRepositoryStub{updateErr: errors.New("sync failed")}
+	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	_, err := service.UpsertDayEntryWithAutoFill(
+	existingDay := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+	logs.entries["2026-02-10"] = models.DailyLog{
+		ID:         1,
+		UserID:     10,
+		Date:       existingDay,
+		IsPeriod:   true,
+		CycleStart: true,
+		Flow:       models.FlowHeavy,
+	}
+
+	entry, err := service.UpsertDayEntryWithAutoFill(
 		10,
-		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
+		existingDay,
 		DayEntryInput{
 			IsPeriod: false,
 			Flow:     models.FlowNone,
 		},
 		time.UTC,
 	)
-	if !errors.Is(err, ErrSyncLastPeriodFailed) {
-		t.Fatalf("expected ErrSyncLastPeriodFailed, got %v", err)
+	if err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
+	}
+	if entry.CycleStart {
+		t.Fatalf("expected cycle_start to be cleared when period is removed")
+	}
+}
+
+func TestMarkCycleStartManuallyClearsOtherExplicitStarts(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	previousDay := time.Date(2026, time.February, 13, 0, 0, 0, 0, time.UTC)
+	targetDay := time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC)
+	logs.entries["2026-02-13"] = models.DailyLog{
+		ID:         1,
+		UserID:     10,
+		Date:       previousDay,
+		IsPeriod:   true,
+		CycleStart: true,
+	}
+	logs.entries["2026-02-08"] = models.DailyLog{
+		ID:       2,
+		UserID:   10,
+		Date:     targetDay,
+		IsPeriod: true,
+		Flow:     models.FlowLight,
+	}
+
+	if err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC); err != nil {
+		t.Fatalf("MarkCycleStartManually() unexpected error: %v", err)
+	}
+
+	if logs.entries["2026-02-13"].CycleStart {
+		t.Fatalf("expected previous explicit cycle start to be cleared")
+	}
+	if !logs.entries["2026-02-08"].CycleStart {
+		t.Fatalf("expected selected day to become the explicit cycle start")
+	}
+}
+
+func TestMarkCycleStartManuallyRejectsFarFutureDate(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	now := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
+	futureDay := time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC)
+	if err := service.MarkCycleStartManually(10, futureDay, now, time.UTC); !errors.Is(err, ErrManualCycleStartDateInvalid) {
+		t.Fatalf("expected ErrManualCycleStartDateInvalid, got %v", err)
+	}
+}
+
+func TestMarkCycleStartManuallyAllowsTomorrowDate(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	now := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
+	tomorrow := time.Date(2026, time.March, 13, 0, 0, 0, 0, time.UTC)
+	if err := service.MarkCycleStartManually(10, tomorrow, now, time.UTC); err != nil {
+		t.Fatalf("expected tomorrow cycle start to be allowed, got %v", err)
+	}
+
+	entry, ok := logs.entries["2026-03-13"]
+	if !ok {
+		t.Fatal("expected tomorrow entry to be created")
+	}
+	if !entry.IsPeriod || !entry.CycleStart {
+		t.Fatalf("expected tomorrow entry to be period+cycle_start, got %#v", entry)
 	}
 }

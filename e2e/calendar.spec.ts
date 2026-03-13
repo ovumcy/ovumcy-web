@@ -58,6 +58,15 @@ async function openCalendarNotes(form: Locator): Promise<void> {
   await expect(form.locator('#calendar-notes')).toBeVisible();
 }
 
+async function openSexActivityDisclosure(form: Locator): Promise<void> {
+  const disclosure = form.locator('details[data-sex-activity-details]');
+  const isOpen = await disclosure.evaluate((element) => element.hasAttribute('open'));
+  if (!isOpen) {
+    await disclosure.locator('summary').click();
+  }
+  await expect(form.locator('[data-sex-activity-option="protected"]')).toBeVisible();
+}
+
 async function todayISOFromCalendar(page: Page): Promise<string> {
   const todayButton = page.locator('button[data-day]:has(.calendar-today-pill)').first();
   await expect(todayButton).toBeVisible();
@@ -140,6 +149,27 @@ test.describe('Calendar page', () => {
     await editButton.click();
     await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"] #calendar-notes`)).toHaveValue(noteText);
     await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"] input[name="is_period"]`)).toBeChecked();
+  });
+
+  test('logged day renders data and sex markers in the calendar grid', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-markers');
+
+    const todayISO = await todayISOFromCalendar(page);
+    const pastISO = shiftISODate(todayISO, -1);
+    const pastMonth = pastISO.slice(0, 7);
+
+    const dayEditorForm = await openCalendarDayEditor(page, pastISO);
+    await openSexActivityDisclosure(dayEditorForm);
+    await dayEditorForm.locator('[data-sex-activity-option="protected"]').click();
+    await openCalendarNotes(dayEditorForm);
+    await dayEditorForm.locator('#calendar-notes').fill(`calendar-marker-${Date.now()}`);
+    await dayEditorForm.locator('button[data-save-button]').click();
+
+    await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
+    const dayButton = page.locator(`button[data-day="${pastISO}"]`);
+    await expect(dayButton).toHaveAttribute('data-calendar-has-data', 'true');
+    await expect(dayButton.locator('.calendar-data-marker')).toBeVisible();
+    await expect(dayButton.locator('.calendar-sex-marker')).toBeVisible();
   });
 
   test('existing day entry can be deleted from calendar after confirmation', async ({ page }) => {
@@ -236,6 +266,36 @@ test.describe('Calendar page', () => {
     await editButton.click();
 
     const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"]`);
+    await expect(dayEditorForm).toBeVisible();
+    await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
+  });
+
+  test('tomorrow keeps manual cycle start available with a warning', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-future-cycle-start');
+
+    const todayISO = await todayISOFromCalendar(page);
+    const tomorrowISO = shiftISODate(todayISO, 1);
+    const month = tomorrowISO.slice(0, 7);
+
+    await page.goto(`/calendar?month=${month}&day=${tomorrowISO}`);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${tomorrowISO}`));
+
+    const manualStartButton = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"] [data-day-cycle-start-button]`);
+    await expect(manualStartButton).toBeVisible();
+    await expect(page.locator('#day-editor')).toContainText(/recalculated|пересчитан|recalcular/i);
+
+    await Promise.all([
+      page.waitForResponse((response) => {
+        return (
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/days/${tomorrowISO}/cycle-start?source=calendar`)
+        );
+      }),
+      manualStartButton.click(),
+    ]);
+
+    await page.locator(`[data-day-editor-open="${tomorrowISO}"]`).first().click();
+    const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${tomorrowISO}"]`);
     await expect(dayEditorForm).toBeVisible();
     await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
   });

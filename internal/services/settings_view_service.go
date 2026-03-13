@@ -64,6 +64,7 @@ type SettingsPageViewData struct {
 	AutoPeriodFill          bool
 	IrregularCycle          bool
 	TrackBBT                bool
+	TemperatureUnit         string
 	TrackCervicalMucus      bool
 	HideSexChip             bool
 	LastPeriodStart         string
@@ -125,15 +126,22 @@ func (service *SettingsViewService) BuildSettingsPageViewData(user *models.User,
 	resolvedUser.AutoPeriodFill = autoPeriodFill
 	resolvedUser.IrregularCycle = persisted.IrregularCycle
 	resolvedUser.TrackBBT = persisted.TrackBBT
+	resolvedUser.TemperatureUnit = NormalizeTemperatureUnit(persisted.TemperatureUnit)
 	resolvedUser.TrackCervicalMucus = persisted.TrackCervicalMucus
 	resolvedUser.HideSexChip = persisted.HideSexChip
 	resolvedUser.LastPeriodStart = persisted.LastPeriodStart
 
 	lastPeriodStart := ""
+	_, today := SettingsCycleStartDateBounds(now, location)
 	if persisted.LastPeriodStart != nil {
-		lastPeriodStart = DateAtLocation(*persisted.LastPeriodStart, location).Format("2006-01-02")
+		sanitizedStart := DateAtLocation(*persisted.LastPeriodStart, location)
+		if sanitizedStart.After(today) {
+			sanitizedStart = today
+		}
+		resolvedUser.LastPeriodStart = &sanitizedStart
+		lastPeriodStart = sanitizedStart.Format("2006-01-02")
 	}
-	minCycleStart, today := SettingsCycleStartDateBounds(now, location)
+	minCycleStart, _ := SettingsCycleStartDateBounds(now, location)
 
 	viewData := SettingsPageViewData{
 		CurrentUser:            resolvedUser,
@@ -145,6 +153,7 @@ func (service *SettingsViewService) BuildSettingsPageViewData(user *models.User,
 		AutoPeriodFill:         autoPeriodFill,
 		IrregularCycle:         resolvedUser.IrregularCycle,
 		TrackBBT:               resolvedUser.TrackBBT,
+		TemperatureUnit:        resolvedUser.TemperatureUnit,
 		TrackCervicalMucus:     resolvedUser.TrackCervicalMucus,
 		HideSexChip:            resolvedUser.HideSexChip,
 		LastPeriodStart:        lastPeriodStart,

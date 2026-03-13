@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS temperature_unit TEXT NOT NULL DEFAULT 'c';

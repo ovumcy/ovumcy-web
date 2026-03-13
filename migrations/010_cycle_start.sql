@@ -1,0 +1,1 @@
+ALTER TABLE daily_logs ADD COLUMN cycle_start BOOLEAN NOT NULL DEFAULT 0;

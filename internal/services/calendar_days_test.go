@@ -89,6 +89,14 @@ func TestBuildCalendarDayStatesProjectsOvulationIntoFutureCycles(t *testing.T) {
 	if ovulationDay.IsPredicted {
 		t.Fatalf("did not expect ovulation day to be marked as predicted period")
 	}
+
+	preFertileDay := findCalendarDayStateByDateString(t, days, "2026-03-16")
+	if !preFertileDay.IsPreFertile {
+		t.Fatalf("expected projected pre-fertile marker on 2026-03-16")
+	}
+	if preFertileDay.IsPredicted || preFertileDay.IsFertility || preFertileDay.IsOvulation {
+		t.Fatalf("expected pre-fertile day to be distinct from predicted period, fertile, and ovulation states")
+	}
 }
 
 func TestBuildCalendarDayStatesIncludesCurrentBaselinePeriodWindow(t *testing.T) {
@@ -106,6 +114,16 @@ func TestBuildCalendarDayStatesIncludesCurrentBaselinePeriodWindow(t *testing.T)
 		day := findCalendarDayStateByDateString(t, days, dateString)
 		if !day.IsPredicted {
 			t.Fatalf("expected baseline period day %s to be marked as predicted period", dateString)
+		}
+	}
+
+	for _, dateString := range []string{"2026-03-13", "2026-03-14", "2026-03-15"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if !day.IsPreFertile {
+			t.Fatalf("expected baseline pre-fertile day %s to be marked as low-risk gap", dateString)
+		}
+		if day.IsPredicted || day.IsFertility || day.IsOvulation {
+			t.Fatalf("expected baseline pre-fertile day %s to stay distinct from other prediction states", dateString)
 		}
 	}
 }

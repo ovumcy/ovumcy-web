@@ -54,9 +54,10 @@ type profileSettingsInput struct {
 }
 
 type trackingSettingsInput struct {
-	TrackBBT           bool `json:"track_bbt" form:"track_bbt"`
-	TrackCervicalMucus bool `json:"track_cervical_mucus" form:"track_cervical_mucus"`
-	HideSexChip        bool `json:"hide_sex_chip" form:"hide_sex_chip"`
+	TrackBBT           bool   `json:"track_bbt" form:"track_bbt"`
+	TemperatureUnit    string `json:"temperature_unit" form:"temperature_unit"`
+	TrackCervicalMucus bool   `json:"track_cervical_mucus" form:"track_cervical_mucus"`
+	HideSexChip        bool   `json:"hide_sex_chip" form:"hide_sex_chip"`
 }
 
 type deleteAccountInput struct {

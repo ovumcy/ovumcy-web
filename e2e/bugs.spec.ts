@@ -236,9 +236,11 @@ test.describe('Bug regressions', () => {
 
       const currentStart = await cycleForm.locator('#settings-last-period-start').inputValue();
       const currentDay = shiftISODate(currentStart, 4);
+      const preFertileDay = shiftISODate(currentStart, 5);
 
       await page.goto(`/calendar?month=${currentDay.slice(0, 7)}&day=${currentDay}`);
       await expect(page.locator(`button[data-day="${currentDay}"]`)).toHaveClass(/calendar-cell-predicted/);
+      await expect(page.locator(`button[data-day="${preFertileDay}"]`)).toHaveAttribute('data-calendar-state', 'pre-fertile');
     });
   });
 
@@ -334,6 +336,15 @@ test.describe('Bug regressions', () => {
       await expect(page.locator('#settings-profile-status .status-ok')).toBeVisible();
 
       await expect(identityChip).toContainText(newName);
+      const navOrderIsCorrect = await page.locator('[data-nav-account-actions]').evaluate((node) => {
+        const identity = node.querySelector('[data-current-user-identity-container]');
+        const logout = node.querySelector('.nav-logout-form');
+        if (!identity || !logout) {
+          return false;
+        }
+        return (identity.compareDocumentPosition(logout) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      });
+      expect(navOrderIsCorrect).toBeTruthy();
       await page.reload();
       await expect(page.locator('#settings-display-name')).toHaveValue(newName);
       const reloadedIdentityChip = page.locator('[data-current-user-identity-container]').first();

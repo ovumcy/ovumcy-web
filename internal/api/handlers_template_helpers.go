@@ -3,6 +3,7 @@ package api
 import (
 	"html/template"
 
+	"github.com/terraincognita07/ovumcy/internal/httpx"
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
@@ -42,11 +43,18 @@ func newTemplateFuncMap() template.FuncMap {
 		"hasBBT": func(value float64) bool {
 			return services.IsValidDayBBT(value) && value > 0
 		},
-		"userIdentity":   templateUserIdentity,
-		"hasDisplayName": templateHasDisplayName,
-		"isActiveRoute":  isActiveTemplateRoute,
-		"hasSymptom":     hasTemplateSymptom,
-		"toJSON":         templateToJSON,
-		"dict":           templateDict,
+		"displayBBT": func(value float64, unit string) string {
+			return services.FormatDayBBTForInput(value, unit)
+		},
+		"temperatureUnitSymbol": services.TemperatureUnitSymbol,
+		"userIdentity":          templateUserIdentity,
+		"hasDisplayName":        templateHasDisplayName,
+		"isActiveRoute":         isActiveTemplateRoute,
+		"hasSymptom":            hasTemplateSymptom,
+		"statusOK": func(message string) template.HTML {
+			return template.HTML(httpx.StatusOKMarkup(message))
+		},
+		"toJSON": templateToJSON,
+		"dict":   templateDict,
 	}
 }

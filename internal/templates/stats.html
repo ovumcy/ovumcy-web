@@ -21,6 +21,9 @@
     {{if lt .TrendPointCount 3}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.data_notice"}}</div>
     {{end}}
+    {{if .ShowIrregularInsufficientDataNotice}}
+    <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_insufficient_data"}}</div>
+    {{end}}
     {{if .ShowIrregularityNotice}}
     <div class="journal-panel text-sm journal-muted">{{printf (t .Messages "stats.irregular_notice") .Stats.MinCycleLength .Stats.MaxCycleLength}}</div>
     {{end}}

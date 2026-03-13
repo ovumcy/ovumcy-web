@@ -7,7 +7,7 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/models"
 )
 
-func TestApplyUserCycleBaselineUsesOnboardingValuesWhenDataIsSparse(t *testing.T) {
+func TestApplyUserCycleBaselineUsesSettingsFallbackWhenNoExplicitCycleStartExists(t *testing.T) {
 	userLastPeriod := mustParseBaselineDay(t, "2026-02-07")
 	user := &models.User{
 		Role:            models.RoleOwner,
@@ -34,21 +34,21 @@ func TestApplyUserCycleBaselineUsesOnboardingValuesWhenDataIsSparse(t *testing.T
 	if stats.AveragePeriodLength != 1 {
 		t.Fatalf("expected average period length 1, got %.2f", stats.AveragePeriodLength)
 	}
-	if stats.LastPeriodStart.Format("2006-01-02") != "2026-02-16" {
-		t.Fatalf("expected last period start 2026-02-16, got %s", stats.LastPeriodStart.Format("2006-01-02"))
+	if stats.LastPeriodStart.Format("2006-01-02") != "2026-02-07" {
+		t.Fatalf("expected settings fallback last period start 2026-02-07, got %s", stats.LastPeriodStart.Format("2006-01-02"))
 	}
-	if stats.NextPeriodStart.Format("2006-01-02") != "2026-02-25" {
-		t.Fatalf("expected next period start 2026-02-25, got %s", stats.NextPeriodStart.Format("2006-01-02"))
+	if stats.NextPeriodStart.Format("2006-01-02") != "2026-02-16" {
+		t.Fatalf("expected next period start 2026-02-16, got %s", stats.NextPeriodStart.Format("2006-01-02"))
 	}
-	if stats.CurrentCycleDay != 2 {
-		t.Fatalf("expected current cycle day 2, got %d", stats.CurrentCycleDay)
+	if stats.CurrentCycleDay != 11 {
+		t.Fatalf("expected current cycle day 11, got %d", stats.CurrentCycleDay)
 	}
-	if stats.CurrentPhase != "ovulation" {
-		t.Fatalf("expected ovulation phase, got %s", stats.CurrentPhase)
+	if stats.CurrentPhase != "luteal" {
+		t.Fatalf("expected luteal phase, got %s", stats.CurrentPhase)
 	}
 }
 
-func TestApplyUserCycleBaselineDoesNotOverrideReliableCycleData(t *testing.T) {
+func TestApplyUserCycleBaselinePrefersExplicitCycleStartOverSettingsFallback(t *testing.T) {
 	userLastPeriod := mustParseBaselineDay(t, "2025-03-27")
 	user := &models.User{
 		Role:            models.RoleOwner,
@@ -64,7 +64,7 @@ func TestApplyUserCycleBaselineDoesNotOverrideReliableCycleData(t *testing.T) {
 		{Date: mustParseBaselineDay(t, "2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: mustParseBaselineDay(t, "2025-01-30"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: mustParseBaselineDay(t, "2025-01-31"), IsPeriod: true, Flow: models.FlowMedium},
-		{Date: mustParseBaselineDay(t, "2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2025-02-26"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
 		{Date: mustParseBaselineDay(t, "2025-02-27"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: mustParseBaselineDay(t, "2025-02-28"), IsPeriod: true, Flow: models.FlowMedium},
 	}
@@ -80,7 +80,7 @@ func TestApplyUserCycleBaselineDoesNotOverrideReliableCycleData(t *testing.T) {
 		t.Fatalf("expected reliable median cycle length 28, got %d", stats.MedianCycleLength)
 	}
 	if stats.LastPeriodStart.Format("2006-01-02") != "2025-02-26" {
-		t.Fatalf("expected reliable last period start 2025-02-26, got %s", stats.LastPeriodStart.Format("2006-01-02"))
+		t.Fatalf("expected explicit last period start 2025-02-26, got %s", stats.LastPeriodStart.Format("2006-01-02"))
 	}
 }
 

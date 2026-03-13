@@ -8,8 +8,12 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
-func parseDayPayload(c *fiber.Ctx) (dayPayload, error) {
+func parseDayPayload(c *fiber.Ctx, user *models.User) (dayPayload, error) {
 	payload := dayPayload{Flow: models.FlowNone, SymptomIDs: []uint{}}
+	temperatureUnit := services.DefaultTemperatureUnit
+	if user != nil {
+		temperatureUnit = user.TemperatureUnit
+	}
 
 	if hasJSONBody(c) {
 		if err := c.BodyParser(&payload); err != nil {
@@ -23,7 +27,7 @@ func parseDayPayload(c *fiber.Ctx) (dayPayload, error) {
 		payload.SexActivity = strings.ToLower(strings.TrimSpace(c.FormValue("sex_activity")))
 		payload.CervicalMucus = strings.ToLower(strings.TrimSpace(c.FormValue("cervical_mucus")))
 		payload.Notes = strings.TrimSpace(c.FormValue("notes"))
-		payload.BBT, err = services.ParseDayBBTRaw(c.FormValue("bbt"))
+		payload.BBT, err = services.ParseDayBBTRawWithUnit(c.FormValue("bbt"), temperatureUnit)
 		if err != nil {
 			return payload, err
 		}

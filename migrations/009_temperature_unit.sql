@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN temperature_unit TEXT NOT NULL DEFAULT 'c';

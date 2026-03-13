@@ -2106,6 +2106,206 @@
     }
   }
 
+  function syncBinaryToggleState(toggle) {
+    if (!toggle || !toggle.querySelector) {
+      return;
+    }
+
+    var input = toggle.querySelector("[data-binary-toggle-input]");
+    var state = toggle.querySelector("[data-binary-toggle-state]");
+    var active = !!(input && input.checked);
+
+    toggle.setAttribute("data-active", active ? "true" : "false");
+    if (!state) {
+      return;
+    }
+
+    state.textContent = active
+      ? String(state.getAttribute("data-state-on") || "")
+      : String(state.getAttribute("data-state-off") || "");
+  }
+
+  function bindBinaryToggles(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var toggles = scope.querySelectorAll("[data-binary-toggle]");
+
+    for (var index = 0; index < toggles.length; index++) {
+      var toggle = toggles[index];
+      var input = toggle.querySelector("[data-binary-toggle-input]");
+      if (!input) {
+        continue;
+      }
+
+      if (toggle.dataset.binaryToggleBound !== "1") {
+        toggle.dataset.binaryToggleBound = "1";
+        (function (currentToggle, currentInput) {
+          currentInput.addEventListener("change", function () {
+            syncBinaryToggleState(currentToggle);
+          });
+        })(toggle, input);
+      }
+
+      syncBinaryToggleState(toggle);
+    }
+  }
+
+  function temperatureInputMaxLength(input) {
+    var maxText = String(input.getAttribute("data-temperature-max") || "").trim();
+    return Math.max(maxText.length, 5);
+  }
+
+  function normalizeTemperatureInputText(raw, maxLength) {
+    var source = String(raw || "").replace(",", ".");
+    var normalized = "";
+    var dotSeen = false;
+
+    for (var index = 0; index < source.length; index++) {
+      var char = source.charAt(index);
+      if (char >= "0" && char <= "9") {
+        normalized += char;
+        continue;
+      }
+      if (char === "." && !dotSeen) {
+        if (!normalized) {
+          normalized = "0";
+        }
+        normalized += ".";
+        dotSeen = true;
+      }
+    }
+
+    if (dotSeen) {
+      var parts = normalized.split(".");
+      normalized = parts[0] + "." + String(parts[1] || "").slice(0, 2);
+    }
+
+    if (isFinite(maxLength) && maxLength > 0 && normalized.length > maxLength) {
+      normalized = normalized.slice(0, maxLength);
+    }
+
+    return normalized;
+  }
+
+  function parseTemperatureNumber(raw) {
+    var value = Number(raw);
+    return isFinite(value) ? value : NaN;
+  }
+
+  function syncTemperatureInput(input, finalize) {
+    if (!input) {
+      return true;
+    }
+
+    var maxLength = temperatureInputMaxLength(input);
+    var raw = String(input.value || "");
+    var sanitized = normalizeTemperatureInputText(raw, maxLength);
+    var minValue = Number(input.getAttribute("data-temperature-min"));
+    var maxValue = Number(input.getAttribute("data-temperature-max"));
+    var errorMessage = String(input.getAttribute("data-temperature-range-error") || "");
+    var lastValid = String(input.dataset.temperatureLastValid || "");
+    var numeric = parseTemperatureNumber(sanitized);
+
+    if (sanitized && isFinite(numeric) && isFinite(maxValue) && numeric > maxValue) {
+      sanitized = lastValid;
+      numeric = parseTemperatureNumber(sanitized);
+    }
+
+    if (sanitized !== raw) {
+      input.value = sanitized;
+    }
+
+    if (!sanitized) {
+      input.dataset.temperatureLastValid = "";
+      input.setCustomValidity("");
+      return true;
+    }
+
+    if (isFinite(numeric) && (!isFinite(maxValue) || numeric <= maxValue)) {
+      input.dataset.temperatureLastValid = sanitized;
+    }
+
+    if (!finalize) {
+      input.setCustomValidity("");
+      return true;
+    }
+
+    if (!isFinite(numeric) || (isFinite(minValue) && numeric < minValue) || (isFinite(maxValue) && numeric > maxValue)) {
+      input.setCustomValidity(errorMessage);
+      return false;
+    }
+
+    input.value = numeric.toFixed(2);
+    input.dataset.temperatureLastValid = input.value;
+    input.setCustomValidity("");
+    return true;
+  }
+
+  function validateTemperatureInputs(form) {
+    if (!form || !form.querySelectorAll) {
+      return true;
+    }
+
+    var inputs = form.querySelectorAll("[data-temperature-input]");
+    var firstInvalid = null;
+
+    for (var index = 0; index < inputs.length; index++) {
+      var input = inputs[index];
+      if (!syncTemperatureInput(input, true) && !firstInvalid) {
+        firstInvalid = input;
+      }
+    }
+
+    if (!firstInvalid) {
+      return true;
+    }
+
+    if (typeof firstInvalid.reportValidity === "function") {
+      firstInvalid.reportValidity();
+    }
+    return false;
+  }
+
+  function bindTemperatureInputs(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var inputs = scope.querySelectorAll("[data-temperature-input]");
+
+    for (var index = 0; index < inputs.length; index++) {
+      var input = inputs[index];
+      var form = input.form;
+
+      if (!input.getAttribute("maxlength")) {
+        input.setAttribute("maxlength", String(temperatureInputMaxLength(input)));
+      }
+
+      if (input.dataset.temperatureInputBound !== "1") {
+        input.dataset.temperatureInputBound = "1";
+
+        input.addEventListener("input", function () {
+          syncTemperatureInput(this, false);
+        });
+
+        input.addEventListener("blur", function () {
+          syncTemperatureInput(this, true);
+        });
+
+        input.addEventListener("change", function () {
+          syncTemperatureInput(this, true);
+        });
+      }
+
+      if (form && form.dataset.temperatureInputsBound !== "1") {
+        form.dataset.temperatureInputsBound = "1";
+        form.addEventListener("submit", function (event) {
+          if (!validateTemperatureInputs(this)) {
+            event.preventDefault();
+          }
+        });
+      }
+
+      syncTemperatureInput(input, false);
+    }
+  }
+
   function syncDashboardPreview(root) {
     var periodToggle = root.querySelector("[data-period-toggle]");
     var notesField = root.querySelector("[data-dashboard-notes]");
@@ -2944,6 +3144,8 @@
     if (typeof window.__ovumcyBindLocalizedDateFields === "function") {
       window.__ovumcyBindLocalizedDateFields(document);
     }
+    bindBinaryToggles(document);
+    bindTemperatureInputs(document);
     bindSettingsCycleForms();
     bindIconControls();
     bindDashboardEditors();

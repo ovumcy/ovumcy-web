@@ -14,11 +14,11 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 		location = time.UTC
 	}
 
-	latestLoggedPeriodStart := findLatestLoggedPeriodStart(logs, location)
+	latestExplicitCycleStart := findLatestExplicitCycleStart(logs, location)
 	cycleLength, periodLength := resolveUserCycleLengths(user)
 	hasObservedCycleLengths := len(CycleLengths(logs)) >= 1
 	today := DateAtLocation(now.In(location), location)
-	applyObservedBaseline(&stats, user, latestLoggedPeriodStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
+	applyObservedBaseline(&stats, user, latestExplicitCycleStart, cycleLength, periodLength, hasObservedCycleLengths, today, location)
 	applyProjectedBaseline(&stats, cycleLength, periodLength, location)
 
 	stats.CurrentCycleDay = baselineCurrentCycleDay(stats.LastPeriodStart, today)
@@ -26,12 +26,12 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 	return stats
 }
 
-func findLatestLoggedPeriodStart(logs []models.DailyLog, location *time.Location) time.Time {
-	detectedStarts := DetectCycleStarts(logs)
-	if len(detectedStarts) == 0 {
+func findLatestExplicitCycleStart(logs []models.DailyLog, location *time.Location) time.Time {
+	explicitStarts := DetectExplicitCycleStarts(logs)
+	if len(explicitStarts) == 0 {
 		return time.Time{}
 	}
-	return DateAtLocation(detectedStarts[len(detectedStarts)-1], location)
+	return DateAtLocation(explicitStarts[len(explicitStarts)-1], location)
 }
 
 func resolveUserCycleLengths(user *models.User) (int, int) {
@@ -50,7 +50,7 @@ func resolveUserCycleLengths(user *models.User) (int, int) {
 	return cycleLength, periodLength
 }
 
-func applyObservedBaseline(stats *CycleStats, user *models.User, latestLoggedPeriodStart time.Time, cycleLength int, periodLength int, hasObservedCycleLengths bool, today time.Time, location *time.Location) {
+func applyObservedBaseline(stats *CycleStats, user *models.User, latestExplicitCycleStart time.Time, cycleLength int, periodLength int, hasObservedCycleLengths bool, today time.Time, location *time.Location) {
 	if !hasObservedCycleLengths {
 		if cycleLength > 0 {
 			stats.AverageCycleLength = float64(cycleLength)
@@ -59,14 +59,14 @@ func applyObservedBaseline(stats *CycleStats, user *models.User, latestLoggedPer
 		if periodLength > 0 {
 			stats.AveragePeriodLength = float64(periodLength)
 		}
-		stats.LastPeriodStart = baselineLastPeriodStart(user, latestLoggedPeriodStart, today, location)
+		stats.LastPeriodStart = baselineLastPeriodStart(user, latestExplicitCycleStart, today, location)
 		return
 	}
 
-	stats.LastPeriodStart = baselineLastPeriodStart(user, latestLoggedPeriodStart, today, location)
+	stats.LastPeriodStart = baselineLastPeriodStart(user, latestExplicitCycleStart, today, location)
 }
 
-func baselineLastPeriodStart(user *models.User, latestLoggedPeriodStart time.Time, today time.Time, location *time.Location) time.Time {
+func baselineLastPeriodStart(user *models.User, latestExplicitCycleStart time.Time, today time.Time, location *time.Location) time.Time {
 	userLastPeriodStart := time.Time{}
 	if user != nil && user.LastPeriodStart != nil {
 		userLastPeriodStart = DateAtLocation(*user.LastPeriodStart, location)
@@ -74,16 +74,16 @@ func baselineLastPeriodStart(user *models.User, latestLoggedPeriodStart time.Tim
 	if !userLastPeriodStart.IsZero() && !today.IsZero() && userLastPeriodStart.After(today) {
 		userLastPeriodStart = time.Time{}
 	}
-	switch {
-	case !userLastPeriodStart.IsZero() && (latestLoggedPeriodStart.IsZero() || userLastPeriodStart.After(latestLoggedPeriodStart)):
-		return userLastPeriodStart
-	case !latestLoggedPeriodStart.IsZero():
-		return latestLoggedPeriodStart
-	case !userLastPeriodStart.IsZero():
-		return userLastPeriodStart
-	default:
-		return time.Time{}
+	if !latestExplicitCycleStart.IsZero() {
+		latestExplicitCycleStart = DateAtLocation(latestExplicitCycleStart, location)
+		if today.IsZero() || !latestExplicitCycleStart.After(manualCycleStartMaxDate(today, location)) {
+			return latestExplicitCycleStart
+		}
 	}
+	if !userLastPeriodStart.IsZero() {
+		return userLastPeriodStart
+	}
+	return time.Time{}
 }
 
 func applyProjectedBaseline(stats *CycleStats, cycleLength int, periodLength int, location *time.Location) {

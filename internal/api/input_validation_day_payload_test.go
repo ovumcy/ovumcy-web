@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func TestParseDayPayloadFromJSON(t *testing.T) {
@@ -69,12 +71,32 @@ func TestParseDayPayloadIgnoresOutOfRangeSymptomIDs(t *testing.T) {
 	}
 }
 
+func TestParseDayPayloadFromFormWithFahrenheitPreference(t *testing.T) {
+	t.Parallel()
+
+	form := url.Values{}
+	form.Set("bbt", "98.60")
+
+	request := httptest.NewRequest(http.MethodPost, "/day", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	payload := parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.TemperatureUnitFahrenheit})
+	if payload.BBT != 37.00 {
+		t.Fatalf("expected converted BBT 37.00, got %.2f", payload.BBT)
+	}
+}
+
 func parseDayPayloadForTest(t *testing.T, request *http.Request) dayPayload {
+	t.Helper()
+	return parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.DefaultTemperatureUnit})
+}
+
+func parseDayPayloadForUser(t *testing.T, request *http.Request, user *models.User) dayPayload {
 	t.Helper()
 
 	app := fiber.New()
 	app.Post("/day", func(c *fiber.Ctx) error {
-		payload, err := parseDayPayload(c)
+		payload, err := parseDayPayload(c, user)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}

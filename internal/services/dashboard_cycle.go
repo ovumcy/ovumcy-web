@@ -51,8 +51,11 @@ func DashboardCycleDataLooksStale(lastPeriodStart time.Time, today time.Time, re
 }
 
 func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *time.Location) time.Time {
+	if !stats.LastPeriodStart.IsZero() {
+		return DateAtLocation(stats.LastPeriodStart, location)
+	}
 	if user == nil || user.LastPeriodStart == nil || user.LastPeriodStart.IsZero() {
-		return stats.LastPeriodStart
+		return time.Time{}
 	}
 	return DateAtLocation(*user.LastPeriodStart, location)
 }

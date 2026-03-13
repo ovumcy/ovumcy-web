@@ -113,17 +113,23 @@
         </div>
 
         <div class="space-y-2">
-          <label class="period-toggle">
-            <input type="checkbox" name="auto_period_fill" value="true" data-onboarding-auto-period-fill {{if .AutoPeriodFill}}checked{{end}}>
-            <span>🩸 {{t .Messages "onboarding.step2.auto_period_fill"}}</span>
+          <label class="period-toggle" data-binary-toggle data-active="{{if .AutoPeriodFill}}true{{else}}false{{end}}">
+            <input type="checkbox" name="auto_period_fill" value="true" data-onboarding-auto-period-fill data-binary-toggle-input {{if .AutoPeriodFill}}checked{{end}}>
+            <span class="period-toggle-copy">
+              <span class="period-toggle-main">🩸 {{t .Messages "onboarding.step2.auto_period_fill"}}</span>
+              <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .AutoPeriodFill}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+            </span>
           </label>
           <p class="journal-muted text-sm">{{t .Messages "onboarding.step2.auto_period_fill_hint"}}</p>
         </div>
 
         <div class="space-y-2">
-          <label class="period-toggle">
-            <input type="checkbox" name="irregular_cycle" value="true" autocomplete="off" {{if .IrregularCycle}}checked{{end}}>
-            <span>〰️ {{t .Messages "onboarding.step2.irregular_cycle"}}</span>
+          <label class="period-toggle" data-binary-toggle data-active="{{if .IrregularCycle}}true{{else}}false{{end}}">
+            <input type="checkbox" name="irregular_cycle" value="true" autocomplete="off" data-binary-toggle-input {{if .IrregularCycle}}checked{{end}}>
+            <span class="period-toggle-copy">
+              <span class="period-toggle-main">〰️ {{t .Messages "onboarding.step2.irregular_cycle"}}</span>
+              <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .IrregularCycle}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+            </span>
           </label>
           <p class="journal-muted text-sm">{{t .Messages "onboarding.step2.irregular_cycle_hint"}}</p>
         </div>
@@ -144,4 +150,3 @@
 </section>
 
 {{end}}
-

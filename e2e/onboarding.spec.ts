@@ -177,6 +177,8 @@ test.describe('Onboarding flow', () => {
     const periodSlider = page.locator('#period-length');
     const autoFillCheckbox = page.locator('form[hx-post="/onboarding/step2"] input[name="auto_period_fill"]');
     const irregularCheckbox = page.locator('form[hx-post="/onboarding/step2"] input[name="irregular_cycle"]');
+    const autoFillToggle = page.locator('form[hx-post="/onboarding/step2"] label[data-binary-toggle]:has(input[name="auto_period_fill"])');
+    const irregularToggle = page.locator('form[hx-post="/onboarding/step2"] label[data-binary-toggle]:has(input[name="irregular_cycle"])');
     const finishButtonShell = page.locator('[data-onboarding-step2-submit-shell]');
 
     await expect(finishButtonShell).toBeVisible();
@@ -192,6 +194,9 @@ test.describe('Onboarding flow', () => {
     await expect(periodSlider).toHaveValue('6');
     await expect(autoFillCheckbox).not.toBeChecked();
     await expect(irregularCheckbox).not.toBeChecked();
+    await expect(autoFillToggle).toHaveAttribute('data-active', 'false');
+    await expect(autoFillToggle.locator('[data-binary-toggle-state]')).toHaveText('Off');
+    await expect(irregularToggle).toHaveAttribute('data-active', 'false');
 
     await page.locator('form[hx-post="/onboarding/step2"] button.btn-secondary[type="button"]').click();
 
@@ -205,6 +210,7 @@ test.describe('Onboarding flow', () => {
     await expect(cycleSlider).toHaveValue('35');
     await expect(periodSlider).toHaveValue('6');
     await expect(autoFillCheckbox).not.toBeChecked();
+    await expect(autoFillToggle).toHaveAttribute('data-active', 'false');
 
     await submitStepTwo(page);
     await expect(page).toHaveURL(/\/dashboard$/);

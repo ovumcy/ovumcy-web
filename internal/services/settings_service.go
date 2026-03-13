@@ -80,6 +80,7 @@ func (service *SettingsService) SaveCycleSettings(userID uint, settings CycleSet
 func (service *SettingsService) SaveTrackingSettings(userID uint, settings TrackingSettingsUpdate) error {
 	return service.users.UpdateByID(userID, map[string]any{
 		"track_bbt":            settings.TrackBBT,
+		"temperature_unit":     NormalizeTemperatureUnit(settings.TemperatureUnit),
 		"track_cervical_mucus": settings.TrackCervicalMucus,
 		"hide_sex_chip":        settings.HideSexChip,
 	})

@@ -24,6 +24,7 @@ type DailyLog struct {
 	UserID        uint      `gorm:"not null;uniqueIndex:uidx_user_date"`
 	Date          time.Time `gorm:"type:date;not null;uniqueIndex:uidx_user_date"`
 	IsPeriod      bool      `gorm:"not null;default:false"`
+	CycleStart    bool      `gorm:"column:cycle_start;not null;default:false"`
 	Flow          string    `gorm:"not null;default:none"`
 	Mood          int       `gorm:"not null;default:0"`
 	SexActivity   string    `gorm:"column:sex_activity;not null;default:none"`

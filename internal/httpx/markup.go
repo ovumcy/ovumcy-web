@@ -5,6 +5,14 @@ import (
 	"html/template"
 )
 
+// StatusOKMarkup renders the shared non-dismissible status-ok wrapper.
+func StatusOKMarkup(message string) string {
+	return fmt.Sprintf(
+		"<div class=\"status-ok\"><span class=\"toast-message-wrap\"><span class=\"toast-icon\" aria-hidden=\"true\">✓</span><span class=\"toast-message\">%s</span></span></div>",
+		template.HTMLEscapeString(message),
+	)
+}
+
 // StatusErrorMarkup renders the shared HTMX status-error wrapper.
 func StatusErrorMarkup(message string) string {
 	return fmt.Sprintf("<div class=\"status-error\">%s</div>", template.HTMLEscapeString(message))

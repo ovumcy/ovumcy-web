@@ -30,19 +30,20 @@ type StatsSymptomCountViewData struct {
 }
 
 type StatsPageViewData struct {
-	Stats                   CycleStats
-	ChartData               StatsChartViewData
-	ChartBaseline           int
-	TrendPointCount         int
-	Flags                   StatsFlags
-	SymptomCounts           []StatsSymptomCountViewData
-	PhaseMoodInsights       []StatsPhaseMoodInsight
-	PhaseSymptomInsights    []StatsPhaseSymptomInsight
-	HasPhaseMoodInsights    bool
-	HasPhaseSymptomInsights bool
-	ShowIrregularityNotice  bool
-	IsIrregularMode         bool
-	IsOwner                 bool
+	Stats                               CycleStats
+	ChartData                           StatsChartViewData
+	ChartBaseline                       int
+	TrendPointCount                     int
+	Flags                               StatsFlags
+	SymptomCounts                       []StatsSymptomCountViewData
+	PhaseMoodInsights                   []StatsPhaseMoodInsight
+	PhaseSymptomInsights                []StatsPhaseSymptomInsight
+	HasPhaseMoodInsights                bool
+	HasPhaseSymptomInsights             bool
+	ShowIrregularityNotice              bool
+	ShowIrregularInsufficientDataNotice bool
+	IsIrregularMode                     bool
+	IsOwner                             bool
 }
 
 func (service *StatsService) BuildStatsPageViewData(user *models.User, language string, cycleLabelPattern string, now time.Time, location *time.Location, maxTrendPoints int) (StatsPageViewData, error) {
@@ -87,18 +88,19 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 	}
 
 	return StatsPageViewData{
-		Stats:                   stats,
-		ChartData:               chartData,
-		ChartBaseline:           baselineCycleLength,
-		TrendPointCount:         trendPointCount,
-		Flags:                   flags,
-		SymptomCounts:           symptomCounts,
-		PhaseMoodInsights:       phaseMoodInsights,
-		PhaseSymptomInsights:    phaseSymptomInsights,
-		HasPhaseMoodInsights:    hasPhaseMoodInsights,
-		HasPhaseSymptomInsights: hasPhaseSymptomInsights,
-		ShowIrregularityNotice:  IsOwnerUser(user) && !user.IrregularCycle && IsIrregularCycleSpread(stats),
-		IsIrregularMode:         user != nil && user.IrregularCycle,
-		IsOwner:                 IsOwnerUser(user),
+		Stats:                               stats,
+		ChartData:                           chartData,
+		ChartBaseline:                       baselineCycleLength,
+		TrendPointCount:                     trendPointCount,
+		Flags:                               flags,
+		SymptomCounts:                       symptomCounts,
+		PhaseMoodInsights:                   phaseMoodInsights,
+		PhaseSymptomInsights:                phaseSymptomInsights,
+		HasPhaseMoodInsights:                hasPhaseMoodInsights,
+		HasPhaseSymptomInsights:             hasPhaseSymptomInsights,
+		ShowIrregularityNotice:              IsOwnerUser(user) && !user.IrregularCycle && IsIrregularCycleSpread(stats),
+		ShowIrregularInsufficientDataNotice: user != nil && user.IrregularCycle && flags.CompletedCycleCount < 2,
+		IsIrregularMode:                     user != nil && user.IrregularCycle,
+		IsOwner:                             IsOwnerUser(user),
 	}, nil
 }

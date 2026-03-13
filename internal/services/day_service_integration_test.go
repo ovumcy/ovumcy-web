@@ -219,54 +219,13 @@ func TestDayServiceDayHasDataForDate(t *testing.T) {
 	}
 }
 
-func TestDayServiceRefreshUserLastPeriodStart(t *testing.T) {
-	service, database := newDayServiceIntegration(t)
-	user := createDayServiceTestUser(t, database, "refresh-last-period-service@example.com")
-
-	first := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
-	second := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
-	logs := []models.DailyLog{
-		{UserID: user.ID, Date: first, IsPeriod: true, Flow: models.FlowMedium, SymptomIDs: []uint{}},
-		{UserID: user.ID, Date: second, IsPeriod: true, Flow: models.FlowMedium, SymptomIDs: []uint{}},
-	}
-	if err := database.Create(&logs).Error; err != nil {
-		t.Fatalf("create period logs: %v", err)
-	}
-
-	if err := service.RefreshUserLastPeriodStart(user.ID, time.UTC); err != nil {
-		t.Fatalf("RefreshUserLastPeriodStart returned error: %v", err)
-	}
-
-	updated := models.User{}
-	if err := database.First(&updated, user.ID).Error; err != nil {
-		t.Fatalf("load updated user: %v", err)
-	}
-	if updated.LastPeriodStart == nil {
-		t.Fatal("expected last_period_start to be populated")
-	}
-	if updated.LastPeriodStart.Format("2006-01-02") != second.Format("2006-01-02") {
-		t.Fatalf("expected latest period start %s, got %s", second.Format("2006-01-02"), updated.LastPeriodStart.Format("2006-01-02"))
-	}
-
-	if err := database.Where("user_id = ?", user.ID).Delete(&models.DailyLog{}).Error; err != nil {
-		t.Fatalf("delete logs: %v", err)
-	}
-	if err := service.RefreshUserLastPeriodStart(user.ID, time.UTC); err != nil {
-		t.Fatalf("RefreshUserLastPeriodStart second call returned error: %v", err)
-	}
-
-	updated = models.User{}
-	if err := database.First(&updated, user.ID).Error; err != nil {
-		t.Fatalf("reload user: %v", err)
-	}
-	if updated.LastPeriodStart != nil {
-		t.Fatalf("expected last_period_start to be cleared, got %v", updated.LastPeriodStart)
-	}
-}
-
-func TestDayServiceMarkCycleStartManuallyPreservesEntryAndUpdatesAnchor(t *testing.T) {
+func TestDayServiceMarkCycleStartManuallyPreservesEntryAndMarksExplicitStart(t *testing.T) {
 	service, database := newDayServiceIntegration(t)
 	user := createDayServiceTestUser(t, database, "manual-cycle-start-service@example.com")
+	settingsBaseline := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("last_period_start", settingsBaseline).Error; err != nil {
+		t.Fatalf("set settings baseline: %v", err)
+	}
 
 	targetDay := time.Date(2026, time.February, 18, 0, 0, 0, 0, time.UTC)
 	entry := models.DailyLog{
@@ -284,7 +243,7 @@ func TestDayServiceMarkCycleStartManuallyPreservesEntryAndUpdatesAnchor(t *testi
 		t.Fatalf("create log: %v", err)
 	}
 
-	if err := service.MarkCycleStartManually(user.ID, targetDay, time.UTC); err != nil {
+	if err := service.MarkCycleStartManually(user.ID, targetDay, targetDay, time.UTC); err != nil {
 		t.Fatalf("MarkCycleStartManually returned error: %v", err)
 	}
 
@@ -294,6 +253,9 @@ func TestDayServiceMarkCycleStartManuallyPreservesEntryAndUpdatesAnchor(t *testi
 	}
 	if !updatedEntry.IsPeriod {
 		t.Fatalf("expected selected day to become a period day")
+	}
+	if !updatedEntry.CycleStart {
+		t.Fatalf("expected selected day to become the explicit cycle start")
 	}
 	if updatedEntry.Flow != models.FlowHeavy {
 		t.Fatalf("expected flow to be preserved, got %q", updatedEntry.Flow)
@@ -310,9 +272,39 @@ func TestDayServiceMarkCycleStartManuallyPreservesEntryAndUpdatesAnchor(t *testi
 		t.Fatalf("load updated user: %v", err)
 	}
 	if updatedUser.LastPeriodStart == nil {
-		t.Fatalf("expected last_period_start to be updated")
+		t.Fatalf("expected settings last_period_start to remain populated")
 	}
-	if got := updatedUser.LastPeriodStart.Format("2006-01-02"); got != "2026-02-18" {
-		t.Fatalf("expected last_period_start 2026-02-18, got %s", got)
+	if got := updatedUser.LastPeriodStart.Format("2006-01-02"); got != "2026-02-01" {
+		t.Fatalf("expected settings last_period_start 2026-02-01 to remain unchanged, got %s", got)
+	}
+}
+
+func TestDayServiceMarkCycleStartManuallyClearsPreviousExplicitStart(t *testing.T) {
+	service, database := newDayServiceIntegration(t)
+	user := createDayServiceTestUser(t, database, "manual-cycle-start-replace-service@example.com")
+
+	earlierDay := time.Date(2026, time.March, 8, 0, 0, 0, 0, time.UTC)
+	laterDay := time.Date(2026, time.March, 13, 0, 0, 0, 0, time.UTC)
+	logs := []models.DailyLog{
+		{UserID: user.ID, Date: earlierDay, IsPeriod: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: laterDay, IsPeriod: true, Flow: models.FlowMedium, CycleStart: true},
+	}
+	if err := database.Create(&logs).Error; err != nil {
+		t.Fatalf("create logs: %v", err)
+	}
+
+	if err := service.MarkCycleStartManually(user.ID, earlierDay, laterDay, time.UTC); err != nil {
+		t.Fatalf("MarkCycleStartManually returned error: %v", err)
+	}
+
+	reloaded := []models.DailyLog{}
+	if err := database.Where("user_id = ?", user.ID).Order("date ASC").Find(&reloaded).Error; err != nil {
+		t.Fatalf("reload logs: %v", err)
+	}
+	if !reloaded[0].CycleStart {
+		t.Fatalf("expected earlier date to become explicit cycle start")
+	}
+	if reloaded[1].CycleStart {
+		t.Fatalf("expected later date to be downgraded to a regular period day")
 	}
 }

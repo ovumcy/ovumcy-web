@@ -4,6 +4,7 @@ import "github.com/terraincognita07/ovumcy/internal/models"
 
 type TrackingSettingsUpdate struct {
 	TrackBBT           bool
+	TemperatureUnit    string
 	TrackCervicalMucus bool
 	HideSexChip        bool
 }
@@ -13,6 +14,7 @@ func (service *SettingsService) ApplyTrackingSettings(user *models.User, update 
 		return
 	}
 	user.TrackBBT = update.TrackBBT
+	user.TemperatureUnit = NormalizeTemperatureUnit(update.TemperatureUnit)
 	user.TrackCervicalMucus = update.TrackCervicalMucus
 	user.HideSexChip = update.HideSexChip
 }

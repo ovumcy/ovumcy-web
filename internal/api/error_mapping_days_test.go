@@ -53,6 +53,11 @@ func TestMapDayUpsertError(t *testing.T) {
 		want APIErrorSpec
 	}{
 		{
+			name: "invalid cycle start day",
+			err:  services.ErrManualCycleStartDateInvalid,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle start day"),
+		},
+		{
 			name: "invalid flow",
 			err:  services.ErrInvalidDayFlow,
 			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid flow value"),
@@ -71,11 +76,6 @@ func TestMapDayUpsertError(t *testing.T) {
 			name: "update failed",
 			err:  services.ErrDayEntryUpdateFailed,
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day"),
-		},
-		{
-			name: "sync failed",
-			err:  services.ErrSyncLastPeriodFailed,
-			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to sync last period start"),
 		},
 		{
 			name: "unknown",
@@ -104,11 +104,6 @@ func TestMapDayDeleteError(t *testing.T) {
 			name: "delete failed",
 			err:  services.ErrDeleteDayFailed,
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day"),
-		},
-		{
-			name: "sync failed",
-			err:  services.ErrSyncLastPeriodFailed,
-			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to sync last period start"),
 		},
 		{
 			name: "unknown",

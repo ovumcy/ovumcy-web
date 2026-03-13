@@ -20,12 +20,16 @@
     data-day-editor-date="{{.DateString}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-    <label class="period-toggle">
-      <input type="checkbox" name="is_period" value="true" data-period-toggle {{if .Log.IsPeriod}}checked{{end}}>
-      <span
-        data-period-toggle-label
-        data-period-label-on="{{t .Messages "dashboard.period_day"}}"
-        data-period-label-off="{{t .Messages "dashboard.period_day_action"}}">🩸 {{if .Log.IsPeriod}}{{t .Messages "dashboard.period_day"}}{{else}}{{t .Messages "dashboard.period_day_action"}}{{end}}</span>
+    <label class="period-toggle" data-binary-toggle data-active="{{if .Log.IsPeriod}}true{{else}}false{{end}}">
+      <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .Log.IsPeriod}}checked{{end}}>
+      <span class="period-toggle-copy">
+        <span
+          class="period-toggle-main"
+          data-period-toggle-label
+          data-period-label-on="{{t .Messages "dashboard.period_day"}}"
+          data-period-label-off="{{t .Messages "dashboard.period_day_action"}}">🩸 {{if .Log.IsPeriod}}{{t .Messages "dashboard.period_day"}}{{else}}{{t .Messages "dashboard.period_day_action"}}{{end}}</span>
+        <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .Log.IsPeriod}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+      </span>
     </label>
 
     <fieldset class="space-y-2">
@@ -52,9 +56,21 @@
     <fieldset class="space-y-2">
       <legend class="field-label">{{t .Messages "dashboard.bbt"}}</legend>
       <div class="measurement-field-row">
-        <input type="number" name="bbt" value="{{if hasBBT .Log.BBT}}{{printf "%.2f" .Log.BBT}}{{end}}" step="0.01" min="34" max="43" inputmode="decimal" class="input-field measurement-field-input">
-        <span class="measurement-field-unit">°C</span>
+        <input
+          type="text"
+          name="bbt"
+          value="{{displayBBT .Log.BBT .TemperatureUnit}}"
+          inputmode="decimal"
+          autocomplete="off"
+          class="input-field measurement-field-input"
+          data-temperature-input
+          data-temperature-unit="{{.TemperatureUnit}}"
+          data-temperature-min="{{.TemperatureInputMin}}"
+          data-temperature-max="{{.TemperatureInputMax}}"
+          data-temperature-range-error="{{.TemperatureRangeError}}">
+        <span class="measurement-field-unit">{{.TemperatureUnitSymbol}}</span>
       </div>
+      <p class="journal-muted text-xs">{{.TemperatureRangeHint}}</p>
     </fieldset>
     {{end}}
 
@@ -86,7 +102,7 @@
     </div>
   </form>
 
-  {{if not .IsFutureDate}}
+  {{if .AllowManualCycleStart}}
   <form
     hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
     hx-target="#calendar-save-status"
@@ -95,8 +111,14 @@
     data-day-cycle-start-form
     data-day-cycle-start-date="{{.DateString}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <button type="submit" class="btn-secondary" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
+    <button type="submit" class="{{if .Log.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
   </form>
+  {{if .ShowFutureCycleStartNotice}}
+  <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
+  {{end}}
+  {{if .ShowCycleStartSuggestion}}
+  <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+  {{end}}
   {{end}}
 
   {{if .HasDayData}}
@@ -115,10 +137,10 @@
   {{end}}
   {{else if .IsOwner}}
     {{if .HasDayData}}
-    {{template "owner_log_summary" (dict "Messages" .Messages "Log" .Log "Symptoms" .Symptoms "SelectedSymptomID" .SelectedSymptomID "NoDataLabel" .NoDataLabel)}}
+    {{template "owner_log_summary" (dict "Messages" .Messages "Log" .Log "Symptoms" .Symptoms "SelectedSymptomID" .SelectedSymptomID "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit)}}
     <div class="flex flex-wrap items-center gap-3">
       <button type="button" class="btn-secondary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}">{{t .Messages "calendar.edit_entry"}}</button>
-      {{if not .IsFutureDate}}
+      {{if .AllowManualCycleStart}}
       <form
         hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
         hx-target="#day-editor"
@@ -126,16 +148,22 @@
         data-day-cycle-start-form
         data-day-cycle-start-date="{{.DateString}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <button type="submit" class="btn-secondary" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
+        <button type="submit" class="{{if .Log.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
       </form>
       {{end}}
     </div>
+    {{if .ShowFutureCycleStartNotice}}
+    <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
+    {{end}}
+    {{if .ShowCycleStartSuggestion}}
+    <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+    {{end}}
     {{else}}
     <div class="journal-panel space-y-3 text-sm">
       <p>{{t .Messages "calendar.no_entry"}}</p>
       <div class="flex flex-wrap items-center gap-3">
         <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}">{{t .Messages "calendar.add_entry"}}</button>
-        {{if not .IsFutureDate}}
+        {{if .AllowManualCycleStart}}
         <form
           hx-post="/api/days/{{.DateString}}/cycle-start?source=calendar"
           hx-target="#day-editor"
@@ -147,10 +175,16 @@
         </form>
         {{end}}
       </div>
+      {{if .ShowFutureCycleStartNotice}}
+      <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
+      {{end}}
+      {{if .ShowCycleStartSuggestion}}
+      <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+      {{end}}
     </div>
     {{end}}
   {{else}}
-  {{template "readonly_log_summary" (dict "Messages" .Messages "Log" .Log "NoDataLabel" .NoDataLabel)}}
+  {{template "readonly_log_summary" (dict "Messages" .Messages "Log" .Log "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit)}}
   {{end}}
 </div>
 {{end}}

@@ -54,6 +54,7 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 		AutoPeriodFill      bool   `gorm:"column:auto_period_fill"`
 		IrregularCycle      bool   `gorm:"column:irregular_cycle"`
 		TrackBBT            bool   `gorm:"column:track_bbt"`
+		TemperatureUnit     string `gorm:"column:temperature_unit"`
 		TrackCervicalMucus  bool   `gorm:"column:track_cervical_mucus"`
 		HideSexChip         bool   `gorm:"column:hide_sex_chip"`
 	}
@@ -69,6 +70,7 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 			"auto_period_fill",
 			"irregular_cycle",
 			"track_bbt",
+			"temperature_unit",
 			"track_cervical_mucus",
 			"hide_sex_chip",
 		).
@@ -100,6 +102,9 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 	}
 	if migratedUser.TrackBBT {
 		t.Fatal("expected track_bbt default to be false")
+	}
+	if migratedUser.TemperatureUnit != "c" {
+		t.Fatalf("expected temperature_unit default to be c, got %q", migratedUser.TemperatureUnit)
 	}
 	if migratedUser.TrackCervicalMucus {
 		t.Fatal("expected track_cervical_mucus default to be false")
@@ -266,6 +271,7 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"auth_session_version",
 		"irregular_cycle",
 		"track_bbt",
+		"temperature_unit",
 		"track_cervical_mucus",
 		"hide_sex_chip",
 		"last_period_start",

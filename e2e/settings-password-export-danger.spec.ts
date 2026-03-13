@@ -289,6 +289,36 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await expect(exportButtons.first()).toBeEnabled();
   });
 
+  test('export presets stay ordered and anchor to browser today even with future entries', async ({
+    page,
+  }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-export-presets-ordered');
+    await setRequestTimezoneFromBrowser(page);
+
+    await page.goto('/calendar');
+    const todayISO = await todayISOFromCalendar(page);
+    const futureISO = shiftISODate(todayISO, 4);
+
+    const dayEditorForm = await openCalendarDayEditor(page, futureISO);
+    await dayEditorForm.locator('input[name="is_period"]').check();
+    await openCalendarNotes(dayEditorForm);
+    await dayEditorForm.locator('#calendar-notes').fill(`future-preset-${Date.now()}`);
+    await dayEditorForm.locator('button[data-save-button]').click();
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+
+    await page.locator('button[data-export-preset="365"]').click();
+
+    const exportFrom = page.locator('#export-from');
+    const exportTo = page.locator('#export-to');
+    const fromValue = await exportFrom.inputValue();
+    const toValue = await exportTo.inputValue();
+
+    expect(fromValue <= toValue).toBeTruthy();
+    expect(toValue).toBe(todayISO);
+  });
+
   test('clear data removes tracked entry and resets cycle defaults', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-clear-data');
 

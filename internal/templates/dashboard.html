@@ -66,12 +66,16 @@
         data-dashboard-date="{{.Today}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-        <label class="period-toggle">
-          <input type="checkbox" name="is_period" value="true" data-period-toggle {{if .TodayEntry.IsPeriod}}checked{{end}}>
-          <span
-            data-period-toggle-label
-            data-period-label-on="{{t .Messages "dashboard.period_day"}}"
-            data-period-label-off="{{t .Messages "dashboard.period_day_action"}}">🩸 {{if .TodayEntry.IsPeriod}}{{t .Messages "dashboard.period_day"}}{{else}}{{t .Messages "dashboard.period_day_action"}}{{end}}</span>
+        <label class="period-toggle" data-binary-toggle data-active="{{if .TodayEntry.IsPeriod}}true{{else}}false{{end}}">
+          <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .TodayEntry.IsPeriod}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span
+              class="period-toggle-main"
+              data-period-toggle-label
+              data-period-label-on="{{t .Messages "dashboard.period_day"}}"
+              data-period-label-off="{{t .Messages "dashboard.period_day_action"}}">🩸 {{if .TodayEntry.IsPeriod}}{{t .Messages "dashboard.period_day"}}{{else}}{{t .Messages "dashboard.period_day_action"}}{{end}}</span>
+            <span class="period-toggle-state" data-binary-toggle-state data-state-on="{{t .Messages "common.switch_on"}}" data-state-off="{{t .Messages "common.switch_off"}}">{{if .TodayEntry.IsPeriod}}{{t .Messages "common.switch_on"}}{{else}}{{t .Messages "common.switch_off"}}{{end}}</span>
+          </span>
         </label>
 
         <fieldset class="space-y-3">
@@ -98,9 +102,21 @@
         <fieldset class="space-y-2">
           <legend class="field-label">{{t .Messages "dashboard.bbt"}}</legend>
           <div class="measurement-field-row">
-            <input type="number" name="bbt" value="{{if hasBBT .TodayEntry.BBT}}{{printf "%.2f" .TodayEntry.BBT}}{{end}}" step="0.01" min="34" max="43" inputmode="decimal" class="input-field measurement-field-input">
-            <span class="measurement-field-unit">°C</span>
+            <input
+              type="text"
+              name="bbt"
+              value="{{displayBBT .TodayEntry.BBT .TemperatureUnit}}"
+              inputmode="decimal"
+              autocomplete="off"
+              class="input-field measurement-field-input"
+              data-temperature-input
+              data-temperature-unit="{{.TemperatureUnit}}"
+              data-temperature-min="{{.TemperatureInputMin}}"
+              data-temperature-max="{{.TemperatureInputMax}}"
+              data-temperature-range-error="{{.TemperatureRangeError}}">
+            <span class="measurement-field-unit">{{.TemperatureUnitSymbol}}</span>
           </div>
+          <p class="journal-muted text-xs">{{.TemperatureRangeHint}}</p>
         </fieldset>
         {{end}}
 
@@ -131,6 +147,7 @@
         </div>
       </form>
 
+      {{if .AllowManualCycleStart}}
       <div class="dashboard-secondary-actions">
         <form
           class="dashboard-secondary-form"
@@ -140,9 +157,13 @@
           data-dashboard-cycle-start-form
           data-dashboard-date="{{.Today}}">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button type="submit" class="btn-secondary" data-dashboard-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
+          <button type="submit" class="{{if .TodayEntry.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-dashboard-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
         </form>
+        {{if .ShowCycleStartSuggestion}}
+        <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+        {{end}}
       </div>
+      {{end}}
 
       {{if .TodayHasData}}
       <div class="dashboard-danger-actions">
@@ -160,7 +181,7 @@
       </div>
       {{end}}
       {{else}}
-      {{template "readonly_log_summary" (dict "Messages" .Messages "Log" .TodayEntry "NoDataLabel" .NoDataLabel)}}
+      {{template "readonly_log_summary" (dict "Messages" .Messages "Log" .TodayEntry "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit)}}
       {{end}}
     </section>
   </div>

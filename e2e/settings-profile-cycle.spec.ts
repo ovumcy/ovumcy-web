@@ -104,6 +104,10 @@ function dashboardSaveForm(page: Page): Locator {
   return page.locator('[data-dashboard-save-form]').first();
 }
 
+function navIdentityChip(page: Page): Locator {
+  return page.locator('[data-nav-account-actions] [data-current-user-identity-container]');
+}
+
 async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   const creds = createCredentials(prefix);
 
@@ -222,9 +226,9 @@ test.describe('Settings: profile and cycle', () => {
     await page.reload();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(displayNameInput).toHaveValue(newName);
-    await expect(page.locator('.nav-user-chip')).toContainText(newName);
-    await expect(page.locator('.nav-user-chip')).not.toContainText(creds.email);
-    await expect(page.locator('.nav-user-chip')).not.toContainText(creds.email.split('@')[0]);
+    await expect(navIdentityChip(page)).toContainText(newName);
+    await expect(navIdentityChip(page)).not.toContainText(creds.email);
+    await expect(navIdentityChip(page)).not.toContainText(creds.email.split('@')[0]);
 
     await displayNameInput.evaluate((el) => {
       (el as HTMLInputElement).value = 'X'.repeat(80);
@@ -238,9 +242,9 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.reload();
     await expect(displayNameInput).toHaveValue('');
-    await expect(page.locator('.nav-user-chip')).toContainText('Add profile name');
-    await expect(page.locator('.nav-user-chip')).not.toContainText(creds.email);
-    await expect(page.locator('.nav-user-chip')).not.toContainText(creds.email.split('@')[0]);
+    await expect(navIdentityChip(page)).toContainText('Add profile name');
+    await expect(navIdentityChip(page)).not.toContainText(creds.email);
+    await expect(navIdentityChip(page)).not.toContainText(creds.email.split('@')[0]);
   });
 
   test('cycle settings persist, affect dashboard predictions, and reject future last-period date', async ({
@@ -322,7 +326,7 @@ test.describe('Settings: profile and cycle', () => {
     expect(nextPeriodText).toContain(' - ');
   });
 
-  test('tracking toggles persist and change the owner day form', async ({ page }) => {
+  test('tracking toggles and BBT unit persist and change the owner day form', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-tracking');
 
     const trackingSection = page.locator('#settings-tracking');
@@ -331,15 +335,22 @@ test.describe('Settings: profile and cycle', () => {
     const trackBBT = trackingSection.locator('input[name="track_bbt"]');
     const trackCervicalMucus = trackingSection.locator('input[name="track_cervical_mucus"]');
     const hideSexChip = trackingSection.locator('input[name="hide_sex_chip"]');
+    const trackBBTToggle = trackingSection.locator('label[data-binary-toggle]:has(input[name="track_bbt"])');
+    const trackCervicalMucusToggle = trackingSection.locator('label[data-binary-toggle]:has(input[name="track_cervical_mucus"])');
+    const hideSexChipToggle = trackingSection.locator('label[data-binary-toggle]:has(input[name="hide_sex_chip"])');
+    const temperatureUnitFahrenheit = trackingSection.locator('input[name="temperature_unit"][value="f"]');
     const saveTrackingButton = trackingSection.locator('button[data-save-button]');
 
     await expect(trackBBT).not.toBeChecked();
     await expect(trackCervicalMucus).not.toBeChecked();
     await expect(hideSexChip).not.toBeChecked();
+    await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
+    await expect(trackBBTToggle.locator('[data-binary-toggle-state]')).toHaveText('Off');
 
     await trackBBT.check();
     await trackCervicalMucus.check();
     await hideSexChip.check();
+    await temperatureUnitFahrenheit.check({ force: true });
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
 
@@ -348,12 +359,36 @@ test.describe('Settings: profile and cycle', () => {
     await expect(trackBBT).toBeChecked();
     await expect(trackCervicalMucus).toBeChecked();
     await expect(hideSexChip).toBeChecked();
+    await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
+    await expect(trackBBTToggle.locator('[data-binary-toggle-state]')).toHaveText('On');
+    await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
+    await expect(hideSexChipToggle).toHaveAttribute('data-active', 'true');
+    await expect(temperatureUnitFahrenheit).toBeChecked();
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.locator('[data-dashboard-save-form] input[name="bbt"]')).toBeVisible();
+    const dashboardForm = page.locator('[data-dashboard-save-form]').first();
+    const bbtInput = dashboardForm.locator('input[name="bbt"]');
+    await expect(bbtInput).toBeVisible();
+    await expect(dashboardForm.locator('.measurement-field-unit')).toContainText('°F');
+    await expect(dashboardForm).toContainText('93.20-109.40 °F');
+    await bbtInput.fill('65555555');
+    await bbtInput.blur();
+    await expect(bbtInput).toHaveValue('');
+    await bbtInput.fill('98.6');
+    await bbtInput.blur();
+    await expect(bbtInput).toHaveValue('98.60');
     await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toBeVisible();
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toHaveCount(0);
+    await page.locator('button[data-save-button]').first().click();
+    await expect(page.locator('#save-status .status-ok')).toBeVisible();
+
+    const todayAction = await dashboardForm.getAttribute('hx-post');
+    expect(todayAction).toMatch(/^\/api\/days\/\d{4}-\d{2}-\d{2}$/);
+    const todayISO = String(todayAction).replace('/api/days/', '');
+    const dayEditorForm = await openCalendarDayEditor(page, todayISO);
+    await expect(dayEditorForm.locator('input[name="bbt"]')).toHaveValue('98.60');
+    await expect(dayEditorForm.locator('.measurement-field-unit')).toContainText('°F');
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
@@ -362,6 +397,8 @@ test.describe('Settings: profile and cycle', () => {
     await hideSexChip.uncheck();
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
+    await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
+    await expect(trackBBTToggle.locator('[data-binary-toggle-state]')).toHaveText('Off');
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
@@ -446,7 +483,7 @@ test.describe('Settings: profile and cycle', () => {
     expect(hideButtonBox!.y).toBeGreaterThan(saveButtonBox!.y + 4);
 
     await archiveCustomSymptom(page, activeRow);
-    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'archived').locator('[data-symptom-row-success]')).toBeVisible();
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'archived').locator('.status-ok')).toBeVisible();
 
     await page.goto('/dashboard');
     const archivedDashboardSymptom = await ensureSymptomInputVisible(
@@ -493,10 +530,10 @@ test.describe('Settings: profile and cycle', () => {
 
     const renamedArchivedRow = customSymptomRow(symptomSection, 'Joint ease', 'archived');
     await expect(renamedArchivedRow).toBeVisible();
-    await expect(renamedArchivedRow.locator('[data-symptom-row-success]')).toBeVisible();
+    await expect(renamedArchivedRow.locator('.status-ok')).toBeVisible();
     await renamedArchivedRow.locator('form[action$="/restore"] button[type="submit"]').click();
     await expect(
-      customSymptomRow(symptomSection, 'Joint ease', 'active').locator('[data-symptom-row-success]')
+      customSymptomRow(symptomSection, 'Joint ease', 'active').locator('.status-ok')
     ).toBeVisible();
     await expect(customSymptomRow(symptomSection, 'Joint support', 'active')).toBeVisible();
 

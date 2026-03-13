@@ -27,6 +27,7 @@ var authErrorTranslationKeys = map[string]string{
 	"invalid profile input":                           "settings.error.invalid_profile_input",
 	"display name too long":                           "settings.error.display_name_too_long",
 	"invalid cycle start date":                        "settings.error.invalid_last_period_start",
+	"invalid cycle start day":                         "dashboard.error.invalid_cycle_start_date",
 	"invalid password":                                "settings.error.invalid_password",
 	"invalid symptom name":                            "settings.symptoms.error.name_required",
 	"symptom name is required":                        "settings.symptoms.error.name_required",

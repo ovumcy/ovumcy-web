@@ -20,6 +20,8 @@ func mapDayRangeError(err error) APIErrorSpec {
 
 func mapDayUpsertError(err error) APIErrorSpec {
 	switch services.ClassifyDayUpsertError(err) {
+	case services.DayUpsertErrorInvalidCycleStartDate:
+		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle start day")
 	case services.DayUpsertErrorInvalidFlow:
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid flow value")
 	case services.DayUpsertErrorInvalidMood:
@@ -36,8 +38,6 @@ func mapDayUpsertError(err error) APIErrorSpec {
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create day")
 	case services.DayUpsertErrorUpdateFailed:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day")
-	case services.DayUpsertErrorSyncLastPeriodFailed:
-		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to sync last period start")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day")
 	}
@@ -47,8 +47,6 @@ func mapDayDeleteError(err error) APIErrorSpec {
 	switch services.ClassifyDayDeleteError(err) {
 	case services.DayDeleteErrorDeleteFailed:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day")
-	case services.DayDeleteErrorSyncLastPeriodFailed:
-		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to sync last period start")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day")
 	}

@@ -36,43 +36,48 @@ type DashboardViewService struct {
 }
 
 type DashboardViewData struct {
-	Stats             CycleStats
-	CycleContext      DashboardCycleContext
-	Today             time.Time
-	Yesterday         time.Time
-	YesterdayMonth    string
-	FormattedDate     string
-	TodayLog          models.DailyLog
-	TodayHasData      bool
-	TodayEntryExists  bool
-	Symptoms          []models.SymptomType
-	PrimarySymptoms   []models.SymptomType
-	ExtraSymptoms     []models.SymptomType
-	HasExtraSymptoms  bool
-	SelectedSymptomID map[uint]bool
-	ShowYesterdayJump bool
-	ShowSexChip       bool
-	ShowBBTField      bool
-	ShowCervicalMucus bool
-	IsOwner           bool
+	Stats                    CycleStats
+	CycleContext             DashboardCycleContext
+	Today                    time.Time
+	Yesterday                time.Time
+	YesterdayMonth           string
+	FormattedDate            string
+	TodayLog                 models.DailyLog
+	TodayHasData             bool
+	TodayEntryExists         bool
+	Symptoms                 []models.SymptomType
+	PrimarySymptoms          []models.SymptomType
+	ExtraSymptoms            []models.SymptomType
+	HasExtraSymptoms         bool
+	SelectedSymptomID        map[uint]bool
+	ShowYesterdayJump        bool
+	ShowSexChip              bool
+	ShowBBTField             bool
+	ShowCervicalMucus        bool
+	AllowManualCycleStart    bool
+	ShowCycleStartSuggestion bool
+	IsOwner                  bool
 }
 
 type DayEditorViewData struct {
-	Date              time.Time
-	DateString        string
-	DateLabel         string
-	IsFutureDate      bool
-	Log               models.DailyLog
-	Symptoms          []models.SymptomType
-	PrimarySymptoms   []models.SymptomType
-	ExtraSymptoms     []models.SymptomType
-	HasExtraSymptoms  bool
-	SelectedSymptomID map[uint]bool
-	HasDayData        bool
-	ShowSexChip       bool
-	ShowBBTField      bool
-	ShowCervicalMucus bool
-	IsOwner           bool
+	Date                       time.Time
+	DateString                 string
+	DateLabel                  string
+	IsFutureDate               bool
+	Log                        models.DailyLog
+	Symptoms                   []models.SymptomType
+	PrimarySymptoms            []models.SymptomType
+	ExtraSymptoms              []models.SymptomType
+	HasExtraSymptoms           bool
+	SelectedSymptomID          map[uint]bool
+	HasDayData                 bool
+	ShowSexChip                bool
+	ShowBBTField               bool
+	ShowCervicalMucus          bool
+	AllowManualCycleStart      bool
+	ShowFutureCycleStartNotice bool
+	ShowCycleStartSuggestion   bool
+	IsOwner                    bool
 }
 
 func NewDashboardViewService(stats DashboardStatsProvider, viewer DashboardViewerProvider, days DashboardDayStateProvider) *DashboardViewService {
@@ -97,38 +102,46 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 	}
 
 	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
-	selectedSymptomID := SymptomIDSet(todayLog.SymptomIDs)
-	rankedSymptoms, err := service.loadRankedPickerSymptoms(user.ID, symptoms)
+	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, showCycleStartSuggestion, err := service.buildPickerViewState(
+		user,
+		today,
+		now,
+		todayLog,
+		symptoms,
+		location,
+	)
 	if err != nil {
 		return DashboardViewData{}, err
 	}
-	primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
 	yesterday := today.AddDate(0, 0, -1)
 	yesterdayHasData, err := service.days.DayHasDataForDate(user.ID, yesterday, location)
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayState, err)
 	}
+	allowManualCycleStart := IsOwnerUser(user) && IsAllowedManualCycleStartDate(today, now, location)
 
 	return DashboardViewData{
-		Stats:             stats,
-		CycleContext:      cycleContext,
-		Today:             today,
-		Yesterday:         yesterday,
-		YesterdayMonth:    yesterday.Format("2006-01"),
-		FormattedDate:     LocalizedDashboardDate(language, today),
-		TodayLog:          todayLog,
-		TodayHasData:      DayHasData(todayLog),
-		TodayEntryExists:  todayLog.ID != 0,
-		Symptoms:          rankedSymptoms,
-		PrimarySymptoms:   primarySymptoms,
-		ExtraSymptoms:     extraSymptoms,
-		HasExtraSymptoms:  len(extraSymptoms) > 0,
-		SelectedSymptomID: selectedSymptomID,
-		ShowYesterdayJump: !yesterdayHasData,
-		ShowSexChip:       IsOwnerUser(user) && !user.HideSexChip,
-		ShowBBTField:      IsOwnerUser(user) && user.TrackBBT,
-		ShowCervicalMucus: IsOwnerUser(user) && user.TrackCervicalMucus,
-		IsOwner:           IsOwnerUser(user),
+		Stats:                    stats,
+		CycleContext:             cycleContext,
+		Today:                    today,
+		Yesterday:                yesterday,
+		YesterdayMonth:           yesterday.Format("2006-01"),
+		FormattedDate:            LocalizedDashboardDate(language, today),
+		TodayLog:                 todayLog,
+		TodayHasData:             DayHasData(todayLog),
+		TodayEntryExists:         todayLog.ID != 0,
+		Symptoms:                 rankedSymptoms,
+		PrimarySymptoms:          primarySymptoms,
+		ExtraSymptoms:            extraSymptoms,
+		HasExtraSymptoms:         len(extraSymptoms) > 0,
+		SelectedSymptomID:        selectedSymptomID,
+		ShowYesterdayJump:        !yesterdayHasData,
+		ShowSexChip:              IsOwnerUser(user) && !user.HideSexChip,
+		ShowBBTField:             IsOwnerUser(user) && user.TrackBBT,
+		ShowCervicalMucus:        IsOwnerUser(user) && user.TrackCervicalMucus,
+		AllowManualCycleStart:    allowManualCycleStart,
+		ShowCycleStartSuggestion: showCycleStartSuggestion,
+		IsOwner:                  IsOwnerUser(user),
 	}, nil
 }
 
@@ -142,40 +155,60 @@ func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, l
 	if err != nil {
 		return DayEditorViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayLog, err)
 	}
-	selectedSymptomID := SymptomIDSet(logEntry.SymptomIDs)
-	rankedSymptoms, err := service.loadRankedPickerSymptoms(user.ID, symptoms)
+	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, showCycleStartSuggestion, err := service.buildPickerViewState(
+		user,
+		day,
+		now,
+		logEntry,
+		symptoms,
+		location,
+	)
 	if err != nil {
 		return DayEditorViewData{}, err
 	}
-	primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
+	isFutureDate := day.After(DateAtLocation(now.In(location), location))
+	allowManualCycleStart := IsOwnerUser(user) && IsAllowedManualCycleStartDate(day, now, location)
 
 	return DayEditorViewData{
-		Date:              day,
-		DateString:        day.Format("2006-01-02"),
-		DateLabel:         LocalizedDateLabel(language, day),
-		IsFutureDate:      day.After(DateAtLocation(now.In(location), location)),
-		Log:               logEntry,
-		Symptoms:          rankedSymptoms,
-		PrimarySymptoms:   primarySymptoms,
-		ExtraSymptoms:     extraSymptoms,
-		HasExtraSymptoms:  len(extraSymptoms) > 0,
-		SelectedSymptomID: selectedSymptomID,
-		HasDayData:        hasDayData,
-		ShowSexChip:       IsOwnerUser(user) && !user.HideSexChip,
-		ShowBBTField:      IsOwnerUser(user) && user.TrackBBT,
-		ShowCervicalMucus: IsOwnerUser(user) && user.TrackCervicalMucus,
-		IsOwner:           IsOwnerUser(user),
+		Date:                       day,
+		DateString:                 day.Format("2006-01-02"),
+		DateLabel:                  LocalizedDateLabel(language, day),
+		IsFutureDate:               isFutureDate,
+		Log:                        logEntry,
+		Symptoms:                   rankedSymptoms,
+		PrimarySymptoms:            primarySymptoms,
+		ExtraSymptoms:              extraSymptoms,
+		HasExtraSymptoms:           len(extraSymptoms) > 0,
+		SelectedSymptomID:          selectedSymptomID,
+		HasDayData:                 hasDayData,
+		ShowSexChip:                IsOwnerUser(user) && !user.HideSexChip,
+		ShowBBTField:               IsOwnerUser(user) && user.TrackBBT,
+		ShowCervicalMucus:          IsOwnerUser(user) && user.TrackCervicalMucus,
+		AllowManualCycleStart:      allowManualCycleStart,
+		ShowFutureCycleStartNotice: isFutureDate && allowManualCycleStart,
+		ShowCycleStartSuggestion:   showCycleStartSuggestion,
+		IsOwner:                    IsOwnerUser(user),
 	}, nil
 }
 
-func (service *DashboardViewService) loadRankedPickerSymptoms(userID uint, symptoms []models.SymptomType) ([]models.SymptomType, error) {
-	if len(symptoms) < 2 {
-		return symptoms, nil
+func (service *DashboardViewService) buildPickerViewState(user *models.User, day time.Time, now time.Time, logEntry models.DailyLog, symptoms []models.SymptomType, location *time.Location) (map[uint]bool, []models.SymptomType, []models.SymptomType, []models.SymptomType, bool, error) {
+	selectedSymptomID := SymptomIDSet(logEntry.SymptomIDs)
+	rankedSymptoms := symptoms
+	requiresLogs := len(symptoms) >= 2 || IsOwnerUser(user)
+	if !requiresLogs {
+		primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
+		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, false, nil
 	}
 
-	logs, err := service.days.FetchAllLogsForUser(userID)
+	logs, err := service.days.FetchAllLogsForUser(user.ID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
+		return nil, nil, nil, nil, false, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
 	}
-	return RankSymptomsForEntryPicker(symptoms, logs), nil
+	if len(symptoms) >= 2 {
+		rankedSymptoms = RankSymptomsForEntryPicker(symptoms, logs)
+	}
+
+	primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
+	showCycleStartSuggestion := ShouldSuggestManualCycleStart(user, logs, logEntry, day, now, location)
+	return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, showCycleStartSuggestion, nil
 }

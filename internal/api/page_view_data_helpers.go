@@ -1,10 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/models"
+	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func (handler *Handler) buildDashboardViewData(user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
@@ -12,6 +14,7 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 	if err != nil {
 		return nil, err
 	}
+	bbtView := buildBBTFieldViewData(messages, user.TemperatureUnit)
 
 	data := fiber.Map{
 		"Title":                       localizedPageTitle(messages, "meta.title.dashboard", "Ovumcy | Dashboard"),
@@ -46,7 +49,15 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 		"ShowYesterdayJump":           viewData.ShowYesterdayJump,
 		"ShowSexChip":                 viewData.ShowSexChip,
 		"ShowBBTField":                viewData.ShowBBTField,
+		"TemperatureUnit":             bbtView.Unit,
+		"TemperatureUnitSymbol":       bbtView.Symbol,
+		"TemperatureInputMin":         bbtView.Min,
+		"TemperatureInputMax":         bbtView.Max,
+		"TemperatureRangeHint":        bbtView.RangeHint,
+		"TemperatureRangeError":       bbtView.RangeError,
 		"ShowCervicalMucus":           viewData.ShowCervicalMucus,
+		"AllowManualCycleStart":       viewData.AllowManualCycleStart,
+		"ShowCycleStartSuggestion":    viewData.ShowCycleStartSuggestion,
 		"IsOwner":                     viewData.IsOwner,
 	}
 	return data, nil
@@ -57,25 +68,69 @@ func (handler *Handler) buildDayEditorPartialData(user *models.User, language st
 	if err != nil {
 		return nil, err
 	}
+	bbtView := buildBBTFieldViewData(messages, user.TemperatureUnit)
 
 	payload := fiber.Map{
-		"Date":              viewData.Date,
-		"DateString":        viewData.DateString,
-		"DateLabel":         viewData.DateLabel,
-		"IsFutureDate":      viewData.IsFutureDate,
-		"NoDataLabel":       translateMessage(messages, "common.not_available"),
-		"Log":               viewData.Log,
-		"Symptoms":          viewData.Symptoms,
-		"PrimarySymptoms":   viewData.PrimarySymptoms,
-		"ExtraSymptoms":     viewData.ExtraSymptoms,
-		"HasExtraSymptoms":  viewData.HasExtraSymptoms,
-		"SelectedSymptomID": viewData.SelectedSymptomID,
-		"HasDayData":        viewData.HasDayData,
-		"ShowSexChip":       viewData.ShowSexChip,
-		"ShowBBTField":      viewData.ShowBBTField,
-		"ShowCervicalMucus": viewData.ShowCervicalMucus,
-		"EditMode":          editMode,
-		"IsOwner":           viewData.IsOwner,
+		"Date":                       viewData.Date,
+		"DateString":                 viewData.DateString,
+		"DateLabel":                  viewData.DateLabel,
+		"IsFutureDate":               viewData.IsFutureDate,
+		"NoDataLabel":                translateMessage(messages, "common.not_available"),
+		"Log":                        viewData.Log,
+		"Symptoms":                   viewData.Symptoms,
+		"PrimarySymptoms":            viewData.PrimarySymptoms,
+		"ExtraSymptoms":              viewData.ExtraSymptoms,
+		"HasExtraSymptoms":           viewData.HasExtraSymptoms,
+		"SelectedSymptomID":          viewData.SelectedSymptomID,
+		"HasDayData":                 viewData.HasDayData,
+		"ShowSexChip":                viewData.ShowSexChip,
+		"ShowBBTField":               viewData.ShowBBTField,
+		"TemperatureUnit":            bbtView.Unit,
+		"TemperatureUnitSymbol":      bbtView.Symbol,
+		"TemperatureInputMin":        bbtView.Min,
+		"TemperatureInputMax":        bbtView.Max,
+		"TemperatureRangeHint":       bbtView.RangeHint,
+		"TemperatureRangeError":      bbtView.RangeError,
+		"ShowCervicalMucus":          viewData.ShowCervicalMucus,
+		"AllowManualCycleStart":      viewData.AllowManualCycleStart,
+		"ShowFutureCycleStartNotice": viewData.ShowFutureCycleStartNotice,
+		"ShowCycleStartSuggestion":   viewData.ShowCycleStartSuggestion,
+		"EditMode":                   editMode,
+		"IsOwner":                    viewData.IsOwner,
 	}
 	return payload, nil
+}
+
+type bbtFieldViewData struct {
+	Unit       string
+	Symbol     string
+	Min        string
+	Max        string
+	RangeHint  string
+	RangeError string
+}
+
+func buildBBTFieldViewData(messages map[string]string, unit string) bbtFieldViewData {
+	resolvedUnit := services.NormalizeTemperatureUnit(unit)
+	min, max := services.TemperatureUnitRange(resolvedUnit)
+	symbol := services.TemperatureUnitSymbol(resolvedUnit)
+	minLabel := fmt.Sprintf("%.2f", min)
+	maxLabel := fmt.Sprintf("%.2f", max)
+
+	return bbtFieldViewData{
+		Unit:       resolvedUnit,
+		Symbol:     symbol,
+		Min:        minLabel,
+		Max:        maxLabel,
+		RangeHint:  formatBBTLocalizedMessage(messages, "dashboard.bbt_range_hint", "Allowed range: %s-%s %s.", minLabel, maxLabel, symbol),
+		RangeError: formatBBTLocalizedMessage(messages, "dashboard.bbt_range_error", "Enter a value between %s and %s %s.", minLabel, maxLabel, symbol),
+	}
+}
+
+func formatBBTLocalizedMessage(messages map[string]string, key string, fallback string, min string, max string, symbol string) string {
+	pattern := translateMessage(messages, key)
+	if pattern == "" || pattern == key {
+		pattern = fallback
+	}
+	return fmt.Sprintf(pattern, min, max, symbol)
 }

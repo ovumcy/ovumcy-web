@@ -15,15 +15,15 @@ func TestDashboardCycleReferenceLengthPrefersObservedAverage(t *testing.T) {
 	}
 }
 
-func TestDashboardCycleStaleAnchorPrefersUserBaseline(t *testing.T) {
+func TestDashboardCycleStaleAnchorPrefersStatsBaseline(t *testing.T) {
 	userBaseline := time.Date(2026, time.January, 1, 15, 30, 0, 0, time.UTC)
 	statsBaseline := time.Date(2026, time.February, 20, 7, 0, 0, 0, time.UTC)
 	user := &models.User{LastPeriodStart: &userBaseline}
 	stats := CycleStats{LastPeriodStart: statsBaseline}
 
 	anchor := DashboardCycleStaleAnchor(user, stats, time.UTC)
-	if anchor.Format("2006-01-02") != "2026-01-01" {
-		t.Fatalf("expected user baseline date, got %s", anchor.Format("2006-01-02"))
+	if anchor.Format("2006-01-02") != "2026-02-20" {
+		t.Fatalf("expected stats baseline date, got %s", anchor.Format("2006-01-02"))
 	}
 }
 

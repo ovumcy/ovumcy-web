@@ -16,7 +16,6 @@ var (
 	ErrDayAutoFillCheckFailed = errors.New("check day autofill failed")
 	ErrDayAutoFillApplyFailed = errors.New("apply day autofill failed")
 	ErrDeleteDayFailed        = errors.New("delete day failed")
-	ErrSyncLastPeriodFailed   = errors.New("sync last period failed")
 	ErrManualCycleStartFailed = errors.New("manual cycle start failed")
 )
 
@@ -35,7 +34,7 @@ type DayLogRepository interface {
 	ListByUser(userID uint) ([]models.DailyLog, error)
 	ListByUserRange(userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error)
 	ListByUserDayRange(userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error)
-	ListPeriodDays(userID uint) ([]models.DailyLog, error)
+	ClearCycleStartsExcept(userID uint, dayStart time.Time, dayEnd time.Time) error
 	FindByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error)
 	Create(entry *models.DailyLog) error
 	Save(entry *models.DailyLog) error
@@ -44,7 +43,6 @@ type DayLogRepository interface {
 
 type DayUserRepository interface {
 	LoadSettingsByID(userID uint) (models.User, error)
-	UpdateByID(userID uint, updates map[string]any) error
 }
 
 type DayService struct {
@@ -133,6 +131,9 @@ func (service *DayService) UpsertDayEntry(userID uint, dayStart time.Time, paylo
 	if found {
 		wasPeriod = entry.IsPeriod
 		entry.IsPeriod = payload.IsPeriod
+		if !payload.IsPeriod {
+			entry.CycleStart = false
+		}
 		entry.Flow = payload.Flow
 		entry.Mood = payload.Mood
 		entry.SexActivity = payload.SexActivity
@@ -198,24 +199,21 @@ func (service *DayService) UpsertDayEntryWithAutoFill(userID uint, day time.Time
 		}
 	}
 
-	if err := service.RefreshUserLastPeriodStart(userID, location); err != nil {
-		return models.DailyLog{}, fmt.Errorf("%w: %v", ErrSyncLastPeriodFailed, err)
-	}
-
 	return entry, nil
 }
 
-func (service *DayService) DeleteDayAndRefreshLastPeriod(userID uint, day time.Time, location *time.Location) error {
+func (service *DayService) DeleteDayEntry(userID uint, day time.Time, location *time.Location) error {
 	if err := service.DeleteDailyLogByDate(userID, day, location); err != nil {
 		return ErrDeleteDayFailed
-	}
-	if err := service.RefreshUserLastPeriodStart(userID, location); err != nil {
-		return ErrSyncLastPeriodFailed
 	}
 	return nil
 }
 
-func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, location *time.Location) error {
+func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, now time.Time, location *time.Location) error {
+	if !IsAllowedManualCycleStartDate(day, now, location) {
+		return ErrManualCycleStartDateInvalid
+	}
+
 	existingEntry, err := service.FetchLogByDate(userID, day, location)
 	if err != nil {
 		return ErrDayEntryLoadFailed
@@ -243,7 +241,20 @@ func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, lo
 	}
 
 	dayStart, _ := DayRange(day, location)
-	if err := service.users.UpdateByID(userID, map[string]any{"last_period_start": dayStart}); err != nil {
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	if err := service.logs.ClearCycleStartsExcept(userID, dayStart, dayEnd); err != nil {
+		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
+	}
+
+	entry, found, err := service.logs.FindByUserAndDayRange(userID, dayStart, dayEnd)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
+	}
+	if !found {
+		return ErrManualCycleStartFailed
+	}
+	entry.CycleStart = true
+	if err := service.logs.Save(&entry); err != nil {
 		return fmt.Errorf("%w: %v", ErrManualCycleStartFailed, err)
 	}
 
@@ -253,20 +264,6 @@ func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, lo
 func (service *DayService) DeleteDailyLogByDate(userID uint, day time.Time, location *time.Location) error {
 	dayStart, dayEnd := DayRange(day, location)
 	return service.logs.DeleteByUserAndDayRange(userID, dayStart, dayEnd)
-}
-
-func (service *DayService) RefreshUserLastPeriodStart(userID uint, location *time.Location) error {
-	periodLogs, err := service.logs.ListPeriodDays(userID)
-	if err != nil {
-		return err
-	}
-	starts := DetectCycleStarts(periodLogs)
-	if len(starts) == 0 {
-		return service.users.UpdateByID(userID, map[string]any{"last_period_start": nil})
-	}
-
-	latest := DateAtLocation(starts[len(starts)-1], location)
-	return service.users.UpdateByID(userID, map[string]any{"last_period_start": latest})
 }
 
 func (service *DayService) LoadAutoFillSettings(userID uint) (int, bool, error) {

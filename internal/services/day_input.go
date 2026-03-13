@@ -42,6 +42,7 @@ func NormalizeDayEntryInput(input DayEntryInput) (DayEntryInput, error) {
 	}
 	input.SexActivity = NormalizeDaySexActivity(input.SexActivity)
 	input.CervicalMucus = NormalizeDayCervicalMucus(input.CervicalMucus)
+	input.BBT = normalizeStoredDayBBT(input.BBT)
 	input.Notes = TrimDayNotes(input.Notes)
 	return input, nil
 }

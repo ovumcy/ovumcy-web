@@ -72,6 +72,23 @@ func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 	}
 }
 
+func TestBuildStatsPageViewDataShowsIrregularInsufficientDataNotice(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+	}
+	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
+	now := mustParseStatsServiceDay(t, "2026-02-10")
+
+	viewData, err := service.BuildStatsPageViewData(&models.User{ID: 8, Role: models.RoleOwner, IrregularCycle: true}, "en", "Cycle %d", now, time.UTC, 12)
+	if err != nil {
+		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
+	}
+	if !viewData.ShowIrregularInsufficientDataNotice {
+		t.Fatalf("expected ShowIrregularInsufficientDataNotice=true")
+	}
+}
+
 func assertOwnerTrendViewData(t *testing.T, viewData StatsPageViewData) {
 	t.Helper()
 

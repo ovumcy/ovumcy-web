@@ -99,6 +99,9 @@ func TestBuildDashboardViewData(t *testing.T) {
 	if !viewData.SelectedSymptomID[3] {
 		t.Fatalf("expected selected symptom id=3")
 	}
+	if !viewData.AllowManualCycleStart {
+		t.Fatalf("expected AllowManualCycleStart=true for today")
+	}
 }
 
 func TestBuildDashboardViewDataReturnsTypedErrors(t *testing.T) {
@@ -158,6 +161,43 @@ func TestBuildDayEditorViewData(t *testing.T) {
 	}
 	if !viewData.SelectedSymptomID[7] {
 		t.Fatalf("expected selected symptom id=7")
+	}
+	if !viewData.AllowManualCycleStart {
+		t.Fatalf("expected AllowManualCycleStart=true for tomorrow")
+	}
+	if !viewData.ShowFutureCycleStartNotice {
+		t.Fatalf("expected ShowFutureCycleStartNotice=true for tomorrow")
+	}
+}
+
+func TestBuildDashboardViewDataSuggestsManualCycleStartAfterLongGap(t *testing.T) {
+	user := &models.User{ID: 5, Role: models.RoleOwner, CycleLength: 28}
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{},
+		&stubDashboardViewerProvider{
+			logEntry: models.DailyLog{
+				Date:     today,
+				IsPeriod: true,
+				Flow:     models.FlowLight,
+			},
+			symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
+		},
+		&stubDashboardDayStateProvider{
+			logs: []models.DailyLog{
+				{Date: mustParseDashboardServiceDay(t, "2026-02-01"), IsPeriod: true, CycleStart: true},
+				{Date: today, IsPeriod: true},
+			},
+		},
+	)
+
+	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+	if !viewData.ShowCycleStartSuggestion {
+		t.Fatalf("expected ShowCycleStartSuggestion=true after a long gap")
 	}
 }
 

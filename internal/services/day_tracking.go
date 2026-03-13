@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -9,8 +10,12 @@ import (
 )
 
 const (
-	MinDayBBT = 34.0
-	MaxDayBBT = 43.0
+	TemperatureUnitCelsius    = "c"
+	TemperatureUnitFahrenheit = "f"
+	DefaultTemperatureUnit    = TemperatureUnitCelsius
+
+	MinDayBBTCelsius = 34.0
+	MaxDayBBTCelsius = 43.0
 )
 
 func NormalizeDaySexActivity(value string) string {
@@ -58,10 +63,52 @@ func IsValidDayCervicalMucus(value string) bool {
 }
 
 func IsValidDayBBT(value float64) bool {
-	return value == 0 || (value >= MinDayBBT && value <= MaxDayBBT)
+	return value == 0 || (value >= MinDayBBTCelsius && value <= MaxDayBBTCelsius)
+}
+
+func NormalizeTemperatureUnit(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case TemperatureUnitFahrenheit:
+		return TemperatureUnitFahrenheit
+	default:
+		return TemperatureUnitCelsius
+	}
+}
+
+func TemperatureUnitSymbol(unit string) string {
+	switch NormalizeTemperatureUnit(unit) {
+	case TemperatureUnitFahrenheit:
+		return "°F"
+	default:
+		return "°C"
+	}
+}
+
+func TemperatureUnitRange(unit string) (float64, float64) {
+	switch NormalizeTemperatureUnit(unit) {
+	case TemperatureUnitFahrenheit:
+		return roundTemperatureValue(celsiusToFahrenheit(MinDayBBTCelsius)), roundTemperatureValue(celsiusToFahrenheit(MaxDayBBTCelsius))
+	default:
+		return MinDayBBTCelsius, MaxDayBBTCelsius
+	}
+}
+
+func FormatDayBBTForInput(value float64, unit string) string {
+	normalized := normalizeStoredDayBBT(value)
+	if normalized <= 0 {
+		return ""
+	}
+	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
+		return fmt.Sprintf("%.2f", roundTemperatureValue(celsiusToFahrenheit(normalized)))
+	}
+	return fmt.Sprintf("%.2f", normalized)
 }
 
 func ParseDayBBTRaw(raw string) (float64, error) {
+	return ParseDayBBTRawWithUnit(raw, TemperatureUnitCelsius)
+}
+
+func ParseDayBBTRawWithUnit(raw string, unit string) (float64, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return 0, nil
@@ -72,5 +119,27 @@ func ParseDayBBTRaw(raw string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("invalid day bbt: %w", err)
 	}
-	return value, nil
+	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
+		value = fahrenheitToCelsius(value)
+	}
+	return normalizeStoredDayBBT(value), nil
+}
+
+func normalizeStoredDayBBT(value float64) float64 {
+	if value <= 0 {
+		return 0
+	}
+	return roundTemperatureValue(value)
+}
+
+func roundTemperatureValue(value float64) float64 {
+	return math.Round(value*100) / 100
+}
+
+func celsiusToFahrenheit(value float64) float64 {
+	return value*9/5 + 32
+}
+
+func fahrenheitToCelsius(value float64) float64 {
+	return (value - 32) * 5 / 9
 }

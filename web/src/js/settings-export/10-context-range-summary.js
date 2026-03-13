@@ -51,6 +51,33 @@
   }
 
   function createDateRangeController(context, bounds) {
+    function effectivePresetUpperBound() {
+      if (!bounds.hasBounds) {
+        return null;
+      }
+
+      var now = new Date();
+      var browserToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (dateKey(bounds.maxBound) < dateKey(browserToday)) {
+        return cloneDate(bounds.maxBound);
+      }
+      return browserToday;
+    }
+
+    function clampDateToBounds(value) {
+      if (!bounds.hasBounds || !value) {
+        return value;
+      }
+
+      if (dateKey(value) < dateKey(bounds.minBound)) {
+        return cloneDate(bounds.minBound);
+      }
+      if (dateKey(value) > dateKey(bounds.maxBound)) {
+        return cloneDate(bounds.maxBound);
+      }
+      return cloneDate(value);
+    }
+
     function setExportActionsDisabled(disabled) {
       for (var index = 0; index < context.actions.length; index++) {
         var action = context.actions[index];
@@ -144,9 +171,13 @@
         return null;
       }
 
-      var today = new Date();
-      var toDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      var toDate = effectivePresetUpperBound();
+      if (!toDate) {
+        return null;
+      }
       var fromDate = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() - days + 1);
+      fromDate = clampDateToBounds(fromDate);
+      toDate = clampDateToBounds(toDate);
       return { from: fromDate, to: toDate };
     }
 
@@ -189,8 +220,8 @@
 
       var fromValue = parseISODate(dateFieldValue(context.fromField, context.fromInput));
       var toValue = parseISODate(dateFieldValue(context.toField, context.toInput));
-      fromValue = fromValue || cloneDate(bounds.minBound);
-      toValue = toValue || cloneDate(bounds.maxBound);
+      fromValue = clampDateToBounds(fromValue || cloneDate(bounds.minBound));
+      toValue = clampDateToBounds(toValue || cloneDate(bounds.maxBound));
 
       setDateFieldValue(context.fromField, context.fromInput, formatISODate(fromValue));
       setDateFieldValue(context.toField, context.toInput, formatISODate(toValue));

@@ -13,12 +13,14 @@ func TestApplyTrackingSettings(t *testing.T) {
 		TrackBBT:           false,
 		TrackCervicalMucus: false,
 		HideSexChip:        false,
+		TemperatureUnit:    "",
 	}
 
 	service.ApplyTrackingSettings(user, TrackingSettingsUpdate{
 		TrackBBT:           true,
 		TrackCervicalMucus: true,
 		HideSexChip:        true,
+		TemperatureUnit:    TemperatureUnitFahrenheit,
 	})
 
 	if !user.TrackBBT {
@@ -29,6 +31,9 @@ func TestApplyTrackingSettings(t *testing.T) {
 	}
 	if !user.HideSexChip {
 		t.Fatal("expected HideSexChip to be enabled")
+	}
+	if user.TemperatureUnit != TemperatureUnitFahrenheit {
+		t.Fatalf("expected TemperatureUnit=%q, got %q", TemperatureUnitFahrenheit, user.TemperatureUnit)
 	}
 }
 
@@ -48,6 +53,7 @@ func TestSaveTrackingSettings(t *testing.T) {
 		TrackBBT:           true,
 		TrackCervicalMucus: true,
 		HideSexChip:        true,
+		TemperatureUnit:    TemperatureUnitFahrenheit,
 	})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
@@ -63,6 +69,9 @@ func TestSaveTrackingSettings(t *testing.T) {
 	}
 	if repo.updates["hide_sex_chip"] != true {
 		t.Fatalf("expected hide_sex_chip=true, got %#v", repo.updates["hide_sex_chip"])
+	}
+	if repo.updates["temperature_unit"] != TemperatureUnitFahrenheit {
+		t.Fatalf("expected temperature_unit=%q, got %#v", TemperatureUnitFahrenheit, repo.updates["temperature_unit"])
 	}
 }
 

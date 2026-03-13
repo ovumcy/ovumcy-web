@@ -155,6 +155,30 @@ func DetectCycleStarts(logs []models.DailyLog) []time.Time {
 	return starts
 }
 
+func DetectExplicitCycleStarts(logs []models.DailyLog) []time.Time {
+	if len(logs) == 0 {
+		return nil
+	}
+
+	sorted := sortDailyLogs(logs)
+	starts := make([]time.Time, 0)
+	seen := make(map[string]struct{}, len(sorted))
+	for _, logEntry := range sorted {
+		if !logEntry.IsPeriod || !logEntry.CycleStart {
+			continue
+		}
+
+		day := dateOnly(logEntry.Date)
+		key := day.Format("2006-01-02")
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		starts = append(starts, day)
+	}
+	return starts
+}
+
 func sortDailyLogs(logs []models.DailyLog) []models.DailyLog {
 	sorted := make([]models.DailyLog, 0, len(logs))
 	sorted = append(sorted, logs...)
