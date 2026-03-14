@@ -61,6 +61,12 @@ func TestOnboardingDateFieldUsesRussianLabels(t *testing.T) {
 	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="День".*?aria-label="Месяц".*?aria-label="Год"`).Match(body) {
 		t.Fatalf("expected russian onboarding segmented date labels")
 	}
+	if !regexp.MustCompile(`data-yesterday-label="Вчера"`).Match(body) {
+		t.Fatalf("expected russian onboarding quick-pick yesterday label")
+	}
+	if !regexp.MustCompile(`data-two-days-ago-label="2 дня назад"`).Match(body) {
+		t.Fatalf("expected russian onboarding quick-pick two-days-ago label")
+	}
 }
 
 func TestOnboardingDateFieldUsesSpanishLabels(t *testing.T) {

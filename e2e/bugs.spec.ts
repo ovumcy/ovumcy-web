@@ -272,6 +272,38 @@ test.describe('Bug regressions', () => {
       await expect(page.locator(`button[data-day="${currentDay}"]`)).toHaveClass(/calendar-cell-predicted/);
       await expect(page.locator(`button[data-day="${preFertileDay}"]`)).toHaveAttribute('data-calendar-state', 'pre-fertile');
     });
+
+    test('onboarding with auto period fill disabled does not create logged-entry markers', async ({
+      page,
+    }) => {
+      const credentials = createCredentials('bug01-onboarding-no-autofill');
+
+      await registerOwnerViaUI(page, credentials);
+      await expectInlineRegisterRecoveryStep(page);
+      await readRecoveryCode(page);
+      await continueFromRecoveryCode(page);
+      await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+
+      const onboardingDate = shiftISODate(await browserLocalISODate(page), -3);
+      await fillDateField(page.locator('#last-period-start'), onboardingDate);
+      await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
+      await expect(page.locator('form[hx-post="/onboarding/step2"]')).toBeVisible();
+
+      const autoFillToggle = page.locator('label[data-binary-toggle]:has(input[name="auto_period_fill"])');
+      const autoFillCheckbox = page.locator('input[name="auto_period_fill"]');
+      await expect(autoFillCheckbox).toBeChecked();
+      await autoFillToggle.click();
+      await expect(autoFillCheckbox).not.toBeChecked();
+
+      await page.locator('form[hx-post="/onboarding/step2"] button[type="submit"]').click();
+      await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+
+      await page.goto(`/calendar?month=${onboardingDate.slice(0, 7)}&day=${onboardingDate}`);
+      for (let offset = 0; offset < 5; offset += 1) {
+        const iso = shiftISODate(onboardingDate, offset);
+        await expect(page.locator(`button[data-day="${iso}"]`)).toHaveAttribute('data-calendar-has-data', 'false');
+      }
+    });
   });
 
   test.describe('BUG-02: registration privacy and enumeration', () => {

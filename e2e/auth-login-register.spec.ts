@@ -310,6 +310,13 @@ test.describe('Auth: register, login, logout', () => {
     page,
   }) => {
     const creds = createCredentials('auth-logout-ui');
+    let logoutRequests = 0;
+
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/logout')) {
+        logoutRequests += 1;
+      }
+    });
 
     await registerOwnerViaUI(page, creds);
     await expectInlineRegisterRecoveryStep(page);
@@ -321,6 +328,7 @@ test.describe('Auth: register, login, logout', () => {
     await expect(page.locator('#confirm-modal')).toBeVisible();
     await page.locator('#confirm-modal-accept').click();
 
+    await expect.poll(() => logoutRequests).toBe(1);
     await expect(page).toHaveURL(/\/login$/);
 
     await page.goto('/dashboard');

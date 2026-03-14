@@ -22,7 +22,7 @@ type OnboardingUserRepository interface {
 	FindByID(userID uint) (models.User, error)
 	SaveOnboardingStep1(userID uint, start time.Time) error
 	SaveOnboardingStep2(userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error
-	CompleteOnboarding(userID uint, startDay time.Time, periodLength int) error
+	CompleteOnboarding(userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error
 }
 
 type OnboardingService struct {
@@ -108,7 +108,7 @@ func (service *OnboardingService) CompleteOnboardingForUser(userID uint, locatio
 
 	startDay := DateAtLocation(*current.LastPeriodStart, location)
 	_, periodLength := SanitizeOnboardingCycleAndPeriod(current.CycleLength, current.PeriodLength)
-	if err := service.users.CompleteOnboarding(userID, startDay, periodLength); err != nil {
+	if err := service.users.CompleteOnboarding(userID, startDay, periodLength, current.AutoPeriodFill); err != nil {
 		return time.Time{}, err
 	}
 	return startDay, nil

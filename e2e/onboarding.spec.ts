@@ -153,6 +153,27 @@ test.describe('Onboarding flow', () => {
     await expect(page.locator('#settings-last-period-start')).toHaveValue(String(selectedValue));
   });
 
+  test('russian onboarding quick-picks stay localized even if server labels are missing', async ({
+    page,
+  }) => {
+    const creds = createCredentials('onboarding-step1-ru-localized');
+    await registerOwnerViaUI(page, creds);
+    await expectInlineRegisterRecoveryStep(page);
+    await readRecoveryCode(page);
+    await continueFromRecoveryCode(page);
+
+    await page.goto(`/lang/ru?next=${encodeURIComponent('/onboarding')}`);
+    await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+
+    const quickPickButtons = page.locator(
+      'form[hx-post="/onboarding/step1"] .grid button[data-onboarding-day-option]'
+    );
+    await expect(quickPickButtons.first()).toContainText('Сегодня');
+    await expect(quickPickButtons.nth(1)).toContainText('Вчера');
+    await expect(quickPickButtons.nth(2)).toContainText('2 дня назад');
+  });
+
   test('step 1 rejects out-of-range manual dates instead of clamping them', async ({ page }) => {
     await registerAndOpenOnboarding(page, 'onboarding-step1-bounds');
 

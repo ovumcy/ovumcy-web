@@ -67,7 +67,7 @@
 
           <div class="nav-account-actions" data-nav-account-actions>
             {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-desktop" "Block" false "SwapOOB" false)}}
-            <form action="/api/auth/logout" method="post" class="nav-logout-form" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
+            <form action="/logout" method="post" class="nav-logout-form" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
               <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
               <button type="submit" class="nav-link nav-link-logout">{{t .Messages "nav.logout"}}</button>
             </form>
@@ -80,7 +80,7 @@
           <a href="/stats" class="nav-link block {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}">{{t .Messages "nav.insights"}}</a>
           <a href="/settings" class="nav-link nav-link-icon block {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span aria-hidden="true">⚙️</span></a>
           {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-mobile" "Block" true "SwapOOB" false)}}
-          <form action="/api/auth/logout" method="post" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
+          <form action="/logout" method="post" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <button type="submit" class="nav-link nav-link-logout w-full text-left">{{t .Messages "nav.logout"}}</button>
           </form>

@@ -91,6 +91,54 @@
     }
   }
 
+  function localizedRelativeDayFallback(dayOffset, locale) {
+    var resolvedLocale = String(locale || "en").trim() || "en";
+
+    try {
+      if (typeof Intl !== "undefined" && typeof Intl.RelativeTimeFormat === "function") {
+        if (dayOffset === 0) {
+          return new Intl.RelativeTimeFormat(resolvedLocale, { numeric: "auto" }).format(0, "day");
+        }
+        if (dayOffset === 1) {
+          return new Intl.RelativeTimeFormat(resolvedLocale, { numeric: "auto" }).format(-1, "day");
+        }
+        if (dayOffset === 2) {
+          return new Intl.RelativeTimeFormat(resolvedLocale, { numeric: "always" }).format(-2, "day");
+        }
+      }
+    } catch {
+      // Fall back to stable English copy below when Intl locale data is unavailable.
+    }
+
+    if (dayOffset === 0) {
+      return "Today";
+    }
+    if (dayOffset === 1) {
+      return "Yesterday";
+    }
+    if (dayOffset === 2) {
+      return "2 days ago";
+    }
+    return "";
+  }
+
+  function resolveRelativeDayLabel(dayOffset, locale, relativeLabels) {
+    var label = "";
+    if (dayOffset === 0) {
+      label = String(relativeLabels && relativeLabels.today || "").trim();
+    } else if (dayOffset === 1) {
+      label = String(relativeLabels && relativeLabels.yesterday || "").trim();
+    } else if (dayOffset === 2) {
+      label = String(relativeLabels && relativeLabels.twoDaysAgo || "").trim();
+    }
+
+    if (label) {
+      return label;
+    }
+
+    return localizedRelativeDayFallback(dayOffset, locale);
+  }
+
   function buildDayOptions(minDateRaw, maxDateRaw, locale, relativeLabels) {
     var minDate = parseDateValue(minDateRaw);
     var maxDate = parseDateValue(maxDateRaw);
@@ -108,14 +156,7 @@
       var current = new Date(cursor);
       var dayOffset = Math.round((maxDate.getTime() - current.getTime()) / 86400000);
       var isToday = dayOffset === 0;
-      var relativeLabel = "";
-      if (dayOffset === 0) {
-        relativeLabel = String(relativeLabels && relativeLabels.today || "");
-      } else if (dayOffset === 1) {
-        relativeLabel = String(relativeLabels && relativeLabels.yesterday || "");
-      } else if (dayOffset === 2) {
-        relativeLabel = String(relativeLabels && relativeLabels.twoDaysAgo || "");
-      }
+      var relativeLabel = resolveRelativeDayLabel(dayOffset, locale, relativeLabels);
       var formattedDate = formatter.format(current);
       result.push({
         value: formatDateValue(current),

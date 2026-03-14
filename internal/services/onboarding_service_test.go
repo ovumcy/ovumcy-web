@@ -15,6 +15,7 @@ type stubOnboardingRepo struct {
 	completeCalled    bool
 	completeStartDay  time.Time
 	completePeriodLen int
+	completeAutoFill  bool
 }
 
 func (stub *stubOnboardingRepo) FindByID(uint) (models.User, error) {
@@ -32,10 +33,11 @@ func (stub *stubOnboardingRepo) SaveOnboardingStep2(uint, int, int, bool, bool, 
 	return nil
 }
 
-func (stub *stubOnboardingRepo) CompleteOnboarding(userID uint, startDay time.Time, periodLength int) error {
+func (stub *stubOnboardingRepo) CompleteOnboarding(userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
 	stub.completeCalled = true
 	stub.completeStartDay = startDay
 	stub.completePeriodLen = periodLength
+	stub.completeAutoFill = autoPeriodFill
 	return stub.completeErr
 }
 
@@ -67,6 +69,7 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 		user: models.User{
 			CycleLength:     22,
 			PeriodLength:    20,
+			AutoPeriodFill:  true,
 			LastPeriodStart: &original,
 		},
 	}
@@ -81,6 +84,9 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	}
 	if repo.completePeriodLen != 12 {
 		t.Fatalf("expected sanitized period length 12, got %d", repo.completePeriodLen)
+	}
+	if !repo.completeAutoFill {
+		t.Fatal("expected auto_period_fill to be forwarded to onboarding completion")
 	}
 	if startDay.Hour() != 0 || startDay.Minute() != 0 {
 		t.Fatalf("expected normalized start day, got %s", startDay.Format(time.RFC3339))

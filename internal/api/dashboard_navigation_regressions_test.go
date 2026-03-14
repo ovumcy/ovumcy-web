@@ -36,10 +36,10 @@ func TestDashboardLogoutFormsRequireConfirmation(t *testing.T) {
 		t.Fatalf("read dashboard body: %v", err)
 	}
 	rendered := string(body)
-	if strings.Count(rendered, `action="/api/auth/logout"`) < 2 {
+	if strings.Count(rendered, `action="/logout"`) < 2 {
 		t.Fatalf("expected desktop and mobile logout forms")
 	}
-	if strings.Count(rendered, `action="/api/auth/logout" method="post"`) < 2 {
+	if strings.Count(rendered, `action="/logout" method="post"`) < 2 {
 		t.Fatalf("expected logout forms to use POST method")
 	}
 	if strings.Count(rendered, `name="csrf_token" value="`) < 2 {

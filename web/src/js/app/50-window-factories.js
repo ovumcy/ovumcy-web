@@ -1431,9 +1431,9 @@
           periodLength: clampInteger(root.getAttribute("data-period-length"), 5, 1, 14),
           periodExceedsCycleMessage: String(root.getAttribute("data-period-exceeds-cycle-message") || "Period length must not exceed cycle length."),
           relativeDayLabels: {
-            today: String(root.getAttribute("data-today-label") || "Today"),
-            yesterday: String(root.getAttribute("data-yesterday-label") || "Yesterday"),
-            twoDaysAgo: String(root.getAttribute("data-two-days-ago-label") || "2 days ago")
+            today: String(root.getAttribute("data-today-label") || ""),
+            yesterday: String(root.getAttribute("data-yesterday-label") || ""),
+            twoDaysAgo: String(root.getAttribute("data-two-days-ago-label") || "")
           },
           lang: String(root.getAttribute("data-lang") || "en"),
           progress: root.querySelector("[data-onboarding-progress]"),

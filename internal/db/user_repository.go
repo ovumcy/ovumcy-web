@@ -216,7 +216,7 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(userID uint) error {
 	})
 }
 
-func (repo *UserRepository) CompleteOnboarding(userID uint, startDay time.Time, periodLength int) error {
+func (repo *UserRepository) CompleteOnboarding(userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
 	if periodLength <= 0 {
 		return errors.New("invalid period length")
 	}
@@ -226,39 +226,41 @@ func (repo *UserRepository) CompleteOnboarding(userID uint, startDay time.Time, 
 	}
 
 	return repo.database.Transaction(func(tx *gorm.DB) error {
-		for cursor := startDay; !cursor.After(endDay); cursor = cursor.AddDate(0, 0, 1) {
-			dayStart := cursor
-			dayEnd := dayStart.AddDate(0, 0, 1)
+		if autoPeriodFill {
+			for cursor := startDay; !cursor.After(endDay); cursor = cursor.AddDate(0, 0, 1) {
+				dayStart := cursor
+				dayEnd := dayStart.AddDate(0, 0, 1)
 
-			var entry models.DailyLog
-			result := tx.
-				Where("user_id = ? AND date >= ? AND date < ?", userID, dayStart, dayEnd).
-				Order("date DESC, id DESC").
-				First(&entry)
-			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-				entry = models.DailyLog{
-					UserID:        userID,
-					Date:          dayStart,
-					IsPeriod:      true,
-					Flow:          models.FlowNone,
-					SexActivity:   models.SexActivityNone,
-					CervicalMucus: models.CervicalMucusNone,
-					SymptomIDs:    []uint{},
+				var entry models.DailyLog
+				result := tx.
+					Where("user_id = ? AND date >= ? AND date < ?", userID, dayStart, dayEnd).
+					Order("date DESC, id DESC").
+					First(&entry)
+				if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+					entry = models.DailyLog{
+						UserID:        userID,
+						Date:          dayStart,
+						IsPeriod:      true,
+						Flow:          models.FlowNone,
+						SexActivity:   models.SexActivityNone,
+						CervicalMucus: models.CervicalMucusNone,
+						SymptomIDs:    []uint{},
+					}
+					if err := tx.Create(&entry).Error; err != nil {
+						return err
+					}
+					continue
 				}
-				if err := tx.Create(&entry).Error; err != nil {
+				if result.Error != nil {
+					return result.Error
+				}
+
+				if err := tx.Model(&entry).Updates(map[string]any{
+					"is_period": true,
+					"flow":      models.FlowNone,
+				}).Error; err != nil {
 					return err
 				}
-				continue
-			}
-			if result.Error != nil {
-				return result.Error
-			}
-
-			if err := tx.Model(&entry).Updates(map[string]any{
-				"is_period": true,
-				"flow":      models.FlowNone,
-			}).Error; err != nil {
-				return err
 			}
 		}
 
