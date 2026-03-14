@@ -225,6 +225,21 @@ test.describe('Dashboard: today editor', () => {
     await expect(notes).toHaveValue(noteText);
   });
 
+  test('mobile dashboard symptom chips remain clickable above the bottom tabbar', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-mobile-symptoms');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    const lastSymptom = page
+      .locator('fieldset[data-dashboard-section="symptoms"] label.choice-option:visible')
+      .last();
+    await expect(lastSymptom).toBeVisible();
+    await lastSymptom.scrollIntoViewIfNeeded();
+    await symptomChipForOption(lastSymptom).click();
+    await expect(symptomInputForOption(lastSymptom)).toBeChecked();
+  });
+
   test('switching Period day off keeps symptoms but clears flow for saved state', async ({ page }) => {
     await registerOwnerOnDashboard(page, 'dashboard-period-off');
 

@@ -131,6 +131,13 @@ test.describe('Auth: register, login, logout', () => {
   });
 
   test('register form rejects emoji email via client validation', async ({ page }) => {
+    const consoleErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') {
+        consoleErrors.push(message.text());
+      }
+    });
+
     await page.goto('/register');
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
 
@@ -149,6 +156,9 @@ test.describe('Auth: register, login, logout', () => {
     await expect(page.locator('#register-client-status .status-error')).toContainText(
       /valid email address|корректный email|correo válido/i
     );
+    expect(
+      consoleErrors.some((text) => /Pattern attribute value .* is not a valid regular expression/i.test(text))
+    ).toBe(false);
   });
 
   test('register empty submit validates in top-down order and places the error next to the active field', async ({

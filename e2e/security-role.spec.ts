@@ -70,7 +70,7 @@ async function readCSRFToken(page: Page): Promise<string> {
 }
 
 test.describe('Security and role-based access', () => {
-  test('xss in profile display name is escaped and never executes', async ({ page }) => {
+  test('xss in profile display name is rejected and never executes', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'security-xss-profile');
 
     let dialogTriggered = false;
@@ -83,10 +83,11 @@ test.describe('Security and role-based access', () => {
     await page.locator('#settings-display-name').fill(payload);
     await page.locator('form[action="/api/settings/profile"] button[data-save-button]').click();
 
-    const primaryNavUserChip = page.locator('.nav-user-chip').first();
+    const primaryNavUserChip = page.locator('[data-nav-account-actions] #nav-user-chip-desktop');
 
-    await expect(page.locator('#settings-profile-status .status-ok')).toBeVisible();
-    await expect(primaryNavUserChip).toContainText(payload);
+    await expect(page.locator('#settings-profile-status .status-error')).toBeVisible();
+    await expect(page.locator('#settings-profile-status .status-ok')).toHaveCount(0);
+    await expect(primaryNavUserChip).not.toContainText('xss-profile');
     await expect(primaryNavUserChip.locator('img')).toHaveCount(0);
     await expect(page.locator('#settings-display-name')).toHaveValue(payload);
     await expect(page.locator('#settings-account img')).toHaveCount(0);

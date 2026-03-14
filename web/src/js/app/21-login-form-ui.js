@@ -1,10 +1,63 @@
-  var authEmailInputPattern = "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$";
+  var authEmailLocalPattern = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/;
+  var authEmailDomainLabelPattern = /^[A-Za-z0-9-]+$/;
 
   function configureEmailField(input) {
     if (!input || input.type !== "email") {
       return;
     }
-    input.setAttribute("pattern", authEmailInputPattern);
+
+    input.removeAttribute("pattern");
+    input.setAttribute("autocapitalize", "none");
+    input.setAttribute("spellcheck", "false");
+  }
+
+  function isAuthEmailValueValid(value) {
+    var normalized = String(value || "").trim();
+    var atIndex;
+    var localPart;
+    var domainPart;
+    var domainLabels;
+    var index;
+    var label;
+
+    if (!normalized) {
+      return true;
+    }
+
+    if (/[^\u0021-\u007E]/.test(normalized)) {
+      return false;
+    }
+
+    atIndex = normalized.indexOf("@");
+    if (atIndex <= 0 || atIndex !== normalized.lastIndexOf("@") || atIndex >= normalized.length - 1) {
+      return false;
+    }
+
+    localPart = normalized.slice(0, atIndex);
+    domainPart = normalized.slice(atIndex + 1);
+    if (!authEmailLocalPattern.test(localPart)) {
+      return false;
+    }
+    if (localPart.charAt(0) === "." || localPart.charAt(localPart.length - 1) === "." || localPart.indexOf("..") !== -1) {
+      return false;
+    }
+
+    domainLabels = domainPart.split(".");
+    if (domainLabels.length < 2) {
+      return false;
+    }
+
+    for (index = 0; index < domainLabels.length; index++) {
+      label = domainLabels[index];
+      if (!label || !authEmailDomainLabelPattern.test(label)) {
+        return false;
+      }
+      if (label.charAt(0) === "-" || label.charAt(label.length - 1) === "-") {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   function updateFieldValidityMessage(input, requiredMessage, emailMessage) {
@@ -21,7 +74,7 @@
       input.setCustomValidity(requiredMessage);
       return;
     }
-    if (input.type === "email" && (input.validity.typeMismatch || input.validity.patternMismatch)) {
+    if (input.type === "email" && (input.validity.typeMismatch || !isAuthEmailValueValid(input.value))) {
       input.setCustomValidity(emailMessage);
     }
   }
