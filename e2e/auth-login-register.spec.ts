@@ -5,6 +5,7 @@ import {
   createCredentials,
   expectInlineRegisterRecoveryStep,
   expectNoSensitiveAuthParams,
+  expectValueNotInWebStorage,
   loginViaUI,
   logoutViaAPI,
   pathOf,
@@ -220,6 +221,30 @@ test.describe('Auth: register, login, logout', () => {
 
     await page.locator('#login-password').fill('StillWrong2');
     await expect(serverError).toHaveCount(0);
+  });
+
+  test('login wrong password keeps email but does not restore password from browser storage', async ({
+    page,
+  }) => {
+    const creds = createCredentials('auth-login-no-password-draft');
+    const attemptedPassword = 'WrongPass1';
+
+    await registerOwnerViaUI(page, creds);
+    await expectInlineRegisterRecoveryStep(page);
+    await logoutViaAPI(page);
+
+    await page.goto('/login');
+    await page.locator('#login-email').fill(creds.email);
+    await page.locator('#login-password').fill(attemptedPassword);
+    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    expectNoSensitiveAuthParams(page.url());
+    await expect(page.locator('[data-auth-server-error]')).toBeVisible();
+    await expect(page.locator('#login-email')).toHaveValue(creds.email);
+    await expect(page.locator('#login-password')).toHaveValue('');
+    await expect(page.locator('#login-password')).toBeFocused();
+    await expectValueNotInWebStorage(page, attemptedPassword);
   });
 
   test('login wrong password and unknown email return same generic error message', async ({ page }) => {

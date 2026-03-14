@@ -188,14 +188,14 @@ git clone https://github.com/terraincognita07/ovumcy.git
 cd ovumcy
 npm ci
 npm run build
-export SECRET_KEY=replace_with_at_least_32_random_characters
+export SECRET_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
 go run ./cmd/ovumcy
 ```
 
 PowerShell:
 
 ```powershell
-$env:SECRET_KEY = "replace_with_at_least_32_random_characters"
+$env:SECRET_KEY = node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 go run ./cmd/ovumcy
 ```
 
@@ -206,7 +206,8 @@ Most self-hosted setups only need a small set of variables:
 ```env
 TZ=UTC
 DEFAULT_LANGUAGE=en
-SECRET_KEY=replace_with_at_least_32_random_characters
+# Set a unique 32+ character secret before first start.
+SECRET_KEY=
 PORT=8080
 COOKIE_SECURE=false
 

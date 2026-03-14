@@ -838,46 +838,6 @@
     });
   }
 
-  function loginPasswordDraftStorage() {
-    if (!window.sessionStorage) {
-      return null;
-    }
-    return window.sessionStorage;
-  }
-
-  function readLoginPasswordDraft(storage, key) {
-    if (!storage || !key) {
-      return "";
-    }
-    try {
-      return String(storage.getItem(key) || "");
-    } catch {
-      return "";
-    }
-  }
-
-  function writeLoginPasswordDraft(storage, key, value) {
-    if (!storage || !key) {
-      return;
-    }
-    try {
-      storage.setItem(key, String(value || ""));
-    } catch {
-      // Ignore session storage write failures (privacy mode, quota, etc.).
-    }
-  }
-
-  function clearLoginPasswordDraft(storage, key) {
-    if (!storage || !key) {
-      return;
-    }
-    try {
-      storage.removeItem(key);
-    } catch {
-      // Ignore session storage cleanup failures.
-    }
-  }
-
   function isTruthyDataValue(raw) {
     var normalized = String(raw || "").trim().toLowerCase();
     return normalized === "1" || normalized === "true" || normalized === "yes";
@@ -896,7 +856,7 @@
     input.setSelectionRange(end, end);
   }
 
-  function initLoginPasswordPersistence() {
+  function initLoginErrorFocus() {
     var form = document.getElementById("login-form");
     if (!form) {
       return;
@@ -907,26 +867,12 @@
       return;
     }
 
-    var storage = loginPasswordDraftStorage();
-    var storageKey = form.getAttribute("data-password-draft-key") || "ovumcy_login_password_draft";
     var hasError = isTruthyDataValue(form.getAttribute("data-login-has-error"));
 
-    function persistPasswordDraft() {
-      writeLoginPasswordDraft(storage, storageKey, passwordField.value);
-    }
-
-    passwordField.addEventListener("input", persistPasswordDraft);
-    form.addEventListener("submit", persistPasswordDraft);
-
     if (!hasError) {
-      clearLoginPasswordDraft(storage, storageKey);
       return;
     }
 
-    var draft = readLoginPasswordDraft(storage, storageKey);
-    if (draft) {
-      passwordField.value = draft;
-    }
     focusLoginPasswordField(passwordField);
   }
 
@@ -4270,7 +4216,7 @@
     initRegisterValidation();
     initSettingsPasswordValidation();
     initResetPasswordValidation();
-    initLoginPasswordPersistence();
+    initLoginErrorFocus();
     initConfirmModal();
     initClearDataPasswordConfirmation();
     bindCycleStartConfirmForms();

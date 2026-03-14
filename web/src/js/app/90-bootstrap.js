@@ -21,7 +21,7 @@
     initRegisterValidation();
     initSettingsPasswordValidation();
     initResetPasswordValidation();
-    initLoginPasswordPersistence();
+    initLoginErrorFocus();
     initConfirmModal();
     initClearDataPasswordConfirmation();
     bindCycleStartConfirmForms();

@@ -19,7 +19,6 @@
       novalidate
       class="mt-5 space-y-4"
       data-login-has-error="{{if .ErrorKey}}true{{else}}false{{end}}"
-      data-password-draft-key="ovumcy_login_password_draft"
       data-required-message="{{t .Messages "validation.required"}}"
       data-email-message="{{t .Messages "validation.email"}}">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -59,4 +58,3 @@
   </div>
 </section>
 {{end}}
-
