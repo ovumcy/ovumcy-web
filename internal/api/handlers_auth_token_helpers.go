@@ -51,6 +51,12 @@ func (handler *Handler) clearAuthCookie(c *fiber.Ctx) {
 	})
 }
 
+func (handler *Handler) clearAuthRelatedCookies(c *fiber.Ctx) {
+	handler.clearAuthCookie(c)
+	handler.clearRecoveryCodePageCookie(c)
+	handler.clearResetPasswordCookie(c)
+}
+
 func (handler *Handler) buildToken(user *models.User, ttl time.Duration) (string, error) {
 	if user == nil {
 		return "", errors.New("user is required")

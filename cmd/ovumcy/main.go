@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"os"
@@ -258,7 +259,7 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {
 	app.Use(securityHeadersMiddleware())
 	app.Use(recover.New())
-	app.Use(logger.New())
+	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
 	app.Use("/api/auth/login", limiter.New(limiter.Config{
 		Max:        config.RateLimits.LoginMax,
@@ -281,6 +282,23 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	}))
 	app.Use(handler.LanguageMiddleware)
 	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure)))
+}
+
+const requestLoggerFormat = "${time} | ${status} | ${latency} | ${method} | ${request_path} | ${error}\n"
+
+func newRequestLogger(output io.Writer) fiber.Handler {
+	config := logger.Config{
+		Format: requestLoggerFormat,
+		CustomTags: map[string]logger.LogFunc{
+			"request_path": func(buffer logger.Buffer, c *fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
+				return buffer.WriteString(api.SafeRequestLogPath(c))
+			},
+		},
+	}
+	if output != nil {
+		config.Output = output
+	}
+	return logger.New(config)
 }
 
 func securityHeadersMiddleware() fiber.Handler {
@@ -553,15 +571,10 @@ func rateLimitScope(c *fiber.Ctx) string {
 }
 
 func logRateLimitHit(c *fiber.Ctx) {
-	ip := strings.TrimSpace(c.IP())
-	if ip == "" {
-		ip = "unknown"
-	}
-
 	retryAfter := strings.TrimSpace(string(c.Response().Header.Peek(fiber.HeaderRetryAfter)))
 	if retryAfter == "" {
 		retryAfter = "unknown"
 	}
 
-	log.Printf("rate limit reached: method=%s path=%s ip=%s retry_after=%s", c.Method(), c.Path(), ip, retryAfter)
+	log.Printf("rate limit reached: method=%s path=%s retry_after=%s", c.Method(), api.SafeRequestLogPath(c), retryAfter)
 }

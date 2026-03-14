@@ -96,16 +96,12 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	if err := handler.authService.RevokeAuthSessions(user.ID); err != nil {
-		handler.clearAuthCookie(c)
-		handler.clearRecoveryCodePageCookie(c)
-		handler.clearResetPasswordCookie(c)
+		handler.clearAuthRelatedCookies(c)
 		spec := authSessionRevokeErrorSpec()
 		handler.logSecurityError(c, "auth.logout", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	handler.clearAuthCookie(c)
-	handler.clearRecoveryCodePageCookie(c)
-	handler.clearResetPasswordCookie(c)
+	handler.clearAuthRelatedCookies(c)
 	handler.logSecurityEvent(c, "auth.logout", "success")
 	if isHTMX(c) {
 		c.Set("HX-Redirect", "/login")

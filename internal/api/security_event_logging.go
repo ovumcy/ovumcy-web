@@ -39,7 +39,7 @@ func LogSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...Sec
 		fmt.Sprintf("action=%q", strings.TrimSpace(action)),
 		fmt.Sprintf("outcome=%q", strings.TrimSpace(outcome)),
 		fmt.Sprintf("method=%q", c.Method()),
-		fmt.Sprintf("path=%q", c.Path()),
+		fmt.Sprintf("path=%q", SafeRequestLogPath(c)),
 		fmt.Sprintf("format=%q", securityEventRequestFormat(c)),
 	}
 

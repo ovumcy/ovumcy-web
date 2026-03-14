@@ -487,6 +487,39 @@ func TestDefaultRequestLoggerDoesNotLogFormSecrets(t *testing.T) {
 	}
 }
 
+func TestRequestLoggerUsesSafeRouteTemplateWithoutIP(t *testing.T) {
+	var output bytes.Buffer
+	app := fiber.New()
+	app.Use(newRequestLogger(&output))
+	app.Post("/api/days/:date", func(c *fiber.Ctx) error {
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/days/2026-02-17", nil)
+	request.RemoteAddr = "203.0.113.9:43123"
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
+
+	logLine := output.String()
+	if !strings.Contains(logLine, "/api/days/:date") {
+		t.Fatalf("expected safe route template in request logs, got %q", logLine)
+	}
+	if strings.Contains(logLine, "2026-02-17") {
+		t.Fatalf("did not expect concrete health date in request logs: %q", logLine)
+	}
+	if strings.Contains(logLine, "203.0.113.9") {
+		t.Fatalf("did not expect raw client ip in request logs: %q", logLine)
+	}
+}
+
 func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
@@ -497,17 +530,19 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 	const plaintextPassword = "PlaintextPassword123!"
 
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Post("/api/days/:date", func(c *fiber.Ctx) error {
+		c.Response().Header.Set(fiber.HeaderRetryAfter, "60")
 		logRateLimitHit(c)
 		return c.SendStatus(http.StatusTooManyRequests)
 	})
 
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/api/auth/forgot-password?token=plain-reset-token&email=user@example.com",
+		"/api/days/2026-02-17?token=plain-reset-token&email=user@example.com",
 		strings.NewReader("email=user@example.com&password=PlaintextPassword123%21&token=plain-reset-token"),
 	)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.RemoteAddr = "203.0.113.9:43123"
 
 	response, err := app.Test(request, -1)
 	if err != nil {
@@ -520,8 +555,8 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 	}
 
 	logLine := output.String()
-	if !strings.Contains(logLine, "path=/api/auth/forgot-password") {
-		t.Fatalf("expected path without query string in rate-limit logs, got %q", logLine)
+	if !strings.Contains(logLine, "path=/api/days/:date") {
+		t.Fatalf("expected sanitized path without query string in rate-limit logs, got %q", logLine)
 	}
 	if strings.Contains(logLine, "plain-reset-token") {
 		t.Fatalf("did not expect reset token in rate-limit logs: %q", logLine)
@@ -531,6 +566,12 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 	}
 	if strings.Contains(logLine, plaintextPassword) {
 		t.Fatalf("did not expect plaintext password in rate-limit logs: %q", logLine)
+	}
+	if strings.Contains(logLine, "2026-02-17") {
+		t.Fatalf("did not expect concrete health date in rate-limit logs: %q", logLine)
+	}
+	if strings.Contains(logLine, "203.0.113.9") {
+		t.Fatalf("did not expect raw client ip in rate-limit logs: %q", logLine)
 	}
 }
 

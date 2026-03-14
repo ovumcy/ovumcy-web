@@ -2,7 +2,9 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
@@ -58,14 +60,30 @@ func TestSettingsDeleteAccountRejectsInvalidPassword(t *testing.T) {
 	}
 }
 
-func TestSettingsDeleteAccountDeletesUserAndClearsAuthCookie(t *testing.T) {
+func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-delete-success@example.com")
 
-	response := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/settings/delete-account", url.Values{
-		"password": {"StrongPass1"},
-	}, map[string]string{
-		"Accept": "application/json",
-	})
+	form := url.Values{
+		"password":   {"StrongPass1"},
+		"csrf_token": {ctx.csrfToken},
+	}
+	request := httptest.NewRequest(http.MethodDelete, "/api/settings/delete-account", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set(
+		"Cookie",
+		joinCookieHeader(
+			ctx.authCookie,
+			cookiePair(ctx.csrfCookie),
+			recoveryCodeCookieName+"=temporary-recovery",
+			resetPasswordCookieName+"=temporary-reset",
+		),
+	)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("delete-account request failed: %v", err)
+	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
@@ -86,5 +104,21 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthCookie(t *testing.T) {
 	}
 	if authCookieAfterDelete.Value != "" {
 		t.Fatalf("expected cleared auth cookie value, got %q", authCookieAfterDelete.Value)
+	}
+
+	recoveryCookieAfterDelete := responseCookie(response.Cookies(), recoveryCodeCookieName)
+	if recoveryCookieAfterDelete == nil {
+		t.Fatalf("expected recovery code cookie to be cleared on delete-account success")
+	}
+	if recoveryCookieAfterDelete.Value != "" {
+		t.Fatalf("expected cleared recovery code cookie value, got %q", recoveryCookieAfterDelete.Value)
+	}
+
+	resetCookieAfterDelete := responseCookie(response.Cookies(), resetPasswordCookieName)
+	if resetCookieAfterDelete == nil {
+		t.Fatalf("expected reset password cookie to be cleared on delete-account success")
+	}
+	if resetCookieAfterDelete.Value != "" {
+		t.Fatalf("expected cleared reset password cookie value, got %q", resetCookieAfterDelete.Value)
 	}
 }

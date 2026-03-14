@@ -51,7 +51,7 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	handler.clearAuthCookie(c)
+	handler.clearAuthRelatedCookies(c)
 	handler.logSecurityEvent(c, "settings.delete_account", "success")
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})

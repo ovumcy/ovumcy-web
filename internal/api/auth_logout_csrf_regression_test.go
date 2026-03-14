@@ -22,7 +22,12 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set(
 		"Cookie",
-		joinCookieHeader(authCookie, cookiePair(csrfCookie), recoveryCodeCookieName+"=temporary-recovery"),
+		joinCookieHeader(
+			authCookie,
+			cookiePair(csrfCookie),
+			recoveryCodeCookieName+"=temporary-recovery",
+			resetPasswordCookieName+"=temporary-reset",
+		),
 	)
 
 	response, err := app.Test(request, -1)
@@ -52,6 +57,14 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	}
 	if recoveryCookieAfterLogout.Value != "" {
 		t.Fatalf("expected cleared recovery code cookie value, got %q", recoveryCookieAfterLogout.Value)
+	}
+
+	resetCookieAfterLogout := responseCookie(response.Cookies(), resetPasswordCookieName)
+	if resetCookieAfterLogout == nil {
+		t.Fatalf("expected logout response to clear reset password cookie")
+	}
+	if resetCookieAfterLogout.Value != "" {
+		t.Fatalf("expected cleared reset password cookie value, got %q", resetCookieAfterLogout.Value)
 	}
 }
 
