@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
 )
@@ -62,6 +63,7 @@ func TestSettingsDeleteAccountRejectsInvalidPassword(t *testing.T) {
 
 func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-delete-success@example.com")
+	seedSettingsDeleteAccountHealthData(t, ctx)
 
 	form := url.Values{
 		"password":   {"StrongPass1"},
@@ -97,6 +99,7 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.
 	if usersCount != 0 {
 		t.Fatalf("expected user to be deleted, got count=%d", usersCount)
 	}
+	assertSettingsDeleteAccountDataCounts(t, ctx, 0, 0)
 
 	authCookieAfterDelete := responseCookie(response.Cookies(), authCookieName)
 	if authCookieAfterDelete == nil {
@@ -120,5 +123,54 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.
 	}
 	if resetCookieAfterDelete.Value != "" {
 		t.Fatalf("expected cleared reset password cookie value, got %q", resetCookieAfterDelete.Value)
+	}
+}
+
+func seedSettingsDeleteAccountHealthData(t *testing.T, ctx settingsSecurityTestContext) {
+	t.Helper()
+
+	symptom := models.SymptomType{
+		UserID:    ctx.user.ID,
+		Name:      "Delete custom",
+		Icon:      "A",
+		Color:     "#111111",
+		IsBuiltin: false,
+	}
+	if err := ctx.database.Create(&symptom).Error; err != nil {
+		t.Fatalf("create custom symptom: %v", err)
+	}
+
+	logEntry := models.DailyLog{
+		UserID:     ctx.user.ID,
+		Date:       time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
+		IsPeriod:   true,
+		Flow:       models.FlowMedium,
+		SymptomIDs: []uint{symptom.ID},
+		Notes:      "delete me",
+	}
+	if err := ctx.database.Create(&logEntry).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+
+	assertSettingsDeleteAccountDataCounts(t, ctx, 1, 1)
+}
+
+func assertSettingsDeleteAccountDataCounts(t *testing.T, ctx settingsSecurityTestContext, wantSymptoms int64, wantLogs int64) {
+	t.Helper()
+
+	var symptomsCount int64
+	if err := ctx.database.Model(&models.SymptomType{}).Where("user_id = ? AND is_builtin = ?", ctx.user.ID, false).Count(&symptomsCount).Error; err != nil {
+		t.Fatalf("count custom symptoms: %v", err)
+	}
+	if symptomsCount != wantSymptoms {
+		t.Fatalf("expected custom symptoms count %d, got %d", wantSymptoms, symptomsCount)
+	}
+
+	var logsCount int64
+	if err := ctx.database.Model(&models.DailyLog{}).Where("user_id = ?", ctx.user.ID).Count(&logsCount).Error; err != nil {
+		t.Fatalf("count daily logs: %v", err)
+	}
+	if logsCount != wantLogs {
+		t.Fatalf("expected daily logs count %d, got %d", wantLogs, logsCount)
 	}
 }

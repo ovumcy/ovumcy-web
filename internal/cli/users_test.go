@@ -10,6 +10,7 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/db"
 	"github.com/terraincognita07/ovumcy/internal/models"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 func TestRunUsersCommandListPrintsMinimalUserAuditTable(t *testing.T) {
@@ -49,7 +50,8 @@ func TestRunUsersCommandDeleteRequiresExplicitConfirmation(t *testing.T) {
 	t.Parallel()
 
 	databasePath := createCLIUsersDatabase(t)
-	createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	user := createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	seedCLIUsersHealthData(t, databasePath, user.ID)
 
 	var output bytes.Buffer
 	err := runUsersCommand(
@@ -66,6 +68,31 @@ func TestRunUsersCommandDeleteRequiresExplicitConfirmation(t *testing.T) {
 	if len(remainingUsers) != 1 || remainingUsers[0] != "owner@example.com" {
 		t.Fatalf("expected user to remain after cancelled delete, got %#v", remainingUsers)
 	}
+	assertCLIUsersDataCounts(t, databasePath, user.ID, 1, 1, 1)
+}
+
+func TestRunUsersCommandDeleteRemovesAccountAndRelatedDataAfterExplicitConfirmation(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIUsersDatabase(t)
+	user := createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	seedCLIUsersHealthData(t, databasePath, user.ID)
+
+	var output bytes.Buffer
+	err := runUsersCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath},
+		[]string{"delete", "owner@example.com"},
+		strings.NewReader("DELETE\n"),
+		&output,
+	)
+	if err != nil {
+		t.Fatalf("runUsersCommand(delete) returned error: %v", err)
+	}
+	if !strings.Contains(output.String(), "Deleted account owner@example.com") {
+		t.Fatalf("expected delete confirmation output, got %q", output.String())
+	}
+
+	assertCLIUsersDataCounts(t, databasePath, user.ID, 0, 0, 0)
 }
 
 func TestRunUsersCommandDeleteRemovesAccountWithYesFlag(t *testing.T) {
@@ -112,7 +139,7 @@ func createCLIUsersDatabase(t *testing.T) string {
 	return databasePath
 }
 
-func createCLIUsersUser(t *testing.T, databasePath string, email string, displayName string, role string, onboardingCompleted bool, createdAt time.Time) {
+func createCLIUsersUser(t *testing.T, databasePath string, email string, displayName string, role string, onboardingCompleted bool, createdAt time.Time) models.User {
 	t.Helper()
 
 	database, err := db.OpenSQLite(databasePath)
@@ -144,6 +171,7 @@ func createCLIUsersUser(t *testing.T, databasePath string, email string, display
 	if err := database.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	return user
 }
 
 func listCLIUserEmails(t *testing.T, databasePath string) []string {
@@ -169,4 +197,71 @@ func listCLIUserEmails(t *testing.T, databasePath string) []string {
 		emails = append(emails, user.Email)
 	}
 	return emails
+}
+
+func seedCLIUsersHealthData(t *testing.T, databasePath string, userID uint) {
+	t.Helper()
+
+	database, err := db.OpenSQLite(databasePath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	defer sqlDB.Close()
+
+	symptom := models.SymptomType{
+		UserID:    userID,
+		Name:      "Custom",
+		Icon:      "A",
+		Color:     "#111111",
+		IsBuiltin: false,
+	}
+	if err := database.Create(&symptom).Error; err != nil {
+		t.Fatalf("create symptom: %v", err)
+	}
+
+	logEntry := models.DailyLog{
+		UserID:     userID,
+		Date:       time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
+		IsPeriod:   true,
+		Flow:       models.FlowMedium,
+		SymptomIDs: []uint{symptom.ID},
+		Notes:      "test note",
+	}
+	if err := database.Create(&logEntry).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+}
+
+func assertCLIUsersDataCounts(t *testing.T, databasePath string, userID uint, wantUsers int64, wantSymptoms int64, wantLogs int64) {
+	t.Helper()
+
+	database, err := db.OpenSQLite(databasePath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open sql db: %v", err)
+	}
+	defer sqlDB.Close()
+
+	assertCLIUsersCountForModel(t, database, &models.User{}, "id = ?", userID, wantUsers)
+	assertCLIUsersCountForModel(t, database, &models.SymptomType{}, "user_id = ?", userID, wantSymptoms)
+	assertCLIUsersCountForModel(t, database, &models.DailyLog{}, "user_id = ?", userID, wantLogs)
+}
+
+func assertCLIUsersCountForModel(t *testing.T, database *gorm.DB, model any, query string, arg any, want int64) {
+	t.Helper()
+
+	var count int64
+	if err := database.Model(model).Where(query, arg).Count(&count).Error; err != nil {
+		t.Fatalf("count %T: %v", model, err)
+	}
+	if count != want {
+		t.Fatalf("expected %T count %d, got %d", model, want, count)
+	}
 }

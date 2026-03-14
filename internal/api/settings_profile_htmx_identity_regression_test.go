@@ -42,14 +42,19 @@ func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
 		t.Fatalf("read htmx profile update body: %v", err)
 	}
 	rendered := string(body)
-	if !strings.Contains(rendered, `data-current-user-identity`) {
-		t.Fatalf("expected nav identity markup in htmx response, got %q", rendered)
+	if strings.Count(rendered, `data-current-user-identity`) != 2 {
+		t.Fatalf("expected both nav identity chips in htmx response, got %q", rendered)
 	}
-	if !strings.Contains(rendered, `title="Катя"`) || !strings.Contains(rendered, `aria-label="Катя"`) {
-		t.Fatalf("expected unicode-safe identity attributes in htmx response, got %q", rendered)
+	if strings.Contains(rendered, `nav-user-chip-empty`) {
+		t.Fatalf("did not expect empty-state nav identity styling after setting a display name, got %q", rendered)
 	}
 	if strings.Contains(rendered, "profile-htmx-owner@example.com") {
 		t.Fatalf("did not expect email fallback in identity response, got %q", rendered)
+	}
+	for _, id := range []string{`id="nav-user-chip-desktop"`, `id="nav-user-chip-mobile"`} {
+		if !strings.Contains(rendered, id) {
+			t.Fatalf("expected nav identity chip %s in htmx response", id)
+		}
 	}
 }
 
@@ -103,10 +108,18 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 		t.Fatalf("read clear htmx profile body: %v", err)
 	}
 	rendered := string(body)
-	if !strings.Contains(rendered, `title="Profile settings"`) {
-		t.Fatalf("expected empty display-name nav chip to fall back to profile settings tooltip, got %q", rendered)
+	if strings.Contains(rendered, "profile-htmx-clear@example.com") {
+		t.Fatalf("did not expect email fallback in cleared identity response, got %q", rendered)
 	}
-	if strings.Contains(rendered, ">Add profile name<") {
-		t.Fatalf("did not expect empty display-name placeholder as visible nav label, got %q", rendered)
+	if strings.Count(rendered, `nav-user-chip-empty`) < 2 {
+		t.Fatalf("expected cleared profile response to render empty-state nav chips, got %q", rendered)
+	}
+	if strings.Contains(rendered, `data-current-user-identity`) {
+		t.Fatalf("did not expect display-name identity spans after clearing the display name, got %q", rendered)
+	}
+	for _, id := range []string{`id="nav-user-chip-desktop"`, `id="nav-user-chip-mobile"`} {
+		if !strings.Contains(rendered, id) {
+			t.Fatalf("expected nav identity chip %s in cleared htmx response", id)
+		}
 	}
 }

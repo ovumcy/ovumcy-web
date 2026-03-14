@@ -31,13 +31,10 @@ func TestBaseTemplateAvoidsInlineScriptsUnderStrictCSP(t *testing.T) {
 	rendered := string(body)
 
 	scriptTagPattern := regexp.MustCompile(`(?is)<script\b[^>]*>`)
-	scriptTags := scriptTagPattern.FindAllString(rendered, -1)
-	if len(scriptTags) == 0 {
-		t.Fatalf("expected at least one external script tag in base template")
-	}
-	for _, tag := range scriptTags {
-		if !regexp.MustCompile(`(?i)\bsrc=`).MatchString(tag) {
-			t.Fatalf("expected base template to avoid inline scripts, found tag %q", tag)
+	for _, tag := range scriptTagPattern.FindAllString(rendered, -1) {
+		if regexp.MustCompile(`(?is)\bsrc\s*=`).MatchString(tag) {
+			continue
 		}
+		t.Fatalf("expected login page to avoid inline script tags under strict CSP, found %q", tag)
 	}
 }

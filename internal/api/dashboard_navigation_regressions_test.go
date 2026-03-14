@@ -36,14 +36,24 @@ func TestDashboardLogoutFormsRequireConfirmation(t *testing.T) {
 		t.Fatalf("read dashboard body: %v", err)
 	}
 	rendered := string(body)
-	if strings.Count(rendered, `action="/logout"`) < 2 {
-		t.Fatalf("expected desktop and mobile logout forms")
+
+	logoutForms := regexp.MustCompile(`(?is)<form\b[^>]*action="/logout"[^>]*>`).FindAllString(rendered, -1)
+	if len(logoutForms) < 2 {
+		t.Fatalf("expected dashboard navigation to render both desktop and mobile logout forms")
 	}
-	if strings.Count(rendered, `action="/logout" method="post"`) < 2 {
-		t.Fatalf("expected logout forms to use POST method")
+	for _, form := range logoutForms {
+		if !strings.Contains(form, `method="post"`) {
+			t.Fatalf("expected logout form to use POST, got %q", form)
+		}
+		if !strings.Contains(form, `data-confirm="`) {
+			t.Fatalf("expected logout form to carry confirmation wiring, got %q", form)
+		}
 	}
-	if strings.Count(rendered, `name="csrf_token" value="`) < 2 {
-		t.Fatalf("expected csrf token hidden fields on both logout forms")
+	if strings.Contains(rendered, `action="/api/auth/logout"`) {
+		t.Fatalf("did not expect dashboard navigation to post to the raw API logout route")
+	}
+	if got := len(regexp.MustCompile(`(?is)<input\b[^>]*name="csrf_token"[^>]*>`).FindAllString(rendered, -1)); got < len(logoutForms) {
+		t.Fatalf("expected csrf token hidden fields for each logout form, got %d for %d forms", got, len(logoutForms))
 	}
 }
 
@@ -80,11 +90,16 @@ func TestDashboardNavigationShowsDisplayNameWithoutEmailFallback(t *testing.T) {
 	if strings.Contains(rendered, "identity-owner@example.com") {
 		t.Fatalf("did not expect email identity in navigation")
 	}
-	if !strings.Contains(rendered, `data-current-user-identity`) {
-		t.Fatalf("expected dashboard navigation identity container, got %q", rendered)
+	if strings.Count(rendered, `data-current-user-identity`) != 2 {
+		t.Fatalf("expected both dashboard nav identity chips to render the saved display name, got %q", rendered)
 	}
-	if !strings.Contains(rendered, `title="Maya"`) || !strings.Contains(rendered, `aria-label="Maya"`) {
-		t.Fatalf("expected dashboard navigation to render the saved display name, got %q", rendered)
+	if strings.Contains(rendered, `nav-user-chip-empty`) {
+		t.Fatalf("did not expect empty identity chip styling when display name exists, got %q", rendered)
+	}
+	for _, id := range []string{`id="nav-user-chip-desktop"`, `id="nav-user-chip-mobile"`} {
+		if !strings.Contains(rendered, id) {
+			t.Fatalf("expected dashboard navigation chip %s in response", id)
+		}
 	}
 }
 
@@ -94,14 +109,19 @@ func TestDashboardNavigationShowsProfileHintWhenDisplayNameEmpty(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	rendered := mustRenderDashboard(t, app, authCookie, "en")
-	if !strings.Contains(rendered, `title="Profile settings"`) {
-		t.Fatalf("expected empty display-name navigation tooltip, got %q", rendered)
-	}
-	if strings.Contains(rendered, ">Add profile name<") {
-		t.Fatalf("did not expect empty display-name placeholder as visible nav label, got %q", rendered)
-	}
 	if strings.Contains(rendered, "identity-empty@example.com") || strings.Contains(rendered, "identity-empty") {
 		t.Fatalf("did not expect email fallback in navigation when display name is empty")
+	}
+	if strings.Count(rendered, `nav-user-chip-empty`) < 2 {
+		t.Fatalf("expected both dashboard nav identity chips to use the empty-state styling, got %q", rendered)
+	}
+	if strings.Contains(rendered, `data-current-user-identity`) {
+		t.Fatalf("did not expect display-name identity spans when display name is empty, got %q", rendered)
+	}
+	for _, id := range []string{`id="nav-user-chip-desktop"`, `id="nav-user-chip-mobile"`} {
+		if !strings.Contains(rendered, id) {
+			t.Fatalf("expected dashboard navigation chip %s in response", id)
+		}
 	}
 }
 
