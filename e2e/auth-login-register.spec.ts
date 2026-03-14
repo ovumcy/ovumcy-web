@@ -61,12 +61,53 @@ test.describe('Auth: register, login, logout', () => {
 
   test('register weak password shows validation error without leaking query params', async ({ page }) => {
     const creds = createCredentials('auth-weak', 'weakpass');
+    let registerRequests = 0;
 
-    await registerOwnerViaUI(page, creds);
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/api/auth/register')) {
+        registerRequests += 1;
+      }
+    });
+
+    await page.goto('/register');
+    await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
+
+    const checklist = page.locator('[data-password-guidance]');
+    await expect(checklist.locator('[data-password-rule-item="length"]')).toHaveAttribute(
+      'data-met',
+      'false'
+    );
+
+    await page.locator('#register-email').fill(creds.email);
+    await page.locator('#register-password').fill(creds.password);
+    await page.locator('#register-confirm-password').fill(creds.password);
+
+    await expect(checklist.locator('[data-password-rule-item="length"]')).toHaveAttribute(
+      'data-met',
+      'true'
+    );
+    await expect(checklist.locator('[data-password-rule-item="lower"]')).toHaveAttribute(
+      'data-met',
+      'true'
+    );
+    await expect(checklist.locator('[data-password-rule-item="upper"]')).toHaveAttribute(
+      'data-met',
+      'false'
+    );
+    await expect(checklist.locator('[data-password-rule-item="digit"]')).toHaveAttribute(
+      'data-met',
+      'false'
+    );
+
+    await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/register$/);
     expectNoSensitiveAuthParams(page.url());
-    await expect(page.locator('.status-error')).toBeVisible();
+    await expect(page.locator('#register-client-status .status-error')).toBeVisible();
+    await expect(page.locator('#register-email')).toHaveValue(creds.email);
+    await expect(page.locator('#register-password')).toHaveValue(creds.password);
+    await expect(page.locator('#register-confirm-password')).toHaveValue(creds.password);
+    expect(registerRequests).toBe(0);
   });
 
   test('register form rejects invalid email via browser validation', async ({ page }) => {

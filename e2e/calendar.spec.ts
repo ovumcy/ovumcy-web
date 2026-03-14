@@ -217,14 +217,19 @@ test.describe('Calendar page', () => {
     const futureISO = shiftISODate(todayISO, 3);
     const futureMonth = futureISO.slice(0, 7);
 
-    await page.goto(`/calendar?month=${futureMonth}&day=${futureISO}`);
-    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${futureMonth}&day=${futureISO}`));
+    await page.goto(`/calendar?month=${futureMonth}`);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${futureMonth}`));
+
+    await page.locator(`button[data-day="${futureISO}"]`).click();
 
     const warningPanel = page.locator('#day-editor .journal-panel.text-sm').first();
     await expect(warningPanel).toBeVisible();
     await expect(warningPanel).not.toHaveText(/^$/);
     await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${futureISO}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-day-editor-open="${futureISO}"]`)).toBeVisible();
+
+    await page.locator(`[data-day-editor-open="${futureISO}"]`).click();
+    await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${futureISO}"]`)).toBeVisible();
   });
 
   test('language route preserves selected month/day query and visible panel', async ({ page }) => {

@@ -92,6 +92,10 @@ func ResolveLutealPhase(value int) int {
 	}
 }
 
+// CalcOvulationDay returns the one-based ovulation day within the cycle where
+// periodStart is cycle day 1. Example: a 28-day cycle with a 14-day luteal
+// phase predicts ovulation on cycle day 14, so a cycle that starts on
+// March 10, 2026 maps to March 23, 2026.
 func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 	if cycleLen < minLutealPhaseDays+minOvulationCycleDay {
 		return 0, false
@@ -125,6 +129,7 @@ func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int)
 	}
 
 	nextPeriodStart := dateOnly(periodStart.AddDate(0, 0, cycleLength))
+	// ovulationDay is one-based relative to periodStart (cycle day 1).
 	ovulationDate := dateOnly(periodStart.AddDate(0, 0, ovulationDay-1))
 	if !ovulationDate.Before(nextPeriodStart) {
 		return time.Time{}, time.Time{}, time.Time{}, false, false

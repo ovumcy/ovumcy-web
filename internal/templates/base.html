@@ -183,6 +183,29 @@
   </button>
 </div>
 {{end}}
+{{define "password_requirements_checklist"}}
+<div class="password-requirements" data-password-guidance>
+  <p class="journal-muted text-xs">{{t .Messages "auth.password_requirements"}}</p>
+  <ul class="password-requirements-list">
+    <li class="password-requirements-item" data-password-rule-item="length" data-met="false">
+      <span class="password-requirements-icon" data-password-rule-icon aria-hidden="true">•</span>
+      <span>{{t .Messages "auth.password_rule_length"}}</span>
+    </li>
+    <li class="password-requirements-item" data-password-rule-item="upper" data-met="false">
+      <span class="password-requirements-icon" data-password-rule-icon aria-hidden="true">•</span>
+      <span>{{t .Messages "auth.password_rule_upper"}}</span>
+    </li>
+    <li class="password-requirements-item" data-password-rule-item="lower" data-met="false">
+      <span class="password-requirements-icon" data-password-rule-icon aria-hidden="true">•</span>
+      <span>{{t .Messages "auth.password_rule_lower"}}</span>
+    </li>
+    <li class="password-requirements-item" data-password-rule-item="digit" data-met="false">
+      <span class="password-requirements-icon" data-password-rule-icon aria-hidden="true">•</span>
+      <span>{{t .Messages "auth.password_rule_digit"}}</span>
+    </li>
+  </ul>
+</div>
+{{end}}
 {{define "recovery_code_panel"}}
 <div
   class="journal-card journal-hero w-full p-7 sm:p-10"
@@ -326,7 +349,7 @@
   {{if .SwapOOB}}hx-swap-oob="outerHTML"{{end}}>
   <span class="nav-user-chip-icon" aria-hidden="true">👤</span>
   {{if hasDisplayName .CurrentUser}}
-  <span data-current-user-identity>{{userIdentity .CurrentUser}}</span>
+  <span class="role-chip-identity nav-user-chip-label" data-current-user-identity>{{userIdentity .CurrentUser}}</span>
   {{end}}
 </a>
 {{end}}

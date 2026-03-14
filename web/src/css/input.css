@@ -433,6 +433,11 @@
     cursor: pointer;
   }
 
+  .nav-user-chip-label {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
   .nav-account-actions {
     margin-left: auto;
     display: inline-flex;
@@ -729,6 +734,52 @@
   .password-toggle-btn:focus-visible {
     outline: 2px solid rgba(212, 165, 116, 0.55);
     outline-offset: 1px;
+  }
+
+  .password-requirements {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .password-requirements-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.35rem;
+  }
+
+  .password-requirements-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  .password-requirements-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(172, 136, 96, 0.28);
+    background: rgba(255, 248, 240, 0.72);
+    color: rgba(157, 117, 70, 0.92);
+    font-size: 0.72rem;
+    line-height: 1;
+    flex: 0 0 auto;
+  }
+
+  .password-requirements-item-met {
+    color: #2f6d49;
+  }
+
+  .password-requirements-item-met .password-requirements-icon {
+    border-color: rgba(74, 134, 97, 0.32);
+    background: rgba(232, 247, 238, 0.92);
+    color: #2f6d49;
   }
 
   .remember-option {
@@ -1576,6 +1627,103 @@
     border: 1px dashed rgba(172, 136, 96, 0.34);
     background: rgba(255, 248, 240, 0.56);
     padding: 0.78rem 0.86rem;
+  }
+
+  .stats-empty-hero {
+    position: relative;
+    display: grid;
+    gap: 0.9rem;
+    justify-items: center;
+    padding: 0.4rem 0 0.2rem;
+  }
+
+  .stats-empty-hero-card {
+    position: relative;
+    width: min(100%, 17rem);
+    border-radius: 1rem;
+    border: 1px solid rgba(182, 142, 101, 0.28);
+    background:
+      radial-gradient(circle at top, rgba(255, 255, 255, 0.8), rgba(255, 247, 239, 0.94)),
+      linear-gradient(160deg, rgba(255, 249, 244, 0.96), rgba(250, 236, 219, 0.92));
+    padding: 1rem 1rem 0.9rem;
+    overflow: hidden;
+    box-shadow: 0 16px 34px rgba(185, 134, 79, 0.14);
+  }
+
+  .stats-empty-hero-orb {
+    position: absolute;
+    width: 4.25rem;
+    height: 4.25rem;
+    border-radius: 999px;
+    filter: blur(0.2px);
+    opacity: 0.88;
+  }
+
+  .stats-empty-hero-orb-primary {
+    top: -1.1rem;
+    right: -0.9rem;
+    background: radial-gradient(circle, rgba(255, 189, 147, 0.62), rgba(255, 189, 147, 0));
+  }
+
+  .stats-empty-hero-orb-secondary {
+    left: -0.9rem;
+    bottom: -1.2rem;
+    background: radial-gradient(circle, rgba(232, 196, 168, 0.74), rgba(232, 196, 168, 0));
+  }
+
+  .stats-empty-hero-grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.45rem;
+    z-index: 1;
+  }
+
+  .stats-empty-hero-cell {
+    display: block;
+    min-height: 2.5rem;
+    border-radius: 0.8rem;
+    border: 1px solid rgba(172, 136, 96, 0.24);
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  }
+
+  .stats-empty-hero-cell-active {
+    background:
+      linear-gradient(160deg, rgba(243, 189, 192, 0.96), rgba(221, 147, 154, 0.86));
+    border-color: rgba(189, 111, 121, 0.32);
+  }
+
+  .stats-empty-hero-cell-soft {
+    background:
+      linear-gradient(160deg, rgba(241, 225, 198, 0.96), rgba(232, 196, 168, 0.88));
+  }
+
+  .stats-empty-hero-note {
+    width: min(100%, 11.5rem);
+    border-radius: 0.9rem;
+    border: 1px dashed rgba(172, 136, 96, 0.28);
+    background: rgba(255, 249, 244, 0.82);
+    padding: 0.75rem 0.85rem;
+    display: grid;
+    gap: 0.38rem;
+  }
+
+  .stats-empty-hero-note-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 999px;
+    background: rgba(205, 125, 111, 0.9);
+  }
+
+  .stats-empty-hero-note-line {
+    height: 0.46rem;
+    border-radius: 999px;
+    background: rgba(226, 196, 167, 0.82);
+  }
+
+  .stats-empty-hero-note-line-short {
+    width: 62%;
   }
 
   .stats-empty-icon {
@@ -2566,6 +2714,26 @@
     color: #c2b3db;
   }
 
+  :root[data-theme="dark"] .password-requirements-item {
+    color: #c9bfd9;
+  }
+
+  :root[data-theme="dark"] .password-requirements-icon {
+    border-color: rgba(157, 129, 196, 0.36);
+    background: rgba(43, 34, 58, 0.84);
+    color: #e5d2f7;
+  }
+
+  :root[data-theme="dark"] .password-requirements-item-met {
+    color: #9cd8ae;
+  }
+
+  :root[data-theme="dark"] .password-requirements-item-met .password-requirements-icon {
+    border-color: rgba(113, 183, 135, 0.34);
+    background: rgba(32, 66, 47, 0.86);
+    color: #9cd8ae;
+  }
+
   :root[data-theme="dark"] .journal-hero {
     background:
       linear-gradient(145deg, rgba(47, 40, 62, 0.98), rgba(34, 28, 45, 0.95)),
@@ -2576,6 +2744,31 @@
   :root[data-theme="dark"] .symptom-group-panel,
   :root[data-theme="dark"] .stats-empty-state {
     background: var(--bg-soft-strong);
+  }
+
+  :root[data-theme="dark"] .stats-empty-hero-card {
+    border-color: rgba(157, 129, 196, 0.24);
+    background:
+      radial-gradient(circle at top, rgba(76, 62, 99, 0.8), rgba(46, 37, 61, 0.95)),
+      linear-gradient(160deg, rgba(45, 37, 59, 0.98), rgba(34, 28, 45, 0.95));
+  }
+
+  :root[data-theme="dark"] .stats-empty-hero-cell {
+    border-color: rgba(157, 129, 196, 0.22);
+    background: rgba(60, 48, 78, 0.9);
+  }
+
+  :root[data-theme="dark"] .stats-empty-hero-cell-active {
+    border-color: rgba(207, 120, 132, 0.34);
+  }
+
+  :root[data-theme="dark"] .stats-empty-hero-note {
+    border-color: rgba(157, 129, 196, 0.24);
+    background: rgba(41, 33, 54, 0.88);
+  }
+
+  :root[data-theme="dark"] .stats-empty-hero-note-line {
+    background: rgba(118, 97, 149, 0.72);
   }
 
   :root[data-theme="dark"] .settings-account-block {

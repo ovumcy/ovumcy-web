@@ -29,7 +29,8 @@
       class="mt-5 space-y-4"
       data-required-message="{{t .Messages "validation.required"}}"
       data-email-message="{{t .Messages "validation.email"}}"
-      data-password-mismatch-message="{{t .Messages "auth.error.password_mismatch"}}">
+      data-password-mismatch-message="{{t .Messages "auth.error.password_mismatch"}}"
+      data-weak-password-message="{{t .Messages "auth.password_requirements"}}">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <label class="field-label" for="register-email">{{t .Messages "auth.email"}}</label>
@@ -50,7 +51,7 @@
         "FieldName" "confirm_password"
         "Autocomplete" "new-password"
         "Required" true)}}
-      <p class="journal-muted text-xs">{{t .Messages "auth.password_requirements"}}</p>
+      {{template "password_requirements_checklist" (dict "Messages" .Messages)}}
       <div id="register-client-status" class="save-status text-sm" aria-live="polite"></div>
 
       <button type="submit" class="btn-primary w-full">{{t .Messages "auth.register"}}</button>

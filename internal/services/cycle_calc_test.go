@@ -9,11 +9,11 @@ func TestCalcOvulationDay(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name         string
-		cycleLength  int
-		lutealPhase  int
-		wantDay      int
-		wantExact    bool
+		name        string
+		cycleLength int
+		lutealPhase int
+		wantDay     int
+		wantExact   bool
 	}{
 		{name: "regular cycle", cycleLength: 28, lutealPhase: 14, wantDay: 14, wantExact: true},
 		{name: "short cycle keeps minimum luteal reserve", cycleLength: 15, lutealPhase: 10, wantDay: 5, wantExact: true},
@@ -104,6 +104,23 @@ func TestPredictCycleWindow_NormalCycle(t *testing.T) {
 	}
 
 	assertCyclePredictionInvariants(t, periodStart, 28, ovulationDate, fertilityStart, fertilityEnd)
+}
+
+func TestPredictCycleWindow_UsesOneBasedCycleDayCounting(t *testing.T) {
+	t.Parallel()
+
+	periodStart := mustParseDay(t, "2026-03-10")
+	ovulationDate, _, _, exact, calculable := PredictCycleWindow(periodStart, 28, 14)
+
+	if !calculable {
+		t.Fatalf("expected calculable prediction for regular cycle")
+	}
+	if !exact {
+		t.Fatalf("expected exact prediction for regular cycle")
+	}
+	if got := ovulationDate.Format("2006-01-02"); got != "2026-03-23" {
+		t.Fatalf("expected one-based cycle day 14 to map to 2026-03-23, got %s", got)
+	}
 }
 
 func TestPredictCycleWindow_InvariantsAcrossRanges(t *testing.T) {

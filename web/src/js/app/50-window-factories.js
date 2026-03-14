@@ -1430,7 +1430,11 @@
           cycleLength: clampInteger(root.getAttribute("data-cycle-length"), 28, 15, 90),
           periodLength: clampInteger(root.getAttribute("data-period-length"), 5, 1, 14),
           periodExceedsCycleMessage: String(root.getAttribute("data-period-exceeds-cycle-message") || "Period length must not exceed cycle length."),
-          todayLabel: String(root.getAttribute("data-today-label") || "Today"),
+          relativeDayLabels: {
+            today: String(root.getAttribute("data-today-label") || "Today"),
+            yesterday: String(root.getAttribute("data-yesterday-label") || "Yesterday"),
+            twoDaysAgo: String(root.getAttribute("data-two-days-ago-label") || "2 days ago")
+          },
           lang: String(root.getAttribute("data-lang") || "en"),
           progress: root.querySelector("[data-onboarding-progress]"),
           progressBar: root.querySelector("[data-onboarding-progress-bar]"),
@@ -1466,7 +1470,7 @@
           },
           dayOptions: []
         };
-        state.dayOptions = buildDayOptions(state.minDate, state.maxDate, state.lang, state.todayLabel);
+        state.dayOptions = buildDayOptions(state.minDate, state.maxDate, state.lang, state.relativeDayLabels);
         root.__ovumcyOnboardingState = state;
 
         root.addEventListener("click", function (event) {

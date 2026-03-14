@@ -143,26 +143,72 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
   test('change password validation: wrong current, mismatch, weak password', async ({ page }) => {
     const creds = await registerOwnerAndOpenSettings(page, 'settings-password-validation');
+    let passwordRequests = 0;
+
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST' &&
+        request.url().includes('/api/settings/change-password')
+      ) {
+        passwordRequests += 1;
+      }
+    });
 
     const submit = page.locator('form[action="/api/settings/change-password"] button[type="submit"]');
+    const checklist = page.locator('#settings-change-password-form [data-password-guidance]');
+
+    await expect(checklist.locator('[data-password-rule-item="length"]')).toHaveAttribute(
+      'data-met',
+      'false'
+    );
 
     await page.locator('#settings-current-password').fill('WrongPass1');
     await page.locator('#settings-new-password').fill('ValidStrong2');
     await page.locator('#settings-confirm-password').fill('ValidStrong2');
     await submit.click();
     await expect(page.locator('#settings-change-password-status .status-error')).toBeVisible();
+    await expect.poll(() => passwordRequests).toBe(1);
+
+    await expect(checklist.locator('[data-password-rule-item="upper"]')).toHaveAttribute(
+      'data-met',
+      'true'
+    );
+    await expect(checklist.locator('[data-password-rule-item="lower"]')).toHaveAttribute(
+      'data-met',
+      'true'
+    );
+    await expect(checklist.locator('[data-password-rule-item="digit"]')).toHaveAttribute(
+      'data-met',
+      'true'
+    );
 
     await page.locator('#settings-current-password').fill(creds.password);
     await page.locator('#settings-new-password').fill('ValidStrong2');
     await page.locator('#settings-confirm-password').fill('DifferentStrong3');
     await submit.click();
     await expect(page.locator('#settings-change-password-status .status-error')).toBeVisible();
+    await expect.poll(() => passwordRequests).toBe(1);
+    await expect(page.locator('#settings-new-password')).toHaveValue('ValidStrong2');
+    await expect(page.locator('#settings-confirm-password')).toHaveValue('DifferentStrong3');
 
     await page.locator('#settings-current-password').fill(creds.password);
     await page.locator('#settings-new-password').fill('weakpass');
     await page.locator('#settings-confirm-password').fill('weakpass');
     await submit.click();
     await expect(page.locator('#settings-change-password-status .status-error')).toBeVisible();
+    await expect.poll(() => passwordRequests).toBe(1);
+    await expect(checklist.locator('[data-password-rule-item="length"]')).toHaveAttribute(
+      'data-met',
+      'true'
+    );
+    await expect(checklist.locator('[data-password-rule-item="upper"]')).toHaveAttribute(
+      'data-met',
+      'false'
+    );
+    await expect(checklist.locator('[data-password-rule-item="digit"]')).toHaveAttribute(
+      'data-met',
+      'false'
+    );
   });
 
   test('recovery code regeneration uses dedicated recovery page and returns to settings', async ({
@@ -288,6 +334,26 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await fillDateField(exportTo, initialValue);
     await expect(exportTo).toHaveValue(initialValue);
     await expect(exportButtons.first()).toBeEnabled();
+  });
+
+  test('export invalid date range is blocked before download', async ({ page }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-export-invalid-range');
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+
+    const exportFrom = page.locator('#export-from');
+    const exportTo = page.locator('#export-to');
+    const exportButton = page.locator('button[data-export-action]').first();
+    const maxValue = String(await exportTo.inputValue());
+    const laterFrom = shiftISODate(maxValue, -1);
+    const earlierTo = shiftISODate(maxValue, -3);
+
+    await expect(exportButton).toBeEnabled();
+    await fillDateField(exportFrom, laterFrom);
+    await fillDateField(exportTo, earlierTo);
+    await expect(exportTo).toHaveValue(earlierTo);
+    await expect(exportButton).toBeDisabled();
   });
 
   test('export presets stay ordered and anchor to browser today even with future entries', async ({

@@ -214,11 +214,12 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('#settings-account input#settings-profile-email')).toHaveCount(0);
 
     const displayNameInput = page.locator('#settings-display-name');
+    await expect(displayNameInput).toHaveAttribute('maxlength', '64');
     const saveProfileButton = page.locator(
       'form[action="/api/settings/profile"] button[data-save-button]'
     );
 
-    const newName = `Profile-${Date.now()}`;
+    const newName = `Profile-${Date.now()}-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890`.slice(0, 64);
     await displayNameInput.fill(newName);
     await saveProfileButton.click();
     await expect(page.locator('#settings-profile-status .status-ok')).toBeVisible();
@@ -229,6 +230,19 @@ test.describe('Settings: profile and cycle', () => {
     await expect(navIdentityChip(page)).toContainText(newName);
     await expect(navIdentityChip(page)).not.toContainText(creds.email);
     await expect(navIdentityChip(page)).not.toContainText(creds.email.split('@')[0]);
+    const identityTextStyles = await navIdentityChip(page)
+      .locator('[data-current-user-identity]')
+      .evaluate((node) => {
+        const styles = window.getComputedStyle(node);
+        return {
+          overflow: styles.overflow,
+          textOverflow: styles.textOverflow,
+          whiteSpace: styles.whiteSpace,
+        };
+      });
+    expect(identityTextStyles.overflow).toBe('hidden');
+    expect(identityTextStyles.textOverflow).toBe('ellipsis');
+    expect(identityTextStyles.whiteSpace).toBe('nowrap');
 
     await displayNameInput.fill("<script>alert('xss')</script>");
     await saveProfileButton.click();

@@ -7,6 +7,25 @@
 
   {{if not .HasInsights}}
   <section class="journal-card p-5 sm:p-6 space-y-4">
+    <div class="stats-empty-hero" aria-hidden="true">
+      <div class="stats-empty-hero-card">
+        <span class="stats-empty-hero-orb stats-empty-hero-orb-primary"></span>
+        <span class="stats-empty-hero-orb stats-empty-hero-orb-secondary"></span>
+        <div class="stats-empty-hero-grid">
+          <span class="stats-empty-hero-cell"></span>
+          <span class="stats-empty-hero-cell"></span>
+          <span class="stats-empty-hero-cell stats-empty-hero-cell-active"></span>
+          <span class="stats-empty-hero-cell"></span>
+          <span class="stats-empty-hero-cell stats-empty-hero-cell-soft"></span>
+          <span class="stats-empty-hero-cell"></span>
+        </div>
+      </div>
+      <div class="stats-empty-hero-note">
+        <span class="stats-empty-hero-note-dot"></span>
+        <span class="stats-empty-hero-note-line"></span>
+        <span class="stats-empty-hero-note-line stats-empty-hero-note-line-short"></span>
+      </div>
+    </div>
     <p class="journal-subtitle">{{t .Messages "stats.empty_title"}}</p>
     <p class="journal-muted text-sm">{{t .Messages "stats.empty_body"}}</p>
     <div class="space-y-2">

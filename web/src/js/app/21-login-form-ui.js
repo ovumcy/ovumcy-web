@@ -149,6 +149,162 @@
     return null;
   }
 
+  var passwordUpperPattern;
+  var passwordLowerPattern;
+  var passwordDigitPattern;
+  try {
+    passwordUpperPattern = new RegExp("\\p{Lu}", "u");
+    passwordLowerPattern = new RegExp("\\p{Ll}", "u");
+    passwordDigitPattern = new RegExp("\\p{Nd}", "u");
+  } catch {
+    passwordUpperPattern = /[A-Z]/;
+    passwordLowerPattern = /[a-z]/;
+    passwordDigitPattern = /\d/;
+  }
+
+  function passwordStrengthState(password) {
+    var value = String(password || "");
+    return {
+      length: Array.from(value).length >= 8,
+      upper: passwordUpperPattern.test(value),
+      lower: passwordLowerPattern.test(value),
+      digit: passwordDigitPattern.test(value)
+    };
+  }
+
+  function isPasswordStrengthValid(password) {
+    var state = passwordStrengthState(password);
+    return state.length && state.upper && state.lower && state.digit;
+  }
+
+  function updatePasswordGuidance(guidanceRoot, password) {
+    if (!guidanceRoot || !guidanceRoot.querySelectorAll) {
+      return;
+    }
+
+    var state = passwordStrengthState(password);
+    var items = guidanceRoot.querySelectorAll("[data-password-rule-item]");
+    for (var index = 0; index < items.length; index++) {
+      var item = items[index];
+      var rule = String(item.getAttribute("data-password-rule-item") || "");
+      var met = !!state[rule];
+      item.setAttribute("data-met", met ? "true" : "false");
+      item.classList.toggle("password-requirements-item-met", met);
+      item.classList.toggle("password-requirements-item-pending", !met);
+      var icon = item.querySelector("[data-password-rule-icon]");
+      if (icon) {
+        icon.textContent = met ? "✓" : "•";
+      }
+    }
+  }
+
+  function stopInvalidSubmit(event) {
+    if (!event) {
+      return;
+    }
+
+    event.preventDefault();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (typeof event.stopPropagation === "function") {
+      event.stopPropagation();
+    }
+  }
+
+  function passwordStrengthErrorMessage(passwordField, weakMessage) {
+    var password = String(passwordField && passwordField.value || "");
+    if (!password || isPasswordStrengthValid(password)) {
+      return "";
+    }
+    return weakMessage;
+  }
+
+  function passwordMismatchErrorMessage(passwordField, confirmField, mismatchMessage) {
+    var password = String(passwordField && passwordField.value || "");
+    var confirm = String(confirmField && confirmField.value || "");
+    if (!password || !confirm || password === confirm) {
+      return "";
+    }
+    return mismatchMessage;
+  }
+
+  function bindPasswordFormValidation(options) {
+    var form = options && options.form;
+    var passwordField = options && options.passwordField;
+    var confirmField = options && options.confirmField;
+    if (!form || !passwordField || !confirmField) {
+      return;
+    }
+
+    var requiredMessage = options.requiredMessage || "Please fill out this field.";
+    var emailMessage = options.emailMessage || "Please enter a valid email address.";
+    var mismatchMessage = options.mismatchMessage || "Passwords do not match.";
+    var weakMessage = options.weakMessage || "Use a stronger password.";
+    var statusTarget = options.statusTarget || null;
+    var guidanceRoot = options.guidanceRoot || null;
+
+    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+
+    function clearValidationStatus() {
+      clearFormStatus(statusTarget);
+      clearAuthServerError(form);
+    }
+
+    function syncPasswordState() {
+      updatePasswordGuidance(guidanceRoot, passwordField.value);
+    }
+
+    syncPasswordState();
+
+    passwordField.addEventListener("input", function () {
+      clearValidationStatus();
+      syncPasswordState();
+    });
+    confirmField.addEventListener("input", clearValidationStatus);
+    form.addEventListener("input", function () {
+      clearValidationStatus();
+    });
+
+    form.addEventListener("submit", function (event) {
+      var invalidField;
+      var weakPasswordError;
+      var mismatchError;
+
+      clearValidationStatus();
+      syncPasswordState();
+
+      invalidField = firstInvalidRequiredField(form, requiredMessage, emailMessage);
+      if (invalidField) {
+        stopInvalidSubmit(event);
+        moveFormStatusTarget(statusTarget, invalidField);
+        renderFormStatusError(statusTarget, invalidField.validationMessage || requiredMessage);
+        invalidField.focus();
+        return;
+      }
+
+      weakPasswordError = passwordStrengthErrorMessage(passwordField, weakMessage);
+      if (weakPasswordError) {
+        stopInvalidSubmit(event);
+        moveFormStatusTarget(statusTarget, passwordField);
+        renderFormStatusError(statusTarget, weakPasswordError);
+        focusLoginPasswordField(passwordField);
+        return;
+      }
+
+      mismatchError = passwordMismatchErrorMessage(passwordField, confirmField, mismatchMessage);
+      if (!mismatchError) {
+        return;
+      }
+
+      stopInvalidSubmit(event);
+      moveFormStatusTarget(statusTarget, confirmField);
+      renderFormStatusError(statusTarget, mismatchError);
+      focusLoginPasswordField(confirmField);
+    }, true);
+  }
+
   function initLoginValidation() {
     var form = document.getElementById("login-form");
     if (!form) {
@@ -182,7 +338,7 @@
     var requiredMessage = form.getAttribute("data-required-message") || "Please fill out this field.";
     var emailMessage = form.getAttribute("data-email-message") || "Please enter a valid email address.";
     var mismatchMessage = form.getAttribute("data-password-mismatch-message") || "Passwords do not match.";
-    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+    var weakMessage = form.getAttribute("data-weak-password-message") || "Use a stronger password.";
 
     var passwordField = document.getElementById("register-password");
     var confirmField = document.getElementById("register-confirm-password");
@@ -191,55 +347,40 @@
     }
 
     var statusTarget = document.getElementById("register-client-status");
-
-    function isPasswordMatchValid() {
-      confirmField.setCustomValidity("");
-
-      var password = String(passwordField.value || "");
-      var confirm = String(confirmField.value || "");
-      if (!password || !confirm || password === confirm) {
-        return true;
-      }
-
-      confirmField.setCustomValidity(mismatchMessage);
-      return false;
-    }
-
-    function handlePasswordInput() {
-      clearFormStatus(statusTarget);
-      clearAuthServerError(form);
-      isPasswordMatchValid();
-    }
-
-    passwordField.addEventListener("input", handlePasswordInput);
-    confirmField.addEventListener("input", handlePasswordInput);
-    form.addEventListener("input", function () {
-      clearFormStatus(statusTarget);
-      clearAuthServerError(form);
+    bindPasswordFormValidation({
+      form: form,
+      passwordField: passwordField,
+      confirmField: confirmField,
+      statusTarget: statusTarget,
+      guidanceRoot: form.querySelector("[data-password-guidance]"),
+      requiredMessage: requiredMessage,
+      emailMessage: emailMessage,
+      mismatchMessage: mismatchMessage,
+      weakMessage: weakMessage
     });
+  }
 
-    form.addEventListener("submit", function (event) {
-      var invalidField;
-      clearFormStatus(statusTarget);
-      clearAuthServerError(form);
+  function initSettingsPasswordValidation() {
+    var form = document.getElementById("settings-change-password-form");
+    if (!form) {
+      return;
+    }
 
-      invalidField = firstInvalidRequiredField(form, requiredMessage, emailMessage);
-      if (invalidField) {
-        event.preventDefault();
-        moveFormStatusTarget(statusTarget, invalidField);
-        renderFormStatusError(statusTarget, invalidField.validationMessage || requiredMessage);
-        invalidField.focus();
-        return;
-      }
+    var passwordField = document.getElementById("settings-new-password");
+    var confirmField = document.getElementById("settings-confirm-password");
+    if (!passwordField || !confirmField) {
+      return;
+    }
 
-      if (isPasswordMatchValid()) {
-        return;
-      }
-
-      event.preventDefault();
-      moveFormStatusTarget(statusTarget, confirmField);
-      renderFormStatusError(statusTarget, mismatchMessage);
-      focusLoginPasswordField(confirmField);
+    bindPasswordFormValidation({
+      form: form,
+      passwordField: passwordField,
+      confirmField: confirmField,
+      statusTarget: document.getElementById("settings-change-password-status"),
+      guidanceRoot: form.querySelector("[data-password-guidance]"),
+      requiredMessage: form.getAttribute("data-required-message") || "Please fill out this field.",
+      mismatchMessage: form.getAttribute("data-password-mismatch-message") || "Passwords do not match.",
+      weakMessage: form.getAttribute("data-weak-password-message") || "Use a stronger password."
     });
   }
 

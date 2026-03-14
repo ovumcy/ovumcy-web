@@ -91,7 +91,7 @@
     }
   }
 
-  function buildDayOptions(minDateRaw, maxDateRaw, locale, todayLabel) {
+  function buildDayOptions(minDateRaw, maxDateRaw, locale, relativeLabels) {
     var minDate = parseDateValue(minDateRaw);
     var maxDate = parseDateValue(maxDateRaw);
     if (!minDate || !maxDate || minDate > maxDate) {
@@ -106,11 +106,21 @@
 
     for (var cursor = new Date(maxDate); cursor >= minDate; cursor.setDate(cursor.getDate() - 1)) {
       var current = new Date(cursor);
-      var isToday = formatDateValue(current) === formatDateValue(maxDate);
+      var dayOffset = Math.round((maxDate.getTime() - current.getTime()) / 86400000);
+      var isToday = dayOffset === 0;
+      var relativeLabel = "";
+      if (dayOffset === 0) {
+        relativeLabel = String(relativeLabels && relativeLabels.today || "");
+      } else if (dayOffset === 1) {
+        relativeLabel = String(relativeLabels && relativeLabels.yesterday || "");
+      } else if (dayOffset === 2) {
+        relativeLabel = String(relativeLabels && relativeLabels.twoDaysAgo || "");
+      }
+      var formattedDate = formatter.format(current);
       result.push({
         value: formatDateValue(current),
-        label: isToday && todayLabel ? String(todayLabel) : formatter.format(current),
-        secondaryLabel: isToday ? formatter.format(current) : "",
+        label: relativeLabel || formattedDate,
+        secondaryLabel: relativeLabel ? formattedDate : "",
         isToday: isToday
       });
     }

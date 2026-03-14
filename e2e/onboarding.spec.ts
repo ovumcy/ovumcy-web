@@ -114,6 +114,9 @@ test.describe('Onboarding flow', () => {
     );
     const firstQuickPick = quickPickButtons.first();
     await expect(firstQuickPick).toBeVisible();
+    await expect(firstQuickPick).toContainText('Today');
+    await expect(quickPickButtons.nth(1)).toContainText('Yesterday');
+    await expect(quickPickButtons.nth(2)).toContainText('2 days ago');
 
     const firstQuickPickValue = await firstQuickPick.getAttribute('data-onboarding-day-value');
     expect(firstQuickPickValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -126,6 +129,7 @@ test.describe('Onboarding flow', () => {
     await expect(firstQuickPick).toHaveClass(/choice-chip-active/);
     await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
     await expect(page.locator('form[hx-post="/onboarding/step2"]')).toBeVisible();
+    await expect(page.locator('form[hx-post="/onboarding/step2"]')).toContainText(/21.?35/);
   });
 
   test('today quick-pick keeps the exact selected date through onboarding completion', async ({

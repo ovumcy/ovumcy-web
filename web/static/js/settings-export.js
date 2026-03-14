@@ -502,23 +502,15 @@
         return false;
       }
 
-      if (fromDate && toDate && dateKey(toDate) < dateKey(fromDate)) {
-        if (changedSide === "to") {
-          setDateFieldValue(context.toField, context.toInput, formatISODate(fromDate));
-          toDate = fromDate;
-        } else {
-          setDateFieldValue(context.fromField, context.fromInput, formatISODate(toDate));
-          fromDate = toDate;
-        }
-      }
-
       clearDateFieldValidity(context.fromField, context.fromInput);
       clearDateFieldValidity(context.toField, context.toInput);
       if (fromDate && toDate && dateKey(toDate) < dateKey(fromDate)) {
-        if (context.toField && typeof context.toField.setCustomValidity === "function") {
-          context.toField.setCustomValidity(context.invalidRangeMessage);
-        } else if (context.toInput) {
-          context.toInput.setCustomValidity(context.invalidRangeMessage);
+        var invalidField = changedSide === "from" ? context.fromField : context.toField;
+        var invalidInput = changedSide === "from" ? context.fromInput : context.toInput;
+        if (invalidField && typeof invalidField.setCustomValidity === "function") {
+          invalidField.setCustomValidity(context.invalidRangeMessage);
+        } else if (invalidInput) {
+          invalidInput.setCustomValidity(context.invalidRangeMessage);
         }
         setExportActionsDisabled(true);
         return false;

@@ -500,4 +500,25 @@ test.describe('Bug regressions', () => {
       await expect(previousControl).not.toHaveAttribute('href', /.+/);
     });
   });
+
+  test.describe('IMPROVEMENTS: dashboard and stats polish', () => {
+    test('dashboard menstrual phase uses the blood-drop icon', async ({ page }) => {
+      await registerOwnerAndReachDashboard(page, 'improvement-menstrual-icon');
+
+      const phaseChip = page.locator('.dashboard-status-line .dashboard-status-item').first();
+      await expect(phaseChip).toContainText('🩸');
+      await expect(phaseChip).toContainText(/Menstrual|Менструальная|Menstrual/i);
+    });
+
+    test('stats empty state includes illustration and progress affordance for a new owner', async ({
+      page,
+    }) => {
+      await registerOwnerAndReachDashboard(page, 'improvement-stats-empty');
+
+      await page.goto('/stats');
+      await expect(page).toHaveURL(/\/stats$/);
+      await expect(page.locator('.stats-empty-hero')).toBeVisible();
+      await expect(page.locator('.stats-empty-progress')).toBeVisible();
+    });
+  });
 });

@@ -19,6 +19,7 @@
     initLoginValidation();
     initForgotPasswordValidation();
     initRegisterValidation();
+    initSettingsPasswordValidation();
     initResetPasswordValidation();
     initLoginPasswordPersistence();
     initConfirmModal();

@@ -24,10 +24,13 @@ func TestDomainLabelPolicy(t *testing.T) {
 		t.Fatalf("expected passthrough role for unknown, got %q", got)
 	}
 
-	if got := PhaseIcon("fertile"); got != "🌿" {
+	if got := PhaseIcon("menstrual"); got != "\U0001FA78" {
+		t.Fatalf("expected menstrual icon, got %q", got)
+	}
+	if got := PhaseIcon("fertile"); got != "\U0001F33F" {
 		t.Fatalf("expected fertile icon, got %q", got)
 	}
-	if got := PhaseIcon("bad"); got != "✨" {
+	if got := PhaseIcon("bad"); got != "\u2728" {
 		t.Fatalf("expected default icon, got %q", got)
 	}
 

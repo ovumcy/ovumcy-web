@@ -78,16 +78,16 @@ func RoleTranslationKey(role string) string {
 func PhaseIcon(phase string) string {
 	switch strings.ToLower(strings.TrimSpace(phase)) {
 	case "menstrual":
-		return "🌙"
+		return "\U0001FA78"
 	case "follicular":
-		return "🌸"
+		return "\U0001F338"
 	case "ovulation":
-		return "☀️"
+		return "\u2600\uFE0F"
 	case "fertile":
-		return "🌿"
+		return "\U0001F33F"
 	case "luteal":
-		return "🍂"
+		return "\U0001F342"
 	default:
-		return "✨"
+		return "\u2728"
 	}
 }

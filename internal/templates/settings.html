@@ -367,12 +367,17 @@
         </div>
 
         <form
+          id="settings-change-password-form"
           action="/api/settings/change-password"
           method="post"
           hx-post="/api/settings/change-password"
           hx-target="#settings-change-password-status"
           hx-swap="innerHTML"
           class="space-y-4"
+          novalidate
+          data-required-message="{{t .Messages "validation.required"}}"
+          data-password-mismatch-message="{{t .Messages "auth.error.password_mismatch"}}"
+          data-weak-password-message="{{t .Messages "auth.password_requirements"}}"
           data-save-feedback>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
@@ -399,7 +404,7 @@
             "FieldName" "confirm_password"
             "Autocomplete" "new-password"
             "Required" true)}}
-          <p class="journal-muted text-xs">{{t .Messages "auth.password_requirements"}}</p>
+          {{template "password_requirements_checklist" (dict "Messages" .Messages)}}
 
           <div class="settings-form-actions">
             <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.change_password.submit"}}</button>
