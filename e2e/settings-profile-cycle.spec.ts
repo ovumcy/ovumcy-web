@@ -203,7 +203,7 @@ async function currentNextPeriodText(page: Page): Promise<string> {
 }
 
 test.describe('Settings: profile and cycle', () => {
-  test('profile name persists, long value is rejected, and empty clears without header fallback', async ({
+  test('profile name persists, rejects invalid markup and long values, and empty clears without header fallback', async ({
     page,
   }) => {
     const creds = await registerOwnerAndOpenSettings(page, 'settings-profile');
@@ -229,6 +229,15 @@ test.describe('Settings: profile and cycle', () => {
     await expect(navIdentityChip(page)).toContainText(newName);
     await expect(navIdentityChip(page)).not.toContainText(creds.email);
     await expect(navIdentityChip(page)).not.toContainText(creds.email.split('@')[0]);
+
+    await displayNameInput.fill("<script>alert('xss')</script>");
+    await saveProfileButton.click();
+    await expect(page.locator('#settings-profile-status .status-error')).toBeVisible();
+
+    await page.reload();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(displayNameInput).toHaveValue(newName);
+    await expect(navIdentityChip(page)).toContainText(newName);
 
     await displayNameInput.evaluate((el) => {
       (el as HTMLInputElement).value = 'X'.repeat(80);

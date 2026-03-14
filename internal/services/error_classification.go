@@ -475,12 +475,15 @@ type SettingsProfileErrorKind uint8
 const (
 	SettingsProfileErrorUnknown SettingsProfileErrorKind = iota
 	SettingsProfileErrorDisplayNameTooLong
+	SettingsProfileErrorDisplayNameInvalidCharacters
 )
 
 func ClassifySettingsProfileError(err error) SettingsProfileErrorKind {
 	switch {
 	case errors.Is(err, ErrSettingsDisplayNameTooLong):
 		return SettingsProfileErrorDisplayNameTooLong
+	case errors.Is(err, ErrSettingsDisplayNameInvalidCharacters):
+		return SettingsProfileErrorDisplayNameInvalidCharacters
 	default:
 		return SettingsProfileErrorUnknown
 	}

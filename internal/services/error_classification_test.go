@@ -113,6 +113,9 @@ func TestClassifySymptomAndSettingsErrors(t *testing.T) {
 	if got := ClassifySettingsProfileError(ErrSettingsDisplayNameTooLong); got != SettingsProfileErrorDisplayNameTooLong {
 		t.Fatalf("expected SettingsProfileErrorDisplayNameTooLong, got %v", got)
 	}
+	if got := ClassifySettingsProfileError(ErrSettingsDisplayNameInvalidCharacters); got != SettingsProfileErrorDisplayNameInvalidCharacters {
+		t.Fatalf("expected SettingsProfileErrorDisplayNameInvalidCharacters, got %v", got)
+	}
 	if got := ClassifyRecoveryCodeRegenerationError(ErrRecoveryCodeUpdate); got != RecoveryCodeRegenerationErrorUpdateFailed {
 		t.Fatalf("expected RecoveryCodeRegenerationErrorUpdateFailed, got %v", got)
 	}

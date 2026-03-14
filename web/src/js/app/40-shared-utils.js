@@ -462,6 +462,10 @@
   window.__ovumcyBindLocalizedDateFields = bindLocalizedDateFields;
   window.__ovumcyGetDateFieldController = getLocalizedDateFieldController;
 
+  function fieldCharacterLength(value) {
+    return Array.from(String(value || "")).length;
+  }
+
   function getRecoveryCodeText(refs) {
     var node = refs && refs.code ? refs.code : null;
     return node ? String(node.textContent || "").trim() : "";

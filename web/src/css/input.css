@@ -667,6 +667,11 @@
     padding: 0.66rem 0.78rem;
   }
 
+  .dashboard-notes-field {
+    max-height: 20rem;
+    overflow-y: auto;
+  }
+
   .input-field:focus,
   .textarea-field:focus {
     outline: none;

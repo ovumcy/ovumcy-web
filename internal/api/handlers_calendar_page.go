@@ -25,7 +25,10 @@ func (handler *Handler) ShowCalendar(c *fiber.Ctx) error {
 	}
 	activeMonth, selectedDate, err := services.ResolveCalendarMonthAndSelectedDateWithinBounds(c.Query("month"), selectedDateQuery, now, location, minMonth)
 	if err != nil {
-		return handler.respondMappedError(c, invalidMonthErrorSpec())
+		if acceptsJSON(c) {
+			return handler.respondMappedError(c, invalidMonthErrorSpec())
+		}
+		return redirectOrJSON(c, "/calendar")
 	}
 
 	data, err := handler.buildCalendarViewData(user, language, messages, now, activeMonth, selectedDate, location)

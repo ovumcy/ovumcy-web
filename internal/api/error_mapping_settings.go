@@ -49,6 +49,8 @@ func mapSettingsProfileNormalizeError(err error) APIErrorSpec {
 	switch services.ClassifySettingsProfileError(err) {
 	case services.SettingsProfileErrorDisplayNameTooLong:
 		return settingsValidationErrorSpec("display name too long")
+	case services.SettingsProfileErrorDisplayNameInvalidCharacters:
+		return settingsValidationErrorSpec("display name contains invalid characters")
 	default:
 		return settingsValidationErrorSpec("invalid profile input")
 	}

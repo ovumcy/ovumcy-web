@@ -266,6 +266,7 @@
   "settings.error.invalid_input": "Укажите текущий, новый пароль и подтверждение.",
   "settings.error.invalid_profile_input": "Не удалось обработать данные профиля.",
   "settings.error.display_name_too_long": "Имя профиля должно быть не длиннее 64 символов.",
+  "settings.error.display_name_invalid_characters": "Допустим только обычный текст без тегов и угловых скобок.",
   "settings.error.invalid_last_period_start": "Укажите корректную дату начала последних месячных, не позже сегодняшнего дня.",
   "settings.error.invalid_current_password": "Текущий пароль указан неверно.",
   "settings.error.password_unchanged": "Новый пароль должен отличаться от текущего.",

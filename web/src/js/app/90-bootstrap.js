@@ -17,6 +17,7 @@
     initLanguageSwitcher();
     initPasswordToggles();
     initLoginValidation();
+    initForgotPasswordValidation();
     initRegisterValidation();
     initResetPasswordValidation();
     initLoginPasswordPersistence();

@@ -399,6 +399,15 @@
     });
   }
 
+  var authEmailInputPattern = "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$";
+
+  function configureEmailField(input) {
+    if (!input || input.type !== "email") {
+      return;
+    }
+    input.setAttribute("pattern", authEmailInputPattern);
+  }
+
   function updateFieldValidityMessage(input, requiredMessage, emailMessage) {
     if (!input || typeof input.setCustomValidity !== "function") {
       return;
@@ -413,7 +422,7 @@
       input.setCustomValidity(requiredMessage);
       return;
     }
-    if (input.type === "email" && input.validity.typeMismatch) {
+    if (input.type === "email" && (input.validity.typeMismatch || input.validity.patternMismatch)) {
       input.setCustomValidity(emailMessage);
     }
   }
@@ -425,6 +434,7 @@
 
     var fields = form.querySelectorAll("input[required]");
     for (var index = 0; index < fields.length; index++) {
+      configureEmailField(fields[index]);
       fields[index].addEventListener("invalid", function () {
         updateFieldValidityMessage(this, requiredMessage, emailMessage);
       });
@@ -435,6 +445,35 @@
         updateFieldValidityMessage(this, requiredMessage, emailMessage);
       });
     }
+  }
+
+  function bindSimpleRequiredFormValidation(form, statusTarget, requiredMessage, emailMessage) {
+    if (!form) {
+      return;
+    }
+
+    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+
+    form.addEventListener("input", function () {
+      clearFormStatus(statusTarget);
+      clearAuthServerError(form);
+    });
+
+    form.addEventListener("submit", function (event) {
+      var invalidField;
+      clearFormStatus(statusTarget);
+      clearAuthServerError(form);
+
+      invalidField = firstInvalidRequiredField(form, requiredMessage, emailMessage);
+      if (!invalidField) {
+        return;
+      }
+
+      event.preventDefault();
+      moveFormStatusTarget(statusTarget, invalidField);
+      renderFormStatusError(statusTarget, invalidField.validationMessage || requiredMessage);
+      invalidField.focus();
+    });
   }
 
   function renderFormStatusError(target, text) {
@@ -520,28 +559,19 @@
     var requiredMessage = form.getAttribute("data-required-message") || "Please fill out this field.";
     var emailMessage = form.getAttribute("data-email-message") || "Please enter a valid email address.";
     var statusTarget = document.getElementById("login-client-status");
-    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+    bindSimpleRequiredFormValidation(form, statusTarget, requiredMessage, emailMessage);
+  }
 
-    form.addEventListener("input", function () {
-      clearFormStatus(statusTarget);
-      clearAuthServerError(form);
-    });
+  function initForgotPasswordValidation() {
+    var form = document.getElementById("forgot-password-form");
+    if (!form) {
+      return;
+    }
 
-    form.addEventListener("submit", function (event) {
-      var invalidField;
-      clearFormStatus(statusTarget);
-      clearAuthServerError(form);
-
-      invalidField = firstInvalidRequiredField(form, requiredMessage, emailMessage);
-      if (!invalidField) {
-        return;
-      }
-
-      event.preventDefault();
-      moveFormStatusTarget(statusTarget, invalidField);
-      renderFormStatusError(statusTarget, invalidField.validationMessage || requiredMessage);
-      invalidField.focus();
-    });
+    var requiredMessage = form.getAttribute("data-required-message") || "Please fill out this field.";
+    var emailMessage = form.getAttribute("data-email-message") || "Please enter a valid email address.";
+    var statusTarget = document.getElementById("forgot-password-client-status");
+    bindSimpleRequiredFormValidation(form, statusTarget, requiredMessage, emailMessage);
   }
 
   function initRegisterValidation() {
@@ -1036,7 +1066,7 @@
         return;
       }
 
-       if (typeof window.__ovumcyMaybeAcknowledgePeriodTip === "function") {
+      if (typeof window.__ovumcyMaybeAcknowledgePeriodTip === "function") {
         window.__ovumcyMaybeAcknowledgePeriodTip(form);
       }
 
@@ -1051,6 +1081,7 @@
       }
 
       event.preventDefault();
+      event.stopImmediatePropagation();
       setCycleStartHiddenValue(form, "[data-cycle-start-replace-input]", false);
       setCycleStartHiddenValue(form, "[data-cycle-start-uncertain-input]", false);
 
@@ -1089,7 +1120,7 @@
           }
           submitCycleStartForm(form);
         });
-    });
+    }, true);
   }
 
   var PWA_INSTALL_DISMISS_STORAGE_KEY = "ovumcy_pwa_install_hidden_v1";
@@ -2180,6 +2211,10 @@
   window.__ovumcyBindLocalizedDateFields = bindLocalizedDateFields;
   window.__ovumcyGetDateFieldController = getLocalizedDateFieldController;
 
+  function fieldCharacterLength(value) {
+    return Array.from(String(value || "")).length;
+  }
+
   function getRecoveryCodeText(refs) {
     var node = refs && refs.code ? refs.code : null;
     return node ? String(node.textContent || "").trim() : "";
@@ -2423,10 +2458,6 @@
     }
   }
 
-  function symptomNameLength(value) {
-    return Array.from(String(value || "")).length;
-  }
-
   function syncSymptomNameCounter(field) {
     if (!field || !field.querySelector) {
       return;
@@ -2439,7 +2470,7 @@
     }
 
     var maxLength = parseInt(input.getAttribute("maxlength") || "", 10);
-    var currentLength = symptomNameLength(input.value);
+    var currentLength = fieldCharacterLength(input.value);
     if (maxLength > 0) {
       counter.textContent = String(currentLength) + "/" + String(maxLength);
       return;
@@ -2820,6 +2851,55 @@
         });
       }
       autosizeNoteField(field);
+    }
+  }
+
+  function syncDashboardNotesCounter(group) {
+    if (!group || !group.querySelector) {
+      return;
+    }
+
+    var input = group.querySelector("[data-dashboard-notes]");
+    var counter = group.querySelector("[data-dashboard-notes-count]");
+    if (!input || !counter) {
+      return;
+    }
+
+    var maxLength = parseInt(input.getAttribute("maxlength") || "", 10);
+    var currentLength = fieldCharacterLength(input.value);
+    if (maxLength > 0) {
+      counter.textContent = String(currentLength) + "/" + String(maxLength);
+      return;
+    }
+
+    counter.textContent = String(currentLength);
+  }
+
+  function bindDashboardNotesCounters(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var counters = scope.querySelectorAll("[data-dashboard-notes-count]");
+
+    for (var index = 0; index < counters.length; index++) {
+      var counter = counters[index];
+      var group = typeof counter.closest === "function" ? counter.closest("[data-dashboard-notes-field-group]") : null;
+      if (!group) {
+        continue;
+      }
+
+      var input = group.querySelector("[data-dashboard-notes]");
+      if (!input) {
+        continue;
+      }
+
+      if (input.dataset.dashboardNotesCounterBound !== "1") {
+        input.dataset.dashboardNotesCounterBound = "1";
+        input.addEventListener("input", function () {
+          var ownerGroup = typeof this.closest === "function" ? this.closest("[data-dashboard-notes-field-group]") : null;
+          syncDashboardNotesCounter(ownerGroup);
+        });
+      }
+
+      syncDashboardNotesCounter(group);
     }
   }
 
@@ -3907,6 +3987,7 @@
     bindBinaryToggles(document);
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
+    bindDashboardNotesCounters(document);
     bindSettingsCycleForms();
     bindIconControls();
     bindDashboardEditors();
@@ -3936,6 +4017,7 @@
     initLanguageSwitcher();
     initPasswordToggles();
     initLoginValidation();
+    initForgotPasswordValidation();
     initRegisterValidation();
     initResetPasswordValidation();
     initLoginPasswordPersistence();

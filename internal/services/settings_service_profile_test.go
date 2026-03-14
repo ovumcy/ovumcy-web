@@ -36,6 +36,15 @@ func TestNormalizeDisplayName_RejectsTooLongName(t *testing.T) {
 	}
 }
 
+func TestNormalizeDisplayName_RejectsMarkupLikeName(t *testing.T) {
+	service := NewSettingsService(nil)
+
+	_, err := service.NormalizeDisplayName("<script>alert('xss')</script>")
+	if !errors.Is(err, ErrSettingsDisplayNameInvalidCharacters) {
+		t.Fatalf("expected ErrSettingsDisplayNameInvalidCharacters, got %v", err)
+	}
+}
+
 func TestResolveProfileUpdateStatus(t *testing.T) {
 	service := NewSettingsService(nil)
 

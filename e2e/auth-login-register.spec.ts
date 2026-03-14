@@ -89,6 +89,27 @@ test.describe('Auth: register, login, logout', () => {
     await expect(page.locator('#register-client-status .status-error')).toBeVisible();
   });
 
+  test('register form rejects emoji email via client validation', async ({ page }) => {
+    await page.goto('/register');
+    await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
+
+    await page.locator('#register-email').fill('test😀@test.com');
+    await page.locator('#register-password').fill('StrongPass1');
+    await page.locator('#register-confirm-password').fill('StrongPass1');
+
+    const emailInput = page.locator('#register-email');
+    const isValidBeforeSubmit = await emailInput.evaluate(
+      (element) => (element as HTMLInputElement).checkValidity()
+    );
+    expect(isValidBeforeSubmit).toBe(false);
+
+    await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
+    await expect(page.locator('#register-client-status .status-error')).toContainText(
+      /valid email address|корректный email|correo válido/i
+    );
+  });
+
   test('register empty submit validates in top-down order and places the error next to the active field', async ({
     page,
   }) => {

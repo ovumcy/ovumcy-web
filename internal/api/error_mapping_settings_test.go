@@ -78,6 +78,11 @@ func TestMapSettingsProfileNormalizeError(t *testing.T) {
 			want: settingsValidationErrorSpec("display name too long"),
 		},
 		{
+			name: "display name invalid characters",
+			err:  services.ErrSettingsDisplayNameInvalidCharacters,
+			want: settingsValidationErrorSpec("display name contains invalid characters"),
+		},
+		{
 			name: "unknown",
 			err:  errors.New("unknown"),
 			want: settingsValidationErrorSpec("invalid profile input"),

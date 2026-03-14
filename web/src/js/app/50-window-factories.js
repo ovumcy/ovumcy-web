@@ -220,10 +220,6 @@
     }
   }
 
-  function symptomNameLength(value) {
-    return Array.from(String(value || "")).length;
-  }
-
   function syncSymptomNameCounter(field) {
     if (!field || !field.querySelector) {
       return;
@@ -236,7 +232,7 @@
     }
 
     var maxLength = parseInt(input.getAttribute("maxlength") || "", 10);
-    var currentLength = symptomNameLength(input.value);
+    var currentLength = fieldCharacterLength(input.value);
     if (maxLength > 0) {
       counter.textContent = String(currentLength) + "/" + String(maxLength);
       return;
@@ -617,6 +613,55 @@
         });
       }
       autosizeNoteField(field);
+    }
+  }
+
+  function syncDashboardNotesCounter(group) {
+    if (!group || !group.querySelector) {
+      return;
+    }
+
+    var input = group.querySelector("[data-dashboard-notes]");
+    var counter = group.querySelector("[data-dashboard-notes-count]");
+    if (!input || !counter) {
+      return;
+    }
+
+    var maxLength = parseInt(input.getAttribute("maxlength") || "", 10);
+    var currentLength = fieldCharacterLength(input.value);
+    if (maxLength > 0) {
+      counter.textContent = String(currentLength) + "/" + String(maxLength);
+      return;
+    }
+
+    counter.textContent = String(currentLength);
+  }
+
+  function bindDashboardNotesCounters(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var counters = scope.querySelectorAll("[data-dashboard-notes-count]");
+
+    for (var index = 0; index < counters.length; index++) {
+      var counter = counters[index];
+      var group = typeof counter.closest === "function" ? counter.closest("[data-dashboard-notes-field-group]") : null;
+      if (!group) {
+        continue;
+      }
+
+      var input = group.querySelector("[data-dashboard-notes]");
+      if (!input) {
+        continue;
+      }
+
+      if (input.dataset.dashboardNotesCounterBound !== "1") {
+        input.dataset.dashboardNotesCounterBound = "1";
+        input.addEventListener("input", function () {
+          var ownerGroup = typeof this.closest === "function" ? this.closest("[data-dashboard-notes-field-group]") : null;
+          syncDashboardNotesCounter(ownerGroup);
+        });
+      }
+
+      syncDashboardNotesCounter(group);
     }
   }
 
@@ -1704,6 +1749,7 @@
     bindBinaryToggles(document);
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
+    bindDashboardNotesCounters(document);
     bindSettingsCycleForms();
     bindIconControls();
     bindDashboardEditors();

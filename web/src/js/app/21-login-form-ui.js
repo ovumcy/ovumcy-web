@@ -1,3 +1,12 @@
+  var authEmailInputPattern = "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$";
+
+  function configureEmailField(input) {
+    if (!input || input.type !== "email") {
+      return;
+    }
+    input.setAttribute("pattern", authEmailInputPattern);
+  }
+
   function updateFieldValidityMessage(input, requiredMessage, emailMessage) {
     if (!input || typeof input.setCustomValidity !== "function") {
       return;
@@ -12,7 +21,7 @@
       input.setCustomValidity(requiredMessage);
       return;
     }
-    if (input.type === "email" && input.validity.typeMismatch) {
+    if (input.type === "email" && (input.validity.typeMismatch || input.validity.patternMismatch)) {
       input.setCustomValidity(emailMessage);
     }
   }
@@ -24,6 +33,7 @@
 
     var fields = form.querySelectorAll("input[required]");
     for (var index = 0; index < fields.length; index++) {
+      configureEmailField(fields[index]);
       fields[index].addEventListener("invalid", function () {
         updateFieldValidityMessage(this, requiredMessage, emailMessage);
       });
@@ -34,6 +44,35 @@
         updateFieldValidityMessage(this, requiredMessage, emailMessage);
       });
     }
+  }
+
+  function bindSimpleRequiredFormValidation(form, statusTarget, requiredMessage, emailMessage) {
+    if (!form) {
+      return;
+    }
+
+    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+
+    form.addEventListener("input", function () {
+      clearFormStatus(statusTarget);
+      clearAuthServerError(form);
+    });
+
+    form.addEventListener("submit", function (event) {
+      var invalidField;
+      clearFormStatus(statusTarget);
+      clearAuthServerError(form);
+
+      invalidField = firstInvalidRequiredField(form, requiredMessage, emailMessage);
+      if (!invalidField) {
+        return;
+      }
+
+      event.preventDefault();
+      moveFormStatusTarget(statusTarget, invalidField);
+      renderFormStatusError(statusTarget, invalidField.validationMessage || requiredMessage);
+      invalidField.focus();
+    });
   }
 
   function renderFormStatusError(target, text) {
@@ -119,28 +158,19 @@
     var requiredMessage = form.getAttribute("data-required-message") || "Please fill out this field.";
     var emailMessage = form.getAttribute("data-email-message") || "Please enter a valid email address.";
     var statusTarget = document.getElementById("login-client-status");
-    bindRequiredFieldValidation(form, requiredMessage, emailMessage);
+    bindSimpleRequiredFormValidation(form, statusTarget, requiredMessage, emailMessage);
+  }
 
-    form.addEventListener("input", function () {
-      clearFormStatus(statusTarget);
-      clearAuthServerError(form);
-    });
+  function initForgotPasswordValidation() {
+    var form = document.getElementById("forgot-password-form");
+    if (!form) {
+      return;
+    }
 
-    form.addEventListener("submit", function (event) {
-      var invalidField;
-      clearFormStatus(statusTarget);
-      clearAuthServerError(form);
-
-      invalidField = firstInvalidRequiredField(form, requiredMessage, emailMessage);
-      if (!invalidField) {
-        return;
-      }
-
-      event.preventDefault();
-      moveFormStatusTarget(statusTarget, invalidField);
-      renderFormStatusError(statusTarget, invalidField.validationMessage || requiredMessage);
-      invalidField.focus();
-    });
+    var requiredMessage = form.getAttribute("data-required-message") || "Please fill out this field.";
+    var emailMessage = form.getAttribute("data-email-message") || "Please enter a valid email address.";
+    var statusTarget = document.getElementById("forgot-password-client-status");
+    bindSimpleRequiredFormValidation(form, statusTarget, requiredMessage, emailMessage);
   }
 
   function initRegisterValidation() {

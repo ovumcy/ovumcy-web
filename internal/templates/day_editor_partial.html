@@ -82,9 +82,10 @@
     </fieldset>
     {{end}}
 
-    <div class="space-y-2">
+    <div class="space-y-2" data-dashboard-notes-field-group>
       <label class="field-label" for="calendar-notes">{{t .Messages "dashboard.notes"}}</label>
       <textarea id="calendar-notes" name="notes" rows="2" maxlength="2000" class="textarea-field dashboard-notes-field" placeholder="{{t .Messages "dashboard.notes_placeholder"}}" data-dashboard-notes>{{.Log.Notes}}</textarea>
+      <p class="journal-muted text-xs" data-dashboard-notes-count></p>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">

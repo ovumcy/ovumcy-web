@@ -74,7 +74,7 @@
         return;
       }
 
-       if (typeof window.__ovumcyMaybeAcknowledgePeriodTip === "function") {
+      if (typeof window.__ovumcyMaybeAcknowledgePeriodTip === "function") {
         window.__ovumcyMaybeAcknowledgePeriodTip(form);
       }
 
@@ -89,6 +89,7 @@
       }
 
       event.preventDefault();
+      event.stopImmediatePropagation();
       setCycleStartHiddenValue(form, "[data-cycle-start-replace-input]", false);
       setCycleStartHiddenValue(form, "[data-cycle-start-uncertain-input]", false);
 
@@ -127,5 +128,5 @@
           }
           submitCycleStartForm(form);
         });
-    });
+    }, true);
   }

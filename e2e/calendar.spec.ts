@@ -99,6 +99,14 @@ test.describe('Calendar page', () => {
     await expect(page.locator('button[data-day]:has(.calendar-today-pill)')).toHaveCount(1);
   });
 
+  test('invalid month query redirects to the current calendar page', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-invalid-month');
+
+    await page.goto('/calendar?month=9999-99');
+    await expect(page).toHaveURL(/\/calendar$/);
+    await expect(page.locator('h1')).toContainText(/Calendar|Календарь|Calendario/);
+  });
+
   test('legend includes period/predicted/fertility/ovulation markers', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-legend');
 

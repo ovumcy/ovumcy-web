@@ -266,6 +266,7 @@
   "settings.error.invalid_input": "Please provide current, new, and confirmation passwords.",
   "settings.error.invalid_profile_input": "Unable to process profile data.",
   "settings.error.display_name_too_long": "Profile name must be 64 characters or fewer.",
+  "settings.error.display_name_invalid_characters": "Use plain text only. Tags and angle brackets are not allowed.",
   "settings.error.invalid_last_period_start": "Please enter a valid last period start date that is not in the future.",
   "settings.error.invalid_current_password": "Current password is incorrect.",
   "settings.error.password_unchanged": "New password must be different from current password.",

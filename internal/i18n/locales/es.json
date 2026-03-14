@@ -266,6 +266,7 @@
   "settings.error.invalid_input": "Indica la contraseña actual, la nueva y su confirmación.",
   "settings.error.invalid_profile_input": "No se pudieron procesar los datos del perfil.",
   "settings.error.display_name_too_long": "El nombre del perfil debe tener 64 caracteres o menos.",
+  "settings.error.display_name_invalid_characters": "Usa solo texto sin formato. No se permiten etiquetas ni signos de menor o mayor.",
   "settings.error.invalid_last_period_start": "Introduce una fecha válida de inicio del último periodo que no esté en el futuro.",
   "settings.error.invalid_current_password": "La contraseña actual es incorrecta.",
   "settings.error.password_unchanged": "La nueva contraseña debe ser diferente de la actual.",

@@ -126,17 +126,24 @@ test.describe('Dashboard: today editor', () => {
     await registerOwnerOnDashboard(page, 'dashboard-note-disclosure');
 
     const notes = page.locator('#today-notes');
+    const notesCounter = page.locator('[data-dashboard-notes-field-group] [data-dashboard-notes-count]').first();
     await expect(page.locator('details.note-disclosure')).toHaveCount(0);
     await expect(notes).toBeVisible();
     await expect(notes).toHaveAttribute('rows', '2');
+    await expect(notes).toHaveAttribute('maxlength', '2000');
     await expect(notes).toHaveAttribute('placeholder', /.+/);
+    await expect(notesCounter).toHaveText('0/2000');
 
-    const noteText = `toggle-note-${Date.now()}`;
+    const noteText = Array.from({ length: 60 }, (_, index) => `toggle-note-${index}-${Date.now()}`).join('\n');
     await notes.fill(noteText);
+    const filledNoteText = await notes.inputValue();
+    await expect(notesCounter).toHaveText(`${Array.from(filledNoteText).length}/2000`);
+    const notesHeight = await notes.evaluate((node) => Math.round(node.getBoundingClientRect().height));
+    expect(notesHeight).toBeLessThanOrEqual(340);
     await saveToday(page);
 
     await page.reload();
-    await expect(page.locator('#today-notes')).toHaveValue(noteText);
+    await expect(page.locator('#today-notes')).toHaveValue(filledNoteText);
   });
 
   test('BBT blur validation blocks autosave with form guidance copy', async ({ page }) => {
@@ -353,6 +360,12 @@ test.describe('Dashboard: today editor', () => {
 
     const manualStartButton = page.locator('.dashboard-secondary-form button[type="submit"]');
     await expect(manualStartButton).toBeVisible();
+    await manualStartButton.click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-cancel').click();
+    await expect(page.locator('#confirm-modal')).toBeHidden();
+    await expect(page.locator('#save-status .status-error')).toHaveCount(0);
+
     await Promise.all([
       page.waitForResponse((response) => {
         return (
@@ -360,7 +373,11 @@ test.describe('Dashboard: today editor', () => {
           response.url().includes('/cycle-start?source=dashboard')
         );
       }),
-      manualStartButton.click(),
+      (async () => {
+        await manualStartButton.click();
+        await expect(page.locator('#confirm-modal')).toBeVisible();
+        await page.locator('#confirm-modal-accept').click();
+      })(),
     ]);
 
     const periodToggle = page.locator('input[name="is_period"]');

@@ -3,7 +3,6 @@ package services
 import (
 	"regexp"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -25,7 +24,7 @@ func normalizeSymptomNameInput(raw string) (string, error) {
 	if utf8.RuneCountInString(name) > maxSymptomNameLength {
 		return "", ErrSymptomNameTooLong
 	}
-	if containsInvalidSymptomNameRune(name) {
+	if containsInvalidPlainTextLabelRune(name) {
 		return "", ErrSymptomNameInvalidCharacters
 	}
 	return name, nil
@@ -68,17 +67,4 @@ func resolveSymptomColorInput(raw string, fallback string) (string, error) {
 		color = defaultSymptomColor
 	}
 	return normalizeSymptomColorInput(color)
-}
-
-func containsInvalidSymptomNameRune(value string) bool {
-	for _, r := range value {
-		if unicode.IsControl(r) {
-			return true
-		}
-		switch r {
-		case '<', '>':
-			return true
-		}
-	}
-	return false
 }
