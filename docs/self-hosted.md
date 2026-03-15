@@ -63,6 +63,7 @@ Use one of the example stacks under `docs/examples/reverse-proxy/` for public HT
 - `TRUST_PROXY_ENABLED=true`
 - `PROXY_HEADER=X-Forwarded-For`
 - `TRUSTED_PROXIES` must match the exact proxy IP or private Docker subnet used by that stack
+- when `COOKIE_SECURE=true`, Ovumcy emits `Strict-Transport-Security` itself, so the example proxy configs do not add a second HSTS policy
 
 Do not start from the base compose file and then expose `8080` publicly as a shortcut. The supported public path is the dedicated proxy stack where only the reverse proxy publishes host ports.
 
@@ -250,7 +251,7 @@ docker run --rm \
   -e BACKUP_FILE="$BACKUP_FILE" \
   -v ovumcy_data:/source:ro \
   -v "$PWD/backups:/backup" \
-  alpine:3.21 \
+  alpine:3.22.2 \
   sh -c 'cd /source && tar czf "/backup/$BACKUP_FILE" .'
 ```
 
@@ -271,7 +272,7 @@ docker run --rm \
   -e BACKUP_FILE="$BACKUP_FILE" \
   -v ovumcy_data:/target \
   -v "$PWD/backups:/backup:ro" \
-  alpine:3.21 \
+  alpine:3.22.2 \
   sh -c 'cd /target && tar xzf "/backup/$BACKUP_FILE"'
 
 docker compose up -d
@@ -314,7 +315,7 @@ If you changed `HOST_BIND_ADDRESS` or `PORT`, adjust the host-side health-check 
 
 For the public reverse-proxy example stacks, run the same `docker compose pull`, `docker compose up -d`, and `docker compose ps` sequence inside the example directory, then verify `https://your-domain.example/healthz` through the proxy instead of expecting a host-level `127.0.0.1:8080` listener.
 
-For safer upgrades, pin `OVUMCY_IMAGE` to a concrete release tag instead of relying on `latest`.
+Keep `OVUMCY_IMAGE` on a concrete release tag and update it intentionally during upgrades instead of relying on a floating `latest`.
 
 ## Troubleshooting Baseline
 

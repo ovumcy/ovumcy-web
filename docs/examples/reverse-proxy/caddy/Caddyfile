@@ -2,6 +2,5 @@
 
 ovumcy.example.com {
 	encode zstd gzip
-	header Strict-Transport-Security "max-age=31536000"
 	reverse_proxy ovumcy:8080
 }

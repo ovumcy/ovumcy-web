@@ -1,6 +1,6 @@
 services:
   ovumcy:
-    image: ${OVUMCY_IMAGE:-ghcr.io/terraincognita07/ovumcy:latest}
+    image: ${OVUMCY_IMAGE:-ghcr.io/terraincognita07/ovumcy:v0.6.0}
     pull_policy: always
     environment:
       TZ: ${TZ:-UTC}
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2.10-alpine
+    image: caddy:2.10.2-alpine
     pull_policy: always
     depends_on:
       ovumcy:

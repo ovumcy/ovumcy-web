@@ -160,7 +160,7 @@ SQLite (default) / PostgreSQL (advanced)
 
 ### Docker
 
-Uses the prebuilt image from GHCR by default (`ghcr.io/terraincognita07/ovumcy:latest`).
+Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/terraincognita07/ovumcy:v0.6.0`).
 
 For public GHCR images, pull does not require GitHub login. `docker compose up -d` is enough because `pull_policy: always` is enabled.
 
@@ -172,7 +172,7 @@ curl -fsSL -o .env https://raw.githubusercontent.com/terraincognita07/ovumcy/mai
 docker compose up -d
 ```
 
-Pin a specific image tag if needed:
+Override the pinned default image tag if needed:
 
 ```bash
 OVUMCY_IMAGE=ghcr.io/terraincognita07/ovumcy:v0.6.0 docker compose up -d

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24.13-alpine3.22@sha256:3641e0d9b931dc4f2f185dcd669c4679670e9277c8166a838ddb98a2d4389cb5 AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -14,7 +14,7 @@ COPY web/static ./web/static
 ENV CGO_ENABLED=0 GOOS=linux
 RUN go build -trimpath -ldflags="-s -w" -o /out/ovumcy ./cmd/ovumcy
 
-FROM alpine:3.21 AS runtime
+FROM alpine:3.22.2@sha256:4b7ce07002c69e8f3d704a9c5d6fd3053be500b7f1c69fc0d80990c2ad8dd412 AS runtime
 WORKDIR /app
 
 RUN apk add --no-cache tzdata ca-certificates \

@@ -314,7 +314,7 @@ func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 
 func TestSecurityHeadersMiddlewareSetsHeadersOnHTMLResponses(t *testing.T) {
 	app := fiber.New()
-	app.Use(securityHeadersMiddleware())
+	app.Use(securityHeadersMiddleware(false))
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("ok")
 	})
@@ -326,12 +326,12 @@ func TestSecurityHeadersMiddlewareSetsHeadersOnHTMLResponses(t *testing.T) {
 	}
 	defer response.Body.Close()
 
-	assertDefaultSecurityHeaders(t, response)
+	assertDefaultSecurityHeaders(t, response, false)
 }
 
 func TestSecurityHeadersMiddlewareSetsHeadersOnAPIResponses(t *testing.T) {
 	app := fiber.New()
-	app.Use(securityHeadersMiddleware())
+	app.Use(securityHeadersMiddleware(false))
 	app.Get("/api/ping", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	})
@@ -343,7 +343,24 @@ func TestSecurityHeadersMiddlewareSetsHeadersOnAPIResponses(t *testing.T) {
 	}
 	defer response.Body.Close()
 
-	assertDefaultSecurityHeaders(t, response)
+	assertDefaultSecurityHeaders(t, response, false)
+}
+
+func TestSecurityHeadersMiddlewareAddsHSTSWhenSecureCookiesEnabled(t *testing.T) {
+	app := fiber.New()
+	app.Use(securityHeadersMiddleware(true))
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("secure html request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	assertDefaultSecurityHeaders(t, response, true)
 }
 
 func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
@@ -367,7 +384,7 @@ func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
 	}
 }
 
-func assertDefaultSecurityHeaders(t *testing.T, response *http.Response) {
+func assertDefaultSecurityHeaders(t *testing.T, response *http.Response, expectStrictTransportSecurity bool) {
 	t.Helper()
 
 	if value := response.Header.Get(headerXContentTypeOptions); value != xContentTypeOptionsNoSniff {
@@ -384,6 +401,13 @@ func assertDefaultSecurityHeaders(t *testing.T, response *http.Response) {
 	}
 	if value := response.Header.Get(headerContentSecurityPolicy); value != contentSecurityPolicyDefault {
 		t.Fatalf("expected %s=%q, got %q", headerContentSecurityPolicy, contentSecurityPolicyDefault, value)
+	}
+	if value := response.Header.Get(headerStrictTransportSecurity); expectStrictTransportSecurity {
+		if value != strictTransportSecurityDefault {
+			t.Fatalf("expected %s=%q, got %q", headerStrictTransportSecurity, strictTransportSecurityDefault, value)
+		}
+	} else if value != "" {
+		t.Fatalf("did not expect %s by default, got %q", headerStrictTransportSecurity, value)
 	}
 	if value := response.Header.Get("Access-Control-Allow-Origin"); value != "" {
 		t.Fatalf("did not expect Access-Control-Allow-Origin by default, got %q", value)

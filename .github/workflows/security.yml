@@ -13,6 +13,9 @@ permissions:
   contents: read
   security-events: write
 
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.68.2@sha256:05d0126976bdedcd0782a0336f77832dbea1c81b9cc5e4b3a5ea5d2ec863aca7
+
 jobs:
   gosec:
     runs-on: ubuntu-latest
@@ -64,7 +67,7 @@ jobs:
         run: mkdir -p .tmp/security
 
       - name: Run Trivy filesystem scan
-        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work aquasec/trivy:0.68.2 fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 1 .
+        run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 1 .
 
       - name: Upload Trivy filesystem SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -95,11 +98,11 @@ jobs:
         run: mkdir -p .tmp/security
 
       - name: Run Trivy image scan
-        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work aquasec/trivy:0.68.2 image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output .tmp/security/trivy-image.sarif --exit-code 1 ovumcy-security:${{ github.sha }}
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output .tmp/security/trivy-image.sarif --exit-code 1 ovumcy-security:${{ github.sha }}
 
       - name: Generate CycloneDX SBOM
         if: always()
-        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work aquasec/trivy:0.68.2 image --skip-version-check --format cyclonedx --output .tmp/security/ovumcy-image.cdx.json ovumcy-security:${{ github.sha }}
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --skip-version-check --format cyclonedx --output .tmp/security/ovumcy-image.cdx.json ovumcy-security:${{ github.sha }}
 
       - name: Upload Trivy image SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)

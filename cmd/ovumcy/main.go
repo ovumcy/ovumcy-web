@@ -58,17 +58,19 @@ type proxySettings struct {
 }
 
 const (
-	headerXContentTypeOptions   = "X-Content-Type-Options"
-	headerReferrerPolicy        = "Referrer-Policy"
-	headerPermissionsPolicy     = "Permissions-Policy"
-	headerXFrameOptions         = "X-Frame-Options"
-	headerContentSecurityPolicy = "Content-Security-Policy"
+	headerXContentTypeOptions     = "X-Content-Type-Options"
+	headerReferrerPolicy          = "Referrer-Policy"
+	headerPermissionsPolicy       = "Permissions-Policy"
+	headerXFrameOptions           = "X-Frame-Options"
+	headerContentSecurityPolicy   = "Content-Security-Policy"
+	headerStrictTransportSecurity = "Strict-Transport-Security"
 
-	xContentTypeOptionsNoSniff   = "nosniff"
-	referrerPolicyStrictOrigin   = "strict-origin-when-cross-origin"
-	permissionsPolicyDefault     = "geolocation=(), camera=(), microphone=()"
-	xFrameOptionsDeny            = "DENY"
-	contentSecurityPolicyDefault = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'"
+	xContentTypeOptionsNoSniff     = "nosniff"
+	referrerPolicyStrictOrigin     = "strict-origin-when-cross-origin"
+	permissionsPolicyDefault       = "geolocation=(), camera=(), microphone=()"
+	xFrameOptionsDeny              = "DENY"
+	contentSecurityPolicyDefault   = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'"
+	strictTransportSecurityDefault = "max-age=31536000"
 )
 
 func main() {
@@ -272,7 +274,7 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 }
 
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {
-	app.Use(securityHeadersMiddleware())
+	app.Use(securityHeadersMiddleware(config.CookieSecure))
 	app.Use(recover.New())
 	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
@@ -316,13 +318,16 @@ func newRequestLogger(output io.Writer) fiber.Handler {
 	return logger.New(config)
 }
 
-func securityHeadersMiddleware() fiber.Handler {
+func securityHeadersMiddleware(enableStrictTransportSecurity bool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		c.Set(headerXContentTypeOptions, xContentTypeOptionsNoSniff)
 		c.Set(headerReferrerPolicy, referrerPolicyStrictOrigin)
 		c.Set(headerPermissionsPolicy, permissionsPolicyDefault)
 		c.Set(headerXFrameOptions, xFrameOptionsDeny)
 		c.Set(headerContentSecurityPolicy, contentSecurityPolicyDefault)
+		if enableStrictTransportSecurity {
+			c.Set(headerStrictTransportSecurity, strictTransportSecurityDefault)
+		}
 		return c.Next()
 	}
 }

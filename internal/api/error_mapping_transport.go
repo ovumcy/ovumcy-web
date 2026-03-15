@@ -8,6 +8,21 @@ import (
 	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
+func apiError(c *fiber.Ctx, status int, message string) error {
+	if responseFormat(c) == httpx.ResponseFormatHTMX {
+		rendered := message
+		if key := services.AuthErrorTranslationKey(message); key != "" {
+			if localized := translateMessage(currentMessages(c), key); localized != key {
+				rendered = localized
+			}
+		} else if localized := translateMessage(currentMessages(c), message); localized != message {
+			rendered = localized
+		}
+		return c.Status(status).SendString(httpx.StatusErrorMarkup(rendered))
+	}
+	return c.Status(status).JSON(fiber.Map{"error": message})
+}
+
 func (handler *Handler) respondAuthError(c *fiber.Ctx, status int, message string) error {
 	if strings.HasPrefix(c.Path(), "/api/auth/") && !acceptsJSON(c) && !isHTMX(c) {
 		flash := FlashPayload{AuthError: message}

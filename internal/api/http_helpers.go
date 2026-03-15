@@ -5,7 +5,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/terraincognita07/ovumcy/internal/httpx"
-	"github.com/terraincognita07/ovumcy/internal/services"
 )
 
 func redirectOrJSON(c *fiber.Ctx, path string) error {
@@ -18,21 +17,6 @@ func redirectOrJSON(c *fiber.Ctx, path string) error {
 	default:
 		return c.Redirect(path, fiber.StatusSeeOther)
 	}
-}
-
-func apiError(c *fiber.Ctx, status int, message string) error {
-	if responseFormat(c) == httpx.ResponseFormatHTMX {
-		rendered := message
-		if key := services.AuthErrorTranslationKey(message); key != "" {
-			if localized := translateMessage(currentMessages(c), key); localized != key {
-				rendered = localized
-			}
-		} else if localized := translateMessage(currentMessages(c), message); localized != message {
-			rendered = localized
-		}
-		return c.Status(status).SendString(httpx.StatusErrorMarkup(rendered))
-	}
-	return c.Status(status).JSON(fiber.Map{"error": message})
 }
 
 func acceptsJSON(c *fiber.Ctx) bool {
