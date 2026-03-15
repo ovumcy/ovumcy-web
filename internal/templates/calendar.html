@@ -88,6 +88,17 @@
         {{end}}
       </div>
 
+      {{if or .HasPredictionExplanationPrimary .HasPredictionExplanationSecondary}}
+      <div class="mt-4 space-y-2" data-calendar-prediction-explainer>
+        {{if .HasPredictionExplanationPrimary}}
+        <p class="journal-muted text-sm">{{t .Messages .PredictionExplanationPrimaryKey}}</p>
+        {{end}}
+        {{if .HasPredictionExplanationSecondary}}
+        <p class="journal-muted text-sm">{{t .Messages .PredictionExplanationSecondaryKey}}</p>
+        {{end}}
+      </div>
+      {{end}}
+
       <div class="calendar-legend mt-4 flex flex-wrap items-center gap-3 text-xs journal-muted">
         <span class="legend-item"><span class="legend-dot legend-dot-period"></span>{{t .Messages "calendar.legend.actual_period"}}</span>
         {{if not .CurrentUser.UnpredictableCycle}}

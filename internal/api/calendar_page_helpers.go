@@ -16,17 +16,21 @@ func (handler *Handler) buildCalendarViewData(user *models.User, language string
 	days := handler.buildCalendarDays(viewData.DayStates)
 
 	data := fiber.Map{
-		"Title":        localizedPageTitle(messages, "meta.title.calendar", "Ovumcy | Calendar"),
-		"CurrentUser":  user,
-		"MonthLabel":   viewData.MonthLabel,
-		"MonthValue":   viewData.MonthValue,
-		"PrevMonth":    viewData.PrevMonth,
-		"NextMonth":    viewData.NextMonth,
-		"SelectedDate": viewData.SelectedDate,
-		"CalendarDays": days,
-		"Today":        viewData.TodayISO,
-		"Stats":        viewData.Stats,
-		"IsOwner":      viewData.IsOwner,
+		"Title":                             localizedPageTitle(messages, "meta.title.calendar", "Ovumcy | Calendar"),
+		"CurrentUser":                       user,
+		"MonthLabel":                        viewData.MonthLabel,
+		"MonthValue":                        viewData.MonthValue,
+		"PrevMonth":                         viewData.PrevMonth,
+		"NextMonth":                         viewData.NextMonth,
+		"SelectedDate":                      viewData.SelectedDate,
+		"CalendarDays":                      days,
+		"Today":                             viewData.TodayISO,
+		"Stats":                             viewData.Stats,
+		"PredictionExplanationPrimaryKey":   viewData.PredictionExplanationPrimaryKey,
+		"PredictionExplanationSecondaryKey": viewData.PredictionExplanationSecondaryKey,
+		"HasPredictionExplanationPrimary":   viewData.HasPredictionExplanationPrimary,
+		"HasPredictionExplanationSecondary": viewData.HasPredictionExplanationSecondary,
+		"IsOwner":                           viewData.IsOwner,
 	}
 	return data, nil
 }

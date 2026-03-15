@@ -22,15 +22,19 @@ type CalendarViewStatsProvider interface {
 }
 
 type CalendarPageViewData struct {
-	MonthLabel   string
-	MonthValue   string
-	PrevMonth    string
-	NextMonth    string
-	SelectedDate string
-	DayStates    []CalendarDayState
-	TodayISO     string
-	Stats        CycleStats
-	IsOwner      bool
+	MonthLabel                        string
+	MonthValue                        string
+	PrevMonth                         string
+	NextMonth                         string
+	SelectedDate                      string
+	DayStates                         []CalendarDayState
+	TodayISO                          string
+	Stats                             CycleStats
+	PredictionExplanationPrimaryKey   string
+	PredictionExplanationSecondaryKey string
+	HasPredictionExplanationPrimary   bool
+	HasPredictionExplanationSecondary bool
+	IsOwner                           bool
 }
 
 type CalendarViewService struct {
@@ -52,7 +56,7 @@ func (service *CalendarViewService) BuildCalendarPageViewData(user *models.User,
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadLogs, err)
 	}
 
-	stats, _, err := service.stats.BuildCycleStatsForRange(user, now.AddDate(-2, 0, 0), now, now, location)
+	stats, statsLogs, err := service.stats.BuildCycleStatsForRange(user, now.AddDate(-2, 0, 0), now, now, location)
 	if err != nil {
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadStats, err)
 	}
@@ -60,16 +64,23 @@ func (service *CalendarViewService) BuildCalendarPageViewData(user *models.User,
 	minMonth := CalendarMinimumNavigableMonth(user, location)
 	prevMonth, nextMonth := CalendarAdjacentMonthValuesWithinBounds(monthStart, minMonth)
 	dayStates := BuildCalendarDayStates(user, monthStart, logs, stats, now, location)
+	cycleContext := BuildDashboardCycleContext(user, stats, DateAtLocation(now, location), location)
+	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, statsLogs, stats, now, location)
+	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 
 	return CalendarPageViewData{
-		MonthLabel:   LocalizedMonthYear(language, monthStart),
-		MonthValue:   monthStart.Format("2006-01"),
-		PrevMonth:    prevMonth,
-		NextMonth:    nextMonth,
-		SelectedDate: selectedDate,
-		DayStates:    dayStates,
-		TodayISO:     DateAtLocation(now, location).Format("2006-01-02"),
-		Stats:        stats,
-		IsOwner:      IsOwnerUser(user),
+		MonthLabel:                        LocalizedMonthYear(language, monthStart),
+		MonthValue:                        monthStart.Format("2006-01"),
+		PrevMonth:                         prevMonth,
+		NextMonth:                         nextMonth,
+		SelectedDate:                      selectedDate,
+		DayStates:                         dayStates,
+		TodayISO:                          DateAtLocation(now, location).Format("2006-01-02"),
+		Stats:                             stats,
+		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
+		PredictionExplanationSecondaryKey: predictionExplanation.SecondaryKey,
+		HasPredictionExplanationPrimary:   predictionExplanation.PrimaryKey != "",
+		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",
+		IsOwner:                           IsOwnerUser(user),
 	}, nil
 }

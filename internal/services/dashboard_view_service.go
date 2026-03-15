@@ -36,34 +36,38 @@ type DashboardViewService struct {
 }
 
 type DashboardViewData struct {
-	Stats                    CycleStats
-	CycleContext             DashboardCycleContext
-	Today                    time.Time
-	Yesterday                time.Time
-	YesterdayMonth           string
-	FormattedDate            string
-	TodayLog                 models.DailyLog
-	TodayHasData             bool
-	TodayEntryExists         bool
-	Symptoms                 []models.SymptomType
-	PrimarySymptoms          []models.SymptomType
-	ExtraSymptoms            []models.SymptomType
-	HasExtraSymptoms         bool
-	SelectedSymptomID        map[uint]bool
-	ShowYesterdayJump        bool
-	ShowSexChip              bool
-	ShowBBTField             bool
-	ShowCervicalMucus        bool
-	AllowManualCycleStart    bool
-	ManualCycleStartPolicy   ManualCycleStartPolicy
-	ShowHighFertilityBadge   bool
-	ShowMissedDaysLink       bool
-	MissedDay                time.Time
-	ShowCycleStartSuggestion bool
-	ShowSpottingCycleWarning bool
-	PredictionFactorHintKeys []string
-	HasPredictionFactorHint  bool
-	IsOwner                  bool
+	Stats                             CycleStats
+	CycleContext                      DashboardCycleContext
+	Today                             time.Time
+	Yesterday                         time.Time
+	YesterdayMonth                    string
+	FormattedDate                     string
+	TodayLog                          models.DailyLog
+	TodayHasData                      bool
+	TodayEntryExists                  bool
+	Symptoms                          []models.SymptomType
+	PrimarySymptoms                   []models.SymptomType
+	ExtraSymptoms                     []models.SymptomType
+	HasExtraSymptoms                  bool
+	SelectedSymptomID                 map[uint]bool
+	ShowYesterdayJump                 bool
+	ShowSexChip                       bool
+	ShowBBTField                      bool
+	ShowCervicalMucus                 bool
+	AllowManualCycleStart             bool
+	ManualCycleStartPolicy            ManualCycleStartPolicy
+	ShowHighFertilityBadge            bool
+	ShowMissedDaysLink                bool
+	MissedDay                         time.Time
+	ShowCycleStartSuggestion          bool
+	ShowSpottingCycleWarning          bool
+	PredictionExplanationPrimaryKey   string
+	PredictionExplanationSecondaryKey string
+	HasPredictionExplanationPrimary   bool
+	HasPredictionExplanationSecondary bool
+	PredictionFactorHintKeys          []string
+	HasPredictionFactorHint           bool
+	IsOwner                           bool
 }
 
 type DayEditorViewData struct {
@@ -116,6 +120,7 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 
 	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, logs, stats, now, location)
+	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, err := service.buildPickerViewState(
 		user,
 		today,
@@ -137,34 +142,38 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 	allowManualCycleStart := IsOwnerUser(user) && IsAllowedManualCycleStartDate(today, now, location)
 
 	return DashboardViewData{
-		Stats:                    stats,
-		CycleContext:             cycleContext,
-		Today:                    today,
-		Yesterday:                yesterday,
-		YesterdayMonth:           yesterday.Format("2006-01"),
-		FormattedDate:            LocalizedDashboardDate(language, today),
-		TodayLog:                 todayLog,
-		TodayHasData:             DayHasData(todayLog),
-		TodayEntryExists:         todayLog.ID != 0,
-		Symptoms:                 rankedSymptoms,
-		PrimarySymptoms:          primarySymptoms,
-		ExtraSymptoms:            extraSymptoms,
-		HasExtraSymptoms:         len(extraSymptoms) > 0,
-		SelectedSymptomID:        selectedSymptomID,
-		ShowYesterdayJump:        !yesterdayHasData,
-		ShowSexChip:              IsOwnerUser(user) && !user.HideSexChip,
-		ShowBBTField:             IsOwnerUser(user) && user.TrackBBT,
-		ShowCervicalMucus:        IsOwnerUser(user) && user.TrackCervicalMucus,
-		AllowManualCycleStart:    allowManualCycleStart,
-		ManualCycleStartPolicy:   cycleStartPolicy,
-		ShowHighFertilityBadge:   IsOwnerUser(user) && NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite,
-		ShowMissedDaysLink:       showMissedDaysLink,
-		MissedDay:                missedDay,
-		ShowCycleStartSuggestion: showCycleStartSuggestion,
-		ShowSpottingCycleWarning: todayLog.IsPeriod && NormalizeDayFlow(todayLog.Flow) == models.FlowSpotting && !stats.LastPeriodStart.IsZero() && sameCalendarDay(DateAtLocation(stats.LastPeriodStart, location), today),
-		PredictionFactorHintKeys: cycleFactorExplanation.HintFactorKeys,
-		HasPredictionFactorHint:  hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0,
-		IsOwner:                  IsOwnerUser(user),
+		Stats:                             stats,
+		CycleContext:                      cycleContext,
+		Today:                             today,
+		Yesterday:                         yesterday,
+		YesterdayMonth:                    yesterday.Format("2006-01"),
+		FormattedDate:                     LocalizedDashboardDate(language, today),
+		TodayLog:                          todayLog,
+		TodayHasData:                      DayHasData(todayLog),
+		TodayEntryExists:                  todayLog.ID != 0,
+		Symptoms:                          rankedSymptoms,
+		PrimarySymptoms:                   primarySymptoms,
+		ExtraSymptoms:                     extraSymptoms,
+		HasExtraSymptoms:                  len(extraSymptoms) > 0,
+		SelectedSymptomID:                 selectedSymptomID,
+		ShowYesterdayJump:                 !yesterdayHasData,
+		ShowSexChip:                       IsOwnerUser(user) && !user.HideSexChip,
+		ShowBBTField:                      IsOwnerUser(user) && user.TrackBBT,
+		ShowCervicalMucus:                 IsOwnerUser(user) && user.TrackCervicalMucus,
+		AllowManualCycleStart:             allowManualCycleStart,
+		ManualCycleStartPolicy:            cycleStartPolicy,
+		ShowHighFertilityBadge:            IsOwnerUser(user) && NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite,
+		ShowMissedDaysLink:                showMissedDaysLink,
+		MissedDay:                         missedDay,
+		ShowCycleStartSuggestion:          showCycleStartSuggestion,
+		ShowSpottingCycleWarning:          todayLog.IsPeriod && NormalizeDayFlow(todayLog.Flow) == models.FlowSpotting && !stats.LastPeriodStart.IsZero() && sameCalendarDay(DateAtLocation(stats.LastPeriodStart, location), today),
+		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
+		PredictionExplanationSecondaryKey: predictionExplanation.SecondaryKey,
+		HasPredictionExplanationPrimary:   predictionExplanation.PrimaryKey != "",
+		HasPredictionExplanationSecondary: predictionExplanation.SecondaryKey != "",
+		PredictionFactorHintKeys:          cycleFactorExplanation.HintFactorKeys,
+		HasPredictionFactorHint:           hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0,
+		IsOwner:                           IsOwnerUser(user),
 	}, nil
 }
 

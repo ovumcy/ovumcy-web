@@ -88,6 +88,9 @@ func TestBuildStatsPageViewDataShowsIrregularInsufficientDataNotice(t *testing.T
 	if !viewData.ShowIrregularInsufficientDataNotice {
 		t.Fatalf("expected ShowIrregularInsufficientDataNotice=true")
 	}
+	if !viewData.HasPredictionExplanationPrimary || viewData.PredictionExplanationPrimaryKey != "prediction.explainer.irregular_sparse" {
+		t.Fatalf("expected shared irregular sparse explanation, got %#v", viewData)
+	}
 }
 
 func TestBuildStatsPageViewDataBuildsRecentCycleFactorContextForVariablePatterns(t *testing.T) {
@@ -131,6 +134,9 @@ func TestBuildStatsPageViewDataBuildsRecentCycleFactorContextForVariablePatterns
 	if !viewData.HasPredictionFactorHint || len(viewData.PredictionFactorHintKeys) != 2 {
 		t.Fatalf("expected prediction hint factor keys, got %#v", viewData.PredictionFactorHintKeys)
 	}
+	if !viewData.HasPredictionExplanationSecondary || viewData.PredictionExplanationSecondaryKey != "prediction.explainer.factor_context" {
+		t.Fatalf("expected shared factor explanation key, got %#v", viewData)
+	}
 }
 
 func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *testing.T) {
@@ -159,6 +165,9 @@ func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *t
 	}
 	if !viewData.HasCycleFactorPatternSummaries || !viewData.HasRecentFactorCycles || !viewData.HasPredictionFactorHint {
 		t.Fatalf("expected richer factor explanations to remain available, got %#v", viewData)
+	}
+	if !viewData.HasPredictionExplanationPrimary || viewData.PredictionExplanationPrimaryKey != "prediction.explainer.irregular_sparse" {
+		t.Fatalf("expected sparse irregular explanation to stay available with the newer baseline, got %#v", viewData)
 	}
 }
 
@@ -356,6 +365,9 @@ func TestBuildStatsPageViewDataPartnerSkipsBaselineAndSymptomLoading(t *testing.
 	}
 	if viewData.HasRecentCycleFactors || viewData.HasCycleFactorPatternSummaries || viewData.HasRecentFactorCycles || viewData.HasPredictionFactorHint {
 		t.Fatalf("expected no owner-only factor context for partner, got %#v", viewData)
+	}
+	if viewData.HasPredictionExplanationPrimary || viewData.HasPredictionExplanationSecondary {
+		t.Fatalf("expected no owner-only prediction explanation for partner, got %#v", viewData)
 	}
 	if dayReader.fetchAllCalled {
 		t.Fatalf("did not expect FetchAllLogsForUser for partner")

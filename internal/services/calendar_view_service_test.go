@@ -24,6 +24,7 @@ func (stub *stubCalendarViewDayReader) FetchLogsForUser(_ uint, _ time.Time, _ t
 
 type stubCalendarViewStatsProvider struct {
 	stats CycleStats
+	logs  []models.DailyLog
 	err   error
 }
 
@@ -31,7 +32,9 @@ func (stub *stubCalendarViewStatsProvider) BuildCycleStatsForRange(_ *models.Use
 	if stub.err != nil {
 		return CycleStats{}, nil, stub.err
 	}
-	return stub.stats, nil, nil
+	logs := make([]models.DailyLog, len(stub.logs))
+	copy(logs, stub.logs)
+	return stub.stats, logs, nil
 }
 
 func TestBuildCalendarPageViewData(t *testing.T) {
@@ -114,6 +117,47 @@ func TestBuildCalendarPageViewDataHidesPreviousMonthAtLowerBound(t *testing.T) {
 	}
 	if viewData.NextMonth != "2023-04" {
 		t.Fatalf("expected next month 2023-04, got %q", viewData.NextMonth)
+	}
+}
+
+func TestBuildCalendarPageViewDataBuildsSharedPredictionExplanation(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseCalendarViewDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseCalendarViewDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
+		{Date: mustParseCalendarViewDay(t, "2026-01-25"), IsPeriod: true},
+		{Date: mustParseCalendarViewDay(t, "2026-01-28"), CycleFactorKeys: []string{models.CycleFactorTravel}},
+		{Date: mustParseCalendarViewDay(t, "2026-03-10"), IsPeriod: true},
+		{Date: mustParseCalendarViewDay(t, "2026-03-12"), CycleFactorKeys: []string{models.CycleFactorStress}},
+		{Date: mustParseCalendarViewDay(t, "2026-04-20"), IsPeriod: true},
+	}
+	service := NewCalendarViewService(
+		&stubCalendarViewDayReader{},
+		&stubCalendarViewStatsProvider{
+			stats: CycleStats{
+				CompletedCycleCount: 3,
+				LastPeriodStart:     mustParseCalendarViewDay(t, "2026-04-20"),
+				NextPeriodStart:     mustParseCalendarViewDay(t, "2026-05-22"),
+				MedianCycleLength:   32,
+				MinCycleLength:      24,
+				MaxCycleLength:      44,
+			},
+			logs: logs,
+		},
+	)
+
+	user := &models.User{ID: 3, Role: models.RoleOwner, IrregularCycle: true}
+	now := mustParseCalendarViewDay(t, "2026-04-25")
+	monthStart := mustParseCalendarViewDay(t, "2026-04-01")
+
+	viewData, err := service.BuildCalendarPageViewData(user, "en", now, monthStart, "2026-04-25", time.UTC)
+	if err != nil {
+		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
+	}
+	if !viewData.HasPredictionExplanationPrimary || viewData.PredictionExplanationPrimaryKey != "prediction.explainer.irregular_ranges" {
+		t.Fatalf("expected shared irregular range explanation, got %#v", viewData)
+	}
+	if !viewData.HasPredictionExplanationSecondary || viewData.PredictionExplanationSecondaryKey != "prediction.explainer.factor_context" {
+		t.Fatalf("expected shared factor explanation, got %#v", viewData)
 	}
 }
 

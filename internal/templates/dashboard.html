@@ -10,7 +10,7 @@
       <span class="dashboard-status-separator" aria-hidden="true">·</span>
       <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}: {{t .Messages "dashboard.next_period_unknown"}}</span>
       <span class="dashboard-status-separator" aria-hidden="true">·</span>
-      <span class="dashboard-status-item">{{t .Messages "dashboard.unpredictable_cycle_notice"}}</span>
+      <span class="dashboard-status-item">{{t .Messages "prediction.explainer.unpredictable_compact"}}</span>
       {{else}}
         {{if .ShowHighFertilityBadge}}
         <span class="dashboard-status-item{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}} dashboard-status-item-warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}} dashboard-status-item-positive{{end}}">
@@ -40,6 +40,10 @@
       {{end}}
     </div>
 
+    {{if .HasPredictionExplanationPrimary}}
+    <p class="journal-muted text-sm" data-dashboard-prediction-explainer>{{t .Messages .PredictionExplanationPrimaryKey}}</p>
+    {{end}}
+
     {{if or .CycleDataStale .CycleDayWarning .NextPeriodInPast .OvulationInPast}}
     <div class="flex flex-wrap items-center gap-3 text-sm">
       {{if .CycleDataStale}}
@@ -57,14 +61,14 @@
       {{end}}
     {{if .HasPredictionFactorHint}}
     <div class="flex flex-wrap items-center gap-2 text-sm" data-dashboard-factor-hint>
-      <span class="journal-muted">{{t .Messages "dashboard.factor_prediction_hint"}}</span>
+      <span class="journal-muted">{{t .Messages .PredictionExplanationSecondaryKey}}</span>
       {{range .PredictionFactorHintKeys}}
       <span class="check-chip check-chip-static">
         <span class="symptom-icon">{{cycleFactorIcon .}}</span>
         <span class="symptom-label">{{cycleFactorLabel $.Messages .}}</span>
       </span>
       {{end}}
-      <a href="/stats" class="inline-link text-xs">{{t .Messages "dashboard.factor_prediction_hint_link"}}</a>
+      <a href="/stats" class="inline-link text-xs">{{t .Messages "prediction.explainer.details_link"}}</a>
     </div>
     {{end}}
     {{if .ShowMissedDaysLink}}

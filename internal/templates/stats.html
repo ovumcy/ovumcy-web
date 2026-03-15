@@ -38,17 +38,14 @@
     {{if lt .TrendPointCount 3}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.data_notice"}}</div>
     {{end}}
-    {{if and (not .PredictionDisabled) .ShowIrregularInsufficientDataNotice}}
-    <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_insufficient_data"}}</div>
+    {{if .HasPredictionExplanationPrimary}}
+    <div class="journal-panel text-sm journal-muted" data-stats-prediction-explainer>{{t .Messages .PredictionExplanationPrimaryKey}}</div>
     {{end}}
     {{if .ShowIrregularityNotice}}
     <div class="journal-panel text-sm journal-muted">{{printf (t .Messages "stats.irregular_notice") .Stats.MinCycleLength .Stats.MaxCycleLength}}</div>
     {{end}}
     {{if .ShowIrregularModeRecommendation}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_recommendation"}}</div>
-    {{end}}
-    {{if .PredictionDisabled}}
-    <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.prediction_disabled"}}</div>
     {{end}}
     {{if .ShowAgeVariabilityHint}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.age_variability_hint"}}</div>
@@ -102,7 +99,7 @@
           </span>
           {{end}}
         </div>
-        <p class="journal-muted mt-2 text-xs">{{t .Messages "stats.reliability.factors_hint"}}</p>
+        <p class="journal-muted mt-2 text-xs">{{t .Messages .PredictionExplanationSecondaryKey}}</p>
         {{end}}
       </article>
       {{end}}

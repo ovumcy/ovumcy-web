@@ -40,6 +40,10 @@ type StatsPageViewData struct {
 	PredictionReliabilityLabelKey       string
 	PredictionReliabilityHintKey        string
 	ShowPredictionReliability           bool
+	PredictionExplanationPrimaryKey     string
+	PredictionExplanationSecondaryKey   string
+	HasPredictionExplanationPrimary     bool
+	HasPredictionExplanationSecondary   bool
 	RecentCycleFactors                  []StatsCycleFactorContextItem
 	CycleFactorPatternSummaries         []StatsCycleFactorPatternSummary
 	RecentFactorCycles                  []StatsCycleFactorRecentCycleSummary
@@ -111,6 +115,8 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 	isOwner := IsOwnerUser(user)
 	predictionSampleCount, predictionSampleUsesRecentWindow, predictionReliabilityLabelKey, predictionReliabilityHintKey, showPredictionReliability := buildStatsPredictionReliability(user, baseData.flags, baseData.stats)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, baseData.logs, baseData.stats, now, location)
+	cycleContext := BuildDashboardCycleContext(user, baseData.stats, DateAtLocation(now, location), location)
+	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 
 	return StatsPageViewData{
 		Stats:                               baseData.stats,
@@ -123,6 +129,10 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 		PredictionReliabilityLabelKey:       predictionReliabilityLabelKey,
 		PredictionReliabilityHintKey:        predictionReliabilityHintKey,
 		ShowPredictionReliability:           showPredictionReliability,
+		PredictionExplanationPrimaryKey:     predictionExplanation.PrimaryKey,
+		PredictionExplanationSecondaryKey:   predictionExplanation.SecondaryKey,
+		HasPredictionExplanationPrimary:     predictionExplanation.PrimaryKey != "",
+		HasPredictionExplanationSecondary:   predictionExplanation.SecondaryKey != "",
 		RecentCycleFactors:                  cycleFactorExplanation.RecentFactors,
 		CycleFactorPatternSummaries:         cycleFactorExplanation.PatternSummaries,
 		RecentFactorCycles:                  cycleFactorExplanation.RecentCycles,

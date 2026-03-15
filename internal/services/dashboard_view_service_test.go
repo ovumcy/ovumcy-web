@@ -265,6 +265,36 @@ func TestBuildDashboardViewDataAddsPredictionFactorHintForVariablePatterns(t *te
 	if len(viewData.PredictionFactorHintKeys) != 2 || viewData.PredictionFactorHintKeys[0] != models.CycleFactorStress {
 		t.Fatalf("expected stable dashboard factor hint order, got %#v", viewData.PredictionFactorHintKeys)
 	}
+	if !viewData.HasPredictionExplanationSecondary || viewData.PredictionExplanationSecondaryKey != "prediction.explainer.factor_context" {
+		t.Fatalf("expected shared factor explanation copy, got %#v", viewData)
+	}
+}
+
+func TestBuildDashboardViewDataAddsSharedIrregularSparseExplanation(t *testing.T) {
+	user := &models.User{ID: 8, Role: models.RoleOwner, CycleLength: 32, IrregularCycle: true}
+	today := mustParseDashboardServiceDay(t, "2026-02-10")
+
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{stats: CycleStats{
+			CompletedCycleCount: 2,
+			LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-02-01"),
+			NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-03-05"),
+			MedianCycleLength:   32,
+		}},
+		&stubDashboardViewerProvider{
+			logEntry: models.DailyLog{Date: today},
+			symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
+		},
+		&stubDashboardDayStateProvider{},
+	)
+
+	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+	if !viewData.HasPredictionExplanationPrimary || viewData.PredictionExplanationPrimaryKey != "prediction.explainer.irregular_sparse" {
+		t.Fatalf("expected shared irregular sparse explanation, got %#v", viewData)
+	}
 }
 
 func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
