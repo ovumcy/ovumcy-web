@@ -10,6 +10,7 @@ import (
 
 	"github.com/terraincognita07/ovumcy/internal/models"
 	"github.com/terraincognita07/ovumcy/internal/services"
+	"golang.org/x/net/html"
 )
 
 func TestDashboardSymptomsNotesPanelUsesSavedSymptomsAndNotesState(t *testing.T) {
@@ -56,17 +57,35 @@ func TestDashboardSymptomsNotesPanelUsesSavedSymptomsAndNotesState(t *testing.T)
 	if err != nil {
 		t.Fatalf("read dashboard body: %v", err)
 	}
-	rendered := string(body)
-	if !strings.Contains(rendered, "Remember to hydrate") {
+	document := mustParseHTMLDocument(t, string(body))
+	documentText := htmlDocumentText(document)
+	if !strings.Contains(documentText, "Remember to hydrate") {
 		t.Fatalf("expected saved note to stay visible in dashboard form")
 	}
-	if !strings.Contains(rendered, `data-note-disclosure`) || !strings.Contains(rendered, "Hide note") {
+	disclosure := htmlElementByTagAndClass(document, "details", "note-disclosure")
+	if disclosure == nil {
 		t.Fatalf("expected saved notes to render inside a disclosure block")
 	}
-	if !strings.Contains(rendered, "Custom cramps") {
+	if !htmlHasAttr(disclosure, "open") {
+		t.Fatalf("expected saved dashboard note disclosure to stay open")
+	}
+	summary := htmlFindElement(disclosure, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "summary"
+	})
+	if !strings.Contains(htmlDocumentText(summary), "Hide note") {
+		t.Fatalf("expected saved dashboard note disclosure to use Hide note copy")
+	}
+	noteField := htmlElementByID(document, "today-notes")
+	if noteField == nil {
+		t.Fatalf("expected dashboard notes textarea")
+	}
+	if got := htmlDocumentText(noteField); got != "Remember to hydrate" {
+		t.Fatalf("expected saved note textarea value, got %q", got)
+	}
+	if !strings.Contains(documentText, "Custom cramps") {
 		t.Fatalf("expected saved custom symptom label to be rendered in dashboard picker")
 	}
-	if !strings.Contains(rendered, "Custom headache") {
+	if !strings.Contains(documentText, "Custom headache") {
 		t.Fatalf("expected second saved custom symptom label to be rendered in dashboard picker")
 	}
 }
@@ -89,11 +108,18 @@ func TestDashboardEmptyNotesUseAddNoteDisclosure(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	rendered := mustReadBodyString(t, response.Body)
-	if !strings.Contains(rendered, `data-note-disclosure`) {
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	disclosure := htmlElementByTagAndClass(document, "details", "note-disclosure")
+	if disclosure == nil {
 		t.Fatalf("expected dashboard note field to render as a disclosure")
 	}
-	if !strings.Contains(rendered, "Add note") {
+	summary := htmlFindElement(disclosure, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "summary"
+	})
+	if !strings.Contains(htmlDocumentText(summary), "Add note") {
 		t.Fatalf("expected empty dashboard note disclosure to use Add note copy")
+	}
+	if htmlHasAttr(disclosure, "open") {
+		t.Fatalf("expected empty dashboard note disclosure to stay closed")
 	}
 }

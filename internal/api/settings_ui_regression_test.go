@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -26,9 +27,10 @@ func TestSettingsPageRendersSingleIrregularCycleExplanation(t *testing.T) {
 	}
 
 	rendered := mustReadBodyString(t, response.Body)
+	documentText := htmlDocumentText(mustParseHTMLDocument(t, rendered))
 	const hint = "Turn this on if your cycles vary by more than 7 days. A range will be shown instead of a single date."
-	if strings.Count(rendered, hint) != 1 {
-		t.Fatalf("expected a single irregular-cycle explanation, got %q", rendered)
+	if strings.Count(documentText, hint) != 1 {
+		t.Fatalf("expected a single irregular-cycle explanation, got %q", documentText)
 	}
 }
 
@@ -49,26 +51,27 @@ func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndReminders(t *testing.T
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
 	}
 
-	rendered := mustReadBodyString(t, response.Body)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
 	order := []string{
-		`id="settings-cycle"`,
-		`id="settings-symptoms-section"`,
-		`id="settings-tracking"`,
-		`id="settings-interface"`,
-		`id="settings-account"`,
-		`id="settings-data"`,
-		`id="settings-reminders"`,
-		`id="settings-danger-zone"`,
+		"settings-cycle",
+		"settings-symptoms-section",
+		"settings-tracking",
+		"settings-interface",
+		"settings-account",
+		"settings-data",
+		"settings-reminders",
+		"settings-danger-zone",
 	}
 
+	sectionIDs := htmlSectionIDs(document)
 	lastIndex := -1
-	for _, marker := range order {
-		currentIndex := strings.Index(rendered, marker)
+	for _, expectedID := range order {
+		currentIndex := slices.Index(sectionIDs, expectedID)
 		if currentIndex == -1 {
-			t.Fatalf("expected settings page to contain %q", marker)
+			t.Fatalf("expected settings page to contain %q", expectedID)
 		}
 		if currentIndex <= lastIndex {
-			t.Fatalf("expected settings section %q after previous sections", marker)
+			t.Fatalf("expected settings section %q after previous sections", expectedID)
 		}
 		lastIndex = currentIndex
 	}
@@ -110,8 +113,8 @@ func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T)
 		t.Fatalf("expected forgot-password follow-up status 200, got %d", followResponse.StatusCode)
 	}
 
-	rendered := mustReadBodyString(t, followResponse.Body)
-	if !strings.Contains(rendered, "If this address is registered, enter your recovery code to continue.") {
-		t.Fatalf("expected generic recovery subtitle after email step, got %q", rendered)
+	documentText := htmlDocumentText(mustParseHTMLDocument(t, mustReadBodyString(t, followResponse.Body)))
+	if !strings.Contains(documentText, "If this address is registered, enter your recovery code to continue.") {
+		t.Fatalf("expected generic recovery subtitle after email step, got %q", documentText)
 	}
 }

@@ -67,8 +67,10 @@ func TestStatsChartExcludesCycleEndingToday(t *testing.T) {
 		return
 	}
 
-	if !strings.Contains(rendered, "Complete 2 cycles to unlock insights. Start by entering the first day of your next period.") {
-		t.Fatalf("expected empty-state message when chart payload is skipped, got %q", rendered)
+	document := mustParseHTMLDocument(t, rendered)
+	documentText := htmlDocumentText(document)
+	if !strings.Contains(documentText, "Complete 2 cycles to unlock insights. Start by entering the first day of your next period.") {
+		t.Fatalf("expected empty-state message when chart payload is skipped, got %q", documentText)
 	}
 }
 
@@ -99,14 +101,15 @@ func TestStatsPageKeepsMetricGridHiddenAfterOneCompletedCycle(t *testing.T) {
 		t.Fatalf("expected stats status 200, got %d", response.StatusCode)
 	}
 
-	rendered := mustReadBodyString(t, response.Body)
-	if !strings.Contains(rendered, "You have 1 completed cycle. Complete one more cycle to unlock insights.") {
-		t.Fatalf("expected one-cycle empty-state guidance, got %q", rendered)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	documentText := htmlDocumentText(document)
+	if !strings.Contains(documentText, "You have 1 completed cycle. Complete one more cycle to unlock insights.") {
+		t.Fatalf("expected one-cycle empty-state guidance, got %q", documentText)
 	}
-	if strings.Contains(rendered, `id="cycle-chart"`) {
+	if htmlElementByID(document, "cycle-chart") != nil {
 		t.Fatalf("did not expect cycle chart before two completed cycles")
 	}
-	if strings.Contains(rendered, "Last cycle length") {
+	if strings.Contains(documentText, "Last cycle length") {
 		t.Fatalf("did not expect metric cards before two completed cycles")
 	}
 }

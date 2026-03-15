@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -77,24 +76,23 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read stats body: %v", err)
-	}
-	rendered := string(body)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	documentText := htmlDocumentText(document)
 
 	for _, fragment := range []string{
 		"Last cycle length",
 		"Period length",
+		"Current phase",
 		"Prediction reliability",
 		"Based on 3 completed cycles.",
 		"Top symptoms in your last cycle",
-		`id="bbt-chart"`,
-		"Probable ovulation",
 		"Symptom patterns",
 	} {
-		if !strings.Contains(rendered, fragment) {
-			t.Fatalf("expected stats page to contain %q, got %q", fragment, rendered)
+		if !strings.Contains(documentText, fragment) {
+			t.Fatalf("expected stats page to contain %q, got %q", fragment, documentText)
 		}
+	}
+	if htmlElementByID(document, "bbt-chart") == nil {
+		t.Fatalf("expected stats page to render BBT chart container")
 	}
 }

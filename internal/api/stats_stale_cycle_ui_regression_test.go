@@ -1,38 +1,36 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/terraincognita07/ovumcy/internal/models"
 	"github.com/terraincognita07/ovumcy/internal/services"
+	"golang.org/x/net/html"
 )
 
 func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
-	rendered := renderStatsPageWithStaleCycleData(t)
-	if !strings.Contains(rendered, "Complete 2 cycles to unlock insights. Start by entering the first day of your next period.") {
+	documentText := htmlDocumentText(renderStatsPageWithStaleCycleData(t))
+	if !strings.Contains(documentText, "Complete 2 cycles to unlock insights. Start by entering the first day of your next period.") {
 		t.Fatalf("expected updated empty-state guidance before the first completed cycle")
 	}
 }
 
 func TestStatsPageEmptyStateUsesDedicatedProgressMeterWithoutInlineStyle(t *testing.T) {
-	rendered := renderStatsPageWithStaleCycleData(t)
-
-	progressTag := regexp.MustCompile(`<progress[^>]*class="stats-progress-meter"[^>]*>`).FindString(rendered)
-	if progressTag == "" {
-		t.Fatalf("expected stats empty state to render a dedicated progress meter, got %q", rendered)
+	document := renderStatsPageWithStaleCycleData(t)
+	progressMeter := htmlElementByTagAndClass(document, "progress", "stats-progress-meter")
+	if progressMeter == nil {
+		t.Fatalf("expected stats empty state to render a dedicated progress meter")
 	}
-	if strings.Contains(progressTag, "style=") {
-		t.Fatalf("expected progress meter tag to avoid inline style attributes under strict CSP, got %q", progressTag)
+	if htmlAttr(progressMeter, "style") != "" {
+		t.Fatalf("expected progress meter tag to avoid inline style attributes under strict CSP, got %q", htmlAttr(progressMeter, "style"))
 	}
 }
 
-func renderStatsPageWithStaleCycleData(t *testing.T) string {
+func renderStatsPageWithStaleCycleData(t *testing.T) *html.Node {
 	t.Helper()
 
 	app, database := newOnboardingTestApp(t)
@@ -62,9 +60,5 @@ func renderStatsPageWithStaleCycleData(t *testing.T) string {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read stats body: %v", err)
-	}
-	return string(body)
+	return mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
 }
