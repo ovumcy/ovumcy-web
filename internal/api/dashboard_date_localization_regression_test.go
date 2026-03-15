@@ -59,3 +59,51 @@ func TestDashboardEnglishRendersLocalizedPredictionDates(t *testing.T) {
 		t.Fatalf("expected English-localized ovulation display date in dashboard status line")
 	}
 }
+
+func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-irregular-ovulation@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	nowUTC := time.Now().UTC()
+	today := services.DateAtLocation(nowUTC, time.UTC)
+	cycleStarts := []time.Time{
+		today.AddDate(0, 0, -84),
+		today.AddDate(0, 0, -58),
+		today.AddDate(0, 0, -26),
+		today.AddDate(0, 0, -5),
+	}
+	for _, day := range cycleStarts {
+		if err := database.Create(&models.DailyLog{UserID: user.ID, Date: day, IsPeriod: true, Flow: models.FlowMedium}).Error; err != nil {
+			t.Fatalf("create irregular cycle start %s: %v", day.Format("2006-01-02"), err)
+		}
+	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"irregular_cycle":   true,
+		"cycle_length":      29,
+		"period_length":     5,
+		"last_period_start": cycleStarts[len(cycleStarts)-1],
+	}).Error; err != nil {
+		t.Fatalf("update user irregular cycle context: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("dashboard request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	ovulationRangePattern := regexp.MustCompile(`Ovulation:\s*[A-Z][a-z]{2} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2} \d{1,2}, \d{4}`)
+	if !ovulationRangePattern.MatchString(rendered) {
+		t.Fatalf("expected English-localized ovulation range in dashboard status line")
+	}
+}

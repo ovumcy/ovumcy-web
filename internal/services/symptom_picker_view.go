@@ -38,10 +38,15 @@ func SplitSymptomsForCollapsedPicker(symptoms []models.SymptomType, selectedIDs 
 	primary := make([]models.SymptomType, 0, primaryLimit)
 	custom := make([]models.SymptomType, 0, len(symptoms))
 	remaining := make([]models.SymptomType, 0, len(symptoms))
+	deferred := make([]models.SymptomType, 0, len(symptoms))
 
 	for _, symptom := range symptoms {
 		if selectedIDs[symptom.ID] {
 			primary = append(primary, symptom)
+			continue
+		}
+		if shouldDeferSymptomFromPrimaryPath(symptom) {
+			deferred = append(deferred, symptom)
 			continue
 		}
 		if !symptom.IsBuiltin && symptom.IsActive() {
@@ -67,6 +72,11 @@ func SplitSymptomsForCollapsedPicker(symptoms []models.SymptomType, selectedIDs 
 		}
 		extra = append(extra, symptom)
 	}
+	extra = append(extra, deferred...)
 
 	return primary, extra
+}
+
+func shouldDeferSymptomFromPrimaryPath(symptom models.SymptomType) bool {
+	return symptom.IsBuiltin && BuiltinSymptomTranslationKey(symptom.Name) == "symptoms.mood_swings"
 }

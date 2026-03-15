@@ -108,6 +108,18 @@ func TestBuildDashboardCycleContextUsesRangeForIrregularMode(t *testing.T) {
 	if context.DisplayNextPeriodNeedsData {
 		t.Fatalf("expected irregular range to skip the low-data placeholder")
 	}
+	if !context.DisplayOvulationUseRange {
+		t.Fatalf("expected irregular mode to use ovulation range")
+	}
+	if got := context.DisplayOvulationRangeStart.Format("2006-01-02"); got != "2026-03-11" {
+		t.Fatalf("expected ovulation range start 2026-03-11, got %s", got)
+	}
+	if got := context.DisplayOvulationRangeEnd.Format("2006-01-02"); got != "2026-04-01" {
+		t.Fatalf("expected ovulation range end 2026-04-01, got %s", got)
+	}
+	if !context.DisplayOvulationDate.IsZero() {
+		t.Fatalf("expected irregular range to suppress single ovulation date")
+	}
 }
 
 func TestDashboardPredictionRangeWidensForAge35Plus(t *testing.T) {
@@ -165,6 +177,28 @@ func TestBuildDashboardCycleContextDisablesPredictionsForUnpredictableMode(t *te
 	}
 	if !context.DisplayNextPeriodStart.IsZero() || !context.DisplayOvulationDate.IsZero() {
 		t.Fatalf("expected unpredictable mode to clear projected dates")
+	}
+}
+
+func TestBuildDashboardCycleContextNeedsOvulationDataForIrregularModeWithFewerThanThreeCycles(t *testing.T) {
+	user := &models.User{IrregularCycle: true}
+	stats := CycleStats{
+		LastPeriodStart:     mustParseDashboardDay(t, "2026-03-01"),
+		AverageCycleLength:  32,
+		CompletedCycleCount: 2,
+		NextPeriodStart:     mustParseDashboardDay(t, "2026-04-02"),
+		OvulationDate:       mustParseDashboardDay(t, "2026-03-19"),
+	}
+
+	context := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
+	if !context.DisplayOvulationNeedsData {
+		t.Fatalf("expected irregular mode with sparse data to defer ovulation estimate")
+	}
+	if context.DisplayOvulationUseRange {
+		t.Fatalf("did not expect ovulation range without enough completed cycles")
+	}
+	if !context.DisplayOvulationDate.IsZero() {
+		t.Fatalf("expected sparse irregular mode to suppress single ovulation date")
 	}
 }
 

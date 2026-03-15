@@ -28,13 +28,13 @@ func TestSettingsPageRendersSingleIrregularCycleExplanation(t *testing.T) {
 
 	rendered := mustReadBodyString(t, response.Body)
 	documentText := htmlDocumentText(mustParseHTMLDocument(t, rendered))
-	const hint = "Turn this on if your cycles vary by more than 7 days. A range will be shown instead of a single date."
+	const hint = "Turn this on if your cycles vary by more than 7 days. Ranges will be used for next period and ovulation instead of a single date."
 	if strings.Count(documentText, hint) != 1 {
 		t.Fatalf("expected a single irregular-cycle explanation, got %q", documentText)
 	}
 }
 
-func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndReminders(t *testing.T) {
+func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndDangerZone(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-section-order@example.com")
 
 	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
@@ -59,7 +59,6 @@ func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndReminders(t *testing.T
 		"settings-interface",
 		"settings-account",
 		"settings-data",
-		"settings-reminders",
 		"settings-danger-zone",
 	}
 
@@ -74,6 +73,32 @@ func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndReminders(t *testing.T
 			t.Fatalf("expected settings section %q after previous sections", expectedID)
 		}
 		lastIndex = currentIndex
+	}
+	if slices.Contains(sectionIDs, "settings-reminders") {
+		t.Fatalf("did not expect deprecated reminders section, got %v", sectionIDs)
+	}
+}
+
+func TestSettingsPageExplainsClearDataRemovesCustomSymptoms(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-clear-data-copy@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	documentText := htmlDocumentText(mustParseHTMLDocument(t, mustReadBodyString(t, response.Body)))
+	if !strings.Contains(documentText, "remove your custom symptoms") {
+		t.Fatalf("expected clear-data copy to explain custom symptom removal, got %q", documentText)
 	}
 }
 

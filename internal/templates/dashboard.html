@@ -36,7 +36,7 @@
           </span>
         </span>
         <span class="dashboard-status-separator" aria-hidden="true">·</span>
-        <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}: {{if .DisplayOvulationImpossible}}{{t .Messages "dashboard.ovulation_unavailable"}}{{else if .DisplayOvulationDate.IsZero}}{{.NoDataLabel}}{{else}}{{formatLocalizedDate .Lang .DisplayOvulationDate "display"}}{{end}}</span>
+        <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}: {{if .DisplayOvulationImpossible}}{{t .Messages "dashboard.ovulation_unavailable"}}{{else if .DisplayOvulationUseRange}}{{printf (t .Messages "dashboard.ovulation_range") (formatLocalizedDate .Lang .DisplayOvulationRangeStart "display") (formatLocalizedDate .Lang .DisplayOvulationRangeEnd "display")}}{{else if .DisplayOvulationNeedsData}}{{t .Messages "dashboard.ovulation_need_cycles"}}{{else if .DisplayOvulationDate.IsZero}}{{.NoDataLabel}}{{else}}{{formatLocalizedDate .Lang .DisplayOvulationDate "display"}}{{end}}</span>
       {{end}}
     </div>
 
@@ -52,7 +52,7 @@
       {{end}}
       <a href="/settings#settings-cycle" class="btn-secondary text-sm">{{t .Messages "dashboard.update_cycle_data"}}</a>
     </div>
-      {{else if and (not .DisplayOvulationImpossible) (not .DisplayOvulationDate.IsZero) (not .DisplayOvulationExact)}}
+      {{else if and (not .DisplayOvulationUseRange) (not .DisplayOvulationImpossible) (not .DisplayOvulationDate.IsZero) (not .DisplayOvulationExact)}}
       <p class="journal-muted text-sm">{{t .Messages "dashboard.ovulation_approximate"}}</p>
       {{end}}
     {{if .ShowMissedDaysLink}}

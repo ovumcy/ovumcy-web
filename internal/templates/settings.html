@@ -518,31 +518,6 @@
   </section>
   {{end}}
 
-  {{if eq .CurrentUser.Role "owner"}}
-  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-reminders">
-    <div>
-      <h2 class="journal-subtitle">⏰ {{t .Messages "settings.reminders.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.reminders.subtitle"}}</p>
-    </div>
-    <div class="settings-toggle-list">
-      <label class="period-toggle" data-binary-toggle data-active="false" aria-disabled="true">
-        <input type="checkbox" disabled>
-        <span class="period-toggle-copy">
-          <span class="period-toggle-main">{{t .Messages "settings.reminders.log_days"}}</span>
-          <span class="period-toggle-state">{{t .Messages "settings.reminders.coming_soon"}}</span>
-        </span>
-      </label>
-      <label class="period-toggle" data-binary-toggle data-active="false" aria-disabled="true">
-        <input type="checkbox" disabled>
-        <span class="period-toggle-copy">
-          <span class="period-toggle-main">{{t .Messages "settings.reminders.period_window"}}</span>
-          <span class="period-toggle-state">{{t .Messages "settings.reminders.coming_soon"}}</span>
-        </span>
-      </label>
-    </div>
-  </section>
-  {{end}}
-
   <section id="settings-danger-zone" class="journal-card danger-card-strong p-5 sm:p-6 settings-danger-zone">
     <h2 class="journal-subtitle danger-title">⚠️ {{t .Messages "settings.danger_zone.title"}}</h2>
     <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
