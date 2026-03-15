@@ -251,7 +251,7 @@ docker run --rm \
   -e BACKUP_FILE="$BACKUP_FILE" \
   -v ovumcy_data:/source:ro \
   -v "$PWD/backups:/backup" \
-  alpine:3.22.2 \
+  alpine:3.22.3 \
   sh -c 'cd /source && tar czf "/backup/$BACKUP_FILE" .'
 ```
 
@@ -272,7 +272,7 @@ docker run --rm \
   -e BACKUP_FILE="$BACKUP_FILE" \
   -v ovumcy_data:/target \
   -v "$PWD/backups:/backup:ro" \
-  alpine:3.22.2 \
+  alpine:3.22.3 \
   sh -c 'cd /target && tar xzf "/backup/$BACKUP_FILE"'
 
 docker compose up -d
