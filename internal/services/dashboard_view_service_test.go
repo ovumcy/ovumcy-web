@@ -225,6 +225,48 @@ func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testin
 	}
 }
 
+func TestBuildDashboardViewDataAddsPredictionFactorHintForVariablePatterns(t *testing.T) {
+	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32}
+	today := mustParseDashboardServiceDay(t, "2026-04-25")
+
+	service := NewDashboardViewService(
+		&stubDashboardStatsProvider{stats: CycleStats{
+			CompletedCycleCount: 3,
+			MedianCycleLength:   32,
+			MinCycleLength:      24,
+			MaxCycleLength:      44,
+			LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-04-20"),
+			NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-05-21"),
+		}},
+		&stubDashboardViewerProvider{
+			logEntry: models.DailyLog{Date: today},
+			symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
+		},
+		&stubDashboardDayStateProvider{
+			logs: []models.DailyLog{
+				{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true},
+				{Date: mustParseDashboardServiceDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
+				{Date: mustParseDashboardServiceDay(t, "2026-01-25"), IsPeriod: true},
+				{Date: mustParseDashboardServiceDay(t, "2026-01-28"), CycleFactorKeys: []string{models.CycleFactorTravel}},
+				{Date: mustParseDashboardServiceDay(t, "2026-03-10"), IsPeriod: true},
+				{Date: mustParseDashboardServiceDay(t, "2026-03-12"), CycleFactorKeys: []string{models.CycleFactorStress}},
+				{Date: mustParseDashboardServiceDay(t, "2026-04-20"), IsPeriod: true},
+			},
+		},
+	)
+
+	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+	if !viewData.HasPredictionFactorHint {
+		t.Fatalf("expected dashboard prediction factor hint")
+	}
+	if len(viewData.PredictionFactorHintKeys) != 2 || viewData.PredictionFactorHintKeys[0] != models.CycleFactorStress {
+		t.Fatalf("expected stable dashboard factor hint order, got %#v", viewData.PredictionFactorHintKeys)
+	}
+}
+
 func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 	user := &models.User{ID: 4, Role: models.RoleOwner}
 	now := mustParseDashboardServiceDay(t, "2026-02-21")

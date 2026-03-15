@@ -79,6 +79,8 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 		"MissedDayMonth":                        viewData.MissedDay.Format("2006-01"),
 		"ShowCycleStartSuggestion":              viewData.ShowCycleStartSuggestion,
 		"ShowSpottingCycleWarning":              viewData.ShowSpottingCycleWarning,
+		"PredictionFactorHintKeys":              viewData.PredictionFactorHintKeys,
+		"HasPredictionFactorHint":               viewData.HasPredictionFactorHint,
 		"IsOwner":                               viewData.IsOwner,
 	}
 	return data, nil

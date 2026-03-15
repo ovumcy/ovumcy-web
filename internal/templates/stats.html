@@ -93,6 +93,17 @@
           {{end}}
         </p>
         <p class="journal-muted mt-1 text-xs">{{t .Messages .PredictionReliabilityHintKey}}</p>
+        {{if .HasPredictionFactorHint}}
+        <div class="mt-3 flex flex-wrap gap-2">
+          {{range .PredictionFactorHintKeys}}
+          <span class="check-chip check-chip-static">
+            <span class="symptom-icon">{{cycleFactorIcon .}}</span>
+            <span class="symptom-label">{{cycleFactorLabel $.Messages .}}</span>
+          </span>
+          {{end}}
+        </div>
+        <p class="journal-muted mt-2 text-xs">{{t .Messages "stats.reliability.factors_hint"}}</p>
+        {{end}}
       </article>
       {{end}}
     </div>
@@ -120,7 +131,7 @@
     </section>
 
     {{if .HasRecentCycleFactors}}
-    <section class="journal-card p-5 sm:p-6 space-y-4 reveal">
+    <section class="journal-card p-5 sm:p-6 space-y-4 reveal" data-stats-factor-context>
       <div>
         <h2 class="journal-subtitle">{{t .Messages "stats.factor_context_title"}}</h2>
         <p class="journal-muted mt-2 text-sm">{{printf (t .Messages "stats.factor_context_window") .CycleFactorWindowDays}}</p>
@@ -134,6 +145,46 @@
         </li>
         {{end}}
       </ul>
+      {{if .HasCycleFactorPatternSummaries}}
+      <div class="grid gap-3 sm:grid-cols-2" data-stats-factor-patterns>
+        {{range .CycleFactorPatternSummaries}}
+        <article class="journal-panel space-y-3">
+          <p class="field-label">{{t $.Messages (printf "stats.factor_pattern_%s" .Kind)}}</p>
+          <div class="flex flex-wrap gap-2">
+            {{range .Items}}
+            <span class="check-chip check-chip-static">
+              <span class="symptom-icon">{{cycleFactorIcon .Key}}</span>
+              <span class="symptom-label">{{cycleFactorLabel $.Messages .Key}}</span>
+              <span class="journal-muted text-xs">· {{.Count}}</span>
+            </span>
+            {{end}}
+          </div>
+        </article>
+        {{end}}
+      </div>
+      {{end}}
+      {{if .HasRecentFactorCycles}}
+      <div class="space-y-3" data-stats-factor-recent-cycles>
+        <p class="field-label">{{t .Messages "stats.factor_recent_cycles_title"}}</p>
+        {{range .RecentFactorCycles}}
+        <article class="journal-panel space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <p class="field-label">{{printf (t $.Messages "stats.factor_cycle_length") .CycleLength}}</p>
+            <span class="journal-muted text-xs">{{t $.Messages (printf "stats.factor_cycle_kind_%s" .ComparisonKind)}}</span>
+          </div>
+          <p class="journal-muted text-xs">{{printf (t $.Messages "stats.factor_cycle_dates") (formatLocalizedDate $.Lang .Start "display") (formatLocalizedDate $.Lang .End "display")}}</p>
+          <div class="flex flex-wrap gap-2">
+            {{range .FactorKeys}}
+            <span class="check-chip check-chip-static">
+              <span class="symptom-icon">{{cycleFactorIcon .}}</span>
+              <span class="symptom-label">{{cycleFactorLabel $.Messages .}}</span>
+            </span>
+            {{end}}
+          </div>
+        </article>
+        {{end}}
+      </div>
+      {{end}}
       <p class="journal-muted text-sm">{{t .Messages "stats.factor_context_hint"}}</p>
     </section>
     {{end}}

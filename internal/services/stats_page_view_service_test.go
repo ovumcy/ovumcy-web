@@ -116,6 +116,50 @@ func TestBuildStatsPageViewDataBuildsRecentCycleFactorContextForVariablePatterns
 	if viewData.RecentCycleFactors[0].Key != models.CycleFactorStress || viewData.RecentCycleFactors[0].Count != 1 {
 		t.Fatalf("expected stress to lead context, got %#v", viewData.RecentCycleFactors)
 	}
+	if !viewData.HasCycleFactorPatternSummaries || len(viewData.CycleFactorPatternSummaries) != 3 {
+		t.Fatalf("expected longer/shorter/variable factor summaries, got %#v", viewData.CycleFactorPatternSummaries)
+	}
+	if viewData.CycleFactorPatternSummaries[0].Kind != "longer" || viewData.CycleFactorPatternSummaries[1].Kind != "shorter" || viewData.CycleFactorPatternSummaries[2].Kind != "variable" {
+		t.Fatalf("expected longer then shorter summaries, got %#v", viewData.CycleFactorPatternSummaries)
+	}
+	if !viewData.HasRecentFactorCycles || len(viewData.RecentFactorCycles) != 3 {
+		t.Fatalf("expected three recent factor cycles, got %#v", viewData.RecentFactorCycles)
+	}
+	if viewData.RecentFactorCycles[0].ComparisonKind != "variable" || len(viewData.RecentFactorCycles[0].FactorKeys) != 1 || viewData.RecentFactorCycles[0].FactorKeys[0] != models.CycleFactorStress {
+		t.Fatalf("expected latest variable cycle to keep stress context, got %#v", viewData.RecentFactorCycles[0])
+	}
+	if !viewData.HasPredictionFactorHint || len(viewData.PredictionFactorHintKeys) != 2 {
+		t.Fatalf("expected prediction hint factor keys, got %#v", viewData.PredictionFactorHintKeys)
+	}
+}
+
+func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-03"), CycleFactorKeys: []string{models.CycleFactorStress}},
+		{Date: mustParseStatsServiceDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-28"), CycleFactorKeys: []string{models.CycleFactorTravel}},
+		{Date: mustParseStatsServiceDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-12"), CycleFactorKeys: []string{models.CycleFactorStress}},
+	}
+	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
+	recentBaseline := mustParseStatsServiceDay(t, "2026-03-13")
+	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32, IrregularCycle: true, LastPeriodStart: &recentBaseline}
+	now := mustParseStatsServiceDay(t, "2026-03-16")
+
+	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	if err != nil {
+		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
+	}
+	if got := viewData.Stats.LastPeriodStart.Format("2006-01-02"); got != "2026-03-13" {
+		t.Fatalf("expected stats baseline 2026-03-13, got %s", got)
+	}
+	if viewData.Flags.CycleDataStale {
+		t.Fatalf("expected fresh cycle data when a newer baseline exists")
+	}
+	if !viewData.HasCycleFactorPatternSummaries || !viewData.HasRecentFactorCycles || !viewData.HasPredictionFactorHint {
+		t.Fatalf("expected richer factor explanations to remain available, got %#v", viewData)
+	}
 }
 
 func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilSecondCompletedCycle(t *testing.T) {
@@ -309,6 +353,9 @@ func TestBuildStatsPageViewDataPartnerSkipsBaselineAndSymptomLoading(t *testing.
 	}
 	if len(viewData.SymptomCounts) != 0 {
 		t.Fatalf("expected no symptom counts for partner, got %#v", viewData.SymptomCounts)
+	}
+	if viewData.HasRecentCycleFactors || viewData.HasCycleFactorPatternSummaries || viewData.HasRecentFactorCycles || viewData.HasPredictionFactorHint {
+		t.Fatalf("expected no owner-only factor context for partner, got %#v", viewData)
 	}
 	if dayReader.fetchAllCalled {
 		t.Fatalf("did not expect FetchAllLogsForUser for partner")

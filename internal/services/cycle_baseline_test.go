@@ -84,6 +84,33 @@ func TestApplyUserCycleBaselinePrefersExplicitCycleStartOverSettingsFallback(t *
 	}
 }
 
+func TestApplyUserCycleBaselinePrefersMoreRecentSettingsBaselineOverOlderExplicitHistory(t *testing.T) {
+	userLastPeriod := mustParseBaselineDay(t, "2026-03-13")
+	user := &models.User{
+		Role:            models.RoleOwner,
+		CycleLength:     28,
+		PeriodLength:    5,
+		LastPeriodStart: &userLastPeriod,
+	}
+
+	logs := []models.DailyLog{
+		{Date: mustParseBaselineDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2026-01-25"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: mustParseBaselineDay(t, "2026-03-10"), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+	}
+
+	now := mustParseBaselineDay(t, "2026-03-16")
+	stats := BuildCycleStats(logs, now)
+	stats = ApplyUserCycleBaseline(user, logs, stats, now, time.UTC)
+
+	if got := stats.LastPeriodStart.Format("2006-01-02"); got != "2026-03-13" {
+		t.Fatalf("expected more recent user baseline 2026-03-13, got %s", got)
+	}
+	if stats.CurrentCycleDay != 4 {
+		t.Fatalf("expected current cycle day 4 from recent baseline, got %d", stats.CurrentCycleDay)
+	}
+}
+
 func TestApplyUserCycleBaselineClampsShortCyclePredictionsAwayFromDayOne(t *testing.T) {
 	userLastPeriod := mustParseBaselineDay(t, "2026-02-10")
 	user := &models.User{

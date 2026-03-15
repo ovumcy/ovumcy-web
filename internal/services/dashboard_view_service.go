@@ -61,6 +61,8 @@ type DashboardViewData struct {
 	MissedDay                time.Time
 	ShowCycleStartSuggestion bool
 	ShowSpottingCycleWarning bool
+	PredictionFactorHintKeys []string
+	HasPredictionFactorHint  bool
 	IsOwner                  bool
 }
 
@@ -113,6 +115,7 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 	}
 
 	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
+	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, logs, stats, now, location)
 	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, err := service.buildPickerViewState(
 		user,
 		today,
@@ -159,6 +162,8 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 		MissedDay:                missedDay,
 		ShowCycleStartSuggestion: showCycleStartSuggestion,
 		ShowSpottingCycleWarning: todayLog.IsPeriod && NormalizeDayFlow(todayLog.Flow) == models.FlowSpotting && !stats.LastPeriodStart.IsZero() && sameCalendarDay(DateAtLocation(stats.LastPeriodStart, location), today),
+		PredictionFactorHintKeys: cycleFactorExplanation.HintFactorKeys,
+		HasPredictionFactorHint:  hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0,
 		IsOwner:                  IsOwnerUser(user),
 	}, nil
 }

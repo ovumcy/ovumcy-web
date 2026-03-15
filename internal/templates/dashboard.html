@@ -55,6 +55,18 @@
       {{else if and (not .DisplayOvulationUseRange) (not .DisplayOvulationImpossible) (not .DisplayOvulationDate.IsZero) (not .DisplayOvulationExact)}}
       <p class="journal-muted text-sm">{{t .Messages "dashboard.ovulation_approximate"}}</p>
       {{end}}
+    {{if .HasPredictionFactorHint}}
+    <div class="flex flex-wrap items-center gap-2 text-sm" data-dashboard-factor-hint>
+      <span class="journal-muted">{{t .Messages "dashboard.factor_prediction_hint"}}</span>
+      {{range .PredictionFactorHintKeys}}
+      <span class="check-chip check-chip-static">
+        <span class="symptom-icon">{{cycleFactorIcon .}}</span>
+        <span class="symptom-label">{{cycleFactorLabel $.Messages .}}</span>
+      </span>
+      {{end}}
+      <a href="/stats" class="inline-link text-xs">{{t .Messages "dashboard.factor_prediction_hint_link"}}</a>
+    </div>
+    {{end}}
     {{if .ShowMissedDaysLink}}
     <p class="journal-muted text-sm"><a href="/calendar?month={{.MissedDayMonth}}&day={{.MissedDay}}&edit=1" class="inline-link">{{t .Messages "dashboard.fill_missed_days"}}</a></p>
     {{end}}

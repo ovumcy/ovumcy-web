@@ -105,23 +105,8 @@ func LatestCycleStartAnchorBeforeOrOn(user *models.User, logs []models.DailyLog,
 	}
 
 	targetDay := DateAtLocation(day.In(location), location)
-	explicitStarts := DetectExplicitCycleStarts(logs)
-	for index := len(explicitStarts) - 1; index >= 0; index-- {
-		explicitStart := DateAtLocation(explicitStarts[index], location)
-		if explicitStart.After(targetDay) {
-			continue
-		}
-		return explicitStart
-	}
-
-	if user != nil && user.LastPeriodStart != nil {
-		fallback := DateAtLocation(user.LastPeriodStart.In(location), location)
-		if !fallback.After(targetDay) {
-			return fallback
-		}
-	}
-
-	return time.Time{}
+	explicitStart := latestExplicitCycleStartBeforeOrOn(logs, targetDay, location)
+	return latestCycleStartAnchorBeforeOrOn(user, explicitStart, targetDay, location)
 }
 
 func ShouldSuggestManualCycleStart(user *models.User, logs []models.DailyLog, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) bool {
