@@ -60,10 +60,40 @@ func TestDashboardSymptomsNotesPanelUsesSavedSymptomsAndNotesState(t *testing.T)
 	if !strings.Contains(rendered, "Remember to hydrate") {
 		t.Fatalf("expected saved note to stay visible in dashboard form")
 	}
+	if !strings.Contains(rendered, `data-note-disclosure`) || !strings.Contains(rendered, "Hide note") {
+		t.Fatalf("expected saved notes to render inside a disclosure block")
+	}
 	if !strings.Contains(rendered, "Custom cramps") {
 		t.Fatalf("expected saved custom symptom label to be rendered in dashboard picker")
 	}
 	if !strings.Contains(rendered, "Custom headache") {
 		t.Fatalf("expected second saved custom symptom label to be rendered in dashboard picker")
+	}
+}
+
+func TestDashboardEmptyNotesUseAddNoteDisclosure(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-empty-note@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("dashboard request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	if !strings.Contains(rendered, `data-note-disclosure`) {
+		t.Fatalf("expected dashboard note field to render as a disclosure")
+	}
+	if !strings.Contains(rendered, "Add note") {
+		t.Fatalf("expected empty dashboard note disclosure to use Add note copy")
 	}
 }

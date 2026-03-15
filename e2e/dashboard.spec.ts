@@ -125,14 +125,23 @@ test.describe('Dashboard: today editor', () => {
     expect(serverToday).toBe(clientToday);
   });
 
-  test('notes field stays visible without an extra disclosure click', async ({
+  test('notes field uses a disclosure and reopens once a note exists', async ({
     page,
   }) => {
     await registerOwnerOnDashboard(page, 'dashboard-note-disclosure');
 
+    const noteDisclosure = page.locator('details.note-disclosure');
+    const noteSummary = noteDisclosure.locator('summary');
     const notes = page.locator('#today-notes');
     const notesCounter = page.locator('[data-dashboard-notes-field-group] [data-dashboard-notes-count]').first();
-    await expect(page.locator('details.note-disclosure')).toHaveCount(0);
+    await expect(noteDisclosure).toHaveCount(1);
+    await expect(noteDisclosure).not.toHaveAttribute('open', '');
+    await expect(noteSummary).toContainText(/Add note|Добавить заметку|Agregar nota/);
+    await expect(notes).toBeHidden();
+
+    await noteSummary.click();
+    await expect(noteDisclosure).toHaveAttribute('open', '');
+    await expect(noteSummary).toContainText(/Hide note|Скрыть заметку|Ocultar nota/);
     await expect(notes).toBeVisible();
     await expect(notes).toHaveAttribute('rows', '2');
     await expect(notes).toHaveAttribute('maxlength', '2000');
@@ -148,6 +157,8 @@ test.describe('Dashboard: today editor', () => {
     await saveToday(page);
 
     await page.reload();
+    await expect(noteDisclosure).toHaveAttribute('open', '');
+    await expect(noteSummary).toContainText(/Hide note|Скрыть заметку|Ocultar nota/);
     await expect(page.locator('#today-notes')).toHaveValue(filledNoteText);
   });
 
@@ -445,6 +456,7 @@ test.describe('Dashboard: today editor', () => {
     await registerOwnerOnDashboard(page, 'dashboard-autosave-idle');
 
     const savePath = await todaySavePath(page);
+    await openTodayNotes(page);
     const notes = page.locator('#today-notes');
     const noteText = `dashboard-autosave-${Date.now()}`;
     const autosaveResponse = waitForDashboardAutosave(page, savePath);
@@ -461,6 +473,7 @@ test.describe('Dashboard: today editor', () => {
 
     const noteText = `dashboard-beforeunload-${Date.now()}`;
 
+    await openTodayNotes(page);
     await page.locator('#today-notes').fill(noteText);
     await page.close({ runBeforeUnload: true });
 

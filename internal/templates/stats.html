@@ -27,11 +27,11 @@
       </div>
     </div>
     <p class="journal-subtitle">{{t .Messages "stats.empty_title"}}</p>
-    <p class="journal-muted text-sm">{{t .Messages "stats.empty_body"}}</p>
+    <p class="journal-muted text-sm">{{if eq .CompletedCycleCount 0}}{{t .Messages "stats.empty_body_zero"}}{{else}}{{t .Messages "stats.empty_body_one"}}{{end}}</p>
     <div class="space-y-2">
-      <div class="stats-empty-progress" aria-hidden="true">
-        <div class="stats-empty-progress-fill" {{if le .InsightProgress 0}}hidden{{end}}></div>
-      </div>
+      <progress class="stats-progress-meter" value="{{.CompletedCycleCount}}" max="2">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</progress>
+      <p class="journal-muted text-xs">{{printf (t .Messages "stats.completed_cycles_progress") .CompletedCycleCount}}</p>
+      <p class="journal-muted text-xs">{{t .Messages "stats.empty_progress_hint"}}</p>
     </div>
   </section>
   {{else}}
@@ -54,7 +54,7 @@
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.age_variability_hint"}}</div>
     {{end}}
 
-    <div class="grid gap-4 lg:grid-cols-3">
+    <div class="grid gap-4 {{if .ShowPredictionReliability}}lg:grid-cols-4{{else}}lg:grid-cols-3{{end}}">
       <article class="journal-card stat-card reveal">
         <p class="stat-label">{{t .Messages "stats.last_cycle_length"}}</p>
         <p class="stat-value mt-2">{{if gt .Stats.LastCycleLength 0}}{{.Stats.LastCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</p>
@@ -80,14 +80,37 @@
           {{end}}
         {{end}}
       </article>
+
+      {{if .ShowPredictionReliability}}
+      <article class="journal-card stat-card reveal">
+        <p class="stat-label">{{t .Messages "stats.prediction_reliability"}}</p>
+        <p class="stat-value mt-2">{{t .Messages .PredictionReliabilityLabelKey}}</p>
+        <p class="journal-muted mt-2 text-xs">
+          {{if .PredictionSampleUsesRecentWindow}}
+            {{printf (t .Messages "stats.reliability.sample_recent") .PredictionSampleCount}}
+          {{else}}
+            {{printf (t .Messages "stats.reliability.sample") .PredictionSampleCount}}
+          {{end}}
+        </p>
+        <p class="journal-muted mt-1 text-xs">{{t .Messages .PredictionReliabilityHintKey}}</p>
+      </article>
+      {{end}}
     </div>
 
-    {{if ge .CompletedCycleCount 3}}
     <section class="journal-card p-5 sm:p-6 space-y-4 reveal">
       <div class="grid gap-4 lg:grid-cols-2">
         <article class="journal-panel">
-          <p class="stat-label">{{t .Messages "dashboard.average_cycle"}}</p>
-          <p class="stat-value mt-2">{{if gt .Stats.AverageCycleLength 0.0}}{{formatFloat .Stats.AverageCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</p>
+          <p class="stat-label">{{t .Messages "stats.cycle_length_card"}}</p>
+          <div class="mt-3 space-y-2 text-sm">
+            <div class="flex items-center justify-between gap-3">
+              <span class="journal-muted">{{t .Messages "stats.legend.average"}}</span>
+              <span class="font-semibold text-[var(--text-primary)]">{{if gt .Stats.AverageCycleLength 0.0}}{{formatFloat .Stats.AverageCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span class="journal-muted">{{t .Messages "dashboard.median_cycle"}}</span>
+              <span class="font-semibold text-[var(--text-primary)]">{{if gt .Stats.MedianCycleLength 0}}{{.Stats.MedianCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</span>
+            </div>
+          </div>
         </article>
         <article class="journal-panel">
           <p class="stat-label">{{t .Messages "stats.cycle_range"}}</p>
@@ -95,7 +118,6 @@
         </article>
       </div>
     </section>
-    {{end}}
 
     {{if .IsOwner}}
     <div class="grid gap-6 lg:grid-cols-2">

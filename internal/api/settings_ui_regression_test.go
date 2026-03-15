@@ -32,6 +32,48 @@ func TestSettingsPageRendersSingleIrregularCycleExplanation(t *testing.T) {
 	}
 }
 
+func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndReminders(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-section-order@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	order := []string{
+		`id="settings-cycle"`,
+		`id="settings-symptoms-section"`,
+		`id="settings-tracking"`,
+		`id="settings-interface"`,
+		`id="settings-account"`,
+		`id="settings-data"`,
+		`id="settings-reminders"`,
+		`id="settings-danger-zone"`,
+	}
+
+	lastIndex := -1
+	for _, marker := range order {
+		currentIndex := strings.Index(rendered, marker)
+		if currentIndex == -1 {
+			t.Fatalf("expected settings page to contain %q", marker)
+		}
+		if currentIndex <= lastIndex {
+			t.Fatalf("expected settings section %q after previous sections", marker)
+		}
+		lastIndex = currentIndex
+	}
+}
+
 func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 

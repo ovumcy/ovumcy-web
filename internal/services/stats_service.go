@@ -23,6 +23,11 @@ type StatsService struct {
 
 const statsOverviewWindowYears = 2
 
+const (
+	statsMinimumInsightsCycles = 2
+	statsReliableTrendCycles   = 3
+)
+
 type StatsFlags struct {
 	HasObservedCycleData bool
 	HasTrendData         bool
@@ -93,20 +98,28 @@ func (service *StatsService) BuildFlags(user *models.User, logs []models.DailyLo
 	today := DateAtLocation(now, location)
 	cycleDayReference := DashboardCycleReferenceLength(user, stats)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
-	insightProgress := completedCycleCount * 100
-	if insightProgress > 100 {
-		insightProgress = 100
-	}
 
 	return StatsFlags{
 		HasObservedCycleData: observedCycleCount > 0,
 		HasTrendData:         trendPointCount > 0,
-		HasInsights:          completedCycleCount >= 1,
-		HasReliableTrend:     trendPointCount >= 3,
+		HasInsights:          completedCycleCount >= statsMinimumInsightsCycles,
+		HasReliableTrend:     trendPointCount >= statsReliableTrendCycles,
 		CycleDataStale:       DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference),
 		CompletedCycleCount:  completedCycleCount,
-		InsightProgress:      insightProgress,
+		InsightProgress:      statsInsightProgress(completedCycleCount),
 	}
+}
+
+func statsInsightProgress(completedCycleCount int) int {
+	if completedCycleCount <= 0 {
+		return 0
+	}
+
+	progress := completedCycleCount * 100 / statsMinimumInsightsCycles
+	if progress > 100 {
+		return 100
+	}
+	return progress
 }
 
 func (service *StatsService) BuildSymptomFrequenciesForUser(user *models.User) ([]SymptomFrequency, error) {

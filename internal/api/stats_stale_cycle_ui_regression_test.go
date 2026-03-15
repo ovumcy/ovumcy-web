@@ -15,7 +15,7 @@ import (
 
 func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
 	rendered := renderStatsPageWithStaleCycleData(t)
-	if !strings.Contains(rendered, "Enter the start of your next period to complete your first cycle and unlock insights.") {
+	if !strings.Contains(rendered, "Complete 2 cycles to unlock insights. Start by entering the first day of your next period.") {
 		t.Fatalf("expected updated empty-state guidance before the first completed cycle")
 	}
 }
@@ -23,7 +23,7 @@ func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
 func TestStatsPageEmptyStateUsesDedicatedProgressMeterWithoutInlineStyle(t *testing.T) {
 	rendered := renderStatsPageWithStaleCycleData(t)
 
-	progressTag := regexp.MustCompile(`<div[^>]*class="stats-empty-progress"[^>]*>`).FindString(rendered)
+	progressTag := regexp.MustCompile(`<progress[^>]*class="stats-progress-meter"[^>]*>`).FindString(rendered)
 	if progressTag == "" {
 		t.Fatalf("expected stats empty state to render a dedicated progress meter, got %q", rendered)
 	}

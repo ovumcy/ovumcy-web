@@ -90,6 +90,29 @@ func TestBuildStatsPageViewDataShowsIrregularInsufficientDataNotice(t *testing.T
 	}
 }
 
+func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilSecondCompletedCycle(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
+	}
+	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
+	now := mustParseStatsServiceDay(t, "2026-02-10")
+
+	viewData, err := service.BuildStatsPageViewData(&models.User{ID: 10, Role: models.RoleOwner, CycleLength: 28}, "en", "Cycle %d", now, time.UTC, 12)
+	if err != nil {
+		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
+	}
+	if viewData.Flags.HasInsights {
+		t.Fatalf("expected HasInsights=false with one completed cycle")
+	}
+	if viewData.ShowPredictionReliability {
+		t.Fatalf("expected ShowPredictionReliability=false before base insights unlock")
+	}
+	if viewData.Flags.InsightProgress != 50 {
+		t.Fatalf("expected InsightProgress=50, got %d", viewData.Flags.InsightProgress)
+	}
+}
+
 func TestBuildStatsPageViewDataBuildsLastCycleSymptomsPatternsAndBBTChart(t *testing.T) {
 	service, user, now := newStatsPatternAndBBTTestFixture(t)
 	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
@@ -116,6 +139,18 @@ func assertOwnerTrendViewData(t *testing.T, viewData StatsPageViewData) {
 	}
 	if viewData.TrendPointCount != 2 {
 		t.Fatalf("expected TrendPointCount=2, got %d", viewData.TrendPointCount)
+	}
+	if !viewData.ShowPredictionReliability {
+		t.Fatalf("expected prediction reliability block to be available")
+	}
+	if viewData.PredictionSampleCount != 3 {
+		t.Fatalf("expected PredictionSampleCount=3, got %d", viewData.PredictionSampleCount)
+	}
+	if viewData.PredictionSampleUsesRecentWindow {
+		t.Fatalf("expected uncapped sample count for three completed cycles")
+	}
+	if viewData.PredictionReliabilityLabelKey != "stats.reliability.building" {
+		t.Fatalf("expected building reliability label, got %q", viewData.PredictionReliabilityLabelKey)
 	}
 	if len(viewData.ChartData.Labels) != 2 || viewData.ChartData.Labels[0] != "Cycle 1" || viewData.ChartData.Labels[1] != "Cycle 2" {
 		t.Fatalf("unexpected chart labels: %#v", viewData.ChartData.Labels)

@@ -550,7 +550,7 @@ test.describe('Bug regressions', () => {
       await page.goto('/stats');
       await expect(page).toHaveURL(/\/stats$/);
       await expect(page.locator('.stats-empty-hero')).toBeVisible();
-      await expect(page.locator('.stats-empty-progress')).toBeVisible();
+      await expect(page.locator('.stats-progress-meter')).toBeVisible();
     });
   });
 });

@@ -82,11 +82,22 @@
     </fieldset>
     {{end}}
 
-    <div class="space-y-2" data-dashboard-notes-field-group>
-      <label class="field-label" for="calendar-notes">{{t .Messages "dashboard.notes"}}</label>
-      <textarea id="calendar-notes" name="notes" rows="2" maxlength="2000" class="textarea-field dashboard-notes-field" placeholder="{{t .Messages "dashboard.notes_placeholder"}}" data-dashboard-notes>{{.Log.Notes}}</textarea>
-      <p class="journal-muted text-xs" data-dashboard-notes-count></p>
-    </div>
+    <details
+      class="note-disclosure"
+      data-note-disclosure
+      data-note-open-text="{{t .Messages "dashboard.hide_note"}}"
+      data-note-empty-text="{{t .Messages "dashboard.add_note"}}"
+      data-note-filled-text="{{t .Messages "dashboard.edit_note"}}"
+      {{if ne .Log.Notes ""}}open{{end}}>
+      <summary class="symptom-more-summary">
+        <span class="symptom-more-label" data-note-disclosure-label>{{if ne .Log.Notes ""}}{{t .Messages "dashboard.hide_note"}}{{else}}{{t .Messages "dashboard.add_note"}}{{end}}</span>
+      </summary>
+      <div class="mt-3 space-y-2" data-dashboard-notes-field-group>
+        <label class="field-label" for="calendar-notes">{{t .Messages "dashboard.notes"}}</label>
+        <textarea id="calendar-notes" name="notes" rows="2" maxlength="2000" class="textarea-field dashboard-notes-field" placeholder="{{t .Messages "dashboard.notes_placeholder"}}" data-dashboard-notes>{{.Log.Notes}}</textarea>
+        <p class="journal-muted text-xs" data-dashboard-notes-count></p>
+      </div>
+    </details>
 
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if gt .Log.ID 0}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_day"}}{{end}}</button>

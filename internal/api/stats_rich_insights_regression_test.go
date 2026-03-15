@@ -86,6 +86,8 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 	for _, fragment := range []string{
 		"Last cycle length",
 		"Period length",
+		"Prediction reliability",
+		"Based on 3 completed cycles.",
 		"Top symptoms in your last cycle",
 		`id="bbt-chart"`,
 		"Probable ovulation",

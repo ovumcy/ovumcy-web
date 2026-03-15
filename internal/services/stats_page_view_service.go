@@ -35,6 +35,11 @@ type StatsPageViewData struct {
 	ChartBaseline                       int
 	TrendPointCount                     int
 	Flags                               StatsFlags
+	PredictionSampleCount               int
+	PredictionSampleUsesRecentWindow    bool
+	PredictionReliabilityLabelKey       string
+	PredictionReliabilityHintKey        string
+	ShowPredictionReliability           bool
 	LastCycleSymptoms                   []StatsSymptomCountViewData
 	SymptomPatterns                     []StatsSymptomPatternViewData
 	SymptomCounts                       []StatsSymptomCountViewData
@@ -65,10 +70,10 @@ type statsPageBaseData struct {
 }
 
 type statsOwnerInsightsViewData struct {
-	lastCycleSymptoms      []StatsSymptomCountViewData
-	symptomPatterns        []StatsSymptomPatternViewData
-	currentCycleBBTChart   StatsBBTChartViewData
-	phaseSymptomInsights   []StatsPhaseSymptomInsight
+	lastCycleSymptoms       []StatsSymptomCountViewData
+	symptomPatterns         []StatsSymptomPatternViewData
+	currentCycleBBTChart    StatsBBTChartViewData
+	phaseSymptomInsights    []StatsPhaseSymptomInsight
 	hasPhaseSymptomInsights bool
 }
 
@@ -96,6 +101,7 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 	predictionDisabled := isStatsPredictionDisabled(user)
 	isIrregularMode := isStatsIrregularMode(user)
 	isOwner := IsOwnerUser(user)
+	predictionSampleCount, predictionSampleUsesRecentWindow, predictionReliabilityLabelKey, predictionReliabilityHintKey, showPredictionReliability := buildStatsPredictionReliability(user, baseData.flags, baseData.stats)
 
 	return StatsPageViewData{
 		Stats:                               baseData.stats,
@@ -103,6 +109,11 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 		ChartBaseline:                       baseData.chartBaseline,
 		TrendPointCount:                     baseData.trendPointCount,
 		Flags:                               baseData.flags,
+		PredictionSampleCount:               predictionSampleCount,
+		PredictionSampleUsesRecentWindow:    predictionSampleUsesRecentWindow,
+		PredictionReliabilityLabelKey:       predictionReliabilityLabelKey,
+		PredictionReliabilityHintKey:        predictionReliabilityHintKey,
+		ShowPredictionReliability:           showPredictionReliability,
 		LastCycleSymptoms:                   ownerInsights.lastCycleSymptoms,
 		SymptomPatterns:                     ownerInsights.symptomPatterns,
 		SymptomCounts:                       symptomCounts,
@@ -210,4 +221,36 @@ func isStatsPredictionDisabled(user *models.User) bool {
 
 func isStatsIrregularMode(user *models.User) bool {
 	return user != nil && user.IrregularCycle
+}
+
+func buildStatsPredictionReliability(user *models.User, flags StatsFlags, stats CycleStats) (int, bool, string, string, bool) {
+	if flags.CompletedCycleCount < statsMinimumInsightsCycles || isStatsPredictionDisabled(user) {
+		return 0, false, "", "", false
+	}
+
+	sampleCount := flags.CompletedCycleCount
+	usesRecentWindow := false
+	if sampleCount > cyclePredictionWindow {
+		sampleCount = cyclePredictionWindow
+		usesRecentWindow = true
+	}
+
+	variablePattern := user != nil && (user.IrregularCycle || (flags.CompletedCycleCount >= minimumPhaseInsightCycles && IsIrregularCycleSpread(stats)))
+	labelKey := "stats.reliability.early"
+
+	switch {
+	case variablePattern && sampleCount >= minimumPhaseInsightCycles:
+		labelKey = "stats.reliability.variable"
+	case sampleCount >= cyclePredictionWindow:
+		labelKey = "stats.reliability.stable"
+	case sampleCount >= minimumPhaseInsightCycles:
+		labelKey = "stats.reliability.building"
+	}
+
+	hintKey := "stats.reliability.hint"
+	if variablePattern {
+		hintKey = "stats.reliability.hint_variable"
+	}
+
+	return sampleCount, usesRecentWindow, labelKey, hintKey, true
 }
