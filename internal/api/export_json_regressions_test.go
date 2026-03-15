@@ -74,17 +74,35 @@ func assertExportJSONPayload(t *testing.T, payload struct {
 }) {
 	t.Helper()
 
-	if payload.ExportedAt == "" {
+	assertExportJSONPayloadMetadata(t, payload.ExportedAt)
+	entry := assertSingleExportJSONEntry(t, payload.Entries)
+	assertExportJSONTrackingFields(t, entry)
+	assertExportJSONSymptomFields(t, entry)
+}
+
+func assertExportJSONPayloadMetadata(t *testing.T, exportedAt string) {
+	t.Helper()
+
+	if exportedAt == "" {
 		t.Fatalf("expected exported_at in payload")
 	}
-	if _, err := time.Parse(time.RFC3339, payload.ExportedAt); err != nil {
-		t.Fatalf("expected RFC3339 exported_at, got %q", payload.ExportedAt)
+	if _, err := time.Parse(time.RFC3339, exportedAt); err != nil {
+		t.Fatalf("expected RFC3339 exported_at, got %q", exportedAt)
 	}
-	if len(payload.Entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(payload.Entries))
-	}
+}
 
-	entry := payload.Entries[0]
+func assertSingleExportJSONEntry(t *testing.T, entries []exportJSONEntry) exportJSONEntry {
+	t.Helper()
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	return entries[0]
+}
+
+func assertExportJSONTrackingFields(t *testing.T, entry exportJSONEntry) {
+	t.Helper()
+
 	if entry.Flow != models.FlowNone {
 		t.Fatalf("expected unknown flow normalized to %q, got %q", models.FlowNone, entry.Flow)
 	}
@@ -103,13 +121,18 @@ func assertExportJSONPayload(t *testing.T, payload struct {
 	if len(entry.CycleFactors) != 2 || entry.CycleFactors[0] != models.CycleFactorStress || entry.CycleFactors[1] != models.CycleFactorTravel {
 		t.Fatalf("expected cycle factors in export json, got %#v", entry.CycleFactors)
 	}
+	if entry.Notes != "json-note" {
+		t.Fatalf("expected notes to be preserved, got %q", entry.Notes)
+	}
+}
+
+func assertExportJSONSymptomFields(t *testing.T, entry exportJSONEntry) {
+	t.Helper()
+
 	if !entry.Symptoms.Mood {
 		t.Fatalf("expected mood flag to be true")
 	}
 	if len(entry.OtherSymptoms) != 1 || entry.OtherSymptoms[0] != "My Custom" {
 		t.Fatalf("expected custom symptom in other list, got %#v", entry.OtherSymptoms)
-	}
-	if entry.Notes != "json-note" {
-		t.Fatalf("expected notes to be preserved, got %q", entry.Notes)
 	}
 }

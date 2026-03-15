@@ -38,48 +38,74 @@ func TestPartnerReadOnlyFlowSmoke(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	dashboardBody := smokeGET(t, app, authCookie, "/dashboard", http.StatusOK)
-	if strings.Contains(dashboardBody, `hx-post="/api/days/`) {
+	settingsBody := smokeGET(t, app, authCookie, "/settings", http.StatusOK)
+	dayPanelBody := smokeGET(t, app, authCookie, "/calendar/day/2026-02-21", http.StatusOK)
+	assertPartnerDashboardReadOnly(t, dashboardBody)
+	assertPartnerSettingsReadOnly(t, settingsBody)
+	assertPartnerDayPanelReadOnly(t, dayPanelBody)
+	assertPartnerCycleFactorsHidden(t, dashboardBody, dayPanelBody)
+	assertPartnerUpsertForbidden(t, app, authCookie)
+	assertPartnerExportForbidden(t, app, authCookie)
+}
+
+func assertPartnerDashboardReadOnly(t *testing.T, body string) {
+	t.Helper()
+
+	if strings.Contains(body, `hx-post="/api/days/`) {
 		t.Fatalf("expected partner dashboard to be read-only")
 	}
+}
 
-	settingsBody := smokeGET(t, app, authCookie, "/settings", http.StatusOK)
-	if strings.Contains(settingsBody, `data-export-section`) {
+func assertPartnerSettingsReadOnly(t *testing.T, body string) {
+	t.Helper()
+
+	if strings.Contains(body, `data-export-section`) {
 		t.Fatalf("expected owner-only export section hidden for partner")
 	}
-	if strings.Contains(settingsBody, `action="/settings/cycle"`) {
+	if strings.Contains(body, `action="/settings/cycle"`) {
 		t.Fatalf("expected owner-only cycle settings hidden for partner")
 	}
+}
 
-	dayPanelBody := smokeGET(t, app, authCookie, "/calendar/day/2026-02-21", http.StatusOK)
-	if strings.Contains(dayPanelBody, `hx-post="/api/days/2026-02-21"`) {
+func assertPartnerDayPanelReadOnly(t *testing.T, body string) {
+	t.Helper()
+
+	if strings.Contains(body, `hx-post="/api/days/2026-02-21"`) {
 		t.Fatalf("expected partner day panel to be read-only")
 	}
-	if strings.Contains(dayPanelBody, `name="notes"`) {
+	if strings.Contains(body, `name="notes"`) {
 		t.Fatalf("expected partner day notes field to be hidden")
 	}
-	if strings.Contains(dayPanelBody, `name="symptom_ids"`) {
+	if strings.Contains(body, `name="symptom_ids"`) {
 		t.Fatalf("expected partner day symptoms controls to be hidden")
 	}
-	if strings.Contains(dayPanelBody, `name="cycle_factor_keys"`) {
+	if strings.Contains(body, `name="cycle_factor_keys"`) {
 		t.Fatalf("expected partner day cycle factor controls to be hidden")
 	}
+}
+
+func assertPartnerCycleFactorsHidden(t *testing.T, dashboardBody string, dayPanelBody string) {
+	t.Helper()
+
 	for _, fragment := range []string{"Stress", "Travel"} {
 		if strings.Contains(dashboardBody, fragment) || strings.Contains(dayPanelBody, fragment) {
 			t.Fatalf("expected partner flow to hide private cycle factor label %q", fragment)
 		}
 	}
+}
 
-	payload := map[string]any{
+func assertPartnerUpsertForbidden(t *testing.T, app *fiber.App, authCookie string) {
+	t.Helper()
+
+	body, err := json.Marshal(map[string]any{
 		"is_period":   true,
 		"flow":        models.FlowMedium,
 		"symptom_ids": []uint{},
 		"notes":       "forbidden write",
-	}
-	body, err := json.Marshal(payload)
+	})
 	if err != nil {
 		t.Fatalf("marshal partner payload: %v", err)
 	}
-
 	upsertRequest := httptest.NewRequest(http.MethodPost, "/api/days/2026-02-21", bytes.NewReader(body))
 	upsertRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	upsertRequest.Header.Set("Cookie", authCookie)
@@ -93,9 +119,12 @@ func TestPartnerReadOnlyFlowSmoke(t *testing.T) {
 	if upsertResponse.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected partner upsert status 403, got %d", upsertResponse.StatusCode)
 	}
+}
+
+func assertPartnerExportForbidden(t *testing.T, app *fiber.App, authCookie string) {
+	t.Helper()
 
 	exportRequest := newExportRequestForTest(t, "/api/export/csv?from=2026-02-01&to=2026-02-28", authCookie)
-
 	exportResponse, err := app.Test(exportRequest, -1)
 	if err != nil {
 		t.Fatalf("partner export request failed: %v", err)

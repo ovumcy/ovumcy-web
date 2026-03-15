@@ -153,9 +153,26 @@ func TestBuildStatsPageViewDataBuildsLastCycleSymptomsPatternsAndBBTChart(t *tes
 func assertOwnerTrendViewData(t *testing.T, viewData StatsPageViewData) {
 	t.Helper()
 
+	assertOwnerTrendIdentity(t, viewData)
+	assertOwnerTrendChartData(t, viewData)
+	assertOwnerTrendReliability(t, viewData)
+	assertOwnerTrendSymptomSummary(t, viewData)
+}
+
+func assertOwnerTrendIdentity(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
 	if !viewData.IsOwner {
 		t.Fatalf("expected IsOwner=true")
 	}
+	if viewData.TrendPointCount != 2 {
+		t.Fatalf("expected TrendPointCount=2, got %d", viewData.TrendPointCount)
+	}
+}
+
+func assertOwnerTrendChartData(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
 	if viewData.ChartData.Kind != "bar" {
 		t.Fatalf("expected chart kind=bar, got %q", viewData.ChartData.Kind)
 	}
@@ -165,9 +182,17 @@ func assertOwnerTrendViewData(t *testing.T, viewData StatsPageViewData) {
 	if viewData.ChartBaseline != 28 {
 		t.Fatalf("expected ChartBaseline=28, got %d", viewData.ChartBaseline)
 	}
-	if viewData.TrendPointCount != 2 {
-		t.Fatalf("expected TrendPointCount=2, got %d", viewData.TrendPointCount)
+	if len(viewData.ChartData.Labels) != 2 || viewData.ChartData.Labels[0] != "Cycle 1" || viewData.ChartData.Labels[1] != "Cycle 2" {
+		t.Fatalf("unexpected chart labels: %#v", viewData.ChartData.Labels)
 	}
+	if len(viewData.ChartData.Values) != 2 || viewData.ChartData.Values[0] != 28 || viewData.ChartData.Values[1] != 28 {
+		t.Fatalf("unexpected chart values: %#v", viewData.ChartData.Values)
+	}
+}
+
+func assertOwnerTrendReliability(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
 	if !viewData.ShowPredictionReliability {
 		t.Fatalf("expected prediction reliability block to be available")
 	}
@@ -180,12 +205,11 @@ func assertOwnerTrendViewData(t *testing.T, viewData StatsPageViewData) {
 	if viewData.PredictionReliabilityLabelKey != "stats.reliability.building" {
 		t.Fatalf("expected building reliability label, got %q", viewData.PredictionReliabilityLabelKey)
 	}
-	if len(viewData.ChartData.Labels) != 2 || viewData.ChartData.Labels[0] != "Cycle 1" || viewData.ChartData.Labels[1] != "Cycle 2" {
-		t.Fatalf("unexpected chart labels: %#v", viewData.ChartData.Labels)
-	}
-	if len(viewData.ChartData.Values) != 2 || viewData.ChartData.Values[0] != 28 || viewData.ChartData.Values[1] != 28 {
-		t.Fatalf("unexpected chart values: %#v", viewData.ChartData.Values)
-	}
+}
+
+func assertOwnerTrendSymptomSummary(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
 	if len(viewData.SymptomCounts) != 1 {
 		t.Fatalf("expected one symptom count entry, got %d", len(viewData.SymptomCounts))
 	}

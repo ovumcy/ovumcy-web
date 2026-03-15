@@ -299,20 +299,8 @@ For bugs and feature requests, open a GitHub issue:
 
 ## Roadmap
 
-The live roadmap now also exists in GitHub Issues and the `Ovumcy Roadmap` project board, so the list below is a compact product summary rather than the only planning source.
-
-### Next Up
-
-- Import from other trackers: Clue, Flo CSV import.
-- Web Push notifications: period predictions delivered via browser push, no third-party services.
-- Advanced factor-based cycle pattern explanations: richer personalized context on top of the new recorded cycle factors.
-- Partner invite via link: simplified partner onboarding without manual account setup.
-- Continued UX simplification across core owner flows.
-
-### Longer Term
-
-- Managed hosting option.
-- Optional end-to-end encrypted sync (client-side key, self-hosted or managed).
+Product planning lives in GitHub Issues and the `Ovumcy Roadmap` project board.
+This README intentionally focuses on functionality that exists today rather than future or commercial roadmap items.
 
 ## License
 

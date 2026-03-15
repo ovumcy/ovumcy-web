@@ -60,40 +60,9 @@ func TestDashboardSymptomsNotesPanelUsesSavedSymptomsAndNotesState(t *testing.T)
 	}
 	document := mustParseHTMLDocument(t, string(body))
 	documentText := htmlDocumentText(document)
-	if !strings.Contains(documentText, "Remember to hydrate") {
-		t.Fatalf("expected saved note to stay visible in dashboard form")
-	}
-	disclosure := htmlElementByTagAndClass(document, "details", "note-disclosure")
-	if disclosure == nil {
-		t.Fatalf("expected saved notes to render inside a disclosure block")
-	}
-	if !htmlHasAttr(disclosure, "open") {
-		t.Fatalf("expected saved dashboard note disclosure to stay open")
-	}
-	summary := htmlFindElement(disclosure, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && node.Data == "summary"
-	})
-	if !strings.Contains(htmlDocumentText(summary), "Hide note") {
-		t.Fatalf("expected saved dashboard note disclosure to use Hide note copy")
-	}
-	noteField := htmlElementByID(document, "today-notes")
-	if noteField == nil {
-		t.Fatalf("expected dashboard notes textarea")
-	}
-	if got := htmlDocumentText(noteField); got != "Remember to hydrate" {
-		t.Fatalf("expected saved note textarea value, got %q", got)
-	}
-	if !strings.Contains(documentText, "Custom cramps") {
-		t.Fatalf("expected saved custom symptom label to be rendered in dashboard picker")
-	}
-	if !strings.Contains(documentText, "Custom headache") {
-		t.Fatalf("expected second saved custom symptom label to be rendered in dashboard picker")
-	}
-	for _, fragment := range []string{"Stress", "Travel"} {
-		if !strings.Contains(documentText, fragment) {
-			t.Fatalf("expected saved cycle factor label %q to be rendered in dashboard picker", fragment)
-		}
-	}
+	assertDashboardSavedNoteDisclosure(t, document)
+	assertDashboardSavedLabels(t, documentText, "saved custom symptom", "Custom cramps", "Custom headache")
+	assertDashboardSavedLabels(t, documentText, "saved cycle factor", "Stress", "Travel")
 }
 
 func TestDashboardEmptyNotesUseAddNoteDisclosure(t *testing.T) {
@@ -127,5 +96,43 @@ func TestDashboardEmptyNotesUseAddNoteDisclosure(t *testing.T) {
 	}
 	if htmlHasAttr(disclosure, "open") {
 		t.Fatalf("expected empty dashboard note disclosure to stay closed")
+	}
+}
+
+func assertDashboardSavedNoteDisclosure(t *testing.T, document *html.Node) {
+	t.Helper()
+
+	if !strings.Contains(htmlDocumentText(document), "Remember to hydrate") {
+		t.Fatalf("expected saved note to stay visible in dashboard form")
+	}
+	disclosure := htmlElementByTagAndClass(document, "details", "note-disclosure")
+	if disclosure == nil {
+		t.Fatalf("expected saved notes to render inside a disclosure block")
+	}
+	if !htmlHasAttr(disclosure, "open") {
+		t.Fatalf("expected saved dashboard note disclosure to stay open")
+	}
+	summary := htmlFindElement(disclosure, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "summary"
+	})
+	if !strings.Contains(htmlDocumentText(summary), "Hide note") {
+		t.Fatalf("expected saved dashboard note disclosure to use Hide note copy")
+	}
+	noteField := htmlElementByID(document, "today-notes")
+	if noteField == nil {
+		t.Fatalf("expected dashboard notes textarea")
+	}
+	if got := htmlDocumentText(noteField); got != "Remember to hydrate" {
+		t.Fatalf("expected saved note textarea value, got %q", got)
+	}
+}
+
+func assertDashboardSavedLabels(t *testing.T, documentText string, labelType string, expected ...string) {
+	t.Helper()
+
+	for _, fragment := range expected {
+		if !strings.Contains(documentText, fragment) {
+			t.Fatalf("expected %s label %q to be rendered in dashboard picker", labelType, fragment)
+		}
 	}
 }

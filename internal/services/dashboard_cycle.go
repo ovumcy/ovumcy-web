@@ -29,6 +29,22 @@ type DashboardCycleContext struct {
 	OvulationInPast             bool
 }
 
+type dashboardPredictionDisplay struct {
+	nextPeriodStart      time.Time
+	nextPeriodRangeStart time.Time
+	nextPeriodRangeEnd   time.Time
+	nextPeriodUseRange   bool
+	nextPeriodPrompt     bool
+	nextPeriodNeedsData  bool
+	ovulationDate        time.Time
+	ovulationRangeStart  time.Time
+	ovulationRangeEnd    time.Time
+	ovulationUseRange    bool
+	ovulationNeedsData   bool
+	ovulationExact       bool
+	ovulationImpossible  bool
+}
+
 func DashboardPredictionDisabled(user *models.User) bool {
 	return user != nil && user.UnpredictableCycle
 }
@@ -183,63 +199,103 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 	cycleDayWarning := DashboardCycleDayLooksLong(stats.CurrentCycleDay, cycleDayReference)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
 	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
-	displayNextPeriodStart, displayOvulationDate, displayOvulationExact, displayOvulationImpossible := DashboardUpcomingPredictions(
-		stats,
-		user,
-		today,
-		cycleDayReference,
-	)
-
-	displayNextPeriodRangeStart := time.Time{}
-	displayNextPeriodRangeEnd := time.Time{}
-	displayNextPeriodUseRange := false
-	displayNextPeriodPrompt := stats.LastPeriodStart.IsZero()
-	displayNextPeriodNeedsData := user != nil && user.IrregularCycle && stats.CompletedCycleCount < 3 && !displayNextPeriodStart.IsZero()
-	displayOvulationRangeStart := time.Time{}
-	displayOvulationRangeEnd := time.Time{}
-	displayOvulationUseRange := false
-	displayOvulationNeedsData := user != nil && user.IrregularCycle && stats.CompletedCycleCount < 3 && !stats.LastPeriodStart.IsZero()
-	if !displayNextPeriodPrompt && !displayNextPeriodNeedsData {
-		displayNextPeriodRangeStart, displayNextPeriodRangeEnd, displayNextPeriodUseRange = DashboardPredictionRange(user, stats, displayNextPeriodStart, location)
-		if dashboardIrregularPredictionRangeEnabled(user, stats) {
-			displayOvulationRangeStart, displayOvulationRangeEnd, displayOvulationUseRange = DashboardOvulationRange(
-				displayNextPeriodRangeStart,
-				displayNextPeriodRangeEnd,
-				stats.LutealPhase,
-				location,
-			)
-			if displayOvulationUseRange {
-				displayOvulationDate = time.Time{}
-				displayOvulationExact = false
-			}
-		}
-	}
-	if displayOvulationNeedsData {
-		displayOvulationDate = time.Time{}
-		displayOvulationExact = false
-	}
+	display := buildDashboardPredictionDisplay(user, stats, today, location, cycleDayReference)
 
 	return DashboardCycleContext{
 		CycleDayReference:           cycleDayReference,
 		CycleDayWarning:             cycleDayWarning,
 		CycleDataStale:              cycleDataStale,
 		PredictionDisabled:          false,
-		DisplayNextPeriodStart:      displayNextPeriodStart,
-		DisplayNextPeriodRangeStart: displayNextPeriodRangeStart,
-		DisplayNextPeriodRangeEnd:   displayNextPeriodRangeEnd,
-		DisplayNextPeriodUseRange:   displayNextPeriodUseRange,
-		DisplayNextPeriodPrompt:     displayNextPeriodPrompt,
-		DisplayNextPeriodNeedsData:  displayNextPeriodNeedsData,
-		DisplayOvulationDate:        displayOvulationDate,
-		DisplayOvulationRangeStart:  displayOvulationRangeStart,
-		DisplayOvulationRangeEnd:    displayOvulationRangeEnd,
-		DisplayOvulationUseRange:    displayOvulationUseRange,
-		DisplayOvulationNeedsData:   displayOvulationNeedsData,
-		DisplayOvulationExact:       displayOvulationExact,
-		DisplayOvulationImpossible:  displayOvulationImpossible,
-		NextPeriodInPast:            displayNextPeriodUseRange && !displayNextPeriodRangeEnd.IsZero() && displayNextPeriodRangeEnd.Before(today),
-		OvulationInPast:             (!displayOvulationUseRange && !displayOvulationImpossible && !displayOvulationDate.IsZero() && displayOvulationDate.Before(today)) || (displayOvulationUseRange && !displayOvulationRangeEnd.IsZero() && displayOvulationRangeEnd.Before(today)),
+		DisplayNextPeriodStart:      display.nextPeriodStart,
+		DisplayNextPeriodRangeStart: display.nextPeriodRangeStart,
+		DisplayNextPeriodRangeEnd:   display.nextPeriodRangeEnd,
+		DisplayNextPeriodUseRange:   display.nextPeriodUseRange,
+		DisplayNextPeriodPrompt:     display.nextPeriodPrompt,
+		DisplayNextPeriodNeedsData:  display.nextPeriodNeedsData,
+		DisplayOvulationDate:        display.ovulationDate,
+		DisplayOvulationRangeStart:  display.ovulationRangeStart,
+		DisplayOvulationRangeEnd:    display.ovulationRangeEnd,
+		DisplayOvulationUseRange:    display.ovulationUseRange,
+		DisplayOvulationNeedsData:   display.ovulationNeedsData,
+		DisplayOvulationExact:       display.ovulationExact,
+		DisplayOvulationImpossible:  display.ovulationImpossible,
+		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
+		OvulationInPast:             dashboardOvulationInPast(display, today),
 	}
+}
+
+func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today time.Time, location *time.Location, cycleDayReference int) dashboardPredictionDisplay {
+	nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible := DashboardUpcomingPredictions(
+		stats,
+		user,
+		today,
+		cycleDayReference,
+	)
+
+	display := dashboardPredictionDisplay{
+		nextPeriodStart:     nextPeriodStart,
+		nextPeriodPrompt:    stats.LastPeriodStart.IsZero(),
+		nextPeriodNeedsData: dashboardNeedsNextPeriodData(user, stats, nextPeriodStart),
+		ovulationDate:       ovulationDate,
+		ovulationNeedsData:  dashboardNeedsOvulationData(user, stats),
+		ovulationExact:      ovulationExact,
+		ovulationImpossible: ovulationImpossible,
+	}
+	if display.nextPeriodPrompt || display.nextPeriodNeedsData {
+		return finalizeDashboardPredictionDisplay(display)
+	}
+	return finalizeDashboardPredictionDisplay(applyDashboardPredictionRanges(display, user, stats, location))
+}
+
+func dashboardNeedsNextPeriodData(user *models.User, stats CycleStats, nextPeriodStart time.Time) bool {
+	return user != nil && user.IrregularCycle && stats.CompletedCycleCount < 3 && !nextPeriodStart.IsZero()
+}
+
+func dashboardNeedsOvulationData(user *models.User, stats CycleStats) bool {
+	return user != nil && user.IrregularCycle && stats.CompletedCycleCount < 3 && !stats.LastPeriodStart.IsZero()
+}
+
+func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *models.User, stats CycleStats, location *time.Location) dashboardPredictionDisplay {
+	display.nextPeriodRangeStart, display.nextPeriodRangeEnd, display.nextPeriodUseRange = DashboardPredictionRange(
+		user,
+		stats,
+		display.nextPeriodStart,
+		location,
+	)
+	if !dashboardIrregularPredictionRangeEnabled(user, stats) {
+		return display
+	}
+	display.ovulationRangeStart, display.ovulationRangeEnd, display.ovulationUseRange = DashboardOvulationRange(
+		display.nextPeriodRangeStart,
+		display.nextPeriodRangeEnd,
+		stats.LutealPhase,
+		location,
+	)
+	if display.ovulationUseRange {
+		display.ovulationDate = time.Time{}
+		display.ovulationExact = false
+	}
+	return display
+}
+
+func finalizeDashboardPredictionDisplay(display dashboardPredictionDisplay) dashboardPredictionDisplay {
+	if !display.ovulationNeedsData {
+		return display
+	}
+	display.ovulationDate = time.Time{}
+	display.ovulationExact = false
+	return display
+}
+
+func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Time) bool {
+	return display.nextPeriodUseRange && !display.nextPeriodRangeEnd.IsZero() && display.nextPeriodRangeEnd.Before(today)
+}
+
+func dashboardOvulationInPast(display dashboardPredictionDisplay, today time.Time) bool {
+	if display.ovulationUseRange {
+		return !display.ovulationRangeEnd.IsZero() && display.ovulationRangeEnd.Before(today)
+	}
+	return !display.ovulationImpossible && !display.ovulationDate.IsZero() && display.ovulationDate.Before(today)
 }
 
 func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location *time.Location) []int {

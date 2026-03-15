@@ -118,36 +118,9 @@ func TestExportBuildJSONEntriesNormalizesFlowAndMapsSymptoms(t *testing.T) {
 	}
 
 	entry := entries[0]
-	if entry.Date != "2026-02-19" {
-		t.Fatalf("expected Date=2026-02-19, got %q", entry.Date)
-	}
-	if entry.Flow != models.FlowNone {
-		t.Fatalf("expected normalized flow=%q, got %q", models.FlowNone, entry.Flow)
-	}
-	if entry.MoodRating != 4 {
-		t.Fatalf("expected mood rating 4, got %d", entry.MoodRating)
-	}
-	if entry.SexActivity != models.SexActivityProtected {
-		t.Fatalf("expected protected sex activity, got %q", entry.SexActivity)
-	}
-	if entry.BBT != 36.55 {
-		t.Fatalf("expected BBT 36.55, got %.2f", entry.BBT)
-	}
-	if entry.CervicalMucus != models.CervicalMucusEggWhite {
-		t.Fatalf("expected eggwhite cervical mucus, got %q", entry.CervicalMucus)
-	}
-	if len(entry.CycleFactors) != 2 || entry.CycleFactors[0] != models.CycleFactorStress || entry.CycleFactors[1] != models.CycleFactorTravel {
-		t.Fatalf("expected normalized cycle factors, got %#v", entry.CycleFactors)
-	}
-	if !entry.Symptoms.Mood {
-		t.Fatalf("expected mood flag=true")
-	}
-	if len(entry.OtherSymptoms) != 2 || entry.OtherSymptoms[0] != "Another Custom" || entry.OtherSymptoms[1] != "My Custom" {
-		t.Fatalf("expected sorted deduped other symptoms, got %#v", entry.OtherSymptoms)
-	}
-	if entry.Notes != "json-note" {
-		t.Fatalf("expected notes preserved, got %q", entry.Notes)
-	}
+	assertExportJSONEntryCoreFields(t, entry)
+	assertExportJSONEntryTrackingFields(t, entry)
+	assertExportJSONEntrySymptomFields(t, entry)
 }
 
 func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
@@ -188,37 +161,10 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 	if len(columns) != len(ExportCSVHeaders) {
 		t.Fatalf("expected %d csv columns, got %d", len(ExportCSVHeaders), len(columns))
 	}
-	if columns[0] != "2026-02-18" || columns[1] != "Yes" || columns[2] != "Light" {
-		t.Fatalf("unexpected fixed csv columns: %#v", columns[:3])
-	}
-	indexByHeader := make(map[string]int, len(ExportCSVHeaders))
-	for index, header := range ExportCSVHeaders {
-		indexByHeader[header] = index
-	}
-	if columns[indexByHeader["Mood rating"]] != "5" {
-		t.Fatalf("expected mood rating column 5, got %q", columns[indexByHeader["Mood rating"]])
-	}
-	if columns[indexByHeader["Sex activity"]] != "Unprotected" {
-		t.Fatalf("expected sex activity column Unprotected, got %q", columns[indexByHeader["Sex activity"]])
-	}
-	if columns[indexByHeader["BBT (C)"]] != "36.70" {
-		t.Fatalf("expected BBT column 36.70, got %q", columns[indexByHeader["BBT (C)"]])
-	}
-	if columns[indexByHeader["Cervical mucus"]] != "Creamy" {
-		t.Fatalf("expected cervical mucus column Creamy, got %q", columns[indexByHeader["Cervical mucus"]])
-	}
-	if columns[indexByHeader["Cramps"]] != "Yes" {
-		t.Fatalf("expected cramps column Yes, got %q", columns[indexByHeader["Cramps"]])
-	}
-	if columns[indexByHeader["Cycle factors"]] != "Stress; Medication change" {
-		t.Fatalf("expected cycle factors column, got %q", columns[indexByHeader["Cycle factors"]])
-	}
-	if columns[indexByHeader["Other"]] != "Custom Symptom" {
-		t.Fatalf("expected other symptom column, got %q", columns[indexByHeader["Other"]])
-	}
-	if columns[indexByHeader["Notes"]] != "note" {
-		t.Fatalf("expected notes column, got %q", columns[indexByHeader["Notes"]])
-	}
+	assertExportCSVFixedColumns(t, columns)
+	indexByHeader := exportCSVIndexByHeader()
+	assertExportCSVTrackingColumns(t, columns, indexByHeader)
+	assertExportCSVSymptomColumns(t, columns, indexByHeader)
 }
 
 func TestExportBuildCSVRowsNeutralizesFormulaLikeCells(t *testing.T) {
@@ -286,4 +232,99 @@ func mustParseExportDay(t *testing.T, raw string) time.Time {
 		t.Fatalf("parse day %q: %v", raw, err)
 	}
 	return parsed
+}
+
+func assertExportJSONEntryCoreFields(t *testing.T, entry ExportJSONEntry) {
+	t.Helper()
+
+	if entry.Date != "2026-02-19" {
+		t.Fatalf("expected Date=2026-02-19, got %q", entry.Date)
+	}
+	if entry.Flow != models.FlowNone {
+		t.Fatalf("expected normalized flow=%q, got %q", models.FlowNone, entry.Flow)
+	}
+	if entry.Notes != "json-note" {
+		t.Fatalf("expected notes preserved, got %q", entry.Notes)
+	}
+}
+
+func assertExportJSONEntryTrackingFields(t *testing.T, entry ExportJSONEntry) {
+	t.Helper()
+
+	if entry.MoodRating != 4 {
+		t.Fatalf("expected mood rating 4, got %d", entry.MoodRating)
+	}
+	if entry.SexActivity != models.SexActivityProtected {
+		t.Fatalf("expected protected sex activity, got %q", entry.SexActivity)
+	}
+	if entry.BBT != 36.55 {
+		t.Fatalf("expected BBT 36.55, got %.2f", entry.BBT)
+	}
+	if entry.CervicalMucus != models.CervicalMucusEggWhite {
+		t.Fatalf("expected eggwhite cervical mucus, got %q", entry.CervicalMucus)
+	}
+	if len(entry.CycleFactors) != 2 || entry.CycleFactors[0] != models.CycleFactorStress || entry.CycleFactors[1] != models.CycleFactorTravel {
+		t.Fatalf("expected normalized cycle factors, got %#v", entry.CycleFactors)
+	}
+}
+
+func assertExportJSONEntrySymptomFields(t *testing.T, entry ExportJSONEntry) {
+	t.Helper()
+
+	if !entry.Symptoms.Mood {
+		t.Fatalf("expected mood flag=true")
+	}
+	if len(entry.OtherSymptoms) != 2 || entry.OtherSymptoms[0] != "Another Custom" || entry.OtherSymptoms[1] != "My Custom" {
+		t.Fatalf("expected sorted deduped other symptoms, got %#v", entry.OtherSymptoms)
+	}
+}
+
+func assertExportCSVFixedColumns(t *testing.T, columns []string) {
+	t.Helper()
+
+	if columns[0] != "2026-02-18" || columns[1] != "Yes" || columns[2] != "Light" {
+		t.Fatalf("unexpected fixed csv columns: %#v", columns[:3])
+	}
+}
+
+func assertExportCSVTrackingColumns(t *testing.T, columns []string, indexByHeader map[string]int) {
+	t.Helper()
+
+	if columns[indexByHeader["Mood rating"]] != "5" {
+		t.Fatalf("expected mood rating column 5, got %q", columns[indexByHeader["Mood rating"]])
+	}
+	if columns[indexByHeader["Sex activity"]] != "Unprotected" {
+		t.Fatalf("expected sex activity column Unprotected, got %q", columns[indexByHeader["Sex activity"]])
+	}
+	if columns[indexByHeader["BBT (C)"]] != "36.70" {
+		t.Fatalf("expected BBT column 36.70, got %q", columns[indexByHeader["BBT (C)"]])
+	}
+	if columns[indexByHeader["Cervical mucus"]] != "Creamy" {
+		t.Fatalf("expected cervical mucus column Creamy, got %q", columns[indexByHeader["Cervical mucus"]])
+	}
+	if columns[indexByHeader["Cycle factors"]] != "Stress; Medication change" {
+		t.Fatalf("expected cycle factors column, got %q", columns[indexByHeader["Cycle factors"]])
+	}
+}
+
+func assertExportCSVSymptomColumns(t *testing.T, columns []string, indexByHeader map[string]int) {
+	t.Helper()
+
+	if columns[indexByHeader["Cramps"]] != "Yes" {
+		t.Fatalf("expected cramps column Yes, got %q", columns[indexByHeader["Cramps"]])
+	}
+	if columns[indexByHeader["Other"]] != "Custom Symptom" {
+		t.Fatalf("expected other symptom column, got %q", columns[indexByHeader["Other"]])
+	}
+	if columns[indexByHeader["Notes"]] != "note" {
+		t.Fatalf("expected notes column, got %q", columns[indexByHeader["Notes"]])
+	}
+}
+
+func exportCSVIndexByHeader() map[string]int {
+	indexByHeader := make(map[string]int, len(ExportCSVHeaders))
+	for index, header := range ExportCSVHeaders {
+		indexByHeader[header] = index
+	}
+	return indexByHeader
 }
