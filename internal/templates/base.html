@@ -671,8 +671,12 @@
   data-symptom-name="{{.Symptom.Name}}"
   data-symptom-state="{{if .Symptom.IsActive}}active{{else}}archived{{end}}">
   <div class="settings-symptom-card-header">
-    <div>
-      <p class="field-label">{{.Heading}}</p>
+    <div class="min-w-0 space-y-1">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="text-sm" aria-hidden="true">{{.FormIcon}}</span>
+        <p class="field-label break-words" data-symptom-card-title>{{.FormName}}</p>
+      </div>
+      <p class="journal-muted text-xs">{{.Heading}}</p>
     </div>
     {{if not .Symptom.IsActive}}
     <span class="warning-amber text-xs">{{t .Messages "settings.symptoms.archived_badge"}}</span>
@@ -754,6 +758,7 @@
 <section id="settings-symptoms-section" class="journal-card p-5 sm:p-6 space-y-5" data-settings-symptoms>
   <div>
     <h2 class="journal-subtitle">🧩 {{t .Messages "settings.symptoms.title"}}</h2>
+    <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
   </div>
 
   <form
@@ -803,8 +808,11 @@
 
   <div class="space-y-4">
     {{if .HasCustomSymptoms}}
-    <div class="space-y-3">
-      <h3 class="field-label">{{t .Messages "settings.symptoms.active_heading"}}</h3>
+    <div class="space-y-3" data-symptom-group="active">
+      <div class="space-y-1">
+        <h3 class="field-label">{{t .Messages "settings.symptoms.active_heading"}}</h3>
+        <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.active_hint"}}</p>
+      </div>
       <div class="space-y-3">
         {{range .ActiveCustomSymptoms}}
         {{template "settings_custom_symptom_card" (dict
@@ -820,11 +828,23 @@
         {{end}}
       </div>
     </div>
+    {{else if .HasArchivedSymptoms}}
+    <div class="journal-panel space-y-2" data-symptom-empty-state="active">
+      <p class="field-label">{{t .Messages "settings.symptoms.active_heading"}}</p>
+      <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.empty_active"}}</p>
+    </div>
+    {{else}}
+    <div class="journal-panel space-y-2" data-symptom-empty-state="empty">
+      <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.empty"}}</p>
+    </div>
     {{end}}
 
     {{if .HasArchivedSymptoms}}
-    <div class="space-y-3">
-      <h3 class="field-label">{{t .Messages "settings.symptoms.archived_heading"}}</h3>
+    <div class="space-y-3" data-symptom-group="archived">
+      <div class="space-y-1">
+        <h3 class="field-label">{{t .Messages "settings.symptoms.archived_heading"}}</h3>
+        <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.archived_hint"}}</p>
+      </div>
       <div class="space-y-3">
         {{range .ArchivedCustomSymptoms}}
         {{template "settings_custom_symptom_card" (dict

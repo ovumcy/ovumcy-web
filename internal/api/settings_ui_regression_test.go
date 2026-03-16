@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 func TestSettingsPageRendersSingleIrregularCycleExplanation(t *testing.T) {
@@ -99,6 +101,83 @@ func TestSettingsPageExplainsClearDataRemovesCustomSymptoms(t *testing.T) {
 	documentText := htmlDocumentText(mustParseHTMLDocument(t, mustReadBodyString(t, response.Body)))
 	if !strings.Contains(documentText, "remove your custom symptoms") {
 		t.Fatalf("expected clear-data copy to explain custom symptom removal, got %q", documentText)
+	}
+}
+
+func TestSettingsTrackingSectionExplainsToggleEffectsAndCurrentState(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-copy@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	if strings.Contains(rendered, "settings.tracking.cervical_mucus_explainer") {
+		t.Fatalf("expected tracking section to use translated helper copy instead of a missing explainer key")
+	}
+
+	document := mustParseHTMLDocument(t, rendered)
+	if !strings.Contains(htmlDocumentText(document), "Existing values stay in your private history and exports.") {
+		t.Fatalf("expected tracking subtitle to explain saved-value behavior")
+	}
+
+	testCases := []struct {
+		attribute string
+		hint      string
+		state     string
+	}{
+		{
+			attribute: "track-bbt",
+			hint:      "Adds a basal body temperature field to dashboard and calendar day editing.",
+			state:     "Currently hidden from new dashboard and calendar entries.",
+		},
+		{
+			attribute: "track-cervical-mucus",
+			hint:      "Adds cervical mucus choices to dashboard and calendar day editing.",
+			state:     "Currently hidden from new dashboard and calendar entries.",
+		},
+		{
+			attribute: "hide-sex-chip",
+			hint:      "Removes the intimacy section from new dashboard and calendar entries.",
+			state:     "Currently visible in dashboard and calendar day editor.",
+		},
+	}
+
+	for _, tc := range testCases {
+		toggle := htmlFindElement(document, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlAttr(node, "data-tracking-setting") == tc.attribute
+		})
+		if toggle == nil {
+			t.Fatalf("expected tracking toggle %q", tc.attribute)
+		}
+
+		toggleText := normalizeHTMLText(htmlNodeText(toggle))
+		if !strings.Contains(toggleText, tc.hint) {
+			t.Fatalf("expected tracking toggle %q to include hint %q, got %q", tc.attribute, tc.hint, toggleText)
+		}
+		if !strings.Contains(toggleText, tc.state) {
+			t.Fatalf("expected tracking toggle %q to include state %q, got %q", tc.attribute, tc.state, toggleText)
+		}
+
+		state := htmlFindElement(toggle, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlHasAttr(node, "data-binary-toggle-state")
+		})
+		if state == nil {
+			t.Fatalf("expected tracking toggle %q to render live state node", tc.attribute)
+		}
+		if htmlAttr(state, "data-state-on") == "" || htmlAttr(state, "data-state-off") == "" {
+			t.Fatalf("expected tracking toggle %q to provide live state labels", tc.attribute)
+		}
 	}
 }
 

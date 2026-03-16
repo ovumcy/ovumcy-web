@@ -360,9 +360,12 @@ test.describe('Settings: profile and cycle', () => {
     const trackBBT = trackingSection.locator('input[name="track_bbt"]');
     const trackCervicalMucus = trackingSection.locator('input[name="track_cervical_mucus"]');
     const hideSexChip = trackingSection.locator('input[name="hide_sex_chip"]');
-    const trackBBTToggle = trackingSection.locator('label[data-binary-toggle]:has(input[name="track_bbt"])');
-    const trackCervicalMucusToggle = trackingSection.locator('label[data-binary-toggle]:has(input[name="track_cervical_mucus"])');
-    const hideSexChipToggle = trackingSection.locator('label[data-binary-toggle]:has(input[name="hide_sex_chip"])');
+    const trackBBTToggle = trackingSection.locator('[data-tracking-setting="track-bbt"]');
+    const trackCervicalMucusToggle = trackingSection.locator('[data-tracking-setting="track-cervical-mucus"]');
+    const hideSexChipToggle = trackingSection.locator('[data-tracking-setting="hide-sex-chip"]');
+    const trackBBTState = trackBBTToggle.locator('[data-binary-toggle-state]');
+    const trackCervicalMucusState = trackCervicalMucusToggle.locator('[data-binary-toggle-state]');
+    const hideSexChipState = hideSexChipToggle.locator('[data-binary-toggle-state]');
     const temperatureUnitFahrenheit = trackingSection.locator('input[name="temperature_unit"][value="f"]');
     const saveTrackingButton = trackingSection.locator('button[data-save-button]');
 
@@ -370,10 +373,36 @@ test.describe('Settings: profile and cycle', () => {
     await expect(trackCervicalMucus).not.toBeChecked();
     await expect(hideSexChip).not.toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
+    await expect(trackBBTToggle).toContainText(
+      'Adds a basal body temperature field to dashboard and calendar day editing.'
+    );
+    await expect(trackCervicalMucusToggle).toContainText(
+      'Adds cervical mucus choices to dashboard and calendar day editing.'
+    );
+    await expect(hideSexChipToggle).toContainText(
+      'Removes the intimacy section from new dashboard and calendar entries.'
+    );
+    await expect(trackBBTState).toHaveText('Currently hidden from new dashboard and calendar entries.');
+    await expect(trackCervicalMucusState).toHaveText(
+      'Currently hidden from new dashboard and calendar entries.'
+    );
+    await expect(hideSexChipState).toHaveText(
+      'Currently visible in dashboard and calendar day editor.'
+    );
 
     await trackBBT.check();
     await trackCervicalMucus.check();
     await hideSexChip.check();
+    await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
+    await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
+    await expect(hideSexChipToggle).toHaveAttribute('data-active', 'true');
+    await expect(trackBBTState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(trackCervicalMucusState).toHaveText(
+      'Currently visible in dashboard and calendar day editor.'
+    );
+    await expect(hideSexChipState).toHaveText(
+      'Currently hidden in dashboard and calendar day editor.'
+    );
     await temperatureUnitFahrenheit.check({ force: true });
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
@@ -386,6 +415,13 @@ test.describe('Settings: profile and cycle', () => {
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
     await expect(hideSexChipToggle).toHaveAttribute('data-active', 'true');
+    await expect(trackBBTState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(trackCervicalMucusState).toHaveText(
+      'Currently visible in dashboard and calendar day editor.'
+    );
+    await expect(hideSexChipState).toHaveText(
+      'Currently hidden in dashboard and calendar day editor.'
+    );
     await expect(temperatureUnitFahrenheit).toBeChecked();
 
     await page.goto('/dashboard');
@@ -426,6 +462,13 @@ test.describe('Settings: profile and cycle', () => {
     await trackBBT.uncheck();
     await trackCervicalMucus.uncheck();
     await hideSexChip.uncheck();
+    await expect(trackBBTState).toHaveText('Currently hidden from new dashboard and calendar entries.');
+    await expect(trackCervicalMucusState).toHaveText(
+      'Currently hidden from new dashboard and calendar entries.'
+    );
+    await expect(hideSexChipState).toHaveText(
+      'Currently visible in dashboard and calendar day editor.'
+    );
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
@@ -514,6 +557,12 @@ test.describe('Settings: profile and cycle', () => {
 
     await archiveCustomSymptom(page, activeRow);
     await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'archived').locator('.status-ok')).toBeVisible();
+    await expect(symptomSection.locator('[data-symptom-empty-state="active"]')).toContainText(
+      'No visible custom symptoms right now. Restore one below or add a new one above.'
+    );
+    await expect(symptomSection.locator('[data-symptom-group="archived"]')).toContainText(
+      'Past logs keep them. Restore one when you want it back in the picker.'
+    );
 
     await page.goto('/dashboard');
     const archivedDashboardSymptom = await ensureSymptomInputVisible(
@@ -655,10 +704,13 @@ test.describe('Settings: profile and cycle', () => {
     await assertNoHorizontalOverflow(page);
   });
 
-  test('empty custom symptom groups stay hidden until they have rows', async ({ page }) => {
+  test('custom symptom empty states explain what happens next until rows exist', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-empty-groups');
 
     const symptomSection = page.locator('#settings-symptoms-section');
+    await expect(symptomSection.locator('[data-symptom-empty-state="empty"]')).toContainText(
+      'No custom symptoms yet. Add one above to make it available in new entries.'
+    );
     await expect(symptomSection.getByText('Active custom symptoms')).toHaveCount(0);
     await expect(symptomSection.getByText('Hidden custom symptoms')).toHaveCount(0);
 
@@ -668,6 +720,10 @@ test.describe('Settings: profile and cycle', () => {
     await createForm.locator('button[type="submit"]').click();
 
     await expect(symptomSection.getByText('Active custom symptoms')).toBeVisible();
+    await expect(symptomSection.locator('[data-symptom-group="active"]')).toContainText(
+      'These appear in dashboard and calendar day editing.'
+    );
     await expect(symptomSection.getByText('Hidden custom symptoms')).toHaveCount(0);
+    await expect(symptomSection.locator('[data-symptom-empty-state="empty"]')).toHaveCount(0);
   });
 });

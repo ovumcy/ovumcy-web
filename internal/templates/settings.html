@@ -190,25 +190,54 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="settings-toggle-list">
-        <label class="period-toggle" data-binary-toggle data-active="{{if .TrackBBT}}true{{else}}false{{end}}">
+        <label
+          class="period-toggle"
+          data-binary-toggle
+          data-active="{{if .TrackBBT}}true{{else}}false{{end}}"
+          data-tracking-setting="track-bbt">
           <input type="checkbox" name="track_bbt" value="true" data-binary-toggle-input {{if .TrackBBT}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_bbt_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.track_bbt_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.track_bbt_state_off"}}">{{if .TrackBBT}}{{t .Messages "settings.tracking.track_bbt_state_on"}}{{else}}{{t .Messages "settings.tracking.track_bbt_state_off"}}{{end}}</span>
           </span>
         </label>
 
-        <label class="period-toggle" data-binary-toggle data-active="{{if .TrackCervicalMucus}}true{{else}}false{{end}}">
+        <label
+          class="period-toggle"
+          data-binary-toggle
+          data-active="{{if .TrackCervicalMucus}}true{{else}}false{{end}}"
+          data-tracking-setting="track-cervical-mucus">
           <input type="checkbox" name="track_cervical_mucus" value="true" data-binary-toggle-input {{if .TrackCervicalMucus}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_cervical_mucus_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.track_cervical_mucus_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.track_cervical_mucus_state_off"}}">{{if .TrackCervicalMucus}}{{t .Messages "settings.tracking.track_cervical_mucus_state_on"}}{{else}}{{t .Messages "settings.tracking.track_cervical_mucus_state_off"}}{{end}}</span>
           </span>
         </label>
-        <p class="journal-muted text-sm">{{t .Messages "settings.tracking.cervical_mucus_explainer"}}</p>
 
-        <label class="period-toggle" data-binary-toggle data-active="{{if .HideSexChip}}true{{else}}false{{end}}">
+        <label
+          class="period-toggle"
+          data-binary-toggle
+          data-active="{{if .HideSexChip}}true{{else}}false{{end}}"
+          data-tracking-setting="hide-sex-chip">
           <input type="checkbox" name="hide_sex_chip" value="true" data-binary-toggle-input {{if .HideSexChip}}checked{{end}}>
           <span class="period-toggle-copy">
             <span class="period-toggle-main">◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_sex_chip_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.hide_sex_chip_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}">{{if .HideSexChip}}{{t .Messages "settings.tracking.hide_sex_chip_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}{{end}}</span>
           </span>
         </label>
       </div>
