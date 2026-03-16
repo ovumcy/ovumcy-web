@@ -110,33 +110,10 @@ func TestBuildStatsPageViewDataBuildsRecentCycleFactorContextForVariablePatterns
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
-	if !viewData.HasRecentCycleFactors {
-		t.Fatalf("expected recent cycle factor context")
-	}
-	if len(viewData.RecentCycleFactors) != 2 {
-		t.Fatalf("expected two recent factor items, got %#v", viewData.RecentCycleFactors)
-	}
-	if viewData.RecentCycleFactors[0].Key != models.CycleFactorStress || viewData.RecentCycleFactors[0].Count != 1 {
-		t.Fatalf("expected stress to lead context, got %#v", viewData.RecentCycleFactors)
-	}
-	if !viewData.HasCycleFactorPatternSummaries || len(viewData.CycleFactorPatternSummaries) != 3 {
-		t.Fatalf("expected longer/shorter/variable factor summaries, got %#v", viewData.CycleFactorPatternSummaries)
-	}
-	if viewData.CycleFactorPatternSummaries[0].Kind != "longer" || viewData.CycleFactorPatternSummaries[1].Kind != "shorter" || viewData.CycleFactorPatternSummaries[2].Kind != "variable" {
-		t.Fatalf("expected longer then shorter summaries, got %#v", viewData.CycleFactorPatternSummaries)
-	}
-	if !viewData.HasRecentFactorCycles || len(viewData.RecentFactorCycles) != 3 {
-		t.Fatalf("expected three recent factor cycles, got %#v", viewData.RecentFactorCycles)
-	}
-	if viewData.RecentFactorCycles[0].ComparisonKind != "variable" || len(viewData.RecentFactorCycles[0].FactorKeys) != 1 || viewData.RecentFactorCycles[0].FactorKeys[0] != models.CycleFactorStress {
-		t.Fatalf("expected latest variable cycle to keep stress context, got %#v", viewData.RecentFactorCycles[0])
-	}
-	if !viewData.HasPredictionFactorHint || len(viewData.PredictionFactorHintKeys) != 2 {
-		t.Fatalf("expected prediction hint factor keys, got %#v", viewData.PredictionFactorHintKeys)
-	}
-	if !viewData.HasPredictionExplanationSecondary || viewData.PredictionExplanationSecondaryKey != "prediction.explainer.factor_context" {
-		t.Fatalf("expected shared factor explanation key, got %#v", viewData)
-	}
+	assertStatsRecentCycleFactors(t, viewData)
+	assertStatsCycleFactorPatternSummaries(t, viewData)
+	assertStatsRecentFactorCycles(t, viewData)
+	assertStatsPredictionFactorHint(t, viewData)
 }
 
 func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *testing.T) {
@@ -210,6 +187,53 @@ func assertOwnerTrendViewData(t *testing.T, viewData StatsPageViewData) {
 	assertOwnerTrendChartData(t, viewData)
 	assertOwnerTrendReliability(t, viewData)
 	assertOwnerTrendSymptomSummary(t, viewData)
+}
+
+func assertStatsRecentCycleFactors(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
+	if !viewData.HasRecentCycleFactors {
+		t.Fatalf("expected recent cycle factor context")
+	}
+	if len(viewData.RecentCycleFactors) != 2 {
+		t.Fatalf("expected two recent factor items, got %#v", viewData.RecentCycleFactors)
+	}
+	if viewData.RecentCycleFactors[0].Key != models.CycleFactorStress || viewData.RecentCycleFactors[0].Count != 1 {
+		t.Fatalf("expected stress to lead context, got %#v", viewData.RecentCycleFactors)
+	}
+}
+
+func assertStatsCycleFactorPatternSummaries(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
+	if !viewData.HasCycleFactorPatternSummaries || len(viewData.CycleFactorPatternSummaries) != 3 {
+		t.Fatalf("expected longer/shorter/variable factor summaries, got %#v", viewData.CycleFactorPatternSummaries)
+	}
+	if viewData.CycleFactorPatternSummaries[0].Kind != "longer" || viewData.CycleFactorPatternSummaries[1].Kind != "shorter" || viewData.CycleFactorPatternSummaries[2].Kind != "variable" {
+		t.Fatalf("expected longer then shorter summaries, got %#v", viewData.CycleFactorPatternSummaries)
+	}
+}
+
+func assertStatsRecentFactorCycles(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
+	if !viewData.HasRecentFactorCycles || len(viewData.RecentFactorCycles) != 3 {
+		t.Fatalf("expected three recent factor cycles, got %#v", viewData.RecentFactorCycles)
+	}
+	if viewData.RecentFactorCycles[0].ComparisonKind != "variable" || len(viewData.RecentFactorCycles[0].FactorKeys) != 1 || viewData.RecentFactorCycles[0].FactorKeys[0] != models.CycleFactorStress {
+		t.Fatalf("expected latest variable cycle to keep stress context, got %#v", viewData.RecentFactorCycles[0])
+	}
+}
+
+func assertStatsPredictionFactorHint(t *testing.T, viewData StatsPageViewData) {
+	t.Helper()
+
+	if !viewData.HasPredictionFactorHint || len(viewData.PredictionFactorHintKeys) != 2 {
+		t.Fatalf("expected prediction hint factor keys, got %#v", viewData.PredictionFactorHintKeys)
+	}
+	if !viewData.HasPredictionExplanationSecondary || viewData.PredictionExplanationSecondaryKey != "prediction.explainer.factor_context" {
+		t.Fatalf("expected shared factor explanation key, got %#v", viewData)
+	}
 }
 
 func assertOwnerTrendIdentity(t *testing.T, viewData StatsPageViewData) {
