@@ -445,8 +445,19 @@ test.describe('Bug regressions', () => {
 
       const statusLine = page.locator('.dashboard-status-line');
       await expect(statusLine).toContainText('Next period: unknown');
-      await expect(statusLine).toContainText('Keep tracking to spot patterns.');
+      await expect(statusLine).toContainText('Predictions off');
       await expect(statusLine).not.toContainText('Ovulation:');
+      await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveText(
+        'Predictions are off in unpredictable cycle mode. Ovumcy shows recorded facts only.'
+      );
+
+      await page.goto('/calendar');
+      await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
+      const calendarExplainer = page.locator('[data-calendar-prediction-explainer]');
+      await expect(calendarExplainer).toBeVisible();
+      await expect(calendarExplainer).toHaveText(
+        'Predictions are off in unpredictable cycle mode. Ovumcy shows recorded facts only.'
+      );
     });
   });
 

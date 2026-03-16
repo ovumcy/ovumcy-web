@@ -83,3 +83,43 @@ func TestCalendarEnglishRendersSharedPredictionExplanation(t *testing.T) {
 		t.Fatalf("expected shared factor context note, got %q", rendered)
 	}
 }
+
+func TestCalendarEnglishRendersUnpredictableFactsOnlyExplanation(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "calendar-unpredictable-copy@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	nowUTC := time.Now().UTC()
+	today := services.DateAtLocation(nowUTC, time.UTC)
+
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"unpredictable_cycle": true,
+		"cycle_length":        28,
+		"period_length":       5,
+		"last_period_start":   today.AddDate(0, 0, -8),
+	}).Error; err != nil {
+		t.Fatalf("update user unpredictable cycle context: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/calendar?month="+today.Format("2006-01")+"&day="+today.Format("2006-01-02"), nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("calendar request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	if !strings.Contains(rendered, `data-calendar-prediction-explainer`) {
+		t.Fatalf("expected calendar prediction explainer block, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Predictions are off in unpredictable cycle mode. Ovumcy shows recorded facts only.") {
+		t.Fatalf("expected shared unpredictable facts-only note, got %q", rendered)
+	}
+}
