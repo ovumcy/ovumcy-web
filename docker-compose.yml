@@ -31,6 +31,8 @@ services:
       - /tmp
     volumes:
       - ovumcy_data:/app/data
+      # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
+      # - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${PORT:-8080}/healthz >/dev/null || exit 1"]
       interval: 30s

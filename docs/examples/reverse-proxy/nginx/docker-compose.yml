@@ -6,7 +6,8 @@ services:
       TZ: ${TZ:-UTC}
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-en}
       DB_DRIVER: ${DB_DRIVER:-sqlite}
-      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY_FILE: ${SECRET_KEY_FILE:-}
       DB_PATH: /app/data/ovumcy.db
       DATABASE_URL: ${DATABASE_URL:-}
       COOKIE_SECURE: "true"
@@ -29,6 +30,8 @@ services:
       - /tmp
     volumes:
       - ovumcy_data:/app/data
+      # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
+      # - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 30s

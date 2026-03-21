@@ -13,7 +13,7 @@ Supported baseline assumptions:
 - `TRUST_PROXY_ENABLED=true` only when Ovumcy is actually behind your own trusted reverse proxy.
 - Prefer a containerized reverse proxy stack where only the proxy publishes host ports.
 - Keep Ovumcy's plain HTTP port internal to a private network or loopback-only.
-- A strong, unique `SECRET_KEY`.
+- A strong, unique application secret provided through `SECRET_KEY` or `SECRET_KEY_FILE`.
 
 Out of scope for this baseline:
 
@@ -25,7 +25,7 @@ Out of scope for this baseline:
 
 Before exposing Ovumcy outside localhost:
 
-1. Generate a strong `SECRET_KEY` and store it privately.
+1. Generate a strong application secret, then either set `SECRET_KEY` directly or mount a readable secret file and point `SECRET_KEY_FILE` at its in-container path.
 2. Use a persistent Docker volume or bind mount for the database path.
 3. Put the app behind HTTPS and set `COOKIE_SECURE=true`.
 4. Enable `TRUST_PROXY_ENABLED=true` only if the reverse proxy is under your control.
@@ -40,7 +40,8 @@ Treat configuration in three layers instead of one flat checklist.
 
 ### Required in all deployments
 
-- `SECRET_KEY` must be strong, private, and backed up separately from SQLite data.
+- Configure at least one strong secret source: `SECRET_KEY` directly or `SECRET_KEY_FILE` pointing to a readable in-container path. `SECRET_KEY` takes precedence if both are set.
+- The underlying application secret must stay private and be backed up separately from SQLite data.
 - `DB_DRIVER` must match the actual runtime you intend to use.
 - Persistent database storage must exist for the engine you selected.
 - You must know whether you are running the local/private base compose path or a public reverse-proxy stack before changing cookie and proxy settings.
@@ -132,9 +133,11 @@ Use one of the example stacks as the supported public deployment path:
 Both examples assume:
 
 - the public hostname is `ovumcy.example.com`;
-- you create a local `.env` file next to the example `docker-compose.yml` with at least `SECRET_KEY=...`;
+- you create a local `.env` file next to the example `docker-compose.yml` with at least `SECRET_KEY=...` or `SECRET_KEY_FILE=...`;
 - the `ovumcy` service stays on a private Docker network and is not reachable directly from the host network;
 - public traffic reaches only the reverse proxy.
+
+If you choose `SECRET_KEY_FILE`, mount that file into the `ovumcy` container and use the in-container path in `.env`. The official compose examples include a commented bind-mount line for the common `/run/secrets/ovumcy_secret_key` path.
 
 Prefer the Caddy stack if you want automatic certificate management. Use the Nginx stack if you already manage TLS certificates yourself and can mount them into `./certs/fullchain.pem` and `./certs/privkey.pem`.
 Choose the SQLite baseline variants when you want the simplest public deployment. Choose the Postgres variants when you want the same proxy-only public exposure model with Postgres as the runtime engine.
@@ -157,7 +160,7 @@ Startup flow:
 
 1. Copy the example `docker-compose.yml` and `.env.example` into a dedicated deployment directory.
 2. Rename `.env.example` to `.env`.
-3. Set a strong `SECRET_KEY` and `POSTGRES_PASSWORD`.
+3. Set a strong application secret via `SECRET_KEY` or `SECRET_KEY_FILE`, and set `POSTGRES_PASSWORD`.
 4. Start the stack with `docker compose up -d`.
 5. Confirm `docker compose ps` shows both `postgres` and `ovumcy` healthy.
 6. Confirm `curl -fsS http://127.0.0.1:8080/healthz` succeeds.
@@ -198,12 +201,14 @@ For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.
 
 ## Secret Handling and Rotation
 
-Treat `SECRET_KEY` as part of the deployment identity, not as an ordinary tuning variable.
+Treat the application secret as part of the deployment identity, whether you pass it via `SECRET_KEY` or `SECRET_KEY_FILE`.
 
-- Store it privately and back it up separately from the SQLite archive.
-- Rotating `SECRET_KEY` invalidates existing sealed cookies and active sign-ins.
-- Restoring SQLite data with a different `SECRET_KEY` is valid, but users should expect a fresh sign-in and new sealed-cookie state.
-- Do not paste `SECRET_KEY`, backup archives, or certificate material into issue trackers, chat logs, or shared shell history.
+- `SECRET_KEY_FILE` should point to a readable path inside the running process or container. Trailing newlines are trimmed, but the secret still needs 32+ non-placeholder characters.
+- `SECRET_KEY` takes precedence if both secret sources are configured.
+- Store the underlying secret privately and back it up separately from the SQLite archive.
+- Rotating the application secret invalidates existing sealed cookies and active sign-ins.
+- Restoring SQLite data with a different application secret is valid, but users should expect a fresh sign-in and new sealed-cookie state.
+- Do not paste the application secret, backup archives, or certificate material into issue trackers, chat logs, or shared shell history.
 
 ## Backup and Restore Contract
 
@@ -211,8 +216,8 @@ The supported self-hosted backup contract is intentionally narrow:
 
 - Back up the SQLite data volume before every upgrade and before any manual recovery work.
 - Treat every backup archive as sensitive health data.
-- Keep `.env` and `SECRET_KEY` backed up separately from the SQLite data archive.
-- Expect existing auth-related cookies to become invalid if you restore data with a different `SECRET_KEY`.
+- Keep `.env` and the application secret backup (`SECRET_KEY` value or the file behind `SECRET_KEY_FILE`) separate from the SQLite data archive.
+- Expect existing auth-related cookies to become invalid if you restore data with a different application secret.
 
 For the bundled local/private Postgres stack, use native PostgreSQL backup tooling instead of the SQLite archive workflow:
 
@@ -227,7 +232,7 @@ Restore with the app stopped and the target database intentionally selected:
 cat backups/ovumcy-postgres.sql | docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
 ```
 
-Keep the SQL dump and `.env` / `SECRET_KEY` backup separate, just as you would for the SQLite baseline.
+Keep the SQL dump and `.env` / application-secret backup separate, just as you would for the SQLite baseline.
 
 The same rule applies to the public Postgres reverse-proxy stacks. Back up PostgreSQL with `pg_dump` or your platform-native Postgres snapshot tooling; do not try to apply the SQLite file-copy runbook to those stacks.
 
@@ -359,7 +364,7 @@ Typical failure split:
   start from the dedicated Caddy or Nginx example stack, then migrate your existing SQLite volume into that stack instead of exposing the base compose app port directly.
 - Changing the proxy subnet or host:
   update the Docker subnet or proxy IP and `TRUSTED_PROXIES` together; treating only one side as changed is a common source of broken real-client IP handling.
-- Rotating `SECRET_KEY`:
+- Rotating the application secret:
   treat it as planned maintenance; active sessions and sealed cookies will stop working, which is expected.
 - Seeing healthy containers but a failing public URL:
   check DNS, certificate mounts, and proxy config before changing application data or restoring backups.
@@ -372,7 +377,7 @@ Use it only after the baseline path is already stable.
 
 Recommended advanced practices:
 
-- Keep at least one recent off-host backup copy of the SQLite archive and store the `.env` / `SECRET_KEY` backup separately from that data copy.
+- Keep at least one recent off-host backup copy of the SQLite archive and store the `.env` / application-secret backup separately from that data copy.
 - Run periodic restore drills into an isolated temporary stack and verify both `/healthz` and a normal page load before trusting the backup chain.
 - Restrict Docker, shell, and filesystem access so that only a small number of administrators can read `.env`, logs, the SQLite volume, or backup archives.
 - Rotate or ship logs to a private operator-controlled sink, and keep retention short enough that routine diagnostics do not become a second long-term data store.

@@ -20,67 +20,113 @@ import (
 )
 
 func TestResolveSecretKey(t *testing.T) {
-	t.Setenv("SECRET_KEY", "")
-	if _, err := resolveSecretKey(); err == nil {
-		t.Fatal("expected error when SECRET_KEY is empty")
-	}
-
-	t.Setenv("SECRET_KEY", "change_me_in_production")
-	if _, err := resolveSecretKey(); err == nil {
-		t.Fatal("expected error when SECRET_KEY uses insecure placeholder")
-	}
-
-	t.Setenv("SECRET_KEY", "replace_with_at_least_32_random_characters")
-	if _, err := resolveSecretKey(); err == nil {
-		t.Fatal("expected error when SECRET_KEY uses example placeholder")
-	}
-
-	t.Setenv("SECRET_KEY", "too-short-secret")
-	if _, err := resolveSecretKey(); err == nil {
-		t.Fatal("expected error when SECRET_KEY is too short")
-	}
-
 	valid := "0123456789abcdef0123456789abcdef"
-	t.Setenv("SECRET_KEY", valid)
+	t.Run("requires a secret source", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", "")
+		assertResolveSecretKeyError(t, "SECRET_KEY is required")
+	})
 
-	secret, err := resolveSecretKey()
-	if err != nil {
-		t.Fatalf("expected valid secret, got error: %v", err)
-	}
-	if secret != valid {
-		t.Fatalf("expected %q, got %q", valid, secret)
-	}
+	t.Run("rejects insecure placeholder values from environment", func(t *testing.T) {
+		t.Setenv("SECRET_KEY_FILE", "")
+		t.Setenv("SECRET_KEY", "change_me_in_production")
+		assertResolveSecretKeyError(t, "placeholder value")
 
-	// SECRET_KEY_FILE support
-	t.Setenv("SECRET_KEY", "")
-	t.Setenv("SECRET_KEY_FILE", "")
-	filePath := filepath.Join(t.TempDir(), "secret_key.txt")
-	if err := os.WriteFile(filePath, []byte(valid), 0600); err != nil {
-		t.Fatalf("failed to write secret key file: %v", err)
-	}
-	t.Setenv("SECRET_KEY_FILE", filePath)
+		t.Setenv("SECRET_KEY", "replace_with_at_least_32_random_characters")
+		assertResolveSecretKeyError(t, "placeholder value")
+	})
 
-	secret, err = resolveSecretKey()
-	if err != nil {
-		t.Fatalf("expected valid secret from file, got error: %v", err)
-	}
-	if secret != valid {
-		t.Fatalf("expected %q from file, got %q", valid, secret)
-	}
+	t.Run("rejects short environment secrets", func(t *testing.T) {
+		t.Setenv("SECRET_KEY_FILE", "")
+		t.Setenv("SECRET_KEY", "too-short-secret")
+		assertResolveSecretKeyError(t, "at least 32 characters")
+	})
 
-	// SECRET_KEY takes precedence over SECRET_KEY_FILE
-	other := "fedcba9876543210fedcba9876543210"
-	os.WriteFile(filePath, []byte(other), 0600)
-	t.Setenv("SECRET_KEY", valid)
-	secret, err = resolveSecretKey()
-	if err != nil {
-		t.Fatalf("expected env secret to win, got error: %v", err)
+	t.Run("accepts a valid environment secret", func(t *testing.T) {
+		t.Setenv("SECRET_KEY_FILE", "")
+		t.Setenv("SECRET_KEY", valid)
+
+		secret, err := resolveSecretKey()
+		if err != nil {
+			t.Fatalf("expected valid secret, got error: %v", err)
+		}
+		if secret != valid {
+			t.Fatalf("expected %q, got %q", valid, secret)
+		}
+	})
+
+	t.Run("reads and trims SECRET_KEY_FILE", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", writeSecretKeyFile(t, valid+"\n"))
+
+		secret, err := resolveSecretKey()
+		if err != nil {
+			t.Fatalf("expected valid secret from file, got error: %v", err)
+		}
+		if secret != valid {
+			t.Fatalf("expected %q from file, got %q", valid, secret)
+		}
+	})
+
+	t.Run("SECRET_KEY takes precedence over SECRET_KEY_FILE", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", valid)
+		t.Setenv("SECRET_KEY_FILE", filepath.Join(t.TempDir(), "missing-secret.txt"))
+
+		secret, err := resolveSecretKey()
+		if err != nil {
+			t.Fatalf("expected env secret to win, got error: %v", err)
+		}
+		if secret != valid {
+			t.Fatalf("expected %q from env, got %q", valid, secret)
+		}
+	})
+
+	t.Run("fails when SECRET_KEY_FILE cannot be read", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", filepath.Join(t.TempDir(), "missing-secret.txt"))
+		assertResolveSecretKeyError(t, "failed to read SECRET_KEY_FILE")
+	})
+
+	t.Run("rejects whitespace-only SECRET_KEY_FILE values", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", writeSecretKeyFile(t, " \n\t "))
+		assertResolveSecretKeyError(t, "SECRET_KEY is required")
+	})
+
+	t.Run("rejects insecure placeholder values from SECRET_KEY_FILE", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", writeSecretKeyFile(t, "change_me_in_production\n"))
+		assertResolveSecretKeyError(t, "placeholder value")
+	})
+
+	t.Run("rejects short SECRET_KEY_FILE values", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", writeSecretKeyFile(t, "too-short-secret\n"))
+		assertResolveSecretKeyError(t, "at least 32 characters")
+	})
+}
+
+func assertResolveSecretKeyError(t *testing.T, expectedSubstring string) {
+	t.Helper()
+
+	_, err := resolveSecretKey()
+	if err == nil {
+		t.Fatalf("expected error containing %q", expectedSubstring)
 	}
-	if secret != valid {
-		t.Fatalf("expected %q from env, got %q", valid, secret)
+	if !strings.Contains(err.Error(), expectedSubstring) {
+		t.Fatalf("expected error containing %q, got %v", expectedSubstring, err)
 	}
 }
 
+func writeSecretKeyFile(t *testing.T, contents string) string {
+	t.Helper()
+
+	filePath := filepath.Join(t.TempDir(), "secret_key.txt")
+	if err := os.WriteFile(filePath, []byte(contents), 0o600); err != nil {
+		t.Fatalf("failed to write secret key file: %v", err)
+	}
+	return filePath
+}
 
 func TestResolveDatabaseConfigDefaultsToSQLite(t *testing.T) {
 	t.Setenv("DB_DRIVER", "")

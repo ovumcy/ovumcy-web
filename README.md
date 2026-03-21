@@ -169,7 +169,7 @@ For public GHCR images, pull does not require GitHub login. `docker compose up -
 mkdir -p ovumcy && cd ovumcy
 curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/terraincognita07/ovumcy/main/docker-compose.yml
 curl -fsSL -o .env https://raw.githubusercontent.com/terraincognita07/ovumcy/main/.env.example
-# edit SECRET_KEY in .env
+# set SECRET_KEY in .env, or mount a secret file and set SECRET_KEY_FILE
 docker compose up -d
 ```
 
@@ -205,10 +205,22 @@ export SECRET_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toSt
 go run ./cmd/ovumcy
 ```
 
+Or keep the secret in a readable file and point `SECRET_KEY_FILE` at that path:
+
+```bash
+export SECRET_KEY_FILE=/absolute/path/to/ovumcy-secret.txt
+go run ./cmd/ovumcy
+```
+
 PowerShell:
 
 ```powershell
 $env:SECRET_KEY = node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+go run ./cmd/ovumcy
+```
+
+```powershell
+$env:SECRET_KEY_FILE = "C:\\path\\to\\ovumcy-secret.txt"
 go run ./cmd/ovumcy
 ```
 
@@ -220,8 +232,9 @@ Most self-hosted setups only need a small set of variables:
 TZ=UTC
 DEFAULT_LANGUAGE=en
 REGISTRATION_MODE=open
-# Set a unique 32+ character secret before first start.
+# Set one secret source before first start. SECRET_KEY wins if both are set.
 SECRET_KEY=
+# SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key
 PORT=8080
 HOST_BIND_ADDRESS=127.0.0.1
 COOKIE_SECURE=false
@@ -237,8 +250,10 @@ TRUSTED_PROXIES=127.0.0.1,::1
 
 Important notes:
 
-- Always set a strong `SECRET_KEY`.
-- `DEFAULT_LANGUAGE` supports `en`, `ru`, `es` and `fr`.
+- Always set a strong secret through `SECRET_KEY` or `SECRET_KEY_FILE`.
+- `SECRET_KEY_FILE` must point to a readable file path for the running process. In Docker-based deployments, that means a path inside the container after you mount the file.
+- `SECRET_KEY` takes precedence if both `SECRET_KEY` and `SECRET_KEY_FILE` are set.
+- `DEFAULT_LANGUAGE` supports `en`, `ru`, `es`, and `fr`.
 - `REGISTRATION_MODE` supports `open` and `closed`; use `closed` for pre-provisioned or otherwise operator-restricted internet-facing instances where self-service sign-up must stay disabled.
 - `HOST_BIND_ADDRESS=127.0.0.1` keeps the base compose path local/private by default. Only change it deliberately for a specific private-network bind.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.

@@ -28,7 +28,8 @@ services:
       TZ: ${TZ:-UTC}
       DEFAULT_LANGUAGE: ${DEFAULT_LANGUAGE:-en}
       DB_DRIVER: postgres
-      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      SECRET_KEY: ${SECRET_KEY:-}
+      SECRET_KEY_FILE: ${SECRET_KEY_FILE:-}
       DATABASE_URL: postgres://${POSTGRES_USER:-ovumcy}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-ovumcy}?sslmode=disable
       COOKIE_SECURE: "true"
       RATE_LIMIT_LOGIN_MAX: ${RATE_LIMIT_LOGIN_MAX:-8}
@@ -48,6 +49,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    # Optional: mount a file-backed app secret and set SECRET_KEY_FILE=/run/secrets/ovumcy_secret_key in .env
+    # volumes:
+    #   - ./secrets/ovumcy_secret_key:/run/secrets/ovumcy_secret_key:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 30s
