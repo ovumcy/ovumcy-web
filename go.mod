@@ -1,6 +1,6 @@
 module github.com/terraincognita07/ovumcy
 
-go 1.24.13
+go 1.25.8
 
 require (
 	github.com/glebarez/sqlite v1.11.0

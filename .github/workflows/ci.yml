@@ -58,6 +58,7 @@ jobs:
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
       - name: Upload coverage to Codecov
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
           files: coverage.out
