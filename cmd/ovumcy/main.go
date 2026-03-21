@@ -472,11 +472,11 @@ func resolveSecretKey() (string, error) {
 	if secret == "" {
 		keyFilePath := strings.TrimSpace(os.Getenv("SECRET_KEY_FILE"))
 		if keyFilePath != "" {
-			content, err := os.ReadFile(keyFilePath)
+			content, err := readSecretKeyFile(keyFilePath)
 			if err != nil {
 				return "", fmt.Errorf("failed to read SECRET_KEY_FILE: %w", err)
 			}
-			secret = strings.TrimSpace(string(content))
+			secret = strings.TrimSpace(content)
 		}
 	}
 
@@ -493,6 +493,34 @@ func resolveSecretKey() (string, error) {
 		return "", fmt.Errorf("SECRET_KEY must be at least 32 characters")
 	}
 	return secret, nil
+}
+
+func readSecretKeyFile(path string) (string, error) {
+	cleanedPath := filepath.Clean(path)
+	rootDir := "."
+	relativePath := cleanedPath
+
+	if filepath.IsAbs(cleanedPath) {
+		rootDir = filepath.VolumeName(cleanedPath) + string(filepath.Separator)
+
+		relPath, err := filepath.Rel(rootDir, cleanedPath)
+		if err != nil {
+			return "", err
+		}
+		relativePath = relPath
+	}
+
+	root, err := os.OpenRoot(rootDir)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+
+	content, err := root.ReadFile(relativePath)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
 }
 
 func resolvePort() (string, error) {
