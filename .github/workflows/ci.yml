@@ -59,11 +59,17 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        id: codecov
+        continue-on-error: ${{ github.event_name == 'push' }}
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
           files: coverage.out
           use_oidc: true
           fail_ci_if_error: true
+
+      - name: Warn on non-blocking Codecov failure
+        if: ${{ github.event_name == 'push' && steps.codecov.outcome == 'failure' }}
+        run: echo "::warning::Codecov upload failed on push. Coverage was generated locally, but Codecov ingest returned an external error."
 
       - name: Frontend build
         run: npm run build

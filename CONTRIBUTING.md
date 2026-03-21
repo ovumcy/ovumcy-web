@@ -28,7 +28,7 @@ go run ./cmd/ovumcy
 ## Reporting Bugs
 
 Before opening a bug, check existing issues:
-- https://github.com/terraincognita07/ovumcy/issues
+- https://github.com/ovumcy/ovumcy-web/issues
 
 When opening a bug report, include:
 - environment (OS, browser, Go/Node versions),

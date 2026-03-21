@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Public repository, badge, and documentation links now point to `github.com/ovumcy/ovumcy-web`. Historical `v0.7.0` image examples still reference the pre-transfer GHCR tag path until the next tagged image is published under the new namespace.
+
 ## [0.7.0] - 2026-03-16
 
 ### Added
@@ -184,16 +187,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/terraincognita07/ovumcy/compare/v0.7.0...HEAD
-[0.7.0]: https://github.com/terraincognita07/ovumcy/compare/v0.6.1...v0.7.0
-[0.6.1]: https://github.com/terraincognita07/ovumcy/compare/v0.6.0...v0.6.1
-[0.6.0]: https://github.com/terraincognita07/ovumcy/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/terraincognita07/ovumcy/compare/v0.4.1...v0.5.0
-[0.4.1]: https://github.com/terraincognita07/ovumcy/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/terraincognita07/ovumcy/compare/v0.3.2...v0.4.0
-[0.3.2]: https://github.com/terraincognita07/ovumcy/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/terraincognita07/ovumcy/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/terraincognita07/ovumcy/compare/v0.2.5...v0.3.0
-[0.2.5]: https://github.com/terraincognita07/ovumcy/compare/v0.2.0...v0.2.5
-[0.2.0]: https://github.com/terraincognita07/ovumcy/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/terraincognita07/ovumcy/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.3.2...v0.4.0
+[0.3.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.2.5...v0.3.0
+[0.2.5]: https://github.com/ovumcy/ovumcy-web/compare/v0.2.0...v0.2.5
+[0.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/ovumcy/ovumcy-web/releases/tag/v0.1.0

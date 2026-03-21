@@ -1,13 +1,13 @@
-[![CI](https://github.com/terraincognita07/ovumcy/actions/workflows/ci.yml/badge.svg)](https://github.com/terraincognita07/ovumcy/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/terraincognita07/ovumcy/actions/workflows/codeql.yml/badge.svg)](https://github.com/terraincognita07/ovumcy/actions/workflows/codeql.yml)
-[![Coverage](https://codecov.io/gh/terraincognita07/ovumcy/graph/badge.svg)](https://codecov.io/gh/terraincognita07/ovumcy)
-[![Go Report Card](https://goreportcard.com/badge/github.com/terraincognita07/ovumcy)](https://goreportcard.com/report/github.com/terraincognita07/ovumcy)
-[![Release](https://img.shields.io/github/v/release/terraincognita07/ovumcy?display_name=tag)](https://github.com/terraincognita07/ovumcy/releases)
+[![CI](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml)
+[![Coverage](https://codecov.io/gh/ovumcy/ovumcy-web/graph/badge.svg)](https://app.codecov.io/gh/ovumcy/ovumcy-web)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ovumcy/ovumcy-web)](https://goreportcard.com/report/github.com/ovumcy/ovumcy-web)
+[![Release](https://img.shields.io/github/v/release/ovumcy/ovumcy-web?display_name=tag)](https://github.com/ovumcy/ovumcy-web/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](https://github.com/terraincognita07/ovumcy/pkgs/container/ovumcy)
-[![Self-hosted](https://img.shields.io/badge/Self--hosted-yes-2ea44f)](https://github.com/terraincognita07/ovumcy/blob/main/docs/self-hosted.md)
-[![No telemetry](https://img.shields.io/badge/Telemetry-none-2ea44f)](https://github.com/terraincognita07/ovumcy#privacy-and-security)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](https://github.com/ovumcy/ovumcy-web/actions/workflows/docker-image.yml)
+[![Self-hosted](https://img.shields.io/badge/Self--hosted-yes-2ea44f)](https://github.com/ovumcy/ovumcy-web/blob/main/docs/self-hosted.md)
+[![No telemetry](https://img.shields.io/badge/Telemetry-none-2ea44f)](https://github.com/ovumcy/ovumcy-web#privacy-and-security)
 
 <p align="center">
   <img src="docs/screenshots/ovumcy-logo-horizontal.svg" alt="Ovumcy" width="640">
@@ -163,12 +163,14 @@ SQLite (default) / PostgreSQL (advanced)
 
 Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/terraincognita07/ovumcy:v0.7.0`).
 
+The GitHub repository now lives at `github.com/ovumcy/ovumcy-web`. The current `v0.7.0` examples keep the historical GHCR image path until the next tagged release is published under the new namespace.
+
 For public GHCR images, pull does not require GitHub login. `docker compose up -d` is enough because `pull_policy: always` is enabled.
 
 ```bash
 mkdir -p ovumcy && cd ovumcy
-curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/terraincognita07/ovumcy/main/docker-compose.yml
-curl -fsSL -o .env https://raw.githubusercontent.com/terraincognita07/ovumcy/main/.env.example
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/ovumcy/ovumcy-web/main/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/ovumcy/ovumcy-web/main/.env.example
 # set SECRET_KEY in .env, or mount a secret file and set SECRET_KEY_FILE
 docker compose up -d
 ```
@@ -197,8 +199,8 @@ Requirements:
 - Node.js 18+
 
 ```bash
-git clone https://github.com/terraincognita07/ovumcy.git
-cd ovumcy
+git clone https://github.com/ovumcy/ovumcy-web.git
+cd ovumcy-web
 npm ci
 npm run build
 export SECRET_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")"
@@ -306,7 +308,7 @@ Dedicated security workflows run CodeQL plus `gosec`, Trivy filesystem/container
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 For bugs and feature requests, open a GitHub issue:
-- https://github.com/terraincognita07/ovumcy/issues
+- https://github.com/ovumcy/ovumcy-web/issues
 
 ## Releases
 
