@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,7 +50,37 @@ func TestResolveSecretKey(t *testing.T) {
 	if secret != valid {
 		t.Fatalf("expected %q, got %q", valid, secret)
 	}
+
+	// SECRET_KEY_FILE support
+	t.Setenv("SECRET_KEY", "")
+	t.Setenv("SECRET_KEY_FILE", "")
+	filePath := filepath.Join(t.TempDir(), "secret_key.txt")
+	if err := os.WriteFile(filePath, []byte(valid), 0600); err != nil {
+		t.Fatalf("failed to write secret key file: %v", err)
+	}
+	t.Setenv("SECRET_KEY_FILE", filePath)
+
+	secret, err = resolveSecretKey()
+	if err != nil {
+		t.Fatalf("expected valid secret from file, got error: %v", err)
+	}
+	if secret != valid {
+		t.Fatalf("expected %q from file, got %q", valid, secret)
+	}
+
+	// SECRET_KEY takes precedence over SECRET_KEY_FILE
+	other := "fedcba9876543210fedcba9876543210"
+	os.WriteFile(filePath, []byte(other), 0600)
+	t.Setenv("SECRET_KEY", valid)
+	secret, err = resolveSecretKey()
+	if err != nil {
+		t.Fatalf("expected env secret to win, got error: %v", err)
+	}
+	if secret != valid {
+		t.Fatalf("expected %q from env, got %q", valid, secret)
+	}
 }
+
 
 func TestResolveDatabaseConfigDefaultsToSQLite(t *testing.T) {
 	t.Setenv("DB_DRIVER", "")

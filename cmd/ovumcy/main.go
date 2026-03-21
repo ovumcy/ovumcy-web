@@ -470,6 +470,17 @@ func getEnv(key string, fallback string) string {
 func resolveSecretKey() (string, error) {
 	secret := strings.TrimSpace(os.Getenv("SECRET_KEY"))
 	if secret == "" {
+		keyFilePath := strings.TrimSpace(os.Getenv("SECRET_KEY_FILE"))
+		if keyFilePath != "" {
+			content, err := os.ReadFile(keyFilePath)
+			if err != nil {
+				return "", fmt.Errorf("failed to read SECRET_KEY_FILE: %w", err)
+			}
+			secret = strings.TrimSpace(string(content))
+		}
+	}
+
+	if secret == "" {
 		return "", fmt.Errorf("SECRET_KEY is required")
 	}
 
