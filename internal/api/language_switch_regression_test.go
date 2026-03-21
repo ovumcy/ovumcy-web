@@ -41,6 +41,14 @@ func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 			expectedTitle:      "Mantener la sesión iniciada durante 30 días",
 			expectedHelperText: "solo hasta que cierres el navegador",
 		},
+		{
+			name:               "french",
+			switchPath:         "/lang/fr?next=/login",
+			expectedCookie:     "fr",
+			expectedHTMLLang:   "fr",
+			expectedTitle:      "Rester connecté(e) pendant 30 jours",
+			expectedHelperText: "fermeture du navigateur",
+		},
 	}
 
 	for _, testCase := range tests {
