@@ -13,6 +13,7 @@ const (
 	LangRU = "ru"
 	LangEN = "en"
 	LangES = "es"
+	LangFR = "fr"
 )
 
 type Manager struct {
@@ -60,7 +61,7 @@ func NewManager(defaultLanguage string, localesDir string) (*Manager, error) {
 		return nil, fmt.Errorf("no locales found in %s", localesDir)
 	}
 
-	for _, language := range []string{LangEN, LangES, LangRU} {
+	for _, language := range []string{LangEN, LangES, LangRU, LangFR} {
 		if _, ok := manager.locales[language]; !ok {
 			return nil, fmt.Errorf("required locale %q missing", language)
 		}

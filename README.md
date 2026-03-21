@@ -115,6 +115,7 @@ The privacy-safe hero demo asset pack, including the mobile install prompt captu
 | English | `en` | Full first-party UI localization | Supported |
 | Russian | `ru` | Full first-party UI localization | Supported |
 | Spanish | `es` | Full first-party UI localization | Supported |
+| French | `fr` | Full first-party UI localization | Supported |
 
 These are the currently supported first-party UI languages. Operators can set `DEFAULT_LANGUAGE` to any of the codes above, and users can switch language from the UI without changing deployment defaults.
 
@@ -237,7 +238,7 @@ TRUSTED_PROXIES=127.0.0.1,::1
 Important notes:
 
 - Always set a strong `SECRET_KEY`.
-- `DEFAULT_LANGUAGE` supports `en`, `ru`, and `es`.
+- `DEFAULT_LANGUAGE` supports `en`, `ru`, `es` and `fr`.
 - `REGISTRATION_MODE` supports `open` and `closed`; use `closed` for pre-provisioned or otherwise operator-restricted internet-facing instances where self-service sign-up must stay disabled.
 - `HOST_BIND_ADDRESS=127.0.0.1` keeps the base compose path local/private by default. Only change it deliberately for a specific private-network bind.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.

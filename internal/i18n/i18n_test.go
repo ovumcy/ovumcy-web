@@ -11,8 +11,8 @@ func TestManagerSupportsSpanishLocale(t *testing.T) {
 	manager := newTestI18nManager(t, LangES)
 
 	supported := manager.SupportedLanguages()
-	if !slices.Equal(supported, []string{LangEN, LangES, LangRU}) {
-		t.Fatalf("expected sorted supported languages [en es ru], got %#v", supported)
+	if !slices.Equal(supported, []string{LangEN, LangES, LangFR, LangRU}) {
+		t.Fatalf("expected sorted supported languages [en es ru fr], got %#v", supported)
 	}
 	if manager.DefaultLanguage() != LangES {
 		t.Fatalf("expected default language %q, got %q", LangES, manager.DefaultLanguage())

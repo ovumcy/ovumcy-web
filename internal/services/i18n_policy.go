@@ -110,6 +110,17 @@ func LocalizedSymptomFrequencySummary(language string, count int, days int) stri
 		}
 		return fmt.Sprintf("%d %s (en %d %s)", count, countWord, days, dayWord)
 	}
+	if lang == "fr" {
+		countWord := "fois"
+		if count == 1 {
+			countWord = "fois"
+		}
+		dayWord := "jours"
+		if days == 1 {
+			dayWord = "jour"
+		}
+		return fmt.Sprintf("%d %s (en %d %s)", count, countWord, days, dayWord)
+	}
 
 	countWord := "times"
 	if count == 1 {

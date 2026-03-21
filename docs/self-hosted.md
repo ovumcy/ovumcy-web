@@ -71,7 +71,7 @@ Do not start from the base compose file and then expose `8080` publicly as a sho
 
 These settings are valid, but they are not required for a safe first deployment:
 
-- `TZ` and `DEFAULT_LANGUAGE` (`en`, `ru`, `es`) for operator preference
+- `TZ` and `DEFAULT_LANGUAGE` (`en`, `ru`, `es`, `fr`) for operator preference
 - rate-limit variables if you need stricter or looser local policy
 - `PROXY_HEADER` only if your trusted proxy uses a different real-client header contract
 - `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to Postgres, either through the bundled local/private Postgres stack or an operator-managed database service

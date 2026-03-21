@@ -204,6 +204,9 @@
     if (normalized === "es") {
       return "es-ES";
     }
+    if (normalized === "fr") {
+      return "fr-FR";
+    }
     return "en-US";
   }
 

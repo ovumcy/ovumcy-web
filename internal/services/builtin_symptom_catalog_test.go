@@ -17,7 +17,7 @@ func (stub stubBuiltinSymptomMessages) Messages(language string) map[string]stri
 
 func TestBuiltinSymptomReservedNamesIncludesLocalizedLabels(t *testing.T) {
 	provider := stubBuiltinSymptomMessages{
-		supported: []string{"en", "ru", "de"},
+		supported: []string{"en", "ru", "de", "fr"},
 		messages: map[string]map[string]string{
 			"ru": {
 				"symptoms.fatigue": "Усталость",
