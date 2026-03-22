@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-03-22
+
+### Added
+- First-party French and German UI localization across server-rendered pages, language switching, and onboarding date accessibility labels.
+- Supported `SECRET_KEY_FILE` as a file-backed runtime secret source for self-hosted deployments, together with regression coverage and operator-facing documentation.
+
 ### Changed
-- Public repository, badge, and documentation links now point to `github.com/ovumcy/ovumcy-web`. Historical `v0.7.0` image examples still reference the pre-transfer GHCR tag path until the next tagged image is published under the new namespace.
+- Public repository, badge, and documentation links now point to `github.com/ovumcy/ovumcy-web`.
+- Official compose files and quick-start examples now pin `ghcr.io/ovumcy/ovumcy-web:v0.7.1`, matching the post-transfer GHCR namespace for tagged releases.
+- README no longer shows the Go Report Card badge, because the external report tracks tagged releases and could misstate the quality of the current `main` branch.
+- CI now treats Codecov upload failures on `push` as non-blocking external errors so downstream smoke lanes still run when Codecov ingest is unavailable.
+
+### Security
+- The runtime image and Go toolchain are now pinned to Go `1.25.8`, removing the vulnerable stdlib version previously flagged by Trivy.
+- The transitive `flatted` dependency is updated to `3.4.2`.
+- No auth/session, privacy-boundary, export-data, or role-access contract was weakened in this release.
 
 ## [0.7.0] - 2026-03-16
 
@@ -187,7 +201,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.5.0...v0.6.0
