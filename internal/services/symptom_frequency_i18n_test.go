@@ -68,6 +68,27 @@ func TestLocalizedSymptomFrequencySummary_SpanishPluralization(t *testing.T) {
 	}
 }
 
+func TestLocalizedSymptomFrequencySummary_GermanPluralization(t *testing.T) {
+	tests := []struct {
+		name     string
+		count    int
+		days     int
+		expected string
+	}{
+		{name: "singular day", count: 1, days: 1, expected: "1 Mal (an 1 Tag)"},
+		{name: "plural day", count: 2, days: 4, expected: "2 Mal (an 4 Tagen)"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := LocalizedSymptomFrequencySummary("de", testCase.count, testCase.days)
+			if got != testCase.expected {
+				t.Fatalf("expected %q, got %q", testCase.expected, got)
+			}
+		})
+	}
+}
+
 func TestLocalizedSymptomFrequencySummary_FrenchPluralization(t *testing.T) {
 	tests := []struct {
 		name     string

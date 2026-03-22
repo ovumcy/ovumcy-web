@@ -7,6 +7,7 @@ import (
 )
 
 var monthNames = map[string][]string{
+	"de": {"Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"},
 	"en": {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"},
 	"es": {"Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"},
 	"fr": {"Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"},
@@ -14,6 +15,7 @@ var monthNames = map[string][]string{
 }
 
 var monthLongNames = map[string][]string{
+	"de": {"Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"},
 	"en": {"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"},
 	"es": {"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"},
 	"fr": {"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"},
@@ -21,6 +23,7 @@ var monthLongNames = map[string][]string{
 }
 
 var weekdayShortNames = map[string][]string{
+	"de": {"So.", "Mo.", "Di.", "Mi.", "Do.", "Fr.", "Sa."},
 	"en": {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"},
 	"es": {"dom", "lun", "mar", "mié", "jue", "vie", "sáb"},
 	"fr": {"dim", "lun", "mar", "mer", "jeu", "ven", "sam"},
@@ -28,6 +31,7 @@ var weekdayShortNames = map[string][]string{
 }
 
 var weekdayLongNames = map[string][]string{
+	"de": {"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"},
 	"en": {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
 	"es": {"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"},
 	"fr": {"dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"},
@@ -35,6 +39,7 @@ var weekdayLongNames = map[string][]string{
 }
 
 var monthShortNames = map[string][]string{
+	"de": {"Jan.", "Feb.", "Mär.", "Apr.", "Mai", "Juni", "Juli", "Aug.", "Sep.", "Okt.", "Nov.", "Dez."},
 	"en": {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"},
 	"es": {"ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"},
 	"fr": {"jan", "fév", "mar", "avr", "mai", "jun", "jul", "aoû", "sep", "oct", "nov", "déc"},
@@ -77,6 +82,9 @@ func LocalizedDateLabel(language string, value time.Time) string {
 	if lang == "es" {
 		return fmt.Sprintf("%s, %d %s", weekday, value.Day(), month)
 	}
+	if lang == "de" {
+		return fmt.Sprintf("%s, %d. %s", weekday, value.Day(), month)
+	}
 	if lang == "fr" {
 		return fmt.Sprintf("%s %d %s", weekday, value.Day(), month)
 	}
@@ -103,6 +111,9 @@ func LocalizedDashboardDate(language string, value time.Time) string {
 	if lang == "es" {
 		return fmt.Sprintf("%d de %s de %d, %s", value.Day(), month, value.Year(), weekday)
 	}
+	if lang == "de" {
+		return fmt.Sprintf("%s, %d. %s %d", weekday, value.Day(), month, value.Year())
+	}
 	if lang == "fr" {
 		// French: "lundi 21 mars 2026"
 		return fmt.Sprintf("%s %d %s %d", weekday, value.Day(), month, value.Year())
@@ -126,6 +137,14 @@ func LocalizedDateDisplay(language string, value time.Time) string {
 			return value.Format("2 Jan 2006")
 		}
 		return fmt.Sprintf("%d %s %d", value.Day(), months[monthIndex], value.Year())
+	}
+	if lang == "de" {
+		months := monthShortNames[lang]
+		monthIndex := int(value.Month()) - 1
+		if monthIndex < 0 || monthIndex >= len(months) {
+			return value.Format("2 Jan 2006")
+		}
+		return fmt.Sprintf("%d. %s %d", value.Day(), months[monthIndex], value.Year())
 	}
 	if lang == "fr" {
 		months := monthShortNames[lang]
@@ -161,6 +180,14 @@ func LocalizedDateShort(language string, value time.Time) string {
 			return value.Format("2 Jan")
 		}
 		return fmt.Sprintf("%d %s", value.Day(), months[monthIndex])
+	}
+	if lang == "de" {
+		months := monthShortNames[lang]
+		monthIndex := int(value.Month()) - 1
+		if monthIndex < 0 || monthIndex >= len(months) {
+			return value.Format("2 Jan")
+		}
+		return fmt.Sprintf("%d. %s", value.Day(), months[monthIndex])
 	}
 	if lang == "fr" {
 		months := monthShortNames[lang]

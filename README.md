@@ -1,7 +1,6 @@
 [![CI](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml)
 [![Coverage](https://codecov.io/gh/ovumcy/ovumcy-web/graph/badge.svg)](https://app.codecov.io/gh/ovumcy/ovumcy-web)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ovumcy/ovumcy-web)](https://goreportcard.com/report/github.com/ovumcy/ovumcy-web)
 [![Release](https://img.shields.io/github/v/release/ovumcy/ovumcy-web?display_name=tag)](https://github.com/ovumcy/ovumcy-web/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://go.dev/)
@@ -105,7 +104,7 @@ The privacy-safe hero demo asset pack, including the mobile install prompt captu
 - Calendar and statistics views for longer-term pattern spotting.
 - Mobile home-screen install support on the current `main` branch.
 - CSV, JSON, and PDF export for backup, portability, and personal review.
-- English, Russian, and Spanish localization.
+- English, Russian, Spanish, French, and German localization.
 - Self-hosted deployment with Docker or a single Go binary.
 
 ## Supported Languages
@@ -116,6 +115,7 @@ The privacy-safe hero demo asset pack, including the mobile install prompt captu
 | Russian | `ru` | Full first-party UI localization | Supported |
 | Spanish | `es` | Full first-party UI localization | Supported |
 | French | `fr` | Full first-party UI localization | Supported |
+| German | `de` | Full first-party UI localization | Supported |
 
 These are the currently supported first-party UI languages. Operators can set `DEFAULT_LANGUAGE` to any of the codes above, and users can switch language from the UI without changing deployment defaults.
 
@@ -255,7 +255,7 @@ Important notes:
 - Always set a strong secret through `SECRET_KEY` or `SECRET_KEY_FILE`.
 - `SECRET_KEY_FILE` must point to a readable file path for the running process. In Docker-based deployments, that means a path inside the container after you mount the file.
 - `SECRET_KEY` takes precedence if both `SECRET_KEY` and `SECRET_KEY_FILE` are set.
-- `DEFAULT_LANGUAGE` supports `en`, `ru`, `es`, and `fr`.
+- `DEFAULT_LANGUAGE` supports `en`, `ru`, `es`, `fr`, and `de`.
 - `REGISTRATION_MODE` supports `open` and `closed`; use `closed` for pre-provisioned or otherwise operator-restricted internet-facing instances where self-service sign-up must stay disabled.
 - `HOST_BIND_ADDRESS=127.0.0.1` keeps the base compose path local/private by default. Only change it deliberately for a specific private-network bind.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.

@@ -42,6 +42,14 @@ func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 			expectedHelperText: "solo hasta que cierres el navegador",
 		},
 		{
+			name:               "german",
+			switchPath:         "/lang/de?next=/login",
+			expectedCookie:     "de",
+			expectedHTMLLang:   "de",
+			expectedTitle:      "30 Tage angemeldet bleiben",
+			expectedHelperText: "bis Sie den Browser schließen",
+		},
+		{
 			name:               "french",
 			switchPath:         "/lang/fr?next=/login",
 			expectedCookie:     "fr",

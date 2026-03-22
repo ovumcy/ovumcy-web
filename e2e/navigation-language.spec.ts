@@ -63,7 +63,7 @@ test.describe('Navigation and language switch', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
   });
 
-  test('language route on login page toggles EN/ES/RU/FR and persists after reload', async ({ page }) => {
+  test('language route on login page toggles EN/ES/RU/FR/DE and persists after reload', async ({ page }) => {
     await page.goto('/login');
     await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
 
@@ -106,6 +106,17 @@ test.describe('Navigation and language switch', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
     await expect(page.locator('h1.journal-title')).toContainText('Connexion à votre compte');
     await expect(page.locator('label[for="login-email"]')).toHaveText('E-mail');
+
+    await switchLanguageViaRoute(page, 'de', '/login');
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+    await expect(page.locator('h1.journal-title')).toContainText('Melden Sie sich bei Ihrem Konto an');
+    await expect(page.locator('label[for="login-email"]')).toHaveText('E-Mail');
+
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+    await expect(page.locator('h1.journal-title')).toContainText('Melden Sie sich bei Ihrem Konto an');
+    await expect(page.locator('label[for="login-email"]')).toHaveText('E-Mail');
   });
 
   test('language switch while logged in keeps current page and translates navigation/settings', async ({
@@ -148,9 +159,16 @@ test.describe('Navigation and language switch', () => {
     await expect(page.getByRole('link', { name: "Aujourd'hui" }).first()).toBeVisible();
     await expectDateFieldVisible(page, 'settings-last-period-start');
 
+    await page.locator('.lang-switch a[href^="/lang/de"]').click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+    await expect(page.locator('h1.journal-title')).toContainText('Einstellungen');
+    await expect(page.getByRole('link', { name: 'Heute' }).first()).toBeVisible();
+    await expectDateFieldVisible(page, 'settings-last-period-start');
+
     await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
-    await expect(page.locator('h1.journal-title')).toContainText('Paramètres');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+    await expect(page.locator('h1.journal-title')).toContainText('Einstellungen');
   });
 
   test('direct /recovery-code access without valid recovery context is blocked', async ({ page }) => {

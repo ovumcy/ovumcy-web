@@ -128,3 +128,36 @@ func TestOnboardingDateFieldUsesFrenchLabels(t *testing.T) {
 		t.Fatalf("expected french onboarding quick-pick two-days-ago label")
 	}
 }
+
+func TestOnboardingDateFieldUsesGermanLabels(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "onboarding-lang-de@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=de")
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("onboarding request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
+	}
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read onboarding body: %v", err)
+	}
+
+	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="Tag".*?aria-label="Monat".*?aria-label="Jahr"`).Match(body) {
+		t.Fatalf("expected german onboarding segmented date labels")
+	}
+	if !regexp.MustCompile(`data-yesterday-label="Gestern"`).Match(body) {
+		t.Fatalf("expected german onboarding quick-pick yesterday label")
+	}
+	if !regexp.MustCompile(`data-two-days-ago-label="Vor 2 Tagen"`).Match(body) {
+		t.Fatalf("expected german onboarding quick-pick two-days-ago label")
+	}
+}
