@@ -16,7 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Public repository, badge, and documentation links now point to `github.com/ovumcy/ovumcy-web`.
 - Official compose files and quick-start examples now pin `ghcr.io/ovumcy/ovumcy-web:v0.7.1`, matching the post-transfer GHCR namespace for tagged releases.
-- README no longer shows the Go Report Card badge, because the external report tracks tagged releases and could misstate the quality of the current `main` branch.
 - CI now treats Codecov upload failures on `push` as non-blocking external errors so downstream smoke lanes still run when Codecov ingest is unavailable.
 
 ### Security
