@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-03-24
+
+### Added
+- README now documents how `ovumcy-web`, `ovumcy-app`, and `ovumcy-sync-community` fit together as one product family.
+
+### Changed
+- `SECRET_KEY_FILE` now preserves operator-managed path semantics, so absolute secret file paths keep working after the runtime hardening change and startup errors still show the original unreadable path.
+- README restores the Go Report Card badge for `github.com/ovumcy/ovumcy-web`.
+- Official compose files and quick-start examples now pin `ghcr.io/ovumcy/ovumcy-web:v0.7.2`.
+
+### Security
+- No auth/session, privacy-boundary, export-data, or role-access contract was weakened in this release.
+
 ## [0.7.1] - 2026-03-22
 
 ### Added
@@ -200,7 +213,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.6.0...v0.6.1

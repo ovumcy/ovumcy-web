@@ -18,7 +18,7 @@ It is built for people who want fast daily tracking, useful cycle insights, and 
 
 Ovumcy runs as a single Go service with a server-rendered web UI, can be installed on a phone home screen, and supports SQLite by default with Postgres as an advanced self-hosted path.
 
-This README describes the current `main` branch. The latest tagged release is `v0.7.1`.
+This README describes the current `main` branch. The latest tagged release is `v0.7.2`.
 
 ## Clients And Deployment Models
 
@@ -177,9 +177,9 @@ SQLite (default) / PostgreSQL (advanced)
 
 ### Docker
 
-Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/ovumcy/ovumcy-web:v0.7.1`).
+Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/ovumcy/ovumcy-web:v0.7.2`).
 
-Tagged releases from `v0.7.1` onward publish under the new GHCR namespace `ghcr.io/ovumcy/ovumcy-web`.
+Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/ovumcy/ovumcy-web`.
 
 For public GHCR images, pull does not require GitHub login. `docker compose up -d` is enough because `pull_policy: always` is enabled.
 
@@ -194,7 +194,7 @@ docker compose up -d
 Override the pinned default image tag if needed:
 
 ```bash
-OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v0.7.1 docker compose up -d
+OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v0.7.2 docker compose up -d
 ```
 
 Then open `http://127.0.0.1:8080`.
@@ -328,7 +328,7 @@ For bugs and feature requests, open a GitHub issue:
 
 ## Releases
 
-- Latest tagged release: `v0.7.1`.
+- Latest tagged release: `v0.7.2`.
 - Publish release notes via GitHub Releases and keep [CHANGELOG.md](CHANGELOG.md) updated.
 
 ## Roadmap
