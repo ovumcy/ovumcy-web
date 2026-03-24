@@ -496,27 +496,8 @@ func resolveSecretKey() (string, error) {
 }
 
 func readSecretKeyFile(path string) (string, error) {
-	cleanedPath := filepath.Clean(path)
-	rootDir := "."
-	relativePath := cleanedPath
-
-	if filepath.IsAbs(cleanedPath) {
-		rootDir = filepath.VolumeName(cleanedPath) + string(filepath.Separator)
-
-		relPath, err := filepath.Rel(rootDir, cleanedPath)
-		if err != nil {
-			return "", err
-		}
-		relativePath = relPath
-	}
-
-	root, err := os.OpenRoot(rootDir)
-	if err != nil {
-		return "", err
-	}
-	defer root.Close()
-
-	content, err := root.ReadFile(relativePath)
+	// #nosec G304 -- SECRET_KEY_FILE is an operator-managed startup path, not request input.
+	content, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return "", err
 	}

@@ -83,8 +83,10 @@ func TestResolveSecretKey(t *testing.T) {
 
 	t.Run("fails when SECRET_KEY_FILE cannot be read", func(t *testing.T) {
 		t.Setenv("SECRET_KEY", "")
-		t.Setenv("SECRET_KEY_FILE", filepath.Join(t.TempDir(), "missing-secret.txt"))
+		missingPath := filepath.Join(t.TempDir(), "missing-secret.txt")
+		t.Setenv("SECRET_KEY_FILE", missingPath)
 		assertResolveSecretKeyError(t, "failed to read SECRET_KEY_FILE")
+		assertResolveSecretKeyError(t, missingPath)
 	})
 
 	t.Run("rejects whitespace-only SECRET_KEY_FILE values", func(t *testing.T) {
