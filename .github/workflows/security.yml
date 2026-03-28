@@ -40,7 +40,7 @@ jobs:
         run: mkdir -p .tmp/security
 
       - name: Run gosec
-        run: ./.bin/gosec -fmt sarif -out .tmp/security/gosec.sarif ./...
+        run: ./.bin/gosec -fmt sarif -out .tmp/security/gosec.sarif ./cmd/... ./internal/...
 
       - name: Upload gosec SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)

@@ -6,10 +6,12 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -20,11 +22,12 @@ import (
 
 const OIDCCallbackPath = "/auth/oidc/callback"
 const defaultOIDCHTTPTimeout = 10 * time.Second
+const maxOIDCCABundleBytes int64 = 1 << 20
 
 type OIDCLoginMode string
 
 const (
-	OIDCLoginModeHybrid  OIDCLoginMode = "hybrid"
+	OIDCLoginModeHybrid   OIDCLoginMode = "hybrid"
 	OIDCLoginModeOIDCOnly OIDCLoginMode = "oidc_only"
 )
 
@@ -37,16 +40,16 @@ const (
 )
 
 type OIDCConfig struct {
-	Enabled                    bool
-	IssuerURL                  string
-	ClientID                   string
-	ClientSecret               string
-	RedirectURL                string
-	CAFile                     string
-	AutoProvision              bool
-	LoginMode                  OIDCLoginMode
-	LogoutMode                 OIDCLogoutMode
-	PostLogoutRedirectURL      string
+	Enabled                     bool
+	IssuerURL                   string
+	ClientID                    string
+	ClientSecret                string
+	RedirectURL                 string
+	CAFile                      string
+	AutoProvision               bool
+	LoginMode                   OIDCLoginMode
+	LogoutMode                  OIDCLogoutMode
+	PostLogoutRedirectURL       string
 	AutoProvisionAllowedDomains []string
 }
 
@@ -428,15 +431,48 @@ func sanitizeOIDCEndSessionEndpoint(rawEndpoint string) string {
 }
 
 func validateOIDCCABundle(path string) error {
-	content, err := os.ReadFile(path)
+	content, err := readOIDCCABundle(path)
 	if err != nil {
-		return fmt.Errorf("OIDC_CA_FILE could not be read: %w", err)
+		return err
 	}
 	pool := x509.NewCertPool()
 	if ok := pool.AppendCertsFromPEM(content); !ok {
 		return errors.New("OIDC_CA_FILE must contain at least one PEM certificate")
 	}
 	return nil
+}
+
+func readOIDCCABundle(path string) ([]byte, error) {
+	cleanPath := filepath.Clean(strings.TrimSpace(path))
+	if cleanPath == "" || cleanPath == "." {
+		return nil, errors.New("OIDC_CA_FILE must reference a regular file")
+	}
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("OIDC_CA_FILE could not be read: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("OIDC_CA_FILE must reference a regular file")
+	}
+	if info.Size() > maxOIDCCABundleBytes {
+		return nil, fmt.Errorf("OIDC_CA_FILE must be at most %d bytes", maxOIDCCABundleBytes)
+	}
+
+	// #nosec G304 -- OIDC_CA_FILE is an operator-managed local path validated as a regular file before read.
+	file, err := os.Open(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("OIDC_CA_FILE could not be read: %w", err)
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(io.LimitReader(file, maxOIDCCABundleBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("OIDC_CA_FILE could not be read: %w", err)
+	}
+	if int64(len(content)) > maxOIDCCABundleBytes {
+		return nil, fmt.Errorf("OIDC_CA_FILE must be at most %d bytes", maxOIDCCABundleBytes)
+	}
+	return content, nil
 }
 
 func newOIDCHTTPClient(config OIDCConfig) *http.Client {
@@ -448,7 +484,7 @@ func newOIDCHTTPClient(config OIDCConfig) *http.Client {
 	}
 
 	if config.CAFile != "" {
-		if bundle, err := os.ReadFile(config.CAFile); err == nil {
+		if bundle, err := readOIDCCABundle(config.CAFile); err == nil {
 			roots, poolErr := x509.SystemCertPool()
 			if poolErr != nil || roots == nil {
 				roots = x509.NewCertPool()

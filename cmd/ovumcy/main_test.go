@@ -455,6 +455,15 @@ func TestResolveOIDCConfig(t *testing.T) {
 			t.Fatalf("expected invalid OIDC CA file contents error, got %v", err)
 		}
 	})
+
+	t.Run("rejects directory oidc ca path", func(t *testing.T) {
+		setValidOIDCTestEnv(t)
+		t.Setenv("OIDC_CA_FILE", t.TempDir())
+
+		if _, err := resolveOIDCConfig(true, services.RegistrationModeOpen); err == nil || !strings.Contains(err.Error(), "OIDC_CA_FILE") {
+			t.Fatalf("expected directory OIDC CA file validation error, got %v", err)
+		}
+	})
 }
 
 func setValidOIDCTestEnv(t *testing.T) {

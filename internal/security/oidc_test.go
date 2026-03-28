@@ -46,8 +46,8 @@ func TestOIDCClientContextInjectsConfiguredHTTPClient(t *testing.T) {
 
 func TestOIDCConfigAllowsAutoProvisionHonorsDomainAllowlist(t *testing.T) {
 	config := OIDCConfig{
-		Enabled:                    true,
-		AutoProvision:              true,
+		Enabled:                     true,
+		AutoProvision:               true,
 		AutoProvisionAllowedDomains: []string{"example.com", "staff.example.com"},
 	}
 
@@ -86,6 +86,27 @@ func TestOIDCConfigValidateRejectsInvalidCAFile(t *testing.T) {
 
 	if err := config.Validate(true, true); err == nil {
 		t.Fatal("expected invalid OIDC CA file to fail validation")
+	}
+}
+
+func TestOIDCConfigValidateRejectsDirectoryCAFile(t *testing.T) {
+	config := OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    "https://id.example.com",
+		ClientID:     "ovumcy",
+		ClientSecret: "secret",
+		RedirectURL:  "https://ovumcy.example.com/auth/oidc/callback",
+		CAFile:       t.TempDir(),
+	}
+
+	if err := config.Validate(true, true); err == nil {
+		t.Fatal("expected directory OIDC CA path to fail validation")
+	}
+}
+
+func TestReadOIDCCABundleRejectsDirectory(t *testing.T) {
+	if _, err := readOIDCCABundle(t.TempDir()); err == nil {
+		t.Fatal("expected directory OIDC CA path to fail")
 	}
 }
 
