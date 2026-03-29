@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-03-29
+
+### Changed
+- Reissued the patch release on the correct release-packaging commit after the `v0.8.2` tag was created from the previous `main` commit. The runtime feature set is unchanged from the fully green `main` branch.
+
+### Security
+- `v0.8.3` is the public patch tag that combines the final CodeQL-driven OIDC helper hardening with the matching release notes and pinned deployment references.
+
 ## [0.8.2] - 2026-03-29
 
 ### Changed
@@ -243,7 +251,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.2...v0.8.3
 [0.8.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.2...v0.8.0
