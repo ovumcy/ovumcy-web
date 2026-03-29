@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-03-29
+
+### Changed
+- Removed the last reflected callback-markup pattern from the local OIDC browser-test runtime helper by switching the `form_post` bridge to a constant HTML shell plus a one-time JSON payload endpoint.
+
+### Security
+- This patch release supersedes `v0.8.1` for public rollout: it keeps the same OIDC feature set and release packaging, while adding the final CodeQL-driven hardening needed to clear the remaining reflected-XSS alert in the local OIDC test harness.
+
 ## [0.8.1] - 2026-03-29
 
 ### Changed
@@ -235,7 +243,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.7.1...v0.7.2
