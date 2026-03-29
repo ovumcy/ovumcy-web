@@ -140,8 +140,8 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 
 	repo := &stubAuthUserRepo{
 		user: models.User{
-			ID:           42,
-			PasswordHash: string(passwordHash),
+			ID:               42,
+			PasswordHash:     string(passwordHash),
 			LocalAuthEnabled: true,
 		},
 	}

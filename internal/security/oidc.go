@@ -95,6 +95,29 @@ func (config OIDCConfig) Validate(cookieSecure bool, registrationOpen bool) erro
 	if !config.Enabled {
 		return nil
 	}
+	if err := config.validateRuntimeModes(cookieSecure, registrationOpen); err != nil {
+		return err
+	}
+	if err := config.validateRequiredFields(); err != nil {
+		return err
+	}
+	if err := config.validateIssuerURL(); err != nil {
+		return err
+	}
+	redirectURL, err := config.validateRedirectURL()
+	if err != nil {
+		return err
+	}
+	if err := config.validatePostLogoutRedirectURL(redirectURL); err != nil {
+		return err
+	}
+	if err := config.validateCABundle(); err != nil {
+		return err
+	}
+	return config.validateProvisioningDomains()
+}
+
+func (config OIDCConfig) validateRuntimeModes(cookieSecure bool, registrationOpen bool) error {
 	if !cookieSecure {
 		return errors.New("OIDC_ENABLED=true requires COOKIE_SECURE=true")
 	}
@@ -104,75 +127,85 @@ func (config OIDCConfig) Validate(cookieSecure bool, registrationOpen bool) erro
 	if config.LogoutMode != OIDCLogoutModeLocal && config.LogoutMode != OIDCLogoutModeProvider && config.LogoutMode != OIDCLogoutModeAuto {
 		return errors.New("OIDC_LOGOUT_MODE must be local, provider, or auto")
 	}
-	if config.AutoProvision {
-		if !registrationOpen {
-			return errors.New("OIDC_AUTO_PROVISION=true requires REGISTRATION_MODE=open")
-		}
+	if config.AutoProvision && !registrationOpen {
+		return errors.New("OIDC_AUTO_PROVISION=true requires REGISTRATION_MODE=open")
 	}
-	if config.IssuerURL == "" {
+	return nil
+}
+
+func (config OIDCConfig) validateRequiredFields() error {
+	switch {
+	case config.IssuerURL == "":
 		return errors.New("OIDC_ISSUER_URL is required when OIDC_ENABLED=true")
-	}
-	if config.ClientID == "" {
+	case config.ClientID == "":
 		return errors.New("OIDC_CLIENT_ID is required when OIDC_ENABLED=true")
-	}
-	if config.ClientSecret == "" {
+	case config.ClientSecret == "":
 		return errors.New("OIDC_CLIENT_SECRET is required when OIDC_ENABLED=true")
-	}
-	if config.RedirectURL == "" {
+	case config.RedirectURL == "":
 		return errors.New("OIDC_REDIRECT_URL is required when OIDC_ENABLED=true")
+	default:
+		return nil
 	}
+}
 
-	issuerURL, err := url.Parse(config.IssuerURL)
-	if err != nil || !issuerURL.IsAbs() {
-		return errors.New("OIDC_ISSUER_URL must be an absolute URL")
-	}
-	if !strings.EqualFold(issuerURL.Scheme, "https") {
-		return errors.New("OIDC_ISSUER_URL must use https")
-	}
-	if issuerURL.RawQuery != "" || issuerURL.Fragment != "" {
-		return errors.New("OIDC_ISSUER_URL must not include query or fragment")
-	}
+func (config OIDCConfig) validateIssuerURL() error {
+	_, err := validateOIDCHTTPSURL(config.IssuerURL, "OIDC_ISSUER_URL")
+	return err
+}
 
-	redirectURL, err := url.Parse(config.RedirectURL)
-	if err != nil || !redirectURL.IsAbs() {
-		return errors.New("OIDC_REDIRECT_URL must be an absolute URL")
-	}
-	if !strings.EqualFold(redirectURL.Scheme, "https") {
-		return errors.New("OIDC_REDIRECT_URL must use https")
-	}
-	if redirectURL.RawQuery != "" || redirectURL.Fragment != "" {
-		return errors.New("OIDC_REDIRECT_URL must not include query or fragment")
+func (config OIDCConfig) validateRedirectURL() (*url.URL, error) {
+	redirectURL, err := validateOIDCHTTPSURL(config.RedirectURL, "OIDC_REDIRECT_URL")
+	if err != nil {
+		return nil, err
 	}
 	if path.Clean(strings.TrimSpace(redirectURL.Path)) != OIDCCallbackPath {
-		return fmt.Errorf("OIDC_REDIRECT_URL path must be %s", OIDCCallbackPath)
+		return nil, fmt.Errorf("OIDC_REDIRECT_URL path must be %s", OIDCCallbackPath)
 	}
-	if config.PostLogoutRedirectURL != "" {
-		postLogoutURL, err := url.Parse(config.PostLogoutRedirectURL)
-		if err != nil || !postLogoutURL.IsAbs() {
-			return errors.New("OIDC_POST_LOGOUT_REDIRECT_URL must be an absolute URL")
-		}
-		if !strings.EqualFold(postLogoutURL.Scheme, "https") {
-			return errors.New("OIDC_POST_LOGOUT_REDIRECT_URL must use https")
-		}
-		if postLogoutURL.RawQuery != "" || postLogoutURL.Fragment != "" {
-			return errors.New("OIDC_POST_LOGOUT_REDIRECT_URL must not include query or fragment")
-		}
-		if !sameOriginURL(redirectURL, postLogoutURL) {
-			return errors.New("OIDC_POST_LOGOUT_REDIRECT_URL must match the OIDC redirect origin")
-		}
+	return redirectURL, nil
+}
+
+func (config OIDCConfig) validatePostLogoutRedirectURL(redirectURL *url.URL) error {
+	if config.PostLogoutRedirectURL == "" {
+		return nil
 	}
-	if config.CAFile != "" {
-		if err := validateOIDCCABundle(config.CAFile); err != nil {
-			return err
-		}
+	postLogoutURL, err := validateOIDCHTTPSURL(config.PostLogoutRedirectURL, "OIDC_POST_LOGOUT_REDIRECT_URL")
+	if err != nil {
+		return err
 	}
+	if !sameOriginURL(redirectURL, postLogoutURL) {
+		return errors.New("OIDC_POST_LOGOUT_REDIRECT_URL must match the OIDC redirect origin")
+	}
+	return nil
+}
+
+func (config OIDCConfig) validateCABundle() error {
+	if config.CAFile == "" {
+		return nil
+	}
+	return validateOIDCCABundle(config.CAFile)
+}
+
+func (config OIDCConfig) validateProvisioningDomains() error {
 	for _, domain := range config.AutoProvisionAllowedDomains {
 		if !isValidProvisioningDomain(domain) {
 			return fmt.Errorf("OIDC_AUTO_PROVISION_ALLOWED_DOMAINS contains invalid domain %q", domain)
 		}
 	}
-
 	return nil
+}
+
+func validateOIDCHTTPSURL(rawURL string, envName string) (*url.URL, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || !parsedURL.IsAbs() {
+		return nil, fmt.Errorf("%s must be an absolute URL", envName)
+	}
+	if !strings.EqualFold(parsedURL.Scheme, "https") {
+		return nil, fmt.Errorf("%s must use https", envName)
+	}
+	if parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
+		return nil, fmt.Errorf("%s must not include query or fragment", envName)
+	}
+	return parsedURL, nil
 }
 
 func (client *OIDCClient) Enabled() bool {

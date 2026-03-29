@@ -11,7 +11,7 @@ import (
 type stubRegistrationAuthService struct {
 	user         models.User
 	recoveryCode string
-	oidcUser      models.User
+	oidcUser     models.User
 	err          error
 	called       bool
 	oidcCalled   bool

@@ -313,9 +313,9 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		repo := &stubAuthUserRepo{
 			existsByEmail: true,
 			findByEmailUser: models.User{
-				ID:           18,
-				Email:        "owner@example.com",
-				PasswordHash: string(originalHash),
+				ID:               18,
+				Email:            "owner@example.com",
+				PasswordHash:     string(originalHash),
 				LocalAuthEnabled: true,
 			},
 			updatePasswordErr: errors.New("write failed"),
@@ -376,9 +376,9 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 
 	repo := &stubAuthUserRepo{
 		findByEmailUser: models.User{
-			ID:           77,
-			Email:        "login@example.com",
-			PasswordHash: string(passwordHash),
+			ID:               77,
+			Email:            "login@example.com",
+			PasswordHash:     string(passwordHash),
 			LocalAuthEnabled: true,
 		},
 	}
@@ -470,8 +470,8 @@ func TestAuthServiceResolveUserByResetToken(t *testing.T) {
 
 	repo := &stubAuthUserRepo{
 		user: models.User{
-			ID:           42,
-			PasswordHash: string(passwordHash),
+			ID:               42,
+			PasswordHash:     string(passwordHash),
 			LocalAuthEnabled: true,
 		},
 	}
@@ -506,8 +506,8 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 
 	repo := &stubAuthUserRepo{
 		user: models.User{
-			ID:           42,
-			PasswordHash: string(changedHash),
+			ID:               42,
+			PasswordHash:     string(changedHash),
 			LocalAuthEnabled: true,
 		},
 	}

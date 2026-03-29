@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	ErrSettingsPasswordMissing = errors.New("settings password missing")
-	ErrSettingsPasswordInvalid = errors.New("settings password invalid")
+	ErrSettingsPasswordMissing     = errors.New("settings password missing")
+	ErrSettingsPasswordInvalid     = errors.New("settings password invalid")
 	ErrSettingsLocalPasswordNotSet = errors.New("settings local password not set")
 )
 

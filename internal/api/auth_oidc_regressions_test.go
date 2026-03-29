@@ -15,20 +15,20 @@ import (
 )
 
 type stubOIDCWorkflowService struct {
-	enabled               bool
+	enabled                bool
 	localPublicAuthEnabled bool
-	authURL               string
-	startErr              error
-	result                services.OIDCLoginResult
-	authErr               error
-	lastStartState        string
-	lastStartNonce        string
-	lastStartVerifier     string
-	lastStartDeadline     time.Time
-	lastAuthCode          string
-	lastAuthVerifier      string
-	lastAuthExpectedNonce string
-	lastAuthDeadline      time.Time
+	authURL                string
+	startErr               error
+	result                 services.OIDCLoginResult
+	authErr                error
+	lastStartState         string
+	lastStartNonce         string
+	lastStartVerifier      string
+	lastStartDeadline      time.Time
+	lastAuthCode           string
+	lastAuthVerifier       string
+	lastAuthExpectedNonce  string
+	lastAuthDeadline       time.Time
 }
 
 func (stub *stubOIDCWorkflowService) Enabled() bool {
