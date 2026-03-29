@@ -38,6 +38,7 @@ type Handler struct {
 	passwordResetSvc     *services.PasswordResetService
 	loginService         LoginWorkflowService
 	oidcService          OIDCWorkflowService
+	oidcLogoutStateSvc   *services.OIDCLogoutStateService
 	dayService           *services.DayService
 	symptomService       *services.SymptomService
 	viewerService        *services.ViewerService

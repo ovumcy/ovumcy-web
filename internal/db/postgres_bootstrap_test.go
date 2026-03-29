@@ -15,6 +15,7 @@ func TestOpenPostgresAppliesEmbeddedMigrationsOnCleanDatabase(t *testing.T) {
 
 	assertUsersSchemaReconciled(t, database)
 	assertSymptomTypesSchemaReconciled(t, database)
+	assertOIDCLogoutStateSchemaReconciled(t, database)
 	assertAllEmbeddedMigrationsAppliedForDriver(t, database, DriverPostgres)
 	assertPostgresNormalizedEmailUniqueness(t, database)
 	assertPostgresDailyLogsSchemaReconciled(t, database)

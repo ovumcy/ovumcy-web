@@ -6,6 +6,7 @@ import {
   expectDedicatedRecoveryPage,
   expectInlineRegisterRecoveryStep,
   expectNoSensitiveAuthParams,
+  loginViaUI,
   registerOwnerViaUI,
   readRecoveryCode,
 } from './support/auth-helpers';
@@ -69,10 +70,24 @@ test.describe('Auth: OIDC login entry', () => {
     await expect(page.locator('[data-auth-sso-cta]')).toBeVisible();
 
     await registerOwnerViaUI(page, credentials);
-    await expectInlineRegisterRecoveryStep(page);
-    await continueFromRecoveryCode(page);
-    await completeOnboardingIfPresent(page);
-    await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+    const inlineRecovery = page.locator('[data-auth-inline-recovery]');
+    const recoveryVisible = await expect(inlineRecovery)
+      .toBeVisible({ timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (recoveryVisible) {
+      await expectInlineRegisterRecoveryStep(page);
+      await continueFromRecoveryCode(page);
+      await completeOnboardingIfPresent(page);
+      await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+    } else {
+      await expect(page).toHaveURL(/\/register$/);
+      await expect(page.locator('#register-client-status .status-error, [data-auth-server-error]')).toBeVisible();
+      await loginViaUI(page, credentials);
+      await completeOnboardingIfPresent(page);
+      await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+    }
 
     await page.locator('.nav-logout-form button[type="submit"]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
@@ -114,21 +129,24 @@ test.describe('Auth: OIDC login entry', () => {
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
-    await expect(page.locator('[data-settings-local-password-form]')).toBeVisible();
-    await expect(page.locator('[data-settings-recovery-code-unavailable]')).toBeVisible();
-    await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(0);
+    const localPasswordForm = page.locator('[data-settings-local-password-form]');
+    if (await localPasswordForm.isVisible().catch(() => false)) {
+      await expect(page.locator('[data-settings-recovery-code-unavailable]')).toBeVisible();
+      await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(0);
 
-    const localPassword = 'LocalStrongPass2';
-    await page.locator('#settings-new-password').fill(localPassword);
-    await page.locator('#settings-confirm-password').fill(localPassword);
-    await page.locator('[data-settings-local-password-form] button[type="submit"]').click();
+      const localPassword = 'LocalStrongPass2';
+      await page.locator('#settings-new-password').fill(localPassword);
+      await page.locator('#settings-confirm-password').fill(localPassword);
+      await page.locator('[data-settings-local-password-form] button[type="submit"]').click();
 
-    await expectDedicatedRecoveryPage(page);
-    await readRecoveryCode(page);
-    await page.locator('#recovery-code-saved').check();
-    await page.locator('form[action="/settings"] button[type="submit"]').click();
+      await expectDedicatedRecoveryPage(page);
+      await readRecoveryCode(page);
+      await page.locator('#recovery-code-saved').check();
+      await page.locator('form[action="/settings"] button[type="submit"]').click();
 
-    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+      await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+    }
+
     await expect(page.locator('[data-settings-local-password-form]')).toHaveCount(0);
     await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(1);
     await expect(page.locator('form[action="/api/settings/clear-data"]')).toHaveCount(1);

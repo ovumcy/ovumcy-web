@@ -29,7 +29,7 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 		return nil, errors.New("invalid token")
 	}
 
-	user, err := handler.authService.ResolveUserByAuthSessionToken(handler.secretKey, tokenValue, time.Now())
+	user, claims, err := handler.authService.ResolveAuthSession(handler.secretKey, tokenValue, time.Now())
 	if err != nil {
 		if errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 			handler.clearAuthCookie(c)
@@ -54,5 +54,6 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 		}
 	}
 
+	c.Locals(contextAuthSessionKey, claims)
 	return user, nil
 }

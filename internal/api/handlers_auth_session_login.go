@@ -37,7 +37,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.setAuthCookie(c, &user, true); err != nil {
+	if _, err := handler.setAuthCookie(c, &user, true); err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.register", spec)
 		return handler.respondMappedError(c, spec)
@@ -92,7 +92,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	}
 
 	user := result.User
-	if err := handler.setAuthCookie(c, &user, credentials.RememberMe); err != nil {
+	if _, err := handler.setAuthCookie(c, &user, credentials.RememberMe); err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.login", spec)
 		return handler.respondMappedError(c, spec)
@@ -121,12 +121,18 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.logout", spec)
 		return handler.respondMappedError(c, spec)
 	}
+
 	logoutTransportPath := ""
-	logoutPayload := handler.readOIDCLogoutCookie(c)
+	sessionClaims, hasSession := currentAuthSession(c)
 	handler.clearAuthRelatedCookies(c)
-	if logoutPayload.valid() {
-		if err := handler.setOIDCLogoutBridgeCookie(c, logoutPayload, time.Now()); err == nil {
-			logoutTransportPath = oidcLogoutBridgePath
+	if hasSession && sessionClaims != nil {
+		logoutState, found, err := handler.oidcLogoutStateSvc.Load(sessionClaims.SessionID, time.Now())
+		if err != nil {
+			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")
+		} else if found && validOIDCLogoutState(logoutState) {
+			if err := handler.setOIDCLogoutBridgeCookie(c, sessionClaims.SessionID, time.Now()); err == nil {
+				logoutTransportPath = oidcLogoutBridgePath
+			}
 		}
 	}
 	handler.logSecurityEvent(c, "auth.logout", "success")

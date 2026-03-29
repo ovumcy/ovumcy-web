@@ -124,6 +124,7 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	exportService := services.NewExportService(dayService, symptomService)
 	settingsService := services.NewSettingsService(repositories.Users)
 	notificationService := services.NewNotificationService()
+	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 	settingsViewService := services.NewSettingsViewService(settingsService, notificationService, exportService, symptomService)
 	onboardingService := services.NewOnboardingService(repositories.Users)
 	setupService := services.NewSetupService(repositories.Users)
@@ -134,6 +135,7 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 		PasswordResetService: passwordResetService,
 		LoginService:         loginService,
 		OIDCService:          oidcService,
+		OIDCLogoutStateSvc:   oidcLogoutStateService,
 		DayService:           dayService,
 		SymptomService:       symptomService,
 		ViewerService:        viewerService,

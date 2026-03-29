@@ -30,6 +30,9 @@ func TestBuildAndParseAuthSessionToken(t *testing.T) {
 	if claims.SessionVersion != 3 {
 		t.Fatalf("expected session version 3, got %d", claims.SessionVersion)
 	}
+	if claims.SessionID == "" {
+		t.Fatal("expected auth session token to carry a session id")
+	}
 }
 
 func TestParseAuthSessionTokenRejectsExpired(t *testing.T) {
@@ -67,8 +70,9 @@ func TestParseAuthSessionTokenRejectsWrongAlgorithm(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 
 	claims := AuthSessionClaims{
-		UserID: 42,
-		Role:   "owner",
+		UserID:    42,
+		Role:      "owner",
+		SessionID: "session-for-version-normalization",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -91,8 +95,9 @@ func TestParseAuthSessionTokenNormalizesLegacyMissingVersion(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 
 	claims := AuthSessionClaims{
-		UserID: 42,
-		Role:   "owner",
+		UserID:    42,
+		Role:      "owner",
+		SessionID: "session-for-version-normalization",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -110,5 +115,30 @@ func TestParseAuthSessionTokenNormalizesLegacyMissingVersion(t *testing.T) {
 	}
 	if parsedClaims.SessionVersion != 1 {
 		t.Fatalf("expected legacy session version to normalize to 1, got %d", parsedClaims.SessionVersion)
+	}
+}
+
+func TestParseAuthSessionTokenRejectsMissingSessionID(t *testing.T) {
+	secret := []byte("test-auth-secret")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+
+	claims := AuthSessionClaims{
+		UserID:         42,
+		Role:           "owner",
+		SessionVersion: 1,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(10 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	rawToken, err := token.SignedString(secret)
+	if err != nil {
+		t.Fatalf("sign missing-session-id token: %v", err)
+	}
+
+	_, err = ParseAuthSessionToken(secret, rawToken, now.Add(1*time.Minute))
+	if !errors.Is(err, ErrAuthSessionTokenInvalid) {
+		t.Fatalf("expected ErrAuthSessionTokenInvalid, got %v", err)
 	}
 }

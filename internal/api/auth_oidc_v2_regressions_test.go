@@ -7,6 +7,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/ovumcy/ovumcy-web/internal/db"
+	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
 
 func TestLoginPageInOIDCOnlyModeHidesLocalAuthUI(t *testing.T) {
@@ -111,8 +117,7 @@ func TestOIDCOnlyModeRejectsLocalPublicAuthEndpoints(t *testing.T) {
 func TestAuthLogoutWithOIDCProviderUsesSameOriginBridge(t *testing.T) {
 	t.Parallel()
 
-	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
-	oidcLogoutCookie := mustBuildOIDCLogoutCookieHeader(t, oidcLogoutCookiePayload{
+	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedOIDCLogoutContext(t, services.OIDCLogoutState{
 		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
 		IDTokenHint:           "raw-id-token",
 		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
@@ -126,7 +131,6 @@ func TestAuthLogoutWithOIDCProviderUsesSameOriginBridge(t *testing.T) {
 		joinCookieHeader(
 			authCookie,
 			cookiePair(csrfCookie),
-			oidcLogoutCookie,
 			recoveryCodeCookieName+"=temporary-recovery",
 			resetPasswordCookieName+"=temporary-reset",
 		),
@@ -147,25 +151,60 @@ func TestAuthLogoutWithOIDCProviderUsesSameOriginBridge(t *testing.T) {
 	if authCookieAfterLogout == nil || authCookieAfterLogout.Value != "" {
 		t.Fatalf("expected logout response to clear auth cookie, got %#v", authCookieAfterLogout)
 	}
-	oidcCookieAfterLogout := responseCookie(response.Cookies(), oidcLogoutCookieName)
-	if oidcCookieAfterLogout == nil || oidcCookieAfterLogout.Value != "" {
-		t.Fatalf("expected logout response to clear oidc logout cookie, got %#v", oidcCookieAfterLogout)
-	}
 	bridgeCookieAfterLogout := responseCookie(response.Cookies(), oidcLogoutBridgeCookieName)
 	if bridgeCookieAfterLogout == nil || strings.TrimSpace(bridgeCookieAfterLogout.Value) == "" {
 		t.Fatalf("expected logout response to set oidc logout bridge cookie, got %#v", bridgeCookieAfterLogout)
+	}
+	if len(bridgeCookieAfterLogout.Value) > 512 {
+		t.Fatalf("expected bounded bridge cookie size, got %d bytes", len(bridgeCookieAfterLogout.Value))
+	}
+}
+
+func TestAuthLogoutWithOversizedOIDCProviderStateKeepsBridgeCookieSmall(t *testing.T) {
+	t.Parallel()
+
+	rawIDToken := strings.Repeat("idtoken.", 768)
+	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedOIDCLogoutContext(t, services.OIDCLogoutState{
+		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
+		IDTokenHint:           rawIDToken,
+		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
+	})
+
+	form := url.Values{"csrf_token": {csrfToken}}
+	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusSeeOther)
+
+	bridgeCookie := responseCookie(response.Cookies(), oidcLogoutBridgeCookieName)
+	if bridgeCookie == nil || strings.TrimSpace(bridgeCookie.Value) == "" {
+		t.Fatalf("expected bounded bridge cookie for oversized logout state, got %#v", bridgeCookie)
+	}
+	if len(bridgeCookie.Value) > 512 {
+		t.Fatalf("expected oversized id_token_hint to stay out of bridge cookie, got %d bytes", len(bridgeCookie.Value))
+	}
+	tokenProbe := rawIDToken[:128]
+	if strings.Contains(response.Header.Get("Location"), tokenProbe) {
+		t.Fatal("did not expect oversized id_token_hint in logout redirect location")
+	}
+	for _, value := range response.Header.Values("Set-Cookie") {
+		if strings.Contains(value, tokenProbe) {
+			t.Fatal("did not expect oversized id_token_hint in Set-Cookie headers")
+		}
 	}
 }
 
 func TestOIDCLogoutBridgeRedirectsToProviderEndSessionEndpoint(t *testing.T) {
 	t.Parallel()
 
-	app, _, _, _ := prepareAuthenticatedLogoutCSRFContext(t)
-	bridgeCookie := mustBuildOIDCLogoutBridgeCookieHeader(t, oidcLogoutCookiePayload{
+	app, authCookie, _, _ := prepareAuthenticatedOIDCLogoutContext(t, services.OIDCLogoutState{
 		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
 		IDTokenHint:           "raw-id-token",
 		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
 	})
+	bridgeCookie := mustBuildOIDCLogoutBridgeCookieHeader(t, mustExtractAuthSessionIDFromCookieHeader(t, authCookie))
 
 	request := httptest.NewRequest(http.MethodGet, oidcLogoutBridgeRedirectPath, nil)
 	request.Header.Set("Cookie", bridgeCookie)
@@ -190,15 +229,39 @@ func TestOIDCLogoutBridgeRedirectsToProviderEndSessionEndpoint(t *testing.T) {
 	}
 }
 
-func TestOIDCLogoutBridgePageRefreshesToInternalRedirectEndpoint(t *testing.T) {
+func TestOIDCLogoutBridgeRedirectConsumesServerSideState(t *testing.T) {
 	t.Parallel()
 
-	app, _, _, _ := prepareAuthenticatedLogoutCSRFContext(t)
-	bridgeCookie := mustBuildOIDCLogoutBridgeCookieHeader(t, oidcLogoutCookiePayload{
+	app, authCookie, _, _ := prepareAuthenticatedOIDCLogoutContext(t, services.OIDCLogoutState{
 		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
 		IDTokenHint:           "raw-id-token",
 		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
 	})
+	bridgeCookie := mustBuildOIDCLogoutBridgeCookieHeader(t, mustExtractAuthSessionIDFromCookieHeader(t, authCookie))
+
+	firstRequest := httptest.NewRequest(http.MethodGet, oidcLogoutBridgeRedirectPath, nil)
+	firstRequest.Header.Set("Cookie", bridgeCookie)
+	firstResponse := mustAppResponse(t, app, firstRequest)
+	assertStatusCode(t, firstResponse, http.StatusSeeOther)
+
+	secondRequest := httptest.NewRequest(http.MethodGet, oidcLogoutBridgeRedirectPath, nil)
+	secondRequest.Header.Set("Cookie", bridgeCookie)
+	secondResponse := mustAppResponse(t, app, secondRequest)
+	assertStatusCode(t, secondResponse, http.StatusSeeOther)
+	if location := secondResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected consumed logout state to fall back to /login, got %q", location)
+	}
+}
+
+func TestOIDCLogoutBridgePageRefreshesToInternalRedirectEndpoint(t *testing.T) {
+	t.Parallel()
+
+	app, authCookie, _, _ := prepareAuthenticatedOIDCLogoutContext(t, services.OIDCLogoutState{
+		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
+		IDTokenHint:           "raw-id-token",
+		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
+	})
+	bridgeCookie := mustBuildOIDCLogoutBridgeCookieHeader(t, mustExtractAuthSessionIDFromCookieHeader(t, authCookie))
 
 	request := httptest.NewRequest(http.MethodGet, oidcLogoutBridgePath, nil)
 	request.Header.Set("Cookie", bridgeCookie)
@@ -220,8 +283,7 @@ func TestOIDCLogoutBridgePageRefreshesToInternalRedirectEndpoint(t *testing.T) {
 func TestAuthLogoutJSONWithOIDCProviderReturnsBridgePathWithoutTokenLeak(t *testing.T) {
 	t.Parallel()
 
-	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
-	oidcLogoutCookie := mustBuildOIDCLogoutCookieHeader(t, oidcLogoutCookiePayload{
+	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedOIDCLogoutContext(t, services.OIDCLogoutState{
 		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
 		IDTokenHint:           "raw-id-token",
 		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
@@ -236,7 +298,6 @@ func TestAuthLogoutJSONWithOIDCProviderReturnsBridgePathWithoutTokenLeak(t *test
 		joinCookieHeader(
 			authCookie,
 			cookiePair(csrfCookie),
-			oidcLogoutCookie,
 		),
 	)
 
@@ -261,35 +322,73 @@ func TestAuthLogoutJSONWithOIDCProviderReturnsBridgePathWithoutTokenLeak(t *test
 	}
 }
 
-func mustBuildOIDCLogoutCookieHeader(t *testing.T, payload oidcLogoutCookiePayload) string {
+func prepareAuthenticatedOIDCLogoutContext(t *testing.T, logoutState services.OIDCLogoutState) (*fiber.App, string, *http.Cookie, string) {
 	t.Helper()
 
-	serialized, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal oidc logout cookie payload: %v", err)
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "oidc-logout@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	persistOIDCLogoutStateForAuthCookie(t, database, authCookie, logoutState)
+
+	csrfRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	csrfRequest.Header.Set("Accept-Language", "en")
+	csrfRequest.Header.Set("Cookie", authCookie)
+
+	csrfResponse := mustAppResponse(t, app, csrfRequest)
+	assertStatusCode(t, csrfResponse, http.StatusOK)
+	body := mustReadBodyString(t, csrfResponse.Body)
+	csrfCookie := responseCookie(csrfResponse.Cookies(), "ovumcy_csrf")
+	if csrfCookie == nil || strings.TrimSpace(csrfCookie.Value) == "" {
+		t.Fatal("expected csrf cookie in dashboard response")
+	}
+
+	return app, authCookie, csrfCookie, extractCSRFTokenFromHTML(t, body)
+}
+
+func persistOIDCLogoutStateForAuthCookie(t *testing.T, database *gorm.DB, authCookie string, logoutState services.OIDCLogoutState) {
+	t.Helper()
+
+	sessionID := mustExtractAuthSessionIDFromCookieHeader(t, authCookie)
+	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	if err := stateService.Save(sessionID, logoutState, time.Now().UTC()); err != nil {
+		t.Fatalf("save oidc logout state: %v", err)
+	}
+}
+
+func mustExtractAuthSessionIDFromCookieHeader(t *testing.T, authCookie string) string {
+	t.Helper()
+
+	_, sealedValue, ok := strings.Cut(strings.TrimSpace(authCookie), "=")
+	if !ok || strings.TrimSpace(sealedValue) == "" {
+		t.Fatalf("expected auth cookie header, got %q", authCookie)
 	}
 
 	codec, err := newSecureCookieCodec([]byte("test-secret-key"))
 	if err != nil {
 		t.Fatalf("init secure cookie codec: %v", err)
 	}
-	sealed, err := codec.seal(oidcLogoutCookieName, serialized)
+	tokenValue, err := codec.open(authCookieName, sealedValue)
 	if err != nil {
-		t.Fatalf("seal oidc logout cookie payload: %v", err)
+		t.Fatalf("open sealed auth cookie: %v", err)
 	}
-	return oidcLogoutCookieName + "=" + sealed
+
+	claims, err := services.ParseAuthSessionToken([]byte("test-secret-key"), string(tokenValue), time.Now())
+	if err != nil {
+		t.Fatalf("parse auth session token: %v", err)
+	}
+	if strings.TrimSpace(claims.SessionID) == "" {
+		t.Fatal("expected auth session token to carry a session id")
+	}
+	return claims.SessionID
 }
 
-func mustBuildOIDCLogoutBridgeCookieHeader(t *testing.T, payload oidcLogoutCookiePayload) string {
+func mustBuildOIDCLogoutBridgeCookieHeader(t *testing.T, sessionID string) string {
 	t.Helper()
 
-	bridgePayload := oidcLogoutBridgeCookiePayload{
-		EndSessionEndpoint:    payload.EndSessionEndpoint,
-		IDTokenHint:           payload.IDTokenHint,
-		PostLogoutRedirectURL: payload.PostLogoutRedirectURL,
-		ExpiresAtUnix:         4102444800,
-	}
-	serialized, err := json.Marshal(bridgePayload)
+	serialized, err := json.Marshal(oidcLogoutBridgeCookiePayload{
+		SessionID:     sessionID,
+		ExpiresAtUnix: 4102444800,
+	})
 	if err != nil {
 		t.Fatalf("marshal oidc logout bridge cookie payload: %v", err)
 	}

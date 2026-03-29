@@ -67,12 +67,13 @@ const (
 	headerContentSecurityPolicy   = "Content-Security-Policy"
 	headerStrictTransportSecurity = "Strict-Transport-Security"
 
-	xContentTypeOptionsNoSniff     = "nosniff"
-	referrerPolicyStrictOrigin     = "strict-origin-when-cross-origin"
-	permissionsPolicyDefault       = "geolocation=(), camera=(), microphone=()"
-	xFrameOptionsDeny              = "DENY"
-	contentSecurityPolicyDefault   = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'"
-	strictTransportSecurityDefault = "max-age=31536000"
+	xContentTypeOptionsNoSniff           = "nosniff"
+	referrerPolicyStrictOrigin           = "strict-origin-when-cross-origin"
+	permissionsPolicyDefault             = "geolocation=(), camera=(), microphone=()"
+	xFrameOptionsDeny                    = "DENY"
+	contentSecurityPolicyDefault         = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'"
+	strictTransportSecurityDefault       = "max-age=31536000"
+	maxSecretKeyFileBytes          int64 = 8 << 10
 )
 
 func main() {
@@ -243,6 +244,7 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 	exportService := services.NewExportService(dayService, symptomService)
 	settingsService := services.NewSettingsService(repositories.Users)
 	notificationService := services.NewNotificationService()
+	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 	oidcLoginService := services.NewOIDCLoginService(
 		security.NewOIDCClient(oidcConfig),
 		repositories.OIDCIdentities,
@@ -256,6 +258,7 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 		PasswordResetService: passwordResetService,
 		LoginService:         loginService,
 		OIDCService:          oidcLoginService,
+		OIDCLogoutStateSvc:   oidcLogoutStateService,
 		DayService:           dayService,
 		SymptomService:       symptomService,
 		ViewerService:        viewerService,
@@ -540,8 +543,7 @@ func resolveSecretKey() (string, error) {
 }
 
 func readSecretKeyFile(path string) (string, error) {
-	// #nosec G304 -- SECRET_KEY_FILE is an operator-managed startup path, not request input.
-	content, err := os.ReadFile(filepath.Clean(path))
+	content, err := security.ReadBoundedRegularFile(path, "SECRET_KEY_FILE", maxSecretKeyFileBytes)
 	if err != nil {
 		return "", err
 	}

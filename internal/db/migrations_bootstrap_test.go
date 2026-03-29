@@ -21,6 +21,7 @@ func TestOpenSQLiteAppliesEmbeddedMigrationsOnCleanDatabase(t *testing.T) {
 	assertUsersSchemaReconciled(t, database)
 	assertSymptomTypesSchemaReconciled(t, database)
 	assertDailyLogsSchemaReconciled(t, database)
+	assertOIDCLogoutStateSchemaReconciled(t, database)
 	assertNormalizedEmailIndexExists(t, database)
 	assertAllEmbeddedMigrationsApplied(t, database)
 }
@@ -34,6 +35,7 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 	assertUsersSchemaReconciled(t, database)
 	assertSymptomTypesSchemaReconciled(t, database)
 	assertDailyLogsSchemaReconciled(t, database)
+	assertOIDCLogoutStateSchemaReconciled(t, database)
 	assertNormalizedEmailIndexExists(t, database)
 	assertAllEmbeddedMigrationsApplied(t, database)
 
@@ -173,6 +175,20 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 	}
 	if migratedLog.SymptomIDs == nil || strings.TrimSpace(*migratedLog.SymptomIDs) != "[1,2]" {
 		t.Fatalf("expected migrated symptom_ids to remain [1,2], got %v", migratedLog.SymptomIDs)
+	}
+}
+
+func assertOIDCLogoutStateSchemaReconciled(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
+	if !database.Migrator().HasTable("oidc_logout_states") {
+		t.Fatal("expected oidc_logout_states table to exist after migrations")
+	}
+	if !database.Migrator().HasColumn("oidc_logout_states", "session_id") {
+		t.Fatal("expected oidc_logout_states.session_id column to exist after migrations")
+	}
+	if !database.Migrator().HasColumn("oidc_logout_states", "expires_at") {
+		t.Fatal("expected oidc_logout_states.expires_at column to exist after migrations")
 	}
 }
 

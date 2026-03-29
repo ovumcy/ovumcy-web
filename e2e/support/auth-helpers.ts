@@ -1,4 +1,4 @@
-import { expect, type BrowserContext, type Page } from '@playwright/test';
+import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { dateFieldRoot, fillDateField } from './date-field-helpers';
 
 export type Credentials = {
@@ -20,6 +20,15 @@ export function createCredentials(prefix: string, password = DEFAULT_STRONG_PASS
 
 export function pathOf(urlString: string): string {
   return new URL(urlString).pathname;
+}
+
+export async function requestSubmitForm(form: Locator): Promise<void> {
+  await form.evaluate((element) => {
+    if (!(element instanceof HTMLFormElement)) {
+      throw new Error('target is not an HTMLFormElement');
+    }
+    element.requestSubmit();
+  });
 }
 
 export function expectNoSensitiveAuthParams(urlString: string): void {
@@ -58,12 +67,7 @@ export async function registerOwnerViaUI(
   await page.locator('#register-email').fill(credentials.email);
   await page.locator('#register-password').fill(credentials.password);
   await page.locator('#register-confirm-password').fill(confirmPassword);
-  await page.locator('form[action="/api/auth/register"]').evaluate((element) => {
-    if (!(element instanceof HTMLFormElement)) {
-      throw new Error('register form is not an HTMLFormElement');
-    }
-    element.requestSubmit();
-  });
+  await requestSubmitForm(page.locator('form[action="/api/auth/register"]'));
 }
 
 export async function expectInlineRegisterRecoveryStep(page: Page): Promise<void> {
@@ -168,6 +172,25 @@ export async function openForgotPasswordRecoveryStep(page: Page, email: string):
 export async function cookieByName(context: BrowserContext, name: string) {
   const cookies = await context.cookies();
   return cookies.find((cookie) => cookie.name === name);
+}
+
+export async function enableClipboardRoundTripIfSupported(
+  page: Page,
+  context: BrowserContext
+): Promise<boolean> {
+  const origin = new URL(page.url()).origin;
+
+  try {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
+  } catch {
+    return false;
+  }
+
+  return page.evaluate(
+    () =>
+      typeof navigator.clipboard?.readText === 'function' &&
+      typeof navigator.clipboard?.writeText === 'function'
+  );
 }
 
 export async function expectValueNotInWebStorage(page: Page, secret: string): Promise<void> {

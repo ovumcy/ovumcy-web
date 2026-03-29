@@ -1,6 +1,8 @@
 package services
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -22,16 +24,23 @@ type AuthSessionClaims struct {
 	UserID         uint   `json:"uid"`
 	Role           string `json:"role"`
 	SessionVersion int    `json:"sv,omitempty"`
+	SessionID      string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
 func BuildAuthSessionToken(secretKey []byte, userID uint, role string, ttl time.Duration, now time.Time) (string, error) {
-	return BuildAuthSessionTokenWithVersion(secretKey, userID, role, 1, ttl, now)
+	token, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, 1, ttl, now)
+	return token, err
 }
 
 func BuildAuthSessionTokenWithVersion(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, error) {
+	token, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, sessionVersion, ttl, now)
+	return token, err
+}
+
+func BuildAuthSessionTokenWithVersionAndSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {
 	if userID == 0 {
-		return "", ErrAuthSessionTokenInvalidUserID
+		return "", "", ErrAuthSessionTokenInvalidUserID
 	}
 	if ttl <= 0 {
 		ttl = 7 * 24 * time.Hour
@@ -39,11 +48,16 @@ func BuildAuthSessionTokenWithVersion(secretKey []byte, userID uint, role string
 	if now.IsZero() {
 		now = time.Now()
 	}
+	sessionID, err := GenerateAuthSessionID()
+	if err != nil {
+		return "", "", err
+	}
 
 	claims := AuthSessionClaims{
 		UserID:         userID,
 		Role:           role,
 		SessionVersion: normalizeAuthSessionVersion(sessionVersion),
+		SessionID:      sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatUint(uint64(userID), 10),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
@@ -52,7 +66,11 @@ func BuildAuthSessionTokenWithVersion(secretKey []byte, userID uint, role string
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secretKey)
+	rawToken, signErr := token.SignedString(secretKey)
+	if signErr != nil {
+		return "", "", signErr
+	}
+	return rawToken, sessionID, nil
 }
 
 func ParseAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*AuthSessionClaims, error) {
@@ -87,7 +105,19 @@ func ParseAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*A
 		return nil, ErrAuthSessionTokenInvalidUserID
 	}
 	claims.SessionVersion = normalizeAuthSessionVersion(claims.SessionVersion)
+	claims.SessionID = strings.TrimSpace(claims.SessionID)
+	if claims.SessionID == "" {
+		return nil, ErrAuthSessionTokenInvalid
+	}
 	return claims, nil
+}
+
+func GenerateAuthSessionID() (string, error) {
+	buffer := make([]byte, 16)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buffer), nil
 }
 
 func normalizeAuthSessionVersion(version int) int {

@@ -9,19 +9,19 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberMe bool) error {
+func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberMe bool) (string, error) {
 	tokenTTL := defaultAuthTokenTTL
 	if rememberMe {
 		tokenTTL = rememberAuthTokenTTL
 	}
 
-	token, err := handler.buildToken(user, tokenTTL)
+	token, sessionID, err := handler.buildTokenWithSessionID(user, tokenTTL)
 	if err != nil {
-		return err
+		return "", err
 	}
 	encodedToken, err := handler.encodeAuthCookieToken(token)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	cookie := &fiber.Cookie{
@@ -36,7 +36,7 @@ func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberM
 		cookie.Expires = time.Now().Add(tokenTTL)
 	}
 	c.Cookie(cookie)
-	return nil
+	return sessionID, nil
 }
 
 func (handler *Handler) clearAuthCookie(c *fiber.Ctx) {
@@ -58,14 +58,47 @@ func (handler *Handler) clearAuthRelatedCookies(c *fiber.Ctx) {
 	handler.clearResetPasswordCookie(c)
 }
 
-func (handler *Handler) buildToken(user *models.User, ttl time.Duration) (string, error) {
+func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {
 	if user == nil {
-		return "", errors.New("user is required")
+		return "", "", errors.New("user is required")
 	}
 	if ttl <= 0 {
 		ttl = defaultAuthTokenTTL
 	}
-	return handler.authService.BuildAuthSessionToken(handler.secretKey, user.ID, user.Role, user.AuthSessionVersion, ttl, time.Now())
+	return handler.authService.BuildAuthSessionTokenWithSessionID(handler.secretKey, user.ID, user.Role, user.AuthSessionVersion, ttl, time.Now())
+}
+
+func (handler *Handler) rotateOIDCLogoutState(c *fiber.Ctx, newSessionID string) error {
+	if handler == nil || handler.oidcLogoutStateSvc == nil {
+		return nil
+	}
+
+	newSessionID = strings.TrimSpace(newSessionID)
+	if newSessionID == "" {
+		return nil
+	}
+
+	currentSession, ok := currentAuthSession(c)
+	if !ok || currentSession == nil {
+		return nil
+	}
+
+	oldSessionID := strings.TrimSpace(currentSession.SessionID)
+	if oldSessionID == "" || oldSessionID == newSessionID {
+		return nil
+	}
+
+	logoutState, found, err := handler.oidcLogoutStateSvc.Load(oldSessionID, time.Now())
+	if err != nil || !found {
+		return err
+	}
+	if !validOIDCLogoutState(logoutState) {
+		return handler.oidcLogoutStateSvc.Delete(oldSessionID)
+	}
+	if err := handler.oidcLogoutStateSvc.Save(newSessionID, logoutState, time.Now()); err != nil {
+		return err
+	}
+	return handler.oidcLogoutStateSvc.Delete(oldSessionID)
 }
 
 func (handler *Handler) encodeAuthCookieToken(rawToken string) (string, error) {

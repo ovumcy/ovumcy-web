@@ -87,7 +87,8 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 		return c.Redirect("/reset-password", fiber.StatusSeeOther)
 	}
 
-	if err := handler.setAuthCookie(c, &result.User, false); err != nil {
+	sessionID, err := handler.setAuthCookie(c, &result.User, false)
+	if err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
@@ -95,7 +96,7 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
 	if result.Logout != nil {
-		if err := handler.setOIDCLogoutCookie(c, *result.Logout); err != nil {
+		if err := handler.oidcLogoutStateSvc.Save(sessionID, *result.Logout, time.Now()); err != nil {
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
 			handler.clearAuthRelatedCookies(c)
@@ -103,6 +104,7 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 			return c.Redirect("/login", fiber.StatusSeeOther)
 		}
 	} else {
+		_ = handler.oidcLogoutStateSvc.Delete(sessionID)
 		handler.clearOIDCLogoutTransportCookies(c)
 	}
 
@@ -131,7 +133,7 @@ func boolString(value bool) string {
 }
 
 func (handler *Handler) ShowOIDCLogoutBridge(c *fiber.Ctx) error {
-	if !handler.readOIDCLogoutBridgeCookie(c, time.Now()).valid() {
+	if !handler.readOIDCLogoutBridgeCookie(c, time.Now()).validAt(time.Now()) {
 		handler.clearOIDCLogoutBridgeCookie(c)
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}
@@ -141,10 +143,17 @@ func (handler *Handler) ShowOIDCLogoutBridge(c *fiber.Ctx) error {
 }
 
 func (handler *Handler) RedirectOIDCLogout(c *fiber.Ctx) error {
-	logoutPayload := handler.readOIDCLogoutBridgeCookie(c, time.Now())
+	bridgePayload := handler.readOIDCLogoutBridgeCookie(c, time.Now())
 	handler.clearOIDCLogoutBridgeCookie(c)
+	if !bridgePayload.validAt(time.Now()) {
+		return c.Redirect("/login", fiber.StatusSeeOther)
+	}
 
-	providerLogoutURL := handler.providerLogoutRedirectURLFromPayload(logoutPayload)
+	logoutState, found, err := handler.oidcLogoutStateSvc.Consume(bridgePayload.SessionID, time.Now())
+	if err != nil || !found {
+		return c.Redirect("/login", fiber.StatusSeeOther)
+	}
+	providerLogoutURL := handler.providerLogoutRedirectURLFromState(logoutState)
 	if providerLogoutURL == "" {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func TestSettingsPageForOIDCOnlyAccountShowsLocalPasswordSetup(t *testing.T) {
@@ -141,5 +142,49 @@ func TestOIDCOnlySettingsEnableLocalPasswordIssuesRecoveryCode(t *testing.T) {
 	localLoginCookie := loginAndExtractAuthCookieWithCSRF(t, ctx.app, persisted.Email, "EvenStronger2")
 	if strings.TrimSpace(localLoginCookie) == "" {
 		t.Fatal("expected local login to work after enabling local password")
+	}
+}
+
+func TestOIDCOnlySettingsEnableLocalPasswordPreservesProviderLogoutBridge(t *testing.T) {
+	t.Parallel()
+
+	ctx := newOIDCOnlySettingsSecurityTestContext(t, "settings-enable-local-logout@example.com")
+	persistOIDCLogoutStateForAuthCookie(t, ctx.database, ctx.authCookie, services.OIDCLogoutState{
+		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
+		IDTokenHint:           strings.Repeat("idtoken.", 128),
+		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
+	})
+
+	form := url.Values{
+		"new_password":     {"EvenStronger2"},
+		"confirm_password": {"EvenStronger2"},
+	}
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/change-password", form, map[string]string{
+		"Accept-Language": "en",
+	})
+	defer response.Body.Close()
+
+	assertStatusCode(t, response, http.StatusSeeOther)
+	updatedAuthCookie := ctx.authCookie
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && authCookie.Value != "" {
+		updatedAuthCookie = cookiePair(authCookie)
+	}
+
+	logoutForm := url.Values{"csrf_token": {ctx.csrfToken}}
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader(logoutForm.Encode()))
+	logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	logoutRequest.Header.Set("Cookie", joinCookieHeader(updatedAuthCookie, cookiePair(ctx.csrfCookie)))
+
+	logoutResponse := mustAppResponse(t, ctx.app, logoutRequest)
+	assertStatusCode(t, logoutResponse, http.StatusSeeOther)
+	if location := logoutResponse.Header.Get("Location"); location != oidcLogoutBridgePath {
+		t.Fatalf("expected provider logout bridge after local password enablement, got %q", location)
+	}
+	bridgeCookie := responseCookie(logoutResponse.Cookies(), oidcLogoutBridgeCookieName)
+	if bridgeCookie == nil || strings.TrimSpace(bridgeCookie.Value) == "" {
+		t.Fatalf("expected logout bridge cookie after local password enablement, got %#v", bridgeCookie)
+	}
+	if len(bridgeCookie.Value) > 512 {
+		t.Fatalf("expected bounded logout bridge cookie after local password enablement, got %d bytes", len(bridgeCookie.Value))
 	}
 }

@@ -27,11 +27,15 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 			handler.logSecurityError(c, "auth.password_change", spec)
 			return handler.respondMappedError(c, spec)
 		}
-		if err := handler.setAuthCookie(c, user, false); err != nil {
+		sessionID, err := handler.setAuthCookie(c, user, false)
+		if err != nil {
 			handler.clearAuthCookie(c)
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.password_change", spec)
 			return handler.respondMappedError(c, spec)
+		}
+		if err := handler.rotateOIDCLogoutState(c, sessionID); err != nil {
+			handler.logSecurityEvent(c, "auth.password_change", "provider_logout_state_rotation_failed")
 		}
 		handler.logSecurityEvent(c, "auth.password_change", "local_password_enabled")
 		return handler.renderRecoveryCodeResponseWithContinuePath(c, user, recoveryCode, fiber.StatusOK, "/settings")
@@ -42,11 +46,15 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.password_change", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.setAuthCookie(c, user, false); err != nil {
+	sessionID, err := handler.setAuthCookie(c, user, false)
+	if err != nil {
 		handler.clearAuthCookie(c)
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.password_change", spec)
 		return handler.respondMappedError(c, spec)
+	}
+	if err := handler.rotateOIDCLogoutState(c, sessionID); err != nil {
+		handler.logSecurityEvent(c, "auth.password_change", "provider_logout_state_rotation_failed")
 	}
 
 	handler.logSecurityEvent(c, "auth.password_change", "success")

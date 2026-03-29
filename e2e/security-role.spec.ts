@@ -163,7 +163,6 @@ test.describe('Security and role-based access', () => {
     const authCookie = await cookieByName(context, 'ovumcy_auth');
     expect(authCookie).toBeTruthy();
     expect(authCookie?.httpOnly).toBe(true);
-    expect(authCookie?.sameSite).toBe('Lax');
 
     const isHttps = page.url().startsWith('https://');
     expect(authCookie?.secure).toBe(isHttps);

@@ -251,23 +251,32 @@ func (service *AuthService) BuildAuthSessionToken(secretKey []byte, userID uint,
 	return BuildAuthSessionTokenWithVersion(secretKey, userID, role, sessionVersion, ttl, now)
 }
 
+func (service *AuthService) BuildAuthSessionTokenWithSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {
+	return BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, sessionVersion, ttl, now)
+}
+
 func (service *AuthService) ResolveUserByAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
+	user, _, err := service.ResolveAuthSession(secretKey, rawToken, now)
+	return user, err
+}
+
+func (service *AuthService) ResolveAuthSession(secretKey []byte, rawToken string, now time.Time) (*models.User, *AuthSessionClaims, error) {
 	claims, err := ParseAuthSessionToken(secretKey, rawToken, now)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	user, err := service.users.FindByID(claims.UserID)
 	if err != nil {
-		return nil, ErrAuthInvalidCreds
+		return nil, nil, ErrAuthInvalidCreds
 	}
 	if user.MustChangePassword {
-		return nil, ErrAuthSessionTokenRevoked
+		return nil, nil, ErrAuthSessionTokenRevoked
 	}
 	if normalizeAuthSessionVersion(claims.SessionVersion) != normalizeAuthSessionVersion(user.AuthSessionVersion) {
-		return nil, ErrAuthSessionTokenRevoked
+		return nil, nil, ErrAuthSessionTokenRevoked
 	}
-	return &user, nil
+	return &user, claims, nil
 }
 
 func (service *AuthService) ResolveUserByResetToken(secretKey []byte, rawToken string, now time.Time) (*models.User, error) {

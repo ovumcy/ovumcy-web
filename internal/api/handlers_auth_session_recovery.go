@@ -98,7 +98,7 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.setAuthCookie(c, user, true); err != nil {
+	if _, err := handler.setAuthCookie(c, user, true); err != nil {
 		spec := authSessionCreateErrorSpec()
 		handler.logSecurityError(c, "auth.reset_password", spec)
 		return handler.respondMappedError(c, spec)

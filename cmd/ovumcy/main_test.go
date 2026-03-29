@@ -90,6 +90,18 @@ func TestResolveSecretKey(t *testing.T) {
 		assertResolveSecretKeyError(t, missingPath)
 	})
 
+	t.Run("rejects directory SECRET_KEY_FILE paths", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", t.TempDir())
+		assertResolveSecretKeyError(t, "regular file")
+	})
+
+	t.Run("rejects oversized SECRET_KEY_FILE values", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "")
+		t.Setenv("SECRET_KEY_FILE", writeSecretKeyFile(t, strings.Repeat("a", int(maxSecretKeyFileBytes)+1)))
+		assertResolveSecretKeyError(t, "at most")
+	})
+
 	t.Run("rejects whitespace-only SECRET_KEY_FILE values", func(t *testing.T) {
 		t.Setenv("SECRET_KEY", "")
 		t.Setenv("SECRET_KEY_FILE", writeSecretKeyFile(t, " \n\t "))

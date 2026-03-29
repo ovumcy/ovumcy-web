@@ -13,6 +13,7 @@ type Dependencies struct {
 	PasswordResetService *services.PasswordResetService
 	LoginService         LoginWorkflowService
 	OIDCService          OIDCWorkflowService
+	OIDCLogoutStateSvc   *services.OIDCLogoutStateService
 	DayService           *services.DayService
 	SymptomService       *services.SymptomService
 	ViewerService        *services.ViewerService
@@ -47,6 +48,7 @@ func (dependencies Dependencies) requirements() []dependencyRequirement {
 		{value: dependencies.PasswordResetService, message: "password reset service is required"},
 		{value: dependencies.LoginService, message: "login service is required"},
 		{value: dependencies.OIDCService, message: "oidc service is required"},
+		{value: dependencies.OIDCLogoutStateSvc, message: "oidc logout state service is required"},
 		{value: dependencies.DayService, message: "day service is required"},
 		{value: dependencies.SymptomService, message: "symptom service is required"},
 		{value: dependencies.ViewerService, message: "viewer service is required"},
@@ -81,6 +83,7 @@ func (handler *Handler) withDependencies(dependencies Dependencies) *Handler {
 	handler.passwordResetSvc = dependencies.PasswordResetService
 	handler.loginService = dependencies.LoginService
 	handler.oidcService = dependencies.OIDCService
+	handler.oidcLogoutStateSvc = dependencies.OIDCLogoutStateSvc
 	handler.dayService = dependencies.DayService
 	handler.symptomService = dependencies.SymptomService
 	handler.viewerService = dependencies.ViewerService

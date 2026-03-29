@@ -6,12 +6,9 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -443,36 +440,7 @@ func validateOIDCCABundle(path string) error {
 }
 
 func readOIDCCABundle(path string) ([]byte, error) {
-	cleanPath := filepath.Clean(strings.TrimSpace(path))
-	if cleanPath == "" || cleanPath == "." {
-		return nil, errors.New("OIDC_CA_FILE must reference a regular file")
-	}
-	info, err := os.Stat(cleanPath)
-	if err != nil {
-		return nil, fmt.Errorf("OIDC_CA_FILE could not be read: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, errors.New("OIDC_CA_FILE must reference a regular file")
-	}
-	if info.Size() > maxOIDCCABundleBytes {
-		return nil, fmt.Errorf("OIDC_CA_FILE must be at most %d bytes", maxOIDCCABundleBytes)
-	}
-
-	// #nosec G304 -- OIDC_CA_FILE is an operator-managed local path validated as a regular file before read.
-	file, err := os.Open(cleanPath)
-	if err != nil {
-		return nil, fmt.Errorf("OIDC_CA_FILE could not be read: %w", err)
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(io.LimitReader(file, maxOIDCCABundleBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("OIDC_CA_FILE could not be read: %w", err)
-	}
-	if int64(len(content)) > maxOIDCCABundleBytes {
-		return nil, fmt.Errorf("OIDC_CA_FILE must be at most %d bytes", maxOIDCCABundleBytes)
-	}
-	return content, nil
+	return ReadBoundedRegularFile(path, "OIDC_CA_FILE", maxOIDCCABundleBytes)
 }
 
 func newOIDCHTTPClient(config OIDCConfig) *http.Client {

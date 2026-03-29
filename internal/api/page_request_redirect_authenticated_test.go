@@ -16,7 +16,7 @@ func TestRedirectAuthenticatedUserIfPresentRedirectsAuthenticatedRequest(t *test
 	handler.secretKey = []byte("test-secret")
 	user := createDataAccessTestUser(t, database, "redirect-helper@example.com")
 
-	token, err := handler.buildToken(&user, time.Hour)
+	token, _, err := handler.buildTokenWithSessionID(&user, time.Hour)
 	if err != nil {
 		t.Fatalf("buildToken returned error: %v", err)
 	}
