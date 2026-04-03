@@ -3,6 +3,7 @@ module github.com/ovumcy/ovumcy-web
 go 1.25.8
 
 require (
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/gofiber/fiber/v2 v2.52.12
@@ -10,6 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.6.0
 	golang.org/x/crypto v0.45.0
 	golang.org/x/net v0.47.0
+	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.38.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.0
@@ -17,10 +19,9 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
-	github.com/coreos/go-oidc/v3 v3.17.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -38,7 +39,6 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	modernc.org/libc v1.22.5 // indirect
