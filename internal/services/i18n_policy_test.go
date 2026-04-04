@@ -33,6 +33,9 @@ func TestSettingsStatusTranslationKey(t *testing.T) {
 	if got := SettingsStatusTranslationKey("  CYCLE_UPDATED "); got != "settings.success.cycle_updated" {
 		t.Fatalf("expected cycle_updated key, got %q", got)
 	}
+	if got := SettingsStatusTranslationKey(" interface_updated "); got != "settings.success.interface_updated" {
+		t.Fatalf("expected interface_updated key, got %q", got)
+	}
 	if got := SettingsStatusTranslationKey("unknown"); got != "" {
 		t.Fatalf("expected empty key for unknown status, got %q", got)
 	}

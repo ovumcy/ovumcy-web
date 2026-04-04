@@ -21,6 +21,18 @@ func TestSettingsChangePasswordMissingCSRFRejectedByMiddleware(t *testing.T) {
 	assertStatusCode(t, response, http.StatusForbidden)
 }
 
+func TestSettingsInterfaceMissingCSRFRejectedByMiddleware(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-interface-csrf@example.com")
+
+	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/settings/interface", url.Values{
+		"language": {"en"},
+		"theme":    {"dark"},
+	}, nil)
+	defer response.Body.Close()
+
+	assertStatusCode(t, response, http.StatusForbidden)
+}
+
 func TestSettingsRegenerateRecoveryCodeMissingCSRFRejectedByMiddleware(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-regenerate-csrf@example.com")
 

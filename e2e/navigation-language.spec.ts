@@ -33,6 +33,19 @@ async function switchLanguageViaRoute(page: Page, code: string, next: string): P
   await page.goto(`/lang/${code}?next=${encodeURIComponent(next)}`);
 }
 
+async function saveSettingsLanguage(page: Page, code: string): Promise<void> {
+  const form = page.locator('[data-settings-interface-form]');
+  const option = form.locator(`[data-settings-interface-language-option="${code}"]`);
+  if ((await option.getAttribute('data-selected')) !== 'true') {
+    await option.locator('.radio-tile').click();
+    await form.locator('[data-settings-interface-save]').click();
+  }
+  await expect(form.locator(`[data-settings-interface-language-option="${code}"]`)).toHaveAttribute(
+    'data-selected',
+    'true'
+  );
+}
+
 async function expectDateFieldVisible(page: Page, fieldID: string): Promise<void> {
   const root = page.locator(`[data-date-field-id="${fieldID}"]`);
   await expect(root.locator('[data-date-field-part="day"]')).toBeVisible();
@@ -127,15 +140,15 @@ test.describe('Navigation and language switch', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
 
-    await expect(page.locator('#settings-interface .lang-switch')).toBeVisible();
+    await expect(page.locator('[data-settings-interface-form]')).toBeVisible();
 
-    await page.locator('.lang-switch a[href^="/lang/en"]').click();
+    await saveSettingsLanguage(page, 'en');
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(page.locator('h1.journal-title')).toContainText('Settings');
     await expect(page.getByRole('link', { name: 'Today' }).first()).toBeVisible();
 
-    await page.locator('.lang-switch a[href^="/lang/es"]').click();
+    await saveSettingsLanguage(page, 'es');
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'es');
     await expect(page.locator('h1.journal-title')).toContainText('Configuración');
@@ -146,20 +159,20 @@ test.describe('Navigation and language switch', () => {
     await expect(page.locator('[data-date-field-id="export-from"] [data-date-field-open]')).toBeVisible();
     await expect(page.locator('[data-date-field-id="export-to"] [data-date-field-open]')).toBeVisible();
 
-    await page.locator('.lang-switch a[href^="/lang/ru"]').click();
+    await saveSettingsLanguage(page, 'ru');
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
     await expect(page.locator('h1.journal-title')).toContainText('Настройки');
     await expect(page.getByRole('link', { name: 'Сегодня' }).first()).toBeVisible();
 
-    await page.locator('.lang-switch a[href^="/lang/fr"]').click();
+    await saveSettingsLanguage(page, 'fr');
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
     await expect(page.locator('h1.journal-title')).toContainText('Paramètres');
     await expect(page.getByRole('link', { name: "Aujourd'hui" }).first()).toBeVisible();
     await expectDateFieldVisible(page, 'settings-last-period-start');
 
-    await page.locator('.lang-switch a[href^="/lang/de"]').click();
+    await saveSettingsLanguage(page, 'de');
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
     await expect(page.locator('h1.journal-title')).toContainText('Einstellungen');

@@ -25,6 +25,9 @@
       hx-target="#settings-cycle-status"
       hx-swap="innerHTML"
       class="mt-5 space-y-6"
+      data-settings-draft-form="cycle"
+      data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
+      data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}"
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
@@ -155,15 +158,17 @@
         </div>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3">
+      <div class="settings-form-actions">
         <button
           type="submit"
           class="btn-primary"
+          data-settings-cycle-save
           data-settings-cycle-submit
           data-save-button
           data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.cycle.save"}}</button>
+        <button type="button" class="btn-secondary" data-settings-cycle-discard>{{t .Messages "settings.draft.discard"}}</button>
+        <div id="settings-cycle-status" class="save-status text-sm"></div>
       </div>
-      <div id="settings-cycle-status" class="save-status text-sm"></div>
     </form>
   </section>
   {{end}}
@@ -186,6 +191,9 @@
       hx-target="#settings-tracking-status"
       hx-swap="innerHTML"
       class="space-y-4"
+      data-settings-draft-form="tracking"
+      data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
+      data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}"
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
@@ -264,7 +272,13 @@
       </div>
 
       <div class="settings-form-actions">
-        <button type="submit" class="btn-secondary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.tracking.save"}}</button>
+        <button
+          type="submit"
+          class="btn-secondary"
+          data-settings-tracking-save
+          data-save-button
+          data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.tracking.save"}}</button>
+        <button type="button" class="btn-secondary" data-settings-tracking-discard>{{t .Messages "settings.draft.discard"}}</button>
         <div id="settings-tracking-status" class="save-status text-sm"></div>
       </div>
     </form>
@@ -277,43 +291,62 @@
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.interface.subtitle"}}</p>
     </div>
 
-    <div class="settings-interface-grid">
-      <section class="journal-panel settings-interface-panel space-y-3">
-        <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
-        <div class="lang-switch settings-switch">
-          {{range .LanguageOptions}}
-          <a href="{{.Href}}" class="lang-link{{if .Active}} lang-link-active{{end}}" {{if .Active}}aria-current="page"{{end}}>{{.Label}}</a>
-          {{end}}
-        </div>
-      </section>
+    <form
+      action="/api/settings/interface"
+      method="post"
+      class="space-y-5"
+      data-settings-draft-form="interface"
+      data-settings-interface-form
+      data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
+      data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-      <section class="journal-panel settings-interface-panel space-y-3">
-        <div class="space-y-1">
-          <p class="field-label">{{t .Messages "settings.interface.theme"}}</p>
-          <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
-        </div>
-        <div class="theme-switch settings-switch" data-theme-switch role="group" aria-label="{{t .Messages "settings.interface.theme"}}">
-          <button
-            type="button"
-            class="theme-switch-option"
-            data-theme-option="light"
-            aria-pressed="false">
-            <span class="theme-switch-icon" aria-hidden="true">☀️</span>
-            <span>{{t .Messages "theme.name.light"}}</span>
-            <span class="theme-switch-check" aria-hidden="true">✓</span>
-          </button>
-          <button
-            type="button"
-            class="theme-switch-option"
-            data-theme-option="dark"
-            aria-pressed="false">
-            <span class="theme-switch-icon" aria-hidden="true">🌙</span>
-            <span>{{t .Messages "theme.name.dark"}}</span>
-            <span class="theme-switch-check" aria-hidden="true">✓</span>
-          </button>
-        </div>
-      </section>
-    </div>
+      <div class="settings-interface-grid">
+        <section class="journal-panel settings-interface-panel space-y-3">
+          <div class="space-y-1">
+            <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
+            <p class="journal-muted text-sm">{{t .Messages "settings.interface.language_hint"}}</p>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="{{t .Messages "settings.interface.language"}}">
+            {{range .LanguageOptions}}
+            <label class="choice-option" data-settings-interface-language-option="{{.Code}}" data-selected="{{if .Active}}true{{else}}false{{end}}">
+              <input type="radio" name="language" value="{{.Code}}" class="choice-input" {{if .Active}}checked{{end}}>
+              <span class="radio-tile radio-tile-inline"><span>{{.Label}}</span></span>
+            </label>
+            {{end}}
+          </div>
+        </section>
+
+        <section class="journal-panel settings-interface-panel space-y-3">
+          <div class="space-y-1">
+            <p class="field-label">{{t .Messages "settings.interface.theme"}}</p>
+            <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
+            <p class="journal-muted text-xs">{{t .Messages "settings.interface.preview_hint"}}</p>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="{{t .Messages "settings.interface.theme"}}">
+            <label class="choice-option" data-settings-interface-theme-option="light" data-selected="false">
+              <input type="radio" name="theme" value="light" class="choice-input" checked>
+              <span class="radio-tile radio-tile-inline">
+                <span>☀️</span>
+                <span>{{t .Messages "theme.name.light"}}</span>
+              </span>
+            </label>
+            <label class="choice-option" data-settings-interface-theme-option="dark" data-selected="false">
+              <input type="radio" name="theme" value="dark" class="choice-input">
+              <span class="radio-tile radio-tile-inline">
+                <span>🌙</span>
+                <span>{{t .Messages "theme.name.dark"}}</span>
+              </span>
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-primary" data-settings-interface-save>{{t .Messages "settings.interface.save"}}</button>
+        <button type="button" class="btn-secondary" data-settings-interface-discard>{{t .Messages "settings.interface.discard"}}</button>
+      </div>
+    </form>
   </section>
 
   <section class="journal-card p-5 sm:p-6 space-y-6" id="settings-account">

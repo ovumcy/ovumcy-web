@@ -75,6 +75,7 @@ func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	export.Post("/pdf", handler.ExportPDF)
 
 	settings := api.Group("/settings", handler.AuthRequired)
+	settings.Post("/interface", handler.UpdateInterfaceSettings)
 	settings.Post("/profile", handler.UpdateProfile)
 	settings.Post("/tracking", handler.OwnerOnly, handler.UpdateTrackingSettings)
 	settings.Post("/change-password", handler.ChangePassword)

@@ -207,8 +207,15 @@
   "settings.interface.title": "Interface",
   "settings.interface.subtitle": "Langue et thème de l'application.",
   "settings.interface.language": "Langue",
+  "settings.interface.language_hint": "Enregistrez pour mettre à jour la navigation, les paramètres et les dates dans toute l'application.",
   "settings.interface.theme": "Thème",
   "settings.interface.theme_hint": "Sauvegardé uniquement dans ce navigateur.",
+  "settings.interface.preview_hint": "L'aperçu du thème se met à jour immédiatement et est enregistré dans ce navigateur quand vous cliquez sur Enregistrer.",
+  "settings.draft.discard": "Ignorer les modifications",
+  "settings.draft.unsaved_prompt": "Vous avez des modifications de paramètres non enregistrées. Quitter sans enregistrer ?",
+  "settings.interface.save": "Enregistrer",
+  "settings.interface.discard": "Ignorer",
+  "settings.interface.unsaved_prompt": "Vous avez des changements d'interface non enregistrés. Quitter sans enregistrer ?",
 
   "settings.account.title": "Compte",
   "settings.account.subtitle": "Profil, mot de passe et contrôles de sécurité avancés.",
@@ -309,6 +316,7 @@
 
   "settings.success.password_changed": "Mot de passe modifié avec succès.",
   "settings.success.cycle_updated": "Paramètres du cycle mis à jour avec succès.",
+  "settings.success.interface_updated": "Les paramètres d'interface ont été mis à jour.",
   "settings.success.profile_updated": "Profil mis à jour avec succès.",
   "settings.success.profile_name_cleared": "Nom de profil supprimé.",
   "settings.success.data_cleared": "Toutes les données de suivi ont été effacées avec succès.",

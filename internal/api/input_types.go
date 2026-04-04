@@ -57,6 +57,11 @@ type profileSettingsInput struct {
 	DisplayName string `json:"display_name" form:"display_name"`
 }
 
+type interfaceSettingsInput struct {
+	Language string `json:"language" form:"language"`
+	Theme    string `json:"theme" form:"theme"`
+}
+
 type trackingSettingsInput struct {
 	TrackBBT           bool   `json:"track_bbt" form:"track_bbt"`
 	TemperatureUnit    string `json:"temperature_unit" form:"temperature_unit"`

@@ -73,10 +73,11 @@ test.describe('Cross-browser smoke', () => {
     await expect(page).toHaveURL(/\/settings$/);
 
     const html = page.locator('html');
-    await page.locator('[data-theme-option="dark"]').click();
+    const interfaceForm = page.locator('[data-settings-interface-form]');
+    await interfaceForm.locator('[data-settings-interface-theme-option="dark"] .radio-tile').click();
     await expect(html).toHaveAttribute('data-theme', 'dark');
-
-    await page.locator('.lang-switch a[href^="/lang/es"]').click();
+    await interfaceForm.locator('[data-settings-interface-language-option="es"] .radio-tile').click();
+    await interfaceForm.locator('[data-settings-interface-save]').click();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(html).toHaveAttribute('lang', 'es');
     await expect(page.locator('h1.journal-title')).toContainText('Configuración');

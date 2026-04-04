@@ -480,6 +480,62 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toBeVisible();
   });
 
+  test('cycle and tracking drafts discard unsaved changes before navigation', async ({ page }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-drafts');
+
+    const cycleForm = page.locator('section#settings-cycle form[data-settings-draft-form="cycle"]');
+    const trackingForm = page.locator('section#settings-tracking form[data-settings-draft-form="tracking"]');
+    const cycleLength = cycleForm.locator('#settings-cycle-length');
+    const cycleSave = cycleForm.locator('[data-settings-cycle-save]');
+    const cycleDiscard = cycleForm.locator('[data-settings-cycle-discard]');
+    const trackingSave = trackingForm.locator('[data-settings-tracking-save]');
+    const trackingDiscard = trackingForm.locator('[data-settings-tracking-discard]');
+    const trackBBT = trackingForm.locator('input[name="track_bbt"]');
+
+    await expect(cycleSave).toBeDisabled();
+    await expect(cycleDiscard).toBeDisabled();
+    await expect(trackingSave).toBeDisabled();
+    await expect(trackingDiscard).toBeDisabled();
+
+    const initialCycleLength = Number(await cycleLength.inputValue());
+    await setRangeValue(cycleLength, initialCycleLength + 4);
+    await expect(cycleSave).toBeEnabled();
+    await expect(cycleDiscard).toBeEnabled();
+
+    await trackBBT.check();
+    await expect(trackingSave).toBeEnabled();
+    await expect(trackingDiscard).toBeEnabled();
+
+    await page.locator('a[href="/calendar"]').first().click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await expect(page.locator('#confirm-modal-message')).toContainText(
+      'You have unsaved settings changes. Leave without saving?'
+    );
+    await page.locator('#confirm-modal-cancel').click();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(cycleLength).toHaveValue(String(initialCycleLength + 4));
+    await expect(trackBBT).toBeChecked();
+
+    await cycleDiscard.click();
+    await expect(cycleLength).toHaveValue(String(initialCycleLength));
+    await expect(cycleSave).toBeDisabled();
+    await expect(cycleDiscard).toBeDisabled();
+    await expect(trackingSave).toBeEnabled();
+    await expect(trackingDiscard).toBeEnabled();
+
+    await page.locator('a[href="/calendar"]').first().click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.locator('#settings-cycle-length')).toHaveValue(String(initialCycleLength));
+    await expect(page.locator('section#settings-tracking input[name="track_bbt"]')).not.toBeChecked();
+    await expect(page.locator('[data-settings-tracking-save]')).toBeDisabled();
+    await expect(page.locator('[data-settings-tracking-discard]')).toBeDisabled();
+  });
+
   test('onboarding selected start date persists into settings cycle field', async ({ page }) => {
     const creds = createCredentials('settings-onboarding-date');
 

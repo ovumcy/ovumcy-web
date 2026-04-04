@@ -181,6 +181,68 @@ func TestSettingsTrackingSectionExplainsToggleEffectsAndCurrentState(t *testing.
 	}
 }
 
+func TestSettingsInterfaceSectionRendersDraftSaveContract(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-interface-ui@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: `data-settings-interface-form`, message: "expected interface settings form"},
+		bodyStringMatch{fragment: `action="/api/settings/interface"`, message: "expected interface form action"},
+		bodyStringMatch{fragment: `data-settings-interface-save`, message: "expected interface save control"},
+		bodyStringMatch{fragment: `data-settings-interface-discard`, message: "expected interface discard control"},
+		bodyStringMatch{fragment: `data-settings-interface-language-option="en"`, message: "expected interface language radio tiles"},
+		bodyStringMatch{fragment: `data-settings-interface-theme-option="dark"`, message: "expected interface theme radio tiles"},
+		bodyStringMatch{fragment: "Theme preview updates immediately and is saved in this browser when you press Save.", message: "expected interface preview hint"},
+	)
+	assertBodyNotContainsAll(t, rendered,
+		bodyStringMatch{fragment: `class="lang-link`, message: "did not expect legacy language links in settings interface"},
+	)
+}
+
+func TestSettingsCycleAndTrackingSectionsRenderDraftDiscardContract(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-cycle-tracking-draft-ui@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: `data-settings-draft-form="cycle"`, message: "expected cycle draft form contract"},
+		bodyStringMatch{fragment: `data-settings-cycle-save`, message: "expected cycle save hook"},
+		bodyStringMatch{fragment: `data-settings-cycle-discard`, message: "expected cycle discard control"},
+		bodyStringMatch{fragment: `data-settings-draft-form="tracking"`, message: "expected tracking draft form contract"},
+		bodyStringMatch{fragment: `data-settings-tracking-save`, message: "expected tracking save hook"},
+		bodyStringMatch{fragment: `data-settings-tracking-discard`, message: "expected tracking discard control"},
+		bodyStringMatch{fragment: "You have unsaved settings changes. Leave without saving?", message: "expected shared settings unsaved prompt"},
+		bodyStringMatch{fragment: "Discard changes", message: "expected shared settings discard copy"},
+	)
+}
+
 func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 

@@ -469,7 +469,9 @@ test.describe('Bug regressions', () => {
 
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
-      await page.locator('.lang-switch a[href^="/lang/ru"]').click();
+      const interfaceForm = page.locator('[data-settings-interface-form]');
+      await interfaceForm.locator('[data-settings-interface-language-option="ru"] .radio-tile').click();
+      await interfaceForm.locator('[data-settings-interface-save]').click();
       await expect(page).toHaveURL(/\/settings$/);
       await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
 
