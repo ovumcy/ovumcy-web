@@ -54,6 +54,8 @@ type DashboardViewData struct {
 	ShowSexChip                       bool
 	ShowBBTField                      bool
 	ShowCervicalMucus                 bool
+	ShowCycleFactors                  bool
+	ShowNotesField                    bool
 	AllowManualCycleStart             bool
 	ManualCycleStartPolicy            ManualCycleStartPolicy
 	ShowHighFertilityBadge            bool
@@ -85,6 +87,8 @@ type DayEditorViewData struct {
 	ShowSexChip                bool
 	ShowBBTField               bool
 	ShowCervicalMucus          bool
+	ShowCycleFactors           bool
+	ShowNotesField             bool
 	AllowManualCycleStart      bool
 	ManualCycleStartPolicy     ManualCycleStartPolicy
 	ShowFutureCycleStartNotice bool
@@ -145,9 +149,9 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 		cycleFactorExplanation,
 		hasCycleFactorExplanation,
 	)
-	showSexChip, showBBTField, showCervicalMucus, allowManualCycleStart := dashboardOwnerVisibilityState(user, today, now, location)
+	visibility := dashboardOwnerVisibilityState(user, today, now, location)
 	showHighFertilityBadge := dashboardHighFertilityBadge(user, todayLog)
-	showSpottingCycleWarning := dashboardSpottingCycleWarning(stats, todayLog, today, location)
+	showSpottingCycleWarning := dashboardSpottingCycleWarning(logs, todayLog, today, location)
 
 	return DashboardViewData{
 		Stats:                             stats,
@@ -165,10 +169,12 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 		HasExtraSymptoms:                  len(extraSymptoms) > 0,
 		SelectedSymptomID:                 selectedSymptomID,
 		ShowYesterdayJump:                 !yesterdayHasData,
-		ShowSexChip:                       showSexChip,
-		ShowBBTField:                      showBBTField,
-		ShowCervicalMucus:                 showCervicalMucus,
-		AllowManualCycleStart:             allowManualCycleStart,
+		ShowSexChip:                       visibility.ShowSexChip,
+		ShowBBTField:                      visibility.ShowBBTField,
+		ShowCervicalMucus:                 visibility.ShowCervicalMucus,
+		ShowCycleFactors:                  visibility.ShowCycleFactors,
+		ShowNotesField:                    visibility.ShowNotesField,
+		AllowManualCycleStart:             visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:            cycleStartPolicy,
 		ShowHighFertilityBadge:            showHighFertilityBadge,
 		ShowMissedDaysLink:                showMissedDaysLink,
@@ -192,23 +198,33 @@ func dashboardPredictionExplanationState(user *models.User, cycleContext Dashboa
 	return predictionExplanation, factorHintKeys, hasPredictionFactorHint
 }
 
-func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.Time, location *time.Location) (bool, bool, bool, bool) {
+type dashboardOwnerVisibility struct {
+	ShowSexChip           bool
+	ShowBBTField          bool
+	ShowCervicalMucus     bool
+	ShowCycleFactors      bool
+	ShowNotesField        bool
+	AllowManualCycleStart bool
+}
+
+func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.Time, location *time.Location) dashboardOwnerVisibility {
 	isOwner := IsOwnerUser(user)
-	return isOwner && !user.HideSexChip,
-		isOwner && user.TrackBBT,
-		isOwner && user.TrackCervicalMucus,
-		isOwner && IsAllowedManualCycleStartDate(today, now, location)
+	return dashboardOwnerVisibility{
+		ShowSexChip:           isOwner && !user.HideSexChip,
+		ShowBBTField:          isOwner && user.TrackBBT,
+		ShowCervicalMucus:     isOwner && user.TrackCervicalMucus,
+		ShowCycleFactors:      isOwner && !user.HideCycleFactors,
+		ShowNotesField:        isOwner && !user.HideNotesField,
+		AllowManualCycleStart: isOwner && IsAllowedManualCycleStartDate(today, now, location),
+	}
 }
 
 func dashboardHighFertilityBadge(user *models.User, todayLog models.DailyLog) bool {
 	return IsOwnerUser(user) && NormalizeDayCervicalMucus(todayLog.CervicalMucus) == models.CervicalMucusEggWhite
 }
 
-func dashboardSpottingCycleWarning(stats CycleStats, todayLog models.DailyLog, today time.Time, location *time.Location) bool {
-	return todayLog.IsPeriod &&
-		NormalizeDayFlow(todayLog.Flow) == models.FlowSpotting &&
-		!stats.LastPeriodStart.IsZero() &&
-		sameCalendarDay(DateAtLocation(stats.LastPeriodStart, location), today)
+func dashboardSpottingCycleWarning(logs []models.DailyLog, todayLog models.DailyLog, today time.Time, location *time.Location) bool {
+	return shouldShowSpottingCycleWarning(logs, todayLog, today, location)
 }
 
 func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, language string, day time.Time, now time.Time, location *time.Location) (DayEditorViewData, error) {
@@ -238,12 +254,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, l
 		return DayEditorViewData{}, err
 	}
 	isFutureDate := day.After(DateAtLocation(now.In(location), location))
-	allowManualCycleStart := IsOwnerUser(user) && IsAllowedManualCycleStartDate(day, now, location)
-	stats, _, err := service.stats.BuildCycleStatsForRange(user, day.AddDate(-2, 0, 0), day, now, location)
-	if err != nil {
-		return DayEditorViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadStats, err)
-	}
-
+	visibility := dashboardOwnerVisibilityState(user, day, now, location)
 	return DayEditorViewData{
 		Date:                       day,
 		DateString:                 day.Format("2006-01-02"),
@@ -256,14 +267,16 @@ func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, l
 		HasExtraSymptoms:           len(extraSymptoms) > 0,
 		SelectedSymptomID:          selectedSymptomID,
 		HasDayData:                 hasDayData,
-		ShowSexChip:                IsOwnerUser(user) && !user.HideSexChip,
-		ShowBBTField:               IsOwnerUser(user) && user.TrackBBT,
-		ShowCervicalMucus:          IsOwnerUser(user) && user.TrackCervicalMucus,
-		AllowManualCycleStart:      allowManualCycleStart,
+		ShowSexChip:                visibility.ShowSexChip,
+		ShowBBTField:               visibility.ShowBBTField,
+		ShowCervicalMucus:          visibility.ShowCervicalMucus,
+		ShowCycleFactors:           visibility.ShowCycleFactors,
+		ShowNotesField:             visibility.ShowNotesField,
+		AllowManualCycleStart:      visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:     cycleStartPolicy,
-		ShowFutureCycleStartNotice: isFutureDate && allowManualCycleStart,
+		ShowFutureCycleStartNotice: isFutureDate && visibility.AllowManualCycleStart,
 		ShowCycleStartSuggestion:   showCycleStartSuggestion,
-		ShowSpottingCycleWarning:   logEntry.IsPeriod && NormalizeDayFlow(logEntry.Flow) == models.FlowSpotting && !stats.LastPeriodStart.IsZero() && sameCalendarDay(DateAtLocation(stats.LastPeriodStart, location), day),
+		ShowSpottingCycleWarning:   shouldShowSpottingCycleWarning(logs, logEntry, day, location),
 		IsOwner:                    IsOwnerUser(user),
 	}, nil
 }

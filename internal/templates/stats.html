@@ -50,6 +50,13 @@
     {{if .ShowAgeVariabilityHint}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.age_variability_hint"}}</div>
     {{end}}
+    {{if .IsOwner}}
+    <div class="journal-panel text-sm space-y-1" data-usage-goal-summary>
+      <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
+      <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
+      <p class="journal-muted text-xs">{{t .Messages "usage_goal.ui_only_hint"}}</p>
+    </div>
+    {{end}}
 
     <div class="grid gap-4 {{if .ShowPredictionReliability}}lg:grid-cols-4{{else}}lg:grid-cols-3{{end}}">
       <article class="journal-card stat-card reveal">
@@ -217,7 +224,7 @@
       {{if .HasCurrentCycleBBTChart}}
       <section class="journal-card p-5 sm:p-6 stats-trend-panel">
         <div class="mb-4 flex items-center justify-between gap-3">
-          <h2 class="journal-subtitle">{{t .Messages "stats.bbt_title"}}</h2>
+          <h2 id="stats-bbt-title" class="journal-subtitle">{{t .Messages "stats.bbt_title"}}</h2>
           <span class="journal-muted text-xs">{{t .Messages "stats.bbt_unit"}}</span>
         </div>
         <div
@@ -227,9 +234,13 @@
           data-value-suffix='{{t .Messages "stats.bbt_unit"}}'
           data-value-decimals="1"
           data-baseline-label='{{t .Messages "stats.bbt_baseline"}}'
+          role="img"
+          aria-labelledby="stats-bbt-title"
+          aria-describedby="stats-bbt-summary stats-bbt-caption"
           class="chart-shell">
         </div>
-        <p class="journal-muted mt-3 text-sm">{{t .Messages "stats.bbt_caption"}}</p>
+        <p id="stats-bbt-summary" class="journal-muted mt-3 text-xs">{{.BBTChartSummary}}</p>
+        <p id="stats-bbt-caption" class="journal-muted mt-2 text-sm">{{t .Messages "stats.bbt_caption"}}</p>
       </section>
       {{end}}
     </div>
@@ -238,7 +249,7 @@
     <div class="grid gap-6 lg:grid-cols-[2fr_1fr] lg:items-start">
       <section class="journal-card p-5 sm:p-6 stats-trend-panel">
         <div class="mb-4 flex items-center justify-between gap-3">
-          <h2 class="journal-subtitle">{{t .Messages "stats.cycle_trend"}}</h2>
+          <h2 id="stats-cycle-trend-title" class="journal-subtitle">{{t .Messages "stats.cycle_trend"}}</h2>
           <span class="journal-muted text-xs">{{if .HasTrendData}}{{t .Messages "stats.recent_cycles"}}{{else}}{{t .Messages "stats.no_cycle_data"}}{{end}}</span>
         </div>
         <div class="mb-3 flex flex-wrap items-center gap-3 text-xs journal-muted">
@@ -260,8 +271,12 @@
           data-empty-text='{{t .Messages "stats.no_cycle_data"}}'
           data-days-suffix='{{t .Messages "common.days_short"}}'
           data-baseline-label='{{t .Messages "stats.legend.average"}}'
+          role="img"
+          aria-labelledby="stats-cycle-trend-title"
+          aria-describedby="stats-cycle-trend-summary"
           class="chart-shell">
         </div>
+        <p id="stats-cycle-trend-summary" class="journal-muted mt-3 text-xs">{{.CycleChartSummary}}</p>
         {{else}}
         <p class="journal-muted text-sm">{{t .Messages "stats.no_cycle_data"}}</p>
         {{end}}

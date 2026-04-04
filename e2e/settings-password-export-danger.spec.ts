@@ -237,8 +237,8 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     const cycleForm = page.locator('section#settings-cycle form[action="/settings/cycle"]');
 
     await expect(cycleForm).toBeVisible();
-    await setRangeValue(page.locator('#settings-cycle-length'), 28);
-    await setRangeValue(page.locator('#settings-period-length'), 5);
+    await setRangeValue(page.locator('#settings-cycle-length'), 29);
+    await setRangeValue(page.locator('#settings-period-length'), 6);
     await page.locator('input[name="unpredictable_cycle"]').uncheck();
     await cycleForm.locator('button[data-save-button]').click();
     await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
@@ -259,11 +259,12 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
     await expect(page.locator('.recovery-code-box')).toHaveCount(0);
-    await expect(page.locator('#settings-period-length')).toHaveValue('5');
+    await expect(page.locator('#settings-cycle-length')).toHaveValue('29');
+    await expect(page.locator('#settings-period-length')).toHaveValue('6');
     await expect(page.locator('input[name="unpredictable_cycle"]')).not.toBeChecked();
   });
 
-  test('export CSV, JSON, and PDF from settings return attachment responses with expected structure', async ({
+  test('export CSV and JSON from settings return attachment responses with expected structure', async ({
     page,
   }) => {
     await registerOwnerAndOpenSettings(page, 'settings-export');
@@ -300,17 +301,6 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     expect(typeof payload.exported_at).toBe('string');
     expect(Array.isArray(payload.entries)).toBe(true);
     expect(payload.entries?.some((entry) => String(entry.notes || '') === exportNote)).toBe(true);
-
-    const pdfResponse = await page.request.post('/api/export/pdf', {
-      form: { csrf_token: csrfToken },
-    });
-
-    expect(pdfResponse.status()).toBe(200);
-    expect(pdfResponse.headers()['content-type'] || '').toContain('application/pdf');
-    expect(pdfResponse.headers()['content-disposition'] || '').toContain('attachment;');
-
-    const pdfBody = await pdfResponse.body();
-    expect(pdfBody.subarray(0, 4).toString()).toBe('%PDF');
   });
 
   test('export date range defaults to browser today even when future entries exist', async ({ page }) => {

@@ -5,7 +5,6 @@ go 1.25.8
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/go-pdf/fpdf v0.9.0
 	github.com/gofiber/fiber/v2 v2.52.12
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/jackc/pgx/v5 v5.6.0

@@ -41,7 +41,7 @@ func (service *DayService) ResolveDayFeedback(user *models.User, day time.Time, 
 		MessageKey: resolveDaySaveMessageKey(user, day, stats),
 	}
 
-	if entry.IsPeriod && NormalizeDayFlow(entry.Flow) == models.FlowSpotting && !stats.LastPeriodStart.IsZero() && sameCalendarDay(DateAtLocation(stats.LastPeriodStart, location), day) {
+	if shouldShowSpottingCycleWarning(logs, entry, day, location) {
 		state.ShowSpottingCycleWarning = true
 	}
 
@@ -80,6 +80,19 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 		return daySaveMessageFertile
 	}
 	return daySaveMessageNeutral
+}
+
+func shouldShowSpottingCycleWarning(logs []models.DailyLog, entry models.DailyLog, day time.Time, location *time.Location) bool {
+	if !entry.IsPeriod || NormalizeDayFlow(entry.Flow) != models.FlowSpotting {
+		return false
+	}
+
+	_, cycleStart, ok := currentPeriodStreakAtDay(logs, day, location)
+	if !ok {
+		return false
+	}
+
+	return sameCalendarDay(cycleStart, DateAtLocation(day, location))
 }
 
 func currentPeriodStreakAtDay(logs []models.DailyLog, day time.Time, location *time.Location) (int, time.Time, bool) {

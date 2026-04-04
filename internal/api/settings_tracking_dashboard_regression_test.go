@@ -6,8 +6,10 @@ import (
 	"net/url"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func TestTrackingSettingsExposeBBTAndCervicalMucusOnDashboard(t *testing.T) {
@@ -85,4 +87,53 @@ func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *t
 	if regexp.MustCompile(`name="unpredictable_cycle"[^>]*checked`).MatchString(rendered) {
 		t.Fatalf("did not expect unpredictable_cycle to become checked after recovery-code regeneration")
 	}
+}
+
+func TestTrackingSettingsHideSensitiveSectionsOnDashboardAndCalendar(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-privacy@example.com")
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/tracking", url.Values{
+		"hide_sex_chip":      {"true"},
+		"hide_cycle_factors": {"true"},
+		"hide_notes_field":   {"true"},
+		"temperature_unit":   {"c"},
+	}, map[string]string{
+		"HX-Request": "true",
+	})
+	assertStatusCode(t, response, http.StatusOK)
+
+	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	dashboardRequest.Header.Set("Accept-Language", "en")
+	dashboardRequest.Header.Set("Cookie", ctx.authCookie)
+
+	dashboardResponse := mustAppResponse(t, ctx.app, dashboardRequest)
+	assertStatusCode(t, dashboardResponse, http.StatusOK)
+	dashboardBody := mustReadBodyString(t, dashboardResponse.Body)
+	assertBodyContainsAll(t, dashboardBody,
+		bodyStringMatch{fragment: "Intimacy", message: "expected intimacy section heading to remain visible"},
+		bodyStringMatch{fragment: "This section is hidden in settings.", message: "expected dashboard intimacy hidden hint"},
+	)
+	assertBodyNotContainsAll(t, dashboardBody,
+		bodyStringMatch{fragment: `id="today-notes"`, message: "did not expect dashboard notes field when hidden"},
+		bodyStringMatch{fragment: `name="cycle_factor_keys"`, message: "did not expect dashboard cycle factor inputs when hidden"},
+		bodyStringMatch{fragment: `name="sex_activity"`, message: "did not expect dashboard sex activity inputs when hidden"},
+	)
+
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC).Format("2006-01-02")
+	panelRequest := httptest.NewRequest(http.MethodGet, "/calendar/day/"+today+"?mode=edit", nil)
+	panelRequest.Header.Set("Accept-Language", "en")
+	panelRequest.Header.Set("Cookie", ctx.authCookie)
+
+	panelResponse := mustAppResponse(t, ctx.app, panelRequest)
+	assertStatusCode(t, panelResponse, http.StatusOK)
+	panelBody := mustReadBodyString(t, panelResponse.Body)
+	assertBodyContainsAll(t, panelBody,
+		bodyStringMatch{fragment: "Intimacy", message: "expected calendar intimacy section heading to remain visible"},
+		bodyStringMatch{fragment: "This section is hidden in settings.", message: "expected calendar intimacy hidden hint"},
+	)
+	assertBodyNotContainsAll(t, panelBody,
+		bodyStringMatch{fragment: `id="calendar-notes"`, message: "did not expect calendar notes field when hidden"},
+		bodyStringMatch{fragment: `name="cycle_factor_keys"`, message: "did not expect calendar cycle factor inputs when hidden"},
+		bodyStringMatch{fragment: `name="sex_activity"`, message: "did not expect calendar sex activity inputs when hidden"},
+	)
 }

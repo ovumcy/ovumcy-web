@@ -60,6 +60,12 @@ func TestUserPreferenceTranslationKeysUseNormalizedFallbacks(t *testing.T) {
 	if got := UsageGoalTranslationKey(models.UsageGoalAvoid); got != "settings.goal.avoid" {
 		t.Fatalf("expected avoid translation key, got %q", got)
 	}
+	if got := UsageGoalSummaryTranslationKey("unknown"); got != "usage_goal.summary.health" {
+		t.Fatalf("expected health summary translation fallback, got %q", got)
+	}
+	if got := UsageGoalSummaryTranslationKey(models.UsageGoalTrying); got != "usage_goal.summary.trying" {
+		t.Fatalf("expected trying summary translation key, got %q", got)
+	}
 	if got := AgeGroupTranslationKey("unknown"); got != "settings.age_group.20_35" {
 		t.Fatalf("expected middle age fallback translation key, got %q", got)
 	}

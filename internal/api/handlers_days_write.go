@@ -26,7 +26,7 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 	entry, err := handler.dayService.UpsertDayEntryWithAutoFill(
 		request.user.ID,
 		request.day,
-		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs),
+		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.user, !hasJSONBody(c)),
 		request.location,
 	)
 	if err != nil {
@@ -72,17 +72,28 @@ func (handler *Handler) resolveUpsertDayRequest(c *fiber.Ctx) (upsertDayRequest,
 	}, APIErrorSpec{}, true
 }
 
-func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint) services.DayEntryInput {
+func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *models.User, preserveHiddenFields bool) services.DayEntryInput {
+	preserveSexActivity := preserveHiddenFields && user != nil && user.HideSexChip
+	preserveBBT := preserveHiddenFields && user != nil && !user.TrackBBT
+	preserveCervicalMucus := preserveHiddenFields && user != nil && !user.TrackCervicalMucus
+	preserveCycleFactors := preserveHiddenFields && user != nil && user.HideCycleFactors
+	preserveNotes := preserveHiddenFields && user != nil && user.HideNotesField
+
 	return services.DayEntryInput{
-		IsPeriod:        payload.IsPeriod,
-		Flow:            payload.Flow,
-		Mood:            payload.Mood,
-		SexActivity:     payload.SexActivity,
-		BBT:             payload.BBT,
-		CervicalMucus:   payload.CervicalMucus,
-		CycleFactorKeys: payload.CycleFactorKeys,
-		Notes:           payload.Notes,
-		SymptomIDs:      cleanSymptomIDs,
+		IsPeriod:              payload.IsPeriod,
+		Flow:                  payload.Flow,
+		Mood:                  payload.Mood,
+		SexActivity:           payload.SexActivity,
+		BBT:                   payload.BBT,
+		CervicalMucus:         payload.CervicalMucus,
+		CycleFactorKeys:       payload.CycleFactorKeys,
+		Notes:                 payload.Notes,
+		SymptomIDs:            cleanSymptomIDs,
+		PreserveSexActivity:   preserveSexActivity,
+		PreserveBBT:           preserveBBT,
+		PreserveCervicalMucus: preserveCervicalMucus,
+		PreserveCycleFactors:  preserveCycleFactors,
+		PreserveNotes:         preserveNotes,
 	}
 }
 

@@ -20,15 +20,20 @@ var (
 )
 
 type DayEntryInput struct {
-	IsPeriod        bool
-	Flow            string
-	Mood            int
-	SexActivity     string
-	BBT             float64
-	CervicalMucus   string
-	CycleFactorKeys []string
-	Notes           string
-	SymptomIDs      []uint
+	IsPeriod              bool
+	Flow                  string
+	Mood                  int
+	SexActivity           string
+	BBT                   float64
+	CervicalMucus         string
+	CycleFactorKeys       []string
+	Notes                 string
+	SymptomIDs            []uint
+	PreserveSexActivity   bool
+	PreserveBBT           bool
+	PreserveCervicalMucus bool
+	PreserveCycleFactors  bool
+	PreserveNotes         bool
 }
 
 type ManualCycleStartOptions struct {
@@ -138,6 +143,7 @@ func (service *DayService) UpsertDayEntry(userID uint, dayStart time.Time, paylo
 	wasPeriod := false
 	if found {
 		wasPeriod = entry.IsPeriod
+		payload = mergePreservedDayEntryInput(entry, payload)
 		entry.IsPeriod = payload.IsPeriod
 		if !payload.IsPeriod {
 			entry.CycleStart = false
@@ -174,6 +180,30 @@ func (service *DayService) UpsertDayEntry(userID uint, dayStart time.Time, paylo
 		return models.DailyLog{}, false, ErrDayEntryCreateFailed
 	}
 	return entry, false, nil
+}
+
+func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput) DayEntryInput {
+	if payload.PreserveSexActivity {
+		payload.SexActivity = NormalizeDaySexActivity(existing.SexActivity)
+	}
+	if payload.PreserveBBT {
+		if IsValidDayBBT(existing.BBT) {
+			payload.BBT = existing.BBT
+		} else {
+			payload.BBT = 0
+		}
+	}
+	if payload.PreserveCervicalMucus {
+		payload.CervicalMucus = NormalizeDayCervicalMucus(existing.CervicalMucus)
+	}
+	if payload.PreserveCycleFactors {
+		normalized, _ := NormalizeDayCycleFactorKeys(existing.CycleFactorKeys)
+		payload.CycleFactorKeys = normalized
+	}
+	if payload.PreserveNotes {
+		payload.Notes = TrimDayNotes(existing.Notes)
+	}
+	return payload
 }
 
 func (service *DayService) UpsertDayEntryWithAutoFill(userID uint, day time.Time, payload DayEntryInput, location *time.Location) (models.DailyLog, error) {

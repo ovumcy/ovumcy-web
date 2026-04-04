@@ -1027,8 +1027,6 @@
         var extension = "csv";
         if (type === "json") {
           extension = "json";
-        } else if (type === "pdf") {
-          extension = "pdf";
         }
         var fallbackName = "ovumcy-export." + extension;
         var filename = parseFilenameFromDisposition(response.headers.get("Content-Disposition") || "", fallbackName);

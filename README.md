@@ -119,7 +119,7 @@ The privacy-safe hero demo asset pack, including the mobile install prompt captu
 - Predictions for next period, ovulation, fertile window, and cycle phase.
 - Calendar and statistics views for longer-term pattern spotting.
 - Mobile home-screen install support on the current `main` branch.
-- CSV, JSON, and PDF export for backup, portability, and personal review.
+- CSV and JSON export for backup, portability, and personal review.
 - Optional OIDC sign-in in hybrid or SSO-only mode, with guarded owner auto-provision and provider logout support.
 - English, Russian, Spanish, French, and German localization.
 - Self-hosted deployment with Docker or a single Go binary.

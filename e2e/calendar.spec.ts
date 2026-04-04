@@ -223,7 +223,7 @@ test.describe('Calendar page', () => {
     await expect(page.locator('#day-editor')).not.toContainText(noteText);
   });
 
-  test('future day panel shows future warning context', async ({ page }) => {
+  test('future empty day opens editor directly and keeps future warning context', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-future-day');
 
     const todayISO = await todayISOFromCalendar(page);
@@ -238,11 +238,8 @@ test.describe('Calendar page', () => {
     const warningPanel = page.locator('#day-editor .journal-panel.text-sm').first();
     await expect(warningPanel).toBeVisible();
     await expect(warningPanel).not.toHaveText(/^$/);
-    await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${futureISO}"]`)).toHaveCount(0);
-    await expect(page.locator(`[data-day-editor-open="${futureISO}"]`)).toBeVisible();
-
-    await page.locator(`[data-day-editor-open="${futureISO}"]`).click();
     await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${futureISO}"]`)).toBeVisible();
+    await expect(page.locator(`[data-day-editor-open="${futureISO}"]`)).toHaveCount(0);
   });
 
   test('saved language keeps selected month/day query localized after returning from settings', async ({ page }) => {

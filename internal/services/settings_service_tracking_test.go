@@ -13,6 +13,8 @@ func TestApplyTrackingSettings(t *testing.T) {
 		TrackBBT:           false,
 		TrackCervicalMucus: false,
 		HideSexChip:        false,
+		HideCycleFactors:   false,
+		HideNotesField:     false,
 		TemperatureUnit:    "",
 	}
 
@@ -20,6 +22,8 @@ func TestApplyTrackingSettings(t *testing.T) {
 		TrackBBT:           true,
 		TrackCervicalMucus: true,
 		HideSexChip:        true,
+		HideCycleFactors:   true,
+		HideNotesField:     true,
 		TemperatureUnit:    TemperatureUnitFahrenheit,
 	})
 
@@ -31,6 +35,12 @@ func TestApplyTrackingSettings(t *testing.T) {
 	}
 	if !user.HideSexChip {
 		t.Fatal("expected HideSexChip to be enabled")
+	}
+	if !user.HideCycleFactors {
+		t.Fatal("expected HideCycleFactors to be enabled")
+	}
+	if !user.HideNotesField {
+		t.Fatal("expected HideNotesField to be enabled")
 	}
 	if user.TemperatureUnit != TemperatureUnitFahrenheit {
 		t.Fatalf("expected TemperatureUnit=%q, got %q", TemperatureUnitFahrenheit, user.TemperatureUnit)
@@ -53,6 +63,8 @@ func TestSaveTrackingSettings(t *testing.T) {
 		TrackBBT:           true,
 		TrackCervicalMucus: true,
 		HideSexChip:        true,
+		HideCycleFactors:   true,
+		HideNotesField:     true,
 		TemperatureUnit:    TemperatureUnitFahrenheit,
 	})
 	if err != nil {
@@ -69,6 +81,12 @@ func TestSaveTrackingSettings(t *testing.T) {
 	}
 	if repo.updates["hide_sex_chip"] != true {
 		t.Fatalf("expected hide_sex_chip=true, got %#v", repo.updates["hide_sex_chip"])
+	}
+	if repo.updates["hide_cycle_factors"] != true {
+		t.Fatalf("expected hide_cycle_factors=true, got %#v", repo.updates["hide_cycle_factors"])
+	}
+	if repo.updates["hide_notes_field"] != true {
+		t.Fatalf("expected hide_notes_field=true, got %#v", repo.updates["hide_notes_field"])
 	}
 	if repo.updates["temperature_unit"] != TemperatureUnitFahrenheit {
 		t.Fatalf("expected temperature_unit=%q, got %#v", TemperatureUnitFahrenheit, repo.updates["temperature_unit"])

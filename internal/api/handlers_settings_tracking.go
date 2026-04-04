@@ -25,6 +25,8 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 		TemperatureUnit:    input.TemperatureUnit,
 		TrackCervicalMucus: input.TrackCervicalMucus,
 		HideSexChip:        input.HideSexChip,
+		HideCycleFactors:   input.HideCycleFactors,
+		HideNotesField:     input.HideNotesField,
 	}
 	if err := handler.settingsService.SaveTrackingSettings(user.ID, update); err != nil {
 		spec := settingsTrackingUpdateErrorSpec()
@@ -44,6 +46,8 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 			"temperature_unit":     services.NormalizeTemperatureUnit(update.TemperatureUnit),
 			"track_cervical_mucus": update.TrackCervicalMucus,
 			"hide_sex_chip":        update.HideSexChip,
+			"hide_cycle_factors":   update.HideCycleFactors,
+			"hide_notes_field":     update.HideNotesField,
 		})
 	}
 	if isHTMX(c) {
@@ -73,5 +77,7 @@ func parseTrackingSettingsInput(c *fiber.Ctx) (trackingSettingsInput, error) {
 		TemperatureUnit:    c.FormValue("temperature_unit"),
 		TrackCervicalMucus: services.ParseBoolLike(c.FormValue("track_cervical_mucus")),
 		HideSexChip:        services.ParseBoolLike(c.FormValue("hide_sex_chip")),
+		HideCycleFactors:   services.ParseBoolLike(c.FormValue("hide_cycle_factors")),
+		HideNotesField:     services.ParseBoolLike(c.FormValue("hide_notes_field")),
 	}, nil
 }

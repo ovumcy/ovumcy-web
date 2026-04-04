@@ -20,6 +20,11 @@
   </section>
 
   <section class="journal-card p-5 sm:p-6 space-y-3">
+    <h2 class="journal-subtitle">🙈 {{t .Messages "privacy.hidden_sections.title"}}</h2>
+    <p class="journal-muted">{{t .Messages "privacy.hidden_sections.body"}}</p>
+  </section>
+
+  <section class="journal-card p-5 sm:p-6 space-y-3">
     <h2 class="journal-subtitle">🔌 {{t .Messages "privacy.third_parties.title"}}</h2>
     <p class="journal-muted">{{t .Messages "privacy.third_parties.body"}}</p>
   </section>
@@ -32,9 +37,8 @@
     </p>
   </section>
 
-  <p class="pt-1">
+  <p class="pt-1 mobile-safe-target">
     <a href="{{.BackPath}}" class="inline-link">{{t .Messages "common.back"}}</a>
   </p>
 </section>
 {{end}}
-

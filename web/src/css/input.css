@@ -2293,6 +2293,7 @@
 
   .stats-trend-panel,
   .stats-symptoms-panel {
+    min-width: 0;
     min-height: 0;
   }
 
@@ -3184,7 +3185,8 @@
     }
 
     .main-with-mobile-nav .journal-card,
-    .main-with-mobile-nav .journal-panel {
+    .main-with-mobile-nav .journal-panel,
+    .main-with-mobile-nav .mobile-safe-target {
       scroll-margin-bottom: var(--mobile-tabbar-safe-space);
     }
 

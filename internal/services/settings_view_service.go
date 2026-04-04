@@ -71,6 +71,8 @@ type SettingsPageViewData struct {
 	TemperatureUnit         string
 	TrackCervicalMucus      bool
 	HideSexChip             bool
+	HideCycleFactors        bool
+	HideNotesField          bool
 	LastPeriodStart         string
 	TodayISO                string
 	CycleStartMinISO        string
@@ -163,6 +165,8 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.TemperatureUnit = NormalizeTemperatureUnit(persisted.TemperatureUnit)
 	resolvedUser.TrackCervicalMucus = persisted.TrackCervicalMucus
 	resolvedUser.HideSexChip = persisted.HideSexChip
+	resolvedUser.HideCycleFactors = persisted.HideCycleFactors
+	resolvedUser.HideNotesField = persisted.HideNotesField
 	resolvedUser.LastPeriodStart = persisted.LastPeriodStart
 
 	lastPeriodStart := ""
@@ -196,6 +200,8 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 		TemperatureUnit:        user.TemperatureUnit,
 		TrackCervicalMucus:     user.TrackCervicalMucus,
 		HideSexChip:            user.HideSexChip,
+		HideCycleFactors:       user.HideCycleFactors,
+		HideNotesField:         user.HideNotesField,
 		LastPeriodStart:        lastPeriodStart,
 		TodayISO:               today.Format("2006-01-02"),
 		CycleStartMinISO:       minCycleStart.Format("2006-01-02"),

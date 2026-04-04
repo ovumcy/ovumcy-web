@@ -61,6 +61,8 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 		TemperatureUnit     string `gorm:"column:temperature_unit"`
 		TrackCervicalMucus  bool   `gorm:"column:track_cervical_mucus"`
 		HideSexChip         bool   `gorm:"column:hide_sex_chip"`
+		HideCycleFactors    bool   `gorm:"column:hide_cycle_factors"`
+		HideNotesField      bool   `gorm:"column:hide_notes_field"`
 	}
 	if err := database.
 		Table("users").
@@ -79,6 +81,8 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 			"temperature_unit",
 			"track_cervical_mucus",
 			"hide_sex_chip",
+			"hide_cycle_factors",
+			"hide_notes_field",
 		).
 		Where("email = ?", "legacy@example.com").
 		First(&migratedUser).Error; err != nil {
@@ -123,6 +127,12 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 	}
 	if migratedUser.HideSexChip {
 		t.Fatal("expected hide_sex_chip default to be false")
+	}
+	if migratedUser.HideCycleFactors {
+		t.Fatal("expected hide_cycle_factors default to be false")
+	}
+	if migratedUser.HideNotesField {
+		t.Fatal("expected hide_notes_field default to be false")
 	}
 }
 
@@ -314,6 +324,8 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"temperature_unit",
 		"track_cervical_mucus",
 		"hide_sex_chip",
+		"hide_cycle_factors",
+		"hide_notes_field",
 		"last_period_start",
 	}
 

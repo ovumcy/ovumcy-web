@@ -99,6 +99,37 @@ func TestDashboardEmptyNotesUseAddNoteDisclosure(t *testing.T) {
 	}
 }
 
+func TestDashboardShowsCurrentUsageGoalSummaryForOwner(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-usage-goal@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("usage_goal", models.UsageGoalTrying).Error; err != nil {
+		t.Fatalf("update usage goal: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("dashboard request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: `data-usage-goal-summary`, message: "expected dashboard usage-goal summary panel"},
+		bodyStringMatch{fragment: "Current mode: Trying to conceive", message: "expected current usage-goal label on dashboard"},
+		bodyStringMatch{fragment: "Fertile indicators are framed around timing opportunities", message: "expected usage-goal summary copy on dashboard"},
+		bodyStringMatch{fragment: "Calculations stay the same.", message: "expected dashboard usage-goal disclaimer"},
+	)
+}
+
 func assertDashboardSavedNoteDisclosure(t *testing.T, document *html.Node) {
 	t.Helper()
 

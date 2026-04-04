@@ -213,7 +213,7 @@ func buildCalendarDayState(day time.Time, monthStart time.Time, todayKey string,
 	isTentativeOvulation := tentativeOvulationMap[key]
 	isFertilityPeak := fertilityPeakMap[key]
 	isFertilityEdge := fertilityEdgeMap[key]
-	openEditDirectly := !hasDataMap[key] && key <= todayKey
+	openEditDirectly := !hasDataMap[key]
 
 	return CalendarDayState{
 		Date:                 day,

@@ -42,11 +42,13 @@
       {{template "mood_picker" (dict "SelectedMood" .Log.Mood "Compact" true)}}
     </fieldset>
 
+    {{if .ShowCycleFactors}}
     <fieldset class="space-y-2">
       <legend class="field-label">{{t .Messages "dashboard.cycle_factors"}}</legend>
       <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_factors_hint"}}</p>
       {{template "cycle_factor_options" (dict "Messages" .Messages "CycleFactorKeys" .CycleFactorKeys "SelectedCycleFactorKey" .SelectedCycleFactorKey "Compact" true)}}
     </fieldset>
+    {{end}}
 
     <fieldset class="space-y-2" data-period-fields {{if not .Log.IsPeriod}}hidden{{end}}>
       <legend class="field-label">{{t .Messages "dashboard.flow"}}</legend>
@@ -88,6 +90,7 @@
     </fieldset>
     {{end}}
 
+    {{if .ShowNotesField}}
     <details
       class="note-disclosure"
       data-note-disclosure
@@ -104,6 +107,7 @@
         <p class="journal-muted text-xs" data-dashboard-notes-count></p>
       </div>
     </details>
+    {{end}}
 
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if gt .Log.ID 0}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_day"}}{{end}}</button>

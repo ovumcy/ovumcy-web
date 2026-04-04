@@ -72,7 +72,6 @@ func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	export.Post("/summary", handler.ExportSummary)
 	export.Post("/csv", handler.ExportCSV)
 	export.Post("/json", handler.ExportJSON)
-	export.Post("/pdf", handler.ExportPDF)
 
 	settings := api.Group("/settings", handler.AuthRequired)
 	settings.Post("/interface", handler.UpdateInterfaceSettings)

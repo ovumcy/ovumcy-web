@@ -81,6 +81,29 @@ func TestResolveDayFeedbackShowsSpottingWarningOnCycleStart(t *testing.T) {
 	}
 }
 
+func TestResolveDayFeedbackShowsSpottingWarningForUTCShiftedLocalCycleStart(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+	location := time.FixedZone("UTC+2", 2*60*60)
+	day := time.Date(2026, time.March, 1, 0, 0, 0, 0, location)
+
+	logs.entries["2026-03-01"] = models.DailyLog{
+		UserID:   10,
+		Date:     time.Date(2026, time.February, 28, 22, 0, 0, 0, time.UTC),
+		IsPeriod: true,
+		Flow:     models.FlowSpotting,
+	}
+
+	state, err := service.ResolveDayFeedback(&models.User{ID: 10}, day, day, location)
+	if err != nil {
+		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
+	}
+	if !state.ShowSpottingCycleWarning {
+		t.Fatalf("expected spotting warning for timezone-shifted local cycle start")
+	}
+}
+
 func TestResolveDayFeedbackShowsLongPeriodWarningOnlyOncePerCycle(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{}

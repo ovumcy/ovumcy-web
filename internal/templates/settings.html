@@ -248,6 +248,40 @@
               data-state-off="{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}">{{if .HideSexChip}}{{t .Messages "settings.tracking.hide_sex_chip_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}{{end}}</span>
           </span>
         </label>
+
+        <label
+          class="period-toggle"
+          data-binary-toggle
+          data-active="{{if .HideCycleFactors}}true{{else}}false{{end}}"
+          data-tracking-setting="hide-cycle-factors">
+          <input type="checkbox" name="hide_cycle_factors" value="true" data-binary-toggle-input {{if .HideCycleFactors}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">🏷️ {{t .Messages "settings.tracking.hide_cycle_factors"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_cycle_factors_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.hide_cycle_factors_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.hide_cycle_factors_state_off"}}">{{if .HideCycleFactors}}{{t .Messages "settings.tracking.hide_cycle_factors_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_cycle_factors_state_off"}}{{end}}</span>
+          </span>
+        </label>
+
+        <label
+          class="period-toggle"
+          data-binary-toggle
+          data-active="{{if .HideNotesField}}true{{else}}false{{end}}"
+          data-tracking-setting="hide-notes-field">
+          <input type="checkbox" name="hide_notes_field" value="true" data-binary-toggle-input {{if .HideNotesField}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">📝 {{t .Messages "settings.tracking.hide_notes_field"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_notes_field_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.hide_notes_field_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.hide_notes_field_state_off"}}">{{if .HideNotesField}}{{t .Messages "settings.tracking.hide_notes_field_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_notes_field_state_off"}}{{end}}</span>
+          </span>
+        </label>
       </div>
 
       <div class="space-y-2">
@@ -618,9 +652,7 @@
     <div class="flex flex-wrap gap-2">
       <button type="button" data-export-action data-export-endpoint="/api/export/csv" data-export-type="csv" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">📊</span><span>{{t .Messages "settings.export_csv"}}</span></button>
       <button type="button" data-export-action data-export-endpoint="/api/export/json" data-export-type="json" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">🧾</span><span>{{t .Messages "settings.export_json"}}</span></button>
-      <button type="button" data-export-action data-export-endpoint="/api/export/pdf" data-export-type="pdf" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">📄</span><span>{{t .Messages "settings.export_pdf"}}</span></button>
     </div>
-    <p class="journal-muted text-sm">{{t .Messages "settings.export_pdf_hint"}}</p>
     <p class="journal-muted text-sm" data-export-summary-total>{{printf (t .Messages "settings.export_summary_total") .ExportTotalEntries}}</p>
     <p class="journal-muted text-sm" data-export-summary-range>
       {{if .HasExportSummaryData}}{{printf (t .Messages "settings.export_summary_range") .ExportDateFromDisplay .ExportDateToDisplay}}{{else}}{{t .Messages "settings.export_summary_range_empty"}}{{end}}

@@ -94,6 +94,8 @@ func (service *SettingsService) SaveTrackingSettings(userID uint, settings Track
 		"temperature_unit":     NormalizeTemperatureUnit(settings.TemperatureUnit),
 		"track_cervical_mucus": settings.TrackCervicalMucus,
 		"hide_sex_chip":        settings.HideSexChip,
+		"hide_cycle_factors":   settings.HideCycleFactors,
+		"hide_notes_field":     settings.HideNotesField,
 	})
 }
 

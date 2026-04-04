@@ -44,6 +44,14 @@
     <p class="journal-muted text-sm" data-dashboard-prediction-explainer>{{t .Messages .PredictionExplanationPrimaryKey}}</p>
     {{end}}
 
+    {{if .IsOwner}}
+    <div class="journal-panel text-sm space-y-1" data-usage-goal-summary>
+      <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
+      <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
+      <p class="journal-muted text-xs">{{t .Messages "usage_goal.ui_only_hint"}}</p>
+    </div>
+    {{end}}
+
     {{if or .CycleDataStale .CycleDayWarning .NextPeriodInPast .OvulationInPast}}
     <div class="flex flex-wrap items-center gap-3 text-sm">
       {{if .CycleDataStale}}
@@ -137,11 +145,13 @@
           {{template "mood_picker" (dict "SelectedMood" .TodayEntry.Mood "Compact" false)}}
         </fieldset>
 
+        {{if .ShowCycleFactors}}
         <fieldset class="space-y-3">
           <legend class="field-label">{{t .Messages "dashboard.cycle_factors"}}</legend>
           <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_factors_hint"}}</p>
           {{template "cycle_factor_options" (dict "Messages" .Messages "CycleFactorKeys" .CycleFactorKeys "SelectedCycleFactorKey" .SelectedCycleFactorKey "Compact" false)}}
         </fieldset>
+        {{end}}
 
         <fieldset class="space-y-3" data-period-fields {{if not .TodayEntry.IsPeriod}}hidden{{end}}>
           <legend class="field-label">{{t .Messages "dashboard.flow"}}</legend>
@@ -184,6 +194,7 @@
           "TemperatureRangeHint" .TemperatureRangeHint)}}
         {{end}}
 
+        {{if .ShowNotesField}}
         <details
           class="note-disclosure"
           data-note-disclosure
@@ -200,6 +211,7 @@
             <p class="journal-muted text-xs" data-dashboard-notes-count></p>
           </div>
         </details>
+        {{end}}
 
         <div class="flex flex-wrap items-center gap-3">
           <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if .TodayEntryExists}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_today"}}{{end}}</button>

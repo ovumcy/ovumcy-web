@@ -58,6 +58,8 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 		"ShowYesterdayJump":                     viewData.ShowYesterdayJump,
 		"ShowSexChip":                           viewData.ShowSexChip,
 		"ShowBBTField":                          viewData.ShowBBTField,
+		"ShowCycleFactors":                      viewData.ShowCycleFactors,
+		"ShowNotesField":                        viewData.ShowNotesField,
 		"TemperatureUnit":                       bbtView.Unit,
 		"TemperatureUnitSymbol":                 bbtView.Symbol,
 		"TemperatureInputMin":                   bbtView.Min,
@@ -85,6 +87,8 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 		"HasPredictionExplanationSecondary":     viewData.HasPredictionExplanationSecondary,
 		"PredictionFactorHintKeys":              viewData.PredictionFactorHintKeys,
 		"HasPredictionFactorHint":               viewData.HasPredictionFactorHint,
+		"UsageGoalLabelKey":                     services.UsageGoalTranslationKey(user.UsageGoal),
+		"UsageGoalSummaryKey":                   services.UsageGoalSummaryTranslationKey(user.UsageGoal),
 		"IsOwner":                               viewData.IsOwner,
 	}
 	return data, nil
@@ -114,6 +118,8 @@ func (handler *Handler) buildDayEditorPartialData(user *models.User, language st
 		"HasDayData":                            viewData.HasDayData,
 		"ShowSexChip":                           viewData.ShowSexChip,
 		"ShowBBTField":                          viewData.ShowBBTField,
+		"ShowCycleFactors":                      viewData.ShowCycleFactors,
+		"ShowNotesField":                        viewData.ShowNotesField,
 		"TemperatureUnit":                       bbtView.Unit,
 		"TemperatureUnitSymbol":                 bbtView.Symbol,
 		"TemperatureInputMin":                   bbtView.Min,

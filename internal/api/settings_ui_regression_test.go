@@ -127,7 +127,11 @@ func TestSettingsTrackingSectionExplainsToggleEffectsAndCurrentState(t *testing.
 	}
 
 	document := mustParseHTMLDocument(t, rendered)
-	if !strings.Contains(htmlDocumentText(document), "Existing values stay in your private history and exports.") {
+	documentText := htmlDocumentText(document)
+	if !strings.Contains(documentText, "These toggles only change new dashboard and calendar entry forms.") {
+		t.Fatalf("expected tracking subtitle to explain that toggles only affect new entry forms")
+	}
+	if !strings.Contains(documentText, "Existing values stay in your private history and exports.") {
 		t.Fatalf("expected tracking subtitle to explain saved-value behavior")
 	}
 
@@ -149,6 +153,16 @@ func TestSettingsTrackingSectionExplainsToggleEffectsAndCurrentState(t *testing.
 		{
 			attribute: "hide-sex-chip",
 			hint:      "Removes the intimacy section from new dashboard and calendar entries.",
+			state:     "Currently visible in dashboard and calendar day editor.",
+		},
+		{
+			attribute: "hide-cycle-factors",
+			hint:      "Removes cycle factor labels from new dashboard and calendar entries.",
+			state:     "Currently visible in dashboard and calendar day editor.",
+		},
+		{
+			attribute: "hide-notes-field",
+			hint:      "Removes the notes section from new dashboard and calendar entries.",
 			state:     "Currently visible in dashboard and calendar day editor.",
 		},
 	}
@@ -178,6 +192,32 @@ func TestSettingsTrackingSectionExplainsToggleEffectsAndCurrentState(t *testing.
 		if htmlAttr(state, "data-state-on") == "" || htmlAttr(state, "data-state-off") == "" {
 			t.Fatalf("expected tracking toggle %q to provide live state labels", tc.attribute)
 		}
+	}
+}
+
+func TestSettingsDataSectionExplainsServerStorageAndUIOnlyHiding(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-data-copy@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	documentText := htmlDocumentText(mustParseHTMLDocument(t, mustReadBodyString(t, response.Body)))
+	if !strings.Contains(documentText, "SQLite or PostgreSQL database on this server") {
+		t.Fatalf("expected settings data section to describe server-side storage, got %q", documentText)
+	}
+	if !strings.Contains(documentText, "Hidden entry sections are a UI-only preference.") {
+		t.Fatalf("expected settings data section to explain hidden-section export behavior, got %q", documentText)
 	}
 }
 

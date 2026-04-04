@@ -36,6 +36,12 @@ func TestPrivacyRouteRendersPublicPage(t *testing.T) {
 	if !strings.Contains(rendered, "Zero Data Collection") {
 		t.Fatalf("expected rendered page to contain privacy section, got body: %s", rendered)
 	}
+	if !strings.Contains(rendered, "Hidden sections and exports") {
+		t.Fatalf("expected rendered page to explain hidden sections and exports, got body: %s", rendered)
+	}
+	if !strings.Contains(rendered, "SQLite or PostgreSQL database on this server") {
+		t.Fatalf("expected rendered page to describe server-side storage, got body: %s", rendered)
+	}
 	if strings.Contains(rendered, "Ovumcy is built for private, self-hosted tracking.") {
 		t.Fatalf("did not expect deprecated privacy subtitle to be rendered")
 	}

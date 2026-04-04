@@ -41,6 +41,17 @@ func UsageGoalTranslationKey(value string) string {
 	}
 }
 
+func UsageGoalSummaryTranslationKey(value string) string {
+	switch NormalizeUsageGoal(value) {
+	case models.UsageGoalAvoid:
+		return "usage_goal.summary.avoid"
+	case models.UsageGoalTrying:
+		return "usage_goal.summary.trying"
+	default:
+		return "usage_goal.summary.health"
+	}
+}
+
 func AgeGroupTranslationKey(value string) string {
 	switch NormalizeAgeGroup(value) {
 	case models.AgeGroupUnder20:

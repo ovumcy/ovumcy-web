@@ -162,6 +162,18 @@ func TestBuildCalendarDayStatesDisablesPredictionsForUnpredictableCycle(t *testi
 	}
 }
 
+func TestBuildCalendarDayStatesOpensEditDirectlyForFutureEmptyDays(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
+
+	days := BuildCalendarDayStates(nil, monthStart, nil, CycleStats{}, now, time.UTC)
+
+	futureEmptyDay := findCalendarDayStateByDateString(t, days, "2026-03-15")
+	if !futureEmptyDay.OpenEditDirectly {
+		t.Fatalf("expected future empty day to open edit directly, got %#v", futureEmptyDay)
+	}
+}
+
 func TestBuildCalendarDayStatesMarksTentativeOvulationWhenBBTHasNoShift(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)

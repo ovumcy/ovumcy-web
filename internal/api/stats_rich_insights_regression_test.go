@@ -34,6 +34,7 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		"last_period_start": currentCycleStart,
 		"track_bbt":         true,
 		"irregular_cycle":   true,
+		"usage_goal":        models.UsageGoalTrying,
 	}).Error; err != nil {
 		t.Fatalf("update user settings: %v", err)
 	}
@@ -77,7 +78,8 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	rendered := mustReadBodyString(t, response.Body)
+	document := mustParseHTMLDocument(t, rendered)
 	documentText := htmlDocumentText(document)
 
 	for _, fragment := range []string{
@@ -101,4 +103,20 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 	if htmlElementByID(document, "bbt-chart") == nil {
 		t.Fatalf("expected stats page to render BBT chart container")
 	}
+	assertBodyContainsAll(t, rendered,
+		bodyStringMatch{fragment: `data-usage-goal-summary`, message: "expected stats usage-goal summary panel"},
+		bodyStringMatch{fragment: "Current mode: Trying to conceive", message: "expected current usage-goal label on stats page"},
+		bodyStringMatch{fragment: `id="cycle-chart"`, message: "expected cycle chart container"},
+		bodyStringMatch{fragment: `role="img"`, message: "expected chart containers to expose image role"},
+		bodyStringMatch{fragment: `aria-labelledby="stats-cycle-trend-title"`, message: "expected cycle chart accessible title"},
+		bodyStringMatch{fragment: `aria-describedby="stats-cycle-trend-summary"`, message: "expected cycle chart summary reference"},
+		bodyStringMatch{fragment: `id="stats-cycle-trend-summary"`, message: "expected cycle chart summary node"},
+		bodyStringMatch{fragment: "3 completed cycles shown.", message: "expected cycle chart summary copy"},
+		bodyStringMatch{fragment: `id="bbt-chart"`, message: "expected bbt chart container"},
+		bodyStringMatch{fragment: `aria-labelledby="stats-bbt-title"`, message: "expected bbt chart accessible title"},
+		bodyStringMatch{fragment: `aria-describedby="stats-bbt-summary stats-bbt-caption"`, message: "expected bbt chart summary reference"},
+		bodyStringMatch{fragment: `id="stats-bbt-summary"`, message: "expected bbt chart summary node"},
+		bodyStringMatch{fragment: "readings this cycle.", message: "expected bbt chart summary copy"},
+		bodyStringMatch{fragment: "Calculations stay the same.", message: "expected stats usage-goal disclaimer"},
+	)
 }

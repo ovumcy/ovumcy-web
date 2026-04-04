@@ -8,6 +8,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -63,14 +64,6 @@ async function setRangeValue(locator: Locator, value: number): Promise<void> {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }, value);
-}
-
-async function assertNoHorizontalOverflow(page: Page): Promise<void> {
-  const hasOverflow = await page.evaluate(() => {
-    const root = document.documentElement;
-    return root.scrollWidth > root.clientWidth + 1;
-  });
-  expect(hasOverflow).toBe(false);
 }
 
 async function selectSymptomIcon(root: Locator, icon: string): Promise<void> {
