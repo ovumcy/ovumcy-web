@@ -49,7 +49,6 @@
   "pwa.install.action.later": "Peut-être plus tard",
 
   "role.owner": "Propriétaire",
-  "role.partner": "Partenaire",
 
   "auth.welcome_back": "Bienvenue",
   "auth.login_title": "Connexion à votre compte",
@@ -120,6 +119,7 @@
   "auth.error.sso_authentication_failed": "La connexion SSO n'a pas pu être finalisée. Veuillez réessayer.",
   "auth.error.sso_sign_in_unavailable": "Ce compte SSO ne peut pas encore se connecter. Utilisez la connexion locale ou contactez l'opérateur.",
   "auth.error.local_sign_in_unavailable": "La connexion locale est désactivée pour cette instance. Utilisez le SSO.",
+  "auth.error.web_sign_in_unavailable": "Ce compte n'est pas disponible dans Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "La récupération locale n'est pas disponible tant qu'un mot de passe local n'est pas défini pour ce compte.",
   "auth.error.too_many_forgot_password_attempts": "Trop de tentatives de récupération. Veuillez patienter 1 heure.",
   "auth.error.invalid_reset_token": "Le lien de réinitialisation est invalide ou expiré.",
@@ -472,7 +472,6 @@
   "dashboard.cycle_start_short_gap_accept": "Marquer quand même",
   "dashboard.save_day": "Enregistrer",
   "dashboard.symptoms_notes": "Symptômes et notes",
-  "dashboard.partner_readonly": "Le compte partenaire est en lecture seule.",
   "dashboard.error.invalid_mood": "Sélectionnez une humeur entre 1 et 5.",
   "dashboard.error.invalid_sex_activity": "Sélectionnez une valeur d'activité sexuelle valide.",
   "dashboard.error.invalid_bbt": "Saisissez une température basale valide.",
@@ -576,7 +575,6 @@
   "stats.symptom_frequency_context_one": "fois (en %d jours)",
   "stats.symptom_frequency_context": "fois (en %d jours)",
   "stats.no_symptom_data": "Aucune donnée de symptôme pour l'instant.",
-  "stats.hidden_for_partner": "Les données de symptômes sont masquées pour les comptes partenaires.",
   "stats.no_cycle_data": "Pas encore assez de données de cycle.",
   "stats.empty_title": "Continuez à enregistrer pour débloquer des analyses",
   "stats.empty_body": "Saisissez le début de vos prochaines règles pour compléter votre premier cycle et débloquer des analyses.",

@@ -59,16 +59,16 @@ func TestViewerServiceFetchSymptomsForViewer_OnlyOwner(t *testing.T) {
 		t.Fatalf("expected owner symptoms to load, got %#v", ownerSymptoms)
 	}
 
-	partnerSymptoms, err := service.FetchSymptomsForViewer(&models.User{ID: 11, Role: models.RolePartner}, []uint{4})
+	unsupportedSymptoms, err := service.FetchSymptomsForViewer(&models.User{ID: 11, Role: "legacy_viewer"}, []uint{4})
 	if err != nil {
-		t.Fatalf("FetchSymptomsForViewer(partner) unexpected error: %v", err)
+		t.Fatalf("FetchSymptomsForViewer(unsupported) unexpected error: %v", err)
 	}
-	if len(partnerSymptoms) != 0 {
-		t.Fatalf("expected partner symptoms to be hidden, got %#v", partnerSymptoms)
+	if len(unsupportedSymptoms) != 0 {
+		t.Fatalf("expected unsupported-role symptoms to be hidden, got %#v", unsupportedSymptoms)
 	}
 }
 
-func TestViewerServiceFetchDayLogForViewer_SanitizesPartnerAndSkipsSymptoms(t *testing.T) {
+func TestViewerServiceFetchDayLogForViewer_SanitizesUnsupportedRoleAndSkipsSymptoms(t *testing.T) {
 	service := NewViewerService(
 		&stubViewerDayReader{
 			entry: models.DailyLog{
@@ -83,15 +83,15 @@ func TestViewerServiceFetchDayLogForViewer_SanitizesPartnerAndSkipsSymptoms(t *t
 		},
 	)
 
-	logEntry, symptoms, err := service.FetchDayLogForViewer(&models.User{ID: 10, Role: models.RolePartner}, time.Now().UTC(), time.UTC)
+	logEntry, symptoms, err := service.FetchDayLogForViewer(&models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.UTC)
 	if err != nil {
-		t.Fatalf("FetchDayLogForViewer(partner) unexpected error: %v", err)
+		t.Fatalf("FetchDayLogForViewer(unsupported) unexpected error: %v", err)
 	}
 	if logEntry.Notes != "" || len(logEntry.SymptomIDs) != 0 {
-		t.Fatalf("expected partner log to be sanitized, got %#v", logEntry)
+		t.Fatalf("expected unsupported-role log to be sanitized, got %#v", logEntry)
 	}
 	if len(symptoms) != 0 {
-		t.Fatalf("expected partner symptoms hidden, got %#v", symptoms)
+		t.Fatalf("expected unsupported-role symptoms hidden, got %#v", symptoms)
 	}
 }
 
@@ -140,7 +140,7 @@ func TestViewerServiceFetchDayLogForViewer_PassesSelectedIDsToPicker(t *testing.
 	}
 }
 
-func TestViewerServiceFetchLogsForViewer_SanitizesPartnerLogs(t *testing.T) {
+func TestViewerServiceFetchLogsForViewer_SanitizesUnsupportedRoleLogs(t *testing.T) {
 	service := NewViewerService(
 		&stubViewerDayReader{
 			logs: []models.DailyLog{
@@ -151,21 +151,21 @@ func TestViewerServiceFetchLogsForViewer_SanitizesPartnerLogs(t *testing.T) {
 		&stubViewerSymptomReader{},
 	)
 
-	logs, err := service.FetchLogsForViewer(&models.User{ID: 10, Role: models.RolePartner}, time.Now().UTC(), time.Now().UTC(), time.UTC)
+	logs, err := service.FetchLogsForViewer(&models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.Now().UTC(), time.UTC)
 	if err != nil {
-		t.Fatalf("FetchLogsForViewer(partner) unexpected error: %v", err)
+		t.Fatalf("FetchLogsForViewer(unsupported) unexpected error: %v", err)
 	}
 	if len(logs) != 2 {
 		t.Fatalf("expected two logs, got %#v", logs)
 	}
 	for _, entry := range logs {
 		if entry.Notes != "" || len(entry.SymptomIDs) != 0 {
-			t.Fatalf("expected partner logs sanitized, got %#v", logs)
+			t.Fatalf("expected unsupported-role logs sanitized, got %#v", logs)
 		}
 	}
 }
 
-func TestViewerServiceFetchLogByDateForViewer_SanitizesPartnerLog(t *testing.T) {
+func TestViewerServiceFetchLogByDateForViewer_SanitizesUnsupportedRoleLog(t *testing.T) {
 	service := NewViewerService(
 		&stubViewerDayReader{
 			entry: models.DailyLog{
@@ -176,11 +176,11 @@ func TestViewerServiceFetchLogByDateForViewer_SanitizesPartnerLog(t *testing.T) 
 		&stubViewerSymptomReader{},
 	)
 
-	logEntry, err := service.FetchLogByDateForViewer(&models.User{ID: 10, Role: models.RolePartner}, time.Now().UTC(), time.UTC)
+	logEntry, err := service.FetchLogByDateForViewer(&models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.UTC)
 	if err != nil {
-		t.Fatalf("FetchLogByDateForViewer(partner) unexpected error: %v", err)
+		t.Fatalf("FetchLogByDateForViewer(unsupported) unexpected error: %v", err)
 	}
 	if logEntry.Notes != "" || len(logEntry.SymptomIDs) != 0 {
-		t.Fatalf("expected partner log sanitized, got %#v", logEntry)
+		t.Fatalf("expected unsupported-role log sanitized, got %#v", logEntry)
 	}
 }

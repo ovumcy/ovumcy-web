@@ -26,13 +26,14 @@ func TestSettingsCycleUpdateRedirectsUnauthenticatedUsersToLogin(t *testing.T) {
 	}
 }
 
-func TestSettingsCycleUpdateRejectsPartnerRoleJSON(t *testing.T) {
+func TestSettingsCycleUpdateRejectsUnsupportedLegacyRoleJSON(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "settings-cycle-partner@example.com", "StrongPass1", true)
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", models.RolePartner).Error; err != nil {
-		t.Fatalf("set partner role: %v", err)
+	user := createOnboardingTestUser(t, database, "settings-cycle-legacy@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", "partner").Error; err != nil {
+		t.Fatalf("set unsupported legacy role: %v", err)
 	}
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	user.Role = "partner"
+	authCookie := issueAuthCookieForUser(t, user)
 
 	request := httptest.NewRequest(http.MethodPost, "/settings/cycle", strings.NewReader(url.Values{
 		"cycle_length":  {"28"},
@@ -44,8 +45,8 @@ func TestSettingsCycleUpdateRejectsPartnerRoleJSON(t *testing.T) {
 
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusForbidden)
-	if got := readAPIError(t, response.Body); got != "owner access required" {
-		t.Fatalf("expected owner access required error, got %q", got)
+	if got := readAPIError(t, response.Body); got != "web sign-in unavailable" {
+		t.Fatalf("expected unsupported-role sign-in error, got %q", got)
 	}
 }
 

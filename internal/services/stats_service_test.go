@@ -83,7 +83,7 @@ func TestOwnerBaselineCycleLength(t *testing.T) {
 		want int
 	}{
 		{name: "nil user", user: nil, want: 0},
-		{name: "partner user", user: &models.User{Role: models.RolePartner, CycleLength: 29}, want: 0},
+		{name: "unsupported role", user: &models.User{Role: "legacy_viewer", CycleLength: 29}, want: 0},
 		{name: "owner invalid cycle length", user: &models.User{Role: models.RoleOwner, CycleLength: 120}, want: 0},
 		{name: "owner valid cycle length", user: &models.User{Role: models.RoleOwner, CycleLength: 28}, want: 28},
 	}
@@ -233,20 +233,20 @@ func TestBuildFlagsKeepsInsightsLockedUntilTwoCompletedCycles(t *testing.T) {
 	}
 }
 
-func TestBuildSymptomFrequenciesForUserPartnerSkipsDataAccess(t *testing.T) {
+func TestBuildSymptomFrequenciesForUserUnsupportedRoleSkipsDataAccess(t *testing.T) {
 	dayReader := &stubStatsDayReader{}
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{})
 
-	partner := &models.User{ID: 5, Role: models.RolePartner}
-	frequencies, err := service.BuildSymptomFrequenciesForUser(partner)
+	unsupported := &models.User{ID: 5, Role: "legacy_viewer"}
+	frequencies, err := service.BuildSymptomFrequenciesForUser(unsupported)
 	if err != nil {
 		t.Fatalf("BuildSymptomFrequenciesForUser() unexpected error: %v", err)
 	}
 	if len(frequencies) != 0 {
-		t.Fatalf("expected no frequencies for partner, got %#v", frequencies)
+		t.Fatalf("expected no frequencies for unsupported role, got %#v", frequencies)
 	}
 	if dayReader.fetchAllCalled {
-		t.Fatalf("did not expect FetchAllLogsForUser call for partner")
+		t.Fatalf("did not expect FetchAllLogsForUser call for unsupported role")
 	}
 }
 

@@ -366,14 +366,14 @@ func assertStatsPatternAndBBTViewData(t *testing.T, viewData StatsPageViewData) 
 	}
 }
 
-func TestBuildStatsPageViewDataPartnerSkipsBaselineAndSymptomLoading(t *testing.T) {
+func TestBuildStatsPageViewDataUnsupportedRoleSkipsBaselineAndSymptomLoading(t *testing.T) {
 	dayReader := &stubStatsDayReader{}
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{})
 
-	partner := &models.User{ID: 9, Role: models.RolePartner, CycleLength: 28}
+	unsupported := &models.User{ID: 9, Role: "legacy_viewer", CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-02-21")
 
-	viewData, err := service.BuildStatsPageViewData(partner, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(unsupported, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -382,19 +382,19 @@ func TestBuildStatsPageViewDataPartnerSkipsBaselineAndSymptomLoading(t *testing.
 		t.Fatalf("expected IsOwner=false")
 	}
 	if viewData.ChartData.HasBaseline || viewData.ChartData.Baseline != 0 || viewData.ChartBaseline != 0 {
-		t.Fatalf("expected no chart baseline for partner, got chart=%#v baseline=%d", viewData.ChartData, viewData.ChartBaseline)
+		t.Fatalf("expected no chart baseline for unsupported role, got chart=%#v baseline=%d", viewData.ChartData, viewData.ChartBaseline)
 	}
 	if len(viewData.SymptomCounts) != 0 {
-		t.Fatalf("expected no symptom counts for partner, got %#v", viewData.SymptomCounts)
+		t.Fatalf("expected no symptom counts for unsupported role, got %#v", viewData.SymptomCounts)
 	}
 	if viewData.HasRecentCycleFactors || viewData.HasCycleFactorPatternSummaries || viewData.HasRecentFactorCycles || viewData.HasPredictionFactorHint {
-		t.Fatalf("expected no owner-only factor context for partner, got %#v", viewData)
+		t.Fatalf("expected no owner-only factor context for unsupported role, got %#v", viewData)
 	}
 	if viewData.HasPredictionExplanationPrimary || viewData.HasPredictionExplanationSecondary {
-		t.Fatalf("expected no owner-only prediction explanation for partner, got %#v", viewData)
+		t.Fatalf("expected no owner-only prediction explanation for unsupported role, got %#v", viewData)
 	}
 	if dayReader.fetchAllCalled {
-		t.Fatalf("did not expect FetchAllLogsForUser for partner")
+		t.Fatalf("did not expect FetchAllLogsForUser for unsupported role")
 	}
 }
 

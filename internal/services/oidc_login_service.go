@@ -162,6 +162,9 @@ func (service *OIDCLoginService) authenticateLinkedIdentity(exchange security.OI
 	if err != nil {
 		return OIDCLoginResult{}, true, ErrOIDCIdentityResolveFailed
 	}
+	if err := ValidateSupportedWebUser(&user); err != nil {
+		return OIDCLoginResult{}, true, ErrOIDCAccountUnavailable
+	}
 	_ = service.identities.TouchLastUsed(identity.ID, loginTime)
 	return OIDCLoginResult{User: user}, true, nil
 }
@@ -180,6 +183,9 @@ func (service *OIDCLoginService) findOrProvisionUser(normalizedEmail string, log
 		return models.User{}, false, ErrOIDCIdentityResolveFailed
 	}
 	if found {
+		if err := ValidateSupportedWebUser(&user); err != nil {
+			return models.User{}, false, ErrOIDCAccountUnavailable
+		}
 		return user, false, nil
 	}
 	if !service.config.AllowsAutoProvision(normalizedEmail) || service.provisioner == nil {
@@ -203,6 +209,9 @@ func (service *OIDCLoginService) autoProvisionOrLookupUser(normalizedEmail strin
 	}
 	if !found {
 		return models.User{}, false, ErrOIDCProvisionFailed
+	}
+	if err := ValidateSupportedWebUser(&user); err != nil {
+		return models.User{}, false, ErrOIDCAccountUnavailable
 	}
 	return user, false, nil
 }

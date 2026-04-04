@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -90,6 +91,9 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 	sessionID, err := handler.setAuthCookie(c, &result.User, false)
 	if err != nil {
 		spec := authSessionCreateErrorSpec()
+		if errors.Is(err, services.ErrAuthUnsupportedRole) {
+			spec = authOIDCAccountUnavailableErrorSpec()
+		}
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect("/login", fiber.StatusSeeOther)

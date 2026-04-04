@@ -6,8 +6,8 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestSanitizeLogForViewerPartnerHidesPrivateFields(t *testing.T) {
-	partner := &models.User{Role: models.RolePartner}
+func TestSanitizeLogForViewerUnsupportedRoleHidesPrivateFields(t *testing.T) {
+	unsupported := &models.User{Role: "legacy_viewer"}
 	entry := models.DailyLog{
 		Mood:            4,
 		SexActivity:     models.SexActivityProtected,
@@ -18,7 +18,7 @@ func TestSanitizeLogForViewerPartnerHidesPrivateFields(t *testing.T) {
 		SymptomIDs:      []uint{1, 2},
 	}
 
-	sanitized := SanitizeLogForViewer(partner, entry)
+	sanitized := SanitizeLogForViewer(unsupported, entry)
 	if sanitized.Mood != 0 {
 		t.Fatalf("expected mood to be hidden, got %d", sanitized.Mood)
 	}
@@ -78,14 +78,14 @@ func TestSanitizeLogForViewerOwnerKeepsFields(t *testing.T) {
 	}
 }
 
-func TestSanitizeLogsForViewerPartnerHidesPrivateFieldsInAllEntries(t *testing.T) {
-	partner := &models.User{Role: models.RolePartner}
+func TestSanitizeLogsForViewerUnsupportedRoleHidesPrivateFieldsInAllEntries(t *testing.T) {
+	unsupported := &models.User{Role: "legacy_viewer"}
 	logs := []models.DailyLog{
 		{Mood: 1, SexActivity: models.SexActivityProtected, BBT: 36.1, CervicalMucus: models.CervicalMucusMoist, CycleFactorKeys: []string{models.CycleFactorStress}, Notes: "a", SymptomIDs: []uint{1}},
 		{Mood: 5, SexActivity: models.SexActivityUnprotected, BBT: 36.8, CervicalMucus: models.CervicalMucusEggWhite, CycleFactorKeys: []string{models.CycleFactorTravel}, Notes: "b", SymptomIDs: []uint{2, 3}},
 	}
 
-	SanitizeLogsForViewer(partner, logs)
+	SanitizeLogsForViewer(unsupported, logs)
 
 	for index := range logs {
 		if logs[index].Mood != 0 {
@@ -116,7 +116,7 @@ func TestShouldExposeSymptomsForViewer(t *testing.T) {
 	if !ShouldExposeSymptomsForViewer(&models.User{Role: models.RoleOwner}) {
 		t.Fatal("expected owner to see symptoms")
 	}
-	if ShouldExposeSymptomsForViewer(&models.User{Role: models.RolePartner}) {
-		t.Fatal("expected partner not to see symptoms")
+	if ShouldExposeSymptomsForViewer(&models.User{Role: "legacy_viewer"}) {
+		t.Fatal("expected unsupported role not to see symptoms")
 	}
 }

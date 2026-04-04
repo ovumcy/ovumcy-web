@@ -201,12 +201,12 @@ func TestOnboardingRedirectPolicy(t *testing.T) {
 		t.Fatalf("expected dashboard redirect, got %q", path)
 	}
 
-	partner := &models.User{Role: models.RolePartner, OnboardingCompleted: false}
-	if RequiresOnboarding(partner) {
-		t.Fatalf("did not expect partner to require onboarding")
+	unsupported := &models.User{Role: "legacy_viewer", OnboardingCompleted: false}
+	if RequiresOnboarding(unsupported) {
+		t.Fatalf("did not expect unsupported role to require onboarding")
 	}
-	if path := PostLoginRedirectPath(partner); path != "/dashboard" {
-		t.Fatalf("expected dashboard redirect for partner, got %q", path)
+	if path := PostLoginRedirectPath(unsupported); path != "/dashboard" {
+		t.Fatalf("expected dashboard redirect for unsupported role, got %q", path)
 	}
 
 	if RequiresOnboarding(nil) {
@@ -241,9 +241,9 @@ func TestValidateOnboardingCompletionEligibility(t *testing.T) {
 			want: ErrOnboardingCompletionNotNeeded,
 		},
 		{
-			name: "partner is not eligible",
+			name: "unsupported role is not eligible",
 			user: &models.User{
-				Role:                models.RolePartner,
+				Role:                "legacy_viewer",
 				OnboardingCompleted: false,
 			},
 			want: ErrOnboardingCompletionNotNeeded,

@@ -215,6 +215,9 @@ func (service *AuthService) AuthenticateCredentials(email string, password strin
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
 		return models.User{}, ErrAuthInvalidCreds
 	}
+	if err := ValidateSupportedWebUser(&user); err != nil {
+		return models.User{}, err
+	}
 	return user, nil
 }
 
@@ -238,6 +241,9 @@ func (service *AuthService) FindUserByEmailAndRecoveryCode(email string, code st
 		return nil, ErrRecoveryCodeNotFound
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(NormalizeRecoveryCode(code))) != nil {
+		return nil, ErrRecoveryCodeNotFound
+	}
+	if err := ValidateSupportedWebUser(&user); err != nil {
 		return nil, ErrRecoveryCodeNotFound
 	}
 	return &user, nil
@@ -276,6 +282,9 @@ func (service *AuthService) ResolveAuthSession(secretKey []byte, rawToken string
 	if normalizeAuthSessionVersion(claims.SessionVersion) != normalizeAuthSessionVersion(user.AuthSessionVersion) {
 		return nil, nil, ErrAuthSessionTokenRevoked
 	}
+	if err := ValidateSupportedWebUser(&user); err != nil {
+		return nil, nil, err
+	}
 	return &user, claims, nil
 }
 
@@ -293,6 +302,9 @@ func (service *AuthService) ResolveUserByResetToken(secretKey []byte, rawToken s
 		return nil, ErrInvalidResetToken
 	}
 	if !IsPasswordStateFingerprintMatch(claims.PasswordState, user.PasswordHash) {
+		return nil, ErrInvalidResetToken
+	}
+	if err := ValidateSupportedWebUser(&user); err != nil {
 		return nil, ErrInvalidResetToken
 	}
 	return &user, nil

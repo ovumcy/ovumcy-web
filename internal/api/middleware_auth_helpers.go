@@ -31,6 +31,11 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 
 	user, claims, err := handler.authService.ResolveAuthSession(handler.secretKey, tokenValue, time.Now())
 	if err != nil {
+		if errors.Is(err, services.ErrAuthUnsupportedRole) {
+			handler.clearAuthRelatedCookies(c)
+			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "unsupported role"))
+			return nil, err
+		}
 		if errors.Is(err, services.ErrAuthSessionTokenRevoked) {
 			handler.clearAuthCookie(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "revoked session"))

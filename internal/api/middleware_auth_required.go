@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -10,7 +11,15 @@ import (
 func (handler *Handler) AuthRequired(c *fiber.Ctx) error {
 	user, err := handler.authenticateRequest(c)
 	if err != nil {
-		if strings.HasPrefix(c.Path(), "/api/") {
+		if errors.Is(err, services.ErrAuthUnsupportedRole) {
+			spec := authWebSignInUnavailableErrorSpec()
+			if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) {
+				return respondGlobalMappedError(c, spec)
+			}
+			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			return c.Redirect("/login", fiber.StatusSeeOther)
+		}
+		if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) {
 			return respondGlobalMappedError(c, unauthorizedErrorSpec())
 		}
 		return c.Redirect("/login", fiber.StatusSeeOther)
@@ -18,7 +27,7 @@ func (handler *Handler) AuthRequired(c *fiber.Ctx) error {
 
 	c.Locals(contextUserKey, user)
 	if services.RequiresOnboarding(user) && services.ShouldEnforceOnboardingAccess(c.Path()) {
-		if strings.HasPrefix(c.Path(), "/api/") {
+		if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) {
 			return respondGlobalMappedError(c, onboardingRequiredErrorSpec())
 		}
 		return c.Redirect("/onboarding", fiber.StatusSeeOther)

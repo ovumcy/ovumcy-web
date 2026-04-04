@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
@@ -39,6 +40,9 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 
 	if _, err := handler.setAuthCookie(c, &user, true); err != nil {
 		spec := authSessionCreateErrorSpec()
+		if errors.Is(err, services.ErrAuthUnsupportedRole) {
+			spec = authWebSignInUnavailableErrorSpec()
+		}
 		handler.logSecurityError(c, "auth.register", spec)
 		return handler.respondMappedError(c, spec)
 	}
@@ -94,6 +98,9 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	user := result.User
 	if _, err := handler.setAuthCookie(c, &user, credentials.RememberMe); err != nil {
 		spec := authSessionCreateErrorSpec()
+		if errors.Is(err, services.ErrAuthUnsupportedRole) {
+			spec = authWebSignInUnavailableErrorSpec()
+		}
 		handler.logSecurityError(c, "auth.login", spec)
 		return handler.respondMappedError(c, spec)
 	}

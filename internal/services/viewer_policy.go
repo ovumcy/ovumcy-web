@@ -2,15 +2,7 @@ package services
 
 import "github.com/ovumcy/ovumcy-web/internal/models"
 
-func IsOwnerUser(user *models.User) bool {
-	return user != nil && user.Role == models.RoleOwner
-}
-
-func IsPartnerUser(user *models.User) bool {
-	return user != nil && user.Role == models.RolePartner
-}
-
-func SanitizeLogForPartner(entry models.DailyLog) models.DailyLog {
+func SanitizeRestrictedViewerLog(entry models.DailyLog) models.DailyLog {
 	entry.Mood = 0
 	entry.SexActivity = models.SexActivityNone
 	entry.BBT = 0
@@ -22,18 +14,18 @@ func SanitizeLogForPartner(entry models.DailyLog) models.DailyLog {
 }
 
 func SanitizeLogForViewer(user *models.User, entry models.DailyLog) models.DailyLog {
-	if IsPartnerUser(user) {
-		return SanitizeLogForPartner(entry)
+	if IsOwnerUser(user) {
+		return entry
 	}
-	return entry
+	return SanitizeRestrictedViewerLog(entry)
 }
 
 func SanitizeLogsForViewer(user *models.User, logs []models.DailyLog) {
-	if !IsPartnerUser(user) {
+	if IsOwnerUser(user) {
 		return
 	}
 	for index := range logs {
-		logs[index] = SanitizeLogForPartner(logs[index])
+		logs[index] = SanitizeRestrictedViewerLog(logs[index])
 	}
 }
 

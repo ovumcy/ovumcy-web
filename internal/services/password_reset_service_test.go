@@ -106,6 +106,7 @@ func TestPasswordResetServiceStartRecoverySuccessResetsLimiter(t *testing.T) {
 			PasswordHash:     string(passwordHash),
 			RecoveryCodeHash: recoveryHash,
 			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
 		},
 	}
 	authService := NewAuthService(repo)
@@ -143,6 +144,7 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 			ID:               42,
 			PasswordHash:     string(passwordHash),
 			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
 		},
 	}
 	authService := NewAuthService(repo)

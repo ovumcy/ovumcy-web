@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -31,6 +33,9 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 		if err != nil {
 			handler.clearAuthCookie(c)
 			spec := authSessionCreateErrorSpec()
+			if errors.Is(err, services.ErrAuthUnsupportedRole) {
+				spec = authWebSignInUnavailableErrorSpec()
+			}
 			handler.logSecurityError(c, "auth.password_change", spec)
 			return handler.respondMappedError(c, spec)
 		}
@@ -50,6 +55,9 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 	if err != nil {
 		handler.clearAuthCookie(c)
 		spec := authSessionCreateErrorSpec()
+		if errors.Is(err, services.ErrAuthUnsupportedRole) {
+			spec = authWebSignInUnavailableErrorSpec()
+		}
 		handler.logSecurityError(c, "auth.password_change", spec)
 		return handler.respondMappedError(c, spec)
 	}

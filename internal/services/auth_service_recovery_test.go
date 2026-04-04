@@ -380,6 +380,7 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 			Email:            "login@example.com",
 			PasswordHash:     string(passwordHash),
 			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
 		},
 	}
 	service := NewAuthService(repo)
@@ -416,6 +417,7 @@ func TestAuthServiceFindUserByEmailAndRecoveryCode(t *testing.T) {
 			Email:            "owner@example.com",
 			RecoveryCodeHash: recoveryHash,
 			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
 		},
 	}
 	service := NewAuthService(repo)
@@ -473,6 +475,7 @@ func TestAuthServiceResolveUserByResetToken(t *testing.T) {
 			ID:               42,
 			PasswordHash:     string(passwordHash),
 			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
 		},
 	}
 	service := NewAuthService(repo)

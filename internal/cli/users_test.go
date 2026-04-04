@@ -18,7 +18,7 @@ func TestRunUsersCommandListPrintsMinimalUserAuditTable(t *testing.T) {
 
 	databasePath := createCLIUsersDatabase(t)
 	createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC))
-	createCLIUsersUser(t, databasePath, "partner@example.com", "", models.RolePartner, false, time.Date(2026, time.March, 2, 11, 0, 0, 0, time.UTC))
+	createCLIUsersUser(t, databasePath, "second-owner@example.com", "", models.RoleOwner, false, time.Date(2026, time.March, 2, 11, 0, 0, 0, time.UTC))
 
 	var output bytes.Buffer
 	err := runUsersCommand(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}, []string{"list"}, strings.NewReader(""), &output)
@@ -35,7 +35,7 @@ func TestRunUsersCommandListPrintsMinimalUserAuditTable(t *testing.T) {
 		!strings.Contains(rendered, "CREATED AT") {
 		t.Fatalf("expected user table header, got %q", rendered)
 	}
-	if !strings.Contains(rendered, "owner@example.com") || !strings.Contains(rendered, "partner@example.com") {
+	if !strings.Contains(rendered, "owner@example.com") || !strings.Contains(rendered, "second-owner@example.com") {
 		t.Fatalf("expected both users in output, got %q", rendered)
 	}
 	if !strings.Contains(rendered, "Owner") || !strings.Contains(rendered, "-") {

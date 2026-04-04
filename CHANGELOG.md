@@ -131,7 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTML regression coverage and Codecov publication were tightened so patch-status checks remain reliable in CI.
 
 ### Security
-- No auth/session or privacy-boundary contract was weakened in this release; owner-only cycle factors remain sanitized from partner and viewer surfaces.
+- No auth/session or privacy-boundary contract was weakened in this release; owner-only cycle factors remain sanitized outside the supported owner browser path.
 
 ## [0.5.0] - 2026-03-15
 

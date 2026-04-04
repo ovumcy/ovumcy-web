@@ -5,27 +5,10 @@ import {
   cookieByName,
   createCredentials,
   expectInlineRegisterRecoveryStep,
-  loginViaUI,
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
-
-type EnvCredentials = {
-  email: string;
-  password: string;
-};
-
-function partnerCredentialsFromEnv(): EnvCredentials | null {
-  const email = String(process.env.E2E_PARTNER_EMAIL || '').trim();
-  const password = String(process.env.E2E_PARTNER_PASSWORD || '').trim();
-
-  if (!email || !password) {
-    return null;
-  }
-
-  return { email, password };
-}
 
 async function registerOwnerAndReachDashboard(page: Page, prefix: string) {
   const creds = createCredentials(prefix);
@@ -51,16 +34,6 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string): Promise
 
 async function openTodayNotes(page: Page): Promise<void> {
   await ensureNotesFieldVisible(page, '#today-notes');
-}
-
-function todayISOInBrowser(): Promise<string> {
-  return Promise.resolve().then(() => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const dd = String(now.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  });
 }
 
 async function readCSRFToken(page: Page): Promise<string> {
@@ -183,46 +156,4 @@ test.describe('Security and role-based access', () => {
     expect(exportResponse.headers()['content-type'] || '').toContain('text/csv');
   });
 
-  test('partner is read-only: owner-only settings and APIs are blocked', async ({ page }) => {
-    const partnerCredentials = partnerCredentialsFromEnv();
-    test.skip(
-      !partnerCredentials,
-      'Set E2E_PARTNER_EMAIL and E2E_PARTNER_PASSWORD to run partner role checks'
-    );
-    if (!partnerCredentials) {
-      return;
-    }
-
-    await loginViaUI(page, partnerCredentials);
-    await expect(page).toHaveURL(/\/dashboard$/);
-
-    await expect(page.locator('form[hx-post^="/api/days/"]')).toHaveCount(0);
-    await expect(page.locator('#today-notes')).toHaveCount(0);
-
-    await page.goto('/settings');
-    await expect(page).toHaveURL(/\/settings$/);
-
-    await expect(page.locator('section#settings-cycle')).toHaveCount(0);
-    await expect(page.locator('#settings-symptoms-section')).toHaveCount(0);
-    await expect(page.locator('[data-export-section]')).toHaveCount(0);
-    await expect(page.locator('form[action="/api/settings/clear-data"]')).toHaveCount(0);
-
-    const exportForbidden = await page.request.post('/api/export/csv', {
-      form: { csrf_token: await readCSRFToken(page) },
-      maxRedirects: 0,
-    });
-    expect(exportForbidden.status()).toBe(403);
-
-    const csrfToken = await readCSRFToken(page);
-
-    const todayISO = await todayISOInBrowser();
-    const upsertForbidden = await page.request.post(`/api/days/${todayISO}`, {
-      form: {
-        csrf_token: csrfToken,
-        is_period: 'true',
-      },
-      maxRedirects: 0,
-    });
-    expect(upsertForbidden.status()).toBe(403);
-  });
 });

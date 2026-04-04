@@ -19,6 +19,7 @@ var authErrorTranslationKeys = map[string]string{
 	"sso temporarily unavailable":                     "auth.error.sso_temporarily_unavailable",
 	"sso authentication failed":                       "auth.error.sso_authentication_failed",
 	"sso sign-in unavailable":                         "auth.error.sso_sign_in_unavailable",
+	"web sign-in unavailable":                         "auth.error.web_sign_in_unavailable",
 	"local sign-in unavailable":                       "auth.error.local_sign_in_unavailable",
 	"local recovery unavailable":                      "auth.error.local_recovery_unavailable",
 	"too_many_sso_attempts":                           "auth.error.too_many_sso_attempts",

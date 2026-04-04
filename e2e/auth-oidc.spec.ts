@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   DEFAULT_STRONG_PASSWORD,
   completeOnboardingIfPresent,
@@ -15,9 +15,48 @@ import {
 const oidcEnabled = process.env.OIDC_ENABLED === 'true';
 const localOIDCProvider = process.env.E2E_OIDC_PROVIDER === 'local';
 const loginMode = process.env.OIDC_LOGIN_MODE ?? 'hybrid';
+const logoutMode = process.env.OIDC_LOGOUT_MODE ?? 'local';
 const autoProvisionEnabled = process.env.OIDC_AUTO_PROVISION === 'true';
 const providerEmail = process.env.OIDC_TEST_PROVIDER_EMAIL ?? 'oidc-browser@example.com';
 const providerIssuer = process.env.OIDC_ISSUER_URL ?? '';
+
+async function signInViaOIDCOnlyAndEnableLocalPassword(page: Page) {
+  await page.goto('/login');
+  await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
+  await expect(page.locator('#login-form')).toHaveCount(0);
+  await expect(page.locator('[data-auth-signup-cta]')).toHaveCount(0);
+  await expect(page.locator('a[href="/forgot-password"]')).toHaveCount(0);
+  await expect(page.locator('[data-auth-sso-cta]')).toBeVisible();
+
+  await page.locator('[data-auth-sso-cta]').click();
+  await completeOnboardingIfPresent(page);
+  await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+
+  await page.goto('/settings');
+  await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+
+  const localPasswordForm = page.locator('[data-settings-local-password-form]');
+  if (await localPasswordForm.isVisible().catch(() => false)) {
+    await expect(page.locator('[data-settings-recovery-code-unavailable]')).toBeVisible();
+    await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(0);
+
+    const localPassword = 'LocalStrongPass2';
+    await page.locator('#settings-new-password').fill(localPassword);
+    await page.locator('#settings-confirm-password').fill(localPassword);
+    await page.locator('[data-settings-local-password-form] button[type="submit"]').click();
+
+    await expectDedicatedRecoveryPage(page);
+    await readRecoveryCode(page);
+    await confirmRecoveryCode(page);
+
+    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+  }
+
+  await expect(page.locator('[data-settings-local-password-form]')).toHaveCount(0);
+  await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(1);
+  await expect(page.locator('form[action="/api/settings/clear-data"]')).toHaveCount(1);
+  await expect(page.locator('form[hx-delete="/api/settings/delete-account"]')).toHaveCount(1);
+}
 
 test.describe('Auth: OIDC login entry', () => {
   test.use({ ignoreHTTPSErrors: true });
@@ -102,12 +141,24 @@ test.describe('Auth: OIDC login entry', () => {
     await expect(page.locator('[data-nav-account-actions]')).toBeVisible();
   });
 
-  test('oidc_only auto-provision enables a local password and provider logout', async ({
-    page,
-  }) => {
+  test('oidc_only auto-provision enables a local password', async ({ page }) => {
     test.skip(
       !localOIDCProvider || loginMode !== 'oidc_only' || !autoProvisionEnabled,
       'Requires local OIDC provider, oidc_only mode, and auto-provision',
+    );
+
+    await signInViaOIDCOnlyAndEnableLocalPassword(page);
+  });
+
+  test('oidc_only provider logout bridge works when provider logout is enabled', async ({
+    page,
+  }) => {
+    test.skip(
+      !localOIDCProvider ||
+        loginMode !== 'oidc_only' ||
+        !autoProvisionEnabled ||
+        !['provider', 'auto'].includes(logoutMode),
+      'Requires local OIDC provider, oidc_only mode, auto-provision, and provider/auto logout mode',
     );
 
     let providerLogoutSeen = false;
@@ -117,40 +168,7 @@ test.describe('Auth: OIDC login entry', () => {
       }
     });
 
-    await page.goto('/login');
-    await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
-    await expect(page.locator('#login-form')).toHaveCount(0);
-    await expect(page.locator('[data-auth-signup-cta]')).toHaveCount(0);
-    await expect(page.locator('a[href="/forgot-password"]')).toHaveCount(0);
-    await expect(page.locator('[data-auth-sso-cta]')).toBeVisible();
-
-    await page.locator('[data-auth-sso-cta]').click();
-    await completeOnboardingIfPresent(page);
-    await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
-
-    await page.goto('/settings');
-    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
-    const localPasswordForm = page.locator('[data-settings-local-password-form]');
-    if (await localPasswordForm.isVisible().catch(() => false)) {
-      await expect(page.locator('[data-settings-recovery-code-unavailable]')).toBeVisible();
-      await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(0);
-
-      const localPassword = 'LocalStrongPass2';
-      await page.locator('#settings-new-password').fill(localPassword);
-      await page.locator('#settings-confirm-password').fill(localPassword);
-      await page.locator('[data-settings-local-password-form] button[type="submit"]').click();
-
-      await expectDedicatedRecoveryPage(page);
-      await readRecoveryCode(page);
-      await confirmRecoveryCode(page);
-
-      await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
-    }
-
-    await expect(page.locator('[data-settings-local-password-form]')).toHaveCount(0);
-    await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(1);
-    await expect(page.locator('form[action="/api/settings/clear-data"]')).toHaveCount(1);
-    await expect(page.locator('form[hx-delete="/api/settings/delete-account"]')).toHaveCount(1);
+    await signInViaOIDCOnlyAndEnableLocalPassword(page);
 
     await page.locator('.nav-logout-form button[type="submit"]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();

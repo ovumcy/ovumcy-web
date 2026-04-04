@@ -46,6 +46,8 @@ func mapAuthLoginError(err error) APIErrorSpec {
 	switch services.ClassifyAuthLoginError(err) {
 	case services.AuthLoginErrorRateLimited:
 		return authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many login attempts")
+	case services.AuthLoginErrorUnsupportedRole:
+		return authWebSignInUnavailableErrorSpec()
 	case services.AuthLoginErrorResetTokenIssue:
 		return authResetTokenCreateErrorSpec()
 	case services.AuthLoginErrorInvalidCredentials:
@@ -76,6 +78,10 @@ func authLocalSignInDisabledErrorSpec() APIErrorSpec {
 
 func authLocalRecoveryDisabledErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "local recovery unavailable")
+}
+
+func authWebSignInUnavailableErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "web sign-in unavailable")
 }
 
 func mapPasswordRecoveryStartError(err error) APIErrorSpec {

@@ -284,30 +284,23 @@
 
       <section class="journal-card p-5 sm:p-6 stats-symptoms-panel">
         <h2 class="journal-subtitle">{{t .Messages "stats.symptom_frequency"}}</h2>
-        {{if .IsOwner}}
-          {{if .SymptomCounts}}
-          <ul class="mt-4 space-y-2 text-sm">
-            {{range .SymptomCounts}}
-            {{$label := symptomLabel $.Messages .Name}}
-            <li class="journal-panel stats-symptom-row">
-              <span class="stats-symptom-meta">
-                <span class="stats-symptom-icon">{{.Icon}}</span>
-                <span class="stats-symptom-name" title="{{$label}}">{{$label}}</span>
-              </span>
-              <span class="stats-symptom-frequency">{{.FrequencySummary}}</span>
-            </li>
-            {{end}}
-          </ul>
-          {{else}}
-          <div class="stats-empty-state">
-            <span class="stats-empty-icon" aria-hidden="true">🧾</span>
-            <p class="journal-muted text-sm">{{t .Messages "stats.no_symptom_data"}}</p>
-          </div>
+        {{if .SymptomCounts}}
+        <ul class="mt-4 space-y-2 text-sm">
+          {{range .SymptomCounts}}
+          {{$label := symptomLabel $.Messages .Name}}
+          <li class="journal-panel stats-symptom-row">
+            <span class="stats-symptom-meta">
+              <span class="stats-symptom-icon">{{.Icon}}</span>
+              <span class="stats-symptom-name" title="{{$label}}">{{$label}}</span>
+            </span>
+            <span class="stats-symptom-frequency">{{.FrequencySummary}}</span>
+          </li>
           {{end}}
+        </ul>
         {{else}}
         <div class="stats-empty-state">
-          <span class="stats-empty-icon" aria-hidden="true">🔒</span>
-          <p class="journal-muted text-sm">{{t .Messages "stats.hidden_for_partner"}}</p>
+          <span class="stats-empty-icon" aria-hidden="true">🧾</span>
+          <p class="journal-muted text-sm">{{t .Messages "stats.no_symptom_data"}}</p>
         </div>
         {{end}}
       </section>

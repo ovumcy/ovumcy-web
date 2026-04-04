@@ -65,11 +65,9 @@ func CervicalMucusTranslationKey(value string) string {
 }
 
 func RoleTranslationKey(role string) string {
-	switch strings.ToLower(strings.TrimSpace(role)) {
+	switch NormalizeUserRole(role) {
 	case models.RoleOwner:
 		return "role.owner"
-	case models.RolePartner:
-		return "role.partner"
 	default:
 		return role
 	}

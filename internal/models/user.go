@@ -4,7 +4,6 @@ import "time"
 
 const (
 	RoleOwner           = "owner"
-	RolePartner         = "partner"
 	DefaultCycleLength  = 28
 	DefaultPeriodLength = 5
 	AgeGroupUnknown     = ""

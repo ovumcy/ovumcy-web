@@ -7,10 +7,10 @@ import (
 )
 
 func TestBuildOwnerPredictionExplanation(t *testing.T) {
-	t.Run("partner sees no owner-only explanation", func(t *testing.T) {
-		explanation := BuildOwnerPredictionExplanation(&models.User{Role: models.RolePartner}, DashboardCycleContext{}, true)
+	t.Run("unsupported role sees no owner-only explanation", func(t *testing.T) {
+		explanation := BuildOwnerPredictionExplanation(&models.User{Role: "legacy_viewer"}, DashboardCycleContext{}, true)
 		if explanation.PrimaryKey != "" || explanation.SecondaryKey != "" {
-			t.Fatalf("expected no prediction explanation for partner, got %#v", explanation)
+			t.Fatalf("expected no prediction explanation for unsupported role, got %#v", explanation)
 		}
 	})
 

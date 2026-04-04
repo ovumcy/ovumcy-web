@@ -12,7 +12,7 @@ func TestParsePartialTemplatesIncludesBaseHelpers(t *testing.T) {
 	t.Parallel()
 
 	templateDir := t.TempDir()
-	baseTemplate := `{{define "base"}}base{{end}}{{define "readonly_log_summary"}}<p>{{t .Messages "dashboard.period_day"}}: {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p><p>{{t .Messages "dashboard.flow"}}: {{flowLabel .Messages .Log.Flow}}</p><p>{{t .Messages "dashboard.partner_readonly"}}</p>{{end}}`
+	baseTemplate := `{{define "base"}}base{{end}}{{define "readonly_log_summary"}}<p>{{t .Messages "dashboard.period_day"}}: {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p><p>{{t .Messages "dashboard.flow"}}: {{flowLabel .Messages .Log.Flow}}</p>{{end}}`
 	partialTemplate := `{{define "day_editor_partial"}}{{template "readonly_log_summary" (dict "Messages" .Messages "Log" .Log)}}{{end}}`
 
 	if err := os.WriteFile(filepath.Join(templateDir, "base.html"), []byte(baseTemplate), 0o600); err != nil {
@@ -34,7 +34,6 @@ func TestParsePartialTemplatesIncludesBaseHelpers(t *testing.T) {
 			"common.no":                  "No",
 			"dashboard.flow":             "Flow",
 			"dashboard.flow.none":        "None",
-			"dashboard.partner_readonly": "Read-only mode",
 		},
 		"Log": struct {
 			IsPeriod bool
@@ -51,7 +50,7 @@ func TestParsePartialTemplatesIncludesBaseHelpers(t *testing.T) {
 	}
 
 	rendered := output.String()
-	expected := []string{"Period day", "Yes", "Flow", "None", "Read-only mode"}
+	expected := []string{"Period day", "Yes", "Flow", "None"}
 	for _, fragment := range expected {
 		if !strings.Contains(rendered, fragment) {
 			t.Fatalf("expected rendered output to include %q, got %q", fragment, rendered)

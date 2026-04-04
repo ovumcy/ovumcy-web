@@ -60,13 +60,14 @@ func TestSymptomRoutesRequireAuthJSON(t *testing.T) {
 	}
 }
 
-func TestSymptomRoutesRequireOwnerRoleJSON(t *testing.T) {
+func TestSymptomRoutesRejectUnsupportedLegacyRoleJSON(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "symptom-routes-partner@example.com", "StrongPass1", true)
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", models.RolePartner).Error; err != nil {
-		t.Fatalf("set partner role: %v", err)
+	user := createOnboardingTestUser(t, database, "symptom-routes-legacy@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("role", "partner").Error; err != nil {
+		t.Fatalf("set unsupported legacy role: %v", err)
 	}
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	user.Role = "partner"
+	authCookie := issueAuthCookieForUser(t, user)
 
 	testCases := []struct {
 		name   string
@@ -103,15 +104,15 @@ func TestSymptomRoutesRequireOwnerRoleJSON(t *testing.T) {
 
 			response, err := app.Test(request, -1)
 			if err != nil {
-				t.Fatalf("symptom owner-only request failed: %v", err)
+				t.Fatalf("unsupported legacy role symptom request failed: %v", err)
 			}
 			defer response.Body.Close()
 
 			if response.StatusCode != http.StatusForbidden {
 				t.Fatalf("expected status 403, got %d", response.StatusCode)
 			}
-			if got := readAPIError(t, response.Body); got != "owner access required" {
-				t.Fatalf("expected owner access required error, got %q", got)
+			if got := readAPIError(t, response.Body); got != "web sign-in unavailable" {
+				t.Fatalf("expected unsupported-role sign-in error, got %q", got)
 			}
 		})
 	}

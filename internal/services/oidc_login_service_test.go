@@ -276,7 +276,7 @@ func TestOIDCLoginServiceAuthenticateMapsLinkPersistenceFailure(t *testing.T) {
 		createErr: errors.New("duplicate key"),
 	}, &stubOIDCUserStore{
 		byEmailFound: true,
-		byEmail:      models.User{ID: 5, Email: "owner@example.com"},
+		byEmail:      models.User{ID: 5, Email: "owner@example.com", Role: models.RoleOwner},
 	}, nil)
 
 	if _, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{}); !errors.Is(err, ErrOIDCLinkFailed) {

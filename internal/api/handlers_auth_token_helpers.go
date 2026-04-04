@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberMe bool) (string, error) {
@@ -61,6 +62,9 @@ func (handler *Handler) clearAuthRelatedCookies(c *fiber.Ctx) {
 func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {
 	if user == nil {
 		return "", "", errors.New("user is required")
+	}
+	if err := services.ValidateSupportedWebUser(user); err != nil {
+		return "", "", err
 	}
 	if ttl <= 0 {
 		ttl = defaultAuthTokenTTL

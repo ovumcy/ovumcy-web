@@ -1,10 +1,12 @@
 package api
 
 import (
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
@@ -100,6 +102,9 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 
 	if _, err := handler.setAuthCookie(c, user, true); err != nil {
 		spec := authSessionCreateErrorSpec()
+		if errors.Is(err, services.ErrAuthUnsupportedRole) {
+			spec = authWebSignInUnavailableErrorSpec()
+		}
 		handler.logSecurityError(c, "auth.reset_password", spec)
 		return handler.respondMappedError(c, spec)
 	}

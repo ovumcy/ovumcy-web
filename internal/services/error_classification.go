@@ -42,6 +42,7 @@ const (
 	AuthLoginErrorUnknown AuthLoginErrorKind = iota
 	AuthLoginErrorRateLimited
 	AuthLoginErrorInvalidCredentials
+	AuthLoginErrorUnsupportedRole
 	AuthLoginErrorResetTokenIssue
 )
 
@@ -49,6 +50,8 @@ func ClassifyAuthLoginError(err error) AuthLoginErrorKind {
 	switch {
 	case errors.Is(err, ErrAuthLoginRateLimited):
 		return AuthLoginErrorRateLimited
+	case errors.Is(err, ErrAuthUnsupportedRole):
+		return AuthLoginErrorUnsupportedRole
 	case errors.Is(err, ErrAuthInvalidCreds):
 		return AuthLoginErrorInvalidCredentials
 	case errors.Is(err, ErrLoginResetTokenIssue):
@@ -149,10 +152,13 @@ const (
 	AuthSessionResolveErrorMissing
 	AuthSessionResolveErrorExpired
 	AuthSessionResolveErrorInvalid
+	AuthSessionResolveErrorUnsupportedRole
 )
 
 func ClassifyAuthSessionResolveError(err error) AuthSessionResolveErrorKind {
 	switch {
+	case errors.Is(err, ErrAuthUnsupportedRole):
+		return AuthSessionResolveErrorUnsupportedRole
 	case errors.Is(err, ErrAuthSessionTokenMissing):
 		return AuthSessionResolveErrorMissing
 	case errors.Is(err, ErrAuthSessionTokenExpired):

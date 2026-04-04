@@ -236,22 +236,22 @@ func TestBuildSettingsPageViewDataPartnerSkipsExportSummary(t *testing.T) {
 	symptomProvider := &stubSettingsViewSymptomProvider{}
 	service := NewSettingsViewService(settingsLoader, NewNotificationService(), exportBuilder, symptomProvider)
 
-	user := &models.User{ID: 3, Role: models.RolePartner}
+	user := &models.User{ID: 3, Role: "legacy_viewer"}
 	viewData, err := service.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
 	}
 	if exportBuilder.called {
-		t.Fatalf("did not expect BuildSummary call for partner")
+		t.Fatalf("did not expect BuildSummary call for unsupported role")
 	}
 	if symptomProvider.called {
-		t.Fatalf("did not expect FetchSymptoms call for partner")
+		t.Fatalf("did not expect FetchSymptoms call for unsupported role")
 	}
 	if viewData.HasOwnerExportViewState {
-		t.Fatalf("expected no owner export state for partner")
+		t.Fatalf("expected no owner export state for unsupported role")
 	}
 	if viewData.HasOwnerSymptomsView {
-		t.Fatalf("expected no owner symptoms view state for partner")
+		t.Fatalf("expected no owner symptoms view state for unsupported role")
 	}
 }
 
