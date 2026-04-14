@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.25.8-alpine3.22@sha256:6b7607461f105ccaa0615b6f7932dfd5b36c5d827a0770b5578e565107cc3adb AS builder
+FROM golang:1.25.9-alpine3.22@sha256:2c16ac01b3d038ca2ed421d66cea489e3cb670c251b4f8bbcfad2ebfb75f884c AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -14,21 +14,27 @@ COPY web/static ./web/static
 ENV CGO_ENABLED=0 GOOS=linux
 RUN go build -trimpath -ldflags="-s -w" -o /out/ovumcy ./cmd/ovumcy
 
-FROM alpine:3.22.3@sha256:55ae5d250caebc548793f321534bc6a8ef1d116f334f18f4ada1b2daad3251b2 AS runtime
+FROM alpine:3.22.3@sha256:55ae5d250caebc548793f321534bc6a8ef1d116f334f18f4ada1b2daad3251b2 AS runtime-assets
 WORKDIR /app
 
 RUN apk add --no-cache tzdata ca-certificates \
-    && addgroup -S ovumcy \
-    && adduser -S -G ovumcy -h /app ovumcy
+    && addgroup -S -g 10001 ovumcy \
+    && adduser -S -D -H -u 10001 -G ovumcy -h /app ovumcy \
+    && mkdir -p /app/data
 
-COPY --from=builder --chown=ovumcy:ovumcy /out/ovumcy /app/ovumcy
-COPY --from=builder --chown=ovumcy:ovumcy /src/internal/templates /app/internal/templates
-COPY --from=builder --chown=ovumcy:ovumcy /src/internal/i18n /app/internal/i18n
-COPY --from=builder --chown=ovumcy:ovumcy /src/web/static /app/web/static
+FROM scratch AS runtime
+WORKDIR /app
 
-RUN mkdir -p /app/data && chown -R ovumcy:ovumcy /app
+COPY --from=runtime-assets /etc/passwd /etc/group /etc/
+COPY --from=runtime-assets /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=runtime-assets /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --from=runtime-assets --chown=10001:10001 /app/data /app/data
+COPY --from=builder --chown=10001:10001 /out/ovumcy /app/ovumcy
+COPY --from=builder --chown=10001:10001 /src/internal/templates /app/internal/templates
+COPY --from=builder --chown=10001:10001 /src/internal/i18n /app/internal/i18n
+COPY --from=builder --chown=10001:10001 /src/web/static /app/web/static
 
-USER ovumcy:ovumcy
+USER 10001:10001
 
 EXPOSE 8080
 ENV DB_PATH=/app/data/ovumcy.db
