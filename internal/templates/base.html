@@ -263,7 +263,7 @@
   <p class="status-ok mt-4" data-recovery-status="downloaded" hidden>{{t .Messages "auth.code_downloaded"}}</p>
   <p class="status-error mt-4" data-recovery-status="download-failed" hidden>{{t .Messages "auth.code_download_failed"}}</p>
 
-  <form action="{{if .ContinuePath}}{{.ContinuePath}}{{else}}/dashboard{{end}}" method="get" novalidate class="mt-5 space-y-4" data-recovery-code-confirm data-recovery-continue-path="{{if .ContinuePath}}{{.ContinuePath}}{{else}}/dashboard{{end}}" data-recovery-required-message="{{t .Messages "auth.saved_recovery_code_required"}}">
+  <form action="{{if .ContinuePath}}{{.ContinuePath}}{{else}}/dashboard{{end}}" method="get" novalidate class="mt-5 space-y-4" data-recovery-code-confirm data-recovery-continue-target="{{if .ContinueTarget}}{{.ContinueTarget}}{{else}}dashboard{{end}}" data-recovery-required-message="{{t .Messages "auth.saved_recovery_code_required"}}">
     <label class="remember-option" for="recovery-code-saved">
       <input id="recovery-code-saved" type="checkbox" required class="remember-checkbox" data-recovery-code-checkbox>
       <span class="remember-copy">

@@ -74,7 +74,7 @@ test.describe('Auth: recovery and reset password', () => {
     await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
   });
 
-  test('recovery confirmation sanitizes client-side continue paths to same-origin app routes', async ({
+  test('recovery confirmation ignores hostile form actions and follows trusted continue targets', async ({
     page,
   }) => {
     const creds = createCredentials('auth-recovery-redirect-sanitize');
@@ -88,7 +88,6 @@ test.describe('Auth: recovery and reset password', () => {
 
     await checkbox.check();
     await form.evaluate((element) => {
-      element.setAttribute('data-recovery-continue-path', 'javascript:alert(1)');
       element.setAttribute('action', 'https://evil.example/phish');
     });
 

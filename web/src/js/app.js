@@ -4640,55 +4640,18 @@
     return String(form.dataset.recoveryRequiredMessage || "Check this box to continue.");
   }
 
-  var recoveryCodeAllowedContinuePaths = {
-    "/dashboard": true,
-    "/onboarding": true,
-    "/settings": true
-  };
-
-  function sanitizeRecoveryCodeContinuePath(raw, fallback) {
-    var safeFallback = typeof fallback === "string" && fallback.trim()
-      ? fallback.trim()
-      : "/dashboard";
-    var candidate = String(raw || "").trim();
-    if (!candidate) {
-      return safeFallback;
-    }
-    if (candidate.charAt(0) !== "/") {
-      return safeFallback;
-    }
-    if (candidate.length > 1 && (candidate.charAt(1) === "/" || candidate.charAt(1) === "\\")) {
-      return safeFallback;
-    }
-
-    try {
-      var parsed = new URL(candidate, window.location.origin);
-      if (parsed.origin !== window.location.origin) {
-        return safeFallback;
-      }
-      if (parsed.pathname.charAt(0) !== "/") {
-        return safeFallback;
-      }
-      if (!recoveryCodeAllowedContinuePaths[parsed.pathname]) {
-        return safeFallback;
-      }
-      return parsed.pathname + parsed.search + parsed.hash;
-    } catch {
-      return safeFallback;
-    }
-  }
-
   function recoveryCodeContinuePath(form) {
     if (!form || typeof form.getAttribute !== "function") {
       return "/dashboard";
     }
-
-    return sanitizeRecoveryCodeContinuePath(
-      form.getAttribute("data-recovery-continue-path")
-      || form.getAttribute("action")
-      || "/dashboard",
-      "/dashboard"
-    );
+    switch (String(form.getAttribute("data-recovery-continue-target") || "").trim()) {
+      case "onboarding":
+        return "/onboarding";
+      case "settings":
+        return "/settings";
+      default:
+        return "/dashboard";
+    }
   }
 
   function bindRecoveryCodeConfirmForms() {

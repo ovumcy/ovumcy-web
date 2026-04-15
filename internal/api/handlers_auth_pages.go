@@ -45,6 +45,7 @@ func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
 			data["HideNavigation"] = true
 			data["RecoveryCode"] = recoveryState.RecoveryCode
 			data["ContinuePath"] = recoveryState.ContinuePath
+			data["ContinueTarget"] = recoveryState.ContinueTarget
 			data["ShowInlineRecoveryCode"] = true
 			return handler.render(c, "register", data)
 		}
@@ -84,6 +85,7 @@ func (handler *Handler) ShowRecoveryCodePage(c *fiber.Ctx) error {
 		"Title":          localizedPageTitle(currentMessages(c), "meta.title.recovery_code", "Ovumcy | Recovery Code"),
 		"RecoveryCode":   recoveryState.RecoveryCode,
 		"ContinuePath":   recoveryState.ContinuePath,
+		"ContinueTarget": recoveryState.ContinueTarget,
 		"HideNavigation": true,
 	})
 }

@@ -89,6 +89,7 @@ func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
 
 	assertRecoveryCodeSurface(t, recoveryPage, recoveryCodeSurfaceExpectations{
 		expectedAction: "/settings",
+		expectedTarget: recoveryCodeContinueTargetSettings,
 	})
 }
 
@@ -243,6 +244,7 @@ func stringValue(value any) string {
 
 type recoveryCodeSurfaceExpectations struct {
 	expectedAction string
+	expectedTarget string
 	inline         bool
 }
 
@@ -252,7 +254,7 @@ func assertRecoveryCodeSurface(t *testing.T, markup string, expectations recover
 	document := mustParseHTMLDocument(t, markup)
 	panel := requireRecoveryCodeSurfacePanel(t, document, expectations.inline)
 	assertRenderedRecoveryCodeValue(t, panel)
-	assertRecoveryCodeConfirmFormSurface(t, panel, expectations.expectedAction)
+	assertRecoveryCodeConfirmFormSurface(t, panel, expectations.expectedAction, expectations.expectedTarget)
 }
 
 func requireRecoveryCodeSurfacePanel(t *testing.T, document *html.Node, inline bool) *html.Node {
@@ -285,7 +287,7 @@ func assertRenderedRecoveryCodeValue(t *testing.T, panel *html.Node) {
 	}
 }
 
-func assertRecoveryCodeConfirmFormSurface(t *testing.T, panel *html.Node, expectedAction string) {
+func assertRecoveryCodeConfirmFormSurface(t *testing.T, panel *html.Node, expectedAction string, expectedTarget string) {
 	t.Helper()
 
 	confirmForm := htmlFindElement(panel, func(node *html.Node) bool {
@@ -296,6 +298,9 @@ func assertRecoveryCodeConfirmFormSurface(t *testing.T, panel *html.Node, expect
 	}
 	if got := htmlAttr(confirmForm, "action"); got != expectedAction {
 		t.Fatalf("expected recovery confirmation action %q, got %q", expectedAction, got)
+	}
+	if got := htmlAttr(confirmForm, "data-recovery-continue-target"); got != expectedTarget {
+		t.Fatalf("expected recovery confirmation target %q, got %q", expectedTarget, got)
 	}
 	assertRecoveryCodeConfirmControl(t, confirmForm, "data-recovery-code-checkbox", "expected recovery confirmation checkbox")
 	assertRecoveryCodeConfirmControl(t, confirmForm, "data-recovery-code-submit", "expected recovery confirmation submit button")
