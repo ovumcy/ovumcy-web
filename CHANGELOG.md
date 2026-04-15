@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-04-15
+
+### Changed
+- Replaced DOM-provided recovery confirmation redirect paths with trusted continue-target tokens, while keeping short-lived recovery cookies backward-compatible during the transition.
+- Fixed the Docker image publish workflow parsing failure so the release image pipeline can run again on `main` and on version tags.
+- Official compose files, quick-start examples, and README references now pin `ghcr.io/ovumcy/ovumcy-web:v0.9.2`.
+
+### Security
+- This patch release hardens the browser recovery-code confirmation sink that CodeQL continued to flag after `v0.9.1` by ensuring the client follows only fixed same-app routes (`/dashboard`, `/onboarding`, `/settings`) selected from trusted tokens rather than DOM text.
+
 ## [0.9.1] - 2026-04-15
 
 ### Changed
@@ -292,7 +302,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.5...v0.9.0
 [0.8.5]: https://github.com/ovumcy/ovumcy-web/compare/v0.8.4...v0.8.5
