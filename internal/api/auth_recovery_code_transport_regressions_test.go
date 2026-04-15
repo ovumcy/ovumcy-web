@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 func TestRegisterJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
@@ -85,15 +87,9 @@ func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
 	assertStatusCode(t, recoveryPageResponse, http.StatusOK)
 	recoveryPage := mustReadBodyString(t, recoveryPageResponse.Body)
 
-	assertBodyContainsAll(t, recoveryPage,
-		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected dedicated recovery code page after regeneration"},
-		bodyStringMatch{fragment: `form action="/settings"`, message: "expected regeneration flow to return to settings after confirmation"},
-		bodyStringMatch{fragment: `data-recovery-code-checkbox`, message: "expected recovery confirmation checkbox hook on recovery page"},
-	)
-	assertBodyNotContainsAll(t, recoveryPage,
-		bodyStringMatch{fragment: "settings.success.recovery_code_regenerated", message: "did not expect raw settings success key on recovery page"},
-		bodyStringMatch{fragment: `name="saved"`, message: "did not expect recovery confirmation checkbox to submit a saved query parameter"},
-	)
+	assertRecoveryCodeSurface(t, recoveryPage, recoveryCodeSurfaceExpectations{
+		expectedAction: "/settings",
+	})
 }
 
 func TestRegenerateRecoveryCodeJSONDoesNotExposeRecoveryCode(t *testing.T) {
@@ -243,4 +239,59 @@ func stringValue(value any) string {
 		return text
 	}
 	return ""
+}
+
+type recoveryCodeSurfaceExpectations struct {
+	expectedAction string
+	inline         bool
+}
+
+func assertRecoveryCodeSurface(t *testing.T, markup string, expectations recoveryCodeSurfaceExpectations) {
+	t.Helper()
+
+	document := mustParseHTMLDocument(t, markup)
+	panel := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-recovery-code-tools")
+	})
+	if panel == nil {
+		t.Fatal("expected recovery-code surface")
+	}
+	if expectations.inline && !htmlHasAttr(panel, "data-auth-inline-recovery") {
+		t.Fatal("expected inline recovery-code surface")
+	}
+	if !expectations.inline && htmlHasAttr(panel, "data-auth-inline-recovery") {
+		t.Fatal("did not expect inline recovery-code surface")
+	}
+
+	recoveryCode := htmlElementByID(panel, "recovery-code")
+	if recoveryCode == nil {
+		t.Fatal("expected rendered recovery code")
+	}
+	if normalizeHTMLText(htmlNodeText(recoveryCode)) == "" {
+		t.Fatal("expected non-empty recovery code text")
+	}
+
+	confirmForm := htmlFindElement(panel, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "form" && htmlHasAttr(node, "data-recovery-code-confirm")
+	})
+	if confirmForm == nil {
+		t.Fatal("expected recovery confirmation form")
+	}
+	if got := htmlAttr(confirmForm, "action"); got != expectations.expectedAction {
+		t.Fatalf("expected recovery confirmation action %q, got %q", expectations.expectedAction, got)
+	}
+
+	checkbox := htmlFindElement(confirmForm, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-recovery-code-checkbox")
+	})
+	if checkbox == nil {
+		t.Fatal("expected recovery confirmation checkbox")
+	}
+
+	submit := htmlFindElement(confirmForm, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-recovery-code-submit")
+	})
+	if submit == nil {
+		t.Fatal("expected recovery confirmation submit button")
+	}
 }

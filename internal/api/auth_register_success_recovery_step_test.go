@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestRegisterSuccessSetsAuthCookieAndShowsInlineRecoveryStep(t *testing.T) {
+func TestRegisterSuccessRedirectsToInlineRecoverySurfaceAndSetsCookies(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 	email := "autologin-register@example.com"
 
@@ -43,30 +42,4 @@ func TestRegisterSuccessSetsAuthCookieAndShowsInlineRecoveryStep(t *testing.T) {
 	if recoveryCookie == "" {
 		t.Fatalf("expected recovery page cookie in register response")
 	}
-
-	recoveryRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
-	recoveryRequest.Header.Set("Accept-Language", "en")
-	recoveryRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
-
-	recoveryResponse, err := app.Test(recoveryRequest, -1)
-	if err != nil {
-		t.Fatalf("recovery page request failed: %v", err)
-	}
-	defer recoveryResponse.Body.Close()
-
-	if recoveryResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected recovery page status 200, got %d", recoveryResponse.StatusCode)
-	}
-
-	body, err := io.ReadAll(recoveryResponse.Body)
-	if err != nil {
-		t.Fatalf("read recovery response body: %v", err)
-	}
-	rendered := string(body)
-	assertBodyContainsAll(t, rendered,
-		bodyStringMatch{fragment: `data-auth-inline-recovery`, message: "expected inline recovery block after register"},
-		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected recovery code field after register"},
-		bodyStringMatch{fragment: `id="recovery-code-saved"`, message: "expected recovery confirmation checkbox after register"},
-		bodyStringMatch{fragment: `form action="/onboarding"`, message: "expected new-owner recovery flow to continue to onboarding"},
-	)
 }

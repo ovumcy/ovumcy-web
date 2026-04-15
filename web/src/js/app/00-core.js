@@ -17,7 +17,17 @@
   var TIMEZONE_COOKIE_MAX_AGE_SECONDS = 31536000;
 
   function getEventTarget(event) {
-    return event && event.target ? event.target : null;
+    var target = event && event.target ? event.target : null;
+    if (!target) {
+      return null;
+    }
+    if (target.nodeType && target.nodeType !== 1) {
+      return target.parentElement || null;
+    }
+    if (!target.closest && target.parentElement) {
+      return target.parentElement;
+    }
+    return target;
   }
 
   function closestFromEvent(event, selector) {

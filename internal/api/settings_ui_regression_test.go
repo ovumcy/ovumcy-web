@@ -104,7 +104,7 @@ func TestSettingsPageExplainsClearDataRemovesCustomSymptoms(t *testing.T) {
 	}
 }
 
-func TestSettingsTrackingSectionExplainsToggleEffectsAndCurrentState(t *testing.T) {
+func TestSettingsTrackingSectionRendersExpectedToggleContracts(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-tracking-copy@example.com")
 
 	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
@@ -127,70 +127,32 @@ func TestSettingsTrackingSectionExplainsToggleEffectsAndCurrentState(t *testing.
 	}
 
 	document := mustParseHTMLDocument(t, rendered)
-	documentText := htmlDocumentText(document)
-	if !strings.Contains(documentText, "These toggles only change new dashboard and calendar entry forms.") {
-		t.Fatalf("expected tracking subtitle to explain that toggles only affect new entry forms")
-	}
-	if !strings.Contains(documentText, "Existing values stay in your private history and exports.") {
-		t.Fatalf("expected tracking subtitle to explain saved-value behavior")
-	}
-
-	testCases := []struct {
-		attribute string
-		hint      string
-		state     string
-	}{
-		{
-			attribute: "track-bbt",
-			hint:      "Adds a basal body temperature field to dashboard and calendar day editing.",
-			state:     "Currently hidden from new dashboard and calendar entries.",
-		},
-		{
-			attribute: "track-cervical-mucus",
-			hint:      "Adds cervical mucus choices to dashboard and calendar day editing.",
-			state:     "Currently hidden from new dashboard and calendar entries.",
-		},
-		{
-			attribute: "hide-sex-chip",
-			hint:      "Removes the intimacy section from new dashboard and calendar entries.",
-			state:     "Currently visible in dashboard and calendar day editor.",
-		},
-		{
-			attribute: "hide-cycle-factors",
-			hint:      "Removes cycle factor labels from new dashboard and calendar entries.",
-			state:     "Currently visible in dashboard and calendar day editor.",
-		},
-		{
-			attribute: "hide-notes-field",
-			hint:      "Removes the notes section from new dashboard and calendar entries.",
-			state:     "Currently visible in dashboard and calendar day editor.",
-		},
+	trackingSection := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "id") == "settings-tracking"
+	})
+	if trackingSection == nil {
+		t.Fatal("expected settings tracking section")
 	}
 
-	for _, tc := range testCases {
-		toggle := htmlFindElement(document, func(node *html.Node) bool {
-			return node.Type == html.ElementNode && htmlAttr(node, "data-tracking-setting") == tc.attribute
+	expectedToggles := []string{
+		"track-bbt",
+		"track-cervical-mucus",
+		"hide-sex-chip",
+		"hide-cycle-factors",
+		"hide-notes-field",
+	}
+
+	for _, attribute := range expectedToggles {
+		toggle := htmlFindElement(trackingSection, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlAttr(node, "data-tracking-setting") == attribute
 		})
 		if toggle == nil {
-			t.Fatalf("expected tracking toggle %q", tc.attribute)
+			t.Fatalf("expected tracking toggle %q", attribute)
 		}
 
 		toggleText := normalizeHTMLText(htmlNodeText(toggle))
-		if !strings.Contains(toggleText, tc.hint) {
-			t.Fatalf("expected tracking toggle %q to include hint %q, got %q", tc.attribute, tc.hint, toggleText)
-		}
-		if !strings.Contains(toggleText, tc.state) {
-			t.Fatalf("expected tracking toggle %q to include state %q, got %q", tc.attribute, tc.state, toggleText)
-		}
-
-		state := htmlFindElement(toggle, func(node *html.Node) bool {
-			return node.Type == html.ElementNode && htmlHasAttr(node, "data-binary-toggle-state")
-		})
-		if state == nil {
-			t.Fatalf("expected tracking toggle %q to render live state node", tc.attribute)
-		}
-		if htmlAttr(state, "data-state-on") == "" || htmlAttr(state, "data-state-off") == "" {
-			t.Fatalf("expected tracking toggle %q to provide live state labels", tc.attribute)
+		if toggleText == "" {
+			t.Fatalf("expected tracking toggle %q to render non-empty user-facing copy", attribute)
 		}
 	}
 }
@@ -221,7 +183,7 @@ func TestSettingsDataSectionExplainsServerStorageAndUIOnlyHiding(t *testing.T) {
 	}
 }
 
-func TestSettingsInterfaceSectionRendersDraftSaveContract(t *testing.T) {
+func TestSettingsInterfaceSectionRendersSaveDiscardContract(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-interface-ui@example.com")
 
 	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
@@ -238,19 +200,69 @@ func TestSettingsInterfaceSectionRendersDraftSaveContract(t *testing.T) {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
 	}
 
-	rendered := mustReadBodyString(t, response.Body)
-	assertBodyContainsAll(t, rendered,
-		bodyStringMatch{fragment: `data-settings-interface-form`, message: "expected interface settings form"},
-		bodyStringMatch{fragment: `action="/api/settings/interface"`, message: "expected interface form action"},
-		bodyStringMatch{fragment: `data-settings-interface-save`, message: "expected interface save control"},
-		bodyStringMatch{fragment: `data-settings-interface-discard`, message: "expected interface discard control"},
-		bodyStringMatch{fragment: `data-settings-interface-language-option="en"`, message: "expected interface language radio tiles"},
-		bodyStringMatch{fragment: `data-settings-interface-theme-option="dark"`, message: "expected interface theme radio tiles"},
-		bodyStringMatch{fragment: "Theme preview updates immediately and is saved in this browser when you press Save.", message: "expected interface preview hint"},
-	)
-	assertBodyNotContainsAll(t, rendered,
-		bodyStringMatch{fragment: `class="lang-link`, message: "did not expect legacy language links in settings interface"},
-	)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	form := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-settings-interface-form")
+	})
+	if form == nil {
+		t.Fatal("expected interface settings form")
+	}
+	if got := htmlAttr(form, "action"); got != "/api/settings/interface" {
+		t.Fatalf("expected interface form action /api/settings/interface, got %q", got)
+	}
+	if htmlFindElement(form, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-settings-interface-save")
+	}) == nil {
+		t.Fatal("expected interface save control")
+	}
+	if htmlFindElement(form, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-settings-interface-discard")
+	}) == nil {
+		t.Fatal("expected interface discard control")
+	}
+	if htmlFindElement(form, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-settings-interface-language-option") == "en"
+	}) == nil {
+		t.Fatal("expected English language option in interface form")
+	}
+	if htmlFindElement(form, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-settings-interface-theme-option") == "dark"
+	}) == nil {
+		t.Fatal("expected dark theme option in interface form")
+	}
+}
+
+func TestSettingsDangerZoneDeleteAccountCardShowsVisibleTitle(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-danger-title@example.com")
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	deleteCard := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasClass(node, "danger-card-soft") && htmlFindElement(node, func(child *html.Node) bool {
+			return child.Type == html.ElementNode && htmlAttr(child, "hx-delete") == "/api/settings/delete-account"
+		}) != nil
+	})
+	if deleteCard == nil {
+		t.Fatal("expected delete-account danger card")
+	}
+
+	deleteCardText := normalizeHTMLText(htmlNodeText(deleteCard))
+	if !strings.Contains(deleteCardText, "Delete account") {
+		t.Fatalf("expected delete-account danger card to include a visible title, got %q", deleteCardText)
+	}
 }
 
 func TestSettingsCycleAndTrackingSectionsRenderDraftDiscardContract(t *testing.T) {

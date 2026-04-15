@@ -2291,13 +2291,45 @@
 
     var checkbox = form.querySelector("[data-recovery-code-checkbox], #recovery-code-saved");
     var submit = form.querySelector("[data-recovery-code-submit]");
+    var statusTarget = form.querySelector("[data-recovery-code-status]");
     var enabled = !!(checkbox && checkbox.checked);
+    if (checkbox) {
+      if (enabled && typeof checkbox.setCustomValidity === "function") {
+        checkbox.setCustomValidity("");
+      }
+      if (enabled) {
+        checkbox.removeAttribute("aria-invalid");
+      }
+    }
+    if (enabled && statusTarget && typeof clearFormStatus === "function") {
+      clearFormStatus(statusTarget);
+    }
     if (!submit) {
       return;
     }
 
     submit.setAttribute("aria-disabled", enabled ? "false" : "true");
     submit.dataset.recoveryCodeReady = enabled ? "true" : "false";
+  }
+
+  function recoveryCodeRequiredMessage(form) {
+    if (!form || !form.dataset) {
+      return "Check this box to continue.";
+    }
+
+    return String(form.dataset.recoveryRequiredMessage || "Check this box to continue.");
+  }
+
+  function recoveryCodeContinuePath(form) {
+    if (!form || typeof form.getAttribute !== "function") {
+      return "/dashboard";
+    }
+
+    return String(
+      form.getAttribute("data-recovery-continue-path")
+      || form.getAttribute("action")
+      || "/dashboard"
+    ).trim() || "/dashboard";
   }
 
   function bindRecoveryCodeConfirmForms() {
@@ -2320,16 +2352,29 @@
         });
         form.addEventListener("submit", function (event) {
           var checkbox = this.querySelector("[data-recovery-code-checkbox], #recovery-code-saved");
-          if (!checkbox || checkbox.checked) {
+          var statusTarget = this.querySelector("[data-recovery-code-status]");
+          var requiredMessage = recoveryCodeRequiredMessage(this);
+          if (!checkbox) {
             syncRecoveryCodeConfirmForm(this);
+            return;
+          }
+          if (checkbox.checked) {
+            event.preventDefault();
+            syncRecoveryCodeConfirmForm(this);
+            window.location.assign(recoveryCodeContinuePath(this));
             return;
           }
 
           event.preventDefault();
-          syncRecoveryCodeConfirmForm(this);
-          if (typeof checkbox.reportValidity === "function") {
-            checkbox.reportValidity();
-            return;
+          if (typeof checkbox.setCustomValidity === "function") {
+            checkbox.setCustomValidity(requiredMessage);
+          }
+          checkbox.setAttribute("aria-invalid", "true");
+          if (statusTarget && typeof moveFormStatusTarget === "function") {
+            moveFormStatusTarget(statusTarget, checkbox);
+          }
+          if (statusTarget && typeof renderFormStatusError === "function") {
+            renderFormStatusError(statusTarget, requiredMessage);
           }
           if (typeof checkbox.focus === "function") {
             checkbox.focus();

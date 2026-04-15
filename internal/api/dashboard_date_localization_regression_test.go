@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -11,16 +10,16 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/net/html"
 )
 
-func TestDashboardEnglishRendersLocalizedPredictionDates(t *testing.T) {
+func TestDashboardStableHeroRendersEnglishPredictionWindowWithoutFallbackStatus(t *testing.T) {
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user := createOnboardingTestUser(t, database, "dashboard-date-localization@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	nowUTC := time.Now().UTC()
-	timezoneName, location := timezoneWithDifferentCalendarDay(t, nowUTC)
-	lastPeriodStart := services.DateAtLocation(nowUTC.In(location), location).AddDate(0, 0, -8)
+	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	lastPeriodStart := today.AddDate(0, 0, -8)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,
 		"period_length":     5,
@@ -31,8 +30,7 @@ func TestDashboardEnglishRendersLocalizedPredictionDates(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
-	request.Header.Set("Cookie", authCookie+"; "+timezoneCookieName+"="+timezoneName)
-	request.Header.Set(timezoneHeaderName, timezoneName)
+	request.Header.Set("Cookie", authCookie)
 
 	response, err := app.Test(request, -1)
 	if err != nil {
@@ -44,20 +42,21 @@ func TestDashboardEnglishRendersLocalizedPredictionDates(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read dashboard body: %v", err)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	hero := dashboardElementByDataAttr(document, "data-dashboard-cycle-hero")
+	if hero == nil {
+		t.Fatal("expected stable dashboard cycle hero")
 	}
-	rendered := string(body)
-
-	nextPeriodPattern := regexp.MustCompile(`(?s)<span data-dashboard-next-period>\s*[A-Z][a-z]{2} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2} \d{1,2}, \d{4}\s*</span>`)
-	if !nextPeriodPattern.MatchString(rendered) {
-		t.Fatalf("expected English-localized next period range in dashboard status line")
+	footerText := dashboardElementTextByDataAttr(t, hero, "data-dashboard-cycle-hero-next-period")
+	exactWindowPattern := regexp.MustCompile(`[A-Z][a-z]{2,8} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2,8} \d{1,2}, \d{4}`)
+	if !exactWindowPattern.MatchString(footerText) {
+		t.Fatalf("expected stable dashboard hero footer to render an English-localized next period window, got %q", footerText)
 	}
-
-	ovulationPattern := regexp.MustCompile(`Ovulation:\s*[A-Z][a-z]{2} \d{1,2}, \d{4}`)
-	if !ovulationPattern.MatchString(rendered) {
-		t.Fatalf("expected English-localized ovulation display date in dashboard status line")
+	if dashboardElementByDataAttr(document, "data-dashboard-status-line") != nil {
+		t.Fatalf("did not expect duplicated dashboard status line when hero is visible")
+	}
+	if htmlAttr(hero, "data-cycle-hero-approximate") == "true" {
+		t.Fatalf("did not expect exact stable cycle hero to be marked approximate")
 	}
 }
 
@@ -102,13 +101,24 @@ func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	rendered := mustReadBodyString(t, response.Body)
-	ovulationRangePattern := regexp.MustCompile(`Ovulation:\s*[A-Z][a-z]{2} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2} \d{1,2}, \d{4}`)
-	if !ovulationRangePattern.MatchString(rendered) {
-		t.Fatalf("expected English-localized ovulation range in dashboard status line")
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	hero := dashboardElementByDataAttr(document, "data-dashboard-cycle-hero")
+	if hero == nil {
+		t.Fatal("expected irregular range state to keep the dashboard cycle hero")
 	}
-	if !strings.Contains(rendered, `data-dashboard-prediction-explainer`) || !strings.Contains(rendered, "Irregular cycle mode uses ranges instead of exact prediction dates.") {
-		t.Fatalf("expected shared irregular-range explanation note in dashboard, got %q", rendered)
+	footerText := dashboardElementTextByDataAttr(t, hero, "data-dashboard-cycle-hero-next-period")
+	if !regexp.MustCompile(`[A-Z][a-z]{2,8} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2,8} \d{1,2}, \d{4}`).MatchString(footerText) {
+		t.Fatalf("expected English-localized next period range in dashboard hero footer, got %q", footerText)
+	}
+	if dashboardElementByDataAttr(document, "data-dashboard-status-line") != nil {
+		t.Fatalf("did not expect duplicated dashboard status line when hero is visible")
+	}
+	if htmlAttr(hero, "data-cycle-hero-approximate") != "true" {
+		t.Fatalf("expected irregular range dashboard hero to be marked approximate")
+	}
+	explainerText := dashboardElementTextByDataAttr(t, document, "data-dashboard-prediction-explainer")
+	if !strings.Contains(explainerText, "Irregular cycle mode uses ranges instead of exact prediction dates.") {
+		t.Fatalf("expected shared irregular-range explanation note in dashboard, got %q", explainerText)
 	}
 }
 
@@ -152,11 +162,35 @@ func TestDashboardEnglishRendersSharedSparsePredictionExplanationForIrregularMod
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	rendered := mustReadBodyString(t, response.Body)
-	if !strings.Contains(rendered, "3 cycles are needed for a reliable range") {
-		t.Fatalf("expected sparse irregular dashboard status copy, got %q", rendered)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	if dashboardElementByDataAttr(document, "data-dashboard-cycle-hero") != nil {
+		t.Fatal("did not expect dashboard cycle hero before sparse irregular history becomes reliable")
 	}
-	if !strings.Contains(rendered, `data-dashboard-prediction-explainer`) || !strings.Contains(rendered, "Irregular cycle mode needs at least 3 completed cycles before Ovumcy can show steadier ranges.") {
-		t.Fatalf("expected shared sparse irregular explanation note in dashboard, got %q", rendered)
+	pageText := htmlDocumentText(document)
+	if !strings.Contains(pageText, "3 cycles are needed for a reliable range") {
+		t.Fatalf("expected sparse irregular dashboard status copy, got %q", pageText)
 	}
+	explainerText := dashboardElementTextByDataAttr(t, document, "data-dashboard-prediction-explainer")
+	if !strings.Contains(explainerText, "Irregular cycle mode needs at least 3 completed cycles before Ovumcy can show steadier ranges.") {
+		t.Fatalf("expected shared sparse irregular explanation note in dashboard, got %q", explainerText)
+	}
+}
+
+func dashboardElementByDataAttr(root *html.Node, attr string) *html.Node {
+	if root == nil {
+		return nil
+	}
+	return htmlFindElement(root, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, attr)
+	})
+}
+
+func dashboardElementTextByDataAttr(t *testing.T, root *html.Node, attr string) string {
+	t.Helper()
+
+	node := dashboardElementByDataAttr(root, attr)
+	if node == nil {
+		t.Fatalf("expected dashboard element with %s", attr)
+	}
+	return normalizeHTMLText(htmlNodeText(node))
 }

@@ -23,7 +23,14 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string): Promi
 
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.locator('.dashboard-status-line')).toBeVisible();
+  const cycleHero = page.locator('[data-dashboard-cycle-hero]');
+  const fallbackStatusLine = page.locator('[data-dashboard-status-line]');
+  if ((await cycleHero.count()) > 0) {
+    await expect(cycleHero).toBeVisible();
+    await expect(fallbackStatusLine).toHaveCount(0);
+  } else {
+    await expect(fallbackStatusLine).toBeVisible();
+  }
   await expect(page.locator('[data-dashboard-save-form]').first()).toBeVisible();
 }
 

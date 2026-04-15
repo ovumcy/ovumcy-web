@@ -38,6 +38,7 @@ type DashboardViewService struct {
 type DashboardViewData struct {
 	Stats                             CycleStats
 	CycleContext                      DashboardCycleContext
+	CycleHero                         DashboardCycleHero
 	Today                             time.Time
 	Yesterday                         time.Time
 	YesterdayMonth                    string
@@ -156,6 +157,7 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 	return DashboardViewData{
 		Stats:                             stats,
 		CycleContext:                      cycleContext,
+		CycleHero:                         BuildDashboardCycleHero(user, stats, cycleContext),
 		Today:                             today,
 		Yesterday:                         yesterday,
 		YesterdayMonth:                    yesterday.Format("2006-01"),

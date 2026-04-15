@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -176,7 +177,8 @@ async function completeOnboardingWithStartDate(page: Page, startDate: string): P
 
   const startDateOption = page.locator(`[data-onboarding-day-option][data-onboarding-day-value="${startDate}"]`);
   if ((await startDateOption.count()) > 0) {
-    await startDateOption.first().click();
+    await startDateOption.first().focus();
+    await page.keyboard.press('Enter');
   } else {
     await fillDateField(startDateInput, startDate);
   }
@@ -187,12 +189,6 @@ async function completeOnboardingWithStartDate(page: Page, startDate: string): P
   await expect(stepTwoForm).toBeVisible();
   await stepTwoForm.locator('button[type="submit"]').click();
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
-}
-
-async function currentNextPeriodText(page: Page): Promise<string> {
-  const value = await page.locator('[data-dashboard-next-period]').textContent();
-
-  return String(value || '').trim();
 }
 
 test.describe('Settings: profile and cycle', () => {
@@ -271,7 +267,7 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
-    const nextPeriodBefore = await currentNextPeriodText(page);
+    const nextPeriodBefore = await dashboardNextPeriodText(page);
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
@@ -306,7 +302,7 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
-    const nextPeriodAfter = await currentNextPeriodText(page);
+    const nextPeriodAfter = await dashboardNextPeriodText(page);
     expect(nextPeriodAfter).not.toBe(nextPeriodBefore);
 
     await page.goto('/calendar');
@@ -338,7 +334,7 @@ test.describe('Settings: profile and cycle', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    const nextPeriodText = await currentNextPeriodText(page);
+    const nextPeriodText = await dashboardNextPeriodText(page);
     expect(nextPeriodText).toContain('around');
     expect(nextPeriodText).toContain('3 cycles are needed');
     expect(nextPeriodText).not.toContain(' - ');

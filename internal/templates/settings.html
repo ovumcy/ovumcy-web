@@ -199,12 +199,12 @@
 
       <div class="settings-toggle-list">
         <label
-          class="period-toggle"
+          class="period-toggle settings-tracking-toggle"
           data-binary-toggle
           data-active="{{if .TrackBBT}}true{{else}}false{{end}}"
           data-tracking-setting="track-bbt">
           <input type="checkbox" name="track_bbt" value="true" data-binary-toggle-input {{if .TrackBBT}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main">🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_bbt_hint"}}</span>
             <span
@@ -216,12 +216,12 @@
         </label>
 
         <label
-          class="period-toggle"
+          class="period-toggle settings-tracking-toggle"
           data-binary-toggle
           data-active="{{if .TrackCervicalMucus}}true{{else}}false{{end}}"
           data-tracking-setting="track-cervical-mucus">
           <input type="checkbox" name="track_cervical_mucus" value="true" data-binary-toggle-input {{if .TrackCervicalMucus}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main">💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_cervical_mucus_hint"}}</span>
             <span
@@ -233,12 +233,12 @@
         </label>
 
         <label
-          class="period-toggle"
+          class="period-toggle settings-tracking-toggle"
           data-binary-toggle
           data-active="{{if .HideSexChip}}true{{else}}false{{end}}"
           data-tracking-setting="hide-sex-chip">
           <input type="checkbox" name="hide_sex_chip" value="true" data-binary-toggle-input {{if .HideSexChip}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main">◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_sex_chip_hint"}}</span>
             <span
@@ -250,12 +250,12 @@
         </label>
 
         <label
-          class="period-toggle"
+          class="period-toggle settings-tracking-toggle"
           data-binary-toggle
           data-active="{{if .HideCycleFactors}}true{{else}}false{{end}}"
           data-tracking-setting="hide-cycle-factors">
           <input type="checkbox" name="hide_cycle_factors" value="true" data-binary-toggle-input {{if .HideCycleFactors}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main">🏷️ {{t .Messages "settings.tracking.hide_cycle_factors"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_cycle_factors_hint"}}</span>
             <span
@@ -267,12 +267,12 @@
         </label>
 
         <label
-          class="period-toggle"
+          class="period-toggle settings-tracking-toggle"
           data-binary-toggle
           data-active="{{if .HideNotesField}}true{{else}}false{{end}}"
           data-tracking-setting="hide-notes-field">
           <input type="checkbox" name="hide_notes_field" value="true" data-binary-toggle-input {{if .HideNotesField}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main">📝 {{t .Messages "settings.tracking.hide_notes_field"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_notes_field_hint"}}</span>
             <span
@@ -341,9 +341,9 @@
             <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
             <p class="journal-muted text-sm">{{t .Messages "settings.interface.language_hint"}}</p>
           </div>
-          <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="{{t .Messages "settings.interface.language"}}">
+          <div class="settings-interface-options settings-interface-language-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.language"}}">
             {{range .LanguageOptions}}
-            <label class="choice-option" data-settings-interface-language-option="{{.Code}}" data-selected="{{if .Active}}true{{else}}false{{end}}">
+            <label class="choice-option settings-interface-option" data-settings-interface-language-option="{{.Code}}" data-selected="{{if .Active}}true{{else}}false{{end}}">
               <input type="radio" name="language" value="{{.Code}}" class="choice-input" {{if .Active}}checked{{end}}>
               <span class="radio-tile radio-tile-inline"><span>{{.Label}}</span></span>
             </label>
@@ -357,15 +357,15 @@
             <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
             <p class="journal-muted text-xs">{{t .Messages "settings.interface.preview_hint"}}</p>
           </div>
-          <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="{{t .Messages "settings.interface.theme"}}">
-            <label class="choice-option" data-settings-interface-theme-option="light" data-selected="false">
+          <div class="settings-interface-options settings-interface-theme-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.theme"}}">
+            <label class="choice-option settings-interface-option" data-settings-interface-theme-option="light" data-selected="false">
               <input type="radio" name="theme" value="light" class="choice-input" checked>
               <span class="radio-tile radio-tile-inline">
                 <span>☀️</span>
                 <span>{{t .Messages "theme.name.light"}}</span>
               </span>
             </label>
-            <label class="choice-option" data-settings-interface-theme-option="dark" data-selected="false">
+            <label class="choice-option settings-interface-option" data-settings-interface-theme-option="dark" data-selected="false">
               <input type="radio" name="theme" value="dark" class="choice-input">
               <span class="radio-tile radio-tile-inline">
                 <span>🌙</span>
@@ -709,6 +709,9 @@
 
     {{if .CurrentUser.LocalAuthEnabled}}
     <div class="journal-panel danger-card-soft mt-5 space-y-4">
+      <div>
+        <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
+      </div>
       <form
         hx-delete="/api/settings/delete-account"
         hx-target="#delete-account-feedback"

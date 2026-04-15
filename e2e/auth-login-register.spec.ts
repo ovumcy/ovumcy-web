@@ -102,7 +102,7 @@ test.describe('Auth: register, login, logout', () => {
       'false'
     );
 
-    await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
+    await requestSubmitForm(page.locator('form[action="/api/auth/register"]'));
 
     await expect(page).toHaveURL(/\/register$/);
     expectNoSensitiveAuthParams(page.url());

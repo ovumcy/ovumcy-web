@@ -99,7 +99,7 @@
       </div>
       {{end}}
 
-      <div class="calendar-legend mt-4 flex flex-wrap items-center gap-3 text-xs journal-muted">
+      <div class="calendar-legend mobile-safe-target mt-4 flex flex-wrap items-center gap-3 text-xs journal-muted">
         <span class="legend-item"><span class="legend-dot legend-dot-period"></span>{{t .Messages "calendar.legend.actual_period"}}</span>
         {{if not .CurrentUser.UnpredictableCycle}}
         <span class="legend-item"><span class="legend-dot legend-dot-predicted"></span>{{t .Messages "calendar.legend.predicted_period"}}</span>

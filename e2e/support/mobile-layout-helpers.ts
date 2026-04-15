@@ -62,13 +62,37 @@ export async function expectElementAboveMobileTabbar(
   await expect(tabbar).toBeVisible();
   await expect(element).toBeVisible();
 
-  const [elementBox, tabbarBox] = await Promise.all([element.boundingBox(), tabbar.boundingBox()]);
+  let [elementBox, tabbarBox] = await Promise.all([element.boundingBox(), tabbar.boundingBox()]);
 
   expect(elementBox, 'expected target element to have a visible bounding box').not.toBeNull();
   expect(tabbarBox, 'expected mobile tabbar to have a visible bounding box').not.toBeNull();
 
-  const elementBottom = elementBox!.y + elementBox!.height;
-  const tabbarTop = tabbarBox!.y;
+  let elementBottom = elementBox!.y + elementBox!.height;
+  let tabbarTop = tabbarBox!.y;
+
+  if (elementBottom > tabbarTop - minGap) {
+    const scrollState = await page.evaluate(() => {
+      return {
+        scrollY: window.scrollY,
+        maxScrollY: Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
+      };
+    });
+    const remainingScroll = Math.max(0, scrollState.maxScrollY - scrollState.scrollY);
+    const neededScroll = Math.max(0, Math.ceil(elementBottom - (tabbarTop - minGap) + 16));
+
+    if (remainingScroll > 0 && neededScroll > 0) {
+      await page.evaluate((delta) => {
+        window.scrollBy(0, delta);
+      }, Math.min(remainingScroll, neededScroll));
+      await page.waitForTimeout(150);
+
+      [elementBox, tabbarBox] = await Promise.all([element.boundingBox(), tabbar.boundingBox()]);
+      expect(elementBox, 'expected target element to have a visible bounding box after scrolling').not.toBeNull();
+      expect(tabbarBox, 'expected mobile tabbar to have a visible bounding box after scrolling').not.toBeNull();
+      elementBottom = elementBox!.y + elementBox!.height;
+      tabbarTop = tabbarBox!.y;
+    }
+  }
 
   expect(elementBottom).toBeLessThanOrEqual(tabbarTop - minGap);
 }

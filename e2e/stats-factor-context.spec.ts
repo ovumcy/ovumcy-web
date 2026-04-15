@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import {
   markCycleStart,
   registerOwnerAndEnableIrregularMode,
@@ -20,7 +21,7 @@ test.describe('Stats factor context', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
-    await expect(page.locator('[data-dashboard-next-period]')).toContainText('3 cycles are needed for a reliable range');
+    expect(await dashboardNextPeriodText(page)).toContain('3 cycles are needed for a reliable range');
     await expect(page.locator('[data-dashboard-prediction-explainer]')).toContainText(
       'Irregular cycle mode needs at least 3 completed cycles before Ovumcy can show steadier ranges.'
     );
@@ -59,8 +60,9 @@ test.describe('Stats factor context', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.locator('a[href="/settings#settings-cycle"]')).toHaveCount(0);
     await expect(page.locator('.warning-amber')).toHaveCount(0);
-    await expect(page.locator('[data-dashboard-next-period]')).toContainText(/\w{3} \d{1,2}, \d{4} — \w{3} \d{1,2}, \d{4}/);
-    await expect(page.locator('[data-dashboard-next-period]')).not.toContainText('3 cycles are needed');
+    const nextPeriodText = await dashboardNextPeriodText(page);
+    expect(nextPeriodText).toMatch(/\w{3} \d{1,2}, \d{4} — \w{3} \d{1,2}, \d{4}/);
+    expect(nextPeriodText).not.toContain('3 cycles are needed');
     await expect(page.locator('[data-dashboard-prediction-explainer]')).toContainText(
       'Irregular cycle mode uses ranges instead of exact prediction dates.'
     );

@@ -1,7 +1,89 @@
 {{define "content"}}
 <section class="space-y-6">
   <section class="space-y-3" data-dashboard-shell data-phase="{{.Stats.CurrentPhase}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
-    <div class="dashboard-status-line reveal">
+    {{if .CycleHero.Visible}}
+    <section class="journal-card journal-hero dashboard-cycle-hero reveal" data-dashboard-cycle-hero{{if .CycleHero.Approximate}} data-cycle-hero-approximate="true"{{end}}>
+      <div class="dashboard-cycle-hero-shell">
+        <div class="dashboard-cycle-hero-topline">
+          <p class="journal-kicker">{{t .Messages "dashboard.cycle_snapshot"}}</p>
+          {{if .ShowHighFertilityBadge}}
+          <p class="dashboard-cycle-hero-badge{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}} dashboard-cycle-hero-badge-warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}} dashboard-cycle-hero-badge-positive{{end}}">
+            {{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}⚠️ {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}✨ {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}💧 {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
+          </p>
+          {{end}}
+          {{if .CycleHero.Approximate}}
+          <p class="dashboard-cycle-hero-note">{{t .Messages "dashboard.cycle_hero_estimated"}}</p>
+          {{end}}
+        </div>
+
+        <div class="dashboard-cycle-hero-ring-block">
+          <div class="dashboard-cycle-hero-ring-wrap">
+            <svg class="dashboard-cycle-hero-ring" viewBox="0 0 220 220" aria-hidden="true" focusable="false">
+              <circle class="dashboard-cycle-hero-track" cx="110" cy="110" r="78"></circle>
+              {{range .CycleHero.Segments}}
+              <circle
+                class="dashboard-cycle-hero-segment dashboard-cycle-hero-segment-{{.Phase}}"
+                cx="110"
+                cy="110"
+                r="78"
+                stroke-dasharray="{{.DashArray}}"
+                stroke-dashoffset="{{.DashOffset}}"
+                data-cycle-hero-segment="{{.Phase}}"></circle>
+              {{end}}
+              {{if .CycleHero.ShowCurrentDayMarker}}
+              <circle class="dashboard-cycle-hero-marker dashboard-cycle-hero-marker-current" cx="{{.CycleHero.CurrentDayMarker.X}}" cy="{{.CycleHero.CurrentDayMarker.Y}}" r="6"></circle>
+              {{end}}
+            </svg>
+
+            <div class="dashboard-cycle-hero-center">
+              <p class="dashboard-cycle-hero-center-label">{{t .Messages "dashboard.cycle_day"}}</p>
+              <p class="dashboard-cycle-hero-center-day">{{.CycleHero.CurrentDay}}</p>
+              <p class="dashboard-cycle-hero-center-phase">{{phaseLabel .Messages .CycleHero.CurrentPhase}}</p>
+              <p class="dashboard-cycle-hero-center-length">{{printf (t .Messages "dashboard.cycle_hero_cycle_length") .CycleHero.CycleLength}}</p>
+            </div>
+          </div>
+
+          <div class="dashboard-cycle-hero-phases">
+            {{range .CycleHero.PhaseCards}}
+            <article class="dashboard-phase-card dashboard-phase-card-{{.Phase}}{{if .IsCurrent}} is-current{{end}}" data-cycle-hero-phase="{{.Phase}}">
+              <p class="dashboard-phase-card-title">
+                <span class="dashboard-phase-card-dot" aria-hidden="true"></span>
+                <span>{{phaseLabel $.Messages .Phase}}</span>
+              </p>
+              <p class="dashboard-phase-card-range">
+                {{if eq .StartDay .EndDay}}
+                  {{printf (t $.Messages "dashboard.cycle_hero_day_single") .StartDay}}
+                {{else}}
+                  {{printf (t $.Messages "dashboard.cycle_hero_day_range") .StartDay .EndDay}}
+                {{end}}
+              </p>
+            </article>
+            {{end}}
+          </div>
+        </div>
+
+        <p class="dashboard-cycle-hero-footer" data-dashboard-cycle-hero-next-period>
+          <span class="field-label">{{t .Messages "dashboard.next_period"}}:</span>
+          <span>
+            {{if .DisplayNextPeriodUseRange}}
+              {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "display")}}
+            {{else if .DisplayNextPeriodNeedsData}}
+              {{printf (t .Messages "dashboard.next_period_estimate") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display")}} · {{t .Messages "dashboard.next_period_need_cycles"}}
+            {{else if .DisplayNextPeriodPrompt}}
+              {{t .Messages "dashboard.next_period_prompt"}}
+            {{else if .DisplayNextPeriodStart.IsZero}}
+              {{.NoDataLabel}}
+            {{else}}
+              {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodEnd "display")}}
+            {{end}}
+          </span>
+        </p>
+      </div>
+    </section>
+    {{end}}
+
+    {{if not .CycleHero.Visible}}
+    <div class="dashboard-status-line reveal" data-dashboard-status-line>
       <span class="dashboard-status-item">
         <span aria-hidden="true">{{if .CycleDataStale}}{{phaseIcon "unknown"}}{{else}}{{phaseIcon .Stats.CurrentPhase}}{{end}}</span>
         <span>{{if .CycleDataStale}}{{phaseLabel .Messages "unknown"}}{{else}}{{phaseLabel .Messages .Stats.CurrentPhase}}{{end}}</span>
@@ -31,7 +113,7 @@
             {{else if .DisplayNextPeriodStart.IsZero}}
               {{.NoDataLabel}}
             {{else}}
-              {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display")}}
+              {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodEnd "display")}}
             {{end}}
           </span>
         </span>
@@ -39,6 +121,7 @@
         <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}: {{if .DisplayOvulationImpossible}}{{t .Messages "dashboard.ovulation_unavailable"}}{{else if .DisplayOvulationUseRange}}{{printf (t .Messages "dashboard.ovulation_range") (formatLocalizedDate .Lang .DisplayOvulationRangeStart "display") (formatLocalizedDate .Lang .DisplayOvulationRangeEnd "display")}}{{else if .DisplayOvulationNeedsData}}{{t .Messages "dashboard.ovulation_need_cycles"}}{{else if .DisplayOvulationDate.IsZero}}{{.NoDataLabel}}{{else}}{{formatLocalizedDate .Lang .DisplayOvulationDate "display"}}{{end}}</span>
       {{end}}
     </div>
+    {{end}}
 
     {{if .HasPredictionExplanationPrimary}}
     <p class="journal-muted text-sm" data-dashboard-prediction-explainer>{{t .Messages .PredictionExplanationPrimaryKey}}</p>

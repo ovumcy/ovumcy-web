@@ -294,6 +294,31 @@
     min-height: 100%;
   }
 
+  .settings-interface-options {
+    display: grid;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .settings-interface-language-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @media (min-width: 1024px) {
+    .settings-interface-language-options {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  .settings-interface-theme-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-interface-option .radio-tile {
+    text-align: center;
+    white-space: normal;
+  }
+
   .settings-switch {
     width: fit-content;
     max-width: 100%;
@@ -620,6 +645,260 @@
 
   .dashboard-status-separator {
     color: rgba(172, 136, 96, 0.72);
+  }
+
+  .dashboard-cycle-hero {
+    position: relative;
+    overflow: hidden;
+    padding: 1.2rem;
+  }
+
+  .dashboard-cycle-hero::before,
+  .dashboard-cycle-hero::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+
+  .dashboard-cycle-hero::before {
+    inset: auto auto -4.5rem -3rem;
+    width: 10rem;
+    height: 10rem;
+    background: radial-gradient(circle, rgba(228, 197, 166, 0.22), transparent 72%);
+  }
+
+  .dashboard-cycle-hero::after {
+    inset: -3.4rem -1.8rem auto auto;
+    width: 8.5rem;
+    height: 8.5rem;
+    background: radial-gradient(circle, rgba(240, 218, 193, 0.42), transparent 70%);
+  }
+
+  .dashboard-cycle-hero-shell {
+    position: relative;
+    display: grid;
+    gap: 1rem;
+  }
+
+  .dashboard-cycle-hero-topline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem 0.9rem;
+  }
+
+  .dashboard-cycle-hero-note {
+    margin: 0;
+    font-size: 0.86rem;
+    color: var(--text-muted);
+  }
+
+  .dashboard-cycle-hero-badge {
+    margin: 0;
+    border-radius: 999px;
+    padding: 0.24rem 0.7rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    background: rgba(122, 159, 135, 0.16);
+    color: #4d7856;
+  }
+
+  .dashboard-cycle-hero-badge-warning {
+    background: rgba(233, 164, 74, 0.16);
+    color: #9b5f19;
+  }
+
+  .dashboard-cycle-hero-badge-positive {
+    background: rgba(102, 168, 104, 0.16);
+    color: #48794b;
+  }
+
+  .dashboard-cycle-hero-ring-block {
+    display: grid;
+    gap: 1.1rem;
+  }
+
+  .dashboard-cycle-hero-ring-wrap {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 20rem;
+    padding: 0.35rem 0;
+  }
+
+  .dashboard-cycle-hero-ring {
+    width: min(100%, 20rem);
+    max-width: 20rem;
+    height: auto;
+    overflow: visible;
+  }
+
+  .dashboard-cycle-hero-track,
+  .dashboard-cycle-hero-segment {
+    fill: none;
+    stroke-width: 12;
+  }
+
+  .dashboard-cycle-hero-track {
+    stroke: rgba(212, 165, 116, 0.16);
+  }
+
+  .dashboard-cycle-hero-segment {
+    transform-box: fill-box;
+    transform-origin: center;
+    transform: rotate(-90deg);
+    stroke-linecap: round;
+  }
+
+  .dashboard-cycle-hero-segment-menstrual {
+    stroke: #d99590;
+  }
+
+  .dashboard-cycle-hero-segment-follicular {
+    stroke: #cf9a5e;
+  }
+
+  .dashboard-cycle-hero-segment-ovulation {
+    stroke: #dfb44e;
+  }
+
+  .dashboard-cycle-hero-segment-luteal {
+    stroke: #89aa72;
+  }
+
+  .dashboard-cycle-hero-marker {
+    stroke-width: 3;
+  }
+
+  .dashboard-cycle-hero-marker-current {
+    fill: var(--bg-card);
+    stroke: #cf8e7c;
+  }
+
+  .dashboard-cycle-hero-center {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: min(12rem, 64%);
+    transform: translate(-50%, -50%);
+    display: grid;
+    justify-items: center;
+    gap: 0.18rem;
+    text-align: center;
+  }
+
+  .dashboard-cycle-hero-center-label {
+    margin: 0;
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--accent-strong);
+  }
+
+  .dashboard-cycle-hero-center-day {
+    margin: 0;
+    font-family: "Quicksand", "Avenir Next Rounded", "Trebuchet MS", sans-serif;
+    font-size: clamp(3rem, 8vw, 3.6rem);
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+  }
+
+  .dashboard-cycle-hero-center-phase {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #bf7d8a;
+  }
+
+  .dashboard-cycle-hero-center-length {
+    margin: 0;
+    font-size: 0.94rem;
+    color: var(--text-muted);
+  }
+
+  .dashboard-cycle-hero-phases {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+  }
+
+  .dashboard-phase-card {
+    border-radius: 1rem;
+    border: 1px solid rgba(212, 165, 116, 0.28);
+    background: rgba(255, 255, 255, 0.78);
+    padding: 0.9rem 1rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  .dashboard-phase-card.is-current {
+    border-color: rgba(186, 131, 80, 0.55);
+    box-shadow:
+      0 10px 22px rgba(174, 126, 73, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.68);
+    transform: translateY(-1px);
+  }
+
+  .dashboard-phase-card-menstrual {
+    background: linear-gradient(180deg, rgba(246, 230, 228, 0.96), rgba(250, 239, 237, 0.92));
+  }
+
+  .dashboard-phase-card-follicular {
+    background: linear-gradient(180deg, rgba(247, 242, 233, 0.96), rgba(252, 248, 242, 0.92));
+  }
+
+  .dashboard-phase-card-ovulation {
+    background: linear-gradient(180deg, rgba(251, 245, 229, 0.96), rgba(255, 250, 241, 0.92));
+  }
+
+  .dashboard-phase-card-luteal {
+    background: linear-gradient(180deg, rgba(233, 243, 235, 0.96), rgba(241, 248, 242, 0.92));
+  }
+
+  .dashboard-phase-card-title {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-weight: 700;
+  }
+
+  .dashboard-phase-card-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+
+  .dashboard-phase-card-menstrual .dashboard-phase-card-dot {
+    background: #d99590;
+  }
+
+  .dashboard-phase-card-follicular .dashboard-phase-card-dot {
+    background: #cf9a5e;
+  }
+
+  .dashboard-phase-card-ovulation .dashboard-phase-card-dot {
+    background: #dfb44e;
+  }
+
+  .dashboard-phase-card-luteal .dashboard-phase-card-dot {
+    background: #89aa72;
+  }
+
+  .dashboard-phase-card-range {
+    margin: 0.65rem 0 0;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+  }
+
+  .dashboard-cycle-hero-footer {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.35rem;
+    font-size: 1rem;
   }
 
   .stat-card {
@@ -1018,6 +1297,22 @@
     display: block;
     min-width: 0;
     color: var(--text-primary);
+  }
+
+  .settings-tracking-toggle-copy {
+    display: grid;
+    align-content: start;
+    gap: 0.22rem;
+    flex: 1 1 0%;
+  }
+
+  .settings-tracking-toggle-copy .period-toggle-main,
+  .settings-tracking-toggle-copy .journal-muted {
+    max-width: 68ch;
+  }
+
+  .settings-tracking-toggle .period-toggle-state {
+    justify-self: start;
   }
 
   .period-toggle-state {
@@ -2285,12 +2580,6 @@
     padding: 0.9rem;
   }
 
-  .chart-canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-  }
-
   .stats-trend-panel,
   .stats-symptoms-panel {
     min-width: 0;
@@ -2743,6 +3032,68 @@
     background:
       linear-gradient(145deg, rgba(47, 40, 62, 0.98), rgba(34, 28, 45, 0.95)),
       var(--bg-card);
+  }
+
+  :root[data-theme="dark"] .dashboard-cycle-hero-track {
+    stroke: rgba(157, 129, 196, 0.2);
+  }
+
+  :root[data-theme="dark"] .dashboard-cycle-hero-note,
+  :root[data-theme="dark"] .dashboard-cycle-hero-center-length,
+  :root[data-theme="dark"] .dashboard-phase-card-range {
+    color: #cbbfb7;
+  }
+
+  :root[data-theme="dark"] .dashboard-cycle-hero-badge {
+    background: rgba(95, 143, 98, 0.24);
+    color: #cde8c8;
+  }
+
+  :root[data-theme="dark"] .dashboard-cycle-hero-badge-warning {
+    background: rgba(141, 112, 71, 0.42);
+    color: #ffe0b0;
+  }
+
+  :root[data-theme="dark"] .dashboard-cycle-hero-badge-positive {
+    background: rgba(67, 110, 70, 0.42);
+    color: #d5efd2;
+  }
+
+  :root[data-theme="dark"] .dashboard-cycle-hero-center-phase {
+    color: #efb2bc;
+  }
+
+  :root[data-theme="dark"] .dashboard-cycle-hero-marker-current {
+    fill: rgba(36, 29, 48, 0.96);
+  }
+
+  :root[data-theme="dark"] .dashboard-phase-card {
+    border-color: rgba(127, 105, 160, 0.42);
+    background: rgba(46, 38, 61, 0.84);
+    box-shadow: inset 0 1px 0 rgba(247, 243, 255, 0.04);
+  }
+
+  :root[data-theme="dark"] .dashboard-phase-card.is-current {
+    border-color: rgba(222, 176, 117, 0.5);
+    box-shadow:
+      0 12px 24px rgba(8, 5, 12, 0.34),
+      inset 0 1px 0 rgba(247, 243, 255, 0.05);
+  }
+
+  :root[data-theme="dark"] .dashboard-phase-card-menstrual {
+    background: linear-gradient(180deg, rgba(83, 50, 58, 0.92), rgba(55, 39, 52, 0.9));
+  }
+
+  :root[data-theme="dark"] .dashboard-phase-card-follicular {
+    background: linear-gradient(180deg, rgba(87, 66, 47, 0.92), rgba(56, 43, 33, 0.9));
+  }
+
+  :root[data-theme="dark"] .dashboard-phase-card-ovulation {
+    background: linear-gradient(180deg, rgba(95, 77, 42, 0.92), rgba(60, 49, 29, 0.9));
+  }
+
+  :root[data-theme="dark"] .dashboard-phase-card-luteal {
+    background: linear-gradient(180deg, rgba(54, 70, 47, 0.92), rgba(40, 50, 35, 0.9));
   }
 
   :root[data-theme="dark"] .journal-panel,
@@ -3206,6 +3557,44 @@
       font-size: 1.08rem;
     }
 
+    .dashboard-cycle-hero {
+      padding: 1rem;
+    }
+
+    .dashboard-cycle-hero-ring-wrap {
+      min-height: 16.8rem;
+    }
+
+    .dashboard-cycle-hero-ring {
+      width: min(100%, 17.5rem);
+    }
+
+    .dashboard-cycle-hero-center {
+      width: min(11rem, 68%);
+    }
+
+    .dashboard-cycle-hero-center-day {
+      font-size: clamp(2.55rem, 11vw, 3.05rem);
+    }
+
+    .dashboard-cycle-hero-phases {
+      gap: 0.7rem;
+    }
+
+    .dashboard-phase-card {
+      padding: 0.75rem 0.8rem;
+    }
+
+    .dashboard-phase-card-title {
+      align-items: flex-start;
+      line-height: 1.2;
+    }
+
+    .dashboard-phase-card-range,
+    .dashboard-cycle-hero-footer {
+      font-size: 0.9rem;
+    }
+
     .stat-card {
       padding: 0.9rem;
     }
@@ -3272,4 +3661,12 @@
       font-size: 1rem;
     }
   }
+}
+
+.chart-shell > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  min-width: 0;
 }

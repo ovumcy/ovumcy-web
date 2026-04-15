@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { clearDateField, dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import {
   continueFromRecoveryCode,
   createCredentials,
@@ -63,6 +64,11 @@ function onboardingQuickPickButtons(page: Page): Locator {
   return page.locator('[data-onboarding-day-options] button[data-onboarding-day-option]');
 }
 
+async function activateOnboardingQuickPick(page: Page, quickPick: Locator): Promise<void> {
+  await quickPick.focus();
+  await page.keyboard.press('Enter');
+}
+
 function onboardingStepTwoBackButton(page: Page): Locator {
   return page.locator('[data-onboarding-go-step="1"]');
 }
@@ -90,12 +96,6 @@ async function submitStepOne(page: Page, dateISO: string): Promise<void> {
 async function submitStepTwo(page: Page): Promise<void> {
   await onboardingStepTwoSubmit(page).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-}
-
-async function currentDashboardNextPeriodText(page: Page): Promise<string> {
-  const value = await page.locator('[data-dashboard-next-period]').textContent();
-
-  return String(value || '').trim();
 }
 
 test.describe('Onboarding flow', () => {
@@ -144,7 +144,7 @@ test.describe('Onboarding flow', () => {
     expect(firstQuickPickValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await expect(firstQuickPick).toHaveAttribute('aria-pressed', 'false');
 
-    await firstQuickPick.click();
+    await activateOnboardingQuickPick(page, firstQuickPick);
 
     await expect(dateInput).toHaveValue(String(firstQuickPickValue));
     await expect(firstQuickPick).toHaveAttribute('aria-pressed', 'true');
@@ -163,7 +163,7 @@ test.describe('Onboarding flow', () => {
     const selectedValue = await todayQuickPick.getAttribute('data-onboarding-day-value');
     expect(selectedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-    await todayQuickPick.click();
+    await activateOnboardingQuickPick(page, todayQuickPick);
     await onboardingStepOneSubmit(page).click();
     await expect(onboardingStepTwoForm(page)).toBeVisible();
     await submitStepTwo(page);
@@ -331,7 +331,7 @@ test.describe('Onboarding flow', () => {
     await irregularCheckbox.check();
     await submitStepTwo(page);
 
-    const nextPeriodText = await currentDashboardNextPeriodText(page);
+    const nextPeriodText = await dashboardNextPeriodText(page);
     expect(nextPeriodText).toContain('around');
     expect(nextPeriodText).toContain('3 cycles are needed');
     expect(nextPeriodText).not.toContain(' - ');

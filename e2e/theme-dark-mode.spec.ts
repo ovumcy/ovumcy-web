@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { dashboardPrimarySummaryMode } from './support/dashboard-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -91,7 +92,7 @@ test.describe('Theme mode', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(html).toHaveAttribute('data-theme', nextTheme);
-    await expect(page.locator('.dashboard-status-line')).toBeVisible();
+    await dashboardPrimarySummaryMode(page);
 
     const secondPage = await context.newPage();
     await secondPage.goto('/privacy');

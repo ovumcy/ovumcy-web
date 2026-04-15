@@ -13,6 +13,7 @@ import {
   logoutViaAPI,
   readRecoveryCode,
   registerOwnerViaUI,
+  requestSubmitForm,
 } from './support/auth-helpers';
 
 function toISODate(date: Date): string {
@@ -144,9 +145,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await page.locator('#settings-current-password').fill(creds.password);
     await page.locator('#settings-new-password').fill(newPassword);
     await page.locator('#settings-confirm-password').fill(newPassword);
-    await page
-      .locator('form[action="/api/settings/change-password"] button[type="submit"]')
-      .click();
+    await requestSubmitForm(page.locator('form[action="/api/settings/change-password"]'));
 
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('#settings-change-password-status .status-ok').first()).toBeVisible();
@@ -173,7 +172,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
       }
     });
 
-    const submit = page.locator('form[action="/api/settings/change-password"] button[type="submit"]');
+    const changePasswordForm = page.locator('form[action="/api/settings/change-password"]');
     const checklist = page.locator('#settings-change-password-form [data-password-guidance]');
 
     await expect(checklist.locator('[data-password-rule-item="length"]')).toHaveAttribute(
@@ -184,7 +183,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await page.locator('#settings-current-password').fill('WrongPass1');
     await page.locator('#settings-new-password').fill('ValidStrong2');
     await page.locator('#settings-confirm-password').fill('ValidStrong2');
-    await submit.click();
+    await requestSubmitForm(changePasswordForm);
     await expect(page.locator('#settings-change-password-status .status-error')).toBeVisible();
     await expect.poll(() => passwordRequests).toBe(1);
 
@@ -204,7 +203,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await page.locator('#settings-current-password').fill(creds.password);
     await page.locator('#settings-new-password').fill('ValidStrong2');
     await page.locator('#settings-confirm-password').fill('DifferentStrong3');
-    await submit.click();
+    await requestSubmitForm(changePasswordForm);
     await expect(page.locator('#settings-change-password-status .status-error')).toBeVisible();
     await expect.poll(() => passwordRequests).toBe(1);
     await expect(page.locator('#settings-new-password')).toHaveValue('ValidStrong2');
@@ -213,7 +212,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await page.locator('#settings-current-password').fill(creds.password);
     await page.locator('#settings-new-password').fill('weakpass');
     await page.locator('#settings-confirm-password').fill('weakpass');
-    await submit.click();
+    await requestSubmitForm(changePasswordForm);
     await expect(page.locator('#settings-change-password-status .status-error')).toBeVisible();
     await expect.poll(() => passwordRequests).toBe(1);
     await expect(checklist.locator('[data-password-rule-item="length"]')).toHaveAttribute(

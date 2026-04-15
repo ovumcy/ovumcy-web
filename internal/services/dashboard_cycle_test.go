@@ -68,14 +68,14 @@ func TestBuildDashboardCycleContext(t *testing.T) {
 	if !context.CycleDataStale {
 		t.Fatalf("expected stale cycle data flag")
 	}
-	if !context.DisplayNextPeriodUseRange {
-		t.Fatalf("expected next period to be rendered as a range")
+	if context.DisplayNextPeriodUseRange {
+		t.Fatalf("did not expect stable cycle context to render next period as an uncertainty range")
 	}
-	if got := context.DisplayNextPeriodRangeStart.Format("2006-01-02"); got != "2026-04-03" {
-		t.Fatalf("expected range start 2026-04-03, got %s", got)
+	if got := context.DisplayNextPeriodStart.Format("2006-01-02"); got != "2026-04-07" {
+		t.Fatalf("expected exact next period start 2026-04-07, got %s", got)
 	}
-	if got := context.DisplayNextPeriodRangeEnd.Format("2006-01-02"); got != "2026-04-11" {
-		t.Fatalf("expected range end 2026-04-11, got %s", got)
+	if got := context.DisplayNextPeriodEnd.Format("2006-01-02"); got != "2026-04-11" {
+		t.Fatalf("expected exact next period end 2026-04-11, got %s", got)
 	}
 }
 
@@ -158,6 +158,39 @@ func TestDashboardUpcomingPredictionsClampsShortCycleOvulationAwayFromCycleStart
 	}
 	if ovulationImpossible {
 		t.Fatalf("expected short-cycle ovulation prediction to remain calculable")
+	}
+}
+
+func TestDashboardUpcomingPredictionsKeepsNearestUpcomingPeriodWhenCurrentOvulationAlreadyPassed(t *testing.T) {
+	stats := CycleStats{
+		LastPeriodStart: mustParseDashboardDay(t, "2026-04-01"),
+		LutealPhase:     14,
+	}
+	today := mustParseDashboardDay(t, "2026-04-15")
+
+	nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible := DashboardUpcomingPredictions(stats, &models.User{}, today, 28)
+	if got := nextPeriodStart.Format("2006-01-02"); got != "2026-04-29" {
+		t.Fatalf("expected nearest next period start 2026-04-29, got %s", got)
+	}
+	if got := ovulationDate.Format("2006-01-02"); got != "2026-05-12" {
+		t.Fatalf("expected next upcoming ovulation date 2026-05-12, got %s", got)
+	}
+	if !ovulationExact {
+		t.Fatalf("expected standard-cycle ovulation prediction to stay exact")
+	}
+	if ovulationImpossible {
+		t.Fatalf("expected standard-cycle ovulation prediction to remain calculable")
+	}
+}
+
+func TestDashboardNextPeriodEndUsesPredictedPeriodLength(t *testing.T) {
+	stats := CycleStats{
+		AveragePeriodLength: 5,
+	}
+
+	end := dashboardNextPeriodEnd(mustParseDashboardDay(t, "2026-04-29"), stats, time.UTC)
+	if got := end.Format("2006-01-02"); got != "2026-05-03" {
+		t.Fatalf("expected next period end 2026-05-03, got %s", got)
 	}
 }
 

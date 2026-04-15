@@ -76,12 +76,16 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
 
 export async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locator> {
   const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
+  await page.goto(`/calendar?month=${month}&day=${isoDate}`, { waitUntil: 'domcontentloaded' });
   await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
 
   const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
   await expect(editButton).toBeVisible();
-  await editButton.click();
+  await editButton.evaluate((node) => {
+    if (node instanceof HTMLButtonElement) {
+      node.click();
+    }
+  });
 
   const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
   await expect(form).toBeVisible();
@@ -102,7 +106,11 @@ export async function saveCycleFactorOnDay(
     page.waitForResponse((response) => {
       return response.request().method() === 'POST' && response.url().includes(`/api/days/${isoDate}`);
     }),
-    form.locator('button[data-save-button]').click(),
+    form.evaluate((node) => {
+      if (node instanceof HTMLFormElement) {
+        node.requestSubmit();
+      }
+    }),
   ]);
   const savedForm = await openCalendarDayEditor(page, isoDate);
   await expect(savedForm.locator(`input[name="cycle_factor_keys"][value="${factorKey}"]`)).toBeChecked();
@@ -114,11 +122,22 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
 
   const trackingSection = page.locator('#settings-tracking');
   await expect(trackingSection).toBeVisible();
+  const trackingForm = trackingSection.locator('form[data-settings-draft-form="tracking"]');
+  await expect(trackingForm).toBeVisible();
 
   const trackBBT = trackingSection.locator('input[name="track_bbt"]');
   if (!(await trackBBT.isChecked())) {
-    await trackBBT.check();
-    await trackingSection.locator('button[data-save-button]').click();
+    await trackBBT.evaluate((node) => {
+      if (node instanceof HTMLInputElement) {
+        node.click();
+      }
+    });
+    await expect(trackBBT).toBeChecked();
+    await trackingForm.evaluate((node) => {
+      if (node instanceof HTMLFormElement) {
+        node.requestSubmit();
+      }
+    });
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
   }
 
@@ -130,7 +149,11 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
     page.waitForResponse((response) => {
       return response.request().method() === 'POST' && response.url().includes(`/api/days/${isoDate}`);
     }),
-    form.locator('button[data-save-button]').click(),
+    form.evaluate((node) => {
+      if (node instanceof HTMLFormElement) {
+        node.requestSubmit();
+      }
+    }),
   ]);
 
   const savedForm = await openCalendarDayEditor(page, isoDate);

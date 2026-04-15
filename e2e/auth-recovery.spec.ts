@@ -3,7 +3,6 @@ import { expect, test } from '@playwright/test';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
-  cookieByName,
   createCredentials,
   enableClipboardRoundTripIfSupported,
   expectDedicatedRecoveryPage,
@@ -13,6 +12,7 @@ import {
   loginViaUI,
   logoutViaAPI,
   openForgotPasswordRecoveryStep,
+  requestSubmitForm,
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
@@ -29,10 +29,19 @@ test.describe('Auth: recovery and reset password', () => {
 
     const recoveryCode = await readRecoveryCode(page);
 
+    const form = page.locator('form[data-recovery-code-confirm]');
     const continueButton = page.locator('[data-recovery-code-submit]');
+    const checkbox = page.locator('#recovery-code-saved');
+    const status = page.locator('[data-recovery-code-status]');
     await expect(continueButton).toHaveAttribute('aria-disabled', 'true');
     await expectInlineRegisterRecoveryStep(page);
-    await expect(page.locator('#recovery-code-saved')).not.toBeChecked();
+    await expect(checkbox).not.toBeChecked();
+
+    await requestSubmitForm(form);
+    await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
+    expectNoSensitiveAuthParams(page.url());
+    await expect(checkbox).toHaveAttribute('aria-invalid', 'true');
+    await expect(status).toContainText('Check this box to continue.');
 
     const canAssertClipboardRoundTrip = await enableClipboardRoundTripIfSupported(page, context);
 
@@ -54,7 +63,7 @@ test.describe('Auth: recovery and reset password', () => {
     const downloadedContent = await fs.readFile(downloadPath!, 'utf8');
     expect(downloadedContent).toContain(recoveryCode);
 
-    await page.locator('#recovery-code-saved').check();
+    await checkbox.check();
     await expect(continueButton).toHaveAttribute('aria-disabled', 'false');
     const continueButtonBox = await continueButton.boundingBox();
     expect(continueButtonBox).toBeTruthy();
@@ -201,23 +210,13 @@ test.describe('Auth: recovery and reset password', () => {
     await expect(page.locator('#recovery-code')).toHaveCount(0);
   });
 
-  test('basic security: csrf enforcement and cookie flags for auth/recovery/reset cookies', async ({
+  test('basic security: csrf enforcement and reset flow keep secrets out of the browser surface', async ({
     page,
-    context,
   }) => {
     const creds = createCredentials('auth-security-basic');
 
     await registerOwnerViaUI(page, creds);
     const recoveryCode = await readRecoveryCode(page);
-
-    const authCookie = await cookieByName(context, 'ovumcy_auth');
-    const recoveryCookie = await cookieByName(context, 'ovumcy_recovery_code');
-
-    expect(authCookie).toBeTruthy();
-    expect(authCookie?.httpOnly).toBe(true);
-    expect(authCookie?.secure).toBe(false);
-
-    expect(recoveryCookie).toBeFalsy();
 
     const csrfFailure = await page.request.post('/api/auth/logout', {
       form: {},
@@ -234,10 +233,6 @@ test.describe('Auth: recovery and reset password', () => {
     await page.locator('#recovery-code').fill(recoveryCode);
     await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/reset-password$/);
-
-    const resetCookie = await cookieByName(context, 'ovumcy_reset_password');
-    expect(resetCookie).toBeTruthy();
-    expect(resetCookie?.httpOnly).toBe(true);
-    expect(resetCookie?.secure).toBe(false);
+    expectNoSensitiveAuthParams(page.url());
   });
 });

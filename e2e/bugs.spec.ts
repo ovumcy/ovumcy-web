@@ -1,6 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clearDateField, fillDateField } from './support/date-field-helpers';
 import {
+  dashboardCurrentCycleDay,
+  dashboardCurrentPhaseText,
+  dashboardCycleHero,
+  dashboardPrimarySummaryMode,
+} from './support/dashboard-helpers';
+import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
@@ -141,6 +147,17 @@ async function browserMonthYearsAgo(page: Page, years: number): Promise<string> 
   }, years);
 }
 
+async function formatEnglishDisplayDate(page: Page, iso: string): Promise<string> {
+  return page.evaluate((value) => {
+    const date = new Date(`${value}T00:00:00`);
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(date);
+  }, iso);
+}
+
 async function openCalendarDayEditor(page: Page, isoDate: string) {
   const month = isoDate.slice(0, 7);
   await page.goto(`/calendar?month=${month}&day=${isoDate}`);
@@ -213,10 +230,6 @@ test.describe('Bug regressions', () => {
         subtitleText.includes(expectedToday.weekdayEN) || subtitleText.toLowerCase().includes(expectedToday.weekdayRU)
       ).toBeTruthy();
 
-      const cycleStatusItem = page.locator('.dashboard-status-line .dashboard-status-item').nth(1);
-      const cycleValueText = String((await cycleStatusItem.textContent()) || '');
-      const cycleDayMatch = cycleValueText.match(/\d+/);
-      expect(cycleDayMatch, `Cannot parse cycle day from "${cycleValueText}"`).toBeTruthy();
       const expectedCycleDay = page.evaluate(({ todayISO, startISO }) => {
         const today = new Date(`${todayISO}T00:00:00`);
         const start = new Date(`${startISO}T00:00:00`);
@@ -225,7 +238,7 @@ test.describe('Bug regressions', () => {
         todayISO: actualTodayISO,
         startISO: savedStartISO,
       });
-      expect(Number(cycleDayMatch![0])).toBe(await expectedCycleDay);
+      expect(await dashboardCurrentCycleDay(page)).toBe(await expectedCycleDay);
 
       await page.goto('/calendar');
       await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
@@ -303,6 +316,56 @@ test.describe('Bug regressions', () => {
         const iso = shiftISODate(onboardingDate, offset);
         await expect(page.locator(`button[data-day="${iso}"]`)).toHaveAttribute('data-calendar-has-data', 'false');
       }
+    });
+
+    test('dashboard cycle hero next period stays aligned with calendar predicted start', async ({
+      page,
+    }) => {
+      const creds = await registerOwnerAndReachDashboard(page, 'bug01-dashboard-calendar');
+
+      await page.goto('/settings');
+      await expect(page).toHaveURL(/\/settings$/);
+
+      const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
+      const clearResponse = await page.request.post('/api/settings/clear-data', {
+        form: {
+          csrf_token: csrfToken,
+          password: creds.password,
+        },
+        maxRedirects: 0,
+      });
+      expect([200, 303]).toContain(clearResponse.status());
+
+      await page.goto('/settings');
+      await expect(page).toHaveURL(/\/settings$/);
+
+      const cycleForm = page.locator('section#settings-cycle form[action="/settings/cycle"]');
+      const todayISO = await browserLocalISODate(page);
+      const lastPeriodStart = shiftISODate(todayISO, -14);
+      const nextPeriodStart = shiftISODate(lastPeriodStart, 28);
+      const nextPeriodEnd = shiftISODate(lastPeriodStart, 32);
+
+      await fillDateField(cycleForm.locator('#settings-last-period-start'), lastPeriodStart);
+      await setRangeValue('#settings-cycle-length', page, 28);
+      await setRangeValue('#settings-period-length', page, 5);
+      await cycleForm.locator('button[data-save-button]').click();
+      await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
+
+      await page.goto('/dashboard');
+      await expect(page).toHaveURL(/\/dashboard$/);
+
+      const hero = page.locator('[data-dashboard-cycle-hero]');
+      const heroFooter = hero.locator('[data-dashboard-cycle-hero-next-period]');
+      await expect(hero).toBeVisible();
+      await expect(page.locator('[data-dashboard-status-line]')).toHaveCount(0);
+
+      const expectedStartLabel = await formatEnglishDisplayDate(page, nextPeriodStart);
+      const expectedEndLabel = await formatEnglishDisplayDate(page, nextPeriodEnd);
+      await expect(heroFooter).toContainText(`${expectedStartLabel} — ${expectedEndLabel}`);
+
+      await page.goto(`/calendar?month=${nextPeriodStart.slice(0, 7)}&day=${nextPeriodStart}`);
+      await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${nextPeriodStart.slice(0, 7)}&day=${nextPeriodStart}`));
+      await expect(page.locator(`button[data-day="${nextPeriodStart}"]`)).toHaveClass(/calendar-cell-predicted/);
     });
   });
 
@@ -547,12 +610,18 @@ test.describe('Bug regressions', () => {
   });
 
   test.describe('IMPROVEMENTS: dashboard and stats polish', () => {
-    test('dashboard menstrual phase uses the blood-drop icon', async ({ page }) => {
+    test('dashboard menstrual phase stays clear in the primary summary', async ({ page }) => {
       await registerOwnerAndReachDashboard(page, 'improvement-menstrual-icon');
 
-      const phaseChip = page.locator('.dashboard-status-line .dashboard-status-item').first();
-      await expect(phaseChip).toContainText('🩸');
-      await expect(phaseChip).toContainText(/Menstrual|Менструальная|Menstrual/i);
+      const mode = await dashboardPrimarySummaryMode(page);
+      expect(await dashboardCurrentPhaseText(page)).toMatch(/Menstrual|Менструальная|Menstrual/i);
+
+      if (mode === 'hero') {
+        await expect(dashboardCycleHero(page)).toContainText(/Days 1-5|Tag 1-5|Дни 1-5/);
+      } else {
+        const phaseChip = page.locator('[data-dashboard-status-line] .dashboard-status-item').first();
+        await expect(phaseChip).toContainText('🩸');
+      }
     });
 
     test('stats empty state includes illustration and progress affordance for a new owner', async ({

@@ -126,6 +126,10 @@
     canvas.height = Math.floor(size.height * dpr);
     canvas.className = "chart-canvas";
     canvas.setAttribute("aria-hidden", "true");
+    canvas.style.display = "block";
+    canvas.style.width = size.width + "px";
+    canvas.style.height = size.height + "px";
+    canvas.style.maxWidth = "100%";
     container.appendChild(canvas);
 
     context.scale(dpr, dpr);
