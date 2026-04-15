@@ -99,14 +99,7 @@ jobs:
           fi
 
           token="$(
-            python3 - "$token_body" <<'PY'
-import json
-import pathlib
-import sys
-
-body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-print(body.get("token", ""))
-PY
+            python3 -c 'import json, pathlib, sys; body = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); print(body.get("token", ""))' "$token_body"
           )"
 
           if [[ -z "$token" ]]; then
