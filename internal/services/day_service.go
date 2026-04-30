@@ -438,7 +438,7 @@ func (service *DayService) AutoFillFollowingPeriodDays(userID uint, startDay tim
 
 	today := DateAtLocation(now, location)
 	for offset := 1; offset < periodLength; offset++ {
-		targetDay := DateAtLocation(startDay.AddDate(0, 0, offset), location)
+		targetDay := CalendarDay(startDay.AddDate(0, 0, offset), location)
 		if !today.IsZero() && targetDay.After(today) {
 			break
 		}
@@ -504,13 +504,13 @@ func (service *DayService) clearCompetingCycleStarts(userID uint, logs []models.
 		return nil
 	}
 
-	selectedDay := DateAtLocation(selectedEntry.Date, location)
+	selectedDay := CalendarDay(selectedEntry.Date, location)
 	for _, logEntry := range logs {
 		if logEntry.UserID != userID || !logEntry.CycleStart {
 			continue
 		}
 
-		logDay := DateAtLocation(logEntry.Date, location)
+		logDay := CalendarDay(logEntry.Date, location)
 		if logDay.Before(clusterStart) || logDay.After(clusterEnd) {
 			continue
 		}

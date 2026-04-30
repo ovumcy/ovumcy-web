@@ -330,7 +330,7 @@ func firstMissingTrackedDay(logs []models.DailyLog, today time.Time, lookbackDay
 	}
 	logByDay := make(map[string]bool, len(logs))
 	for _, logEntry := range logs {
-		logByDay[DateAtLocation(logEntry.Date, location).Format("2006-01-02")] = true
+		logByDay[CalendarDay(logEntry.Date, location).Format("2006-01-02")] = true
 	}
 
 	startDay := today.AddDate(0, 0, -lookbackDays)

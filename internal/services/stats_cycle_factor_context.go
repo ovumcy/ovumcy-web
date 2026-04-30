@@ -83,7 +83,7 @@ func collectStatsCycleFactorCounts(logs []models.DailyLog, now time.Time, locati
 	windowStart := today.AddDate(0, 0, -(statsCycleFactorContextWindowDays - 1))
 	counts := make(map[string]int, len(supportedDayCycleFactorKeys))
 	for _, logEntry := range logs {
-		logDay := DateAtLocation(logEntry.Date, location)
+		logDay := CalendarDay(logEntry.Date, location)
 		if logDay.Before(windowStart) || logDay.After(today) {
 			continue
 		}
@@ -115,7 +115,7 @@ func buildStatsCycleFactorSnapshots(logs []models.DailyLog, completedCycles []co
 func collectCycleFactorKeysForSpan(logs []models.DailyLog, cycle completedCycleSpan, location *time.Location) []string {
 	counts := make(map[string]int, len(supportedDayCycleFactorKeys))
 	for _, logEntry := range logs {
-		localDay := DateAtLocation(logEntry.Date, location)
+		localDay := CalendarDay(logEntry.Date, location)
 		if localDay.Before(cycle.Start) || !localDay.Before(cycle.NextStart) {
 			continue
 		}

@@ -26,8 +26,8 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 
 	lutealLengths := make([]int, 0, len(starts)-1)
 	for index := 0; index+1 < len(starts); index++ {
-		start := DateAtLocation(starts[index], location)
-		nextStart := DateAtLocation(starts[index+1], location)
+		start := CalendarDay(starts[index], location)
+		nextStart := CalendarDay(starts[index+1], location)
 		ovulationDate := inferObservedOvulationDate(logs, start, nextStart, location)
 		if ovulationDate.IsZero() {
 			continue
@@ -74,7 +74,7 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 			streak = 0
 		}
 		if streak >= 3 {
-			return DateAtLocation(points[index-2].Date, location)
+			return CalendarDay(points[index-2].Date, location)
 		}
 	}
 	return time.Time{}
@@ -87,7 +87,7 @@ func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, nextSta
 			continue
 		}
 
-		day := DateAtLocation(logEntry.Date, location)
+		day := CalendarDay(logEntry.Date, location)
 		if day.Before(cycleStart) || !day.Before(nextStart) {
 			continue
 		}
@@ -108,7 +108,7 @@ func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, nextSta
 func inferEggWhiteOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) time.Time {
 	ovulationDate := time.Time{}
 	for _, logEntry := range sortDailyLogs(logs) {
-		day := DateAtLocation(logEntry.Date, location)
+		day := CalendarDay(logEntry.Date, location)
 		if day.Before(cycleStart) || !day.Before(nextStart) {
 			continue
 		}

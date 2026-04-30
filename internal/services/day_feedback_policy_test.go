@@ -81,16 +81,22 @@ func TestResolveDayFeedbackShowsSpottingWarningOnCycleStart(t *testing.T) {
 	}
 }
 
-func TestResolveDayFeedbackShowsSpottingWarningForUTCShiftedLocalCycleStart(t *testing.T) {
+func TestResolveDayFeedbackShowsSpottingWarningForLocalCycleStart(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 	location := time.FixedZone("UTC+2", 2*60*60)
 	day := time.Date(2026, time.March, 1, 0, 0, 0, 0, location)
 
+	// Canonical date-only storage: UTC midnight of the calendar day.
+	// Pre-fix this test stored 2026-02-28T22:00Z (UTC+2 midnight) to verify
+	// that DateAtLocation in(location) mapped it forward to March 1 — but that
+	// path no longer runs for date-only values. CalendarDay takes components
+	// from the stored value as-is, so test data must already carry the correct
+	// calendar day (issue #48).
 	logs.entries["2026-03-01"] = models.DailyLog{
 		UserID:   10,
-		Date:     time.Date(2026, time.February, 28, 22, 0, 0, 0, time.UTC),
+		Date:     time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		IsPeriod: true,
 		Flow:     models.FlowSpotting,
 	}
@@ -100,7 +106,7 @@ func TestResolveDayFeedbackShowsSpottingWarningForUTCShiftedLocalCycleStart(t *t
 		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
 	}
 	if !state.ShowSpottingCycleWarning {
-		t.Fatalf("expected spotting warning for timezone-shifted local cycle start")
+		t.Fatalf("expected spotting warning on the local cycle start day")
 	}
 }
 

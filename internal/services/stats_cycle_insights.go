@@ -44,8 +44,8 @@ func buildCompletedCycleSpans(logs []models.DailyLog, location *time.Location) [
 	cycles := buildCycles(starts, sorted)
 	spans := make([]completedCycleSpan, 0, len(starts)-1)
 	for index := 0; index+1 < len(starts) && index < len(cycles); index++ {
-		start := DateAtLocation(starts[index], location)
-		nextStart := DateAtLocation(starts[index+1], location)
+		start := CalendarDay(starts[index], location)
+		nextStart := CalendarDay(starts[index+1], location)
 		cycleLength := int(nextStart.Sub(start).Hours() / 24)
 		if cycleLength <= 0 {
 			continue
@@ -76,7 +76,7 @@ func buildLastCycleSymptomCounts(language string, logs []models.DailyLog, comple
 	counts := make(map[uint]int, len(symptomByID))
 	totalLoggedDays := 0
 	for _, logEntry := range logs {
-		localDay := DateAtLocation(logEntry.Date, location)
+		localDay := CalendarDay(logEntry.Date, location)
 		if localDay.Before(lastCycle.Start) || !localDay.Before(lastCycle.NextStart) {
 			continue
 		}
@@ -202,7 +202,7 @@ func resolveCurrentCycleBBTBounds(stats CycleStats, now time.Time, location *tim
 		location = time.UTC
 	}
 
-	cycleStart := DateAtLocation(stats.LastPeriodStart, location)
+	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 	today := DateAtLocation(now.In(location), location)
 	if today.Before(cycleStart) {
 		return time.Time{}, time.Time{}, false
@@ -214,7 +214,7 @@ func collectCurrentCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, 
 	dayValues := make(map[int]float64)
 	recordedDays := make([]int, 0)
 	for _, logEntry := range sortDailyLogs(filterLogsNotAfter(logs, today)) {
-		localDay := DateAtLocation(logEntry.Date, location)
+		localDay := CalendarDay(logEntry.Date, location)
 		if localDay.Before(cycleStart) || localDay.After(today) || !IsValidDayBBT(logEntry.BBT) || logEntry.BBT <= 0 {
 			continue
 		}
@@ -310,7 +310,7 @@ func detectProbableOvulationMarker(recordedDays []int, dayValues map[int]float64
 }
 
 func completedCycleDayNumber(day time.Time, completedCycles []completedCycleSpan, location *time.Location) (int, bool) {
-	localDay := DateAtLocation(day, location)
+	localDay := CalendarDay(day, location)
 	for _, cycle := range completedCycles {
 		if localDay.Before(cycle.Start) || !localDay.Before(cycle.NextStart) {
 			continue

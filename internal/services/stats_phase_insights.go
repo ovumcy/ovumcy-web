@@ -57,8 +57,8 @@ func buildCompletedCyclePhaseContexts(logs []models.DailyLog, location *time.Loc
 	cycles := buildCycles(starts, sorted)
 	contexts := make([]completedCyclePhaseContext, 0, len(starts)-1)
 	for index := 0; index+1 < len(starts) && index < len(cycles); index++ {
-		start := DateAtLocation(starts[index], location)
-		nextStart := DateAtLocation(starts[index+1], location)
+		start := CalendarDay(starts[index], location)
+		nextStart := CalendarDay(starts[index+1], location)
 		cycleLength := int(nextStart.Sub(start).Hours() / 24)
 		if cycleLength <= 0 {
 			continue
@@ -87,7 +87,7 @@ func buildCompletedCyclePhaseContexts(logs []models.DailyLog, location *time.Loc
 }
 
 func phaseForCompletedCycleDay(day time.Time, cycle completedCyclePhaseContext, location *time.Location) string {
-	localDay := DateAtLocation(day, location)
+	localDay := CalendarDay(day, location)
 	if localDay.Before(cycle.Start) || !localDay.Before(cycle.NextStart) {
 		return ""
 	}
@@ -106,7 +106,7 @@ func phaseForCompletedCycleDay(day time.Time, cycle completedCyclePhaseContext, 
 }
 
 func findCompletedCycleForDay(day time.Time, cycles []completedCyclePhaseContext, location *time.Location) (completedCyclePhaseContext, bool) {
-	localDay := DateAtLocation(day, location)
+	localDay := CalendarDay(day, location)
 	for _, cycle := range cycles {
 		if !localDay.Before(cycle.Start) && localDay.Before(cycle.NextStart) {
 			return cycle, true

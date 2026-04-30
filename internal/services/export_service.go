@@ -236,7 +236,7 @@ func (service *ExportService) BuildJSONEntries(userID uint, from *time.Time, to 
 	for _, logEntry := range logs {
 		flags, other := buildExportSymptomFlags(logEntry.SymptomIDs, symptomNames)
 		entries = append(entries, ExportJSONEntry{
-			Date:          DateAtLocation(logEntry.Date, location).Format(exportDateLayout),
+			Date:          CalendarDay(logEntry.Date, location).Format(exportDateLayout),
 			Period:        logEntry.IsPeriod,
 			Flow:          normalizeExportFlow(logEntry.Flow),
 			MoodRating:    normalizeExportMood(logEntry.Mood),
@@ -262,7 +262,7 @@ func (service *ExportService) BuildCSVRows(userID uint, from *time.Time, to *tim
 	for _, logEntry := range logs {
 		flags, other := buildExportSymptomFlags(logEntry.SymptomIDs, symptomNames)
 		rows = append(rows, ExportCSVRow{
-			Date:          DateAtLocation(logEntry.Date, location).Format(exportDateLayout),
+			Date:          CalendarDay(logEntry.Date, location).Format(exportDateLayout),
 			Period:        logEntry.IsPeriod,
 			Flow:          csvFlowLabel(logEntry.Flow),
 			MoodRating:    normalizeExportMood(logEntry.Mood),

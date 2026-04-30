@@ -1,12 +1,23 @@
 package services
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// DateAtLocation projects an instant-in-time `value` onto the calendar of
+// `location` and returns midnight of that calendar day. Use this for
+// time.Time values that represent a real instant (time.Now(),
+// user.CreatedAt) where the in-location calendar day is what you want.
+//
+// Do NOT use this for date-only stored values (DailyLog.Date,
+// User.LastPeriodStart). Those values carry only a calendar date — their
+// time-of-day and timezone metadata are storage artifacts. Applying
+// In(location) to a UTC-midnight stored value in a UTC-minus locale shifts
+// it one calendar day backward (issue #48). Use CalendarDay for those.
 func DateAtLocation(value time.Time, location *time.Location) time.Time {
 	if location == nil {
 		location = time.UTC
@@ -14,6 +25,36 @@ func DateAtLocation(value time.Time, location *time.Location) time.Time {
 	localized := value.In(location)
 	year, month, day := localized.Date()
 	return time.Date(year, month, day, 0, 0, 0, 0, location)
+}
+
+// CalendarDay rebuilds a date-only stored value at midnight in `location`,
+// preserving the calendar components of `value` exactly as stored. Use this
+// for time.Time values whose semantics is "a calendar date" rather than
+// "an instant in time" — DailyLog.Date, User.LastPeriodStart, derived stats
+// fields. Unlike DateAtLocation, this does not apply In(location) and
+// therefore does not shift the calendar day across timezones, which matters
+// when stored values were persisted with a UTC-midnight timestamp.
+func CalendarDay(value time.Time, location *time.Location) time.Time {
+	if location == nil {
+		location = time.UTC
+	}
+	if value.IsZero() {
+		return time.Time{}
+	}
+	year, month, day := value.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, location)
+}
+
+// CalendarDayKey returns the YYYY-MM-DD ISO string for a date-only stored
+// value, taking calendar components from the value as-is (no timezone
+// shift). Equivalent to value.Format("2006-01-02") on a value that already
+// carries the canonical calendar day.
+func CalendarDayKey(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	year, month, day := value.Date()
+	return fmt.Sprintf("%04d-%02d-%02d", year, month, day)
 }
 
 func DayRange(value time.Time, location *time.Location) (time.Time, time.Time) {

@@ -106,7 +106,7 @@ func (service *OnboardingService) CompleteOnboardingForUser(userID uint, locatio
 		return time.Time{}, ErrOnboardingStepsRequired
 	}
 
-	startDay := DateAtLocation(*current.LastPeriodStart, location)
+	startDay := CalendarDay(*current.LastPeriodStart, location)
 	_, periodLength := SanitizeOnboardingCycleAndPeriod(current.CycleLength, current.PeriodLength)
 	if err := service.users.CompleteOnboarding(userID, startDay, periodLength, current.AutoPeriodFill); err != nil {
 		return time.Time{}, err

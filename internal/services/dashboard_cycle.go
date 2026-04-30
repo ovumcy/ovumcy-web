@@ -91,12 +91,12 @@ func DashboardCycleDataLooksStale(lastPeriodStart time.Time, today time.Time, re
 
 func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *time.Location) time.Time {
 	if !stats.LastPeriodStart.IsZero() {
-		return DateAtLocation(stats.LastPeriodStart, location)
+		return CalendarDay(stats.LastPeriodStart, location)
 	}
 	if user == nil || user.LastPeriodStart == nil || user.LastPeriodStart.IsZero() {
 		return time.Time{}
 	}
-	return DateAtLocation(*user.LastPeriodStart, location)
+	return CalendarDay(*user.LastPeriodStart, location)
 }
 
 func predictionRangeSpanDays(stats CycleStats) int {
@@ -124,15 +124,15 @@ func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStar
 	}
 
 	if dashboardIrregularPredictionRangeEnabled(user, stats) {
-		return DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, stats.MinCycleLength), location),
-			DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, stats.MaxCycleLength), location),
+		return CalendarDay(stats.LastPeriodStart.AddDate(0, 0, stats.MinCycleLength), location),
+			CalendarDay(stats.LastPeriodStart.AddDate(0, 0, stats.MaxCycleLength), location),
 			true
 	}
 
 	spanDays := predictionRangeSpanDays(stats)
 	spanDays += dashboardPredictionExtraSpanDays(user)
-	return DateAtLocation(predictedStart.AddDate(0, 0, -spanDays), location),
-		DateAtLocation(predictedStart.AddDate(0, 0, spanDays), location),
+	return CalendarDay(predictedStart.AddDate(0, 0, -spanDays), location),
+		CalendarDay(predictedStart.AddDate(0, 0, spanDays), location),
 		true
 }
 
@@ -142,8 +142,8 @@ func DashboardOvulationRange(nextPeriodRangeStart time.Time, nextPeriodRangeEnd 
 	}
 
 	resolvedLutealPhase := ResolveLutealPhase(lutealPhase)
-	rangeStart := DateAtLocation(nextPeriodRangeStart.AddDate(0, 0, -resolvedLutealPhase), location)
-	rangeEnd := DateAtLocation(nextPeriodRangeEnd.AddDate(0, 0, -resolvedLutealPhase), location)
+	rangeStart := CalendarDay(nextPeriodRangeStart.AddDate(0, 0, -resolvedLutealPhase), location)
+	rangeEnd := CalendarDay(nextPeriodRangeEnd.AddDate(0, 0, -resolvedLutealPhase), location)
 	if rangeEnd.Before(rangeStart) {
 		return time.Time{}, time.Time{}, false
 	}
@@ -166,7 +166,7 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 		return nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible
 	}
 
-	nextPeriodStart = DateAtLocation(cycleStart.AddDate(0, 0, cycleLength), today.Location())
+	nextPeriodStart = CalendarDay(cycleStart.AddDate(0, 0, cycleLength), today.Location())
 	ovulationDate, _, _, ovulationExact, ovulationCalculable := PredictCycleWindow(
 		cycleStart,
 		cycleLength,
@@ -300,7 +300,7 @@ func dashboardNextPeriodEnd(nextPeriodStart time.Time, stats CycleStats, locatio
 		return time.Time{}
 	}
 
-	return DateAtLocation(nextPeriodStart.AddDate(0, 0, periodLength-1), location)
+	return CalendarDay(nextPeriodStart.AddDate(0, 0, periodLength-1), location)
 }
 
 func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Time) bool {
@@ -323,8 +323,8 @@ func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location 
 	today := DateAtLocation(now, location)
 	lengths := make([]int, 0, len(starts)-1)
 	for index := 1; index < len(starts); index++ {
-		previousStart := DateAtLocation(starts[index-1], location)
-		currentStart := DateAtLocation(starts[index], location)
+		previousStart := CalendarDay(starts[index-1], location)
+		currentStart := CalendarDay(starts[index], location)
 		if !currentStart.Before(today) {
 			break
 		}

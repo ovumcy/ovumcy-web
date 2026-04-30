@@ -136,7 +136,7 @@ func findCompetingCycleStart(logs []models.DailyLog, day time.Time, location *ti
 			continue
 		}
 
-		logDay := DateAtLocation(logEntry.Date, location)
+		logDay := CalendarDay(logEntry.Date, location)
 		if sameCalendarDay(logDay, day) {
 			continue
 		}

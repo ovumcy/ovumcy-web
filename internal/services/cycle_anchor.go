@@ -11,7 +11,11 @@ func latestCycleStartAnchorBeforeOrOn(user *models.User, explicitStart time.Time
 		location = time.UTC
 	}
 
-	targetDay := DateAtLocation(day.In(location), location)
+	// `day` arrives as a localized "today" anchor (an instant projected to
+	// the user's calendar) — DateAtLocation is appropriate. Stored cycle
+	// anchors below are date-only values and use CalendarDay so a
+	// UTC-midnight storage representation does not shift the calendar day.
+	targetDay := DateAtLocation(day, location)
 	explicitAnchor := normalizedCycleStartAnchorBeforeOrOn(explicitStart, targetDay, location)
 	userAnchor := normalizedUserCycleStartAnchorBeforeOrOn(user, targetDay, location)
 	return moreRecentCycleStartAnchor(explicitAnchor, userAnchor)
@@ -23,9 +27,9 @@ func latestExplicitCycleStartBeforeOrOn(logs []models.DailyLog, day time.Time, l
 	}
 
 	explicitStarts := DetectExplicitCycleStarts(logs)
-	targetDay := DateAtLocation(day.In(location), location)
+	targetDay := DateAtLocation(day, location)
 	for index := len(explicitStarts) - 1; index >= 0; index-- {
-		explicitStart := DateAtLocation(explicitStarts[index], location)
+		explicitStart := CalendarDay(explicitStarts[index], location)
 		if explicitStart.After(targetDay) {
 			continue
 		}
@@ -39,7 +43,7 @@ func normalizedCycleStartAnchorBeforeOrOn(anchor time.Time, day time.Time, locat
 		return time.Time{}
 	}
 
-	normalized := DateAtLocation(anchor.In(location), location)
+	normalized := CalendarDay(anchor, location)
 	if !day.IsZero() && normalized.After(day) {
 		return time.Time{}
 	}

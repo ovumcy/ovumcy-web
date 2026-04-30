@@ -171,7 +171,7 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 
 	lastPeriodStart := ""
 	if persisted.LastPeriodStart != nil {
-		sanitizedStart := DateAtLocation(*persisted.LastPeriodStart, location)
+		sanitizedStart := CalendarDay(*persisted.LastPeriodStart, location)
 		if sanitizedStart.After(today) {
 			sanitizedStart = today
 		}

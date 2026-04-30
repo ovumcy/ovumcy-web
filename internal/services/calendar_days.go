@@ -56,7 +56,7 @@ func buildCalendarLogMaps(logs []models.DailyLog, location *time.Location) (map[
 	latestLogByDate := make(map[string]models.DailyLog)
 	hasDataMap := make(map[string]bool)
 	for _, logEntry := range logs {
-		key := DateAtLocation(logEntry.Date, location).Format("2006-01-02")
+		key := CalendarDayKey(logEntry.Date)
 		existing, exists := latestLogByDate[key]
 		if !exists || logEntry.Date.After(existing.Date) || (logEntry.Date.Equal(existing.Date) && logEntry.ID > existing.ID) {
 			latestLogByDate[key] = logEntry
@@ -94,7 +94,7 @@ func appendCurrentBaselinePeriod(predictedPeriodMap map[string]bool, stats Cycle
 	}
 
 	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
-	appendPredictedPeriod(predictedPeriodMap, DateAtLocation(stats.LastPeriodStart, location), periodLength)
+	appendPredictedPeriod(predictedPeriodMap, CalendarDay(stats.LastPeriodStart, location), periodLength)
 }
 
 func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleStats, location *time.Location) {
@@ -102,11 +102,11 @@ func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleS
 		return
 	}
 
-	cycleStart := DateAtLocation(stats.LastPeriodStart, location)
+	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
 	preFertileStart := cycleStart.AddDate(0, 0, periodLength)
 
-	fertilityStart := DateAtLocation(stats.FertilityWindowStart, location)
+	fertilityStart := CalendarDay(stats.FertilityWindowStart, location)
 	if fertilityStart.IsZero() {
 		cycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
 		_, computedFertilityStart, _, _, calculable := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
@@ -159,7 +159,7 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 
 	predictedCycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
 	predictedPeriodLength := predictedPeriodLength(stats.AveragePeriodLength)
-	for cycleStart := DateAtLocation(stats.NextPeriodStart, location); !cycleStart.After(gridEnd); cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
+	for cycleStart := CalendarDay(stats.NextPeriodStart, location); !cycleStart.After(gridEnd); cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
 	}
@@ -190,18 +190,18 @@ func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stat
 		return
 	}
 
-	cycleStart := DateAtLocation(stats.LastPeriodStart, location)
+	cycleStart := CalendarDay(stats.LastPeriodStart, location)
 	today := DateAtLocation(now, location)
 	if today.Before(cycleStart) {
 		return
 	}
 
-	ovulationSignal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, DateAtLocation(stats.NextPeriodStart, location), location)
+	ovulationSignal := inferBBTOvulationDate(filterLogsNotAfter(logs, today), cycleStart, CalendarDay(stats.NextPeriodStart, location), location)
 	if !ovulationSignal.IsZero() {
 		return
 	}
 
-	key := DateAtLocation(stats.OvulationDate, location).Format("2006-01-02")
+	key := CalendarDayKey(stats.OvulationDate)
 	delete(ovulationMap, key)
 	tentativeOvulationMap[key] = true
 }

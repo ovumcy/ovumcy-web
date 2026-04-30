@@ -79,7 +79,7 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 		return
 	}
 
-	stats.NextPeriodStart = DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength), location)
+	stats.NextPeriodStart = CalendarDay(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength), location)
 	stats.LutealPhase = ResolveLutealPhase(lutealPhase)
 
 	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(
@@ -92,7 +92,7 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 		return
 	}
 
-	stats.OvulationDate = DateAtLocation(ovulationDate, location)
+	stats.OvulationDate = CalendarDay(ovulationDate, location)
 	stats.OvulationExact = ovulationExact
 	stats.OvulationImpossible = false
 	stats.FertilityWindowStart = locationDateOrZero(fertilityWindowStart, location)
@@ -103,7 +103,7 @@ func locationDateOrZero(day time.Time, location *time.Location) time.Time {
 	if day.IsZero() {
 		return time.Time{}
 	}
-	return DateAtLocation(day, location)
+	return CalendarDay(day, location)
 }
 
 func baselineCurrentCycleDay(lastPeriodStart time.Time, today time.Time) int {
@@ -120,7 +120,7 @@ func DetectCurrentPhase(stats CycleStats, logs []models.DailyLog, today time.Tim
 	periodByDate := make(map[string]bool, len(logs))
 	for _, logEntry := range logs {
 		if logEntry.IsPeriod {
-			periodByDate[DateAtLocation(logEntry.Date, location).Format("2006-01-02")] = true
+			periodByDate[CalendarDayKey(logEntry.Date)] = true
 		}
 	}
 	if periodByDate[today.Format("2006-01-02")] {
@@ -132,7 +132,7 @@ func DetectCurrentPhase(stats CycleStats, logs []models.DailyLog, today time.Tim
 		periodLength = models.DefaultPeriodLength
 	}
 	if !stats.LastPeriodStart.IsZero() {
-		periodEnd := DateAtLocation(stats.LastPeriodStart.AddDate(0, 0, periodLength-1), location)
+		periodEnd := CalendarDay(stats.LastPeriodStart.AddDate(0, 0, periodLength-1), location)
 		if betweenCalendarDaysInclusive(today, stats.LastPeriodStart, periodEnd) {
 			return "menstrual"
 		}
@@ -168,7 +168,7 @@ func ProjectCycleStart(lastPeriodStart time.Time, cycleLength int, today time.Ti
 
 	elapsedDays := int(today.Sub(lastPeriodStart).Hours() / 24)
 	cyclesElapsed := elapsedDays / cycleLength
-	projectedStart := DateAtLocation(lastPeriodStart.AddDate(0, 0, cyclesElapsed*cycleLength), today.Location())
+	projectedStart := CalendarDay(lastPeriodStart.AddDate(0, 0, cyclesElapsed*cycleLength), today.Location())
 	projectedCycleDay := (elapsedDays % cycleLength) + 1
 	return projectedStart, projectedCycleDay, true
 }
@@ -179,7 +179,7 @@ func ShiftCycleStartToFutureOvulation(cycleStart time.Time, ovulationDate time.T
 	}
 	lagDays := int(today.Sub(ovulationDate).Hours() / 24)
 	shiftCycles := lagDays/cycleLength + 1
-	return DateAtLocation(cycleStart.AddDate(0, 0, shiftCycles*cycleLength), today.Location())
+	return CalendarDay(cycleStart.AddDate(0, 0, shiftCycles*cycleLength), today.Location())
 }
 
 func sameCalendarDay(a time.Time, b time.Time) bool {

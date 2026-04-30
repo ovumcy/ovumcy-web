@@ -46,7 +46,7 @@ func (service *DayService) ResolveDayFeedback(user *models.User, day time.Time, 
 	}
 
 	streakLength, cycleStart, ok := currentPeriodStreakAtDay(logs, day, location)
-	if ok && streakLength > 8 && (user == nil || user.LongPeriodWarnedAt == nil || !sameCalendarDay(DateAtLocation(*user.LongPeriodWarnedAt, location), cycleStart)) {
+	if ok && streakLength > 8 && (user == nil || user.LongPeriodWarnedAt == nil || !sameCalendarDay(CalendarDay(*user.LongPeriodWarnedAt, location), cycleStart)) {
 		state.ShowLongPeriodWarning = true
 		state.LongPeriodCycleStart = cycleStart
 	}
@@ -59,7 +59,7 @@ func (service *DayService) AcknowledgeLongPeriodWarning(userID uint, cycleStart 
 		return nil
 	}
 	if location != nil {
-		cycleStart = DateAtLocation(cycleStart, location)
+		cycleStart = CalendarDay(cycleStart, location)
 	}
 	return service.users.UpdateByID(userID, map[string]any{
 		"long_period_warning_cycle_start": cycleStart,
@@ -103,7 +103,7 @@ func currentPeriodStreakAtDay(logs []models.DailyLog, day time.Time, location *t
 	targetDay := DateAtLocation(day, location)
 	logByDay := make(map[string]models.DailyLog, len(logs))
 	for _, logEntry := range sortDailyLogs(logs) {
-		logByDay[DateAtLocation(logEntry.Date, location).Format("2006-01-02")] = logEntry
+		logByDay[CalendarDay(logEntry.Date, location).Format("2006-01-02")] = logEntry
 	}
 
 	current, ok := logByDay[targetDay.Format("2006-01-02")]

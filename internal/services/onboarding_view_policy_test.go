@@ -14,7 +14,10 @@ func TestBuildOnboardingViewStateUsesUserValues(t *testing.T) {
 	}
 
 	now := time.Date(2026, time.April, 15, 14, 0, 0, 0, location)
-	rawLastPeriod := time.Date(2026, time.March, 10, 22, 30, 0, 0, time.UTC)
+	// Canonical date-only storage: UTC midnight of the calendar day.
+	// CalendarDay must surface the same calendar day in any viewer locale,
+	// without the cross-timezone shift that previously caused issue #48.
+	rawLastPeriod := time.Date(2026, time.March, 11, 0, 0, 0, 0, time.UTC)
 	user := &models.User{
 		CycleLength:     31,
 		PeriodLength:    6,
@@ -39,7 +42,7 @@ func TestBuildOnboardingViewStateUsesUserValues(t *testing.T) {
 		t.Fatal("expected last period start to be set")
 	}
 	if got := state.LastPeriodStart.Format("2006-01-02"); got != "2026-03-11" {
-		t.Fatalf("expected normalized last period start 2026-03-11, got %s", got)
+		t.Fatalf("expected last period start 2026-03-11, got %s", got)
 	}
 	if state.CycleLength != 31 {
 		t.Fatalf("expected cycle length 31, got %d", state.CycleLength)

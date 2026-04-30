@@ -53,7 +53,7 @@ func BuildOnboardingViewState(user *models.User, stepRaw string, now time.Time, 
 		ageGroup = NormalizeAgeGroup(user.AgeGroup)
 		usageGoal = NormalizeUsageGoal(user.UsageGoal)
 		if user.LastPeriodStart != nil {
-			day := DateAtLocation(*user.LastPeriodStart, location)
+			day := CalendarDay(*user.LastPeriodStart, location)
 			lastPeriodStart = &day
 		}
 	}
