@@ -62,3 +62,4 @@ TASK-*.md
 test-results/
 playwright-report/
 docs/screenshots/ovumcy-social-preview.png
+.claude/
