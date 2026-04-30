@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-04-30
+
 ### Fixed
 - Calendar period highlight and dashboard cycle day no longer shift one calendar day earlier for viewers in UTC-minus timezones (e.g. America/Toronto) when daily logs or `users.last_period_start` were persisted with a UTC-based time.Time. Date-only stored values are now read through a new location-agnostic `services.CalendarDay`/`CalendarDayKey` path that takes calendar components from the stored value as-is, instead of running them through `In(location)` which silently moved a UTC-midnight stamp into the previous day in negative-offset locales. Closes #48.
 
