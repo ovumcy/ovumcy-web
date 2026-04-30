@@ -1,6 +1,6 @@
 services:
   ovumcy:
-    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v0.9.2}
+    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v0.9.3}
     pull_policy: always
     environment:
       TZ: ${TZ:-UTC}
