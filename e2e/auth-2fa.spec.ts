@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { authenticator } from 'otplib';
+import { generateSync } from 'otplib';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -47,7 +47,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.goto('/settings/2fa');
     const secret = await readTOTPSecret(page);
 
-    const code = authenticator.generate(secret);
+    const code = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(code);
     await page.locator('button[type="submit"]').click();
 
@@ -76,7 +76,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Enroll
     await page.goto('/settings/2fa');
     const secret = await readTOTPSecret(page);
-    const code = authenticator.generate(secret);
+    const code = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(code);
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
@@ -113,7 +113,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Enroll
     await page.goto('/settings/2fa');
     const secret = await readTOTPSecret(page);
-    const enrollCode = authenticator.generate(secret);
+    const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
@@ -131,7 +131,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
     // Provide valid code on the challenge page
-    const challengeCode = authenticator.generate(secret);
+    const challengeCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(challengeCode);
     await page.locator('button[type="submit"]').click();
 
@@ -153,7 +153,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Enroll
     await page.goto('/settings/2fa');
     const secret = await readTOTPSecret(page);
-    const enrollCode = authenticator.generate(secret);
+    const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
@@ -192,7 +192,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Enroll
     await page.goto('/settings/2fa');
     const secret = await readTOTPSecret(page);
-    const enrollCode = authenticator.generate(secret);
+    const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
