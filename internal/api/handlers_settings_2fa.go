@@ -60,7 +60,7 @@ func (handler *Handler) ShowTOTPSetupPage(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, settingsLoadErrorSpec())
 	}
 
-	data["QRDataURL"] = template.URL(qrDataURL) //nolint:gosec // data URI for inline QR image
+	data["QRDataURL"] = template.URL(qrDataURL) // #nosec G203 -- server-built data: URI from a server-rendered PNG, no user input
 	data["TOTPSecret"] = key.Secret()
 	return handler.render(c, "settings_2fa", data)
 }

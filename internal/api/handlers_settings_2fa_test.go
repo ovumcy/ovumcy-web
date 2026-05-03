@@ -39,27 +39,6 @@ func sealTOTPSetupCookieForTest(t *testing.T, secretKey []byte, rawSecret string
 	return totpSetupCookieName + "=" + sealed
 }
 
-func sealExpiredTOTPSetupCookieForTest(t *testing.T, secretKey []byte, rawSecret string) string {
-	t.Helper()
-	payload := totpSetupCookiePayload{
-		RawSecret: rawSecret,
-		ExpiresAt: time.Now().Add(-1 * time.Minute),
-	}
-	serialized, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("marshal expired totp setup payload: %v", err)
-	}
-	codec, err := newSecureCookieCodec(secretKey)
-	if err != nil {
-		t.Fatalf("newSecureCookieCodec: %v", err)
-	}
-	sealed, err := codec.seal(totpSetupCookieName, serialized)
-	if err != nil {
-		t.Fatalf("seal expired totp setup: %v", err)
-	}
-	return totpSetupCookieName + "=" + sealed
-}
-
 func newTOTPSettingsContext(t *testing.T, email string) settingsSecurityTestContext {
 	t.Helper()
 	// Use the standard settings context; TOTP state is managed per-test via DB.
