@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { authenticator } from 'otplib';
 import {
   completeOnboardingIfPresent,
+  continueFromRecoveryCode,
   cookieByName,
   createCredentials,
   loginViaUI,
@@ -22,6 +23,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
   test('setup page shows QR code and manual secret before enrollment', async ({ page }) => {
     const creds = createCredentials('2fa-setup-qr');
     await registerOwnerViaUI(page, creds);
+    await continueFromRecoveryCode(page);
     await completeOnboardingIfPresent(page);
 
     await page.goto('/settings/2fa');
@@ -39,6 +41,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
   test('enrolling with a valid code enables 2FA', async ({ page, context }) => {
     const creds = createCredentials('2fa-enroll');
     await registerOwnerViaUI(page, creds);
+    await continueFromRecoveryCode(page);
     await completeOnboardingIfPresent(page);
 
     await page.goto('/settings/2fa');
@@ -67,6 +70,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
 
     const creds = createCredentials('2fa-login-redirect');
     await registerOwnerViaUI(page, creds);
+    await continueFromRecoveryCode(page);
     await completeOnboardingIfPresent(page);
 
     // Enroll
@@ -103,6 +107,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
   }) => {
     const creds = createCredentials('2fa-challenge-valid');
     await registerOwnerViaUI(page, creds);
+    await continueFromRecoveryCode(page);
     await completeOnboardingIfPresent(page);
 
     // Enroll
@@ -142,6 +147,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
   }) => {
     const creds = createCredentials('2fa-challenge-invalid');
     await registerOwnerViaUI(page, creds);
+    await continueFromRecoveryCode(page);
     await completeOnboardingIfPresent(page);
 
     // Enroll
@@ -180,6 +186,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
   }) => {
     const creds = createCredentials('2fa-disable');
     await registerOwnerViaUI(page, creds);
+    await continueFromRecoveryCode(page);
     await completeOnboardingIfPresent(page);
 
     // Enroll
