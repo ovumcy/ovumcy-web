@@ -44,4 +44,6 @@ type User struct {
 	LongPeriodWarnedAt  *time.Time `gorm:"column:long_period_warning_cycle_start;type:date"`
 	LastPeriodStart     *time.Time `gorm:"type:date"`
 	CreatedAt           time.Time  `gorm:"not null"`
+	TOTPSecret          string     `gorm:"column:totp_secret"`
+	TOTPEnabled         bool       `gorm:"column:totp_enabled;not null;default:false"`
 }

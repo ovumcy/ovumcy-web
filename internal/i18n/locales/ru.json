@@ -665,5 +665,35 @@
   "symptom.food_cravings": "Тяга к еде",
   "symptom.diarrhea": "Диарея",
   "symptom.constipation": "Запор",
-  "symptom.swelling": "Отёчность"
+  "symptom.swelling": "Отёчность",
+
+  "auth.2fa.title": "Двухфакторная аутентификация",
+  "auth.2fa.description": "Введите 6-значный код из приложения-аутентификатора.",
+  "auth.2fa.code_label": "Код аутентификации",
+  "auth.2fa.code_placeholder": "000000",
+  "auth.2fa.submit_button": "Подтвердить",
+  "auth.2fa.lost_access": "Нет доступа к аутентификатору? Используйте код восстановления.",
+
+  "settings.2fa.title": "Двухфакторная аутентификация",
+  "settings.2fa.description": "Защитите аккаунт с помощью приложения-аутентификатора (TOTP).",
+  "settings.2fa.manage_button": "Управление двухфакторной аутентификацией",
+  "settings.2fa.status_enabled_label": "Двухфакторная аутентификация включена",
+  "settings.2fa.status_disabled_label": "Двухфакторная аутентификация не включена",
+  "settings.2fa.setup_title": "Настройка двухфакторной аутентификации",
+  "settings.2fa.setup_instructions": "Отсканируйте QR-код в приложении-аутентификаторе (Google Authenticator, Authy, Aegis и др.), затем введите 6-значный код для подтверждения.",
+  "settings.2fa.qr_alt": "QR-код для приложения-аутентификатора",
+  "settings.2fa.secret_label": "Или введите ключ вручную",
+  "settings.2fa.secret_hint": "Используйте этот ключ, если не можете отсканировать QR-код.",
+  "settings.2fa.code_placeholder": "Введите 6-значный код",
+  "settings.2fa.verify_button": "Включить двухфакторную аутентификацию",
+  "settings.2fa.enabled_status": "Двухфакторная аутентификация включена.",
+  "settings.2fa.disabled_status": "Двухфакторная аутентификация отключена.",
+  "settings.2fa.disable_button": "Отключить двухфакторную аутентификацию",
+  "settings.2fa.disable_confirm_password": "Подтвердите текущим паролем",
+
+  "error.totp_invalid_code": "Неверный код аутентификации. Попробуйте ещё раз.",
+  "error.totp_session_expired": "Сессия входа истекла. Пожалуйста, войдите снова.",
+  "error.totp_internal_error": "Что-то пошло не так. Попробуйте ещё раз.",
+
+  "common.back_to_settings": "Назад к настройкам"
 }

@@ -533,6 +533,23 @@
 
       <section class="journal-panel settings-account-block space-y-4">
         <div>
+          <h3 class="field-label">{{t .Messages "settings.2fa.title"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.description"}}</p>
+        </div>
+
+        {{if .CurrentUser.TOTPEnabled}}
+        <p class="text-sm font-medium text-green-600 dark:text-green-400">{{t .Messages "settings.2fa.status_enabled_label"}}</p>
+        {{else}}
+        <p class="journal-muted text-sm">{{t .Messages "settings.2fa.status_disabled_label"}}</p>
+        {{end}}
+
+        <div>
+          <a href="/settings/2fa" class="btn-secondary">{{t .Messages "settings.2fa.manage_button"}}</a>
+        </div>
+      </section>
+
+      <section class="journal-panel settings-account-block space-y-4">
+        <div>
           <h3 class="field-label">{{t .Messages "settings.security.advanced"}}</h3>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.security.advanced_hint"}}</p>
         </div>

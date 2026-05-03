@@ -28,6 +28,7 @@ type LoginResult struct {
 	User                  models.User
 	RequiresPasswordReset bool
 	ResetToken            string
+	RequiresTOTP          bool
 }
 
 func NewLoginService(auth LoginAuthService, reset LoginResetTokenIssuer, limiter *AttemptLimiter) *LoginService {
@@ -66,6 +67,10 @@ func (service *LoginService) Authenticate(
 	service.attemptPolicy.Reset(secretKey, clientKey, normalizedEmail)
 	result := LoginResult{User: user}
 	if !user.MustChangePassword {
+		if user.TOTPEnabled {
+			result.RequiresTOTP = true
+			return result, nil
+		}
 		return result, nil
 	}
 

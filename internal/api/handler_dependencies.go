@@ -25,6 +25,7 @@ type Dependencies struct {
 	SettingsViewService  *services.SettingsViewService
 	OnboardingService    *services.OnboardingService
 	SetupService         *services.SetupService
+	TOTPService          *services.TOTPService
 }
 
 func (dependencies Dependencies) validate() error {
@@ -60,6 +61,7 @@ func (dependencies Dependencies) requirements() []dependencyRequirement {
 		{value: dependencies.SettingsViewService, message: "settings view service is required"},
 		{value: dependencies.OnboardingService, message: "onboarding service is required"},
 		{value: dependencies.SetupService, message: "setup service is required"},
+		{value: dependencies.TOTPService, message: "totp service is required"},
 	}
 }
 
@@ -95,5 +97,6 @@ func (handler *Handler) withDependencies(dependencies Dependencies) *Handler {
 	handler.settingsViewService = dependencies.SettingsViewService
 	handler.onboardingSvc = dependencies.OnboardingService
 	handler.setupService = dependencies.SetupService
+	handler.totpService = dependencies.TOTPService
 	return handler
 }

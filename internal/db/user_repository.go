@@ -144,6 +144,13 @@ func (repo *UserRepository) BumpAuthSessionVersion(userID uint) error {
 	return repo.database.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
 }
 
+func (repo *UserRepository) UpdateTOTPFields(userID uint, encryptedSecret string, enabled bool) error {
+	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"totp_secret":  encryptedSecret,
+		"totp_enabled": enabled,
+	}).Error
+}
+
 func (repo *UserRepository) UpdateByID(userID uint, updates map[string]any) error {
 	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
 }

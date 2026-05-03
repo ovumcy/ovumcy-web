@@ -50,6 +50,7 @@ type Handler struct {
 	settingsViewService  *services.SettingsViewService
 	onboardingSvc        *services.OnboardingService
 	setupService         *services.SetupService
+	totpService          *services.TOTPService
 }
 
 type CalendarDay struct {

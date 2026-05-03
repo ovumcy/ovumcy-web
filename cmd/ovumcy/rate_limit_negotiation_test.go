@@ -88,7 +88,7 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 			ForgotPasswordWindow: time.Hour,
 			APIMax:               300,
 			APIWindow:            time.Minute,
-		}, services.RegistrationModeOpen, security.OIDCConfig{}),
+		}, services.RegistrationModeOpen, security.OIDCConfig{}, "test-secret-key"),
 	)
 	if err != nil {
 		t.Fatalf("init rate-limit test handler: %v", err)

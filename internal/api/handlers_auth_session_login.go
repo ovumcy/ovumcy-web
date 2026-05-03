@@ -95,6 +95,19 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 		return redirectToPath(c, "/reset-password")
 	}
 
+	if result.RequiresTOTP {
+		if err := handler.setTOTPPendingCookie(c, result.User.ID, credentials.RememberMe); err != nil {
+			spec := authSessionCreateErrorSpec()
+			handler.logSecurityError(c, "auth.login", spec)
+			return handler.respondMappedError(c, spec)
+		}
+		handler.logSecurityEvent(c, "auth.login", "totp_required")
+		if acceptsJSON(c) {
+			return c.Status(fiber.StatusOK).JSON(fiber.Map{"requires_totp": true})
+		}
+		return redirectToPath(c, "/auth/2fa")
+	}
+
 	user := result.User
 	if _, err := handler.setAuthCookie(c, &user, credentials.RememberMe); err != nil {
 		spec := authSessionCreateErrorSpec()

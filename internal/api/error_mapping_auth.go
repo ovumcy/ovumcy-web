@@ -13,6 +13,18 @@ func authInvalidInputErrorSpec() APIErrorSpec {
 	return authValidationErrorSpec("invalid input")
 }
 
+func totpInvalidCodeErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "totp invalid code")
+}
+
+func totpSessionExpiredErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "totp session expired")
+}
+
+func totpInternalErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "totp internal error")
+}
+
 func invalidResetTokenErrorSpec() APIErrorSpec {
 	return authValidationErrorSpec("invalid reset token")
 }

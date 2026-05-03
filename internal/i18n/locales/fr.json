@@ -712,5 +712,35 @@
   "symptom.food_cravings": "Envies alimentaires",
   "symptom.diarrhea": "Diarrhée",
   "symptom.constipation": "Constipation",
-  "symptom.swelling": "Gonflement"
+  "symptom.swelling": "Gonflement",
+
+  "auth.2fa.title": "Two-Factor Authentication",
+  "auth.2fa.description": "Enter the 6-digit code from your authenticator app.",
+  "auth.2fa.code_label": "Authentication code",
+  "auth.2fa.code_placeholder": "000000",
+  "auth.2fa.submit_button": "Verify",
+  "auth.2fa.lost_access": "Lost access to your authenticator? Use your recovery code.",
+
+  "settings.2fa.title": "Two-Factor Authentication",
+  "settings.2fa.description": "Protect your account with an authenticator app (TOTP).",
+  "settings.2fa.manage_button": "Manage two-factor authentication",
+  "settings.2fa.status_enabled_label": "Two-factor authentication is enabled",
+  "settings.2fa.status_disabled_label": "Two-factor authentication is not enabled",
+  "settings.2fa.setup_title": "Set up two-factor authentication",
+  "settings.2fa.setup_instructions": "Scan the QR code with your authenticator app, then enter the 6-digit code to confirm.",
+  "settings.2fa.qr_alt": "QR code for authenticator app",
+  "settings.2fa.secret_label": "Or enter the key manually",
+  "settings.2fa.secret_hint": "Use this key if you cannot scan the QR code.",
+  "settings.2fa.code_placeholder": "Enter 6-digit code",
+  "settings.2fa.verify_button": "Enable two-factor authentication",
+  "settings.2fa.enabled_status": "Two-factor authentication enabled.",
+  "settings.2fa.disabled_status": "Two-factor authentication disabled.",
+  "settings.2fa.disable_button": "Disable two-factor authentication",
+  "settings.2fa.disable_confirm_password": "Confirm with your current password",
+
+  "error.totp_invalid_code": "Invalid authentication code. Please try again.",
+  "error.totp_session_expired": "Your login session expired. Please sign in again.",
+  "error.totp_internal_error": "Something went wrong. Please try again.",
+
+  "common.back_to_settings": "Back to settings"
 }

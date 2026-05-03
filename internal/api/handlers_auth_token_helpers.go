@@ -57,6 +57,7 @@ func (handler *Handler) clearAuthRelatedCookies(c *fiber.Ctx) {
 	handler.clearOIDCLogoutTransportCookies(c)
 	handler.clearRecoveryCodePageCookie(c)
 	handler.clearResetPasswordCookie(c)
+	handler.clearTOTPPendingCookie(c)
 }
 
 func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {

@@ -20,6 +20,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/recovery-code", handler.ShowRecoveryCodePage)
 	app.Get("/forgot-password", handler.ShowForgotPasswordPage)
 	app.Get("/reset-password", handler.ShowResetPasswordPage)
+	app.Get("/auth/2fa", handler.ShowTOTPChallengePage)
 	app.Post("/auth/oidc/callback", handler.CompleteOIDCLogin)
 	app.Post("/logout", handler.AuthRequired, handler.Logout)
 	app.Get("/privacy", handler.ShowPrivacyPage)
@@ -34,6 +35,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/stats", handler.AuthRequired, handler.ShowStats)
 	app.Get("/settings", handler.AuthRequired, handler.ShowSettings)
 	app.Post("/settings/cycle", handler.AuthRequired, handler.OwnerOnly, handler.UpdateCycleSettings)
+	app.Get("/settings/2fa", handler.AuthRequired, handler.ShowTOTPSetupPage)
 }
 
 func registerAPIRoutes(app *fiber.App, handler *Handler) {
@@ -43,6 +45,7 @@ func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	auth.Post("/logout", handler.AuthRequired, handler.Logout)
 	auth.Post("/register", handler.Register)
 	auth.Post("/login", handler.Login)
+	auth.Post("/2fa", handler.VerifyTOTPLogin)
 	auth.Post("/forgot-password", handler.ForgotPassword)
 	auth.Post("/reset-password", handler.ResetPassword)
 
@@ -79,6 +82,8 @@ func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	settings.Post("/tracking", handler.OwnerOnly, handler.UpdateTrackingSettings)
 	settings.Post("/change-password", handler.ChangePassword)
 	settings.Post("/regenerate-recovery-code", handler.RegenerateRecoveryCode)
+	settings.Post("/2fa/verify", handler.VerifyTOTP2FAEnrollment)
+	settings.Post("/2fa/disable", handler.DisableTOTP2FA)
 	settings.Post("/clear-data/validate", handler.OwnerOnly, handler.ValidateClearDataPassword)
 	settings.Post("/clear-data", handler.OwnerOnly, handler.ClearAllData)
 	settings.Delete("/delete-account", handler.DeleteAccount)
