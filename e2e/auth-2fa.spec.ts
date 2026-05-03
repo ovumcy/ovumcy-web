@@ -8,12 +8,13 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 
-// Reads the raw TOTP secret from the setup page's data attribute.
+// Reads the raw TOTP secret from the visible manual-entry element on the
+// enrollment page (the same string the user copies into their authenticator).
 async function readTOTPSecret(page: import('@playwright/test').Page): Promise<string> {
-  const el = page.locator('[data-totp-secret]');
+  const el = page.locator('[data-totp-manual-secret]');
   await expect(el).toBeVisible();
-  const secret = await el.getAttribute('data-totp-secret');
-  if (!secret) throw new Error('data-totp-secret attribute is missing or empty');
+  const secret = (await el.textContent())?.trim() ?? '';
+  if (!secret) throw new Error('manual TOTP secret element is missing or empty');
   return secret;
 }
 

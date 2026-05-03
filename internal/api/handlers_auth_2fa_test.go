@@ -21,7 +21,7 @@ import (
 
 func setupTOTPForUser(t *testing.T, database *gorm.DB, userID uint, secretKey []byte) string {
 	t.Helper()
-	svc := services.NewTOTPService(&dbUserRepoForTest{database}, secretKey)
+	svc := services.NewTOTPService(&dbUserRepoForTest{database}, secretKey, nil)
 	key, err := svc.GenerateSetupKey("Ovumcy", "test@example.com")
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
@@ -148,13 +148,17 @@ func TestShowTOTPChallengePage_ValidPendingCookie_Renders200(t *testing.T) {
 
 func TestVerifyTOTPLogin_MissingPendingCookie_ReturnsError(t *testing.T) {
 	app, _ := newOnboardingTestAppWithCSRF(t)
-	csrfToken := extractGlobalCSRFToken(t, app)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
 
-	resp := doTOTPChallengeRequest(t, app, getCsrfCookieHeader(t, app), "123456", csrfToken)
+	resp := doTOTPChallengeRequest(t, app, csrfCookieHeader, "123456", csrfToken)
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusSeeOther {
-		t.Errorf("expected error status, got %d", resp.StatusCode)
+	// HTML form path: respondAuthError redirects with 303 to /auth/2fa.
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("status = %d, want 303 (redirect to challenge page with error)", resp.StatusCode)
+	}
+	if c := responseCookie(resp.Cookies(), authCookieName); c != nil && c.Value != "" {
+		t.Error("missing pending cookie must not issue an auth cookie")
 	}
 }
 
@@ -227,36 +231,97 @@ func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 	}
 }
 
+// TestVerifyTOTPLogin_RateLimited_HTMXReturns429 drives more failures than the
+// configured limit through /api/auth/2fa via the HTMX path (which surfaces the
+// real status code) and asserts the 6th attempt is rejected with 429 by the
+// rate limiter. Guards against accidental removal of the CheckRateLimit call
+// in the handler or wiring breakage between handler and service.
+func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-ratelimit@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+
+	doHTMX := func(code string) *http.Response {
+		t.Helper()
+		pendingCookie := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+		form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/2fa", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		req.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
+		req.Header.Set("Accept-Language", "en")
+		resp, err := app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("POST /api/auth/2fa: %v", err)
+		}
+		return resp
+	}
+
+	for attempt := 0; attempt < services.DefaultTOTPAttemptsLimit; attempt++ {
+		resp := doHTMX("000000")
+		status := resp.StatusCode
+		resp.Body.Close()
+		if status == http.StatusTooManyRequests {
+			t.Fatalf("attempt %d returned 429 too early (limit is %d)", attempt+1, services.DefaultTOTPAttemptsLimit)
+		}
+		if status != http.StatusUnauthorized {
+			t.Fatalf("attempt %d status = %d, want 401 (invalid code)", attempt+1, status)
+		}
+	}
+
+	resp := doHTMX("000000")
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("status after %d failed attempts = %d, want 429", services.DefaultTOTPAttemptsLimit, resp.StatusCode)
+	}
+	if c := responseCookie(resp.Cookies(), authCookieName); c != nil && c.Value != "" {
+		t.Error("rate-limited request must not issue an auth cookie")
+	}
+}
+
+// TestVerifyTOTPLogin_ReplayCode_Rejected proves the handler rejects a TOTP
+// code that has already been consumed for the same user. Guards against
+// removal of the replay check in ValidateCode or its wiring in the handler.
+func TestVerifyTOTPLogin_ReplayCode_Rejected(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-replay@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+
+	code, err := totp.GenerateCode(rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+
+	pending1 := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+	resp1 := doTOTPChallengeRequest(t, app, joinCookieHeader(pending1, csrfCookieHeader), code, csrfToken)
+	status1 := resp1.StatusCode
+	cookies1 := resp1.Cookies()
+	resp1.Body.Close()
+
+	if status1 != http.StatusSeeOther {
+		t.Fatalf("first submission status = %d, want 303", status1)
+	}
+	if c := responseCookie(cookies1, authCookieName); c == nil || c.Value == "" {
+		t.Fatal("first submission did not issue an auth cookie — replay test premise is broken")
+	}
+
+	// Replay the same code with a fresh pending cookie. Replay protection must
+	// reject it; no new auth cookie may be issued.
+	pending2 := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+	resp2 := doTOTPChallengeRequest(t, app, joinCookieHeader(pending2, csrfCookieHeader), code, csrfToken)
+	defer resp2.Body.Close()
+
+	if c := responseCookie(resp2.Cookies(), authCookieName); c != nil && c.Value != "" {
+		t.Error("replayed code must not issue a new auth cookie — replay protection failed")
+	}
+}
+
 // --- small helpers for extracting CSRF without a full settings context ---
-
-func extractGlobalCSRFToken(t *testing.T, app *fiber.App) string {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
-	req.Header.Set("Accept-Language", "en")
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatalf("GET /login for csrf: %v", err)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	return extractCSRFTokenFromHTML(t, string(body))
-}
-
-func getCsrfCookieHeader(t *testing.T, app *fiber.App) string {
-	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
-	req.Header.Set("Accept-Language", "en")
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatalf("GET /login for csrf cookie: %v", err)
-	}
-	defer resp.Body.Close()
-	c := responseCookie(resp.Cookies(), "ovumcy_csrf")
-	if c == nil {
-		return ""
-	}
-	return cookiePair(c)
-}
 
 func extractCSRFCookieAndToken(t *testing.T, app *fiber.App) (string, string) {
 	t.Helper()

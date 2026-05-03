@@ -63,9 +63,7 @@
 
       <div class="space-y-2">
         <p class="field-label">{{t .Messages "settings.2fa.secret_label"}}</p>
-        <p
-          class="font-mono text-sm break-all journal-muted"
-          data-totp-secret="{{.TOTPSecret}}">{{.TOTPSecret}}</p>
+        <p data-totp-manual-secret class="font-mono text-sm break-all journal-muted">{{.TOTPSecret}}</p>
         <p class="journal-muted text-xs">{{t .Messages "settings.2fa.secret_hint"}}</p>
       </div>
     </div>

@@ -694,6 +694,7 @@
   "error.totp_invalid_code": "Invalid authentication code. Please try again.",
   "error.totp_session_expired": "Your login session expired. Please sign in again.",
   "error.totp_internal_error": "Something went wrong. Please try again.",
+  "error.totp_too_many_attempts": "Too many attempts. Please wait and try again.",
 
   "common.back_to_settings": "Back to settings"
 }

@@ -25,6 +25,14 @@ func totpInternalErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "totp internal error")
 }
 
+func totpRateLimitedErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "totp too many attempts")
+}
+
+func totpDisableRateLimitedErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "totp too many attempts")
+}
+
 func invalidResetTokenErrorSpec() APIErrorSpec {
 	return authValidationErrorSpec("invalid reset token")
 }

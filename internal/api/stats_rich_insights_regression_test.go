@@ -29,7 +29,15 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		"Acne":     customSymptoms[2].ID,
 	}
 
-	currentCycleStart := time.Date(2026, time.February, 26, 0, 0, 0, 0, time.UTC)
+	// Anchor all dates relative to time.Now() so the test stays within the
+	// 90-day cycle-factor context window regardless of when CI runs it.
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	currentCycleStart := today.AddDate(0, 0, -8)
+	period3Start := currentCycleStart.AddDate(0, 0, -28)
+	period2Start := currentCycleStart.AddDate(0, 0, -56)
+	period1Start := currentCycleStart.AddDate(0, 0, -84)
+
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"last_period_start": currentCycleStart,
 		"track_bbt":         true,
@@ -40,25 +48,25 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 	}
 
 	logs := []models.DailyLog{
-		{UserID: user.ID, Date: time.Date(2025, time.December, 4, 0, 0, 0, 0, time.UTC), IsPeriod: true},
-		{UserID: user.ID, Date: time.Date(2025, time.December, 5, 0, 0, 0, 0, time.UTC), CycleFactorKeys: []string{models.CycleFactorStress}, SymptomIDs: []uint{symptomByName["Headache"]}},
-		{UserID: user.ID, Date: time.Date(2025, time.December, 8, 0, 0, 0, 0, time.UTC), SymptomIDs: []uint{symptomByName["Cramps"]}},
-		{UserID: user.ID, Date: time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true},
-		{UserID: user.ID, Date: time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC), CycleFactorKeys: []string{models.CycleFactorTravel}, SymptomIDs: []uint{symptomByName["Headache"]}},
-		{UserID: user.ID, Date: time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC), SymptomIDs: []uint{symptomByName["Cramps"]}},
-		{UserID: user.ID, Date: time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC), IsPeriod: true},
-		{UserID: user.ID, Date: time.Date(2026, time.January, 30, 0, 0, 0, 0, time.UTC), SymptomIDs: []uint{symptomByName["Headache"]}},
-		{UserID: user.ID, Date: time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC), CycleFactorKeys: []string{models.CycleFactorStress}, SymptomIDs: []uint{symptomByName["Headache"]}},
-		{UserID: user.ID, Date: time.Date(2026, time.February, 2, 0, 0, 0, 0, time.UTC), SymptomIDs: []uint{symptomByName["Cramps"]}},
-		{UserID: user.ID, Date: time.Date(2026, time.February, 4, 0, 0, 0, 0, time.UTC), SymptomIDs: []uint{symptomByName["Acne"]}},
-		{UserID: user.ID, Date: time.Date(2026, time.February, 26, 0, 0, 0, 0, time.UTC), IsPeriod: true, BBT: 36.40},
-		{UserID: user.ID, Date: time.Date(2026, time.February, 27, 0, 0, 0, 0, time.UTC), BBT: 36.45},
-		{UserID: user.ID, Date: time.Date(2026, time.February, 28, 0, 0, 0, 0, time.UTC), BBT: 36.50},
-		{UserID: user.ID, Date: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC), BBT: 36.42},
-		{UserID: user.ID, Date: time.Date(2026, time.March, 2, 0, 0, 0, 0, time.UTC), BBT: 36.43},
-		{UserID: user.ID, Date: time.Date(2026, time.March, 3, 0, 0, 0, 0, time.UTC), BBT: 36.70},
-		{UserID: user.ID, Date: time.Date(2026, time.March, 4, 0, 0, 0, 0, time.UTC), BBT: 36.72},
-		{UserID: user.ID, Date: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC), BBT: 36.74},
+		{UserID: user.ID, Date: period1Start, IsPeriod: true},
+		{UserID: user.ID, Date: period1Start.AddDate(0, 0, 1), CycleFactorKeys: []string{models.CycleFactorStress}, SymptomIDs: []uint{symptomByName["Headache"]}},
+		{UserID: user.ID, Date: period1Start.AddDate(0, 0, 4), SymptomIDs: []uint{symptomByName["Cramps"]}},
+		{UserID: user.ID, Date: period2Start, IsPeriod: true},
+		{UserID: user.ID, Date: period2Start.AddDate(0, 0, 1), CycleFactorKeys: []string{models.CycleFactorTravel}, SymptomIDs: []uint{symptomByName["Headache"]}},
+		{UserID: user.ID, Date: period2Start.AddDate(0, 0, 4), SymptomIDs: []uint{symptomByName["Cramps"]}},
+		{UserID: user.ID, Date: period3Start, IsPeriod: true},
+		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 1), SymptomIDs: []uint{symptomByName["Headache"]}},
+		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 2), CycleFactorKeys: []string{models.CycleFactorStress}, SymptomIDs: []uint{symptomByName["Headache"]}},
+		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 4), SymptomIDs: []uint{symptomByName["Cramps"]}},
+		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 6), SymptomIDs: []uint{symptomByName["Acne"]}},
+		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, BBT: 36.40},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 1), BBT: 36.45},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 2), BBT: 36.50},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 3), BBT: 36.42},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 4), BBT: 36.43},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 5), BBT: 36.70},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 6), BBT: 36.72},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 7), BBT: 36.74},
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("create stats logs: %v", err)

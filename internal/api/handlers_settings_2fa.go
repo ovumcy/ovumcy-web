@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"image/png"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -118,10 +119,20 @@ func (handler *Handler) DisableTOTP2FA(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
 
-	if _, err := handler.authService.AuthenticateCredentials(user.Email, password); err != nil {
-		handler.logSecurityError(c, "settings.2fa.disable", authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials"))
-		return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials"))
+	if err := handler.totpService.CheckDisableRateLimit(handler.secretKey, c.IP(), user.ID, time.Now()); err != nil {
+		spec := totpDisableRateLimitedErrorSpec()
+		handler.logSecurityError(c, "settings.2fa.disable", spec)
+		return handler.respondMappedError(c, spec)
 	}
+
+	if _, err := handler.authService.AuthenticateCredentials(user.Email, password); err != nil {
+		handler.totpService.RecordDisableFailure(handler.secretKey, c.IP(), user.ID, time.Now())
+		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
+		handler.logSecurityError(c, "settings.2fa.disable", spec)
+		return handler.respondMappedError(c, spec)
+	}
+
+	handler.totpService.ResetDisableAttempts(handler.secretKey, c.IP(), user.ID)
 
 	if err := handler.totpService.DisableTOTP(user.ID); err != nil {
 		handler.logSecurityError(c, "settings.2fa.disable", totpInternalErrorSpec())

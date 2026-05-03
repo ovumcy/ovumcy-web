@@ -123,7 +123,7 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
 	exportService := services.NewExportService(dayService, symptomService)
 	settingsService := services.NewSettingsService(repositories.Users)
-	totpService := services.NewTOTPService(repositories.Users, []byte("test-secret-key"))
+	totpService := services.NewTOTPService(repositories.Users, []byte("test-secret-key"), attemptLimiter)
 	notificationService := services.NewNotificationService()
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 	settingsViewService := services.NewSettingsViewService(settingsService, notificationService, exportService, symptomService)

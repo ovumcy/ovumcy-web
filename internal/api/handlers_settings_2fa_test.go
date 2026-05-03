@@ -67,7 +67,7 @@ func newTOTPSettingsContext(t *testing.T, email string) settingsSecurityTestCont
 }
 
 func getTOTPServiceForTest(database *gorm.DB) *services.TOTPService {
-	return services.NewTOTPService(&dbUserRepoForTest{database}, []byte("test-secret-key"))
+	return services.NewTOTPService(&dbUserRepoForTest{database}, []byte("test-secret-key"), nil)
 }
 
 // --- ShowTOTPSetupPage ---
@@ -107,8 +107,8 @@ func TestShowTOTPSetupPage_TOTPNotEnabled_RendersQRAndSecret(t *testing.T) {
 	if !strings.Contains(string(body), "data:image/png;base64,") {
 		t.Error("setup page should contain an inline QR code PNG")
 	}
-	if !strings.Contains(string(body), "data-totp-secret") {
-		t.Error("setup page should expose data-totp-secret attribute for e2e tests")
+	if !strings.Contains(string(body), "data-totp-manual-secret") {
+		t.Error("setup page should expose the manual TOTP secret element for e2e tests")
 	}
 }
 
@@ -132,9 +132,17 @@ func TestShowTOTPSetupPage_TOTPEnabled_ShowsManagementView(t *testing.T) {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	// Management view should show the disable button, not QR.
+	// Management view: must NOT show QR (negative) and MUST show the disable
+	// form action + password field (positive). A blank page would otherwise
+	// satisfy the QR-absence check.
 	if strings.Contains(string(body), "data:image/png;base64,") {
 		t.Error("management view should not show QR code when TOTP is already enabled")
+	}
+	if !strings.Contains(string(body), "/api/settings/2fa/disable") {
+		t.Error("management view should contain the disable form action")
+	}
+	if !strings.Contains(string(body), `name="password"`) {
+		t.Error("management view should contain the password confirmation field")
 	}
 }
 
@@ -144,7 +152,7 @@ func TestVerifyTOTP2FAEnrollment_ValidCode_EnablesTOTP(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-enroll-valid@example.com")
 
 	// Generate a real key and seal its secret in a setup cookie.
-	key, err := services.NewTOTPService(&dbUserRepoForTest{ctx.database}, []byte("test-secret-key")).GenerateSetupKey("Ovumcy", ctx.user.Email)
+	key, err := services.NewTOTPService(&dbUserRepoForTest{ctx.database}, []byte("test-secret-key"), nil).GenerateSetupKey("Ovumcy", ctx.user.Email)
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
@@ -187,7 +195,7 @@ func TestVerifyTOTP2FAEnrollment_ValidCode_EnablesTOTP(t *testing.T) {
 func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-enroll-invalid@example.com")
 
-	key, err := services.NewTOTPService(&dbUserRepoForTest{ctx.database}, []byte("test-secret-key")).GenerateSetupKey("Ovumcy", ctx.user.Email)
+	key, err := services.NewTOTPService(&dbUserRepoForTest{ctx.database}, []byte("test-secret-key"), nil).GenerateSetupKey("Ovumcy", ctx.user.Email)
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
@@ -233,11 +241,20 @@ func TestVerifyTOTP2FAEnrollment_MissingSetupCookie_ReturnsError(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		if strings.Contains(string(body), "enabled") && !strings.Contains(strings.ToLower(string(body)), "error") {
-			t.Error("missing setup cookie should produce an error response")
-		}
+	// Without a setup cookie the handler maps to totpSessionExpiredErrorSpec
+	// (401). /api/settings/2fa/verify is not in the auth-redirect path, so the
+	// status surfaces directly via apiError.
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401 (totp session expired)", resp.StatusCode)
+	}
+
+	// Verify TOTP was NOT enabled despite the request reaching the handler.
+	var reloaded models.User
+	if err := ctx.database.First(&reloaded, ctx.user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.TOTPEnabled {
+		t.Error("missing setup cookie must not enable TOTP")
 	}
 }
 
@@ -287,5 +304,36 @@ func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 	}
 	if !reloaded.TOTPEnabled {
 		t.Error("TOTPEnabled should remain true after wrong password")
+	}
+}
+
+// TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword guards against an
+// authenticated session-stealing attacker brute-forcing the password to disable
+// 2FA. After DefaultTOTPDisableAttemptsLimit failures, a subsequent attempt
+// (even with the correct password) must be rejected by the rate limiter.
+func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "totp-disable-rl@example.com")
+	svc := getTOTPServiceForTest(ctx.database)
+	if err := svc.EnableTOTP(ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
+		t.Fatalf("EnableTOTP: %v", err)
+	}
+
+	wrongForm := url.Values{"password": {"WrongPassword1"}}
+	for attempt := 0; attempt < services.DefaultTOTPDisableAttemptsLimit; attempt++ {
+		resp := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/2fa/disable", wrongForm, map[string]string{"Accept-Language": "en"})
+		resp.Body.Close()
+	}
+
+	// Even the correct password must be rejected once the limiter has tripped.
+	correctForm := url.Values{"password": {"StrongPass1"}}
+	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/2fa/disable", correctForm, map[string]string{"Accept-Language": "en"})
+	defer resp.Body.Close()
+
+	var reloaded models.User
+	if err := ctx.database.First(&reloaded, ctx.user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if !reloaded.TOTPEnabled {
+		t.Error("rate-limited disable request must not actually disable TOTP")
 	}
 }

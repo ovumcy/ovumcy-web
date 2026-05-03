@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -32,6 +34,12 @@ func (handler *Handler) VerifyTOTPLogin(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
+	if err := handler.totpService.CheckRateLimit(handler.secretKey, c.IP(), userID, time.Now()); err != nil {
+		spec := totpRateLimitedErrorSpec()
+		handler.logSecurityError(c, "auth.2fa", spec)
+		return handler.respondMappedError(c, spec)
+	}
+
 	code := c.FormValue("code")
 	if len(code) != 6 {
 		spec := totpInvalidCodeErrorSpec()
@@ -46,18 +54,20 @@ func (handler *Handler) VerifyTOTPLogin(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	valid, err := handler.totpService.ValidateCode(user.TOTPSecret, code)
+	valid, err := handler.totpService.ValidateCode(userID, user.TOTPSecret, code)
 	if err != nil {
 		spec := totpInternalErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
 	if !valid {
+		handler.totpService.RecordFailure(handler.secretKey, c.IP(), userID, time.Now())
 		spec := totpInvalidCodeErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
 
+	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), userID)
 	handler.clearTOTPPendingCookie(c)
 
 	if _, err := handler.setAuthCookie(c, &user, rememberMe); err != nil {

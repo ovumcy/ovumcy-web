@@ -243,7 +243,7 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
 	exportService := services.NewExportService(dayService, symptomService)
 	settingsService := services.NewSettingsService(repositories.Users)
-	totpService := services.NewTOTPService(repositories.Users, []byte(secretKey))
+	totpService := services.NewTOTPService(repositories.Users, []byte(secretKey), attemptLimiter)
 	notificationService := services.NewNotificationService()
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 	oidcLoginService := services.NewOIDCLoginService(
