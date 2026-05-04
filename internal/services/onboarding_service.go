@@ -64,7 +64,7 @@ func (service *OnboardingService) ValidateAndParseStep1StartDate(raw string, now
 	if err := service.ValidateStep1StartDate(parsed, now, location); err != nil {
 		return time.Time{}, err
 	}
-	return parsed, nil
+	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC), nil
 }
 
 func (service *OnboardingService) SaveStep2(userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) (int, int, error) {
@@ -106,7 +106,7 @@ func (service *OnboardingService) CompleteOnboardingForUser(userID uint, locatio
 		return time.Time{}, ErrOnboardingStepsRequired
 	}
 
-	startDay := CalendarDay(*current.LastPeriodStart, location)
+	startDay := CalendarDay(*current.LastPeriodStart, time.UTC)
 	_, periodLength := SanitizeOnboardingCycleAndPeriod(current.CycleLength, current.PeriodLength)
 	if err := service.users.CompleteOnboarding(userID, startDay, periodLength, current.AutoPeriodFill); err != nil {
 		return time.Time{}, err

@@ -57,8 +57,17 @@ func CalendarDayKey(value time.Time) string {
 	return fmt.Sprintf("%04d-%02d-%02d", year, month, day)
 }
 
+// DayRange returns the [start, end) bounds for the local calendar day of
+// `value` in `location`, expressed as UTC-midnight instants. The local
+// calendar day is computed via DateAtLocation; the resulting y/m/d is then
+// rebuilt at UTC-midnight so the bounds match the on-disk shape produced
+// by DailyLog.BeforeSave (which canonicalizes Date to UTC-midnight). This
+// keeps DELETE/UPSERT range queries aligned with stored rows regardless
+// of the request timezone offset.
 func DayRange(value time.Time, location *time.Location) (time.Time, time.Time) {
-	start := DateAtLocation(value, location)
+	localMidnight := DateAtLocation(value, location)
+	year, month, day := localMidnight.Date()
+	start := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 	return start, start.AddDate(0, 0, 1)
 }
 
