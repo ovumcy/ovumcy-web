@@ -114,6 +114,51 @@ func TestValidateAndParseStep1StartDate(t *testing.T) {
 	if parsed.Format("2006-01-02") != "2026-04-10" {
 		t.Fatalf("expected parsed date 2026-04-10, got %s", parsed.Format("2006-01-02"))
 	}
+	if parsed.Location() != time.UTC {
+		t.Fatalf("expected canonical UTC location, got %s", parsed.Location())
+	}
+	if parsed.Hour() != 0 || parsed.Minute() != 0 || parsed.Second() != 0 || parsed.Nanosecond() != 0 {
+		t.Fatalf("expected UTC-midnight, got %s", parsed.Format(time.RFC3339Nano))
+	}
+}
+
+func TestValidateAndParseStep1StartDateCanonicalizesAcrossLocations(t *testing.T) {
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatalf("load Asia/Tokyo: %v", err)
+	}
+	toronto, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatalf("load America/Toronto: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		location *time.Location
+	}{
+		{name: "UTC+9 Tokyo", location: tokyo},
+		{name: "UTC-5 Toronto", location: toronto},
+	}
+
+	service := NewOnboardingService(nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Date(2026, time.April, 15, 10, 0, 0, 0, tt.location)
+			parsed, err := service.ValidateAndParseStep1StartDate("2026-04-10", now, tt.location)
+			if err != nil {
+				t.Fatalf("expected valid step1 date, got %v", err)
+			}
+			if parsed.Location() != time.UTC {
+				t.Fatalf("expected canonical UTC location regardless of input location, got %s", parsed.Location())
+			}
+			if parsed.Format("2006-01-02") != "2026-04-10" {
+				t.Fatalf("expected calendar day 2026-04-10 preserved, got %s", parsed.Format("2006-01-02"))
+			}
+			if parsed.Hour() != 0 || parsed.Minute() != 0 {
+				t.Fatalf("expected UTC-midnight, got %s", parsed.Format(time.RFC3339Nano))
+			}
+		})
+	}
 }
 
 func TestResolveCycleAndPeriodDefaults(t *testing.T) {

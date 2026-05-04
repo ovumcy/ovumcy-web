@@ -67,14 +67,14 @@ func (service *SettingsService) ValidateCycleSettings(input CycleSettingsValidat
 	if err != nil {
 		return CycleSettingsUpdate{}, ErrSettingsCycleStartDateInvalid
 	}
-	parsedDay = DateAtLocation(parsedDay, location)
 
 	minCycleStart, today := SettingsCycleStartDateBounds(now, location)
 	if parsedDay.Before(minCycleStart) || parsedDay.After(today) {
 		return CycleSettingsUpdate{}, ErrSettingsCycleStartDateInvalid
 	}
 
-	update.LastPeriodStart = &parsedDay
+	canonical := time.Date(parsedDay.Year(), parsedDay.Month(), parsedDay.Day(), 0, 0, 0, 0, time.UTC)
+	update.LastPeriodStart = &canonical
 	return update, nil
 }
 

@@ -89,6 +89,12 @@ func TestValidateCycleSettingsBuildsUpdate(t *testing.T) {
 	if update.LastPeriodStart == nil || update.LastPeriodStart.Format("2006-01-02") != "2026-02-10" {
 		t.Fatalf("expected normalized last_period_start 2026-02-10, got %#v", update.LastPeriodStart)
 	}
+	if update.LastPeriodStart.Location() != time.UTC {
+		t.Fatalf("expected canonical UTC location, got %s", update.LastPeriodStart.Location())
+	}
+	if update.LastPeriodStart.Hour() != 0 || update.LastPeriodStart.Minute() != 0 {
+		t.Fatalf("expected UTC-midnight, got %s", update.LastPeriodStart.Format(time.RFC3339Nano))
+	}
 
 	cleared, err := service.ValidateCycleSettings(CycleSettingsValidationInput{
 		CycleLength:        28,
@@ -102,6 +108,80 @@ func TestValidateCycleSettingsBuildsUpdate(t *testing.T) {
 	}
 	if cleared.LastPeriodStart != nil {
 		t.Fatalf("expected nil last_period_start, got %#v", cleared.LastPeriodStart)
+	}
+}
+
+func TestValidateCycleSettingsCanonicalizesLastPeriodStartAcrossLocations(t *testing.T) {
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatalf("load Asia/Tokyo: %v", err)
+	}
+	toronto, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatalf("load America/Toronto: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		location *time.Location
+	}{
+		{name: "UTC+9 Tokyo", location: tokyo},
+		{name: "UTC-5 Toronto", location: toronto},
+	}
+
+	service := NewSettingsService(nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Date(2026, time.February, 15, 12, 0, 0, 0, tt.location)
+
+			update, err := service.ValidateCycleSettings(CycleSettingsValidationInput{
+				CycleLength:        28,
+				PeriodLength:       6,
+				LastPeriodStartSet: true,
+				LastPeriodStartRaw: "2026-02-10",
+			}, now, tt.location)
+			if err != nil {
+				t.Fatalf("expected valid date, got %v", err)
+			}
+			if update.LastPeriodStart == nil {
+				t.Fatal("expected non-nil last_period_start")
+			}
+			if update.LastPeriodStart.Location() != time.UTC {
+				t.Fatalf("expected canonical UTC location regardless of input location, got %s", update.LastPeriodStart.Location())
+			}
+			if update.LastPeriodStart.Format("2006-01-02") != "2026-02-10" {
+				t.Fatalf("expected calendar day 2026-02-10 preserved, got %s", update.LastPeriodStart.Format("2006-01-02"))
+			}
+			if update.LastPeriodStart.Hour() != 0 || update.LastPeriodStart.Minute() != 0 {
+				t.Fatalf("expected UTC-midnight, got %s", update.LastPeriodStart.Format(time.RFC3339Nano))
+			}
+		})
+	}
+}
+
+func TestValidateCycleSettingsAcceptsLocalTodayInPositiveOffset(t *testing.T) {
+	tokyo, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatalf("load Asia/Tokyo: %v", err)
+	}
+
+	service := NewSettingsService(nil)
+	now := time.Date(2026, time.February, 15, 12, 0, 0, 0, tokyo)
+
+	update, err := service.ValidateCycleSettings(CycleSettingsValidationInput{
+		CycleLength:        28,
+		PeriodLength:       6,
+		LastPeriodStartSet: true,
+		LastPeriodStartRaw: "2026-02-15",
+	}, now, tokyo)
+	if err != nil {
+		t.Fatalf("expected today (UTC+9) to pass bounds check, got %v", err)
+	}
+	if update.LastPeriodStart == nil || update.LastPeriodStart.Format("2006-01-02") != "2026-02-15" {
+		t.Fatalf("expected today canonicalized to 2026-02-15 UTC, got %#v", update.LastPeriodStart)
+	}
+	if update.LastPeriodStart.Location() != time.UTC {
+		t.Fatalf("expected UTC location, got %s", update.LastPeriodStart.Location())
 	}
 }
 

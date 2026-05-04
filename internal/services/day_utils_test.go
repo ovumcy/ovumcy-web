@@ -54,20 +54,62 @@ func TestDayHasData(t *testing.T) {
 	}
 }
 
-func TestDayRangeNormalizesToLocationMidnight(t *testing.T) {
-	location, err := time.LoadLocation("Europe/Moscow")
+func TestDayRangeReturnsUTCBoundsForLocalCalendarDay(t *testing.T) {
+	moscow, err := time.LoadLocation("Europe/Moscow")
 	if err != nil {
-		t.Fatalf("load location: %v", err)
+		t.Fatalf("load Europe/Moscow: %v", err)
+	}
+	toronto, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatalf("load America/Toronto: %v", err)
 	}
 
-	raw := time.Date(2026, 2, 1, 19, 35, 10, 0, time.UTC)
-	start, end := DayRange(raw, location)
-
-	if start.Hour() != 0 || start.Minute() != 0 || start.Second() != 0 {
-		t.Fatalf("expected midnight start, got %s", start.Format(time.RFC3339))
+	tests := []struct {
+		name        string
+		input       time.Time
+		location    *time.Location
+		wantDateKey string
+	}{
+		{
+			name:        "Moscow UTC+3 instant in local 2026-02-01",
+			input:       time.Date(2026, time.February, 1, 19, 35, 10, 0, time.UTC),
+			location:    moscow,
+			wantDateKey: "2026-02-01",
+		},
+		{
+			name:        "Toronto UTC-5 instant past UTC midnight is local 2026-02-09",
+			input:       time.Date(2026, time.February, 10, 2, 0, 0, 0, time.UTC),
+			location:    toronto,
+			wantDateKey: "2026-02-09",
+		},
+		{
+			name:        "Toronto UTC-5 morning instant is local 2026-02-10",
+			input:       time.Date(2026, time.February, 10, 14, 0, 0, 0, time.UTC),
+			location:    toronto,
+			wantDateKey: "2026-02-10",
+		},
 	}
-	if !end.Equal(start.AddDate(0, 0, 1)) {
-		t.Fatalf("expected next day end, got %s", end.Format(time.RFC3339))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start, end := DayRange(tt.input, tt.location)
+
+			if start.Location() != time.UTC {
+				t.Fatalf("expected UTC start, got %s", start.Location())
+			}
+			if end.Location() != time.UTC {
+				t.Fatalf("expected UTC end, got %s", end.Location())
+			}
+			if start.Hour() != 0 || start.Minute() != 0 || start.Second() != 0 || start.Nanosecond() != 0 {
+				t.Fatalf("expected UTC-midnight start, got %s", start.Format(time.RFC3339Nano))
+			}
+			if got := start.Format("2006-01-02"); got != tt.wantDateKey {
+				t.Fatalf("expected local calendar day %s rebuilt at UTC, got %s", tt.wantDateKey, got)
+			}
+			if got := end.Sub(start); got != 24*time.Hour {
+				t.Fatalf("expected 24h range, got %s", got)
+			}
+		})
 	}
 }
 

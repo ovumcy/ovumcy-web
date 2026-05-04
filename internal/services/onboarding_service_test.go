@@ -91,4 +91,13 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	if startDay.Hour() != 0 || startDay.Minute() != 0 {
 		t.Fatalf("expected normalized start day, got %s", startDay.Format(time.RFC3339))
 	}
+	if startDay.Location() != time.UTC {
+		t.Fatalf("expected start day at UTC so user_repository.CompleteOnboarding iterates UTC-midnight bounds, got %s", startDay.Location())
+	}
+	if !repo.completeStartDay.Equal(startDay) {
+		t.Fatalf("expected repo to receive same canonical start day, got repo=%s service=%s", repo.completeStartDay.Format(time.RFC3339), startDay.Format(time.RFC3339))
+	}
+	if repo.completeStartDay.Format("2006-01-02") != "2026-02-10" {
+		t.Fatalf("expected calendar day 2026-02-10 preserved, got %s", repo.completeStartDay.Format("2006-01-02"))
+	}
 }
