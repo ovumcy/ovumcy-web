@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -242,5 +243,174 @@ func TestTOTPService_EnableTOTP_RepoError(t *testing.T) {
 	err := svc.EnableTOTP(1, "JBSWY3DPEHPK3PXP")
 	if err == nil {
 		t.Fatal("EnableTOTP() should propagate repo error")
+	}
+}
+
+// --- rate-limit: verification (CheckRateLimit / RecordFailure / ResetAttempts) ---
+
+func TestTOTPService_CheckRateLimit_BelowLimit_ReturnsNil(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPAttemptsLimit-1; i++ {
+		svc.RecordFailure(secretKey, "1.2.3.4", 1, now)
+	}
+
+	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
+		t.Errorf("CheckRateLimit() after %d failures = %v, want nil", DefaultTOTPAttemptsLimit-1, err)
+	}
+}
+
+func TestTOTPService_CheckRateLimit_AtLimit_ReturnsErrTOTPRateLimited(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+		svc.RecordFailure(secretKey, "1.2.3.4", 1, now)
+	}
+
+	err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now)
+	if !errors.Is(err, ErrTOTPRateLimited) {
+		t.Errorf("CheckRateLimit() after %d failures = %v, want ErrTOTPRateLimited", DefaultTOTPAttemptsLimit, err)
+	}
+}
+
+func TestTOTPService_ResetAttempts_ClearsLimit(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+		svc.RecordFailure(secretKey, "1.2.3.4", 1, now)
+	}
+	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPRateLimited) {
+		t.Fatalf("precondition: limiter not tripped after %d failures, err=%v", DefaultTOTPAttemptsLimit, err)
+	}
+
+	svc.ResetAttempts(secretKey, "1.2.3.4", 1)
+
+	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
+		t.Errorf("CheckRateLimit() after ResetAttempts = %v, want nil", err)
+	}
+}
+
+// TestTOTPService_CheckRateLimit_IdentityIsolation verifies that failures
+// recorded for one user do not trip the limiter for another user from a
+// different client. Both the client bucket and the HMAC'd identity bucket
+// must be independent.
+func TestTOTPService_CheckRateLimit_IdentityIsolation(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+		svc.RecordFailure(secretKey, "client-A", 1, now)
+	}
+
+	if err := svc.CheckRateLimit(secretKey, "client-A", 1, now); !errors.Is(err, ErrTOTPRateLimited) {
+		t.Fatalf("user 1 from client-A should be limited, got %v", err)
+	}
+	if err := svc.CheckRateLimit(secretKey, "client-B", 2, now); err != nil {
+		t.Errorf("user 2 from client-B should not be limited (HMAC'd identity bucket independent), got %v", err)
+	}
+}
+
+// TestTOTPService_CheckRateLimit_ClientIPIsolation verifies that failures
+// recorded from one client IP do not trip the limiter for another client IP
+// when the user identity also differs.
+func TestTOTPService_CheckRateLimit_ClientIPIsolation(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+		svc.RecordFailure(secretKey, "1.1.1.1", 100, now)
+	}
+
+	if err := svc.CheckRateLimit(secretKey, "1.1.1.1", 100, now); !errors.Is(err, ErrTOTPRateLimited) {
+		t.Fatalf("client 1.1.1.1 should be limited, got %v", err)
+	}
+	if err := svc.CheckRateLimit(secretKey, "2.2.2.2", 200, now); err != nil {
+		t.Errorf("client 2.2.2.2 should not be limited, got %v", err)
+	}
+}
+
+// --- rate-limit: disable (CheckDisableRateLimit / RecordDisableFailure / ResetDisableAttempts) ---
+
+func TestTOTPService_CheckDisableRateLimit_BelowLimit_ReturnsNil(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPDisableAttemptsLimit-1; i++ {
+		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+	}
+
+	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
+		t.Errorf("CheckDisableRateLimit() after %d failures = %v, want nil", DefaultTOTPDisableAttemptsLimit-1, err)
+	}
+}
+
+func TestTOTPService_CheckDisableRateLimit_AtLimit_ReturnsErrTOTPDisableRateLimited(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+	}
+
+	err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now)
+	if !errors.Is(err, ErrTOTPDisableRateLimited) {
+		t.Errorf("CheckDisableRateLimit() after %d failures = %v, want ErrTOTPDisableRateLimited", DefaultTOTPDisableAttemptsLimit, err)
+	}
+}
+
+func TestTOTPService_ResetDisableAttempts_ClearsLimit(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+	}
+	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
+		t.Fatalf("precondition: disable limiter not tripped after %d failures, err=%v", DefaultTOTPDisableAttemptsLimit, err)
+	}
+
+	svc.ResetDisableAttempts(secretKey, "1.2.3.4", 1)
+
+	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
+		t.Errorf("CheckDisableRateLimit() after ResetDisableAttempts = %v, want nil", err)
+	}
+}
+
+// TestTOTPService_DisableAndVerifyLimitsAreIndependent verifies that the
+// "totp" and "totp.disable" scopes use separate buckets — exhausting the
+// disable limit must not trip the verification limit and vice versa.
+func TestTOTPService_DisableAndVerifyLimitsAreIndependent(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+	now := time.Now()
+
+	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
+	}
+	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
+		t.Fatalf("precondition: disable limiter not tripped, err=%v", err)
+	}
+	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); err != nil {
+		t.Errorf("verify limiter must be independent of disable limiter, got %v", err)
 	}
 }
