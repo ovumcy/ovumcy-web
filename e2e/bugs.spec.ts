@@ -297,7 +297,18 @@ test.describe('Bug regressions', () => {
       await continueFromRecoveryCode(page);
       await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
 
-      const onboardingDate = shiftISODate(await browserLocalISODate(page), -3);
+      // Pin onboardingDate to the 5th of a stable month so the +0..+4 window walked
+      // below stays inside one calendar month — otherwise the loop crosses a month
+      // boundary on early-month days and the rendered ?month=YYYY-MM grid has no
+      // buttons for the spillover days. Falls back to the 5th of the prior month
+      // when today's day-of-month is < 5 so the date stays in the past (onboarding
+      // step1 rejects future dates).
+      const todayISO = await browserLocalISODate(page);
+      const [todayYear, todayMonth, todayDay] = todayISO.split('-').map((part) => Number(part));
+      const monthAnchor =
+        todayDay >= 5 ? new Date(todayYear, todayMonth - 1, 5) : new Date(todayYear, todayMonth - 2, 5);
+      const onboardingDate = `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, '0')}-05`;
+
       await fillDateField(page.locator('#last-period-start'), onboardingDate);
       await page.locator('form[hx-post="/onboarding/step1"] button[type="submit"]').click();
       await expect(page.locator('form[hx-post="/onboarding/step2"]')).toBeVisible();
