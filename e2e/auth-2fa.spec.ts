@@ -49,7 +49,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
 
     const code = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(code);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
 
     // After successful enrollment the management view shows the disable button.
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
@@ -78,7 +78,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const secret = await readTOTPSecret(page);
     const code = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(code);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
@@ -90,7 +90,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.goto('/login');
     await page.locator('input[name="email"]').fill(creds.email);
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
 
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
@@ -115,7 +115,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const secret = await readTOTPSecret(page);
     const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
@@ -127,13 +127,13 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.goto('/login');
     await page.locator('input[name="email"]').fill(creds.email);
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
     // Provide valid code on the challenge page
     const challengeCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(challengeCode);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/auth/2fa"] button[type="submit"]').click();
 
     // Should be on the dashboard
     await expect(page).toHaveURL('/', { timeout: 5_000 });
@@ -155,7 +155,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const secret = await readTOTPSecret(page);
     const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
@@ -167,12 +167,12 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.goto('/login');
     await page.locator('input[name="email"]').fill(creds.email);
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
     // Submit wrong code
     await page.locator('input[name="code"]').fill('000000');
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/auth/2fa"] button[type="submit"]').click();
 
     // Should stay on challenge page
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
@@ -194,7 +194,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const secret = await readTOTPSecret(page);
     const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
-    await page.locator('button[type="submit"]').click();
+    await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
