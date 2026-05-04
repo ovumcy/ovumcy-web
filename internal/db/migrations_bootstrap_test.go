@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -41,6 +42,119 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 
 	assertMigratedLegacyUserDefaults(t, database)
 	assertMigratedLegacyDailyLogDefaults(t, database)
+	assertMigratedLegacyDailyLogDateCanonicalized(t, database)
+}
+
+// TestMigration019CanonicalizesNonUTCDateFields locks the on-disk
+// rewrite contract of migration 019: legacy rows whose stored date or
+// last_period_start carries a non-UTC offset (because they were written
+// before the DailyLog BeforeSave hook landed) must be rewritten to
+// canonical UTC-midnight TEXT form. The migration is idempotent — a row
+// already in canonical form is left at the same value.
+func TestMigration019CanonicalizesNonUTCDateFields(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "ovumcy-019.db")
+	database := openSQLiteForMigrationBootstrapTest(t, databasePath)
+
+	if err := database.Exec(
+		`INSERT INTO users (email, password_hash, role, last_period_start, created_at)
+		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		"non-canonical@example.com",
+		"test-hash",
+		"owner",
+		"2026-02-15 00:00:00-05:00",
+	).Error; err != nil {
+		t.Fatalf("insert non-canonical user: %v", err)
+	}
+
+	var nonCanonicalUser struct {
+		ID uint `gorm:"column:id"`
+	}
+	if err := database.Raw(
+		`SELECT id FROM users WHERE email = ?`, "non-canonical@example.com",
+	).Scan(&nonCanonicalUser).Error; err != nil {
+		t.Fatalf("load non-canonical user id: %v", err)
+	}
+
+	if err := database.Exec(
+		`INSERT INTO daily_logs (user_id, date, is_period, flow, symptom_ids, notes, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		nonCanonicalUser.ID,
+		"2026-02-20 00:00:00+09:00",
+		true,
+		"medium",
+		"[]",
+		"non-canonical-log",
+	).Error; err != nil {
+		t.Fatalf("insert non-canonical daily log: %v", err)
+	}
+
+	if err := database.Exec(
+		`INSERT INTO daily_logs (user_id, date, is_period, flow, symptom_ids, notes, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		nonCanonicalUser.ID,
+		"2026-02-21 00:00:00+00:00",
+		false,
+		"none",
+		"[]",
+		"already-canonical-log",
+	).Error; err != nil {
+		t.Fatalf("insert already-canonical daily log: %v", err)
+	}
+
+	if err := database.Exec(
+		`DELETE FROM schema_migrations WHERE version = ?`, "019",
+	).Error; err != nil {
+		t.Fatalf("delete migration 019 record: %v", err)
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("get sql db handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	reopened := openSQLiteForMigrationBootstrapTest(t, databasePath)
+
+	assertStoredDateEqualsUTCMidnight(t, reopened,
+		`SELECT last_period_start FROM users WHERE email = ?`,
+		"non-canonical@example.com",
+		time.Date(2026, time.February, 15, 0, 0, 0, 0, time.UTC),
+	)
+
+	assertStoredDateEqualsUTCMidnight(t, reopened,
+		`SELECT date FROM daily_logs WHERE notes = ?`,
+		"non-canonical-log",
+		time.Date(2026, time.February, 20, 0, 0, 0, 0, time.UTC),
+	)
+
+	assertStoredDateEqualsUTCMidnight(t, reopened,
+		`SELECT date FROM daily_logs WHERE notes = ?`,
+		"already-canonical-log",
+		time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC),
+	)
+}
+
+// assertStoredDateEqualsUTCMidnight reads the column the query selects
+// and asserts the value, parsed by the glebarez driver into time.Time,
+// equals the expected UTC-midnight instant. This is format-agnostic
+// (the driver reformats DATE columns on read, so byte-equal comparisons
+// are unreliable) but instant-strict — a non-UTC offset row resolves to
+// a different instant than the canonical UTC-midnight target.
+func assertStoredDateEqualsUTCMidnight(t *testing.T, database *gorm.DB, query string, arg any, expected time.Time) {
+	t.Helper()
+
+	var stored time.Time
+	if err := database.Raw(query, arg).Row().Scan(&stored); err != nil {
+		t.Fatalf("scan stored date for %v: %v", arg, err)
+	}
+	if !stored.Equal(expected) {
+		t.Fatalf("expected stored date %s for %v, got %s", expected.Format(time.RFC3339), arg, stored.Format(time.RFC3339))
+	}
+	if stored.Hour() != 0 || stored.Minute() != 0 || stored.Second() != 0 {
+		t.Fatalf("expected midnight time-of-day for %v, got %s", arg, stored.Format(time.RFC3339Nano))
+	}
 }
 
 func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
@@ -180,6 +294,13 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 	if migratedLog.SymptomIDs == nil || strings.TrimSpace(*migratedLog.SymptomIDs) != "[1,2]" {
 		t.Fatalf("expected migrated symptom_ids to remain [1,2], got %v", migratedLog.SymptomIDs)
 	}
+}
+
+func assertMigratedLegacyDailyLogDateCanonicalized(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
+	expected := time.Date(2026, time.January, 10, 0, 0, 0, 0, time.UTC)
+	assertStoredDateEqualsUTCMidnight(t, database, `SELECT date FROM daily_logs WHERE notes = ?`, "legacy-log", expected)
 }
 
 func assertOIDCLogoutStateSchemaReconciled(t *testing.T, database *gorm.DB) {
