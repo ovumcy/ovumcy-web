@@ -46,6 +46,9 @@ func (handler *Handler) respondAuthError(c *fiber.Ctx, status int, message strin
 		case "/api/auth/reset-password":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/reset-password", fiber.StatusSeeOther)
+		case "/api/auth/2fa":
+			handler.setFlashCookie(c, flash)
+			return c.Redirect("/auth/2fa", fiber.StatusSeeOther)
 		default:
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/login", fiber.StatusSeeOther)

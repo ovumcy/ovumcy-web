@@ -122,6 +122,7 @@ The privacy-safe hero demo asset pack, including the mobile install prompt captu
 - Mobile home-screen install support on the current `main` branch.
 - CSV and JSON export for backup, portability, and personal review.
 - Optional OIDC sign-in in hybrid or SSO-only mode, with guarded owner auto-provision and provider logout support.
+- Optional TOTP two-factor authentication for owner sign-in, compatible with any RFC 6238 authenticator app (Google Authenticator, 1Password, Aegis, etc.).
 - English, Russian, Spanish, French, and German localization.
 - Self-hosted deployment with Docker or a single Go binary.
 
@@ -145,6 +146,7 @@ These are the currently supported first-party UI languages. Operators can set `D
 - Data stays on infrastructure you control.
 - Automated security checks cover CodeQL, gosec, Trivy filesystem/container scans, and CycloneDX SBOM generation in GitHub Actions.
 - SQLite is the baseline default; Postgres is available for advanced self-hosted deployments through official example stacks.
+- Optional TOTP 2FA: secrets are AES-256-GCM encrypted at rest, the login challenge and disable-confirmation endpoints are rate-limited, and replayed codes are rejected within the verifier window.
 
 If you found a security issue, see [SECURITY.md](SECURITY.md).
 

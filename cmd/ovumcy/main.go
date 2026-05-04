@@ -91,7 +91,7 @@ func main() {
 	config := mustLoadRuntimeConfig(location)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
-	dependencies := buildDependencies(db.NewRepositories(database), i18nManager, config.RateLimits, config.RegistrationMode, config.OIDC)
+	dependencies := buildDependencies(db.NewRepositories(database), i18nManager, config.RateLimits, config.RegistrationMode, config.OIDC, config.SecretKey)
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	stopSignals := installGracefulShutdown(app)
@@ -227,7 +227,7 @@ func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
 	return i18nManager
 }
 
-func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager, rateLimits rateLimitSettings, registrationMode services.RegistrationMode, oidcConfig security.OIDCConfig) api.Dependencies {
+func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager, rateLimits rateLimitSettings, registrationMode services.RegistrationMode, oidcConfig security.OIDCConfig, secretKey string) api.Dependencies {
 	authService := services.NewAuthService(repositories.Users)
 	attemptLimiter := services.NewAttemptLimiter()
 	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
@@ -243,6 +243,7 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
 	exportService := services.NewExportService(dayService, symptomService)
 	settingsService := services.NewSettingsService(repositories.Users)
+	totpService := services.NewTOTPService(repositories.Users, []byte(secretKey), attemptLimiter)
 	notificationService := services.NewNotificationService()
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 	oidcLoginService := services.NewOIDCLoginService(
@@ -270,6 +271,7 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 		SettingsViewService:  services.NewSettingsViewService(settingsService, notificationService, exportService, symptomService),
 		OnboardingService:    services.NewOnboardingService(repositories.Users),
 		SetupService:         services.NewSetupService(repositories.Users),
+		TOTPService:          totpService,
 	}
 }
 

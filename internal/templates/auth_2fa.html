@@ -1,0 +1,51 @@
+{{define "content"}}
+<section class="mx-auto flex min-h-[72vh] max-w-3xl items-center justify-center">
+  <div class="journal-card journal-hero w-full p-7 sm:p-10" data-auth-panel>
+    <p class="journal-kicker">{{t .Messages "app.name"}}</p>
+
+    <div>
+      <h1 class="journal-title">{{t .Messages "auth.2fa.title"}}</h1>
+      <p class="journal-muted mt-2">{{t .Messages "auth.2fa.description"}}</p>
+    </div>
+
+    {{if .ErrorKey}}
+    <div class="status-error mt-5" data-auth-server-error>{{t .Messages .ErrorKey}}</div>
+    {{end}}
+
+    <form
+      id="totp-challenge-form"
+      action="/api/auth/2fa"
+      method="post"
+      novalidate
+      class="mt-5 space-y-4"
+      data-required-message="{{t .Messages "validation.required"}}">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="space-y-2">
+        <label class="field-label" for="totp-code">{{t .Messages "auth.2fa.code_label"}}</label>
+        <input
+          id="totp-code"
+          type="text"
+          name="code"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          autocomplete="one-time-code"
+          required
+          autofocus
+          class="input-field tracking-widest text-center text-xl"
+          placeholder="{{t .Messages "auth.2fa.code_placeholder"}}" />
+      </div>
+
+      <div id="totp-client-status" class="save-status text-sm" aria-live="polite"></div>
+      <button type="submit" class="btn-primary w-full">{{t .Messages "auth.2fa.submit_button"}}</button>
+    </form>
+
+    <div class="mt-5 text-sm">
+      <p class="journal-muted">
+        <a href="/recovery-code" class="inline-link">{{t .Messages "auth.2fa.lost_access"}}</a>
+      </p>
+    </div>
+  </div>
+</section>
+{{end}}

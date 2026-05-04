@@ -1,0 +1,113 @@
+{{define "content"}}
+<section class="mx-auto max-w-3xl space-y-6 px-4 py-8">
+  <div>
+    <h1 class="journal-title">{{t .Messages "settings.2fa.title"}}</h1>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.description"}}</p>
+  </div>
+
+  {{if .TOTPEnabled}}
+
+  <div class="journal-card p-5 sm:p-6 space-y-4">
+    <div>
+      <h2 class="journal-subtitle">{{t .Messages "settings.2fa.status_enabled_label"}}</h2>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.status_enabled_hint"}}</p>
+    </div>
+
+    <form
+      action="/api/settings/2fa/disable"
+      method="post"
+      hx-post="/api/settings/2fa/disable"
+      hx-target="#settings-2fa-status"
+      hx-swap="innerHTML"
+      class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="space-y-2">
+        <label class="field-label" for="settings-2fa-disable-password">
+          {{t .Messages "settings.2fa.disable_confirm_password"}}
+        </label>
+        <input
+          id="settings-2fa-disable-password"
+          type="password"
+          name="password"
+          autocomplete="current-password"
+          required
+          class="input-field" />
+      </div>
+
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-danger">
+          {{t .Messages "settings.2fa.disable_button"}}
+        </button>
+        <div id="settings-2fa-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
+    </form>
+  </div>
+
+  {{else}}
+
+  <div class="journal-card p-5 sm:p-6 space-y-6">
+    <div>
+      <h2 class="journal-subtitle">{{t .Messages "settings.2fa.setup_title"}}</h2>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.setup_instructions"}}</p>
+    </div>
+
+    {{if .QRDataURL}}
+    <div class="flex flex-col items-start gap-4 sm:flex-row">
+      <img
+        src="{{.QRDataURL}}"
+        alt="{{t .Messages "settings.2fa.qr_alt"}}"
+        width="200"
+        height="200"
+        class="rounded border border-gray-200 dark:border-gray-700" />
+
+      <div class="space-y-2">
+        <p class="field-label">{{t .Messages "settings.2fa.secret_label"}}</p>
+        <p data-totp-manual-secret class="font-mono text-sm break-all journal-muted">{{.TOTPSecret}}</p>
+        <p class="journal-muted text-xs">{{t .Messages "settings.2fa.secret_hint"}}</p>
+      </div>
+    </div>
+
+    <form
+      action="/api/settings/2fa/verify"
+      method="post"
+      hx-post="/api/settings/2fa/verify"
+      hx-target="#settings-2fa-verify-status"
+      hx-swap="innerHTML"
+      class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="space-y-2">
+        <label class="field-label" for="settings-2fa-code">
+          {{t .Messages "settings.2fa.code_placeholder"}}
+        </label>
+        <input
+          id="settings-2fa-code"
+          type="text"
+          name="code"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          autocomplete="one-time-code"
+          required
+          class="input-field tracking-widest text-center text-xl w-40"
+          placeholder="000000" />
+      </div>
+
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-primary">
+          {{t .Messages "settings.2fa.verify_button"}}
+        </button>
+        <div id="settings-2fa-verify-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
+    </form>
+    {{end}}
+  </div>
+
+  {{end}}
+
+  <div class="mt-2">
+    <a href="/settings" class="inline-link text-sm">← {{t .Messages "common.back_to_settings"}}</a>
+  </div>
+</section>
+{{end}}
