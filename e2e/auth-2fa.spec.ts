@@ -50,6 +50,10 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const code = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(code);
     await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
+    // Form submit is HTMX-intercepted; wait for the inline success status, then
+    // reload to render the management view (DB now has TOTPEnabled=true).
+    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    await page.goto('/settings/2fa');
 
     // After successful enrollment the management view shows the disable button.
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
@@ -79,6 +83,9 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const code = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(code);
     await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
+    // Form submit is HTMX-intercepted; wait for inline success then reload.
+    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    await page.goto('/settings/2fa');
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
@@ -116,6 +123,10 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
+    // Form submit is HTMX-intercepted; wait for the inline success status, then
+    // reload to render the management view (DB now has TOTPEnabled=true).
+    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    await page.goto('/settings/2fa');
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
@@ -156,6 +167,10 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
+    // Form submit is HTMX-intercepted; wait for the inline success status, then
+    // reload to render the management view (DB now has TOTPEnabled=true).
+    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    await page.goto('/settings/2fa');
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
@@ -195,6 +210,10 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     const enrollCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(enrollCode);
     await page.locator('form[action="/api/settings/2fa/verify"] button[type="submit"]').click();
+    // Form submit is HTMX-intercepted; wait for the inline success status, then
+    // reload to render the management view (DB now has TOTPEnabled=true).
+    await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    await page.goto('/settings/2fa');
     await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
       timeout: 5_000,
     });
@@ -202,6 +221,10 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Disable
     await page.locator('input[name="password"]').fill(creds.password);
     await page.locator('button[type="submit"]', { hasText: /disable/i }).click();
+    // HTMX-intercepted; wait for inline success status, then reload to render
+    // the setup view (DB now has TOTPEnabled=false).
+    await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });
+    await page.goto('/settings/2fa');
 
     // After disabling, the QR setup view should reappear.
     await expect(page.locator('img[src^="data:image/png;base64,"]')).toBeVisible({
