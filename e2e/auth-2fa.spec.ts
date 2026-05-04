@@ -6,6 +6,7 @@ import {
   cookieByName,
   createCredentials,
   loginViaUI,
+  logoutViaAPI,
   registerOwnerViaUI,
 } from './support/auth-helpers';
 
@@ -90,8 +91,8 @@ test.describe('Auth: TOTP two-factor authentication', () => {
       timeout: 5_000,
     });
 
-    // Log out
-    await page.goto('/api/auth/logout', { waitUntil: 'networkidle' });
+    // Log out (must be POST+CSRF; GET to /api/auth/logout is rejected).
+    await logoutViaAPI(page);
 
     // Log back in — should hit challenge page
     await page.goto('/login');
@@ -131,8 +132,8 @@ test.describe('Auth: TOTP two-factor authentication', () => {
       timeout: 5_000,
     });
 
-    // Log out
-    await page.goto('/api/auth/logout', { waitUntil: 'networkidle' });
+    // Log out (must be POST+CSRF; GET to /api/auth/logout is rejected).
+    await logoutViaAPI(page);
 
     // Log back in
     await page.goto('/login');
@@ -175,8 +176,8 @@ test.describe('Auth: TOTP two-factor authentication', () => {
       timeout: 5_000,
     });
 
-    // Log out
-    await page.goto('/api/auth/logout', { waitUntil: 'networkidle' });
+    // Log out (must be POST+CSRF; GET to /api/auth/logout is rejected).
+    await logoutViaAPI(page);
 
     // Log back in
     await page.goto('/login');
@@ -232,7 +233,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     });
 
     // Log out and back in — should land directly on dashboard (no challenge)
-    await page.goto('/api/auth/logout', { waitUntil: 'networkidle' });
+    await logoutViaAPI(page);
     await loginViaUI(page, creds);
     await expect(page).not.toHaveURL('/auth/2fa');
 
