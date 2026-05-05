@@ -63,12 +63,13 @@ type interfaceSettingsInput struct {
 }
 
 type trackingSettingsInput struct {
-	TrackBBT           bool   `json:"track_bbt" form:"track_bbt"`
-	TemperatureUnit    string `json:"temperature_unit" form:"temperature_unit"`
-	TrackCervicalMucus bool   `json:"track_cervical_mucus" form:"track_cervical_mucus"`
-	HideSexChip        bool   `json:"hide_sex_chip" form:"hide_sex_chip"`
-	HideCycleFactors   bool   `json:"hide_cycle_factors" form:"hide_cycle_factors"`
-	HideNotesField     bool   `json:"hide_notes_field" form:"hide_notes_field"`
+	TrackBBT             bool   `json:"track_bbt" form:"track_bbt"`
+	TemperatureUnit      string `json:"temperature_unit" form:"temperature_unit"`
+	TrackCervicalMucus   bool   `json:"track_cervical_mucus" form:"track_cervical_mucus"`
+	HideSexChip          bool   `json:"hide_sex_chip" form:"hide_sex_chip"`
+	HideCycleFactors     bool   `json:"hide_cycle_factors" form:"hide_cycle_factors"`
+	HideNotesField       bool   `json:"hide_notes_field" form:"hide_notes_field"`
+	ShowHistoricalPhases bool   `json:"show_historical_phases" form:"show_historical_phases"`
 }
 
 type passwordProtectedSettingsInput struct {

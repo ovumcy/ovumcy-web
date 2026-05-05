@@ -73,6 +73,7 @@ type SettingsPageViewData struct {
 	HideSexChip             bool
 	HideCycleFactors        bool
 	HideNotesField          bool
+	ShowHistoricalPhases    bool
 	LastPeriodStart         string
 	TodayISO                string
 	CycleStartMinISO        string
@@ -167,6 +168,7 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.HideSexChip = persisted.HideSexChip
 	resolvedUser.HideCycleFactors = persisted.HideCycleFactors
 	resolvedUser.HideNotesField = persisted.HideNotesField
+	resolvedUser.ShowHistoricalPhases = persisted.ShowHistoricalPhases
 	resolvedUser.LastPeriodStart = persisted.LastPeriodStart
 
 	lastPeriodStart := ""
@@ -202,6 +204,7 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 		HideSexChip:            user.HideSexChip,
 		HideCycleFactors:       user.HideCycleFactors,
 		HideNotesField:         user.HideNotesField,
+		ShowHistoricalPhases:   user.ShowHistoricalPhases,
 		LastPeriodStart:        lastPeriodStart,
 		TodayISO:               today.Format("2006-01-02"),
 		CycleStartMinISO:       minCycleStart.Format("2006-01-02"),

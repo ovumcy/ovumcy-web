@@ -37,6 +37,7 @@ type User struct {
 	HideSexChip         bool       `gorm:"column:hide_sex_chip;not null;default:false"`
 	HideCycleFactors    bool       `gorm:"column:hide_cycle_factors;not null;default:false"`
 	HideNotesField      bool       `gorm:"column:hide_notes_field;not null;default:false"`
+	ShowHistoricalPhases bool      `gorm:"column:show_historical_phases;not null;default:false"`
 	ShownPeriodTip      bool       `gorm:"column:shown_period_tip;not null;default:false"`
 	AgeGroup            string     `gorm:"column:age_group;not null;default:''"`
 	UsageGoal           string     `gorm:"column:usage_goal;not null;default:health"`

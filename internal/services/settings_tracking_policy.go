@@ -3,12 +3,13 @@ package services
 import "github.com/ovumcy/ovumcy-web/internal/models"
 
 type TrackingSettingsUpdate struct {
-	TrackBBT           bool
-	TemperatureUnit    string
-	TrackCervicalMucus bool
-	HideSexChip        bool
-	HideCycleFactors   bool
-	HideNotesField     bool
+	TrackBBT             bool
+	TemperatureUnit      string
+	TrackCervicalMucus   bool
+	HideSexChip          bool
+	HideCycleFactors     bool
+	HideNotesField       bool
+	ShowHistoricalPhases bool
 }
 
 func (service *SettingsService) ApplyTrackingSettings(user *models.User, update TrackingSettingsUpdate) {
@@ -21,6 +22,7 @@ func (service *SettingsService) ApplyTrackingSettings(user *models.User, update 
 	user.HideSexChip = update.HideSexChip
 	user.HideCycleFactors = update.HideCycleFactors
 	user.HideNotesField = update.HideNotesField
+	user.ShowHistoricalPhases = update.ShowHistoricalPhases
 }
 
 func (service *SettingsService) ResolveTrackingUpdateStatus() string {
