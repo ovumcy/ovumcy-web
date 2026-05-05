@@ -2,7 +2,6 @@ package services
 
 import (
 	"math"
-	"sort"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -189,7 +188,6 @@ func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[
 	if len(starts) < 2 {
 		return
 	}
-	sort.Slice(starts, func(i, j int) bool { return starts[i].Before(starts[j]) })
 
 	luteal := ResolveLutealPhase(stats.LutealPhase)
 	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
