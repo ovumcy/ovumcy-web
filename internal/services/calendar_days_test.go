@@ -271,3 +271,76 @@ func TestBuildCalendarDayStatesKeepsConfirmedOvulationWhenBBTHasShift(t *testing
 		t.Fatalf("expected tentative ovulation marker to stay off when BBT shift exists")
 	}
 }
+
+func TestBuildCalendarDayStatesPaintsHistoricalFertileWindowsWhenEnabled(t *testing.T) {
+	// Two consecutive cycle starts 28 days apart with luteal phase 14 imply
+	// ovulation on cycle day 14 (= cycle_start + 13 days). For a cycle starting
+	// 2026-01-04 the historical ovulation falls on 2026-01-17, with a fertile
+	// window of [2026-01-12, 2026-01-17] and a pre-fertile gap of
+	// [2026-01-09, 2026-01-11] (period of 5 days ending 2026-01-08).
+	monthStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.February, 15, 0, 0, 0, 0, time.UTC)
+
+	logs := []models.DailyLog{
+		{Date: time.Date(2026, time.January, 4, 0, 0, 0, 0, time.UTC), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+	}
+	stats := CycleStats{
+		AverageCycleLength:  28,
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		LutealPhase:         14,
+		LastPeriodStart:     time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC),
+	}
+	user := &models.User{ShowHistoricalPhases: true}
+
+	days := BuildCalendarDayStates(user, monthStart, logs, stats, now, time.UTC)
+
+	ovulation := findCalendarDayStateByDateString(t, days, "2026-01-17")
+	if !ovulation.IsOvulation {
+		t.Fatalf("expected historical ovulation marker on 2026-01-17, got %#v", ovulation)
+	}
+
+	for _, dateString := range []string{"2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-17"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if !day.IsFertility && !day.IsOvulation {
+			t.Fatalf("expected historical fertility marker on %s, got %#v", dateString, day)
+		}
+	}
+
+	for _, dateString := range []string{"2026-01-09", "2026-01-10", "2026-01-11"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if !day.IsPreFertile {
+			t.Fatalf("expected historical pre-fertile gap on %s, got %#v", dateString, day)
+		}
+	}
+}
+
+func TestBuildCalendarDayStatesHidesHistoricalFertileWindowsByDefault(t *testing.T) {
+	monthStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.February, 15, 0, 0, 0, 0, time.UTC)
+
+	logs := []models.DailyLog{
+		{Date: time.Date(2026, time.January, 4, 0, 0, 0, 0, time.UTC), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+		{Date: time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+	}
+	stats := CycleStats{
+		AverageCycleLength:  28,
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		LutealPhase:         14,
+		LastPeriodStart:     time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC),
+	}
+	// Default ShowHistoricalPhases is false; explicit zero-value User confirms
+	// the upstream behavior is preserved when the toggle is not opted in.
+	user := &models.User{}
+
+	days := BuildCalendarDayStates(user, monthStart, logs, stats, now, time.UTC)
+
+	for _, dateString := range []string{"2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-17"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if day.IsFertility || day.IsOvulation {
+			t.Fatalf("expected no historical fertility paint on %s when toggle is off, got %#v", dateString, day)
+		}
+	}
+}

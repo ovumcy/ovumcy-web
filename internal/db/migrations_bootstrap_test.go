@@ -177,6 +177,7 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 		HideSexChip         bool   `gorm:"column:hide_sex_chip"`
 		HideCycleFactors    bool   `gorm:"column:hide_cycle_factors"`
 		HideNotesField      bool   `gorm:"column:hide_notes_field"`
+		ShowHistoricalPhases bool  `gorm:"column:show_historical_phases"`
 	}
 	if err := database.
 		Table("users").
@@ -197,6 +198,7 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 			"hide_sex_chip",
 			"hide_cycle_factors",
 			"hide_notes_field",
+			"show_historical_phases",
 		).
 		Where("email = ?", "legacy@example.com").
 		First(&migratedUser).Error; err != nil {
@@ -218,6 +220,7 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 	assertBoolDefault(t, "hide_sex_chip", migratedUser.HideSexChip, false)
 	assertBoolDefault(t, "hide_cycle_factors", migratedUser.HideCycleFactors, false)
 	assertBoolDefault(t, "hide_notes_field", migratedUser.HideNotesField, false)
+	assertBoolDefault(t, "show_historical_phases", migratedUser.ShowHistoricalPhases, false)
 }
 
 func assertStringDefault(t *testing.T, field string, got string, want string) {
@@ -441,6 +444,7 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"hide_sex_chip",
 		"hide_cycle_factors",
 		"hide_notes_field",
+		"show_historical_phases",
 		"last_period_start",
 	}
 

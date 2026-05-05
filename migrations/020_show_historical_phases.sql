@@ -1,0 +1,1 @@
+ALTER TABLE users ADD COLUMN show_historical_phases BOOLEAN NOT NULL DEFAULT 0;

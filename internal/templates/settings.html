@@ -282,6 +282,23 @@
               data-state-off="{{t .Messages "settings.tracking.hide_notes_field_state_off"}}">{{if .HideNotesField}}{{t .Messages "settings.tracking.hide_notes_field_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_notes_field_state_off"}}{{end}}</span>
           </span>
         </label>
+
+        <label
+          class="period-toggle settings-tracking-toggle"
+          data-binary-toggle
+          data-active="{{if .ShowHistoricalPhases}}true{{else}}false{{end}}"
+          data-tracking-setting="show-historical-phases">
+          <input type="checkbox" name="show_historical_phases" value="true" data-binary-toggle-input {{if .ShowHistoricalPhases}}checked{{end}}>
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
+            <span class="period-toggle-main">📅 {{t .Messages "settings.tracking.show_historical_phases"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_historical_phases_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.show_historical_phases_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.show_historical_phases_state_off"}}">{{if .ShowHistoricalPhases}}{{t .Messages "settings.tracking.show_historical_phases_state_on"}}{{else}}{{t .Messages "settings.tracking.show_historical_phases_state_off"}}{{end}}</span>
+          </span>
+        </label>
       </div>
 
       <div class="space-y-2">

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -83,6 +84,7 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, stats.FertilityWindowStart, stats.FertilityWindowEnd, stats.OvulationDate)
 	appendCalendarSingleDate(ovulationMap, stats.OvulationDate)
 	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location)
+	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, location)
 	appendCurrentCycleBBTSignal(user, logs, stats, now, ovulationMap, tentativeOvulationMap, location)
 
 	return predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, tentativeOvulationMap
@@ -162,6 +164,50 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	for cycleStart := CalendarDay(stats.NextPeriodStart, location); !cycleStart.After(gridEnd); cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
+	}
+}
+
+// appendHistoricalCycles paints fertile-window, ovulation, and pre-fertile
+// markers onto past completed cycles. A cycle is considered "completed" when a
+// later cycle_start exists in the supplied logs; the most recent cycle_start
+// has no successor and is therefore handled by the existing current-baseline /
+// predicted-cycles paths instead. Gated on the user's ShowHistoricalPhases
+// preference so that the upstream behavior (predictions only) remains the
+// default for users who want it.
+func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, logs []models.DailyLog, stats CycleStats, user *models.User, location *time.Location) {
+	if user == nil || !user.ShowHistoricalPhases {
+		return
+	}
+
+	starts := make([]time.Time, 0, len(logs))
+	for _, log := range logs {
+		if log.CycleStart {
+			starts = append(starts, CalendarDay(log.Date, location))
+		}
+	}
+	if len(starts) < 2 {
+		return
+	}
+
+	luteal := ResolveLutealPhase(stats.LutealPhase)
+	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
+
+	for index := 0; index < len(starts)-1; index++ {
+		cycleStart := starts[index]
+		nextStart := starts[index+1]
+		cycleLen := int(math.Round(nextStart.Sub(cycleStart).Hours() / 24))
+		if cycleLen <= 0 {
+			continue
+		}
+		ovulationDate, fertilityStart, fertilityEnd, _, calculable := PredictCycleWindow(cycleStart, cycleLen, luteal)
+		if !calculable {
+			continue
+		}
+		preFertileStart := cycleStart.AddDate(0, 0, periodLength)
+		preFertileEnd := fertilityStart.AddDate(0, 0, -1)
+		appendCalendarDateRange(preFertileMap, preFertileStart, preFertileEnd)
+		ovulationMap[ovulationDate.Format("2006-01-02")] = true
+		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, fertilityStart, fertilityEnd, ovulationDate)
 	}
 }
 

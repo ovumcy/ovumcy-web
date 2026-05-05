@@ -21,12 +21,13 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 	}
 
 	update := services.TrackingSettingsUpdate{
-		TrackBBT:           input.TrackBBT,
-		TemperatureUnit:    input.TemperatureUnit,
-		TrackCervicalMucus: input.TrackCervicalMucus,
-		HideSexChip:        input.HideSexChip,
-		HideCycleFactors:   input.HideCycleFactors,
-		HideNotesField:     input.HideNotesField,
+		TrackBBT:             input.TrackBBT,
+		TemperatureUnit:      input.TemperatureUnit,
+		TrackCervicalMucus:   input.TrackCervicalMucus,
+		HideSexChip:          input.HideSexChip,
+		HideCycleFactors:     input.HideCycleFactors,
+		HideNotesField:       input.HideNotesField,
+		ShowHistoricalPhases: input.ShowHistoricalPhases,
 	}
 	if err := handler.settingsService.SaveTrackingSettings(user.ID, update); err != nil {
 		spec := settingsTrackingUpdateErrorSpec()
@@ -40,14 +41,15 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{
-			"ok":                   true,
-			"status":               status,
-			"track_bbt":            update.TrackBBT,
-			"temperature_unit":     services.NormalizeTemperatureUnit(update.TemperatureUnit),
-			"track_cervical_mucus": update.TrackCervicalMucus,
-			"hide_sex_chip":        update.HideSexChip,
-			"hide_cycle_factors":   update.HideCycleFactors,
-			"hide_notes_field":     update.HideNotesField,
+			"ok":                     true,
+			"status":                 status,
+			"track_bbt":              update.TrackBBT,
+			"temperature_unit":       services.NormalizeTemperatureUnit(update.TemperatureUnit),
+			"track_cervical_mucus":   update.TrackCervicalMucus,
+			"hide_sex_chip":          update.HideSexChip,
+			"hide_cycle_factors":     update.HideCycleFactors,
+			"hide_notes_field":       update.HideNotesField,
+			"show_historical_phases": update.ShowHistoricalPhases,
 		})
 	}
 	if isHTMX(c) {
@@ -73,11 +75,12 @@ func parseTrackingSettingsInput(c *fiber.Ctx) (trackingSettingsInput, error) {
 	}
 
 	return trackingSettingsInput{
-		TrackBBT:           services.ParseBoolLike(c.FormValue("track_bbt")),
-		TemperatureUnit:    c.FormValue("temperature_unit"),
-		TrackCervicalMucus: services.ParseBoolLike(c.FormValue("track_cervical_mucus")),
-		HideSexChip:        services.ParseBoolLike(c.FormValue("hide_sex_chip")),
-		HideCycleFactors:   services.ParseBoolLike(c.FormValue("hide_cycle_factors")),
-		HideNotesField:     services.ParseBoolLike(c.FormValue("hide_notes_field")),
+		TrackBBT:             services.ParseBoolLike(c.FormValue("track_bbt")),
+		TemperatureUnit:      c.FormValue("temperature_unit"),
+		TrackCervicalMucus:   services.ParseBoolLike(c.FormValue("track_cervical_mucus")),
+		HideSexChip:          services.ParseBoolLike(c.FormValue("hide_sex_chip")),
+		HideCycleFactors:     services.ParseBoolLike(c.FormValue("hide_cycle_factors")),
+		HideNotesField:       services.ParseBoolLike(c.FormValue("hide_notes_field")),
+		ShowHistoricalPhases: services.ParseBoolLike(c.FormValue("show_historical_phases")),
 	}, nil
 }
