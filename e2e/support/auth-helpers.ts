@@ -151,8 +151,10 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   }
 
   await expect(stepTwoForm).toBeVisible();
-  await stepTwoForm.locator('button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+  await Promise.all([
+    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
+    stepTwoForm.locator('button[type="submit"]').click(),
+  ]);
 }
 
 export async function logoutViaAPI(page: Page): Promise<void> {
