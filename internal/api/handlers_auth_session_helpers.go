@@ -72,6 +72,23 @@ func (handler *Handler) renderRegisterInlineRecoveryResponse(c *fiber.Ctx, user 
 	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceInlineRegister)
 }
 
+// renderRegisterDuplicateSilencedResponse emits the same status code, JSON
+// shape, and redirect target as a successful Register, but without auth or
+// recovery cookies. Used when the email is already taken: an attacker who
+// only inspects status code + body cannot tell collision from success.
+// (Set-Cookie inspection is still a residual oracle; see SECURITY.md.)
+func (handler *Handler) renderRegisterDuplicateSilencedResponse(c *fiber.Ctx, status int) error {
+	nextPath := recoveryCodeSurfacePath(recoveryCodeSurfaceInlineRegister)
+	if acceptsJSON(c) {
+		return c.Status(status).JSON(fiber.Map{
+			"ok":        true,
+			"next_step": "recovery_code",
+			"next_path": nextPath,
+		})
+	}
+	return redirectToPath(c, nextPath)
+}
+
 func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c *fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string) error {
 	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
 }

@@ -33,6 +33,17 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 		time.Now().In(handler.location),
 	)
 	if err != nil {
+		// Email collisions used to return 400 invalid-input here, which made
+		// /api/auth/register a single-request oracle for "does this email
+		// already have an account" — a privacy-sensitive leak in a health
+		// app (GDPR Art. 9). Hide the collision behind the new-account
+		// status + body. The response is still distinguishable by the
+		// absence of Set-Cookie auth and recovery headers, which is
+		// documented as a residual signal in SECURITY.md.
+		if errors.Is(err, services.ErrAuthEmailExists) {
+			handler.logSecurityEvent(c, "auth.register", "duplicate_silenced")
+			return handler.renderRegisterDuplicateSilencedResponse(c, fiber.StatusCreated)
+		}
 		spec := mapAuthRegisterError(err)
 		handler.logSecurityError(c, "auth.register", spec)
 		return handler.respondMappedError(c, spec)

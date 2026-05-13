@@ -1,7 +1,7 @@
 package api
 
 import (
-	"io"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -87,6 +87,40 @@ func TestRegisterRejectsPasswordMismatch(t *testing.T) {
 	}
 }
 
+// assertRegisterDuplicateResponseLooksLikeSuccess pins the silencing fix for
+// #5: a register POST hitting an existing email must return the same status
+// and JSON shape as a new-email enrollment. Set-Cookie inspection can still
+// distinguish the cases (no auth/recovery cookies are issued for the duplicate),
+// and that residual signal is documented in SECURITY.md.
+func assertRegisterDuplicateResponseLooksLikeSuccess(t *testing.T, response *http.Response) {
+	t.Helper()
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("expected status 201 (mirroring new-account flow), got %d", response.StatusCode)
+	}
+	payload := map[string]any{}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode duplicate register response: %v", err)
+	}
+	if ok, _ := payload["ok"].(bool); !ok {
+		t.Fatalf("expected ok=true in duplicate register response, got %#v", payload)
+	}
+	if step, _ := payload["next_step"].(string); step != "recovery_code" {
+		t.Fatalf("expected next_step=recovery_code, got %#v", payload["next_step"])
+	}
+	if path, _ := payload["next_path"].(string); path != "/register" {
+		t.Fatalf("expected next_path=/register, got %#v", payload["next_path"])
+	}
+	if _, exposed := payload["error"]; exposed {
+		t.Fatalf("expected no error field in silenced response, got %#v", payload["error"])
+	}
+	if cookie := responseCookieValue(response.Cookies(), authCookieName); cookie != "" {
+		t.Fatalf("expected no auth cookie in silenced response (would leak duplicate via Set-Cookie), got %q", cookie)
+	}
+	if cookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName); cookie != "" {
+		t.Fatalf("expected no recovery cookie in silenced response, got %q", cookie)
+	}
+}
+
 func TestRegisterRejectsCaseInsensitiveDuplicateEmail(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	existingEmail := "QA-Test2@Ovumcy.Local"
@@ -125,14 +159,7 @@ func TestRegisterRejectsCaseInsensitiveDuplicateEmail(t *testing.T) {
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", response.StatusCode)
-	}
-
-	errorValue := readAPIError(t, response.Body)
-	if errorValue != "invalid input" {
-		t.Fatalf("expected generic invalid input error, got %q", errorValue)
-	}
+	assertRegisterDuplicateResponseLooksLikeSuccess(t, response)
 
 	var usersCount int64
 	if err := database.Model(&models.User{}).Where("lower(trim(email)) = ?", "qa-test2@ovumcy.local").Count(&usersCount).Error; err != nil {
@@ -181,14 +208,7 @@ func TestRegisterRejectsExactDuplicateEmail(t *testing.T) {
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected status 400, got %d", response.StatusCode)
-	}
-
-	errorValue := readAPIError(t, response.Body)
-	if errorValue != "invalid input" {
-		t.Fatalf("expected generic invalid input error, got %q", errorValue)
-	}
+	assertRegisterDuplicateResponseLooksLikeSuccess(t, response)
 
 	var usersCount int64
 	if err := database.Model(&models.User{}).Where("email = ?", existingEmail).Count(&usersCount).Error; err != nil {
@@ -244,29 +264,14 @@ func TestRegisterRejectsExactDuplicateEmailHTMLFlow(t *testing.T) {
 		t.Fatalf("expected redirect to /register, got %q", location)
 	}
 
-	flashValue := responseCookieValue(response.Cookies(), flashCookieName)
-	if flashValue == "" {
-		t.Fatalf("expected flash cookie in register duplicate-email response")
+	if flashValue := responseCookieValue(response.Cookies(), flashCookieName); flashValue != "" {
+		t.Fatalf("expected no flash cookie in silenced duplicate-email response (would leak existence), got %q", flashValue)
 	}
-
-	followRequest := httptest.NewRequest(http.MethodGet, "/register", nil)
-	followRequest.Header.Set("Accept-Language", "en")
-	followRequest.Header.Set("Cookie", flashCookieName+"="+flashValue)
-
-	followResponse, err := app.Test(followRequest, -1)
-	if err != nil {
-		t.Fatalf("follow register request failed: %v", err)
+	if cookie := responseCookieValue(response.Cookies(), authCookieName); cookie != "" {
+		t.Fatalf("expected no auth cookie in silenced duplicate-email response, got %q", cookie)
 	}
-	defer followResponse.Body.Close()
-
-	followBody, err := io.ReadAll(followResponse.Body)
-	if err != nil {
-		t.Fatalf("read follow register body: %v", err)
-	}
-
-	rendered := strings.ToLower(string(followBody))
-	if strings.Contains(rendered, "already exists") || strings.Contains(rendered, "already registered") {
-		t.Fatalf("expected duplicate register page to avoid account existence phrases")
+	if cookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName); cookie != "" {
+		t.Fatalf("expected no recovery cookie in silenced duplicate-email response, got %q", cookie)
 	}
 
 	var usersCount int64
