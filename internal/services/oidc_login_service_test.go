@@ -11,12 +11,13 @@ import (
 )
 
 type stubOIDCProviderClient struct {
-	enabled     bool
-	authURL     string
-	config      security.OIDCConfig
-	exchange    security.OIDCExchangeResult
-	authErr     error
-	exchangeErr error
+	enabled       bool
+	authURL       string
+	config        security.OIDCConfig
+	exchange      security.OIDCExchangeResult
+	authErr       error
+	exchangeErr   error
+	lastAuthExtra map[string]string
 }
 
 func (stub *stubOIDCProviderClient) Enabled() bool {
@@ -31,7 +32,8 @@ func (stub *stubOIDCProviderClient) Config() security.OIDCConfig {
 	return stub.config
 }
 
-func (stub *stubOIDCProviderClient) AuthCodeURL(context.Context, string, string, string, map[string]string) (string, error) {
+func (stub *stubOIDCProviderClient) AuthCodeURL(_ context.Context, _, _, _ string, extra map[string]string) (string, error) {
+	stub.lastAuthExtra = extra
 	if stub.authErr != nil {
 		return "", stub.authErr
 	}
