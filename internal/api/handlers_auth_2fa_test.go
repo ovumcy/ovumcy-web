@@ -37,9 +37,20 @@ type dbUserRepoForTest struct{ db *gorm.DB }
 
 func (r *dbUserRepoForTest) UpdateTOTPFields(userID uint, encryptedSecret string, enabled bool) error {
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"totp_secret":  encryptedSecret,
-		"totp_enabled": enabled,
+		"totp_secret":         encryptedSecret,
+		"totp_enabled":        enabled,
+		"totp_last_used_step": 0,
 	}).Error
+}
+
+func (r *dbUserRepoForTest) ClaimTOTPStep(userID uint, step int64) (bool, error) {
+	result := r.db.Model(&models.User{}).
+		Where("id = ? AND totp_last_used_step < ?", userID, step).
+		Update("totp_last_used_step", step)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func sealTOTPPendingCookieForTest(t *testing.T, secretKey []byte, userID uint, rememberMe bool) string {

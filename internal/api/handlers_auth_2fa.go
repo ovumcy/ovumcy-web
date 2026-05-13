@@ -1,9 +1,11 @@
 package api
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // ShowTOTPChallengePage renders the 2FA code entry page after a successful
@@ -55,6 +57,15 @@ func (handler *Handler) VerifyTOTPLogin(c *fiber.Ctx) error {
 	}
 
 	valid, err := handler.totpService.ValidateCode(userID, user.TOTPSecret, code)
+	if errors.Is(err, services.ErrTOTPReplayed) {
+		// Same response shape as a plain invalid code so an attacker cannot
+		// distinguish replay from a wrong guess. We log replay separately for
+		// security observability (potential captured-code attempt).
+		handler.totpService.RecordFailure(handler.secretKey, c.IP(), userID, time.Now())
+		spec := totpInvalidCodeErrorSpec()
+		handler.logSecurityEvent(c, "auth.2fa", "replay_rejected")
+		return handler.respondMappedError(c, spec)
+	}
 	if err != nil {
 		spec := totpInternalErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)

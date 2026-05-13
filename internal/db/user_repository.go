@@ -146,9 +146,24 @@ func (repo *UserRepository) BumpAuthSessionVersion(userID uint) error {
 
 func (repo *UserRepository) UpdateTOTPFields(userID uint, encryptedSecret string, enabled bool) error {
 	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"totp_secret":  encryptedSecret,
-		"totp_enabled": enabled,
+		"totp_secret":         encryptedSecret,
+		"totp_enabled":        enabled,
+		"totp_last_used_step": 0,
 	}).Error
+}
+
+// ClaimTOTPStep atomically claims a TOTP step for the given user. Returns true
+// iff the row was updated, i.e. the persisted totp_last_used_step was strictly
+// less than `step` at the moment of the UPDATE. Replays and concurrent losers
+// observe RowsAffected == 0 and get false.
+func (repo *UserRepository) ClaimTOTPStep(userID uint, step int64) (bool, error) {
+	result := repo.database.Model(&models.User{}).
+		Where("id = ? AND totp_last_used_step < ?", userID, step).
+		Update("totp_last_used_step", step)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func (repo *UserRepository) UpdateByID(userID uint, updates map[string]any) error {

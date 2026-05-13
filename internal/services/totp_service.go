@@ -1,10 +1,11 @@
 package services
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/security"
@@ -17,26 +18,27 @@ const (
 	DefaultTOTPAttemptsWindow        = 15 * time.Minute
 	DefaultTOTPDisableAttemptsLimit  = 5
 	DefaultTOTPDisableAttemptsWindow = 15 * time.Minute
-	totpReplayTTL                    = 90 * time.Second
+	totpStepSeconds                  = 30
 )
 
 var (
-	ErrTOTPInvalidCode          = errors.New("totp invalid code")
-	ErrTOTPRateLimited          = errors.New("totp rate limited")
-	ErrTOTPDisableRateLimited   = errors.New("totp disable rate limited")
-	ErrTOTPSecretEncrypt        = errors.New("totp secret encrypt failed")
-	ErrTOTPSecretDecrypt        = errors.New("totp secret decrypt failed")
-	ErrTOTPUpdateFailed         = errors.New("totp update failed")
+	ErrTOTPInvalidCode        = errors.New("totp invalid code")
+	ErrTOTPRateLimited        = errors.New("totp rate limited")
+	ErrTOTPDisableRateLimited = errors.New("totp disable rate limited")
+	ErrTOTPSecretEncrypt      = errors.New("totp secret encrypt failed")
+	ErrTOTPSecretDecrypt      = errors.New("totp secret decrypt failed")
+	ErrTOTPUpdateFailed       = errors.New("totp update failed")
+	ErrTOTPReplayed           = errors.New("totp code already used")
 )
-
-type recentCode struct {
-	code      string
-	expiresAt time.Time
-}
 
 // TOTPUserRepository is the minimal repository interface required by TOTPService.
 type TOTPUserRepository interface {
 	UpdateTOTPFields(userID uint, encryptedSecret string, enabled bool) error
+	// ClaimTOTPStep atomically advances totp_last_used_step to step iff it is
+	// strictly greater than the persisted value. Returns true when the row was
+	// updated (the step is now consumed by this caller) and false when the step
+	// was already at or beyond `step` (replay or concurrent loser).
+	ClaimTOTPStep(userID uint, step int64) (bool, error)
 }
 
 // TOTPService handles TOTP secret generation, enrollment, validation, and removal.
@@ -45,7 +47,6 @@ type TOTPService struct {
 	secretKey            []byte
 	attemptPolicy        *AuthAttemptPolicy
 	disableAttemptPolicy *AuthAttemptPolicy
-	usedCodes            sync.Map
 }
 
 // NewTOTPService creates a TOTPService. secretKey is used to encrypt TOTP secrets
@@ -114,23 +115,51 @@ func (service *TOTPService) ValidateCodeRaw(rawSecret, code string) bool {
 	return totp.Validate(code, rawSecret)
 }
 
-// ValidateCode decrypts the stored TOTP secret and validates the 6-digit code.
-// Returns false without an error if the code was already used within totpReplayTTL
-// (replay protection). Used during the 2FA login challenge.
+// ValidateCode decrypts the stored TOTP secret, finds which RFC 6238 step the
+// code belongs to (allowing ±1 step of clock skew), and atomically claims that
+// step in the database. A replayed or concurrently-consumed step returns
+// ErrTOTPReplayed so the caller can surface it separately in security logs.
+// Used during the 2FA login challenge.
 func (service *TOTPService) ValidateCode(userID uint, encryptedSecret, code string) (bool, error) {
 	rawSecret, err := security.DecryptField(encryptedSecret, service.secretKey)
 	if err != nil {
 		return false, fmt.Errorf("%w: %v", ErrTOTPSecretDecrypt, err)
 	}
-	now := time.Now()
-	if service.isRecentlyUsed(userID, code, now) {
+	step, found := findValidatedTOTPStep(rawSecret, code, time.Now())
+	if !found {
 		return false, nil
 	}
-	valid := totp.Validate(code, rawSecret)
-	if valid {
-		service.markUsed(userID, code, now)
+	claimed, err := service.users.ClaimTOTPStep(userID, step)
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrTOTPUpdateFailed, err)
 	}
-	return valid, nil
+	if !claimed {
+		return false, ErrTOTPReplayed
+	}
+	return true, nil
+}
+
+// findValidatedTOTPStep returns the RFC 6238 time step whose generated code
+// matches the supplied code (within ±1 step of skew), and a boolean indicating
+// whether a match was found. Comparison is constant-time to avoid leaking which
+// step matched through timing.
+func findValidatedTOTPStep(rawSecret, code string, now time.Time) (int64, bool) {
+	trimmed := strings.TrimSpace(code)
+	if len(trimmed) == 0 {
+		return 0, false
+	}
+	currentStep := now.Unix() / totpStepSeconds
+	for _, delta := range []int64{0, -1, +1} {
+		step := currentStep + delta
+		candidate, err := totp.GenerateCode(rawSecret, time.Unix(step*totpStepSeconds, 0))
+		if err != nil {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(candidate), []byte(trimmed)) == 1 {
+			return step, true
+		}
+	}
+	return 0, false
 }
 
 // EnableTOTP encrypts rawSecret and stores it alongside totp_enabled=true for the user.
@@ -153,18 +182,3 @@ func (service *TOTPService) DisableTOTP(userID uint) error {
 	return nil
 }
 
-func (service *TOTPService) isRecentlyUsed(userID uint, code string, now time.Time) bool {
-	v, ok := service.usedCodes.Load(userID)
-	if !ok {
-		return false
-	}
-	rc := v.(recentCode)
-	return rc.code == code && now.Before(rc.expiresAt)
-}
-
-func (service *TOTPService) markUsed(userID uint, code string, now time.Time) {
-	service.usedCodes.Store(userID, recentCode{
-		code:      code,
-		expiresAt: now.Add(totpReplayTTL),
-	})
-}

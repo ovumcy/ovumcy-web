@@ -47,4 +47,5 @@ type User struct {
 	CreatedAt           time.Time  `gorm:"not null"`
 	TOTPSecret          string     `gorm:"column:totp_secret"`
 	TOTPEnabled         bool       `gorm:"column:totp_enabled;not null;default:false"`
+	TOTPLastUsedStep    int64      `gorm:"column:totp_last_used_step;not null;default:0"`
 }

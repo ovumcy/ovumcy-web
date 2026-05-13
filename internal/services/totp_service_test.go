@@ -9,12 +9,20 @@ import (
 )
 
 // stubTOTPUserRepo is a minimal stub for TOTPUserRepository used in unit tests.
+// claimedSteps emulates the persisted totp_last_used_step column per userID;
+// ClaimTOTPStep applies the same "strictly greater than" semantics as the real
+// repo so replay/concurrency cases can be exercised without a database.
 type stubTOTPUserRepo struct {
 	updateErr        error
 	updatedUserID    uint
 	updatedSecret    string
 	updatedEnabled   bool
 	updateTOTPCalled bool
+
+	claimErr      error
+	claimedSteps  map[uint]int64
+	lastClaimUser uint
+	lastClaimStep int64
 }
 
 func (stub *stubTOTPUserRepo) UpdateTOTPFields(userID uint, encryptedSecret string, enabled bool) error {
@@ -22,7 +30,26 @@ func (stub *stubTOTPUserRepo) UpdateTOTPFields(userID uint, encryptedSecret stri
 	stub.updatedUserID = userID
 	stub.updatedSecret = encryptedSecret
 	stub.updatedEnabled = enabled
+	if stub.claimedSteps != nil {
+		stub.claimedSteps[userID] = 0
+	}
 	return stub.updateErr
+}
+
+func (stub *stubTOTPUserRepo) ClaimTOTPStep(userID uint, step int64) (bool, error) {
+	if stub.claimErr != nil {
+		return false, stub.claimErr
+	}
+	if stub.claimedSteps == nil {
+		stub.claimedSteps = map[uint]int64{}
+	}
+	stub.lastClaimUser = userID
+	stub.lastClaimStep = step
+	if stub.claimedSteps[userID] >= step {
+		return false, nil
+	}
+	stub.claimedSteps[userID] = step
+	return true, nil
 }
 
 func TestTOTPService_GenerateSetupKey(t *testing.T) {
@@ -164,13 +191,54 @@ func TestTOTPService_ValidateCode_ReplayRejected(t *testing.T) {
 		t.Fatal("ValidateCode() returned false for first valid use")
 	}
 
-	// Second use of the same code — must be rejected as replay.
+	// Second use of the same code — must be rejected as replay with the
+	// dedicated sentinel so the API layer can log it separately while still
+	// returning the same response shape as an invalid code.
 	valid, err = svc.ValidateCode(1, encryptedSecret, code)
-	if err != nil {
-		t.Fatalf("ValidateCode() replay call error: %v", err)
+	if !errors.Is(err, ErrTOTPReplayed) {
+		t.Fatalf("ValidateCode() replay error = %v, want ErrTOTPReplayed", err)
 	}
 	if valid {
 		t.Error("ValidateCode() accepted a replayed code — replay protection not working")
+	}
+}
+
+// TestTOTPService_ValidateCode_ReplaySurvivesServiceRestart simulates a
+// process restart by constructing a fresh TOTPService on top of the same
+// repository state. Pre-#7 the replay window lived in TOTPService.usedCodes
+// (an in-memory sync.Map) and a fresh instance accepted a captured code if
+// replayed within the original 90s window.
+func TestTOTPService_ValidateCode_ReplaySurvivesServiceRestart(t *testing.T) {
+	repo := &stubTOTPUserRepo{}
+	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	svc := NewTOTPService(repo, secretKey, nil)
+
+	key, err := svc.GenerateSetupKey("Ovumcy", "user@example.com")
+	if err != nil {
+		t.Fatalf("GenerateSetupKey() error: %v", err)
+	}
+	if err := svc.EnableTOTP(1, key.Secret()); err != nil {
+		t.Fatalf("EnableTOTP() error: %v", err)
+	}
+	encryptedSecret := repo.updatedSecret
+
+	code, err := totp.GenerateCode(key.Secret(), time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode() error: %v", err)
+	}
+	valid, err := svc.ValidateCode(1, encryptedSecret, code)
+	if err != nil || !valid {
+		t.Fatalf("first use: valid=%v err=%v", valid, err)
+	}
+
+	// Fresh service, same repository (DB state survives).
+	restarted := NewTOTPService(repo, secretKey, nil)
+	valid, err = restarted.ValidateCode(1, encryptedSecret, code)
+	if !errors.Is(err, ErrTOTPReplayed) {
+		t.Fatalf("post-restart replay error = %v, want ErrTOTPReplayed", err)
+	}
+	if valid {
+		t.Error("replayed code accepted after service restart — replay state did not persist")
 	}
 }
 
