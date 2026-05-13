@@ -59,3 +59,46 @@ func TestOnboardingStep1PostRejectsRequestsMissingCSRFToken(t *testing.T) {
 		t.Fatalf("expected csrf middleware to reject onboarding step1 with 403, got %d", response.StatusCode)
 	}
 }
+
+func TestOnboardingStep2PostRejectsRequestsMissingCSRFToken(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "onboarding-step2-csrf@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodPost, "/onboarding/step2", strings.NewReader(url.Values{
+		"cycle_length":  {"28"},
+		"period_length": {"5"},
+	}.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("onboarding step2 without csrf failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected csrf middleware to reject onboarding step2 with 403, got %d", response.StatusCode)
+	}
+}
+
+func TestOnboardingCompletePostRejectsRequestsMissingCSRFToken(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "onboarding-complete-csrf@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodPost, "/onboarding/complete", strings.NewReader(url.Values{}.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("onboarding complete without csrf failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected csrf middleware to reject onboarding complete with 403, got %d", response.StatusCode)
+	}
+}
