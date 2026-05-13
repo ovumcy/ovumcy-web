@@ -142,7 +142,7 @@ func TestVerifyTOTP2FAEnrollment_ValidCode_EnablesTOTP(t *testing.T) {
 		t.Fatalf("GenerateCode: %v", err)
 	}
 
-	form := url.Values{"code": {code}}
+	form := url.Values{"code": {code}, "password": {"StrongPass1"}}
 	cloned := cloneFormValues(form)
 	cloned.Set("csrf_token", ctx.csrfToken)
 
@@ -180,7 +180,7 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 	}
 	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), key.Secret())
 
-	form := url.Values{"code": {"000000"}}
+	form := url.Values{"code": {"000000"}, "password": {"StrongPass1"}}
 	cloned := cloneFormValues(form)
 	cloned.Set("csrf_token", ctx.csrfToken)
 
@@ -206,7 +206,7 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 func TestVerifyTOTP2FAEnrollment_MissingSetupCookie_ReturnsError(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-enroll-nocookie@example.com")
 
-	form := url.Values{"code": {"123456"}}
+	form := url.Values{"code": {"123456"}, "password": {"StrongPass1"}}
 	cloned := cloneFormValues(form)
 	cloned.Set("csrf_token", ctx.csrfToken)
 

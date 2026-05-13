@@ -76,6 +76,7 @@
       hx-swap="innerHTML"
       class="space-y-4">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 
       <div class="space-y-2">
         <label class="field-label" for="settings-2fa-code">
@@ -93,6 +94,14 @@
           class="input-field tracking-widest text-center text-xl w-40"
           placeholder="000000" />
       </div>
+
+      {{template "password_toggle_field" (dict
+        "Messages" .Messages
+        "LabelKey" "settings.delete_account.password"
+        "FieldID" "settings-2fa-enroll-password"
+        "FieldName" "password"
+        "Autocomplete" "current-password"
+        "Required" true)}}
 
       <div class="settings-form-actions">
         <button type="submit" class="btn-primary">
