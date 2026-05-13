@@ -29,6 +29,17 @@ type stubOIDCWorkflowService struct {
 	lastAuthVerifier       string
 	lastAuthExpectedNonce  string
 	lastAuthDeadline       time.Time
+	reauthURL              string
+	reauthStartErr         error
+	reauthErr              error
+	lastReauthState        string
+	lastReauthNonce        string
+	lastReauthVerifier     string
+	lastReauthCode         string
+	lastReauthCodeVerifier string
+	lastReauthNonceCheck   string
+	lastReauthUserID       uint
+	lastReauthMaxAge       time.Duration
 }
 
 func (stub *stubOIDCWorkflowService) Enabled() bool {
@@ -69,6 +80,28 @@ func (stub *stubOIDCWorkflowService) Authenticate(ctx context.Context, code stri
 		return services.OIDCLoginResult{}, stub.authErr
 	}
 	return stub.result, nil
+}
+
+func (stub *stubOIDCWorkflowService) StartReauth(_ context.Context, state string, nonce string, codeVerifier string) (string, error) {
+	stub.lastReauthState = state
+	stub.lastReauthNonce = nonce
+	stub.lastReauthVerifier = codeVerifier
+	if stub.reauthStartErr != nil {
+		return "", stub.reauthStartErr
+	}
+	if stub.reauthURL != "" {
+		return stub.reauthURL, nil
+	}
+	return stub.authURL, nil
+}
+
+func (stub *stubOIDCWorkflowService) ValidateReauthExchange(_ context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, _ time.Time) error {
+	stub.lastReauthCode = code
+	stub.lastReauthCodeVerifier = codeVerifier
+	stub.lastReauthNonceCheck = expectedNonce
+	stub.lastReauthUserID = expectedUserID
+	stub.lastReauthMaxAge = maxAuthAge
+	return stub.reauthErr
 }
 
 func TestLoginPageWithOIDCEnabledShowsSSOButton(t *testing.T) {

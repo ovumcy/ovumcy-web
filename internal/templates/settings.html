@@ -508,18 +508,14 @@
 
         <form
           id="settings-change-password-form"
-          action="/api/settings/change-password"
+          action="/api/settings/start-local-password-setup"
           method="post"
-          hx-post="/api/settings/change-password"
-          hx-target="#settings-change-password-status"
-          hx-swap="innerHTML"
           class="space-y-4"
           data-settings-local-password-form
           novalidate
           data-required-message="{{t .Messages "validation.required"}}"
           data-password-mismatch-message="{{t .Messages "auth.error.password_mismatch"}}"
-          data-weak-password-message="{{t .Messages "auth.password_requirements"}}"
-          data-save-feedback>
+          data-weak-password-message="{{t .Messages "auth.password_requirements"}}">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 

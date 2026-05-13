@@ -55,6 +55,11 @@ type OIDCClaims struct {
 	Subject       string
 	Email         string
 	EmailVerified bool
+	// IssuedAt is the ID token "iat" claim (always present per RFC).
+	IssuedAt time.Time
+	// AuthTime is the ID token "auth_time" claim. Zero when the provider did
+	// not include the claim (it is REQUIRED only when max_age was requested).
+	AuthTime time.Time
 }
 
 type OIDCSession struct {
@@ -277,7 +282,11 @@ func (client *OIDCClient) Config() OIDCConfig {
 	return client.config
 }
 
-func (client *OIDCClient) AuthCodeURL(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
+// AuthCodeURL builds the provider authorize URL. Additional extra parameters
+// (e.g. prompt=login, max_age=0) are passed through verbatim via
+// oauth2.SetAuthURLParam so callers can force a fresh re-authentication for
+// step-up flows without touching the base login parameters.
+func (client *OIDCClient) AuthCodeURL(ctx context.Context, state string, nonce string, codeVerifier string, extra map[string]string) (string, error) {
 	if !client.Enabled() {
 		return "", errors.New("oidc is disabled")
 	}
@@ -285,12 +294,19 @@ func (client *OIDCClient) AuthCodeURL(ctx context.Context, state string, nonce s
 	if err != nil {
 		return "", err
 	}
-	return oauthConfig.AuthCodeURL(
-		strings.TrimSpace(state),
+	opts := []oauth2.AuthCodeOption{
 		oidc.Nonce(strings.TrimSpace(nonce)),
 		oauth2.S256ChallengeOption(strings.TrimSpace(codeVerifier)),
 		oauth2.SetAuthURLParam("response_mode", "form_post"),
-	), nil
+	}
+	for key, value := range extra {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		opts = append(opts, oauth2.SetAuthURLParam(key, value))
+	}
+	return oauthConfig.AuthCodeURL(strings.TrimSpace(state), opts...), nil
 }
 
 func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVerifier string, expectedNonce string) (OIDCExchangeResult, error) {
@@ -324,9 +340,20 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 	var claims struct {
 		Email         string `json:"email"`
 		EmailVerified bool   `json:"email_verified"`
+		IssuedAt      int64  `json:"iat"`
+		AuthTime      int64  `json:"auth_time"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		return OIDCExchangeResult{}, fmt.Errorf("decode oidc id_token claims: %w", err)
+	}
+
+	var issuedAt time.Time
+	if claims.IssuedAt > 0 {
+		issuedAt = time.Unix(claims.IssuedAt, 0).UTC()
+	}
+	var authTime time.Time
+	if claims.AuthTime > 0 {
+		authTime = time.Unix(claims.AuthTime, 0).UTC()
 	}
 
 	return OIDCExchangeResult{
@@ -335,6 +362,8 @@ func (client *OIDCClient) ExchangeCode(ctx context.Context, code string, codeVer
 			Subject:       strings.TrimSpace(idToken.Subject),
 			Email:         strings.TrimSpace(claims.Email),
 			EmailVerified: claims.EmailVerified,
+			IssuedAt:      issuedAt,
+			AuthTime:      authTime,
 		},
 		Session: OIDCSession{
 			EndSessionEndpoint: client.metadata.EndSessionEndpoint,

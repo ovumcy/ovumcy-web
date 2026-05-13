@@ -23,7 +23,9 @@ type OIDCWorkflowService interface {
 	Enabled() bool
 	LocalPublicAuthEnabled() bool
 	StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
+	StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)
+	ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error
 }
 
 type Handler struct {

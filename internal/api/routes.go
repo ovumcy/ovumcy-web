@@ -81,6 +81,7 @@ func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	settings.Post("/profile", handler.UpdateProfile)
 	settings.Post("/tracking", handler.OwnerOnly, handler.UpdateTrackingSettings)
 	settings.Post("/change-password", handler.ChangePassword)
+	settings.Post("/start-local-password-setup", handler.StartLocalPasswordSetupReauth)
 	settings.Post("/regenerate-recovery-code", handler.RegenerateRecoveryCode)
 	settings.Post("/2fa/verify", handler.VerifyTOTP2FAEnrollment)
 	settings.Post("/2fa/disable", handler.DisableTOTP2FA)

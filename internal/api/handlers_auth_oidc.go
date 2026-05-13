@@ -43,6 +43,15 @@ func (handler *Handler) StartOIDCLogin(c *fiber.Ctx) error {
 }
 
 func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
+	// Step-up re-auth (e.g. enabling local password on OIDC-only account)
+	// reuses the same /auth/oidc/callback path as ordinary login but carries
+	// a distinct sealed cookie identifying the purpose and the originating
+	// user. Dispatching off cookie presence avoids registering a second
+	// redirect URI at every provider operators have to manage.
+	if stepupState := handler.popOIDCStepupCookie(c); stepupState.validAt(time.Now()) {
+		return handler.completeLocalPasswordSetupReauth(c, stepupState)
+	}
+
 	oidcState := handler.popOIDCStateCookie(c)
 	callbackState := c.FormValue("state")
 	code := c.FormValue("code")

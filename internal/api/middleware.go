@@ -15,6 +15,7 @@ const (
 	recoveryCodeCookieName       = "ovumcy_recovery_code"
 	resetPasswordCookieName      = "ovumcy_reset_password" // #nosec G101 -- cookie name contains "password" but is not a secret or credential.
 	oidcStateCookieName          = "ovumcy_oidc_auth"
+	oidcStepupCookieName         = "ovumcy_oidc_stepup"
 	oidcLogoutBridgeCookieName   = "ovumcy_oidc_logout_bridge"
 	totpPendingCookieName        = "ovumcy_totp_pending"
 	totpSetupCookieName          = "ovumcy_totp_setup"

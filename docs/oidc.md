@@ -83,6 +83,14 @@ That last point is important. An auto-provisioned OIDC-only account can use the 
 - recovery-code regeneration is not available yet;
 - password-confirmed sensitive actions such as `clear data` or `delete account` stay blocked until the user sets a local password in `Settings`.
 
+To enable a local password, OIDC-only users go through a **step-up re-authentication flow**:
+
+1. The user fills the "set local password" form in `Settings`. The browser submits to `POST /api/settings/start-local-password-setup`, which validates the password, prepares its bcrypt hash without touching the database, and redirects the browser to the provider's authorize endpoint with `prompt=login` and `max_age=0` so the provider is forced to re-authenticate the user interactively.
+2. The provider posts the result back to the existing `/auth/oidc/callback` endpoint. Ovumcy detects the step-up flow (via a sealed cookie issued in step 1), runs the OIDC code exchange, and requires the resulting ID token's `auth_time` claim (or, if the provider omits it, `iat`) to lie within the last five minutes and the returned `(issuer, subject)` pair to already be linked to the current session's user.
+3. Only after both checks succeed does Ovumcy persist the prepared password hash, mint a fresh recovery code, and present it on the dedicated `/recovery-code` page. A stale or mismatched re-auth leaves the account untouched.
+
+The legacy `POST /api/settings/change-password` endpoint still works for accounts that already have local auth enabled (ordinary password rotation). For accounts with `LocalAuthEnabled=false` it now returns `403 oidc reauth required` so the step-up flow above is the only path to enroll a local password.
+
 ## How Logout Works
 
 `OIDC_LOGOUT_MODE` controls what happens after Ovumcy clears its own auth cookies:

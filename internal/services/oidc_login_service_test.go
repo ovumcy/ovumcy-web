@@ -31,7 +31,7 @@ func (stub *stubOIDCProviderClient) Config() security.OIDCConfig {
 	return stub.config
 }
 
-func (stub *stubOIDCProviderClient) AuthCodeURL(context.Context, string, string, string) (string, error) {
+func (stub *stubOIDCProviderClient) AuthCodeURL(context.Context, string, string, string, map[string]string) (string, error) {
 	if stub.authErr != nil {
 		return "", stub.authErr
 	}

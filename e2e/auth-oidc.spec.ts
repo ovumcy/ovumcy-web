@@ -2,14 +2,11 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   DEFAULT_STRONG_PASSWORD,
   completeOnboardingIfPresent,
-  confirmRecoveryCode,
   continueFromRecoveryCode,
-  expectDedicatedRecoveryPage,
   expectInlineRegisterRecoveryStep,
   expectNoSensitiveAuthParams,
   loginViaUI,
   registerOwnerViaUI,
-  readRecoveryCode,
 } from './support/auth-helpers';
 
 const oidcEnabled = process.env.OIDC_ENABLED === 'true';
@@ -37,25 +34,27 @@ async function signInViaOIDCOnlyAndEnableLocalPassword(page: Page) {
 
   const localPasswordForm = page.locator('[data-settings-local-password-form]');
   if (await localPasswordForm.isVisible().catch(() => false)) {
+    // OIDC-only users now must complete a step-up re-auth before a local
+    // password is committed. Submitting the form posts to
+    // /api/settings/start-local-password-setup, which redirects to the
+    // provider's authorize endpoint with prompt=login + max_age=0. The full
+    // round-trip back through /auth/oidc/callback into /recovery-code depends
+    // on the test provider honoring those parameters and cannot be exercised
+    // without a controllable IdP — assert the redirect to the provider as the
+    // closest end-to-end signal.
     await expect(page.locator('[data-settings-recovery-code-unavailable]')).toBeVisible();
     await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(0);
+    await expect(localPasswordForm).toHaveAttribute('action', '/api/settings/start-local-password-setup');
 
     const localPassword = 'LocalStrongPass2';
     await page.locator('#settings-new-password').fill(localPassword);
     await page.locator('#settings-confirm-password').fill(localPassword);
-    await page.locator('[data-settings-local-password-form] button[type="submit"]').click();
-
-    await expectDedicatedRecoveryPage(page);
-    await readRecoveryCode(page);
-    await confirmRecoveryCode(page);
-
-    await expect(page).toHaveURL(/\/settings(?:\?.*)?$/);
+    await Promise.all([
+      page.waitForURL((url) => !url.toString().startsWith(page.url())),
+      page.locator('[data-settings-local-password-form] button[type="submit"]').click(),
+    ]);
+    expect(page.url()).not.toMatch(/\/settings(?:\?.*)?$/);
   }
-
-  await expect(page.locator('[data-settings-local-password-form]')).toHaveCount(0);
-  await expect(page.locator('form[action="/api/settings/regenerate-recovery-code"]')).toHaveCount(1);
-  await expect(page.locator('form[action="/api/settings/clear-data"]')).toHaveCount(1);
-  await expect(page.locator('form[hx-delete="/api/settings/delete-account"]')).toHaveCount(1);
 }
 
 test.describe('Auth: OIDC login entry', () => {

@@ -19,13 +19,22 @@ var (
 	ErrOIDCIdentityResolveFailed = errors.New("oidc identity resolve failed")
 	ErrOIDCLinkFailed            = errors.New("oidc identity link failed")
 	ErrOIDCProvisionFailed       = errors.New("oidc account provision failed")
+	// ErrOIDCReauthStale indicates the provider returned a successful exchange
+	// but auth_time / iat are older than the requested max age — the user did
+	// not actually re-authenticate, the provider answered from a cached SSO
+	// session despite prompt=login + max_age=0.
+	ErrOIDCReauthStale = errors.New("oidc reauth stale")
+	// ErrOIDCReauthIdentityMismatch indicates the (issuer, subject) returned by
+	// the reauth callback is not linked to the user that started the step-up
+	// flow. Treated as a hard failure to prevent cross-account substitution.
+	ErrOIDCReauthIdentityMismatch = errors.New("oidc reauth identity mismatch")
 )
 
 type OIDCProviderClient interface {
 	Enabled() bool
 	LocalPublicAuthEnabled() bool
 	Config() security.OIDCConfig
-	AuthCodeURL(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
+	AuthCodeURL(ctx context.Context, state string, nonce string, codeVerifier string, extra map[string]string) (string, error)
 	ExchangeCode(ctx context.Context, code string, codeVerifier string, expectedNonce string) (security.OIDCExchangeResult, error)
 }
 
@@ -95,17 +104,101 @@ func (service *OIDCLoginService) OIDCOnly() bool {
 }
 
 func (service *OIDCLoginService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
+	return service.startAuthWithExtra(ctx, state, nonce, codeVerifier, nil)
+}
+
+// StartReauth forces the provider to perform a fresh interactive login by
+// adding prompt=login and max_age=0 to the authorize URL. Used for step-up
+// flows like enabling a local password from an OIDC-only account where we
+// must verify that the holder of the current session also controls the
+// upstream identity right now (not via a stale cached SSO session).
+func (service *OIDCLoginService) StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
+	return service.startAuthWithExtra(ctx, state, nonce, codeVerifier, map[string]string{
+		"prompt":  "login",
+		"max_age": "0",
+	})
+}
+
+func (service *OIDCLoginService) startAuthWithExtra(ctx context.Context, state string, nonce string, codeVerifier string, extra map[string]string) (string, error) {
 	if !service.Enabled() {
 		return "", ErrOIDCDisabled
 	}
 	if strings.TrimSpace(state) == "" || strings.TrimSpace(nonce) == "" || strings.TrimSpace(codeVerifier) == "" {
 		return "", ErrOIDCCallbackInvalid
 	}
-	url, err := service.client.AuthCodeURL(ctx, state, nonce, codeVerifier)
+	url, err := service.client.AuthCodeURL(ctx, state, nonce, codeVerifier, extra)
 	if err != nil {
 		return "", ErrOIDCUnavailable
 	}
 	return url, nil
+}
+
+// ValidateReauthExchange runs an OIDC code exchange in the context of a
+// step-up re-auth (e.g. promoting an OIDC-only account to local auth). It
+// enforces three properties that plain Authenticate does NOT:
+//
+//   - the (issuer, subject) returned by the provider must already be linked to
+//     expectedUserID. This stops an attacker who hijacked an OIDC-only session
+//     from completing the step-up by signing in with their OWN provider account.
+//   - the provider must actually have performed a fresh interactive
+//     authentication. We trust auth_time when present (REQUIRED by the spec
+//     whenever max_age was sent); otherwise we fall back to iat, which is
+//     bounded by token lifetime but still useful when auth_time is omitted.
+//   - the freshness signal must lie within maxAuthAge of now. A small
+//     forward-tolerance handles modest clock skew.
+//
+// All deviations collapse into ErrOIDCReauthStale or
+// ErrOIDCReauthIdentityMismatch so the handler can log them with distinct
+// security events while returning a uniform user-facing error.
+func (service *OIDCLoginService) ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error {
+	if !service.Enabled() {
+		return ErrOIDCDisabled
+	}
+	if expectedUserID == 0 {
+		return ErrOIDCReauthIdentityMismatch
+	}
+	if strings.TrimSpace(code) == "" || strings.TrimSpace(codeVerifier) == "" || strings.TrimSpace(expectedNonce) == "" {
+		return ErrOIDCCallbackInvalid
+	}
+
+	exchange, err := service.client.ExchangeCode(ctx, code, codeVerifier, expectedNonce)
+	if err != nil {
+		return ErrOIDCAuthenticationFailed
+	}
+
+	identity, found, err := service.identities.FindByIssuerSubject(exchange.Claims.Issuer, exchange.Claims.Subject)
+	if err != nil {
+		return ErrOIDCIdentityResolveFailed
+	}
+	if !found || identity.UserID != expectedUserID {
+		return ErrOIDCReauthIdentityMismatch
+	}
+
+	if !reauthClaimsFresh(exchange.Claims, maxAuthAge, now) {
+		return ErrOIDCReauthStale
+	}
+
+	_ = service.identities.TouchLastUsed(identity.ID, effectiveOIDCLoginTime(now))
+	return nil
+}
+
+func reauthClaimsFresh(claims security.OIDCClaims, maxAuthAge time.Duration, now time.Time) bool {
+	if maxAuthAge <= 0 {
+		return false
+	}
+	reference := claims.AuthTime
+	if reference.IsZero() {
+		reference = claims.IssuedAt
+	}
+	if reference.IsZero() {
+		return false
+	}
+	if reference.After(now.Add(1 * time.Minute)) {
+		// Clock skew tolerance in one direction only — clearly future-dated
+		// timestamps look forged or like provider misconfiguration.
+		return false
+	}
+	return now.Sub(reference) <= maxAuthAge
 }
 
 func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (OIDCLoginResult, error) {

@@ -218,7 +218,7 @@ func (stub *stubSettingsUserRepo) DeleteAccountAndRelatedData(uint) error {
 	return nil
 }
 
-func TestEnableLocalPasswordIssuesRecoveryCode(t *testing.T) {
+func TestPrepareAndFinalizeLocalPasswordSetup(t *testing.T) {
 	repo := &stubSettingsUserRepo{}
 	service := NewSettingsService(repo)
 	user := &models.User{
@@ -227,23 +227,51 @@ func TestEnableLocalPasswordIssuesRecoveryCode(t *testing.T) {
 		AuthSessionVersion: 5,
 	}
 
-	recoveryCode, err := service.EnableLocalPassword(user, "EvenStronger2", "EvenStronger2")
+	preparedHash, err := service.PrepareLocalPasswordHash(user, "EvenStronger2", "EvenStronger2")
 	if err != nil {
-		t.Fatalf("EnableLocalPassword() unexpected error: %v", err)
+		t.Fatalf("PrepareLocalPasswordHash() unexpected error: %v", err)
+	}
+	if preparedHash == "" {
+		t.Fatal("expected non-empty prepared hash")
+	}
+	if repo.updatePasswordCalled {
+		t.Fatal("Prepare must not touch the database")
+	}
+	if user.LocalAuthEnabled {
+		t.Fatal("Prepare must not flip LocalAuthEnabled")
+	}
+
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(user, preparedHash)
+	if err != nil {
+		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
 	}
 	if recoveryCode == "" {
-		t.Fatal("expected recovery code after enabling local password")
+		t.Fatal("expected recovery code from finalize")
 	}
 	if !repo.updatePasswordCalled {
-		t.Fatal("expected password+recovery update")
+		t.Fatal("expected password+recovery update on finalize")
 	}
 	if repo.updatedRecoveryHash == "" {
-		t.Fatal("expected persisted recovery hash")
+		t.Fatal("expected persisted recovery hash on finalize")
 	}
 	if !user.LocalAuthEnabled {
-		t.Fatal("expected LocalAuthEnabled=true after enable flow")
+		t.Fatal("expected LocalAuthEnabled=true after finalize")
 	}
 	if user.AuthSessionVersion != 6 {
 		t.Fatalf("expected auth session version to increment to 6, got %d", user.AuthSessionVersion)
+	}
+}
+
+func TestFinalizeLocalPasswordSetupRejectsWhenAlreadyEnabled(t *testing.T) {
+	repo := &stubSettingsUserRepo{}
+	service := NewSettingsService(repo)
+	user := &models.User{ID: 88, LocalAuthEnabled: true}
+
+	_, err := service.FinalizeLocalPasswordSetup(user, "some-bcrypt-hash")
+	if !errors.Is(err, ErrSettingsPasswordChangeInvalidInput) {
+		t.Fatalf("expected ErrSettingsPasswordChangeInvalidInput, got %v", err)
+	}
+	if repo.updatePasswordCalled {
+		t.Fatal("must not touch DB when local auth already enabled")
 	}
 }

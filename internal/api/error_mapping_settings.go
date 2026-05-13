@@ -25,6 +25,22 @@ func settingsLocalPasswordRequiredErrorSpec() APIErrorSpec {
 	return settingsFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "local password required")
 }
 
+// settingsOIDCReauthRequiredErrorSpec is returned when an OIDC-only user
+// attempts to enable a local password via the legacy ChangePassword endpoint
+// instead of going through StartLocalPasswordSetupReauth. It signals the UI
+// to redirect into the step-up flow.
+func settingsOIDCReauthRequiredErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "oidc reauth required")
+}
+
+func settingsOIDCReauthStaleErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth stale")
+}
+
+func settingsOIDCReauthMismatchErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "oidc reauth identity mismatch")
+}
+
 func settingsCycleUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update cycle settings")
 }

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
-	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func TestSettingsPageForOIDCOnlyAccountShowsLocalPasswordSetup(t *testing.T) {
@@ -86,105 +85,42 @@ func TestOIDCOnlySettingsSensitiveActionsRequireLocalPassword(t *testing.T) {
 	}
 }
 
-func TestOIDCOnlySettingsEnableLocalPasswordIssuesRecoveryCode(t *testing.T) {
+// TestOIDCOnlySettingsChangePasswordRequiresReauth is the closed-CVE regression
+// for #3: prior to the OIDC step-up flow, POST /api/settings/change-password
+// for an OIDC-only account silently enabled a local password and emitted a
+// fresh recovery code. A hijacked session could thus mint a permanent
+// take-over in a single request. The endpoint must now reject this branch
+// with 403 oidc-reauth-required and leave the user untouched.
+func TestOIDCOnlySettingsChangePasswordRequiresReauth(t *testing.T) {
 	t.Parallel()
 
-	ctx := newOIDCOnlySettingsSecurityTestContext(t, "settings-enable-local@example.com")
+	ctx := newOIDCOnlySettingsSecurityTestContext(t, "settings-oidc-change-password-blocked@example.com")
 
 	form := url.Values{
 		"new_password":     {"EvenStronger2"},
 		"confirm_password": {"EvenStronger2"},
 	}
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/change-password", form, map[string]string{
-		"Accept-Language": "en",
+		"Accept": "application/json",
 	})
 	defer response.Body.Close()
 
-	assertStatusCode(t, response, http.StatusSeeOther)
-	if location := response.Header.Get("Location"); location != "/recovery-code" {
-		t.Fatalf("expected redirect to /recovery-code, got %q", location)
+	assertStatusCode(t, response, http.StatusForbidden)
+	if got := readAPIError(t, response.Body); got != "oidc reauth required" {
+		t.Fatalf("expected error %q, got %q", "oidc reauth required", got)
 	}
-
-	updatedAuthCookie := ctx.authCookie
-	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && authCookie.Value != "" {
-		updatedAuthCookie = cookiePair(authCookie)
-	}
-	recoveryCookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName)
-	if recoveryCookie == "" {
-		t.Fatal("expected recovery-code display cookie after enabling local password")
-	}
-
-	recoveryRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
-	recoveryRequest.Header.Set("Accept-Language", "en")
-	recoveryRequest.Header.Set("Cookie", joinCookieHeader(updatedAuthCookie, recoveryCodeCookieName+"="+recoveryCookie))
-	recoveryResponse := mustAppResponse(t, ctx.app, recoveryRequest)
-	assertStatusCode(t, recoveryResponse, http.StatusOK)
-	recoveryPage := mustReadBodyString(t, recoveryResponse.Body)
-	assertBodyContainsAll(t, recoveryPage,
-		bodyStringMatch{fragment: `id="recovery-code"`, message: "expected dedicated recovery-code page after enabling local password"},
-		bodyStringMatch{fragment: "/settings", message: "expected recovery-code continue path to point back to settings"},
-	)
 
 	var persisted models.User
 	if err := ctx.database.First(&persisted, ctx.user.ID).Error; err != nil {
-		t.Fatalf("load updated oidc-only user: %v", err)
+		t.Fatalf("reload oidc-only user: %v", err)
 	}
-	if !persisted.LocalAuthEnabled {
-		t.Fatal("expected local auth to be enabled after setting local password")
+	if persisted.LocalAuthEnabled {
+		t.Fatal("oidc-only user must remain in non-local-auth state after rejected ChangePassword")
 	}
-	if strings.TrimSpace(persisted.PasswordHash) == "" {
-		t.Fatal("expected stored password hash after setting local password")
+	if strings.TrimSpace(persisted.PasswordHash) != "" {
+		t.Fatal("oidc-only user must not have a password hash stored after rejected ChangePassword")
 	}
-	if strings.TrimSpace(persisted.RecoveryCodeHash) == "" {
-		t.Fatal("expected stored recovery code hash after setting local password")
-	}
-
-	localLoginCookie := loginAndExtractAuthCookieWithCSRF(t, ctx.app, persisted.Email, "EvenStronger2")
-	if strings.TrimSpace(localLoginCookie) == "" {
-		t.Fatal("expected local login to work after enabling local password")
-	}
-}
-
-func TestOIDCOnlySettingsEnableLocalPasswordPreservesProviderLogoutBridge(t *testing.T) {
-	t.Parallel()
-
-	ctx := newOIDCOnlySettingsSecurityTestContext(t, "settings-enable-local-logout@example.com")
-	persistOIDCLogoutStateForAuthCookie(t, ctx.database, ctx.authCookie, services.OIDCLogoutState{
-		EndSessionEndpoint:    "https://id.example.com/oidc/logout",
-		IDTokenHint:           strings.Repeat("idtoken.", 128),
-		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
-	})
-
-	form := url.Values{
-		"new_password":     {"EvenStronger2"},
-		"confirm_password": {"EvenStronger2"},
-	}
-	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/change-password", form, map[string]string{
-		"Accept-Language": "en",
-	})
-	defer response.Body.Close()
-
-	assertStatusCode(t, response, http.StatusSeeOther)
-	updatedAuthCookie := ctx.authCookie
-	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && authCookie.Value != "" {
-		updatedAuthCookie = cookiePair(authCookie)
-	}
-
-	logoutForm := url.Values{"csrf_token": {ctx.csrfToken}}
-	logoutRequest := httptest.NewRequest(http.MethodPost, "/logout", strings.NewReader(logoutForm.Encode()))
-	logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	logoutRequest.Header.Set("Cookie", joinCookieHeader(updatedAuthCookie, cookiePair(ctx.csrfCookie)))
-
-	logoutResponse := mustAppResponse(t, ctx.app, logoutRequest)
-	assertStatusCode(t, logoutResponse, http.StatusSeeOther)
-	if location := logoutResponse.Header.Get("Location"); location != oidcLogoutBridgePath {
-		t.Fatalf("expected provider logout bridge after local password enablement, got %q", location)
-	}
-	bridgeCookie := responseCookie(logoutResponse.Cookies(), oidcLogoutBridgeCookieName)
-	if bridgeCookie == nil || strings.TrimSpace(bridgeCookie.Value) == "" {
-		t.Fatalf("expected logout bridge cookie after local password enablement, got %#v", bridgeCookie)
-	}
-	if len(bridgeCookie.Value) > 512 {
-		t.Fatalf("expected bounded logout bridge cookie after local password enablement, got %d bytes", len(bridgeCookie.Value))
+	if strings.TrimSpace(persisted.RecoveryCodeHash) != "" {
+		t.Fatal("oidc-only user must not have a recovery code hash stored after rejected ChangePassword")
 	}
 }
