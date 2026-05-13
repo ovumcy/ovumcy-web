@@ -101,7 +101,7 @@
   "auth.error.registration_disabled": "El registro está desactivado después de la configuración inicial.",
   "auth.error.invalid_credentials": "Correo o contraseña incorrectos.",
   "auth.error.email_exists": "No se pudo completar el registro. Revisa tus datos o intenta iniciar sesión.",
-  "auth.error.post_register_signin": "Tu sesión de registro caducó o ya se completó. Inicia sesión para continuar.",
+  "auth.error.post_register_signin": "Tu sesión de registro ya no es válida. Inicia sesión para continuar.",
   "auth.error.weak_password": "Usa al menos 8 caracteres con mayúsculas, minúsculas y un número.",
   "auth.error.password_mismatch": "Las contraseñas no coinciden.",
   "auth.error.invalid_recovery_code": "Código de recuperación no válido.",

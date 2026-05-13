@@ -101,7 +101,7 @@
   "auth.error.registration_disabled": "Регистрация отключена после первичной настройки.",
   "auth.error.invalid_credentials": "Неверный email или пароль.",
   "auth.error.email_exists": "Не удалось завершить регистрацию. Проверьте данные или попробуйте войти.",
-  "auth.error.post_register_signin": "Сессия регистрации истекла или уже завершена. Войдите, чтобы продолжить.",
+  "auth.error.post_register_signin": "Сессия регистрации более недействительна. Войдите, чтобы продолжить.",
   "auth.error.weak_password": "Нужен пароль от 8 символов: заглавная, строчная буква и цифра.",
   "auth.error.password_mismatch": "Пароли не совпадают.",
   "auth.error.invalid_recovery_code": "Неверный код восстановления.",

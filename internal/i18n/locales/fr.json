@@ -110,7 +110,7 @@
   "auth.error.registration_disabled": "L'inscription est désactivée après la configuration initiale.",
   "auth.error.invalid_credentials": "E-mail ou mot de passe incorrect.",
   "auth.error.email_exists": "L'inscription n'a pas pu être finalisée. Vérifiez vos informations ou essayez de vous connecter.",
-  "auth.error.post_register_signin": "Votre session d'inscription a expiré ou est déjà terminée. Connectez-vous pour continuer.",
+  "auth.error.post_register_signin": "Votre session d'inscription n'est plus valide. Connectez-vous pour continuer.",
   "auth.error.weak_password": "Utilisez au moins 8 caractères avec majuscule, minuscule et un chiffre.",
   "auth.error.password_mismatch": "Les mots de passe ne correspondent pas.",
   "auth.error.invalid_recovery_code": "Code de récupération invalide.",

@@ -101,7 +101,7 @@
   "auth.error.registration_disabled": "Registration is disabled after initial setup.",
   "auth.error.invalid_credentials": "Invalid email or password.",
   "auth.error.email_exists": "We could not finish registration. Please review your details or try signing in.",
-  "auth.error.post_register_signin": "Your registration session has expired or already completed. Please sign in to continue.",
+  "auth.error.post_register_signin": "Your registration session is no longer valid. Please sign in to continue.",
   "auth.error.weak_password": "Use at least 8 characters with uppercase, lowercase, and a number.",
   "auth.error.password_mismatch": "Passwords do not match.",
   "auth.error.invalid_recovery_code": "Invalid recovery code.",

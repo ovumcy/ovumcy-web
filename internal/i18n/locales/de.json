@@ -101,7 +101,7 @@
   "auth.error.registration_disabled": "Die Registrierung ist nach der Ersteinrichtung deaktiviert.",
   "auth.error.invalid_credentials": "Ungültige E-Mail-Adresse oder falsches Passwort.",
   "auth.error.email_exists": "Wir konnten die Registrierung nicht abschließen. Bitte prüfen Sie Ihre Angaben oder melden Sie sich an.",
-  "auth.error.post_register_signin": "Ihre Registrierungssitzung ist abgelaufen oder bereits abgeschlossen. Bitte melden Sie sich an, um fortzufahren.",
+  "auth.error.post_register_signin": "Ihre Registrierungssitzung ist nicht mehr gültig. Bitte melden Sie sich an, um fortzufahren.",
   "auth.error.weak_password": "Verwenden Sie mindestens 8 Zeichen mit Großbuchstaben, Kleinbuchstaben und einer Zahl.",
   "auth.error.password_mismatch": "Die Passwörter stimmen nicht überein.",
   "auth.error.invalid_recovery_code": "Ungültiger Wiederherstellungscode.",
