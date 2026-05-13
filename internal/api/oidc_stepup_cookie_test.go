@@ -126,7 +126,7 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	handler := newStepupTestHandler(t)
-	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	original, err := newOIDCStepupState(now, oidcStepupPurposeLocalPasswordSetup, 42, "bcrypt-hash")
 	if err != nil {
 		t.Fatalf("create state: %v", err)
@@ -194,7 +194,7 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 		cookieSecure: true,
 	}
 
-	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	state, err := newOIDCStepupState(now, oidcStepupPurposeLocalPasswordSetup, 1, "h")
 	if err != nil {
 		t.Fatalf("create state: %v", err)
