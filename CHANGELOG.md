@@ -7,15 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-05-13
+
+### Added
+- TOTP-based two-factor authentication. Owners can enable TOTP 2FA in Settings → Security. Login prompts for the 6-digit TOTP code when 2FA is active. A step-up re-authentication challenge is issued when an OIDC session requires verification.
+
 ### Security
-- Strengthened `Strict-Transport-Security` header with `includeSubDomains` directive for enhanced HTTPS enforcement.
-- Expanded `Permissions-Policy` header to explicitly deny access to additional browser features (accelerometer, gyroscope, payment, usb, interest-cohort, ambient-light-sensor).
-- Added `Cross-Origin-Opener-Policy: same-origin` header to prevent cross-window opening attacks.
-- Implemented rate limiting for `/api/auth/register` endpoint (8 requests per 15 minutes by default) to mitigate enumeration and credential-stuffing attacks. Closes per-request Set-Cookie enumeration oracle on POST /api/auth/register via sealed recovery code cookie; residual two-step oracle documented in SECURITY.md.
+- Sealed register pickup cookie closes the per-request Set-Cookie enumeration oracle on `POST /api/auth/register`. The endpoint returns an identical status, body, and single sealed `ovumcy_register_pickup` cookie for both new and duplicate emails; `GET /register/welcome` silently issues a decoy pickup for duplicate addresses and redirects to `/login` with a neutral flash message. The residual two-step timing oracle is documented in `SECURITY.md`.
+- TOTP replay protection: step counter validated to reject codes already used within the same 30-second window.
+- Login timing side-channel: constant-time bcrypt invocation now applies uniformly to OIDC-only accounts and missing-user paths, preventing user-enumeration via response-time differences.
+- OIDC step-up re-authentication: expired OIDC sessions trigger a re-authentication challenge instead of relying solely on the upstream provider's session state.
+- Strengthened `Strict-Transport-Security` header with `includeSubDomains` directive.
+- Expanded `Permissions-Policy` header to explicitly deny `accelerometer`, `gyroscope`, `payment`, `usb`, `interest-cohort`, and `ambient-light-sensor`.
+- Added `Cross-Origin-Opener-Policy: same-origin` to prevent cross-window opener attacks.
+- Rate limiting for `/api/auth/register` (8 requests per 15 minutes by default) closes the register enumeration probe surface.
+- Per-account rate limit on `/api/auth/logout` (60 requests per 15 minutes by default) to prevent session-disruption attacks.
+- Active sessions are atomically revoked when the owner regenerates a recovery code; the originating request receives a fresh auth cookie so the current device stays signed in while all other devices are signed out.
 
 ### Fixed
-- Per-account rate limit enforcement on `/api/auth/logout` endpoint to prevent denial-of-service attacks via session disruption.
-- Docker `HEALTHCHECK` no longer relies on external HTTP clients (`wget`/`curl`) that are not present in the scratch-based runtime image. The binary now ships an `ovumcy healthcheck` subcommand that performs the `/healthz` probe in-process; the `Dockerfile` and bundled compose examples invoke it directly. Without this fix the container was reported as `unhealthy` once Docker began running the bundled healthcheck.
+- `DailyLog.Date` and `User.LastPeriodStart` are now canonicalized to UTC midnight on write. A one-time migration backfill corrects existing rows with non-canonical timestamps; observable calendar behavior is unchanged.
+- Docker `HEALTHCHECK` no longer relies on `wget`/`curl`, which are absent from the scratch-based runtime image. The binary now ships an `ovumcy healthcheck` subcommand that performs the `/healthz` probe in-process; the `Dockerfile` and all bundled compose examples invoke it directly. Without this fix the container was reported as `unhealthy`.
+
+### Changed
+- Updated `github.com/gofiber/fiber/v2` dependency.
 
 ## [0.9.3] - 2026-04-30
 
@@ -317,7 +331,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.0...v0.9.1
