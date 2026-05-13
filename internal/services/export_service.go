@@ -218,11 +218,16 @@ func (service *ExportService) BuildSummary(userID uint, from *time.Time, to *tim
 		}
 	}
 
+	// first/last come from DailyLog.Date, which migration 019 canonicalizes to
+	// UTC-midnight. DateAtLocation() applies .In(location) and would shift the
+	// calendar day backward by one for negative-offset zones (Pago_Pago,
+	// Adak, …) — see the explicit warning in day_utils.go. Use CalendarDayKey
+	// to read the stored calendar components verbatim instead.
 	return ExportSummary{
 		TotalEntries: len(logs),
 		HasData:      true,
-		DateFrom:     DateAtLocation(first, location).Format(exportDateLayout),
-		DateTo:       DateAtLocation(last, location).Format(exportDateLayout),
+		DateFrom:     CalendarDayKey(first),
+		DateTo:       CalendarDayKey(last),
 	}, nil
 }
 

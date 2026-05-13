@@ -59,7 +59,11 @@ func TestSettingsCycleUsesRequestTimezoneForLastPeriodStartValidation(t *testing
 		t.Fatal("expected persisted last_period_start")
 	}
 
-	savedLocalDay := services.DateAtLocation(updatedUser.LastPeriodStart.In(location), location).Format("2006-01-02")
+	// LastPeriodStart is a date-only value (UTC-midnight on disk per migration
+	// 019). DateAtLocation/.In(location) would mis-shift it across DST and
+	// negative-offset zones; read the calendar components directly instead —
+	// see the docblock on services.DateAtLocation.
+	savedLocalDay := services.CalendarDayKey(*updatedUser.LastPeriodStart)
 	if savedLocalDay != localToday {
 		t.Fatalf("expected saved last_period_start %q, got %q", localToday, savedLocalDay)
 	}
