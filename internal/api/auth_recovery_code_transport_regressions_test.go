@@ -68,7 +68,9 @@ func TestResetPasswordJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-regenerate@example.com")
 
-	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{}, nil)
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{
+		"password": {"StrongPass1"},
+	}, nil)
 	assertStatusCode(t, response, http.StatusSeeOther)
 	if location := response.Header.Get("Location"); location != "/recovery-code" {
 		t.Fatalf("expected redirect to /recovery-code, got %q", location)
@@ -96,7 +98,9 @@ func TestRegenerateRecoveryCodeRedirectsToDedicatedRecoveryPage(t *testing.T) {
 func TestRegenerateRecoveryCodeJSONDoesNotExposeRecoveryCode(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-regenerate-json@example.com")
 
-	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{}, map[string]string{
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{
+		"password": {"StrongPass1"},
+	}, map[string]string{
 		"Accept": "application/json",
 	})
 	assertStatusCode(t, response, http.StatusOK)

@@ -243,6 +243,9 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
 
     await page
+      .locator('form[action="/api/settings/regenerate-recovery-code"] #settings-recovery-code-password')
+      .fill(state.password);
+    await page
       .locator('form[action="/api/settings/regenerate-recovery-code"] button[type="submit"]')
       .click();
     await expect(page.locator('#confirm-modal')).toBeVisible();

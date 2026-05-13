@@ -14,6 +14,10 @@ func (handler *Handler) RegenerateRecoveryCode(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
 		return handler.respondMappedError(c, spec)
 	}
+	if _, spec, valid := handler.validateSettingsActionPassword(c); !valid {
+		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
+		return handler.respondMappedError(c, spec)
+	}
 	recoveryCode, err := handler.authService.RegenerateRecoveryCode(user.ID)
 	if err != nil {
 		spec := mapRecoveryCodeRegenerationError(err)

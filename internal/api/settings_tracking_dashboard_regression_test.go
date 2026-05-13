@@ -41,7 +41,9 @@ func TestTrackingSettingsExposeBBTAndCervicalMucusOnDashboard(t *testing.T) {
 func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-recovery-return@example.com")
 
-	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{}, nil)
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/settings/regenerate-recovery-code", url.Values{
+		"password": {"StrongPass1"},
+	}, nil)
 	assertStatusCode(t, response, http.StatusSeeOther)
 
 	recoveryCookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName)

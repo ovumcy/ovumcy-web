@@ -580,9 +580,18 @@
         <form
           action="/api/settings/regenerate-recovery-code"
           method="post"
+          class="space-y-4"
           data-confirm="{{t .Messages "settings.confirm_regenerate_recovery_code"}}"
           data-confirm-accept="{{t .Messages "settings.recovery_code.submit"}}">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "settings.delete_account.password"
+            "FieldID" "settings-recovery-code-password"
+            "FieldName" "password"
+            "Autocomplete" "current-password"
+            "Required" true)}}
           <button type="submit" class="btn-secondary">{{t .Messages "settings.recovery_code.submit"}}</button>
         </form>
         {{else}}
