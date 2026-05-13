@@ -35,7 +35,19 @@ test.describe('Auth: register, login, logout', () => {
     expect(recoveryCookie).toBeFalsy();
   });
 
-  test('register duplicate email shows error and keeps clean redirect URL', async ({ page }) => {
+  test('register duplicate email is silenced and does not leak account existence', async ({
+    page,
+    context,
+  }) => {
+    // Pre-fix #5: registering an already-taken email surfaced a
+    // .status-error banner and pre-filled #register-email with the
+    // submitted address, giving an attacker a single-request oracle
+    // for "is this email registered". Post-fix the server returns the
+    // same status + body shape as a fresh enrollment but without auth
+    // or recovery cookies (Set-Cookie remains the residual signal —
+    // see SECURITY.md). UI must therefore look like a no-op landing on
+    // /register: no error banner, no email pre-fill, and no flash /
+    // auth / recovery cookies left behind.
     const creds = createCredentials('auth-duplicate');
 
     await registerOwnerViaUI(page, creds);
@@ -44,10 +56,15 @@ test.describe('Auth: register, login, logout', () => {
     await logoutViaAPI(page);
     await registerOwnerViaUI(page, creds);
 
-    await expect(page).toHaveURL(/\/register$/);
+    await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
     expectNoSensitiveAuthParams(page.url());
-    await expect(page.locator('.status-error')).toBeVisible();
-    await expect(page.locator('#register-email')).toHaveValue(creds.email);
+    await expect(page.locator('.status-error')).toHaveCount(0);
+    await expect(page.locator('#register-email')).toHaveValue('');
+
+    const cookies = await context.cookies();
+    for (const name of ['ovumcy_auth', 'ovumcy_recovery_code', 'ovumcy_flash']) {
+      expect(cookies.find((cookie) => cookie.name === name)).toBeUndefined();
+    }
   });
 
   test('register mismatch password shows form error without leaking query params', async ({ page }) => {

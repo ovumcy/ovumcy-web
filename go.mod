@@ -1,6 +1,6 @@
 module github.com/ovumcy/ovumcy-web
 
-go 1.25.8
+go 1.25.10
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0

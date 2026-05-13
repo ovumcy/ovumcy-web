@@ -29,8 +29,13 @@ var (
 	ErrAuthPasswordUpdate   = errors.New("auth password update failed")
 )
 
-const recoveryCodeTimingEqualizationHash = "$2a$10$ReZgUuXu2GXtC.RZ/q2QyesBFX182a3ycbr78sbtgURmuOyc3ygtG"
-const credentialsTimingEqualizationHash = "$2a$10$h7pMPVpw/fZjbsXnbtpfD.UzmSCNk0FmbmMkP7wKDlO7IqhsBVX1m"
+// recoveryCodeTimingEqualizationHash and credentialsTimingEqualizationHash are
+// fixed bcrypt-cost-10 placeholder hashes used by the equalize* helpers below
+// to spend bcrypt compute time on the early-return paths in recovery and
+// login. They are never compared against a real credential — the result of
+// bcrypt.CompareHashAndPassword is discarded — and never authenticate anyone.
+const recoveryCodeTimingEqualizationHash = "$2a$10$ReZgUuXu2GXtC.RZ/q2QyesBFX182a3ycbr78sbtgURmuOyc3ygtG" // #nosec G101 -- fixed placeholder bcrypt hash, see comment above; never authenticates a real user
+const credentialsTimingEqualizationHash = "$2a$10$h7pMPVpw/fZjbsXnbtpfD.UzmSCNk0FmbmMkP7wKDlO7IqhsBVX1m" // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
 
 type AuthUserRepository interface {
 	ExistsByNormalizedEmail(email string) (bool, error)
