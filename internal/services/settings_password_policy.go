@@ -128,4 +128,3 @@ func (service *SettingsService) FinalizeLocalPasswordSetup(user *models.User, pr
 	user.MustChangePassword = false
 	return recoveryCode, nil
 }
-

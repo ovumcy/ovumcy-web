@@ -64,13 +64,13 @@ type proxySettings struct {
 }
 
 const (
-	headerXContentTypeOptions        = "X-Content-Type-Options"
-	headerReferrerPolicy             = "Referrer-Policy"
-	headerPermissionsPolicy          = "Permissions-Policy"
-	headerCrossOriginOpenerPolicy    = "Cross-Origin-Opener-Policy"
-	headerXFrameOptions              = "X-Frame-Options"
-	headerContentSecurityPolicy      = "Content-Security-Policy"
-	headerStrictTransportSecurity    = "Strict-Transport-Security"
+	headerXContentTypeOptions     = "X-Content-Type-Options"
+	headerReferrerPolicy          = "Referrer-Policy"
+	headerPermissionsPolicy       = "Permissions-Policy"
+	headerCrossOriginOpenerPolicy = "Cross-Origin-Opener-Policy"
+	headerXFrameOptions           = "X-Frame-Options"
+	headerContentSecurityPolicy   = "Content-Security-Policy"
+	headerStrictTransportSecurity = "Strict-Transport-Security"
 
 	xContentTypeOptionsNoSniff           = "nosniff"
 	referrerPolicyStrictOrigin           = "strict-origin-when-cross-origin"

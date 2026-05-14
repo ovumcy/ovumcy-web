@@ -181,4 +181,3 @@ func (service *TOTPService) DisableTOTP(userID uint) error {
 	}
 	return nil
 }
-

@@ -145,4 +145,3 @@ func TestPickupRegisterTamperedCookieRedirectsToLogin(t *testing.T) {
 		t.Fatal("expected neutral flash cookie after tampered pickup")
 	}
 }
-

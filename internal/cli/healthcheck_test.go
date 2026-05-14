@@ -95,4 +95,3 @@ func TestRunHealthcheckCommandHitsConfiguredPort(t *testing.T) {
 		t.Fatalf("expected request path %q, got %q", healthcheckPath, requested)
 	}
 }
-

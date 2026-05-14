@@ -161,23 +161,23 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 	t.Helper()
 
 	var migratedUser struct {
-		Email               string `gorm:"column:email"`
-		DisplayName         string `gorm:"column:display_name"`
-		LocalAuthEnabled    bool   `gorm:"column:local_auth_enabled"`
-		AuthSessionVersion  int    `gorm:"column:auth_session_version"`
-		OnboardingCompleted bool   `gorm:"column:onboarding_completed"`
-		CycleLength         int    `gorm:"column:cycle_length"`
-		PeriodLength        int    `gorm:"column:period_length"`
-		LutealPhase         int    `gorm:"column:luteal_phase"`
-		AutoPeriodFill      bool   `gorm:"column:auto_period_fill"`
-		IrregularCycle      bool   `gorm:"column:irregular_cycle"`
-		TrackBBT            bool   `gorm:"column:track_bbt"`
-		TemperatureUnit     string `gorm:"column:temperature_unit"`
-		TrackCervicalMucus  bool   `gorm:"column:track_cervical_mucus"`
-		HideSexChip         bool   `gorm:"column:hide_sex_chip"`
-		HideCycleFactors    bool   `gorm:"column:hide_cycle_factors"`
-		HideNotesField      bool   `gorm:"column:hide_notes_field"`
-		ShowHistoricalPhases bool  `gorm:"column:show_historical_phases"`
+		Email                string `gorm:"column:email"`
+		DisplayName          string `gorm:"column:display_name"`
+		LocalAuthEnabled     bool   `gorm:"column:local_auth_enabled"`
+		AuthSessionVersion   int    `gorm:"column:auth_session_version"`
+		OnboardingCompleted  bool   `gorm:"column:onboarding_completed"`
+		CycleLength          int    `gorm:"column:cycle_length"`
+		PeriodLength         int    `gorm:"column:period_length"`
+		LutealPhase          int    `gorm:"column:luteal_phase"`
+		AutoPeriodFill       bool   `gorm:"column:auto_period_fill"`
+		IrregularCycle       bool   `gorm:"column:irregular_cycle"`
+		TrackBBT             bool   `gorm:"column:track_bbt"`
+		TemperatureUnit      string `gorm:"column:temperature_unit"`
+		TrackCervicalMucus   bool   `gorm:"column:track_cervical_mucus"`
+		HideSexChip          bool   `gorm:"column:hide_sex_chip"`
+		HideCycleFactors     bool   `gorm:"column:hide_cycle_factors"`
+		HideNotesField       bool   `gorm:"column:hide_notes_field"`
+		ShowHistoricalPhases bool   `gorm:"column:show_historical_phases"`
 	}
 	if err := database.
 		Table("users").

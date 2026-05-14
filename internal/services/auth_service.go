@@ -35,7 +35,7 @@ var (
 // login. They are never compared against a real credential — the result of
 // bcrypt.CompareHashAndPassword is discarded — and never authenticate anyone.
 const recoveryCodeTimingEqualizationHash = "$2a$10$ReZgUuXu2GXtC.RZ/q2QyesBFX182a3ycbr78sbtgURmuOyc3ygtG" // #nosec G101 -- fixed placeholder bcrypt hash, see comment above; never authenticates a real user
-const credentialsTimingEqualizationHash = "$2a$10$h7pMPVpw/fZjbsXnbtpfD.UzmSCNk0FmbmMkP7wKDlO7IqhsBVX1m" // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
+const credentialsTimingEqualizationHash = "$2a$10$h7pMPVpw/fZjbsXnbtpfD.UzmSCNk0FmbmMkP7wKDlO7IqhsBVX1m"  // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
 
 type AuthUserRepository interface {
 	ExistsByNormalizedEmail(email string) (bool, error)
