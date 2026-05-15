@@ -19,10 +19,10 @@ type stubTOTPUserRepo struct {
 	updatedEnabled   bool
 	updateTOTPCalled bool
 
-	reencryptErr           error
-	reencryptCalled        bool
-	reencryptedUserID      uint
-	reencryptedCiphertext  string
+	reencryptErr          error
+	reencryptCalled       bool
+	reencryptedUserID     uint
+	reencryptedCiphertext string
 
 	claimErr      error
 	claimedSteps  map[uint]int64

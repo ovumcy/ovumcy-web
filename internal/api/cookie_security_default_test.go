@@ -28,18 +28,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	defer loginResponse.Body.Close()
 
 	authCookie := responseCookie(loginResponse.Cookies(), authCookieName)
-	if authCookie == nil {
-		t.Fatal("expected auth cookie on valid login")
-	}
-	if !authCookie.HttpOnly {
-		t.Fatal("expected auth cookie HttpOnly=true")
-	}
-	if authCookie.Secure {
-		t.Fatal("expected auth cookie Secure=false when COOKIE_SECURE is disabled")
-	}
-	if authCookie.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("expected auth cookie SameSite=Lax, got %v", authCookie.SameSite)
-	}
+	assertSessionCookieInsecure(t, authCookie, "auth")
 
 	registerForm := url.Values{
 		"email":            {"recovery-cookie-default@example.com"},
@@ -60,18 +49,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	}
 
 	pickupCookie := responseCookie(registerResponse.Cookies(), registerPickupCookieName)
-	if pickupCookie == nil {
-		t.Fatal("expected pickup cookie after successful register")
-	}
-	if !pickupCookie.HttpOnly {
-		t.Fatal("expected pickup cookie HttpOnly=true")
-	}
-	if pickupCookie.Secure {
-		t.Fatal("expected pickup cookie Secure=false when COOKIE_SECURE is disabled")
-	}
-	if pickupCookie.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("expected pickup cookie SameSite=Lax, got %v", pickupCookie.SameSite)
-	}
+	assertSessionCookieInsecure(t, pickupCookie, "pickup")
 
 	pickupRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
 	pickupRequest.Header.Set("Cookie", registerPickupCookieName+"="+pickupCookie.Value)
@@ -82,18 +60,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	defer pickupResponse.Body.Close()
 
 	recoveryCookie := responseCookie(pickupResponse.Cookies(), recoveryCodeCookieName)
-	if recoveryCookie == nil {
-		t.Fatal("expected recovery cookie after pickup")
-	}
-	if !recoveryCookie.HttpOnly {
-		t.Fatal("expected recovery cookie HttpOnly=true")
-	}
-	if recoveryCookie.Secure {
-		t.Fatal("expected recovery cookie Secure=false when COOKIE_SECURE is disabled")
-	}
-	if recoveryCookie.SameSite != http.SameSiteLaxMode {
-		t.Fatalf("expected recovery cookie SameSite=Lax, got %v", recoveryCookie.SameSite)
-	}
+	assertSessionCookieInsecure(t, recoveryCookie, "recovery")
 
 	languageForm := url.Values{
 		"lang": {"en"},
@@ -113,5 +80,21 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	}
 	if languageCookie.Secure {
 		t.Fatal("expected language cookie Secure=false when COOKIE_SECURE is disabled")
+	}
+}
+
+func assertSessionCookieInsecure(t *testing.T, cookie *http.Cookie, label string) {
+	t.Helper()
+	if cookie == nil {
+		t.Fatalf("expected %s cookie", label)
+	}
+	if !cookie.HttpOnly {
+		t.Fatalf("expected %s cookie HttpOnly=true", label)
+	}
+	if cookie.Secure {
+		t.Fatalf("expected %s cookie Secure=false when COOKIE_SECURE is disabled", label)
+	}
+	if cookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("expected %s cookie SameSite=Lax, got %v", label, cookie.SameSite)
 	}
 }

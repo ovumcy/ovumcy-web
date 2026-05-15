@@ -57,14 +57,7 @@ func TestDayServiceUpsertCanonicalizesDateToUTCMidnight(t *testing.T) {
 			if err := database.Raw("SELECT date FROM daily_logs WHERE user_id = ? ORDER BY date ASC LIMIT 1", user.ID).Row().Scan(&rawDate); err != nil {
 				t.Fatalf("raw SELECT date: %v", err)
 			}
-			if !strings.HasPrefix(rawDate, "2026-02-10") {
-				t.Fatalf("expected on-disk date to begin with local calendar day 2026-02-10, got %q", rawDate)
-			}
-			if strings.Contains(rawDate, "+") || strings.Contains(rawDate, "-05:") || strings.Contains(rawDate, "+09:") {
-				if !strings.Contains(rawDate, "+00:00") && !strings.Contains(rawDate, "Z") {
-					t.Fatalf("expected on-disk offset to be UTC (+00:00 or Z), got %q", rawDate)
-				}
-			}
+			assertUTCMidnightRawDate(t, rawDate, "2026-02-10")
 
 			entry, err := service.FetchLogByDate(user.ID, localCalendarDay, tt.location)
 			if err != nil {
@@ -83,5 +76,17 @@ func TestDayServiceUpsertCanonicalizesDateToUTCMidnight(t *testing.T) {
 				t.Fatalf("expected loaded entry at midnight, got %s", entry.Date.Format(time.RFC3339Nano))
 			}
 		})
+	}
+}
+
+func assertUTCMidnightRawDate(t *testing.T, rawDate, expectedPrefix string) {
+	t.Helper()
+	if !strings.HasPrefix(rawDate, expectedPrefix) {
+		t.Fatalf("expected on-disk date to begin with local calendar day %s, got %q", expectedPrefix, rawDate)
+	}
+	hasNonUTCOffset := strings.Contains(rawDate, "+") || strings.Contains(rawDate, "-05:") || strings.Contains(rawDate, "+09:")
+	isUTC := strings.Contains(rawDate, "+00:00") || strings.Contains(rawDate, "Z")
+	if hasNonUTCOffset && !isUTC {
+		t.Fatalf("expected on-disk offset to be UTC (+00:00 or Z), got %q", rawDate)
 	}
 }

@@ -107,29 +107,7 @@ func TestRegisterResponseParityBetweenNewAndDuplicateEmail(t *testing.T) {
 	}
 
 	for _, name := range cookieNames(newResponse) {
-		newCookie := newCookies[name]
-		dupCookie := dupCookies[name]
-		if dupCookie == nil {
-			t.Fatalf("duplicate response missing cookie %q present in new response", name)
-		}
-		if len(newCookie.Value) != len(dupCookie.Value) {
-			t.Fatalf(
-				"cookie %q length mismatch: new=%d duplicate=%d",
-				name, len(newCookie.Value), len(dupCookie.Value),
-			)
-		}
-		if newCookie.Path != dupCookie.Path {
-			t.Fatalf("cookie %q path mismatch: new=%q duplicate=%q", name, newCookie.Path, dupCookie.Path)
-		}
-		if newCookie.HttpOnly != dupCookie.HttpOnly {
-			t.Fatalf("cookie %q HttpOnly mismatch", name)
-		}
-		if newCookie.Secure != dupCookie.Secure {
-			t.Fatalf("cookie %q Secure mismatch", name)
-		}
-		if newCookie.SameSite != dupCookie.SameSite {
-			t.Fatalf("cookie %q SameSite mismatch", name)
-		}
+		assertCookieParity(t, name, newCookies[name], dupCookies[name])
 	}
 
 	// Both branches must specifically emit the pickup cookie and must NOT leak
@@ -144,6 +122,28 @@ func TestRegisterResponseParityBetweenNewAndDuplicateEmail(t *testing.T) {
 		if cookies[recoveryCodeCookieName] != nil {
 			t.Fatalf("%s response unexpectedly issued recovery cookie", label)
 		}
+	}
+}
+
+func assertCookieParity(t *testing.T, name string, want, got *http.Cookie) {
+	t.Helper()
+	if got == nil {
+		t.Fatalf("duplicate response missing cookie %q present in new response", name)
+	}
+	if len(want.Value) != len(got.Value) {
+		t.Fatalf("cookie %q length mismatch: new=%d duplicate=%d", name, len(want.Value), len(got.Value))
+	}
+	if want.Path != got.Path {
+		t.Fatalf("cookie %q path mismatch: new=%q duplicate=%q", name, want.Path, got.Path)
+	}
+	if want.HttpOnly != got.HttpOnly {
+		t.Fatalf("cookie %q HttpOnly mismatch", name)
+	}
+	if want.Secure != got.Secure {
+		t.Fatalf("cookie %q Secure mismatch", name)
+	}
+	if want.SameSite != got.SameSite {
+		t.Fatalf("cookie %q SameSite mismatch", name)
 	}
 }
 

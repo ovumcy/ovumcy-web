@@ -73,12 +73,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			if err := database.Raw("SELECT date FROM daily_logs WHERE user_id = ? ORDER BY date ASC LIMIT 1", user.ID).Row().Scan(&rawDate); err != nil {
 				t.Fatalf("raw SELECT date: %v", err)
 			}
-			if !strings.HasPrefix(rawDate, postedDayRaw) {
-				t.Fatalf("expected on-disk date prefix %q, got %q (calendar day must reflect the request locale day)", postedDayRaw, rawDate)
-			}
-			if strings.Contains(rawDate, "-05:") || strings.Contains(rawDate, "+09:") {
-				t.Fatalf("expected canonical UTC offset on disk, got non-UTC offset in %q", rawDate)
-			}
+			assertUpsertUTCDate(t, rawDate, postedDayRaw)
 
 			roundTripRequest := httptest.NewRequest(http.MethodGet, "/api/days/"+postedDayRaw, nil)
 			roundTripRequest.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+location.String()))
@@ -107,5 +102,15 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 				t.Fatalf("expected calendar day %s preserved through round-trip, got %s", postedDayRaw, loaded.Date.Format("2006-01-02"))
 			}
 		})
+	}
+}
+
+func assertUpsertUTCDate(t *testing.T, rawDate, expectedPrefix string) {
+	t.Helper()
+	if !strings.HasPrefix(rawDate, expectedPrefix) {
+		t.Fatalf("expected on-disk date prefix %q, got %q (calendar day must reflect the request locale day)", expectedPrefix, rawDate)
+	}
+	if strings.Contains(rawDate, "-05:") || strings.Contains(rawDate, "+09:") {
+		t.Fatalf("expected canonical UTC offset on disk, got non-UTC offset in %q", rawDate)
 	}
 }
