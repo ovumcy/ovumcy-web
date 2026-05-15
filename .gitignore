@@ -64,3 +64,4 @@ playwright-report/
 docs/screenshots/ovumcy-social-preview.png
 .claude/
 scripts/take-screenshots.mjs
+scripts/record-demo.mjs

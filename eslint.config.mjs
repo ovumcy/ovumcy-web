@@ -7,7 +7,8 @@ export default [
       "node_modules/",
       "web/src/js/app/*.js",
       "web/src/js/settings-export/*.js",
-      "web/static/js/htmx.min.js"
+      "web/static/js/htmx.min.js",
+      "scripts/take-screenshots.mjs"
     ]
   },
   {

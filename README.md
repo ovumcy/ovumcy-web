@@ -85,6 +85,12 @@ Basic familiarity with Docker is enough for the supported quick start. A `docker
 
 No. Ovumcy provides estimates and logs based on recorded data. It is not a medical device and should not be treated as diagnostic or treatment advice.
 
+## Demo
+
+<p align="center">
+  <img src="docs/demo.gif" alt="Ovumcy demo — sign up, onboarding, dashboard, calendar, settings, and dark theme" width="720">
+</p>
+
 ## Screenshots
 
 ### Get Started Quickly
