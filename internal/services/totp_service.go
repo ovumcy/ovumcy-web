@@ -37,11 +37,26 @@ type TOTPUserRepository interface {
 	// bumps auth_session_version in the same transaction, so toggling 2FA
 	// invalidates every active auth cookie for the account.
 	UpdateTOTPFieldsAndRevokeSessions(userID uint, encryptedSecret string, enabled bool) error
+	// UpdateTOTPSecretCiphertext rewrites just the encrypted secret column
+	// WITHOUT bumping auth_session_version or touching totp_enabled. It exists
+	// for transparent re-encryption of legacy ciphertexts under the new
+	// aad-bound format on a successful 2FA login: nothing about the account's
+	// security posture changed, so no active session should be revoked.
+	UpdateTOTPSecretCiphertext(userID uint, encryptedSecret string) error
 	// ClaimTOTPStep atomically advances totp_last_used_step to step iff it is
 	// strictly greater than the persisted value. Returns true when the row was
 	// updated (the step is now consumed by this caller) and false when the step
 	// was already at or beyond `step` (replay or concurrent loser).
 	ClaimTOTPStep(userID uint, step int64) (bool, error)
+}
+
+// aadForTOTPSecret returns the additional-authenticated-data used to bind
+// an encrypted TOTP secret to a single user. The string is opaque to the
+// caller and only needs to be stable across encrypt/decrypt for the same
+// (purpose, user) pair. Including the user id prevents a swap of one user's
+// ciphertext into another user's row from being acceptable to DecryptField.
+func aadForTOTPSecret(userID uint) []byte {
+	return []byte(fmt.Sprintf("ovumcy.field.totp_secret:%d", userID))
 }
 
 // TOTPService handles TOTP secret generation, enrollment, validation, and removal.
@@ -123,8 +138,16 @@ func (service *TOTPService) ValidateCodeRaw(rawSecret, code string) bool {
 // step in the database. A replayed or concurrently-consumed step returns
 // ErrTOTPReplayed so the caller can surface it separately in security logs.
 // Used during the 2FA login challenge.
+//
+// If the persisted ciphertext was sealed by a pre-aad version of EncryptField
+// (no aad binding), DecryptField returns isLegacy=true and we transparently
+// re-encrypt the secret under the current aad-bound format after a
+// successful step claim. The re-encryption uses a session-version-preserving
+// repo call so the user's current login does not get invalidated by what is
+// otherwise an internal storage upgrade.
 func (service *TOTPService) ValidateCode(userID uint, encryptedSecret, code string) (bool, error) {
-	rawSecret, err := security.DecryptField(encryptedSecret, service.secretKey)
+	aad := aadForTOTPSecret(userID)
+	rawSecret, isLegacy, err := security.DecryptField(encryptedSecret, service.secretKey, aad)
 	if err != nil {
 		return false, fmt.Errorf("%w: %v", ErrTOTPSecretDecrypt, err)
 	}
@@ -138,6 +161,15 @@ func (service *TOTPService) ValidateCode(userID uint, encryptedSecret, code stri
 	}
 	if !claimed {
 		return false, ErrTOTPReplayed
+	}
+
+	// Best-effort lazy re-encryption: failure here MUST NOT block login.
+	// A persistent inability to upgrade the row will surface again on the
+	// next login and is operationally observable via the security log.
+	if isLegacy {
+		if reEncrypted, encryptErr := security.EncryptField(rawSecret, service.secretKey, aad); encryptErr == nil {
+			_ = service.users.UpdateTOTPSecretCiphertext(userID, reEncrypted)
+		}
 	}
 	return true, nil
 }
@@ -166,10 +198,12 @@ func findValidatedTOTPStep(rawSecret, code string, now time.Time) (int64, bool) 
 }
 
 // EnableTOTP encrypts rawSecret and stores it alongside totp_enabled=true for
-// the user. The underlying repository call also bumps auth_session_version so
-// every active auth cookie issued before 2FA was enabled is revoked.
+// the user. The ciphertext is bound to the user's id via aad so a database-
+// level swap of one user's encrypted secret into another row fails to open.
+// The underlying repository call also bumps auth_session_version so every
+// active auth cookie issued before 2FA was enabled is revoked.
 func (service *TOTPService) EnableTOTP(userID uint, rawSecret string) error {
-	encrypted, err := security.EncryptField(rawSecret, service.secretKey)
+	encrypted, err := security.EncryptField(rawSecret, service.secretKey, aadForTOTPSecret(userID))
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrTOTPSecretEncrypt, err)
 	}

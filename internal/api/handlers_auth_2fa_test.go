@@ -44,6 +44,10 @@ func (r *dbUserRepoForTest) UpdateTOTPFieldsAndRevokeSessions(userID uint, encry
 	}).Error
 }
 
+func (r *dbUserRepoForTest) UpdateTOTPSecretCiphertext(userID uint, encryptedSecret string) error {
+	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("totp_secret", encryptedSecret).Error
+}
+
 func (r *dbUserRepoForTest) ClaimTOTPStep(userID uint, step int64) (bool, error) {
 	result := r.db.Model(&models.User{}).
 		Where("id = ? AND totp_last_used_step < ?", userID, step).

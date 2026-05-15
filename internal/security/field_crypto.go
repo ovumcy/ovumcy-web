@@ -18,12 +18,26 @@ const (
 	fieldCryptoInfoLabel = "ovumcy.field-crypto.key.v1"
 )
 
-// EncryptField encrypts a plaintext string using AES-256-GCM with a key derived
-// from secretKey via HKDF-SHA256. The returned value is base64url-encoded and
-// suitable for persistent storage in the database.
-func EncryptField(plaintext string, secretKey []byte) (string, error) {
+// EncryptField encrypts a plaintext string with AES-256-GCM using a key
+// derived from secretKey via HKDF-SHA256. The ciphertext is bound to `aad`
+// through the AEAD authentication tag, so an attacker with database write
+// access cannot swap the ciphertext from one row or column into another
+// under the same key without invalidating the tag — DecryptField with a
+// different aad will fail to open.
+//
+// `aad` MUST be non-empty. Callers should use a stable, context-specific
+// identifier such as "ovumcy.field.<purpose>:<row id>" (for example
+// "ovumcy.field.totp_secret:42"). Empty aad would re-introduce the
+// cross-row swap vector that this function exists to close.
+//
+// The returned value is base64url-encoded and suitable for persistent
+// storage in the database.
+func EncryptField(plaintext string, secretKey []byte, aad []byte) (string, error) {
 	if len(secretKey) == 0 {
 		return "", errors.New("field crypto: secret key is required")
+	}
+	if len(aad) == 0 {
+		return "", errors.New("field crypto: aad is required")
 	}
 
 	aead, err := newFieldCryptoAEAD(secretKey)
@@ -36,7 +50,7 @@ func EncryptField(plaintext string, secretKey []byte) (string, error) {
 		return "", fmt.Errorf("field crypto: generate nonce: %w", err)
 	}
 
-	ciphertext := aead.Seal(nil, nonce, []byte(plaintext), nil)
+	ciphertext := aead.Seal(nil, nonce, []byte(plaintext), aad)
 	payload := make([]byte, 0, len(nonce)+len(ciphertext))
 	payload = append(payload, nonce...)
 	payload = append(payload, ciphertext...)
@@ -44,12 +58,40 @@ func EncryptField(plaintext string, secretKey []byte) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(payload), nil
 }
 
-// DecryptField decrypts a value produced by EncryptField.
-func DecryptField(encoded string, secretKey []byte) (string, error) {
+// DecryptField opens a ciphertext produced by EncryptField. It returns the
+// plaintext together with an `isLegacy` flag.
+//
+// The function first tries to open the payload with the supplied aad (the
+// normal path for ciphertexts written by this revision of EncryptField).
+// On failure it falls back to opening without aad, which succeeds only for
+// LEGACY ciphertexts written by earlier Ovumcy versions that called
+// EncryptField with nil aad. When the legacy fallback succeeds `isLegacy`
+// is true, signaling to the caller that the persisted ciphertext is in the
+// deprecated unbound format and should be re-encrypted with aad on the next
+// safe write opportunity.
+//
+// If neither path opens, the original aad-bound error is returned so the
+// failure mode mirrors a tampered ciphertext rather than a misconfigured
+// aad.
+func DecryptField(encoded string, secretKey []byte, aad []byte) (string, bool, error) {
 	if len(secretKey) == 0 {
-		return "", errors.New("field crypto: secret key is required")
+		return "", false, errors.New("field crypto: secret key is required")
 	}
 
+	plaintext, err := openFieldCiphertext(encoded, secretKey, aad)
+	if err == nil {
+		return plaintext, false, nil
+	}
+	if len(aad) == 0 {
+		return "", false, err
+	}
+	if legacy, legacyErr := openFieldCiphertext(encoded, secretKey, nil); legacyErr == nil {
+		return legacy, true, nil
+	}
+	return "", false, err
+}
+
+func openFieldCiphertext(encoded string, secretKey []byte, aad []byte) (string, error) {
 	aead, err := newFieldCryptoAEAD(secretKey)
 	if err != nil {
 		return "", err
@@ -66,12 +108,36 @@ func DecryptField(encoded string, secretKey []byte) (string, error) {
 	}
 
 	nonce, ct := payload[:nonceSize], payload[nonceSize:]
-	plaintext, err := aead.Open(nil, nonce, ct, nil)
+	plaintext, err := aead.Open(nil, nonce, ct, aad)
 	if err != nil {
 		return "", fmt.Errorf("field crypto: decrypt: %w", err)
 	}
 
 	return string(plaintext), nil
+}
+
+// EncryptFieldNoAADForTest produces a ciphertext using the legacy no-aad
+// format that earlier Ovumcy versions wrote to disk. It exists ONLY so
+// regression tests in other packages can construct legacy fixtures without
+// re-implementing the AEAD machinery (the HKDF labels are unexported).
+// Production code MUST NOT call this function — use EncryptField instead.
+func EncryptFieldNoAADForTest(plaintext string, secretKey []byte) (string, error) {
+	if len(secretKey) == 0 {
+		return "", errors.New("field crypto: secret key is required")
+	}
+	aead, err := newFieldCryptoAEAD(secretKey)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("field crypto: generate nonce: %w", err)
+	}
+	ciphertext := aead.Seal(nil, nonce, []byte(plaintext), nil)
+	payload := make([]byte, 0, len(nonce)+len(ciphertext))
+	payload = append(payload, nonce...)
+	payload = append(payload, ciphertext...)
+	return base64.RawURLEncoding.EncodeToString(payload), nil
 }
 
 func newFieldCryptoAEAD(secretKey []byte) (cipher.AEAD, error) {

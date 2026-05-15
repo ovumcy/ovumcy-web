@@ -165,6 +165,16 @@ func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(userID uint, encry
 	}).Error
 }
 
+// UpdateTOTPSecretCiphertext rewrites only the encrypted TOTP secret column
+// without bumping auth_session_version and without touching totp_enabled or
+// totp_last_used_step. It exists for transparent re-encryption of legacy
+// (pre-aad-binding) ciphertexts under the current aad-bound format: the
+// account's security posture has not changed, so no active session should
+// be revoked by what is otherwise an internal storage upgrade.
+func (repo *UserRepository) UpdateTOTPSecretCiphertext(userID uint, encryptedSecret string) error {
+	return repo.database.Model(&models.User{}).Where("id = ?", userID).Update("totp_secret", encryptedSecret).Error
+}
+
 // ClaimTOTPStep atomically claims a TOTP step for the given user. Returns true
 // iff the row was updated, i.e. the persisted totp_last_used_step was strictly
 // less than `step` at the moment of the UPDATE. Replays and concurrent losers

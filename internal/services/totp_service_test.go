@@ -19,6 +19,11 @@ type stubTOTPUserRepo struct {
 	updatedEnabled   bool
 	updateTOTPCalled bool
 
+	reencryptErr           error
+	reencryptCalled        bool
+	reencryptedUserID      uint
+	reencryptedCiphertext  string
+
 	claimErr      error
 	claimedSteps  map[uint]int64
 	lastClaimUser uint
@@ -34,6 +39,13 @@ func (stub *stubTOTPUserRepo) UpdateTOTPFieldsAndRevokeSessions(userID uint, enc
 		stub.claimedSteps[userID] = 0
 	}
 	return stub.updateErr
+}
+
+func (stub *stubTOTPUserRepo) UpdateTOTPSecretCiphertext(userID uint, encryptedSecret string) error {
+	stub.reencryptCalled = true
+	stub.reencryptedUserID = userID
+	stub.reencryptedCiphertext = encryptedSecret
+	return stub.reencryptErr
 }
 
 func (stub *stubTOTPUserRepo) ClaimTOTPStep(userID uint, step int64) (bool, error) {

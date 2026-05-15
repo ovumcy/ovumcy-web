@@ -33,6 +33,12 @@ Closing the residual signal entirely is mathematically impossible without an out
 
 A separate vector — replay of a sealed `ovumcy_register_pickup` cookie captured from somebody else's response within the 5-minute TTL — is **not** part of this residual. The pickup cookie carries an opaque nonce that is consumed atomically through `register_pickup_tokens` on the first `GET /register/welcome` call; a captured cookie reaching the welcome endpoint a second time gets the same neutral `/login` redirect as a decoy or expired pickup, and cannot mint a second `ovumcy_auth` session.
 
+## Field-Level Encryption
+
+Sensitive per-account fields written through `security.EncryptField` (currently `users.totp_secret`) are encrypted with AES-256-GCM under a key derived from `SECRET_KEY` via HKDF-SHA256, and bound to the owner's user id through the AEAD authentication tag (additional-authenticated-data, `ovumcy.field.<purpose>:<row id>`). An attacker who can write directly to the database — for example via a hypothetical SQL injection or via host-level compromise — cannot move a ciphertext from one account into another account's row and have it open: the authentication tag fails to verify under a different aad. The `SECRET_KEY` itself is required for both encrypt and decrypt; database access without the key leaks nothing about the persisted value.
+
+A legacy decrypt path exists for ciphertexts written by Ovumcy versions before aad binding was introduced. The new code transparently re-encrypts those values under the aad-bound format on the next successful 2FA login. Operators do not need to take any explicit migration step; the upgrade happens lazily and without revoking the user's current session.
+
 ### Login: `requires_totp` reveals 2FA status
 
 `POST /api/auth/login` returns `{"requires_totp": true}` when the supplied password is correct and the account has TOTP enabled, and `{"ok": true}` plus a session cookie otherwise. A credential-dump attacker can use this to triage accounts by whether they have a second factor.
