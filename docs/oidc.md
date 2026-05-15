@@ -101,6 +101,12 @@ The legacy `POST /api/settings/change-password` endpoint still works for account
 
 If you want provider logout, keep `OIDC_POST_LOGOUT_REDIRECT_URL` on the same public origin as the callback URL. If you leave it empty, Ovumcy defaults to your public `/login` URL.
 
+Ovumcy host-pins the discovery-supplied `end_session_endpoint` to the configured `OIDC_ISSUER_URL` (same scheme, host, and effective port). If a provider advertises an end-session endpoint on a different origin — for example a compromised or look-alike discovery document — Ovumcy rejects it at provider load and silently falls back to local logout, regardless of `OIDC_LOGOUT_MODE`. This prevents a malicious metadata response from redirecting the logout flow (including any `id_token_hint` carried in the URL) to an attacker-controlled host.
+
+## Accepted Signing Algorithms
+
+Ovumcy verifies provider ID tokens with an explicit asymmetric-algorithm allowlist: `RS256`, `RS384`, `RS512`, `ES256`, `ES384`, `ES512`, `PS256`, `PS384`, `PS512`, and `EdDSA`. Symmetric algorithms (`HS*`) and the `none` algorithm are rejected even if the provider advertises them, so an attacker who controls discovery metadata cannot downgrade verification into an algorithm-confusion path that treats a known-public JWKS key as a shared HMAC secret. If your provider only supports something outside this list, sign-in will fail closed and the operator must reconfigure the upstream IdP.
+
 ## Provider Recipes
 
 The exact UI labels differ a little by provider version, but the stable requirements are the same:

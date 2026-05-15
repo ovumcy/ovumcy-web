@@ -31,6 +31,8 @@ A few information-disclosure signals are accepted residual risk because closing 
 
 Closing the residual signal entirely is mathematically impossible without an out-of-band verification channel: any in-app dispatch on the pickup cookie reveals the branch, and any login-after-register variant turns the probe into a follow-up POST `/api/auth/login` whose success or failure carries the same information. The only options are (a) a magic-link / email-driven enrollment that gates registration behind SMTP delivery (not assumed in the self-hosted deployment model), or (b) acceptance of the documented two-request probe. Both are revisited if Ovumcy ever ships a multi-tenant SaaS variant.
 
+A separate vector — replay of a sealed `ovumcy_register_pickup` cookie captured from somebody else's response within the 5-minute TTL — is **not** part of this residual. The pickup cookie carries an opaque nonce that is consumed atomically through `register_pickup_tokens` on the first `GET /register/welcome` call; a captured cookie reaching the welcome endpoint a second time gets the same neutral `/login` redirect as a decoy or expired pickup, and cannot mint a second `ovumcy_auth` session.
+
 ### Login: `requires_totp` reveals 2FA status
 
 `POST /api/auth/login` returns `{"requires_totp": true}` when the supplied password is correct and the account has TOTP enabled, and `{"ok": true}` plus a session cookie otherwise. A credential-dump attacker can use this to triage accounts by whether they have a second factor.
@@ -45,5 +47,6 @@ Operations that rotate a long-lived credential bump `users.auth_session_version`
 - Password reset via recovery code (`POST /api/auth/reset-password`).
 - Recovery-code regeneration (`POST /api/settings/regenerate-recovery-code`) — the current request receives a freshly issued cookie so the originating session stays alive, but every other device is signed out.
 - Forced password reset via the `ovumcy reset-password` operator command.
+- TOTP 2FA enable (`POST /api/settings/2fa/verify`) and disable (`POST /api/settings/2fa/disable`) — toggling the second factor is also a change to the account's auth posture, so any cookie issued before the toggle is invalidated. The originating device receives a freshly issued cookie inline; every other device is signed out.
 
 If you suspect a session compromise, regenerating the recovery code is the fastest way to force every other device to re-authenticate without changing your password.
