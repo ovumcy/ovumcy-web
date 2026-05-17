@@ -17,7 +17,6 @@ var (
 
 type SettingsUserRepository interface {
 	UpdateDisplayName(userID uint, displayName string) error
-	UpdateRecoveryCodeHash(userID uint, recoveryHash string) error
 	UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
 	UpdateByID(userID uint, updates map[string]any) error
@@ -48,10 +47,6 @@ func NewSettingsService(users SettingsUserRepository) *SettingsService {
 
 func (service *SettingsService) UpdateDisplayName(userID uint, displayName string) error {
 	return service.users.UpdateDisplayName(userID, displayName)
-}
-
-func (service *SettingsService) UpdateRecoveryCodeHash(userID uint, recoveryHash string) error {
-	return service.users.UpdateRecoveryCodeHash(userID, recoveryHash)
 }
 
 func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {

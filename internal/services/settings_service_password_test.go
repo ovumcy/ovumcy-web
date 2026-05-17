@@ -181,10 +181,6 @@ func (stub *stubSettingsUserRepo) UpdateDisplayName(uint, string) error {
 	return nil
 }
 
-func (stub *stubSettingsUserRepo) UpdateRecoveryCodeHash(uint, string) error {
-	return nil
-}
-
 func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error {
 	stub.updatePasswordCalled = true
 	stub.updatedUserID = userID

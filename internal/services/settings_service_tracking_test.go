@@ -112,10 +112,6 @@ func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(uint, string) error 
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdateRecoveryCodeHash(uint, string) error {
-	return nil
-}
-
 func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(uint, string, bool) error {
 	return nil
 }

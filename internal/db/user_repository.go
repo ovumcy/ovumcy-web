@@ -109,22 +109,10 @@ func (repo *UserRepository) UpdateDisplayName(userID uint, displayName string) e
 	return repo.database.Model(&models.User{}).Where("id = ?", userID).Update("display_name", displayName).Error
 }
 
-func (repo *UserRepository) UpdateRecoveryCodeHash(userID uint, recoveryHash string) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Update("recovery_code_hash", recoveryHash).Error
-}
-
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(userID uint, recoveryHash string) error {
 	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"recovery_code_hash":   recoveryHash,
 		"auth_session_version": gorm.Expr("auth_session_version + 1"),
-	}).Error
-}
-
-func (repo *UserRepository) UpdatePassword(userID uint, passwordHash string, mustChangePassword bool) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"password_hash":        passwordHash,
-		"must_change_password": mustChangePassword,
-		"local_auth_enabled":   true,
 	}).Error
 }
 
