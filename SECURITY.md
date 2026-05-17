@@ -242,3 +242,125 @@ If you enable `AUDIT_LOG_ENABLED=true`, plan retention and access control around
 The Fiber request log (`time | status | latency | method | path`) is independent of `AUDIT_LOG_ENABLED` and remains enabled in all configurations. It does not include `user_id` or authenticated-session metadata.
 
 The startup banner reflects the current setting (`audit_log=true|false`) so operators can confirm the effective configuration on each boot.
+
+## Test Enforcement Matrix
+
+This section maps each test-enforceable claim above to the Go test that guards it. It is the mechanical check that the privacy and security claims in this document remain true. When a claim changes, the corresponding test must change too; when a test is removed, the claim is no longer enforced and must be retracted from this document.
+
+Policy-level claims (threat model in/out-of-scope, design rationale, marketing-style statements like "privacy-first") are intentionally excluded — they are reviewed by humans, not by `go test`.
+
+### Field-Level Encryption
+
+| Claim | Enforced by |
+| --- | --- |
+| `users.totp_secret` is AES-256-GCM encrypted under a key derived from `SECRET_KEY` via HKDF-SHA256 | `TestEncryptDecryptField_RoundTrip` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| AAD-bound to row id; cross-row substitution under a different AAD fails to open | `TestDecryptField_RejectsWrongAAD` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Ciphertext is non-deterministic (distinct outputs for the same plaintext) | `TestEncryptField_ProducesDistinctCiphertexts` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Wrong key fails to decrypt | `TestDecryptField_WrongKey` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Tampered ciphertext fails to decrypt | `TestDecryptField_TamperedCiphertext` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Legacy no-AAD ciphertexts open through the fallback path | `TestDecryptField_LegacyFallback` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Empty `SECRET_KEY` is refused | `TestEncryptField_EmptyKey`, `TestDecryptField_EmptyKey` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+
+### Register Enumeration Residual
+
+| Claim | Enforced by |
+| --- | --- |
+| `POST /api/auth/register` emits an identical-shape sealed pickup cookie for new and duplicate emails | `auth_register_regressions_test.go`, `auth_register_email_persistence_regressions_test.go` in `internal/api/` |
+| Duplicate-email branch runs equalized bcrypt timing | `TestAuthenticateCredentialsEqualizesTimingForMissingUser`, `TestAuthenticateCredentialsEqualizesTimingForDisabledLocalAuth` in [internal/services/auth_service_credentials_timing_test.go](internal/services/auth_service_credentials_timing_test.go) |
+| Pickup nonce is single-use via `register_pickup_tokens` (atomic UPDATE) | `register_pickup_handler_test.go` in `internal/api/` |
+| `GET /register/welcome` second consumption falls through to `/login` | `register_pickup_handler_test.go` in `internal/api/` |
+| Recovery code shape `OVUM-XXXX-XXXX-XXXX` | `TestValidateRecoveryCodeFormat`, `TestNormalizeRecoveryCode` in [internal/services/auth_input_policy_test.go](internal/services/auth_input_policy_test.go) |
+
+### Session Invalidation on Credential Rotation
+
+| Claim | Enforced by |
+| --- | --- |
+| Password change bumps `auth_session_version`; other devices sign out | `auth_password_change_session_regression_test.go` in `internal/api/` |
+| Password reset via recovery code bumps `auth_session_version` | `TestAuthServiceResetPasswordAndRotateRecoveryCode` in [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go) |
+| Recovery-code regeneration bumps `auth_session_version`; originating session refreshed inline | `TestAuthServiceRegenerateRecoveryCode` in [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go) |
+| Forced `ovumcy reset-password` CLI bumps `auth_session_version` | `TestAuthServiceForceResetPasswordByEmail` in [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go), `internal/cli/reset_test.go` |
+| TOTP enable bumps `auth_session_version` and refreshes originating session | `handlers_settings_2fa_session_revocation_test.go` in `internal/api/` |
+| TOTP disable bumps `auth_session_version` and refreshes originating session | `handlers_settings_2fa_session_revocation_test.go` in `internal/api/` |
+| `clear-data` bumps `auth_session_version` atomically with the wipe | `settings_clear_data_session_revocation_test.go` in `internal/api/` |
+| `ovumcy_auth` cookie verifies against current `auth_session_version`; revoked sessions are rejected | `TestAuthMiddlewareRejectsRevokedAuthSessionCookieForAPI`, `TestAuthMiddlewareRejectsRevokedAuthSessionCookieAfterForcedResetForHTML` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
+
+### Cookies
+
+| Claim | Enforced by |
+| --- | --- |
+| Sealed cookies use the AES-GCM `v2.<...>` envelope | `TestSecureCookieCodecSealsWithVersion2Prefix` in [internal/api/secure_cookie_codec_rotation_test.go](internal/api/secure_cookie_codec_rotation_test.go) |
+| Legacy `v1` cookie payloads are rejected | `TestSecureCookieCodecRejectsLegacyV1Payload` in [internal/api/secure_cookie_codec_rotation_test.go](internal/api/secure_cookie_codec_rotation_test.go) |
+| Sealed cookies are AAD-bound to the cookie name; cross-cookie substitution fails | `secure_cookie_codec_security_test.go` in `internal/api/` |
+| `ovumcy_auth`, `ovumcy_register_pickup`, `ovumcy_recovery_code` all set `SameSite=Lax` | `cookie_security_enabled_test.go`, `cookie_security_default_test.go` in `internal/api/` |
+| OIDC sign-in cookies (`ovumcy_oidc_auth`, `ovumcy_oidc_stepup`) require `Secure=true` to issue | `oidc_state_cookie_test.go`, `oidc_stepup_cookie_test.go` in `internal/api/` |
+| Login issues a sealed `ovumcy_auth` cookie (not a legacy JWT) | `TestLoginSetsSealedAuthCookieValue`, `TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
+| Remember-me toggles cookie persistence | `TestLoginRememberMeControlsCookiePersistence` in [internal/api/auth_login_remember_me_regressions_test.go](internal/api/auth_login_remember_me_regressions_test.go) |
+| State-changing endpoints require a valid CSRF token | `state_mutation_csrf_regression_test.go`, `auth_logout_csrf_regression_test.go`, `settings_security_csrf_regression_test.go`, `export_csrf_regression_test.go`, `language_switch_csrf_regression_test.go` in `internal/api/` |
+
+### Retention and Deletion
+
+| Claim | Enforced by |
+| --- | --- |
+| `clear-data` deletes daily_logs and user-defined symptoms and resets preferences | `settings_clear_data_flow_test.go` in `internal/api/` |
+| `clear-data` does **not** touch email, password hash, recovery code hash, role, display name, OIDC identity links, TOTP state, or onboarding status | `TestClearDataPreservesAccountIdentityFields` in [internal/api/settings_clear_data_preservation_test.go](internal/api/settings_clear_data_preservation_test.go) **(added in this matrix pass)** |
+| `delete-account` deletes daily_logs, all symptoms, and the users row | `settings_delete_account_regression_test.go` in `internal/api/`, `TestOperatorUserService*` in [internal/services/operator_user_service_test.go](internal/services/operator_user_service_test.go) |
+| `delete-account` cascades to `oidc_identities` via `ON DELETE CASCADE` FK | Schema-enforced; migration `migrations/014_oidc_identities.sql` |
+| Both danger-zone actions require the current password | `settings_clear_data_flow_test.go`, `settings_delete_account_regression_test.go` in `internal/api/` |
+
+### Password & Auth Policy
+
+| Claim | Enforced by |
+| --- | --- |
+| Passwords require ≥ 8 Unicode code points | `TestValidatePasswordStrength_RejectsWeakPasswords` (`"Short1"` case) in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
+| Passwords require at least one uppercase, one lowercase, and one digit | `TestValidatePasswordStrength_RejectsWeakPasswords` (alllowercase / ALLUPPERCASE / NoDigitsHere cases) in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
+| Strong password passes | `TestValidatePasswordStrength_AcceptsStrongPassword` in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
+| Change-password rejects weak password and mismatch | `TestChangePasswordRejectsWeakNumericPassword`, `TestChangePasswordRejectsPasswordMismatch` in [internal/api/auth_change_password_validation_test.go](internal/api/auth_change_password_validation_test.go) |
+| Recovery code is bcrypt-hashed at rest | `TestGenerateRecoveryCodeHash` in [internal/services/auth_reset_policy_test.go](internal/services/auth_reset_policy_test.go) |
+| TOTP secret is encrypted under a key derived from `SECRET_KEY`; stored value not equal to plaintext | `internal/security/field_crypto_test.go` (see Field-Level Encryption above) |
+| TOTP code reuse within the same 30-second step is rejected | `totp_service_test.go`, `user_repository_totp_step_test.go`, `handlers_auth_2fa_test.go` |
+| TOTP enrollment rejects 6-digit codes that do not match | `handlers_settings_2fa_test.go` |
+| Forgotten password reset rejects wrong recovery code | `TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMismatch`, `TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMissingUser` in [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go) |
+| Reset token rejects expired / wrong-purpose / state-mismatched inputs | `TestParsePasswordResetTokenRejectsExpired`, `TestParsePasswordResetTokenRejectsWrongPurpose`, `TestAuthServiceResolveUserByResetTokenRejectsStateMismatch` in [internal/services/auth_reset_policy_test.go](internal/services/auth_reset_policy_test.go), [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go) |
+| Auth session token rejects expired / wrong-signature / wrong-algorithm | `TestParseAuthSessionTokenRejectsExpired`, `TestParseAuthSessionTokenRejectsInvalidSignature`, `TestParseAuthSessionTokenRejectsWrongAlgorithm` in [internal/services/auth_session_policy_test.go](internal/services/auth_session_policy_test.go) |
+
+### Rate Limits
+
+| Claim | Enforced by |
+| --- | --- |
+| Per-account rate-limit keys are HMAC-derived from `SECRET_KEY` (no raw identity persisted) | `TestAuthAttemptPolicyKeysUseScopedHMACFingerprint`, `TestAuthAttemptPolicyKeysOmitIdentityFingerprintForBlankIdentity` in [internal/services/auth_attempt_policy_test.go](internal/services/auth_attempt_policy_test.go) |
+| Attempt limiter respects window and reset semantics | `TestAttemptLimiterWindowAndReset`, `TestAttemptLimiterMultiKeyOperations` in [internal/services/attempt_limiter_test.go](internal/services/attempt_limiter_test.go) |
+| Logout endpoint is rate-limited per account | `auth_logout_rate_limit_regression_test.go` in `internal/api/` |
+| TOTP login rate-limited at 5 failures / 15 min | `TestVerifyTOTPLoginRateLimitsRepeatedAttempts` (or sibling) in `handlers_auth_2fa_test.go` |
+| TOTP disable rate-limited at 5 failures / 15 min | `handlers_settings_2fa_test.go` |
+| Rate-limit error response is sanitized and contains no PII | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
+
+### SECRET_KEY Usage Map
+
+| Claim | Enforced by |
+| --- | --- |
+| Sealed cookies derive their key from `SECRET_KEY` via HKDF with versioned salt/info labels | `secure_cookie_codec_rotation_test.go`, `secure_cookie_codec_security_test.go` in `internal/api/` |
+| Field encryption uses a distinct HKDF label set; AAD prevents cross-row swap | `TestDecryptField_RejectsWrongAAD` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Rate-limit identity HMAC uses a distinct domain-separation label | `TestAuthAttemptPolicyKeysUseScopedHMACFingerprint` in [internal/services/auth_attempt_policy_test.go](internal/services/auth_attempt_policy_test.go) |
+| Rotating `SECRET_KEY` breaks field-encrypted TOTP secrets (DecryptField with the new key fails) | `TestDecryptField_WrongKey` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+
+### Threat Model
+
+| Claim | Enforced by |
+| --- | --- |
+| OIDC `end_session_endpoint` is host-pinned; cross-origin endpoint is dropped, logout falls back to local | `TestOIDC_RuntimePoC_HostPinRejectsCrossOriginEndSessionEndpoint`, `TestOIDC_RuntimePoC_HostPinAcceptsSameOriginEndSessionEndpoint` in [internal/security/oidc_runtime_poc_test.go](internal/security/oidc_runtime_poc_test.go) |
+| OIDC ID-token signing-algorithm allowlist rejects symmetric algorithms and `none` | `TestOIDC_RuntimePoC_AlgorithmConfusionRejected`, `TestOIDC_RuntimePoC_AlgorithmNoneRejected` in [internal/security/oidc_runtime_poc_test.go](internal/security/oidc_runtime_poc_test.go) |
+| OIDC step-up reauth requires a matching `(issuer, subject)` identity for the current user | `auth_oidc_v2_regressions_test.go`, `settings_oidc_local_password_setup_test.go` in `internal/api/` |
+| HTMX error fragments are DOM-built, not assigned via `innerHTML` (defense-in-depth XSS) | `web/src/js/__tests__/` JS unit suite (`npm run test:unit`) |
+| All other threat-model entries (operator-as-adversary, endpoint compromise, side-channel) are **policy-level** — Ovumcy explicitly declares these out of scope | Not test-enforceable |
+
+### Logging Policy
+
+| Claim | Enforced by |
+| --- | --- |
+| `AUDIT_LOG_ENABLED=false` (default) emits no `security event:` lines | `TestAuditLogDefaultOffSuppressesSecurityEvents` in [internal/api/security_event_logging_audit_flag_test.go](internal/api/security_event_logging_audit_flag_test.go) |
+| `AUDIT_LOG_ENABLED=true` emits security-event lines | `TestAuditLogEnabledRestoresSecurityEvents` in [internal/api/security_event_logging_audit_flag_test.go](internal/api/security_event_logging_audit_flag_test.go) |
+| `AuditLogEnabled()` getter reflects `SetAuditLogEnabled()` writes | `TestAuditLogEnabledReporter` in [internal/api/security_event_logging_audit_flag_test.go](internal/api/security_event_logging_audit_flag_test.go) |
+| When enabled, day-write logs the sanitized path `/api/days/:date` (no concrete date) | `TestUpsertDayLogsSanitizedPathWithoutConcreteDate` in [internal/api/security_event_logging_mutation_regression_test.go](internal/api/security_event_logging_mutation_regression_test.go) |
+| When enabled, symptom mutation log does not leak the user-supplied symptom name | `TestCreateSymptomLogsMutationWithoutLeakingUserInput` in [internal/api/security_event_logging_mutation_regression_test.go](internal/api/security_event_logging_mutation_regression_test.go) |
+| CSRF middleware error path does not leak PII into the audit log | `TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
+| Rate-limit handler does not leak PII into the audit log | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
