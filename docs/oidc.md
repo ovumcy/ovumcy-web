@@ -120,26 +120,33 @@ The exact UI labels differ a little by provider version, but the stable requirem
 
 The matrix below reflects real interoperability checks under Ovumcy's current hardened browser callback model.
 
-| Provider | Sign-in status | Logout status | Notes |
-| --- | --- | --- | --- |
-| Keycloak | Live-verified supported | Live-verified provider logout | Full browser sign-in, account resolution, and provider logout were verified end-to-end. |
-| authentik | Live-verified supported | Live-verified provider-managed logout | Sign-in is supported. Provider logout may show an authentik-managed invalidation screen before the provider session fully ends. |
-| Authelia | Live-verified supported | Local-only fallback | Sign-in is supported. Authelia does not currently expose `end_session_endpoint`, so Ovumcy clears its own session and returns to `/login`. |
-| ZITADEL | Supported with the full official deployment | Provider logout depends on the full deployment | Discovery metadata and app setup are compatible, but browser sign-in requires the full ZITADEL deployment that includes the separate Login UI application under `/ui/v2/login`. |
-| Dex | Live-verified unsupported | Not applicable | Dex returned `code` and `state` in the callback URL query during live verification, which conflicts with Ovumcy's `form_post`-only HTML callback contract. |
-| Pocket ID | Live-verified unsupported | Not applicable | Pocket ID returned `code`, `state`, and issuer data in the callback URL query during live verification, which conflicts with Ovumcy's `form_post`-only HTML callback contract. |
+Important caveats — read these before relying on any row in the table:
+
+- "Verified" in this document means **manually exercised in a local test stack** — `docker-compose` standing up the upstream provider image on the same network as a local Ovumcy build, hitting the real OIDC code path. It does **not** mean integration-tested in CI, and it does **not** mean validated against a production identity deployment with custom claim mappings, organization-specific policies, reverse-proxy front-ends, custom CAs, or non-default scopes.
+- Ovumcy does not pin or run automated integration tests against specific provider versions. The matrix records manual checks performed during the indicated release window — re-verify whenever you upgrade your identity provider across major versions.
+- The v0.9.5 hardening (host-pinning of the discovery-supplied `end_session_endpoint` and the asymmetric-only signing-algorithm allowlist) was validated against a synthetic OIDC provider in `internal/security/oidc_runtime_poc_test.go`. Re-verification of every provider row against those two contracts is not part of CI; report any regressions through [SECURITY.md](../SECURITY.md).
+- "Last verified in" is the Ovumcy release tag at which the local-test-stack check was last run, not the provider version. Provider versions used during verification were the then-current upstream stable docker images at that time.
+
+| Provider | Sign-in status | Logout status | Last verified in | Notes |
+| --- | --- | --- | --- | --- |
+| Keycloak | Verified supported | Verified provider logout | v0.8.0 | Full browser sign-in, account resolution, and provider logout were verified end-to-end. |
+| authentik | Verified supported | Verified provider-managed logout | v0.8.0 | Sign-in is supported. Provider logout may show an authentik-managed invalidation screen before the provider session fully ends. |
+| Authelia | Verified supported | Local-only fallback | v0.8.0 | Sign-in is supported. Authelia does not currently expose `end_session_endpoint`, so Ovumcy clears its own session and returns to `/login`. |
+| ZITADEL | Supported with the full official deployment | Provider logout depends on the full deployment | v0.8.0 | Discovery metadata and app setup are compatible, but browser sign-in requires the full ZITADEL deployment that includes the separate Login UI application under `/ui/v2/login`. |
+| Dex | Verified unsupported | Not applicable | v0.8.0 | Dex returned `code` and `state` in the callback URL query during live verification, which conflicts with Ovumcy's `form_post`-only HTML callback contract. |
+| Pocket ID | Verified unsupported | Not applicable | v0.8.0 | Pocket ID returned `code`, `state`, and issuer data in the callback URL query during live verification, which conflicts with Ovumcy's `form_post`-only HTML callback contract. |
 
 ### Why Dex and Pocket ID Are Excluded
 
 Ovumcy intentionally requires `response_mode=form_post` for browser sign-in so auth-sensitive transport data such as `code`, `state`, and provider error details do not appear in user-visible URLs.
 
-During live verification, both Dex and Pocket ID returned callback data in the URL query instead. That behavior conflicts with Ovumcy's hardened callback transport contract, so they are currently treated as unsupported rather than weakening the security model.
+During verification in the local test stack, both Dex and Pocket ID returned callback data in the URL query instead. That behavior conflicts with Ovumcy's hardened callback transport contract, so they are currently treated as unsupported rather than weakening the security model.
 
 ### Pocket ID
 
 Pocket ID is currently not supported under Ovumcy's hardened callback model.
 
-Live verification showed Pocket ID returning auth-sensitive callback parameters in the browser URL instead of using `response_mode=form_post`. Until Pocket ID can satisfy the same browser callback contract, do not advertise it as a supported Ovumcy provider.
+Verification in the local test stack showed Pocket ID returning auth-sensitive callback parameters in the browser URL instead of using `response_mode=form_post`. Until Pocket ID can satisfy the same browser callback contract, do not advertise it as a supported Ovumcy provider.
 
 ### Authentik
 
@@ -164,7 +171,7 @@ OIDC_REDIRECT_URL=https://ovumcy.example.com/auth/oidc/callback
 
 Dex is currently not supported under Ovumcy's hardened callback model.
 
-Live verification showed Dex returning `code` and `state` in a query-based callback (`GET /auth/oidc/callback?...`) instead of using `response_mode=form_post`. Ovumcy does not relax its URL-safety contract for that flow, so Dex should be treated as incompatible for now.
+Verification in the local test stack showed Dex returning `code` and `state` in a query-based callback (`GET /auth/oidc/callback?...`) instead of using `response_mode=form_post`. Ovumcy does not relax its URL-safety contract for that flow, so Dex should be treated as incompatible for now.
 
 ### Keycloak
 
@@ -316,7 +323,7 @@ In that case, Ovumcy still performs a safe local logout and redirects back to `/
 
 This is expected under Ovumcy's current browser callback hardening.
 
-Both providers were live-verified returning auth-sensitive callback data in the URL query instead of a `form_post` callback. Ovumcy intentionally refuses that transport shape rather than weakening the URL-safety contract for HTML sign-in.
+Both providers were observed in the local test stack returning auth-sensitive callback data in the URL query instead of a `form_post` callback. Ovumcy intentionally refuses that transport shape rather than weakening the URL-safety contract for HTML sign-in.
 
 ## Official Provider Documentation
 
