@@ -325,4 +325,45 @@ test.describe('Calendar page', () => {
     await expect(dayEditorForm).toBeVisible();
     await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
   });
+
+  test('usage_goal setting flips the calendar root data-usage-goal attribute', async ({ page }) => {
+    // The tailwind palette keys fertile-edge / fertile-peak cell colors off
+    // [data-calendar-view][data-usage-goal="..."]. The template wires the
+    // user's UsageGoal into that attribute on every calendar render. Lock in
+    // that contract: the bare wire from setting -> DOM attribute, which the
+    // CSS palette on its own cannot verify.
+    await registerOwnerOnCalendar(page, 'calendar-goal-palette');
+
+    const calendarRoot = page.locator('[data-calendar-view]');
+    await expect(calendarRoot).toHaveAttribute('data-usage-goal', 'health');
+
+    const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
+
+    async function patchUsageGoal(goal: string): Promise<void> {
+      // parseCycleSettingsInput validates cycle_length / period_length even
+      // on a partial JSON patch — resend the full default snapshot with the
+      // UsageGoal override.
+      const response = await page.request.patch('/api/v1/users/current/cycle', {
+        headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
+        data: {
+          cycle_length: 28,
+          period_length: 5,
+          auto_period_fill: true,
+          irregular_cycle: false,
+          unpredictable_cycle: false,
+          age_group: '',
+          usage_goal: goal,
+        },
+      });
+      expect(response.status(), `patch usage_goal=${goal}`).toBeLessThan(400);
+    }
+
+    await patchUsageGoal('avoid_pregnancy');
+    await page.goto('/calendar');
+    await expect(page.locator('[data-calendar-view]')).toHaveAttribute('data-usage-goal', 'avoid_pregnancy');
+
+    await patchUsageGoal('trying_to_conceive');
+    await page.goto('/calendar');
+    await expect(page.locator('[data-calendar-view]')).toHaveAttribute('data-usage-goal', 'trying_to_conceive');
+  });
 });
