@@ -229,3 +229,105 @@ test.describe('Stats: BBT chart', () => {
     }
   });
 });
+
+test.describe('Stats: symptom patterns', () => {
+  test('symptom logged across three completed cycles surfaces a pattern card with cycle-day copy', async ({
+    page,
+  }) => {
+    // buildSymptomPatternInsights requires >= minimumPhaseInsightCycles (3)
+    // completed cycles. OnboardingDateBounds caps last_period_start at
+    // max(Jan 1 of current year, today-60), so the deepest onboarding can
+    // anchor is today-60. Lay three more cycle starts with 18-day gaps:
+    // ResolveManualCycleStartPolicy floors gapDays through int truncation
+    // after a TZ-aware diff, so a nominal 15-day gap can collapse to 14
+    // and trip the short-gap confirmation requirement. 18 days leaves
+    // headroom regardless of the boundary direction.
+    await registerAndOnboardWithStartDaysAgo(page, 'stats-symptom-pattern', 60);
+    const today = isoDateDaysAgo(0);
+
+    await markCycleStartViaAPI(page, shiftISODate(today, -42));
+    await markCycleStartViaAPI(page, shiftISODate(today, -24));
+    await markCycleStartViaAPI(page, shiftISODate(today, -6));
+
+    // The dashboard renders the user's pre-seeded symptom catalogue as
+    // <input name="symptom_ids" value="..."> checkboxes; pick the first one
+    // to log across cycles.
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    const firstSymptomInput = page
+      .locator('fieldset[data-dashboard-section="symptoms"] input[name="symptom_ids"]')
+      .first();
+    await expect(firstSymptomInput).toBeAttached();
+    const symptomIDRaw = await firstSymptomInput.getAttribute('value');
+    expect(symptomIDRaw).toMatch(/^\d+$/);
+    const symptomID = Number(symptomIDRaw);
+
+    // Log the same symptom on cycle day 10 of each completed cycle:
+    //   cycle 1: today-60 .. today-43 -> day 10 = today-51
+    //   cycle 2: today-42 .. today-25 -> day 10 = today-33
+    //   cycle 3: today-24 .. today-7  -> day 10 = today-15
+    // Day 10 sits past the default 5-day auto-period-fill window, so the
+    // JSON PUT (which defaults IsPeriod=false) never wipes a flag we care
+    // about.
+    const csrf = await csrfToken(page);
+    for (const offset of [-51, -33, -15]) {
+      const response = await page.request.put(`/api/v1/days/${shiftISODate(today, offset)}`, {
+        headers: {
+          'X-CSRF-Token': csrf,
+          'Content-Type': 'application/json',
+        },
+        data: { symptom_ids: [symptomID] },
+      });
+      expect(response.status(), `save symptom at offset ${offset}`).toBeLessThan(400);
+    }
+
+    await page.goto('/stats');
+    await expect(page).toHaveURL(/\/stats$/);
+
+    // HasSymptomPatterns gate -> the section renders, and at least one card
+    // shows the localized "Usually on day N of the cycle" / "Usually on days
+    // N-M of the cycle" copy from stats.symptom_pattern_day(s).
+    await expect(page.getByRole('heading', { name: 'Symptom patterns' })).toBeVisible();
+    const patternCard = page
+      .locator('.phase-symptom-card')
+      .filter({ hasText: /Usually on days? \d+(?:-\d+)? of the cycle/ })
+      .first();
+    await expect(patternCard).toBeVisible();
+  });
+});
+
+test.describe('Stats: cycle range', () => {
+  test('two completed cycles of different lengths populate the cycle range stat card', async ({
+    page,
+  }) => {
+    // Two cycle starts after onboarding -> two completed cycles of distinct
+    // lengths (20 and 25 days nominally). populateObservedCycleStats fills
+    // MinCycleLength / MaxCycleLength from cycleLengths(observedStarts), and
+    // the Range card prints stats.cycle_range_summary when MinCycleLength>0.
+    await registerAndOnboardWithStartDaysAgo(page, 'stats-cycle-range', 60);
+    const today = isoDateDaysAgo(0);
+
+    await markCycleStartViaAPI(page, shiftISODate(today, -40));
+    await markCycleStartViaAPI(page, shiftISODate(today, -15));
+
+    await page.goto('/stats');
+    await expect(page).toHaveURL(/\/stats$/);
+
+    // Match the stat card by its label, then read the populated value.
+    // Avoid pinning the exact numbers: a TZ-induced ±1 boundary shift on
+    // the seeded starts can shift the observed cycle lengths by one, and
+    // the card behaviour we want to lock in is "renders with two distinct
+    // positive integers", not "renders with literal 20 and 25".
+    const rangeArticle = page
+      .locator('article.journal-panel')
+      .filter({ has: page.locator('.stat-label', { hasText: 'Range' }) });
+    await expect(rangeArticle).toBeVisible();
+    const valueText = (await rangeArticle.locator('.stat-value').textContent()) ?? '';
+    const match = valueText.match(/Your cycles:\s+(\d+)\s+to\s+(\d+)\s+days/);
+    expect(match, `range card value: ${valueText}`).not.toBeNull();
+    const minLen = Number(match![1]);
+    const maxLen = Number(match![2]);
+    expect(minLen).toBeGreaterThan(0);
+    expect(maxLen).toBeGreaterThan(minLen);
+  });
+});
