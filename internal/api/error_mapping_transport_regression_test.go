@@ -53,7 +53,7 @@ func TestRespondMappedErrorAuthFormRedirectsWithFlashOnly(t *testing.T) {
 	app, handler := newErrorMappingTransportTestApp(t)
 
 	form := url.Values{"email": {"MixedCase@Example.com"}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response := mustAppResponse(t, app, request)
@@ -117,7 +117,7 @@ func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 		c.Locals(contextMessagesKey, map[string]string{"not found": "Localized not found."})
 		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "not found"))
 	})
-	app.Post("/api/auth/register", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/users", func(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password"))
 	})
 	app.Post("/api/settings/profile", func(c *fiber.Ctx) error {

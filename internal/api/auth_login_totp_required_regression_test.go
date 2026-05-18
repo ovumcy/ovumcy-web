@@ -26,11 +26,11 @@ func TestLogin_TOTPEnabledUser_IssuesPendingCookieAndRedirectsTo2FAChallenge(t *
 		"password":    {"StrongPass1"},
 		"remember_me": {"1"},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := app.Test(req, -1)
 	if err != nil {
-		t.Fatalf("POST /api/auth/login: %v", err)
+		t.Fatalf("POST /api/v1/sessions: %v", err)
 	}
 	defer resp.Body.Close()
 

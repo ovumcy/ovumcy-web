@@ -39,7 +39,7 @@ test.describe('Auth: register, login, logout', () => {
     page,
     context,
   }) => {
-    // Cookie-less register flow: POST /api/auth/register returns the same
+    // Cookie-less register flow: POST /api/v1/users returns the same
     // status, body, and single sealed ovumcy_register_pickup cookie for
     // both new and duplicate emails. GET /register/welcome then exchanges
     // a valid pickup for auth + recovery cookies (lands on /register with
@@ -92,7 +92,7 @@ test.describe('Auth: register, login, logout', () => {
     let registerRequests = 0;
 
     page.on('request', (request) => {
-      if (request.method() === 'POST' && request.url().includes('/api/auth/register')) {
+      if (request.method() === 'POST' && request.url().includes('/api/v1/users')) {
         registerRequests += 1;
       }
     });
@@ -127,7 +127,7 @@ test.describe('Auth: register, login, logout', () => {
       'false'
     );
 
-    await requestSubmitForm(page.locator('form[action="/api/auth/register"]'));
+    await requestSubmitForm(page.locator('form[action="/api/v1/users"]'));
 
     await expect(page).toHaveURL(/\/register$/);
     expectNoSensitiveAuthParams(page.url());
@@ -153,7 +153,7 @@ test.describe('Auth: register, login, logout', () => {
     );
     expect(isValidBeforeSubmit).toBe(false);
 
-    await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
     await expect(page.locator('#register-client-status .status-error')).toBeVisible();
   });
@@ -179,7 +179,7 @@ test.describe('Auth: register, login, logout', () => {
     );
     expect(isValidBeforeSubmit).toBe(false);
 
-    await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
     await expect(page.locator('#register-client-status .status-error')).toContainText(
       /valid email address|корректный email|correo válido/i
@@ -195,7 +195,7 @@ test.describe('Auth: register, login, logout', () => {
     await page.goto('/register');
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
 
-    const form = page.locator('form[action="/api/auth/register"]');
+    const form = page.locator('form[action="/api/v1/users"]');
     const status = page.locator('#register-client-status');
     const email = page.locator('#register-email');
     const password = page.locator('#register-password');
@@ -236,12 +236,12 @@ test.describe('Auth: register, login, logout', () => {
     await page.goto('/login');
     await expect(page.locator('#login-form')).toHaveAttribute('novalidate', '');
 
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
     await expect(page.locator('#login-client-status .status-error')).toBeVisible();
 
     await page.locator('#login-email').fill(creds.email);
     await page.locator('#login-password').fill('WrongPass1');
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
 
     const serverError = page.locator('[data-auth-server-error]');
     await expect(serverError).toBeVisible();
@@ -263,7 +263,7 @@ test.describe('Auth: register, login, logout', () => {
     await page.goto('/login');
     await page.locator('#login-email').fill(creds.email);
     await page.locator('#login-password').fill(attemptedPassword);
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/login$/);
     expectNoSensitiveAuthParams(page.url());
@@ -285,7 +285,7 @@ test.describe('Auth: register, login, logout', () => {
     await page.goto('/login');
     await page.locator('#login-email').fill(creds.email);
     await page.locator('#login-password').fill('WrongPass1');
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/login$/);
     expectNoSensitiveAuthParams(page.url());
@@ -294,7 +294,7 @@ test.describe('Auth: register, login, logout', () => {
     await page.goto('/login');
     await page.locator('#login-email').fill(createCredentials('auth-missing-email').email);
     await page.locator('#login-password').fill('WrongPass1');
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/login$/);
     expectNoSensitiveAuthParams(page.url());

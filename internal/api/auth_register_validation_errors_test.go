@@ -22,7 +22,7 @@ func TestRegisterRejectsWeakNumericPassword(t *testing.T) {
 		"password":         {"12345678"},
 		"confirm_password": {"12345678"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
@@ -59,7 +59,7 @@ func TestRegisterRejectsPasswordMismatch(t *testing.T) {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass2"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
@@ -153,7 +153,7 @@ func TestRegisterRejectsCaseInsensitiveDuplicateEmail(t *testing.T) {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
@@ -202,7 +202,7 @@ func TestRegisterRejectsExactDuplicateEmail(t *testing.T) {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
@@ -251,7 +251,7 @@ func TestRegisterRejectsExactDuplicateEmailHTMLFlow(t *testing.T) {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)

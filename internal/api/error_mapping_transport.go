@@ -36,29 +36,29 @@ func apiError(c *fiber.Ctx, spec APIErrorSpec) error {
 }
 
 func (handler *Handler) respondAuthError(c *fiber.Ctx, spec APIErrorSpec) error {
-	if (strings.HasPrefix(c.Path(), "/api/auth/") || strings.HasPrefix(c.Path(), "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
+	if (isV1AuthFormPath(c.Path()) || strings.HasPrefix(c.Path(), "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
 		flash := FlashPayload{AuthError: spec.Key}
 		switch c.Path() {
-		case "/api/auth/register":
+		case "/api/v1/users":
 			email := services.NormalizeAuthEmail(c.FormValue("email"))
 			flash.RegisterEmail = email
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/register", fiber.StatusSeeOther)
-		case "/api/auth/login":
+		case "/api/v1/sessions":
 			flash.LoginEmail = services.NormalizeAuthEmail(c.FormValue("email"))
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/login", fiber.StatusSeeOther)
-		case "/api/auth/forgot-password":
+		case "/api/v1/password-resets":
 			flash.ForgotEmail = services.NormalizeAuthEmail(c.FormValue("email"))
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/forgot-password", fiber.StatusSeeOther)
 		case "/auth/oidc", "/auth/oidc/start", "/auth/oidc/callback":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/login", fiber.StatusSeeOther)
-		case "/api/auth/reset-password":
+		case "/api/v1/password-resets/redeem":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/reset-password", fiber.StatusSeeOther)
-		case "/api/auth/2fa":
+		case "/api/v1/sessions/2fa-challenge":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/auth/2fa", fiber.StatusSeeOther)
 		default:
@@ -67,6 +67,21 @@ func (handler *Handler) respondAuthError(c *fiber.Ctx, spec APIErrorSpec) error 
 		}
 	}
 	return apiError(c, spec)
+}
+
+// isV1AuthFormPath enumerates the v1 auth endpoints that accept browser form
+// submissions and therefore need flash-redirect handling on error. Listed
+// explicitly rather than prefix-matched on /api/v1/ because the broader v1
+// surface (days, symptoms, settings) returns JSON or HTMX status fragments
+// and must NOT flash-redirect on error.
+func isV1AuthFormPath(path string) bool {
+	switch path {
+	case "/api/v1/users", "/api/v1/sessions", "/api/v1/sessions/current",
+		"/api/v1/sessions/2fa-challenge", "/api/v1/password-resets",
+		"/api/v1/password-resets/redeem":
+		return true
+	}
+	return false
 }
 
 func (handler *Handler) respondSettingsError(c *fiber.Ctx, spec APIErrorSpec) error {

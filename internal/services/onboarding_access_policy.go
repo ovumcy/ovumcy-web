@@ -9,7 +9,7 @@ func IsOnboardingPath(path string) bool {
 
 func ShouldEnforceOnboardingAccess(path string) bool {
 	cleanPath := strings.TrimSpace(path)
-	if cleanPath == "/api/auth/logout" {
+	if cleanPath == "/api/v1/sessions/current" {
 		return false
 	}
 	return !IsOnboardingPath(cleanPath)

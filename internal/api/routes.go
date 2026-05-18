@@ -4,7 +4,24 @@ import "github.com/gofiber/fiber/v2"
 
 func RegisterRoutes(app *fiber.App, handler *Handler) {
 	registerPageRoutes(app, handler)
+	registerV1APIRoutes(app, handler)
 	registerAPIRoutes(app, handler)
+}
+
+func registerV1APIRoutes(app *fiber.App, handler *Handler) {
+	v1 := app.Group("/api/v1")
+
+	users := v1.Group("/users")
+	users.Post("", handler.Register)
+
+	sessions := v1.Group("/sessions")
+	sessions.Post("", handler.Login)
+	sessions.Post("/2fa-challenge", handler.VerifyTOTPLogin)
+	sessions.Delete("/current", handler.AuthRequired, handler.Logout)
+
+	passwordResets := v1.Group("/password-resets")
+	passwordResets.Post("", handler.ForgotPassword)
+	passwordResets.Post("/redeem", handler.ResetPassword)
 }
 
 func registerPageRoutes(app *fiber.App, handler *Handler) {
@@ -41,14 +58,6 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 
 func registerAPIRoutes(app *fiber.App, handler *Handler) {
 	api := app.Group("/api")
-
-	auth := api.Group("/auth")
-	auth.Post("/logout", handler.AuthRequired, handler.Logout)
-	auth.Post("/register", handler.Register)
-	auth.Post("/login", handler.Login)
-	auth.Post("/2fa", handler.VerifyTOTPLogin)
-	auth.Post("/forgot-password", handler.ForgotPassword)
-	auth.Post("/reset-password", handler.ResetPassword)
 
 	days := api.Group("/days", handler.AuthRequired)
 	days.Get("", handler.GetDays)

@@ -26,7 +26,7 @@ func TestResetPasswordTokenCannotBeReusedAfterSuccessfulReset(t *testing.T) {
 		"password":         {"EvenStronger2"},
 		"confirm_password": {"EvenStronger2"},
 	}
-	firstResetRequest := httptest.NewRequest(http.MethodPost, "/api/auth/reset-password", strings.NewReader(firstResetForm.Encode()))
+	firstResetRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(firstResetForm.Encode()))
 	firstResetRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	firstResetRequest.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
@@ -47,7 +47,7 @@ func TestResetPasswordTokenCannotBeReusedAfterSuccessfulReset(t *testing.T) {
 		"password":         {"AnotherStrong3"},
 		"confirm_password": {"AnotherStrong3"},
 	}
-	secondResetRequest := httptest.NewRequest(http.MethodPost, "/api/auth/reset-password", strings.NewReader(secondResetForm.Encode()))
+	secondResetRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(secondResetForm.Encode()))
 	secondResetRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	secondResetRequest.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
@@ -72,7 +72,7 @@ func TestResetPasswordRejectsExpiredResetToken(t *testing.T) {
 	expiredToken := mustSignResetTokenForTest(t, user.ID, user.PasswordHash, time.Now().Add(-5*time.Minute), time.Now().Add(-30*time.Minute))
 	resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), expiredToken, false)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/reset-password", strings.NewReader(url.Values{
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(url.Values{
 		"password":         {"EvenStronger2"},
 		"confirm_password": {"EvenStronger2"},
 	}.Encode()))
@@ -111,7 +111,7 @@ func TestResetPasswordRejectsInvalidOrTamperedResetToken(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			resetCookieValue := mustSealResetCookieValueForTest(t, []byte("test-secret-key"), tc.tokenValue, false)
-			request := httptest.NewRequest(http.MethodPost, "/api/auth/reset-password", strings.NewReader(url.Values{
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(url.Values{
 				"password":         {"EvenStronger2"},
 				"confirm_password": {"EvenStronger2"},
 			}.Encode()))
@@ -141,7 +141,7 @@ func requestResetCookieByRecoveryCode(t *testing.T, app *fiber.App, email string
 		"email":         {email},
 		"recovery_code": {recoveryCode},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/forgot-password", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)

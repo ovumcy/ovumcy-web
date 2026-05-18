@@ -70,9 +70,9 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 		c.Locals(contextUserKey, &models.User{ID: 1, Role: models.RoleOwner})
 		return c.Next()
 	})
-	app.Post("/api/auth/logout", handler.Logout)
+	app.Delete("/api/v1/sessions/current", handler.Logout)
 
-	first := httptest.NewRequest(http.MethodPost, "/api/auth/logout", bytes.NewBufferString(""))
+	first := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", bytes.NewBufferString(""))
 	first.Header.Set("Accept", "application/json")
 	firstResp, err := app.Test(first, -1)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 		t.Fatalf("expected first logout to succeed (200 or 303), got %d", firstResp.StatusCode)
 	}
 
-	second := httptest.NewRequest(http.MethodPost, "/api/auth/logout", bytes.NewBufferString(""))
+	second := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", bytes.NewBufferString(""))
 	second.Header.Set("Accept", "application/json")
 	secondResp, err := app.Test(second, -1)
 	if err != nil {

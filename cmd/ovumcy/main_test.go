@@ -985,14 +985,14 @@ func TestDefaultRequestLoggerDoesNotLogFormSecrets(t *testing.T) {
 	app.Use(logger.New(logger.Config{
 		Output: &output,
 	}))
-	app.Post("/api/auth/reset-password", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/password-resets/redeem", func(c *fiber.Ctx) error {
 		return c.SendStatus(http.StatusNoContent)
 	})
 
 	form := "password=PlaintextPassword123%21&confirm_password=PlaintextPassword123%21&token=plain-reset-token"
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/api/auth/reset-password",
+		"/api/v1/password-resets/redeem",
 		strings.NewReader(form),
 	)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1008,7 +1008,7 @@ func TestDefaultRequestLoggerDoesNotLogFormSecrets(t *testing.T) {
 	}
 
 	logLine := output.String()
-	if !strings.Contains(logLine, "/api/auth/reset-password") {
+	if !strings.Contains(logLine, "/api/v1/password-resets/redeem") {
 		t.Fatalf("expected request path in logs, got %q", logLine)
 	}
 	if strings.Contains(logLine, plaintextPassword) {
@@ -1164,13 +1164,13 @@ func TestAuthRateLimitHandlerLogsSecurityEventWithoutPII(t *testing.T) {
 
 	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
-	app.Post("/api/auth/login", newAuthRateLimitHandler(handler, authRateLimitConfig{
+	app.Post("/api/v1/sessions", newAuthRateLimitHandler(handler, authRateLimitConfig{
 		ErrorCode: "too_many_login_attempts",
 	}))
 
 	request := httptest.NewRequest(
 		http.MethodPost,
-		"/api/auth/login?email=user@example.com",
+		"/api/v1/sessions?email=user@example.com",
 		strings.NewReader("email=user@example.com&password=PlaintextPassword123%21"),
 	)
 	request.Header.Set("Accept", "application/json")

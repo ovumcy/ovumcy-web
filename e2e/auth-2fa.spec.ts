@@ -93,14 +93,14 @@ test.describe('Auth: TOTP two-factor authentication', () => {
       timeout: 5_000,
     });
 
-    // Log out (must be POST+CSRF; GET to /api/auth/logout is rejected).
+    // Log out (must be DELETE+CSRF; GET to /api/v1/sessions/current is rejected).
     await logoutViaAPI(page);
 
     // Log back in — should hit challenge page
     await page.goto('/login');
     await page.locator('input[name="email"]').fill(creds.email);
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
 
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
@@ -135,20 +135,20 @@ test.describe('Auth: TOTP two-factor authentication', () => {
       timeout: 5_000,
     });
 
-    // Log out (must be POST+CSRF; GET to /api/auth/logout is rejected).
+    // Log out (must be DELETE+CSRF; GET to /api/v1/sessions/current is rejected).
     await logoutViaAPI(page);
 
     // Log back in
     await page.goto('/login');
     await page.locator('input[name="email"]').fill(creds.email);
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
     // Provide valid code on the challenge page
     const challengeCode = generateSync({ secret, strategy: 'totp' });
     await page.locator('input[name="code"]').fill(challengeCode);
-    await page.locator('form[action="/api/auth/2fa"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions/2fa-challenge"] button[type="submit"]').click();
 
     // Should be on the dashboard
     await expect(page).toHaveURL('/', { timeout: 5_000 });
@@ -180,19 +180,19 @@ test.describe('Auth: TOTP two-factor authentication', () => {
       timeout: 5_000,
     });
 
-    // Log out (must be POST+CSRF; GET to /api/auth/logout is rejected).
+    // Log out (must be DELETE+CSRF; GET to /api/v1/sessions/current is rejected).
     await logoutViaAPI(page);
 
     // Log back in
     await page.goto('/login');
     await page.locator('input[name="email"]').fill(creds.email);
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
     // Submit wrong code
     await page.locator('input[name="code"]').fill('000000');
-    await page.locator('form[action="/api/auth/2fa"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions/2fa-challenge"] button[type="submit"]').click();
 
     // Should stay on challenge page
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });

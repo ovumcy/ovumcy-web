@@ -20,7 +20,7 @@ func TestRegisterJSONContentTypeWithoutAcceptReturnsJSONError(t *testing.T) {
 		t.Fatalf("marshal register payload: %v", err)
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(payload))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := app.Test(request, -1)

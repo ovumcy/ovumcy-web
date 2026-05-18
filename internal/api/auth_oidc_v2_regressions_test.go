@@ -80,19 +80,19 @@ func TestOIDCOnlyModeRejectsLocalPublicAuthEndpoints(t *testing.T) {
 	}{
 		{
 			name:      "login",
-			path:      "/api/auth/login",
+			path:      "/api/v1/sessions",
 			form:      url.Values{"email": {"owner@example.com"}, "password": {"StrongPass1"}},
 			wantError: "local sign-in unavailable",
 		},
 		{
 			name:      "register",
-			path:      "/api/auth/register",
+			path:      "/api/v1/users",
 			form:      url.Values{"email": {"owner@example.com"}, "password": {"StrongPass1"}, "confirm_password": {"StrongPass1"}},
 			wantError: "local sign-in unavailable",
 		},
 		{
 			name:      "forgot-password",
-			path:      "/api/auth/forgot-password",
+			path:      "/api/v1/password-resets",
 			form:      url.Values{"email": {"owner@example.com"}},
 			wantError: "local recovery unavailable",
 		},
@@ -124,7 +124,7 @@ func TestAuthLogoutWithOIDCProviderUsesSameOriginBridge(t *testing.T) {
 	})
 
 	form := url.Values{"csrf_token": {csrfToken}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set(
 		"Cookie",
@@ -171,7 +171,7 @@ func TestAuthLogoutWithOversizedOIDCProviderStateKeepsBridgeCookieSmall(t *testi
 	})
 
 	form := url.Values{"csrf_token": {csrfToken}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
@@ -290,7 +290,7 @@ func TestAuthLogoutJSONWithOIDCProviderReturnsBridgePathWithoutTokenLeak(t *test
 	})
 
 	form := url.Values{"csrf_token": {csrfToken}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set(

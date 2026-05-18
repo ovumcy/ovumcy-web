@@ -21,7 +21,7 @@ func TestUnsupportedLegacyRoleLoginIsRejected(t *testing.T) {
 		"email":    {user.Email},
 		"password": {"StrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 

@@ -115,21 +115,21 @@ test.describe('Auth: recovery and reset password', () => {
     expectNoSensitiveAuthParams(page.url());
 
     await page.locator('#recovery-code').fill('invalid-code-format');
-    await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/forgot-password$/);
     expectNoSensitiveAuthParams(page.url());
     await expect(page.locator('.status-error')).toBeVisible();
 
     await page.locator('#recovery-code').fill('OVUM-0000-0000-0000');
-    await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/forgot-password$/);
     expectNoSensitiveAuthParams(page.url());
     await expect(page.locator('.status-error')).toBeVisible();
 
     await page.locator('#recovery-code').fill(recoveryCode);
-    await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/reset-password$/);
     expectNoSensitiveAuthParams(page.url());
@@ -149,13 +149,13 @@ test.describe('Auth: recovery and reset password', () => {
 
     await openForgotPasswordRecoveryStep(page, creds.email);
     await page.locator('#recovery-code').fill(oldRecoveryCode);
-    await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/reset-password$/);
 
     await page.locator('#reset-password').fill(newPassword);
     await page.locator('#reset-password-confirm').fill(newPassword);
-    await page.locator('form[action="/api/auth/reset-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets/redeem"] button[type="submit"]').click();
 
     await expectDedicatedRecoveryPage(page);
     expectNoSensitiveAuthParams(page.url());
@@ -172,7 +172,7 @@ test.describe('Auth: recovery and reset password', () => {
     await page.goto('/login');
     await page.locator('#login-email').fill(creds.email);
     await page.locator('#login-password').fill(creds.password);
-    await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.locator('.status-error')).toBeVisible();
 
@@ -191,13 +191,13 @@ test.describe('Auth: recovery and reset password', () => {
 
     await openForgotPasswordRecoveryStep(page, creds.email);
     await page.locator('#recovery-code').fill(recoveryCode);
-    await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets"] button[type="submit"]').click();
 
     await expect(page).toHaveURL(/\/reset-password$/);
 
     await page.locator('#reset-password').fill('weak');
     await page.locator('#reset-password-confirm').fill('weak');
-    await page.locator('form[action="/api/auth/reset-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets/redeem"] button[type="submit"]').click();
 
     const serverError = page.locator('[data-auth-server-error]');
     await expect(serverError).toBeVisible();
@@ -246,7 +246,7 @@ test.describe('Auth: recovery and reset password', () => {
     await registerOwnerViaUI(page, creds);
     const recoveryCode = await readRecoveryCode(page);
 
-    const csrfFailure = await page.request.post('/api/auth/logout', {
+    const csrfFailure = await page.request.delete('/api/v1/sessions/current', {
       form: {},
       maxRedirects: 0,
     });
@@ -259,7 +259,7 @@ test.describe('Auth: recovery and reset password', () => {
 
     await openForgotPasswordRecoveryStep(page, creds.email);
     await page.locator('#recovery-code').fill(recoveryCode);
-    await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+    await page.locator('form[action="/api/v1/password-resets"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/reset-password$/);
     expectNoSensitiveAuthParams(page.url());
   });

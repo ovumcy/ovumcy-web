@@ -83,7 +83,7 @@ func (handler *Handler) respondRegisterPickup(c *fiber.Ctx, outcome registerPick
 }
 
 // PickupRegister completes a fresh registration by exchanging the sealed
-// pickup cookie that POST /api/auth/register handed back for the real auth
+// pickup cookie that POST /api/v1/users handed back for the real auth
 // session cookie and the inline recovery-code surface. The same endpoint
 // handles three indistinguishable-from-outside outcomes:
 //
@@ -99,7 +99,7 @@ func (handler *Handler) respondRegisterPickup(c *fiber.Ctx, outcome registerPick
 //
 // See SECURITY.md "Register enumeration" for the residual two-step oracle
 // (which redirect target the holder of a pickup cookie observes after their
-// own POST /api/auth/register).
+// own POST /api/v1/users).
 func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
 		handler.clearRegisterPickupCookie(c)

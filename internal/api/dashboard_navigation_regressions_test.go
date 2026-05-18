@@ -49,7 +49,7 @@ func TestDashboardLogoutFormsRequireConfirmation(t *testing.T) {
 			t.Fatalf("expected logout form to carry confirmation wiring, got %q", form)
 		}
 	}
-	if strings.Contains(rendered, `action="/api/auth/logout"`) {
+	if strings.Contains(rendered, `action="/api/v1/sessions/current"`) {
 		t.Fatalf("did not expect dashboard navigation to post to the raw API logout route")
 	}
 	if got := len(regexp.MustCompile(`(?is)<input\b[^>]*name="csrf_token"[^>]*>`).FindAllString(rendered, -1)); got < len(logoutForms) {

@@ -18,7 +18,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
 
 	form := url.Values{"csrf_token": {csrfToken}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set(
 		"Cookie",
@@ -72,7 +72,7 @@ func TestAuthLogoutPostRevokesPreviousSessionCookie(t *testing.T) {
 	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
 
 	form := url.Values{"csrf_token": {csrfToken}}
-	logoutRequest := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	logoutRequest := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
 	logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	logoutRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
@@ -115,7 +115,7 @@ func TestAuthLogoutPostRevokesPreviousSessionCookie(t *testing.T) {
 func TestAuthLogoutPostMissingCSRFRejectedByMiddleware(t *testing.T) {
 	app, authCookie, _, _ := prepareAuthenticatedLogoutCSRFContext(t)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(url.Values{}.Encode()))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(url.Values{}.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
@@ -136,7 +136,7 @@ func TestAuthLogoutPostInvalidCSRFRejectedByMiddleware(t *testing.T) {
 	app, authCookie, csrfCookie, csrfToken := prepareAuthenticatedLogoutCSRFContext(t)
 
 	form := url.Values{"csrf_token": {"invalid-" + csrfToken}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 

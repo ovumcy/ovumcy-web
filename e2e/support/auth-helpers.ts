@@ -67,7 +67,7 @@ export async function registerOwnerViaUI(
   await page.locator('#register-email').fill(credentials.email);
   await page.locator('#register-password').fill(credentials.password);
   await page.locator('#register-confirm-password').fill(confirmPassword);
-  await requestSubmitForm(page.locator('form[action="/api/auth/register"]'));
+  await requestSubmitForm(page.locator('form[action="/api/v1/users"]'));
 }
 
 export async function expectInlineRegisterRecoveryStep(page: Page): Promise<void> {
@@ -93,7 +93,7 @@ export async function loginViaUI(page: Page, credentials: Credentials, rememberM
     await page.locator('#login-remember-me').uncheck();
   }
 
-  await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+  await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
 }
 
 export async function readRecoveryCode(page: Page): Promise<string> {
@@ -161,7 +161,7 @@ export async function logoutViaAPI(page: Page): Promise<void> {
   const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute('content');
   expect(csrfToken).toBeTruthy();
 
-  const response = await page.request.post('/api/auth/logout', {
+  const response = await page.request.delete('/api/v1/sessions/current', {
     form: { csrf_token: csrfToken ?? '' },
     maxRedirects: 0,
   });
@@ -174,7 +174,7 @@ export async function openForgotPasswordRecoveryStep(page: Page, email: string):
   await expect(page).toHaveURL(/\/forgot-password(?:\?.*)?$/);
 
   await page.locator('#forgot-email').fill(email);
-  await page.locator('form[action="/api/auth/forgot-password"] button[type="submit"]').click();
+  await page.locator('form[action="/api/v1/password-resets"] button[type="submit"]').click();
 
   await expect(page).toHaveURL(/\/forgot-password$/);
   await expect(page.locator('input[type="hidden"][name="email"]')).toHaveValue(email);

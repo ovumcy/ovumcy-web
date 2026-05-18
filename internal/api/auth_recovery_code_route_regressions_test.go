@@ -128,7 +128,7 @@ func registerAndExtractRecoveryCookies(t *testing.T, app *fiber.App, email strin
 		"password":         {password},
 		"confirm_password": {password},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	registerResponse, err := app.Test(request, -1)

@@ -17,7 +17,7 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 		"email":    {user.Email},
 		"password": {"StrongPass1"},
 	}
-	sessionRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(sessionForm.Encode()))
+	sessionRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(sessionForm.Encode()))
 	sessionRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	sessionResponse, err := app.Test(sessionRequest, -1)
@@ -43,7 +43,7 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 		"password":    {"StrongPass1"},
 		"remember_me": {"1"},
 	}
-	rememberRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(rememberForm.Encode()))
+	rememberRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(rememberForm.Encode()))
 	rememberRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	rememberResponse, err := app.Test(rememberRequest, -1)

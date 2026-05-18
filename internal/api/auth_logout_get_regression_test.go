@@ -13,7 +13,7 @@ func TestAuthLogoutHandlerSupportsPostRequestWithoutCSRFMiddleware(t *testing.T)
 	user := createOnboardingTestUser(t, database, "logout-get@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/logout", strings.NewReader(url.Values{}.Encode()))
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", strings.NewReader(url.Values{}.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 

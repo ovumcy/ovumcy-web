@@ -27,16 +27,17 @@ info:
     navigation, and the corresponding response is not part of this contract.
 
     Authentication & authorization — most endpoints require the sealed
-    `ovumcy_auth` session cookie issued by `POST /api/auth/login`. Endpoints
+    `ovumcy_auth` session cookie issued by `POST /api/v1/sessions`. Endpoints
     marked **owner only** additionally require the caller's `role` to be
     `owner`; non-owner roles receive `403`. State-changing endpoints also
     require a valid CSRF token. See [SECURITY.md](../SECURITY.md#cookies) for
     cookie attributes and [SECURITY.md#password--auth-policy](../SECURITY.md#password--auth-policy)
     for session semantics.
 
-    Rate limits — `/api/auth/*` endpoints carry per-IP HTTP rate limits with
-    additional per-account budgets enforced by `AuthAttemptPolicy`. Specific
-    defaults are listed in [SECURITY.md#rate-limits](../SECURITY.md#rate-limits).
+    Rate limits — the v1 auth endpoints (`/api/v1/sessions`, `/api/v1/users`,
+    `/api/v1/password-resets`) carry per-IP HTTP rate limits with additional
+    per-account budgets enforced by `AuthAttemptPolicy`. Specific defaults
+    are listed in [SECURITY.md#rate-limits](../SECURITY.md#rate-limits).
 
     Errors — every error response carries `{ "error": "<key>", "error_detail":
     { "key", "category", "target" } }`. The top-level `error` string is the
@@ -97,7 +98,7 @@ components:
       in: cookie
       name: ovumcy_auth
       description: |
-        Sealed session cookie issued by `POST /api/auth/login` (or by completing
+        Sealed session cookie issued by `POST /api/v1/sessions` (or by completing
         the OIDC sign-in flow). Verified against `users.auth_session_version` on
         every request. See [SECURITY.md](../SECURITY.md#cookies).
     csrfToken:
@@ -276,7 +277,7 @@ components:
 
     LoginTOTPRequiredResponse:
       type: object
-      description: Returned when the password is correct and the account has TOTP 2FA enabled. The caller must follow up with `POST /api/auth/2fa`.
+      description: Returned when the password is correct and the account has TOTP 2FA enabled. The caller must follow up with `POST /api/v1/sessions/2fa-challenge`.
       required: [requires_totp]
       properties:
         requires_totp:
@@ -754,7 +755,7 @@ paths:
   # =========================================================================
   # auth
   # =========================================================================
-  /api/auth/register:
+  /api/v1/users:
     post:
       tags: [auth]
       summary: Create a new owner account.
@@ -777,7 +778,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /api/auth/login:
+  /api/v1/sessions:
     post:
       tags: [auth]
       summary: Sign in with email and password.
@@ -819,7 +820,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /api/auth/2fa:
+  /api/v1/sessions/2fa-challenge:
     post:
       tags: [auth]
       summary: Submit the TOTP code in the 2FA challenge.
@@ -851,8 +852,8 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /api/auth/logout:
-    post:
+  /api/v1/sessions/current:
+    delete:
       tags: [auth]
       summary: Revoke current session.
       description: |
@@ -876,7 +877,7 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /api/auth/forgot-password:
+  /api/v1/password-resets:
     post:
       tags: [auth]
       summary: Begin password reset via recovery code.
@@ -900,13 +901,13 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
-  /api/auth/reset-password:
+  /api/v1/password-resets/redeem:
     post:
       tags: [auth]
       summary: Set a new password using the reset cookie.
       description: |
         Requires the `ovumcy_reset_password` cookie issued by `POST
-        /api/auth/forgot-password`. Bumps `auth_session_version` on success.
+        /api/v1/password-resets`. Bumps `auth_session_version` on success.
       security: []
       requestBody:
         required: true

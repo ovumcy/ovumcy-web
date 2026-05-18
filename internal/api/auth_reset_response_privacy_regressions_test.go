@@ -21,7 +21,7 @@ func TestResetPasswordInvalidTokenJSONResponseDoesNotExposeSecrets(t *testing.T)
 		"confirm_password": {plaintextPassword},
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/reset-password", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
@@ -55,7 +55,7 @@ func TestResetPasswordInvalidTokenHTMLResponseDoesNotExposeSecrets(t *testing.T)
 		"confirm_password": {plaintextPassword},
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/reset-password", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 

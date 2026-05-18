@@ -14,7 +14,7 @@ func TestFlashCookieUsesSealedTransport(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "sealed-flash@example.com", "StrongPass1", true)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(url.Values{
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(url.Values{
 		"email":    {user.Email},
 		"password": {"WrongPass1"},
 	}.Encode()))
@@ -70,7 +70,7 @@ func TestTamperedSealedFlashCookieIsIgnoredAndCleared(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "tampered-flash@example.com", "StrongPass1", true)
 
-	loginRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(url.Values{
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(url.Values{
 		"email":    {user.Email},
 		"password": {"WrongPass1"},
 	}.Encode()))

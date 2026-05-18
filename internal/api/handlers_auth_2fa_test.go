@@ -104,13 +104,13 @@ func sealExpiredTOTPPendingCookieForTest(t *testing.T, secretKey []byte, userID 
 func doTOTPChallengeRequest(t *testing.T, app *fiber.App, cookies string, code string, csrfToken string) *http.Response {
 	t.Helper()
 	form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/2fa", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Cookie", cookies)
 	req.Header.Set("Accept-Language", "en")
 	resp, err := app.Test(req, -1)
 	if err != nil {
-		t.Fatalf("POST /api/auth/2fa: %v", err)
+		t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
 	}
 	return resp
 }
@@ -248,7 +248,7 @@ func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 }
 
 // TestVerifyTOTPLogin_RateLimited_HTMXReturns429 drives more failures than the
-// configured limit through /api/auth/2fa via the HTMX path (which surfaces the
+// configured limit through /api/v1/sessions/2fa-challenge via the HTMX path (which surfaces the
 // real status code) and asserts the 6th attempt is rejected with 429 by the
 // rate limiter. Guards against accidental removal of the CheckRateLimit call
 // in the handler or wiring breakage between handler and service.
@@ -263,14 +263,14 @@ func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 		t.Helper()
 		pendingCookie := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
 		form := url.Values{"code": {code}, "csrf_token": {csrfToken}}
-		req := httptest.NewRequest(http.MethodPost, "/api/auth/2fa", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("HX-Request", "true")
 		req.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
 		req.Header.Set("Accept-Language", "en")
 		resp, err := app.Test(req, -1)
 		if err != nil {
-			t.Fatalf("POST /api/auth/2fa: %v", err)
+			t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
 		}
 		return resp
 	}

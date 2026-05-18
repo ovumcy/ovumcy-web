@@ -299,7 +299,7 @@ func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T)
 	app, _ := newOnboardingTestApp(t)
 
 	form := url.Values{"email": {"unknown-owner@example.com"}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/forgot-password", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)

@@ -61,7 +61,7 @@ func TestRegisterInlineRecoveryConsumesStaleFlashCookie(t *testing.T) {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	successRequest := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(successForm.Encode()))
+	successRequest := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(successForm.Encode()))
 	successRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	successRequest.Header.Set("Accept-Language", "en")
 	successRequest.Header.Set("Cookie", flashCookieName+"="+staleFlashValue)
@@ -130,7 +130,7 @@ func weakRegisterRequest(email string) *http.Request {
 		"password":         {"12345678"},
 		"confirm_password": {"12345678"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return request
 }

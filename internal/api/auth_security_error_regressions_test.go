@@ -41,7 +41,7 @@ func TestRegisterReturnsSeedFailureAndRollsBackUser(t *testing.T) {
 		t.Fatalf("marshal register request: %v", err)
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", bytes.NewReader(serialized))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(serialized))
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 
@@ -76,9 +76,9 @@ func TestLoginReturnsResetTokenIssueError(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Post("/api/auth/login", handler.Login)
+	app.Post("/api/v1/sessions", handler.Login)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
@@ -103,9 +103,9 @@ func TestLoginReturnsRateLimitedError(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Post("/api/auth/login", handler.Login)
+	app.Post("/api/v1/sessions", handler.Login)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
@@ -140,9 +140,9 @@ func TestLoginForcedResetCookieWriteFailureReturns500(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Post("/api/auth/login", handler.Login)
+	app.Post("/api/v1/sessions", handler.Login)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", bytes.NewBufferString("email=owner%40example.com&password=StrongPass1"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 

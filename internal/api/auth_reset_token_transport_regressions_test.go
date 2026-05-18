@@ -20,7 +20,7 @@ func TestForgotPasswordDoesNotExposeResetTokenInRedirect(t *testing.T) {
 		"email":         {user.Email},
 		"recovery_code": {recoveryCode},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/forgot-password", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)
@@ -51,7 +51,7 @@ func TestForgotPasswordEmailStepDoesNotExposeEmailInRedirect(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "forgot-email-step@example.com", "StrongPass1", true)
 
 	form := url.Values{"email": {user.Email}}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/forgot-password", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)
@@ -81,7 +81,7 @@ func TestForgotPasswordJSONDoesNotExposeResetToken(t *testing.T) {
 		"email":         {user.Email},
 		"recovery_code": {recoveryCode},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/forgot-password", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
@@ -125,7 +125,7 @@ func TestLoginForcedResetDoesNotExposeResetToken(t *testing.T) {
 		"password": {"StrongPass1"},
 	}
 
-	htmlRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
+	htmlRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	htmlRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	htmlResponse, err := app.Test(htmlRequest, -1)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestLoginForcedResetDoesNotExposeResetToken(t *testing.T) {
 		t.Fatalf("expected reset-password cookie in forced-reset html response")
 	}
 
-	jsonRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
+	jsonRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	jsonRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	jsonRequest.Header.Set("Accept", "application/json")
 	jsonResponse, err := app.Test(jsonRequest, -1)

@@ -102,11 +102,11 @@ func TestAuthRateLimitHandlerTreatsJSONContentTypeAsJSONRequest(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
 	app.Use(handler.LanguageMiddleware)
-	app.Post("/api/auth/login", newAuthRateLimitHandler(handler, authRateLimitConfig{
+	app.Post("/api/v1/sessions", newAuthRateLimitHandler(handler, authRateLimitConfig{
 		ErrorCode: "too_many_login_attempts",
 	}))
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"email":"rate-limit@example.com"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(`{"email":"rate-limit@example.com"}`))
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := app.Test(request, -1)
@@ -132,11 +132,11 @@ func TestAuthRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
 	app.Use(handler.LanguageMiddleware)
-	app.Post("/api/auth/login", newAuthRateLimitHandler(handler, authRateLimitConfig{
+	app.Post("/api/v1/sessions", newAuthRateLimitHandler(handler, authRateLimitConfig{
 		ErrorCode: "too_many_login_attempts",
 	}))
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("email=rate-limit%40example.com"))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader("email=rate-limit%40example.com"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)
@@ -261,19 +261,19 @@ func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 	app.Use(handler.LanguageMiddleware)
 
 	const expirationSeconds = 30
-	app.Use("/api/auth/login", limiter.New(limiter.Config{
+	app.Use("/api/v1/sessions", limiter.New(limiter.Config{
 		Max:        1,
 		Expiration: expirationSeconds * time.Second,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_login_attempts",
 		}),
 	}))
-	app.Post("/api/auth/login", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/sessions", func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
 	// Burn the single allowed request.
-	first := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	first := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
 	first.Header.Set("Content-Type", "application/json")
 	firstResponse, err := app.Test(first, -1)
 	if err != nil {
@@ -285,7 +285,7 @@ func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 	}
 
 	// Second request must trip the limiter.
-	second := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	second := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
 	second.Header.Set("Content-Type", "application/json")
 	secondResponse, err := app.Test(second, -1)
 	if err != nil {

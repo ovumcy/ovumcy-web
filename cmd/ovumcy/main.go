@@ -333,28 +333,32 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	app.Use(recover.New())
 	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
-	app.Use("/api/auth/logout", limiter.New(limiter.Config{
+	app.Use(limiter.New(limiter.Config{
+		Next:       rateLimitOnlyFor(fiber.MethodDelete, "/api/v1/sessions/current"),
 		Max:        config.RateLimits.LogoutMax,
 		Expiration: config.RateLimits.LogoutWindow,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_logout_attempts",
 		}),
 	}))
-	app.Use("/api/auth/login", limiter.New(limiter.Config{
+	app.Use(limiter.New(limiter.Config{
+		Next:       rateLimitOnlyFor(fiber.MethodPost, "/api/v1/sessions"),
 		Max:        config.RateLimits.LoginMax,
 		Expiration: config.RateLimits.LoginWindow,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_login_attempts",
 		}),
 	}))
-	app.Use("/api/auth/register", limiter.New(limiter.Config{
+	app.Use(limiter.New(limiter.Config{
+		Next:       rateLimitOnlyFor(fiber.MethodPost, "/api/v1/users"),
 		Max:        config.RateLimits.RegisterMax,
 		Expiration: config.RateLimits.RegisterWindow,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_register_attempts",
 		}),
 	}))
-	app.Use("/api/auth/forgot-password", limiter.New(limiter.Config{
+	app.Use(limiter.New(limiter.Config{
+		Next:       rateLimitOnlyFor(fiber.MethodPost, "/api/v1/password-resets"),
 		Max:        config.RateLimits.ForgotPasswordMax,
 		Expiration: config.RateLimits.ForgotPasswordWindow,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
@@ -711,13 +715,40 @@ func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
 }
 
 func rateLimitScope(c *fiber.Ctx) string {
+	path := c.Path()
 	switch {
-	case strings.HasPrefix(c.Path(), "/api/settings/"), strings.HasPrefix(c.Path(), "/settings/"):
+	case strings.HasPrefix(path, "/api/settings/"), strings.HasPrefix(path, "/settings/"):
 		return "settings"
-	case strings.HasPrefix(c.Path(), "/api/auth/"), strings.HasPrefix(c.Path(), "/auth/oidc"):
+	case isV1AuthPath(path), strings.HasPrefix(path, "/auth/oidc"):
 		return "auth"
 	default:
 		return "api"
+	}
+}
+
+// isV1AuthPath returns true for the v1 auth surface (sessions, users
+// creation, password-reset flow). Used by rateLimitScope to classify rate-
+// limit events so the security log preserves the "auth" scope across the
+// /api/v1/* migration.
+func isV1AuthPath(path string) bool {
+	switch path {
+	case "/api/v1/users", "/api/v1/sessions", "/api/v1/sessions/current",
+		"/api/v1/sessions/2fa-challenge", "/api/v1/password-resets",
+		"/api/v1/password-resets/redeem":
+		return true
+	}
+	return false
+}
+
+// rateLimitOnlyFor returns a Next predicate for fiber's limiter middleware
+// that lets the limiter run only when the request's method and path match
+// exactly. Fiber's Use() is path-prefix-matched and method-agnostic; without
+// this filter a limiter wired to "/api/v1/sessions" would also fire on
+// sibling routes such as POST /api/v1/sessions/2fa-challenge that share the
+// prefix, silently broadening the rate-limit budget.
+func rateLimitOnlyFor(method, path string) func(*fiber.Ctx) bool {
+	return func(c *fiber.Ctx) bool {
+		return !(c.Method() == method && c.Path() == path)
 	}
 }
 

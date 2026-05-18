@@ -14,7 +14,7 @@ func TestSecureFlashCookieEnabledWhenConfigured(t *testing.T) {
 	app, database := newOnboardingTestAppWithCookieSecure(t, true)
 	user := createOnboardingTestUser(t, database, "secure-cookies@example.com", "StrongPass1", true)
 
-	response := mustAppResponse(t, app, secureCookieFormRequest(http.MethodPost, "/api/auth/login", url.Values{
+	response := mustAppResponse(t, app, secureCookieFormRequest(http.MethodPost, "/api/v1/sessions", url.Values{
 		"email":    {user.Email},
 		"password": {"WrongPass1"},
 	}))
@@ -57,7 +57,7 @@ func TestSecureAuthCookieEnabledWhenConfigured(t *testing.T) {
 	app, database := newOnboardingTestAppWithCookieSecure(t, true)
 	user := createOnboardingTestUser(t, database, "secure-auth-cookie@example.com", "StrongPass1", true)
 
-	response := mustAppResponse(t, app, secureCookieFormRequest(http.MethodPost, "/api/auth/login", url.Values{
+	response := mustAppResponse(t, app, secureCookieFormRequest(http.MethodPost, "/api/v1/sessions", url.Values{
 		"email":    {user.Email},
 		"password": {"StrongPass1"},
 	}))
@@ -82,7 +82,7 @@ func TestSecureRecoveryCookieEnabledWhenConfigured(t *testing.T) {
 	t.Parallel()
 
 	app, _ := newOnboardingTestAppWithCookieSecure(t, true)
-	registerResponse := mustAppResponse(t, app, secureCookieFormRequest(http.MethodPost, "/api/auth/register", url.Values{
+	registerResponse := mustAppResponse(t, app, secureCookieFormRequest(http.MethodPost, "/api/v1/users", url.Values{
 		"email":            {"recovery-cookie-secure@example.com"},
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},

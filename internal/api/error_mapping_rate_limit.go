@@ -29,7 +29,7 @@ func (handler *Handler) RespondAuthRateLimited(c *fiber.Ctx, errorKey string) er
 
 func (handler *Handler) RespondAPIRateLimited(c *fiber.Ctx) error {
 	switch {
-	case strings.HasPrefix(c.Path(), "/api/auth/"):
+	case isV1AuthFormPath(c.Path()):
 		return handler.respondRateLimitedMappedError(c, authRateLimitErrorSpec("too many requests"))
 	case strings.HasPrefix(c.Path(), "/api/settings/"), strings.HasPrefix(c.Path(), "/settings/"):
 		return handler.respondRateLimitedMappedError(c, settingsRateLimitErrorSpec())

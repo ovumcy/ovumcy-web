@@ -44,7 +44,7 @@ func loginInvalidCredentialsRequest(email string) *http.Request {
 		"email":    {email},
 		"password": {"WrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return request
 }

@@ -18,7 +18,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 		"email":    {user.Email},
 		"password": {"StrongPass1"},
 	}
-	loginRequest := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(loginForm.Encode()))
+	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(loginForm.Encode()))
 	loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	loginResponse, err := app.Test(loginRequest, -1)
@@ -35,7 +35,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	registerRequest := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(registerForm.Encode()))
+	registerRequest := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(registerForm.Encode()))
 	registerRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	registerResponse, err := app.Test(registerRequest, -1)

@@ -15,7 +15,7 @@ import (
 func TestRegisterJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(url.Values{
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(url.Values{
 		"email":            {"json-register@example.com"},
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
@@ -63,7 +63,7 @@ func TestResetPasswordJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "json-reset@example.com", "StrongPass1", true)
 
 	recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
-	startResetRequest := httptest.NewRequest(http.MethodPost, "/api/auth/forgot-password", strings.NewReader(url.Values{
+	startResetRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(url.Values{
 		"email":         {user.Email},
 		"recovery_code": {recoveryCode},
 	}.Encode()))
@@ -76,7 +76,7 @@ func TestResetPasswordJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 		t.Fatal("expected reset-password cookie after forgot-password flow")
 	}
 
-	completeResetRequest := httptest.NewRequest(http.MethodPost, "/api/auth/reset-password", strings.NewReader(url.Values{
+	completeResetRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(url.Values{
 		"password":         {"EvenStronger2"},
 		"confirm_password": {"EvenStronger2"},
 	}.Encode()))
@@ -148,7 +148,7 @@ func TestRegenerateRecoveryCodeJSONDoesNotExposeRecoveryCode(t *testing.T) {
 func TestRegisterInlineRecoveryStepConsumesCookieAfterFirstView(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(url.Values{
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(url.Values{
 		"email":            {"one-time-recovery@example.com"},
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
@@ -215,7 +215,7 @@ func TestRegisterInlineRecoveryStepConsumesCookieAfterFirstView(t *testing.T) {
 func TestRecoveryCodePageRedirectsInlineRegistrationSurfaceBackToRegister(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(url.Values{
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(url.Values{
 		"email":            {"inline-surface@example.com"},
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},

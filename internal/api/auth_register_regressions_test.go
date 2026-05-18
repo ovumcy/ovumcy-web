@@ -18,7 +18,7 @@ func TestRegisterValidationErrorRedirectDoesNotLeakEmailOrErrorInQuery(t *testin
 		"password":         {"12345678"},
 		"confirm_password": {"12345678"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)
@@ -59,7 +59,7 @@ func TestRegisterValidationErrorRedirectDoesNotLeakEmailOrErrorInQuery(t *testin
 }
 
 // TestRegisterResponseParityBetweenNewAndDuplicateEmail closes the per-request
-// Set-Cookie enumeration oracle: POST /api/auth/register must emit identical
+// Set-Cookie enumeration oracle: POST /api/v1/users must emit identical
 // status, body, redirect target, and Set-Cookie shape regardless of whether
 // the email was new or already registered. Any divergence here re-opens the
 // oracle that the pickup-cookie redesign was meant to remove.
@@ -153,7 +153,7 @@ func registerRequest(email string) *http.Request {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept-Language", "en")
 	return request
@@ -185,7 +185,7 @@ func TestRegisterSuccessIssuesPickupCookieAndRedirectsToWelcome(t *testing.T) {
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept-Language", "en")
 

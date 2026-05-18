@@ -100,7 +100,7 @@ test.describe('Security and role-based access', () => {
   test('csrf basics: missing token is rejected for state-changing endpoints', async ({ page }) => {
     const creds = await registerOwnerAndReachDashboard(page, 'security-csrf');
 
-    const logoutNoCsrf = await page.request.post('/api/auth/logout', {
+    const logoutNoCsrf = await page.request.delete('/api/v1/sessions/current', {
       form: {},
       maxRedirects: 0,
     });

@@ -17,7 +17,7 @@ func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *tes
 		"password":         {"StrongPass1"},
 		"confirm_password": {"StrongPass1"},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/register", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept-Language", "en")
 

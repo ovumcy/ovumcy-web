@@ -14,7 +14,7 @@ import (
 )
 
 // registerPickupCookieTTL caps how long the sealed register-pickup cookie is
-// honored after POST /api/auth/register. Short on purpose so a stale pickup
+// honored after POST /api/v1/users. Short on purpose so a stale pickup
 // cannot be replayed minutes after the fact, but long enough to absorb the
 // natural 303 follow-up plus a brief stall.
 const registerPickupCookieTTL = 5 * time.Minute
@@ -30,7 +30,7 @@ const registerPickupNonceBytes = 16
 // serialized to JSON with FIXED-WIDTH string fields so that the resulting
 // ciphertext is byte-identical in length between a real new-user payload and
 // a decoy payload for a duplicate-email collision. This is what closes the
-// per-request Set-Cookie enumeration oracle on POST /api/auth/register.
+// per-request Set-Cookie enumeration oracle on POST /api/v1/users.
 //
 // The Nonce field is opaque: for a real pickup it is the primary key of a
 // server-side `register_pickup_tokens` row whose Consume() call resolves to

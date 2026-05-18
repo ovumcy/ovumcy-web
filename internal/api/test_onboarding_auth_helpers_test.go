@@ -22,7 +22,7 @@ func loginAndExtractAuthCookie(t *testing.T, app *fiber.App, email string, passw
 		"email":    {email},
 		"password": {password},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	response, err := app.Test(request, -1)
@@ -74,7 +74,7 @@ func loginAndExtractAuthCookieWithCSRF(t *testing.T, app *fiber.App, email strin
 		"password":   {password},
 		"csrf_token": {csrfToken},
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", csrfCookie.Name+"="+csrfCookie.Value)
 

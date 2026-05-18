@@ -386,7 +386,7 @@ test.describe('Bug regressions', () => {
     }) => {
       const creds = await registerOwnerAndReachDashboard(page, 'bug02-duplicate');
 
-      await page.request.post('/api/auth/logout', {
+      await page.request.delete('/api/v1/sessions/current', {
         form: {
           csrf_token:
             (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '',
@@ -398,7 +398,7 @@ test.describe('Bug regressions', () => {
       await page.locator('#register-email').fill(creds.email);
       await page.locator('#register-password').fill('ValidPass1');
       await page.locator('#register-confirm-password').fill('ValidPass1');
-      await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
+      await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
 
       await expect(page).toHaveURL(/\/register$/);
       const currentURL = page.url().toLowerCase();
@@ -417,7 +417,7 @@ test.describe('Bug regressions', () => {
       await page.locator('#register-email').fill('anyuser@ovumcy.lan');
       await page.locator('#register-password').fill('weak');
       await page.locator('#register-confirm-password').fill('weak');
-      await page.locator('form[action="/api/auth/register"] button[type="submit"]').click();
+      await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
 
       await expect(page).toHaveURL(/\/register$/);
       const currentURL = page.url().toLowerCase();
@@ -429,7 +429,7 @@ test.describe('Bug regressions', () => {
       const creds = await registerOwnerAndReachDashboard(page, 'bug02-login-generic');
 
       const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
-      await page.request.post('/api/auth/logout', {
+      await page.request.delete('/api/v1/sessions/current', {
         form: { csrf_token: csrf },
         maxRedirects: 0,
       });
@@ -437,14 +437,14 @@ test.describe('Bug regressions', () => {
       await page.goto('/login');
       await page.locator('#login-email').fill('doesnotexist@ovumcy.lan');
       await page.locator('#login-password').fill('SomePass1');
-      await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+      await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
       await expect(page).toHaveURL(/\/login$/);
       const unknownMessage = String((await page.locator('.status-error').first().textContent()) || '').trim();
 
       await page.goto('/login');
       await page.locator('#login-email').fill(creds.email);
       await page.locator('#login-password').fill('WrongPass1');
-      await page.locator('form[action="/api/auth/login"] button[type="submit"]').click();
+      await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
       await expect(page).toHaveURL(/\/login$/);
       const wrongPasswordMessage = String((await page.locator('.status-error').first().textContent()) || '').trim();
 
