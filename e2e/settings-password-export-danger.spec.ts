@@ -165,7 +165,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     page.on('request', (request) => {
       if (
-        request.method() === 'POST' &&
+        request.method() === 'PUT' &&
         request.url().includes('/api/v1/users/current/password')
       ) {
         passwordRequests += 1;

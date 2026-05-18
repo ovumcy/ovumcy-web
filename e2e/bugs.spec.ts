@@ -400,7 +400,15 @@ test.describe('Bug regressions', () => {
       await page.locator('#register-confirm-password').fill('ValidPass1');
       await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
 
-      await expect(page).toHaveURL(/\/register$/);
+      // Duplicate registration dispatches through the pickup-cookie flow:
+      // POST /api/v1/users issues a decoy pickup cookie + 303 to
+      // /register/welcome, the welcome handler fails to consume the decoy
+      // nonce, and the browser ends at /login with a neutral flash. The
+      // privacy invariant guarded here is that no URL params leak the
+      // attempted email/error and no page text reveals "already exists".
+      // The residual two-step landing-page oracle is documented in
+      // SECURITY.md "Register enumeration".
+      await expect(page).toHaveURL(/\/(register|login)$/);
       const currentURL = page.url().toLowerCase();
       expect(currentURL).not.toContain('email=');
       expect(currentURL).not.toContain('error=');

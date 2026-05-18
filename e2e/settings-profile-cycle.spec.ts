@@ -131,7 +131,7 @@ async function createCustomSymptom(symptomSection: Locator, name: string, icon: 
 }
 
 async function archiveCustomSymptom(page: Page, row: Locator): Promise<void> {
-  await row.locator('form[action$="/archive"] button[type="submit"]').click();
+  await row.locator('form[hx-delete^="/api/v1/symptoms/"] button[type="submit"]').click();
   await expect(page.locator('#confirm-modal')).toBeVisible();
   await page.locator('#confirm-modal-accept').click();
 }
@@ -595,7 +595,7 @@ test.describe('Settings: profile and cycle', () => {
 
     const activeRow = customSymptomRow(symptomSection, 'Joint stiffness', 'active');
     const saveButtonBox = await activeRow.locator('[data-symptom-edit-form] button[type="submit"]').boundingBox();
-    const hideButtonBox = await activeRow.locator('form[action$="/archive"] button[type="submit"]').boundingBox();
+    const hideButtonBox = await activeRow.locator('form[hx-delete^="/api/v1/symptoms/"] button[type="submit"]').boundingBox();
     expect(saveButtonBox).not.toBeNull();
     expect(hideButtonBox).not.toBeNull();
     expect(hideButtonBox!.y).toBeGreaterThan(saveButtonBox!.y + 4);

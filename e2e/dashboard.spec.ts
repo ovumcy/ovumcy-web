@@ -75,7 +75,7 @@ async function waitForDashboardAutosave(
 ): Promise<void> {
   const path = savePath ?? (await todaySavePath(page));
   await page.waitForResponse((response) => {
-    return response.request().method() === 'POST' && response.url().includes(path);
+    return response.request().method() === 'PUT' && response.url().includes(path);
   });
   if (options?.expectIndicator === false) {
     return;
