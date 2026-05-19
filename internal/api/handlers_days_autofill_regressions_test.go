@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
 
 func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
@@ -261,78 +262,66 @@ func TestUpsertDayAutoFillClearsBareNeighborsWhenAnchorToggledOff(t *testing.T) 
 		t.Fatalf("update user cycle settings: %v", err)
 	}
 
-	onPayload := map[string]any{
+	putDayPayloadExpectOK(t, app, authCookie, "2026-02-10", map[string]any{
 		"is_period":   true,
 		"flow":        models.FlowMedium,
 		"symptom_ids": []uint{},
 		"notes":       "",
-	}
-	onBody, err := json.Marshal(onPayload)
-	if err != nil {
-		t.Fatalf("marshal on payload: %v", err)
-	}
-	onRequest := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-10", bytes.NewReader(onBody))
-	onRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
-	onRequest.Header.Set("Cookie", authCookie)
-	onResponse, err := app.Test(onRequest, -1)
-	if err != nil {
-		t.Fatalf("on request failed: %v", err)
-	}
-	defer onResponse.Body.Close()
-	if onResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200 on toggle on, got %d", onResponse.StatusCode)
+	}, "toggle on")
+
+	for _, dateRaw := range []string{"2026-02-11", "2026-02-12", "2026-02-13"} {
+		assertDayPeriodState(t, database, user.ID, dateRaw, true, "auto-marked as period day before toggle off")
 	}
 
-	autoFilledDays := []string{"2026-02-11", "2026-02-12", "2026-02-13"}
-	for _, dateRaw := range autoFilledDays {
-		day, err := services.ParseDayDate(dateRaw, time.UTC)
-		if err != nil {
-			t.Fatalf("parse day %s: %v", dateRaw, err)
-		}
-		entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
-		if err != nil {
-			t.Fatalf("fetch log for %s: %v", dateRaw, err)
-		}
-		if !entry.IsPeriod {
-			t.Fatalf("expected %s to be auto-marked as period day before toggle off", dateRaw)
-		}
-	}
-
-	offPayload := map[string]any{
+	putDayPayloadExpectOK(t, app, authCookie, "2026-02-10", map[string]any{
 		"is_period":   false,
 		"flow":        models.FlowNone,
 		"symptom_ids": []uint{},
 		"notes":       "",
-	}
-	offBody, err := json.Marshal(offPayload)
-	if err != nil {
-		t.Fatalf("marshal off payload: %v", err)
-	}
-	offRequest := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-10", bytes.NewReader(offBody))
-	offRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
-	offRequest.Header.Set("Cookie", authCookie)
-	offResponse, err := app.Test(offRequest, -1)
-	if err != nil {
-		t.Fatalf("off request failed: %v", err)
-	}
-	defer offResponse.Body.Close()
-	if offResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200 on toggle off, got %d", offResponse.StatusCode)
-	}
+	}, "toggle off")
 
-	allDays := []string{"2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13"}
-	for _, dateRaw := range allDays {
-		day, err := services.ParseDayDate(dateRaw, time.UTC)
-		if err != nil {
-			t.Fatalf("parse day %s: %v", dateRaw, err)
-		}
-		entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
-		if err != nil {
-			t.Fatalf("fetch log for %s: %v", dateRaw, err)
-		}
-		if entry.IsPeriod {
-			t.Fatalf("expected %s to be cleared after anchor toggle off, got IsPeriod=true", dateRaw)
-		}
+	for _, dateRaw := range []string{"2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13"} {
+		assertDayPeriodState(t, database, user.ID, dateRaw, false, "cleared after anchor toggle off")
+	}
+}
+
+// putDayPayloadExpectOK marshals payload, fires PUT /api/v1/days/{date}, and
+// fails the test on any error or non-200. Extracted to keep parent test
+// cyclomatic complexity below the gocyclo gate.
+func putDayPayloadExpectOK(t *testing.T, app *fiber.App, authCookie, dateISO string, payload map[string]any, label string) {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal %s payload: %v", label, err)
+	}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+dateISO, bytes.NewReader(body))
+	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
+	request.Header.Set("Cookie", authCookie)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("%s request failed: %v", label, err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 on %s, got %d", label, response.StatusCode)
+	}
+}
+
+// assertDayPeriodState parses dateRaw, fetches the user's daily log, and
+// asserts IsPeriod matches expectPeriod. Provides a uniform failure message
+// keyed on the date so each per-day branch in the test stays a single line.
+func assertDayPeriodState(t *testing.T, database *gorm.DB, userID uint, dateRaw string, expectPeriod bool, reason string) {
+	t.Helper()
+	day, err := services.ParseDayDate(dateRaw, time.UTC)
+	if err != nil {
+		t.Fatalf("parse day %s: %v", dateRaw, err)
+	}
+	entry, err := fetchLogByDateForTest(database, userID, day, time.UTC)
+	if err != nil {
+		t.Fatalf("fetch log for %s: %v", dateRaw, err)
+	}
+	if entry.IsPeriod != expectPeriod {
+		t.Fatalf("expected %s %s (IsPeriod=%v), got IsPeriod=%v", dateRaw, reason, expectPeriod, entry.IsPeriod)
 	}
 }
 

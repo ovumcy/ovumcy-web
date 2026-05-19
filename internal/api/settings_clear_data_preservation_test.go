@@ -73,36 +73,7 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 		t.Fatalf("load user after clear-data: %v", err)
 	}
 
-	if after.Email != before.Email {
-		t.Fatalf("expected email preserved, before=%q after=%q", before.Email, after.Email)
-	}
-	if after.PasswordHash != before.PasswordHash {
-		t.Fatal("expected password hash preserved, but it changed")
-	}
-	if after.RecoveryCodeHash != before.RecoveryCodeHash {
-		t.Fatal("expected recovery code hash preserved, but it changed")
-	}
-	if after.Role != before.Role {
-		t.Fatalf("expected role preserved, before=%q after=%q", before.Role, after.Role)
-	}
-	if after.DisplayName != displayName {
-		t.Fatalf("expected display name preserved %q, got %q", displayName, after.DisplayName)
-	}
-	if !after.LocalAuthEnabled {
-		t.Fatal("expected local_auth_enabled preserved, but it was cleared")
-	}
-	if !after.OnboardingCompleted {
-		t.Fatal("expected onboarding_completed preserved, but it was cleared")
-	}
-	if after.TOTPSecret != totpSecret {
-		t.Fatalf("expected totp_secret preserved, before=%q after=%q", totpSecret, after.TOTPSecret)
-	}
-	if !after.TOTPEnabled {
-		t.Fatal("expected totp_enabled preserved, but it was disabled")
-	}
-	if after.TOTPLastUsedStep != totpLastUsedStep {
-		t.Fatalf("expected totp_last_used_step preserved, before=%d after=%d", totpLastUsedStep, after.TOTPLastUsedStep)
-	}
+	assertUserIdentityPreserved(t, before, after, displayName, totpSecret, totpLastUsedStep)
 
 	var oidcRowCount int64
 	if err := scenario.database.Model(&models.OIDCIdentity{}).Where("user_id = ?", scenario.user.ID).Count(&oidcRowCount).Error; err != nil {
@@ -110,5 +81,47 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 	}
 	if oidcRowCount != 1 {
 		t.Fatalf("expected oidc identity link preserved (count=1), got count=%d", oidcRowCount)
+	}
+}
+
+// assertUserIdentityPreserved walks the identity-shaped User columns that the
+// clear-data contract must NOT wipe. Pulled out of the parent test so the
+// per-field branches do not balloon its cyclomatic complexity.
+func assertUserIdentityPreserved(t *testing.T, before, after models.User, displayName, totpSecret string, totpLastUsedStep int64) {
+	t.Helper()
+
+	stringChecks := []struct {
+		name           string
+		before, after  string
+	}{
+		{"email", before.Email, after.Email},
+		{"password_hash", before.PasswordHash, after.PasswordHash},
+		{"recovery_code_hash", before.RecoveryCodeHash, after.RecoveryCodeHash},
+		{"role", string(before.Role), string(after.Role)},
+		{"display_name", displayName, after.DisplayName},
+		{"totp_secret", totpSecret, after.TOTPSecret},
+	}
+	for _, check := range stringChecks {
+		if check.before != check.after {
+			t.Fatalf("expected %s preserved, before=%q after=%q", check.name, check.before, check.after)
+		}
+	}
+
+	boolChecks := []struct {
+		name string
+		got  bool
+	}{
+		{"local_auth_enabled", after.LocalAuthEnabled},
+		{"onboarding_completed", after.OnboardingCompleted},
+		{"totp_enabled", after.TOTPEnabled},
+	}
+	for _, check := range boolChecks {
+		if !check.got {
+			t.Fatalf("expected %s preserved, but it was cleared", check.name)
+		}
+	}
+
+	if after.TOTPLastUsedStep != totpLastUsedStep {
+		t.Fatalf("expected totp_last_used_step preserved, before=%d after=%d", totpLastUsedStep, after.TOTPLastUsedStep)
 	}
 }
