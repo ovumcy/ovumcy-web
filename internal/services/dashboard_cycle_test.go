@@ -122,20 +122,128 @@ func TestBuildDashboardCycleContextUsesRangeForIrregularMode(t *testing.T) {
 	}
 }
 
-func TestDashboardPredictionRangeWidensForAge35Plus(t *testing.T) {
-	user := &models.User{AgeGroup: models.AgeGroup35Plus}
-	stats := CycleStats{CompletedCycleCount: 2}
+func TestDashboardPredictionRangeUsesObservedStdDevForRegularCycles(t *testing.T) {
+	predictedStart := mustParseDashboardDay(t, "2026-04-07")
+	cases := []struct {
+		name         string
+		stats        CycleStats
+		wantOK       bool
+		wantStartISO string
+		wantEndISO   string
+	}{
+		{
+			name:   "fewer than three completed cycles shows no range",
+			stats:  CycleStats{CompletedCycleCount: 2, CycleLengthStdDev: 3.0},
+			wantOK: false,
+		},
+		{
+			name:   "zero variability shows no range",
+			stats:  CycleStats{CompletedCycleCount: 6, CycleLengthStdDev: 0},
+			wantOK: false,
+		},
+		{
+			name:         "low variability rounds up to one day",
+			stats:        CycleStats{CompletedCycleCount: 4, CycleLengthStdDev: 0.4},
+			wantOK:       true,
+			wantStartISO: "2026-04-06",
+			wantEndISO:   "2026-04-08",
+		},
+		{
+			name:         "moderate variability rounds to nearest day",
+			stats:        CycleStats{CompletedCycleCount: 5, CycleLengthStdDev: 2.4},
+			wantOK:       true,
+			wantStartISO: "2026-04-05",
+			wantEndISO:   "2026-04-09",
+		},
+		{
+			name:         "high variability is clamped at five days",
+			stats:        CycleStats{CompletedCycleCount: 8, CycleLengthStdDev: 8.7},
+			wantOK:       true,
+			wantStartISO: "2026-04-02",
+			wantEndISO:   "2026-04-12",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rangeStart, rangeEnd, ok := DashboardPredictionRange(&models.User{}, tc.stats, predictedStart, time.UTC)
+			if ok != tc.wantOK {
+				t.Fatalf("expected ok=%v, got ok=%v", tc.wantOK, ok)
+			}
+			if !tc.wantOK {
+				return
+			}
+			if got := rangeStart.Format("2006-01-02"); got != tc.wantStartISO {
+				t.Fatalf("expected range start %s, got %s", tc.wantStartISO, got)
+			}
+			if got := rangeEnd.Format("2006-01-02"); got != tc.wantEndISO {
+				t.Fatalf("expected range end %s, got %s", tc.wantEndISO, got)
+			}
+		})
+	}
+}
+
+// TestDashboardPredictionRangeIgnoresAgeGroup locks in that age, on its
+// own, no longer widens the prediction. The previous age_35_plus add-on
+// was applied to the cohort with the lowest within-individual variability
+// per Gibson et al., npj Digital Medicine 2023 (Apple Women's Health
+// Study), so it has been removed in favour of the data-driven span above.
+func TestDashboardPredictionRangeIgnoresAgeGroup(t *testing.T) {
+	stats := CycleStats{CompletedCycleCount: 5, CycleLengthStdDev: 2.0}
 	predictedStart := mustParseDashboardDay(t, "2026-04-07")
 
-	rangeStart, rangeEnd, ok := DashboardPredictionRange(user, stats, predictedStart, time.UTC)
-	if !ok {
-		t.Fatal("expected prediction range to be calculable")
+	for _, ageGroup := range []string{
+		models.AgeGroupUnder40,
+		models.AgeGroup40To45,
+		models.AgeGroup45Plus,
+	} {
+		ageGroup := ageGroup
+		t.Run(ageGroup, func(t *testing.T) {
+			rangeStart, rangeEnd, ok := DashboardPredictionRange(&models.User{AgeGroup: ageGroup}, stats, predictedStart, time.UTC)
+			if !ok {
+				t.Fatalf("expected prediction range to be calculable for age group %q", ageGroup)
+			}
+			if got := rangeStart.Format("2006-01-02"); got != "2026-04-05" {
+				t.Fatalf("expected range start 2026-04-05 for age group %q, got %s", ageGroup, got)
+			}
+			if got := rangeEnd.Format("2006-01-02"); got != "2026-04-09" {
+				t.Fatalf("expected range end 2026-04-09 for age group %q, got %s", ageGroup, got)
+			}
+		})
 	}
-	if got := rangeStart.Format("2006-01-02"); got != "2026-04-02" {
-		t.Fatalf("expected 35+ range start 2026-04-02, got %s", got)
+}
+
+func TestBuildDashboardCycleContextShowsDataDrivenRangeForRegularUserWithVariability(t *testing.T) {
+	user := &models.User{CycleLength: 28}
+	stats := CycleStats{
+		LastPeriodStart:     mustParseDashboardDay(t, "2026-03-10"),
+		AverageCycleLength:  28.4,
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		CompletedCycleCount: 5,
+		CycleLengthStdDev:   2.4,
+		CurrentCycleDay:     5,
+		NextPeriodStart:     mustParseDashboardDay(t, "2026-04-07"),
+		OvulationDate:       mustParseDashboardDay(t, "2026-03-24"),
+		OvulationExact:      true,
 	}
-	if got := rangeEnd.Format("2006-01-02"); got != "2026-04-12" {
-		t.Fatalf("expected 35+ range end 2026-04-12, got %s", got)
+	today := mustParseDashboardDay(t, "2026-03-14")
+
+	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	if !context.DisplayNextPeriodUseRange {
+		t.Fatalf("expected data-driven prediction range for a regular user with measurable variability")
+	}
+	if got := context.DisplayNextPeriodRangeStart.Format("2006-01-02"); got != "2026-04-05" {
+		t.Fatalf("expected range start 2026-04-05, got %s", got)
+	}
+	if got := context.DisplayNextPeriodRangeEnd.Format("2006-01-02"); got != "2026-04-09" {
+		t.Fatalf("expected range end 2026-04-09, got %s", got)
+	}
+	if context.DisplayOvulationUseRange {
+		t.Fatalf("did not expect ovulation range for a regular user")
+	}
+	if context.DisplayOvulationDate.IsZero() {
+		t.Fatalf("expected ovulation date to remain visible for a regular user")
 	}
 }
 

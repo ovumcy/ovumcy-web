@@ -6,14 +6,22 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// NormalizeAgeGroup accepts the current bracket values and returns
+// AgeGroupUnknown for anything else, including the legacy under_20 /
+// age_20_35 / age_35_plus values stored before the medically-recalibrated
+// bracketing landed. Legacy answers conflated the lowest-variability cohort
+// (35–39) with the perimenopausal cohort (45+), so they are intentionally
+// not migrated to a guessed new bucket — affected users see the current
+// question with no preselected answer on the next settings or onboarding
+// edit.
 func NormalizeAgeGroup(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case models.AgeGroupUnder20:
-		return models.AgeGroupUnder20
-	case models.AgeGroup20To35:
-		return models.AgeGroup20To35
-	case models.AgeGroup35Plus:
-		return models.AgeGroup35Plus
+	case models.AgeGroupUnder40:
+		return models.AgeGroupUnder40
+	case models.AgeGroup40To45:
+		return models.AgeGroup40To45
+	case models.AgeGroup45Plus:
+		return models.AgeGroup45Plus
 	default:
 		return models.AgeGroupUnknown
 	}
@@ -54,11 +62,13 @@ func UsageGoalSummaryTranslationKey(value string) string {
 
 func AgeGroupTranslationKey(value string) string {
 	switch NormalizeAgeGroup(value) {
-	case models.AgeGroupUnder20:
-		return "settings.age_group.under_20"
-	case models.AgeGroup35Plus:
-		return "settings.age_group.35_plus"
+	case models.AgeGroupUnder40:
+		return "settings.age_group.under_40"
+	case models.AgeGroup40To45:
+		return "settings.age_group.40_to_45"
+	case models.AgeGroup45Plus:
+		return "settings.age_group.45_plus"
 	default:
-		return "settings.age_group.20_35"
+		return "settings.age_group.unknown"
 	}
 }

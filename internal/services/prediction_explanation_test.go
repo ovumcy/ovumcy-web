@@ -69,4 +69,15 @@ func TestBuildOwnerPredictionExplanation(t *testing.T) {
 			t.Fatalf("expected factor context secondary key, got %#v", explanation)
 		}
 	})
+
+	t.Run("regular user with data-driven range gets the variability explainer", func(t *testing.T) {
+		explanation := BuildOwnerPredictionExplanation(
+			&models.User{Role: models.RoleOwner},
+			DashboardCycleContext{DisplayNextPeriodUseRange: true},
+			false,
+		)
+		if explanation.PrimaryKey != "prediction.explainer.variable_ranges" {
+			t.Fatalf("expected variable_ranges primary key, got %#v", explanation)
+		}
+	})
 }

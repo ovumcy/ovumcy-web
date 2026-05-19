@@ -366,6 +366,36 @@ func assertStatsPatternAndBBTViewData(t *testing.T, viewData StatsPageViewData) 
 	}
 }
 
+func TestBuildStatsPageViewDataShowsPerimenopauseHintFor45Plus(t *testing.T) {
+	service := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
+	now := mustParseStatsServiceDay(t, "2026-04-10")
+
+	cases := []struct {
+		name     string
+		ageGroup string
+		want     bool
+	}{
+		{name: "45+ owner sees the hint", ageGroup: models.AgeGroup45Plus, want: true},
+		{name: "40-45 owner does not see the hint", ageGroup: models.AgeGroup40To45, want: false},
+		{name: "under 40 owner does not see the hint", ageGroup: models.AgeGroupUnder40, want: false},
+		{name: "legacy age_35_plus normalises to unknown and stays silent", ageGroup: "age_35_plus", want: false},
+		{name: "unknown age does not see the hint", ageGroup: "", want: false},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			user := &models.User{ID: 31, Role: models.RoleOwner, CycleLength: 28, AgeGroup: testCase.ageGroup}
+			viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+			if err != nil {
+				t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
+			}
+			if viewData.ShowPerimenopauseHint != testCase.want {
+				t.Fatalf("expected ShowPerimenopauseHint=%v for age_group=%q, got %v", testCase.want, testCase.ageGroup, viewData.ShowPerimenopauseHint)
+			}
+		})
+	}
+}
+
 func TestBuildStatsPageViewDataUnsupportedRoleSkipsBaselineAndSymptomLoading(t *testing.T) {
 	dayReader := &stubStatsDayReader{}
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{})

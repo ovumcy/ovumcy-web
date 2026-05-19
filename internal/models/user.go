@@ -6,13 +6,20 @@ const (
 	RoleOwner           = "owner"
 	DefaultCycleLength  = 28
 	DefaultPeriodLength = 5
-	AgeGroupUnknown     = ""
-	AgeGroupUnder20     = "under_20"
-	AgeGroup20To35      = "age_20_35"
-	AgeGroup35Plus      = "age_35_plus"
-	UsageGoalHealth     = "health"
-	UsageGoalAvoid      = "avoid_pregnancy"
-	UsageGoalTrying     = "trying_to_conceive"
+	// Age brackets are calibrated to the medical literature: 35–39 is the
+	// lowest-variability cohort in Gibson et al., npj Digital Medicine 2023
+	// (Apple Women's Health Study, n=12,608), with within-individual cycle SD
+	// rising only modestly through 40–44 and sharply at 45+. Persistent ≥7-day
+	// differences between consecutive cycles after 40 are the STRAW+10 marker
+	// for the menopausal transition (median entry age 45.5 years), so the
+	// three brackets isolate the clinically meaningful threshold at 45.
+	AgeGroupUnknown = ""
+	AgeGroupUnder40 = "under_40"
+	AgeGroup40To45  = "age_40_45"
+	AgeGroup45Plus  = "age_45_plus"
+	UsageGoalHealth = "health"
+	UsageGoalAvoid  = "avoid_pregnancy"
+	UsageGoalTrying = "trying_to_conceive"
 )
 
 type User struct {

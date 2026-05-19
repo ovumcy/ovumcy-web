@@ -51,16 +51,6 @@ func DashboardPredictionDisabled(user *models.User) bool {
 	return user != nil && user.UnpredictableCycle
 }
 
-func dashboardPredictionExtraSpanDays(user *models.User) int {
-	if user == nil {
-		return 0
-	}
-	if NormalizeAgeGroup(user.AgeGroup) == models.AgeGroup35Plus {
-		return 1
-	}
-	return 0
-}
-
 func DashboardCycleReferenceLength(user *models.User, stats CycleStats) int {
 	if stats.AverageCycleLength > 0 {
 		return int(stats.AverageCycleLength + 0.5)
@@ -99,19 +89,27 @@ func DashboardCycleStaleAnchor(user *models.User, stats CycleStats, location *ti
 	return CalendarDay(*user.LastPeriodStart, location)
 }
 
-func predictionRangeSpanDays(stats CycleStats) int {
-	switch {
-	case stats.CompletedCycleCount < 3:
-		return 4
-	case stats.CompletedCycleCount < 6:
-		return 3
-	default:
-		span := int(math.Round(stats.CycleLengthStdDev))
-		if span < 1 {
-			span = 1
-		}
-		return span
+// dashboardPredictionRegularSpan returns the half-width, in days, of the
+// next-period prediction range for users without irregular-cycle mode.
+// Returns 0 when the user has too few completed cycles for the standard
+// deviation to be meaningful, signalling the caller to show a single date.
+//
+// The span is round(StdDev) clamped to [1, 5]. The upper bound keeps the
+// UI readable for high-variability cohorts (per-user SD ≈ 5–11 days in
+// participants aged 45+ in Gibson et al., npj Digital Medicine 2023,
+// Apple Women's Health Study, n=12,608).
+func dashboardPredictionRegularSpan(stats CycleStats) int {
+	if stats.CompletedCycleCount < 3 || stats.CycleLengthStdDev <= 0 {
+		return 0
 	}
+	span := int(math.Round(stats.CycleLengthStdDev))
+	if span < 1 {
+		span = 1
+	}
+	if span > 5 {
+		span = 5
+	}
+	return span
 }
 
 func dashboardIrregularPredictionRangeEnabled(user *models.User, stats CycleStats) bool {
@@ -129,8 +127,10 @@ func DashboardPredictionRange(user *models.User, stats CycleStats, predictedStar
 			true
 	}
 
-	spanDays := predictionRangeSpanDays(stats)
-	spanDays += dashboardPredictionExtraSpanDays(user)
+	spanDays := dashboardPredictionRegularSpan(stats)
+	if spanDays <= 0 {
+		return time.Time{}, time.Time{}, false
+	}
 	return CalendarDay(predictedStart.AddDate(0, 0, -spanDays), location),
 		CalendarDay(predictedStart.AddDate(0, 0, spanDays), location),
 		true
@@ -259,15 +259,15 @@ func dashboardNeedsOvulationData(user *models.User, stats CycleStats) bool {
 }
 
 func applyDashboardPredictionRanges(display dashboardPredictionDisplay, user *models.User, stats CycleStats, location *time.Location) dashboardPredictionDisplay {
-	if !dashboardIrregularPredictionRangeEnabled(user, stats) {
-		return display
-	}
 	display.nextPeriodRangeStart, display.nextPeriodRangeEnd, display.nextPeriodUseRange = DashboardPredictionRange(
 		user,
 		stats,
 		display.nextPeriodStart,
 		location,
 	)
+	if !dashboardIrregularPredictionRangeEnabled(user, stats) {
+		return display
+	}
 	display.ovulationRangeStart, display.ovulationRangeEnd, display.ovulationUseRange = DashboardOvulationRange(
 		display.nextPeriodRangeStart,
 		display.nextPeriodRangeEnd,

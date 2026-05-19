@@ -5,6 +5,10 @@
     <p class="journal-muted mt-2">{{t .Messages "stats.subtitle"}}</p>
   </div>
 
+  {{if .ShowPerimenopauseHint}}
+  <div class="journal-panel text-sm journal-muted" data-stats-perimenopause-hint>{{t .Messages "stats.perimenopause_hint"}}</div>
+  {{end}}
+
   {{if not .HasInsights}}
   <section class="journal-card p-5 sm:p-6 space-y-4">
     <div class="stats-empty-hero" aria-hidden="true">
@@ -46,9 +50,6 @@
     {{end}}
     {{if .ShowIrregularModeRecommendation}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_recommendation"}}</div>
-    {{end}}
-    {{if .ShowAgeVariabilityHint}}
-    <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.age_variability_hint"}}</div>
     {{end}}
     {{if .IsOwner}}
     <div class="journal-panel text-sm space-y-1" data-usage-goal-summary>

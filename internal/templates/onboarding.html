@@ -147,16 +147,16 @@
           </div>
           <div class="grid gap-2 sm:grid-cols-3">
             <label class="choice-option">
-              <input type="radio" name="age_group" value="under_20" class="choice-input" {{if eq .AgeGroup "under_20"}}checked{{end}}>
-              <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.under_20"}}</span></span>
+              <input type="radio" name="age_group" value="under_40" class="choice-input" {{if or (eq .AgeGroup "under_40") (eq .AgeGroup "")}}checked{{end}}>
+              <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.under_40"}}</span></span>
             </label>
             <label class="choice-option">
-              <input type="radio" name="age_group" value="age_20_35" class="choice-input" {{if or (eq .AgeGroup "age_20_35") (eq .AgeGroup "")}}checked{{end}}>
-              <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.20_35"}}</span></span>
+              <input type="radio" name="age_group" value="age_40_45" class="choice-input" {{if eq .AgeGroup "age_40_45"}}checked{{end}}>
+              <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.40_to_45"}}</span></span>
             </label>
             <label class="choice-option">
-              <input type="radio" name="age_group" value="age_35_plus" class="choice-input" {{if eq .AgeGroup "age_35_plus"}}checked{{end}}>
-              <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.35_plus"}}</span></span>
+              <input type="radio" name="age_group" value="age_45_plus" class="choice-input" {{if eq .AgeGroup "age_45_plus"}}checked{{end}}>
+              <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.45_plus"}}</span></span>
             </label>
           </div>
         </div>

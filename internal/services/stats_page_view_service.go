@@ -66,7 +66,7 @@ type StatsPageViewData struct {
 	ShowIrregularityNotice              bool
 	ShowIrregularInsufficientDataNotice bool
 	ShowIrregularModeRecommendation     bool
-	ShowAgeVariabilityHint              bool
+	ShowPerimenopauseHint               bool
 	PredictionDisabled                  bool
 	IsIrregularMode                     bool
 	IsOwner                             bool
@@ -109,7 +109,7 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 	showIrregularityNotice := shouldShowStatsIrregularityNotice(user, baseData.flags, baseData.stats)
 	showIrregularInsufficientDataNotice := shouldShowStatsIrregularInsufficientDataNotice(user, baseData.flags)
 	showIrregularModeRecommendation := shouldShowStatsIrregularityNotice(user, baseData.flags, baseData.stats)
-	showAgeVariabilityHint := shouldShowStatsAgeVariabilityHint(user)
+	showPerimenopauseHint := shouldShowStatsPerimenopauseHint(user)
 	predictionDisabled := isStatsPredictionDisabled(user)
 	isIrregularMode := isStatsIrregularMode(user)
 	isOwner := IsOwnerUser(user)
@@ -155,7 +155,7 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 		ShowIrregularityNotice:              showIrregularityNotice,
 		ShowIrregularInsufficientDataNotice: showIrregularInsufficientDataNotice,
 		ShowIrregularModeRecommendation:     showIrregularModeRecommendation,
-		ShowAgeVariabilityHint:              showAgeVariabilityHint,
+		ShowPerimenopauseHint:               showPerimenopauseHint,
 		PredictionDisabled:                  predictionDisabled,
 		IsIrregularMode:                     isIrregularMode,
 		IsOwner:                             isOwner,
@@ -238,8 +238,14 @@ func shouldShowStatsIrregularInsufficientDataNotice(user *models.User, flags Sta
 	return user != nil && user.IrregularCycle && flags.CompletedCycleCount < 3
 }
 
-func shouldShowStatsAgeVariabilityHint(user *models.User) bool {
-	return user != nil && NormalizeAgeGroup(user.AgeGroup) == models.AgeGroup35Plus
+// shouldShowStatsPerimenopauseHint surfaces a STRAW+10-aligned educational
+// note for users aged 45+, where within-individual cycle variability rises
+// sharply (Gibson et al., npj Digital Medicine 2023, Apple Women's Health
+// Study, n=12,608) and persistent ≥7-day differences between consecutive
+// cycles mark entry into the menopausal transition (Harlow et al., the
+// ReSTAGE collaboration, median entry age 45.5 years).
+func shouldShowStatsPerimenopauseHint(user *models.User) bool {
+	return user != nil && NormalizeAgeGroup(user.AgeGroup) == models.AgeGroup45Plus
 }
 
 func isStatsPredictionDisabled(user *models.User) bool {

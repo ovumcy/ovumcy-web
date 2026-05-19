@@ -27,6 +27,8 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 		return "prediction.explainer.irregular_sparse"
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodUseRange || cycleContext.DisplayOvulationUseRange):
 		return "prediction.explainer.irregular_ranges"
+	case user != nil && !user.IrregularCycle && cycleContext.DisplayNextPeriodUseRange:
+		return "prediction.explainer.variable_ranges"
 	default:
 		return ""
 	}

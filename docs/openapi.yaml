@@ -573,7 +573,7 @@ components:
         unpredictable_cycle: { type: boolean }
         age_group:
           type: string
-          enum: ["", under_20, age_20_35, age_35_plus]
+          enum: ["", under_40, age_40_45, age_45_plus]
         usage_goal:
           type: string
           enum: [health, avoid_pregnancy, trying_to_conceive]
@@ -709,7 +709,7 @@ components:
         irregular_cycle: { type: boolean }
         age_group:
           type: string
-          enum: ["", under_20, age_20_35, age_35_plus]
+          enum: ["", under_40, age_40_45, age_45_plus]
         usage_goal:
           type: string
           enum: [health, avoid_pregnancy, trying_to_conceive]

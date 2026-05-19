@@ -194,7 +194,7 @@ func TestValidateCycleSettingsNormalizesOwnerPreferences(t *testing.T) {
 		PeriodLength:       6,
 		AutoPeriodFill:     true,
 		UnpredictableCycle: true,
-		AgeGroup:           "  AGE_35_PLUS  ",
+		AgeGroup:           "  AGE_45_PLUS  ",
 		UsageGoal:          "  TRYING_TO_CONCEIVE  ",
 	}, now, time.UTC)
 	if err != nil {
@@ -203,8 +203,8 @@ func TestValidateCycleSettingsNormalizesOwnerPreferences(t *testing.T) {
 	if !update.UnpredictableCycle {
 		t.Fatalf("expected unpredictable cycle mode to be preserved")
 	}
-	if update.AgeGroup != models.AgeGroup35Plus {
-		t.Fatalf("expected normalized age group %q, got %q", models.AgeGroup35Plus, update.AgeGroup)
+	if update.AgeGroup != models.AgeGroup45Plus {
+		t.Fatalf("expected normalized age group %q, got %q", models.AgeGroup45Plus, update.AgeGroup)
 	}
 	if update.UsageGoal != models.UsageGoalTrying {
 		t.Fatalf("expected normalized usage goal %q, got %q", models.UsageGoalTrying, update.UsageGoal)
@@ -248,7 +248,7 @@ func TestApplyCycleSettingsUpdatesOwnerPreferences(t *testing.T) {
 		AutoPeriodFill:     false,
 		IrregularCycle:     true,
 		UnpredictableCycle: true,
-		AgeGroup:           "age_35_plus",
+		AgeGroup:           "age_45_plus",
 		UsageGoal:          "avoid_pregnancy",
 	})
 
@@ -261,8 +261,8 @@ func TestApplyCycleSettingsUpdatesOwnerPreferences(t *testing.T) {
 	if !user.IrregularCycle || !user.UnpredictableCycle {
 		t.Fatalf("expected irregular and unpredictable cycle flags to be updated, got irregular=%v unpredictable=%v", user.IrregularCycle, user.UnpredictableCycle)
 	}
-	if user.AgeGroup != models.AgeGroup35Plus {
-		t.Fatalf("expected normalized age group %q, got %q", models.AgeGroup35Plus, user.AgeGroup)
+	if user.AgeGroup != models.AgeGroup45Plus {
+		t.Fatalf("expected normalized age group %q, got %q", models.AgeGroup45Plus, user.AgeGroup)
 	}
 	if user.UsageGoal != models.UsageGoalAvoid {
 		t.Fatalf("expected normalized usage goal %q, got %q", models.UsageGoalAvoid, user.UsageGoal)

@@ -148,14 +148,6 @@
     button.setAttribute("aria-disabled", disabled ? "true" : "false");
   }
 
-  function readCSRFToken() {
-    var tokenMeta = document.querySelector('meta[name="csrf-token"]');
-    if (!tokenMeta) {
-      return "";
-    }
-    return String(tokenMeta.getAttribute("content") || "").trim();
-  }
-
   function buildExportRequestBody(fromValue, toValue) {
     var payload = new URLSearchParams();
     if (fromValue) {

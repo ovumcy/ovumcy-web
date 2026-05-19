@@ -14,10 +14,15 @@ func TestNormalizeAgeGroup(t *testing.T) {
 		input string
 		want  string
 	}{
-		{name: "under 20", input: "under_20", want: models.AgeGroupUnder20},
-		{name: "trimmed 35 plus", input: "  AGE_35_PLUS  ", want: models.AgeGroup35Plus},
-		{name: "regular range", input: "age_20_35", want: models.AgeGroup20To35},
+		{name: "under 40", input: "under_40", want: models.AgeGroupUnder40},
+		{name: "trimmed 45 plus", input: "  AGE_45_PLUS  ", want: models.AgeGroup45Plus},
+		{name: "transition 40 to 45", input: "age_40_45", want: models.AgeGroup40To45},
 		{name: "unknown fallback", input: "not-a-group", want: models.AgeGroupUnknown},
+		// Legacy bracket values predate the medically-recalibrated cohorts
+		// and must not be silently remapped — see NormalizeAgeGroup comment.
+		{name: "legacy under_20 maps to unknown", input: "under_20", want: models.AgeGroupUnknown},
+		{name: "legacy age_20_35 maps to unknown", input: "age_20_35", want: models.AgeGroupUnknown},
+		{name: "legacy age_35_plus maps to unknown", input: "age_35_plus", want: models.AgeGroupUnknown},
 	}
 
 	for _, testCase := range tests {
@@ -66,10 +71,16 @@ func TestUserPreferenceTranslationKeysUseNormalizedFallbacks(t *testing.T) {
 	if got := UsageGoalSummaryTranslationKey(models.UsageGoalTrying); got != "usage_goal.summary.trying" {
 		t.Fatalf("expected trying summary translation key, got %q", got)
 	}
-	if got := AgeGroupTranslationKey("unknown"); got != "settings.age_group.20_35" {
-		t.Fatalf("expected middle age fallback translation key, got %q", got)
+	if got := AgeGroupTranslationKey("unknown"); got != "settings.age_group.unknown" {
+		t.Fatalf("expected unknown fallback translation key, got %q", got)
 	}
-	if got := AgeGroupTranslationKey(models.AgeGroup35Plus); got != "settings.age_group.35_plus" {
-		t.Fatalf("expected 35+ translation key, got %q", got)
+	if got := AgeGroupTranslationKey(models.AgeGroup45Plus); got != "settings.age_group.45_plus" {
+		t.Fatalf("expected 45+ translation key, got %q", got)
+	}
+	if got := AgeGroupTranslationKey(models.AgeGroup40To45); got != "settings.age_group.40_to_45" {
+		t.Fatalf("expected 40-45 translation key, got %q", got)
+	}
+	if got := AgeGroupTranslationKey(models.AgeGroupUnder40); got != "settings.age_group.under_40" {
+		t.Fatalf("expected under-40 translation key, got %q", got)
 	}
 }
