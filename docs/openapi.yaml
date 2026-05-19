@@ -2,7 +2,7 @@ openapi: 3.1.0
 
 info:
   title: Ovumcy API
-  version: 0.9.5
+  version: 1.0.0
   summary: HTTP API surface of the ovumcy-web self-hosted deployment.
   description: |
     This document specifies the **current** state of the JSON-emitting HTTP

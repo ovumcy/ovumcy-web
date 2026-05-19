@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-19
+
 ### Changed
 
 - **BREAKING**: The entire HTTP surface moves under `/api/v1/*` and ships as the stable third-party contract. The legacy `/api/*` (non-v1) and the page-route mutators at `/settings/cycle` and `/onboarding/*` are removed.
@@ -411,7 +413,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.5...v1.0.0
+[0.9.5]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.1...v0.9.2
