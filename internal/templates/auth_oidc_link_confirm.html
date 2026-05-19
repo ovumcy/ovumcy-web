@@ -1,0 +1,50 @@
+{{define "content"}}
+<section class="mx-auto flex min-h-[72vh] max-w-3xl items-center justify-center">
+  <div class="journal-card journal-hero w-full p-7 sm:p-10" data-auth-panel>
+    <p class="journal-kicker">{{t .Messages "app.name"}}</p>
+
+    <div>
+      <h1 class="journal-title">{{t .Messages "auth.oidc.link_confirm.title"}}</h1>
+      <p class="journal-muted mt-2">{{t .Messages "auth.oidc.link_confirm.description"}}</p>
+      {{if .TargetEmail}}
+      <p class="journal-muted mt-1" data-link-confirm-email>{{.TargetEmail}}</p>
+      {{end}}
+    </div>
+
+    {{if .ErrorKey}}
+    <div class="status-error mt-5" data-auth-server-error data-error-key="{{.ErrorKey}}">{{t .Messages .ErrorKey}}</div>
+    {{end}}
+
+    <form
+      id="oidc-link-confirm-form"
+      action="/auth/oidc/link-confirm"
+      method="post"
+      novalidate
+      class="mt-5 space-y-4"
+      data-required-message="{{t .Messages "validation.required"}}">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="space-y-2">
+        <label class="field-label" for="oidc-link-confirm-password">{{t .Messages "auth.oidc.link_confirm.password_label"}}</label>
+        <input
+          id="oidc-link-confirm-password"
+          type="password"
+          name="password"
+          autocomplete="current-password"
+          required
+          autofocus
+          class="input-field"
+          placeholder="{{t .Messages "auth.oidc.link_confirm.password_placeholder"}}" />
+      </div>
+
+      <button type="submit" class="btn-primary w-full" data-link-confirm-submit>{{t .Messages "auth.oidc.link_confirm.submit_button"}}</button>
+    </form>
+
+    <div class="mt-5 text-sm">
+      <p class="journal-muted">
+        <a href="/login" class="inline-link">{{t .Messages "auth.oidc.link_confirm.cancel_link"}}</a>
+      </p>
+    </div>
+  </div>
+</section>
+{{end}}

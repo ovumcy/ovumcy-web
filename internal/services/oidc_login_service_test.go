@@ -188,7 +188,14 @@ func TestOIDCLoginServiceAuthenticateUsesExistingIdentityLink(t *testing.T) {
 	}
 }
 
-func TestOIDCLoginServiceAuthenticateLinksVerifiedEmailOnFirstLogin(t *testing.T) {
+// TestOIDCLoginServiceAuthenticateRequiresConfirmationOnFirstLinkToExistingEmail
+// pins the defence against malicious / sloppy upstream IdP account takeover:
+// when an OIDC callback resolves to a pre-existing local user by email but no
+// (issuer, subject) link exists yet, Authenticate must REFUSE to auto-link.
+// It returns ErrOIDCLinkRequiresConfirmation with the pending claims so the
+// handler can demand explicit password confirmation before
+// ConfirmAndLinkIdentity creates the link.
+func TestOIDCLoginServiceAuthenticateRequiresConfirmationOnFirstLinkToExistingEmail(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, time.March, 28, 12, 0, 0, 0, time.UTC)
@@ -215,29 +222,82 @@ func TestOIDCLoginServiceAuthenticateLinksVerifiedEmailOnFirstLogin(t *testing.T
 	}, identities, users, nil)
 
 	result, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", now)
-	if err != nil {
-		t.Fatalf("Authenticate() unexpected error: %v", err)
+	if !errors.Is(err, ErrOIDCLinkRequiresConfirmation) {
+		t.Fatalf("Authenticate() expected ErrOIDCLinkRequiresConfirmation, got err=%v result=%+v", err, result)
 	}
-	if !result.NewlyLinked {
-		t.Fatal("expected first verified login to create an identity link")
+	if result.NewlyLinked {
+		t.Fatal("did not expect NewlyLinked when link confirmation is required")
 	}
 	if result.User.ID != 9 {
-		t.Fatalf("expected user id 9, got %d", result.User.ID)
+		t.Fatalf("expected pending-link target user id 9, got %d", result.User.ID)
 	}
 	if users.lastLookupEmail != "owner@example.com" {
 		t.Fatalf("expected normalized email lookup, got %q", users.lastLookupEmail)
 	}
+	if result.PendingLinkClaims == nil {
+		t.Fatal("expected PendingLinkClaims to carry the pending issuer/subject")
+	}
+	if result.PendingLinkClaims.Issuer != "https://id.example.com" || result.PendingLinkClaims.Subject != "first-login-sub" {
+		t.Fatalf("unexpected pending claims: %+v", result.PendingLinkClaims)
+	}
+	if identities.createCallSeen {
+		t.Fatal("did not expect Create() — auto-link to a pre-existing email is exactly the vulnerability this guard prevents")
+	}
+}
+
+// TestOIDCLoginServiceConfirmAndLinkIdentityPersistsLink covers the path the
+// handler uses after the password-confirmation step succeeds.
+func TestOIDCLoginServiceConfirmAndLinkIdentityPersistsLink(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.March, 28, 12, 0, 0, 0, time.UTC)
+	identities := &stubOIDCIdentityStore{}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{}, nil)
+
+	claims := security.OIDCClaims{
+		Issuer:  "https://id.example.com",
+		Subject: "first-login-sub",
+		Email:   "owner@example.com",
+	}
+	if err := service.ConfirmAndLinkIdentity(9, claims, now); err != nil {
+		t.Fatalf("ConfirmAndLinkIdentity() unexpected error: %v", err)
+	}
 	if !identities.createCallSeen {
-		t.Fatal("expected Create() to persist new identity link")
+		t.Fatal("expected Create() after confirmation")
 	}
-	if identities.created.UserID != 9 {
-		t.Fatalf("expected linked user id 9, got %d", identities.created.UserID)
-	}
-	if identities.created.Issuer != "https://id.example.com" || identities.created.Subject != "first-login-sub" {
-		t.Fatalf("expected issuer/subject link to be persisted, got %+v", identities.created)
+	if identities.created.UserID != 9 || identities.created.Issuer != claims.Issuer || identities.created.Subject != claims.Subject {
+		t.Fatalf("unexpected persisted identity: %+v", identities.created)
 	}
 	if identities.created.LastUsedAt == nil || !identities.created.LastUsedAt.Equal(now) {
 		t.Fatalf("expected LastUsedAt=%s, got %+v", now, identities.created.LastUsedAt)
+	}
+}
+
+// TestOIDCLoginServiceConfirmAndLinkIdentityRefusesCrossUserClaim ensures the
+// confirmation step fails closed if a race or DB inconsistency means the
+// (issuer, subject) was already claimed by a different user between callback
+// and confirmation submission.
+func TestOIDCLoginServiceConfirmAndLinkIdentityRefusesCrossUserClaim(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.March, 28, 12, 0, 0, 0, time.UTC)
+	identities := &stubOIDCIdentityStore{
+		found: true,
+		identity: models.OIDCIdentity{
+			ID:      11,
+			UserID:  44, // already linked to a DIFFERENT user
+			Issuer:  "https://id.example.com",
+			Subject: "first-login-sub",
+		},
+	}
+	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{}, nil)
+
+	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "first-login-sub"}
+	if err := service.ConfirmAndLinkIdentity(9, claims, now); !errors.Is(err, ErrOIDCLinkFailed) {
+		t.Fatalf("expected ErrOIDCLinkFailed for cross-user claim, got %v", err)
+	}
+	if identities.createCallSeen {
+		t.Fatal("did not expect Create() when (issuer, subject) is already linked to another user")
 	}
 }
 
@@ -261,11 +321,24 @@ func TestOIDCLoginServiceAuthenticateRejectsUnverifiedEmail(t *testing.T) {
 	}
 }
 
+// TestOIDCLoginServiceAuthenticateMapsLinkPersistenceFailure exercises the
+// link-failure mapping on the auto-provision path (the only Authenticate path
+// that still calls linkIdentity inline — the existing-email path now requires
+// confirmation and links through ConfirmAndLinkIdentity instead, covered
+// separately).
 func TestOIDCLoginServiceAuthenticateMapsLinkPersistenceFailure(t *testing.T) {
 	t.Parallel()
 
+	provisioner := &stubOIDCAutoProvisioner{
+		user: models.User{ID: 5, Email: "owner@example.com", Role: models.RoleOwner},
+	}
 	service := NewOIDCLoginService(&stubOIDCProviderClient{
 		enabled: true,
+		config: security.OIDCConfig{
+			Enabled:                     true,
+			AutoProvision:               true,
+			AutoProvisionAllowedDomains: []string{"example.com"},
+		},
 		exchange: security.OIDCExchangeResult{
 			Claims: security.OIDCClaims{
 				Issuer:        "https://id.example.com",
@@ -276,10 +349,7 @@ func TestOIDCLoginServiceAuthenticateMapsLinkPersistenceFailure(t *testing.T) {
 		},
 	}, &stubOIDCIdentityStore{
 		createErr: errors.New("duplicate key"),
-	}, &stubOIDCUserStore{
-		byEmailFound: true,
-		byEmail:      models.User{ID: 5, Email: "owner@example.com", Role: models.RoleOwner},
-	}, nil)
+	}, &stubOIDCUserStore{}, provisioner)
 
 	if _, err := service.Authenticate(context.Background(), "code", "verifier", "nonce", time.Time{}); !errors.Is(err, ErrOIDCLinkFailed) {
 		t.Fatalf("expected ErrOIDCLinkFailed, got %v", err)

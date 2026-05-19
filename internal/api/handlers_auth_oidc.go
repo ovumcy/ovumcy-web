@@ -72,6 +72,9 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 	defer cancel()
 
 	result, err := handler.oidcService.Authenticate(ctx, code, oidcState.CodeVerifier, oidcState.Nonce, time.Now())
+	if errors.Is(err, services.ErrOIDCLinkRequiresConfirmation) {
+		return handler.startOIDCLinkConfirmation(c, result)
+	}
 	if err != nil {
 		spec := mapAuthOIDCError(err)
 		handler.logSecurityError(c, "auth.oidc_callback", spec)

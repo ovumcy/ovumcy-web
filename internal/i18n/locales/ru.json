@@ -115,6 +115,9 @@
   "auth.error.sso_temporarily_unavailable": "Вход через SSO сейчас недоступен. Используйте локальный вход или попробуйте позже.",
   "auth.error.sso_authentication_failed": "Не удалось завершить аутентификацию через SSO. Попробуйте ещё раз.",
   "auth.error.sso_sign_in_unavailable": "Для этой SSO-учётной записи вход пока недоступен. Используйте локальный вход или свяжитесь с оператором.",
+  "auth.error.sso_link_confirmation_expired": "Подтверждение привязки OIDC истекло. Войдите снова, чтобы повторить.",
+  "auth.error.sso_link_confirmation_invalid_password": "Пароль не подошёл. Попробуйте ещё раз.",
+  "auth.error.sso_link_confirmation_unavailable": "Для этого аккаунта нельзя привязать новую OIDC-идентичность. Войдите существующим способом или свяжитесь с оператором.",
   "auth.error.local_sign_in_unavailable": "Локальный вход для этого развёртывания отключён. Используйте SSO.",
   "auth.error.web_sign_in_unavailable": "Эта учётная запись недоступна в Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "Локальное восстановление пароля недоступно, пока для аккаунта не задан локальный пароль.",
@@ -690,6 +693,13 @@
   "auth.2fa.code_placeholder": "000000",
   "auth.2fa.submit_button": "Подтвердить",
   "auth.2fa.lost_access": "Нет доступа к аутентификатору? Используйте код восстановления.",
+
+  "auth.oidc.link_confirm.title": "Подтвердите привязку OIDC",
+  "auth.oidc.link_confirm.description": "Аккаунт с этой почтой уже существует. Введите текущий пароль, чтобы привязать к нему OIDC-идентичность.",
+  "auth.oidc.link_confirm.password_label": "Текущий пароль",
+  "auth.oidc.link_confirm.password_placeholder": "Ваш текущий пароль",
+  "auth.oidc.link_confirm.submit_button": "Подтвердить и привязать",
+  "auth.oidc.link_confirm.cancel_link": "Отменить и вернуться ко входу",
 
   "settings.2fa.title": "Двухфакторная аутентификация",
   "settings.2fa.description": "Защитите аккаунт с помощью приложения-аутентификатора (TOTP).",

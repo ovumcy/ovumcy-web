@@ -13,6 +13,7 @@ var pageTemplates = []string{
 	"settings",
 	"settings_2fa",
 	"auth_2fa",
+	"auth_oidc_link_confirm",
 	"not_found",
 	"privacy",
 }

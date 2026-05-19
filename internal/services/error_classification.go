@@ -73,6 +73,7 @@ const (
 	OIDCAuthErrorIdentityResolveFailed
 	OIDCAuthErrorLinkFailed
 	OIDCAuthErrorProvisionFailed
+	OIDCAuthErrorLinkRequiresConfirmation
 )
 
 func ClassifyOIDCAuthError(err error) OIDCAuthErrorKind {
@@ -93,6 +94,8 @@ func ClassifyOIDCAuthError(err error) OIDCAuthErrorKind {
 		return OIDCAuthErrorLinkFailed
 	case errors.Is(err, ErrOIDCProvisionFailed):
 		return OIDCAuthErrorProvisionFailed
+	case errors.Is(err, ErrOIDCLinkRequiresConfirmation):
+		return OIDCAuthErrorLinkRequiresConfirmation
 	default:
 		return OIDCAuthErrorUnknown
 	}

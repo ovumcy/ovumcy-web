@@ -33,6 +33,19 @@ Closing the residual signal entirely is mathematically impossible without an out
 
 A separate vector — replay of a sealed `ovumcy_register_pickup` cookie captured from somebody else's response within the 5-minute TTL — is **not** part of this residual. The pickup cookie carries an opaque nonce that is consumed atomically through `register_pickup_tokens` on the first `GET /register/welcome` call; a captured cookie reaching the welcome endpoint a second time gets the same neutral `/login` redirect as a decoy or expired pickup, and cannot mint a second `ovumcy_auth` session.
 
+## OIDC Account Linking
+
+Ovumcy does not trust an upstream OIDC provider to vouch for *which existing local account* a verified email belongs to. The trust given to a configured IdP is "this user controls subject S at issuer I"; **not** "this user controls every Ovumcy account that ever registered with that email".
+
+Concretely: when an OIDC callback returns a (issuer, subject) pair that is not yet linked to any Ovumcy user, the service layer (`internal/services/oidc_login_service.go`) takes one of two paths:
+
+1. **No existing local user with this email** → auto-provision (if `OIDC_AUTO_PROVISION=true` and the email falls under `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS`) and link the new identity inline. No prior owner exists, so no account can be taken over.
+2. **A local-auth account already exists for this email** → the service returns `ErrOIDCLinkRequiresConfirmation` with the pending claims. The callback handler stores them in the sealed `ovumcy_oidc_link_pending` cookie (5-minute payload-bound TTL, path-scoped to `/auth/oidc/link-confirm`) and redirects the user to a password-confirmation page. Only after the holder of the existing account submits the correct local password does `ConfirmAndLinkIdentity` persist the link and issue a session.
+
+This defends against the malicious / sloppy upstream IdP scenario: a provider that lets any registrant claim any email (a common default posture in self-hosted OIDC servers like Pocket ID or Authelia under their out-of-the-box configurations) cannot, by asserting `email_verified=true` for somebody else's address, take over the corresponding Ovumcy account.
+
+The confirmation step is refused if the existing account has no local password (`local_auth_enabled=false`). Multi-provider linking onto such accounts is intentionally out of scope for the unauthenticated login path — that has to happen through a future authenticated Settings flow, which is not yet shipped.
+
 ## Field-Level Encryption
 
 Sensitive per-account fields written through `security.EncryptField` (currently `users.totp_secret`) are encrypted with AES-256-GCM under a key derived from `SECRET_KEY` via HKDF-SHA256, and bound to the owner's user id through the AEAD authentication tag (additional-authenticated-data, `ovumcy.field.<purpose>:<row id>`). An attacker who can write directly to the database — for example via a hypothetical SQL injection or via host-level compromise — cannot move a ciphertext from one account into another account's row and have it open: the authentication tag fails to verify under a different aad. The `SECRET_KEY` itself is required for both encrypt and decrypt; database access without the key leaks nothing about the persisted value.
@@ -74,6 +87,7 @@ Ovumcy uses only first-party cookies. Cookies marked **Sealed** are encrypted wi
 | `ovumcy_oidc_auth` | OIDC `state`, `nonce`, PKCE verifier during sign-in | 10 minutes | `/auth/oidc/callback` | yes | None | forced `true` | yes |
 | `ovumcy_oidc_stepup` | OIDC step-up state (purpose, pending password hash) during local-password setup re-auth | 10 minutes | `/auth/oidc/callback` | yes | None | forced `true` | yes |
 | `ovumcy_oidc_logout_bridge` | Carries the session id from `/logout` to the provider end-session bridge | 1 minute | `/auth/oidc/logout` | yes | Lax | `COOKIE_SECURE` | yes |
+| `ovumcy_oidc_link_pending` | Holds the (issuer, subject, target user id) of an OIDC identity awaiting password confirmation before being linked to a pre-existing local account; see *OIDC Account Linking* below | 5 minutes (payload-bound) | `/auth/oidc/link-confirm` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_totp_pending` | 2FA challenge state (user id, remember-me) between password and TOTP submission | 5 minutes (payload-bound) | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_totp_setup` | Raw TOTP secret transport during enrollment, before the user has confirmed their first code | 5 minutes (payload-bound) | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 
@@ -211,6 +225,7 @@ Plan secret rotation as planned maintenance, communicate it in advance, and cons
 - Malicious OIDC discovery metadata redirecting the logout flow to attacker-controlled hosts (`end_session_endpoint` host-pinned to the configured issuer).
 - Cross-account ciphertext substitution at the database layer (field encryption is AAD-bound to the row id).
 - Trivial password reuse (8-character minimum with three required character classes).
+- Account takeover via a malicious or sloppy upstream OIDC IdP asserting a verified email already held by a local-auth Ovumcy account — first-time linking is refused without an explicit password confirmation step (`ovumcy_oidc_link_pending` + `/auth/oidc/link-confirm`). See *OIDC Account Linking*.
 
 **Out of scope** — Ovumcy assumes the operator is trusted, and does not defend against:
 
@@ -374,6 +389,9 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | OIDC `end_session_endpoint` is host-pinned; cross-origin endpoint is dropped, logout falls back to local | `TestOIDC_RuntimePoC_HostPinRejectsCrossOriginEndSessionEndpoint`, `TestOIDC_RuntimePoC_HostPinAcceptsSameOriginEndSessionEndpoint` in [internal/security/oidc_runtime_poc_test.go](internal/security/oidc_runtime_poc_test.go) |
 | OIDC ID-token signing-algorithm allowlist rejects symmetric algorithms and `none` | `TestOIDC_RuntimePoC_AlgorithmConfusionRejected`, `TestOIDC_RuntimePoC_AlgorithmNoneRejected` in [internal/security/oidc_runtime_poc_test.go](internal/security/oidc_runtime_poc_test.go) |
 | OIDC step-up reauth requires a matching `(issuer, subject)` identity for the current user | `auth_oidc_v2_regressions_test.go`, `settings_oidc_local_password_setup_test.go` in `internal/api/` |
+| OIDC first-time link to a pre-existing local-auth account is refused without password confirmation (returns `ErrOIDCLinkRequiresConfirmation`; no identity row is created in the bypass path) | `TestOIDCLoginServiceAuthenticateRequiresConfirmationOnFirstLinkToExistingEmail` in [internal/services/oidc_login_service_test.go](internal/services/oidc_login_service_test.go) |
+| OIDC link confirmation persists the identity link after a successful password confirmation | `TestOIDCLoginServiceConfirmAndLinkIdentityPersistsLink` in [internal/services/oidc_login_service_test.go](internal/services/oidc_login_service_test.go) |
+| OIDC link confirmation refuses if the `(issuer, subject)` was concurrently claimed by a different user | `TestOIDCLoginServiceConfirmAndLinkIdentityRefusesCrossUserClaim` in [internal/services/oidc_login_service_test.go](internal/services/oidc_login_service_test.go) |
 | HTMX error fragments are DOM-built, not assigned via `innerHTML` (defense-in-depth XSS) | `web/src/js/__tests__/` JS unit suite (`npm run test:unit`) |
 | All other threat-model entries (operator-as-adversary, endpoint compromise, side-channel) are **policy-level** — Ovumcy explicitly declares these out of scope | Not test-enforceable |
 

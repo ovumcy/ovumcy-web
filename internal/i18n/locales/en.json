@@ -115,6 +115,9 @@
   "auth.error.sso_temporarily_unavailable": "SSO sign-in is currently unavailable. Use local login or try again later.",
   "auth.error.sso_authentication_failed": "SSO authentication could not be completed. Please try again.",
   "auth.error.sso_sign_in_unavailable": "This SSO account cannot sign in yet. Use local login or contact the operator.",
+  "auth.error.sso_link_confirmation_expired": "The OIDC link confirmation has expired. Sign in again to restart.",
+  "auth.error.sso_link_confirmation_invalid_password": "That password did not match. Try again.",
+  "auth.error.sso_link_confirmation_unavailable": "This account cannot link a new OIDC identity. Sign in with your existing method or contact the operator.",
   "auth.error.local_sign_in_unavailable": "Local sign-in is disabled for this deployment. Use SSO instead.",
   "auth.error.web_sign_in_unavailable": "This account is not available in Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "Local password recovery is disabled until a local password is set.",
@@ -690,6 +693,13 @@
   "auth.2fa.code_placeholder": "000000",
   "auth.2fa.submit_button": "Verify",
   "auth.2fa.lost_access": "Lost access to your authenticator? Use your recovery code.",
+
+  "auth.oidc.link_confirm.title": "Confirm OIDC link",
+  "auth.oidc.link_confirm.description": "An account already uses this email. Enter the current password to attach the OIDC identity to this account.",
+  "auth.oidc.link_confirm.password_label": "Current password",
+  "auth.oidc.link_confirm.password_placeholder": "Your current password",
+  "auth.oidc.link_confirm.submit_button": "Confirm and link",
+  "auth.oidc.link_confirm.cancel_link": "Cancel and return to login",
 
   "settings.2fa.title": "Two-Factor Authentication",
   "settings.2fa.description": "Protect your account with an authenticator app (TOTP).",

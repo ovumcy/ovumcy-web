@@ -28,6 +28,15 @@ var (
 	// the reauth callback is not linked to the user that started the step-up
 	// flow. Treated as a hard failure to prevent cross-account substitution.
 	ErrOIDCReauthIdentityMismatch = errors.New("oidc reauth identity mismatch")
+	// ErrOIDCLinkRequiresConfirmation indicates the OIDC exchange resolved to a
+	// pre-existing local user by email, but the (issuer, subject) pair is not
+	// yet linked to that user. Auto-linking would let a malicious or sloppy
+	// upstream IdP take over the account by asserting a verified email it does
+	// not actually control. The handler must capture the pending claims and
+	// require an explicit confirmation step (current local password) before
+	// linkIdentity is called. OIDCLoginResult.PendingLinkClaims carries the
+	// claims to persist; OIDCLoginResult.User carries the target user.
+	ErrOIDCLinkRequiresConfirmation = errors.New("oidc identity link requires confirmation")
 )
 
 type OIDCProviderClient interface {
@@ -64,6 +73,11 @@ type OIDCLoginResult struct {
 	NewlyLinked     bool
 	AutoProvisioned bool
 	Logout          *OIDCLogoutState
+	// PendingLinkClaims is non-nil only when Authenticate returned
+	// ErrOIDCLinkRequiresConfirmation. The handler stores these in a sealed
+	// short-lived cookie and dispatches to the link-confirmation step, where a
+	// password check guards the actual linkIdentity call.
+	PendingLinkClaims *security.OIDCClaims
 }
 
 type OIDCLoginService struct {
@@ -215,6 +229,12 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	}
 
 	result, err := service.authenticateExchange(exchange, effectiveOIDCLoginTime(now))
+	if errors.Is(err, ErrOIDCLinkRequiresConfirmation) {
+		// Preserve the pending-link payload (User + PendingLinkClaims) so the
+		// handler can stash them in the confirmation cookie. Logout state is
+		// intentionally not built — no session was issued.
+		return result, err
+	}
 	if err != nil {
 		return OIDCLoginResult{}, err
 	}
@@ -231,6 +251,21 @@ func (service *OIDCLoginService) authenticateExchange(exchange security.OIDCExch
 	if err != nil {
 		return OIDCLoginResult{}, err
 	}
+
+	// Defence against malicious / sloppy upstream IdP asserting an email that
+	// already belongs to a pre-existing local account: refuse to auto-link.
+	// The handler captures these claims in a sealed pending-link cookie and
+	// requires the holder of the existing account to confirm with their
+	// current local password before the link is created. Auto-provisioned new
+	// users are unaffected — by definition no other party holds that email.
+	if !autoProvisioned {
+		claims := exchange.Claims
+		return OIDCLoginResult{
+			User:              user,
+			PendingLinkClaims: &claims,
+		}, ErrOIDCLinkRequiresConfirmation
+	}
+
 	if err := service.linkIdentity(user.ID, exchange.Claims, loginTime); err != nil {
 		return OIDCLoginResult{}, err
 	}
@@ -240,6 +275,39 @@ func (service *OIDCLoginService) authenticateExchange(exchange security.OIDCExch
 		NewlyLinked:     true,
 		AutoProvisioned: autoProvisioned,
 	}, nil
+}
+
+// ConfirmAndLinkIdentity performs the link previously refused by
+// authenticateExchange after the holder of the target account has proven
+// possession (typically via local-password confirmation). The handler is
+// responsible for the password check; this method only persists the link and
+// touches last-used. It refuses linkage if the (issuer, subject) is already
+// taken by a different user — guarding against a concurrent claim from a
+// second confirmation flow.
+func (service *OIDCLoginService) ConfirmAndLinkIdentity(targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error {
+	if !service.Enabled() {
+		return ErrOIDCDisabled
+	}
+	if targetUserID == 0 {
+		return ErrOIDCLinkFailed
+	}
+
+	existing, found, err := service.identities.FindByIssuerSubject(claims.Issuer, claims.Subject)
+	if err != nil {
+		return ErrOIDCIdentityResolveFailed
+	}
+	if found {
+		if existing.UserID != targetUserID {
+			// (issuer, subject) was claimed by somebody else between the OIDC
+			// callback that issued the pending-link cookie and this
+			// confirmation. Fail closed.
+			return ErrOIDCLinkFailed
+		}
+		_ = service.identities.TouchLastUsed(existing.ID, effectiveOIDCLoginTime(linkTime))
+		return nil
+	}
+
+	return service.linkIdentity(targetUserID, claims, linkTime)
 }
 
 func (service *OIDCLoginService) authenticateLinkedIdentity(exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {

@@ -40,6 +40,9 @@ type stubOIDCWorkflowService struct {
 	lastReauthNonceCheck   string
 	lastReauthUserID       uint
 	lastReauthMaxAge       time.Duration
+	confirmLinkErr         error
+	lastConfirmLinkUserID  uint
+	lastConfirmLinkClaims  security.OIDCClaims
 }
 
 func (stub *stubOIDCWorkflowService) Enabled() bool {
@@ -102,6 +105,12 @@ func (stub *stubOIDCWorkflowService) ValidateReauthExchange(_ context.Context, c
 	stub.lastReauthUserID = expectedUserID
 	stub.lastReauthMaxAge = maxAuthAge
 	return stub.reauthErr
+}
+
+func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(targetUserID uint, claims security.OIDCClaims, _ time.Time) error {
+	stub.lastConfirmLinkUserID = targetUserID
+	stub.lastConfirmLinkClaims = claims
+	return stub.confirmLinkErr
 }
 
 func TestLoginPageWithOIDCEnabledShowsSSOButton(t *testing.T) {

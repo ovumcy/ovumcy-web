@@ -115,6 +115,9 @@
   "auth.error.sso_temporarily_unavailable": "El acceso con SSO no está disponible ahora mismo. Usa el acceso local o inténtalo más tarde.",
   "auth.error.sso_authentication_failed": "No se pudo completar la autenticación con SSO. Inténtalo de nuevo.",
   "auth.error.sso_sign_in_unavailable": "Esta cuenta SSO todavía no puede iniciar sesión. Usa el acceso local o contacta al operador.",
+  "auth.error.sso_link_confirmation_expired": "La confirmación del enlace OIDC ha caducado. Inicia sesión de nuevo para reintentar.",
+  "auth.error.sso_link_confirmation_invalid_password": "La contraseña no coincide. Inténtalo de nuevo.",
+  "auth.error.sso_link_confirmation_unavailable": "Esta cuenta no puede vincular una nueva identidad OIDC. Inicia sesión con tu método existente o contacta al operador.",
   "auth.error.local_sign_in_unavailable": "El acceso local está desactivado para esta instalación. Usa SSO.",
   "auth.error.web_sign_in_unavailable": "Esta cuenta no está disponible en Ovumcy Web.",
   "auth.error.local_recovery_unavailable": "La recuperación local no está disponible hasta que esta cuenta tenga una contraseña local.",
@@ -690,6 +693,13 @@
   "auth.2fa.code_placeholder": "000000",
   "auth.2fa.submit_button": "Verify",
   "auth.2fa.lost_access": "Lost access to your authenticator? Use your recovery code.",
+
+  "auth.oidc.link_confirm.title": "Confirmar el enlace OIDC",
+  "auth.oidc.link_confirm.description": "Ya existe una cuenta con este correo. Introduce la contraseña actual para vincular la identidad OIDC a esta cuenta.",
+  "auth.oidc.link_confirm.password_label": "Contraseña actual",
+  "auth.oidc.link_confirm.password_placeholder": "Tu contraseña actual",
+  "auth.oidc.link_confirm.submit_button": "Confirmar y vincular",
+  "auth.oidc.link_confirm.cancel_link": "Cancelar y volver al inicio de sesión",
 
   "settings.2fa.title": "Two-Factor Authentication",
   "settings.2fa.description": "Protect your account with an authenticator app (TOTP).",

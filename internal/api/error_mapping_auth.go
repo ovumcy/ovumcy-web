@@ -171,3 +171,15 @@ func authOIDCAuthenticationFailedErrorSpec() APIErrorSpec {
 func authOIDCAccountUnavailableErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "sso sign-in unavailable")
 }
+
+func authOIDCLinkConfirmExpiredErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "sso link confirmation expired")
+}
+
+func authOIDCLinkConfirmInvalidPasswordErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "sso link confirmation invalid password")
+}
+
+func authOIDCLinkConfirmUnavailableErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "sso link confirmation unavailable")
+}

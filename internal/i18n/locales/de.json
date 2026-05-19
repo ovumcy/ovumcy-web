@@ -115,6 +115,9 @@
   "auth.error.sso_temporarily_unavailable": "Die SSO-Anmeldung ist derzeit nicht verfügbar. Nutzen Sie die lokale Anmeldung oder versuchen Sie es später erneut.",
   "auth.error.sso_authentication_failed": "Die SSO-Anmeldung konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.",
   "auth.error.sso_sign_in_unavailable": "Dieses SSO-Konto kann sich noch nicht anmelden. Nutzen Sie die lokale Anmeldung oder kontaktieren Sie den Betreiber.",
+  "auth.error.sso_link_confirmation_expired": "Die OIDC-Verknüpfung ist abgelaufen. Melden Sie sich erneut an, um es zu wiederholen.",
+  "auth.error.sso_link_confirmation_invalid_password": "Das Passwort stimmt nicht. Bitte erneut versuchen.",
+  "auth.error.sso_link_confirmation_unavailable": "Für dieses Konto kann keine neue OIDC-Identität verknüpft werden. Melden Sie sich mit Ihrer bestehenden Methode an oder kontaktieren Sie den Betreiber.",
   "auth.error.local_sign_in_unavailable": "Die lokale Anmeldung ist für diese Installation deaktiviert. Bitte nutzen Sie SSO.",
   "auth.error.web_sign_in_unavailable": "Dieses Konto ist in Ovumcy Web nicht verfügbar.",
   "auth.error.local_recovery_unavailable": "Die lokale Wiederherstellung ist erst verfügbar, wenn für dieses Konto ein lokales Passwort gesetzt wurde.",
@@ -690,6 +693,13 @@
   "auth.2fa.code_placeholder": "000000",
   "auth.2fa.submit_button": "Verify",
   "auth.2fa.lost_access": "Lost access to your authenticator? Use your recovery code.",
+
+  "auth.oidc.link_confirm.title": "OIDC-Verknüpfung bestätigen",
+  "auth.oidc.link_confirm.description": "Mit dieser E-Mail existiert bereits ein Konto. Geben Sie das aktuelle Passwort ein, um die OIDC-Identität an dieses Konto zu binden.",
+  "auth.oidc.link_confirm.password_label": "Aktuelles Passwort",
+  "auth.oidc.link_confirm.password_placeholder": "Ihr aktuelles Passwort",
+  "auth.oidc.link_confirm.submit_button": "Bestätigen und verknüpfen",
+  "auth.oidc.link_confirm.cancel_link": "Abbrechen und zur Anmeldung zurückkehren",
 
   "settings.2fa.title": "Two-Factor Authentication",
   "settings.2fa.description": "Protect your account with an authenticator app (TOTP).",
