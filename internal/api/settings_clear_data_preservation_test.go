@@ -91,8 +91,8 @@ func assertUserIdentityPreserved(t *testing.T, before, after models.User, displa
 	t.Helper()
 
 	stringChecks := []struct {
-		name           string
-		before, after  string
+		name          string
+		before, after string
 	}{
 		{"email", before.Email, after.Email},
 		{"password_hash", before.PasswordHash, after.PasswordHash},

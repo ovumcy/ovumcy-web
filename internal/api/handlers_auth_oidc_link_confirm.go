@@ -72,8 +72,8 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c *fiber.Ctx) error {
 	flash := handler.popFlashCookie(c)
 	messages := currentMessages(c)
 	data := fiber.Map{
-		"Title":      localizedPageTitle(messages, "auth.oidc.link_confirm.title", "Ovumcy | Confirm OIDC link"),
-		"ErrorKey":   flash.AuthError,
+		"Title":       localizedPageTitle(messages, "auth.oidc.link_confirm.title", "Ovumcy | Confirm OIDC link"),
+		"ErrorKey":    flash.AuthError,
 		"TargetEmail": payload.Email,
 	}
 	return handler.render(c, "auth_oidc_link_confirm", data)

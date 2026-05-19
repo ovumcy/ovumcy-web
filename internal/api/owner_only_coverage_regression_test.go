@@ -23,11 +23,11 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 	t.Parallel()
 
 	publicAPIRoutes := map[string]struct{}{
-		"POST /api/v1/users":                       {},
-		"POST /api/v1/sessions":                    {},
-		"POST /api/v1/sessions/2fa-challenge":      {},
-		"POST /api/v1/password-resets":             {},
-		"POST /api/v1/password-resets/redeem":      {},
+		"POST /api/v1/users":                  {},
+		"POST /api/v1/sessions":               {},
+		"POST /api/v1/sessions/2fa-challenge": {},
+		"POST /api/v1/password-resets":        {},
+		"POST /api/v1/password-resets/redeem": {},
 	}
 
 	app, database := newOnboardingTestApp(t)
@@ -77,8 +77,8 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 
 func concreteRoutePathForUnsupportedRoleProbe(routePath string) string {
 	replacements := map[string]string{
-		":date":         "2026-01-15",
-		":id":           "1",
+		":date": "2026-01-15",
+		":id":   "1",
 	}
 	path := routePath
 	for placeholder, value := range replacements {
