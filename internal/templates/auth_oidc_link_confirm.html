@@ -37,6 +37,24 @@
           placeholder="{{t .Messages "auth.oidc.link_confirm.password_placeholder"}}" />
       </div>
 
+      {{if .TOTPRequired}}
+      <div class="space-y-2" data-link-confirm-totp>
+        <label class="field-label" for="oidc-link-confirm-totp">{{t .Messages "auth.2fa.code_label"}}</label>
+        <input
+          id="oidc-link-confirm-totp"
+          type="text"
+          name="totp_code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          minlength="6"
+          maxlength="6"
+          pattern="[0-9]{6}"
+          required
+          class="input-field"
+          placeholder="{{t .Messages "auth.2fa.code_placeholder"}}" />
+      </div>
+      {{end}}
+
       <button type="submit" class="btn-primary w-full" data-link-confirm-submit>{{t .Messages "auth.oidc.link_confirm.submit_button"}}</button>
     </form>
 

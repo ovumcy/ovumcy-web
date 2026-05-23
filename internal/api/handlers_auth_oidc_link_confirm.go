@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -61,7 +62,9 @@ func (handler *Handler) startOIDCLinkConfirmation(c *fiber.Ctx, result services.
 }
 
 // ShowOIDCLinkConfirmPage renders the password challenge that gates the
-// pending OIDC identity link.
+// pending OIDC identity link. When the target account has TOTP enabled, the
+// page also surfaces the 2FA code field so the link cannot be completed
+// without the second factor.
 func (handler *Handler) ShowOIDCLinkConfirmPage(c *fiber.Ctx) error {
 	payload, ok := handler.readOIDCLinkPendingCookie(c)
 	if !ok {
@@ -69,12 +72,18 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c *fiber.Ctx) error {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}
 
+	totpRequired := false
+	if targetUser, err := handler.authService.FindByID(payload.TargetUserID); err == nil {
+		totpRequired = targetUser.TOTPEnabled
+	}
+
 	flash := handler.popFlashCookie(c)
 	messages := currentMessages(c)
 	data := fiber.Map{
-		"Title":       localizedPageTitle(messages, "auth.oidc.link_confirm.title", "Ovumcy | Confirm OIDC link"),
-		"ErrorKey":    flash.AuthError,
-		"TargetEmail": payload.Email,
+		"Title":        localizedPageTitle(messages, "auth.oidc.link_confirm.title", "Ovumcy | Confirm OIDC link"),
+		"ErrorKey":     flash.AuthError,
+		"TargetEmail":  payload.Email,
+		"TOTPRequired": totpRequired,
 	}
 	return handler.render(c, "auth_oidc_link_confirm", data)
 }
@@ -124,6 +133,24 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		return c.Redirect(oidcLinkConfirmPath, fiber.StatusSeeOther)
 	}
 
+	// Step-up 2FA gate. If the target user has TOTP enabled, the link-confirm
+	// submission must also carry a valid TOTP code in the same form — mirroring
+	// the local-password Login flow that redirects TOTP-enabled accounts to
+	// /auth/2fa before issuing a session. Without this gate, an attacker with
+	// the victim's password plus a malicious/sloppy upstream IdP (the threat
+	// link-confirm was added to mitigate) could obtain a session for a
+	// TOTP-protected account without ever holding the second factor — and the
+	// linked identity would persist for future OIDC sign-ins. Keep the link
+	// pending cookie alive on TOTP failure so the user can retry within TTL,
+	// same as wrong-password.
+	if targetUser.TOTPEnabled {
+		if spec, ok := handler.verifyTOTPForLinkConfirm(c, &targetUser); !ok {
+			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
+			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
+			return c.Redirect(oidcLinkConfirmPath, fiber.StatusSeeOther)
+		}
+	}
+
 	claims := security.OIDCClaims{
 		Issuer:  payload.Issuer,
 		Subject: payload.Subject,
@@ -169,6 +196,37 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 
 	handler.logSecurityEvent(c, "auth.oidc_link_confirm", "linked")
 	return c.Redirect(services.PostLoginRedirectPath(&targetUser), fiber.StatusSeeOther)
+}
+
+// verifyTOTPForLinkConfirm runs the same checks as VerifyTOTPLogin (rate-limit,
+// length, replay, validity) and returns ok=true only when the code passes.
+// On failure it returns an APIErrorSpec the caller can flash + redirect with.
+// On success it resets the per-(ip,user) failure counter so a clean unlink+
+// relink cycle doesn't carry stale attempts.
+func (handler *Handler) verifyTOTPForLinkConfirm(c *fiber.Ctx, targetUser *models.User) (APIErrorSpec, bool) {
+	if err := handler.totpService.CheckRateLimit(handler.secretKey, c.IP(), targetUser.ID, time.Now()); err != nil {
+		return totpRateLimitedErrorSpec(), false
+	}
+	code := strings.TrimSpace(c.FormValue("totp_code"))
+	if len(code) != 6 {
+		handler.totpService.RecordFailure(handler.secretKey, c.IP(), targetUser.ID, time.Now())
+		return totpInvalidCodeErrorSpec(), false
+	}
+	valid, err := handler.totpService.ValidateCode(targetUser.ID, targetUser.TOTPSecret, code)
+	if errors.Is(err, services.ErrTOTPReplayed) {
+		handler.totpService.RecordFailure(handler.secretKey, c.IP(), targetUser.ID, time.Now())
+		handler.logSecurityEvent(c, "auth.oidc_link_confirm", "totp_replay_rejected")
+		return totpInvalidCodeErrorSpec(), false
+	}
+	if err != nil {
+		return totpInternalErrorSpec(), false
+	}
+	if !valid {
+		handler.totpService.RecordFailure(handler.secretKey, c.IP(), targetUser.ID, time.Now())
+		return totpInvalidCodeErrorSpec(), false
+	}
+	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), targetUser.ID)
+	return APIErrorSpec{}, true
 }
 
 func mapOIDCLinkConfirmError(err error) APIErrorSpec {

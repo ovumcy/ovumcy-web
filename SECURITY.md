@@ -46,6 +46,8 @@ This defends against the malicious / sloppy upstream IdP scenario: a provider th
 
 The confirmation step is refused if the existing account has no local password (`local_auth_enabled=false`). Multi-provider linking onto such accounts is intentionally out of scope for the unauthenticated login path — that has to happen through a future authenticated Settings flow, which is not yet shipped.
 
+When the target account has TOTP enabled, the link-confirmation form additionally requires a valid 6-digit code submitted alongside the password. The handler invokes the same `TOTPService.ValidateCode` path as `/api/v1/sessions/2fa-challenge`, including replay rejection (`ErrTOTPReplayed`) and the per-`(client_ip, user_id)` failure counter. Without this gate, an attacker who has only the victim's password — and uses a malicious or sloppy upstream IdP to assert their email — could obtain a session for a 2FA-protected account without ever holding the second factor, and the linked identity would persist for future OIDC sign-ins.
+
 ## Field-Level Encryption
 
 Sensitive per-account fields written through `security.EncryptField` (currently `users.totp_secret`) are encrypted with AES-256-GCM under a key derived from `SECRET_KEY` via HKDF-SHA256, and bound to the owner's user id through the AEAD authentication tag (additional-authenticated-data, `ovumcy.field.<purpose>:<row id>`). An attacker who can write directly to the database — for example via a hypothetical SQL injection or via host-level compromise — cannot move a ciphertext from one account into another account's row and have it open: the authentication tag fails to verify under a different aad. The `SECRET_KEY` itself is required for both encrypt and decrypt; database access without the key leaks nothing about the persisted value.
@@ -225,7 +227,7 @@ Plan secret rotation as planned maintenance, communicate it in advance, and cons
 - Malicious OIDC discovery metadata redirecting the logout flow to attacker-controlled hosts (`end_session_endpoint` host-pinned to the configured issuer).
 - Cross-account ciphertext substitution at the database layer (field encryption is AAD-bound to the row id).
 - Trivial password reuse (8-character minimum with three required character classes).
-- Account takeover via a malicious or sloppy upstream OIDC IdP asserting a verified email already held by a local-auth Ovumcy account — first-time linking is refused without an explicit password confirmation step (`ovumcy_oidc_link_pending` + `/auth/oidc/link-confirm`). See *OIDC Account Linking*.
+- Account takeover via a malicious or sloppy upstream OIDC IdP asserting a verified email already held by a local-auth Ovumcy account — first-time linking is refused without an explicit password confirmation step (`ovumcy_oidc_link_pending` + `/auth/oidc/link-confirm`), and when the target has TOTP enabled the same submission additionally requires a valid 6-digit code. See *OIDC Account Linking*.
 
 **Out of scope** — Ovumcy assumes the operator is trusted, and does not defend against:
 
@@ -299,6 +301,21 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Tampered ciphertext fails to decrypt | `TestDecryptField_TamperedCiphertext` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
 | Legacy no-AAD ciphertexts open through the fallback path | `TestDecryptField_LegacyFallback` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
 | Empty `SECRET_KEY` is refused | `TestEncryptField_EmptyKey`, `TestDecryptField_EmptyKey` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+
+### OIDC Account Linking
+
+| Claim | Enforced by |
+| --- | --- |
+| First-time link to a pre-existing local-auth account is refused without explicit password confirmation | `TestOIDCCallbackPendingLinkSealsCookieAndRedirectsToConfirmPage` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| Pending-link cookie is rejected on tamper / cross-purpose AAD / rotated key / payload expiry | `oidc_link_pending_cookie_test.go` in `internal/api/` |
+| `/auth/oidc/link-confirm` POST is CSRF-protected and rejects requests without `csrf_token` | `TestCompleteOIDCLinkConfirmationRejectsRequestWithoutCSRFToken` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| Wrong password keeps the pending-link cookie alive for retry within the 5-minute TTL | `TestCompleteOIDCLinkConfirmationKeepsCookieOnWrongPassword` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| Accounts with `local_auth_enabled=false` (OIDC-only) are refused at the link-confirm path | `TestOIDCCallbackPendingLinkForOIDCOnlyUserRefusesWithoutCookie`, `TestCompleteOIDCLinkConfirmationWithLocalAuthDisabledRefusesUnavailable` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| TOTP-enabled targets require a valid 6-digit code together with the password; missing / wrong / replayed codes refuse the link and do not issue a session | `TestCompleteOIDCLinkConfirmationWithTOTPEnabledRequiresValidCode`, `TestCompleteOIDCLinkConfirmationWithTOTPEnabledRefusesMissingCode`, `TestCompleteOIDCLinkConfirmationWithTOTPEnabledRefusesWrongCode` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| Link-confirm form exposes the TOTP input only when the target account has TOTP enabled | `TestShowOIDCLinkConfirmPageRendersTOTPFieldForTOTPEnabledTarget`, `TestShowOIDCLinkConfirmPageHidesTOTPFieldForNonTOTPTarget` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| `MustChangePassword` targets are routed to `/reset-password` instead of receiving an auth cookie | `TestCompleteOIDCLinkConfirmationRoutesMustChangePasswordToReset` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| `ConfirmAndLinkIdentity` provider/storage failures clear the pending cookie | `TestCompleteOIDCLinkConfirmationConfirmLinkErrorMappingClearsCookie` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| Successful link emits a sanitized `auth.oidc_link_confirm linked` security event | `TestCompleteOIDCLinkConfirmationEmitsAuditLogOnSuccess` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
 
 ### Register Enumeration Residual
 
