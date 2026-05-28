@@ -95,9 +95,13 @@ type FlashPayload struct {
 	AuthError       string `json:"auth_error,omitempty"`
 	SettingsError   string `json:"settings_error,omitempty"`
 	SettingsSuccess string `json:"settings_success,omitempty"`
-	LoginEmail      string `json:"login_email,omitempty"`
-	RegisterEmail   string `json:"register_email,omitempty"`
-	ForgotEmail     string `json:"forgot_password_email,omitempty"`
+	// ForgotEmail carries the entered address across the two-step password
+	// recovery flow (email -> recovery code). It is the only email kept in the
+	// flash cookie: the cookie is AEAD-encrypted and the redirect-safe
+	// alternatives (URL query param) would expose the address in logs/history.
+	// Login/register error prefill deliberately does NOT round-trip the email
+	// to keep PII out of the cookie on the common failure paths.
+	ForgotEmail string `json:"forgot_password_email,omitempty"`
 }
 
 const (

@@ -12,7 +12,7 @@ func buildLoginPageData(messages map[string]string, flash FlashPayload, needsSet
 	return fiber.Map{
 		"Title":                  localizedPageTitle(messages, "meta.title.login", "Ovumcy | Login"),
 		"ErrorKey":               services.AuthErrorTranslationKey(errorSource),
-		"Email":                  services.ResolveAuthPageEmail(flash.LoginEmail),
+		"Email":                  "",
 		"IsFirstLaunch":          needsSetup,
 		"RegistrationOpen":       registrationOpen,
 		"OIDCEnabled":            oidcEnabled,
@@ -28,7 +28,7 @@ func buildRegisterPageData(messages map[string]string, flash FlashPayload, needs
 	return fiber.Map{
 		"Title":            localizedPageTitle(messages, "meta.title.register", "Ovumcy | Sign Up"),
 		"ErrorKey":         services.AuthErrorTranslationKey(errorSource),
-		"Email":            services.ResolveAuthPageEmail(flash.RegisterEmail),
+		"Email":            "",
 		"IsFirstLaunch":    needsSetup,
 		"RegistrationOpen": registrationOpen,
 	}

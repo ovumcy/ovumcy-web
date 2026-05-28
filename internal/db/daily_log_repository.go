@@ -111,3 +111,12 @@ func (repo *DailyLogRepository) DeleteByUserAndDayRange(userID uint, dayStart ti
 func (repo *DailyLogRepository) UpdateSymptomIDs(entry *models.DailyLog) error {
 	return repo.database.Model(entry).Select("symptom_ids").Updates(entry).Error
 }
+
+// WithinTransaction runs fn against a transaction-scoped repository bound to a
+// single DB transaction. The provided repository must be used for all reads and
+// writes inside fn so they commit or roll back atomically.
+func (repo *DailyLogRepository) WithinTransaction(fn func(*DailyLogRepository) error) error {
+	return repo.database.Transaction(func(tx *gorm.DB) error {
+		return fn(&DailyLogRepository{database: tx})
+	})
+}

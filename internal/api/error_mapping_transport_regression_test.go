@@ -71,8 +71,8 @@ func TestRespondMappedErrorAuthFormRedirectsWithFlashOnly(t *testing.T) {
 	if payload.AuthError != "weak password" {
 		t.Fatalf("expected auth flash error, got %#v", payload)
 	}
-	if payload.RegisterEmail != "mixedcase@example.com" {
-		t.Fatalf("expected normalized register email in flash payload, got %#v", payload)
+	if payload.ForgotEmail != "" {
+		t.Fatalf("expected no email PII in register flash payload, got %#v", payload)
 	}
 }
 

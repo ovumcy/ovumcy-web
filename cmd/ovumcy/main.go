@@ -172,7 +172,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			APIWindow:            getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
 		},
 		Proxy:           proxy,
-		AuditLogEnabled: getEnvBool("AUDIT_LOG_ENABLED", false),
+		AuditLogEnabled: getEnvBool("AUDIT_LOG_ENABLED", true),
 	}, nil
 }
 
@@ -247,7 +247,12 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 	passwordResetService.ConfigureRecoveryAttemptLimits(rateLimits.ForgotPasswordMax, rateLimits.ForgotPasswordWindow)
 	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
 	loginService.ConfigureAttemptLimits(rateLimits.LoginMax, rateLimits.LoginWindow)
-	dayService := services.NewDayService(repositories.DailyLogs, repositories.Users)
+	dailyLogs := repositories.DailyLogs
+	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, func(fn func(services.DayLogRepository) error) error {
+		return dailyLogs.WithinTransaction(func(tx *db.DailyLogRepository) error {
+			return fn(tx)
+		})
+	})
 	symptomService := services.NewSymptomService(repositories.Symptoms, services.BuiltinSymptomReservedNames(i18nManager)...)
 	registrationService := services.NewRegistrationService(authService, repositories.Users, registrationMode)
 	viewerService := services.NewViewerService(dayService, symptomService)
@@ -443,6 +448,9 @@ func logStartup(config runtimeConfig) {
 	)
 	if config.Proxy.Enabled {
 		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", config.Proxy.Header, len(config.Proxy.TrustedProxies))
+	}
+	if !config.CookieSecure {
+		log.Printf("WARNING: COOKIE_SECURE=false — auth cookies are sent without the Secure flag and can be intercepted over plain HTTP. Set COOKIE_SECURE=true when serving over HTTPS (directly or behind a TLS-terminating proxy).")
 	}
 }
 
@@ -669,7 +677,7 @@ func parseCSV(value string) []string {
 func csrfMiddlewareConfig(cookieSecure bool) csrf.Config {
 	return csrf.Config{
 		Next: func(c *fiber.Ctx) bool {
-			return c.Path() == security.OIDCCallbackPath
+			return c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath
 		},
 		KeyLookup:      "form:csrf_token",
 		CookieName:     "ovumcy_csrf",

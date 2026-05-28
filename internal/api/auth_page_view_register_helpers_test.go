@@ -15,8 +15,7 @@ func TestBuildRegisterPageDataUsesOnlyFlashSources(t *testing.T) {
 		"email": {"query@example.com"},
 	}
 	flash := FlashPayload{
-		AuthError:     "email already exists",
-		RegisterEmail: " Flash@Example.com ",
+		AuthError: "email already exists",
 	}
 
 	payload := evaluateAuthPageBuilder(t, query, func(c *fiber.Ctx) error {
@@ -26,8 +25,8 @@ func TestBuildRegisterPageDataUsesOnlyFlashSources(t *testing.T) {
 	if payload["ErrorKey"] != "auth.error.email_exists" {
 		t.Fatalf("expected flash-based register error key, got %#v", payload["ErrorKey"])
 	}
-	if payload["Email"] != "flash@example.com" {
-		t.Fatalf("expected normalized flash register email, got %#v", payload["Email"])
+	if payload["Email"] != "" {
+		t.Fatalf("expected no prefilled email (PII no longer round-trips), got %#v", payload["Email"])
 	}
 	if payload["IsFirstLaunch"] != true {
 		t.Fatalf("expected IsFirstLaunch=true, got %#v", payload["IsFirstLaunch"])

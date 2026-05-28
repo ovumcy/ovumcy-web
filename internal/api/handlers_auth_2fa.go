@@ -37,6 +37,10 @@ func (handler *Handler) VerifyTOTPLogin(c *fiber.Ctx) error {
 	}
 
 	if err := handler.totpService.CheckRateLimit(handler.secretKey, c.IP(), userID, time.Now()); err != nil {
+		// Invalidate the pending session so an exhausted (or stolen) cookie
+		// cannot be reused; the user must re-authenticate with their password
+		// to obtain a fresh challenge.
+		handler.clearTOTPPendingCookie(c)
 		spec := totpRateLimitedErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)

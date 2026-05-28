@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -51,14 +52,23 @@ type DayLogRepository interface {
 	DeleteByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) error
 }
 
+// DayLogTxRunner executes fn against a transaction-scoped DayLogRepository so
+// that all writes performed through the supplied repository commit or roll
+// back atomically. Reads are also tx-scoped, so fn observes its own writes.
+// Injected from the composition root; when nil the DayService falls back to a
+// pass-through (non-atomic) execution, which is what unit tests with in-memory
+// stubs rely on.
+type DayLogTxRunner func(fn func(DayLogRepository) error) error
+
 type DayUserRepository interface {
 	LoadSettingsByID(userID uint) (models.User, error)
 	UpdateByID(userID uint, updates map[string]any) error
 }
 
 type DayService struct {
-	logs  DayLogRepository
-	users DayUserRepository
+	logs    DayLogRepository
+	users   DayUserRepository
+	runInTx DayLogTxRunner
 }
 
 func NewDayService(logs DayLogRepository, users DayUserRepository) *DayService {
@@ -66,6 +76,25 @@ func NewDayService(logs DayLogRepository, users DayUserRepository) *DayService {
 		logs:  logs,
 		users: users,
 	}
+}
+
+// NewDayServiceWithTx wires a transaction runner so multi-step writes commit
+// atomically. The composition root supplies runInTx; tests may omit it.
+func NewDayServiceWithTx(logs DayLogRepository, users DayUserRepository, runInTx DayLogTxRunner) *DayService {
+	return &DayService{
+		logs:    logs,
+		users:   users,
+		runInTx: runInTx,
+	}
+}
+
+// withinTransaction runs fn atomically when a runner is configured, otherwise
+// it executes fn directly against the non-transactional repository.
+func (service *DayService) withinTransaction(fn func(DayLogRepository) error) error {
+	if service.runInTx != nil {
+		return service.runInTx(fn)
+	}
+	return fn(service.logs)
 }
 
 func (service *DayService) FetchLogsForUser(userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error) {
@@ -234,16 +263,32 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(userID uint, day time.Ti
 	}
 
 	dayStart, _ := DayRange(day, location)
-	entry, wasPeriod, err := service.UpsertDayEntry(userID, dayStart, normalized, location)
-	if err != nil {
-		return models.DailyLog{}, err
-	}
 
-	if err := service.applyPeriodAutoFillSideEffects(userID, dayStart, normalized, wasPeriod, now, location); err != nil {
+	var entry models.DailyLog
+	if err := service.withinTransaction(func(txLogs DayLogRepository) error {
+		txService := &DayService{logs: txLogs, users: service.users}
+		var innerErr error
+		entry, innerErr = txService.applyDayWriteAndAutoFill(userID, dayStart, normalized, now, location)
+		return innerErr
+	}); err != nil {
 		return models.DailyLog{}, err
 	}
 
 	service.refreshDerivedCycleSettings(userID, location)
+	return entry, nil
+}
+
+// applyDayWriteAndAutoFill performs the anchor day write and its period
+// autofill side effects. It carries no transaction of its own so callers can
+// compose it inside a single WithinTransaction boundary.
+func (service *DayService) applyDayWriteAndAutoFill(userID uint, dayStart time.Time, normalized DayEntryInput, now time.Time, location *time.Location) (models.DailyLog, error) {
+	entry, wasPeriod, err := service.UpsertDayEntry(userID, dayStart, normalized, location)
+	if err != nil {
+		return models.DailyLog{}, err
+	}
+	if err := service.applyPeriodAutoFillSideEffects(userID, dayStart, normalized, wasPeriod, now, location); err != nil {
+		return models.DailyLog{}, err
+	}
 	return entry, nil
 }
 
@@ -383,15 +428,18 @@ func (service *DayService) MarkCycleStartManually(userID uint, day time.Time, no
 		return ErrDayEntryLoadFailed
 	}
 
-	if _, err := service.UpsertDayEntryWithAutoFillAt(userID, day, payload, now, location); err != nil {
-		return err
-	}
-
-	entry, err := service.persistManualCycleStartFlags(userID, day, location, options, policy)
-	if err != nil {
-		return err
-	}
-	if err := service.clearCompetingManualCycleStarts(userID, entry, location); err != nil {
+	dayStart, _ := DayRange(day, location)
+	if err := service.withinTransaction(func(txLogs DayLogRepository) error {
+		txService := &DayService{logs: txLogs, users: service.users}
+		if _, err := txService.applyDayWriteAndAutoFill(userID, dayStart, payload, now, location); err != nil {
+			return err
+		}
+		entry, err := txService.persistManualCycleStartFlags(userID, day, location, options, policy)
+		if err != nil {
+			return err
+		}
+		return txService.clearCompetingManualCycleStarts(userID, entry, location)
+	}); err != nil {
 		return err
 	}
 	service.refreshDerivedCycleSettings(userID, location)
@@ -622,6 +670,7 @@ func (service *DayService) refreshDerivedCycleSettings(userID uint, location *ti
 
 	logs, err := service.logs.ListByUser(userID)
 	if err != nil {
+		log.Printf("refreshDerivedCycleSettings: load logs for user %d failed: %v", userID, err)
 		return
 	}
 
@@ -629,7 +678,9 @@ func (service *DayService) refreshDerivedCycleSettings(userID uint, location *ti
 	if !ok {
 		lutealPhase = defaultLutealPhaseDays
 	}
-	_ = service.users.UpdateByID(userID, map[string]any{
+	if err := service.users.UpdateByID(userID, map[string]any{
 		"luteal_phase": lutealPhase,
-	})
+	}); err != nil {
+		log.Printf("refreshDerivedCycleSettings: update luteal_phase for user %d failed: %v", userID, err)
+	}
 }

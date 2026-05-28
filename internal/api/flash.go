@@ -94,8 +94,6 @@ func normalizeFlashPayload(payload FlashPayload) FlashPayload {
 	payload.AuthError = strings.TrimSpace(payload.AuthError)
 	payload.SettingsError = strings.TrimSpace(payload.SettingsError)
 	payload.SettingsSuccess = strings.TrimSpace(payload.SettingsSuccess)
-	payload.LoginEmail = services.NormalizeAuthEmail(payload.LoginEmail)
-	payload.RegisterEmail = services.NormalizeAuthEmail(payload.RegisterEmail)
 	payload.ForgotEmail = services.NormalizeAuthEmail(payload.ForgotEmail)
 	return payload
 }
@@ -104,7 +102,5 @@ func flashPayloadEmpty(payload FlashPayload) bool {
 	return payload.AuthError == "" &&
 		payload.SettingsError == "" &&
 		payload.SettingsSuccess == "" &&
-		payload.LoginEmail == "" &&
-		payload.RegisterEmail == "" &&
 		payload.ForgotEmail == ""
 }

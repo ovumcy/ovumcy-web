@@ -10,7 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func TestRegisterPageKeepsEmailAfterPasswordValidationError(t *testing.T) {
+func TestRegisterPageDoesNotPersistEmailAfterPasswordValidationError(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 	email := "persist-register@example.com"
 
@@ -33,8 +33,11 @@ func TestRegisterPageKeepsEmailAfterPasswordValidationError(t *testing.T) {
 	rendered := renderRegisterPageWithFlash(t, app, flashValue)
 	assertBodyContainsAll(t, rendered,
 		bodyStringMatch{fragment: `id="register-email"`, message: "expected register email input on validation-error page"},
-		bodyStringMatch{fragment: `value="` + email + `"`, message: "expected register page to keep submitted email after validation error"},
 		bodyStringMatch{fragment: "Use at least 8 characters with uppercase, lowercase, and a number.", message: "expected localized weak password message from flash"},
+	)
+	// Email PII must not round-trip through the flash cookie (H-2).
+	assertBodyNotContainsAll(t, rendered,
+		bodyStringMatch{fragment: `value="` + email + `"`, message: "did not expect register email to be restored from flash"},
 	)
 
 	clean := renderCleanRegisterPage(t, app)

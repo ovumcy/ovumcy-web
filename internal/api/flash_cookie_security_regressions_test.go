@@ -43,13 +43,10 @@ func TestFlashCookieUsesSealedTransport(t *testing.T) {
 func TestLegacyPlainFlashCookieIsIgnored(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
-	legacyPayload, err := json.Marshal(FlashPayload{
-		AuthError:  "invalid email or password",
-		LoginEmail: "legacy-flash@example.com",
-	})
-	if err != nil {
-		t.Fatalf("marshal legacy flash payload: %v", err)
-	}
+	// Raw legacy shape: older builds persisted login_email in the flash cookie.
+	// The field has since been removed, but the cookie must still be ignored
+	// when presented as legacy plaintext.
+	legacyPayload := []byte(`{"auth_error":"invalid email or password","login_email":"legacy-flash@example.com"}`)
 	legacyCookie := base64.RawURLEncoding.EncodeToString(legacyPayload)
 
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)

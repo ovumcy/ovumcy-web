@@ -42,12 +42,9 @@ func (handler *Handler) respondAuthError(c *fiber.Ctx, spec APIErrorSpec) error 
 		flash := FlashPayload{AuthError: spec.Key}
 		switch c.Path() {
 		case "/api/v1/users":
-			email := services.NormalizeAuthEmail(c.FormValue("email"))
-			flash.RegisterEmail = email
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/register", fiber.StatusSeeOther)
 		case "/api/v1/sessions":
-			flash.LoginEmail = services.NormalizeAuthEmail(c.FormValue("email"))
 			handler.setFlashCookie(c, flash)
 			return c.Redirect("/login", fiber.StatusSeeOther)
 		case "/api/v1/password-resets":

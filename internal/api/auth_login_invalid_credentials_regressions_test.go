@@ -10,7 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func TestLoginInvalidCredentialsRedirectPreservesEmail(t *testing.T) {
+func TestLoginInvalidCredentialsRedirectDoesNotPersistEmail(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "login-email@example.com", "StrongPass1", true)
 
@@ -28,8 +28,12 @@ func TestLoginInvalidCredentialsRedirectPreservesEmail(t *testing.T) {
 	rendered := followLoginPageWithFlash(t, app, redirectURL.String(), flashValue)
 	assertBodyContainsAll(t, rendered,
 		bodyStringMatch{fragment: `id="login-email"`, message: "expected login email input in page"},
-		bodyStringMatch{fragment: `value="login-email@example.com"`, message: "expected login email input to keep previous value"},
 		bodyStringMatch{fragment: "Invalid email or password.", message: "expected localized login error message from flash"},
+	)
+	// Email PII must not round-trip through the flash cookie (H-2): the address
+	// is no longer echoed back into the form after a failed login.
+	assertBodyNotContainsAll(t, rendered,
+		bodyStringMatch{fragment: `value="login-email@example.com"`, message: "did not expect login email to be restored from flash"},
 	)
 
 	cleanPage := loadCleanLoginPage(t, app)

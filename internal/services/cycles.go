@@ -532,9 +532,15 @@ func sameDay(a, b time.Time) bool {
 	return a.Format("2006-01-02") == b.Format("2006-01-02")
 }
 
+// dateOnly reduces an instant to the midnight of its calendar day, rebuilt at
+// UTC. Stored date-only values (DailyLog.Date) are persisted at UTC-midnight,
+// and derived stats dates inherit that. Anchoring `now` to UTC-midnight of its
+// displayed calendar day keeps "today" comparable with those stored dates;
+// using t.Location() instead skews cross-timezone comparisons by up to a day
+// (today's log dropped on UTC+ servers, off-by-one cycle day).
 func dateOnly(t time.Time) time.Time {
 	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 func filterLogsNotAfter(logs []models.DailyLog, cutoff time.Time) []models.DailyLog {

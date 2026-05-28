@@ -15,8 +15,7 @@ func TestBuildLoginPageDataUsesFlashPriorityAndSetupFlag(t *testing.T) {
 		"email": {"query@example.com"},
 	}
 	flash := FlashPayload{
-		AuthError:  "invalid credentials",
-		LoginEmail: " Flash@Example.com ",
+		AuthError: "invalid credentials",
 	}
 
 	payload := evaluateAuthPageBuilder(t, query, func(c *fiber.Ctx) error {
@@ -26,8 +25,8 @@ func TestBuildLoginPageDataUsesFlashPriorityAndSetupFlag(t *testing.T) {
 	if payload["ErrorKey"] != "auth.error.invalid_credentials" {
 		t.Fatalf("expected flash error key, got %#v", payload["ErrorKey"])
 	}
-	if payload["Email"] != "flash@example.com" {
-		t.Fatalf("expected normalized flash email, got %#v", payload["Email"])
+	if payload["Email"] != "" {
+		t.Fatalf("expected no prefilled email (PII no longer round-trips), got %#v", payload["Email"])
 	}
 	if payload["IsFirstLaunch"] != true {
 		t.Fatalf("expected IsFirstLaunch=true, got %#v", payload["IsFirstLaunch"])
