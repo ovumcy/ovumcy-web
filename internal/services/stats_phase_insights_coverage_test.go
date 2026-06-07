@@ -25,19 +25,6 @@ func statsphaseinsightsCovOwner(id uint) *models.User {
 	return &models.User{ID: id, Role: models.RoleOwner}
 }
 
-// statsphaseinsightsCovFourCycleStarts builds a minimal log set with four
-// period starts spanning three complete cycles of 28 days each, so that
-// buildCompletedCyclePhaseContexts returns exactly three contexts.
-func statsphaseinsightsCovFourCycleStarts(t *testing.T) []models.DailyLog {
-	t.Helper()
-	return []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-02-26"), IsPeriod: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-03-26"), IsPeriod: true},
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Line 52: len(starts) < 2 — gate on minimum two cycle starts
 // ---------------------------------------------------------------------------

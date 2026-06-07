@@ -7,17 +7,6 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// calendarviewpolicyCovNYLoc is a non-UTC location used across tests to detect
-// location-nil-guard mutations and location-fallback path exercise.
-var calendarviewpolicyCovNYLoc = func() *time.Location {
-	loc, err := time.LoadLocation("America/New_York")
-	if err != nil {
-		// Fall back to a fixed offset if tzdata is unavailable in the test environment.
-		loc = time.FixedZone("EST", -5*60*60)
-	}
-	return loc
-}()
-
 // ---------------------------------------------------------------------------
 // Line 18 — nil-location guard in ResolveCalendarMonthAndSelectedDateWithinBounds
 // ---------------------------------------------------------------------------

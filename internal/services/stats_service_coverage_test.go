@@ -8,20 +8,20 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// statsserviceCovErrSentinel is a unique error used to distinguish propagation
+// errStatsserviceCovSentinel is a unique error used to distinguish propagation
 // from any coincidental nil/zero return.
-var statsserviceCovErrSentinel = errors.New("statsserviceCov: sentinel fetch error")
+var errStatsserviceCovSentinel = errors.New("statsserviceCov: sentinel fetch error")
 
 // statsserviceCovFailDayReader always returns the sentinel error from
 // FetchLogsForUser, simulating a storage failure path.
 type statsserviceCovFailDayReader struct{}
 
 func (r *statsserviceCovFailDayReader) FetchLogsForUser(_ uint, _, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
-	return nil, statsserviceCovErrSentinel
+	return nil, errStatsserviceCovSentinel
 }
 
 func (r *statsserviceCovFailDayReader) FetchAllLogsForUser(_ uint) ([]models.DailyLog, error) {
-	return nil, statsserviceCovErrSentinel
+	return nil, errStatsserviceCovSentinel
 }
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,7 @@ func TestStatsserviceCovBuildOverviewStatsPropagatesToStorage(t *testing.T) {
 	if err == nil {
 		t.Fatal("BuildOverviewStats() expected error, got nil")
 	}
-	if !errors.Is(err, statsserviceCovErrSentinel) {
+	if !errors.Is(err, errStatsserviceCovSentinel) {
 		t.Fatalf("BuildOverviewStats() expected sentinel error, got %v", err)
 	}
 }
