@@ -14,6 +14,10 @@
   <img src="docs/screenshots/ovumcy-logo-horizontal.svg" alt="Ovumcy" width="640">
 </p>
 
+<p align="center">
+  <strong>A menstrual cycle tracker you run yourself. Your data stays on your server.</strong>
+</p>
+
 Ovumcy is a privacy-first, self-hosted menstrual cycle tracker.
 It is built for people who want fast daily tracking, useful cycle insights, and data that stays under their control.
 
@@ -21,21 +25,6 @@ Ovumcy runs as a single Go service with a server-rendered web UI, can be install
 
 This README describes the current `main` branch. The latest tagged release is `v1.1.0`.
 The public project site is [ovumcy.com](https://ovumcy.com).
-
-## Clients And Deployment Models
-
-Ovumcy now has two public product shapes:
-
-- [`ovumcy-web`](https://github.com/ovumcy/ovumcy-web) is the self-hosted all-in-one web application and server in this repository.
-- [`ovumcy-app`](https://github.com/ovumcy/ovumcy-app) is the local-first mobile client for iOS and Android.
-
-For the mobile client, optional self-hosted encrypted sync is provided by [`ovumcy-sync-community`](https://github.com/ovumcy/ovumcy-sync-community).
-
-In other words:
-
-- choose `ovumcy-web` when you want one self-hosted server with a browser UI;
-- choose `ovumcy-app` when you want an on-device local-first mobile experience;
-- add `ovumcy-sync-community` only when the mobile app needs self-hosted encrypted backup, restore, or multi-device sync.
 
 ## Why Ovumcy Exists
 
@@ -59,38 +48,6 @@ This comparison focuses on product models rather than specific brands, because p
 | Operator-controlled storage | :white_check_mark: | Device-only | :x: |
 
 Ovumcy trades single-device simplicity for self-hosted control, operator-managed storage, and browser access from any device.
-
-## Short FAQ
-
-### Does Ovumcy require a cloud account?
-
-No. Ovumcy is designed to run as a self-hosted application under your control.
-
-### Where is the data stored?
-
-On the server where you deploy Ovumcy. SQLite is the default baseline, and PostgreSQL is available for more advanced self-hosted setups.
-
-### Does Ovumcy use analytics or ad trackers?
-
-No. Ovumcy is designed without telemetry or advertising trackers.
-
-### Can I export my data?
-
-Yes. Ovumcy supports CSV and JSON export so your records stay portable. See [docs/export.md](docs/export.md) for the exact JSON shape, CSV columns, and stability contract.
-
-### Is there an HTTP API specification?
-
-Yes. The canonical JSON surface lives at `/api/v1/*` and is described in [docs/openapi.yaml](docs/openapi.yaml) (OpenAPI 3.1). `/api/v1/*` is the stable contract for external clients and wrappers — see [CONTRIBUTING.md](CONTRIBUTING.md) for the API Stability Contract. Building a wrapper? Start with `GET /api/v1/users/current` to confirm the session subject, then branch on the documented status code plus `error_detail.category` for error handling.
-
-### Do I need technical knowledge to install Ovumcy?
-
-Basic familiarity with Docker is enough for the supported quick start. A `docker-compose.yml` with working defaults is included in the repository.
-
-### Is Ovumcy a medical product?
-
-No. Ovumcy provides estimates and logs based on recorded data. It is not a medical device and should not be treated as diagnostic or treatment advice.
-
-Period and fertile-window predictions in particular are statistical estimates derived from the cycle data you log. They are not a contraceptive method, a fertility treatment, or a substitute for medical care. Use a medically appropriate method when you need one.
 
 ## Demo
 
@@ -125,6 +82,38 @@ Period and fertile-window predictions in particular are statistical estimates de
 ![Ovumcy dark theme screen](docs/screenshots/dark-theme.jpg)
 
 The privacy-safe hero demo asset pack, including the mobile install prompt capture contract, lives in [docs/hero-demo.md](docs/hero-demo.md).
+
+## Short FAQ
+
+### Does Ovumcy require a cloud account?
+
+No. Ovumcy is designed to run as a self-hosted application under your control.
+
+### Where is the data stored?
+
+On the server where you deploy Ovumcy. SQLite is the default baseline, and PostgreSQL is available for more advanced self-hosted setups.
+
+### Does Ovumcy use analytics or ad trackers?
+
+No. Ovumcy is designed without telemetry or advertising trackers.
+
+### Can I export my data?
+
+Yes. Ovumcy supports CSV and JSON export so your records stay portable. See [docs/export.md](docs/export.md) for the exact JSON shape, CSV columns, and stability contract.
+
+### Is there an HTTP API specification?
+
+Yes. The canonical JSON surface lives at `/api/v1/*` and is described in [docs/openapi.yaml](docs/openapi.yaml) (OpenAPI 3.1). `/api/v1/*` is the stable contract for external clients and wrappers — see [CONTRIBUTING.md](CONTRIBUTING.md) for the API Stability Contract. Building a wrapper? Start with `GET /api/v1/users/current` to confirm the session subject, then branch on the documented status code plus `error_detail.category` for error handling.
+
+### Do I need technical knowledge to install Ovumcy?
+
+Basic familiarity with Docker is enough for the supported quick start. A `docker-compose.yml` with working defaults is included in the repository.
+
+### Is Ovumcy a medical product?
+
+No. Ovumcy provides estimates and logs based on recorded data. It is not a medical device and should not be treated as diagnostic or treatment advice.
+
+Period and fertile-window predictions in particular are statistical estimates derived from the cycle data you log. They are not a contraceptive method, a fertility treatment, or a substitute for medical care. Use a medically appropriate method when you need one.
 
 ## Features
 
@@ -186,6 +175,21 @@ These are the currently supported first-party UI languages. Operators can set `D
 Operator-facing GDPR compliance walkthrough lives in [docs/gdpr.md](docs/gdpr.md) (lawful basis, encryption-at-rest guidance, DSAR via export, breach notification runbook). The repo-visible security invariants live in [docs/SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md); the GDPR cross-reference table is in [SECURITY.md → GDPR Cross-Reference](SECURITY.md#gdpr-cross-reference).
 
 If you found a security issue, see [SECURITY.md](SECURITY.md).
+
+## Clients And Deployment Models
+
+Ovumcy now has two public product shapes:
+
+- [`ovumcy-web`](https://github.com/ovumcy/ovumcy-web) is the self-hosted all-in-one web application and server in this repository.
+- [`ovumcy-app`](https://github.com/ovumcy/ovumcy-app) is the local-first mobile client for iOS and Android.
+
+For the mobile client, optional self-hosted encrypted sync is provided by [`ovumcy-sync-community`](https://github.com/ovumcy/ovumcy-sync-community).
+
+In other words:
+
+- choose `ovumcy-web` when you want one self-hosted server with a browser UI;
+- choose `ovumcy-app` when you want an on-device local-first mobile experience;
+- add `ovumcy-sync-community` only when the mobile app needs self-hosted encrypted backup, restore, or multi-device sync.
 
 ## Architecture
 
