@@ -152,8 +152,28 @@ func NormalizeRecoveryCode(raw string) string {
 	normalized = strings.ReplaceAll(normalized, " ", "")
 	normalized = strings.ReplaceAll(normalized, "-", "")
 	normalized = strings.TrimPrefix(normalized, recoveryCodePrefix)
-	if len(normalized) != 12 {
+	// Only reformat when the body is exactly 12 ASCII alphanumerics. A byte-length
+	// check plus byte slicing is unsafe for multi-byte/invalid-UTF-8 input, where
+	// ToUpper can change the byte length and a slice can split a rune, yielding
+	// unstable, non-idempotent output. Recovery code bodies are always [A-Z0-9].
+	if !isCanonicalRecoveryCodeBody(normalized) {
 		return strings.ToUpper(strings.TrimSpace(raw))
 	}
 	return fmt.Sprintf("%s-%s-%s-%s", recoveryCodePrefix, normalized[:4], normalized[4:8], normalized[8:12])
+}
+
+// isCanonicalRecoveryCodeBody reports whether value is exactly 12 ASCII
+// alphanumeric characters (the canonical recovery-code body). Because every
+// accepted character is single-byte ASCII, byte indexing the result is safe.
+func isCanonicalRecoveryCodeBody(value string) bool {
+	if len(value) != 12 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false
+		}
+	}
+	return true
 }
