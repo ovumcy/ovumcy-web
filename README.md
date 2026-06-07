@@ -141,25 +141,25 @@ The privacy-safe hero demo asset pack, including the mobile install prompt captu
 
 ## How Predictions Work
 
-Ovumcy estimates ovulation, the fertile window, and your next period from the
-dates you log — no sensors and no guessing at your hormones. The model is simple
-and fully open:
+Ovumcy works out ovulation, the fertile window, and your next period from the
+dates you log. There are no sensors and no hormone readings involved; it is
+calendar math, and the model is deliberately simple:
 
-- Your **next period** is the start of your last period plus your typical cycle
-  length (the median of your recent cycles).
-- **Ovulation** is counted backwards from there: the luteal phase (ovulation →
-  next period) is assumed to be about 14 days, so ovulation ≈ cycle length − 14.
-- The **fertile window** is the 6 days ending on ovulation day, reflecting that
-  sperm can survive a few days and the egg about one.
+- Your next period is your last period start plus your typical cycle length (the
+  median of your recent cycles).
+- Ovulation is counted back from there. The luteal phase, from ovulation to the
+  next period, is treated as roughly 14 days, so ovulation lands near cycle
+  length minus 14.
+- The fertile window is the six days ending on ovulation day, since sperm can
+  survive a few days and the egg about one.
 
-That is the whole idea. These are **calendar-based estimates — not medical advice
-and not contraception** — and they get less reliable for irregular cycles.
+These are estimates, not medical advice and not a form of contraception, and they
+get less reliable for irregular cycles.
 
-The full algorithm (every constant, edge case, and assumption) is documented in
-**[docs/cycle-prediction.md](docs/cycle-prediction.md)**. Its worked examples are
-pinned by automated reference tests, so the documentation and the code can never
-silently drift apart — you can read exactly how a prediction is made and verify it
-against the numbers.
+The full algorithm, with every constant and edge case, is in
+[docs/cycle-prediction.md](docs/cycle-prediction.md). The worked examples there are
+checked by reference tests, so the doc and the code stay in sync. You can read how
+a prediction is made and check it against the numbers yourself.
 
 ## Supported Languages
 
