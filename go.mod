@@ -15,6 +15,7 @@ require (
 	golang.org/x/sys v0.38.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.0
+	pgregory.net/rapid v1.3.0
 )
 
 require (
