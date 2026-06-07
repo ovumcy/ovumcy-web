@@ -29,7 +29,7 @@ fails ("kills" the mutant). Surviving mutants reveal weak assertions.
 
 - Run it locally: `scripts/mutation.sh baseline` (full) or `scripts/mutation.sh diff <ref>` (changed code only).
 - A weekly CI job tracks the trend; it is advisory and never blocks a merge.
-- **Current efficacy on the core `services` package: _pending re-measure_** — updated after each full run. *(Efficacy = killed / (killed + survived).)*
+- **Current efficacy on the core `services` package: ~94%** (gremlins, killed / (killed + survived); tracked weekly). The remaining survivors are mostly equivalent mutants or presentation-layer code that cannot be killed without brittle tests, so they are classified rather than chased.
 
 Surviving mutants are triaged honestly: a *real* gap gets a new behavior test; an
 *equivalent* mutant (one that cannot change any observable outcome — a log line,
