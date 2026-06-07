@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-06-07
+
+### Security
+
+- **Recovery-code normalization is now rune-safe.** `NormalizeRecoveryCode` used a byte-length check and byte slicing, which produced unstable, non-idempotent output for non-ASCII / invalid-UTF-8 input. Reformatting is now gated on a strict 12-character ASCII-alphanumeric body and is fuzz-guarded. No exploitable bypass existed — downstream validation rejected non-canonical input — but the path is now structurally sound.
+- **Go toolchain and dependencies bumped to clear advisories.** Go 1.25.10 → 1.26.4 and `golang.org/x/crypto`, `x/net`, `x/sys`, `x/text` to current releases; `govulncheck` confirms zero reachable vulnerabilities.
+- **Release supply-chain verification is documented.** Published images are keyless-signed (cosign), carry SLSA build provenance and an SBOM attestation, and `SECURITY.md` now explains how to verify them with `cosign verify` and `gh attestation verify`.
+- Hardened defaults, atomic day writes, UTC cycle math, and flash-message PII removal landed in the unreleased window.
+
+### Changed
+
+- The README now leads with the product story (demo and screenshots above the fold) and a plain-language "How Predictions Work" section; deployment details moved below.
+- The cycle-prediction algorithm is fully documented in `docs/cycle-prediction.md`, with worked examples pinned 1:1 by reference tests.
+- Test files are excluded from the runtime image build context, `govulncheck` runs as a call-graph reachability gate, and Docker Hub pulls are authenticated to avoid anonymous rate-limit flakiness.
+
+### Internal
+
+- Added mutation testing (gremlins), native fuzzing, property-based and reference-vector tests, cycle-math benchmarks, and a SQLite backup/restore integrity test. Mutation efficacy on `internal/services` is ~94%; see `TESTING.md`.
+
 ## [1.1.0] - 2026-05-23
 
 ### Security
