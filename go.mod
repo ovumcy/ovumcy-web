@@ -1,6 +1,6 @@
 module github.com/ovumcy/ovumcy-web
 
-go 1.25.10
+go 1.26.4
 
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
@@ -9,10 +9,10 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/pquerna/otp v1.5.0
-	golang.org/x/crypto v0.45.0
-	golang.org/x/net v0.47.0
+	golang.org/x/crypto v0.52.0
+	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sys v0.38.0
+	golang.org/x/sys v0.45.0
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.0
 	pgregory.net/rapid v1.3.0
@@ -41,8 +41,8 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect
 	modernc.org/memory v1.5.0 // indirect
