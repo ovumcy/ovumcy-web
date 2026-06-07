@@ -98,6 +98,12 @@ jobs:
           files: coverage.out
           use_oidc: true
           fail_ci_if_error: true
+          # Install the CLI from PyPI instead of cli.codecov.io. The binary path
+          # imports Codecov's signing key only from keybase.io, which the Actions
+          # runners cannot reach reliably ("no valid OpenPGP data found" ->
+          # signature check aborts before upload). PyPI install keeps integrity
+          # (pip over TLS, package hashes) without the keybase dependency.
+          use_pypi: true
 
       - name: Warn on non-blocking Codecov failure
         if: ${{ github.event_name == 'push' && steps.codecov.outcome == 'failure' }}
