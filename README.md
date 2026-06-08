@@ -1,6 +1,7 @@
 [![CI](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ovumcy/ovumcy-web/badge)](https://securityscorecards.dev/viewer/?uri=github.com/ovumcy/ovumcy-web)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13130/badge)](https://www.bestpractices.dev/projects/13130)
 [![Coverage](https://codecov.io/gh/ovumcy/ovumcy-web/graph/badge.svg)](https://app.codecov.io/gh/ovumcy/ovumcy-web)
 [![Tested](https://img.shields.io/badge/tested-mutation%20%C2%B7%20fuzz%20%C2%B7%20property-2ea44f)](https://github.com/ovumcy/ovumcy-web/blob/main/TESTING.md)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ovumcy/ovumcy-web)](https://goreportcard.com/report/github.com/ovumcy/ovumcy-web)
