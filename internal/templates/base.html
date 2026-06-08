@@ -437,7 +437,7 @@
     </ul>
   </div>
 
-  {{if or (ne .Log.SexActivity "none") (hasBBT .Log.BBT) (ne .Log.CervicalMucus "none")}}
+  {{if or (ne .Log.SexActivity "none") (hasBBT .Log.BBT) (ne .Log.CervicalMucus "none") (ne .Log.PregnancyTest "none")}}
   <div class="grid gap-3 sm:grid-cols-2">
     {{if ne .Log.SexActivity "none"}}
     <p><span class="journal-muted">{{t .Messages "dashboard.sex"}}:</span> {{sexActivityLabel .Messages .Log.SexActivity}}</p>
@@ -447,6 +447,9 @@
     {{end}}
     {{if ne .Log.CervicalMucus "none"}}
     <p><span class="journal-muted">{{t .Messages "dashboard.cervical_mucus"}}:</span> {{cervicalMucusLabel .Messages .Log.CervicalMucus}}</p>
+    {{end}}
+    {{if ne .Log.PregnancyTest "none"}}
+    <p><span class="journal-muted">{{t .Messages "dashboard.pregnancy_test"}}:</span> {{pregnancyTestLabel .Messages .Log.PregnancyTest}}</p>
     {{end}}
   </div>
   {{end}}
@@ -576,6 +579,26 @@
   {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "moist" "Compact" .Compact)}}
   {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "creamy" "Compact" .Compact)}}
   {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "eggwhite" "Compact" .Compact)}}
+</div>
+{{end}}
+{{define "pregnancy_test_option"}}
+<label class="choice-option">
+  <input
+    type="radio"
+    name="pregnancy_test"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if eq .SelectedPregnancyTest .Value}}checked{{end}}>
+  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+    <span>{{pregnancyTestLabel .Messages .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "pregnancy_test_options"}}
+<div class="cervical-mucus-row{{if .Compact}} cervical-mucus-row-compact{{end}}">
+  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "none" "Compact" .Compact)}}
+  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "negative" "Compact" .Compact)}}
+  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "positive" "Compact" .Compact)}}
 </div>
 {{end}}
 {{define "symptom_option_item"}}

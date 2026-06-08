@@ -63,6 +63,7 @@ var authErrorTranslationKeys = map[string]string{
 	"invalid sex activity value":                      "dashboard.error.invalid_sex_activity",
 	"invalid bbt value":                               "dashboard.error.invalid_bbt",
 	"invalid cervical mucus value":                    "dashboard.error.invalid_cervical_mucus",
+	"invalid pregnancy test value":                    "dashboard.error.invalid_pregnancy_test",
 	"date is required":                                "onboarding.error.date_required",
 	"invalid last period start":                       "onboarding.error.invalid_last_period_start",
 	"last period start must be within last 60 days":   "onboarding.error.last_period_range",

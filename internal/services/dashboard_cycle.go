@@ -12,6 +12,7 @@ type DashboardCycleContext struct {
 	CycleDayWarning             bool
 	CycleDataStale              bool
 	PredictionDisabled          bool
+	PregnancyPaused             bool
 	DisplayNextPeriodStart      time.Time
 	DisplayNextPeriodEnd        time.Time
 	DisplayNextPeriodRangeStart time.Time
@@ -187,6 +188,13 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 }
 
 func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.Time, location *time.Location) DashboardCycleContext {
+	if stats.PregnancyPaused {
+		return DashboardCycleContext{
+			CycleDayReference:  DashboardCycleReferenceLength(user, stats),
+			PredictionDisabled: true,
+			PregnancyPaused:    true,
+		}
+	}
 	if DashboardPredictionDisabled(user) {
 		return DashboardCycleContext{
 			CycleDayReference:  DashboardCycleReferenceLength(user, stats),

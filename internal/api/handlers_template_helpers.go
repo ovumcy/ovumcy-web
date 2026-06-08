@@ -28,6 +28,9 @@ func newTemplateFuncMap() template.FuncMap {
 		"cervicalMucusLabel": func(messages map[string]string, value string) string {
 			return translateMessage(messages, services.CervicalMucusTranslationKey(value))
 		},
+		"pregnancyTestLabel": func(messages map[string]string, value string) string {
+			return translateMessage(messages, services.PregnancyTestTranslationKey(value))
+		},
 		"cycleFactorLabel": func(messages map[string]string, key string) string {
 			translationKey := services.DayCycleFactorTranslationKey(key)
 			if translationKey == "" {

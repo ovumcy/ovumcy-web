@@ -80,4 +80,18 @@ func TestBuildOwnerPredictionExplanation(t *testing.T) {
 			t.Fatalf("expected variable_ranges primary key, got %#v", explanation)
 		}
 	})
+
+	t.Run("pregnancy pause outranks other explainer states", func(t *testing.T) {
+		explanation := BuildOwnerPredictionExplanation(
+			&models.User{Role: models.RoleOwner, UnpredictableCycle: true},
+			DashboardCycleContext{PregnancyPaused: true, PredictionDisabled: true},
+			true,
+		)
+		if explanation.PrimaryKey != "prediction.explainer.pregnancy_paused" {
+			t.Fatalf("expected pregnancy paused primary key, got %#v", explanation)
+		}
+		if explanation.SecondaryKey != "" {
+			t.Fatalf("expected no factor secondary hint while paused, got %#v", explanation)
+		}
+	})
 }

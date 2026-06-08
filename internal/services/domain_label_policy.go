@@ -64,6 +64,17 @@ func CervicalMucusTranslationKey(value string) string {
 	}
 }
 
+func PregnancyTestTranslationKey(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case models.PregnancyTestNegative:
+		return "dashboard.pregnancy_test.negative"
+	case models.PregnancyTestPositive:
+		return "dashboard.pregnancy_test.positive"
+	default:
+		return "dashboard.pregnancy_test.none"
+	}
+}
+
 func RoleTranslationKey(role string) string {
 	switch NormalizeUserRole(role) {
 	case models.RoleOwner:

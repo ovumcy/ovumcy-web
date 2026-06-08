@@ -321,6 +321,42 @@ func TestBuildDashboardCycleContextDisablesPredictionsForUnpredictableMode(t *te
 	}
 }
 
+func TestBuildDashboardCycleContextPausesPredictionsForPregnancy(t *testing.T) {
+	user := &models.User{CycleLength: 28}
+	stats := CycleStats{
+		LastPeriodStart:   mustParseDashboardDay(t, "2026-03-01"),
+		NextPeriodStart:   mustParseDashboardDay(t, "2026-03-29"),
+		OvulationDate:     mustParseDashboardDay(t, "2026-03-15"),
+		CurrentCycleDay:   13,
+		MedianCycleLength: 28,
+		PregnancyPaused:   true,
+	}
+
+	context := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
+	if !context.PregnancyPaused {
+		t.Fatalf("expected pregnancy pause to be reflected on the cycle context")
+	}
+	if !context.PredictionDisabled {
+		t.Fatalf("expected pregnancy pause to disable dashboard predictions")
+	}
+	if !context.DisplayNextPeriodStart.IsZero() || !context.DisplayOvulationDate.IsZero() {
+		t.Fatalf("expected pregnancy pause to clear projected dates")
+	}
+}
+
+func TestBuildDashboardCycleContextPregnancyPauseOutranksUnpredictableMode(t *testing.T) {
+	user := &models.User{UnpredictableCycle: true, CycleLength: 28}
+	stats := CycleStats{
+		LastPeriodStart: mustParseDashboardDay(t, "2026-03-01"),
+		PregnancyPaused: true,
+	}
+
+	context := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-13"), time.UTC)
+	if !context.PregnancyPaused {
+		t.Fatalf("expected pregnancy pause to take priority over unpredictable mode")
+	}
+}
+
 func TestBuildDashboardCycleContextNeedsOvulationDataForIrregularModeWithFewerThanThreeCycles(t *testing.T) {
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{

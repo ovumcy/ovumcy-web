@@ -26,6 +26,7 @@ func parseDayPayload(c *fiber.Ctx, user *models.User) (dayPayload, error) {
 		payload.Mood = clampFormIntValue(c.FormValue("mood"))
 		payload.SexActivity = strings.ToLower(strings.TrimSpace(c.FormValue("sex_activity")))
 		payload.CervicalMucus = strings.ToLower(strings.TrimSpace(c.FormValue("cervical_mucus")))
+		payload.PregnancyTest = strings.ToLower(strings.TrimSpace(c.FormValue("pregnancy_test")))
 		payload.Notes = strings.TrimSpace(c.FormValue("notes"))
 		payload.BBT, err = services.ParseDayBBTRawWithUnit(c.FormValue("bbt"), temperatureUnit)
 		if err != nil {
@@ -52,6 +53,7 @@ func parseDayPayload(c *fiber.Ctx, user *models.User) (dayPayload, error) {
 	}
 	payload.SexActivity = services.NormalizeDaySexActivity(payload.SexActivity)
 	payload.CervicalMucus = services.NormalizeDayCervicalMucus(payload.CervicalMucus)
+	payload.PregnancyTest = services.NormalizeDayPregnancyTest(payload.PregnancyTest)
 	payload.Notes = strings.TrimSpace(payload.Notes)
 
 	return payload, nil

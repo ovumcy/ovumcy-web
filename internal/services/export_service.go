@@ -19,6 +19,7 @@ var ExportCSVHeaders = []string{
 	"Sex activity",
 	"BBT (C)",
 	"Cervical mucus",
+	"Pregnancy test",
 	"Cramps",
 	"Headache",
 	"Acne",
@@ -152,6 +153,7 @@ type ExportJSONEntry struct {
 	SexActivity   string             `json:"sex_activity"`
 	BBT           float64            `json:"bbt"`
 	CervicalMucus string             `json:"cervical_mucus"`
+	PregnancyTest string             `json:"pregnancy_test"`
 	CycleFactors  []string           `json:"cycle_factors"`
 	Symptoms      ExportSymptomFlags `json:"symptoms"`
 	OtherSymptoms []string           `json:"other_symptoms"`
@@ -166,6 +168,7 @@ type ExportCSVRow struct {
 	SexActivity   string
 	BBT           float64
 	CervicalMucus string
+	PregnancyTest string
 	CycleFactors  []string
 	Symptoms      ExportSymptomFlags
 	OtherSymptoms []string
@@ -248,6 +251,7 @@ func (service *ExportService) BuildJSONEntries(userID uint, from *time.Time, to 
 			SexActivity:   normalizeExportSexActivity(logEntry.SexActivity),
 			BBT:           normalizeExportBBT(logEntry.BBT),
 			CervicalMucus: normalizeExportCervicalMucus(logEntry.CervicalMucus),
+			PregnancyTest: normalizeExportPregnancyTest(logEntry.PregnancyTest),
 			CycleFactors:  normalizeExportCycleFactorKeys(logEntry.CycleFactorKeys),
 			Symptoms:      flags,
 			OtherSymptoms: other,
@@ -274,6 +278,7 @@ func (service *ExportService) BuildCSVRows(userID uint, from *time.Time, to *tim
 			SexActivity:   csvSexActivityLabel(logEntry.SexActivity),
 			BBT:           normalizeExportBBT(logEntry.BBT),
 			CervicalMucus: csvCervicalMucusLabel(logEntry.CervicalMucus),
+			PregnancyTest: csvPregnancyTestLabel(logEntry.PregnancyTest),
 			CycleFactors:  csvCycleFactorLabels(logEntry.CycleFactorKeys),
 			Symptoms:      flags,
 			OtherSymptoms: other,
@@ -296,6 +301,7 @@ func (row ExportCSVRow) Columns() []string {
 		row.SexActivity,
 		csvBBTValue(row.BBT),
 		row.CervicalMucus,
+		row.PregnancyTest,
 		csvYesNo(row.Symptoms.Cramps),
 		csvYesNo(row.Symptoms.Headache),
 		csvYesNo(row.Symptoms.Acne),
@@ -422,6 +428,10 @@ func normalizeExportCervicalMucus(value string) string {
 	return NormalizeDayCervicalMucus(value)
 }
 
+func normalizeExportPregnancyTest(value string) string {
+	return NormalizeDayPregnancyTest(value)
+}
+
 func csvMoodRating(value int) string {
 	if value <= 0 {
 		return ""
@@ -458,6 +468,17 @@ func csvCervicalMucusLabel(value string) string {
 		return "Creamy"
 	case models.CervicalMucusEggWhite:
 		return "Egg white"
+	default:
+		return "None"
+	}
+}
+
+func csvPregnancyTestLabel(value string) string {
+	switch NormalizeDayPregnancyTest(value) {
+	case models.PregnancyTestNegative:
+		return "Negative"
+	case models.PregnancyTestPositive:
+		return "Positive"
 	default:
 		return "None"
 	}

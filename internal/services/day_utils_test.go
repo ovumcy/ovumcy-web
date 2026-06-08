@@ -39,6 +39,11 @@ func TestDayHasData(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "pregnancy test present",
+			entry: models.DailyLog{PregnancyTest: models.PregnancyTestPositive},
+			want:  true,
+		},
+		{
 			name:  "empty entry",
 			entry: models.DailyLog{Flow: models.FlowNone},
 			want:  false,
@@ -78,6 +83,11 @@ func TestIsAutoFilledPeriodCandidate(t *testing.T) {
 		{
 			name:  "anchor day with cycle start",
 			entry: models.DailyLog{IsPeriod: true, CycleStart: true},
+			want:  false,
+		},
+		{
+			name:  "period day with pregnancy test",
+			entry: models.DailyLog{IsPeriod: true, PregnancyTest: models.PregnancyTestPositive},
 			want:  false,
 		},
 		{

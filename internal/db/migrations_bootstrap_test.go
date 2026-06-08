@@ -258,13 +258,14 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 		SexActivity     string  `gorm:"column:sex_activity"`
 		BBT             float64 `gorm:"column:bbt"`
 		CervicalMucus   string  `gorm:"column:cervical_mucus"`
+		PregnancyTest   string  `gorm:"column:pregnancy_test"`
 		CycleFactorKeys string  `gorm:"column:cycle_factor_keys"`
 		SymptomIDs      *string `gorm:"column:symptom_ids"`
 		Notes           string  `gorm:"column:notes"`
 	}
 	if err := database.
 		Table("daily_logs").
-		Select("cycle_start", "is_uncertain", "flow", "mood", "sex_activity", "bbt", "cervical_mucus", "cycle_factor_keys", "symptom_ids", "notes").
+		Select("cycle_start", "is_uncertain", "flow", "mood", "sex_activity", "bbt", "cervical_mucus", "pregnancy_test", "cycle_factor_keys", "symptom_ids", "notes").
 		Where("notes = ?", "legacy-log").
 		First(&migratedLog).Error; err != nil {
 		t.Fatalf("load migrated legacy daily log: %v", err)
@@ -290,6 +291,9 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 	}
 	if migratedLog.CervicalMucus != models.CervicalMucusNone {
 		t.Fatalf("expected migrated cervical_mucus default to be %q, got %q", models.CervicalMucusNone, migratedLog.CervicalMucus)
+	}
+	if migratedLog.PregnancyTest != models.PregnancyTestNone {
+		t.Fatalf("expected migrated pregnancy_test default to be %q, got %q", models.PregnancyTestNone, migratedLog.PregnancyTest)
 	}
 	if migratedLog.CycleFactorKeys != "[]" {
 		t.Fatalf("expected migrated cycle_factor_keys default to be [], got %q", migratedLog.CycleFactorKeys)
@@ -481,6 +485,9 @@ func assertDailyLogsSchemaReconciled(t *testing.T, database *gorm.DB) {
 	}
 	if _, exists := columns["cervical_mucus"]; !exists {
 		t.Fatal("expected daily_logs.cervical_mucus column to exist after migrations")
+	}
+	if _, exists := columns["pregnancy_test"]; !exists {
+		t.Fatal("expected daily_logs.pregnancy_test column to exist after migrations")
 	}
 	if _, exists := columns["symptom_ids"]; !exists {
 		t.Fatal("expected daily_logs.symptom_ids column to exist after migrations")

@@ -1,0 +1,1 @@
+ALTER TABLE daily_logs ADD COLUMN IF NOT EXISTS pregnancy_test TEXT NOT NULL DEFAULT 'none';

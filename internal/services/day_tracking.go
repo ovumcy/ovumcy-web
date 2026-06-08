@@ -62,6 +62,26 @@ func IsValidDayCervicalMucus(value string) bool {
 	}
 }
 
+func NormalizeDayPregnancyTest(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case models.PregnancyTestNegative:
+		return models.PregnancyTestNegative
+	case models.PregnancyTestPositive:
+		return models.PregnancyTestPositive
+	default:
+		return models.PregnancyTestNone
+	}
+}
+
+func IsValidDayPregnancyTest(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", models.PregnancyTestNone, models.PregnancyTestNegative, models.PregnancyTestPositive:
+		return true
+	default:
+		return false
+	}
+}
+
 func IsValidDayBBT(value float64) bool {
 	return value == 0 || (value >= MinDayBBTCelsius && value <= MaxDayBBTCelsius)
 }

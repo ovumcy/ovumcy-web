@@ -27,6 +27,7 @@ type DayEntryInput struct {
 	SexActivity           string
 	BBT                   float64
 	CervicalMucus         string
+	PregnancyTest         string
 	CycleFactorKeys       []string
 	Notes                 string
 	SymptomIDs            []uint
@@ -135,12 +136,14 @@ func (service *DayService) FetchLogByDate(userID uint, day time.Time, location *
 			Mood:            0,
 			SexActivity:     models.SexActivityNone,
 			CervicalMucus:   models.CervicalMucusNone,
+			PregnancyTest:   models.PregnancyTestNone,
 			CycleFactorKeys: []string{},
 			SymptomIDs:      []uint{},
 		}, nil
 	}
 	entry.SexActivity = NormalizeDaySexActivity(entry.SexActivity)
 	entry.CervicalMucus = NormalizeDayCervicalMucus(entry.CervicalMucus)
+	entry.PregnancyTest = NormalizeDayPregnancyTest(entry.PregnancyTest)
 	entry.CycleFactorKeys, _ = NormalizeDayCycleFactorKeys(entry.CycleFactorKeys)
 	if !IsValidDayBBT(entry.BBT) {
 		entry.BBT = 0
@@ -196,6 +199,7 @@ func (service *DayService) UpsertDayEntry(userID uint, dayStart time.Time, paylo
 		entry.SexActivity = payload.SexActivity
 		entry.BBT = payload.BBT
 		entry.CervicalMucus = payload.CervicalMucus
+		entry.PregnancyTest = payload.PregnancyTest
 		entry.CycleFactorKeys = payload.CycleFactorKeys
 		entry.SymptomIDs = payload.SymptomIDs
 		entry.Notes = payload.Notes
@@ -214,6 +218,7 @@ func (service *DayService) UpsertDayEntry(userID uint, dayStart time.Time, paylo
 		SexActivity:     payload.SexActivity,
 		BBT:             payload.BBT,
 		CervicalMucus:   payload.CervicalMucus,
+		PregnancyTest:   payload.PregnancyTest,
 		CycleFactorKeys: payload.CycleFactorKeys,
 		Notes:           payload.Notes,
 		SymptomIDs:      payload.SymptomIDs,
@@ -485,6 +490,7 @@ func (service *DayService) manualCycleStartPayload(userID uint, day time.Time, l
 		SexActivity:     NormalizeDaySexActivity(existingEntry.SexActivity),
 		BBT:             existingEntry.BBT,
 		CervicalMucus:   NormalizeDayCervicalMucus(existingEntry.CervicalMucus),
+		PregnancyTest:   NormalizeDayPregnancyTest(existingEntry.PregnancyTest),
 		CycleFactorKeys: append([]string{}, existingEntry.CycleFactorKeys...),
 		Notes:           existingEntry.Notes,
 		SymptomIDs:      symptomIDs,
@@ -605,6 +611,7 @@ func (service *DayService) AutoFillFollowingPeriodDays(userID uint, startDay tim
 			Flow:            flow,
 			SexActivity:     models.SexActivityNone,
 			CervicalMucus:   models.CervicalMucusNone,
+			PregnancyTest:   models.PregnancyTestNone,
 			CycleFactorKeys: []string{},
 			SymptomIDs:      []uint{},
 		}

@@ -106,6 +106,9 @@ func DayHasData(entry models.DailyLog) bool {
 	if NormalizeDayCervicalMucus(entry.CervicalMucus) != models.CervicalMucusNone {
 		return true
 	}
+	if NormalizeDayPregnancyTest(entry.PregnancyTest) != models.PregnancyTestNone {
+		return true
+	}
 	if len(DayCycleFactorKeySet(entry.CycleFactorKeys)) > 0 {
 		return true
 	}
@@ -143,6 +146,9 @@ func IsAutoFilledPeriodCandidate(entry models.DailyLog) bool {
 		return false
 	}
 	if NormalizeDayCervicalMucus(entry.CervicalMucus) != models.CervicalMucusNone {
+		return false
+	}
+	if NormalizeDayPregnancyTest(entry.PregnancyTest) != models.PregnancyTestNone {
 		return false
 	}
 	if len(DayCycleFactorKeySet(entry.CycleFactorKeys)) > 0 {

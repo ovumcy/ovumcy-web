@@ -305,6 +305,7 @@ func (repo *UserRepository) CompleteOnboarding(userID uint, startDay time.Time, 
 						Flow:          models.FlowNone,
 						SexActivity:   models.SexActivityNone,
 						CervicalMucus: models.CervicalMucusNone,
+						PregnancyTest: models.PregnancyTestNone,
 						SymptomIDs:    []uint{},
 					}
 					if err := tx.Create(&entry).Error; err != nil {

@@ -124,6 +124,41 @@ func TestBuildCycleStatsForRangeAppliesOwnerBaseline(t *testing.T) {
 	}
 }
 
+func TestBuildCycleStatsForRangePausesAfterPositivePregnancyTest(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2026-02-10"), PregnancyTest: models.PregnancyTestPositive},
+	}
+	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
+	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 28}
+	now := mustParseStatsServiceDay(t, "2026-02-20")
+
+	stats, _, err := service.BuildCycleStatsForRange(user, now.AddDate(0, 0, -30), now, now, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildCycleStatsForRange() unexpected error: %v", err)
+	}
+	if !stats.PregnancyPaused {
+		t.Fatal("expected a positive pregnancy test with no later cycle start to pause predictions")
+	}
+}
+
+func TestBuildCycleStatsForRangeResumesWhenCycleStartFollowsPositiveTest(t *testing.T) {
+	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2026-02-10"), PregnancyTest: models.PregnancyTestPositive},
+		{Date: mustParseStatsServiceDay(t, "2026-02-18"), IsPeriod: true, CycleStart: true},
+	}
+	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
+	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 28}
+	now := mustParseStatsServiceDay(t, "2026-02-20")
+
+	stats, _, err := service.BuildCycleStatsForRange(user, now.AddDate(0, 0, -30), now, now, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildCycleStatsForRange() unexpected error: %v", err)
+	}
+	if stats.PregnancyPaused {
+		t.Fatal("expected a cycle start after the positive test to resume predictions")
+	}
+}
+
 func TestStatsOverviewRange(t *testing.T) {
 	now := mustParseStatsServiceDay(t, "2026-03-02")
 	from, to := StatsOverviewRange(now)

@@ -28,6 +28,7 @@ type CycleStats struct {
 	OvulationImpossible  bool      `json:"ovulation_impossible"`
 	FertilityWindowStart time.Time `json:"fertility_window_start"`
 	FertilityWindowEnd   time.Time `json:"fertility_window_end"`
+	PregnancyPaused      bool      `json:"pregnancy_paused"`
 }
 
 type detectedCycle struct {

@@ -77,6 +77,7 @@ func (repo *DailyLogRepository) FindByUserAndDayRange(userID uint, dayStart time
 			"sex_activity",
 			"bbt",
 			"cervical_mucus",
+			"pregnancy_test",
 			"cycle_factor_keys",
 			"symptom_ids",
 			"notes",

@@ -81,3 +81,26 @@ func TestNormalizeDayEntryInputRejectsInvalidCycleFactor(t *testing.T) {
 		t.Fatalf("expected ErrInvalidDayCycleFactors, got %v", err)
 	}
 }
+
+func TestNormalizeDayEntryInputRejectsInvalidPregnancyTest(t *testing.T) {
+	_, err := NormalizeDayEntryInput(DayEntryInput{
+		Flow:          models.FlowNone,
+		PregnancyTest: "bad-test",
+	})
+	if !errors.Is(err, ErrInvalidDayPregnancyTest) {
+		t.Fatalf("expected ErrInvalidDayPregnancyTest, got %v", err)
+	}
+}
+
+func TestNormalizeDayEntryInputNormalizesPregnancyTest(t *testing.T) {
+	normalized, err := NormalizeDayEntryInput(DayEntryInput{
+		Flow:          models.FlowNone,
+		PregnancyTest: " POSITIVE ",
+	})
+	if err != nil {
+		t.Fatalf("NormalizeDayEntryInput() unexpected error: %v", err)
+	}
+	if normalized.PregnancyTest != models.PregnancyTestPositive {
+		t.Fatalf("expected pregnancy test %q, got %q", models.PregnancyTestPositive, normalized.PregnancyTest)
+	}
+}

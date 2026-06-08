@@ -264,6 +264,11 @@
         </fieldset>
         {{end}}
 
+        <fieldset class="space-y-3">
+          <legend class="field-label">{{t .Messages "dashboard.pregnancy_test"}}</legend>
+          {{template "pregnancy_test_options" (dict "Messages" .Messages "SelectedPregnancyTest" .TodayEntry.PregnancyTest "Compact" false)}}
+        </fieldset>
+
         {{if .ShowBBTField}}
         {{template "temperature_input_field" (dict
           "Messages" .Messages

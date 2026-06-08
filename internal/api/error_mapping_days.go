@@ -36,6 +36,8 @@ func mapDayUpsertError(err error) APIErrorSpec {
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid bbt value")
 	case services.DayUpsertErrorInvalidCervicalMucus:
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cervical mucus value")
+	case services.DayUpsertErrorInvalidPregnancyTest:
+		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid pregnancy test value")
 	case services.DayUpsertErrorInvalidCycleFactors:
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle factor values")
 	case services.DayUpsertErrorLoadFailed:

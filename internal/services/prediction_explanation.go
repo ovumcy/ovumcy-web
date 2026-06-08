@@ -21,6 +21,8 @@ func BuildOwnerPredictionExplanation(user *models.User, cycleContext DashboardCy
 
 func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCycleContext) string {
 	switch {
+	case cycleContext.PregnancyPaused:
+		return "prediction.explainer.pregnancy_paused"
 	case cycleContext.PredictionDisabled:
 		return "prediction.explainer.unpredictable"
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodNeedsData || cycleContext.DisplayOvulationNeedsData):

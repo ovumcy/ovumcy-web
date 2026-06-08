@@ -214,6 +214,7 @@ const (
 	DayUpsertErrorLoadFailed
 	DayUpsertErrorCreateFailed
 	DayUpsertErrorUpdateFailed
+	DayUpsertErrorInvalidPregnancyTest
 )
 
 func ClassifyDayUpsertError(err error) DayUpsertErrorKind {
@@ -234,6 +235,8 @@ func ClassifyDayUpsertError(err error) DayUpsertErrorKind {
 		return DayUpsertErrorInvalidBBT
 	case errors.Is(err, ErrInvalidDayCervicalMucus):
 		return DayUpsertErrorInvalidCervicalMucus
+	case errors.Is(err, ErrInvalidDayPregnancyTest):
+		return DayUpsertErrorInvalidPregnancyTest
 	case errors.Is(err, ErrInvalidDayCycleFactors):
 		return DayUpsertErrorInvalidCycleFactors
 	case errors.Is(err, ErrDayAutoFillLoadFailed),

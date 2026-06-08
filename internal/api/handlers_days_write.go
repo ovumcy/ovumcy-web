@@ -86,6 +86,7 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *
 		SexActivity:           payload.SexActivity,
 		BBT:                   payload.BBT,
 		CervicalMucus:         payload.CervicalMucus,
+		PregnancyTest:         payload.PregnancyTest,
 		CycleFactorKeys:       payload.CycleFactorKeys,
 		Notes:                 payload.Notes,
 		SymptomIDs:            cleanSymptomIDs,

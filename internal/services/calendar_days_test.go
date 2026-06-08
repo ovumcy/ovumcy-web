@@ -162,6 +162,30 @@ func TestBuildCalendarDayStatesDisablesPredictionsForUnpredictableCycle(t *testi
 	}
 }
 
+func TestBuildCalendarDayStatesSuppressesPredictionsWhenPregnancyPaused(t *testing.T) {
+	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		AveragePeriodLength:  5,
+		LastPeriodStart:      time.Date(2026, time.March, 8, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:      time.Date(2026, time.April, 5, 0, 0, 0, 0, time.UTC),
+		FertilityWindowStart: time.Date(2026, time.March, 18, 0, 0, 0, 0, time.UTC),
+		FertilityWindowEnd:   time.Date(2026, time.March, 23, 0, 0, 0, 0, time.UTC),
+		OvulationDate:        time.Date(2026, time.March, 23, 0, 0, 0, 0, time.UTC),
+		PregnancyPaused:      true,
+	}
+
+	days := BuildCalendarDayStates(&models.User{}, monthStart, nil, stats, now, time.UTC)
+
+	for _, dateString := range []string{"2026-03-08", "2026-03-18", "2026-03-23", "2026-04-04"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if day.IsPredicted || day.IsPreFertile || day.IsFertility || day.IsOvulation || day.IsTentativeOvulation {
+			t.Fatalf("expected pregnancy pause to suppress calendar predictions on %s, got %#v", dateString, day)
+		}
+	}
+}
+
 func TestBuildCalendarDayStatesOpensEditDirectlyForFutureEmptyDays(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)

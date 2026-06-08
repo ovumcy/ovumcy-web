@@ -75,7 +75,7 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	ovulationMap := make(map[string]bool)
 	tentativeOvulationMap := make(map[string]bool)
 
-	if DashboardPredictionDisabled(user) {
+	if DashboardPredictionDisabled(user) || stats.PregnancyPaused {
 		return predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, tentativeOvulationMap
 	}
 

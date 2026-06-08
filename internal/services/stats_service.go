@@ -53,6 +53,9 @@ func (service *StatsService) BuildCycleStatsForRange(user *models.User, from tim
 
 	stats := BuildCycleStats(logs, now)
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
+	if _, paused := ResolvePregnancyPause(logs); paused {
+		stats.PregnancyPaused = true
+	}
 	return stats, logs, nil
 }
 
