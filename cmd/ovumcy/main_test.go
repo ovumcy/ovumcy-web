@@ -648,6 +648,41 @@ func assertProxyRuntimeConfig(t *testing.T, config runtimeConfig) {
 	}
 }
 
+// TestLoadRuntimeConfigDefaultsAuditLogOff locks the privacy-first default:
+// when AUDIT_LOG_ENABLED is unset the runtime must NOT emit per-action audit
+// logs. This matches SECURITY.md, AI_CONTEXT.md, and .env.example, all of which
+// state audit logging is off by default. (The existing audit-flag test forces
+// the flag with SetAuditLogEnabled and does not exercise the startup default.)
+func TestLoadRuntimeConfigDefaultsAuditLogOff(t *testing.T) {
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_PATH", "data/ovumcy.db")
+	t.Setenv("AUDIT_LOG_ENABLED", "")
+
+	config, err := loadRuntimeConfig(time.UTC)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if config.AuditLogEnabled {
+		t.Fatal("AUDIT_LOG_ENABLED must default to false (off by default per SECURITY.md / AI_CONTEXT.md / .env.example)")
+	}
+}
+
+func TestLoadRuntimeConfigHonorsAuditLogEnabled(t *testing.T) {
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_PATH", "data/ovumcy.db")
+	t.Setenv("AUDIT_LOG_ENABLED", "true")
+
+	config, err := loadRuntimeConfig(time.UTC)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if !config.AuditLogEnabled {
+		t.Fatal("AUDIT_LOG_ENABLED=true must enable audit logging")
+	}
+}
+
 func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 	config := fiberConfig(proxySettings{
 		Enabled:        true,

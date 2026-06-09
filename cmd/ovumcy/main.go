@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -172,7 +173,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			APIWindow:            getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
 		},
 		Proxy:           proxy,
-		AuditLogEnabled: getEnvBool("AUDIT_LOG_ENABLED", true),
+		AuditLogEnabled: getEnvBool("AUDIT_LOG_ENABLED", false),
 	}, nil
 }
 
@@ -322,6 +323,7 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	appConfig := fiber.Config{
 		AppName:               "Ovumcy",
 		DisableStartupMessage: true,
+		ErrorHandler:          ovumcyErrorHandler,
 	}
 	if !proxy.Enabled {
 		return appConfig
@@ -331,6 +333,19 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	appConfig.EnableIPValidation = true
 	appConfig.TrustedProxies = proxy.TrustedProxies
 	return appConfig
+}
+
+// ovumcyErrorHandler is the top-level Fiber error handler. It preserves the
+// status and message of explicit *fiber.Error values (app-controlled and safe,
+// for example the 403 raised by the CSRF middleware) but never forwards a raw
+// error or recovered panic value to the client, since those can carry internal
+// detail such as table names, file paths, or driver messages.
+func ovumcyErrorHandler(c *fiber.Ctx, err error) error {
+	var fiberErr *fiber.Error
+	if errors.As(err, &fiberErr) {
+		return c.Status(fiberErr.Code).SendString(fiberErr.Message)
+	}
+	return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
 }
 
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {
