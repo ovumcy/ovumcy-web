@@ -1,6 +1,6 @@
 services:
   ovumcy:
-    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v0.8.5}
+    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v1.2.0}
     pull_policy: always
     container_name: ovumcy
     env_file:
@@ -53,7 +53,9 @@ services:
       retries: 3
       start_period: 20s
     ports:
-      - "8080:8080"
+      # Publish to loopback only by default (matches the repository-root compose).
+      # Override HOST_BIND_ADDRESS for intentional private-LAN access.
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
     restart: unless-stopped
 
 volumes:
