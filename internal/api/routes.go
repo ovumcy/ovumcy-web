@@ -36,7 +36,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	sessions := v1.Group("/sessions")
 	sessions.Post("", handler.Login)
 	sessions.Post("/2fa-challenge", handler.VerifyTOTPLogin)
-	sessions.Delete("/current", handler.AuthRequired, handler.Logout)
+	sessions.Delete("/current", handler.AuthRequired, handler.OwnerOnly, handler.Logout)
 
 	passwordResets := v1.Group("/password-resets")
 	passwordResets.Post("", handler.ForgotPassword)
