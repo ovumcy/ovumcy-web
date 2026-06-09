@@ -335,20 +335,24 @@ test.describe('Calendar page', () => {
     //   - user.TrackBBT is true
     //   - stats has a non-zero OvulationDate / NextPeriodStart
     //   - inferBBTOvulationDate finds no confirmed BBT signal in the cycle
-    // Onboard 20 days back so the predicted ovulation (cycleStart + 13d)
-    // sits in the past while the cycle is still current, enable TrackBBT
-    // through the tracking endpoint without logging any BBT, then assert
-    // the calendar grid surfaces at least one tentative dash and no
-    // confirmed ovulation dot in calendar day cells (the legend dots stay
-    // in their own .legend-item containers and are excluded).
+    // Onboard 13 days back so the predicted ovulation (cycleStart + 13d)
+    // lands on today. The calendar renders the current month, and its grid
+    // always contains today by construction, so the demoted dash is visible
+    // on every run date. (A past ovulation date can fall before the grid's
+    // leading edge during the first week of a month, and a future one can
+    // fall past the trailing edge at a month's end — today is the only
+    // anchor that is in-grid regardless of when the test runs.) Enable
+    // TrackBBT through the tracking endpoint without logging any BBT, then
+    // assert the demoted day carries a tentative dash and no confirmed dot.
     const creds = createCredentials('calendar-anovulatory-dash');
     await registerOwnerViaUI(page, creds);
     await expectInlineRegisterRecoveryStep(page);
     await readRecoveryCode(page);
     await continueFromRecoveryCode(page);
 
-    // Custom onboarding flow: anchor last_period_start at today-20 so the
-    // predicted cycle day 14 lies in the past.
+    // Custom onboarding flow: anchor last_period_start at today-13 so the
+    // predicted ovulation (cycle day 14) lands on today, keeping the demoted
+    // dash inside the current month's grid on any run date.
     const startISO = shiftISODate(
       await page.evaluate(() => {
         const now = new Date();
@@ -357,7 +361,7 @@ test.describe('Calendar page', () => {
         const dd = String(now.getDate()).padStart(2, '0');
         return `${yyyy}-${mm}-${dd}`;
       }),
-      -20,
+      -13,
     );
     const startInput = page.locator('#last-period-start');
     await expect(dateFieldRoot(startInput)).toBeVisible();
@@ -392,12 +396,18 @@ test.describe('Calendar page', () => {
     await page.goto('/calendar');
     await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
 
-    // Scope to calendar grid buttons only — the legend keeps a dot AND a
-    // dash for the icon row regardless of state.
-    const gridDashes = page.locator('button[data-day] .calendar-ovulation-dash');
-    const gridDots = page.locator('button[data-day] .calendar-ovulation-dot');
-    await expect(gridDashes.first()).toBeVisible();
-    await expect(gridDots).toHaveCount(0);
+    // The current cycle's predicted ovulation is demoted from a confirmed dot
+    // to a tentative dash. We deliberately do NOT assert zero ovulation dots
+    // across the whole grid: future predicted cycles legitimately paint a
+    // confirmed dot, and whether one lands inside the visible month depends on
+    // today's date (the next cycle's ovulation can fall in this month or the
+    // next). Assert the demotion precisely instead — the demoted day cell
+    // carries a dash and not a dot. tentativeOvulationMap is only ever populated
+    // by this BBT demotion, so the dashed cell is exactly that day. The legend
+    // keeps its own dot+dash icons inside .legend-item, excluded by data-day.
+    const demotedDay = page.locator('button[data-day]:has(.calendar-ovulation-dash)');
+    await expect(demotedDay.first()).toBeVisible();
+    await expect(demotedDay.first().locator('.calendar-ovulation-dot')).toHaveCount(0);
   });
 
   test('usage_goal setting flips the calendar root data-usage-goal attribute', async ({ page }) => {
