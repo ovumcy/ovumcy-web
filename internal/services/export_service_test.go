@@ -227,6 +227,24 @@ func TestExportServicePropagatesDependencyErrors(t *testing.T) {
 	}
 }
 
+func TestCsvPregnancyTestLabel(t *testing.T) {
+	cases := []struct {
+		value string
+		want  string
+	}{
+		{models.PregnancyTestPositive, "Positive"},
+		{models.PregnancyTestNegative, "Negative"},
+		{models.PregnancyTestNone, "None"},
+		{"bogus-value", "None"},
+		{"", "None"},
+	}
+	for _, testCase := range cases {
+		if got := csvPregnancyTestLabel(testCase.value); got != testCase.want {
+			t.Fatalf("csvPregnancyTestLabel(%q) = %q, want %q", testCase.value, got, testCase.want)
+		}
+	}
+}
+
 func mustParseExportDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)

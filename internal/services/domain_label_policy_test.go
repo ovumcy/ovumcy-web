@@ -17,6 +17,16 @@ func TestDomainLabelPolicy(t *testing.T) {
 		t.Fatalf("expected none flow key, got %q", got)
 	}
 
+	if got := PregnancyTestTranslationKey("negative"); got != "dashboard.pregnancy_test.negative" {
+		t.Fatalf("expected negative pregnancy test key, got %q", got)
+	}
+	if got := PregnancyTestTranslationKey("positive"); got != "dashboard.pregnancy_test.positive" {
+		t.Fatalf("expected positive pregnancy test key, got %q", got)
+	}
+	if got := PregnancyTestTranslationKey("unexpected"); got != "dashboard.pregnancy_test.none" {
+		t.Fatalf("expected none pregnancy test key, got %q", got)
+	}
+
 	if got := RoleTranslationKey("owner"); got != "role.owner" {
 		t.Fatalf("expected owner role key, got %q", got)
 	}
