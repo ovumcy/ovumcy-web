@@ -8,6 +8,7 @@ import (
 
 const (
 	maxSymptomNameLength = 40
+	maxSymptomIconLength = 16
 	defaultSymptomIcon   = "✨"
 	defaultSymptomColor  = "#E8799F"
 )
@@ -39,12 +40,23 @@ func normalizeSymptomSpacing(raw string) string {
 	return strings.TrimSpace(strings.Join(fields, " "))
 }
 
-func normalizeSymptomIconInput(raw string) string {
+// normalizeSymptomIconInput trims and validates a custom symptom icon. Empty
+// input falls back to the default icon. Like the name and display-name label
+// policy, markup-like ("<"/">") and control characters are rejected (not
+// stripped), and the icon is length-bounded. Errors reuse the symptom-name
+// error values so this rarely-hit (API-only) edge needs no new i18n keys.
+func normalizeSymptomIconInput(raw string) (string, error) {
 	icon := strings.TrimSpace(strings.ToValidUTF8(raw, ""))
 	if icon == "" {
-		return defaultSymptomIcon
+		return defaultSymptomIcon, nil
 	}
-	return icon
+	if utf8.RuneCountInString(icon) > maxSymptomIconLength {
+		return "", ErrSymptomNameTooLong
+	}
+	if containsInvalidPlainTextLabelRune(icon) {
+		return "", ErrSymptomNameInvalidCharacters
+	}
+	return icon, nil
 }
 
 func normalizeSymptomColorInput(raw string) (string, error) {

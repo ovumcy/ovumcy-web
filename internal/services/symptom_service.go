@@ -315,7 +315,10 @@ func (service *SymptomService) normalizeCustomSymptomInput(userID uint, excludeI
 	if err != nil {
 		return models.SymptomType{}, err
 	}
-	normalizedIcon := normalizeSymptomIconInput(icon)
+	normalizedIcon, err := normalizeSymptomIconInput(icon)
+	if err != nil {
+		return models.SymptomType{}, err
+	}
 
 	if err := service.ensureSymptomNameAvailable(userID, excludeID, normalizedName); err != nil {
 		return models.SymptomType{}, err
