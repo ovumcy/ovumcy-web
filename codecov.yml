@@ -13,7 +13,11 @@ coverage:
         informational: false
     patch:
       default:
-        target: auto
+        # Require every modified, coverable line in a PR to be covered by tests
+        # ("All modified and coverable lines are covered by tests"). Genuinely
+        # unreachable lines can be excluded inline with a `// codecov:ignore`
+        # comment rather than lowering this gate.
+        target: 100%
         threshold: 0%
         informational: false
 
