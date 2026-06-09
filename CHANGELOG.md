@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-09
+
 ### Added
 
 - **Pregnancy test day field.** An always-shown day field (`none` / `negative` / `positive`) in the dashboard and calendar day editors. A positive test with no later cycle start pauses cycle predictions until a new period is logged. The field is part of the `/api/v1/days` payload (`docs/openapi.yaml`) and the owner CSV and JSON exports (`docs/export.md`); the CSV column is appended at the end so existing column positions stay stable.
+
+### Security
+
+- **All `/api/v1` read endpoints are now owner-gated.** `GET /users/current`, `/days`, `/days/:date`, and `/stats/overview` chain `handler.OwnerOnly` after `AuthRequired`, matching every mutation. Behavior-neutral for the single-role (owner) product — `AuthRequired` already rejects any non-owner role — closing a defense-in-depth uniformity gap.
+- **Security documentation corrected to match the code.** Recovery codes are 12 base32-style characters (~60 bits of entropy), not "12 hex / 48 bits"; the documented CSP now includes `manifest-src 'self'`; the `/auth/oidc` rate-limit row and the companion security headers (COOP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, HSTS) are documented; the web product is clarified as single-role (owner).
+
+### Internal
+
+- Raised `internal/security` OIDC config-validation and `internal/db` repository test coverage (token/state TTL, daily-log read whitelist, symptom owner-scoping).
 
 ## [1.1.1] - 2026-06-07
 
@@ -457,7 +468,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/ovumcy/ovumcy-web/compare/v0.9.5...v1.0.0
