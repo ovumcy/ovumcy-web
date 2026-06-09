@@ -71,6 +71,29 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  race:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go test with race detector
+        # CGO is required for the race detector; the production image stays
+        # CGO_ENABLED=0. This catches data races in shared in-memory state
+        # (rate-limiter maps, caches) that the CGO-disabled suite cannot.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
   coverage-upload:
     runs-on: ubuntu-latest
     needs:
