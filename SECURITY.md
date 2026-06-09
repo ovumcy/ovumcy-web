@@ -168,9 +168,9 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 
 - Deletes every `daily_logs` row for the user.
 - Deletes every `symptom_types` row for the user (including built-ins).
-- Deletes the `users` row itself, which cascades to `oidc_identities` via the `ON DELETE CASCADE` foreign key.
+- Deletes every `oidc_identities` and `register_pickup_tokens` row for the user explicitly, then deletes the `users` row itself. `oidc_identities` also carries `ON DELETE CASCADE`, but the deletion is performed explicitly so erasure stays complete even if foreign-key enforcement is ever disabled, and so `register_pickup_tokens` (which has no foreign key) is removed rather than left to expire.
 
-Auxiliary short-lived tables (`register_pickup_tokens`, `oidc_logout_states`) are not joined to `users.id`. They expire on their own TTL (≤5 minutes for pickup, provider-driven for logout state); any rows referencing the deleted account become unreachable and are pruned in the normal sweep.
+The `oidc_logout_states` table is not joined to `users.id`; it carries only a short-lived provider-driven logout reference that becomes unreachable and is pruned on its own TTL.
 
 Both operations require the current password through `validateSettingsActionPassword`. OIDC-only accounts must enrol a local password through the step-up re-auth flow before either danger-zone action becomes available.
 
