@@ -1,3 +1,6 @@
+// Tailwind scans the Go HTML templates and handler markup listed under
+// `content` for utility classes (these globs drive purge). The stylesheet is
+// built by scripts/build-css.mjs into web/static/css/tailwind.css.
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
