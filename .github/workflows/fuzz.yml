@@ -1,0 +1,49 @@
+name: Fuzz
+
+on:
+  schedule:
+    # Sundays 15:00 Europe/Moscow (12:00 UTC). Adjust for your timezone.
+    - cron: "0 12 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - FuzzParseDayDate
+          - FuzzParseDayRange
+          - FuzzValidatePasswordStrength
+          - FuzzNormalizeAuthEmail
+          - FuzzNormalizeRecoveryCode
+          - FuzzSanitizeOnboardingCycleAndPeriod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Fuzz ${{ matrix.target }}
+        # -run '^$' skips unit tests; -fuzz runs only the matrix target for 3m.
+        run: go test ./internal/services/ -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime=3m
+
+      - name: Upload crashers
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: fuzz-crashers-${{ matrix.target }}
+          path: internal/services/testdata/fuzz/
+          if-no-files-found: ignore
+          retention-days: 7
