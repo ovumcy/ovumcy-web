@@ -10,6 +10,11 @@ func SanitizeRedirectPath(raw string, fallback string) string {
 	if candidate == "" {
 		return fallback
 	}
+	// Reject CR/LF so a crafted next-path can never split a Location or
+	// HX-Redirect header (defence-in-depth; the HTTP layer also strips these).
+	if strings.ContainsAny(candidate, "\r\n") {
+		return fallback
+	}
 	if !strings.HasPrefix(candidate, "/") {
 		return fallback
 	}
