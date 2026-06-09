@@ -14,7 +14,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	users.Post("", handler.Register)
 
 	usersCurrent := users.Group("/current", handler.AuthRequired)
-	usersCurrent.Get("", handler.GetCurrentUser)
+	usersCurrent.Get("", handler.OwnerOnly, handler.GetCurrentUser)
 	usersCurrent.Delete("", handler.OwnerOnly, handler.DeleteAccount)
 	usersCurrent.Patch("/profile", handler.OwnerOnly, handler.UpdateProfile)
 	usersCurrent.Patch("/interface", handler.OwnerOnly, handler.UpdateInterfaceSettings)
@@ -43,10 +43,10 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	passwordResets.Post("/redeem", handler.ResetPassword)
 
 	days := v1.Group("/days", handler.AuthRequired)
-	days.Get("", handler.GetDays)
+	days.Get("", handler.OwnerOnly, handler.GetDays)
 	days.Delete("", handler.OwnerOnly, handler.DeleteDailyLog)
 	days.Head("/:date", handler.OwnerOnly, handler.CheckDayExists)
-	days.Get("/:date", handler.GetDay)
+	days.Get("/:date", handler.OwnerOnly, handler.GetDay)
 	days.Put("/:date", handler.OwnerOnly, handler.UpsertDay)
 	days.Delete("/:date", handler.OwnerOnly, handler.DeleteDay)
 	days.Post("/:date/cycle-start", handler.OwnerOnly, handler.MarkCycleStart)
@@ -59,7 +59,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	symptoms.Post("/:id/restore", handler.OwnerOnly, handler.RestoreSymptom)
 
 	stats := v1.Group("/stats", handler.AuthRequired)
-	stats.Get("/overview", handler.GetStatsOverview)
+	stats.Get("/overview", handler.OwnerOnly, handler.GetStatsOverview)
 
 	exports := v1.Group("/exports", handler.AuthRequired, handler.OwnerOnly)
 	exports.Get("/summary", handler.ExportSummary)
