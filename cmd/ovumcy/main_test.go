@@ -888,6 +888,51 @@ func TestLogStartupDoesNotLogForgotPasswordRateLimitDetail(t *testing.T) {
 	}
 }
 
+func TestProxyHeaderRateLimitWarning(t *testing.T) {
+	tests := []struct {
+		name     string
+		proxy    proxySettings
+		wantWarn bool
+	}{
+		{name: "trust proxy with X-Forwarded-For warns", proxy: proxySettings{Enabled: true, Header: "X-Forwarded-For"}, wantWarn: true},
+		{name: "case/space insensitive header warns", proxy: proxySettings{Enabled: true, Header: " x-forwarded-for "}, wantWarn: true},
+		{name: "trust proxy with X-Real-IP is safe", proxy: proxySettings{Enabled: true, Header: "X-Real-IP"}, wantWarn: false},
+		{name: "disabled trust proxy never warns", proxy: proxySettings{Enabled: false, Header: "X-Forwarded-For"}, wantWarn: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := proxyHeaderRateLimitWarning(tc.proxy)
+			if tc.wantWarn && got == "" {
+				t.Fatal("expected a spoofable-header warning, got none")
+			}
+			if !tc.wantWarn && got != "" {
+				t.Fatalf("expected no warning, got %q", got)
+			}
+		})
+	}
+}
+
+func TestLogStartupWarnsOnSpoofableProxyHeader(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	logStartup(runtimeConfig{
+		Location: time.UTC,
+		Port:     "8080",
+		Proxy: proxySettings{
+			Enabled: true,
+			Header:  "X-Forwarded-For",
+		},
+	})
+
+	if !strings.Contains(output.String(), "PROXY_HEADER=X-Forwarded-For") {
+		t.Fatalf("expected spoofable-proxy-header warning in startup log, got %q", output.String())
+	}
+}
+
 func TestTryRunCLICommandWithHandlersDispatchesUsersCommand(t *testing.T) {
 	t.Setenv("DB_DRIVER", "sqlite")
 	t.Setenv("DB_PATH", filepath.Join(t.TempDir(), "cli-users.db"))

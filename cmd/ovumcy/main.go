@@ -464,9 +464,25 @@ func logStartup(config runtimeConfig) {
 	if config.Proxy.Enabled {
 		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", config.Proxy.Header, len(config.Proxy.TrustedProxies))
 	}
+	if warning := proxyHeaderRateLimitWarning(config.Proxy); warning != "" {
+		log.Printf("%s", warning)
+	}
 	if !config.CookieSecure {
 		log.Printf("WARNING: COOKIE_SECURE=false — auth cookies are sent without the Secure flag and can be intercepted over plain HTTP. Set COOKIE_SECURE=true when serving over HTTPS (directly or behind a TLS-terminating proxy).")
 	}
+}
+
+// proxyHeaderRateLimitWarning returns a non-empty operator warning when trust-
+// proxy is enabled but PROXY_HEADER resolves to X-Forwarded-For. Behind a proxy
+// that appends to X-Forwarded-For, fiber's c.IP() returns the leftmost (client-
+// supplied) token, so the per-IP rate-limit key becomes attacker-rotatable.
+// PROXY_HEADER should name a header the proxy overwrites with the real client
+// IP (for example X-Real-IP).
+func proxyHeaderRateLimitWarning(proxy proxySettings) string {
+	if proxy.Enabled && strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor) {
+		return "WARNING: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the per-IP rate limiter keys on the leftmost X-Forwarded-For entry, which a client can spoof behind an appending proxy. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP)."
+	}
+	return ""
 }
 
 func buildRevision() string {
