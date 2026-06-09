@@ -261,7 +261,7 @@ For production-style setups:
 Requirements:
 
 - Go 1.26+
-- Node.js 18+
+- Node.js 22+
 
 ```bash
 git clone https://github.com/ovumcy/ovumcy-web.git

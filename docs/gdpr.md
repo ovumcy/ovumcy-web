@@ -85,7 +85,7 @@ For GDPR Art. 32 (security of processing), operators must add filesystem- or vol
 Operational rules:
 
 1. Generate `SECRET_KEY` with at least 32 bytes of cryptographically secure randomness — `openssl rand -hex 32` or equivalent. Ovumcy refuses placeholder values like `change_me_in_production` at startup.
-2. Store the secret separately from the data backup. Restoring data with a different key invalidates auth cookies and breaks 2FA. The backup/restore split is documented in [`.agents/context/deployment.md`](.) (see also `docs/self-hosted.md`).
+2. Store the secret separately from the data backup. Restoring data with a different key invalidates auth cookies and breaks 2FA. The backup/restore split is documented in [`docs/self-hosted.md`](self-hosted.md).
 3. Rotation impact on TOTP-enabled accounts is documented in [`SECURITY.md → SECRET_KEY Usage Map`](../SECURITY.md#secret_key-usage-map). Plan rotation as planned maintenance and communicate it in advance.
 
 ## Records of Processing (Art. 30)

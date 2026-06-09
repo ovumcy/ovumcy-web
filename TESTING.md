@@ -16,7 +16,7 @@ worth anything. Every claim here is backed by code in the repository and by CI.
 | **Fuzz** | Robustness of parsers/validators against arbitrary/invalid input | `internal/services/policy_fuzz_test.go` (native Go fuzzing) |
 | **Reference vectors** | Cycle predictions match the documented algorithm, number for number | `internal/services/cycles_reference_test.go` |
 
-Currently **1,375+ Go test functions** across `internal/` and **24 Playwright
+Currently **1,375+ Go test functions** across `internal/` and **25 Playwright
 specs** (run on three browser engines). Tests favor behavior and persisted state
 over markup or implementation details.
 
@@ -69,7 +69,7 @@ go test ./...
 go test ./internal/services/ -run '^$' -fuzz FuzzParseDayDate -fuzztime 30s
 
 # End-to-end (Playwright)
-npm run test:e2e
+npm run e2e
 
 # Mutation testing (slow; local or nightly)
 bash scripts/mutation.sh baseline

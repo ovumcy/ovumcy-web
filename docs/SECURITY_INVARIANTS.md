@@ -13,7 +13,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 ## Role and access control
 
 - Every state-mutating `/api/v1/*` endpoint **must** chain `handler.OwnerOnly` after `handler.AuthRequired`, even though `AuthRequired` already rejects unsupported roles via `ErrAuthUnsupportedRole`. The matrix test `TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route` in `internal/api/owner_only_coverage_regression_test.go` walks every registered route and fails when a non-public mutation accepts an unsupported-role auth cookie.
-- Only the `RoleOwner` role is supported on the web product path. Legacy `partner` / `viewer` roles are rejected by `AuthRequired`; do not add user-facing flows for them.
+- Only the `RoleOwner` role exists on the web product path — every account is created as `owner`, and `AuthRequired` rejects any non-owner role via `ErrAuthUnsupportedRole`. Do not introduce other roles or user-facing flows for them.
 - Every per-user query at the repository layer filters by `user_id`. There are no path parameters carrying numeric user identifiers — handlers always read the current user from `c.Locals("currentUser")`.
 - Input DTOs in `internal/api/input_types.go` are strictly bounded. They never expose `Role`, `AuthSessionVersion`, `MustChangePassword`, `TOTPSecret`, or `RecoveryCodeHash` to client-supplied bodies.
 
@@ -46,8 +46,9 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 
 ## Content Security Policy
 
-- The CSP shipped from `cmd/ovumcy/main.go` is `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'`. Do not introduce `unsafe-inline`, `unsafe-eval`, `data:` outside `img-src`, or `*` in any directive.
+- The CSP shipped from `cmd/ovumcy/main.go` is `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'`. Do not introduce `unsafe-inline`, `unsafe-eval`, `data:` outside `img-src`, or `*` in any directive.
 - Templates must not contain inline `<script>` blocks, inline event handlers (`onclick=`, `onload=`, …), inline style attributes, or `javascript:` URLs.
+- The same `securityHeadersMiddleware` (`cmd/ovumcy/main.go`) sets these companion headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (geolocation/camera/microphone/payment/usb/… all `()`), `Cross-Origin-Opener-Policy: same-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` (when `COOKIE_SECURE=true`).
 
 ## GDPR (Art. 6, 9, 13, 15–22, 30, 32, 33)
 

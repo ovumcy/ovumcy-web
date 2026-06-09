@@ -141,6 +141,7 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 - Period: `is_period`, `cycle_start`, `is_uncertain`, `flow` (`none|spotting|light|medium|heavy`).
 - Wellbeing: `mood` (signed scale), `sex_activity` (`none|protected|unprotected`), `bbt` (float, unit selected per account), `cervical_mucus` (`none|dry|moist|creamy|eggwhite`), `pregnancy_test` (`none|negative|positive`).
 - `cycle_factor_keys` (JSON list), `symptom_ids` (JSON list, references owner-managed symptoms), `notes` (free text).
+- The string value domains listed above (`flow`, `sex_activity`, `cervical_mucus`, `pregnancy_test`) are normalized and validated in `internal/services`, not by DB `CHECK` constraints — the columns are plain `TEXT`. (An early `flow` `CHECK` omitted `spotting` and was dropped in migration 003.)
 
 **`symptom_types`** — owner-managed symptom catalog with archive support: `name`, `icon`, `color`, `is_builtin`, soft-archive flag.
 
@@ -183,7 +184,7 @@ Both operations require the current password through `validateSettingsActionPass
 
 **Recovery codes:**
 
-- Shape: `OVUM-XXXX-XXXX-XXXX`, 12 hex characters generated from 48 bits of `crypto/rand` (≈48 bits of effective entropy).
+- Shape: `OVUM-XXXX-XXXX-XXXX`, 12 characters drawn uniformly via `crypto/rand` from a 32-symbol Crockford-style base32 alphabet (`A`–`Z` without `I`/`O`, digits `2`–`9`) — 60 bits of effective entropy (`GenerateRecoveryCode`, `internal/services/auth_reset_policy.go`).
 - Storage: bcrypt-hashed in `users.recovery_code_hash`. The plaintext is shown to the user exactly once at issuance and is never retrievable server-side afterwards.
 - Online guessing is bounded by the per-account rate limiter (`Rate Limits`, below); the bcrypt cost bounds offline guessing if the database and `SECRET_KEY` leak together.
 
@@ -207,6 +208,7 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `POST /api/v1/sessions` | 8 requests / 15 minutes | `RATE_LIMIT_LOGIN_MAX`, `RATE_LIMIT_LOGIN_WINDOW` |
 | `POST /api/v1/users` | 8 requests / 15 minutes | `RATE_LIMIT_REGISTER_MAX`, `RATE_LIMIT_REGISTER_WINDOW` |
 | `POST /api/v1/password-resets` | 8 requests / 1 hour | `RATE_LIMIT_FORGOT_PASSWORD_MAX`, `RATE_LIMIT_FORGOT_PASSWORD_WINDOW` |
+| `/auth/oidc/*` (OIDC sign-in) | 8 requests / 15 minutes | shares `RATE_LIMIT_LOGIN_MAX`, `RATE_LIMIT_LOGIN_WINDOW` |
 | `DELETE /api/v1/sessions/current` | 60 requests / 15 minutes | `RATE_LIMIT_LOGOUT_MAX`, `RATE_LIMIT_LOGOUT_WINDOW` |
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 
