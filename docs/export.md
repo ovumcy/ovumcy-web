@@ -33,6 +33,7 @@ Response body:
       "sex_activity": "protected",
       "bbt": 36.7,
       "cervical_mucus": "creamy",
+      "pregnancy_test": "negative",
       "cycle_factors": ["stress", "travel"],
       "symptoms": {
         "cramps": true,
@@ -71,6 +72,7 @@ Field semantics:
 | `sex_activity` | string | One of `none`, `protected`, `unprotected`. |
 | `bbt` | float | Basal body temperature in the unit selected per account (°C or °F). Zero means unset. |
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
+| `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
 | `cycle_factors` | array of strings | Free-form factor keys recorded that day (e.g. `stress`, `travel`, `illness`). |
 | `symptoms` | object of booleans | Flags for the 15 built-in symptoms. Always present, even when all false. |
 | `other_symptoms` | array of strings | Names of owner-managed custom symptoms recorded that day. |
@@ -93,7 +95,7 @@ Columns (in order, single header row):
 Date, Period, Flow, Mood rating, Sex activity, BBT (C), Cervical mucus,
 Cramps, Headache, Acne, Mood, Bloating, Fatigue, Breast tenderness,
 Back pain, Nausea, Spotting, Irritability, Insomnia, Food cravings,
-Diarrhea, Constipation, Cycle factors, Other, Notes
+Diarrhea, Constipation, Cycle factors, Other, Notes, Pregnancy test
 ```
 
 Cell semantics:
@@ -105,6 +107,7 @@ Cell semantics:
 - `Cycle factors` is a `;`-separated list of factor keys; empty when none were recorded.
 - `Other` is a `;`-separated list of owner-managed custom symptom names; empty when none.
 - `Notes` is the free-text note; the CSV writer quotes the cell as needed.
+- `Pregnancy test` is one of `none`, `negative`, `positive`. It is the last column: introduced after the 1.1.1 layout and appended at the end so existing column positions stay stable, per the stability rule below.
 
 ## Summary Export
 

@@ -347,6 +347,10 @@ components:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]
           default: none
+        pregnancy_test:
+          type: string
+          enum: [none, negative, positive]
+          default: none
         cycle_factor_keys:
           type: array
           items: { type: string }
@@ -367,7 +371,7 @@ components:
       description: |
         A persisted day record. `date` is stored as UTC midnight on disk and
         rendered in the caller's timezone at read time.
-      required: [id, user_id, date, is_period, flow, mood, sex_activity, bbt, cervical_mucus]
+      required: [id, user_id, date, is_period, flow, mood, sex_activity, bbt, cervical_mucus, pregnancy_test]
       properties:
         id:
           type: integer
@@ -394,6 +398,9 @@ components:
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]
+        pregnancy_test:
+          type: string
+          enum: [none, negative, positive]
         cycle_factor_keys:
           type: array
           items: { type: string }

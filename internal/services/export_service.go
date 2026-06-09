@@ -19,7 +19,6 @@ var ExportCSVHeaders = []string{
 	"Sex activity",
 	"BBT (C)",
 	"Cervical mucus",
-	"Pregnancy test",
 	"Cramps",
 	"Headache",
 	"Acne",
@@ -38,6 +37,7 @@ var ExportCSVHeaders = []string{
 	"Cycle factors",
 	"Other",
 	"Notes",
+	"Pregnancy test",
 }
 
 var exportSymptomColumnsByName = map[string]string{
@@ -301,7 +301,6 @@ func (row ExportCSVRow) Columns() []string {
 		row.SexActivity,
 		csvBBTValue(row.BBT),
 		row.CervicalMucus,
-		row.PregnancyTest,
 		csvYesNo(row.Symptoms.Cramps),
 		csvYesNo(row.Symptoms.Headache),
 		csvYesNo(row.Symptoms.Acne),
@@ -320,6 +319,7 @@ func (row ExportCSVRow) Columns() []string {
 		cycleFactors,
 		otherSymptoms,
 		notes,
+		row.PregnancyTest,
 	}
 }
 
