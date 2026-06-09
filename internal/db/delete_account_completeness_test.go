@@ -83,3 +83,62 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		}
 	}
 }
+
+// TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError exercises the
+// error-return branches added for the explicit oidc_identities and
+// register_pickup_tokens deletes: when one child delete fails mid-transaction,
+// the whole erasure must roll back so the account is not left half-deleted.
+func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		dropTable string
+	}{
+		{name: "register_pickup_tokens delete fails", dropTable: "register_pickup_tokens"},
+		{name: "oidc_identities delete fails", dropTable: "oidc_identities"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			database, err := OpenSQLite(filepath.Join(dir, "delerr.db"))
+			if err != nil {
+				t.Fatalf("open sqlite: %v", err)
+			}
+			t.Cleanup(func() {
+				if sqlDB, err := database.DB(); err == nil {
+					_ = sqlDB.Close()
+				}
+			})
+			repos := NewRepositories(database)
+			user := &models.User{
+				Email:            "delerr@example.com",
+				PasswordHash:     "hash",
+				RecoveryCodeHash: "recovery",
+				Role:             models.RoleOwner,
+				CycleLength:      models.DefaultCycleLength,
+				PeriodLength:     models.DefaultPeriodLength,
+				AutoPeriodFill:   true,
+				CreatedAt:        time.Now().UTC(),
+			}
+			if err := repos.Users.Create(user); err != nil {
+				t.Fatalf("create user: %v", err)
+			}
+
+			// Drop a child table so its delete inside the transaction errors,
+			// hitting the error-return branch and forcing a rollback.
+			if err := database.Exec("DROP TABLE " + tc.dropTable).Error; err != nil {
+				t.Fatalf("drop %s: %v", tc.dropTable, err)
+			}
+
+			if err := repos.Users.DeleteAccountAndRelatedData(user.ID); err == nil {
+				t.Fatal("expected an error when a child-table delete fails, got nil")
+			}
+
+			var usersLeft int64
+			if err := database.Model(&models.User{}).Where("id = ?", user.ID).Count(&usersLeft).Error; err != nil {
+				t.Fatalf("count users: %v", err)
+			}
+			if usersLeft != 1 {
+				t.Fatalf("transaction must roll back on delete error; user rows = %d, want 1", usersLeft)
+			}
+		})
+	}
+}

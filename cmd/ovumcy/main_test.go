@@ -755,6 +755,47 @@ func TestSecurityHeadersMiddlewareAddsHSTSWhenSecureCookiesEnabled(t *testing.T)
 	assertDefaultSecurityHeaders(t, response, true)
 }
 
+func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
+	app := fiber.New(fiber.Config{ErrorHandler: ovumcyErrorHandler})
+	app.Get("/fiber-error", func(c *fiber.Ctx) error {
+		return fiber.ErrForbidden
+	})
+	app.Get("/raw-error", func(c *fiber.Ctx) error {
+		return errors.New("internal users table secret column leaked")
+	})
+
+	fiberErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/fiber-error", nil), -1)
+	if err != nil {
+		t.Fatalf("fiber-error request failed: %v", err)
+	}
+	defer fiberErrResp.Body.Close()
+	if fiberErrResp.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("fiber.Error status = %d, want 403", fiberErrResp.StatusCode)
+	}
+	fiberBody := new(bytes.Buffer)
+	_, _ = fiberBody.ReadFrom(fiberErrResp.Body)
+	if fiberBody.String() != "Forbidden" {
+		t.Fatalf("fiber.Error body = %q, want %q (status/message preserved)", fiberBody.String(), "Forbidden")
+	}
+
+	rawErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/raw-error", nil), -1)
+	if err != nil {
+		t.Fatalf("raw-error request failed: %v", err)
+	}
+	defer rawErrResp.Body.Close()
+	if rawErrResp.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("raw error status = %d, want 500", rawErrResp.StatusCode)
+	}
+	rawBody := new(bytes.Buffer)
+	_, _ = rawBody.ReadFrom(rawErrResp.Body)
+	if rawBody.String() != "Internal Server Error" {
+		t.Fatalf("raw error body = %q, want generic message", rawBody.String())
+	}
+	if strings.Contains(rawBody.String(), "secret column leaked") {
+		t.Fatalf("raw error body leaked internal detail: %q", rawBody.String())
+	}
+}
+
 func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
 	registerStaticContentTypes()
 
