@@ -21,5 +21,11 @@ coverage:
         threshold: 0%
         informational: false
 
+# Tooling and test-only helpers are excluded from coverage reporting, matching
+# the in-CI scripts/patchcov gate. These are not product code.
+ignore:
+  - "scripts"
+  - "internal/testdb"
+
 github_checks:
   annotations: true
