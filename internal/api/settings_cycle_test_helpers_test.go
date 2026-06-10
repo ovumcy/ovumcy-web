@@ -37,7 +37,7 @@ func submitSettingsCycleUpdate(t *testing.T, app *fiber.App, authCookie string, 
 func assertSettingsCycleHTMXSuccess(t *testing.T, body string) {
 	t.Helper()
 
-	if !strings.Contains(body, "status-ok") {
+	if htmlElementByTagAndClass(mustParseHTMLDocument(t, body), "div", "status-ok") == nil {
 		t.Fatalf("expected htmx success status markup")
 	}
 }
