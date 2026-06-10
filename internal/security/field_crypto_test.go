@@ -161,3 +161,18 @@ func TestDecryptField_LegacyFallback(t *testing.T) {
 		t.Fatal("isLegacy must be true when opening a pre-aad ciphertext via the fallback path")
 	}
 }
+
+// TestDecryptField_RejectsTooShortCiphertext pins the length-boundary guard: a
+// payload shorter than the GCM nonce can never carry a valid nonce+tag and must
+// be rejected with an error rather than panicking on an out-of-range slice. The
+// inputs are valid base64url so they reach the length check (not the decode
+// guard).
+func TestDecryptField_RejectsTooShortCiphertext(t *testing.T) {
+	key := []byte("a-sufficiently-long-test-secret!")
+	aad := []byte("ovumcy.field.test:42")
+	for _, short := range []string{"", "AA", "AAAA"} {
+		if _, _, err := DecryptField(short, key, aad); err == nil {
+			t.Fatalf("DecryptField(%q) must reject a too-short ciphertext", short)
+		}
+	}
+}

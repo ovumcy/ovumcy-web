@@ -1,6 +1,7 @@
 package api
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -138,4 +139,25 @@ func isOpaqueRequestLogSegment(segment string) bool {
 		}
 	}
 	return true
+}
+
+var (
+	logEmailPattern       = regexp.MustCompile(`[^\s@]+@[^\s@]+`)
+	logOpaqueTokenPattern = regexp.MustCompile(`[A-Za-z0-9_-]{24,}`)
+)
+
+// SafeLogError renders a chain error for the request log with PII/secret-shaped
+// substrings masked, mirroring SafeRequestLogPath for the ${request_path} tag.
+// Handlers currently return only nil or generic *fiber.Error values (verified:
+// no handler returns a raw fmt.Errorf carrying user input), so this is
+// defense-in-depth: a future handler that does cannot leak an email or opaque
+// token into the always-on Fiber request log.
+func SafeLogError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	msg = logEmailPattern.ReplaceAllString(msg, ":email")
+	msg = logOpaqueTokenPattern.ReplaceAllString(msg, ":token")
+	return msg
 }

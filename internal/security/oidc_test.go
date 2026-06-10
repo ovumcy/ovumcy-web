@@ -148,3 +148,75 @@ Al6FYKyHksUwdVrLUsSoFtlfM7w8UhjdXDF/fvAvqvwWm9bPVCahEg==
 		t.Fatalf("expected valid OIDC CA file to pass validation, got %v", err)
 	}
 }
+
+// TestOIDCConfigAllowsAutoProvisionBranches pins the branches the single
+// allowlist test left uncovered: auto-provision disabled, an empty allowlist
+// (permits any verified email but still rejects a blank one), and malformed
+// emails under a non-empty allowlist. Auto-provisioning is a security-relevant
+// gate, so each decision must be asserted, not just the happy/denied domain.
+func TestOIDCConfigAllowsAutoProvisionBranches(t *testing.T) {
+	// AutoProvision disabled always denies, even for an allowlisted domain.
+	off := OIDCConfig{Enabled: true, AutoProvision: false, AutoProvisionAllowedDomains: []string{"example.com"}}
+	if off.AllowsAutoProvision("owner@example.com") {
+		t.Fatal("auto-provision disabled must deny")
+	}
+
+	// Empty allowlist permits any non-empty email but still rejects a blank one.
+	open := OIDCConfig{Enabled: true, AutoProvision: true}
+	if !open.AllowsAutoProvision("owner@anything.example") {
+		t.Fatal("empty allowlist must permit any domain")
+	}
+	if open.AllowsAutoProvision("   ") {
+		t.Fatal("blank email must be denied even with an empty allowlist")
+	}
+
+	// Non-empty allowlist rejects malformed emails (no domain to match).
+	restricted := OIDCConfig{Enabled: true, AutoProvision: true, AutoProvisionAllowedDomains: []string{"example.com"}}
+	for _, bad := range []string{"no-at-sign", "trailing@"} {
+		if restricted.AllowsAutoProvision(bad) {
+			t.Fatalf("malformed email %q must be denied under an allowlist", bad)
+		}
+	}
+}
+
+// TestOIDCConfigProviderLogoutEnabled pins the logout-mode predicate that
+// decides whether logout redirects to the provider's end-session endpoint.
+func TestOIDCConfigProviderLogoutEnabled(t *testing.T) {
+	cases := []struct {
+		mode OIDCLogoutMode
+		want bool
+	}{
+		{OIDCLogoutModeProvider, true},
+		{OIDCLogoutModeAuto, true},
+		{OIDCLogoutModeLocal, false},
+	}
+	for _, tc := range cases {
+		if got := (OIDCConfig{LogoutMode: tc.mode}).ProviderLogoutEnabled(); got != tc.want {
+			t.Fatalf("ProviderLogoutEnabled(%q) = %v, want %v", tc.mode, got, tc.want)
+		}
+	}
+}
+
+// TestValidateDiscoveredJWKSURI pins the jwks_uri origin check: same-origin and
+// empty pass; cross-origin or non-https (the SSRF vectors) are rejected before
+// go-oidc ever fetches the key set.
+func TestValidateDiscoveredJWKSURI(t *testing.T) {
+	const issuer = "https://id.example.com"
+
+	if err := validateDiscoveredJWKSURI("https://id.example.com/keys", issuer); err != nil {
+		t.Fatalf("same-origin jwks_uri must pass: %v", err)
+	}
+	if err := validateDiscoveredJWKSURI("", issuer); err != nil {
+		t.Fatalf("empty jwks_uri must defer to go-oidc, not error here: %v", err)
+	}
+	for _, bad := range []string{
+		"https://evil.example.net/keys", // cross-host
+		"http://id.example.com/keys",    // non-https
+		"https://169.254.169.254/keys",  // internal/metadata host
+		"https://id.example.com:8443/keys", // cross-port
+	} {
+		if err := validateDiscoveredJWKSURI(bad, issuer); err == nil {
+			t.Fatalf("jwks_uri %q must be rejected", bad)
+		}
+	}
+}

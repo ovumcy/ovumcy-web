@@ -9,55 +9,25 @@ import (
 	"testing"
 )
 
+// TestLanguageSwitchSetsCookieAndRendersLocalizedLogin verifies the language
+// switch as a backend contract: POST /lang sets the locale cookie, redirects
+// back to the requested path, and the subsequent login render carries the
+// matching <html lang="..."> attribute. Per the backend HTML regression
+// contract (.agents/context/security.md), exact localized phrasing is a
+// Playwright concern (e2e/navigation-language.spec.ts) and is intentionally not
+// asserted here — only the structural locale wiring.
 func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 	tests := []struct {
-		name               string
-		switchLanguage     string
-		expectedCookie     string
-		expectedHTMLLang   string
-		expectedTitle      string
-		expectedHelperText string
+		name             string
+		switchLanguage   string
+		expectedCookie   string
+		expectedHTMLLang string
 	}{
-		{
-			name:               "english",
-			switchLanguage:     "en",
-			expectedCookie:     "en",
-			expectedHTMLLang:   "en",
-			expectedTitle:      "Stay signed in for 30 days",
-			expectedHelperText: "only until you close the browser",
-		},
-		{
-			name:               "russian",
-			switchLanguage:     "ru",
-			expectedCookie:     "ru",
-			expectedHTMLLang:   "ru",
-			expectedTitle:      "Оставаться в системе 30 дней",
-			expectedHelperText: "только до закрытия браузера",
-		},
-		{
-			name:               "spanish",
-			switchLanguage:     "es",
-			expectedCookie:     "es",
-			expectedHTMLLang:   "es",
-			expectedTitle:      "Mantener la sesión iniciada durante 30 días",
-			expectedHelperText: "solo hasta que cierres el navegador",
-		},
-		{
-			name:               "german",
-			switchLanguage:     "de",
-			expectedCookie:     "de",
-			expectedHTMLLang:   "de",
-			expectedTitle:      "30 Tage angemeldet bleiben",
-			expectedHelperText: "bis Sie den Browser schließen",
-		},
-		{
-			name:               "french",
-			switchLanguage:     "fr",
-			expectedCookie:     "fr",
-			expectedHTMLLang:   "fr",
-			expectedTitle:      "Rester connecté(e) pendant 30 jours",
-			expectedHelperText: "fermeture du navigateur",
-		},
+		{name: "english", switchLanguage: "en", expectedCookie: "en", expectedHTMLLang: "en"},
+		{name: "russian", switchLanguage: "ru", expectedCookie: "ru", expectedHTMLLang: "ru"},
+		{name: "spanish", switchLanguage: "es", expectedCookie: "es", expectedHTMLLang: "es"},
+		{name: "german", switchLanguage: "de", expectedCookie: "de", expectedHTMLLang: "de"},
+		{name: "french", switchLanguage: "fr", expectedCookie: "fr", expectedHTMLLang: "fr"},
 	}
 
 	for _, testCase := range tests {
@@ -104,12 +74,6 @@ func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 			rendered := string(loginBody)
 			if !strings.Contains(rendered, `<html lang="`+testCase.expectedHTMLLang+`"`) {
 				t.Fatalf("expected login page html lang to be %q", testCase.expectedHTMLLang)
-			}
-			if !strings.Contains(rendered, testCase.expectedTitle) {
-				t.Fatalf("expected localized remember-me control on login form, got %q", rendered)
-			}
-			if !strings.Contains(rendered, testCase.expectedHelperText) {
-				t.Fatalf("expected localized remember-me helper text on login form, got %q", rendered)
 			}
 		})
 	}

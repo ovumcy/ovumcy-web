@@ -401,7 +401,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure)))
 }
 
-const requestLoggerFormat = "${time} | ${status} | ${latency} | ${method} | ${request_path} | ${error}\n"
+const requestLoggerFormat = "${time} | ${status} | ${latency} | ${method} | ${request_path} | ${safe_error}\n"
 
 func newRequestLogger(output io.Writer) fiber.Handler {
 	config := logger.Config{
@@ -409,6 +409,9 @@ func newRequestLogger(output io.Writer) fiber.Handler {
 		CustomTags: map[string]logger.LogFunc{
 			"request_path": func(buffer logger.Buffer, c *fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
 				return buffer.WriteString(api.SafeRequestLogPath(c))
+			},
+			"safe_error": func(buffer logger.Buffer, c *fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
+				return buffer.WriteString(api.SafeLogError(data.ChainErr))
 			},
 		},
 	}

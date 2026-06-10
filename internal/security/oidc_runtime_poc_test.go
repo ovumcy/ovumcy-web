@@ -116,6 +116,11 @@ type mockOIDCProvider struct {
 	// origin / different origin / different port / etc.).
 	endSessionEndpoint string
 
+	// jwksURI overrides the advertised jwks_uri (default: same-origin
+	// issuer+"/jwks"). Tests set it to a cross-origin value to exercise the
+	// jwks_uri origin-pin rejection in loadProvider.
+	jwksURI string
+
 	// issuer is the URL returned in discovery and in JWT iss claims.
 	// httptest.NewTLSServer assigns it at startup.
 	issuer string
@@ -152,11 +157,15 @@ func newMockOIDCProvider(t *testing.T) (*mockOIDCProvider, []byte) {
 }
 
 func (m *mockOIDCProvider) serveDiscovery(w http.ResponseWriter, r *http.Request) {
+	jwksURI := m.issuer + "/jwks"
+	if m.jwksURI != "" {
+		jwksURI = m.jwksURI
+	}
 	payload := map[string]any{
 		"issuer":                                m.issuer,
 		"authorization_endpoint":                m.issuer + "/authorize",
 		"token_endpoint":                        m.issuer + "/token",
-		"jwks_uri":                              m.issuer + "/jwks",
+		"jwks_uri":                              jwksURI,
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
@@ -261,6 +270,55 @@ func TestOIDC_RuntimePoC_HostPinAcceptsSameOriginEndSessionEndpoint(t *testing.T
 	}
 	if got := client.metadata.EndSessionEndpoint; got != mock.endSessionEndpoint {
 		t.Fatalf("same-origin end_session_endpoint should pass the host-pin; got %q, want %q", got, mock.endSessionEndpoint)
+	}
+}
+
+// TestOIDC_RuntimePoC_JWKSOriginPinRejectsCrossOrigin is the runtime contract
+// for the jwks_uri SSRF pin: a discovery document served over real TLS by the
+// configured issuer cannot point the server-side key fetch at a different
+// origin. loadProvider must refuse before the verifier ever fetches the JWKS.
+func TestOIDC_RuntimePoC_JWKSOriginPinRejectsCrossOrigin(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	mock.jwksURI = "https://attacker.example/jwks"
+
+	caFile := writeIssuerCAFile(t, caPEM)
+	client := NewOIDCClient(OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    mock.issuer,
+		ClientID:     "ovumcy",
+		ClientSecret: "test-secret",
+		RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+		CAFile:       caFile,
+		LoginMode:    OIDCLoginModeHybrid,
+		LogoutMode:   OIDCLogoutModeAuto,
+	})
+
+	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err == nil {
+		t.Fatal("jwks_uri origin pin failed: a cross-origin jwks_uri was accepted; loadProvider must refuse it")
+	}
+}
+
+// TestOIDC_RuntimePoC_JWKSOriginPinAcceptsSameOrigin is the happy-path companion:
+// the default same-origin jwks_uri must continue to load, otherwise the pin
+// would break normal self-hosted providers (Keycloak / authentik / Authelia).
+func TestOIDC_RuntimePoC_JWKSOriginPinAcceptsSameOrigin(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	// jwksURI left empty → defaults to the same-origin issuer+"/jwks".
+
+	caFile := writeIssuerCAFile(t, caPEM)
+	client := NewOIDCClient(OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    mock.issuer,
+		ClientID:     "ovumcy",
+		ClientSecret: "test-secret",
+		RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+		CAFile:       caFile,
+		LoginMode:    OIDCLoginModeHybrid,
+		LogoutMode:   OIDCLogoutModeAuto,
+	})
+
+	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err != nil {
+		t.Fatalf("same-origin jwks_uri must pass the pin: %v", err)
 	}
 }
 

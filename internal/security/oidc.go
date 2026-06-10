@@ -85,6 +85,7 @@ type OIDCClient struct {
 
 type oidcProviderMetadata struct {
 	EndSessionEndpoint string `json:"end_session_endpoint"`
+	JWKSURI            string `json:"jwks_uri"`
 }
 
 func NewOIDCClient(config OIDCConfig) *OIDCClient {
@@ -400,6 +401,17 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 		metadata.EndSessionEndpoint = sanitizeOIDCEndSessionEndpoint(metadata.EndSessionEndpoint, client.config.IssuerURL)
 	}
 
+	// Pin the discovery-supplied jwks_uri to the issuer origin, mirroring the
+	// end_session_endpoint host-pin above. go-oidc fetches the verification keys
+	// from this URL on the first ID-token verification; refusing a cross-origin
+	// jwks_uri here stops a malicious or compromised discovery document from
+	// steering that server-side key fetch at an internal or attacker host (SSRF)
+	// before any verifier is built. Same-origin jwks_uri (the self-hosted norm:
+	// Keycloak / authentik / Authelia) passes unchanged.
+	if err := validateDiscoveredJWKSURI(metadata.JWKSURI, client.config.IssuerURL); err != nil {
+		return nil, nil, err
+	}
+
 	client.provider = provider
 	client.metadata = metadata
 	client.oauthConfig = &oauth2.Config{
@@ -535,6 +547,30 @@ func sanitizeOIDCEndSessionEndpoint(rawEndpoint string, issuerURL string) string
 		return ""
 	}
 	return parsed.String()
+}
+
+// validateDiscoveredJWKSURI pins the discovery-supplied jwks_uri to the issuer
+// origin. An empty jwks_uri is left for go-oidc to reject during verification
+// (there are no keys to fetch); a non-empty one must be an absolute https URL on
+// the same origin (scheme + host + effective port) as the configured issuer.
+// This is the SSRF companion to sanitizeOIDCEndSessionEndpoint.
+func validateDiscoveredJWKSURI(jwksURI string, issuerURL string) error {
+	uri := strings.TrimSpace(jwksURI)
+	if uri == "" {
+		return nil
+	}
+	parsed, err := url.Parse(uri)
+	if err != nil || !parsed.IsAbs() || !strings.EqualFold(parsed.Scheme, "https") {
+		return errors.New("oidc jwks_uri must be an absolute https URL")
+	}
+	parsedIssuer, err := url.Parse(strings.TrimSpace(issuerURL))
+	if err != nil || !parsedIssuer.IsAbs() {
+		return errors.New("oidc issuer URL is invalid")
+	}
+	if !sameOriginURL(parsed, parsedIssuer) {
+		return errors.New("oidc jwks_uri origin must match the issuer origin")
+	}
+	return nil
 }
 
 func validateOIDCCABundle(path string) error {
