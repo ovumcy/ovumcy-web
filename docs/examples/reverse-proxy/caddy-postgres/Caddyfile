@@ -3,10 +3,11 @@
 ovumcy.example.com {
 	encode zstd gzip
 	reverse_proxy ovumcy:8080 {
-		# Set X-Real-IP to the direct client IP so the app's per-IP rate limiter
-		# keys on an unspoofable value (PROXY_HEADER=X-Real-IP). Caddy also sets
-		# X-Forwarded-For, but the app must not key on that: it appends the
-		# client-supplied value and the leftmost entry would be attacker-controlled.
+		# Set X-Real-IP to the direct client IP so the app's c.IP() is spoof-proof
+		# (PROXY_HEADER=X-Real-IP). The rate limiters key on the rightmost untrusted
+		# X-Forwarded-For hop relative to TRUSTED_PROXIES, so they are safe either
+		# way; X-Real-IP also covers the secondary per-client auth buckets that read
+		# c.IP().
 		header_up X-Real-IP {remote_host}
 	}
 }

@@ -51,9 +51,10 @@ services:
       RATE_LIMIT_API_WINDOW: ${RATE_LIMIT_API_WINDOW:-1m}
       TRUST_PROXY_ENABLED: "true"
       # Read the real client IP from X-Real-IP, which nginx sets to $remote_addr
-      # (unspoofable). Do NOT use X-Forwarded-For here: nginx appends the client
-      # value and the app reads the leftmost entry, letting an attacker rotate
-      # the per-IP rate-limit key by forging the header.
+      # (unspoofable). The edge rate limiters are spoof-resistant on
+      # X-Forwarded-For too (they key on the rightmost untrusted hop relative to
+      # TRUSTED_PROXIES), but X-Real-IP also gives a spoof-proof c.IP() for the
+      # secondary per-client auth buckets.
       PROXY_HEADER: X-Real-IP
       TRUSTED_PROXIES: 172.30.0.24/29
     init: true
