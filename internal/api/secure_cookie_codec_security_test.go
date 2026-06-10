@@ -31,6 +31,9 @@ func TestSecureCookieCodecRoundtripsAllKnownPurposes(t *testing.T) {
 		oidcStateCookieName,
 		oidcStepupCookieName,
 		oidcLogoutBridgeCookieName,
+		oidcLinkPendingCookieName,
+		totpPendingCookieName,
+		totpSetupCookieName,
 	}
 	plaintext := []byte(`{"hello":"world","n":42}`)
 
@@ -75,6 +78,9 @@ func TestSecureCookieCodecRejectsCrossPurposeOpen(t *testing.T) {
 		oidcStateCookieName,
 		oidcStepupCookieName,
 		oidcLogoutBridgeCookieName,
+		oidcLinkPendingCookieName,
+		totpPendingCookieName,
+		totpSetupCookieName,
 	}
 	for _, purpose := range otherPurposes {
 		purpose := purpose
@@ -133,6 +139,39 @@ func TestSecureCookieCodecRejectsTamperedCiphertext(t *testing.T) {
 	tamperedNonceEncoded := version + "." + base64.RawURLEncoding.EncodeToString(tamperedNonce)
 	if _, err := codec.open(authCookieName, tamperedNonceEncoded); !errors.Is(err, errInvalidSecureCookieValue) {
 		t.Fatalf("expected tampered nonce to be rejected, got %v", err)
+	}
+}
+
+func TestSecureCookieCodecRejectsTamperedCiphertextForTOTPAndLinkPendingCookies(t *testing.T) {
+	t.Parallel()
+
+	codec, err := newSecureCookieCodec([]byte("test-secret-key"))
+	if err != nil {
+		t.Fatalf("new secure cookie codec: %v", err)
+	}
+
+	for _, purpose := range []string{oidcLinkPendingCookieName, totpPendingCookieName, totpSetupCookieName} {
+		purpose := purpose
+		t.Run(purpose, func(t *testing.T) {
+			t.Parallel()
+
+			sealed, err := codec.seal(purpose, []byte(`{"step":1}`))
+			if err != nil {
+				t.Fatalf("seal under %q: %v", purpose, err)
+			}
+
+			version, encoded, _ := strings.Cut(sealed, ".")
+			payload, err := base64.RawURLEncoding.DecodeString(encoded)
+			if err != nil {
+				t.Fatalf("decode sealed payload: %v", err)
+			}
+			payload[len(payload)-1] ^= 0xFF // flip a byte inside the GCM auth tag
+			tampered := version + "." + base64.RawURLEncoding.EncodeToString(payload)
+
+			if _, err := codec.open(purpose, tampered); !errors.Is(err, errInvalidSecureCookieValue) {
+				t.Fatalf("expected tampered %q ciphertext to be rejected, got %v", purpose, err)
+			}
+		})
 	}
 }
 

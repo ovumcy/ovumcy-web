@@ -648,6 +648,41 @@ func assertProxyRuntimeConfig(t *testing.T, config runtimeConfig) {
 	}
 }
 
+// TestLoadRuntimeConfigDefaultsAuditLogOff locks the privacy-first default:
+// when AUDIT_LOG_ENABLED is unset the runtime must NOT emit per-action audit
+// logs. This matches SECURITY.md, AI_CONTEXT.md, and .env.example, all of which
+// state audit logging is off by default. (The existing audit-flag test forces
+// the flag with SetAuditLogEnabled and does not exercise the startup default.)
+func TestLoadRuntimeConfigDefaultsAuditLogOff(t *testing.T) {
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_PATH", "data/ovumcy.db")
+	t.Setenv("AUDIT_LOG_ENABLED", "")
+
+	config, err := loadRuntimeConfig(time.UTC)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if config.AuditLogEnabled {
+		t.Fatal("AUDIT_LOG_ENABLED must default to false (off by default per SECURITY.md / AI_CONTEXT.md / .env.example)")
+	}
+}
+
+func TestLoadRuntimeConfigHonorsAuditLogEnabled(t *testing.T) {
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_PATH", "data/ovumcy.db")
+	t.Setenv("AUDIT_LOG_ENABLED", "true")
+
+	config, err := loadRuntimeConfig(time.UTC)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if !config.AuditLogEnabled {
+		t.Fatal("AUDIT_LOG_ENABLED=true must enable audit logging")
+	}
+}
+
 func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 	config := fiberConfig(proxySettings{
 		Enabled:        true,
@@ -718,6 +753,47 @@ func TestSecurityHeadersMiddlewareAddsHSTSWhenSecureCookiesEnabled(t *testing.T)
 	defer response.Body.Close()
 
 	assertDefaultSecurityHeaders(t, response, true)
+}
+
+func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
+	app := fiber.New(fiber.Config{ErrorHandler: ovumcyErrorHandler})
+	app.Get("/fiber-error", func(c *fiber.Ctx) error {
+		return fiber.ErrForbidden
+	})
+	app.Get("/raw-error", func(c *fiber.Ctx) error {
+		return errors.New("internal users table secret column leaked")
+	})
+
+	fiberErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/fiber-error", nil), -1)
+	if err != nil {
+		t.Fatalf("fiber-error request failed: %v", err)
+	}
+	defer fiberErrResp.Body.Close()
+	if fiberErrResp.StatusCode != fiber.StatusForbidden {
+		t.Fatalf("fiber.Error status = %d, want 403", fiberErrResp.StatusCode)
+	}
+	fiberBody := new(bytes.Buffer)
+	_, _ = fiberBody.ReadFrom(fiberErrResp.Body)
+	if fiberBody.String() != "Forbidden" {
+		t.Fatalf("fiber.Error body = %q, want %q (status/message preserved)", fiberBody.String(), "Forbidden")
+	}
+
+	rawErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/raw-error", nil), -1)
+	if err != nil {
+		t.Fatalf("raw-error request failed: %v", err)
+	}
+	defer rawErrResp.Body.Close()
+	if rawErrResp.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("raw error status = %d, want 500", rawErrResp.StatusCode)
+	}
+	rawBody := new(bytes.Buffer)
+	_, _ = rawBody.ReadFrom(rawErrResp.Body)
+	if rawBody.String() != "Internal Server Error" {
+		t.Fatalf("raw error body = %q, want generic message", rawBody.String())
+	}
+	if strings.Contains(rawBody.String(), "secret column leaked") {
+		t.Fatalf("raw error body leaked internal detail: %q", rawBody.String())
+	}
 }
 
 func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
@@ -809,6 +885,51 @@ func TestLogStartupDoesNotLogForgotPasswordRateLimitDetail(t *testing.T) {
 	}
 	if !strings.Contains(logLine, "api=700/2m0s") {
 		t.Fatalf("expected api rate limit detail in startup log, got %q", logLine)
+	}
+}
+
+func TestProxyHeaderRateLimitWarning(t *testing.T) {
+	tests := []struct {
+		name     string
+		proxy    proxySettings
+		wantWarn bool
+	}{
+		{name: "trust proxy with X-Forwarded-For warns", proxy: proxySettings{Enabled: true, Header: "X-Forwarded-For"}, wantWarn: true},
+		{name: "case/space insensitive header warns", proxy: proxySettings{Enabled: true, Header: " x-forwarded-for "}, wantWarn: true},
+		{name: "trust proxy with X-Real-IP is safe", proxy: proxySettings{Enabled: true, Header: "X-Real-IP"}, wantWarn: false},
+		{name: "disabled trust proxy never warns", proxy: proxySettings{Enabled: false, Header: "X-Forwarded-For"}, wantWarn: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := proxyHeaderRateLimitWarning(tc.proxy)
+			if tc.wantWarn && got == "" {
+				t.Fatal("expected a spoofable-header warning, got none")
+			}
+			if !tc.wantWarn && got != "" {
+				t.Fatalf("expected no warning, got %q", got)
+			}
+		})
+	}
+}
+
+func TestLogStartupWarnsOnSpoofableProxyHeader(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	logStartup(runtimeConfig{
+		Location: time.UTC,
+		Port:     "8080",
+		Proxy: proxySettings{
+			Enabled: true,
+			Header:  "X-Forwarded-For",
+		},
+	})
+
+	if !strings.Contains(output.String(), "PROXY_HEADER=X-Forwarded-For") {
+		t.Fatalf("expected spoofable-proxy-header warning in startup log, got %q", output.String())
 	}
 }
 

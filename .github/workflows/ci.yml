@@ -71,6 +71,34 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  race:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go test with race detector
+        # CGO is required for the race detector; the production image stays
+        # CGO_ENABLED=0. Scope to packages that hold ovumcy's own shared mutable
+        # state (rate-limiter maps, atomic CAS) and do NOT instantiate Fiber apps.
+        # internal/api spins up hundreds of Fiber apps across its tests, which trips
+        # a known fasthttp/fiber library-internal race (updateServerDate global and
+        # the memory-store GC goroutine) that never occurs with the single app
+        # instance in production — racing it only produces library noise, not ovumcy
+        # bugs. The concurrency that is ours lives in the packages below.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./internal/services/... ./internal/db/... ./internal/security/... ./internal/i18n/... ./internal/httpx/...
+
   coverage-upload:
     runs-on: ubuntu-latest
     needs:

@@ -273,6 +273,17 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(userID uint) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.SymptomType{}).Error; err != nil {
 			return err
 		}
+		// register_pickup_tokens carries no foreign key, and oidc_identities
+		// relies on ON DELETE CASCADE. Delete both explicitly so account
+		// erasure stays complete (no orphaned auth-linkage rows) and does not
+		// depend on foreign_keys being enforced — GDPR erasure must hold even
+		// if the FK pragma is ever disabled.
+		if err := tx.Where("user_id = ?", userID).Delete(&models.RegisterPickupToken{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&models.User{}, userID).Error
 	})
 }

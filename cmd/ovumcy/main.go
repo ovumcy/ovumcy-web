@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -172,7 +173,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			APIWindow:            getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
 		},
 		Proxy:           proxy,
-		AuditLogEnabled: getEnvBool("AUDIT_LOG_ENABLED", true),
+		AuditLogEnabled: getEnvBool("AUDIT_LOG_ENABLED", false),
 	}, nil
 }
 
@@ -322,6 +323,7 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	appConfig := fiber.Config{
 		AppName:               "Ovumcy",
 		DisableStartupMessage: true,
+		ErrorHandler:          ovumcyErrorHandler,
 	}
 	if !proxy.Enabled {
 		return appConfig
@@ -331,6 +333,19 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	appConfig.EnableIPValidation = true
 	appConfig.TrustedProxies = proxy.TrustedProxies
 	return appConfig
+}
+
+// ovumcyErrorHandler is the top-level Fiber error handler. It preserves the
+// status and message of explicit *fiber.Error values (app-controlled and safe,
+// for example the 403 raised by the CSRF middleware) but never forwards a raw
+// error or recovered panic value to the client, since those can carry internal
+// detail such as table names, file paths, or driver messages.
+func ovumcyErrorHandler(c *fiber.Ctx, err error) error {
+	var fiberErr *fiber.Error
+	if errors.As(err, &fiberErr) {
+		return c.Status(fiberErr.Code).SendString(fiberErr.Message)
+	}
+	return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
 }
 
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {
@@ -449,9 +464,25 @@ func logStartup(config runtimeConfig) {
 	if config.Proxy.Enabled {
 		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", config.Proxy.Header, len(config.Proxy.TrustedProxies))
 	}
+	if warning := proxyHeaderRateLimitWarning(config.Proxy); warning != "" {
+		log.Printf("%s", warning)
+	}
 	if !config.CookieSecure {
 		log.Printf("WARNING: COOKIE_SECURE=false — auth cookies are sent without the Secure flag and can be intercepted over plain HTTP. Set COOKIE_SECURE=true when serving over HTTPS (directly or behind a TLS-terminating proxy).")
 	}
+}
+
+// proxyHeaderRateLimitWarning returns a non-empty operator warning when trust-
+// proxy is enabled but PROXY_HEADER resolves to X-Forwarded-For. Behind a proxy
+// that appends to X-Forwarded-For, fiber's c.IP() returns the leftmost (client-
+// supplied) token, so the per-IP rate-limit key becomes attacker-rotatable.
+// PROXY_HEADER should name a header the proxy overwrites with the real client
+// IP (for example X-Real-IP).
+func proxyHeaderRateLimitWarning(proxy proxySettings) string {
+	if proxy.Enabled && strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor) {
+		return "WARNING: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the per-IP rate limiter keys on the leftmost X-Forwarded-For entry, which a client can spoof behind an appending proxy. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP)."
+	}
+	return ""
 }
 
 func buildRevision() string {

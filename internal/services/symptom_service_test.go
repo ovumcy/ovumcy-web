@@ -174,6 +174,15 @@ func TestCreateSymptomForUserRejectsMarkupLikeName(t *testing.T) {
 	}
 }
 
+func TestCreateSymptomForUserRejectsMarkupLikeIcon(t *testing.T) {
+	service := NewSymptomService(&stubSymptomRepo{})
+
+	_, err := service.CreateSymptomForUser(10, "Custom", "<b>", "#123456")
+	if !errors.Is(err, ErrSymptomNameInvalidCharacters) {
+		t.Fatalf("expected ErrSymptomNameInvalidCharacters for markup icon, got %v", err)
+	}
+}
+
 func TestCreateSymptomForUserRejectsBlankAndTooLongNames(t *testing.T) {
 	service := NewSymptomService(&stubSymptomRepo{})
 

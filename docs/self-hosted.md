@@ -63,7 +63,7 @@ Use one of the example stacks under `docs/examples/reverse-proxy/` for public HT
 
 - `COOKIE_SECURE=true`
 - `TRUST_PROXY_ENABLED=true`
-- `PROXY_HEADER=X-Forwarded-For`
+- `PROXY_HEADER=X-Real-IP` — the example proxies set `X-Real-IP` to the real client IP, which a client cannot forge. Do not point this at `X-Forwarded-For`: the proxy appends the client-sent value and the app keys its per-IP rate limiter on the leftmost (attacker-controlled) entry, which would let an attacker bypass login/reset brute-force limits.
 - `TRUSTED_PROXIES` must match the exact proxy IP or private Docker subnet used by that stack
 - when `COOKIE_SECURE=true`, Ovumcy emits `Strict-Transport-Security: max-age=31536000; includeSubDomains` itself, so the example proxy configs do not add a second HSTS policy
 
@@ -76,7 +76,7 @@ These settings are valid, but they are not required for a safe first deployment:
 - `TZ` and `DEFAULT_LANGUAGE` (`en`, `ru`, `es`, `fr`, `de`) for operator preference
 - rate-limit variables if you need stricter or looser local policy
 - optional OIDC variables when you want the login page to offer external sign-in: `OIDC_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL`, `OIDC_CA_FILE`, `OIDC_LOGIN_MODE`, `OIDC_AUTO_PROVISION`, `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS`, `OIDC_LOGOUT_MODE`, and `OIDC_POST_LOGOUT_REDIRECT_URL`
-- `PROXY_HEADER` only if your trusted proxy uses a different real-client header contract
+- `PROXY_HEADER` only if your trusted proxy publishes the real client IP under a header other than `X-Real-IP`
 - `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to Postgres, either through the bundled local/private Postgres stack or an operator-managed database service
 
 ## Optional OIDC Sign-In
@@ -134,7 +134,7 @@ The supported reverse proxy path is intentionally narrow:
 - Ovumcy continues to listen on plain HTTP at `:8080` inside that private network.
 - `COOKIE_SECURE=true` is mandatory once the public site is HTTPS-only.
 - `TRUST_PROXY_ENABLED=true` is valid only when every trusted proxy IP or internal proxy subnet is explicitly listed in `TRUSTED_PROXIES`.
-- Keep `PROXY_HEADER=X-Forwarded-For` unless you have a concrete reason to change it.
+- Keep `PROXY_HEADER=X-Real-IP`; the example proxies set it to the real client IP. Do not use `X-Forwarded-For` for per-IP rate limiting — the proxy appends the client value and the app keys on the leftmost (spoofable) entry.
 
 The example stacks below use dedicated internal subnets and set `TRUSTED_PROXIES` to those exact ranges. If you adapt the stacks, keep the trusted proxy range as small as the network design allows. If the sample subnet collides with your environment, change both the Docker subnet and `TRUSTED_PROXIES` together.
 
@@ -250,6 +250,7 @@ The supported self-hosted backup contract is intentionally narrow:
 - Treat every backup archive as sensitive health data.
 - Keep `.env` and the application secret backup (`SECRET_KEY` value or the file behind `SECRET_KEY_FILE`) separate from the SQLite data archive.
 - Expect existing auth-related cookies to become invalid if you restore data with a different application secret.
+- The SQLite database runs in WAL mode, so the data volume can also hold `ovumcy.db-wal` and `ovumcy.db-shm` next to `ovumcy.db`. The whole-volume archive flow below captures all three together. If you instead copy individual files, stop the app first so SQLite checkpoints the WAL into the main database file.
 
 For the bundled local/private Postgres stack, use native PostgreSQL backup tooling instead of the SQLite archive workflow:
 
