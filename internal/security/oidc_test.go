@@ -210,9 +210,9 @@ func TestValidateDiscoveredJWKSURI(t *testing.T) {
 		t.Fatalf("empty jwks_uri must defer to go-oidc, not error here: %v", err)
 	}
 	for _, bad := range []string{
-		"https://evil.example.net/keys", // cross-host
-		"http://id.example.com/keys",    // non-https
-		"https://169.254.169.254/keys",  // internal/metadata host
+		"https://evil.example.net/keys",    // cross-host
+		"http://id.example.com/keys",       // non-https
+		"https://169.254.169.254/keys",     // internal/metadata host
 		"https://id.example.com:8443/keys", // cross-port
 	} {
 		if err := validateDiscoveredJWKSURI(bad, issuer); err == nil {

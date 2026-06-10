@@ -234,6 +234,8 @@ Per-account budgets are keyed by `HMAC-SHA256(SECRET_KEY, "ovumcy.auth-attempt.i
 | Rate-limit identity HMAC | `HMAC-SHA256(SECRET_KEY, "ovumcy.auth-attempt.identity.v1:" || identity)` | Existing per-identity counters become unreachable; cooldowns reset. Self-recovering. |
 | Auth session token signing | Used inside `BuildAuthSessionTokenWithSessionID` to sign session tokens before they are sealed into `ovumcy_auth` | Subsumed by the sealed-cookie invalidation row above. |
 
+Both HKDF label pairs live next to the shared AEAD primitive (`SealedCipher` in `internal/security/sealed_cipher.go`). The sealed-cookie codec in `internal/api/secure_cookie_codec.go` adds only cookie framing on top: the name→AAD mapping, the `v2` version envelope, and base64url transport.
+
 **Operational caveat — rotating `SECRET_KEY` with 2FA accounts:**
 
 `users.totp_secret` is encrypted under a key derived from the current `SECRET_KEY`. Rotating the secret without a coordinated re-encryption step leaves TOTP-enabled accounts unable to complete the 2FA challenge — they will see a failed verification even when their authenticator app produces the correct code. Recovery options for each affected user are:
@@ -330,6 +332,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Tampered ciphertext fails to decrypt | `TestDecryptField_TamperedCiphertext` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
 | Legacy no-AAD ciphertexts open through the fallback path | `TestDecryptField_LegacyFallback` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
 | Empty `SECRET_KEY` is refused | `TestEncryptField_EmptyKey`, `TestDecryptField_EmptyKey` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Golden pre-consolidation ciphertexts (AAD-bound and legacy no-AAD) still decrypt to the same plaintext | `TestDecryptFieldOpensPreConsolidationGoldenCiphertexts` in [internal/security/field_crypto_golden_test.go](internal/security/field_crypto_golden_test.go) |
 
 ### OIDC Account Linking
 
@@ -376,6 +379,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Sealed cookies use the AES-GCM `v2.<...>` envelope | `TestSecureCookieCodecSealsWithVersion2Prefix` in [internal/api/secure_cookie_codec_rotation_test.go](internal/api/secure_cookie_codec_rotation_test.go) |
 | Legacy `v1` cookie payloads are rejected | `TestSecureCookieCodecRejectsLegacyV1Payload` in [internal/api/secure_cookie_codec_rotation_test.go](internal/api/secure_cookie_codec_rotation_test.go) |
 | Sealed cookies are AAD-bound to the cookie name; cross-cookie substitution fails | `secure_cookie_codec_security_test.go` in `internal/api/` |
+| Golden sealed values from the pre-consolidation codec still open for all 11 purposes | `TestSecureCookieCodecOpensPreConsolidationGoldenValues` in [internal/api/secure_cookie_codec_golden_test.go](internal/api/secure_cookie_codec_golden_test.go) |
 | `ovumcy_auth`, `ovumcy_register_pickup`, `ovumcy_recovery_code` all set `SameSite=Lax` | `cookie_security_enabled_test.go`, `cookie_security_default_test.go` in `internal/api/` |
 | OIDC sign-in cookies (`ovumcy_oidc_auth`, `ovumcy_oidc_stepup`) require `Secure=true` to issue | `oidc_state_cookie_test.go`, `oidc_stepup_cookie_test.go` in `internal/api/` |
 | Login issues a sealed `ovumcy_auth` cookie (not a legacy JWT) | `TestLoginSetsSealedAuthCookieValue`, `TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
@@ -426,6 +430,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | --- | --- |
 | Sealed cookies derive their key from `SECRET_KEY` via HKDF with versioned salt/info labels | `secure_cookie_codec_rotation_test.go`, `secure_cookie_codec_security_test.go` in `internal/api/` |
 | Field encryption uses a distinct HKDF label set; AAD prevents cross-row swap | `TestDecryptField_RejectsWrongAAD` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| Cookie and field label sets derive distinct keys; a payload sealed for one purpose cannot be opened as the other | `TestSealedCipherPurposeKeySeparation` in [internal/security/sealed_cipher_test.go](internal/security/sealed_cipher_test.go) |
 | Rate-limit identity HMAC uses a distinct domain-separation label | `TestAuthAttemptPolicyKeysUseScopedHMACFingerprint` in [internal/services/auth_attempt_policy_test.go](internal/services/auth_attempt_policy_test.go) |
 | Rotating `SECRET_KEY` breaks field-encrypted TOTP secrets (DecryptField with the new key fails) | `TestDecryptField_WrongKey` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
 

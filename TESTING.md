@@ -73,6 +73,12 @@ Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be o
 `ovumcy_auth` (three distinct mutation sites), `ovumcy_totp_pending`, `ovumcy_totp_setup`, and
 `ovumcy_oidc_link_pending` as representative high-value targets.
 
+Backward-compatibility goldens: `internal/api/secure_cookie_codec_golden_test.go` holds sealed
+values produced by the pre-consolidation codec for all eleven purposes, and
+`internal/security/field_crypto_golden_test.go` holds AAD-bound and legacy field ciphertexts.
+They pin the HKDF labels, AAD construction, envelope, and payload layout; never regenerate the
+fixtures to make these tests pass.
+
 ## Transparency
 
 The cycle-prediction algorithm is fully documented in

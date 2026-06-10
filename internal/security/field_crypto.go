@@ -1,29 +1,18 @@
 package security
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
-
-	"golang.org/x/crypto/hkdf"
-)
-
-const (
-	fieldCryptoSaltLabel = "ovumcy.field-crypto.salt.v1"
-	fieldCryptoInfoLabel = "ovumcy.field-crypto.key.v1"
 )
 
 // EncryptField encrypts a plaintext string with AES-256-GCM using a key
-// derived from secretKey via HKDF-SHA256. The ciphertext is bound to `aad`
-// through the AEAD authentication tag, so an attacker with database write
-// access cannot swap the ciphertext from one row or column into another
-// under the same key without invalidating the tag — DecryptField with a
-// different aad will fail to open.
+// derived from secretKey via HKDF-SHA256 (the field-crypto label pair in
+// sealed_cipher.go). The ciphertext is bound to `aad` through the AEAD
+// authentication tag, so an attacker with database write access cannot swap
+// the ciphertext from one row or column into another under the same key
+// without invalidating the tag — DecryptField with a different aad will fail
+// to open.
 //
 // `aad` MUST be non-empty. Callers should use a stable, context-specific
 // identifier such as "ovumcy.field.<purpose>:<row id>" (for example
@@ -39,23 +28,7 @@ func EncryptField(plaintext string, secretKey []byte, aad []byte) (string, error
 	if len(aad) == 0 {
 		return "", errors.New("field crypto: aad is required")
 	}
-
-	aead, err := newFieldCryptoAEAD(secretKey)
-	if err != nil {
-		return "", err
-	}
-
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("field crypto: generate nonce: %w", err)
-	}
-
-	ciphertext := aead.Seal(nil, nonce, []byte(plaintext), aad)
-	payload := make([]byte, 0, len(nonce)+len(ciphertext))
-	payload = append(payload, nonce...)
-	payload = append(payload, ciphertext...)
-
-	return base64.RawURLEncoding.EncodeToString(payload), nil
+	return sealFieldCiphertext(plaintext, secretKey, aad)
 }
 
 // DecryptField opens a ciphertext produced by EncryptField. It returns the
@@ -91,8 +64,22 @@ func DecryptField(encoded string, secretKey []byte, aad []byte) (string, bool, e
 	return "", false, err
 }
 
+func sealFieldCiphertext(plaintext string, secretKey []byte, aad []byte) (string, error) {
+	fieldCipher, err := newFieldCipher(secretKey)
+	if err != nil {
+		return "", err
+	}
+
+	payload, err := fieldCipher.Seal([]byte(plaintext), aad)
+	if err != nil {
+		return "", fmt.Errorf("field crypto: seal: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
 func openFieldCiphertext(encoded string, secretKey []byte, aad []byte) (string, error) {
-	aead, err := newFieldCryptoAEAD(secretKey)
+	fieldCipher, err := newFieldCipher(secretKey)
 	if err != nil {
 		return "", err
 	}
@@ -102,13 +89,7 @@ func openFieldCiphertext(encoded string, secretKey []byte, aad []byte) (string, 
 		return "", fmt.Errorf("field crypto: decode: %w", err)
 	}
 
-	nonceSize := aead.NonceSize()
-	if len(payload) < nonceSize+1 {
-		return "", errors.New("field crypto: ciphertext too short")
-	}
-
-	nonce, ct := payload[:nonceSize], payload[nonceSize:]
-	plaintext, err := aead.Open(nil, nonce, ct, aad)
+	plaintext, err := fieldCipher.Open(payload, aad)
 	if err != nil {
 		return "", fmt.Errorf("field crypto: decrypt: %w", err)
 	}
@@ -125,37 +106,5 @@ func EncryptFieldNoAADForTest(plaintext string, secretKey []byte) (string, error
 	if len(secretKey) == 0 {
 		return "", errors.New("field crypto: secret key is required")
 	}
-	aead, err := newFieldCryptoAEAD(secretKey)
-	if err != nil {
-		return "", err
-	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return "", fmt.Errorf("field crypto: generate nonce: %w", err)
-	}
-	ciphertext := aead.Seal(nil, nonce, []byte(plaintext), nil)
-	payload := make([]byte, 0, len(nonce)+len(ciphertext))
-	payload = append(payload, nonce...)
-	payload = append(payload, ciphertext...)
-	return base64.RawURLEncoding.EncodeToString(payload), nil
-}
-
-func newFieldCryptoAEAD(secretKey []byte) (cipher.AEAD, error) {
-	reader := hkdf.New(sha256.New, secretKey, []byte(fieldCryptoSaltLabel), []byte(fieldCryptoInfoLabel))
-	derivedKey := make([]byte, 32)
-	if _, err := io.ReadFull(reader, derivedKey); err != nil {
-		return nil, fmt.Errorf("field crypto: derive key: %w", err)
-	}
-
-	block, err := aes.NewCipher(derivedKey)
-	if err != nil {
-		return nil, fmt.Errorf("field crypto: create cipher: %w", err)
-	}
-
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("field crypto: create aead: %w", err)
-	}
-
-	return aead, nil
+	return sealFieldCiphertext(plaintext, secretKey, nil)
 }
