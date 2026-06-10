@@ -396,7 +396,7 @@
   </div>
   <div {{if eq .Log.Notes ""}}hidden{{end}}>
     <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
-    <p class="mt-1 whitespace-pre-wrap break-words">{{.Log.Notes}}</p>
+    <p class="mt-1 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
   </div>
 </div>
 {{end}}
@@ -456,7 +456,7 @@
 
   <div {{if eq .Log.Notes ""}}hidden{{end}}>
     <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
-    <p class="mt-2 whitespace-pre-wrap break-words">{{.Log.Notes}}</p>
+    <p class="mt-2 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
   </div>
 </div>
 {{end}}
@@ -715,7 +715,7 @@
     <div class="min-w-0 space-y-1">
       <div class="flex items-center gap-2 min-w-0">
         <span class="text-sm" aria-hidden="true">{{.FormIcon}}</span>
-        <p class="field-label break-words" data-symptom-card-title>{{.FormName}}</p>
+        <p class="field-label wrap-break-word" data-symptom-card-title>{{.FormName}}</p>
       </div>
       <p class="journal-muted text-xs">{{.Heading}}</p>
     </div>

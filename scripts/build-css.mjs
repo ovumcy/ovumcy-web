@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 const buildResult = spawnSync(
   process.execPath,
   [
-    "./node_modules/tailwindcss/lib/cli.js",
+    "./node_modules/@tailwindcss/cli/dist/index.mjs",
     "-i",
     "./web/src/css/input.css",
     "-o",
@@ -11,11 +11,7 @@ const buildResult = spawnSync(
     "--minify"
   ],
   {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      BROWSERSLIST_IGNORE_OLD_DATA: "1"
-    }
+    stdio: "inherit"
   }
 );
 

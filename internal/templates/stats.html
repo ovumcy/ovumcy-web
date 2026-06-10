@@ -120,11 +120,11 @@
           <div class="mt-3 space-y-2 text-sm">
             <div class="flex items-center justify-between gap-3">
               <span class="journal-muted">{{t .Messages "stats.legend.average"}}</span>
-              <span class="font-semibold text-[var(--text-primary)]">{{if gt .Stats.AverageCycleLength 0.0}}{{formatFloat .Stats.AverageCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</span>
+              <span class="font-semibold text-(--text-primary)">{{if gt .Stats.AverageCycleLength 0.0}}{{formatFloat .Stats.AverageCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</span>
             </div>
             <div class="flex items-center justify-between gap-3">
               <span class="journal-muted">{{t .Messages "dashboard.median_cycle"}}</span>
-              <span class="font-semibold text-[var(--text-primary)]">{{if gt .Stats.MedianCycleLength 0}}{{.Stats.MedianCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</span>
+              <span class="font-semibold text-(--text-primary)">{{if gt .Stats.MedianCycleLength 0}}{{.Stats.MedianCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</span>
             </div>
           </div>
         </article>
@@ -255,7 +255,7 @@
         </div>
         <div class="mb-3 flex flex-wrap items-center gap-3 text-xs journal-muted">
           <span class="inline-flex items-center gap-2">
-            <span class="inline-block h-2.5 w-2.5 rounded-sm stats-legend-dot-actual"></span>
+            <span class="inline-block h-2.5 w-2.5 rounded-xs stats-legend-dot-actual"></span>
             {{t .Messages "stats.legend.actual"}}
           </span>
           {{if .ChartBaseline}}
