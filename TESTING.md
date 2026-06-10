@@ -50,6 +50,29 @@ The runtime image is a `FROM scratch` multi-stage build running as a non-root
 user, with pinned base-image digests and dependency versions. Test code never
 ships in the image.
 
+### Sealed-cookie codec coverage
+
+All eleven AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
+Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be opened as another.
+
+| Cookie | Roundtrip | Cross-purpose rejection | Tamper detection |
+|--------|:---------:|:----------------------:|:----------------:|
+| `ovumcy_auth` | ✓ | ✓ | ✓ (auth-tag, body byte, nonce) |
+| `ovumcy_flash` | ✓ | ✓ | †  |
+| `ovumcy_recovery_code` | ✓ | ✓ | †  |
+| `ovumcy_register_pickup` | ✓ | ✓ | †  |
+| `ovumcy_reset_password` | ✓ | ✓ | †  |
+| `ovumcy_oidc_auth` | ✓ | ✓ | †  |
+| `ovumcy_oidc_stepup` | ✓ | ✓ | †  |
+| `ovumcy_oidc_logout_bridge` | ✓ | ✓ | †  |
+| `ovumcy_oidc_link_pending` | ✓ | ✓ | ✓  |
+| `ovumcy_totp_pending` | ✓ | ✓ | ✓  |
+| `ovumcy_totp_setup` | ✓ | ✓ | ✓  |
+
+† AES-256-GCM guarantees tamper detection for all purposes by construction; explicit tests cover
+`ovumcy_auth` (three distinct mutation sites), `ovumcy_totp_pending`, `ovumcy_totp_setup`, and
+`ovumcy_oidc_link_pending` as representative high-value targets.
+
 ## Transparency
 
 The cycle-prediction algorithm is fully documented in
