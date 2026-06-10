@@ -497,8 +497,9 @@ test.describe('Dashboard: today editor', () => {
     const replacementPage = await context.newPage();
     await replacementPage.goto('/dashboard');
     await expect(replacementPage).toHaveURL(/\/dashboard$/);
-    await replacementPage.waitForTimeout(1000);
-    await replacementPage.reload();
-    await expect(replacementPage.locator('#today-notes')).toHaveValue(noteText);
+    await expect.poll(async () => {
+      await replacementPage.reload();
+      return replacementPage.locator('#today-notes').inputValue();
+    }, { timeout: 5000 }).toBe(noteText);
   });
 });
