@@ -5,6 +5,11 @@
 
     window.htmx.config.allowEval = false;
     window.htmx.config.includeIndicatorStyles = false;
+    // htmx 2.0 moved DELETE parameters into the URL query string by default
+    // (methodsThatUseUrlParams gained "delete"). Our handlers read request
+    // bodies via Fiber BodyParser, so restore the htmx 1.x behaviour and keep
+    // DELETE inputs (e.g. the delete-account / 2FA-disable password) in the body.
+    window.htmx.config.methodsThatUseUrlParams = ["get"];
   }
 
   configureHTMXForCSP();
