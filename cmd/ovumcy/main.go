@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"mime"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -335,6 +336,103 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	return appConfig
 }
 
+// trustedProxyMatcher classifies an address as a trusted proxy using the same
+// rules fiber applies when building its own trusted set (App.handleTrustedProxy):
+// a TRUSTED_PROXIES entry containing "/" is parsed as a CIDR range, anything
+// else is matched by exact net.IP string. Keeping our own copy lets the rate-
+// limit key generator reuse fiber's exact trust boundary, so an address we treat
+// as "a proxy hop" is one fiber would also have trusted as the peer.
+type trustedProxyMatcher struct {
+	exact  map[string]struct{}
+	ranges []*net.IPNet
+}
+
+func newTrustedProxyMatcher(entries []string) trustedProxyMatcher {
+	matcher := trustedProxyMatcher{exact: make(map[string]struct{}, len(entries))}
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if strings.Contains(entry, "/") {
+			if _, ipNet, err := net.ParseCIDR(entry); err == nil {
+				matcher.ranges = append(matcher.ranges, ipNet)
+			}
+			continue
+		}
+		matcher.exact[entry] = struct{}{}
+	}
+	return matcher
+}
+
+func (m trustedProxyMatcher) contains(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if _, ok := m.exact[ip.String()]; ok {
+		return true
+	}
+	for _, ipNet := range m.ranges {
+		if ipNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// rightmostUntrustedIP walks an X-Forwarded-For chain from the right (the hop
+// closest to us, appended by our own trusted proxy) toward the left and returns
+// the first address that is not itself a trusted proxy: the real client as seen
+// from the edge of our trusted chain. Entries further left are client-supplied
+// and spoofable, so they are ignored. Returns "" when every hop is trusted or
+// the list is empty, letting the caller fall back to the direct peer.
+func rightmostUntrustedIP(forwarded []string, trusted trustedProxyMatcher) string {
+	for i := len(forwarded) - 1; i >= 0; i-- {
+		ip := net.ParseIP(strings.TrimSpace(forwarded[i]))
+		if ip != nil && !trusted.contains(ip) {
+			return ip.String()
+		}
+	}
+	return ""
+}
+
+// rateLimitKeyGenerator builds the per-request key for fiber's rate limiters.
+//
+// Fiber's default key is c.IP(). With ProxyHeader=X-Forwarded-For and a trusted
+// peer, c.IP() returns the LEFTMOST X-Forwarded-For token — the value the
+// original client supplied — so an attacker behind an appending proxy can rotate
+// that token to mint a fresh rate-limit bucket per request and defeat the limit
+// entirely. These edge limiters key on IP alone (unlike the per-identity auth
+// limiters in internal/services, which also bucket on email/user id), so the IP
+// key must be attacker-proof on its own.
+//
+// The key is derived from our trust boundary outward:
+//   - Proxy support off, or the direct peer is not a trusted proxy: the only
+//     attacker-proof address is the socket peer, so key on it and ignore every
+//     forwarded header (all client-controlled in that position).
+//   - Peer is a trusted proxy and the header is X-Forwarded-For: key on the
+//     rightmost untrusted hop (see rightmostUntrustedIP); fall back to the peer
+//     when every hop is trusted.
+//   - Peer is a trusted proxy and the header is a single-value header the proxy
+//     overwrites (for example X-Real-IP): defer to fiber's parsed c.IP().
+func rateLimitKeyGenerator(proxy proxySettings) func(*fiber.Ctx) string {
+	trusted := newTrustedProxyMatcher(proxy.TrustedProxies)
+	headerIsXForwardedFor := strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor)
+	return func(c *fiber.Ctx) string {
+		peer := c.Context().RemoteIP()
+		if !proxy.Enabled || !trusted.contains(peer) {
+			return peer.String()
+		}
+		if !headerIsXForwardedFor {
+			return c.IP()
+		}
+		if client := rightmostUntrustedIP(c.IPs(), trusted); client != "" {
+			return client
+		}
+		return peer.String()
+	}
+}
+
 // ovumcyErrorHandler is the top-level Fiber error handler. It preserves the
 // status and message of explicit *fiber.Error values (app-controlled and safe,
 // for example the 403 raised by the CSRF middleware) but never forwards a raw
@@ -349,45 +447,54 @@ func ovumcyErrorHandler(c *fiber.Ctx, err error) error {
 }
 
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {
+	// keyGen resolves the real client IP for every limiter so a spoofed
+	// X-Forwarded-For prefix cannot mint fresh per-IP buckets. See
+	// rateLimitKeyGenerator for the trust-boundary derivation.
+	keyGen := rateLimitKeyGenerator(config.Proxy)
 	app.Use(securityHeadersMiddleware(config.CookieSecure))
 	app.Use(recover.New())
 	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
 	app.Use(limiter.New(limiter.Config{
-		Next:       rateLimitOnlyFor(fiber.MethodDelete, "/api/v1/sessions/current"),
-		Max:        config.RateLimits.LogoutMax,
-		Expiration: config.RateLimits.LogoutWindow,
+		Next:         rateLimitOnlyFor(fiber.MethodDelete, "/api/v1/sessions/current"),
+		Max:          config.RateLimits.LogoutMax,
+		Expiration:   config.RateLimits.LogoutWindow,
+		KeyGenerator: keyGen,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_logout_attempts",
 		}),
 	}))
 	app.Use(limiter.New(limiter.Config{
-		Next:       rateLimitOnlyFor(fiber.MethodPost, "/api/v1/sessions"),
-		Max:        config.RateLimits.LoginMax,
-		Expiration: config.RateLimits.LoginWindow,
+		Next:         rateLimitOnlyFor(fiber.MethodPost, "/api/v1/sessions"),
+		Max:          config.RateLimits.LoginMax,
+		Expiration:   config.RateLimits.LoginWindow,
+		KeyGenerator: keyGen,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_login_attempts",
 		}),
 	}))
 	app.Use(limiter.New(limiter.Config{
-		Next:       rateLimitOnlyFor(fiber.MethodPost, "/api/v1/users"),
-		Max:        config.RateLimits.RegisterMax,
-		Expiration: config.RateLimits.RegisterWindow,
+		Next:         rateLimitOnlyFor(fiber.MethodPost, "/api/v1/users"),
+		Max:          config.RateLimits.RegisterMax,
+		Expiration:   config.RateLimits.RegisterWindow,
+		KeyGenerator: keyGen,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_register_attempts",
 		}),
 	}))
 	app.Use(limiter.New(limiter.Config{
-		Next:       rateLimitOnlyFor(fiber.MethodPost, "/api/v1/password-resets"),
-		Max:        config.RateLimits.ForgotPasswordMax,
-		Expiration: config.RateLimits.ForgotPasswordWindow,
+		Next:         rateLimitOnlyFor(fiber.MethodPost, "/api/v1/password-resets"),
+		Max:          config.RateLimits.ForgotPasswordMax,
+		Expiration:   config.RateLimits.ForgotPasswordWindow,
+		KeyGenerator: keyGen,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_forgot_password_attempts",
 		}),
 	}))
 	app.Use("/auth/oidc", limiter.New(limiter.Config{
-		Max:        config.RateLimits.LoginMax,
-		Expiration: config.RateLimits.LoginWindow,
+		Max:          config.RateLimits.LoginMax,
+		Expiration:   config.RateLimits.LoginWindow,
+		KeyGenerator: keyGen,
 		LimitReached: newAuthRateLimitHandler(handler, authRateLimitConfig{
 			ErrorCode: "too_many_sso_attempts",
 		}),
@@ -395,6 +502,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	app.Use("/api", limiter.New(limiter.Config{
 		Max:          config.RateLimits.APIMax,
 		Expiration:   config.RateLimits.APIWindow,
+		KeyGenerator: keyGen,
 		LimitReached: newAPIRateLimitHandler(handler),
 	}))
 	app.Use(handler.LanguageMiddleware)
@@ -475,15 +583,19 @@ func logStartup(config runtimeConfig) {
 	}
 }
 
-// proxyHeaderRateLimitWarning returns a non-empty operator warning when trust-
-// proxy is enabled but PROXY_HEADER resolves to X-Forwarded-For. Behind a proxy
-// that appends to X-Forwarded-For, fiber's c.IP() returns the leftmost (client-
-// supplied) token, so the per-IP rate-limit key becomes attacker-rotatable.
-// PROXY_HEADER should name a header the proxy overwrites with the real client
-// IP (for example X-Real-IP).
+// proxyHeaderRateLimitWarning returns a non-empty operator note when trust-proxy
+// is enabled but PROXY_HEADER resolves to X-Forwarded-For. The edge rate limiters
+// no longer trust that header blindly — rateLimitKeyGenerator keys on the
+// rightmost untrusted X-Forwarded-For hop, so a spoofed prefix cannot defeat
+// them. The residual is that fiber's c.IP() still returns the client-supplied
+// leftmost token; c.IP() only feeds the secondary per-client auth-attempt
+// buckets in internal/services, which sit behind spoof-proof per-identity
+// buckets, so brute-force protection holds. PROXY_HEADER should still name a
+// header the proxy overwrites with the real client IP (for example X-Real-IP)
+// for spoof-proof c.IP() values.
 func proxyHeaderRateLimitWarning(proxy proxySettings) string {
 	if proxy.Enabled && strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor) {
-		return "WARNING: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the per-IP rate limiter keys on the leftmost X-Forwarded-For entry, which a client can spoof behind an appending proxy. Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP)."
+		return "NOTE: TRUST_PROXY_ENABLED=true with PROXY_HEADER=X-Forwarded-For — the rate limiters now key on the rightmost untrusted X-Forwarded-For hop and are not spoofable, but fiber's c.IP() still returns the client-supplied leftmost entry. c.IP() only feeds the secondary per-client auth-attempt buckets (the per-identity buckets that actually cap brute force are unaffected). Set PROXY_HEADER to a header your proxy overwrites with the real client IP (for example X-Real-IP) for spoof-proof c.IP() values."
 	}
 	return ""
 }

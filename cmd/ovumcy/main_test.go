@@ -902,11 +902,26 @@ func TestProxyHeaderRateLimitWarning(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := proxyHeaderRateLimitWarning(tc.proxy)
-			if tc.wantWarn && got == "" {
-				t.Fatal("expected a spoofable-header warning, got none")
+			if !tc.wantWarn {
+				if got != "" {
+					t.Fatalf("expected no note, got %q", got)
+				}
+				return
 			}
-			if !tc.wantWarn && got != "" {
-				t.Fatalf("expected no warning, got %q", got)
+			if got == "" {
+				t.Fatal("expected a spoofable-header note, got none")
+			}
+			// The note must reflect the post-keygen reality: the limiters are
+			// hardened (rightmost untrusted) and the actionable fix is X-Real-IP.
+			// It must NOT claim the rate limiter itself is spoofable.
+			if !strings.Contains(got, "rightmost untrusted") {
+				t.Fatalf("note should state the limiter keys on the rightmost untrusted hop, got %q", got)
+			}
+			if !strings.Contains(got, "X-Real-IP") {
+				t.Fatalf("note should recommend X-Real-IP, got %q", got)
+			}
+			if strings.Contains(got, "rate limiter keys on the leftmost") {
+				t.Fatalf("note must not claim the rate limiter keys on the spoofable leftmost entry, got %q", got)
 			}
 		})
 	}
@@ -928,8 +943,14 @@ func TestLogStartupWarnsOnSpoofableProxyHeader(t *testing.T) {
 		},
 	})
 
-	if !strings.Contains(output.String(), "PROXY_HEADER=X-Forwarded-For") {
-		t.Fatalf("expected spoofable-proxy-header warning in startup log, got %q", output.String())
+	logged := output.String()
+	if !strings.Contains(logged, "PROXY_HEADER=X-Forwarded-For") {
+		t.Fatalf("expected spoofable-proxy-header note in startup log, got %q", logged)
+	}
+	// The note must describe the hardened keying, not the obsolete claim that
+	// the limiter trusts the leftmost (spoofable) X-Forwarded-For entry.
+	if !strings.Contains(logged, "rightmost untrusted") {
+		t.Fatalf("expected startup note to mention the rightmost-untrusted keying, got %q", logged)
 	}
 }
 
