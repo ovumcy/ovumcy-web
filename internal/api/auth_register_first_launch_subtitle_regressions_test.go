@@ -1,11 +1,11 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 func TestRegisterPageShowsFirstLaunchSubtitleWhenNoUsers(t *testing.T) {
@@ -24,12 +24,11 @@ func TestRegisterPageShowsFirstLaunchSubtitleWhenNoUsers(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	if !strings.Contains(string(body), firstLaunchRegisterSubtitle) {
-		t.Fatalf("expected first launch subtitle to be present")
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	if htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-subtitle-key") == "auth.register_subtitle"
+	}) == nil {
+		t.Fatalf("expected first launch subtitle with data-subtitle-key hook")
 	}
 }
 
@@ -50,11 +49,10 @@ func TestRegisterPageHidesFirstLaunchSubtitleWhenUserExists(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
-	}
-	if strings.Contains(string(body), firstLaunchRegisterSubtitle) {
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	if htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-subtitle-key") == "auth.register_subtitle"
+	}) != nil {
 		t.Fatalf("expected first launch subtitle to be hidden when users already exist")
 	}
 }

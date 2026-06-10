@@ -14,7 +14,7 @@
     <div>
       <h1 class="journal-title">{{t .Messages "auth.create_account"}}</h1>
       {{if and .IsFirstLaunch .RegistrationOpen}}
-      <p class="journal-muted mt-2">{{t .Messages "auth.register_subtitle"}}</p>
+      <p class="journal-muted mt-2" data-subtitle-key="auth.register_subtitle">{{t .Messages "auth.register_subtitle"}}</p>
       {{end}}
     </div>
 
