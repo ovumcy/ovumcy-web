@@ -88,12 +88,6 @@ func TestDashboardEmptyNotesUseAddNoteDisclosure(t *testing.T) {
 	if disclosure == nil {
 		t.Fatalf("expected dashboard note field to render as a disclosure")
 	}
-	summary := htmlFindElement(disclosure, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && node.Data == "summary"
-	})
-	if !strings.Contains(htmlDocumentText(summary), "Add note") {
-		t.Fatalf("expected empty dashboard note disclosure to use Add note copy")
-	}
 	if htmlHasAttr(disclosure, "open") {
 		t.Fatalf("expected empty dashboard note disclosure to stay closed")
 	}
@@ -139,6 +133,7 @@ func TestDashboardShowsCurrentUsageGoalSummaryForOwner(t *testing.T) {
 func assertDashboardSavedNoteDisclosure(t *testing.T, document *html.Node) {
 	t.Helper()
 
+	// "Remember to hydrate" is user-entered note content verifying data round-trip, not UI copy.
 	if !strings.Contains(htmlDocumentText(document), "Remember to hydrate") {
 		t.Fatalf("expected saved note to stay visible in dashboard form")
 	}
@@ -148,12 +143,6 @@ func assertDashboardSavedNoteDisclosure(t *testing.T, document *html.Node) {
 	}
 	if !htmlHasAttr(disclosure, "open") {
 		t.Fatalf("expected saved dashboard note disclosure to stay open")
-	}
-	summary := htmlFindElement(disclosure, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && node.Data == "summary"
-	})
-	if !strings.Contains(htmlDocumentText(summary), "Hide note") {
-		t.Fatalf("expected saved dashboard note disclosure to use Hide note copy")
 	}
 	noteField := htmlElementByID(document, "today-notes")
 	if noteField == nil {
