@@ -84,7 +84,7 @@ export async function expectElementAboveMobileTabbar(
       await page.evaluate((delta) => {
         window.scrollBy(0, delta);
       }, Math.min(remainingScroll, neededScroll));
-      await page.waitForTimeout(150);
+      await expect.poll(() => element.boundingBox()).not.toBeNull();
 
       [elementBox, tabbarBox] = await Promise.all([element.boundingBox(), tabbar.boundingBox()]);
       expect(elementBox, 'expected target element to have a visible bounding box after scrolling').not.toBeNull();

@@ -18,7 +18,7 @@ func TestSettingsCycleRejectsOutOfRangePeriodLength(t *testing.T) {
 	assertSettingsCycleStatusError(t, app, authCookie, url.Values{
 		"cycle_length":  {"28"},
 		"period_length": {"15"},
-	}, "period_length=15")
+	}, "onboarding.error.period_length_range")
 }
 
 func TestSettingsCycleRejectsIncompatibleCycleAndPeriodLength(t *testing.T) {
@@ -29,7 +29,7 @@ func TestSettingsCycleRejectsIncompatibleCycleAndPeriodLength(t *testing.T) {
 	assertSettingsCycleStatusError(t, app, authCookie, url.Values{
 		"cycle_length":  {"21"},
 		"period_length": {"14"},
-	}, "incompatible cycle/period values")
+	}, "settings.cycle.error_incompatible")
 }
 
 func TestSettingsCycleRejectsFutureLastPeriodStart(t *testing.T) {
@@ -41,7 +41,7 @@ func TestSettingsCycleRejectsFutureLastPeriodStart(t *testing.T) {
 		"cycle_length":      {"28"},
 		"period_length":     {"6"},
 		"last_period_start": {"2999-01-01"},
-	}, "future last_period_start")
+	}, "settings.error.invalid_last_period_start")
 }
 
 func TestSettingsCycleRejectsTooOldLastPeriodStart(t *testing.T) {
@@ -53,10 +53,10 @@ func TestSettingsCycleRejectsTooOldLastPeriodStart(t *testing.T) {
 		"cycle_length":      {"28"},
 		"period_length":     {"6"},
 		"last_period_start": {"1969-12-31"},
-	}, "too-old last_period_start")
+	}, "settings.error.invalid_last_period_start")
 }
 
-func assertSettingsCycleStatusError(t *testing.T, app *fiber.App, authCookie string, form url.Values, scenario string) {
+func assertSettingsCycleStatusError(t *testing.T, app *fiber.App, authCookie string, form url.Values, flashKey string) {
 	t.Helper()
 
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/cycle", strings.NewReader(form.Encode()))
@@ -67,8 +67,8 @@ func assertSettingsCycleStatusError(t *testing.T, app *fiber.App, authCookie str
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 
-	body := mustReadBodyString(t, response.Body)
-	if !strings.Contains(body, "status-error") {
-		t.Fatalf("expected status-error markup for %s, got %q", scenario, body)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	if htmlFlashByKey(document, flashKey) == nil {
+		t.Fatalf("expected flash key %q in error response", flashKey)
 	}
 }

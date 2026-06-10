@@ -19,7 +19,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 
 ## Authentication and sessions
 
-- Auth, recovery, reset, OIDC state, OIDC step-up, OIDC logout bridge, register pickup, and flash cookies are sealed with AES-256-GCM under an HKDF-derived key, with the cookie name (or row id, for field encryption) bound to the AEAD AAD. The codec is `internal/api/secure_cookie_codec.go`; the version envelope is `v2` and `v1` payloads are rejected on read.
+- Auth, recovery, reset, OIDC state, OIDC step-up, OIDC logout bridge, OIDC link-pending, TOTP pending, TOTP setup, register pickup, and flash cookies are sealed with AES-256-GCM under an HKDF-derived key, with the cookie name (or row id, for field encryption) bound to the AEAD AAD. The codec is `internal/api/secure_cookie_codec.go`; the version envelope is `v2` and `v1` payloads are rejected on read.
 - TOTP secrets are field-encrypted under a distinct HKDF label set and AAD-bound to `users.id`. See `internal/security/field_crypto.go`.
 - Operations that rotate a long-lived credential (password change, password reset, recovery-code regeneration, forced operator reset, TOTP enable/disable, clear-data) must bump `users.auth_session_version` in the same atomic database update, invalidating every active auth cookie for that user. The originating device gets a freshly issued cookie inline.
 - Auth session tokens use `jwt.SigningMethodHS256`. The parser explicitly rejects non-HMAC and `none` algorithms.

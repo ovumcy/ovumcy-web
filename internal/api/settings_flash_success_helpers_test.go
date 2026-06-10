@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string, form url.Values, successKey string) {
@@ -51,8 +52,10 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	if htmlFlashByKey(followDocument, successKey) == nil {
 		t.Fatalf("expected flash success key %q in settings page", successKey)
 	}
-	if strings.Contains(followBody, weakPasswordErrorText) {
-		t.Fatalf("did not expect weak password error on success page")
+	if htmlFindElement(followDocument, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-flash-status") == "error"
+	}) != nil {
+		t.Fatalf("did not expect error flash on settings success page")
 	}
 
 	afterFlashRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
