@@ -11,7 +11,7 @@ func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
-	symptoms, err := handler.symptomService.FetchSymptoms(user.ID)
+	symptoms, err := handler.symptomService.FetchSymptoms(c.UserContext(), user.ID)
 	if err != nil {
 		return handler.respondMappedError(c, symptomsFetchErrorSpec())
 	}
@@ -35,7 +35,7 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 		})
 	}
 
-	symptom, err := handler.symptomService.CreateSymptomForUser(user.ID, payload.Name, payload.Icon, payload.Color)
+	symptom, err := handler.symptomService.CreateSymptomForUser(c.UserContext(), user.ID, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
 		spec := mapSymptomCreateError(err)
 		handler.logHealthDataMutationError(c, "health.symptom_create", spec, "symptom")
@@ -80,7 +80,7 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 		})
 	}
 
-	symptom, err := handler.symptomService.UpdateSymptomForUser(user.ID, id, payload.Name, payload.Icon, payload.Color)
+	symptom, err := handler.symptomService.UpdateSymptomForUser(c.UserContext(), user.ID, id, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
 		useDraftValues := true
 		spec := mapSymptomUpdateError(err)
@@ -125,7 +125,7 @@ func (handler *Handler) RestoreSymptom(c *fiber.Ctx) error {
 		handler.logHealthDataMutationError(c, "health.symptom_restore", spec, "symptom")
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{})
 	}
-	if err := handler.symptomService.RestoreSymptomForUser(user.ID, id); err != nil {
+	if err := handler.symptomService.RestoreSymptomForUser(c.UserContext(), user.ID, id); err != nil {
 		spec := mapSymptomRestoreError(err)
 		handler.logHealthDataMutationError(c, "health.symptom_restore", spec, "symptom")
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
@@ -157,7 +157,7 @@ func (handler *Handler) archiveSymptom(c *fiber.Ctx) error {
 		handler.logHealthDataMutationError(c, "health.symptom_archive", spec, "symptom")
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{})
 	}
-	if err := handler.symptomService.ArchiveSymptomForUser(user.ID, id, time.Now()); err != nil {
+	if err := handler.symptomService.ArchiveSymptomForUser(c.UserContext(), user.ID, id, time.Now()); err != nil {
 		spec := mapSymptomArchiveError(err)
 		handler.logHealthDataMutationError(c, "health.symptom_archive", spec, "symptom")
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{

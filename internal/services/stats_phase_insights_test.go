@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -54,7 +55,7 @@ func TestBuildPhaseSymptomInsightsSortsAndTruncatesTopThree(t *testing.T) {
 	})
 	owner := &models.User{ID: 7, Role: models.RoleOwner}
 
-	insights, ok, err := service.BuildPhaseSymptomInsights(owner, buildPhaseInsightLogs(t), time.UTC)
+	insights, ok, err := service.BuildPhaseSymptomInsights(context.Background(), owner, buildPhaseInsightLogs(t), time.UTC)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}

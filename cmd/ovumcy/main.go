@@ -249,8 +249,8 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
 	loginService.ConfigureAttemptLimits(rateLimits.LoginMax, rateLimits.LoginWindow)
 	dailyLogs := repositories.DailyLogs
-	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, func(fn func(services.DayLogRepository) error) error {
-		return dailyLogs.WithinTransaction(func(tx *db.DailyLogRepository) error {
+	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, func(ctx context.Context, fn func(services.DayLogRepository) error) error {
+		return dailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error {
 			return fn(tx)
 		})
 	})

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -18,22 +19,22 @@ type stubOnboardingRepo struct {
 	completeAutoFill  bool
 }
 
-func (stub *stubOnboardingRepo) FindByID(uint) (models.User, error) {
+func (stub *stubOnboardingRepo) FindByID(context.Context, uint) (models.User, error) {
 	if stub.findErr != nil {
 		return models.User{}, stub.findErr
 	}
 	return stub.user, nil
 }
 
-func (stub *stubOnboardingRepo) SaveOnboardingStep1(uint, time.Time) error {
+func (stub *stubOnboardingRepo) SaveOnboardingStep1(context.Context, uint, time.Time) error {
 	return nil
 }
 
-func (stub *stubOnboardingRepo) SaveOnboardingStep2(uint, int, int, bool, bool, string, string) error {
+func (stub *stubOnboardingRepo) SaveOnboardingStep2(context.Context, uint, int, int, bool, bool, string, string) error {
 	return nil
 }
 
-func (stub *stubOnboardingRepo) CompleteOnboarding(userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
+func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
 	stub.completeCalled = true
 	stub.completeStartDay = startDay
 	stub.completePeriodLen = periodLength
@@ -53,7 +54,7 @@ func TestCompleteOnboardingForUserRequiresStep1Date(t *testing.T) {
 		user: models.User{},
 	})
 
-	_, err := service.CompleteOnboardingForUser(1, time.UTC)
+	_, err := service.CompleteOnboardingForUser(context.Background(), 1, time.UTC)
 	if !errors.Is(err, ErrOnboardingStepsRequired) {
 		t.Fatalf("expected ErrOnboardingStepsRequired, got %v", err)
 	}
@@ -75,7 +76,7 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	}
 	service := NewOnboardingService(repo)
 
-	startDay, err := service.CompleteOnboardingForUser(1, location)
+	startDay, err := service.CompleteOnboardingForUser(context.Background(), 1, location)
 	if err != nil {
 		t.Fatalf("CompleteOnboardingForUser() unexpected error: %v", err)
 	}

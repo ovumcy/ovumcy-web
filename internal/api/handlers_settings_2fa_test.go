@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -94,7 +95,7 @@ func TestShowTOTPSetupPage_TOTPNotEnabled_RendersQRAndSecret(t *testing.T) {
 func TestShowTOTPSetupPage_TOTPEnabled_ShowsManagementView(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-setup-enabled@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	// EnableTOTP bumps auth_session_version atomically, so the pre-enable
@@ -246,7 +247,7 @@ func TestVerifyTOTP2FAEnrollment_MissingSetupCookie_ReturnsError(t *testing.T) {
 func TestDisableTOTP2FA_CorrectPassword_DisablesTOTP(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-correct@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	// EnableTOTP bumped auth_session_version, so refresh the cookie before
@@ -276,7 +277,7 @@ func TestDisableTOTP2FA_CorrectPassword_DisablesTOTP(t *testing.T) {
 func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-wrong@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 
@@ -300,7 +301,7 @@ func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 	ctx := newTOTPSettingsContext(t, "totp-disable-rl@example.com")
 	svc := getTOTPServiceForTest(ctx.database)
-	if err := svc.EnableTOTP(ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
+	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 

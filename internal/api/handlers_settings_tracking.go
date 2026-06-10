@@ -29,7 +29,7 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 		HideNotesField:       input.HideNotesField,
 		ShowHistoricalPhases: input.ShowHistoricalPhases,
 	}
-	if err := handler.settingsService.SaveTrackingSettings(user.ID, update); err != nil {
+	if err := handler.settingsService.SaveTrackingSettings(c.UserContext(), user.ID, update); err != nil {
 		spec := settingsTrackingUpdateErrorSpec()
 		handler.logHealthDataMutationError(c, "settings.tracking_update", spec, "tracking_settings")
 		return handler.respondMappedError(c, spec)

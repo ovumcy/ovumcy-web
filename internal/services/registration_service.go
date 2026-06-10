@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -10,12 +11,12 @@ import (
 var ErrRegistrationSeedSymptoms = errors.New("registration seed symptoms failed")
 
 type RegistrationAuthService interface {
-	RegisterOwner(email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error)
+	RegisterOwner(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error)
 	BuildOIDCOwnerUser(email string, createdAt time.Time) (models.User, error)
 }
 
 type RegistrationPersistence interface {
-	CreateUserWithSymptoms(user *models.User, symptoms []models.SymptomType) error
+	CreateUserWithSymptoms(ctx context.Context, user *models.User, symptoms []models.SymptomType) error
 }
 
 type RegistrationService struct {
@@ -36,17 +37,17 @@ func (service *RegistrationService) RegistrationOpen() bool {
 	return service.mode.IsOpen()
 }
 
-func (service *RegistrationService) RegisterOwnerAccount(email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error) {
+func (service *RegistrationService) RegisterOwnerAccount(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error) {
 	if !service.RegistrationOpen() {
 		return models.User{}, "", ErrAuthRegistrationDisabled
 	}
 
-	user, recoveryCode, err := service.auth.RegisterOwner(email, rawPassword, confirmPassword, createdAt)
+	user, recoveryCode, err := service.auth.RegisterOwner(ctx, email, rawPassword, confirmPassword, createdAt)
 	if err != nil {
 		return models.User{}, "", err
 	}
 
-	if err := service.store.CreateUserWithSymptoms(&user, BuiltinSymptomRecordsForUser(0)); err != nil {
+	if err := service.store.CreateUserWithSymptoms(ctx, &user, BuiltinSymptomRecordsForUser(0)); err != nil {
 		if isRegistrationUniqueConstraintError(err) {
 			return models.User{}, "", ErrAuthEmailExists
 		}
@@ -59,7 +60,7 @@ func (service *RegistrationService) RegisterOwnerAccount(email string, rawPasswo
 	return user, recoveryCode, nil
 }
 
-func (service *RegistrationService) AutoProvisionOwnerAccount(email string, createdAt time.Time) (models.User, error) {
+func (service *RegistrationService) AutoProvisionOwnerAccount(ctx context.Context, email string, createdAt time.Time) (models.User, error) {
 	if !service.RegistrationOpen() {
 		return models.User{}, ErrAuthRegistrationDisabled
 	}
@@ -69,7 +70,7 @@ func (service *RegistrationService) AutoProvisionOwnerAccount(email string, crea
 		return models.User{}, ErrAuthRegisterFailed
 	}
 
-	if err := service.store.CreateUserWithSymptoms(&user, BuiltinSymptomRecordsForUser(0)); err != nil {
+	if err := service.store.CreateUserWithSymptoms(ctx, &user, BuiltinSymptomRecordsForUser(0)); err != nil {
 		if isRegistrationUniqueConstraintError(err) {
 			return models.User{}, ErrAuthEmailExists
 		}

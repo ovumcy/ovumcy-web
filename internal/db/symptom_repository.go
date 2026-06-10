@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
@@ -13,9 +15,9 @@ func NewSymptomRepository(database *gorm.DB) *SymptomRepository {
 	return &SymptomRepository{database: database}
 }
 
-func (repo *SymptomRepository) CountBuiltinByUser(userID uint) (int64, error) {
+func (repo *SymptomRepository) CountBuiltinByUser(ctx context.Context, userID uint) (int64, error) {
 	var count int64
-	if err := repo.database.Model(&models.SymptomType{}).
+	if err := repo.database.WithContext(ctx).Model(&models.SymptomType{}).
 		Where("user_id = ? AND is_builtin = ?", userID, true).
 		Count(&count).Error; err != nil {
 		return 0, err
@@ -23,9 +25,9 @@ func (repo *SymptomRepository) CountBuiltinByUser(userID uint) (int64, error) {
 	return count, nil
 }
 
-func (repo *SymptomRepository) CountByUserAndIDs(userID uint, ids []uint) (int64, error) {
+func (repo *SymptomRepository) CountByUserAndIDs(ctx context.Context, userID uint, ids []uint) (int64, error) {
 	var count int64
-	if err := repo.database.Model(&models.SymptomType{}).
+	if err := repo.database.WithContext(ctx).Model(&models.SymptomType{}).
 		Where("user_id = ? AND id IN ?", userID, ids).
 		Count(&count).Error; err != nil {
 		return 0, err
@@ -33,33 +35,33 @@ func (repo *SymptomRepository) CountByUserAndIDs(userID uint, ids []uint) (int64
 	return count, nil
 }
 
-func (repo *SymptomRepository) ListByUser(userID uint) ([]models.SymptomType, error) {
+func (repo *SymptomRepository) ListByUser(ctx context.Context, userID uint) ([]models.SymptomType, error) {
 	symptoms := make([]models.SymptomType, 0)
-	if err := repo.database.Where("user_id = ?", userID).Find(&symptoms).Error; err != nil {
+	if err := repo.database.WithContext(ctx).Where("user_id = ?", userID).Find(&symptoms).Error; err != nil {
 		return nil, err
 	}
 	return symptoms, nil
 }
 
-func (repo *SymptomRepository) Create(symptom *models.SymptomType) error {
-	return repo.database.Create(symptom).Error
+func (repo *SymptomRepository) Create(ctx context.Context, symptom *models.SymptomType) error {
+	return repo.database.WithContext(ctx).Create(symptom).Error
 }
 
-func (repo *SymptomRepository) CreateBatch(symptoms []models.SymptomType) error {
+func (repo *SymptomRepository) CreateBatch(ctx context.Context, symptoms []models.SymptomType) error {
 	if len(symptoms) == 0 {
 		return nil
 	}
-	return repo.database.Create(&symptoms).Error
+	return repo.database.WithContext(ctx).Create(&symptoms).Error
 }
 
-func (repo *SymptomRepository) FindByIDForUser(symptomID uint, userID uint) (models.SymptomType, error) {
+func (repo *SymptomRepository) FindByIDForUser(ctx context.Context, symptomID uint, userID uint) (models.SymptomType, error) {
 	symptom := models.SymptomType{}
-	if err := repo.database.Where("id = ? AND user_id = ?", symptomID, userID).First(&symptom).Error; err != nil {
+	if err := repo.database.WithContext(ctx).Where("id = ? AND user_id = ?", symptomID, userID).First(&symptom).Error; err != nil {
 		return models.SymptomType{}, err
 	}
 	return symptom, nil
 }
 
-func (repo *SymptomRepository) Update(symptom *models.SymptomType) error {
-	return repo.database.Save(symptom).Error
+func (repo *SymptomRepository) Update(ctx context.Context, symptom *models.SymptomType) error {
+	return repo.database.WithContext(ctx).Save(symptom).Error
 }

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,59 +20,59 @@ func TestRegisterPickupTokenRepositoryIssueConsumeTTL(t *testing.T) {
 	base := time.Date(2026, time.June, 9, 12, 0, 0, 0, time.UTC)
 
 	// Issue validation.
-	if err := repo.Issue("", 42, base.Add(5*time.Minute)); err == nil {
+	if err := repo.Issue(context.Background(), "", 42, base.Add(5*time.Minute)); err == nil {
 		t.Fatal("expected empty nonce to be rejected")
 	}
-	if err := repo.Issue("nonce-a", 0, base.Add(5*time.Minute)); err == nil {
+	if err := repo.Issue(context.Background(), "nonce-a", 0, base.Add(5*time.Minute)); err == nil {
 		t.Fatal("expected zero user id to be rejected")
 	}
-	if err := repo.Issue("nonce-a", 42, time.Time{}); err == nil {
+	if err := repo.Issue(context.Background(), "nonce-a", 42, time.Time{}); err == nil {
 		t.Fatal("expected zero expiry to be rejected")
 	}
 
 	// Issue + consume returns the original user id once.
-	if err := repo.Issue("nonce-a", 42, base.Add(5*time.Minute)); err != nil {
+	if err := repo.Issue(context.Background(), "nonce-a", 42, base.Add(5*time.Minute)); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
-	if userID, ok, err := repo.Consume("nonce-a", base); err != nil || !ok || userID != 42 {
+	if userID, ok, err := repo.Consume(context.Background(), "nonce-a", base); err != nil || !ok || userID != 42 {
 		t.Fatalf("first consume = (%d, %t, %v), want (42, true, nil)", userID, ok, err)
 	}
 
 	// Single-use: replay returns the same indistinguishable (0,false,nil).
-	if userID, ok, err := repo.Consume("nonce-a", base); err != nil || ok || userID != 0 {
+	if userID, ok, err := repo.Consume(context.Background(), "nonce-a", base); err != nil || ok || userID != 0 {
 		t.Fatalf("replay consume = (%d, %t, %v), want (0, false, nil)", userID, ok, err)
 	}
 
 	// Expired token cannot be consumed.
-	if err := repo.Issue("nonce-expired", 7, base.Add(-1*time.Minute)); err != nil {
+	if err := repo.Issue(context.Background(), "nonce-expired", 7, base.Add(-1*time.Minute)); err != nil {
 		t.Fatalf("issue expired: %v", err)
 	}
-	if userID, ok, err := repo.Consume("nonce-expired", base); err != nil || ok || userID != 0 {
+	if userID, ok, err := repo.Consume(context.Background(), "nonce-expired", base); err != nil || ok || userID != 0 {
 		t.Fatalf("expired consume = (%d, %t, %v), want (0, false, nil)", userID, ok, err)
 	}
 
 	// Missing / empty nonce never consume.
-	if _, ok, _ := repo.Consume("does-not-exist", base); ok {
+	if _, ok, _ := repo.Consume(context.Background(), "does-not-exist", base); ok {
 		t.Fatal("expected missing nonce to not consume")
 	}
-	if _, ok, _ := repo.Consume("", base); ok {
+	if _, ok, _ := repo.Consume(context.Background(), "", base); ok {
 		t.Fatal("expected empty nonce to not consume")
 	}
 
 	// DeleteExpired drops only expired rows.
-	if err := repo.Issue("nonce-future", 9, base.Add(5*time.Minute)); err != nil {
+	if err := repo.Issue(context.Background(), "nonce-future", 9, base.Add(5*time.Minute)); err != nil {
 		t.Fatalf("issue future: %v", err)
 	}
-	if err := repo.Issue("nonce-stale", 9, base.Add(-2*time.Minute)); err != nil {
+	if err := repo.Issue(context.Background(), "nonce-stale", 9, base.Add(-2*time.Minute)); err != nil {
 		t.Fatalf("issue stale: %v", err)
 	}
-	if err := repo.DeleteExpired(base); err != nil {
+	if err := repo.DeleteExpired(context.Background(), base); err != nil {
 		t.Fatalf("delete expired: %v", err)
 	}
-	if _, ok, _ := repo.Consume("nonce-stale", base); ok {
+	if _, ok, _ := repo.Consume(context.Background(), "nonce-stale", base); ok {
 		t.Fatal("expected stale row to be deleted by DeleteExpired")
 	}
-	if _, ok, _ := repo.Consume("nonce-future", base); !ok {
+	if _, ok, _ := repo.Consume(context.Background(), "nonce-future", base); !ok {
 		t.Fatal("expected future row to survive DeleteExpired")
 	}
 }
@@ -95,14 +96,14 @@ func TestOIDCLogoutStateRepositorySaveFindTTL(t *testing.T) {
 	}
 
 	// nil is a no-op.
-	if err := repo.Save(nil); err != nil {
+	if err := repo.Save(context.Background(), nil); err != nil {
 		t.Fatalf("save nil: %v", err)
 	}
 
-	if err := repo.Save(newState("sess-1", "https://id.example.com/logout", "hint-1", base.Add(10*time.Minute))); err != nil {
+	if err := repo.Save(context.Background(), newState("sess-1", "https://id.example.com/logout", "hint-1", base.Add(10*time.Minute))); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	got, ok, err := repo.FindBySessionID("sess-1")
+	got, ok, err := repo.FindBySessionID(context.Background(), "sess-1")
 	if err != nil || !ok {
 		t.Fatalf("find = (ok=%t, err=%v), want found", ok, err)
 	}
@@ -111,41 +112,41 @@ func TestOIDCLogoutStateRepositorySaveFindTTL(t *testing.T) {
 	}
 
 	// Upsert on session_id conflict updates the mutable columns.
-	if err := repo.Save(newState("sess-1", "https://id.example.com/logout-v2", "hint-2", base.Add(10*time.Minute))); err != nil {
+	if err := repo.Save(context.Background(), newState("sess-1", "https://id.example.com/logout-v2", "hint-2", base.Add(10*time.Minute))); err != nil {
 		t.Fatalf("re-save: %v", err)
 	}
-	got, _, _ = repo.FindBySessionID("sess-1")
+	got, _, _ = repo.FindBySessionID(context.Background(), "sess-1")
 	if got.EndSessionEndpoint != "https://id.example.com/logout-v2" || got.IDTokenHint != "hint-2" {
 		t.Fatalf("expected upsert to update columns, got %#v", got)
 	}
 
 	// Missing session.
-	if _, ok, _ := repo.FindBySessionID("nope"); ok {
+	if _, ok, _ := repo.FindBySessionID(context.Background(), "nope"); ok {
 		t.Fatal("expected missing session to return not-found")
 	}
 
 	// Targeted delete.
-	if err := repo.DeleteBySessionID("sess-1"); err != nil {
+	if err := repo.DeleteBySessionID(context.Background(), "sess-1"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, ok, _ := repo.FindBySessionID("sess-1"); ok {
+	if _, ok, _ := repo.FindBySessionID(context.Background(), "sess-1"); ok {
 		t.Fatal("expected deleted session to be gone")
 	}
 
 	// TTL sweep drops only expired rows.
-	if err := repo.Save(newState("valid", "https://id.example.com/l", "h", base.Add(10*time.Minute))); err != nil {
+	if err := repo.Save(context.Background(), newState("valid", "https://id.example.com/l", "h", base.Add(10*time.Minute))); err != nil {
 		t.Fatalf("save valid: %v", err)
 	}
-	if err := repo.Save(newState("stale", "https://id.example.com/l", "h", base.Add(-1*time.Minute))); err != nil {
+	if err := repo.Save(context.Background(), newState("stale", "https://id.example.com/l", "h", base.Add(-1*time.Minute))); err != nil {
 		t.Fatalf("save stale: %v", err)
 	}
-	if err := repo.DeleteExpired(base); err != nil {
+	if err := repo.DeleteExpired(context.Background(), base); err != nil {
 		t.Fatalf("delete expired: %v", err)
 	}
-	if _, ok, _ := repo.FindBySessionID("stale"); ok {
+	if _, ok, _ := repo.FindBySessionID(context.Background(), "stale"); ok {
 		t.Fatal("expected stale logout state to be deleted")
 	}
-	if _, ok, _ := repo.FindBySessionID("valid"); !ok {
+	if _, ok, _ := repo.FindBySessionID(context.Background(), "valid"); !ok {
 		t.Fatal("expected valid logout state to survive")
 	}
 }

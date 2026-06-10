@@ -29,7 +29,7 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 		return nil, errors.New("invalid token")
 	}
 
-	user, claims, err := handler.authService.ResolveAuthSession(handler.secretKey, tokenValue, time.Now())
+	user, claims, err := handler.authService.ResolveAuthSession(c.UserContext(), handler.secretKey, tokenValue, time.Now())
 	if err != nil {
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			handler.clearAuthRelatedCookies(c)

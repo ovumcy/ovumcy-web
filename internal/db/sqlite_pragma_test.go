@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,7 +57,7 @@ func TestSQLitePragmasEnforced(t *testing.T) {
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	if err := repos.Users.Create(user); err != nil {
+	if err := repos.Users.Create(context.Background(), user); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	dayLog := &models.DailyLog{
@@ -64,7 +65,7 @@ func TestSQLitePragmasEnforced(t *testing.T) {
 		Date:     time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC),
 		IsPeriod: true,
 	}
-	if err := repos.DailyLogs.Create(dayLog); err != nil {
+	if err := repos.DailyLogs.Create(context.Background(), dayLog); err != nil {
 		t.Fatalf("create daily log: %v", err)
 	}
 

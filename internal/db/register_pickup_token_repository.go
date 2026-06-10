@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ func NewRegisterPickupTokenRepository(database *gorm.DB) *RegisterPickupTokenRep
 // Issue inserts a fresh pickup token. The nonce must be unique; callers
 // should source it from a 16-byte CSPRNG draw. ExpiresAt is treated as the
 // hard cap for the matching cookie's TTL.
-func (repo *RegisterPickupTokenRepository) Issue(nonce string, userID uint, expiresAt time.Time) error {
+func (repo *RegisterPickupTokenRepository) Issue(ctx context.Context, nonce string, userID uint, expiresAt time.Time) error {
 	trimmed := strings.TrimSpace(nonce)
 	if trimmed == "" {
 		return errors.New("register_pickup_tokens: nonce is required")
@@ -44,7 +45,7 @@ func (repo *RegisterPickupTokenRepository) Issue(nonce string, userID uint, expi
 		ExpiresAt: expiresAt.UTC(),
 		CreatedAt: time.Now().UTC(),
 	}
-	return repo.database.Create(row).Error
+	return repo.database.WithContext(ctx).Create(row).Error
 }
 
 // Consume atomically marks the row identified by nonce as consumed and
@@ -52,7 +53,7 @@ func (repo *RegisterPickupTokenRepository) Issue(nonce string, userID uint, expi
 // consumed, or has expired returns (0, false, nil) — callers MUST treat all
 // three cases the same way to keep replay attempts indistinguishable from
 // missing/expired cookies and decoys.
-func (repo *RegisterPickupTokenRepository) Consume(nonce string, now time.Time) (uint, bool, error) {
+func (repo *RegisterPickupTokenRepository) Consume(ctx context.Context, nonce string, now time.Time) (uint, bool, error) {
 	trimmed := strings.TrimSpace(nonce)
 	if trimmed == "" {
 		return 0, false, nil
@@ -62,7 +63,7 @@ func (repo *RegisterPickupTokenRepository) Consume(nonce string, now time.Time) 
 	}
 
 	var userID uint
-	err := repo.database.Transaction(func(tx *gorm.DB) error {
+	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row models.RegisterPickupToken
 		if err := tx.Where("nonce = ?", trimmed).First(&row).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -95,9 +96,9 @@ func (repo *RegisterPickupTokenRepository) Consume(nonce string, now time.Time) 
 // DeleteExpired drops rows whose expires_at is at or before cutoff. Callers
 // can run this periodically; the table is otherwise bounded only by the
 // register rate limit and the 5-minute TTL.
-func (repo *RegisterPickupTokenRepository) DeleteExpired(cutoff time.Time) error {
+func (repo *RegisterPickupTokenRepository) DeleteExpired(ctx context.Context, cutoff time.Time) error {
 	if cutoff.IsZero() {
 		cutoff = time.Now().UTC()
 	}
-	return repo.database.Where("expires_at <= ?", cutoff.UTC()).Delete(&models.RegisterPickupToken{}).Error
+	return repo.database.WithContext(ctx).Where("expires_at <= ?", cutoff.UTC()).Delete(&models.RegisterPickupToken{}).Error
 }

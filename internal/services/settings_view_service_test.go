@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ type stubSettingsViewLoader struct {
 	err  error
 }
 
-func (stub *stubSettingsViewLoader) LoadSettings(_ uint) (models.User, error) {
+func (stub *stubSettingsViewLoader) LoadSettings(ctx context.Context, _ uint) (models.User, error) {
 	if stub.err != nil {
 		return models.User{}, stub.err
 	}
@@ -29,7 +30,7 @@ type stubSettingsViewExportBuilder struct {
 	calls     []settingsViewSummaryCall
 }
 
-func (stub *stubSettingsViewExportBuilder) BuildSummary(_ uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error) {
+func (stub *stubSettingsViewExportBuilder) BuildSummary(ctx context.Context, _ uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error) {
 	stub.called = true
 	stub.calls = append(stub.calls, newSettingsViewSummaryCall(from, to, location))
 	if stub.err != nil {
@@ -70,7 +71,7 @@ type stubSettingsViewSymptomProvider struct {
 	called   bool
 }
 
-func (stub *stubSettingsViewSymptomProvider) FetchSymptoms(_ uint) ([]models.SymptomType, error) {
+func (stub *stubSettingsViewSymptomProvider) FetchSymptoms(ctx context.Context, _ uint) ([]models.SymptomType, error) {
 	stub.called = true
 	if stub.err != nil {
 		return nil, stub.err
@@ -92,7 +93,7 @@ func TestBuildSettingsPageViewDataClassifiesChangePasswordError(t *testing.T) {
 	service := NewSettingsViewService(settingsLoader, NewNotificationService(), nil, nil)
 
 	user := &models.User{ID: 1, Role: models.RoleOwner}
-	viewData, err := service.BuildSettingsPageViewData(user, "en", SettingsViewInput{
+	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{
 		FlashError: "invalid current password",
 	}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
 	if err != nil {
@@ -131,7 +132,7 @@ func TestBuildSettingsPageViewDataOwnerLoadsExportSummary(t *testing.T) {
 	service := NewSettingsViewService(settingsLoader, NewNotificationService(), exportBuilder, symptomProvider)
 
 	user := &models.User{ID: 2, Role: models.RoleOwner}
-	viewData, err := service.BuildSettingsPageViewData(user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
+	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestBuildSettingsPageViewDataOwnerClampsExportDefaultToRequestLocalToday(t 
 
 	service := NewSettingsViewService(settingsLoader, NewNotificationService(), exportBuilder, nil)
 	user := &models.User{ID: 5, Role: models.RoleOwner}
-	viewData, err := service.BuildSettingsPageViewData(user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
+	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
 	}
@@ -211,7 +212,7 @@ func TestBuildSettingsPageViewDataSanitizesFutureLastPeriodStartForForm(t *testi
 
 	service := NewSettingsViewService(settingsLoader, NewNotificationService(), nil, nil)
 	user := &models.User{ID: 6, Role: models.RoleOwner}
-	viewData, err := service.BuildSettingsPageViewData(user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
+	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
 	}
@@ -237,7 +238,7 @@ func TestBuildSettingsPageViewDataPartnerSkipsExportSummary(t *testing.T) {
 	service := NewSettingsViewService(settingsLoader, NewNotificationService(), exportBuilder, symptomProvider)
 
 	user := &models.User{ID: 3, Role: "legacy_viewer"}
-	viewData, err := service.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
+	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
 	}
@@ -264,7 +265,7 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 		nil,
 		nil,
 	)
-	if _, err := settingsErrService.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSettings) {
+	if _, err := settingsErrService.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSettings) {
 		t.Fatalf("expected ErrSettingsViewLoadSettings, got %v", err)
 	}
 
@@ -274,7 +275,7 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 		&stubSettingsViewExportBuilder{err: errors.New("export fail")},
 		nil,
 	)
-	if _, err := exportErrService.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadExport) {
+	if _, err := exportErrService.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadExport) {
 		t.Fatalf("expected ErrSettingsViewLoadExport, got %v", err)
 	}
 
@@ -284,7 +285,7 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 		nil,
 		&stubSettingsViewSymptomProvider{err: errors.New("symptom fail")},
 	)
-	if _, err := symptomErrService.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSymptoms) {
+	if _, err := symptomErrService.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSymptoms) {
 		t.Fatalf("expected ErrSettingsViewLoadSymptoms, got %v", err)
 	}
 }

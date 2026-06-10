@@ -15,7 +15,7 @@ func (handler *Handler) ExportCSV(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, *spec)
 	}
 	location := handler.requestLocation(c)
-	rows, err := handler.exportService.BuildCSVRows(user.ID, from, to, location)
+	rows, err := handler.exportService.BuildCSVRows(c.UserContext(), user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "csv"))

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -56,19 +57,19 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 		return entry
 	}
 
-	if err := repo.Create(mk(1, func(e *models.DailyLog) { e.IsPeriod = true })); err != nil {
+	if err := repo.Create(context.Background(), mk(1, func(e *models.DailyLog) { e.IsPeriod = true })); err != nil {
 		t.Fatalf("create d1: %v", err)
 	}
-	if err := repo.Create(mk(5, func(e *models.DailyLog) { e.PregnancyTest = "positive" })); err != nil {
+	if err := repo.Create(context.Background(), mk(5, func(e *models.DailyLog) { e.PregnancyTest = "positive" })); err != nil {
 		t.Fatalf("create d5: %v", err)
 	}
-	if err := repo.Create(mk(10, func(e *models.DailyLog) { e.IsPeriod = true; e.CycleStart = true })); err != nil {
+	if err := repo.Create(context.Background(), mk(10, func(e *models.DailyLog) { e.IsPeriod = true; e.CycleStart = true })); err != nil {
 		t.Fatalf("create d10: %v", err)
 	}
 
 	// FindByUserAndDayRange returns the pregnancy_test value via its column
 	// whitelist (regression guard: a missing column silently reads as empty).
-	entry, found, err := repo.FindByUserAndDayRange(userID, day(5), day(6))
+	entry, found, err := repo.FindByUserAndDayRange(context.Background(), userID, day(5), day(6))
 	if err != nil || !found {
 		t.Fatalf("find d5 = (found=%t, err=%v), want found", found, err)
 	}
@@ -77,12 +78,12 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 	}
 
 	// Empty range reports not-found.
-	if _, found, _ := repo.FindByUserAndDayRange(userID, day(20), day(21)); found {
+	if _, found, _ := repo.FindByUserAndDayRange(context.Background(), userID, day(20), day(21)); found {
 		t.Fatal("expected empty range to report not found")
 	}
 
 	// ListByUserDayRange returns the window in DESC order.
-	window, err := repo.ListByUserDayRange(userID, day(1), day(11))
+	window, err := repo.ListByUserDayRange(context.Background(), userID, day(1), day(11))
 	if err != nil {
 		t.Fatalf("list day range: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 
 	// ListByUserRange honors the lower bound only.
 	fromD5 := day(5)
-	ranged, err := repo.ListByUserRange(userID, &fromD5, nil)
+	ranged, err := repo.ListByUserRange(context.Background(), userID, &fromD5, nil)
 	if err != nil {
 		t.Fatalf("list range: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 	}
 
 	// ListPeriodDays returns only period rows.
-	periods, err := repo.ListPeriodDays(userID)
+	periods, err := repo.ListPeriodDays(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("list period days: %v", err)
 	}
@@ -114,18 +115,18 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 
 	// Save persists a mutation on an existing row.
 	entry.Notes = "updated note"
-	if err := repo.Save(&entry); err != nil {
+	if err := repo.Save(context.Background(), &entry); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if updated, _, _ := repo.FindByUserAndDayRange(userID, day(5), day(6)); updated.Notes != "updated note" {
+	if updated, _, _ := repo.FindByUserAndDayRange(context.Background(), userID, day(5), day(6)); updated.Notes != "updated note" {
 		t.Fatalf("expected Save to persist note, got %q", updated.Notes)
 	}
 
 	// DeleteByUserAndDayRange removes the [d1, d5) window (only d1).
-	if err := repo.DeleteByUserAndDayRange(userID, day(1), day(5)); err != nil {
+	if err := repo.DeleteByUserAndDayRange(context.Background(), userID, day(1), day(5)); err != nil {
 		t.Fatalf("delete range: %v", err)
 	}
-	remaining, err := repo.ListByUser(userID)
+	remaining, err := repo.ListByUser(context.Background(), userID)
 	if err != nil {
 		t.Fatalf("list by user: %v", err)
 	}

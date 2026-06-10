@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -350,7 +351,7 @@ func persistOIDCLogoutStateForAuthCookie(t *testing.T, database *gorm.DB, authCo
 
 	sessionID := mustExtractAuthSessionIDFromCookieHeader(t, authCookie)
 	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
-	if err := stateService.Save(sessionID, logoutState, time.Now().UTC()); err != nil {
+	if err := stateService.Save(context.Background(), sessionID, logoutState, time.Now().UTC()); err != nil {
 		t.Fatalf("save oidc logout state: %v", err)
 	}
 }

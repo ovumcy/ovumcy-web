@@ -25,7 +25,7 @@ func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "settings.clear_data", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.settingsService.ClearAllData(user.ID); err != nil {
+	if err := handler.settingsService.ClearAllData(c.UserContext(), user.ID); err != nil {
 		spec := settingsClearDataErrorSpec()
 		handler.logSecurityError(c, "settings.clear_data", spec)
 		return handler.respondMappedError(c, spec)
@@ -56,7 +56,7 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.settingsService.DeleteAccount(user.ID); err != nil {
+	if err := handler.settingsService.DeleteAccount(c.UserContext(), user.ID); err != nil {
 		spec := settingsDeleteAccountErrorSpec()
 		handler.logSecurityError(c, "settings.delete_account", spec)
 		return handler.respondMappedError(c, spec)

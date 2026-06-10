@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,38 +19,38 @@ import (
 // other methods are unused but must exist to satisfy the interface.
 type stubLogoutAuthRepo struct{}
 
-func (stubLogoutAuthRepo) ExistsByNormalizedEmail(string) (bool, error) {
+func (stubLogoutAuthRepo) ExistsByNormalizedEmail(context.Context, string) (bool, error) {
 	return false, nil
 }
 
-func (stubLogoutAuthRepo) FindByNormalizedEmail(string) (models.User, error) {
+func (stubLogoutAuthRepo) FindByNormalizedEmail(context.Context, string) (models.User, error) {
 	return models.User{}, nil
 }
 
-func (stubLogoutAuthRepo) FindByNormalizedEmailOptional(string) (models.User, bool, error) {
+func (stubLogoutAuthRepo) FindByNormalizedEmailOptional(context.Context, string) (models.User, bool, error) {
 	return models.User{}, false, nil
 }
 
-func (stubLogoutAuthRepo) FindByID(uint) (models.User, error) {
+func (stubLogoutAuthRepo) FindByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
 
-func (stubLogoutAuthRepo) Create(*models.User) error { return nil }
-func (stubLogoutAuthRepo) Save(*models.User) error   { return nil }
+func (stubLogoutAuthRepo) Create(context.Context, *models.User) error { return nil }
+func (stubLogoutAuthRepo) Save(context.Context, *models.User) error   { return nil }
 
-func (stubLogoutAuthRepo) UpdateRecoveryCodeHashAndRevokeSessions(uint, string) error {
+func (stubLogoutAuthRepo) UpdateRecoveryCodeHashAndRevokeSessions(context.Context, uint, string) error {
 	return nil
 }
 
-func (stubLogoutAuthRepo) UpdatePasswordAndRevokeSessions(uint, string, bool) error {
+func (stubLogoutAuthRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, string, bool) error {
 	return nil
 }
 
-func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(uint, string, string, bool) error {
+func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(context.Context, uint, string, string, bool) error {
 	return nil
 }
 
-func (stubLogoutAuthRepo) BumpAuthSessionVersion(uint) error { return nil }
+func (stubLogoutAuthRepo) BumpAuthSessionVersion(context.Context, uint) error { return nil }
 
 // TestLogoutHandlerEnforcesPerAccountRateLimit asserts that Handler.Logout
 // returns 429 with the documented error message when the per-account logout

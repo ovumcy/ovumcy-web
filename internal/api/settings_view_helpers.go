@@ -14,6 +14,7 @@ func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, f
 	location := handler.requestLocation(c)
 
 	viewData, err := handler.settingsViewService.BuildSettingsPageViewData(
+		c.UserContext(),
 		user,
 		language,
 		services.SettingsViewInput{

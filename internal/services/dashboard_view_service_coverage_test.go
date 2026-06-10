@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ type dashboardviewserviceCovCapturingStatsProvider struct {
 	captTo   time.Time
 }
 
-func (s *dashboardviewserviceCovCapturingStatsProvider) BuildCycleStatsForRange(
+func (s *dashboardviewserviceCovCapturingStatsProvider) BuildCycleStatsForRange(ctx context.Context,
 	_ *models.User, from time.Time, to time.Time, _ time.Time, _ *time.Location,
 ) (CycleStats, []models.DailyLog, error) {
 	s.captFrom = from
@@ -40,7 +41,7 @@ func TestDashboardviewserviceCovStatsRangeIsTwoYears(t *testing.T) {
 		&stubDashboardViewerProvider{},
 		&stubDashboardDayStateProvider{},
 	)
-	if _, err := svc.BuildDashboardViewData(user, "en", now, time.UTC); err != nil {
+	if _, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !capturing.captFrom.Equal(wantFrom) {
@@ -63,7 +64,7 @@ func TestDashboardviewserviceCovYesterdayIsOneDayBack(t *testing.T) {
 		&stubDashboardViewerProvider{},
 		&stubDashboardDayStateProvider{},
 	)
-	vd, err := svc.BuildDashboardViewData(user, "en", now, time.UTC)
+	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +90,7 @@ func TestDashboardviewserviceCovTodayEntryExistsWithID(t *testing.T) {
 		&stubDashboardViewerProvider{logEntry: models.DailyLog{ID: 42, Date: now, IsPeriod: true}},
 		&stubDashboardDayStateProvider{},
 	)
-	vd, err := svcWithID.BuildDashboardViewData(user, "en", now, time.UTC)
+	vd, err := svcWithID.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestDashboardviewserviceCovTodayEntryExistsWithID(t *testing.T) {
 		&stubDashboardViewerProvider{logEntry: models.DailyLog{ID: 0, Date: now}},
 		&stubDashboardDayStateProvider{},
 	)
-	vd2, err := svcNoID.BuildDashboardViewData(user, "en", now, time.UTC)
+	vd2, err := svcNoID.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDashboard(t *testing.
 		&stubDashboardViewerProvider{symptoms: symptoms},
 		&stubDashboardDayStateProvider{},
 	)
-	vd, err := svc.BuildDashboardViewData(user, "en", now, time.UTC)
+	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDashboard(t *testing.
 		&stubDashboardViewerProvider{symptoms: symptoms[:3]},
 		&stubDashboardDayStateProvider{},
 	)
-	vdFew, err := svcFew.BuildDashboardViewData(user, "en", now, time.UTC)
+	vdFew, err := svcFew.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -219,7 +220,7 @@ func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDayEditor(t *testing.
 		&stubDashboardViewerProvider{symptoms: symptoms},
 		&stubDashboardDayStateProvider{},
 	)
-	vd, err := svc.BuildDayEditorViewData(user, "en", day, now, time.UTC)
+	vd, err := svc.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -232,7 +233,7 @@ func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDayEditor(t *testing.
 		&stubDashboardViewerProvider{symptoms: symptoms[:2]},
 		&stubDashboardDayStateProvider{},
 	)
-	vdFew, err := svcFew.BuildDayEditorViewData(user, "en", day, now, time.UTC)
+	vdFew, err := svcFew.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -264,7 +265,7 @@ func TestDashboardviewserviceCovEntryContextLogsLoadedForTwoSymptoms(t *testing.
 		&stubDashboardViewerProvider{symptoms: symptoms},
 		dayState,
 	)
-	vd, err := svc.BuildDayEditorViewData(user, "en", day, now, time.UTC)
+	vd, err := svc.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -282,7 +283,7 @@ func TestDashboardviewserviceCovEntryContextLogsLoadedForTwoSymptoms(t *testing.
 		&stubDashboardDayStateProvider{logs: []models.DailyLog{sentinel}},
 	)
 	// Should succeed even though FetchAllLogsForUser would be a no-op.
-	if _, err := svcOneSymptom.BuildDayEditorViewData(user, "en", day, now, time.UTC); err != nil {
+	if _, err := svcOneSymptom.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC); err != nil {
 		t.Fatalf("unexpected error for viewer with 1 symptom: %v", err)
 	}
 }
@@ -314,7 +315,7 @@ func TestDashboardviewserviceCovSymptomRankingRequiresTwoSymptomsAndTwoCycles(t 
 		&stubDashboardViewerProvider{symptoms: symptoms},
 		&stubDashboardDayStateProvider{logs: logsWithTwoCycles},
 	)
-	vd, err := svc.BuildDashboardViewData(user, "en", now, time.UTC)
+	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -329,7 +330,7 @@ func TestDashboardviewserviceCovSymptomRankingRequiresTwoSymptomsAndTwoCycles(t 
 		&stubDashboardViewerProvider{symptoms: symptoms[:1]},
 		&stubDashboardDayStateProvider{logs: logsWithTwoCycles},
 	)
-	vdOne, err := svcOne.BuildDashboardViewData(user, "en", now, time.UTC)
+	vdOne, err := svcOne.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

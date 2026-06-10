@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	if err := repos.Users.Create(user); err != nil {
+	if err := repos.Users.Create(context.Background(), user); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 
@@ -52,7 +53,7 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		}
 	}
 
-	if err := repos.Users.DeleteAccountAndRelatedData(user.ID); err != nil {
+	if err := repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID); err != nil {
 		t.Fatalf("delete account: %v", err)
 	}
 
@@ -118,7 +119,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 				AutoPeriodFill:   true,
 				CreatedAt:        time.Now().UTC(),
 			}
-			if err := repos.Users.Create(user); err != nil {
+			if err := repos.Users.Create(context.Background(), user); err != nil {
 				t.Fatalf("create user: %v", err)
 			}
 
@@ -128,7 +129,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 				t.Fatalf("drop %s: %v", tc.dropTable, err)
 			}
 
-			if err := repos.Users.DeleteAccountAndRelatedData(user.ID); err == nil {
+			if err := repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID); err == nil {
 				t.Fatal("expected an error when a child-table delete fails, got nil")
 			}
 

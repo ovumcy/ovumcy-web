@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -19,10 +20,10 @@ var (
 )
 
 type OnboardingUserRepository interface {
-	FindByID(userID uint) (models.User, error)
-	SaveOnboardingStep1(userID uint, start time.Time) error
-	SaveOnboardingStep2(userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error
-	CompleteOnboarding(userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error
+	FindByID(ctx context.Context, userID uint) (models.User, error)
+	SaveOnboardingStep1(ctx context.Context, userID uint, start time.Time) error
+	SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error
+	CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error
 }
 
 type OnboardingService struct {
@@ -33,8 +34,8 @@ func NewOnboardingService(users OnboardingUserRepository) *OnboardingService {
 	return &OnboardingService{users: users}
 }
 
-func (service *OnboardingService) SaveStep1(userID uint, valuesStart time.Time) error {
-	return service.users.SaveOnboardingStep1(userID, valuesStart)
+func (service *OnboardingService) SaveStep1(ctx context.Context, userID uint, valuesStart time.Time) error {
+	return service.users.SaveOnboardingStep1(ctx, userID, valuesStart)
 }
 
 func (service *OnboardingService) ValidateStep1StartDate(start time.Time, now time.Time, location *time.Location) error {
@@ -67,9 +68,10 @@ func (service *OnboardingService) ValidateAndParseStep1StartDate(raw string, now
 	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC), nil
 }
 
-func (service *OnboardingService) SaveStep2(userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) (int, int, error) {
+func (service *OnboardingService) SaveStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) (int, int, error) {
 	safeCycleLength, safePeriodLength := SanitizeOnboardingCycleAndPeriod(cycleLength, periodLength)
 	if err := service.users.SaveOnboardingStep2(
+		ctx,
 		userID,
 		safeCycleLength,
 		safePeriodLength,
@@ -97,8 +99,8 @@ func (service *OnboardingService) ParseAndNormalizeStep2Input(cycleRaw string, p
 	return safeCycleLength, safePeriodLength, autoPeriodFill, irregularCycle, NormalizeAgeGroup(ageGroup), NormalizeUsageGoal(usageGoal), nil
 }
 
-func (service *OnboardingService) CompleteOnboardingForUser(userID uint, location *time.Location) (time.Time, error) {
-	current, err := service.users.FindByID(userID)
+func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context, userID uint, location *time.Location) (time.Time, error) {
+	current, err := service.users.FindByID(ctx, userID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -108,7 +110,7 @@ func (service *OnboardingService) CompleteOnboardingForUser(userID uint, locatio
 
 	startDay := CalendarDay(*current.LastPeriodStart, time.UTC)
 	_, periodLength := SanitizeOnboardingCycleAndPeriod(current.CycleLength, current.PeriodLength)
-	if err := service.users.CompleteOnboarding(userID, startDay, periodLength, current.AutoPeriodFill); err != nil {
+	if err := service.users.CompleteOnboarding(ctx, userID, startDay, periodLength, current.AutoPeriodFill); err != nil {
 		return time.Time{}, err
 	}
 	return startDay, nil

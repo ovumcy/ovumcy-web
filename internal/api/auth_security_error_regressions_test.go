@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +19,7 @@ type stubLoginWorkflowService struct {
 	err    error
 }
 
-func (stub *stubLoginWorkflowService) Authenticate([]byte, string, string, string, time.Duration, time.Time) (services.LoginResult, error) {
+func (stub *stubLoginWorkflowService) Authenticate(context.Context, []byte, string, string, string, time.Duration, time.Time) (services.LoginResult, error) {
 	if stub.err != nil {
 		return services.LoginResult{}, stub.err
 	}

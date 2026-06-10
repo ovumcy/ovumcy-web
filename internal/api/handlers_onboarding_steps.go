@@ -22,7 +22,7 @@ func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
 	if validationError != "" {
 		return handler.respondMappedError(c, onboardingValidationErrorSpec(validationError))
 	}
-	if err := handler.onboardingSvc.SaveStep1(user.ID, values.Start); err != nil {
+	if err := handler.onboardingSvc.SaveStep1(c.UserContext(), user.ID, values.Start); err != nil {
 		return handler.respondMappedError(c, onboardingSaveStepErrorSpec())
 	}
 
@@ -51,6 +51,7 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, onboardingValidationErrorSpec(validationError))
 	}
 	_, _, err := handler.onboardingSvc.SaveStep2(
+		c.UserContext(),
 		user.ID,
 		values.CycleLength,
 		values.PeriodLength,
@@ -62,7 +63,7 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, onboardingSaveStepErrorSpec())
 	}
-	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(user.ID, handler.requestLocationFromOnboardingForm(c)); err != nil {
+	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.UserContext(), user.ID, handler.requestLocationFromOnboardingForm(c)); err != nil {
 		if services.ClassifyOnboardingCompletionError(err) == services.OnboardingCompletionErrorStepsRequired {
 			if acceptsJSON(c) {
 				return c.JSON(fiber.Map{"ok": true})

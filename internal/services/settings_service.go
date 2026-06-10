@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -16,13 +17,13 @@ var (
 )
 
 type SettingsUserRepository interface {
-	UpdateDisplayName(userID uint, displayName string) error
-	UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error
-	UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
-	UpdateByID(userID uint, updates map[string]any) error
-	LoadSettingsByID(userID uint) (models.User, error)
-	ClearAllDataAndResetSettings(userID uint) error
-	DeleteAccountAndRelatedData(userID uint) error
+	UpdateDisplayName(ctx context.Context, userID uint, displayName string) error
+	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
+	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
+	UpdateByID(ctx context.Context, userID uint, updates map[string]any) error
+	LoadSettingsByID(ctx context.Context, userID uint) (models.User, error)
+	ClearAllDataAndResetSettings(ctx context.Context, userID uint) error
+	DeleteAccountAndRelatedData(ctx context.Context, userID uint) error
 }
 
 type CycleSettingsUpdate struct {
@@ -45,8 +46,8 @@ func NewSettingsService(users SettingsUserRepository) *SettingsService {
 	return &SettingsService{users: users}
 }
 
-func (service *SettingsService) UpdateDisplayName(userID uint, displayName string) error {
-	return service.users.UpdateDisplayName(userID, displayName)
+func (service *SettingsService) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {
+	return service.users.UpdateDisplayName(ctx, userID, displayName)
 }
 
 func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {
@@ -63,7 +64,7 @@ func (service *SettingsService) ValidateCurrentPassword(passwordHash string, raw
 	return nil
 }
 
-func (service *SettingsService) SaveCycleSettings(userID uint, settings CycleSettingsUpdate) error {
+func (service *SettingsService) SaveCycleSettings(ctx context.Context, userID uint, settings CycleSettingsUpdate) error {
 	updates := map[string]any{
 		"cycle_length":        settings.CycleLength,
 		"period_length":       settings.PeriodLength,
@@ -80,11 +81,11 @@ func (service *SettingsService) SaveCycleSettings(userID uint, settings CycleSet
 			updates["last_period_start"] = *settings.LastPeriodStart
 		}
 	}
-	return service.users.UpdateByID(userID, updates)
+	return service.users.UpdateByID(ctx, userID, updates)
 }
 
-func (service *SettingsService) SaveTrackingSettings(userID uint, settings TrackingSettingsUpdate) error {
-	return service.users.UpdateByID(userID, map[string]any{
+func (service *SettingsService) SaveTrackingSettings(ctx context.Context, userID uint, settings TrackingSettingsUpdate) error {
+	return service.users.UpdateByID(ctx, userID, map[string]any{
 		"track_bbt":              settings.TrackBBT,
 		"temperature_unit":       NormalizeTemperatureUnit(settings.TemperatureUnit),
 		"track_cervical_mucus":   settings.TrackCervicalMucus,
@@ -95,14 +96,14 @@ func (service *SettingsService) SaveTrackingSettings(userID uint, settings Track
 	})
 }
 
-func (service *SettingsService) LoadSettings(userID uint) (models.User, error) {
-	return service.users.LoadSettingsByID(userID)
+func (service *SettingsService) LoadSettings(ctx context.Context, userID uint) (models.User, error) {
+	return service.users.LoadSettingsByID(ctx, userID)
 }
 
-func (service *SettingsService) ClearAllData(userID uint) error {
-	return service.users.ClearAllDataAndResetSettings(userID)
+func (service *SettingsService) ClearAllData(ctx context.Context, userID uint) error {
+	return service.users.ClearAllDataAndResetSettings(ctx, userID)
 }
 
-func (service *SettingsService) DeleteAccount(userID uint) error {
-	return service.users.DeleteAccountAndRelatedData(userID)
+func (service *SettingsService) DeleteAccount(ctx context.Context, userID uint) error {
+	return service.users.DeleteAccountAndRelatedData(ctx, userID)
 }

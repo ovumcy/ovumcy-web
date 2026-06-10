@@ -73,7 +73,7 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c *fiber.Ctx) error {
 	}
 
 	totpRequired := false
-	if targetUser, err := handler.authService.FindByID(payload.TargetUserID); err == nil {
+	if targetUser, err := handler.authService.FindByID(c.UserContext(), payload.TargetUserID); err == nil {
 		totpRequired = targetUser.TOTPEnabled
 	}
 
@@ -113,7 +113,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 	// auth enabled. If the user's local auth was disabled between cookie
 	// issuance and submission, refuse — confirming via password no longer
 	// proves possession.
-	targetUser, err := handler.authService.FindByID(payload.TargetUserID)
+	targetUser, err := handler.authService.FindByID(c.UserContext(), payload.TargetUserID)
 	if err != nil || !targetUser.LocalAuthEnabled {
 		handler.clearOIDCLinkPendingCookie(c)
 		spec := authOIDCLinkConfirmUnavailableErrorSpec()
@@ -122,7 +122,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}
 
-	if _, err := handler.authService.AuthenticateCredentials(targetUser.Email, password); err != nil {
+	if _, err := handler.authService.AuthenticateCredentials(c.UserContext(), targetUser.Email, password); err != nil {
 		// Do not clear the pending cookie on a single wrong password — the
 		// per-IP /auth/oidc/* rate limiter (configured in main.go) bounds
 		// brute-force volume. Keep the cookie so the user can retry within
@@ -156,7 +156,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		Subject: payload.Subject,
 		Email:   payload.Email,
 	}
-	if err := handler.oidcService.ConfirmAndLinkIdentity(payload.TargetUserID, claims, time.Now()); err != nil {
+	if err := handler.oidcService.ConfirmAndLinkIdentity(c.UserContext(), payload.TargetUserID, claims, time.Now()); err != nil {
 		handler.clearOIDCLinkPendingCookie(c)
 		spec := mapOIDCLinkConfirmError(err)
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
@@ -212,7 +212,7 @@ func (handler *Handler) verifyTOTPForLinkConfirm(c *fiber.Ctx, targetUser *model
 		handler.totpService.RecordFailure(handler.secretKey, c.IP(), targetUser.ID, time.Now())
 		return totpInvalidCodeErrorSpec(), false
 	}
-	valid, err := handler.totpService.ValidateCode(targetUser.ID, targetUser.TOTPSecret, code)
+	valid, err := handler.totpService.ValidateCode(c.UserContext(), targetUser.ID, targetUser.TOTPSecret, code)
 	if errors.Is(err, services.ErrTOTPReplayed) {
 		handler.totpService.RecordFailure(handler.secretKey, c.IP(), targetUser.ID, time.Now())
 		handler.logSecurityEvent(c, "auth.oidc_link_confirm", "totp_replay_rejected")

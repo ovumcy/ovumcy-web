@@ -59,7 +59,7 @@ func (handler *Handler) respondRegisterPickup(c *fiber.Ctx, outcome registerPick
 	// server-side guarantee that closes the cookie-replay window.
 	if outcome.userID != 0 {
 		expiresAt := time.Now().UTC().Add(registerPickupCookieTTL)
-		if err := handler.registerPickupTokens.Issue(outcome.payload.Nonce, outcome.userID, expiresAt); err != nil {
+		if err := handler.registerPickupTokens.Issue(c.UserContext(), outcome.payload.Nonce, outcome.userID, expiresAt); err != nil {
 			spec := registerPickupCookieErrorSpec()
 			handler.logSecurityError(c, "auth.register", spec)
 			return handler.respondMappedError(c, spec)
@@ -115,7 +115,7 @@ func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
 	// exchanged once, or a decoy whose nonce was never persisted, returns
 	// consumed == false here and falls through to the same neutral
 	// "register pickup unavailable" /login redirect.
-	userID, consumed, err := handler.registerPickupTokens.Consume(payload.Nonce, time.Now())
+	userID, consumed, err := handler.registerPickupTokens.Consume(c.UserContext(), payload.Nonce, time.Now())
 	if err != nil {
 		return handler.redirectToPostRegisterSignin(c, "consume_failed")
 	}
@@ -123,7 +123,7 @@ func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
 		return handler.redirectToPostRegisterSignin(c, "decoy_or_replay")
 	}
 
-	user, err := handler.authService.FindByID(userID)
+	user, err := handler.authService.FindByID(c.UserContext(), userID)
 	if err != nil {
 		return handler.redirectToPostRegisterSignin(c, "user_not_found")
 	}

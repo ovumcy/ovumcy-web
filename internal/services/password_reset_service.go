@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -48,7 +49,7 @@ func (service *PasswordResetService) ParseResetToken(secretKey []byte, rawToken 
 	return ParsePasswordResetToken(secretKey, rawToken, now)
 }
 
-func (service *PasswordResetService) StartRecovery(secretKey []byte, limiterKey string, email string, rawRecoveryCode string, now time.Time, tokenTTL time.Duration) (string, error) {
+func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKey []byte, limiterKey string, email string, rawRecoveryCode string, now time.Time, tokenTTL time.Duration) (string, error) {
 	if service.auth == nil {
 		return "", errors.New("auth service is required")
 	}
@@ -71,7 +72,7 @@ func (service *PasswordResetService) StartRecovery(secretKey []byte, limiterKey 
 		return "", ErrPasswordRecoveryCodeInvalid
 	}
 
-	user, err := service.auth.FindUserByEmailAndRecoveryCode(normalizedEmail, code)
+	user, err := service.auth.FindUserByEmailAndRecoveryCode(ctx, normalizedEmail, code)
 	if err != nil {
 		if errors.Is(err, ErrRecoveryCodeNotFound) {
 			service.recoveryPolicy.AddFailure(secretKey, limiterKey, normalizedEmail, now)
@@ -89,7 +90,7 @@ func (service *PasswordResetService) StartRecovery(secretKey []byte, limiterKey 
 	return token, nil
 }
 
-func (service *PasswordResetService) CompleteReset(secretKey []byte, rawToken string, password string, confirmPassword string, now time.Time) (*models.User, string, error) {
+func (service *PasswordResetService) CompleteReset(ctx context.Context, secretKey []byte, rawToken string, password string, confirmPassword string, now time.Time) (*models.User, string, error) {
 	if service.auth == nil {
 		return nil, "", errors.New("auth service is required")
 	}
@@ -97,12 +98,12 @@ func (service *PasswordResetService) CompleteReset(secretKey []byte, rawToken st
 		return nil, "", err
 	}
 
-	user, err := service.auth.ResolveUserByResetToken(secretKey, rawToken, now)
+	user, err := service.auth.ResolveUserByResetToken(ctx, secretKey, rawToken, now)
 	if err != nil {
 		return nil, "", ErrInvalidResetToken
 	}
 
-	recoveryCode, err := service.auth.ResetPasswordAndRotateRecoveryCode(user, password)
+	recoveryCode, err := service.auth.ResetPasswordAndRotateRecoveryCode(ctx, user, password)
 	if err != nil {
 		return nil, "", err
 	}

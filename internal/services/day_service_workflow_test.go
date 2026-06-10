@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"strings"
@@ -32,7 +33,7 @@ func (stub *dayLogRepositoryStub) dayKey(value time.Time) string {
 	return value.Format("2006-01-02")
 }
 
-func (stub *dayLogRepositoryStub) ListByUser(userID uint) ([]models.DailyLog, error) {
+func (stub *dayLogRepositoryStub) ListByUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
 	logs := make([]models.DailyLog, 0)
 	for _, entry := range stub.entries {
 		if entry.UserID == userID {
@@ -48,7 +49,7 @@ func (stub *dayLogRepositoryStub) ListByUser(userID uint) ([]models.DailyLog, er
 	return logs, nil
 }
 
-func (stub *dayLogRepositoryStub) ListByUserRange(userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error) {
+func (stub *dayLogRepositoryStub) ListByUserRange(ctx context.Context, userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error) {
 	logs := make([]models.DailyLog, 0)
 	for _, entry := range stub.entries {
 		if entry.UserID != userID {
@@ -71,7 +72,7 @@ func (stub *dayLogRepositoryStub) ListByUserRange(userID uint, fromStart *time.T
 	return logs, nil
 }
 
-func (stub *dayLogRepositoryStub) ListByUserDayRange(userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error) {
+func (stub *dayLogRepositoryStub) ListByUserDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error) {
 	logs := make([]models.DailyLog, 0)
 	for _, entry := range stub.entries {
 		if entry.UserID != userID {
@@ -91,7 +92,7 @@ func (stub *dayLogRepositoryStub) ListByUserDayRange(userID uint, dayStart time.
 	return logs, nil
 }
 
-func (stub *dayLogRepositoryStub) FindByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+func (stub *dayLogRepositoryStub) FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
 	key := stub.dayKey(dayStart)
 	if err, ok := stub.findErrByDay[key]; ok {
 		return models.DailyLog{}, false, err
@@ -104,7 +105,7 @@ func (stub *dayLogRepositoryStub) FindByUserAndDayRange(userID uint, dayStart ti
 	return entry, true, nil
 }
 
-func (stub *dayLogRepositoryStub) Create(entry *models.DailyLog) error {
+func (stub *dayLogRepositoryStub) Create(ctx context.Context, entry *models.DailyLog) error {
 	key := stub.dayKey(entry.Date)
 	if err, ok := stub.createErrByDay[key]; ok {
 		return err
@@ -117,7 +118,7 @@ func (stub *dayLogRepositoryStub) Create(entry *models.DailyLog) error {
 	return nil
 }
 
-func (stub *dayLogRepositoryStub) Save(entry *models.DailyLog) error {
+func (stub *dayLogRepositoryStub) Save(ctx context.Context, entry *models.DailyLog) error {
 	key := stub.dayKey(entry.Date)
 	if err, ok := stub.saveErrByDay[key]; ok {
 		return err
@@ -126,7 +127,7 @@ func (stub *dayLogRepositoryStub) Save(entry *models.DailyLog) error {
 	return nil
 }
 
-func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) error {
+func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) error {
 	for key, entry := range stub.entries {
 		if entry.UserID != userID {
 			continue
@@ -144,14 +145,14 @@ type dayUserRepositoryStub struct {
 	loadErr  error
 }
 
-func (stub *dayUserRepositoryStub) LoadSettingsByID(uint) (models.User, error) {
+func (stub *dayUserRepositoryStub) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	if stub.loadErr != nil {
 		return models.User{}, stub.loadErr
 	}
 	return stub.settings, nil
 }
 
-func (stub *dayUserRepositoryStub) UpdateByID(_ uint, updates map[string]any) error {
+func (stub *dayUserRepositoryStub) UpdateByID(ctx context.Context, _ uint, updates map[string]any) error {
 	if updates == nil {
 		return nil
 	}
@@ -174,7 +175,7 @@ func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
 	users := &dayUserRepositoryStub{}
 	service := NewDayService(logs, users)
 
-	entry, err := service.UpsertDayEntryWithAutoFill(
+	entry, err := service.UpsertDayEntryWithAutoFill(context.Background(),
 		10,
 		time.Date(2026, time.February, 20, 12, 0, 0, 0, time.UTC),
 		DayEntryInput{
@@ -210,7 +211,7 @@ func TestUpsertDayEntryWithAutoFillCreatesFollowingPeriodDays(t *testing.T) {
 	service := NewDayService(logs, users)
 
 	day := time.Date(2026, time.February, 10, 8, 0, 0, 0, time.UTC)
-	entry, err := service.UpsertDayEntryWithAutoFillAt(
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		day,
 		DayEntryInput{
@@ -252,7 +253,7 @@ func TestUpsertDayEntryWithAutoFillStopsAtToday(t *testing.T) {
 	service := NewDayService(logs, users)
 
 	day := time.Date(2026, time.February, 10, 8, 0, 0, 0, time.UTC)
-	_, err := service.UpsertDayEntryWithAutoFillAt(
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		day,
 		DayEntryInput{
@@ -285,7 +286,7 @@ func TestUpsertDayEntryWithAutoFillReturnsTypedLoadError(t *testing.T) {
 	users := &dayUserRepositoryStub{loadErr: errors.New("load settings failed")}
 	service := NewDayService(logs, users)
 
-	_, err := service.UpsertDayEntryWithAutoFill(
+	_, err := service.UpsertDayEntryWithAutoFill(context.Background(),
 		10,
 		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
 		DayEntryInput{
@@ -310,7 +311,7 @@ func TestUpsertDayEntryWithAutoFillReturnsTypedAutofillDecisionError(t *testing.
 	}
 	service := NewDayService(logs, users)
 
-	_, err := service.UpsertDayEntryWithAutoFill(
+	_, err := service.UpsertDayEntryWithAutoFill(context.Background(),
 		10,
 		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
 		DayEntryInput{
@@ -335,7 +336,7 @@ func TestUpsertDayEntryWithAutoFillReturnsTypedAutofillApplyError(t *testing.T) 
 	}
 	service := NewDayService(logs, users)
 
-	_, err := service.UpsertDayEntryWithAutoFill(
+	_, err := service.UpsertDayEntryWithAutoFill(context.Background(),
 		10,
 		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
 		DayEntryInput{
@@ -364,7 +365,7 @@ func TestUpsertDayEntryWithAutoFillClearsCycleStartWhenPeriodIsRemoved(t *testin
 		Flow:       models.FlowHeavy,
 	}
 
-	entry, err := service.UpsertDayEntryWithAutoFill(
+	entry, err := service.UpsertDayEntryWithAutoFill(context.Background(),
 		10,
 		existingDay,
 		DayEntryInput{
@@ -403,7 +404,7 @@ func TestMarkCycleStartManuallyClearsOtherExplicitStarts(t *testing.T) {
 		Flow:     models.FlowLight,
 	}
 
-	if err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{ReplaceExisting: true}); err != nil {
+	if err := service.MarkCycleStartManually(context.Background(), 10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{ReplaceExisting: true}); err != nil {
 		t.Fatalf("MarkCycleStartManually() unexpected error: %v", err)
 	}
 
@@ -434,7 +435,7 @@ func TestMarkCycleStartManuallyRequiresReplaceConfirmationWithinCluster(t *testi
 		IsPeriod: true,
 	}
 
-	err := service.MarkCycleStartManually(10, time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC), time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC), time.UTC, ManualCycleStartOptions{})
+	err := service.MarkCycleStartManually(context.Background(), 10, time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC), time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC), time.UTC, ManualCycleStartOptions{})
 	if !errors.Is(err, ErrManualCycleStartReplaceRequired) {
 		t.Fatalf("expected ErrManualCycleStartReplaceRequired, got %v", err)
 	}
@@ -457,12 +458,12 @@ func TestMarkCycleStartManuallyRequiresShortGapConfirmationAndMarksUncertain(t *
 		IsPeriod: true,
 	}
 
-	err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{})
+	err := service.MarkCycleStartManually(context.Background(), 10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{})
 	if !errors.Is(err, ErrManualCycleStartConfirmationNeeded) {
 		t.Fatalf("expected ErrManualCycleStartConfirmationNeeded, got %v", err)
 	}
 
-	if err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{MarkUncertain: true}); err != nil {
+	if err := service.MarkCycleStartManually(context.Background(), 10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{MarkUncertain: true}); err != nil {
 		t.Fatalf("expected short-gap cycle start to save with confirmation, got %v", err)
 	}
 	if !logs.entries["2026-02-10"].IsUncertain {
@@ -477,7 +478,7 @@ func TestMarkCycleStartManuallyRejectsFarFutureDate(t *testing.T) {
 
 	now := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
 	futureDay := time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC)
-	if err := service.MarkCycleStartManually(10, futureDay, now, time.UTC, ManualCycleStartOptions{}); !errors.Is(err, ErrManualCycleStartDateInvalid) {
+	if err := service.MarkCycleStartManually(context.Background(), 10, futureDay, now, time.UTC, ManualCycleStartOptions{}); !errors.Is(err, ErrManualCycleStartDateInvalid) {
 		t.Fatalf("expected ErrManualCycleStartDateInvalid, got %v", err)
 	}
 }
@@ -489,7 +490,7 @@ func TestMarkCycleStartManuallyAllowsFutureDateWithinTwoDays(t *testing.T) {
 
 	now := time.Date(2026, time.March, 12, 10, 0, 0, 0, time.UTC)
 	dayAfterTomorrow := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)
-	if err := service.MarkCycleStartManually(10, dayAfterTomorrow, now, time.UTC, ManualCycleStartOptions{}); err != nil {
+	if err := service.MarkCycleStartManually(context.Background(), 10, dayAfterTomorrow, now, time.UTC, ManualCycleStartOptions{}); err != nil {
 		t.Fatalf("expected future cycle start within two days to be allowed, got %v", err)
 	}
 

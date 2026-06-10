@@ -53,14 +53,14 @@ func (handler *Handler) VerifyTOTPLogin(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	user, err := handler.authService.FindByID(userID)
+	user, err := handler.authService.FindByID(c.UserContext(), userID)
 	if err != nil || !user.TOTPEnabled {
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
 
-	valid, err := handler.totpService.ValidateCode(userID, user.TOTPSecret, code)
+	valid, err := handler.totpService.ValidateCode(c.UserContext(), userID, user.TOTPSecret, code)
 	if errors.Is(err, services.ErrTOTPReplayed) {
 		// Same response shape as a plain invalid code so an attacker cannot
 		// distinguish replay from a wrong guess. We log replay separately for

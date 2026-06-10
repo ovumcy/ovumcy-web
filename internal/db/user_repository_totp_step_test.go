@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -29,7 +30,7 @@ func createUserForTOTPTest(t *testing.T, repo *UserRepository, email string) mod
 		AutoPeriodFill:      true,
 		CreatedAt:           time.Now().UTC(),
 	}
-	if err := repo.Create(&user); err != nil {
+	if err := repo.Create(context.Background(), &user); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	return user
@@ -39,7 +40,7 @@ func TestClaimTOTPStepFirstClaim(t *testing.T) {
 	repo := openTOTPStepRepoForTest(t)
 	user := createUserForTOTPTest(t, repo, "totp-first@example.com")
 
-	ok, err := repo.ClaimTOTPStep(user.ID, 1000)
+	ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000)
 	if err != nil {
 		t.Fatalf("ClaimTOTPStep() error: %v", err)
 	}
@@ -60,11 +61,11 @@ func TestClaimTOTPStepReplay(t *testing.T) {
 	repo := openTOTPStepRepoForTest(t)
 	user := createUserForTOTPTest(t, repo, "totp-replay@example.com")
 
-	if ok, err := repo.ClaimTOTPStep(user.ID, 1000); err != nil || !ok {
+	if ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000); err != nil || !ok {
 		t.Fatalf("first claim: ok=%v err=%v", ok, err)
 	}
 
-	ok, err := repo.ClaimTOTPStep(user.ID, 1000)
+	ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000)
 	if err != nil {
 		t.Fatalf("replay claim error: %v", err)
 	}
@@ -85,11 +86,11 @@ func TestClaimTOTPStepOlderStep(t *testing.T) {
 	repo := openTOTPStepRepoForTest(t)
 	user := createUserForTOTPTest(t, repo, "totp-older@example.com")
 
-	if ok, err := repo.ClaimTOTPStep(user.ID, 2000); err != nil || !ok {
+	if ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 2000); err != nil || !ok {
 		t.Fatalf("first claim: ok=%v err=%v", ok, err)
 	}
 
-	ok, err := repo.ClaimTOTPStep(user.ID, 1000)
+	ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000)
 	if err != nil {
 		t.Fatalf("older step claim error: %v", err)
 	}
@@ -102,11 +103,11 @@ func TestClaimTOTPStepNewerStep(t *testing.T) {
 	repo := openTOTPStepRepoForTest(t)
 	user := createUserForTOTPTest(t, repo, "totp-newer@example.com")
 
-	if ok, err := repo.ClaimTOTPStep(user.ID, 1000); err != nil || !ok {
+	if ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000); err != nil || !ok {
 		t.Fatalf("first claim: ok=%v err=%v", ok, err)
 	}
 
-	ok, err := repo.ClaimTOTPStep(user.ID, 2000)
+	ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 2000)
 	if err != nil {
 		t.Fatalf("newer step claim error: %v", err)
 	}
@@ -126,7 +127,7 @@ func TestClaimTOTPStepNewerStep(t *testing.T) {
 func TestClaimTOTPStepUnknownUser(t *testing.T) {
 	repo := openTOTPStepRepoForTest(t)
 
-	ok, err := repo.ClaimTOTPStep(99999, 1000)
+	ok, err := repo.ClaimTOTPStep(context.Background(), 99999, 1000)
 	if err != nil {
 		t.Fatalf("expected no error for nonexistent user, got %v", err)
 	}
@@ -147,7 +148,7 @@ func TestClaimTOTPStepConcurrentOneWinner(t *testing.T) {
 		i := i
 		go func() {
 			defer wg.Done()
-			ok, err := repo.ClaimTOTPStep(user.ID, 1000)
+			ok, err := repo.ClaimTOTPStep(context.Background(), user.ID, 1000)
 			if err != nil {
 				t.Errorf("goroutine %d: ClaimTOTPStep error: %v", i, err)
 			}

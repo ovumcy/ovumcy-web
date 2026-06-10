@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -68,7 +69,7 @@ func TestBuildStatsPageDataUsesRequestTimezoneForCycleContext(t *testing.T) {
 		t.Fatalf("reload stats page user: %v", err)
 	}
 
-	data, err := handler.buildStatsPageData(&user, "en", map[string]string{}, nowUTC.In(location), location)
+	data, err := handler.buildStatsPageData(context.Background(), &user, "en", map[string]string{}, nowUTC.In(location), location)
 	if err != nil {
 		t.Fatalf("build stats page data: %v", err)
 	}

@@ -22,7 +22,7 @@ func (handler *Handler) DeleteDailyLog(c *fiber.Ctx) error {
 		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.dayService.DeleteDayEntry(user.ID, day, location); err != nil {
+	if err := handler.dayService.DeleteDayEntry(c.UserContext(), user.ID, day, location); err != nil {
 		spec := deleteDayPersistenceErrorSpec(err)
 		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
 		return handler.respondMappedError(c, spec)
@@ -65,7 +65,7 @@ func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
 		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.dayService.DeleteDayEntry(user.ID, day, location); err != nil {
+	if err := handler.dayService.DeleteDayEntry(c.UserContext(), user.ID, day, location); err != nil {
 		spec := deleteDayPersistenceErrorSpec(err)
 		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
 		return handler.respondMappedError(c, spec)

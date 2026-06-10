@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -29,14 +30,14 @@ func TestOIDCIdentityRepositoryUsesCanonicalTableName(t *testing.T) {
 		CreatedAt: createdAt,
 	}
 
-	if err := repository.Create(&identity); err != nil {
+	if err := repository.Create(context.Background(), &identity); err != nil {
 		t.Fatalf("create oidc identity: %v", err)
 	}
 	if identity.ID == 0 {
 		t.Fatal("expected oidc identity ID to be assigned")
 	}
 
-	stored, found, err := repository.FindByIssuerSubject(identity.Issuer, identity.Subject)
+	stored, found, err := repository.FindByIssuerSubject(context.Background(), identity.Issuer, identity.Subject)
 	if err != nil {
 		t.Fatalf("find oidc identity: %v", err)
 	}

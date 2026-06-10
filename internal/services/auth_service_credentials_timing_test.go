@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestAuthenticateCredentialsEqualizesTimingForMissingUser(t *testing.T) {
 		findByEmailErr: errors.New("not found"),
 	})
 
-	_, err := service.AuthenticateCredentials("nonexistent@example.com", "AnyPass1!")
+	_, err := service.AuthenticateCredentials(context.Background(), "nonexistent@example.com", "AnyPass1!")
 
 	if !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds, got %v", err)
@@ -61,7 +62,7 @@ func TestAuthenticateCredentialsEqualizesTimingForDisabledLocalAuth(t *testing.T
 		},
 	})
 
-	_, err := service.AuthenticateCredentials("oidc-only@example.com", "AnyPass1!")
+	_, err := service.AuthenticateCredentials(context.Background(), "oidc-only@example.com", "AnyPass1!")
 
 	if !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds, got %v", err)

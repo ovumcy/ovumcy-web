@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -16,17 +17,17 @@ func NewUserRepository(database *gorm.DB) *UserRepository {
 	return &UserRepository{database: database}
 }
 
-func (repo *UserRepository) CountUsers() (int64, error) {
+func (repo *UserRepository) CountUsers(ctx context.Context) (int64, error) {
 	var count int64
-	if err := repo.database.Model(&models.User{}).Count(&count).Error; err != nil {
+	if err := repo.database.WithContext(ctx).Model(&models.User{}).Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil
 }
 
-func (repo *UserRepository) ListOperatorUserSummaries() ([]models.OperatorUserSummary, error) {
+func (repo *UserRepository) ListOperatorUserSummaries(ctx context.Context) ([]models.OperatorUserSummary, error) {
 	summaries := make([]models.OperatorUserSummary, 0)
-	if err := repo.database.
+	if err := repo.database.WithContext(ctx).
 		Model(&models.User{}).
 		Select("id", "display_name", "email", "role", "onboarding_completed", "created_at").
 		Order("created_at ASC").
@@ -37,25 +38,25 @@ func (repo *UserRepository) ListOperatorUserSummaries() ([]models.OperatorUserSu
 	return summaries, nil
 }
 
-func (repo *UserRepository) FindByID(userID uint) (models.User, error) {
+func (repo *UserRepository) FindByID(ctx context.Context, userID uint) (models.User, error) {
 	var user models.User
-	if err := repo.database.First(&user, userID).Error; err != nil {
+	if err := repo.database.WithContext(ctx).First(&user, userID).Error; err != nil {
 		return models.User{}, err
 	}
 	return user, nil
 }
 
-func (repo *UserRepository) FindByNormalizedEmail(email string) (models.User, error) {
+func (repo *UserRepository) FindByNormalizedEmail(ctx context.Context, email string) (models.User, error) {
 	var user models.User
-	if err := repo.database.Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
+	if err := repo.database.WithContext(ctx).Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
 		return models.User{}, err
 	}
 	return user, nil
 }
 
-func (repo *UserRepository) FindByNormalizedEmailOptional(email string) (models.User, bool, error) {
+func (repo *UserRepository) FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error) {
 	var user models.User
-	if err := repo.database.Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
+	if err := repo.database.WithContext(ctx).Where("lower(trim(email)) = ?", email).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return models.User{}, false, nil
 		}
@@ -64,9 +65,9 @@ func (repo *UserRepository) FindByNormalizedEmailOptional(email string) (models.
 	return user, true, nil
 }
 
-func (repo *UserRepository) ExistsByNormalizedEmail(email string) (bool, error) {
+func (repo *UserRepository) ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error) {
 	var matched int64
-	if err := repo.database.Model(&models.User{}).
+	if err := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("lower(trim(email)) = ?", email).
 		Count(&matched).Error; err != nil {
 		return false, err
@@ -74,13 +75,13 @@ func (repo *UserRepository) ExistsByNormalizedEmail(email string) (bool, error) 
 	return matched > 0, nil
 }
 
-func (repo *UserRepository) Create(user *models.User) error {
-	err := repo.database.Create(user).Error
+func (repo *UserRepository) Create(ctx context.Context, user *models.User) error {
+	err := repo.database.WithContext(ctx).Create(user).Error
 	return classifyUserCreateError(err)
 }
 
-func (repo *UserRepository) CreateUserWithSymptoms(user *models.User, symptoms []models.SymptomType) error {
-	return repo.database.Transaction(func(tx *gorm.DB) error {
+func (repo *UserRepository) CreateUserWithSymptoms(ctx context.Context, user *models.User, symptoms []models.SymptomType) error {
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := classifyUserCreateError(tx.Create(user).Error); err != nil {
 			return err
 		}
@@ -101,23 +102,23 @@ func (repo *UserRepository) CreateUserWithSymptoms(user *models.User, symptoms [
 	})
 }
 
-func (repo *UserRepository) Save(user *models.User) error {
-	return repo.database.Save(user).Error
+func (repo *UserRepository) Save(ctx context.Context, user *models.User) error {
+	return repo.database.WithContext(ctx).Save(user).Error
 }
 
-func (repo *UserRepository) UpdateDisplayName(userID uint, displayName string) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Update("display_name", displayName).Error
+func (repo *UserRepository) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("display_name", displayName).Error
 }
 
-func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(userID uint, recoveryHash string) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"recovery_code_hash":   recoveryHash,
 		"auth_session_version": gorm.Expr("auth_session_version + 1"),
 	}).Error
 }
 
-func (repo *UserRepository) UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"password_hash":        passwordHash,
 		"must_change_password": mustChangePassword,
 		"local_auth_enabled":   true,
@@ -125,8 +126,8 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(userID uint, passwor
 	}).Error
 }
 
-func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"password_hash":        passwordHash,
 		"recovery_code_hash":   recoveryHash,
 		"must_change_password": mustChangePassword,
@@ -135,8 +136,8 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(userID u
 	}).Error
 }
 
-func (repo *UserRepository) BumpAuthSessionVersion(userID uint) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
+func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
 }
 
 // UpdateTOTPFieldsAndRevokeSessions atomically rewrites the TOTP-related
@@ -144,8 +145,8 @@ func (repo *UserRepository) BumpAuthSessionVersion(userID uint) error {
 // for the user is invalidated in the same transaction. Both 2FA enable and
 // disable change the account's auth posture and therefore must invalidate
 // any session that was issued before the change.
-func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(userID uint, encryptedSecret string, enabled bool) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"totp_secret":          encryptedSecret,
 		"totp_enabled":         enabled,
 		"totp_last_used_step":  0,
@@ -159,16 +160,16 @@ func (repo *UserRepository) UpdateTOTPFieldsAndRevokeSessions(userID uint, encry
 // (pre-aad-binding) ciphertexts under the current aad-bound format: the
 // account's security posture has not changed, so no active session should
 // be revoked by what is otherwise an internal storage upgrade.
-func (repo *UserRepository) UpdateTOTPSecretCiphertext(userID uint, encryptedSecret string) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Update("totp_secret", encryptedSecret).Error
+func (repo *UserRepository) UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("totp_secret", encryptedSecret).Error
 }
 
 // ClaimTOTPStep atomically claims a TOTP step for the given user. Returns true
 // iff the row was updated, i.e. the persisted totp_last_used_step was strictly
 // less than `step` at the moment of the UPDATE. Replays and concurrent losers
 // observe RowsAffected == 0 and get false.
-func (repo *UserRepository) ClaimTOTPStep(userID uint, step int64) (bool, error) {
-	result := repo.database.Model(&models.User{}).
+func (repo *UserRepository) ClaimTOTPStep(ctx context.Context, userID uint, step int64) (bool, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND totp_last_used_step < ?", userID, step).
 		Update("totp_last_used_step", step)
 	if result.Error != nil {
@@ -177,13 +178,13 @@ func (repo *UserRepository) ClaimTOTPStep(userID uint, step int64) (bool, error)
 	return result.RowsAffected == 1, nil
 }
 
-func (repo *UserRepository) UpdateByID(userID uint, updates map[string]any) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
+func (repo *UserRepository) UpdateByID(ctx context.Context, userID uint, updates map[string]any) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(updates).Error
 }
 
-func (repo *UserRepository) LoadSettingsByID(userID uint) (models.User, error) {
+func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (models.User, error) {
 	var user models.User
-	if err := repo.database.
+	if err := repo.database.WithContext(ctx).
 		Select(
 			"cycle_length",
 			"period_length",
@@ -210,14 +211,14 @@ func (repo *UserRepository) LoadSettingsByID(userID uint) (models.User, error) {
 	return user, nil
 }
 
-func (repo *UserRepository) SaveOnboardingStep1(userID uint, start time.Time) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+func (repo *UserRepository) SaveOnboardingStep1(ctx context.Context, userID uint, start time.Time) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"last_period_start": start,
 	}).Error
 }
 
-func (repo *UserRepository) SaveOnboardingStep2(userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error {
-	return repo.database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"cycle_length":     cycleLength,
 		"period_length":    periodLength,
 		"luteal_phase":     14,
@@ -228,8 +229,8 @@ func (repo *UserRepository) SaveOnboardingStep2(userID uint, cycleLength int, pe
 	}).Error
 }
 
-func (repo *UserRepository) ClearAllDataAndResetSettings(userID uint) error {
-	return repo.database.Transaction(func(tx *gorm.DB) error {
+func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, userID uint) error {
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err
 		}
@@ -265,8 +266,8 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(userID uint) error {
 	})
 }
 
-func (repo *UserRepository) DeleteAccountAndRelatedData(userID uint) error {
-	return repo.database.Transaction(func(tx *gorm.DB) error {
+func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err
 		}
@@ -288,7 +289,7 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(userID uint) error {
 	})
 }
 
-func (repo *UserRepository) CompleteOnboarding(userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
+func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
 	if periodLength <= 0 {
 		return errors.New("invalid period length")
 	}
@@ -297,7 +298,7 @@ func (repo *UserRepository) CompleteOnboarding(userID uint, startDay time.Time, 
 		return errors.New("invalid onboarding range")
 	}
 
-	return repo.database.Transaction(func(tx *gorm.DB) error {
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if autoPeriodFill {
 			for cursor := startDay; !cursor.After(endDay); cursor = cursor.AddDate(0, 0, 1) {
 				dayStart := cursor

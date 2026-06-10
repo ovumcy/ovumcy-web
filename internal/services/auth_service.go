@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -38,16 +39,16 @@ const recoveryCodeTimingEqualizationHash = "$2a$10$ReZgUuXu2GXtC.RZ/q2QyesBFX182
 const credentialsTimingEqualizationHash = "$2a$10$h7pMPVpw/fZjbsXnbtpfD.UzmSCNk0FmbmMkP7wKDlO7IqhsBVX1m"  // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
 
 type AuthUserRepository interface {
-	ExistsByNormalizedEmail(email string) (bool, error)
-	FindByNormalizedEmail(email string) (models.User, error)
-	FindByNormalizedEmailOptional(email string) (models.User, bool, error)
-	FindByID(userID uint) (models.User, error)
-	Create(user *models.User) error
-	Save(user *models.User) error
-	UpdateRecoveryCodeHashAndRevokeSessions(userID uint, recoveryHash string) error
-	UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error
-	UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
-	BumpAuthSessionVersion(userID uint) error
+	ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error)
+	FindByNormalizedEmail(ctx context.Context, email string) (models.User, error)
+	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
+	FindByID(ctx context.Context, userID uint) (models.User, error)
+	Create(ctx context.Context, user *models.User) error
+	Save(ctx context.Context, user *models.User) error
+	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error
+	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
+	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
+	BumpAuthSessionVersion(ctx context.Context, userID uint) error
 }
 
 const (
@@ -82,20 +83,20 @@ func (service *AuthService) CheckAndRecordLogoutAttempt(secretKey []byte, client
 	return false
 }
 
-func (service *AuthService) RegistrationEmailExists(email string) (bool, error) {
-	return service.users.ExistsByNormalizedEmail(email)
+func (service *AuthService) RegistrationEmailExists(ctx context.Context, email string) (bool, error) {
+	return service.users.ExistsByNormalizedEmail(ctx, email)
 }
 
-func (service *AuthService) CreateUser(user *models.User) error {
-	return service.users.Create(user)
+func (service *AuthService) CreateUser(ctx context.Context, user *models.User) error {
+	return service.users.Create(ctx, user)
 }
 
-func (service *AuthService) FindByNormalizedEmail(email string) (models.User, error) {
-	return service.users.FindByNormalizedEmail(email)
+func (service *AuthService) FindByNormalizedEmail(ctx context.Context, email string) (models.User, error) {
+	return service.users.FindByNormalizedEmail(ctx, email)
 }
 
-func (service *AuthService) FindByID(userID uint) (models.User, error) {
-	return service.users.FindByID(userID)
+func (service *AuthService) FindByID(ctx context.Context, userID uint) (models.User, error) {
+	return service.users.FindByID(ctx, userID)
 }
 
 func (service *AuthService) ValidateRegistrationCredentials(password string, confirmPassword string) error {
@@ -114,12 +115,12 @@ func (service *AuthService) ValidateRegistrationCredentials(password string, con
 	return nil
 }
 
-func (service *AuthService) RegisterOwner(email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error) {
+func (service *AuthService) RegisterOwner(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error) {
 	if err := service.ValidateRegistrationCredentials(rawPassword, confirmPassword); err != nil {
 		return models.User{}, "", err
 	}
 
-	exists, err := service.RegistrationEmailExists(email)
+	exists, err := service.RegistrationEmailExists(ctx, email)
 	if err != nil {
 		return models.User{}, "", ErrAuthRegisterFailed
 	}
@@ -156,7 +157,7 @@ func (service *AuthService) ValidateResetPasswordInput(password string, confirmP
 	return nil
 }
 
-func (service *AuthService) ForceResetPasswordByEmail(email string, newPassword string) error {
+func (service *AuthService) ForceResetPasswordByEmail(ctx context.Context, email string, newPassword string) error {
 	normalizedEmail := NormalizeAuthEmail(email)
 	newPassword = strings.TrimSpace(newPassword)
 
@@ -167,7 +168,7 @@ func (service *AuthService) ForceResetPasswordByEmail(email string, newPassword 
 		return ErrAuthWeakPassword
 	}
 
-	exists, err := service.users.ExistsByNormalizedEmail(normalizedEmail)
+	exists, err := service.users.ExistsByNormalizedEmail(ctx, normalizedEmail)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
 	}
@@ -175,7 +176,7 @@ func (service *AuthService) ForceResetPasswordByEmail(email string, newPassword 
 		return ErrAuthUserNotFound
 	}
 
-	user, err := service.users.FindByNormalizedEmail(normalizedEmail)
+	user, err := service.users.FindByNormalizedEmail(ctx, normalizedEmail)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
 	}
@@ -185,7 +186,7 @@ func (service *AuthService) ForceResetPasswordByEmail(email string, newPassword 
 		return fmt.Errorf("%w: %v", ErrAuthPasswordHash, err)
 	}
 
-	if err := service.users.UpdatePasswordAndRevokeSessions(user.ID, string(passwordHash), true); err != nil {
+	if err := service.users.UpdatePasswordAndRevokeSessions(ctx, user.ID, string(passwordHash), true); err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordUpdate, err)
 	}
 
@@ -239,8 +240,8 @@ func (service *AuthService) BuildOIDCOwnerUser(email string, createdAt time.Time
 	}, nil
 }
 
-func (service *AuthService) AuthenticateCredentials(email string, password string) (models.User, error) {
-	user, err := service.users.FindByNormalizedEmail(email)
+func (service *AuthService) AuthenticateCredentials(ctx context.Context, email string, password string) (models.User, error) {
+	user, err := service.users.FindByNormalizedEmail(ctx, email)
 	if err != nil {
 		equalizeAuthCredentialsTiming(password)
 		return models.User{}, ErrAuthInvalidCreds
@@ -258,12 +259,12 @@ func (service *AuthService) AuthenticateCredentials(email string, password strin
 	return user, nil
 }
 
-func (service *AuthService) FindUserByEmailAndRecoveryCode(email string, code string) (*models.User, error) {
+func (service *AuthService) FindUserByEmailAndRecoveryCode(ctx context.Context, email string, code string) (*models.User, error) {
 	normalizedEmail := NormalizeAuthEmail(email)
 	if normalizedEmail == "" {
 		return nil, ErrRecoveryCodeNotFound
 	}
-	user, found, err := service.users.FindByNormalizedEmailOptional(normalizedEmail)
+	user, found, err := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -298,18 +299,18 @@ func (service *AuthService) BuildAuthSessionTokenWithSessionID(secretKey []byte,
 	return BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, sessionVersion, ttl, now)
 }
 
-func (service *AuthService) ResolveUserByAuthSessionToken(secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
-	user, _, err := service.ResolveAuthSession(secretKey, rawToken, now)
+func (service *AuthService) ResolveUserByAuthSessionToken(ctx context.Context, secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
+	user, _, err := service.ResolveAuthSession(ctx, secretKey, rawToken, now)
 	return user, err
 }
 
-func (service *AuthService) ResolveAuthSession(secretKey []byte, rawToken string, now time.Time) (*models.User, *AuthSessionClaims, error) {
+func (service *AuthService) ResolveAuthSession(ctx context.Context, secretKey []byte, rawToken string, now time.Time) (*models.User, *AuthSessionClaims, error) {
 	claims, err := ParseAuthSessionToken(secretKey, rawToken, now)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	user, err := service.users.FindByID(claims.UserID)
+	user, err := service.users.FindByID(ctx, claims.UserID)
 	if err != nil {
 		return nil, nil, ErrAuthInvalidCreds
 	}
@@ -325,13 +326,13 @@ func (service *AuthService) ResolveAuthSession(secretKey []byte, rawToken string
 	return &user, claims, nil
 }
 
-func (service *AuthService) ResolveUserByResetToken(secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
+func (service *AuthService) ResolveUserByResetToken(ctx context.Context, secretKey []byte, rawToken string, now time.Time) (*models.User, error) {
 	claims, err := ParsePasswordResetToken(secretKey, rawToken, now)
 	if err != nil {
 		return nil, ErrInvalidResetToken
 	}
 
-	user, err := service.users.FindByID(claims.UserID)
+	user, err := service.users.FindByID(ctx, claims.UserID)
 	if err != nil {
 		return nil, ErrInvalidResetToken
 	}
@@ -351,22 +352,22 @@ func (service *AuthService) GenerateRecoveryCodeHash() (string, string, error) {
 	return GenerateRecoveryCodeHash()
 }
 
-func (service *AuthService) RegenerateRecoveryCode(userID uint) (string, error) {
+func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, userID uint) (string, error) {
 	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrRecoveryCodeGenerate, err)
 	}
-	if err := service.users.UpdateRecoveryCodeHashAndRevokeSessions(userID, recoveryHash); err != nil {
+	if err := service.users.UpdateRecoveryCodeHashAndRevokeSessions(ctx, userID, recoveryHash); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrRecoveryCodeUpdate, err)
 	}
 	return recoveryCode, nil
 }
 
-func (service *AuthService) RevokeAuthSessions(userID uint) error {
+func (service *AuthService) RevokeAuthSessions(ctx context.Context, userID uint) error {
 	if userID == 0 {
 		return ErrAuthUserRequired
 	}
-	return service.users.BumpAuthSessionVersion(userID)
+	return service.users.BumpAuthSessionVersion(ctx, userID)
 }
 
 func equalizeRecoveryCodeLookupTiming(code string) {
@@ -397,7 +398,7 @@ var equalizeRegistrationTiming = func(password string) {
 	_ = bcrypt.CompareHashAndPassword([]byte(recoveryCodeTimingEqualizationHash), []byte(password))
 }
 
-func (service *AuthService) ResetPasswordAndRotateRecoveryCode(user *models.User, newPassword string) (string, error) {
+func (service *AuthService) ResetPasswordAndRotateRecoveryCode(ctx context.Context, user *models.User, newPassword string) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired
 	}
@@ -411,7 +412,7 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCode(user *models.User
 		return "", err
 	}
 
-	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(user.ID, string(passwordHash), recoveryHash, false); err != nil {
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, string(passwordHash), recoveryHash, false); err != nil {
 		return "", err
 	}
 	user.PasswordHash = string(passwordHash)

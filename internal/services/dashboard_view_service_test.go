@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ type stubDashboardStatsProvider struct {
 	err   error
 }
 
-func (stub *stubDashboardStatsProvider) BuildCycleStatsForRange(_ *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
+func (stub *stubDashboardStatsProvider) BuildCycleStatsForRange(ctx context.Context, _ *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
 	if stub.err != nil {
 		return CycleStats{}, nil, stub.err
 	}
@@ -26,7 +27,7 @@ type stubDashboardViewerProvider struct {
 	err      error
 }
 
-func (stub *stubDashboardViewerProvider) FetchDayLogForViewer(_ *models.User, _ time.Time, _ *time.Location) (models.DailyLog, []models.SymptomType, error) {
+func (stub *stubDashboardViewerProvider) FetchDayLogForViewer(ctx context.Context, _ *models.User, _ time.Time, _ *time.Location) (models.DailyLog, []models.SymptomType, error) {
 	if stub.err != nil {
 		return models.DailyLog{}, nil, stub.err
 	}
@@ -41,14 +42,14 @@ type stubDashboardDayStateProvider struct {
 	logs    []models.DailyLog
 }
 
-func (stub *stubDashboardDayStateProvider) DayHasDataForDate(_ uint, _ time.Time, _ *time.Location) (bool, error) {
+func (stub *stubDashboardDayStateProvider) DayHasDataForDate(ctx context.Context, _ uint, _ time.Time, _ *time.Location) (bool, error) {
 	if stub.err != nil {
 		return false, stub.err
 	}
 	return stub.hasData, nil
 }
 
-func (stub *stubDashboardDayStateProvider) FetchAllLogsForUser(_ uint) ([]models.DailyLog, error) {
+func (stub *stubDashboardDayStateProvider) FetchAllLogsForUser(ctx context.Context, _ uint) ([]models.DailyLog, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -80,7 +81,7 @@ func TestBuildDashboardViewData(t *testing.T) {
 		&stubDashboardDayStateProvider{},
 	)
 
-	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestBuildDashboardViewDataReturnsTypedErrors(t *testing.T) {
 		&stubDashboardViewerProvider{},
 		&stubDashboardDayStateProvider{},
 	)
-	if _, err := statsErrService.BuildDashboardViewData(user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadStats) {
+	if _, err := statsErrService.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadStats) {
 		t.Fatalf("expected ErrDashboardViewLoadStats, got %v", err)
 	}
 
@@ -122,7 +123,7 @@ func TestBuildDashboardViewDataReturnsTypedErrors(t *testing.T) {
 		&stubDashboardViewerProvider{err: errors.New("day fail")},
 		&stubDashboardDayStateProvider{},
 	)
-	if _, err := dayErrService.BuildDashboardViewData(user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadTodayLog) {
+	if _, err := dayErrService.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadTodayLog) {
 		t.Fatalf("expected ErrDashboardViewLoadTodayLog, got %v", err)
 	}
 }
@@ -146,7 +147,7 @@ func TestBuildDayEditorViewData(t *testing.T) {
 		&stubDashboardDayStateProvider{hasData: true},
 	)
 
-	viewData, err := service.BuildDayEditorViewData(user, "en", day, now, time.UTC)
+	viewData, err := service.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildDayEditorViewData() unexpected error: %v", err)
 	}
@@ -192,7 +193,7 @@ func TestBuildDashboardViewDataSuggestsManualCycleStartAfterLongGap(t *testing.T
 		},
 	)
 
-	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testin
 		&stubDashboardDayStateProvider{},
 	)
 
-	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
@@ -255,7 +256,7 @@ func TestBuildDashboardViewDataAddsPredictionFactorHintForVariablePatterns(t *te
 		},
 	)
 
-	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
@@ -288,7 +289,7 @@ func TestBuildDashboardViewDataAddsSharedIrregularSparseExplanation(t *testing.T
 		&stubDashboardDayStateProvider{},
 	)
 
-	viewData, err := service.BuildDashboardViewData(user, "en", today, time.UTC)
+	viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
 	}
@@ -307,7 +308,7 @@ func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 		&stubDashboardViewerProvider{},
 		&stubDashboardDayStateProvider{err: errors.New("state fail")},
 	)
-	if _, err := dayStateErrService.BuildDayEditorViewData(user, "en", day, now, time.UTC); !errors.Is(err, ErrDashboardViewLoadDayState) {
+	if _, err := dayStateErrService.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC); !errors.Is(err, ErrDashboardViewLoadDayState) {
 		t.Fatalf("expected ErrDashboardViewLoadDayState, got %v", err)
 	}
 
@@ -316,7 +317,7 @@ func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 		&stubDashboardViewerProvider{err: errors.New("day log fail")},
 		&stubDashboardDayStateProvider{},
 	)
-	if _, err := dayLogErrService.BuildDayEditorViewData(user, "en", day, now, time.UTC); !errors.Is(err, ErrDashboardViewLoadDayLog) {
+	if _, err := dayLogErrService.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC); !errors.Is(err, ErrDashboardViewLoadDayLog) {
 		t.Fatalf("expected ErrDashboardViewLoadDayLog, got %v", err)
 	}
 }

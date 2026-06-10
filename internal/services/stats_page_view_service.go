@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -89,19 +90,19 @@ type statsOwnerInsightsViewData struct {
 	hasPhaseSymptomInsights bool
 }
 
-func (service *StatsService) BuildStatsPageViewData(user *models.User, language string, cycleLabelPattern string, now time.Time, location *time.Location, maxTrendPoints int) (StatsPageViewData, error) {
-	baseData, err := service.buildStatsPageBaseData(user, cycleLabelPattern, now, location, maxTrendPoints)
+func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *models.User, language string, cycleLabelPattern string, now time.Time, location *time.Location, maxTrendPoints int) (StatsPageViewData, error) {
+	baseData, err := service.buildStatsPageBaseData(ctx, user, cycleLabelPattern, now, location, maxTrendPoints)
 	if err != nil {
 		return StatsPageViewData{}, err
 	}
 
-	frequencies, err := service.BuildSymptomFrequenciesForUser(user)
+	frequencies, err := service.BuildSymptomFrequenciesForUser(ctx, user)
 	if err != nil {
 		return StatsPageViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
 	}
 	symptomCounts := buildStatsSymptomCountViewData(language, frequencies)
 	phaseMoodInsights, hasPhaseMoodInsights := service.BuildPhaseMoodInsights(user, baseData.logs, location)
-	ownerInsights, err := service.buildOwnerStatsInsights(user, language, baseData.stats, baseData.logs, now, location)
+	ownerInsights, err := service.buildOwnerStatsInsights(ctx, user, language, baseData.stats, baseData.logs, now, location)
 	if err != nil {
 		return StatsPageViewData{}, err
 	}
@@ -162,8 +163,8 @@ func (service *StatsService) BuildStatsPageViewData(user *models.User, language 
 	}, nil
 }
 
-func (service *StatsService) buildStatsPageBaseData(user *models.User, cycleLabelPattern string, now time.Time, location *time.Location, maxTrendPoints int) (statsPageBaseData, error) {
-	stats, logs, err := service.BuildCycleStatsForRange(user, now.AddDate(-2, 0, 0), now, now, location)
+func (service *StatsService) buildStatsPageBaseData(ctx context.Context, user *models.User, cycleLabelPattern string, now time.Time, location *time.Location, maxTrendPoints int) (statsPageBaseData, error) {
+	stats, logs, err := service.BuildCycleStatsForRange(ctx, user, now.AddDate(-2, 0, 0), now, now, location)
 	if err != nil {
 		return statsPageBaseData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadStats, err)
 	}
@@ -208,7 +209,7 @@ func buildStatsSymptomCountViewData(language string, frequencies []SymptomFreque
 	return symptomCounts
 }
 
-func (service *StatsService) buildOwnerStatsInsights(user *models.User, language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) (statsOwnerInsightsViewData, error) {
+func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *models.User, language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) (statsOwnerInsightsViewData, error) {
 	insights := statsOwnerInsightsViewData{}
 	if !IsOwnerUser(user) {
 		return insights, nil
@@ -219,7 +220,7 @@ func (service *StatsService) buildOwnerStatsInsights(user *models.User, language
 		return insights, nil
 	}
 
-	symptomByID, err := service.phaseInsightSymptomMap(user.ID)
+	symptomByID, err := service.phaseInsightSymptomMap(ctx, user.ID)
 	if err != nil {
 		return statsOwnerInsightsViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
 	}

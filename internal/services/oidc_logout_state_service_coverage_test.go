@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -23,25 +24,25 @@ type oidclogoutstateserviceCovStore struct {
 	deleteByIDCalls     int
 }
 
-func (s *oidclogoutstateserviceCovStore) Save(state *models.OIDCLogoutState) error {
+func (s *oidclogoutstateserviceCovStore) Save(ctx context.Context, state *models.OIDCLogoutState) error {
 	s.saved = state
 	return s.saveErr
 }
 
-func (s *oidclogoutstateserviceCovStore) FindBySessionID(sessionID string) (models.OIDCLogoutState, bool, error) {
+func (s *oidclogoutstateserviceCovStore) FindBySessionID(ctx context.Context, sessionID string) (models.OIDCLogoutState, bool, error) {
 	if s.findErr != nil {
 		return models.OIDCLogoutState{}, false, s.findErr
 	}
 	return s.findRecord, s.findFound, nil
 }
 
-func (s *oidclogoutstateserviceCovStore) DeleteBySessionID(sessionID string) error {
+func (s *oidclogoutstateserviceCovStore) DeleteBySessionID(ctx context.Context, sessionID string) error {
 	s.deleteBySessionID = sessionID
 	s.deleteByIDCalls++
 	return s.deleteBySessionErr
 }
 
-func (s *oidclogoutstateserviceCovStore) DeleteExpired(cutoff time.Time) error {
+func (s *oidclogoutstateserviceCovStore) DeleteExpired(ctx context.Context, cutoff time.Time) error {
 	s.deleteExpiredCutoff = cutoff
 	s.deleteExpiredCalls++
 	return s.deleteExpiredErr
@@ -64,7 +65,7 @@ func TestOIDCLogoutStateServiceCovSaveTTLIs7Days(t *testing.T) {
 		PostLogoutRedirectURL: "https://app.example.com/post-logout",
 	}
 
-	if err := svc.Save("sess-ttl", state, now); err != nil {
+	if err := svc.Save(context.Background(), "sess-ttl", state, now); err != nil {
 		t.Fatalf("Save() unexpected error: %v", err)
 	}
 	if store.saved == nil {
@@ -84,7 +85,7 @@ func TestOIDCLogoutStateServiceCovSaveNilServiceReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	var svc *OIDCLogoutStateService
-	if err := svc.Save("sess1", OIDCLogoutState{}, time.Now()); err != nil {
+	if err := svc.Save(context.Background(), "sess1", OIDCLogoutState{}, time.Now()); err != nil {
 		t.Fatalf("nil receiver Save() should return nil, got %v", err)
 	}
 }
@@ -93,7 +94,7 @@ func TestOIDCLogoutStateServiceCovSaveNilStoreReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	svc := &OIDCLogoutStateService{store: nil}
-	if err := svc.Save("sess1", OIDCLogoutState{}, time.Now()); err != nil {
+	if err := svc.Save(context.Background(), "sess1", OIDCLogoutState{}, time.Now()); err != nil {
 		t.Fatalf("nil store Save() should return nil, got %v", err)
 	}
 }
@@ -108,7 +109,7 @@ func TestOIDCLogoutStateServiceCovSaveEmptySessionIDReturnsNil(t *testing.T) {
 	store := &oidclogoutstateserviceCovStore{}
 	svc := NewOIDCLogoutStateService(store)
 
-	if err := svc.Save("   ", OIDCLogoutState{}, time.Now()); err != nil {
+	if err := svc.Save(context.Background(), "   ", OIDCLogoutState{}, time.Now()); err != nil {
 		t.Fatalf("Save() with whitespace-only sessionID should return nil, got %v", err)
 	}
 	if store.saved != nil {
@@ -127,7 +128,7 @@ func TestOIDCLogoutStateServiceCovSaveDeleteExpiredErrorPropagates(t *testing.T)
 	store := &oidclogoutstateserviceCovStore{deleteExpiredErr: wantErr}
 	svc := NewOIDCLogoutStateService(store)
 
-	err := svc.Save("sess-del-err", OIDCLogoutState{}, time.Now())
+	err := svc.Save(context.Background(), "sess-del-err", OIDCLogoutState{}, time.Now())
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected DeleteExpired error to propagate, got %v", err)
 	}
@@ -144,7 +145,7 @@ func TestOIDCLogoutStateServiceCovDeleteNilServiceReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	var svc *OIDCLogoutStateService
-	if err := svc.Delete("sess1"); err != nil {
+	if err := svc.Delete(context.Background(), "sess1"); err != nil {
 		t.Fatalf("nil receiver Delete() should return nil, got %v", err)
 	}
 }
@@ -153,7 +154,7 @@ func TestOIDCLogoutStateServiceCovDeleteNilStoreReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	svc := &OIDCLogoutStateService{store: nil}
-	if err := svc.Delete("sess1"); err != nil {
+	if err := svc.Delete(context.Background(), "sess1"); err != nil {
 		t.Fatalf("nil store Delete() should return nil, got %v", err)
 	}
 }
@@ -165,7 +166,7 @@ func TestOIDCLogoutStateServiceCovDeleteTrimSpaceAndDelegates(t *testing.T) {
 	store := &oidclogoutstateserviceCovStore{}
 	svc := NewOIDCLogoutStateService(store)
 
-	if err := svc.Delete("  sess-del  "); err != nil {
+	if err := svc.Delete(context.Background(), "  sess-del  "); err != nil {
 		t.Fatalf("Delete() unexpected error: %v", err)
 	}
 	if store.deleteBySessionID != "sess-del" {
@@ -181,7 +182,7 @@ func TestOIDCLogoutStateServiceCovLoadNilServiceReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	var svc *OIDCLogoutStateService
-	got, found, err := svc.Load("sess1", time.Now())
+	got, found, err := svc.Load(context.Background(), "sess1", time.Now())
 	if err != nil || found || got != (OIDCLogoutState{}) {
 		t.Fatalf("nil receiver Load() should return zero, false, nil; got %+v, %v, %v", got, found, err)
 	}
@@ -191,7 +192,7 @@ func TestOIDCLogoutStateServiceCovLoadNilStoreReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	svc := &OIDCLogoutStateService{store: nil}
-	got, found, err := svc.Load("sess1", time.Now())
+	got, found, err := svc.Load(context.Background(), "sess1", time.Now())
 	if err != nil || found || got != (OIDCLogoutState{}) {
 		t.Fatalf("nil store Load() should return zero, false, nil; got %+v, %v, %v", got, found, err)
 	}
@@ -207,7 +208,7 @@ func TestOIDCLogoutStateServiceCovLoadEmptySessionIDReturnsEmpty(t *testing.T) {
 	store := &oidclogoutstateserviceCovStore{}
 	svc := NewOIDCLogoutStateService(store)
 
-	got, found, err := svc.Load("  ", time.Now())
+	got, found, err := svc.Load(context.Background(), "  ", time.Now())
 	if err != nil || found || got != (OIDCLogoutState{}) {
 		t.Fatalf("Load() with whitespace sessionID should return zero, false, nil; got %+v, %v, %v", got, found, err)
 	}
@@ -227,7 +228,7 @@ func TestOIDCLogoutStateServiceCovLoadDeleteExpiredErrorPropagates(t *testing.T)
 	store := &oidclogoutstateserviceCovStore{deleteExpiredErr: wantErr}
 	svc := NewOIDCLogoutStateService(store)
 
-	_, found, err := svc.Load("sess-load-err", time.Now())
+	_, found, err := svc.Load(context.Background(), "sess-load-err", time.Now())
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected DeleteExpired error to propagate through Load, got %v", err)
 	}
@@ -246,7 +247,7 @@ func TestOIDCLogoutStateServiceCovLoadNotFoundReturnsFalse(t *testing.T) {
 	store := &oidclogoutstateserviceCovStore{findFound: false}
 	svc := NewOIDCLogoutStateService(store)
 
-	got, found, err := svc.Load("no-such-session", time.Now())
+	got, found, err := svc.Load(context.Background(), "no-such-session", time.Now())
 	if err != nil || found || got != (OIDCLogoutState{}) {
 		t.Fatalf("Load() for missing session should return zero, false, nil; got %+v, %v, %v", got, found, err)
 	}
@@ -260,7 +261,7 @@ func TestOIDCLogoutStateServiceCovLoadFindErrorPropagates(t *testing.T) {
 	store := &oidclogoutstateserviceCovStore{findErr: wantErr}
 	svc := NewOIDCLogoutStateService(store)
 
-	_, found, err := svc.Load("sess-find-err", time.Now())
+	_, found, err := svc.Load(context.Background(), "sess-find-err", time.Now())
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected Find error to propagate through Load, got %v", err)
 	}
@@ -289,7 +290,7 @@ func TestOIDCLogoutStateServiceCovLoadExpiredRecordDeletedAndNotFound(t *testing
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	got, found, err := svc.Load("sess-expired", now)
+	got, found, err := svc.Load(context.Background(), "sess-expired", now)
 	if err != nil || found || got != (OIDCLogoutState{}) {
 		t.Fatalf("Load() on expired record should return zero, false, nil; got %+v, %v, %v", got, found, err)
 	}
@@ -313,7 +314,7 @@ func TestOIDCLogoutStateServiceCovLoadExactExpiryBoundaryIsExpired(t *testing.T)
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	_, found, err := svc.Load("sess-boundary", now)
+	_, found, err := svc.Load(context.Background(), "sess-boundary", now)
 	if err != nil || found {
 		t.Fatalf("record with ExpiresAt==now should be treated as expired; found=%v err=%v", found, err)
 	}
@@ -335,7 +336,7 @@ func TestOIDCLogoutStateServiceCovLoadExpiredDeleteErrorPropagates(t *testing.T)
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	_, _, err := svc.Load("sess-exp-del-err", now)
+	_, _, err := svc.Load(context.Background(), "sess-exp-del-err", now)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("expected delete error to propagate; got %v", err)
 	}
@@ -361,7 +362,7 @@ func TestOIDCLogoutStateServiceCovLoadValidRecordReturnsData(t *testing.T) {
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	got, found, err := svc.Load("sess-ok", now)
+	got, found, err := svc.Load(context.Background(), "sess-ok", now)
 	if err != nil {
 		t.Fatalf("Load() unexpected error: %v", err)
 	}
@@ -395,7 +396,7 @@ func TestOIDCLogoutStateServiceCovLoadZeroExpiresAtNotExpired(t *testing.T) {
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	_, found, err := svc.Load("sess-zero-exp", now)
+	_, found, err := svc.Load(context.Background(), "sess-zero-exp", now)
 	if err != nil || !found {
 		t.Fatalf("zero ExpiresAt should not be treated as expired; found=%v err=%v", found, err)
 	}
@@ -421,7 +422,7 @@ func TestOIDCLogoutStateServiceCovConsumeDeletesRecord(t *testing.T) {
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	got, found, err := svc.Consume("sess-consume", now)
+	got, found, err := svc.Consume(context.Background(), "sess-consume", now)
 	if err != nil {
 		t.Fatalf("Consume() unexpected error: %v", err)
 	}
@@ -452,7 +453,7 @@ func TestOIDCLogoutStateServiceCovLoadDoesNotDeleteRecord(t *testing.T) {
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	_, found, err := svc.Load("sess-load-nodelete", now)
+	_, found, err := svc.Load(context.Background(), "sess-load-nodelete", now)
 	if err != nil || !found {
 		t.Fatalf("Load() unexpected result; found=%v err=%v", found, err)
 	}
@@ -477,7 +478,7 @@ func TestOIDCLogoutStateServiceCovConsumeDeleteErrorPropagates(t *testing.T) {
 	}
 	svc := NewOIDCLogoutStateService(store)
 
-	_, _, err := svc.Consume("sess-consume-err", now)
+	_, _, err := svc.Consume(context.Background(), "sess-consume-err", now)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Consume() delete error should propagate; got %v", err)
 	}
@@ -501,7 +502,7 @@ func TestOIDCLogoutStateServiceCovSaveFieldsTrimmedAndUTC(t *testing.T) {
 		PostLogoutRedirectURL: "  https://app.example.com/done  ",
 	}
 
-	if err := svc.Save(" sess-trim ", state, now); err != nil {
+	if err := svc.Save(context.Background(), " sess-trim ", state, now); err != nil {
 		t.Fatalf("Save() unexpected error: %v", err)
 	}
 	if store.saved == nil {
@@ -532,7 +533,7 @@ func TestOIDCLogoutStateServiceCovSaveDeleteExpiredCalledWithNow(t *testing.T) {
 	svc := NewOIDCLogoutStateService(store)
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-	if err := svc.Save("sess-de", OIDCLogoutState{}, now); err != nil {
+	if err := svc.Save(context.Background(), "sess-de", OIDCLogoutState{}, now); err != nil {
 		t.Fatalf("Save() unexpected error: %v", err)
 	}
 	if store.deleteExpiredCalls != 1 {

@@ -1,14 +1,15 @@
 package api
 
 import (
+	"context"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func (handler *Handler) buildCalendarViewData(user *models.User, language string, messages map[string]string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (fiber.Map, error) {
-	viewData, err := handler.calendarViewService.BuildCalendarPageViewData(user, language, now, monthStart, selectedDate, location)
+func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.User, language string, messages map[string]string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (fiber.Map, error) {
+	viewData, err := handler.calendarViewService.BuildCalendarPageViewData(ctx, user, language, now, monthStart, selectedDate, location)
 	if err != nil {
 		return nil, err
 	}

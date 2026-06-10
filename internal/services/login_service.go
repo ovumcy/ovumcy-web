@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -11,7 +12,7 @@ var ErrLoginResetTokenIssue = errors.New("login reset token issue")
 var ErrAuthLoginRateLimited = errors.New("auth login rate limited")
 
 type LoginAuthService interface {
-	AuthenticateCredentials(email string, password string) (models.User, error)
+	AuthenticateCredentials(ctx context.Context, email string, password string) (models.User, error)
 }
 
 type LoginResetTokenIssuer interface {
@@ -44,6 +45,7 @@ func (service *LoginService) ConfigureAttemptLimits(attempts int, window time.Du
 }
 
 func (service *LoginService) Authenticate(
+	ctx context.Context,
 	secretKey []byte,
 	clientKey string,
 	email string,
@@ -56,7 +58,7 @@ func (service *LoginService) Authenticate(
 		return LoginResult{}, ErrAuthLoginRateLimited
 	}
 
-	user, err := service.auth.AuthenticateCredentials(email, password)
+	user, err := service.auth.AuthenticateCredentials(ctx, email, password)
 	if err != nil {
 		if errors.Is(err, ErrAuthInvalidCreds) {
 			service.attemptPolicy.AddFailure(secretKey, clientKey, normalizedEmail, now)

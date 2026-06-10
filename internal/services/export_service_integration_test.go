@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func assertExportServiceLoadDataForRangeFiltersInclusiveBoundaries(t *testing.T,
 	to := time.Date(2026, time.February, 11, 0, 0, 0, 0, time.UTC)
 
 	t.Run("exact day range includes target day", func(t *testing.T) {
-		filtered, _, err := exportService.LoadDataForRange(user.ID, &from, &to, time.UTC)
+		filtered, _, err := exportService.LoadDataForRange(context.Background(), user.ID, &from, &to, time.UTC)
 		if err != nil {
 			t.Fatalf("LoadDataForRange returned error: %v", err)
 		}
@@ -45,7 +46,7 @@ func assertExportServiceLoadDataForRangeFiltersInclusiveBoundaries(t *testing.T,
 	})
 
 	t.Run("from only includes from and after", func(t *testing.T) {
-		filtered, _, err := exportService.LoadDataForRange(user.ID, &from, nil, time.UTC)
+		filtered, _, err := exportService.LoadDataForRange(context.Background(), user.ID, &from, nil, time.UTC)
 		if err != nil {
 			t.Fatalf("LoadDataForRange returned error: %v", err)
 		}
@@ -58,7 +59,7 @@ func assertExportServiceLoadDataForRangeFiltersInclusiveBoundaries(t *testing.T,
 	})
 
 	t.Run("to only includes up to and including day", func(t *testing.T) {
-		filtered, _, err := exportService.LoadDataForRange(user.ID, nil, &to, time.UTC)
+		filtered, _, err := exportService.LoadDataForRange(context.Background(), user.ID, nil, &to, time.UTC)
 		if err != nil {
 			t.Fatalf("LoadDataForRange returned error: %v", err)
 		}
@@ -99,7 +100,7 @@ func TestExportServiceBuildSummaryForRangeFiltersInclusiveBoundaries(t *testing.
 	from := time.Date(2026, time.February, 11, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, time.February, 11, 0, 0, 0, 0, time.UTC)
 
-	summary, err := exportService.BuildSummary(user.ID, &from, &to, time.UTC)
+	summary, err := exportService.BuildSummary(context.Background(), user.ID, &from, &to, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSummary returned error: %v", err)
 	}

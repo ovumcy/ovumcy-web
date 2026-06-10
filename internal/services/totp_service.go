@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -36,18 +37,18 @@ type TOTPUserRepository interface {
 	// UpdateTOTPFieldsAndRevokeSessions writes the new TOTP-related columns AND
 	// bumps auth_session_version in the same transaction, so toggling 2FA
 	// invalidates every active auth cookie for the account.
-	UpdateTOTPFieldsAndRevokeSessions(userID uint, encryptedSecret string, enabled bool) error
+	UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error
 	// UpdateTOTPSecretCiphertext rewrites just the encrypted secret column
 	// WITHOUT bumping auth_session_version or touching totp_enabled. It exists
 	// for transparent re-encryption of legacy ciphertexts under the new
 	// aad-bound format on a successful 2FA login: nothing about the account's
 	// security posture changed, so no active session should be revoked.
-	UpdateTOTPSecretCiphertext(userID uint, encryptedSecret string) error
+	UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error
 	// ClaimTOTPStep atomically advances totp_last_used_step to step iff it is
 	// strictly greater than the persisted value. Returns true when the row was
 	// updated (the step is now consumed by this caller) and false when the step
 	// was already at or beyond `step` (replay or concurrent loser).
-	ClaimTOTPStep(userID uint, step int64) (bool, error)
+	ClaimTOTPStep(ctx context.Context, userID uint, step int64) (bool, error)
 }
 
 // aadForTOTPSecret returns the additional-authenticated-data used to bind
@@ -145,7 +146,7 @@ func (service *TOTPService) ValidateCodeRaw(rawSecret, code string) bool {
 // successful step claim. The re-encryption uses a session-version-preserving
 // repo call so the user's current login does not get invalidated by what is
 // otherwise an internal storage upgrade.
-func (service *TOTPService) ValidateCode(userID uint, encryptedSecret, code string) (bool, error) {
+func (service *TOTPService) ValidateCode(ctx context.Context, userID uint, encryptedSecret, code string) (bool, error) {
 	aad := aadForTOTPSecret(userID)
 	rawSecret, isLegacy, err := security.DecryptField(encryptedSecret, service.secretKey, aad)
 	if err != nil {
@@ -155,7 +156,7 @@ func (service *TOTPService) ValidateCode(userID uint, encryptedSecret, code stri
 	if !found {
 		return false, nil
 	}
-	claimed, err := service.users.ClaimTOTPStep(userID, step)
+	claimed, err := service.users.ClaimTOTPStep(ctx, userID, step)
 	if err != nil {
 		return false, fmt.Errorf("%w: %v", ErrTOTPUpdateFailed, err)
 	}
@@ -168,7 +169,7 @@ func (service *TOTPService) ValidateCode(userID uint, encryptedSecret, code stri
 	// next login and is operationally observable via the security log.
 	if isLegacy {
 		if reEncrypted, encryptErr := security.EncryptField(rawSecret, service.secretKey, aad); encryptErr == nil {
-			_ = service.users.UpdateTOTPSecretCiphertext(userID, reEncrypted)
+			_ = service.users.UpdateTOTPSecretCiphertext(ctx, userID, reEncrypted)
 		}
 	}
 	return true, nil
@@ -202,12 +203,12 @@ func findValidatedTOTPStep(rawSecret, code string, now time.Time) (int64, bool) 
 // level swap of one user's encrypted secret into another row fails to open.
 // The underlying repository call also bumps auth_session_version so every
 // active auth cookie issued before 2FA was enabled is revoked.
-func (service *TOTPService) EnableTOTP(userID uint, rawSecret string) error {
+func (service *TOTPService) EnableTOTP(ctx context.Context, userID uint, rawSecret string) error {
 	encrypted, err := security.EncryptField(rawSecret, service.secretKey, aadForTOTPSecret(userID))
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrTOTPSecretEncrypt, err)
 	}
-	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(userID, encrypted, true); err != nil {
+	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, encrypted, true); err != nil {
 		return fmt.Errorf("%w: %v", ErrTOTPUpdateFailed, err)
 	}
 	return nil
@@ -216,8 +217,8 @@ func (service *TOTPService) EnableTOTP(userID uint, rawSecret string) error {
 // DisableTOTP clears the TOTP secret and sets totp_enabled=false for the user.
 // As with EnableTOTP, this bumps auth_session_version so any session that
 // existed while 2FA was on is invalidated when 2FA is taken back off.
-func (service *TOTPService) DisableTOTP(userID uint) error {
-	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(userID, "", false); err != nil {
+func (service *TOTPService) DisableTOTP(ctx context.Context, userID uint) error {
+	if err := service.users.UpdateTOTPFieldsAndRevokeSessions(ctx, userID, "", false); err != nil {
 		return fmt.Errorf("%w: %v", ErrTOTPUpdateFailed, err)
 	}
 	return nil

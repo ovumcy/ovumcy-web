@@ -5,6 +5,7 @@ package services
 // the uncovered compareISODate branches at lines 314, 316.
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func TestSettingsviewserviceCovNilNotificationsDoesNotPanic(t *testing.T) {
 
 	user := &models.User{ID: 1, Role: "viewer"}
 	// Must not panic: notifications.ResolveSettingsStatus is called inside.
-	_, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
+	_, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSettingsPageViewData with nil notifications guard: unexpected error: %v", err)
 	}
@@ -62,7 +63,7 @@ func TestSettingsviewserviceCovExportDateBoundsEarlierFrom(t *testing.T) {
 	user := &models.User{ID: 10, Role: models.RoleOwner}
 	today := mustParseSettingsViewDay(t, "2026-06-01")
 
-	viewData, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, today, time.UTC)
+	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestSettingsviewserviceCovExportDateBoundsFromEqualsToday(t *testing.T) {
 	svc := NewSettingsViewService(loader, nil, exportBuilder, nil)
 	user := &models.User{ID: 11, Role: models.RoleOwner}
 
-	viewData, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, today, time.UTC)
+	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestSettingsviewserviceCovExportDateBoundsLaterTo(t *testing.T) {
 	svc := NewSettingsViewService(loader, nil, exportBuilder, nil)
 	user := &models.User{ID: 12, Role: models.RoleOwner}
 
-	viewData, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, today, time.UTC)
+	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestSettingsviewserviceCovExportDateBoundsToEqualsToday(t *testing.T) {
 	svc := NewSettingsViewService(loader, nil, exportBuilder, nil)
 	user := &models.User{ID: 13, Role: models.RoleOwner}
 
-	viewData, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, today, time.UTC)
+	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestSettingsviewserviceCovSymptomsAllBuiltinNoFlags(t *testing.T) {
 	svc := NewSettingsViewService(loader, nil, nil, symptomProvider)
 	user := &models.User{ID: 20, Role: models.RoleOwner}
 
-	viewData, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
+	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -239,7 +240,7 @@ func TestSettingsviewserviceCovSymptomsOnlyActiveCustomFlag(t *testing.T) {
 	svc := NewSettingsViewService(loader, nil, nil, symptomProvider)
 	user := &models.User{ID: 21, Role: models.RoleOwner}
 
-	viewData, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
+	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -265,7 +266,7 @@ func TestSettingsviewserviceCovSymptomsOnlyArchivedCustomFlag(t *testing.T) {
 	svc := NewSettingsViewService(loader, nil, nil, symptomProvider)
 	user := &models.User{ID: 22, Role: models.RoleOwner}
 
-	viewData, err := svc.BuildSettingsPageViewData(user, "en", SettingsViewInput{}, mustParseSettingsViewDay2("2026-06-01"), time.UTC)
+	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay2("2026-06-01"), time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -17,16 +18,16 @@ var (
 )
 
 type DashboardStatsProvider interface {
-	BuildCycleStatsForRange(user *models.User, from time.Time, to time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error)
+	BuildCycleStatsForRange(ctx context.Context, user *models.User, from time.Time, to time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error)
 }
 
 type DashboardViewerProvider interface {
-	FetchDayLogForViewer(user *models.User, day time.Time, location *time.Location) (models.DailyLog, []models.SymptomType, error)
+	FetchDayLogForViewer(ctx context.Context, user *models.User, day time.Time, location *time.Location) (models.DailyLog, []models.SymptomType, error)
 }
 
 type DashboardDayStateProvider interface {
-	DayHasDataForDate(userID uint, day time.Time, location *time.Location) (bool, error)
-	FetchAllLogsForUser(userID uint) ([]models.DailyLog, error)
+	DayHasDataForDate(ctx context.Context, userID uint, day time.Time, location *time.Location) (bool, error)
+	FetchAllLogsForUser(ctx context.Context, userID uint) ([]models.DailyLog, error)
 }
 
 type DashboardViewService struct {
@@ -106,19 +107,19 @@ func NewDashboardViewService(stats DashboardStatsProvider, viewer DashboardViewe
 	}
 }
 
-func (service *DashboardViewService) BuildDashboardViewData(user *models.User, language string, now time.Time, location *time.Location) (DashboardViewData, error) {
+func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context, user *models.User, language string, now time.Time, location *time.Location) (DashboardViewData, error) {
 	today := DateAtLocation(now, location)
 
-	stats, _, err := service.stats.BuildCycleStatsForRange(user, today.AddDate(-2, 0, 0), today, now, location)
+	stats, _, err := service.stats.BuildCycleStatsForRange(ctx, user, today.AddDate(-2, 0, 0), today, now, location)
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadStats, err)
 	}
 
-	todayLog, symptoms, err := service.viewer.FetchDayLogForViewer(user, today, location)
+	todayLog, symptoms, err := service.viewer.FetchDayLogForViewer(ctx, user, today, location)
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadTodayLog, err)
 	}
-	logs, err := service.entryContextLogs(user, symptoms)
+	logs, err := service.entryContextLogs(ctx, user, symptoms)
 	if err != nil {
 		return DashboardViewData{}, err
 	}
@@ -139,7 +140,7 @@ func (service *DashboardViewService) BuildDashboardViewData(user *models.User, l
 		return DashboardViewData{}, err
 	}
 	yesterday := today.AddDate(0, 0, -1)
-	yesterdayHasData, err := service.days.DayHasDataForDate(user.ID, yesterday, location)
+	yesterdayHasData, err := service.days.DayHasDataForDate(ctx, user.ID, yesterday, location)
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayState, err)
 	}
@@ -229,17 +230,17 @@ func dashboardSpottingCycleWarning(logs []models.DailyLog, todayLog models.Daily
 	return shouldShowSpottingCycleWarning(logs, todayLog, today, location)
 }
 
-func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, language string, day time.Time, now time.Time, location *time.Location) (DayEditorViewData, error) {
-	hasDayData, err := service.days.DayHasDataForDate(user.ID, day, location)
+func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context, user *models.User, language string, day time.Time, now time.Time, location *time.Location) (DayEditorViewData, error) {
+	hasDayData, err := service.days.DayHasDataForDate(ctx, user.ID, day, location)
 	if err != nil {
 		return DayEditorViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayState, err)
 	}
 
-	logEntry, symptoms, err := service.viewer.FetchDayLogForViewer(user, day, location)
+	logEntry, symptoms, err := service.viewer.FetchDayLogForViewer(ctx, user, day, location)
 	if err != nil {
 		return DayEditorViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadDayLog, err)
 	}
-	logs, err := service.entryContextLogs(user, symptoms)
+	logs, err := service.entryContextLogs(ctx, user, symptoms)
 	if err != nil {
 		return DayEditorViewData{}, err
 	}
@@ -283,13 +284,13 @@ func (service *DashboardViewService) BuildDayEditorViewData(user *models.User, l
 	}, nil
 }
 
-func (service *DashboardViewService) entryContextLogs(user *models.User, symptoms []models.SymptomType) ([]models.DailyLog, error) {
+func (service *DashboardViewService) entryContextLogs(ctx context.Context, user *models.User, symptoms []models.SymptomType) ([]models.DailyLog, error) {
 	requiresLogs := len(symptoms) >= 2 || IsOwnerUser(user)
 	if !requiresLogs {
 		return nil, nil
 	}
 
-	logs, err := service.days.FetchAllLogsForUser(user.ID)
+	logs, err := service.days.FetchAllLogsForUser(ctx, user.ID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
 	}

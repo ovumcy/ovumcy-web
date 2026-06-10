@@ -29,7 +29,7 @@ func (handler *Handler) CalendarDayPanel(c *fiber.Ctx) error {
 func (handler *Handler) renderDayEditorPartial(c *fiber.Ctx, user *models.User, day time.Time) error {
 	language, messages, now := handler.currentPageViewContext(c)
 	location := handler.requestLocation(c)
-	payload, err := handler.buildDayEditorPartialData(user, language, messages, day, now, location, c.Query("mode") == "edit")
+	payload, err := handler.buildDayEditorPartialData(c.UserContext(), user, language, messages, day, now, location, c.Query("mode") == "edit")
 	if err != nil {
 		return handler.respondMappedError(c, mapDayEditorViewError(err))
 	}

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -66,7 +67,7 @@ func TestUserRepositoryCreateTranslatesPostgresUniqueViolation(t *testing.T) {
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	if err := repo.Create(first); err != nil {
+	if err := repo.Create(context.Background(), first); err != nil {
 		t.Fatalf("create first postgres user: %v", err)
 	}
 
@@ -80,7 +81,7 @@ func TestUserRepositoryCreateTranslatesPostgresUniqueViolation(t *testing.T) {
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	err := repo.Create(second)
+	err := repo.Create(context.Background(), second)
 	if err == nil {
 		t.Fatal("expected postgres unique violation error")
 	}

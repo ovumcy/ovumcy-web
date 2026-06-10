@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -62,7 +63,7 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 }
 
 func runUsersList(service *services.OperatorUserService, output io.Writer) error {
-	users, err := service.ListUsers()
+	users, err := service.ListUsers(context.Background())
 	if err != nil {
 		return err
 	}
@@ -106,7 +107,7 @@ func runUsersDelete(service *services.OperatorUserService, args []string, input 
 		return err
 	}
 
-	user, err := service.GetUserByEmail(email)
+	user, err := service.GetUserByEmail(context.Background(), email)
 	if err != nil {
 		return err
 	}
@@ -125,7 +126,7 @@ func runUsersDelete(service *services.OperatorUserService, args []string, input 
 		}
 	}
 
-	deletedUser, err := service.DeleteUserByEmail(email)
+	deletedUser, err := service.DeleteUserByEmail(context.Background(), email)
 	if err != nil {
 		return err
 	}

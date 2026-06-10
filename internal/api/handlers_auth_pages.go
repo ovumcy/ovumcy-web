@@ -13,7 +13,7 @@ func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
 	if redirected {
 		return nil
 	}
-	needsSetup, err := handler.setupService.RequiresInitialSetup()
+	needsSetup, err := handler.setupService.RequiresInitialSetup(c.UserContext())
 	if err != nil {
 		return handler.respondMappedError(c, setupStateLoadErrorSpec())
 	}
@@ -54,7 +54,7 @@ func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
 		}
 		return nil
 	}
-	needsSetup, err := handler.setupService.RequiresInitialSetup()
+	needsSetup, err := handler.setupService.RequiresInitialSetup(c.UserContext())
 	if err != nil {
 		return handler.respondMappedError(c, setupStateLoadErrorSpec())
 	}

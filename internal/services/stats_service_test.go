@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -18,7 +19,7 @@ type stubStatsDayReader struct {
 	gotTo          time.Time
 }
 
-func (stub *stubStatsDayReader) FetchLogsForUser(_ uint, from time.Time, to time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (stub *stubStatsDayReader) FetchLogsForUser(ctx context.Context, _ uint, from time.Time, to time.Time, _ *time.Location) ([]models.DailyLog, error) {
 	stub.gotFrom = from
 	stub.gotTo = to
 	if stub.rangeErr != nil {
@@ -29,7 +30,7 @@ func (stub *stubStatsDayReader) FetchLogsForUser(_ uint, from time.Time, to time
 	return result, nil
 }
 
-func (stub *stubStatsDayReader) FetchAllLogsForUser(uint) ([]models.DailyLog, error) {
+func (stub *stubStatsDayReader) FetchAllLogsForUser(context.Context, uint) ([]models.DailyLog, error) {
 	stub.fetchAllCalled = true
 	if stub.allErr != nil {
 		return nil, stub.allErr
@@ -45,7 +46,7 @@ type stubStatsSymptomReader struct {
 	err         error
 }
 
-func (stub *stubStatsSymptomReader) CalculateFrequencies(uint, []models.DailyLog) ([]SymptomFrequency, error) {
+func (stub *stubStatsSymptomReader) CalculateFrequencies(context.Context, uint, []models.DailyLog) ([]SymptomFrequency, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -54,7 +55,7 @@ func (stub *stubStatsSymptomReader) CalculateFrequencies(uint, []models.DailyLog
 	return result, nil
 }
 
-func (stub *stubStatsSymptomReader) FetchSymptoms(uint) ([]models.SymptomType, error) {
+func (stub *stubStatsSymptomReader) FetchSymptoms(context.Context, uint) ([]models.SymptomType, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -112,7 +113,7 @@ func TestBuildCycleStatsForRangeAppliesOwnerBaseline(t *testing.T) {
 	}
 	now := mustParseStatsServiceDay(t, "2026-02-20")
 
-	stats, gotLogs, err := service.BuildCycleStatsForRange(user, now.AddDate(0, 0, -30), now, now, time.UTC)
+	stats, gotLogs, err := service.BuildCycleStatsForRange(context.Background(), user, now.AddDate(0, 0, -30), now, now, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCycleStatsForRange() unexpected error: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestBuildCycleStatsForRangePausesAfterPositivePregnancyTest(t *testing.T) {
 	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-02-20")
 
-	stats, _, err := service.BuildCycleStatsForRange(user, now.AddDate(0, 0, -30), now, now, time.UTC)
+	stats, _, err := service.BuildCycleStatsForRange(context.Background(), user, now.AddDate(0, 0, -30), now, now, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCycleStatsForRange() unexpected error: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestBuildCycleStatsForRangeResumesWhenCycleStartFollowsPositiveTest(t *test
 	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-02-20")
 
-	stats, _, err := service.BuildCycleStatsForRange(user, now.AddDate(0, 0, -30), now, now, time.UTC)
+	stats, _, err := service.BuildCycleStatsForRange(context.Background(), user, now.AddDate(0, 0, -30), now, now, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCycleStatsForRange() unexpected error: %v", err)
 	}
@@ -182,7 +183,7 @@ func TestBuildOverviewStatsUsesOverviewRange(t *testing.T) {
 	user := &models.User{ID: 3, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-03-02")
 
-	if _, err := service.BuildOverviewStats(user, now, time.UTC); err != nil {
+	if _, err := service.BuildOverviewStats(context.Background(), user, now, time.UTC); err != nil {
 		t.Fatalf("BuildOverviewStats() unexpected error: %v", err)
 	}
 
@@ -273,7 +274,7 @@ func TestBuildSymptomFrequenciesForUserUnsupportedRoleSkipsDataAccess(t *testing
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{})
 
 	unsupported := &models.User{ID: 5, Role: "legacy_viewer"}
-	frequencies, err := service.BuildSymptomFrequenciesForUser(unsupported)
+	frequencies, err := service.BuildSymptomFrequenciesForUser(context.Background(), unsupported)
 	if err != nil {
 		t.Fatalf("BuildSymptomFrequenciesForUser() unexpected error: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestBuildSymptomFrequenciesForUserOwnerUsesLogsAndCalculator(t *testing.T) 
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{frequencies: expected})
 
 	owner := &models.User{ID: 8, Role: models.RoleOwner}
-	frequencies, err := service.BuildSymptomFrequenciesForUser(owner)
+	frequencies, err := service.BuildSymptomFrequenciesForUser(context.Background(), owner)
 	if err != nil {
 		t.Fatalf("BuildSymptomFrequenciesForUser() unexpected error: %v", err)
 	}
@@ -307,7 +308,7 @@ func TestBuildSymptomFrequenciesForUserPropagatesErrors(t *testing.T) {
 	service := NewStatsService(&stubStatsDayReader{allErr: errors.New("load failed")}, &stubStatsSymptomReader{})
 	owner := &models.User{ID: 9, Role: models.RoleOwner}
 
-	if _, err := service.BuildSymptomFrequenciesForUser(owner); err == nil {
+	if _, err := service.BuildSymptomFrequenciesForUser(context.Background(), owner); err == nil {
 		t.Fatalf("expected error when logs loading fails")
 	}
 }

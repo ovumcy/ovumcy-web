@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,15 +17,15 @@ var (
 )
 
 type SettingsViewLoader interface {
-	LoadSettings(userID uint) (models.User, error)
+	LoadSettings(ctx context.Context, userID uint) (models.User, error)
 }
 
 type SettingsViewExportBuilder interface {
-	BuildSummary(userID uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error)
+	BuildSummary(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error)
 }
 
 type SettingsViewSymptomProvider interface {
-	FetchSymptoms(userID uint) ([]models.SymptomType, error)
+	FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error)
 }
 
 type SettingsViewInput struct {
@@ -108,9 +109,9 @@ func NewSettingsViewService(settings SettingsViewLoader, notifications *Notifica
 	}
 }
 
-func (service *SettingsViewService) BuildSettingsPageViewData(user *models.User, language string, input SettingsViewInput, now time.Time, location *time.Location) (SettingsPageViewData, error) {
+func (service *SettingsViewService) BuildSettingsPageViewData(ctx context.Context, user *models.User, language string, input SettingsViewInput, now time.Time, location *time.Location) (SettingsPageViewData, error) {
 	statusKeys := service.resolveSettingsStatusKeys(input)
-	persisted, err := service.settings.LoadSettings(user.ID)
+	persisted, err := service.settings.LoadSettings(ctx, user.ID)
 	if err != nil {
 		return SettingsPageViewData{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadSettings, err)
 	}
@@ -124,7 +125,7 @@ func (service *SettingsViewService) BuildSettingsPageViewData(user *models.User,
 		return viewData, nil
 	}
 
-	return viewData, service.populateOwnerSettingsViewData(&viewData, language, today, location)
+	return viewData, service.populateOwnerSettingsViewData(ctx, &viewData, language, today, location)
 }
 
 func (service *SettingsViewService) resolveSettingsStatusKeys(input SettingsViewInput) settingsStatusKeys {
@@ -211,9 +212,9 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 	}
 }
 
-func (service *SettingsViewService) populateOwnerSettingsViewData(viewData *SettingsPageViewData, language string, today time.Time, location *time.Location) error {
+func (service *SettingsViewService) populateOwnerSettingsViewData(ctx context.Context, viewData *SettingsPageViewData, language string, today time.Time, location *time.Location) error {
 	if service.symptoms != nil {
-		symptomsViewData, err := service.BuildSettingsSymptomsViewData(&viewData.CurrentUser)
+		symptomsViewData, err := service.BuildSettingsSymptomsViewData(ctx, &viewData.CurrentUser)
 		if err != nil {
 			return err
 		}
@@ -225,7 +226,7 @@ func (service *SettingsViewService) populateOwnerSettingsViewData(viewData *Sett
 		return nil
 	}
 
-	exportViewData, err := service.buildOwnerExportViewData(viewData.CurrentUser.ID, language, today, location)
+	exportViewData, err := service.buildOwnerExportViewData(ctx, viewData.CurrentUser.ID, language, today, location)
 	if err != nil {
 		return err
 	}
@@ -234,8 +235,8 @@ func (service *SettingsViewService) populateOwnerSettingsViewData(viewData *Sett
 	return nil
 }
 
-func (service *SettingsViewService) buildOwnerExportViewData(userID uint, language string, today time.Time, location *time.Location) (SettingsExportViewData, error) {
-	availableSummary, err := service.export.BuildSummary(userID, nil, nil, location)
+func (service *SettingsViewService) buildOwnerExportViewData(ctx context.Context, userID uint, language string, today time.Time, location *time.Location) (SettingsExportViewData, error) {
+	availableSummary, err := service.export.BuildSummary(ctx, userID, nil, nil, location)
 	if err != nil {
 		return SettingsExportViewData{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadExport, err)
 	}
@@ -245,6 +246,7 @@ func (service *SettingsViewService) buildOwnerExportViewData(userID uint, langua
 
 	defaultFrom, defaultTo, selectableMin, selectableMax := resolveOwnerExportDateBounds(availableSummary, today)
 	defaultSummary, err := service.export.BuildSummary(
+		ctx,
 		userID,
 		exportSummaryBound(defaultFrom, location),
 		exportSummaryBound(defaultTo, location),
@@ -320,12 +322,12 @@ func compareISODate(left string, right string) int {
 	}
 }
 
-func (service *SettingsViewService) BuildSettingsSymptomsViewData(user *models.User) (SettingsSymptomsViewData, error) {
+func (service *SettingsViewService) BuildSettingsSymptomsViewData(ctx context.Context, user *models.User) (SettingsSymptomsViewData, error) {
 	if user == nil || user.Role != models.RoleOwner || service.symptoms == nil {
 		return SettingsSymptomsViewData{}, nil
 	}
 
-	symptoms, err := service.symptoms.FetchSymptoms(user.ID)
+	symptoms, err := service.symptoms.FetchSymptoms(ctx, user.ID)
 	if err != nil {
 		return SettingsSymptomsViewData{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadSymptoms, err)
 	}

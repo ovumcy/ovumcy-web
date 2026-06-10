@@ -43,7 +43,7 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.settingsService.ChangePassword(user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
+	if err := handler.settingsService.ChangePassword(c.UserContext(), user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
 		return handler.respondPasswordChangeError(c, err)
 	}
 
@@ -177,7 +177,7 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c *fiber.Ctx, state oid
 		return c.Redirect("/settings", fiber.StatusSeeOther)
 	}
 
-	recoveryCode, err := handler.settingsService.FinalizeLocalPasswordSetup(user, state.PasswordHash)
+	recoveryCode, err := handler.settingsService.FinalizeLocalPasswordSetup(c.UserContext(), user, state.PasswordHash)
 	if err != nil {
 		return handler.respondPasswordChangeError(c, err)
 	}

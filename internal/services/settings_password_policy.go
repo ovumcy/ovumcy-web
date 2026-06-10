@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -46,7 +47,7 @@ func (service *SettingsService) ValidatePasswordChange(passwordHash string, curr
 	return nil
 }
 
-func (service *SettingsService) ChangePassword(user *models.User, currentPassword string, newPassword string, confirmPassword string) error {
+func (service *SettingsService) ChangePassword(ctx context.Context, user *models.User, currentPassword string, newPassword string, confirmPassword string) error {
 	if user == nil {
 		return ErrSettingsPasswordChangeInvalidInput
 	}
@@ -60,7 +61,7 @@ func (service *SettingsService) ChangePassword(user *models.User, currentPasswor
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordHashFailed, err)
 	}
 
-	if err := service.users.UpdatePasswordAndRevokeSessions(user.ID, string(hashedPassword), false); err != nil {
+	if err := service.users.UpdatePasswordAndRevokeSessions(ctx, user.ID, string(hashedPassword), false); err != nil {
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordUpdateFailed, err)
 	}
 	user.PasswordHash = string(hashedPassword)
@@ -105,7 +106,7 @@ func (service *SettingsService) PrepareLocalPasswordHash(user *models.User, newP
 // FinalizeLocalPasswordSetup commits a previously prepared local password
 // hash, mints a fresh recovery code, and flips LocalAuthEnabled. Called only
 // after a successful step-up OIDC re-auth that has been bound to user.ID.
-func (service *SettingsService) FinalizeLocalPasswordSetup(user *models.User, preparedPasswordHash string) (string, error) {
+func (service *SettingsService) FinalizeLocalPasswordSetup(ctx context.Context, user *models.User, preparedPasswordHash string) (string, error) {
 	if user == nil || user.LocalAuthEnabled {
 		return "", ErrSettingsPasswordChangeInvalidInput
 	}
@@ -117,7 +118,7 @@ func (service *SettingsService) FinalizeLocalPasswordSetup(user *models.User, pr
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrSettingsRecoveryCodeGenerateFailed, err)
 	}
-	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(user.ID, preparedPasswordHash, recoveryHash, false); err != nil {
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, preparedPasswordHash, recoveryHash, false); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrSettingsPasswordUpdateFailed, err)
 	}
 

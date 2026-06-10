@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -108,11 +109,11 @@ var exportSymptomFlagSetters = map[string]func(*ExportSymptomFlags){
 }
 
 type ExportDayReader interface {
-	FetchLogsForOptionalRange(userID uint, from *time.Time, to *time.Time, location *time.Location) ([]models.DailyLog, error)
+	FetchLogsForOptionalRange(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) ([]models.DailyLog, error)
 }
 
 type ExportSymptomReader interface {
-	FetchSymptoms(userID uint) ([]models.SymptomType, error)
+	FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error)
 }
 
 type ExportService struct {
@@ -182,13 +183,13 @@ func NewExportService(days ExportDayReader, symptoms ExportSymptomReader) *Expor
 	}
 }
 
-func (service *ExportService) LoadDataForRange(userID uint, from *time.Time, to *time.Time, location *time.Location) ([]models.DailyLog, map[uint]string, error) {
-	logs, err := service.days.FetchLogsForOptionalRange(userID, from, to, location)
+func (service *ExportService) LoadDataForRange(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) ([]models.DailyLog, map[uint]string, error) {
+	logs, err := service.days.FetchLogsForOptionalRange(ctx, userID, from, to, location)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	symptoms, err := service.symptoms.FetchSymptoms(userID)
+	symptoms, err := service.symptoms.FetchSymptoms(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -201,8 +202,8 @@ func (service *ExportService) LoadDataForRange(userID uint, from *time.Time, to 
 	return logs, symptomNames, nil
 }
 
-func (service *ExportService) BuildSummary(userID uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error) {
-	logs, err := service.days.FetchLogsForOptionalRange(userID, from, to, location)
+func (service *ExportService) BuildSummary(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error) {
+	logs, err := service.days.FetchLogsForOptionalRange(ctx, userID, from, to, location)
 	if err != nil {
 		return ExportSummary{}, err
 	}
@@ -234,8 +235,8 @@ func (service *ExportService) BuildSummary(userID uint, from *time.Time, to *tim
 	}, nil
 }
 
-func (service *ExportService) BuildJSONEntries(userID uint, from *time.Time, to *time.Time, location *time.Location) ([]ExportJSONEntry, error) {
-	logs, symptomNames, err := service.LoadDataForRange(userID, from, to, location)
+func (service *ExportService) BuildJSONEntries(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) ([]ExportJSONEntry, error) {
+	logs, symptomNames, err := service.LoadDataForRange(ctx, userID, from, to, location)
 	if err != nil {
 		return nil, err
 	}
@@ -261,8 +262,8 @@ func (service *ExportService) BuildJSONEntries(userID uint, from *time.Time, to 
 	return entries, nil
 }
 
-func (service *ExportService) BuildCSVRows(userID uint, from *time.Time, to *time.Time, location *time.Location) ([]ExportCSVRow, error) {
-	logs, symptomNames, err := service.LoadDataForRange(userID, from, to, location)
+func (service *ExportService) BuildCSVRows(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) ([]ExportCSVRow, error) {
+	logs, symptomNames, err := service.LoadDataForRange(ctx, userID, from, to, location)
 	if err != nil {
 		return nil, err
 	}

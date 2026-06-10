@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -59,7 +60,7 @@ func TestSaveTrackingSettings(t *testing.T) {
 	repo := &stubSettingsTrackingUserRepo{}
 	service := NewSettingsService(repo)
 
-	err := service.SaveTrackingSettings(42, TrackingSettingsUpdate{
+	err := service.SaveTrackingSettings(context.Background(), 42, TrackingSettingsUpdate{
 		TrackBBT:           true,
 		TrackCervicalMucus: true,
 		HideSexChip:        true,
@@ -97,7 +98,7 @@ func TestSaveTrackingSettingsPropagatesUpdateError(t *testing.T) {
 	repo := &stubSettingsTrackingUserRepo{updateErr: errors.New("write failed")}
 	service := NewSettingsService(repo)
 
-	if err := service.SaveTrackingSettings(42, TrackingSettingsUpdate{}); err == nil {
+	if err := service.SaveTrackingSettings(context.Background(), 42, TrackingSettingsUpdate{}); err == nil {
 		t.Fatal("expected update error")
 	}
 }
@@ -108,32 +109,32 @@ type stubSettingsTrackingUserRepo struct {
 	updateErr     error
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(uint, string) error {
+func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(context.Context, uint, string) error {
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(uint, string, bool) error {
+func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, string, bool) error {
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(uint, string, string, bool) error {
+func (stub *stubSettingsTrackingUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(context.Context, uint, string, string, bool) error {
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) UpdateByID(userID uint, updates map[string]any) error {
+func (stub *stubSettingsTrackingUserRepo) UpdateByID(ctx context.Context, userID uint, updates map[string]any) error {
 	stub.updatedUserID = userID
 	stub.updates = updates
 	return stub.updateErr
 }
 
-func (stub *stubSettingsTrackingUserRepo) LoadSettingsByID(uint) (models.User, error) {
+func (stub *stubSettingsTrackingUserRepo) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) ClearAllDataAndResetSettings(uint) error {
+func (stub *stubSettingsTrackingUserRepo) ClearAllDataAndResetSettings(context.Context, uint) error {
 	return nil
 }
 
-func (stub *stubSettingsTrackingUserRepo) DeleteAccountAndRelatedData(uint) error {
+func (stub *stubSettingsTrackingUserRepo) DeleteAccountAndRelatedData(context.Context, uint) error {
 	return nil
 }

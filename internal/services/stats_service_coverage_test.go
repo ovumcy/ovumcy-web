@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -16,11 +17,11 @@ var errStatsserviceCovSentinel = errors.New("statsserviceCov: sentinel fetch err
 // FetchLogsForUser, simulating a storage failure path.
 type statsserviceCovFailDayReader struct{}
 
-func (r *statsserviceCovFailDayReader) FetchLogsForUser(_ uint, _, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (r *statsserviceCovFailDayReader) FetchLogsForUser(ctx context.Context, _ uint, _, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
 	return nil, errStatsserviceCovSentinel
 }
 
-func (r *statsserviceCovFailDayReader) FetchAllLogsForUser(_ uint) ([]models.DailyLog, error) {
+func (r *statsserviceCovFailDayReader) FetchAllLogsForUser(ctx context.Context, _ uint) ([]models.DailyLog, error) {
 	return nil, errStatsserviceCovSentinel
 }
 
@@ -36,7 +37,7 @@ func TestStatsserviceCovBuildOverviewStatsPropagatesToStorage(t *testing.T) {
 	user := &models.User{ID: 1, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-05-01")
 
-	_, err := svc.BuildOverviewStats(user, now, time.UTC)
+	_, err := svc.BuildOverviewStats(context.Background(), user, now, time.UTC)
 	if err == nil {
 		t.Fatal("BuildOverviewStats() expected error, got nil")
 	}

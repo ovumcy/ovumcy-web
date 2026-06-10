@@ -120,7 +120,7 @@ func (stub *stubOIDCWorkflowService) ValidateReauthExchange(_ context.Context, c
 	return stub.reauthErr
 }
 
-func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(targetUserID uint, claims security.OIDCClaims, _ time.Time) error {
+func (stub *stubOIDCWorkflowService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, _ time.Time) error {
 	stub.lastConfirmLinkUserID = targetUserID
 	stub.lastConfirmLinkClaims = claims
 	return stub.confirmLinkErr

@@ -18,7 +18,7 @@ func (handler *Handler) UpdateCycleSettings(c *fiber.Ctx) error {
 		handler.logHealthDataMutationError(c, "settings.cycle_update", spec, "cycle_settings")
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.settingsService.SaveCycleSettings(user.ID, input); err != nil {
+	if err := handler.settingsService.SaveCycleSettings(c.UserContext(), user.ID, input); err != nil {
 		spec := settingsCycleUpdateErrorSpec()
 		handler.logHealthDataMutationError(c, "settings.cycle_update", spec, "cycle_settings")
 		return handler.respondMappedError(c, spec)

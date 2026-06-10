@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"testing"
@@ -37,21 +38,21 @@ type stubAuthUserRepo struct {
 	updatedMustChange        bool
 }
 
-func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(string) (bool, error) {
+func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(context.Context, string) (bool, error) {
 	if stub.existsByEmailErr != nil {
 		return false, stub.existsByEmailErr
 	}
 	return stub.existsByEmail, nil
 }
 
-func (stub *stubAuthUserRepo) FindByNormalizedEmail(string) (models.User, error) {
+func (stub *stubAuthUserRepo) FindByNormalizedEmail(context.Context, string) (models.User, error) {
 	if stub.findByEmailErr != nil {
 		return models.User{}, stub.findByEmailErr
 	}
 	return stub.findByEmailUser, nil
 }
 
-func (stub *stubAuthUserRepo) FindByNormalizedEmailOptional(email string) (models.User, bool, error) {
+func (stub *stubAuthUserRepo) FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error) {
 	if stub.findByEmailOptionalErr != nil {
 		return models.User{}, false, stub.findByEmailOptionalErr
 	}
@@ -67,14 +68,14 @@ func (stub *stubAuthUserRepo) FindByNormalizedEmailOptional(email string) (model
 	return models.User{}, false, nil
 }
 
-func (stub *stubAuthUserRepo) FindByID(uint) (models.User, error) {
+func (stub *stubAuthUserRepo) FindByID(context.Context, uint) (models.User, error) {
 	if stub.findByIDErr != nil {
 		return models.User{}, stub.findByIDErr
 	}
 	return stub.user, nil
 }
 
-func (stub *stubAuthUserRepo) Create(user *models.User) error {
+func (stub *stubAuthUserRepo) Create(ctx context.Context, user *models.User) error {
 	if stub.createErr != nil {
 		return stub.createErr
 	}
@@ -83,12 +84,12 @@ func (stub *stubAuthUserRepo) Create(user *models.User) error {
 	return nil
 }
 
-func (stub *stubAuthUserRepo) Save(user *models.User) error {
+func (stub *stubAuthUserRepo) Save(ctx context.Context, user *models.User) error {
 	stub.user = *user
 	return nil
 }
 
-func (stub *stubAuthUserRepo) UpdateRecoveryCodeHashAndRevokeSessions(userID uint, recoveryHash string) error {
+func (stub *stubAuthUserRepo) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
 	if stub.updateRecoveryCodeErr != nil {
 		return stub.updateRecoveryCodeErr
 	}
@@ -98,7 +99,7 @@ func (stub *stubAuthUserRepo) UpdateRecoveryCodeHashAndRevokeSessions(userID uin
 	return nil
 }
 
-func (stub *stubAuthUserRepo) UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error {
+func (stub *stubAuthUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
 	if stub.updatePasswordErr != nil {
 		return stub.updatePasswordErr
 	}
@@ -114,7 +115,7 @@ func (stub *stubAuthUserRepo) UpdatePasswordAndRevokeSessions(userID uint, passw
 	return nil
 }
 
-func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
+func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
 	if stub.updateRecoveryPassErr != nil {
 		return stub.updateRecoveryPassErr
 	}
@@ -132,7 +133,7 @@ func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(userID
 	return nil
 }
 
-func (stub *stubAuthUserRepo) BumpAuthSessionVersion(userID uint) error {
+func (stub *stubAuthUserRepo) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
 	if stub.bumpSessionErr != nil {
 		return stub.bumpSessionErr
 	}
@@ -169,7 +170,7 @@ func TestAuthServiceRegisterOwner(t *testing.T) {
 		repo := &stubAuthUserRepo{}
 		service := NewAuthService(repo)
 
-		user, recoveryCode, err := service.RegisterOwner("owner@example.com", "StrongPass1", "StrongPass1", createdAt)
+		user, recoveryCode, err := service.RegisterOwner(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", createdAt)
 		if err != nil {
 			t.Fatalf("RegisterOwner() unexpected error: %v", err)
 		}
@@ -193,7 +194,7 @@ func TestAuthServiceRegisterOwner(t *testing.T) {
 	t.Run("validation mismatch", func(t *testing.T) {
 		repo := &stubAuthUserRepo{}
 		service := NewAuthService(repo)
-		if _, _, err := service.RegisterOwner("owner@example.com", "StrongPass1", "WrongPass2", createdAt); !errors.Is(err, ErrAuthPasswordMismatch) {
+		if _, _, err := service.RegisterOwner(context.Background(), "owner@example.com", "StrongPass1", "WrongPass2", createdAt); !errors.Is(err, ErrAuthPasswordMismatch) {
 			t.Fatalf("expected ErrAuthPasswordMismatch, got %v", err)
 		}
 	})
@@ -201,7 +202,7 @@ func TestAuthServiceRegisterOwner(t *testing.T) {
 	t.Run("email exists", func(t *testing.T) {
 		repo := &stubAuthUserRepo{existsByEmail: true}
 		service := NewAuthService(repo)
-		if _, _, err := service.RegisterOwner("owner@example.com", "StrongPass1", "StrongPass1", createdAt); !errors.Is(err, ErrAuthEmailExists) {
+		if _, _, err := service.RegisterOwner(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", createdAt); !errors.Is(err, ErrAuthEmailExists) {
 			t.Fatalf("expected ErrAuthEmailExists, got %v", err)
 		}
 		if repo.createCalled {
@@ -212,7 +213,7 @@ func TestAuthServiceRegisterOwner(t *testing.T) {
 	t.Run("exists check fails", func(t *testing.T) {
 		repo := &stubAuthUserRepo{existsByEmailErr: errors.New("db down")}
 		service := NewAuthService(repo)
-		if _, _, err := service.RegisterOwner("owner@example.com", "StrongPass1", "StrongPass1", createdAt); !errors.Is(err, ErrAuthRegisterFailed) {
+		if _, _, err := service.RegisterOwner(context.Background(), "owner@example.com", "StrongPass1", "StrongPass1", createdAt); !errors.Is(err, ErrAuthRegisterFailed) {
 			t.Fatalf("expected ErrAuthRegisterFailed, got %v", err)
 		}
 	})
@@ -255,7 +256,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		}
 		service := NewAuthService(repo)
 
-		if err := service.ForceResetPasswordByEmail(" Owner@Example.com ", "EvenStronger2"); err != nil {
+		if err := service.ForceResetPasswordByEmail(context.Background(), " Owner@Example.com ", "EvenStronger2"); err != nil {
 			t.Fatalf("ForceResetPasswordByEmail() unexpected error: %v", err)
 		}
 		if !repo.updatePasswordCalled {
@@ -274,14 +275,14 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 
 	t.Run("missing password", func(t *testing.T) {
 		service := NewAuthService(&stubAuthUserRepo{})
-		if err := service.ForceResetPasswordByEmail("owner@example.com", " "); !errors.Is(err, ErrAuthResetInvalid) {
+		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", " "); !errors.Is(err, ErrAuthResetInvalid) {
 			t.Fatalf("expected ErrAuthResetInvalid, got %v", err)
 		}
 	})
 
 	t.Run("weak password", func(t *testing.T) {
 		service := NewAuthService(&stubAuthUserRepo{})
-		if err := service.ForceResetPasswordByEmail("owner@example.com", "12345678"); !errors.Is(err, ErrAuthWeakPassword) {
+		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "12345678"); !errors.Is(err, ErrAuthWeakPassword) {
 			t.Fatalf("expected ErrAuthWeakPassword, got %v", err)
 		}
 	})
@@ -289,7 +290,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 	t.Run("user not found", func(t *testing.T) {
 		repo := &stubAuthUserRepo{existsByEmail: false}
 		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByEmail("missing@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
+		if err := service.ForceResetPasswordByEmail(context.Background(), "missing@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
 			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
 		}
 		if repo.updatePasswordCalled {
@@ -300,7 +301,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 	t.Run("lookup failure", func(t *testing.T) {
 		repo := &stubAuthUserRepo{existsByEmailErr: errors.New("db down")}
 		service := NewAuthService(repo)
-		if err := service.ForceResetPasswordByEmail("owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserLookupFailed) {
+		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserLookupFailed) {
 			t.Fatalf("expected ErrAuthUserLookupFailed, got %v", err)
 		}
 	})
@@ -323,7 +324,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		}
 		service := NewAuthService(repo)
 
-		if err := service.ForceResetPasswordByEmail("owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthPasswordUpdate) {
+		if err := service.ForceResetPasswordByEmail(context.Background(), "owner@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthPasswordUpdate) {
 			t.Fatalf("expected ErrAuthPasswordUpdate, got %v", err)
 		}
 	})
@@ -386,7 +387,7 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	user, err := service.AuthenticateCredentials("login@example.com", "StrongPass1")
+	user, err := service.AuthenticateCredentials(context.Background(), "login@example.com", "StrongPass1")
 	if err != nil {
 		t.Fatalf("AuthenticateCredentials() unexpected error: %v", err)
 	}
@@ -394,12 +395,12 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 		t.Fatalf("expected user id 77, got %d", user.ID)
 	}
 
-	if _, err := service.AuthenticateCredentials("login@example.com", "WrongPass2"); !errors.Is(err, ErrAuthInvalidCreds) {
+	if _, err := service.AuthenticateCredentials(context.Background(), "login@example.com", "WrongPass2"); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds for wrong password, got %v", err)
 	}
 
 	repo.findByEmailErr = errors.New("user not found")
-	if _, err := service.AuthenticateCredentials("missing@example.com", "StrongPass1"); !errors.Is(err, ErrAuthInvalidCreds) {
+	if _, err := service.AuthenticateCredentials(context.Background(), "missing@example.com", "StrongPass1"); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected ErrAuthInvalidCreds for missing user, got %v", err)
 	}
 }
@@ -423,7 +424,7 @@ func TestAuthServiceFindUserByEmailAndRecoveryCode(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	user, err := service.FindUserByEmailAndRecoveryCode("Owner@Example.com", recoveryCode)
+	user, err := service.FindUserByEmailAndRecoveryCode(context.Background(), "Owner@Example.com", recoveryCode)
 	if err != nil {
 		t.Fatalf("FindUserByEmailAndRecoveryCode() unexpected error: %v", err)
 	}
@@ -450,7 +451,7 @@ func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMismatch(t *testing.T) 
 	}
 	service := NewAuthService(repo)
 
-	if _, err := service.FindUserByEmailAndRecoveryCode("other@example.com", recoveryCode); !errors.Is(err, ErrRecoveryCodeNotFound) {
+	if _, err := service.FindUserByEmailAndRecoveryCode(context.Background(), "other@example.com", recoveryCode); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for mismatched email, got %v", err)
 	}
 }
@@ -458,7 +459,7 @@ func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMismatch(t *testing.T) 
 func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMissingUser(t *testing.T) {
 	service := NewAuthService(&stubAuthUserRepo{})
 
-	if _, err := service.FindUserByEmailAndRecoveryCode("missing@example.com", "OVUM-ABCD-2345-EFGH"); !errors.Is(err, ErrRecoveryCodeNotFound) {
+	if _, err := service.FindUserByEmailAndRecoveryCode(context.Background(), "missing@example.com", "OVUM-ABCD-2345-EFGH"); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for missing user, got %v", err)
 	}
 }
@@ -486,7 +487,7 @@ func TestAuthServiceResolveUserByResetToken(t *testing.T) {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
 
-	user, err := service.ResolveUserByResetToken(secret, token, now.Add(1*time.Minute))
+	user, err := service.ResolveUserByResetToken(context.Background(), secret, token, now.Add(1*time.Minute))
 	if err != nil {
 		t.Fatalf("ResolveUserByResetToken() unexpected error: %v", err)
 	}
@@ -521,7 +522,7 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
 
-	if _, err := service.ResolveUserByResetToken(secret, token, now.Add(1*time.Minute)); !errors.Is(err, ErrInvalidResetToken) {
+	if _, err := service.ResolveUserByResetToken(context.Background(), secret, token, now.Add(1*time.Minute)); !errors.Is(err, ErrInvalidResetToken) {
 		t.Fatalf("expected ErrInvalidResetToken, got %v", err)
 	}
 }
@@ -542,7 +543,7 @@ func TestAuthServiceResetPasswordAndRotateRecoveryCode(t *testing.T) {
 	repo := &stubAuthUserRepo{user: user}
 	service := NewAuthService(repo)
 
-	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCode(&user, "EvenStronger2")
+	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCode(context.Background(), &user, "EvenStronger2")
 	if err != nil {
 		t.Fatalf("ResetPasswordAndRotateRecoveryCode() unexpected error: %v", err)
 	}
@@ -570,7 +571,7 @@ func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	service := NewAuthService(repo)
 
-	recoveryCode, err := service.RegenerateRecoveryCode(55)
+	recoveryCode, err := service.RegenerateRecoveryCode(context.Background(), 55)
 	if err != nil {
 		t.Fatalf("RegenerateRecoveryCode() unexpected error: %v", err)
 	}
@@ -606,7 +607,7 @@ func TestAuthServiceResolveUserByAuthSessionToken(t *testing.T) {
 		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
 	}
 
-	user, err := service.ResolveUserByAuthSessionToken(secret, token, now.Add(1*time.Minute))
+	user, err := service.ResolveUserByAuthSessionToken(context.Background(), secret, token, now.Add(1*time.Minute))
 	if err != nil {
 		t.Fatalf("ResolveUserByAuthSessionToken() unexpected error: %v", err)
 	}
@@ -634,7 +635,7 @@ func TestAuthServiceResolveUserByAuthSessionTokenRejectsRevokedSession(t *testin
 		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
 	}
 
-	if _, err := service.ResolveUserByAuthSessionToken(secret, token, now.Add(1*time.Minute)); !errors.Is(err, ErrAuthSessionTokenRevoked) {
+	if _, err := service.ResolveUserByAuthSessionToken(context.Background(), secret, token, now.Add(1*time.Minute)); !errors.Is(err, ErrAuthSessionTokenRevoked) {
 		t.Fatalf("expected ErrAuthSessionTokenRevoked, got %v", err)
 	}
 }
@@ -648,7 +649,7 @@ func TestAuthServiceRevokeAuthSessions(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	if err := service.RevokeAuthSessions(42); err != nil {
+	if err := service.RevokeAuthSessions(context.Background(), 42); err != nil {
 		t.Fatalf("RevokeAuthSessions() unexpected error: %v", err)
 	}
 	if !repo.bumpSessionCalled {

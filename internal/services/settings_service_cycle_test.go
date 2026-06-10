@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -274,7 +275,7 @@ func TestSaveCycleSettingsPersistsNormalizedOwnerPreferences(t *testing.T) {
 	service := NewSettingsService(repo)
 	lastPeriodStart := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 
-	err := service.SaveCycleSettings(42, CycleSettingsUpdate{
+	err := service.SaveCycleSettings(context.Background(), 42, CycleSettingsUpdate{
 		CycleLength:        29,
 		PeriodLength:       5,
 		AutoPeriodFill:     true,

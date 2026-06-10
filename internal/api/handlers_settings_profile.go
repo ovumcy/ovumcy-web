@@ -23,7 +23,7 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, mapSettingsProfileNormalizeError(err))
 	}
 
-	if err := handler.settingsService.UpdateDisplayName(user.ID, displayName); err != nil {
+	if err := handler.settingsService.UpdateDisplayName(c.UserContext(), user.ID, displayName); err != nil {
 		return handler.respondMappedError(c, settingsProfileUpdateErrorSpec())
 	}
 

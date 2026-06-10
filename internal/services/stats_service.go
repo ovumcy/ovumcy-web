@@ -1,19 +1,20 @@
 package services
 
 import (
+	"context"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
 type StatsDayReader interface {
-	FetchLogsForUser(userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error)
-	FetchAllLogsForUser(userID uint) ([]models.DailyLog, error)
+	FetchLogsForUser(ctx context.Context, userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error)
+	FetchAllLogsForUser(ctx context.Context, userID uint) ([]models.DailyLog, error)
 }
 
 type StatsSymptomReader interface {
-	CalculateFrequencies(userID uint, logs []models.DailyLog) ([]SymptomFrequency, error)
-	FetchSymptoms(userID uint) ([]models.SymptomType, error)
+	CalculateFrequencies(ctx context.Context, userID uint, logs []models.DailyLog) ([]SymptomFrequency, error)
+	FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error)
 }
 
 type StatsService struct {
@@ -45,8 +46,8 @@ func NewStatsService(days StatsDayReader, symptoms StatsSymptomReader) *StatsSer
 	}
 }
 
-func (service *StatsService) BuildCycleStatsForRange(user *models.User, from time.Time, to time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error) {
-	logs, err := service.days.FetchLogsForUser(user.ID, from, to, location)
+func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *models.User, from time.Time, to time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error) {
+	logs, err := service.days.FetchLogsForUser(ctx, user.ID, from, to, location)
 	if err != nil {
 		return CycleStats{}, nil, err
 	}
@@ -63,9 +64,9 @@ func StatsOverviewRange(now time.Time) (time.Time, time.Time) {
 	return now.AddDate(-statsOverviewWindowYears, 0, 0), now
 }
 
-func (service *StatsService) BuildOverviewStats(user *models.User, now time.Time, location *time.Location) (CycleStats, error) {
+func (service *StatsService) BuildOverviewStats(ctx context.Context, user *models.User, now time.Time, location *time.Location) (CycleStats, error) {
 	from, to := StatsOverviewRange(now)
-	stats, _, err := service.BuildCycleStatsForRange(user, from, to, now, location)
+	stats, _, err := service.BuildCycleStatsForRange(ctx, user, from, to, now, location)
 	if err != nil {
 		return CycleStats{}, err
 	}
@@ -125,15 +126,15 @@ func statsInsightProgress(completedCycleCount int) int {
 	return progress
 }
 
-func (service *StatsService) BuildSymptomFrequenciesForUser(user *models.User) ([]SymptomFrequency, error) {
+func (service *StatsService) BuildSymptomFrequenciesForUser(ctx context.Context, user *models.User) ([]SymptomFrequency, error) {
 	if !IsOwnerUser(user) {
 		return []SymptomFrequency{}, nil
 	}
 
-	logs, err := service.days.FetchAllLogsForUser(user.ID)
+	logs, err := service.days.FetchAllLogsForUser(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
 
-	return service.symptoms.CalculateFrequencies(user.ID, logs)
+	return service.symptoms.CalculateFrequencies(ctx, user.ID, logs)
 }

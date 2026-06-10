@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ func TestSQLiteBackupRestorePreservesHealthData(t *testing.T) {
 	})
 	restoredRepos := NewRepositories(restoredDB)
 
-	restoredUser, err := restoredRepos.Users.FindByID(user.ID)
+	restoredUser, err := restoredRepos.Users.FindByID(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("find restored user: %v", err)
 	}
@@ -45,7 +46,7 @@ func TestSQLiteBackupRestorePreservesHealthData(t *testing.T) {
 		t.Fatalf("restored user mismatch: email=%q role=%q", restoredUser.Email, restoredUser.Role)
 	}
 
-	restoredLogs, err := restoredRepos.DailyLogs.ListByUser(user.ID)
+	restoredLogs, err := restoredRepos.DailyLogs.ListByUser(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("list restored logs: %v", err)
 	}
@@ -74,7 +75,7 @@ func seedBackupSourceDatabase(t *testing.T, path string) (*models.User, []models
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	if err := originalRepos.Users.Create(user); err != nil {
+	if err := originalRepos.Users.Create(context.Background(), user); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 
@@ -96,7 +97,7 @@ func seedBackupSourceDatabase(t *testing.T, path string) (*models.User, []models
 		},
 	}
 	for i := range seedLogs {
-		if err := originalRepos.DailyLogs.Create(&seedLogs[i]); err != nil {
+		if err := originalRepos.DailyLogs.Create(context.Background(), &seedLogs[i]); err != nil {
 			t.Fatalf("create day log %d: %v", i, err)
 		}
 	}

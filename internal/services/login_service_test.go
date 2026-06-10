@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -14,7 +15,7 @@ type stubLoginAuthService struct {
 	calls int
 }
 
-func (stub *stubLoginAuthService) AuthenticateCredentials(string, string) (models.User, error) {
+func (stub *stubLoginAuthService) AuthenticateCredentials(context.Context, string, string) (models.User, error) {
 	stub.calls++
 	if stub.err != nil {
 		return models.User{}, stub.err
@@ -45,7 +46,7 @@ func (stub *stubLoginResetTokenIssuer) IssueResetTokenForUser(_ []byte, user *mo
 func TestLoginServiceAuthenticateWithoutForcedReset(t *testing.T) {
 	service, reset := newLoginServiceForTest(models.User{ID: 7, MustChangePassword: false}, nil, "token")
 
-	result, err := service.Authenticate([]byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow)
+	result, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow)
 	if err != nil {
 		t.Fatalf("Authenticate() unexpected error: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestLoginServiceAuthenticateWithoutForcedReset(t *testing.T) {
 func TestLoginServiceAuthenticateForcedResetIssuesToken(t *testing.T) {
 	service, reset := newLoginServiceForTest(models.User{ID: 9, MustChangePassword: true}, nil, "issued-reset-token")
 
-	result, err := service.Authenticate([]byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow)
+	result, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow)
 	if err != nil {
 		t.Fatalf("Authenticate() unexpected error: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestLoginServiceAuthenticatePropagatesInvalidCredentials(t *testing.T) {
 	authErr := ErrAuthInvalidCreds
 	service, reset := newLoginServiceForTest(models.User{}, authErr, "unused")
 
-	if _, err := service.Authenticate([]byte("secret"), "127.0.0.1", "user@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, authErr) {
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "user@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, authErr) {
 		t.Fatalf("expected auth error %v, got %v", authErr, err)
 	}
 	if reset.called {
@@ -102,14 +103,14 @@ func TestLoginServiceAuthenticateRateLimitsByIdentityAcrossIPs(t *testing.T) {
 	service := NewLoginService(auth, reset, NewAttemptLimiter())
 	service.ConfigureAttemptLimits(2, time.Hour)
 
-	if _, err := service.Authenticate([]byte("secret"), "10.0.0.1", "owner@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, ErrAuthInvalidCreds) {
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "10.0.0.1", "owner@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected invalid credentials on first attempt, got %v", err)
 	}
-	if _, err := service.Authenticate([]byte("secret"), "10.0.0.2", "owner@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow.Add(time.Minute)); !errors.Is(err, ErrAuthInvalidCreds) {
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "10.0.0.2", "owner@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow.Add(time.Minute)); !errors.Is(err, ErrAuthInvalidCreds) {
 		t.Fatalf("expected invalid credentials on second attempt, got %v", err)
 	}
 
-	if _, err := service.Authenticate([]byte("secret"), "10.0.0.3", "owner@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow.Add(2*time.Minute)); !errors.Is(err, ErrAuthLoginRateLimited) {
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "10.0.0.3", "owner@example.com", "wrong", loginServiceTestTTL, loginServiceTestNow.Add(2*time.Minute)); !errors.Is(err, ErrAuthLoginRateLimited) {
 		t.Fatalf("expected ErrAuthLoginRateLimited on distributed attempt, got %v", err)
 	}
 	if auth.calls != 2 {
@@ -122,7 +123,7 @@ func TestLoginServiceAuthenticateMapsResetTokenIssueError(t *testing.T) {
 	reset := &stubLoginResetTokenIssuer{err: errors.New("sign failed")}
 	service := NewLoginService(auth, reset, NewAttemptLimiter())
 
-	if _, err := service.Authenticate([]byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, ErrLoginResetTokenIssue) {
+	if _, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, ErrLoginResetTokenIssue) {
 		t.Fatalf("expected ErrLoginResetTokenIssue, got %v", err)
 	}
 	if !reset.called || reset.lastUserID != 12 {

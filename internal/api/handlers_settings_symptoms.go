@@ -9,7 +9,7 @@ import (
 )
 
 func (handler *Handler) buildSettingsSymptomsSectionData(c *fiber.Ctx, user *models.User, state settingsSymptomSectionState) (fiber.Map, error) {
-	viewData, err := handler.settingsViewService.BuildSettingsSymptomsViewData(user)
+	viewData, err := handler.settingsViewService.BuildSettingsSymptomsViewData(c.UserContext(), user)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ package services
 // All helpers and types are prefixed "dayserviceCov" to avoid collisions.
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -26,14 +27,14 @@ type dayserviceCovUserStub struct {
 	updateErr error
 }
 
-func (s *dayserviceCovUserStub) LoadSettingsByID(uint) (models.User, error) {
+func (s *dayserviceCovUserStub) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	if s.loadErr != nil {
 		return models.User{}, s.loadErr
 	}
 	return s.settings, nil
 }
 
-func (s *dayserviceCovUserStub) UpdateByID(_ uint, updates map[string]any) error {
+func (s *dayserviceCovUserStub) UpdateByID(ctx context.Context, _ uint, updates map[string]any) error {
 	if s.updateErr != nil {
 		return s.updateErr
 	}
@@ -84,7 +85,7 @@ func TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainFalseWhenNoShortG
 	// policy.ShortGapDays == 0, so the condition (MarkUncertain && ShortGapDays > 0)
 	// must evaluate to false even though MarkUncertain is true.
 	policy := ManualCycleStartPolicy{ShortGapDays: 0}
-	entry, err := service.persistManualCycleStartFlags(10, targetDay, time.UTC,
+	entry, err := service.persistManualCycleStartFlags(context.Background(), 10, targetDay, time.UTC,
 		ManualCycleStartOptions{MarkUncertain: true}, policy)
 	if err != nil {
 		t.Fatalf("persistManualCycleStartFlags: unexpected error: %v", err)
@@ -115,7 +116,7 @@ func TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainTrueWhenShortGap(
 	}
 
 	policy := ManualCycleStartPolicy{ShortGapDays: 9}
-	entry, err := service.persistManualCycleStartFlags(10, targetDay, time.UTC,
+	entry, err := service.persistManualCycleStartFlags(context.Background(), 10, targetDay, time.UTC,
 		ManualCycleStartOptions{MarkUncertain: true}, policy)
 	if err != nil {
 		t.Fatalf("persistManualCycleStartFlags: unexpected error: %v", err)
@@ -142,7 +143,7 @@ func TestDayserviceCov_LoadAutoFillSettings_ClampsBelowOne(t *testing.T) {
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 0, AutoPeriodFill: true}}
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), users)
 
-	length, enabled, err := service.LoadAutoFillSettings(1)
+	length, enabled, err := service.LoadAutoFillSettings(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -160,7 +161,7 @@ func TestDayserviceCov_LoadAutoFillSettings_ClampsAbove14(t *testing.T) {
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 15, AutoPeriodFill: false}}
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), users)
 
-	length, _, err := service.LoadAutoFillSettings(1)
+	length, _, err := service.LoadAutoFillSettings(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestDayserviceCov_LoadAutoFillSettings_AcceptsValidRange(t *testing.T) {
 	for _, pl := range []int{1, 7, 14} {
 		users := &dayserviceCovUserStub{settings: models.User{PeriodLength: pl}}
 		service := dayserviceCovNewService(newDayLogRepositoryStub(), users)
-		length, _, err := service.LoadAutoFillSettings(1)
+		length, _, err := service.LoadAutoFillSettings(context.Background(), 1)
 		if err != nil {
 			t.Fatalf("PeriodLength=%d: unexpected error: %v", pl, err)
 		}
@@ -200,7 +201,7 @@ func TestDayserviceCov_LoadAutoFillSettings_AcceptsValidRange(t *testing.T) {
 func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenDisabled(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
-	should, err := service.ShouldAutoFillPeriodDays(10, day, false, false, 5, time.UTC)
+	should, err := service.ShouldAutoFillPeriodDays(context.Background(), 10, day, false, false, 5, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenDisabled(t *testing.T) {
 func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenPeriodLengthOne(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
-	should, err := service.ShouldAutoFillPeriodDays(10, day, false, true, 1, time.UTC)
+	should, err := service.ShouldAutoFillPeriodDays(context.Background(), 10, day, false, true, 1, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -228,7 +229,7 @@ func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenPeriodLengthOne(t *testing
 func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenWasPeriod(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
-	should, err := service.ShouldAutoFillPeriodDays(10, day, true, true, 5, time.UTC)
+	should, err := service.ShouldAutoFillPeriodDays(context.Background(), 10, day, true, true, 5, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -266,7 +267,7 @@ func TestDayserviceCov_ShouldAutoFill_ChecksExactPreviousDay(t *testing.T) {
 		IsPeriod: true,
 	}
 
-	should, err := service.ShouldAutoFillPeriodDays(10, day, false, true, 5, time.UTC)
+	should, err := service.ShouldAutoFillPeriodDays(context.Background(), 10, day, false, true, 5, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestDayserviceCov_AutoFill_NoOpForPeriodLengthOne(t *testing.T) {
 	start := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	now := start.AddDate(0, 0, 5)
 
-	if err := service.AutoFillFollowingPeriodDays(10, start, 1, models.FlowLight, now, time.UTC); err != nil {
+	if err := service.AutoFillFollowingPeriodDays(context.Background(), 10, start, 1, models.FlowLight, now, time.UTC); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(logs.entries) != 0 {
@@ -310,7 +311,7 @@ func TestDayserviceCov_AutoFill_LoopBoundIsExclusive(t *testing.T) {
 	now := start.AddDate(0, 0, 10)
 
 	periodLength := 3
-	if err := service.AutoFillFollowingPeriodDays(10, start, periodLength, models.FlowLight, now, time.UTC); err != nil {
+	if err := service.AutoFillFollowingPeriodDays(context.Background(), 10, start, periodLength, models.FlowLight, now, time.UTC); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -339,7 +340,7 @@ func TestDayserviceCov_AutoFill_NilLocationFallsBackToUTC(t *testing.T) {
 	start := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	now := start.AddDate(0, 0, 5)
 
-	if err := service.AutoFillFollowingPeriodDays(10, start, 2, models.FlowLight, now, nil); err != nil {
+	if err := service.AutoFillFollowingPeriodDays(context.Background(), 10, start, 2, models.FlowLight, now, nil); err != nil {
 		t.Fatalf("unexpected error with nil location: %v", err)
 	}
 	if _, ok := logs.entries["2026-02-11"]; !ok {
@@ -382,7 +383,7 @@ func TestDayserviceCov_AutoFill_SaveErrorPropagatesForExistingEntry(t *testing.T
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	now := start.AddDate(0, 0, 5)
 
-	err := service.AutoFillFollowingPeriodDays(10, start, 3, models.FlowLight, now, time.UTC)
+	err := service.AutoFillFollowingPeriodDays(context.Background(), 10, start, 3, models.FlowLight, now, time.UTC)
 	if err == nil {
 		t.Fatal("expected error to propagate from Save, got nil")
 	}
@@ -402,7 +403,7 @@ func TestDayserviceCov_AutoFill_SaveErrorPropagatesForExistingEntry(t *testing.T
 func TestDayserviceCov_HasPeriodInRecentDays_ZeroLookback(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
-	has, err := service.hasPeriodInRecentDays(10, day, 0, time.UTC)
+	has, err := service.hasPeriodInRecentDays(context.Background(), 10, day, 0, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -428,7 +429,7 @@ func TestDayserviceCov_HasPeriodInRecentDays_InclusiveBound(t *testing.T) {
 	}
 
 	// lookbackDays=2 with inclusive bound reaches day-2, should return true.
-	has, err := service.hasPeriodInRecentDays(10, day, 2, time.UTC)
+	has, err := service.hasPeriodInRecentDays(context.Background(), 10, day, 2, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -437,7 +438,7 @@ func TestDayserviceCov_HasPeriodInRecentDays_InclusiveBound(t *testing.T) {
 	}
 
 	// lookbackDays=1 with exclusive bound would miss day-2; must return false.
-	has, err = service.hasPeriodInRecentDays(10, day, 1, time.UTC)
+	has, err = service.hasPeriodInRecentDays(context.Background(), 10, day, 1, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error with lookbackDays=1: %v", err)
 	}
@@ -462,7 +463,7 @@ func TestDayserviceCov_HasPeriodInRecentDays_ExactOffset(t *testing.T) {
 		IsPeriod: true,
 	}
 
-	has, err := service.hasPeriodInRecentDays(10, day, 3, time.UTC)
+	has, err := service.hasPeriodInRecentDays(context.Background(), 10, day, 3, time.UTC)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -480,7 +481,7 @@ func TestDayserviceCov_HasPeriodInRecentDays_ErrorPropagates(t *testing.T) {
 	logs.findErrByDay["2026-02-09"] = errors.New("read error")
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 
-	_, err := service.hasPeriodInRecentDays(10, day, 1, time.UTC)
+	_, err := service.hasPeriodInRecentDays(context.Background(), 10, day, 1, time.UTC)
 	if err == nil {
 		t.Fatal("expected error to propagate from repository, got nil")
 	}
@@ -525,7 +526,7 @@ func TestDayserviceCov_ClearCompetingCycleStarts_ClearsIsUncertain(t *testing.T)
 
 	selected := logs.entries["2026-03-10"]
 	allLogs := []models.DailyLog{logs.entries["2026-03-08"], logs.entries["2026-03-10"]}
-	if err := service.clearCompetingCycleStarts(10, allLogs, selected, time.UTC); err != nil {
+	if err := service.clearCompetingCycleStarts(context.Background(), 10, allLogs, selected, time.UTC); err != nil {
 		t.Fatalf("clearCompetingCycleStarts: %v", err)
 	}
 
@@ -561,7 +562,7 @@ func TestDayserviceCov_RefreshDerivedCycleSettings_NilUsersNoOp(t *testing.T) {
 		users: nil,
 	}
 	// Must not panic.
-	service.refreshDerivedCycleSettings(10, time.UTC)
+	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
 }
 
 // TestDayserviceCov_RefreshDerivedCycleSettings_NilLogsNoOp verifies that
@@ -572,7 +573,7 @@ func TestDayserviceCov_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
 		logs:  nil,
 		users: &dayserviceCovUserStub{},
 	}
-	service.refreshDerivedCycleSettings(10, time.UTC)
+	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
 }
 
 // ---------------------------------------------------------------------------
@@ -601,7 +602,7 @@ func TestDayserviceCov_RefreshDerivedCycleSettings_ListLogsErrorNoOp(t *testing.
 	// (it has no error injection for ListByUser). Instead we verify the
 	// happy-path runs without panic — full error path is exercised via the
 	// nil-logs guard above.
-	service.refreshDerivedCycleSettings(10, time.UTC)
+	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
 	// If we reach here without panic the function handles the empty log set gracefully.
 }
 
@@ -625,13 +626,13 @@ func TestDayserviceCov_UpsertWithAutoFillAt_TxErrorPropagates(t *testing.T) {
 
 	txErr := errors.New("transaction failed")
 	// A runner that always fails without ever calling fn.
-	failingRunner := func(fn func(DayLogRepository) error) error {
+	failingRunner := func(ctx context.Context, fn func(DayLogRepository) error) error {
 		return txErr
 	}
 
 	service := NewDayServiceWithTx(logs, users, failingRunner)
 
-	_, err := service.UpsertDayEntryWithAutoFillAt(
+	_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(),
 		10,
 		time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
 		DayEntryInput{IsPeriod: false, Flow: models.FlowNone},
@@ -666,13 +667,13 @@ func TestDayserviceCov_MarkCycleStartManually_TxErrorPropagates(t *testing.T) {
 	}
 
 	txErr := errors.New("tx commit failed")
-	failingRunner := func(fn func(DayLogRepository) error) error {
+	failingRunner := func(ctx context.Context, fn func(DayLogRepository) error) error {
 		return txErr
 	}
 
 	service := NewDayServiceWithTx(logs, users, failingRunner)
 
-	err := service.MarkCycleStartManually(10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{})
+	err := service.MarkCycleStartManually(context.Background(), 10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{})
 	// The error wraps txErr (via wrapManualCycleStartFailure if it reaches the
 	// inner return, or directly if it short-circuits earlier). Either way,
 	// we expect a non-nil error.

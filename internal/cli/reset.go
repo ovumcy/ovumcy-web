@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -55,7 +56,7 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 
 	repositories := db.NewRepositories(database)
 	authService := services.NewAuthService(repositories.Users)
-	if err := authService.ForceResetPasswordByEmail(normalizedEmail, string(newPassword)); err != nil {
+	if err := authService.ForceResetPasswordByEmail(context.Background(), normalizedEmail, string(newPassword)); err != nil {
 		switch {
 		case errors.Is(err, services.ErrAuthUserNotFound):
 			return fmt.Errorf("user %s not found", normalizedEmail)

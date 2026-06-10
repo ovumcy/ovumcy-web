@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -41,7 +42,7 @@ func TestUserRepositoryCreateTranslatesUniqueViolation(t *testing.T) {
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	if err := repo.Create(first); err != nil {
+	if err := repo.Create(context.Background(), first); err != nil {
 		t.Fatalf("create first user: %v", err)
 	}
 
@@ -55,7 +56,7 @@ func TestUserRepositoryCreateTranslatesUniqueViolation(t *testing.T) {
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	err := repo.Create(second)
+	err := repo.Create(context.Background(), second)
 	if err == nil {
 		t.Fatal("expected unique violation error")
 	}
@@ -90,7 +91,7 @@ func TestUserRepositoryCreateUserWithSymptomsRollsBackOnSeedFailure(t *testing.T
 		IsBuiltin: true,
 	}}
 
-	err := repo.CreateUserWithSymptoms(user, symptoms)
+	err := repo.CreateUserWithSymptoms(context.Background(), user, symptoms)
 	if err == nil {
 		t.Fatal("expected seed write error")
 	}
@@ -100,7 +101,7 @@ func TestUserRepositoryCreateUserWithSymptomsRollsBackOnSeedFailure(t *testing.T
 		t.Fatalf("expected SymptomSeedError, got %T %v", err, err)
 	}
 
-	exists, checkErr := repo.ExistsByNormalizedEmail("rollback@example.com")
+	exists, checkErr := repo.ExistsByNormalizedEmail(context.Background(), "rollback@example.com")
 	if checkErr != nil {
 		t.Fatalf("check rollback user existence: %v", checkErr)
 	}

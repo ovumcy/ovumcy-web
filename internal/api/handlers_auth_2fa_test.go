@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -26,7 +27,7 @@ func setupTOTPForUser(t *testing.T, database *gorm.DB, userID uint, secretKey []
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	if err := svc.EnableTOTP(userID, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), userID, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 	return key.Secret()
@@ -35,7 +36,7 @@ func setupTOTPForUser(t *testing.T, database *gorm.DB, userID uint, secretKey []
 // dbUserRepoForTest adapts *gorm.DB to services.TOTPUserRepository for test setup.
 type dbUserRepoForTest struct{ db *gorm.DB }
 
-func (r *dbUserRepoForTest) UpdateTOTPFieldsAndRevokeSessions(userID uint, encryptedSecret string, enabled bool) error {
+func (r *dbUserRepoForTest) UpdateTOTPFieldsAndRevokeSessions(ctx context.Context, userID uint, encryptedSecret string, enabled bool) error {
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"totp_secret":          encryptedSecret,
 		"totp_enabled":         enabled,
@@ -44,11 +45,11 @@ func (r *dbUserRepoForTest) UpdateTOTPFieldsAndRevokeSessions(userID uint, encry
 	}).Error
 }
 
-func (r *dbUserRepoForTest) UpdateTOTPSecretCiphertext(userID uint, encryptedSecret string) error {
+func (r *dbUserRepoForTest) UpdateTOTPSecretCiphertext(ctx context.Context, userID uint, encryptedSecret string) error {
 	return r.db.Model(&models.User{}).Where("id = ?", userID).Update("totp_secret", encryptedSecret).Error
 }
 
-func (r *dbUserRepoForTest) ClaimTOTPStep(userID uint, step int64) (bool, error) {
+func (r *dbUserRepoForTest) ClaimTOTPStep(ctx context.Context, userID uint, step int64) (bool, error) {
 	result := r.db.Model(&models.User{}).
 		Where("id = ? AND totp_last_used_step < ?", userID, step).
 		Update("totp_last_used_step", step)

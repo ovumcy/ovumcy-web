@@ -5,6 +5,7 @@ package services
 // avoid collisions when merged with other agents' test files.
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -35,7 +36,7 @@ func TestStatspageviewserviceCovPredictionExplanationSecondaryAbsentWhenHintKeys
 	user := &models.User{ID: 99, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: true}
 	now := mustParseStatsServiceDay(t, "2026-03-10")
 
-	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -74,7 +75,7 @@ func TestStatspageviewserviceCovHasLastCycleSymptomsIsFalseWhenNoneLogged(t *tes
 	user := &models.User{ID: 42, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-03-15")
 
-	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestStatspageviewserviceCovHasSymptomPatternsIsFalseWhenNoneAvailable(t *te
 	user := &models.User{ID: 43, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-03-15")
 
-	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -138,7 +139,7 @@ func TestStatspageviewserviceCovHasCurrentCycleBBTChartIsFalseWhenNoBBTData(t *t
 	user := &models.User{ID: 44, Role: models.RoleOwner, CycleLength: 28, TrackBBT: false}
 	now := mustParseStatsServiceDay(t, "2026-03-15")
 
-	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestStatspageviewserviceCovBaseDataRangeStartsExactlyTwoYearsBack(t *testin
 	user := &models.User{ID: 50, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-04-15")
 
-	_, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	_, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -204,7 +205,7 @@ func TestStatspageviewserviceCovIrregularInsufficientDataNoticeAbsentAtThreeCycl
 	// last log date is ~84 days after start; use a date shortly after
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 60, Role: models.RoleOwner, IrregularCycle: true},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -221,7 +222,7 @@ func TestStatspageviewserviceCovIrregularInsufficientDataNoticeAbsentForNonIrreg
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 61, Role: models.RoleOwner, IrregularCycle: false, CycleLength: 28},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -244,7 +245,7 @@ func TestStatspageviewserviceCovPredictionDisabledReflectsUnpredictableCycleFlag
 	now := mustParseStatsServiceDay(t, "2026-04-10")
 
 	unpredictable := &models.User{ID: 70, Role: models.RoleOwner, CycleLength: 28, UnpredictableCycle: true}
-	viewData, err := service.BuildStatsPageViewData(unpredictable, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), unpredictable, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestStatspageviewserviceCovPredictionDisabledReflectsUnpredictableCycleFlag
 	}
 
 	predictable := &models.User{ID: 71, Role: models.RoleOwner, CycleLength: 28, UnpredictableCycle: false}
-	viewData2, err := service.BuildStatsPageViewData(predictable, "en", "Cycle %d", now, time.UTC, 12)
+	viewData2, err := service.BuildStatsPageViewData(context.Background(), predictable, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestStatspageviewserviceCovPredictionReliabilityHiddenForUnpredictableOwner
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 80, Role: models.RoleOwner, CycleLength: 28, UnpredictableCycle: true},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -304,7 +305,7 @@ func TestStatspageviewserviceCovPredictionWindowCapAtSixCycles(t *testing.T) {
 	logs6 := statspageviewserviceCovLogsWithNCompletedCycles(t, 6)
 	now6 := logs6[len(logs6)-1].Date.AddDate(0, 0, 5)
 	service6 := NewStatsService(&stubStatsDayReader{logsForRange: logs6}, &stubStatsSymptomReader{})
-	vd6, err := service6.BuildStatsPageViewData(
+	vd6, err := service6.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 90, Role: models.RoleOwner, CycleLength: 28},
 		"en", "Cycle %d", now6, time.UTC, 12,
 	)
@@ -322,7 +323,7 @@ func TestStatspageviewserviceCovPredictionWindowCapAtSixCycles(t *testing.T) {
 	logs7 := statspageviewserviceCovLogsWithNCompletedCycles(t, 7)
 	now7 := logs7[len(logs7)-1].Date.AddDate(0, 0, 5)
 	service7 := NewStatsService(&stubStatsDayReader{logsForRange: logs7}, &stubStatsSymptomReader{})
-	vd7, err := service7.BuildStatsPageViewData(
+	vd7, err := service7.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 91, Role: models.RoleOwner, CycleLength: 28},
 		"en", "Cycle %d", now7, time.UTC, 12,
 	)
@@ -383,7 +384,7 @@ func TestStatspageviewserviceCovVariablePatternViaIrregularCycleFlagThreeComplet
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 100, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: true},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -403,7 +404,7 @@ func TestStatspageviewserviceCovVariablePatternViaSpreadForNonIrregularUser(t *t
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 101, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: false},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -422,7 +423,7 @@ func TestStatspageviewserviceCovVariablePatternAbsentForNonIrregularRegularSprea
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 102, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: false},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -449,7 +450,7 @@ func TestStatspageviewserviceCovPredictionReliabilityVariableLabelAtThreeOrMoreC
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 110, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: true},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -468,7 +469,7 @@ func TestStatspageviewserviceCovPredictionReliabilityStableLabelAtSixOrMoreRegul
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 111, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: false},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -487,7 +488,7 @@ func TestStatspageviewserviceCovPredictionReliabilityBuildingLabelAtThreeToFiveC
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 112, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: false},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -509,7 +510,7 @@ func TestStatspageviewserviceCovHintKeyIsVariableForIrregularPattern(t *testing.
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 120, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: true},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)
@@ -526,7 +527,7 @@ func TestStatspageviewserviceCovHintKeyIsStandardForRegularPattern(t *testing.T)
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
 
-	viewData, err := service.BuildStatsPageViewData(
+	viewData, err := service.BuildStatsPageViewData(context.Background(),
 		&models.User{ID: 121, Role: models.RoleOwner, CycleLength: 28, IrregularCycle: false},
 		"en", "Cycle %d", now, time.UTC, 12,
 	)

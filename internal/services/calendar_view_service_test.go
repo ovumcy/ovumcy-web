@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ type stubCalendarViewDayReader struct {
 	err  error
 }
 
-func (stub *stubCalendarViewDayReader) FetchLogsForUser(_ uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (stub *stubCalendarViewDayReader) FetchLogsForUser(ctx context.Context, _ uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -28,7 +29,7 @@ type stubCalendarViewStatsProvider struct {
 	err   error
 }
 
-func (stub *stubCalendarViewStatsProvider) BuildCycleStatsForRange(_ *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
+func (stub *stubCalendarViewStatsProvider) BuildCycleStatsForRange(ctx context.Context, _ *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
 	if stub.err != nil {
 		return CycleStats{}, nil, stub.err
 	}
@@ -47,7 +48,7 @@ func TestBuildCalendarPageViewData(t *testing.T) {
 	now := mustParseCalendarViewDay(t, "2026-02-21")
 	monthStart := mustParseCalendarViewDay(t, "2026-02-01")
 
-	viewData, err := service.BuildCalendarPageViewData(user, "en", now, monthStart, "2026-02-17", time.UTC)
+	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "2026-02-17", time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestBuildCalendarPageViewDataReturnsTypedErrors(t *testing.T) {
 		&stubCalendarViewDayReader{err: errors.New("logs fail")},
 		&stubCalendarViewStatsProvider{},
 	)
-	if _, err := logErrService.BuildCalendarPageViewData(user, "en", now, monthStart, "", time.UTC); !errors.Is(err, ErrCalendarViewLoadLogs) {
+	if _, err := logErrService.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC); !errors.Is(err, ErrCalendarViewLoadLogs) {
 		t.Fatalf("expected ErrCalendarViewLoadLogs, got %v", err)
 	}
 
@@ -89,7 +90,7 @@ func TestBuildCalendarPageViewDataReturnsTypedErrors(t *testing.T) {
 		&stubCalendarViewDayReader{},
 		&stubCalendarViewStatsProvider{err: errors.New("stats fail")},
 	)
-	if _, err := statsErrService.BuildCalendarPageViewData(user, "en", now, monthStart, "", time.UTC); !errors.Is(err, ErrCalendarViewLoadStats) {
+	if _, err := statsErrService.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC); !errors.Is(err, ErrCalendarViewLoadStats) {
 		t.Fatalf("expected ErrCalendarViewLoadStats, got %v", err)
 	}
 }
@@ -108,7 +109,7 @@ func TestBuildCalendarPageViewDataHidesPreviousMonthAtLowerBound(t *testing.T) {
 	now := mustParseCalendarViewDay(t, "2026-03-13")
 	monthStart := time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC)
 
-	viewData, err := service.BuildCalendarPageViewData(user, "en", now, monthStart, "", time.UTC)
+	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}
@@ -149,7 +150,7 @@ func TestBuildCalendarPageViewDataBuildsSharedPredictionExplanation(t *testing.T
 	now := mustParseCalendarViewDay(t, "2026-04-25")
 	monthStart := mustParseCalendarViewDay(t, "2026-04-01")
 
-	viewData, err := service.BuildCalendarPageViewData(user, "en", now, monthStart, "2026-04-25", time.UTC)
+	viewData, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "2026-04-25", time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
 	}

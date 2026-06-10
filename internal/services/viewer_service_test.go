@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -14,14 +15,14 @@ type stubViewerDayReader struct {
 	err   error
 }
 
-func (stub *stubViewerDayReader) FetchLogByDate(uint, time.Time, *time.Location) (models.DailyLog, error) {
+func (stub *stubViewerDayReader) FetchLogByDate(context.Context, uint, time.Time, *time.Location) (models.DailyLog, error) {
 	if stub.err != nil {
 		return models.DailyLog{}, stub.err
 	}
 	return stub.entry, nil
 }
 
-func (stub *stubViewerDayReader) FetchLogsForUser(uint, time.Time, time.Time, *time.Location) ([]models.DailyLog, error) {
+func (stub *stubViewerDayReader) FetchLogsForUser(context.Context, uint, time.Time, time.Time, *time.Location) ([]models.DailyLog, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -36,7 +37,7 @@ type stubViewerSymptomReader struct {
 	err             error
 }
 
-func (stub *stubViewerSymptomReader) FetchPickerSymptoms(_ uint, selectedIDs []uint) ([]models.SymptomType, error) {
+func (stub *stubViewerSymptomReader) FetchPickerSymptoms(ctx context.Context, _ uint, selectedIDs []uint) ([]models.SymptomType, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -51,7 +52,7 @@ func TestViewerServiceFetchSymptomsForViewer_OnlyOwner(t *testing.T) {
 		symptoms: []models.SymptomType{{Name: "Headache"}},
 	})
 
-	ownerSymptoms, err := service.FetchSymptomsForViewer(&models.User{ID: 10, Role: models.RoleOwner}, []uint{4})
+	ownerSymptoms, err := service.FetchSymptomsForViewer(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, []uint{4})
 	if err != nil {
 		t.Fatalf("FetchSymptomsForViewer(owner) unexpected error: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestViewerServiceFetchSymptomsForViewer_OnlyOwner(t *testing.T) {
 		t.Fatalf("expected owner symptoms to load, got %#v", ownerSymptoms)
 	}
 
-	unsupportedSymptoms, err := service.FetchSymptomsForViewer(&models.User{ID: 11, Role: "legacy_viewer"}, []uint{4})
+	unsupportedSymptoms, err := service.FetchSymptomsForViewer(context.Background(), &models.User{ID: 11, Role: "legacy_viewer"}, []uint{4})
 	if err != nil {
 		t.Fatalf("FetchSymptomsForViewer(unsupported) unexpected error: %v", err)
 	}
@@ -83,7 +84,7 @@ func TestViewerServiceFetchDayLogForViewer_SanitizesUnsupportedRoleAndSkipsSympt
 		},
 	)
 
-	logEntry, symptoms, err := service.FetchDayLogForViewer(&models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.UTC)
+	logEntry, symptoms, err := service.FetchDayLogForViewer(context.Background(), &models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.UTC)
 	if err != nil {
 		t.Fatalf("FetchDayLogForViewer(unsupported) unexpected error: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestViewerServiceFetchDayLogForViewer_PropagatesErrors(t *testing.T) {
 	dayErr := errors.New("day fetch failed")
 	service := NewViewerService(&stubViewerDayReader{err: dayErr}, &stubViewerSymptomReader{})
 
-	_, _, err := service.FetchDayLogForViewer(&models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
+	_, _, err := service.FetchDayLogForViewer(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
 	if !errors.Is(err, dayErr) {
 		t.Fatalf("expected day fetch error, got %v", err)
 	}
@@ -112,7 +113,7 @@ func TestViewerServiceFetchDayLogForViewer_PropagatesErrors(t *testing.T) {
 		&stubViewerSymptomReader{err: symptomErr},
 	)
 
-	_, _, err = service.FetchDayLogForViewer(&models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
+	_, _, err = service.FetchDayLogForViewer(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
 	if !errors.Is(err, symptomErr) {
 		t.Fatalf("expected symptom fetch error, got %v", err)
 	}
@@ -131,7 +132,7 @@ func TestViewerServiceFetchDayLogForViewer_PassesSelectedIDsToPicker(t *testing.
 		symptomReader,
 	)
 
-	_, _, err := service.FetchDayLogForViewer(&models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
+	_, _, err := service.FetchDayLogForViewer(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
 	if err != nil {
 		t.Fatalf("FetchDayLogForViewer(owner) unexpected error: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestViewerServiceFetchLogsForViewer_SanitizesUnsupportedRoleLogs(t *testing
 		&stubViewerSymptomReader{},
 	)
 
-	logs, err := service.FetchLogsForViewer(&models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.Now().UTC(), time.UTC)
+	logs, err := service.FetchLogsForViewer(context.Background(), &models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.Now().UTC(), time.UTC)
 	if err != nil {
 		t.Fatalf("FetchLogsForViewer(unsupported) unexpected error: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestViewerServiceFetchLogByDateForViewer_SanitizesUnsupportedRoleLog(t *tes
 		&stubViewerSymptomReader{},
 	)
 
-	logEntry, err := service.FetchLogByDateForViewer(&models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.UTC)
+	logEntry, err := service.FetchLogByDateForViewer(context.Background(), &models.User{ID: 10, Role: "legacy_viewer"}, time.Now().UTC(), time.UTC)
 	if err != nil {
 		t.Fatalf("FetchLogByDateForViewer(unsupported) unexpected error: %v", err)
 	}

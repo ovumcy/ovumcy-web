@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -14,11 +15,11 @@ var (
 )
 
 type CalendarViewDayReader interface {
-	FetchLogsForUser(userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error)
+	FetchLogsForUser(ctx context.Context, userID uint, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error)
 }
 
 type CalendarViewStatsProvider interface {
-	BuildCycleStatsForRange(user *models.User, from time.Time, to time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error)
+	BuildCycleStatsForRange(ctx context.Context, user *models.User, from time.Time, to time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error)
 }
 
 type CalendarPageViewData struct {
@@ -49,14 +50,14 @@ func NewCalendarViewService(days CalendarViewDayReader, stats CalendarViewStatsP
 	}
 }
 
-func (service *CalendarViewService) BuildCalendarPageViewData(user *models.User, language string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (CalendarPageViewData, error) {
+func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Context, user *models.User, language string, now time.Time, monthStart time.Time, selectedDate string, location *time.Location) (CalendarPageViewData, error) {
 	logRangeStart, logRangeEnd := CalendarLogRange(monthStart)
-	logs, err := service.days.FetchLogsForUser(user.ID, logRangeStart, logRangeEnd, location)
+	logs, err := service.days.FetchLogsForUser(ctx, user.ID, logRangeStart, logRangeEnd, location)
 	if err != nil {
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadLogs, err)
 	}
 
-	stats, statsLogs, err := service.stats.BuildCycleStatsForRange(user, now.AddDate(-2, 0, 0), now, now, location)
+	stats, statsLogs, err := service.stats.BuildCycleStatsForRange(ctx, user, now.AddDate(-2, 0, 0), now, now, location)
 	if err != nil {
 		return CalendarPageViewData{}, fmt.Errorf("%w: %v", ErrCalendarViewLoadStats, err)
 	}

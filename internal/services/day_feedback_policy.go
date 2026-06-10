@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -19,12 +20,12 @@ type DayFeedbackState struct {
 	LongPeriodCycleStart     time.Time
 }
 
-func (service *DayService) ResolveDayFeedback(user *models.User, day time.Time, now time.Time, location *time.Location) (DayFeedbackState, error) {
+func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.User, day time.Time, now time.Time, location *time.Location) (DayFeedbackState, error) {
 	if location == nil {
 		location = time.UTC
 	}
 
-	logs, err := service.logs.ListByUser(user.ID)
+	logs, err := service.logs.ListByUser(ctx, user.ID)
 	if err != nil {
 		return DayFeedbackState{}, err
 	}
@@ -32,7 +33,7 @@ func (service *DayService) ResolveDayFeedback(user *models.User, day time.Time, 
 	day = DateAtLocation(day, location)
 	today := DateAtLocation(now, location)
 	stats := BuildCycleStats(logs, today)
-	entry, err := service.FetchLogByDate(user.ID, day, location)
+	entry, err := service.FetchLogByDate(ctx, user.ID, day, location)
 	if err != nil {
 		return DayFeedbackState{}, err
 	}
@@ -54,14 +55,14 @@ func (service *DayService) ResolveDayFeedback(user *models.User, day time.Time, 
 	return state, nil
 }
 
-func (service *DayService) AcknowledgeLongPeriodWarning(userID uint, cycleStart time.Time, location *time.Location) error {
+func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, userID uint, cycleStart time.Time, location *time.Location) error {
 	if service == nil || service.users == nil || cycleStart.IsZero() {
 		return nil
 	}
 	if location != nil {
 		cycleStart = CalendarDay(cycleStart, location)
 	}
-	return service.users.UpdateByID(userID, map[string]any{
+	return service.users.UpdateByID(ctx, userID, map[string]any{
 		"long_period_warning_cycle_start": cycleStart,
 	})
 }

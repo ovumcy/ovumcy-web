@@ -13,7 +13,7 @@ func (handler *Handler) ExportJSON(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, *spec)
 	}
 	location := handler.requestLocation(c)
-	entries, err := handler.exportService.BuildJSONEntries(user.ID, from, to, location)
+	entries, err := handler.exportService.BuildJSONEntries(c.UserContext(), user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "json"))

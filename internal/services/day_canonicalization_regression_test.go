@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -58,7 +59,7 @@ func runDayServiceUpsertCanonicalizesDateToUTCMidnight(t *testing.T, setup func(
 			localCalendarDay := time.Date(2026, time.February, 10, 0, 0, 0, 0, tt.location)
 			now := localCalendarDay.Add(8 * time.Hour)
 
-			if _, err := service.UpsertDayEntryWithAutoFillAt(user.ID, localCalendarDay, DayEntryInput{
+			if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), user.ID, localCalendarDay, DayEntryInput{
 				IsPeriod:      true,
 				Flow:          models.FlowMedium,
 				Mood:          0,
@@ -74,7 +75,7 @@ func runDayServiceUpsertCanonicalizesDateToUTCMidnight(t *testing.T, setup func(
 			}
 			assertUTCMidnightRawDate(t, rawDate, "2026-02-10")
 
-			entry, err := service.FetchLogByDate(user.ID, localCalendarDay, tt.location)
+			entry, err := service.FetchLogByDate(context.Background(), user.ID, localCalendarDay, tt.location)
 			if err != nil {
 				t.Fatalf("FetchLogByDate after canonicalized write: %v", err)
 			}
@@ -144,7 +145,7 @@ func runDayServiceConsecutiveUpsertsUpdateSameRowAcrossTimezones(t *testing.T, s
 			localCalendarDay := time.Date(2026, time.February, 10, 0, 0, 0, 0, tt.location)
 			now := localCalendarDay.Add(8 * time.Hour)
 
-			if _, err := service.UpsertDayEntryWithAutoFillAt(user.ID, localCalendarDay, DayEntryInput{
+			if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), user.ID, localCalendarDay, DayEntryInput{
 				IsPeriod:      true,
 				Flow:          models.FlowSpotting,
 				Mood:          0,
@@ -154,7 +155,7 @@ func runDayServiceConsecutiveUpsertsUpdateSameRowAcrossTimezones(t *testing.T, s
 				t.Fatalf("first UpsertDayEntryWithAutoFillAt: %v", err)
 			}
 
-			if _, err := service.UpsertDayEntryWithAutoFillAt(user.ID, localCalendarDay, DayEntryInput{
+			if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), user.ID, localCalendarDay, DayEntryInput{
 				IsPeriod:      true,
 				Flow:          models.FlowSpotting,
 				Mood:          0,
@@ -173,7 +174,7 @@ func runDayServiceConsecutiveUpsertsUpdateSameRowAcrossTimezones(t *testing.T, s
 				t.Fatalf("expected exactly one row after two upserts for the same local day, got %d", rowCount)
 			}
 
-			entry, err := service.FetchLogByDate(user.ID, localCalendarDay, tt.location)
+			entry, err := service.FetchLogByDate(context.Background(), user.ID, localCalendarDay, tt.location)
 			if err != nil {
 				t.Fatalf("FetchLogByDate after second upsert: %v", err)
 			}

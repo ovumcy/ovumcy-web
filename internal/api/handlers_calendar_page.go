@@ -31,7 +31,7 @@ func (handler *Handler) ShowCalendar(c *fiber.Ctx) error {
 		return redirectOrJSON(c, "/calendar")
 	}
 
-	data, err := handler.buildCalendarViewData(user, language, messages, now, activeMonth, selectedDate, location)
+	data, err := handler.buildCalendarViewData(c.UserContext(), user, language, messages, now, activeMonth, selectedDate, location)
 	if err != nil {
 		return handler.respondMappedError(c, mapCalendarViewError(err))
 	}

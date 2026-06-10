@@ -48,18 +48,18 @@ type OIDCProviderClient interface {
 }
 
 type OIDCIdentityStore interface {
-	FindByIssuerSubject(issuer string, subject string) (models.OIDCIdentity, bool, error)
-	Create(identity *models.OIDCIdentity) error
-	TouchLastUsed(identityID uint, usedAt time.Time) error
+	FindByIssuerSubject(ctx context.Context, issuer string, subject string) (models.OIDCIdentity, bool, error)
+	Create(ctx context.Context, identity *models.OIDCIdentity) error
+	TouchLastUsed(ctx context.Context, identityID uint, usedAt time.Time) error
 }
 
 type OIDCUserStore interface {
-	FindByID(userID uint) (models.User, error)
-	FindByNormalizedEmailOptional(email string) (models.User, bool, error)
+	FindByID(ctx context.Context, userID uint) (models.User, error)
+	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
 }
 
 type OIDCAutoProvisioner interface {
-	AutoProvisionOwnerAccount(email string, createdAt time.Time) (models.User, error)
+	AutoProvisionOwnerAccount(ctx context.Context, email string, createdAt time.Time) (models.User, error)
 }
 
 type OIDCLogoutState struct {
@@ -180,7 +180,7 @@ func (service *OIDCLoginService) ValidateReauthExchange(ctx context.Context, cod
 		return ErrOIDCAuthenticationFailed
 	}
 
-	identity, found, err := service.identities.FindByIssuerSubject(exchange.Claims.Issuer, exchange.Claims.Subject)
+	identity, found, err := service.identities.FindByIssuerSubject(ctx, exchange.Claims.Issuer, exchange.Claims.Subject)
 	if err != nil {
 		return ErrOIDCIdentityResolveFailed
 	}
@@ -192,7 +192,7 @@ func (service *OIDCLoginService) ValidateReauthExchange(ctx context.Context, cod
 		return ErrOIDCReauthStale
 	}
 
-	_ = service.identities.TouchLastUsed(identity.ID, effectiveOIDCLoginTime(now))
+	_ = service.identities.TouchLastUsed(ctx, identity.ID, effectiveOIDCLoginTime(now))
 	return nil
 }
 
@@ -228,7 +228,7 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 		return OIDCLoginResult{}, ErrOIDCAuthenticationFailed
 	}
 
-	result, err := service.authenticateExchange(exchange, effectiveOIDCLoginTime(now))
+	result, err := service.authenticateExchange(ctx, exchange, effectiveOIDCLoginTime(now))
 	if errors.Is(err, ErrOIDCLinkRequiresConfirmation) {
 		// Preserve the pending-link payload (User + PendingLinkClaims) so the
 		// handler can stash them in the confirmation cookie. Logout state is
@@ -242,12 +242,12 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	return result, nil
 }
 
-func (service *OIDCLoginService) authenticateExchange(exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, error) {
-	if result, found, err := service.authenticateLinkedIdentity(exchange, loginTime); found || err != nil {
+func (service *OIDCLoginService) authenticateExchange(ctx context.Context, exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, error) {
+	if result, found, err := service.authenticateLinkedIdentity(ctx, exchange, loginTime); found || err != nil {
 		return result, err
 	}
 
-	user, autoProvisioned, err := service.resolveUserForClaims(exchange.Claims, loginTime)
+	user, autoProvisioned, err := service.resolveUserForClaims(ctx, exchange.Claims, loginTime)
 	if err != nil {
 		return OIDCLoginResult{}, err
 	}
@@ -266,7 +266,7 @@ func (service *OIDCLoginService) authenticateExchange(exchange security.OIDCExch
 		}, ErrOIDCLinkRequiresConfirmation
 	}
 
-	if err := service.linkIdentity(user.ID, exchange.Claims, loginTime); err != nil {
+	if err := service.linkIdentity(ctx, user.ID, exchange.Claims, loginTime); err != nil {
 		return OIDCLoginResult{}, err
 	}
 
@@ -284,7 +284,7 @@ func (service *OIDCLoginService) authenticateExchange(exchange security.OIDCExch
 // touches last-used. It refuses linkage if the (issuer, subject) is already
 // taken by a different user — guarding against a concurrent claim from a
 // second confirmation flow.
-func (service *OIDCLoginService) ConfirmAndLinkIdentity(targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error {
+func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error {
 	if !service.Enabled() {
 		return ErrOIDCDisabled
 	}
@@ -292,7 +292,7 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(targetUserID uint, claim
 		return ErrOIDCLinkFailed
 	}
 
-	existing, found, err := service.identities.FindByIssuerSubject(claims.Issuer, claims.Subject)
+	existing, found, err := service.identities.FindByIssuerSubject(ctx, claims.Issuer, claims.Subject)
 	if err != nil {
 		return ErrOIDCIdentityResolveFailed
 	}
@@ -303,15 +303,15 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(targetUserID uint, claim
 			// confirmation. Fail closed.
 			return ErrOIDCLinkFailed
 		}
-		_ = service.identities.TouchLastUsed(existing.ID, effectiveOIDCLoginTime(linkTime))
+		_ = service.identities.TouchLastUsed(ctx, existing.ID, effectiveOIDCLoginTime(linkTime))
 		return nil
 	}
 
-	return service.linkIdentity(targetUserID, claims, linkTime)
+	return service.linkIdentity(ctx, targetUserID, claims, linkTime)
 }
 
-func (service *OIDCLoginService) authenticateLinkedIdentity(exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {
-	identity, found, err := service.identities.FindByIssuerSubject(exchange.Claims.Issuer, exchange.Claims.Subject)
+func (service *OIDCLoginService) authenticateLinkedIdentity(ctx context.Context, exchange security.OIDCExchangeResult, loginTime time.Time) (OIDCLoginResult, bool, error) {
+	identity, found, err := service.identities.FindByIssuerSubject(ctx, exchange.Claims.Issuer, exchange.Claims.Subject)
 	if err != nil {
 		return OIDCLoginResult{}, false, ErrOIDCIdentityResolveFailed
 	}
@@ -319,27 +319,27 @@ func (service *OIDCLoginService) authenticateLinkedIdentity(exchange security.OI
 		return OIDCLoginResult{}, false, nil
 	}
 
-	user, err := service.users.FindByID(identity.UserID)
+	user, err := service.users.FindByID(ctx, identity.UserID)
 	if err != nil {
 		return OIDCLoginResult{}, true, ErrOIDCIdentityResolveFailed
 	}
 	if err := ValidateSupportedWebUser(&user); err != nil {
 		return OIDCLoginResult{}, true, ErrOIDCAccountUnavailable
 	}
-	_ = service.identities.TouchLastUsed(identity.ID, loginTime)
+	_ = service.identities.TouchLastUsed(ctx, identity.ID, loginTime)
 	return OIDCLoginResult{User: user}, true, nil
 }
 
-func (service *OIDCLoginService) resolveUserForClaims(claims security.OIDCClaims, loginTime time.Time) (models.User, bool, error) {
+func (service *OIDCLoginService) resolveUserForClaims(ctx context.Context, claims security.OIDCClaims, loginTime time.Time) (models.User, bool, error) {
 	normalizedEmail := NormalizeAuthEmail(claims.Email)
 	if !claims.EmailVerified || normalizedEmail == "" {
 		return models.User{}, false, ErrOIDCAccountUnavailable
 	}
-	return service.findOrProvisionUser(normalizedEmail, loginTime)
+	return service.findOrProvisionUser(ctx, normalizedEmail, loginTime)
 }
 
-func (service *OIDCLoginService) findOrProvisionUser(normalizedEmail string, loginTime time.Time) (models.User, bool, error) {
-	user, found, err := service.users.FindByNormalizedEmailOptional(normalizedEmail)
+func (service *OIDCLoginService) findOrProvisionUser(ctx context.Context, normalizedEmail string, loginTime time.Time) (models.User, bool, error) {
+	user, found, err := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
 	if err != nil {
 		return models.User{}, false, ErrOIDCIdentityResolveFailed
 	}
@@ -352,11 +352,11 @@ func (service *OIDCLoginService) findOrProvisionUser(normalizedEmail string, log
 	if !service.config.AllowsAutoProvision(normalizedEmail) || service.provisioner == nil {
 		return models.User{}, false, ErrOIDCAccountUnavailable
 	}
-	return service.autoProvisionOrLookupUser(normalizedEmail, loginTime)
+	return service.autoProvisionOrLookupUser(ctx, normalizedEmail, loginTime)
 }
 
-func (service *OIDCLoginService) autoProvisionOrLookupUser(normalizedEmail string, loginTime time.Time) (models.User, bool, error) {
-	user, err := service.provisioner.AutoProvisionOwnerAccount(normalizedEmail, loginTime)
+func (service *OIDCLoginService) autoProvisionOrLookupUser(ctx context.Context, normalizedEmail string, loginTime time.Time) (models.User, bool, error) {
+	user, err := service.provisioner.AutoProvisionOwnerAccount(ctx, normalizedEmail, loginTime)
 	if err == nil {
 		return user, true, nil
 	}
@@ -364,7 +364,7 @@ func (service *OIDCLoginService) autoProvisionOrLookupUser(normalizedEmail strin
 		return models.User{}, false, ErrOIDCProvisionFailed
 	}
 
-	user, found, lookupErr := service.users.FindByNormalizedEmailOptional(normalizedEmail)
+	user, found, lookupErr := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
 	if lookupErr != nil {
 		return models.User{}, false, ErrOIDCIdentityResolveFailed
 	}
@@ -377,7 +377,7 @@ func (service *OIDCLoginService) autoProvisionOrLookupUser(normalizedEmail strin
 	return user, false, nil
 }
 
-func (service *OIDCLoginService) linkIdentity(userID uint, claims security.OIDCClaims, linkTime time.Time) error {
+func (service *OIDCLoginService) linkIdentity(ctx context.Context, userID uint, claims security.OIDCClaims, linkTime time.Time) error {
 	identity := models.OIDCIdentity{
 		UserID:     userID,
 		Issuer:     strings.TrimSpace(claims.Issuer),
@@ -385,7 +385,7 @@ func (service *OIDCLoginService) linkIdentity(userID uint, claims security.OIDCC
 		CreatedAt:  linkTime,
 		LastUsedAt: &linkTime,
 	}
-	if err := service.identities.Create(&identity); err != nil {
+	if err := service.identities.Create(ctx, &identity); err != nil {
 		return ErrOIDCLinkFailed
 	}
 	return nil

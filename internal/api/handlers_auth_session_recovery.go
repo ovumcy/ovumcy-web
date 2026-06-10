@@ -41,6 +41,7 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 	}
 
 	token, err := handler.passwordResetSvc.StartRecovery(
+		c.UserContext(),
 		handler.secretKey,
 		c.IP(),
 		input.Email,
@@ -85,6 +86,7 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	user, recoveryCode, err := handler.passwordResetSvc.CompleteReset(
+		c.UserContext(),
 		handler.secretKey,
 		token,
 		input.Password,

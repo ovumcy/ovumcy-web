@@ -12,20 +12,20 @@ import (
 )
 
 type RegistrationWorkflowService interface {
-	RegisterOwnerAccount(email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error)
+	RegisterOwnerAccount(ctx context.Context, email string, rawPassword string, confirmPassword string, createdAt time.Time) (models.User, string, error)
 	RegistrationOpen() bool
 }
 
 type LoginWorkflowService interface {
-	Authenticate(secretKey []byte, clientKey string, email string, password string, resetTokenTTL time.Duration, now time.Time) (services.LoginResult, error)
+	Authenticate(ctx context.Context, secretKey []byte, clientKey string, email string, password string, resetTokenTTL time.Duration, now time.Time) (services.LoginResult, error)
 }
 
 // RegisterPickupTokenStore persists and atomically consumes the nonces that
 // back the sealed `ovumcy_register_pickup` cookie. The interface lets tests
 // substitute an in-memory implementation without spinning up a database.
 type RegisterPickupTokenStore interface {
-	Issue(nonce string, userID uint, expiresAt time.Time) error
-	Consume(nonce string, now time.Time) (uint, bool, error)
+	Issue(ctx context.Context, nonce string, userID uint, expiresAt time.Time) error
+	Consume(ctx context.Context, nonce string, now time.Time) (uint, bool, error)
 }
 
 type OIDCWorkflowService interface {
@@ -35,7 +35,7 @@ type OIDCWorkflowService interface {
 	StartReauth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error)
 	Authenticate(ctx context.Context, code string, codeVerifier string, expectedNonce string, now time.Time) (services.OIDCLoginResult, error)
 	ValidateReauthExchange(ctx context.Context, code string, codeVerifier string, expectedNonce string, expectedUserID uint, maxAuthAge time.Duration, now time.Time) error
-	ConfirmAndLinkIdentity(targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error
+	ConfirmAndLinkIdentity(ctx context.Context, targetUserID uint, claims security.OIDCClaims, linkTime time.Time) error
 }
 
 type Handler struct {

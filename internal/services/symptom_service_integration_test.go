@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func TestSymptomServiceFetchSymptomsBackfillsMissingBuiltinSymptoms(t *testing.T
 	repositories := db.NewRepositories(database)
 	service := NewSymptomService(repositories.Symptoms)
 
-	symptoms, err := service.FetchSymptoms(user.ID)
+	symptoms, err := service.FetchSymptoms(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("FetchSymptoms returned error: %v", err)
 	}
@@ -59,23 +60,23 @@ func TestSymptomServiceArchiveKeepsHistoryAndHidesFromPicker(t *testing.T) {
 	repositories := db.NewRepositories(database)
 	service := NewSymptomService(repositories.Symptoms)
 
-	if err := service.ArchiveSymptomForUser(user.ID, customSymptom.ID, time.Date(2026, time.March, 8, 10, 0, 0, 0, time.UTC)); err != nil {
+	if err := service.ArchiveSymptomForUser(context.Background(), user.ID, customSymptom.ID, time.Date(2026, time.March, 8, 10, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("archive symptom: %v", err)
 	}
 
-	allSymptoms, err := service.FetchSymptoms(user.ID)
+	allSymptoms, err := service.FetchSymptoms(context.Background(), user.ID)
 	if err != nil {
 		t.Fatalf("FetchSymptoms returned error: %v", err)
 	}
 	assertSymptomServiceArchivedSymptomPresent(t, allSymptoms, customSymptom.ID)
 
-	pickerSymptoms, err := service.FetchPickerSymptoms(user.ID, nil)
+	pickerSymptoms, err := service.FetchPickerSymptoms(context.Background(), user.ID, nil)
 	if err != nil {
 		t.Fatalf("FetchPickerSymptoms returned error: %v", err)
 	}
 	assertSymptomServicePickerOmitsSymptom(t, pickerSymptoms, customSymptom.ID)
 
-	selectedPickerSymptoms, err := service.FetchPickerSymptoms(user.ID, []uint{customSymptom.ID})
+	selectedPickerSymptoms, err := service.FetchPickerSymptoms(context.Background(), user.ID, []uint{customSymptom.ID})
 	if err != nil {
 		t.Fatalf("FetchPickerSymptoms(selected) returned error: %v", err)
 	}

@@ -16,7 +16,7 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, mapDayRangeError(err))
 	}
-	logs, err := handler.viewerService.FetchLogsForViewer(user, from, to, location)
+	logs, err := handler.viewerService.FetchLogsForViewer(c.UserContext(), user, from, to, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayLogsFetchErrorSpec())
 	}
@@ -35,7 +35,7 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	logEntry, err := handler.viewerService.FetchLogByDateForViewer(user, day, location)
+	logEntry, err := handler.viewerService.FetchLogByDateForViewer(c.UserContext(), user, day, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}
@@ -54,7 +54,7 @@ func (handler *Handler) CheckDayExists(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	exists, err := handler.dayService.DayHasDataForDate(user.ID, day, location)
+	exists, err := handler.dayService.DayHasDataForDate(c.UserContext(), user.ID, day, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}

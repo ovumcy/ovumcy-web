@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestBuildStatsPageViewDataOwnerBuildsTrendBaselineAndSymptomSummaries(t *te
 	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-04-10")
 
-	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 2)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 2)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -46,7 +47,7 @@ func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 	now := mustParseStatsServiceDay(t, "2026-04-25")
 
 	regularUser := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32}
-	regularView, err := service.BuildStatsPageViewData(regularUser, "en", "Cycle %d", now, time.UTC, 12)
+	regularView, err := service.BuildStatsPageViewData(context.Background(), regularUser, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error for regular user: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestBuildStatsPageViewDataIrregularNoticeRespectsUserMode(t *testing.T) {
 	}
 
 	irregularUser := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32, IrregularCycle: true}
-	irregularView, err := service.BuildStatsPageViewData(irregularUser, "en", "Cycle %d", now, time.UTC, 12)
+	irregularView, err := service.BuildStatsPageViewData(context.Background(), irregularUser, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error for irregular user: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestBuildStatsPageViewDataShowsIrregularInsufficientDataNotice(t *testing.T
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := mustParseStatsServiceDay(t, "2026-02-10")
 
-	viewData, err := service.BuildStatsPageViewData(&models.User{ID: 8, Role: models.RoleOwner, IrregularCycle: true}, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), &models.User{ID: 8, Role: models.RoleOwner, IrregularCycle: true}, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestBuildStatsPageViewDataBuildsRecentCycleFactorContextForVariablePatterns
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs, logsForAll: logs}, &stubStatsSymptomReader{})
 	now := mustParseStatsServiceDay(t, "2026-04-25")
 
-	viewData, err := service.BuildStatsPageViewData(&models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32}, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32}, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -130,7 +131,7 @@ func TestBuildStatsPageViewDataKeepsRecentBaselineWhenOlderCycleStartsExist(t *t
 	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 32, IrregularCycle: true, LastPeriodStart: &recentBaseline}
 	now := mustParseStatsServiceDay(t, "2026-03-16")
 
-	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilSecondCompletedCycle(t *t
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := mustParseStatsServiceDay(t, "2026-02-10")
 
-	viewData, err := service.BuildStatsPageViewData(&models.User{ID: 10, Role: models.RoleOwner, CycleLength: 28}, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), &models.User{ID: 10, Role: models.RoleOwner, CycleLength: 28}, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -173,7 +174,7 @@ func TestBuildStatsPageViewDataKeepsInsightsHiddenUntilSecondCompletedCycle(t *t
 
 func TestBuildStatsPageViewDataBuildsLastCycleSymptomsPatternsAndBBTChart(t *testing.T) {
 	service, user, now := newStatsPatternAndBBTTestFixture(t)
-	viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -385,7 +386,7 @@ func TestBuildStatsPageViewDataShowsPerimenopauseHintFor45Plus(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			user := &models.User{ID: 31, Role: models.RoleOwner, CycleLength: 28, AgeGroup: testCase.ageGroup}
-			viewData, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", now, time.UTC, 12)
+			viewData, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", now, time.UTC, 12)
 			if err != nil {
 				t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 			}
@@ -403,7 +404,7 @@ func TestBuildStatsPageViewDataUnsupportedRoleSkipsBaselineAndSymptomLoading(t *
 	unsupported := &models.User{ID: 9, Role: "legacy_viewer", CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-02-21")
 
-	viewData, err := service.BuildStatsPageViewData(unsupported, "en", "Cycle %d", now, time.UTC, 12)
+	viewData, err := service.BuildStatsPageViewData(context.Background(), unsupported, "en", "Cycle %d", now, time.UTC, 12)
 	if err != nil {
 		t.Fatalf("BuildStatsPageViewData() unexpected error: %v", err)
 	}
@@ -432,7 +433,7 @@ func TestBuildStatsPageViewDataReturnsLoadStatsError(t *testing.T) {
 	service := NewStatsService(&stubStatsDayReader{rangeErr: errors.New("range fail")}, &stubStatsSymptomReader{})
 	user := &models.User{ID: 11, Role: models.RoleOwner, CycleLength: 28}
 
-	_, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", mustParseStatsServiceDay(t, "2026-02-21"), time.UTC, 12)
+	_, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", mustParseStatsServiceDay(t, "2026-02-21"), time.UTC, 12)
 	if !errors.Is(err, ErrStatsPageViewLoadStats) {
 		t.Fatalf("expected ErrStatsPageViewLoadStats, got %v", err)
 	}
@@ -443,7 +444,7 @@ func TestBuildStatsPageViewDataReturnsLoadSymptomsError(t *testing.T) {
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{err: errors.New("symptom fail")})
 	user := &models.User{ID: 12, Role: models.RoleOwner, CycleLength: 28}
 
-	_, err := service.BuildStatsPageViewData(user, "en", "Cycle %d", mustParseStatsServiceDay(t, "2026-02-21"), time.UTC, 12)
+	_, err := service.BuildStatsPageViewData(context.Background(), user, "en", "Cycle %d", mustParseStatsServiceDay(t, "2026-02-21"), time.UTC, 12)
 	if !errors.Is(err, ErrStatsPageViewLoadSymptoms) {
 		t.Fatalf("expected ErrStatsPageViewLoadSymptoms, got %v", err)
 	}

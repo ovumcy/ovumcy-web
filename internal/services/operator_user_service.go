@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,9 +19,9 @@ var (
 )
 
 type OperatorUserRepository interface {
-	ListOperatorUserSummaries() ([]models.OperatorUserSummary, error)
-	FindByNormalizedEmailOptional(email string) (models.User, bool, error)
-	DeleteAccountAndRelatedData(userID uint) error
+	ListOperatorUserSummaries(ctx context.Context) ([]models.OperatorUserSummary, error)
+	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
+	DeleteAccountAndRelatedData(ctx context.Context, userID uint) error
 }
 
 type OperatorUserService struct {
@@ -31,21 +32,21 @@ func NewOperatorUserService(users OperatorUserRepository) *OperatorUserService {
 	return &OperatorUserService{users: users}
 }
 
-func (service *OperatorUserService) ListUsers() ([]models.OperatorUserSummary, error) {
-	users, err := service.users.ListOperatorUserSummaries()
+func (service *OperatorUserService) ListUsers(ctx context.Context) ([]models.OperatorUserSummary, error) {
+	users, err := service.users.ListOperatorUserSummaries(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrOperatorUserListFailed, err)
 	}
 	return users, nil
 }
 
-func (service *OperatorUserService) GetUserByEmail(email string) (models.OperatorUserSummary, error) {
+func (service *OperatorUserService) GetUserByEmail(ctx context.Context, email string) (models.OperatorUserSummary, error) {
 	normalizedEmail, err := normalizeOperatorUserEmail(email)
 	if err != nil {
 		return models.OperatorUserSummary{}, err
 	}
 
-	user, found, lookupErr := service.users.FindByNormalizedEmailOptional(normalizedEmail)
+	user, found, lookupErr := service.users.FindByNormalizedEmailOptional(ctx, normalizedEmail)
 	if lookupErr != nil {
 		return models.OperatorUserSummary{}, fmt.Errorf("%w: %v", ErrOperatorUserLookupFailed, lookupErr)
 	}
@@ -56,13 +57,13 @@ func (service *OperatorUserService) GetUserByEmail(email string) (models.Operato
 	return operatorUserSummaryFromUser(user), nil
 }
 
-func (service *OperatorUserService) DeleteUserByEmail(email string) (models.OperatorUserSummary, error) {
-	userSummary, err := service.GetUserByEmail(email)
+func (service *OperatorUserService) DeleteUserByEmail(ctx context.Context, email string) (models.OperatorUserSummary, error) {
+	userSummary, err := service.GetUserByEmail(ctx, email)
 	if err != nil {
 		return models.OperatorUserSummary{}, err
 	}
 
-	if deleteErr := service.users.DeleteAccountAndRelatedData(userSummary.ID); deleteErr != nil {
+	if deleteErr := service.users.DeleteAccountAndRelatedData(ctx, userSummary.ID); deleteErr != nil {
 		return models.OperatorUserSummary{}, fmt.Errorf("%w: %v", ErrOperatorUserDeleteFailed, deleteErr)
 	}
 

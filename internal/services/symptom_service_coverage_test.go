@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -29,15 +30,15 @@ type symptomserviceCovRepo struct {
 	createErr  error
 }
 
-func (r *symptomserviceCovRepo) CountBuiltinByUser(uint) (int64, error) {
+func (r *symptomserviceCovRepo) CountBuiltinByUser(context.Context, uint) (int64, error) {
 	return r.countBuiltinCnt, r.countBuiltinErr
 }
 
-func (r *symptomserviceCovRepo) CountByUserAndIDs(uint, []uint) (int64, error) {
+func (r *symptomserviceCovRepo) CountByUserAndIDs(context.Context, uint, []uint) (int64, error) {
 	return r.countByIDs, r.countByIDsErr
 }
 
-func (r *symptomserviceCovRepo) ListByUser(uint) ([]models.SymptomType, error) {
+func (r *symptomserviceCovRepo) ListByUser(context.Context, uint) ([]models.SymptomType, error) {
 	if r.listErr != nil {
 		return nil, r.listErr
 	}
@@ -46,7 +47,7 @@ func (r *symptomserviceCovRepo) ListByUser(uint) ([]models.SymptomType, error) {
 	return result, nil
 }
 
-func (r *symptomserviceCovRepo) Create(symptom *models.SymptomType) error {
+func (r *symptomserviceCovRepo) Create(ctx context.Context, symptom *models.SymptomType) error {
 	if r.createErr != nil {
 		return r.createErr
 	}
@@ -54,7 +55,7 @@ func (r *symptomserviceCovRepo) Create(symptom *models.SymptomType) error {
 	return nil
 }
 
-func (r *symptomserviceCovRepo) CreateBatch(symptoms []models.SymptomType) error {
+func (r *symptomserviceCovRepo) CreateBatch(ctx context.Context, symptoms []models.SymptomType) error {
 	if r.createBatchErr != nil {
 		return r.createBatchErr
 	}
@@ -62,14 +63,14 @@ func (r *symptomserviceCovRepo) CreateBatch(symptoms []models.SymptomType) error
 	return nil
 }
 
-func (r *symptomserviceCovRepo) FindByIDForUser(uint, uint) (models.SymptomType, error) {
+func (r *symptomserviceCovRepo) FindByIDForUser(context.Context, uint, uint) (models.SymptomType, error) {
 	if r.findErr != nil {
 		return models.SymptomType{}, r.findErr
 	}
 	return r.findResult, nil
 }
 
-func (r *symptomserviceCovRepo) Update(symptom *models.SymptomType) error {
+func (r *symptomserviceCovRepo) Update(ctx context.Context, symptom *models.SymptomType) error {
 	if r.updateErr != nil {
 		return r.updateErr
 	}
@@ -100,7 +101,7 @@ func TestSymptomServiceCovFrequenciesSortsByCountDescending(t *testing.T) {
 		{SymptomIDs: []uint{10, 20}},
 	}
 
-	result, err := service.CalculateFrequencies(99, logs)
+	result, err := service.CalculateFrequencies(context.Background(), 99, logs)
 	if err != nil {
 		t.Fatalf("CalculateFrequencies() unexpected error: %v", err)
 	}
@@ -141,7 +142,7 @@ func TestSymptomServiceCovFrequenciesTiebreakAlphabetical(t *testing.T) {
 		{SymptomIDs: []uint{1, 2, 3}},
 	}
 
-	result, err := service.CalculateFrequencies(99, logs)
+	result, err := service.CalculateFrequencies(context.Background(), 99, logs)
 	if err != nil {
 		t.Fatalf("CalculateFrequencies() unexpected error: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestSymptomServiceCovValidateSymptomIDsSortedAscending(t *testing.T) {
 	repo := &symptomserviceCovRepo{countByIDs: 5}
 	service := NewSymptomService(repo)
 
-	ids, err := service.ValidateSymptomIDs(10, []uint{50, 10, 40, 20, 30})
+	ids, err := service.ValidateSymptomIDs(context.Background(), 10, []uint{50, 10, 40, 20, 30})
 	if err != nil {
 		t.Fatalf("ValidateSymptomIDs() unexpected error: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestSymptomServiceCovUpdateDoesNotConflictWithSelf(t *testing.T) {
 	}
 	service := NewSymptomService(repo)
 
-	symptom, err := service.UpdateSymptomForUser(5, 42, "Joint stiffness", "A", "#123456")
+	symptom, err := service.UpdateSymptomForUser(context.Background(), 5, 42, "Joint stiffness", "A", "#123456")
 	if err != nil {
 		t.Fatalf("UpdateSymptomForUser() should succeed when renaming to same name, got: %v", err)
 	}
@@ -237,7 +238,7 @@ func TestSymptomServiceCovExcludeIDZeroDoesNotSkipAnySymptom(t *testing.T) {
 	}
 	service := NewSymptomService(repo)
 
-	_, err := service.CreateSymptomForUser(7, "Migraine", "A", "#aabbcc")
+	_, err := service.CreateSymptomForUser(context.Background(), 7, "Migraine", "A", "#aabbcc")
 	if !errors.Is(err, ErrSymptomNameAlreadyExists) {
 		t.Fatalf("expected ErrSymptomNameAlreadyExists for duplicate name with ID=0 entry, got %v", err)
 	}
@@ -312,7 +313,7 @@ func TestSymptomServiceCovSeedBuiltinSymptomsReturnsCountError(t *testing.T) {
 	repo := &symptomserviceCovRepo{countBuiltinErr: sentinel}
 	service := NewSymptomService(repo)
 
-	if err := service.SeedBuiltinSymptoms(99); !errors.Is(err, sentinel) {
+	if err := service.SeedBuiltinSymptoms(context.Background(), 99); !errors.Is(err, sentinel) {
 		t.Fatalf("expected db failure error, got %v", err)
 	}
 }
@@ -324,7 +325,7 @@ func TestSymptomServiceCovSeedBuiltinSymptomsSkipsWhenAlreadySeeded(t *testing.T
 	repo := &symptomserviceCovRepo{countBuiltinCnt: 5}
 	service := NewSymptomService(repo)
 
-	if err := service.SeedBuiltinSymptoms(99); err != nil {
+	if err := service.SeedBuiltinSymptoms(context.Background(), 99); err != nil {
 		t.Fatalf("SeedBuiltinSymptoms() unexpected error: %v", err)
 	}
 	if repo.batchCreated {

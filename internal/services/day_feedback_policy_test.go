@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func TestResolveDayFeedbackUsesSelfCareMessageForEarlyPeriodDays(t *testing.T) {
 	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
 	logs.entries["2026-03-02"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-02"), IsPeriod: true}
 
-	state, err := service.ResolveDayFeedback(&models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-02"), mustParseDayFeedbackDate(t, "2026-03-02"), time.UTC)
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-02"), mustParseDayFeedbackDate(t, "2026-03-02"), time.UTC)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
 	}
@@ -33,7 +34,7 @@ func TestResolveDayFeedbackUsesFertileMessageDuringFertilityWindow(t *testing.T)
 	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
 	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
 
-	state, err := service.ResolveDayFeedback(&models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-12"), mustParseDayFeedbackDate(t, "2026-03-12"), time.UTC)
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-12"), mustParseDayFeedbackDate(t, "2026-03-12"), time.UTC)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
 	}
@@ -50,7 +51,7 @@ func TestResolveDayFeedbackReturnsNeutralMessageForUnpredictableCycle(t *testing
 	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
 	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
 
-	state, err := service.ResolveDayFeedback(&models.User{ID: 10, UnpredictableCycle: true}, mustParseDayFeedbackDate(t, "2026-03-12"), mustParseDayFeedbackDate(t, "2026-03-12"), time.UTC)
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10, UnpredictableCycle: true}, mustParseDayFeedbackDate(t, "2026-03-12"), mustParseDayFeedbackDate(t, "2026-03-12"), time.UTC)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestResolveDayFeedbackShowsSpottingWarningOnCycleStart(t *testing.T) {
 		Flow:     models.FlowSpotting,
 	}
 
-	state, err := service.ResolveDayFeedback(&models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-01"), mustParseDayFeedbackDate(t, "2026-03-01"), time.UTC)
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-01"), mustParseDayFeedbackDate(t, "2026-03-01"), time.UTC)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestResolveDayFeedbackShowsSpottingWarningForLocalCycleStart(t *testing.T) 
 		Flow:     models.FlowSpotting,
 	}
 
-	state, err := service.ResolveDayFeedback(&models.User{ID: 10}, day, day, location)
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, day, day, location)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestResolveDayFeedbackShowsLongPeriodWarningOnlyOncePerCycle(t *testing.T) 
 		}
 	}
 
-	state, err := service.ResolveDayFeedback(&models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-09"), mustParseDayFeedbackDate(t, "2026-03-09"), time.UTC)
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-09"), mustParseDayFeedbackDate(t, "2026-03-09"), time.UTC)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestResolveDayFeedbackShowsLongPeriodWarningOnlyOncePerCycle(t *testing.T) 
 		t.Fatalf("expected long-period cycle start 2026-03-01, got %s", got)
 	}
 
-	warnedState, err := service.ResolveDayFeedback(&models.User{ID: 10, LongPeriodWarnedAt: ptrDayFeedbackTime(cycleStart)}, mustParseDayFeedbackDate(t, "2026-03-09"), mustParseDayFeedbackDate(t, "2026-03-09"), time.UTC)
+	warnedState, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10, LongPeriodWarnedAt: ptrDayFeedbackTime(cycleStart)}, mustParseDayFeedbackDate(t, "2026-03-09"), mustParseDayFeedbackDate(t, "2026-03-09"), time.UTC)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error after warning acknowledgement: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestAcknowledgeLongPeriodWarningPersistsCycleStart(t *testing.T) {
 	service := NewDayService(newDayLogRepositoryStub(), users)
 	cycleStart := mustParseDayFeedbackDate(t, "2026-03-01")
 
-	if err := service.AcknowledgeLongPeriodWarning(10, cycleStart, time.UTC); err != nil {
+	if err := service.AcknowledgeLongPeriodWarning(context.Background(), 10, cycleStart, time.UTC); err != nil {
 		t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
 	}
 	if users.settings.LongPeriodWarnedAt == nil {

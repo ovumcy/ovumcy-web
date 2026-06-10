@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -15,16 +16,16 @@ func NewDailyLogRepository(database *gorm.DB) *DailyLogRepository {
 	return &DailyLogRepository{database: database}
 }
 
-func (repo *DailyLogRepository) ListByUser(userID uint) ([]models.DailyLog, error) {
+func (repo *DailyLogRepository) ListByUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
 	logs := make([]models.DailyLog, 0)
-	if err := repo.database.Where("user_id = ?", userID).Order("date ASC, id ASC").Find(&logs).Error; err != nil {
+	if err := repo.database.WithContext(ctx).Where("user_id = ?", userID).Order("date ASC, id ASC").Find(&logs).Error; err != nil {
 		return nil, err
 	}
 	return logs, nil
 }
 
-func (repo *DailyLogRepository) ListByUserRange(userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error) {
-	query := repo.database.Model(&models.DailyLog{}).Where("user_id = ?", userID)
+func (repo *DailyLogRepository) ListByUserRange(ctx context.Context, userID uint, fromStart *time.Time, toEnd *time.Time) ([]models.DailyLog, error) {
+	query := repo.database.WithContext(ctx).Model(&models.DailyLog{}).Where("user_id = ?", userID)
 	if fromStart != nil {
 		query = query.Where("date >= ?", *fromStart)
 	}
@@ -39,9 +40,9 @@ func (repo *DailyLogRepository) ListByUserRange(userID uint, fromStart *time.Tim
 	return logs, nil
 }
 
-func (repo *DailyLogRepository) ListByUserDayRange(userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error) {
+func (repo *DailyLogRepository) ListByUserDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error) {
 	logs := make([]models.DailyLog, 0)
-	if err := repo.database.
+	if err := repo.database.WithContext(ctx).
 		Where("user_id = ? AND date >= ? AND date < ?", userID, dayStart, dayEnd).
 		Order("date DESC, id DESC").
 		Find(&logs).Error; err != nil {
@@ -50,9 +51,9 @@ func (repo *DailyLogRepository) ListByUserDayRange(userID uint, dayStart time.Ti
 	return logs, nil
 }
 
-func (repo *DailyLogRepository) ListPeriodDays(userID uint) ([]models.DailyLog, error) {
+func (repo *DailyLogRepository) ListPeriodDays(ctx context.Context, userID uint) ([]models.DailyLog, error) {
 	logs := make([]models.DailyLog, 0)
-	if err := repo.database.
+	if err := repo.database.WithContext(ctx).
 		Select("date", "is_period", "cycle_start", "is_uncertain").
 		Where("user_id = ? AND is_period = ?", userID, true).
 		Order("date ASC").
@@ -62,9 +63,9 @@ func (repo *DailyLogRepository) ListPeriodDays(userID uint) ([]models.DailyLog, 
 	return logs, nil
 }
 
-func (repo *DailyLogRepository) FindByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
+func (repo *DailyLogRepository) FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error) {
 	entry := models.DailyLog{}
-	result := repo.database.
+	result := repo.database.WithContext(ctx).
 		Select(
 			"id",
 			"user_id",
@@ -97,27 +98,27 @@ func (repo *DailyLogRepository) FindByUserAndDayRange(userID uint, dayStart time
 	return entry, true, nil
 }
 
-func (repo *DailyLogRepository) Create(entry *models.DailyLog) error {
-	return repo.database.Create(entry).Error
+func (repo *DailyLogRepository) Create(ctx context.Context, entry *models.DailyLog) error {
+	return repo.database.WithContext(ctx).Create(entry).Error
 }
 
-func (repo *DailyLogRepository) Save(entry *models.DailyLog) error {
-	return repo.database.Save(entry).Error
+func (repo *DailyLogRepository) Save(ctx context.Context, entry *models.DailyLog) error {
+	return repo.database.WithContext(ctx).Save(entry).Error
 }
 
-func (repo *DailyLogRepository) DeleteByUserAndDayRange(userID uint, dayStart time.Time, dayEnd time.Time) error {
-	return repo.database.Where("user_id = ? AND date >= ? AND date < ?", userID, dayStart, dayEnd).Delete(&models.DailyLog{}).Error
+func (repo *DailyLogRepository) DeleteByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) error {
+	return repo.database.WithContext(ctx).Where("user_id = ? AND date >= ? AND date < ?", userID, dayStart, dayEnd).Delete(&models.DailyLog{}).Error
 }
 
-func (repo *DailyLogRepository) UpdateSymptomIDs(entry *models.DailyLog) error {
-	return repo.database.Model(entry).Select("symptom_ids").Updates(entry).Error
+func (repo *DailyLogRepository) UpdateSymptomIDs(ctx context.Context, entry *models.DailyLog) error {
+	return repo.database.WithContext(ctx).Model(entry).Select("symptom_ids").Updates(entry).Error
 }
 
 // WithinTransaction runs fn against a transaction-scoped repository bound to a
 // single DB transaction. The provided repository must be used for all reads and
 // writes inside fn so they commit or roll back atomically.
-func (repo *DailyLogRepository) WithinTransaction(fn func(*DailyLogRepository) error) error {
-	return repo.database.Transaction(func(tx *gorm.DB) error {
+func (repo *DailyLogRepository) WithinTransaction(ctx context.Context, fn func(*DailyLogRepository) error) error {
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return fn(&DailyLogRepository{database: tx})
 	})
 }

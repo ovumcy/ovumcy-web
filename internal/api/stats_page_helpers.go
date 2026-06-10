@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -119,13 +120,14 @@ func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsB
 	return fmt.Sprintf(pattern, readingsCount, chart.Baseline, unit)
 }
 
-func (handler *Handler) buildStatsPageData(user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
+func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
 	cycleLabelPattern := translateMessage(messages, "stats.cycle_label")
 	if cycleLabelPattern == "stats.cycle_label" {
 		cycleLabelPattern = ""
 	}
 
 	viewData, err := handler.statsService.BuildStatsPageViewData(
+		ctx,
 		user,
 		language,
 		cycleLabelPattern,

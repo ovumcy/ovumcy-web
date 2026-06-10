@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ type stubExportDayReader struct {
 	err  error
 }
 
-func (stub *stubExportDayReader) FetchLogsForOptionalRange(uint, *time.Time, *time.Time, *time.Location) ([]models.DailyLog, error) {
+func (stub *stubExportDayReader) FetchLogsForOptionalRange(context.Context, uint, *time.Time, *time.Time, *time.Location) ([]models.DailyLog, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -27,7 +28,7 @@ type stubExportSymptomReader struct {
 	err      error
 }
 
-func (stub *stubExportSymptomReader) FetchSymptoms(uint) ([]models.SymptomType, error) {
+func (stub *stubExportSymptomReader) FetchSymptoms(context.Context, uint) ([]models.SymptomType, error) {
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -48,7 +49,7 @@ func TestExportBuildSummaryUsesDateBounds(t *testing.T) {
 		&stubExportSymptomReader{},
 	)
 
-	summary, err := service.BuildSummary(42, nil, nil, time.UTC)
+	summary, err := service.BuildSummary(context.Background(), 42, nil, nil, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSummary() unexpected error: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestExportBuildSummaryUsesDateBounds(t *testing.T) {
 
 func TestExportBuildSummaryReturnsEmptyForNoLogs(t *testing.T) {
 	service := NewExportService(&stubExportDayReader{logs: []models.DailyLog{}}, &stubExportSymptomReader{})
-	summary, err := service.BuildSummary(42, nil, nil, time.UTC)
+	summary, err := service.BuildSummary(context.Background(), 42, nil, nil, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildSummary() unexpected error: %v", err)
 	}
@@ -110,7 +111,7 @@ func TestExportBuildJSONEntriesNormalizesFlowAndMapsSymptoms(t *testing.T) {
 		},
 	)
 
-	entries, err := service.BuildJSONEntries(42, nil, nil, time.UTC)
+	entries, err := service.BuildJSONEntries(context.Background(), 42, nil, nil, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildJSONEntries() unexpected error: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 		},
 	)
 
-	rows, err := service.BuildCSVRows(42, nil, nil, time.UTC)
+	rows, err := service.BuildCSVRows(context.Background(), 42, nil, nil, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCSVRows() unexpected error: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestExportBuildCSVRowsNeutralizesFormulaLikeCells(t *testing.T) {
 		},
 	)
 
-	rows, err := service.BuildCSVRows(42, nil, nil, time.UTC)
+	rows, err := service.BuildCSVRows(context.Background(), 42, nil, nil, time.UTC)
 	if err != nil {
 		t.Fatalf("BuildCSVRows() unexpected error: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestExportServicePropagatesDependencyErrors(t *testing.T) {
 		&stubExportDayReader{err: errors.New("load failed")},
 		&stubExportSymptomReader{},
 	)
-	if _, err := dayErrService.BuildSummary(1, nil, nil, time.UTC); err == nil {
+	if _, err := dayErrService.BuildSummary(context.Background(), 1, nil, nil, time.UTC); err == nil {
 		t.Fatalf("expected summary error when day reader fails")
 	}
 
@@ -222,7 +223,7 @@ func TestExportServicePropagatesDependencyErrors(t *testing.T) {
 		&stubExportDayReader{logs: []models.DailyLog{{Date: mustParseExportDay(t, "2026-02-18")}}},
 		&stubExportSymptomReader{err: errors.New("symptom load failed")},
 	)
-	if _, err := symptomErrService.BuildJSONEntries(1, nil, nil, time.UTC); err == nil {
+	if _, err := symptomErrService.BuildJSONEntries(context.Background(), 1, nil, nil, time.UTC); err == nil {
 		t.Fatalf("expected json entries error when symptom reader fails")
 	}
 }

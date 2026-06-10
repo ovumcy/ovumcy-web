@@ -10,6 +10,7 @@ package services
 // to avoid symbol collisions when merged with other agents' files.
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func totpserviceCovEnroll(t *testing.T, svc *TOTPService, repo *stubTOTPUserRepo
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	if err := svc.EnableTOTP(userID, key.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), userID, key.Secret()); err != nil {
 		t.Fatalf("EnableTOTP(%d): %v", userID, err)
 	}
 	return key.Secret(), repo.updatedSecret
@@ -62,7 +63,7 @@ func TestTOTPService_findValidatedTOTPStep_BackwardSkew(t *testing.T) {
 		t.Fatalf("GenerateCode (past): %v", err)
 	}
 
-	valid, err := svc.ValidateCode(10, encryptedSecret, pastCode)
+	valid, err := svc.ValidateCode(context.Background(), 10, encryptedSecret, pastCode)
 	if err != nil {
 		t.Fatalf("ValidateCode with past-step code: %v", err)
 	}
@@ -85,7 +86,7 @@ func TestTOTPService_findValidatedTOTPStep_ForwardSkew(t *testing.T) {
 		t.Fatalf("GenerateCode (future): %v", err)
 	}
 
-	valid, err := svc.ValidateCode(11, encryptedSecret, futureCode)
+	valid, err := svc.ValidateCode(context.Background(), 11, encryptedSecret, futureCode)
 	if err != nil {
 		t.Fatalf("ValidateCode with future-step code: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestTOTPService_findValidatedTOTPStep_PastCodeClaimsPastStep(t *testing.T) 
 		t.Fatalf("GenerateCode (past step %d): %v", expectedStep, err)
 	}
 
-	valid, err := svc.ValidateCode(20, encryptedSecret, pastCode)
+	valid, err := svc.ValidateCode(context.Background(), 20, encryptedSecret, pastCode)
 	if err != nil {
 		t.Fatalf("ValidateCode with past-step code: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestTOTPService_findValidatedTOTPStep_FutureCodeClaimsFutureStep(t *testing
 		t.Fatalf("GenerateCode (future step %d): %v", expectedStep, err)
 	}
 
-	valid, err := svc.ValidateCode(21, encryptedSecret, futureCode)
+	valid, err := svc.ValidateCode(context.Background(), 21, encryptedSecret, futureCode)
 	if err != nil {
 		t.Fatalf("ValidateCode with future-step code: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestTOTPService_findValidatedTOTPStep_WrongCodeRejected(t *testing.T) {
 		t.Skip("all 6-digit codes happen to be valid (astronomically unlikely)")
 	}
 
-	valid, err := svc.ValidateCode(30, encryptedSecret, wrongCode)
+	valid, err := svc.ValidateCode(context.Background(), 30, encryptedSecret, wrongCode)
 	if err != nil {
 		t.Fatalf("ValidateCode with wrong code returned unexpected error: %v", err)
 	}

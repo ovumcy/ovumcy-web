@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -9,8 +10,8 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) buildDashboardViewData(user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
-	viewData, err := handler.dashboardViewService.BuildDashboardViewData(user, language, now, location)
+func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
+	viewData, err := handler.dashboardViewService.BuildDashboardViewData(ctx, user, language, now, location)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +97,8 @@ func (handler *Handler) buildDashboardViewData(user *models.User, language strin
 	return data, nil
 }
 
-func (handler *Handler) buildDayEditorPartialData(user *models.User, language string, messages map[string]string, day time.Time, now time.Time, location *time.Location, editMode bool) (fiber.Map, error) {
-	viewData, err := handler.dashboardViewService.BuildDayEditorViewData(user, language, day, now, location)
+func (handler *Handler) buildDayEditorPartialData(ctx context.Context, user *models.User, language string, messages map[string]string, day time.Time, now time.Time, location *time.Location, editMode bool) (fiber.Map, error) {
+	viewData, err := handler.dashboardViewService.BuildDayEditorViewData(ctx, user, language, day, now, location)
 	if err != nil {
 		return nil, err
 	}

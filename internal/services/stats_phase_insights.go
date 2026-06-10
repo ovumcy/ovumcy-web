@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"sort"
 	"time"
 
@@ -172,12 +173,12 @@ func (service *StatsService) BuildPhaseMoodInsights(user *models.User, logs []mo
 	return insights, hasData
 }
 
-func (service *StatsService) BuildPhaseSymptomInsights(user *models.User, logs []models.DailyLog, location *time.Location) ([]StatsPhaseSymptomInsight, bool, error) {
+func (service *StatsService) BuildPhaseSymptomInsights(ctx context.Context, user *models.User, logs []models.DailyLog, location *time.Location) ([]StatsPhaseSymptomInsight, bool, error) {
 	if !canBuildPhaseSymptomInsights(service, user) {
 		return nil, false, nil
 	}
 
-	symptomByID, err := service.phaseInsightSymptomMap(user.ID)
+	symptomByID, err := service.phaseInsightSymptomMap(ctx, user.ID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -200,8 +201,8 @@ func buildPhaseSymptomInsightsWithMap(logs []models.DailyLog, location *time.Loc
 	return buildPhaseSymptomInsightResults(counters, symptomByID), hasPhaseSymptomInsightData(counters)
 }
 
-func (service *StatsService) phaseInsightSymptomMap(userID uint) (map[uint]models.SymptomType, error) {
-	symptoms, err := service.symptoms.FetchSymptoms(userID)
+func (service *StatsService) phaseInsightSymptomMap(ctx context.Context, userID uint) (map[uint]models.SymptomType, error) {
+	symptoms, err := service.symptoms.FetchSymptoms(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

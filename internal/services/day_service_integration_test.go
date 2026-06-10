@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -76,7 +77,7 @@ func assertDayServiceFetchLogByDateFindsZuluStoredRowForLocalCalendarDay(t *test
 		t.Fatalf("parse day: %v", err)
 	}
 
-	entry, err := service.FetchLogByDate(user.ID, day, moscow)
+	entry, err := service.FetchLogByDate(context.Background(), user.ID, day, moscow)
 	if err != nil {
 		t.Fatalf("FetchLogByDate: %v", err)
 	}
@@ -139,7 +140,7 @@ func TestDayServiceFetchLogByDateIgnoresUTCShiftedRowForLocalCalendarDay(t *test
 		t.Fatalf("parse day: %v", err)
 	}
 
-	entry, err := service.FetchLogByDate(user.ID, day, moscow)
+	entry, err := service.FetchLogByDate(context.Background(), user.ID, day, moscow)
 	if err != nil {
 		t.Fatalf("FetchLogByDate: %v", err)
 	}
@@ -177,7 +178,7 @@ func TestDayServiceFetchLogsForUserExcludesUTCShiftedRowForLocalDayRange(t *test
 	}
 	to := from
 
-	logs, err := service.FetchLogsForUser(user.ID, from, to, moscow)
+	logs, err := service.FetchLogsForUser(context.Background(), user.ID, from, to, moscow)
 	if err != nil {
 		t.Fatalf("FetchLogsForUser: %v", err)
 	}
@@ -191,7 +192,7 @@ func TestDayServiceDayHasDataForDate(t *testing.T) {
 	user := createDayServiceTestUser(t, database, "day-has-data-service@example.com")
 
 	day := time.Date(2026, time.February, 18, 0, 0, 0, 0, time.UTC)
-	hasData, err := service.DayHasDataForDate(user.ID, day, time.UTC)
+	hasData, err := service.DayHasDataForDate(context.Background(), user.ID, day, time.UTC)
 	if err != nil {
 		t.Fatalf("DayHasDataForDate returned error: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestDayServiceDayHasDataForDate(t *testing.T) {
 		t.Fatalf("create log: %v", err)
 	}
 
-	hasData, err = service.DayHasDataForDate(user.ID, day, time.UTC)
+	hasData, err = service.DayHasDataForDate(context.Background(), user.ID, day, time.UTC)
 	if err != nil {
 		t.Fatalf("DayHasDataForDate returned error: %v", err)
 	}
@@ -243,7 +244,7 @@ func TestDayServiceMarkCycleStartManuallyPreservesEntryAndMarksExplicitStart(t *
 		t.Fatalf("create log: %v", err)
 	}
 
-	if err := service.MarkCycleStartManually(user.ID, targetDay, targetDay, time.UTC, ManualCycleStartOptions{}); err != nil {
+	if err := service.MarkCycleStartManually(context.Background(), user.ID, targetDay, targetDay, time.UTC, ManualCycleStartOptions{}); err != nil {
 		t.Fatalf("MarkCycleStartManually returned error: %v", err)
 	}
 
@@ -293,7 +294,7 @@ func TestDayServiceMarkCycleStartManuallyClearsPreviousExplicitStart(t *testing.
 		t.Fatalf("create logs: %v", err)
 	}
 
-	if err := service.MarkCycleStartManually(user.ID, earlierDay, laterDay, time.UTC, ManualCycleStartOptions{ReplaceExisting: true}); err != nil {
+	if err := service.MarkCycleStartManually(context.Background(), user.ID, earlierDay, laterDay, time.UTC, ManualCycleStartOptions{ReplaceExisting: true}); err != nil {
 		t.Fatalf("MarkCycleStartManually returned error: %v", err)
 	}
 

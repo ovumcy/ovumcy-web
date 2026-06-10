@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestTOTPService_ValidateCode_RejectsCiphertextFromAnotherUser(t *testing.T)
 	if err != nil {
 		t.Fatalf("GenerateSetupKey user 1: %v", err)
 	}
-	if err := svc.EnableTOTP(1, keyOne.Secret()); err != nil {
+	if err := svc.EnableTOTP(context.Background(), 1, keyOne.Secret()); err != nil {
 		t.Fatalf("EnableTOTP user 1: %v", err)
 	}
 	user1Ciphertext := repo.updatedSecret
@@ -48,7 +49,7 @@ func TestTOTPService_ValidateCode_RejectsCiphertextFromAnotherUser(t *testing.T)
 	}
 
 	// Validating user 1 with user 1's ciphertext + user 1's code succeeds.
-	if valid, err := svc.ValidateCode(1, user1Ciphertext, user1Code); err != nil || !valid {
+	if valid, err := svc.ValidateCode(context.Background(), 1, user1Ciphertext, user1Code); err != nil || !valid {
 		t.Fatalf("baseline: ValidateCode(1, user1Ciphertext, user1Code) = (%v, %v), want (true, nil)", valid, err)
 	}
 
@@ -62,7 +63,7 @@ func TestTOTPService_ValidateCode_RejectsCiphertextFromAnotherUser(t *testing.T)
 	if err != nil {
 		t.Fatalf("GenerateCode user 1 fresh: %v", err)
 	}
-	valid, err := svc.ValidateCode(2, user1Ciphertext, user1FreshCode)
+	valid, err := svc.ValidateCode(context.Background(), 2, user1Ciphertext, user1FreshCode)
 	if err == nil {
 		t.Fatal("ValidateCode(2, user1Ciphertext, ...) must return a decrypt error after the aad swap is rejected")
 	}
@@ -89,7 +90,7 @@ func TestTOTPService_ValidateCode_LegacyCiphertextReencrypts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateCode: %v", err)
 	}
-	valid, err := svc.ValidateCode(42, legacy, code)
+	valid, err := svc.ValidateCode(context.Background(), 42, legacy, code)
 	if err != nil {
 		t.Fatalf("ValidateCode on legacy ciphertext: %v", err)
 	}

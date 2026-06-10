@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -19,21 +20,21 @@ type stubOperatorUserRepo struct {
 	deleteWasCalled bool
 }
 
-func (stub *stubOperatorUserRepo) ListOperatorUserSummaries() ([]models.OperatorUserSummary, error) {
+func (stub *stubOperatorUserRepo) ListOperatorUserSummaries(context.Context) ([]models.OperatorUserSummary, error) {
 	if stub.listErr != nil {
 		return nil, stub.listErr
 	}
 	return stub.listUsers, nil
 }
 
-func (stub *stubOperatorUserRepo) FindByNormalizedEmailOptional(string) (models.User, bool, error) {
+func (stub *stubOperatorUserRepo) FindByNormalizedEmailOptional(context.Context, string) (models.User, bool, error) {
 	if stub.findErr != nil {
 		return models.User{}, false, stub.findErr
 	}
 	return stub.user, stub.found, nil
 }
 
-func (stub *stubOperatorUserRepo) DeleteAccountAndRelatedData(userID uint) error {
+func (stub *stubOperatorUserRepo) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
 	stub.deleteWasCalled = true
 	stub.deletedUserID = userID
 	return stub.deleteErr
@@ -48,7 +49,7 @@ func TestOperatorUserServiceListUsers(t *testing.T) {
 		},
 	})
 
-	users, err := service.ListUsers()
+	users, err := service.ListUsers(context.Background())
 	if err != nil {
 		t.Fatalf("ListUsers() unexpected error: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestOperatorUserServiceGetUserByEmailNormalizesInput(t *testing.T) {
 		found: true,
 	})
 
-	user, err := service.GetUserByEmail(" Owner@Example.com ")
+	user, err := service.GetUserByEmail(context.Background(), " Owner@Example.com ")
 	if err != nil {
 		t.Fatalf("GetUserByEmail() unexpected error: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestOperatorUserServiceDeleteUserByEmail(t *testing.T) {
 	}
 	service := NewOperatorUserService(repo)
 
-	user, err := service.DeleteUserByEmail("owner@example.com")
+	user, err := service.DeleteUserByEmail(context.Background(), "owner@example.com")
 	if err != nil {
 		t.Fatalf("DeleteUserByEmail() unexpected error: %v", err)
 	}
@@ -136,9 +137,9 @@ func TestOperatorUserServiceDeleteUserByEmailErrors(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			service := NewOperatorUserService(testCase.repo)
-			_, err := service.DeleteUserByEmail("not-an-email")
+			_, err := service.DeleteUserByEmail(context.Background(), "not-an-email")
 			if testCase.name != "invalid email" {
-				_, err = service.DeleteUserByEmail("owner@example.com")
+				_, err = service.DeleteUserByEmail(context.Background(), "owner@example.com")
 			}
 			if !errors.Is(err, testCase.err) {
 				t.Fatalf("expected error %v, got %v", testCase.err, err)

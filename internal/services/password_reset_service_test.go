@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func TestPasswordResetServiceStartRecoveryRateLimited(t *testing.T) {
 		service.recoveryPolicy.AddFailure(secretKey, key, "owner@example.com", now.Add(-1*time.Minute))
 	}
 
-	_, err := service.StartRecovery(secretKey, key, "owner@example.com", "OVUM-ABCD-2345-EFGH", now, 30*time.Minute)
+	_, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", "OVUM-ABCD-2345-EFGH", now, 30*time.Minute)
 	if !errors.Is(err, ErrPasswordRecoveryRateLimited) {
 		t.Fatalf("expected ErrPasswordRecoveryRateLimited, got %v", err)
 	}
@@ -39,7 +40,7 @@ func TestPasswordResetServiceStartRecoveryInvalidEmailAddsFailure(t *testing.T) 
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	key := "127.0.0.1"
 
-	_, err := service.StartRecovery(secretKey, key, "invalid-email", "OVUM-ABCD-2345-EFGH", now, 30*time.Minute)
+	_, err := service.StartRecovery(context.Background(), secretKey, key, "invalid-email", "OVUM-ABCD-2345-EFGH", now, 30*time.Minute)
 	if !errors.Is(err, ErrPasswordRecoveryInputInvalid) {
 		t.Fatalf("expected ErrPasswordRecoveryInputInvalid, got %v", err)
 	}
@@ -59,7 +60,7 @@ func TestPasswordResetServiceStartRecoveryInvalidCodeAddsFailure(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	key := "127.0.0.1"
 
-	_, err := service.StartRecovery(secretKey, key, "owner@example.com", "invalid", now, 30*time.Minute)
+	_, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", "invalid", now, 30*time.Minute)
 	if !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
 		t.Fatalf("expected ErrPasswordRecoveryCodeInvalid, got %v", err)
 	}
@@ -78,13 +79,13 @@ func TestPasswordResetServiceStartRecoveryRateLimitsByIdentityAcrossIPs(t *testi
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	code := "invalid"
 
-	if _, err := service.StartRecovery(secretKey, "10.0.0.1", "owner@example.com", code, now, 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
+	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.1", "owner@example.com", code, now, 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
 		t.Fatalf("expected invalid recovery code on first attempt, got %v", err)
 	}
-	if _, err := service.StartRecovery(secretKey, "10.0.0.2", "owner@example.com", code, now.Add(time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
+	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.2", "owner@example.com", code, now.Add(time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
 		t.Fatalf("expected invalid recovery code on second attempt, got %v", err)
 	}
-	if _, err := service.StartRecovery(secretKey, "10.0.0.3", "owner@example.com", code, now.Add(2*time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryRateLimited) {
+	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.3", "owner@example.com", code, now.Add(2*time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryRateLimited) {
 		t.Fatalf("expected ErrPasswordRecoveryRateLimited after distributed attempts, got %v", err)
 	}
 }
@@ -119,7 +120,7 @@ func TestPasswordResetServiceStartRecoverySuccessResetsLimiter(t *testing.T) {
 	key := "127.0.0.1"
 	service.recoveryPolicy.AddFailure(secretKey, key, "owner@example.com", now.Add(-1*time.Minute))
 
-	token, err := service.StartRecovery(secretKey, key, "owner@example.com", recoveryCode, now, 30*time.Minute)
+	token, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", recoveryCode, now, 30*time.Minute)
 	if err != nil {
 		t.Fatalf("StartRecovery() unexpected error: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 		t.Fatalf("BuildPasswordResetToken() unexpected error: %v", err)
 	}
 
-	user, recoveryCode, err := service.CompleteReset(secret, token, "EvenStronger2", "EvenStronger2", now.Add(1*time.Minute))
+	user, recoveryCode, err := service.CompleteReset(context.Background(), secret, token, "EvenStronger2", "EvenStronger2", now.Add(1*time.Minute))
 	if err != nil {
 		t.Fatalf("CompleteReset() unexpected error: %v", err)
 	}

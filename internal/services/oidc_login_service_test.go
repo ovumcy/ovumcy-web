@@ -58,7 +58,7 @@ type stubOIDCIdentityStore struct {
 	createCallSeen bool
 }
 
-func (stub *stubOIDCIdentityStore) FindByIssuerSubject(string, string) (models.OIDCIdentity, bool, error) {
+func (stub *stubOIDCIdentityStore) FindByIssuerSubject(context.Context, string, string) (models.OIDCIdentity, bool, error) {
 	if stub.findErr != nil {
 		return models.OIDCIdentity{}, false, stub.findErr
 	}
@@ -68,7 +68,7 @@ func (stub *stubOIDCIdentityStore) FindByIssuerSubject(string, string) (models.O
 	return stub.identity, true, nil
 }
 
-func (stub *stubOIDCIdentityStore) Create(identity *models.OIDCIdentity) error {
+func (stub *stubOIDCIdentityStore) Create(ctx context.Context, identity *models.OIDCIdentity) error {
 	stub.createCallSeen = true
 	if identity != nil {
 		stub.created = *identity
@@ -76,7 +76,7 @@ func (stub *stubOIDCIdentityStore) Create(identity *models.OIDCIdentity) error {
 	return stub.createErr
 }
 
-func (stub *stubOIDCIdentityStore) TouchLastUsed(identityID uint, usedAt time.Time) error {
+func (stub *stubOIDCIdentityStore) TouchLastUsed(ctx context.Context, identityID uint, usedAt time.Time) error {
 	stub.touchedID = identityID
 	stub.touchedAt = usedAt
 	return nil
@@ -98,7 +98,7 @@ type stubOIDCAutoProvisioner struct {
 	email  string
 }
 
-func (stub *stubOIDCAutoProvisioner) AutoProvisionOwnerAccount(email string, _ time.Time) (models.User, error) {
+func (stub *stubOIDCAutoProvisioner) AutoProvisionOwnerAccount(ctx context.Context, email string, _ time.Time) (models.User, error) {
 	stub.called = true
 	stub.email = email
 	if stub.err != nil {
@@ -107,14 +107,14 @@ func (stub *stubOIDCAutoProvisioner) AutoProvisionOwnerAccount(email string, _ t
 	return stub.user, nil
 }
 
-func (stub *stubOIDCUserStore) FindByID(uint) (models.User, error) {
+func (stub *stubOIDCUserStore) FindByID(context.Context, uint) (models.User, error) {
 	if stub.byIDErr != nil {
 		return models.User{}, stub.byIDErr
 	}
 	return stub.byID, nil
 }
 
-func (stub *stubOIDCUserStore) FindByNormalizedEmailOptional(email string) (models.User, bool, error) {
+func (stub *stubOIDCUserStore) FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error) {
 	stub.lastLookupEmail = email
 	if stub.byEmailErr != nil {
 		return models.User{}, false, stub.byEmailErr
@@ -259,7 +259,7 @@ func TestOIDCLoginServiceConfirmAndLinkIdentityPersistsLink(t *testing.T) {
 		Subject: "first-login-sub",
 		Email:   "owner@example.com",
 	}
-	if err := service.ConfirmAndLinkIdentity(9, claims, now); err != nil {
+	if err := service.ConfirmAndLinkIdentity(context.Background(), 9, claims, now); err != nil {
 		t.Fatalf("ConfirmAndLinkIdentity() unexpected error: %v", err)
 	}
 	if !identities.createCallSeen {
@@ -293,7 +293,7 @@ func TestOIDCLoginServiceConfirmAndLinkIdentityRefusesCrossUserClaim(t *testing.
 	service := NewOIDCLoginService(&stubOIDCProviderClient{enabled: true}, identities, &stubOIDCUserStore{}, nil)
 
 	claims := security.OIDCClaims{Issuer: "https://id.example.com", Subject: "first-login-sub"}
-	if err := service.ConfirmAndLinkIdentity(9, claims, now); !errors.Is(err, ErrOIDCLinkFailed) {
+	if err := service.ConfirmAndLinkIdentity(context.Background(), 9, claims, now); !errors.Is(err, ErrOIDCLinkFailed) {
 		t.Fatalf("expected ErrOIDCLinkFailed for cross-user claim, got %v", err)
 	}
 	if identities.createCallSeen {

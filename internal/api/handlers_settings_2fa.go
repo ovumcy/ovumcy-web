@@ -95,7 +95,7 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
 
-	if err := handler.totpService.EnableTOTP(user.ID, rawSecret); err != nil {
+	if err := handler.totpService.EnableTOTP(c.UserContext(), user.ID, rawSecret); err != nil {
 		handler.logSecurityError(c, "settings.2fa.verify", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}
@@ -141,7 +141,7 @@ func (handler *Handler) DisableTOTP2FA(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if _, err := handler.authService.AuthenticateCredentials(user.Email, password); err != nil {
+	if _, err := handler.authService.AuthenticateCredentials(c.UserContext(), user.Email, password); err != nil {
 		handler.totpService.RecordDisableFailure(handler.secretKey, c.IP(), user.ID, time.Now())
 		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
 		handler.logSecurityError(c, "settings.2fa.disable", spec)
@@ -150,7 +150,7 @@ func (handler *Handler) DisableTOTP2FA(c *fiber.Ctx) error {
 
 	handler.totpService.ResetDisableAttempts(handler.secretKey, c.IP(), user.ID)
 
-	if err := handler.totpService.DisableTOTP(user.ID); err != nil {
+	if err := handler.totpService.DisableTOTP(c.UserContext(), user.ID); err != nil {
 		handler.logSecurityError(c, "settings.2fa.disable", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}

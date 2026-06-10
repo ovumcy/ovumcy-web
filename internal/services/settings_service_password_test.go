@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -101,7 +102,7 @@ func TestChangePasswordUpdatesHashedPassword(t *testing.T) {
 		AuthSessionVersion: 3,
 	}
 
-	err = service.ChangePassword(user, "StrongPass1", "EvenStronger2", "EvenStronger2")
+	err = service.ChangePassword(context.Background(), user, "StrongPass1", "EvenStronger2", "EvenStronger2")
 	if err != nil {
 		t.Fatalf("expected successful ChangePassword, got %v", err)
 	}
@@ -137,7 +138,7 @@ func TestChangePasswordPropagatesValidationErrorWithoutUpdate(t *testing.T) {
 		AuthSessionVersion: 1,
 	}
 
-	err = service.ChangePassword(user, "WrongPass1", "EvenStronger2", "EvenStronger2")
+	err = service.ChangePassword(context.Background(), user, "WrongPass1", "EvenStronger2", "EvenStronger2")
 	if !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
 		t.Fatalf("expected ErrSettingsInvalidCurrentPassword, got %v", err)
 	}
@@ -162,7 +163,7 @@ func TestChangePasswordWrapsUpdateError(t *testing.T) {
 		PasswordHash: string(currentHash),
 	}
 
-	err = service.ChangePassword(user, "StrongPass1", "EvenStronger2", "EvenStronger2")
+	err = service.ChangePassword(context.Background(), user, "StrongPass1", "EvenStronger2", "EvenStronger2")
 	if !errors.Is(err, ErrSettingsPasswordUpdateFailed) {
 		t.Fatalf("expected ErrSettingsPasswordUpdateFailed, got %v", err)
 	}
@@ -177,11 +178,11 @@ type stubSettingsUserRepo struct {
 	updatePasswordErr         error
 }
 
-func (stub *stubSettingsUserRepo) UpdateDisplayName(uint, string) error {
+func (stub *stubSettingsUserRepo) UpdateDisplayName(context.Context, uint, string) error {
 	return nil
 }
 
-func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(userID uint, passwordHash string, mustChangePassword bool) error {
+func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
 	stub.updatePasswordCalled = true
 	stub.updatedUserID = userID
 	stub.updatedPasswordHash = passwordHash
@@ -189,7 +190,7 @@ func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(userID uint, p
 	return stub.updatePasswordErr
 }
 
-func (stub *stubSettingsUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
+func (stub *stubSettingsUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
 	stub.updatePasswordCalled = true
 	stub.updatedUserID = userID
 	stub.updatedPasswordHash = passwordHash
@@ -198,19 +199,19 @@ func (stub *stubSettingsUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(us
 	return stub.updatePasswordErr
 }
 
-func (stub *stubSettingsUserRepo) UpdateByID(uint, map[string]any) error {
+func (stub *stubSettingsUserRepo) UpdateByID(context.Context, uint, map[string]any) error {
 	return nil
 }
 
-func (stub *stubSettingsUserRepo) LoadSettingsByID(uint) (models.User, error) {
+func (stub *stubSettingsUserRepo) LoadSettingsByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
 
-func (stub *stubSettingsUserRepo) ClearAllDataAndResetSettings(uint) error {
+func (stub *stubSettingsUserRepo) ClearAllDataAndResetSettings(context.Context, uint) error {
 	return nil
 }
 
-func (stub *stubSettingsUserRepo) DeleteAccountAndRelatedData(uint) error {
+func (stub *stubSettingsUserRepo) DeleteAccountAndRelatedData(context.Context, uint) error {
 	return nil
 }
 
@@ -237,7 +238,7 @@ func TestPrepareAndFinalizeLocalPasswordSetup(t *testing.T) {
 		t.Fatal("Prepare must not flip LocalAuthEnabled")
 	}
 
-	recoveryCode, err := service.FinalizeLocalPasswordSetup(user, preparedHash)
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), user, preparedHash)
 	if err != nil {
 		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
 	}
@@ -263,7 +264,7 @@ func TestFinalizeLocalPasswordSetupRejectsWhenAlreadyEnabled(t *testing.T) {
 	service := NewSettingsService(repo)
 	user := &models.User{ID: 88, LocalAuthEnabled: true}
 
-	_, err := service.FinalizeLocalPasswordSetup(user, "some-bcrypt-hash")
+	_, err := service.FinalizeLocalPasswordSetup(context.Background(), user, "some-bcrypt-hash")
 	if !errors.Is(err, ErrSettingsPasswordChangeInvalidInput) {
 		t.Fatalf("expected ErrSettingsPasswordChangeInvalidInput, got %v", err)
 	}

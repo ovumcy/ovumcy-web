@@ -112,7 +112,7 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
 	if result.Logout != nil {
-		if err := handler.oidcLogoutStateSvc.Save(sessionID, *result.Logout, time.Now()); err != nil {
+		if err := handler.oidcLogoutStateSvc.Save(c.UserContext(), sessionID, *result.Logout, time.Now()); err != nil {
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
 			handler.clearAuthRelatedCookies(c)
@@ -120,7 +120,7 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 			return c.Redirect("/login", fiber.StatusSeeOther)
 		}
 	} else {
-		_ = handler.oidcLogoutStateSvc.Delete(sessionID)
+		_ = handler.oidcLogoutStateSvc.Delete(c.UserContext(), sessionID)
 		handler.clearOIDCLogoutTransportCookies(c)
 	}
 
@@ -165,7 +165,7 @@ func (handler *Handler) RedirectOIDCLogout(c *fiber.Ctx) error {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}
 
-	logoutState, found, err := handler.oidcLogoutStateSvc.Consume(bridgePayload.SessionID, time.Now())
+	logoutState, found, err := handler.oidcLogoutStateSvc.Consume(c.UserContext(), bridgePayload.SessionID, time.Now())
 	if err != nil || !found {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}

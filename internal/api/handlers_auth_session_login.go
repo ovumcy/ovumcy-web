@@ -39,6 +39,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 	// See SECURITY.md "Register enumeration" for the residual two-step oracle.
 	now := time.Now().In(handler.location)
 	user, recoveryCode, err := handler.registrationService.RegisterOwnerAccount(
+		c.UserContext(),
 		credentials.Email,
 		credentials.Password,
 		credentials.ConfirmPassword,
@@ -75,6 +76,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	result, err := handler.loginService.Authenticate(
+		c.UserContext(),
 		handler.secretKey,
 		c.IP(),
 		credentials.Email,
@@ -151,7 +153,7 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.logout", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.authService.RevokeAuthSessions(user.ID); err != nil {
+	if err := handler.authService.RevokeAuthSessions(c.UserContext(), user.ID); err != nil {
 		handler.clearAuthRelatedCookies(c)
 		spec := authSessionRevokeErrorSpec()
 		handler.logSecurityError(c, "auth.logout", spec)
@@ -162,7 +164,7 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 	sessionClaims, hasSession := currentAuthSession(c)
 	handler.clearAuthRelatedCookies(c)
 	if hasSession && sessionClaims != nil {
-		logoutState, found, err := handler.oidcLogoutStateSvc.Load(sessionClaims.SessionID, time.Now())
+		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.UserContext(), sessionClaims.SessionID, time.Now())
 		if err != nil {
 			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")
 		} else if found && validOIDCLogoutState(logoutState) {
