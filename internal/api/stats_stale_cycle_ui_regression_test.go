@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"strconv"
 	"testing"
 	"time"
 
@@ -13,9 +13,19 @@ import (
 )
 
 func TestStatsPageShowsUnknownPhaseWhenCycleDataIsStale(t *testing.T) {
-	documentText := htmlDocumentText(renderStatsPageWithStaleCycleData(t))
-	if !strings.Contains(documentText, "Complete 2 cycles to unlock insights. Start by entering the first day of your next period.") {
-		t.Fatalf("expected updated empty-state guidance before the first completed cycle")
+	document := renderStatsPageWithStaleCycleData(t)
+	emptyState := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-stats-empty-state")
+	})
+	if emptyState == nil {
+		t.Fatalf("expected stats empty-state element with data-stats-empty-state attribute")
+	}
+	completedCycles, err := strconv.Atoi(htmlAttr(emptyState, "data-stats-completed-cycles"))
+	if err != nil {
+		t.Fatalf("expected data-stats-completed-cycles to be numeric, got %q", htmlAttr(emptyState, "data-stats-completed-cycles"))
+	}
+	if completedCycles >= 2 {
+		t.Fatalf("expected data-stats-completed-cycles < 2 (gating reason), got %d", completedCycles)
 	}
 }
 
