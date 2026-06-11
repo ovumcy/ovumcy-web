@@ -101,6 +101,7 @@ func main() {
 	api.SetAuditLogEnabled(config.AuditLogEnabled)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
+	// codecov:ignore:start -- main() composition-root wiring; runs only in the binary (exercised by e2e). The shared bootstrap.BuildDependencies is unit-tested through the internal/api test helper.
 	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(config.SecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode: config.RegistrationMode,
 		OIDCConfig:       config.OIDC,
@@ -108,6 +109,7 @@ func main() {
 		RecoveryAttempts: bootstrap.AttemptLimit{Max: config.RateLimits.ForgotPasswordMax, Window: config.RateLimits.ForgotPasswordWindow},
 		LogoutAttempts:   &bootstrap.AttemptLimit{Max: config.RateLimits.LogoutMax, Window: config.RateLimits.LogoutWindow},
 	})
+	// codecov:ignore:end
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	stopSignals := installGracefulShutdown(app)
