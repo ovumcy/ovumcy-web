@@ -61,7 +61,7 @@ func (handler *Handler) popFlashCookie(c *fiber.Ctx) FlashPayload {
 	}
 	clearFlashCookie(c, handler.cookieSecure)
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return FlashPayload{}
 	}

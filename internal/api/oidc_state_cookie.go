@@ -70,7 +70,7 @@ func (handler *Handler) setOIDCStateCookie(c *fiber.Ctx, state oidcAuthState) er
 	if err != nil {
 		return err
 	}
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (handler *Handler) popOIDCStateCookie(c *fiber.Ctx) oidcAuthState {
 	}
 	handler.clearOIDCStateCookie(c)
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return oidcAuthState{}
 	}

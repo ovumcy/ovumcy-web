@@ -98,7 +98,7 @@ func (handler *Handler) setOIDCStepupCookie(c *fiber.Ctx, state oidcStepupState)
 	if err != nil {
 		return err
 	}
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func (handler *Handler) popOIDCStepupCookie(c *fiber.Ctx) oidcStepupState {
 	}
 	handler.clearOIDCStepupCookie(c)
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return oidcStepupState{}
 	}

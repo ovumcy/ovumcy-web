@@ -133,7 +133,7 @@ func (handler *Handler) encodeAuthCookieToken(rawToken string) (string, error) {
 		return "", errors.New("auth token is required")
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return "", err
 	}
@@ -141,7 +141,7 @@ func (handler *Handler) encodeAuthCookieToken(rawToken string) (string, error) {
 }
 
 func (handler *Handler) decodeSealedAuthCookieToken(rawValue string) (string, error) {
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return "", err
 	}

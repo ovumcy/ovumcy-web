@@ -76,7 +76,7 @@ func (handler *Handler) setOIDCLinkPendingCookie(c *fiber.Ctx, payload oidcLinkP
 	if err != nil {
 		return err
 	}
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (handler *Handler) readOIDCLinkPendingCookie(c *fiber.Ctx) (oidcLinkPending
 	if raw == "" {
 		return oidcLinkPendingPayload{}, false
 	}
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return oidcLinkPendingPayload{}, false
 	}
