@@ -376,6 +376,7 @@
   "dashboard.ovulation_range": "%s — %s",
   "dashboard.ovulation_need_cycles": "3 abgeschlossene Zyklen sind erforderlich, bevor Ovumcy einen Eisprungsbereich anzeigen kann",
   "dashboard.ovulation_approximate": "(ungefähr)",
+  "dashboard.prediction_disclaimer": "Dies sind Schätzungen, keine medizinische Beratung und keine Verhütungsmethode.",
   "dashboard.ovulation_unavailable": "Kann nicht berechnet werden",
   "dashboard.prediction_in_past": "Das Datum liegt bereits in der Vergangenheit.",
   "usage_goal.current_mode": "Aktueller Modus",

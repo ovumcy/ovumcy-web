@@ -141,8 +141,9 @@ calendar math, and the model is deliberately simple:
 - Your next period is your last period start plus your typical cycle length (the
   median of your recent cycles).
 - Ovulation is counted back from there. The luteal phase, from ovulation to the
-  next period, is treated as roughly 14 days, so ovulation lands near cycle
-  length minus 14.
+  next period, is treated as about 14 days by default — and refined toward your
+  own value when your temperature or cervical-mucus entries allow — so ovulation
+  lands near cycle length minus the luteal length.
 - The fertile window is the six days ending on ovulation day, since sperm can
   survive a few days and the egg about one.
 
