@@ -24,6 +24,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/ovumcy/ovumcy-web/internal/api"
+	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/cli"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
@@ -100,7 +101,13 @@ func main() {
 	api.SetAuditLogEnabled(config.AuditLogEnabled)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
-	dependencies := buildDependencies(db.NewRepositories(database), i18nManager, config.RateLimits, config.RegistrationMode, config.OIDC, config.SecretKey)
+	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(config.SecretKey), i18nManager, bootstrap.Options{
+		RegistrationMode: config.RegistrationMode,
+		OIDCConfig:       config.OIDC,
+		LoginAttempts:    bootstrap.AttemptLimit{Max: config.RateLimits.LoginMax, Window: config.RateLimits.LoginWindow},
+		RecoveryAttempts: bootstrap.AttemptLimit{Max: config.RateLimits.ForgotPasswordMax, Window: config.RateLimits.ForgotPasswordWindow},
+		LogoutAttempts:   &bootstrap.AttemptLimit{Max: config.RateLimits.LogoutMax, Window: config.RateLimits.LogoutWindow},
+	})
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	stopSignals := installGracefulShutdown(app)
@@ -239,61 +246,6 @@ func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
 		log.Fatalf("i18n init failed: %v", err)
 	}
 	return i18nManager
-}
-
-func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager, rateLimits rateLimitSettings, registrationMode services.RegistrationMode, oidcConfig security.OIDCConfig, secretKey string) api.Dependencies {
-	authService := services.NewAuthService(repositories.Users)
-	authService.ConfigureLogoutAttemptLimits(rateLimits.LogoutMax, rateLimits.LogoutWindow)
-	attemptLimiter := services.NewAttemptLimiter()
-	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
-	passwordResetService.ConfigureRecoveryAttemptLimits(rateLimits.ForgotPasswordMax, rateLimits.ForgotPasswordWindow)
-	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
-	loginService.ConfigureAttemptLimits(rateLimits.LoginMax, rateLimits.LoginWindow)
-	dailyLogs := repositories.DailyLogs
-	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, func(ctx context.Context, fn func(services.DayLogRepository) error) error {
-		return dailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error { // codecov:ignore -- main() DI wiring; runs in the binary, exercised by e2e
-			return fn(tx)
-		})
-	})
-	symptomService := services.NewSymptomService(repositories.Symptoms, services.BuiltinSymptomReservedNames(i18nManager)...)
-	registrationService := services.NewRegistrationService(authService, repositories.Users, registrationMode)
-	viewerService := services.NewViewerService(dayService, symptomService)
-	statsService := services.NewStatsService(dayService, symptomService)
-	calendarViewService := services.NewCalendarViewService(dayService, statsService)
-	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
-	exportService := services.NewExportService(dayService, symptomService)
-	settingsService := services.NewSettingsService(repositories.Users)
-	totpService := services.NewTOTPService(repositories.Users, []byte(secretKey), attemptLimiter)
-	notificationService := services.NewNotificationService()
-	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
-	oidcLoginService := services.NewOIDCLoginService(
-		security.NewOIDCClient(oidcConfig),
-		repositories.OIDCIdentities,
-		repositories.Users,
-		registrationService,
-	)
-
-	return api.Dependencies{
-		AuthService:          authService,
-		RegistrationService:  registrationService,
-		PasswordResetService: passwordResetService,
-		LoginService:         loginService,
-		OIDCService:          oidcLoginService,
-		OIDCLogoutStateSvc:   oidcLogoutStateService,
-		DayService:           dayService,
-		SymptomService:       symptomService,
-		ViewerService:        viewerService,
-		StatsService:         statsService,
-		CalendarViewService:  calendarViewService,
-		DashboardViewService: dashboardViewService,
-		ExportService:        exportService,
-		SettingsService:      settingsService,
-		SettingsViewService:  services.NewSettingsViewService(settingsService, notificationService, exportService, symptomService),
-		OnboardingService:    services.NewOnboardingService(repositories.Users),
-		SetupService:         services.NewSetupService(repositories.Users),
-		TOTPService:          totpService,
-		RegisterPickupTokens: repositories.RegisterPickupTokens,
-	}
 }
 
 func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencies api.Dependencies) *api.Handler {

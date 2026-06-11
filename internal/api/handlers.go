@@ -19,7 +19,7 @@ func NewHandler(secret string, templateDir string, location *time.Location, i18n
 	if i18nManager == nil {
 		return nil, errors.New("i18n manager is required")
 	}
-	if err := dependencies.validate(); err != nil {
+	if err := dependencies.Validate(); err != nil {
 		return nil, err
 	}
 

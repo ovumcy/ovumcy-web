@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/ovumcy/ovumcy-web/internal/api"
+	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/security"
@@ -83,14 +84,13 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 		time.UTC,
 		i18nManager,
 		false,
-		buildDependencies(db.NewRepositories(database), i18nManager, rateLimitSettings{
-			LoginMax:             8,
-			LoginWindow:          15 * time.Minute,
-			ForgotPasswordMax:    8,
-			ForgotPasswordWindow: time.Hour,
-			APIMax:               300,
-			APIWindow:            time.Minute,
-		}, services.RegistrationModeOpen, security.OIDCConfig{}, "test-secret-key"),
+		bootstrap.BuildDependencies(db.NewRepositories(database), []byte("test-secret-key"), i18nManager, bootstrap.Options{
+			RegistrationMode: services.RegistrationModeOpen,
+			OIDCConfig:       security.OIDCConfig{},
+			LoginAttempts:    bootstrap.AttemptLimit{Max: 8, Window: 15 * time.Minute},
+			RecoveryAttempts: bootstrap.AttemptLimit{Max: 8, Window: time.Hour},
+			LogoutAttempts:   &bootstrap.AttemptLimit{},
+		}),
 	)
 	if err != nil {
 		t.Fatalf("init rate-limit test handler: %v", err)

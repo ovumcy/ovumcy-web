@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
+	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/security"
@@ -95,62 +96,22 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 		appOptions = options[0]
 	}
 
-	repositories := db.NewRepositories(database)
-	authService := services.NewAuthService(repositories.Users)
-	attemptLimiter := services.NewAttemptLimiter()
-	passwordResetService := services.NewPasswordResetService(authService, attemptLimiter)
-	passwordResetService.ConfigureRecoveryAttemptLimits(services.DefaultRecoveryAttemptsLimit, time.Hour)
-	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
-	loginService.ConfigureAttemptLimits(services.DefaultLoginAttemptsLimit, services.DefaultLoginAttemptsWindow)
-	dayService := services.NewDayService(repositories.DailyLogs, repositories.Users)
-	reservedBuiltinNames := make([]string, 0)
-	if i18nManager != nil {
-		reservedBuiltinNames = services.BuiltinSymptomReservedNames(i18nManager)
-	}
-	symptomService := services.NewSymptomService(repositories.Symptoms, reservedBuiltinNames...)
 	registrationMode := services.RegistrationModeOpen
 	if appOptions.registrationMode != "" {
 		registrationMode = appOptions.registrationMode
 	}
-	registrationService := services.NewRegistrationService(authService, repositories.Users, registrationMode)
-	var oidcService OIDCWorkflowService = services.NewOIDCLoginService(security.NewOIDCClient(security.OIDCConfig{}), repositories.OIDCIdentities, repositories.Users, registrationService)
-	if appOptions.oidcService != nil {
-		oidcService = appOptions.oidcService
-	}
-	viewerService := services.NewViewerService(dayService, symptomService)
-	statsService := services.NewStatsService(dayService, symptomService)
-	calendarViewService := services.NewCalendarViewService(dayService, statsService)
-	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
-	exportService := services.NewExportService(dayService, symptomService)
-	settingsService := services.NewSettingsService(repositories.Users)
-	totpService := services.NewTOTPService(repositories.Users, []byte("test-secret-key"), attemptLimiter)
-	notificationService := services.NewNotificationService()
-	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
-	settingsViewService := services.NewSettingsViewService(settingsService, notificationService, exportService, symptomService)
-	onboardingService := services.NewOnboardingService(repositories.Users)
-	setupService := services.NewSetupService(repositories.Users)
 
-	return Dependencies{
-		AuthService:          authService,
-		RegistrationService:  registrationService,
-		PasswordResetService: passwordResetService,
-		LoginService:         loginService,
-		OIDCService:          oidcService,
-		OIDCLogoutStateSvc:   oidcLogoutStateService,
-		DayService:           dayService,
-		SymptomService:       symptomService,
-		ViewerService:        viewerService,
-		StatsService:         statsService,
-		CalendarViewService:  calendarViewService,
-		DashboardViewService: dashboardViewService,
-		ExportService:        exportService,
-		SettingsService:      settingsService,
-		SettingsViewService:  settingsViewService,
-		OnboardingService:    onboardingService,
-		SetupService:         setupService,
-		TOTPService:          totpService,
-		RegisterPickupTokens: repositories.RegisterPickupTokens,
-	}
+	// Delegate to the shared composition-root wiring (internal/bootstrap), the
+	// same recipe the production binary uses, so the two cannot drift. Tests pass
+	// the default attempt limits, an empty (disabled) OIDC config, and—unlike
+	// production—leave LogoutAttempts unset to keep the auth-service default.
+	return bootstrap.BuildDependencies(db.NewRepositories(database), []byte("test-secret-key"), i18nManager, bootstrap.Options{
+		RegistrationMode:    registrationMode,
+		OIDCConfig:          security.OIDCConfig{},
+		OIDCServiceOverride: appOptions.oidcService,
+		LoginAttempts:       bootstrap.AttemptLimit{Max: services.DefaultLoginAttemptsLimit, Window: services.DefaultLoginAttemptsWindow},
+		RecoveryAttempts:    bootstrap.AttemptLimit{Max: services.DefaultRecoveryAttemptsLimit, Window: time.Hour},
+	})
 }
 
 func testCSRFMiddlewareConfig(cookieSecure bool) csrf.Config {
