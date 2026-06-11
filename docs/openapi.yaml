@@ -103,9 +103,13 @@ components:
       description: |
         Double-submit CSRF token validated against the `ovumcy_csrf` cookie.
         Browser clients usually submit it via the `csrf_token` form field
-        instead of the header. Pure-GET, register/login/forgot-password
-        request paths, and the `/auth/oidc/callback` provider form-post path
-        are exempt. See [CSRF middleware configuration](../cmd/ovumcy/main.go).
+        instead of the header. Only pure-GET requests and the
+        `/auth/oidc/callback` provider form-post path are exempt; every other
+        state-changing request — including register, login, and password-reset
+        — requires the token. Programmatic clients read it from the
+        `ovumcy_csrf` cookie set on any GET (for example `GET /login`) and echo
+        it in the `X-CSRF-Token` header or `csrf_token` form field. See
+        [CSRF middleware configuration](../cmd/ovumcy/main.go).
 
   parameters:
     DateParam:
@@ -772,7 +776,8 @@ paths:
         cookie of fixed length, redirect to `/register/welcome`) for new and
         duplicate emails. See [SECURITY.md "Register enumeration"](../SECURITY.md#register-enumeration-pickup-cookie-follow-up-oracle-residual).
         Per-IP rate limit: default 8 / 15 min.
-      security: []
+      security:
+        - csrfToken: []
       requestBody:
         required: true
         content:
@@ -794,7 +799,8 @@ paths:
         Per-IP rate limit (default 8 / 15 min) plus per-account
         `AuthAttemptPolicy` budget. Constant-time password verification with
         equalized bcrypt timing on the missing-user branch.
-      security: []
+      security:
+        - csrfToken: []
       requestBody:
         required: true
         content:
@@ -892,7 +898,8 @@ paths:
       description: |
         Validates the `(email, recovery_code)` pair without leaking which one
         was wrong. Per-IP rate limit: default 8 / 1 hour.
-      security: []
+      security:
+        - csrfToken: []
       requestBody:
         required: true
         content:
@@ -916,7 +923,8 @@ paths:
       description: |
         Requires the `ovumcy_reset_password` cookie issued by `POST
         /api/v1/password-resets`. Bumps `auth_session_version` on success.
-      security: []
+      security:
+        - csrfToken: []
       requestBody:
         required: true
         content:
