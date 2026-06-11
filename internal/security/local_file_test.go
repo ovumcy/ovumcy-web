@@ -63,3 +63,24 @@ func TestReadBoundedRegularFile_ReadsFileExactlyAtLimit(t *testing.T) {
 		t.Fatalf("content mismatch: got %q want %q", got, content)
 	}
 }
+
+// TestReadBoundedRegularFile_ZeroMaxBytesReadsWholeFile pins the "no limit"
+// contract: maxBytes <= 0 disables the size cap and returns the full file
+// untruncated. This exercises all three `maxBytes > 0` guards (the os.Stat size
+// pre-check, the io.LimitReader, and the post-read length check) at the
+// maxBytes == 0 boundary — a mutant flipping any of them to >= 0 / <= 0 either
+// rejects this non-empty file or truncates it to a single byte, and is killed.
+func TestReadBoundedRegularFile_ZeroMaxBytesReadsWholeFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "unbounded.key")
+	content := []byte(strings.Repeat("z", 50))
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	got, err := ReadBoundedRegularFile(path, "TEST_FILE", 0)
+	if err != nil {
+		t.Fatalf("maxBytes=0 should disable the size cap, got %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("expected the full %d-byte content, got %d bytes (%q)", len(content), len(got), got)
+	}
+}
