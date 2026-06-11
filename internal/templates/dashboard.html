@@ -128,6 +128,10 @@
     {{end}}
 
     {{if .IsOwner}}
+    <p class="journal-muted text-xs" data-dashboard-prediction-disclaimer>{{t .Messages "dashboard.prediction_disclaimer"}}</p>
+    {{end}}
+
+    {{if .IsOwner}}
     <div class="journal-panel text-sm space-y-1" data-usage-goal-summary data-usage-goal-label-key="{{.UsageGoalLabelKey}}" data-usage-goal-summary-key="{{.UsageGoalSummaryKey}}">
       <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
       <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
@@ -147,7 +151,7 @@
       {{end}}
       <a href="/settings#settings-cycle" class="btn-secondary text-sm">{{t .Messages "dashboard.update_cycle_data"}}</a>
     </div>
-      {{else if and (not .DisplayOvulationUseRange) (not .DisplayOvulationImpossible) (not .DisplayOvulationDate.IsZero) (not .DisplayOvulationExact)}}
+      {{else if and (not .DisplayOvulationUseRange) (not .DisplayOvulationImpossible) (not .DisplayOvulationDate.IsZero)}}
       <p class="journal-muted text-sm">{{t .Messages "dashboard.ovulation_approximate"}}</p>
       {{end}}
     {{if .HasPredictionFactorHint}}

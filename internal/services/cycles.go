@@ -335,11 +335,17 @@ func applyPredictedCycleStats(stats *CycleStats) {
 }
 
 func predictedCycleLength(median int, average float64) int {
-	if average > 0 {
-		return int(average + 0.5)
-	}
+	// Prefer the median (the statistic documented in docs/cycle-prediction.md):
+	// it is robust to a single outlier cycle. A missed period log merges two
+	// real cycles into one ~60-90 day gap that would drag the mean by ~10 days
+	// and push every downstream prediction late, but leaves the median unmoved.
+	// The mean is only a fallback for the degenerate case where no median is
+	// available (it never is when at least one cycle length exists).
 	if median > 0 {
 		return median
+	}
+	if average > 0 {
+		return int(average + 0.5)
 	}
 	return models.DefaultCycleLength
 }

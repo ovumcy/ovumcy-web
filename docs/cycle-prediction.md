@@ -21,20 +21,21 @@ implementation cannot silently drift apart.
 |-------|---------|--------|
 | `periodStart` | First day of the current menstrual period (cycle day 1) | Detected from logged period days |
 | `cycleLength` | Length of the cycle in days | Median of observed cycles, or the user's configured value |
-| `lutealPhase` | Days from ovulation to the next period | Fixed model default of **14 days** |
+| `lutealPhase` | Days from ovulation to the next period | **14-day** default, refined toward the owner's own value from logged BBT / cervical-mucus signals when enough cycles carry them |
 
 ## The model
 
 The model rests on one physiological assumption: **the luteal phase (ovulation →
-next period) is roughly constant at ~14 days**, while the follicular phase (period
-→ ovulation) absorbs the variation in cycle length. So ovulation is counted
-*backwards* from the next expected period.
+next period) is relatively stable per person** — modelled at ~14 days by default,
+and refined toward the owner's own value when logged signals allow — while the
+follicular phase (period → ovulation) absorbs the variation in cycle length. So
+ovulation is counted *backwards* from the next expected period.
 
 ### Constants
 
 | Constant | Value | Role |
 |----------|-------|------|
-| `defaultLutealPhaseDays` | 14 | Luteal phase used by the app |
+| `defaultLutealPhaseDays` | 14 | Default luteal phase, used when it is not refined from logged signals |
 | `minLutealPhaseDays` | 10 | Lower clamp for the luteal phase |
 | `minOvulationCycleDay` | 5 | Ovulation may not fall before cycle day 5 |
 | (min cycle for a prediction) | 15 | `minLutealPhaseDays + minOvulationCycleDay` |
@@ -97,19 +98,26 @@ These are the exact cases asserted by the reference tests.
 
 ## How cycle length and luteal phase are chosen
 
-- **Cycle length** is the median of the user's observed completed cycles (a
-  cycle being the gap between two detected period starts). When there is not
-  enough history, the user's configured value is used.
-- **Luteal phase** is not estimated per user; the app uses the fixed 14-day
-  model default. This is a deliberate simplification — individual luteal phases
-  vary, which is one reason predictions are estimates.
+- **Cycle length** is the median of the owner's recent observed cycles (a cycle
+  being the gap between two detected period starts). The median is used rather
+  than the mean, so a single missed-log gap that merges two cycles cannot skew
+  the estimate. When there is not enough history, the owner's configured value
+  is used.
+- **Luteal phase** defaults to the fixed 14-day model value, but is refined for
+  the owner when their logs carry enough signal: when basal body temperature or
+  cervical-mucus entries let the app infer the ovulation-to-next-period length
+  across several cycles, that observed luteal length (clamped to a physiological
+  10–20 day range) replaces the default. With little or no such data the fixed
+  14-day default stands. Individual luteal phases vary (commonly 11–17 days),
+  which is one reason predictions remain estimates.
 - For irregular cycles the app widens the prediction into a range rather than a
   single date.
 
 ## Assumptions and limitations
 
-- Luteal phase is modeled as constant; in reality it varies between people and
-  cycles.
+- Luteal phase defaults to a constant 14 days and is only refined when enough
+  logged BBT / cervical-mucus signal exists; in reality it varies between people
+  and cycles.
 - Predictions are **calendar-based** and cannot observe the body. They do not
   use temperature, LH tests, or symptoms to confirm ovulation.
 - Accuracy degrades sharply for irregular or very short/long cycles.

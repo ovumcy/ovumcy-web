@@ -376,6 +376,7 @@
   "dashboard.ovulation_range": "%s — %s",
   "dashboard.ovulation_need_cycles": "3 completed cycles are needed before Ovumcy shows an ovulation range",
   "dashboard.ovulation_approximate": "(approximate)",
+  "dashboard.prediction_disclaimer": "These are estimates, not medical advice or a method of contraception.",
   "dashboard.ovulation_unavailable": "Cannot be calculated",
   "dashboard.prediction_in_past": "Date is already in the past.",
   "usage_goal.current_mode": "Current mode",

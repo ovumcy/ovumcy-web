@@ -376,6 +376,7 @@
   "dashboard.ovulation_range": "%s — %s",
   "dashboard.ovulation_need_cycles": "нужно 3 завершённых цикла, чтобы Ovumcy показал диапазон овуляции",
   "dashboard.ovulation_approximate": "(приблизительно)",
+  "dashboard.prediction_disclaimer": "Это оценки, а не медицинский совет и не метод контрацепции.",
   "dashboard.ovulation_unavailable": "Невозможно рассчитать",
   "dashboard.prediction_in_past": "Дата уже в прошлом.",
   "usage_goal.current_mode": "Текущий режим",
