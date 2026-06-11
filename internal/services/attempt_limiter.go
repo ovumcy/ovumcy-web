@@ -98,7 +98,7 @@ func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time, window time.
 	threshold := now.Add(-window)
 	for key, times := range limiter.attempts {
 		if len(times) == 0 {
-			delete(limiter.attempts, key)
+			delete(limiter.attempts, key) // codecov:ignore -- defensive; pruneLocked never stores an empty slice in the map
 			continue
 		}
 		// times is ordered oldest-first after pruneLocked; newest is last.

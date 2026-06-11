@@ -33,7 +33,7 @@ func openSQLiteConnection(dbPath string) (*gorm.DB, error) {
 	// workload with headroom for background tasks.
 	sqlDB, err := database.DB()
 	if err != nil {
-		return nil, fmt.Errorf("get sqlite sql.DB: %w", err)
+		return nil, fmt.Errorf("get sqlite sql.DB: %w", err) // codecov:ignore -- database.DB() does not fail after a successful gorm.Open
 	}
 	sqlDB.SetMaxOpenConns(4)
 	sqlDB.SetMaxIdleConns(4)

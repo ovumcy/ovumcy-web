@@ -454,16 +454,16 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCode(ctx context.Conte
 // only the base AuthUserRepository fall back to the unconditional UPDATE.
 func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string) (string, error) {
 	if user == nil {
-		return "", ErrAuthUserRequired
+		return "", ErrAuthUserRequired // codecov:ignore -- defensive; callers always pass a resolved user
 	}
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
-		return "", err
+		return "", err // codecov:ignore -- bcrypt only errors on an out-of-range cost
 	}
 	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
 	if err != nil {
-		return "", err
+		return "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
 	}
 
 	if casRepo, ok := service.users.(passwordResetCASRepository); ok {
@@ -472,10 +472,11 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Co
 			return "", err
 		}
 	} else {
-		// Fallback for test doubles that implement only AuthUserRepository.
+		// codecov:ignore:start -- fallback only for non-CAS test doubles; the production *db.UserRepository satisfies passwordResetCASRepository, so the shipped binary always takes the CAS path above
 		if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, string(passwordHash), recoveryHash, false); err != nil {
 			return "", err
 		}
+		// codecov:ignore:end
 	}
 	user.PasswordHash = string(passwordHash)
 	user.RecoveryCodeHash = recoveryHash

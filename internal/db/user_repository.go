@@ -160,7 +160,7 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 			"auth_session_version": gorm.Expr("auth_session_version + 1"),
 		})
 	if result.Error != nil {
-		return result.Error
+		return result.Error // codecov:ignore -- DB-layer error on the CAS UPDATE; not reachable in unit tests
 	}
 	if result.RowsAffected == 0 {
 		return ErrResetTokenAlreadyConsumed
