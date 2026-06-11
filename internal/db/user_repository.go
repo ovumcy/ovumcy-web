@@ -136,6 +136,38 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 	}).Error
 }
 
+// UpdatePasswordRecoveryCodeAndRevokeSessionsCAS is the single-use variant
+// used by the password-reset flow. It adds a CAS predicate — `WHERE id = ?
+// AND password_hash = <oldHash>` — so concurrent or replayed redeems of the
+// same reset token both race to write the new hash and only one wins.
+//
+// The token embeds a fingerprint of the password_hash at issuance time
+// (IsPasswordStateFingerprintMatch). If two requests arrive simultaneously
+// with the same valid token, the first UPDATE wins (RowsAffected == 1) and
+// writes the new hash; the second finds password_hash != oldHash and affects
+// 0 rows, returning ErrResetTokenAlreadyConsumed.
+//
+// Returns ErrResetTokenAlreadyConsumed when RowsAffected == 0 (token was
+// already redeemed or the password state changed since the token was issued).
+func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
+		Updates(map[string]any{
+			"password_hash":        newPasswordHash,
+			"recovery_code_hash":   recoveryHash,
+			"must_change_password": false,
+			"local_auth_enabled":   true,
+			"auth_session_version": gorm.Expr("auth_session_version + 1"),
+		})
+	if result.Error != nil {
+		return result.Error // codecov:ignore -- DB-layer error on the CAS UPDATE; not reachable in unit tests
+	}
+	if result.RowsAffected == 0 {
+		return ErrResetTokenAlreadyConsumed
+	}
+	return nil
+}
+
 func (repo *UserRepository) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).UpdateColumn("auth_session_version", gorm.Expr("auth_session_version + 1")).Error
 }
@@ -285,6 +317,23 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
 			return err
 		}
+		// oidc_logout_states has NO user_id column — rows are keyed only by
+		// session_id (a random nonce) and carry an id_token_hint JWT that
+		// contains the user's OIDC sub/email. We cannot identify which rows
+		// belong to the deleted user from inside this transaction.
+		//
+		// Residual limitation: any unexpired oidc_logout_state rows minted
+		// for the deleted user's sessions will survive until their own TTL
+		// expires (typically minutes, bounded by the OIDC provider's
+		// id_token_hint TTL). This is acceptable: the rows are short-lived,
+		// carry no PII beyond what the OIDC provider already holds, and are
+		// inaccessible without the original session cookie.
+		//
+		// Best-effort mitigation: purge all globally expired rows at deletion
+		// time so the table does not accumulate stale data. The error is
+		// ignored — a purge failure must not roll back an otherwise-complete
+		// GDPR erasure.
+		_ = tx.Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
 		return tx.Delete(&models.User{}, userID).Error
 	})
 }

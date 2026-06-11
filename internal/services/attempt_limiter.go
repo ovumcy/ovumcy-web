@@ -6,9 +6,22 @@ import (
 	"time"
 )
 
+const (
+	// evictEveryN triggers a full-map stale-key sweep every N AddFailure calls.
+	// Keys are partly attacker-influenced (identity:<hmac>), so without periodic
+	// eviction the map grows unboundedly until process restart. N=128 keeps the
+	// sweep rare enough to be O(1) amortised while bounding residual memory.
+	evictEveryN = 128
+
+	// evictAboveSize triggers an additional sweep when the map exceeds this many
+	// keys, capping memory growth even under a sustained multi-key attack.
+	evictAboveSize = 1024
+)
+
 type AttemptLimiter struct {
-	mu       sync.Mutex
-	attempts map[string][]time.Time
+	mu        sync.Mutex
+	attempts  map[string][]time.Time
+	addCallsN int // counts AddFailure/AddFailureAll invocations for eviction pacing
 }
 
 func NewAttemptLimiter() *AttemptLimiter {
@@ -52,6 +65,9 @@ func (limiter *AttemptLimiter) AddFailure(key string, now time.Time, window time
 	pruned := limiter.pruneLocked(key, now, window)
 	pruned = append(pruned, now)
 	limiter.attempts[key] = pruned
+
+	limiter.addCallsN++
+	limiter.maybeEvictStaleLocked(now, window)
 }
 
 func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, window time.Duration) {
@@ -62,6 +78,33 @@ func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, windo
 		pruned := limiter.pruneLocked(key, now, window)
 		pruned = append(pruned, now)
 		limiter.attempts[key] = pruned
+	}
+
+	limiter.addCallsN++
+	limiter.maybeEvictStaleLocked(now, window)
+}
+
+// maybeEvictStaleLocked performs an opportunistic full-map sweep to remove keys
+// whose most-recent attempt is older than window. It fires when either the call
+// counter reaches evictEveryN or the map exceeds evictAboveSize entries. The
+// sweep is O(n) in map size but runs rarely, keeping amortised cost negligible.
+// Must be called with limiter.mu held.
+func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time, window time.Duration) {
+	if limiter.addCallsN < evictEveryN && len(limiter.attempts) < evictAboveSize {
+		return
+	}
+	limiter.addCallsN = 0
+
+	threshold := now.Add(-window)
+	for key, times := range limiter.attempts {
+		if len(times) == 0 {
+			delete(limiter.attempts, key) // codecov:ignore -- defensive; pruneLocked never stores an empty slice in the map
+			continue
+		}
+		// times is ordered oldest-first after pruneLocked; newest is last.
+		if times[len(times)-1].Before(threshold) || times[len(times)-1].Equal(threshold) {
+			delete(limiter.attempts, key)
+		}
 	}
 }
 

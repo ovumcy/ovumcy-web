@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"runtime"
@@ -102,7 +103,12 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	passwordResetService.ConfigureRecoveryAttemptLimits(services.DefaultRecoveryAttemptsLimit, time.Hour)
 	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
 	loginService.ConfigureAttemptLimits(services.DefaultLoginAttemptsLimit, services.DefaultLoginAttemptsWindow)
-	dayService := services.NewDayService(repositories.DailyLogs, repositories.Users)
+	dailyLogs := repositories.DailyLogs
+	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, func(ctx context.Context, fn func(services.DayLogRepository) error) error {
+		return dailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error {
+			return fn(tx)
+		})
+	})
 	reservedBuiltinNames := make([]string, 0)
 	if i18nManager != nil {
 		reservedBuiltinNames = services.BuiltinSymptomReservedNames(i18nManager)

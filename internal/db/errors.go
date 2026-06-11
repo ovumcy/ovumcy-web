@@ -7,6 +7,13 @@ import (
 	"gorm.io/gorm"
 )
 
+// ErrResetTokenAlreadyConsumed is returned by
+// UpdatePasswordRecoveryCodeAndRevokeSessionsCAS when the CAS predicate
+// matches 0 rows — i.e. the reset token has already been redeemed or the
+// password state changed since the token was issued. It indicates a replay
+// or concurrent redeem, not a DB error.
+var ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
+
 type UniqueConstraintError struct {
 	Constraint string
 	Err        error

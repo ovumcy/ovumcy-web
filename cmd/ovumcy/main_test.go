@@ -845,8 +845,55 @@ func assertDefaultSecurityHeaders(t *testing.T, response *http.Response, expectS
 	} else if value != "" {
 		t.Fatalf("did not expect %s by default, got %q", headerStrictTransportSecurity, value)
 	}
+	if value := response.Header.Get("Cache-Control"); value != "no-store" {
+		t.Fatalf("expected Cache-Control=no-store on dynamic response, got %q", value)
+	}
 	if value := response.Header.Get("Access-Control-Allow-Origin"); value != "" {
 		t.Fatalf("did not expect Access-Control-Allow-Origin by default, got %q", value)
+	}
+}
+
+// TestSecurityHeadersMiddlewareSetsNoCacheOnDynamicRoutes verifies that
+// authenticated / dynamic responses carry Cache-Control: no-store so that
+// bfcache cannot restore health data after logout.
+func TestSecurityHeadersMiddlewareSetsNoCacheOnDynamicRoutes(t *testing.T) {
+	app := fiber.New()
+	app.Use(securityHeadersMiddleware(false))
+	app.Get("/dashboard", func(c *fiber.Ctx) error {
+		return c.SendString("ok")
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("dynamic route request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if value := response.Header.Get("Cache-Control"); value != "no-store" {
+		t.Fatalf("expected Cache-Control=no-store on dynamic route, got %q", value)
+	}
+}
+
+// TestSecurityHeadersMiddlewareDoesNotSetNoCacheOnStaticAssets verifies that
+// the /static prefix is exempt from the no-store guard so static assets can
+// use normal browser caching.
+func TestSecurityHeadersMiddlewareDoesNotSetNoCacheOnStaticAssets(t *testing.T) {
+	app := fiber.New()
+	app.Use(securityHeadersMiddleware(false))
+	app.Get("/static/app.js", func(c *fiber.Ctx) error {
+		return c.SendString("// js")
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/static/app.js", nil)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("static asset request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if value := response.Header.Get("Cache-Control"); value == "no-store" {
+		t.Fatalf("did not expect Cache-Control=no-store on /static asset, got %q", value)
 	}
 }
 
@@ -951,6 +998,53 @@ func TestLogStartupWarnsOnSpoofableProxyHeader(t *testing.T) {
 	// the limiter trusts the leftmost (spoofable) X-Forwarded-For entry.
 	if !strings.Contains(logged, "rightmost untrusted") {
 		t.Fatalf("expected startup note to mention the rightmost-untrusted keying, got %q", logged)
+	}
+}
+
+func TestLogStartupAdvisesWhenTrustProxyDisabled(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	logStartup(runtimeConfig{
+		Location: time.UTC,
+		Port:     "8080",
+		Proxy: proxySettings{
+			Enabled: false,
+		},
+	})
+
+	logged := output.String()
+	if !strings.Contains(logged, "TRUST_PROXY_ENABLED=false") {
+		t.Fatalf("expected proxy-disabled advisory in startup log, got %q", logged)
+	}
+	if !strings.Contains(logged, "reverse proxy") {
+		t.Fatalf("expected advisory to mention reverse proxy, got %q", logged)
+	}
+}
+
+func TestLogStartupDoesNotAdviseTrustProxyWhenEnabled(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	logStartup(runtimeConfig{
+		Location: time.UTC,
+		Port:     "8080",
+		Proxy: proxySettings{
+			Enabled:        true,
+			Header:         "X-Real-IP",
+			TrustedProxies: []string{"127.0.0.1"},
+		},
+	})
+
+	logged := output.String()
+	if strings.Contains(logged, "TRUST_PROXY_ENABLED=false") {
+		t.Fatalf("did not expect proxy-disabled advisory when proxy is enabled, got %q", logged)
 	}
 }
 
