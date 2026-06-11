@@ -221,6 +221,26 @@ func TestApplyUserCycleBaselineCurrentCycleDayMatchesLocalCalendarAcrossTimezone
 	}
 }
 
+// TestBaselineCurrentCycleDayGuardsAgainstFutureAnchor pins the defensive
+// today-before-anchor branch of baselineCurrentCycleDay. ApplyUserCycleBaseline
+// gates the resolved anchor to <= today, so this guard is unreachable through
+// the public path and is exercised directly: a today strictly before the anchor
+// (or a zero anchor) must yield 0, never a negative or wrapped cycle day, and
+// the anchor day itself is cycle day 1.
+func TestBaselineCurrentCycleDayGuardsAgainstFutureAnchor(t *testing.T) {
+	anchor := mustParseBaselineDay(t, "2026-03-10")
+
+	if got := baselineCurrentCycleDay(anchor, mustParseBaselineDay(t, "2026-03-09")); got != 0 {
+		t.Fatalf("today before anchor must be 0, got %d", got)
+	}
+	if got := baselineCurrentCycleDay(time.Time{}, mustParseBaselineDay(t, "2026-03-09")); got != 0 {
+		t.Fatalf("zero anchor must be 0, got %d", got)
+	}
+	if got := baselineCurrentCycleDay(anchor, anchor); got != 1 {
+		t.Fatalf("anchor day itself must be cycle day 1, got %d", got)
+	}
+}
+
 func mustParseBaselineDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)
