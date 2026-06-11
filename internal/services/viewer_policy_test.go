@@ -17,6 +17,8 @@ func TestSanitizeLogForViewerUnsupportedRoleHidesPrivateFields(t *testing.T) {
 		CycleFactorKeys: []string{models.CycleFactorStress},
 		Notes:           "private",
 		SymptomIDs:      []uint{1, 2},
+		CycleStart:      true,
+		IsUncertain:     true,
 	}
 
 	sanitized := SanitizeLogForViewer(unsupported, entry)
@@ -43,6 +45,12 @@ func TestSanitizeLogForViewerUnsupportedRoleHidesPrivateFields(t *testing.T) {
 	}
 	if len(sanitized.SymptomIDs) != 0 {
 		t.Fatalf("expected symptom IDs to be hidden, got %#v", sanitized.SymptomIDs)
+	}
+	if sanitized.CycleStart {
+		t.Fatalf("expected cycle start to be hidden, got true")
+	}
+	if sanitized.IsUncertain {
+		t.Fatalf("expected uncertain flag to be hidden, got true")
 	}
 }
 

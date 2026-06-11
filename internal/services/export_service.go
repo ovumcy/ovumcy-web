@@ -39,6 +39,8 @@ var ExportCSVHeaders = []string{
 	"Other",
 	"Notes",
 	"Pregnancy test",
+	"Cycle start",
+	"Uncertain",
 }
 
 var exportSymptomColumnsByName = map[string]string{
@@ -149,6 +151,8 @@ type ExportSymptomFlags struct {
 type ExportJSONEntry struct {
 	Date          string             `json:"date"`
 	Period        bool               `json:"period"`
+	CycleStart    bool               `json:"cycle_start"`
+	IsUncertain   bool               `json:"is_uncertain"`
 	Flow          string             `json:"flow"`
 	MoodRating    int                `json:"mood_rating"`
 	SexActivity   string             `json:"sex_activity"`
@@ -164,6 +168,8 @@ type ExportJSONEntry struct {
 type ExportCSVRow struct {
 	Date          string
 	Period        bool
+	CycleStart    bool
+	IsUncertain   bool
 	Flow          string
 	MoodRating    int
 	SexActivity   string
@@ -247,6 +253,8 @@ func (service *ExportService) BuildJSONEntries(ctx context.Context, userID uint,
 		entries = append(entries, ExportJSONEntry{
 			Date:          CalendarDay(logEntry.Date, location).Format(exportDateLayout),
 			Period:        logEntry.IsPeriod,
+			CycleStart:    logEntry.CycleStart,
+			IsUncertain:   logEntry.IsUncertain,
 			Flow:          normalizeExportFlow(logEntry.Flow),
 			MoodRating:    normalizeExportMood(logEntry.Mood),
 			SexActivity:   normalizeExportSexActivity(logEntry.SexActivity),
@@ -274,6 +282,8 @@ func (service *ExportService) BuildCSVRows(ctx context.Context, userID uint, fro
 		rows = append(rows, ExportCSVRow{
 			Date:          CalendarDay(logEntry.Date, location).Format(exportDateLayout),
 			Period:        logEntry.IsPeriod,
+			CycleStart:    logEntry.CycleStart,
+			IsUncertain:   logEntry.IsUncertain,
 			Flow:          csvFlowLabel(logEntry.Flow),
 			MoodRating:    normalizeExportMood(logEntry.Mood),
 			SexActivity:   csvSexActivityLabel(logEntry.SexActivity),
@@ -321,6 +331,8 @@ func (row ExportCSVRow) Columns() []string {
 		otherSymptoms,
 		notes,
 		row.PregnancyTest,
+		csvYesNo(row.CycleStart),
+		csvYesNo(row.IsUncertain),
 	}
 }
 

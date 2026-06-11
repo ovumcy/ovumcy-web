@@ -96,6 +96,8 @@ func TestExportBuildJSONEntriesNormalizesFlowAndMapsSymptoms(t *testing.T) {
 					BBT:             36.55,
 					CervicalMucus:   models.CervicalMucusEggWhite,
 					PregnancyTest:   models.PregnancyTestPositive,
+					CycleStart:      true,
+					IsUncertain:     true,
 					CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorTravel},
 					SymptomIDs:      []uint{1, 2, 3, 3},
 					Notes:           "json-note",
@@ -138,6 +140,8 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 					BBT:             36.7,
 					CervicalMucus:   models.CervicalMucusCreamy,
 					PregnancyTest:   models.PregnancyTestNegative,
+					CycleStart:      true,
+					IsUncertain:     true,
 					CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorMedicationChange},
 					SymptomIDs:      []uint{1, 2},
 					Notes:           "note",
@@ -287,6 +291,12 @@ func assertExportJSONEntryTrackingFields(t *testing.T, entry ExportJSONEntry) {
 	if entry.PregnancyTest != models.PregnancyTestPositive {
 		t.Fatalf("expected positive pregnancy test, got %q", entry.PregnancyTest)
 	}
+	if !entry.CycleStart {
+		t.Fatalf("expected cycle_start=true")
+	}
+	if !entry.IsUncertain {
+		t.Fatalf("expected is_uncertain=true")
+	}
 	if len(entry.CycleFactors) != 2 || entry.CycleFactors[0] != models.CycleFactorStress || entry.CycleFactors[1] != models.CycleFactorTravel {
 		t.Fatalf("expected normalized cycle factors, got %#v", entry.CycleFactors)
 	}
@@ -331,6 +341,20 @@ func assertExportCSVTrackingColumns(t *testing.T, columns []string, indexByHeade
 	}
 	if columns[indexByHeader["Cycle factors"]] != "Stress; Medication change" {
 		t.Fatalf("expected cycle factors column, got %q", columns[indexByHeader["Cycle factors"]])
+	}
+	if columns[indexByHeader["Cycle start"]] != "Yes" {
+		t.Fatalf("expected cycle start column Yes, got %q", columns[indexByHeader["Cycle start"]])
+	}
+	if columns[indexByHeader["Uncertain"]] != "Yes" {
+		t.Fatalf("expected uncertain column Yes, got %q", columns[indexByHeader["Uncertain"]])
+	}
+	// Append-only stability contract: the two new tracking columns must remain the
+	// final two headers, after Pregnancy test (docs/export.md "Stability").
+	if got := ExportCSVHeaders[len(ExportCSVHeaders)-2]; got != "Cycle start" {
+		t.Fatalf("expected second-to-last header to be Cycle start, got %q", got)
+	}
+	if got := ExportCSVHeaders[len(ExportCSVHeaders)-1]; got != "Uncertain" {
+		t.Fatalf("expected last header to be Uncertain, got %q", got)
 	}
 }
 

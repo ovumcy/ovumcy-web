@@ -484,6 +484,8 @@ components:
           type: string
           format: date
         period: { type: boolean }
+        cycle_start: { type: boolean }
+        is_uncertain: { type: boolean }
         flow:
           type: string
           enum: [none, spotting, light, medium, heavy]
@@ -497,6 +499,9 @@ components:
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]
+        pregnancy_test:
+          type: string
+          enum: [none, negative, positive]
         cycle_factors:
           type: array
           items: { type: string }

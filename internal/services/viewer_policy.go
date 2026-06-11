@@ -11,6 +11,8 @@ func SanitizeRestrictedViewerLog(entry models.DailyLog) models.DailyLog {
 	entry.CycleFactorKeys = []string{}
 	entry.Notes = ""
 	entry.SymptomIDs = []uint{}
+	entry.CycleStart = false
+	entry.IsUncertain = false
 	return entry
 }
 

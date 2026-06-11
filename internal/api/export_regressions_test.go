@@ -109,6 +109,8 @@ func TestExportCSVIncludesKnownAndOtherSymptoms(t *testing.T) {
 		SexActivity:     models.SexActivityUnprotected,
 		BBT:             36.70,
 		CervicalMucus:   models.CervicalMucusCreamy,
+		CycleStart:      true,
+		IsUncertain:     true,
 		CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorSleepDisruption},
 		SymptomIDs:      []uint{symptoms[0].ID, symptoms[1].ID},
 		Notes:           "note",
@@ -151,6 +153,8 @@ func TestExportCSVIncludesKnownAndOtherSymptoms(t *testing.T) {
 		"Cramps":         "Yes",
 		"Other":          "Custom Symptom",
 		"Notes":          "note",
+		"Cycle start":    "Yes",
+		"Uncertain":      "Yes",
 	})
 }
 
@@ -202,6 +206,8 @@ func TestExportJSONNormalizesFlowAndMapsSymptoms(t *testing.T) {
 		SexActivity:     models.SexActivityProtected,
 		BBT:             36.55,
 		CervicalMucus:   models.CervicalMucusEggWhite,
+		CycleStart:      true,
+		IsUncertain:     true,
 		CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorTravel},
 		SymptomIDs:      []uint{symptoms[0].ID, symptoms[1].ID},
 		Notes:           "json-note",
@@ -293,6 +299,12 @@ func assertExportJSONTrackingFields(t *testing.T, entry exportJSONEntry) {
 	}
 	if entry.Notes != "json-note" {
 		t.Fatalf("expected notes to be preserved, got %q", entry.Notes)
+	}
+	if !entry.CycleStart {
+		t.Fatalf("expected cycle_start=true in export json")
+	}
+	if !entry.IsUncertain {
+		t.Fatalf("expected is_uncertain=true in export json")
 	}
 }
 
