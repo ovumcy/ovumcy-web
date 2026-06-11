@@ -146,6 +146,81 @@ func TestApplyUserCycleBaselineClampsShortCyclePredictionsAwayFromDayOne(t *test
 	}
 }
 
+// TestApplyUserCycleBaselineCurrentCycleDayMatchesLocalCalendarAcrossTimezonesAndDST
+// pins the displayed baseline "current cycle day" to the viewer's local
+// calendar-day count, independent of UTC offset and DST transitions. The
+// owner baseline path derives `today` from the request location (issue #48),
+// so both operands of the day count carry a non-UTC wall clock; counting
+// elapsed days by instant subtraction would lose a day whenever a DST
+// spring-forward falls between the anchor and today. The expected values are
+// pure calendar-day differences (anchor is cycle day 1).
+func TestApplyUserCycleBaselineCurrentCycleDayMatchesLocalCalendarAcrossTimezonesAndDST(t *testing.T) {
+	cases := []struct {
+		name       string
+		locationID string
+		anchor     string
+		now        time.Time
+		wantDay    int
+	}{
+		{
+			// UTC-5, no DST transition in the window: regression guard that a
+			// negative-offset zone still counts the plain calendar difference.
+			name:       "America/New_York without DST transition",
+			locationID: "America/New_York",
+			anchor:     "2026-02-07",
+			now:        time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC),
+			wantDay:    11, // 2026-02-07 -> 2026-02-17 local = 10 elapsed days
+		},
+		{
+			// UTC+9, no DST ever: cross-timezone regression guard.
+			name:       "Asia/Tokyo cross-timezone UTC+9",
+			locationID: "Asia/Tokyo",
+			anchor:     "2026-02-07",
+			now:        time.Date(2026, 2, 17, 12, 0, 0, 0, time.UTC),
+			wantDay:    11,
+		},
+		{
+			// Spring-forward is 2026-03-29 02:00->03:00 in Berlin; the cycle
+			// spans it, so instant subtraction would yield 695h (-> day 29).
+			name:       "Europe/Berlin across spring-forward",
+			locationID: "Europe/Berlin",
+			anchor:     "2026-03-01",
+			now:        time.Date(2026, 3, 30, 12, 0, 0, 0, time.UTC),
+			wantDay:    30, // 2026-03-01 -> 2026-03-30 local = 29 elapsed days
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			location, err := time.LoadLocation(tc.locationID)
+			if err != nil {
+				t.Fatalf("load location %q: %v", tc.locationID, err)
+			}
+
+			anchor := mustParseBaselineDay(t, tc.anchor)
+			user := &models.User{
+				Role:            models.RoleOwner,
+				CycleLength:     28,
+				PeriodLength:    5,
+				LastPeriodStart: &anchor,
+			}
+			logs := []models.DailyLog{
+				{Date: anchor, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium},
+			}
+
+			stats := BuildCycleStats(logs, tc.now)
+			stats = ApplyUserCycleBaseline(user, logs, stats, tc.now, location)
+
+			if got := stats.LastPeriodStart.Format("2006-01-02"); got != tc.anchor {
+				t.Fatalf("baseline LastPeriodStart = %s, want anchor %s (test setup drifted)", got, tc.anchor)
+			}
+			if stats.CurrentCycleDay != tc.wantDay {
+				t.Fatalf("CurrentCycleDay = %d, want %d (local calendar day in %s)", stats.CurrentCycleDay, tc.wantDay, tc.locationID)
+			}
+		})
+	}
+}
+
 func mustParseBaselineDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)
