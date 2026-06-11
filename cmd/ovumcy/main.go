@@ -277,6 +277,9 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 		AppName:               "Ovumcy",
 		DisableStartupMessage: true,
 		ErrorHandler:          ovumcyErrorHandler,
+		ReadTimeout:           30 * time.Second,
+		WriteTimeout:          60 * time.Second,
+		IdleTimeout:           120 * time.Second,
 	}
 	if !proxy.Enabled {
 		return appConfig
@@ -492,6 +495,9 @@ func securityHeadersMiddleware(enableStrictTransportSecurity bool) fiber.Handler
 		if enableStrictTransportSecurity {
 			c.Set(headerStrictTransportSecurity, strictTransportSecurityDefault)
 		}
+		if !strings.HasPrefix(c.Path(), "/static") {
+			c.Set("Cache-Control", "no-store")
+		}
 		return c.Next()
 	}
 }
@@ -532,6 +538,9 @@ func logStartup(config runtimeConfig) {
 	}
 	if !config.CookieSecure {
 		log.Printf("WARNING: COOKIE_SECURE=false — auth cookies are sent without the Secure flag and can be intercepted over plain HTTP. Set COOKIE_SECURE=true when serving over HTTPS (directly or behind a TLS-terminating proxy).")
+	}
+	if !config.Proxy.Enabled {
+		log.Printf("WARNING: TRUST_PROXY_ENABLED=false — edge rate limiters key on the direct socket peer; behind a reverse proxy every client shares one bucket. Set TRUST_PROXY_ENABLED=true, TRUSTED_PROXIES, and a proxy-overwritten PROXY_HEADER (for example X-Real-IP) when deployed behind a proxy.")
 	}
 }
 

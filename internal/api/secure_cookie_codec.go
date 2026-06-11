@@ -38,6 +38,18 @@ func newSecureCookieCodec(secretKey []byte) (*secureCookieCodec, error) {
 	return &secureCookieCodec{aead: aead}, nil
 }
 
+// cookieCodec returns the handler's secureCookieCodec, building it from
+// handler.secretKey on first use and caching both the codec and the error.
+// Initialization is lazy rather than done in NewHandler because tests
+// construct Handler as a bare literal; sync.Once keeps first use race-free
+// under concurrent requests.
+func (handler *Handler) cookieCodec() (*secureCookieCodec, error) {
+	handler.cookieCodecOnce.Do(func() {
+		handler.cookieCodecCached, handler.cookieCodecErr = newSecureCookieCodec(handler.secretKey)
+	})
+	return handler.cookieCodecCached, handler.cookieCodecErr
+}
+
 func (codec *secureCookieCodec) seal(purpose string, plaintext []byte) (string, error) {
 	trimmedPurpose := strings.TrimSpace(purpose)
 	if trimmedPurpose == "" {

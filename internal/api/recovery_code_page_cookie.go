@@ -58,7 +58,7 @@ func (handler *Handler) setRecoveryCodeIssuanceCookie(c *fiber.Ctx, userID uint,
 	if err != nil {
 		return err
 	}
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (handler *Handler) readRecoveryCodeDisplayState(c *fiber.Ctx, userID uint, 
 		return state
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		handler.clearRecoveryCodePageCookie(c)
 		return state

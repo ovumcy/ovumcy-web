@@ -35,15 +35,21 @@ A failed check means the image was not produced by this repository's release wor
 
 ## Reporting a Vulnerability
 
-Please report security issues privately.
+Please report security vulnerabilities privately — not through public GitHub
+issues. Use either channel:
 
-- Email: `contact@ovumcy.com`
-- Subject: `SECURITY: <short summary>`
-- Include: impact, reproduction steps, affected endpoints/files, and suggested fix if available
+- GitHub private vulnerability reporting (preferred):
+  https://github.com/ovumcy/ovumcy-web/security/advisories/new
+- Email: contact@ovumcy.com (subject: `SECURITY: <short summary>`)
 
-We will acknowledge receipt within 72 hours and provide a remediation plan after triage.
+Include impact, reproduction steps, affected endpoints/files, and a suggested
+fix if you have one.
 
-Do not open public GitHub issues for unpatched security vulnerabilities.
+We practice coordinated vulnerability disclosure. After a report we acknowledge
+receipt within 72 hours, share a triage assessment and remediation plan within
+7 days, and aim to ship a fix and coordinate public disclosure within 90 days —
+sooner for actively exploited issues. Please give us reasonable time to
+remediate before disclosing a vulnerability publicly.
 
 ## Known Information Disclosure
 

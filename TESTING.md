@@ -11,14 +11,14 @@ worth anything. Every claim here is backed by code in the repository and by CI.
 |-------|----------------|-------|
 | **Unit** | Business/domain logic (cycle math, validation, policies) | `internal/services/*_test.go` |
 | **Integration** | HTTP handlers against a real database, persistence correctness | `internal/api/*_test.go` |
-| **End-to-end** | Real user flows in a browser, across Chromium / Firefox / WebKit | `e2e/*.spec.ts` (Playwright) |
+| **End-to-end** | Real user flows in a browser; full suite on Chromium, cross-engine smoke spec on Firefox and WebKit | `e2e/*.spec.ts` (Playwright) |
 | **Property-based** | Invariants of the cycle math over thousands of generated inputs | `internal/services/cycles_property_test.go` (`pgregory.net/rapid`) |
 | **Fuzz** | Robustness of parsers/validators against arbitrary/invalid input | `internal/services/policy_fuzz_test.go` (native Go fuzzing) |
 | **Reference vectors** | Cycle predictions match the documented algorithm, number for number | `internal/services/cycles_reference_test.go` |
 
 Currently **1,375+ Go test functions** across `internal/` and **25 Playwright
-specs** (run on three browser engines). Tests favor behavior and persisted state
-over markup or implementation details.
+specs** (full suite on Chromium; cross-engine smoke on Firefox and WebKit).
+Tests favor behavior and persisted state over markup or implementation details.
 
 ## We test our tests
 

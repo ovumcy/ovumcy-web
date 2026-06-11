@@ -104,7 +104,7 @@ func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLo
 }
 
 func (handler *Handler) sealCookieValue(cookieName string, plaintext []byte) (string, error) {
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +112,7 @@ func (handler *Handler) sealCookieValue(cookieName string, plaintext []byte) (st
 }
 
 func (handler *Handler) openCookieValue(cookieName string, raw string) ([]byte, error) {
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return nil, err
 	}

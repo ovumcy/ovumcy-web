@@ -32,7 +32,7 @@ func (handler *Handler) setResetPasswordCookie(c *fiber.Ctx, token string, force
 		return err
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func (handler *Handler) readResetPasswordCookie(c *fiber.Ctx) (string, bool) {
 		return "", false
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		handler.clearResetPasswordCookie(c)
 		return "", false

@@ -12,22 +12,23 @@ import (
 )
 
 var (
-	ErrRecoveryCodeNotFound = errors.New("recovery code not found")
-	ErrInvalidResetToken    = errors.New("invalid reset token")
-	ErrAuthUserRequired     = errors.New("auth user is required")
-	ErrAuthUserNotFound     = errors.New("auth user not found")
-	ErrAuthUserLookupFailed = errors.New("auth user lookup failed")
-	ErrRecoveryCodeGenerate = errors.New("recovery code generation failed")
-	ErrRecoveryCodeUpdate   = errors.New("recovery code update failed")
-	ErrAuthRegisterInvalid  = errors.New("auth register invalid input")
-	ErrAuthEmailExists      = errors.New("auth email already exists")
-	ErrAuthRegisterFailed   = errors.New("auth register failed")
-	ErrAuthPasswordMismatch = errors.New("auth register password mismatch")
-	ErrAuthWeakPassword     = errors.New("auth register weak password")
-	ErrAuthInvalidCreds     = errors.New("auth invalid credentials")
-	ErrAuthResetInvalid     = errors.New("auth reset invalid input")
-	ErrAuthPasswordHash     = errors.New("auth password hash failed")
-	ErrAuthPasswordUpdate   = errors.New("auth password update failed")
+	ErrRecoveryCodeNotFound      = errors.New("recovery code not found")
+	ErrInvalidResetToken         = errors.New("invalid reset token")
+	ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
+	ErrAuthUserRequired          = errors.New("auth user is required")
+	ErrAuthUserNotFound          = errors.New("auth user not found")
+	ErrAuthUserLookupFailed      = errors.New("auth user lookup failed")
+	ErrRecoveryCodeGenerate      = errors.New("recovery code generation failed")
+	ErrRecoveryCodeUpdate        = errors.New("recovery code update failed")
+	ErrAuthRegisterInvalid       = errors.New("auth register invalid input")
+	ErrAuthEmailExists           = errors.New("auth email already exists")
+	ErrAuthRegisterFailed        = errors.New("auth register failed")
+	ErrAuthPasswordMismatch      = errors.New("auth register password mismatch")
+	ErrAuthWeakPassword          = errors.New("auth register weak password")
+	ErrAuthInvalidCreds          = errors.New("auth invalid credentials")
+	ErrAuthResetInvalid          = errors.New("auth reset invalid input")
+	ErrAuthPasswordHash          = errors.New("auth password hash failed")
+	ErrAuthPasswordUpdate        = errors.New("auth password update failed")
 )
 
 // recoveryCodeTimingEqualizationHash and credentialsTimingEqualizationHash are
@@ -48,6 +49,7 @@ type AuthUserRepository interface {
 	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
+	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error
 	BumpAuthSessionVersion(ctx context.Context, userID uint) error
 }
 
@@ -398,6 +400,11 @@ var equalizeRegistrationTiming = func(password string) {
 	_ = bcrypt.CompareHashAndPassword([]byte(recoveryCodeTimingEqualizationHash), []byte(password))
 }
 
+// ResetPasswordAndRotateRecoveryCode applies the new password and a fresh
+// recovery code using an unconditional UPDATE. Kept for backward compatibility
+// with callers that do not have the old password hash at hand (e.g. the
+// FinalizeLocalPasswordSetup path). For the password-reset flow use
+// ResetPasswordAndRotateRecoveryCodeCAS which adds a single-use CAS guard.
 func (service *AuthService) ResetPasswordAndRotateRecoveryCode(ctx context.Context, user *models.User, newPassword string) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired
@@ -413,6 +420,42 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCode(ctx context.Conte
 	}
 
 	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, string(passwordHash), recoveryHash, false); err != nil {
+		return "", err
+	}
+	user.PasswordHash = string(passwordHash)
+	user.RecoveryCodeHash = recoveryHash
+	user.LocalAuthEnabled = true
+	user.AuthSessionVersion = NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
+	user.MustChangePassword = false
+
+	return recoveryCode, nil
+}
+
+// ResetPasswordAndRotateRecoveryCodeCAS is the single-use variant of
+// ResetPasswordAndRotateRecoveryCode used by the password-reset flow.
+// oldPasswordHash must be the hash that was current when the reset token was
+// issued (sourced from the resolved user before any write).
+//
+// The UPDATE carries the predicate
+// `WHERE id = ? AND password_hash = oldPasswordHash`. Concurrent or replayed
+// redeems both reach the UPDATE, but only one sees RowsAffected == 1; the
+// loser receives ErrResetTokenAlreadyConsumed.
+func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string) (string, error) {
+	if user == nil {
+		return "", ErrAuthUserRequired // codecov:ignore -- defensive; callers always pass a resolved user
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err // codecov:ignore -- bcrypt only errors on an out-of-range cost
+	}
+	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
+	if err != nil {
+		return "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
+	}
+
+	// CAS predicate prevents concurrent / replayed redeems.
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, oldPasswordHash, string(passwordHash), recoveryHash); err != nil {
 		return "", err
 	}
 	user.PasswordHash = string(passwordHash)

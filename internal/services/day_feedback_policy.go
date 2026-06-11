@@ -62,6 +62,11 @@ func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, use
 	if location != nil {
 		cycleStart = CalendarDay(cycleStart, location)
 	}
+	// Canonicalize to UTC-midnight so the stored value matches the date-only
+	// convention used by every other date column (issue #48/#64).  Updates(map)
+	// bypasses the GORM BeforeSave hook, so we must normalize here explicitly.
+	y, m, d := cycleStart.Date()
+	cycleStart = time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 	return service.users.UpdateByID(ctx, userID, map[string]any{
 		"long_period_warning_cycle_start": cycleStart,
 	})

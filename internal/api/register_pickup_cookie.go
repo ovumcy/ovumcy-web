@@ -190,7 +190,7 @@ func (handler *Handler) setRegisterPickupCookie(c *fiber.Ctx, payload registerPi
 	if err != nil {
 		return err
 	}
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -218,7 +218,7 @@ func (handler *Handler) popRegisterPickupCookie(c *fiber.Ctx) (registerPickupPay
 	}
 	handler.clearRegisterPickupCookie(c)
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return registerPickupPayload{}, false
 	}

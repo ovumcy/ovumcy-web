@@ -2,6 +2,7 @@ package api
 
 import (
 	"html/template"
+	"sync"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/apideps"
@@ -20,6 +21,9 @@ type (
 
 type Handler struct {
 	secretKey            []byte
+	cookieCodecOnce      sync.Once
+	cookieCodecCached    *secureCookieCodec
+	cookieCodecErr       error
 	location             *time.Location
 	cookieSecure         bool
 	i18n                 *i18n.Manager

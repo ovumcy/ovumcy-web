@@ -35,7 +35,7 @@ func (handler *Handler) setTOTPPendingCookie(c *fiber.Ctx, userID uint, remember
 		return err
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func (handler *Handler) parseTOTPPendingCookie(c *fiber.Ctx) (uint, bool, error)
 		return 0, false, errors.New("totp pending cookie missing")
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return 0, false, err
 	}
@@ -112,7 +112,7 @@ func (handler *Handler) setTOTPSetupCookie(c *fiber.Ctx, rawSecret string) error
 		return err
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (handler *Handler) parseTOTPSetupCookie(c *fiber.Ctx) (string, error) {
 		return "", errors.New("totp setup cookie missing")
 	}
 
-	codec, err := newSecureCookieCodec(handler.secretKey)
+	codec, err := handler.cookieCodec()
 	if err != nil {
 		return "", err
 	}
