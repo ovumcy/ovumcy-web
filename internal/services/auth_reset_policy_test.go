@@ -133,3 +133,25 @@ func TestNormalizeRecoveryCode(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildPasswordResetTokenDefaultsNonPositiveTTL(t *testing.T) {
+	secret := []byte("test-secret")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	passwordHash := "$2a$10$testhashvaluefortokenclaims"
+
+	// ttl <= 0 must default to 30 minutes (auth_reset_policy.go:40–42). Pin the
+	// boundary: the token is valid just before 30m and expired just after. The
+	// ttl=0 case also kills a `<= 0` → `< 0` boundary mutation.
+	for _, ttl := range []time.Duration{0, -time.Minute} {
+		token, err := BuildPasswordResetToken(secret, 42, passwordHash, ttl, now)
+		if err != nil {
+			t.Fatalf("BuildPasswordResetToken(ttl=%v) unexpected error: %v", ttl, err)
+		}
+		if _, err := ParsePasswordResetToken(secret, token, now.Add(29*time.Minute)); err != nil {
+			t.Fatalf("token with defaulted ttl should be valid at +29m (ttl=%v), got %v", ttl, err)
+		}
+		if _, err := ParsePasswordResetToken(secret, token, now.Add(31*time.Minute)); !errors.Is(err, ErrPasswordResetTokenExpired) {
+			t.Fatalf("token with defaulted ttl should expire by +31m (ttl=%v), got %v", ttl, err)
+		}
+	}
+}

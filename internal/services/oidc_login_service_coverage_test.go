@@ -193,14 +193,15 @@ func TestOidcloginserviceCovAutoProvisionFallbackUserNotFoundReturnsProvisionFai
 }
 
 // ---------------------------------------------------------------------------
-// Line 374 — autoProvisionOrLookupUser: fallback user fails role validation
+// Line 347 — findOrProvisionUser: a directly-found user fails role validation
 //
-// Path: provisioner returns ErrAuthEmailExists; fallback lookup succeeds but
-// user has a non-owner role → ValidateSupportedWebUser fails →
-// must return ErrOIDCAccountUnavailable.
+// With byEmailFound:true the *first* email lookup already returns the user, so
+// the role check at line 347 (not the provision fallback at line 374) rejects a
+// non-owner role with ErrOIDCAccountUnavailable. The line-374 provision-fallback
+// variant is covered in oidc_login_service_fallback_coverage_test.go.
 // ---------------------------------------------------------------------------
 
-func TestOidcloginserviceCovAutoProvisionFallbackUnsupportedRoleReturnsAccountUnavailable(t *testing.T) {
+func TestOidcloginserviceCovDirectFoundUnsupportedRoleReturnsAccountUnavailable(t *testing.T) {
 	t.Parallel()
 
 	provisioner := &stubOIDCAutoProvisioner{err: ErrAuthEmailExists}
