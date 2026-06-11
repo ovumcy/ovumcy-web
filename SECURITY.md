@@ -108,7 +108,7 @@ Ovumcy uses only first-party cookies. Cookies marked **Sealed** are encrypted wi
 
 | Name | Purpose | TTL | Path | HttpOnly | SameSite | Secure | Sealed |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `ovumcy_auth` | Session token carrying user id, role, and `auth_session_version` | 7 days with remember-me, otherwise browser session | `/` | yes | Lax | `COOKIE_SECURE` | yes |
+| `ovumcy_auth` | Session token carrying user id, role, and `auth_session_version` | 30 days (persistent) with remember-me, otherwise a browser-session cookie (underlying token TTL 7 days) | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_csrf` | CSRF double-submit token matched against the `csrf_token` form field on every state-changing request | browser session | `/` | yes | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_lang` | User-selected UI language code | 1 year | `/` | no (JS-readable for i18n) | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_tz` | Client IANA timezone for server-side calendar math | 1 year | `/` | no (JS-writable, server-validated) | Lax | `COOKIE_SECURE` | no |
