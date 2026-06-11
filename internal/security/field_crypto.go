@@ -72,7 +72,7 @@ func sealFieldCiphertext(plaintext string, secretKey []byte, aad []byte) (string
 
 	payload, err := fieldCipher.Seal([]byte(plaintext), aad)
 	if err != nil {
-		return "", fmt.Errorf("field crypto: seal: %w", err)
+		return "", fmt.Errorf("field crypto: seal: %w", err) // codecov:ignore -- defensive: AEAD Seal only fails on a crypto/rand error
 	}
 
 	return base64.RawURLEncoding.EncodeToString(payload), nil

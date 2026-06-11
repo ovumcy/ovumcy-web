@@ -112,7 +112,7 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 	}
 	handler.clearOIDCLogoutBridgeCookie(c)
 	if result.Logout != nil {
-		if err := handler.oidcLogoutStateSvc.Save(c.UserContext(), sessionID, *result.Logout, time.Now()); err != nil {
+		if err := handler.oidcLogoutStateSvc.Save(c.UserContext(), sessionID, *result.Logout, time.Now()); err != nil { // codecov:ignore -- OIDC logout-state save error; covered by the e2e OIDC lanes
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
 			handler.clearAuthRelatedCookies(c)

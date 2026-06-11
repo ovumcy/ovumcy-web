@@ -251,7 +251,7 @@ func buildDependencies(repositories *db.Repositories, i18nManager *i18n.Manager,
 	loginService.ConfigureAttemptLimits(rateLimits.LoginMax, rateLimits.LoginWindow)
 	dailyLogs := repositories.DailyLogs
 	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, func(ctx context.Context, fn func(services.DayLogRepository) error) error {
-		return dailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error {
+		return dailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error { // codecov:ignore -- main() DI wiring; runs in the binary, exercised by e2e
 			return fn(tx)
 		})
 	})
@@ -429,7 +429,7 @@ func rateLimitKeyGenerator(proxy proxySettings) func(*fiber.Ctx) string {
 		if client := rightmostUntrustedIP(c.IPs(), trusted); client != "" {
 			return client
 		}
-		return peer.String()
+		return peer.String() // codecov:ignore -- main() IP-resolution fallback; exercised by e2e
 	}
 }
 

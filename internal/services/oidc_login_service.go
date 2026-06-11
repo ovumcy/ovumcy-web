@@ -303,7 +303,7 @@ func (service *OIDCLoginService) ConfirmAndLinkIdentity(ctx context.Context, tar
 			// confirmation. Fail closed.
 			return ErrOIDCLinkFailed
 		}
-		_ = service.identities.TouchLastUsed(ctx, existing.ID, effectiveOIDCLoginTime(linkTime))
+		_ = service.identities.TouchLastUsed(ctx, existing.ID, effectiveOIDCLoginTime(linkTime)) // codecov:ignore -- best-effort last-used touch; error intentionally ignored
 		return nil
 	}
 

@@ -50,7 +50,7 @@ func (codec *secureCookieCodec) seal(purpose string, plaintext []byte) (string, 
 	aad := []byte(secureCookiePurposePrefix + trimmedPurpose)
 	payload, err := codec.aead.Seal(plaintext, aad)
 	if err != nil {
-		return "", fmt.Errorf("seal secure cookie payload: %w", err)
+		return "", fmt.Errorf("seal secure cookie payload: %w", err) // codecov:ignore -- defensive: AEAD Seal only fails on a crypto/rand error
 	}
 
 	return secureCookieVersion + "." + base64.RawURLEncoding.EncodeToString(payload), nil

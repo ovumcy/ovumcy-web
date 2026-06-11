@@ -93,6 +93,45 @@ func TestIsGatedFile(t *testing.T) {
 	}
 }
 
+func TestMarkedLinesAndLineIgnored(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "x.go")
+	content := "package x\n" + // 1
+		"func A() error {\n" + // 2
+		"\tif err := f(); err != nil {\n" + // 3
+		"\t\treturn err // codecov:ignore -- unreachable\n" + // 4
+		"\t}\n" + // 5
+		"\treturn nil\n" + // 6
+		"}\n" + // 7
+		"// codecov:ignore:start\n" + // 8
+		"func B() {}\n" + // 9
+		"// codecov:ignore:end\n" // 10
+	if err := os.WriteFile(src, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	marked := markedLines(src)
+	for _, ln := range []int{4, 8, 9, 10} {
+		if !marked[ln] {
+			t.Fatalf("line %d should be marked", ln)
+		}
+	}
+	for _, ln := range []int{1, 2, 3, 5, 6, 7} {
+		if marked[ln] {
+			t.Fatalf("line %d should NOT be marked", ln)
+		}
+	}
+
+	// The uncovered if-body block [3,5] shares the marker on line 4, so the
+	// closing brace on line 5 is excluded too; the covered return on line 6 is not.
+	blocks := []coverBlock{{start: 3, end: 5, covered: false}}
+	if !lineIgnored(blocks, 5, marked) {
+		t.Fatal("line 5 (closing brace) should be ignored via its annotated block")
+	}
+	if lineIgnored(blocks, 6, marked) {
+		t.Fatal("line 6 should not be ignored")
+	}
+}
+
 func TestReadModulePath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "go.mod")
 	if err := os.WriteFile(path, []byte("module github.com/ovumcy/ovumcy-web\n\ngo 1.26.4\n"), 0o600); err != nil {

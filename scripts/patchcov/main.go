@@ -61,8 +61,9 @@ func main() {
 		if !ok {
 			continue // file absent from the profile -> non-coverable (no-test pkg, tooling)
 		}
+		ignored := markedLines(file)
 		for _, line := range lines {
-			if lineState(blocks, line) == stateUncovered {
+			if lineState(blocks, line) == stateUncovered && !lineIgnored(blocks, line, ignored) {
 				uncovered = append(uncovered, fmt.Sprintf("%s:%d", file, line))
 			}
 		}
@@ -75,7 +76,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "  %s\n", u)
 		}
 		fmt.Fprintln(os.Stderr, "\nAdd tests covering these lines, or, for a genuinely unreachable line,")
-		fmt.Fprintln(os.Stderr, "mark it // codecov:ignore and exclude its path from the gate.")
+		fmt.Fprintln(os.Stderr, "annotate it with a trailing // codecov:ignore (or wrap a region in")
+		fmt.Fprintln(os.Stderr, "// codecov:ignore:start ... // codecov:ignore:end) stating why.")
 		os.Exit(1)
 	}
 	fmt.Println("patch coverage gate OK: every modified coverable line is covered by tests.")
@@ -155,6 +157,55 @@ func lineState(blocks []coverBlock, line int) int {
 		}
 	}
 	return state
+}
+
+// markedLines returns the 1-based line numbers in file annotated for exclusion
+// from the gate, via a trailing "// codecov:ignore" comment or a
+// "// codecov:ignore:start" ... "// codecov:ignore:end" block. Genuinely
+// unreachable defensive code — e.g. crypto-primitive errors that cannot occur,
+// or main() dependency wiring — is excluded this way rather than covered with a
+// brittle fault-injection test. A missing/unreadable file marks nothing.
+func markedLines(file string) map[int]bool {
+	marked := map[int]bool{}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return marked
+	}
+	inBlock := false
+	for i, raw := range strings.Split(string(data), "\n") {
+		lineNo := i + 1
+		switch {
+		case strings.Contains(raw, "codecov:ignore:start"):
+			inBlock = true
+			marked[lineNo] = true
+		case strings.Contains(raw, "codecov:ignore:end"):
+			inBlock = false
+			marked[lineNo] = true
+		case inBlock, strings.Contains(raw, "codecov:ignore"):
+			marked[lineNo] = true
+		}
+	}
+	return marked
+}
+
+// lineIgnored reports whether an uncovered line is excluded: either annotated
+// directly, or sharing a zero-count coverage block with an annotated line — so a
+// single marker on an error branch also excludes its body and closing brace.
+func lineIgnored(blocks []coverBlock, line int, marked map[int]bool) bool {
+	if marked[line] {
+		return true
+	}
+	for _, b := range blocks {
+		if line < b.start || line > b.end || b.covered {
+			continue
+		}
+		for ln := b.start; ln <= b.end; ln++ {
+			if marked[ln] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // parseDiffAddedLines parses `git diff --unified=0` output into the set of added

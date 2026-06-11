@@ -62,16 +62,16 @@ func newSealedCipher(secretKey []byte, saltLabel, infoLabel string) (*SealedCiph
 	reader := hkdf.New(sha256.New, secretKey, []byte(saltLabel), []byte(infoLabel))
 	derivedKey := make([]byte, 32)
 	if _, err := io.ReadFull(reader, derivedKey); err != nil {
-		return nil, fmt.Errorf("sealed cipher: derive key: %w", err)
+		return nil, fmt.Errorf("sealed cipher: derive key: %w", err) // codecov:ignore -- defensive: HKDF read cannot fail for a 32-byte sha256 stream
 	}
 
 	block, err := aes.NewCipher(derivedKey)
 	if err != nil {
-		return nil, fmt.Errorf("sealed cipher: create cipher: %w", err)
+		return nil, fmt.Errorf("sealed cipher: create cipher: %w", err) // codecov:ignore -- defensive: aes.NewCipher never fails for a 32-byte key
 	}
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("sealed cipher: create aead: %w", err)
+		return nil, fmt.Errorf("sealed cipher: create aead: %w", err) // codecov:ignore -- defensive: cipher.NewGCM never fails for AES
 	}
 
 	return &SealedCipher{aead: aead}, nil
@@ -93,7 +93,7 @@ func (c *SealedCipher) Seal(plaintext, aad []byte) ([]byte, error) {
 
 	nonce := make([]byte, c.aead.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, fmt.Errorf("sealed cipher: generate nonce: %w", err)
+		return nil, fmt.Errorf("sealed cipher: generate nonce: %w", err) // codecov:ignore -- defensive: crypto/rand read cannot fail in practice
 	}
 
 	ciphertext := c.aead.Seal(nil, nonce, plaintext, aad)

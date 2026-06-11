@@ -58,7 +58,10 @@ jobs:
         run: go vet ./...
 
       - name: Go test with coverage
-        run: go test ./... -coverprofile=coverage.out -covermode=atomic
+        # -coverpkg=./... credits a line when ANY test exercises it (including
+        # cross-package integration tests), not only its own package's unit
+        # tests. The patch-coverage gate consumes this profile.
+        run: go test ./... -coverprofile=coverage.out -covermode=atomic -coverpkg=./...
 
       - name: Frontend build
         run: npm run build
