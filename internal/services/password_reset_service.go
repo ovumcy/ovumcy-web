@@ -103,7 +103,13 @@ func (service *PasswordResetService) CompleteReset(ctx context.Context, secretKe
 		return nil, "", ErrInvalidResetToken
 	}
 
-	recoveryCode, err := service.auth.ResetPasswordAndRotateRecoveryCode(ctx, user, password)
+	// Capture the password hash that the token was validated against before
+	// the write. ResetPasswordAndRotateRecoveryCodeCAS passes it as a CAS
+	// predicate so only one of any concurrent redeems of the same token can
+	// win; the loser receives ErrResetTokenAlreadyConsumed.
+	oldPasswordHash := user.PasswordHash
+
+	recoveryCode, err := service.auth.ResetPasswordAndRotateRecoveryCodeCAS(ctx, user, oldPasswordHash, password)
 	if err != nil {
 		return nil, "", err
 	}

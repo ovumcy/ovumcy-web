@@ -38,6 +38,28 @@ func TestClassifySettingsErrorSource_ChangePassword(t *testing.T) {
 	}
 }
 
+// TestClassifySettingsErrorSource_AllPasswordChangeKeys ensures every
+// SettingsPasswordChangeKey* constant routes to the change-password section.
+// If a constant value is renamed or a new case is added to
+// mapSettingsPasswordChangeError without a matching entry here, this table
+// will catch the drift.
+func TestClassifySettingsErrorSource_AllPasswordChangeKeys(t *testing.T) {
+	service := NewNotificationService()
+
+	keys := []string{
+		SettingsPasswordChangeKeyInvalidInput,
+		SettingsPasswordChangeKeyPasswordMismatch,
+		SettingsPasswordChangeKeyInvalidCurrent,
+		SettingsPasswordChangeKeyMustDiffer,
+		SettingsPasswordChangeKeyWeakPassword,
+	}
+	for _, key := range keys {
+		if got := service.ClassifySettingsErrorSource(key); got != SettingsErrorTargetChangePassword {
+			t.Errorf("key %q: expected change-password target, got %q", key, got)
+		}
+	}
+}
+
 func TestClassifySettingsErrorSource_General(t *testing.T) {
 	service := NewNotificationService()
 

@@ -7,6 +7,11 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// Health reports process liveness only. It does NOT query the database or
+// check any downstream dependency, so a 200 here means the process is alive,
+// not that it is ready to serve traffic. This is a deliberate trade-off:
+// adding an unauthenticated DB ping would expose a recon/load surface. Wire
+// a separate readiness probe if you need DB-health visibility.
 func (handler *Handler) Health(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }

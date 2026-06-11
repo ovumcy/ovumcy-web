@@ -9,6 +9,19 @@ const (
 	SettingsErrorTargetChangePassword SettingsErrorTarget = "change_password"
 )
 
+// SettingsPasswordChange* are the stable spec keys for password-change errors.
+// They are used both as the API error key (in error_mapping_settings_password.go)
+// and as the routing signal in ClassifySettingsErrorSource, so changing a
+// display message only requires updating one constant instead of two separate
+// switch statements.
+const (
+	SettingsPasswordChangeKeyInvalidInput     = "invalid settings input"
+	SettingsPasswordChangeKeyPasswordMismatch = "password mismatch"
+	SettingsPasswordChangeKeyInvalidCurrent   = "invalid current password"
+	SettingsPasswordChangeKeyMustDiffer       = "new password must differ"
+	SettingsPasswordChangeKeyWeakPassword     = "weak password"
+)
+
 type NotificationService struct{}
 
 func NewNotificationService() *NotificationService {
@@ -32,7 +45,11 @@ func (service *NotificationService) ClassifySettingsErrorSource(errorSource stri
 
 func (service *NotificationService) IsChangePasswordErrorMessage(message string) bool {
 	switch strings.ToLower(strings.TrimSpace(message)) {
-	case "invalid settings input", "password mismatch", "invalid current password", "new password must differ", "weak password":
+	case SettingsPasswordChangeKeyInvalidInput,
+		SettingsPasswordChangeKeyPasswordMismatch,
+		SettingsPasswordChangeKeyInvalidCurrent,
+		SettingsPasswordChangeKeyMustDiffer,
+		SettingsPasswordChangeKeyWeakPassword:
 		return true
 	default:
 		return false

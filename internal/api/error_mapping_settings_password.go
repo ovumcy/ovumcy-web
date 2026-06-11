@@ -8,17 +8,17 @@ import (
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 	switch services.ClassifySettingsPasswordChangeError(err) {
 	case services.SettingsPasswordChangeErrorInvalidInput:
-		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid settings input")
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyInvalidInput)
 	case services.SettingsPasswordChangeErrorPasswordMismatch:
-		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password mismatch")
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyPasswordMismatch)
 	case services.SettingsPasswordChangeErrorInvalidCurrentPassword:
-		return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid current password")
+		return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, services.SettingsPasswordChangeKeyInvalidCurrent)
 	case services.SettingsPasswordChangeErrorLocalPasswordNotSet:
 		return settingsLocalPasswordRequiredErrorSpec()
 	case services.SettingsPasswordChangeErrorNewPasswordMustDiffer:
-		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "new password must differ")
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyMustDiffer)
 	case services.SettingsPasswordChangeErrorWeakPassword:
-		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password")
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyWeakPassword)
 	case services.SettingsPasswordChangeErrorHashFailed, services.SettingsPasswordChangeErrorRecoveryCodeFailed:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to secure password")
 	case services.SettingsPasswordChangeErrorUpdateFailed:
