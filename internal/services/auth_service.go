@@ -49,18 +49,8 @@ type AuthUserRepository interface {
 	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
-	BumpAuthSessionVersion(ctx context.Context, userID uint) error
-}
-
-// passwordResetCASRepository is a narrow extension of AuthUserRepository that
-// the production *db.UserRepository implements. AuthService probes for it via
-// type assertion so the public AuthUserRepository interface stays stable (test
-// doubles that implement only the main interface continue to compile). Any
-// implementation that does NOT satisfy this narrower interface falls back to
-// the non-CAS UPDATE path; that path has no race window in practice because
-// test doubles are not concurrent.
-type passwordResetCASRepository interface {
 	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error
+	BumpAuthSessionVersion(ctx context.Context, userID uint) error
 }
 
 const (
@@ -446,12 +436,10 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCode(ctx context.Conte
 // oldPasswordHash must be the hash that was current when the reset token was
 // issued (sourced from the resolved user before any write).
 //
-// When the underlying repository implements passwordResetCASRepository (the
-// production *db.UserRepository does), the UPDATE carries the predicate
+// The UPDATE carries the predicate
 // `WHERE id = ? AND password_hash = oldPasswordHash`. Concurrent or replayed
 // redeems both reach the UPDATE, but only one sees RowsAffected == 1; the
-// loser receives ErrResetTokenAlreadyConsumed. Test doubles that implement
-// only the base AuthUserRepository fall back to the unconditional UPDATE.
+// loser receives ErrResetTokenAlreadyConsumed.
 func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Context, user *models.User, oldPasswordHash string, newPassword string) (string, error) {
 	if user == nil {
 		return "", ErrAuthUserRequired // codecov:ignore -- defensive; callers always pass a resolved user
@@ -466,17 +454,9 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Co
 		return "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
 	}
 
-	if casRepo, ok := service.users.(passwordResetCASRepository); ok {
-		// Production path: CAS predicate prevents concurrent / replayed redeems.
-		if err := casRepo.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, oldPasswordHash, string(passwordHash), recoveryHash); err != nil {
-			return "", err
-		}
-	} else {
-		// codecov:ignore:start -- fallback only for non-CAS test doubles; the production *db.UserRepository satisfies passwordResetCASRepository, so the shipped binary always takes the CAS path above
-		if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, string(passwordHash), recoveryHash, false); err != nil {
-			return "", err
-		}
-		// codecov:ignore:end
+	// CAS predicate prevents concurrent / replayed redeems.
+	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx, user.ID, oldPasswordHash, string(passwordHash), recoveryHash); err != nil {
+		return "", err
 	}
 	user.PasswordHash = string(passwordHash)
 	user.RecoveryCodeHash = recoveryHash

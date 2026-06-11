@@ -133,6 +133,10 @@ func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx co
 	return nil
 }
 
+func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error {
+	return stub.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, userID, newPasswordHash, recoveryHash, false)
+}
+
 func (stub *stubAuthUserRepo) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
 	if stub.bumpSessionErr != nil {
 		return stub.bumpSessionErr

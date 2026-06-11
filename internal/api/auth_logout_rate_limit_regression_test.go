@@ -50,6 +50,10 @@ func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(context.Co
 	return nil
 }
 
+func (stubLogoutAuthRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(context.Context, uint, string, string, string) error {
+	return nil
+}
+
 func (stubLogoutAuthRepo) BumpAuthSessionVersion(context.Context, uint) error { return nil }
 
 // TestLogoutHandlerEnforcesPerAccountRateLimit asserts that Handler.Logout
