@@ -7,8 +7,16 @@
   }
 
   function createToastStack() {
+    var existing = document.querySelector(".toast-stack");
+    if (existing) {
+      return existing;
+    }
     var stack = document.createElement("div");
     stack.className = "toast-stack";
+    // aria-live without role="status": status implies aria-atomic, which
+    // would re-announce every toast already in the stack each time a new
+    // one is appended.
+    stack.setAttribute("aria-live", "polite");
     document.body.appendChild(stack);
     return stack;
   }
@@ -39,13 +47,13 @@
   var successStatusClearTimers = new WeakMap();
 
   function initToastAPI() {
-    var stack = null;
+    // The live region must already be in the accessibility tree before the
+    // first toast lands in it — a region inserted and populated in the same
+    // breath is skipped by screen readers — so the stack is created eagerly
+    // instead of on first use.
+    var stack = createToastStack();
 
     function getStack() {
-      if (stack) {
-        return stack;
-      }
-      stack = createToastStack();
       return stack;
     }
 
