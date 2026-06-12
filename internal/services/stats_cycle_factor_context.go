@@ -72,7 +72,7 @@ func buildStatsCycleFactorExplanation(user *models.User, logs []models.DailyLog,
 }
 
 func shouldBuildStatsCycleFactorExplanation(user *models.User, logs []models.DailyLog, completedCycles []completedCycleSpan, stats CycleStats) bool {
-	if !IsOwnerUser(user) || len(logs) == 0 || isStatsPredictionDisabled(user) || len(completedCycles) < statsMinimumInsightsCycles {
+	if !IsOwnerUser(user) || len(logs) == 0 || DashboardPredictionDisabled(user) || len(completedCycles) < statsMinimumInsightsCycles {
 		return false
 	}
 	return user.IrregularCycle || (len(completedCycles) >= minimumPhaseInsightCycles && IsIrregularCycleSpread(stats))

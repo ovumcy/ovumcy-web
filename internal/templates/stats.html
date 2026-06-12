@@ -48,7 +48,7 @@
     {{if .ShowIrregularityNotice}}
     <div class="journal-panel text-sm journal-muted">{{printf (tn .Messages .Lang "stats.irregular_notice" .Stats.MaxCycleLength) .Stats.MinCycleLength .Stats.MaxCycleLength}}</div>
     {{end}}
-    {{if .ShowIrregularModeRecommendation}}
+    {{if .ShowIrregularityNotice}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_recommendation"}}</div>
     {{end}}
     {{if .IsOwner}}

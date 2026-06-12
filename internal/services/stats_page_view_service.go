@@ -31,42 +31,44 @@ type StatsSymptomCountViewData struct {
 }
 
 type StatsPageViewData struct {
-	Stats                               CycleStats
-	ChartData                           StatsChartViewData
-	ChartBaseline                       int
-	TrendPointCount                     int
-	Flags                               StatsFlags
-	PredictionSampleCount               int
-	PredictionSampleUsesRecentWindow    bool
-	PredictionReliabilityLabelKey       string
-	PredictionReliabilityHintKey        string
-	ShowPredictionReliability           bool
-	PredictionExplanationPrimaryKey     string
-	PredictionExplanationSecondaryKey   string
-	HasPredictionExplanationPrimary     bool
-	HasPredictionExplanationSecondary   bool
-	RecentCycleFactors                  []StatsCycleFactorContextItem
-	CycleFactorPatternSummaries         []StatsCycleFactorPatternSummary
-	RecentFactorCycles                  []StatsCycleFactorRecentCycleSummary
-	PredictionFactorHintKeys            []string
-	LastCycleSymptoms                   []StatsSymptomCountViewData
-	SymptomPatterns                     []StatsSymptomPatternViewData
-	SymptomCounts                       []StatsSymptomCountViewData
-	CurrentCycleBBTChart                StatsBBTChartViewData
-	PhaseMoodInsights                   []StatsPhaseMoodInsight
-	PhaseSymptomInsights                []StatsPhaseSymptomInsight
-	HasLastCycleSymptoms                bool
-	HasSymptomPatterns                  bool
-	HasRecentCycleFactors               bool
-	HasCycleFactorPatternSummaries      bool
-	HasRecentFactorCycles               bool
-	HasPredictionFactorHint             bool
-	HasCurrentCycleBBTChart             bool
-	HasPhaseMoodInsights                bool
-	HasPhaseSymptomInsights             bool
+	Stats                             CycleStats
+	ChartData                         StatsChartViewData
+	ChartBaseline                     int
+	TrendPointCount                   int
+	Flags                             StatsFlags
+	PredictionSampleCount             int
+	PredictionSampleUsesRecentWindow  bool
+	PredictionReliabilityLabelKey     string
+	PredictionReliabilityHintKey      string
+	ShowPredictionReliability         bool
+	PredictionExplanationPrimaryKey   string
+	PredictionExplanationSecondaryKey string
+	HasPredictionExplanationPrimary   bool
+	HasPredictionExplanationSecondary bool
+	RecentCycleFactors                []StatsCycleFactorContextItem
+	CycleFactorPatternSummaries       []StatsCycleFactorPatternSummary
+	RecentFactorCycles                []StatsCycleFactorRecentCycleSummary
+	PredictionFactorHintKeys          []string
+	LastCycleSymptoms                 []StatsSymptomCountViewData
+	SymptomPatterns                   []StatsSymptomPatternViewData
+	SymptomCounts                     []StatsSymptomCountViewData
+	CurrentCycleBBTChart              StatsBBTChartViewData
+	PhaseMoodInsights                 []StatsPhaseMoodInsight
+	PhaseSymptomInsights              []StatsPhaseSymptomInsight
+	HasLastCycleSymptoms              bool
+	HasSymptomPatterns                bool
+	HasRecentCycleFactors             bool
+	HasCycleFactorPatternSummaries    bool
+	HasRecentFactorCycles             bool
+	HasPredictionFactorHint           bool
+	HasCurrentCycleBBTChart           bool
+	HasPhaseMoodInsights              bool
+	HasPhaseSymptomInsights           bool
+	// ShowIrregularityNotice gates both the irregularity notice and the
+	// irregular-mode recommendation in the stats template: they are two
+	// strings shown under one condition (was two always-equal fields).
 	ShowIrregularityNotice              bool
 	ShowIrregularInsufficientDataNotice bool
-	ShowIrregularModeRecommendation     bool
 	ShowPerimenopauseHint               bool
 	PredictionDisabled                  bool
 	IsIrregularMode                     bool
@@ -109,9 +111,8 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 
 	showIrregularityNotice := shouldShowStatsIrregularityNotice(user, baseData.flags, baseData.stats)
 	showIrregularInsufficientDataNotice := shouldShowStatsIrregularInsufficientDataNotice(user, baseData.flags)
-	showIrregularModeRecommendation := shouldShowStatsIrregularityNotice(user, baseData.flags, baseData.stats)
 	showPerimenopauseHint := shouldShowStatsPerimenopauseHint(user)
-	predictionDisabled := isStatsPredictionDisabled(user)
+	predictionDisabled := DashboardPredictionDisabled(user)
 	isIrregularMode := isStatsIrregularMode(user)
 	isOwner := IsOwnerUser(user)
 	predictionSampleCount, predictionSampleUsesRecentWindow, predictionReliabilityLabelKey, predictionReliabilityHintKey, showPredictionReliability := buildStatsPredictionReliability(user, baseData.flags, baseData.stats)
@@ -155,7 +156,6 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		HasPhaseSymptomInsights:             ownerInsights.hasPhaseSymptomInsights,
 		ShowIrregularityNotice:              showIrregularityNotice,
 		ShowIrregularInsufficientDataNotice: showIrregularInsufficientDataNotice,
-		ShowIrregularModeRecommendation:     showIrregularModeRecommendation,
 		ShowPerimenopauseHint:               showPerimenopauseHint,
 		PredictionDisabled:                  predictionDisabled,
 		IsIrregularMode:                     isIrregularMode,
@@ -249,16 +249,12 @@ func shouldShowStatsPerimenopauseHint(user *models.User) bool {
 	return user != nil && NormalizeAgeGroup(user.AgeGroup) == models.AgeGroup45Plus
 }
 
-func isStatsPredictionDisabled(user *models.User) bool {
-	return user != nil && user.UnpredictableCycle
-}
-
 func isStatsIrregularMode(user *models.User) bool {
 	return user != nil && user.IrregularCycle
 }
 
 func buildStatsPredictionReliability(user *models.User, flags StatsFlags, stats CycleStats) (int, bool, string, string, bool) {
-	if flags.CompletedCycleCount < statsMinimumInsightsCycles || isStatsPredictionDisabled(user) {
+	if flags.CompletedCycleCount < statsMinimumInsightsCycles || DashboardPredictionDisabled(user) {
 		return 0, false, "", "", false
 	}
 
