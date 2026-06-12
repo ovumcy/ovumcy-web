@@ -138,6 +138,26 @@ test.describe('Auth: register, login, logout', () => {
     expect(registerRequests).toBe(0);
   });
 
+  test('register password over the 72-byte limit is rejected server-side with a localized error', async ({
+    page,
+  }) => {
+    // 73 bytes of ASCII: satisfies the client-side checklist (length and
+    // character classes), so the submit reaches the server, which enforces
+    // the bcrypt 72-byte input cap as a stable validation error. The form
+    // intentionally has no maxlength attribute — server validation owns the
+    // upper bound.
+    const longPassword = `Aa1${'x'.repeat(70)}`;
+    const creds = createCredentials('auth-long-pass', longPassword);
+
+    await registerOwnerViaUI(page, creds);
+
+    await expect(page).toHaveURL(/\/register$/);
+    expectNoSensitiveAuthParams(page.url());
+    await expect(
+      page.locator('[data-auth-server-error][data-error-key="auth.error.weak_password"]')
+    ).toBeVisible();
+  });
+
   test('register form rejects invalid email via browser validation', async ({ page }) => {
     await page.goto('/register');
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
