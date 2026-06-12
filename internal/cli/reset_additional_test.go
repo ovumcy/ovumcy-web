@@ -110,3 +110,23 @@ func TestRunResetPasswordCommandWrapsPromptReadFailure(t *testing.T) {
 		t.Fatalf("expected wrapped prompt error, got %v", err)
 	}
 }
+
+// TestRunResetPasswordCommandReportsDatabaseInitFailure covers the operator
+// UX when the configured database cannot be opened (e.g. a bad path/config):
+// the command must surface a wrapped "database init failed" error rather than
+// panic or leak a raw driver error. A directory path is an unopenable SQLite
+// target on every platform.
+func TestRunResetPasswordCommandReportsDatabaseInitFailure(t *testing.T) {
+	err := runResetPasswordCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: t.TempDir()},
+		"owner@example.com",
+		func() ([]byte, error) { return []byte("StrongPass1"), nil },
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("expected an error when the database cannot be opened")
+	}
+	if !strings.Contains(err.Error(), "database init failed") {
+		t.Fatalf("expected a wrapped database-init error, got %v", err)
+	}
+}

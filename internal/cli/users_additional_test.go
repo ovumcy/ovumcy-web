@@ -175,3 +175,22 @@ func mustCLIUsersService(t *testing.T, databasePath string) *services.OperatorUs
 func nowUTC() time.Time {
 	return time.Now().UTC()
 }
+
+// TestRunUsersCommandReportsDatabaseInitFailure mirrors the reset command's
+// operator UX: when the configured database cannot be opened, the users
+// command surfaces a wrapped "database init failed" error. A directory path
+// is an unopenable SQLite target on every platform.
+func TestRunUsersCommandReportsDatabaseInitFailure(t *testing.T) {
+	err := runUsersCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: t.TempDir()},
+		[]string{"list"},
+		bytes.NewReader(nil),
+		io.Discard,
+	)
+	if err == nil {
+		t.Fatal("expected an error when the database cannot be opened")
+	}
+	if !strings.Contains(err.Error(), "database init failed") {
+		t.Fatalf("expected a wrapped database-init error, got %v", err)
+	}
+}
