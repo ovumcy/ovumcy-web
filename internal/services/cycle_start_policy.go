@@ -68,7 +68,7 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 		policy.PreviousStart = previousStart
 		policy.ShortGapDays = gapDays
 	}
-	if implantationGapDays, ok := potentialImplantationGapDays(user, logs, targetDay, previousStart, location); ok {
+	if implantationGapDays, ok := potentialImplantationGapDays(user, logs, targetDay, previousStart); ok {
 		policy.PotentialImplantation = true
 		policy.ImplantationGapDays = implantationGapDays
 	}
@@ -76,7 +76,7 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 	return policy
 }
 
-func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, targetDay time.Time, previousStart time.Time, location *time.Location) (int, bool) {
+func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, targetDay time.Time, previousStart time.Time) (int, bool) {
 	filtered := filterLogsNotAfter(logs, targetDay.AddDate(0, 0, -1))
 	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second))
 	cycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
@@ -92,7 +92,11 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 		return 0, false
 	}
 
-	gapDays := int(targetDay.Sub(DateAtLocation(ovulationDate, location)).Hours() / 24)
+	// ovulationDate is a UTC-midnight date-only value from PredictCycleWindow
+	// while targetDay is a location-midnight working value; compare calendar
+	// days instead of instants. DateAtLocation on the UTC-midnight value would
+	// shift the day backward in UTC-minus locales (issue #48 class).
+	gapDays := CalendarDaysBetween(ovulationDate, targetDay)
 	if gapDays >= 6 && gapDays <= 12 {
 		return gapDays, true
 	}

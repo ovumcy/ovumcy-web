@@ -71,6 +71,19 @@ func DayRange(value time.Time, location *time.Location) (time.Time, time.Time) {
 	return start, start.AddDate(0, 0, 1)
 }
 
+// CalendarDaysBetween returns the signed number of calendar days from `from`
+// to `to`, comparing only the calendar components of the two values. Each
+// operand is re-anchored to UTC-midnight of its own calendar day before
+// subtracting, so the result is a pure calendar-day difference immune to the
+// operands carrying different midnight shapes (location-midnight working
+// values vs UTC-midnight stored values, issue #48 class) and to DST
+// transitions between the two days.
+func CalendarDaysBetween(from time.Time, to time.Time) int {
+	start := dateOnly(from)
+	end := dateOnly(to)
+	return int(end.Sub(start).Hours() / 24)
+}
+
 func SameCalendarDay(a time.Time, b time.Time) bool {
 	return a.Format("2006-01-02") == b.Format("2006-01-02")
 }

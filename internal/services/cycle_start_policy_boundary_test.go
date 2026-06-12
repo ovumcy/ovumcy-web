@@ -103,7 +103,7 @@ func TestPotentialImplantationGapDays_WindowBoundary(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			targetDay := mustParseCycleStartPolicyDay(t, tc.targetDay)
-			gap, ok := potentialImplantationGapDays(user, nil, targetDay, previousStart, time.UTC)
+			gap, ok := potentialImplantationGapDays(user, nil, targetDay, previousStart)
 			if gap != tc.wantGap || ok != tc.wantOK {
 				t.Fatalf("potentialImplantationGapDays(target %s) = (%d,%t), want (%d,%t)",
 					tc.targetDay, gap, ok, tc.wantGap, tc.wantOK)
@@ -134,5 +134,43 @@ func TestResolveManualCycleStartPolicy_ShortGapBoundary(t *testing.T) {
 	p2 := ResolveManualCycleStartPolicy(user, logs, atThreshold, now, time.UTC)
 	if p2.ShortGapDays != 0 {
 		t.Fatalf("expected no short-gap flag at the 15-day boundary, got %d", p2.ShortGapDays)
+	}
+}
+
+// TestPotentialImplantationGapDays_CrossTimezone pins the issue-#48-class
+// fix on the implantation gap: `targetDay` is a location-midnight working
+// value while PredictCycleWindow returns a UTC-midnight ovulation date.
+// Before the fix, DateAtLocation on the UTC-midnight ovulation date shifted
+// it one calendar day backward in UTC-minus locales, inflating the gap by
+// one: a 5-day gap (too early) was reported as a 6-day implantation
+// candidate and a true 12-day gap fell outside the 6..12 window.
+func TestPotentialImplantationGapDays_CrossTimezone(t *testing.T) {
+	// Same geometry as the window-boundary test: ovulation for a 28-day cycle
+	// starting 2026-02-26 lands on 2026-03-11.
+	user := &models.User{CycleLength: 28}
+	previousStart := mustParseCycleStartPolicyDay(t, "2026-02-26")
+	tokyo := time.FixedZone("UTC+9", 9*60*60)
+	lima := time.FixedZone("UTC-5", -5*60*60)
+
+	cases := []struct {
+		name      string
+		targetDay time.Time
+		wantGap   int
+		wantOK    bool
+	}{
+		{"UTC-5 gap of 5 days stays too early", time.Date(2026, 3, 16, 0, 0, 0, 0, lima), 0, false},
+		{"UTC-5 gap of 6 days is the lower edge", time.Date(2026, 3, 17, 0, 0, 0, 0, lima), 6, true},
+		{"UTC-5 gap of 12 days is the upper edge", time.Date(2026, 3, 23, 0, 0, 0, 0, lima), 12, true},
+		{"UTC+9 gap of 6 days is the lower edge", time.Date(2026, 3, 17, 0, 0, 0, 0, tokyo), 6, true},
+		{"UTC+9 gap of 13 days stays too late", time.Date(2026, 3, 24, 0, 0, 0, 0, tokyo), 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gap, ok := potentialImplantationGapDays(user, nil, tc.targetDay, previousStart)
+			if gap != tc.wantGap || ok != tc.wantOK {
+				t.Fatalf("potentialImplantationGapDays(target %s) = (%d,%t), want (%d,%t)",
+					tc.targetDay.Format(time.RFC3339), gap, ok, tc.wantGap, tc.wantOK)
+			}
+		})
 	}
 }

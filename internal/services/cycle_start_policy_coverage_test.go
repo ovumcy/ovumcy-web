@@ -208,7 +208,7 @@ func TestCyclestartpolicyCov_PotentialImplantationGapDays_TargetDayLogExcluded(t
 		{Date: targetDay, IsPeriod: true, CycleStart: true},
 	}
 
-	gap, ok := potentialImplantationGapDays(user, logsWithTargetDayEntry, targetDay, previousStart, time.UTC)
+	gap, ok := potentialImplantationGapDays(user, logsWithTargetDayEntry, targetDay, previousStart)
 	if !ok {
 		t.Fatal("expected potentialImplantationGapDays to return ok=true for 6-day gap")
 	}
@@ -217,7 +217,7 @@ func TestCyclestartpolicyCov_PotentialImplantationGapDays_TargetDayLogExcluded(t
 	}
 
 	// Confirm with no extra logs: result should be identical.
-	gapClean, okClean := potentialImplantationGapDays(user, nil, targetDay, previousStart, time.UTC)
+	gapClean, okClean := potentialImplantationGapDays(user, nil, targetDay, previousStart)
 	if gap != gapClean || ok != okClean {
 		t.Fatalf("result changed when targetDay log added: got (%d,%t) vs (%d,%t)", gap, ok, gapClean, okClean)
 	}

@@ -367,10 +367,11 @@ func clearPredictedCycleWindow(stats *CycleStats) {
 }
 
 func cycleDayAt(lastPeriodStart time.Time, today time.Time) int {
-	if today.Before(lastPeriodStart) {
+	days := CalendarDaysBetween(lastPeriodStart, today)
+	if days < 0 {
 		return 0
 	}
-	return int(today.Sub(lastPeriodStart).Hours()/24) + 1
+	return days + 1
 }
 
 func detectCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time) string {

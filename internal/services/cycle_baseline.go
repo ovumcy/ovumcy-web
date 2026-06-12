@@ -110,21 +110,11 @@ func baselineCurrentCycleDay(lastPeriodStart time.Time, today time.Time) int {
 	if lastPeriodStart.IsZero() {
 		return 0
 	}
-	// Both arguments already carry the intended calendar day: `today` is the
-	// viewer's local calendar day (DateAtLocation per issue #48) and
-	// `lastPeriodStart` is the stored anchor's calendar day. Their wall clocks
-	// sit in the request location, so subtracting them as instants is
-	// DST-sensitive — a spring-forward between the two dates makes the span
-	// 1h short of a whole number of days and truncates the cycle day by one.
-	// Re-anchor each to UTC-midnight of its calendar components (the same
-	// normalization the UTC-safe main path applies via dateOnly) so the count
-	// is a pure calendar-day difference, immune to offset and DST.
-	start := dateOnly(lastPeriodStart)
-	current := dateOnly(today)
-	if current.Before(start) {
-		return 0
-	}
-	return int(current.Sub(start).Hours()/24) + 1
+	// Both arguments may carry request-location wall clocks (DateAtLocation /
+	// CalendarDay per issue #48), so subtracting them as instants is offset-
+	// and DST-sensitive. cycleDayAt counts a pure calendar-day difference via
+	// CalendarDaysBetween, immune to both.
+	return cycleDayAt(lastPeriodStart, today)
 }
 
 func DetectCurrentPhase(stats CycleStats, logs []models.DailyLog, today time.Time, location *time.Location) string {

@@ -174,3 +174,56 @@ func mustParseDayFeedbackDate(t *testing.T, raw string) time.Time {
 func ptrDayFeedbackTime(value time.Time) *time.Time {
 	return &value
 }
+
+// TestResolveDayFeedbackSelfCareMessageInUTCPlusZone is the issue-#48-class
+// regression for the save-message policy: `day` reaches the policy as a
+// location-midnight value while the cycle stats carry UTC-midnight dates.
+// Before the fix, instant comparison made a UTC+9 request on cycle day 1
+// fall before the stored cycle start and resolve to the neutral message
+// instead of self-care.
+func TestResolveDayFeedbackSelfCareMessageInUTCPlusZone(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+
+	tokyo := time.FixedZone("UTC+9", 9*60*60)
+	day := time.Date(2026, time.March, 1, 0, 0, 0, 0, tokyo)
+
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, day, day, tokyo)
+	if err != nil {
+		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
+	}
+	if state.MessageKey != daySaveMessageSelfCare {
+		t.Fatalf("expected self-care message on cycle day 1 in UTC+9, got %q", state.MessageKey)
+	}
+}
+
+// TestResolveDayFeedbackFertileMessageOnWindowStartInUTCPlusZone pins the
+// fertility-window edge of the same issue-#48-class bug: a UTC+9 request on
+// the first day of the fertility window compared a location-midnight `day`
+// instant against the UTC-midnight window start and missed the window.
+func TestResolveDayFeedbackFertileMessageOnWindowStartInUTCPlusZone(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+
+	tokyo := time.FixedZone("UTC+9", 9*60*60)
+	// 28-day observed cycle starting 2026-03-01 with the 14-day default luteal
+	// phase predicts ovulation on 2026-03-14, so the fertility window is
+	// 2026-03-09..2026-03-14.
+	day := time.Date(2026, time.March, 9, 0, 0, 0, 0, tokyo)
+
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, day, day, tokyo)
+	if err != nil {
+		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
+	}
+	if state.MessageKey != daySaveMessageFertile {
+		t.Fatalf("expected fertile message on window start in UTC+9, got %q", state.MessageKey)
+	}
+}

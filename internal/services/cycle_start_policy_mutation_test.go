@@ -58,7 +58,7 @@ func TestPotentialImplantationGapDays_NoStatsUsesPredictedDefaultNotUserLength(t
 	previousStart := mustParseCycleStartPolicyDay(t, "2026-02-26")
 	targetDay := mustParseCycleStartPolicyDay(t, "2026-03-17")
 
-	gap, ok := potentialImplantationGapDays(user, nil, targetDay, previousStart, time.UTC)
+	gap, ok := potentialImplantationGapDays(user, nil, targetDay, previousStart)
 	if !ok || gap != 6 {
 		t.Fatalf("expected (6,true) using the predicted 28-day default, got (%d,%t)", gap, ok)
 	}

@@ -239,3 +239,39 @@ func TestSymptomIDSet(t *testing.T) {
 		t.Fatal("expected set to contain ids 3 and 5")
 	}
 }
+
+// TestCalendarDaysBetween pins the shared calendar-day difference helper: the
+// result must be a pure calendar-day count regardless of the midnight shape
+// each operand carries (UTC-midnight stored values vs location-midnight
+// working values, issue #48 class) and regardless of DST transitions between
+// the two days.
+func TestCalendarDaysBetween(t *testing.T) {
+	tokyo := time.FixedZone("UTC+9", 9*60*60)
+	lima := time.FixedZone("UTC-5", -5*60*60)
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Fatalf("load Europe/Berlin: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		from time.Time
+		to   time.Time
+		want int
+	}{
+		{"same UTC-midnight shape", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC), 4},
+		{"UTC-midnight stored vs UTC+9 location-midnight", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 5, 0, 0, 0, 0, tokyo), 4},
+		{"UTC-midnight stored vs UTC-5 location-midnight", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 5, 0, 0, 0, 0, lima), 4},
+		{"same calendar day across shapes is zero", time.Date(2026, 3, 1, 0, 0, 0, 0, tokyo), time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), 0},
+		{"negative when to precedes from", time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC), time.Date(2026, 3, 1, 0, 0, 0, 0, lima), -4},
+		{"DST spring-forward span counts whole days", time.Date(2026, 3, 28, 0, 0, 0, 0, berlin), time.Date(2026, 3, 30, 0, 0, 0, 0, berlin), 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := CalendarDaysBetween(tc.from, tc.to); got != tc.want {
+				t.Fatalf("CalendarDaysBetween(%s, %s) = %d, want %d",
+					tc.from.Format(time.RFC3339), tc.to.Format(time.RFC3339), got, tc.want)
+			}
+		})
+	}
+}

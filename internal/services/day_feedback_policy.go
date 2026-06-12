@@ -76,6 +76,11 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	if user != nil && user.UnpredictableCycle {
 		return daySaveMessageNeutral
 	}
+	// `day` arrives as a location-midnight working value while the stats
+	// fields carry UTC-midnight calendar days; re-anchor `day` to UTC-midnight
+	// of its calendar components so the instant comparisons below cannot
+	// shift a day across the UTC offset (issue #48 class).
+	day = dateOnly(day)
 	if !stats.LastPeriodStart.IsZero() {
 		cycleDay := cycleDayAt(stats.LastPeriodStart, day)
 		if cycleDay >= 1 && cycleDay <= 3 {
