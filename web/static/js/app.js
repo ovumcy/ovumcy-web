@@ -1724,8 +1724,16 @@
         return;
       }
 
-      event.detail.parameters = event.detail.parameters || {};
-      event.detail.parameters.csrf_token = token;
+      // The form parameter is only attached to non-GET requests: htmx puts
+      // parameters into the URL query for GET (methodsThatUseUrlParams), and
+      // the token must never appear in URLs — browser history and reverse-
+      // proxy access logs keep them. GETs are not CSRF-checked; the header
+      // still rides along on every request.
+      var verb = String(event.detail.verb || "").toLowerCase();
+      if (verb !== "get") {
+        event.detail.parameters = event.detail.parameters || {};
+        event.detail.parameters.csrf_token = token;
+      }
       event.detail.headers = event.detail.headers || {};
       event.detail.headers["X-CSRF-Token"] = token;
 
