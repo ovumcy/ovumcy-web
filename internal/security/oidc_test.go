@@ -220,3 +220,33 @@ func TestValidateDiscoveredJWKSURI(t *testing.T) {
 		}
 	}
 }
+
+// TestValidateDiscoveredTokenEndpoint pins the token_endpoint origin check:
+// the code exchange POSTs the client secret and authorization code to this
+// URL server-side, so cross-origin or non-https endpoints (the SSRF /
+// secret-exfiltration vectors) are rejected before any exchange runs.
+// Same-origin passes; an empty endpoint defers to the oauth2 exchange error.
+func TestValidateDiscoveredTokenEndpoint(t *testing.T) {
+	const issuer = "https://id.example.com"
+
+	if err := validateDiscoveredTokenEndpoint("https://id.example.com/oauth/token", issuer); err != nil {
+		t.Fatalf("same-origin token_endpoint must pass: %v", err)
+	}
+	if err := validateDiscoveredTokenEndpoint("", issuer); err != nil {
+		t.Fatalf("empty token_endpoint must defer to the exchange error, not fail here: %v", err)
+	}
+	for _, bad := range []string{
+		"https://evil.example.net/token",    // cross-host
+		"http://id.example.com/token",       // non-https
+		"https://169.254.169.254/token",     // internal/metadata host
+		"https://id.example.com:8443/token", // cross-port
+		"/oauth/token",                      // relative
+	} {
+		if err := validateDiscoveredTokenEndpoint(bad, issuer); err == nil {
+			t.Fatalf("token_endpoint %q must be rejected", bad)
+		}
+	}
+	if err := validateDiscoveredTokenEndpoint("https://id.example.com/token", "issuer-without-scheme"); err == nil {
+		t.Fatal("non-absolute issuer URL must be rejected")
+	}
+}

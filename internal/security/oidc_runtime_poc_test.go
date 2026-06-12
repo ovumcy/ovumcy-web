@@ -121,6 +121,11 @@ type mockOIDCProvider struct {
 	// jwks_uri origin-pin rejection in loadProvider.
 	jwksURI string
 
+	// tokenEndpoint overrides the advertised token_endpoint (default:
+	// same-origin issuer+"/token"). Tests set it to a cross-origin value to
+	// exercise the token_endpoint origin-pin rejection in loadProvider.
+	tokenEndpoint string
+
 	// issuer is the URL returned in discovery and in JWT iss claims.
 	// httptest.NewTLSServer assigns it at startup.
 	issuer string
@@ -161,10 +166,14 @@ func (m *mockOIDCProvider) serveDiscovery(w http.ResponseWriter, r *http.Request
 	if m.jwksURI != "" {
 		jwksURI = m.jwksURI
 	}
+	tokenEndpoint := m.issuer + "/token"
+	if m.tokenEndpoint != "" {
+		tokenEndpoint = m.tokenEndpoint
+	}
 	payload := map[string]any{
 		"issuer":                                m.issuer,
 		"authorization_endpoint":                m.issuer + "/authorize",
-		"token_endpoint":                        m.issuer + "/token",
+		"token_endpoint":                        tokenEndpoint,
 		"jwks_uri":                              jwksURI,
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
@@ -319,6 +328,32 @@ func TestOIDC_RuntimePoC_JWKSOriginPinAcceptsSameOrigin(t *testing.T) {
 
 	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err != nil {
 		t.Fatalf("same-origin jwks_uri must pass the pin: %v", err)
+	}
+}
+
+// TestOIDC_RuntimePoC_TokenEndpointOriginPinRejectsCrossOrigin is the runtime
+// contract for the token_endpoint SSRF pin: a discovery document served over
+// real TLS by the configured issuer cannot point the server-side code
+// exchange (which carries the client secret and authorization code) at a
+// different origin. loadProvider must refuse before any exchange can run.
+func TestOIDC_RuntimePoC_TokenEndpointOriginPinRejectsCrossOrigin(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	mock.tokenEndpoint = "https://attacker.example/token"
+
+	caFile := writeIssuerCAFile(t, caPEM)
+	client := NewOIDCClient(OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    mock.issuer,
+		ClientID:     "ovumcy",
+		ClientSecret: "test-secret",
+		RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+		CAFile:       caFile,
+		LoginMode:    OIDCLoginModeHybrid,
+		LogoutMode:   OIDCLogoutModeAuto,
+	})
+
+	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err == nil {
+		t.Fatal("token_endpoint origin pin failed: a cross-origin token_endpoint was accepted; loadProvider must refuse it")
 	}
 }
 

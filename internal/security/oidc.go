@@ -412,6 +412,15 @@ func (client *OIDCClient) loadProvider(ctx context.Context) (*oauth2.Config, *oi
 		return nil, nil, err
 	}
 
+	// Pin the discovery-supplied token_endpoint the same way. The code
+	// exchange POSTs the client secret and authorization code to this URL
+	// server-side, so a malicious or compromised discovery document could
+	// otherwise exfiltrate both to an attacker host or steer the request at
+	// internal infrastructure (SSRF).
+	if err := validateDiscoveredTokenEndpoint(provider.Endpoint().TokenURL, client.config.IssuerURL); err != nil {
+		return nil, nil, err
+	}
+
 	client.provider = provider
 	client.metadata = metadata
 	client.oauthConfig = &oauth2.Config{
@@ -569,6 +578,32 @@ func validateDiscoveredJWKSURI(jwksURI string, issuerURL string) error {
 	}
 	if !sameOriginURL(parsed, parsedIssuer) {
 		return errors.New("oidc jwks_uri origin must match the issuer origin")
+	}
+	return nil
+}
+
+// validateDiscoveredTokenEndpoint pins the discovery-supplied token_endpoint
+// to the issuer origin. An empty endpoint is left for the oauth2 exchange to
+// reject (there is nowhere to send the code); a non-empty one must be an
+// absolute https URL on the same origin (scheme + host + effective port) as
+// the configured issuer. This is the SSRF companion to
+// validateDiscoveredJWKSURI for the server-side POST that carries the client
+// secret and authorization code.
+func validateDiscoveredTokenEndpoint(tokenEndpoint string, issuerURL string) error {
+	endpoint := strings.TrimSpace(tokenEndpoint)
+	if endpoint == "" {
+		return nil
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || !parsed.IsAbs() || !strings.EqualFold(parsed.Scheme, "https") {
+		return errors.New("oidc token_endpoint must be an absolute https URL")
+	}
+	parsedIssuer, err := url.Parse(strings.TrimSpace(issuerURL))
+	if err != nil || !parsedIssuer.IsAbs() {
+		return errors.New("oidc issuer URL is invalid")
+	}
+	if !sameOriginURL(parsed, parsedIssuer) {
+		return errors.New("oidc token_endpoint origin must match the issuer origin")
 	}
 	return nil
 }
