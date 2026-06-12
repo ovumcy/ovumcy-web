@@ -24,9 +24,12 @@ func NewRegisterPickupTokenRepository(database *gorm.DB) *RegisterPickupTokenRep
 	return &RegisterPickupTokenRepository{database: database}
 }
 
-// Issue inserts a fresh pickup token. The nonce must be unique; callers
-// should source it from a 16-byte CSPRNG draw. ExpiresAt is treated as the
-// hard cap for the matching cookie's TTL.
+// Issue inserts a fresh pickup token, first dropping rows that have already
+// expired. Rows are only ever created here, so the purge-on-issue keeps the
+// table bounded without a background job: consumed and expired rows survive
+// at most until the next registration issues a token. The nonce must be
+// unique; callers should source it from a 16-byte CSPRNG draw. ExpiresAt is
+// treated as the hard cap for the matching cookie's TTL.
 func (repo *RegisterPickupTokenRepository) Issue(ctx context.Context, nonce string, userID uint, expiresAt time.Time) error {
 	trimmed := strings.TrimSpace(nonce)
 	if trimmed == "" {
@@ -45,7 +48,12 @@ func (repo *RegisterPickupTokenRepository) Issue(ctx context.Context, nonce stri
 		ExpiresAt: expiresAt.UTC(),
 		CreatedAt: time.Now().UTC(),
 	}
-	return repo.database.WithContext(ctx).Create(row).Error
+	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("expires_at <= ?", row.CreatedAt).Delete(&models.RegisterPickupToken{}).Error; err != nil {
+			return err
+		}
+		return tx.Create(row).Error
+	})
 }
 
 // Consume atomically marks the row identified by nonce as consumed and
@@ -93,9 +101,9 @@ func (repo *RegisterPickupTokenRepository) Consume(ctx context.Context, nonce st
 	return userID, true, nil
 }
 
-// DeleteExpired drops rows whose expires_at is at or before cutoff. Callers
-// can run this periodically; the table is otherwise bounded only by the
-// register rate limit and the 5-minute TTL.
+// DeleteExpired drops rows whose expires_at is at or before cutoff. Issue
+// already purges expired rows on every insert; this method remains for
+// explicit cleanup with a caller-controlled cutoff.
 func (repo *RegisterPickupTokenRepository) DeleteExpired(ctx context.Context, cutoff time.Time) error {
 	if cutoff.IsZero() {
 		cutoff = time.Now().UTC()
