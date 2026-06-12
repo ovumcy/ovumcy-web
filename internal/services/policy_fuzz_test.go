@@ -68,6 +68,10 @@ func FuzzValidatePasswordStrength(f *testing.F) {
 	for _, seed := range []string{
 		"Abcdef12", "short", "alllowercase", "ALLUPPER123",
 		"nodigitsAB", "12345678", "Пароль123", "",
+		// At-limit and over-limit seeds exercise the 72-byte bcrypt cap:
+		// 71 bytes (accepted) and 73 bytes (rejected) of otherwise-strong input.
+		"Aa1" + strings.Repeat("x", 68),
+		"Aa1" + strings.Repeat("x", 70),
 	} {
 		f.Add(seed)
 	}
@@ -87,7 +91,11 @@ func FuzzValidatePasswordStrength(f *testing.F) {
 				digit = true
 			}
 		}
-		wantValid := utf8.RuneCountInString(password) >= 8 && upper && lower && digit
+		// The validator enforces BOTH bounds: at least 8 runes and at most 72
+		// BYTES (bcrypt's hard input limit), plus the three character classes.
+		wantValid := utf8.RuneCountInString(password) >= 8 &&
+			len(password) <= maxPasswordBytes &&
+			upper && lower && digit
 
 		switch {
 		case wantValid && err != nil:
@@ -96,10 +104,16 @@ func FuzzValidatePasswordStrength(f *testing.F) {
 			t.Fatalf("ValidatePasswordStrength(%q) accepted a weak password", password)
 		}
 
-		// Metamorphic: appending characters must never weaken an accepted password.
+		// Metamorphic: appending characters never weakens an accepted password
+		// — but only while the result stays within the 72-byte cap. Appending
+		// past the cap legitimately makes the password too long, so guard the
+		// extended length before asserting.
 		if err == nil {
-			if err := ValidatePasswordStrength(password + "xZ9"); err != nil {
-				t.Fatalf("appending characters made a strong password weak: %v", err)
+			extended := password + "xZ9"
+			if len(extended) <= maxPasswordBytes {
+				if err := ValidatePasswordStrength(extended); err != nil {
+					t.Fatalf("appending characters made a strong password weak: %v", err)
+				}
 			}
 		}
 	})
