@@ -64,6 +64,29 @@ func TestOnboardingStepStatusesAreLiveRegions(t *testing.T) {
 	assertLiveStatusContainers(t, body, "onboarding-step1-status", "onboarding-step2-status")
 }
 
+// TestBaseLayoutRendersSkipLink pins the skip-to-content link from audit
+// task #26: every full page rendered through the base layout must offer
+// keyboard users a way past the always-visible header and navigation
+// (Tailwind's content scan reads these comments too, so utility-named
+// bare words are avoided here on purpose), and the link's
+// target must be focusable (tabindex=-1 on <main>) so the jump actually
+// moves focus.
+func TestBaseLayoutRendersSkipLink(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "a11y-skip-link@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	for _, path := range []string{"/dashboard", "/settings"} {
+		body := fetchPageBody(t, app, path, authCookie)
+		if !strings.Contains(body, `<a href="#main-content" class="skip-link">Skip to main content</a>`) {
+			t.Fatalf("expected %s to render the skip-to-content link", path)
+		}
+		if !strings.Contains(body, `<main id="main-content" tabindex="-1"`) {
+			t.Fatalf("expected %s to render a focusable #main-content target", path)
+		}
+	}
+}
+
 func TestSettingsStatusContainersAreLiveRegions(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "a11y-settings-live@example.com", "StrongPass1", true)

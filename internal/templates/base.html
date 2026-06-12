@@ -17,7 +17,7 @@
   <meta name="apple-mobile-web-app-title" content="Ovumcy">
   <script src="/static/js/theme-bootstrap.js?v=20260308-1"></script>
   <script src="/static/js/timezone-bootstrap.js?v=20260309-1"></script>
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=20260313-2">
+  <link rel="stylesheet" href="/static/css/tailwind.css?v=20260612-1">
   <script defer src="/static/js/htmx.min.js?v=20260221-2"></script>
   <script defer src="/static/js/chart-lite.js?v=20260404-1"></script>
   <script defer src="/static/js/app.js?v=20260612-1"></script>
@@ -33,6 +33,7 @@
   data-theme-label-light="{{t .Messages "theme.switch_to_light"}}"
   data-theme-name-dark="{{t .Messages "theme.name.dark"}}"
   data-theme-name-light="{{t .Messages "theme.name.light"}}">
+  <a href="#main-content" class="skip-link">{{t .Messages "a11y.skip_to_content"}}</a>
   <div class="app-shell">
     <header class="paper-header">
       <div class="container-main flex items-center justify-between py-4">
@@ -133,7 +134,7 @@
       </div>
     </section>
 
-    <main class="container-main flex-1 py-8 sm:py-10{{if and .CurrentUser (not .HideNavigation)}} main-with-mobile-nav{{end}}">
+    <main id="main-content" tabindex="-1" class="container-main flex-1 py-8 sm:py-10{{if and .CurrentUser (not .HideNavigation)}} main-with-mobile-nav{{end}}">
       {{template "content" .}}
     </main>
 
