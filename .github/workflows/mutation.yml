@@ -1,10 +1,11 @@
 name: Mutation
 
-# Advisory mutation testing. This project pushes directly to main (no PRs), so
-# there is no merge to gate. Instead this runs on a weekly schedule to track test
-# efficacy over time, plus on demand via workflow_dispatch. It never fails the
-# build — a low score is a signal to review test strength. Fast iteration is done
-# locally with scripts/mutation.sh (baseline | diff <ref>).
+# Advisory mutation testing. Changes land through PRs, but full mutation runs
+# are far too slow to gate merges, so this stays advisory: it runs on a weekly
+# schedule to track test efficacy over time, plus on demand via
+# workflow_dispatch. It never fails the build — a low score is a signal to
+# review test strength. Fast iteration is done locally with
+# scripts/mutation.sh (baseline | diff <ref>).
 
 on:
   schedule:

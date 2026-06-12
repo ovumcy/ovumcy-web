@@ -110,6 +110,9 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 	})
 }
 
+// DeleteSymptom intentionally archives instead of erasing: the symptom is
+// restorable from settings and its name persists until clear-data or
+// account deletion (documented in docs/gdpr.md under Rectification).
 func (handler *Handler) DeleteSymptom(c *fiber.Ctx) error {
 	return handler.archiveSymptom(c)
 }

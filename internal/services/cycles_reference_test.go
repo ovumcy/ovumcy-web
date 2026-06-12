@@ -141,8 +141,11 @@ func TestCyclePrediction_ReferenceVectors(t *testing.T) {
 			if exact != tc.wantExact {
 				t.Errorf("exact = %t, want %t", exact, tc.wantExact)
 			}
-			// Next period is the model's periodStart + cycleLength; assert the
-			// documented value to keep the doc's "next period" column honest.
+			// Doc-only consistency check: this recomputes periodStart +
+			// cycleLength inline, so it can only catch a drifted "next
+			// period" column in docs/cycle-prediction.md — never a
+			// production bug. The production invariant is pinned by
+			// TestPipeline_NextPeriodMatchesFormula.
 			if next := tc.periodStart.AddDate(0, 0, tc.cycleLen); !next.Equal(tc.wantNext) {
 				t.Errorf("next period = %s, want %s", next.Format("2006-01-02"), tc.wantNext.Format("2006-01-02"))
 			}

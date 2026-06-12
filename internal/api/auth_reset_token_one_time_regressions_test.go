@@ -134,6 +134,63 @@ func TestResetPasswordRejectsInvalidOrTamperedResetToken(t *testing.T) {
 	}
 }
 
+// TestOriginalRecoveryCodeRejectedAfterCompletedReset closes the HTTP-level
+// gap around recovery-code rotation: completing a password reset issues a
+// NEW recovery code (rotation is unit-pinned in
+// internal/services/auth_service_recovery_test.go), so the ORIGINAL code
+// must stop working for any later recovery attempt. Without this regression
+// a transport-layer refactor could keep accepting the stale code even
+// though the service rotated it.
+func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "recovery-rotation-http@example.com", "StrongPass1", true)
+
+	originalRecoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
+	resetCookieValue := requestResetCookieByRecoveryCode(t, app, user.Email, originalRecoveryCode)
+
+	resetForm := url.Values{
+		"password":         {"EvenStronger2"},
+		"confirm_password": {"EvenStronger2"},
+	}
+	resetRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets/redeem", strings.NewReader(resetForm.Encode()))
+	resetRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resetRequest.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
+
+	resetResponse, err := app.Test(resetRequest, -1)
+	if err != nil {
+		t.Fatalf("reset-password request failed: %v", err)
+	}
+	defer resetResponse.Body.Close()
+	if resetResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected reset status 303, got %d", resetResponse.StatusCode)
+	}
+	if location := resetResponse.Header.Get("Location"); location != "/recovery-code" {
+		t.Fatalf("expected completed reset to redirect /recovery-code, got %q", location)
+	}
+
+	// A fresh recovery attempt with the ORIGINAL code must be rejected:
+	// no redirect into the reset flow and no usable reset cookie.
+	retryForm := url.Values{
+		"email":         {user.Email},
+		"recovery_code": {originalRecoveryCode},
+	}
+	retryRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(retryForm.Encode()))
+	retryRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	retryResponse, err := app.Test(retryRequest, -1)
+	if err != nil {
+		t.Fatalf("retry forgot-password request failed: %v", err)
+	}
+	defer retryResponse.Body.Close()
+
+	if location := retryResponse.Header.Get("Location"); location == "/reset-password" {
+		t.Fatalf("stale recovery code must not enter the reset flow, got redirect to %q", location)
+	}
+	if cookie := responseCookie(retryResponse.Cookies(), resetPasswordCookieName); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+		t.Fatalf("stale recovery code must not mint a reset cookie, got %q", cookie.Value)
+	}
+}
+
 func requestResetCookieByRecoveryCode(t *testing.T, app *fiber.App, email string, recoveryCode string) string {
 	t.Helper()
 
