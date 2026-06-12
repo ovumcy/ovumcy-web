@@ -559,18 +559,21 @@ func TestCyclesCov_StddevInts_EmptyReturnsZero(t *testing.T) {
 // L569, L570, L572 – stddevInts: formula correctness
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_StddevInts_Formula pins the population standard deviation
-// calculation at lines 569-572 against known values.
+// TestCyclesCov_StddevInts_Formula pins the sample standard deviation
+// (n-1 denominator) calculation against known values. Observed cycle
+// lengths are a small sample of an ongoing process, so the sample
+// estimator is used; fewer than two values have no defined spread.
 func TestCyclesCov_StddevInts_Formula(t *testing.T) {
-	// Single element: stddev is 0.
+	// Single element: spread is undefined, must return 0.
 	if got := stddevInts([]int{42}); got != 0 {
 		t.Fatalf("stddevInts([42]) = %v, want 0", got)
 	}
 
-	// [2, 4, 4, 4, 5, 5, 7, 9]: population stddev = 2.0 (classical example).
+	// [2, 4, 4, 4, 5, 5, 7, 9]: squared diffs sum to 32, n-1 = 7,
+	// sample stddev = sqrt(32/7).
 	values := []int{2, 4, 4, 4, 5, 5, 7, 9}
 	got := stddevInts(values)
-	const want = 2.0
+	want := math.Sqrt(32.0 / 7.0)
 	if math.Abs(got-want) > 1e-9 {
 		t.Fatalf("stddevInts(%v) = %.10f, want %.10f", values, got, want)
 	}
@@ -581,11 +584,12 @@ func TestCyclesCov_StddevInts_Formula(t *testing.T) {
 		t.Fatalf("stddevInts(uniform) = %v, want 0", got)
 	}
 
-	// Two values [28, 30]: mean=29, diffs=[-1,1], squared=[1,1], sum=2, var=1, stddev=1.
+	// Two values [28, 30]: mean=29, squared diffs sum to 2, n-1 = 1,
+	// sample stddev = sqrt(2).
 	two := []int{28, 30}
 	gotTwo := stddevInts(two)
-	if math.Abs(gotTwo-1.0) > 1e-9 {
-		t.Fatalf("stddevInts([28,30]) = %.10f, want 1.0", gotTwo)
+	if math.Abs(gotTwo-math.Sqrt2) > 1e-9 {
+		t.Fatalf("stddevInts([28,30]) = %.10f, want sqrt(2)", gotTwo)
 	}
 }
 

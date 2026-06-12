@@ -111,7 +111,10 @@ These are the exact cases asserted by the reference tests.
   14-day default stands. Individual luteal phases vary (commonly 11–17 days),
   which is one reason predictions remain estimates.
 - For irregular cycles the app widens the prediction into a range rather than a
-  single date.
+  single date. The range and variability statistics (shortest/longest cycle and
+  the sample standard deviation) are computed over the same recent-cycle window
+  as the median, so an old outlier cycle stops affecting them once it ages out
+  of the window.
 
 ## Assumptions and limitations
 

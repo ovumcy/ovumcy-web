@@ -1,6 +1,7 @@
 package services
 
 import (
+	"math"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -60,5 +61,41 @@ func TestMedianInt_EvenCount(t *testing.T) {
 				t.Fatalf("medianInt(%v) = %d, want %d", tc.values, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestPopulateObservedCycleStatsRangeAndSpreadUseRecentWindow pins the range
+// (min/max) and variability (stddev) statistics to the same recent
+// prediction window the median uses. A merged-gap outlier that has aged out
+// of the window must stop widening irregular prediction ranges and the
+// variability spread; before the fix min/max and stddev were computed over
+// the all-time length history.
+func TestPopulateObservedCycleStatsRangeAndSpreadUseRecentWindow(t *testing.T) {
+	// 7 completed cycles: the oldest is a 90-day merged-gap outlier, the
+	// recent six (the cyclePredictionWindow) are a stable 27..30 spread.
+	lengths := []int{90, 28, 29, 27, 30, 28, 28}
+
+	stats := CycleStats{}
+	populateObservedCycleStats(&stats, lengths, nil)
+
+	if stats.MinCycleLength != 27 {
+		t.Fatalf("MinCycleLength = %d, want 27 (windowed)", stats.MinCycleLength)
+	}
+	if stats.MaxCycleLength != 30 {
+		t.Fatalf("MaxCycleLength = %d, want 30 (the aged-out 90-day outlier must not widen the range)", stats.MaxCycleLength)
+	}
+
+	// Sample stddev over the recent window [28 29 27 30 28 28]:
+	// mean = 28.333..., squared diffs sum = 5.333..., n-1 = 5.
+	want := math.Sqrt((16.0 / 3.0) / 5.0)
+	if math.Abs(stats.CycleLengthStdDev-want) > 1e-9 {
+		t.Fatalf("CycleLengthStdDev = %.10f, want %.10f (windowed sample stddev)", stats.CycleLengthStdDev, want)
+	}
+
+	if stats.CompletedCycleCount != 7 {
+		t.Fatalf("CompletedCycleCount = %d, want 7 (count stays all-time)", stats.CompletedCycleCount)
+	}
+	if stats.LastCycleLength != 28 {
+		t.Fatalf("LastCycleLength = %d, want 28", stats.LastCycleLength)
 	}
 }

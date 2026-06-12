@@ -283,11 +283,13 @@ func populateObservedCycleStats(stats *CycleStats, lengths []int, cycles []detec
 	if len(recentLengths) > 0 {
 		stats.AverageCycleLength = averageInts(recentLengths)
 		stats.MedianCycleLength = medianInt(recentLengths)
-	}
-	if len(lengths) > 0 {
-		stats.MinCycleLength, stats.MaxCycleLength = minMaxInts(lengths)
-		stats.CycleLengthStdDev = stddevInts(lengths)
-		stats.LastCycleLength = lengths[len(lengths)-1]
+		// Range and spread statistics describe the same recent window the
+		// median prediction uses: an outlier cycle that has aged out of the
+		// window must not keep widening irregular prediction ranges or the
+		// variability spread indefinitely.
+		stats.MinCycleLength, stats.MaxCycleLength = minMaxInts(recentLengths)
+		stats.CycleLengthStdDev = stddevInts(recentLengths)
+		stats.LastCycleLength = recentLengths[len(recentLengths)-1]
 	}
 
 	periodLengths := recentPositivePeriodLengths(cycles, cyclePredictionWindow)
@@ -566,8 +568,13 @@ func filterLogsNotAfter(logs []models.DailyLog, cutoff time.Time) []models.Daily
 	return filtered
 }
 
+// stddevInts returns the sample standard deviation (n-1 denominator) of
+// values; with fewer than two values the spread is undefined and 0 is
+// returned. The observed cycle lengths are a small sample (at most the
+// recent prediction window) of the owner's ongoing cycle process, and the
+// population formula systematically understates variability at such n.
 func stddevInts(values []int) float64 {
-	if len(values) == 0 {
+	if len(values) < 2 {
 		return 0
 	}
 
@@ -577,5 +584,5 @@ func stddevInts(values []int) float64 {
 		diff := float64(value) - mean
 		squared += diff * diff
 	}
-	return math.Sqrt(squared / float64(len(values)))
+	return math.Sqrt(squared / float64(len(values)-1))
 }
