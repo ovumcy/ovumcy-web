@@ -280,10 +280,18 @@ func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 	if err := svc.EnableTOTP(context.Background(), ctx.user.ID, "JBSWY3DPEHPK3PXP"); err != nil {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
+	// EnableTOTP bumped auth_session_version; without a refreshed cookie the
+	// request dies at AuthRequired and the test goes green without ever
+	// exercising the handler (the bug this fix removes).
+	ctx.refreshAuthCookie(t)
 
 	form := url.Values{"password": {"WrongPassword1"}}
-	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", form, map[string]string{"Accept-Language": "en"})
+	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", form, map[string]string{"Accept-Language": "en", "Accept": "application/json"})
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("wrong password: status = %d, want 401", resp.StatusCode)
+	}
 
 	var reloaded models.User
 	if err := ctx.database.First(&reloaded, ctx.user.ID).Error; err != nil {
@@ -305,16 +313,28 @@ func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 		t.Fatalf("EnableTOTP: %v", err)
 	}
 
+	// EnableTOTP bumped auth_session_version; refresh so the requests reach
+	// the handler instead of dying at AuthRequired (which previously made
+	// this test pass without the limiter ever firing).
+	ctx.refreshAuthCookie(t)
+
 	wrongForm := url.Values{"password": {"WrongPassword1"}}
 	for attempt := 0; attempt < services.DefaultTOTPDisableAttemptsLimit; attempt++ {
-		resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", wrongForm, map[string]string{"Accept-Language": "en"})
+		resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", wrongForm, map[string]string{"Accept-Language": "en", "Accept": "application/json"})
+		if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("attempt %d: status = %d, want 401 or 429", attempt, resp.StatusCode)
+		}
 		resp.Body.Close()
 	}
 
 	// Even the correct password must be rejected once the limiter has tripped.
 	correctForm := url.Values{"password": {"StrongPass1"}}
-	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", correctForm, map[string]string{"Accept-Language": "en"})
+	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", correctForm, map[string]string{"Accept-Language": "en", "Accept": "application/json"})
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("rate-limited disable: status = %d, want 429", resp.StatusCode)
+	}
 
 	var reloaded models.User
 	if err := ctx.database.First(&reloaded, ctx.user.ID).Error; err != nil {
