@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1574,20 +1575,44 @@ func TestRunServerClosesDatabaseOnListenError(t *testing.T) {
 
 // TestRunServerClosesDatabaseAfterGracefulStop pins the graceful exit path:
 // Listen returns nil after a graceful stop, and runServer closes the
-// database before handing control back to main.
+// database before handing control back to main. The stop is issued only
+// after a TCP dial against the bound listener succeeds — calling Shutdown
+// straight from the OnListen hook races the accept loop and can fire before
+// the server is stoppable, hanging Listen forever.
 func TestRunServerClosesDatabaseAfterGracefulStop(t *testing.T) {
 	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "runserver-stop.db"))
 	if err != nil {
 		t.Fatalf("OpenSQLite() unexpected error: %v", err)
 	}
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
-	app.Hooks().OnListen(func(fiber.ListenData) error {
-		go func() { _ = app.Shutdown() }()
+
+	addrCh := make(chan string, 1)
+	app.Hooks().OnListen(func(listenData fiber.ListenData) error {
+		addrCh <- net.JoinHostPort(listenData.Host, listenData.Port)
 		return nil
 	})
+	go func() {
+		address := <-addrCh
+		for {
+			conn, dialErr := net.Dial("tcp", address)
+			if dialErr == nil {
+				_ = conn.Close()
+				_ = app.Shutdown()
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
 
-	if err := runServer(app, database, "127.0.0.1:0"); err != nil {
-		t.Fatalf("runServer after graceful stop: %v", err)
+	done := make(chan error, 1)
+	go func() { done <- runServer(app, database, "127.0.0.1:0") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runServer after graceful stop: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("runServer did not return within 30s of the graceful stop")
 	}
 
 	sqlDB, err := database.DB()
