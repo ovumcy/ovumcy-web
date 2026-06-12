@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -474,6 +475,34 @@ func TestDayAndSymptomJSONUseSnakeCaseWireKeys(t *testing.T) {
 	assertWireKeysAbsent(t, symptomKeys, "symptom", []string{
 		"UserID", "IsBuiltin", "ArchivedAt",
 	})
+
+	// Pin the symptom update JSON branch (PATCH content-negotiation) to the same
+	// snake_case DTO contract. A no-CSRF app is appropriate here: the test
+	// isolates content negotiation, while the valid-token CSRF update path is
+	// covered by the settings symptom HTMX regressions and the missing-token 403
+	// by state_mutation_csrf_missing_token_test.go (testing.md content-negotiation
+	// rule).
+	custom := models.SymptomType{
+		UserID:    user.ID,
+		Name:      "Wire custom symptom",
+		Icon:      "🌟",
+		Color:     "#AABBCC",
+		IsBuiltin: false,
+	}
+	if err := database.Create(&custom).Error; err != nil {
+		t.Fatalf("seed custom symptom: %v", err)
+	}
+	updatedKeys := patchSymptomJSON(t, app, authCookie, custom.ID, url.Values{
+		"name":  {"Wire custom renamed"},
+		"icon":  {"⭐"},
+		"color": {"#112233"},
+	})
+	assertWireKeysPresent(t, updatedKeys, "symptom-update", []string{
+		"id", "user_id", "name", "icon", "color", "is_builtin", "archived_at",
+	})
+	assertWireKeysAbsent(t, updatedKeys, "symptom-update", []string{
+		"UserID", "IsBuiltin", "ArchivedAt",
+	})
 }
 
 // decodeJSONObjectKeys issues an Accept: application/json GET and returns the
@@ -514,6 +543,27 @@ func decodeJSONArrayFirstObjectKeys(t *testing.T, app *fiber.App, authCookie, pa
 		t.Fatalf("GET %s: expected at least one element, got empty array", path)
 	}
 	return list[0]
+}
+
+// patchSymptomJSON updates a symptom via PATCH with Accept: application/json and
+// returns the response object's raw-message keys, so the update wire contract is
+// asserted the same way as the read endpoints.
+func patchSymptomJSON(t *testing.T, app *fiber.App, authCookie string, id uint, form url.Values) map[string]json.RawMessage {
+	t.Helper()
+	path := "/api/v1/symptoms/" + strconv.FormatUint(uint64(id), 10)
+	request := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", authCookie)
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("PATCH %s: expected status 200, got %d", path, response.StatusCode)
+	}
+	var keys map[string]json.RawMessage
+	if err := json.NewDecoder(response.Body).Decode(&keys); err != nil {
+		t.Fatalf("decode %s object: %v", path, err)
+	}
+	return keys
 }
 
 func assertWireKeysPresent(t *testing.T, keys map[string]json.RawMessage, label string, expected []string) {
