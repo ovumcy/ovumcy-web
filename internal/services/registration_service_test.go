@@ -211,3 +211,73 @@ func newRegistrationServiceForTest(fixture stubRegistrationFixture) (*Registrati
 	store := &stubRegistrationStore{err: fixture.storeErr}
 	return NewRegistrationService(auth, store, RegistrationModeOpen), store
 }
+
+func TestRegistrationServiceAutoProvisionOwnerAccountErrorBranches(t *testing.T) {
+	cases := []struct {
+		name     string
+		mode     RegistrationMode
+		authErr  error
+		storeErr error
+		want     error
+	}{
+		{name: "closed registration refuses provisioning", mode: RegistrationModeClosed, want: ErrAuthRegistrationDisabled},
+		{name: "owner build failure maps to register failed", mode: RegistrationModeOpen, authErr: errors.New("build broke"), want: ErrAuthRegisterFailed},
+		{name: "duplicate email maps to email exists", mode: RegistrationModeOpen, storeErr: stubRegistrationUniqueConstraintError{}, want: ErrAuthEmailExists},
+		{name: "symptom seed failure maps to seed error", mode: RegistrationModeOpen, storeErr: stubRegistrationSeedWriteError{}, want: ErrRegistrationSeedSymptoms},
+		{name: "generic persistence failure maps to register failed", mode: RegistrationModeOpen, storeErr: errors.New("db down"), want: ErrAuthRegisterFailed},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			auth := &stubRegistrationAuthService{
+				user: models.User{ID: 7, Email: "owner@example.com"},
+				err:  testCase.authErr,
+			}
+			store := &stubRegistrationStore{err: testCase.storeErr}
+			service := NewRegistrationService(auth, store, testCase.mode)
+
+			_, err := service.AutoProvisionOwnerAccount(context.Background(), "owner@example.com", registrationServiceTestNow)
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("expected %v, got %v", testCase.want, err)
+			}
+			if testCase.mode == RegistrationModeClosed && (auth.oidcCalled || store.called) {
+				t.Fatalf("closed mode must refuse before building or persisting anything")
+			}
+		})
+	}
+}
+
+// TestBuildOIDCOwnerUserShape pins the security-relevant shape of an
+// auto-provisioned OIDC owner: no local password hash, local auth disabled,
+// no recovery hash, owner role with cycle defaults, and session version 1.
+func TestBuildOIDCOwnerUserShape(t *testing.T) {
+	auth := NewAuthService(nil)
+
+	user, err := auth.BuildOIDCOwnerUser("owner@example.com", registrationServiceTestNow)
+	if err != nil {
+		t.Fatalf("BuildOIDCOwnerUser() unexpected error: %v", err)
+	}
+	if user.PasswordHash != "" || user.RecoveryCodeHash != "" {
+		t.Fatalf("OIDC-provisioned owner must carry no local secrets, got hash=%q recovery=%q", user.PasswordHash, user.RecoveryCodeHash)
+	}
+	if user.LocalAuthEnabled {
+		t.Fatalf("OIDC-provisioned owner must have local auth disabled")
+	}
+	if user.Role != models.RoleOwner || user.AuthSessionVersion != 1 {
+		t.Fatalf("expected owner role with session version 1, got role=%q sv=%d", user.Role, user.AuthSessionVersion)
+	}
+	if user.CycleLength != models.DefaultCycleLength || user.PeriodLength != models.DefaultPeriodLength || !user.AutoPeriodFill {
+		t.Fatalf("expected default cycle settings on provisioning")
+	}
+	if !user.CreatedAt.Equal(registrationServiceTestNow) {
+		t.Fatalf("expected explicit createdAt to be preserved, got %s", user.CreatedAt)
+	}
+
+	zeroTime, err := auth.BuildOIDCOwnerUser("owner@example.com", time.Time{})
+	if err != nil {
+		t.Fatalf("BuildOIDCOwnerUser(zero) unexpected error: %v", err)
+	}
+	if zeroTime.CreatedAt.IsZero() {
+		t.Fatalf("zero createdAt must default to a real timestamp")
+	}
+}

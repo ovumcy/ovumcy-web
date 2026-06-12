@@ -17,15 +17,22 @@ type dayLogRepositoryStub struct {
 	findErrByDay   map[string]error
 	createErrByDay map[string]error
 	saveErrByDay   map[string]error
+	// saveErrFromCall makes saveErrByDay fire only from the N-th Save call
+	// for that day (1-based), so a test can pass an earlier upsert and fail
+	// a later flag write on the same calendar day.
+	saveErrFromCall map[string]int
+	saveCalls       map[string]int
 }
 
 func newDayLogRepositoryStub() *dayLogRepositoryStub {
 	return &dayLogRepositoryStub{
-		entries:        make(map[string]models.DailyLog),
-		nextID:         1,
-		findErrByDay:   make(map[string]error),
-		createErrByDay: make(map[string]error),
-		saveErrByDay:   make(map[string]error),
+		entries:         make(map[string]models.DailyLog),
+		nextID:          1,
+		findErrByDay:    make(map[string]error),
+		createErrByDay:  make(map[string]error),
+		saveErrByDay:    make(map[string]error),
+		saveErrFromCall: make(map[string]int),
+		saveCalls:       make(map[string]int),
 	}
 }
 
@@ -120,8 +127,11 @@ func (stub *dayLogRepositoryStub) Create(ctx context.Context, entry *models.Dail
 
 func (stub *dayLogRepositoryStub) Save(ctx context.Context, entry *models.DailyLog) error {
 	key := stub.dayKey(entry.Date)
+	stub.saveCalls[key]++
 	if err, ok := stub.saveErrByDay[key]; ok {
-		return err
+		if from, gated := stub.saveErrFromCall[key]; !gated || stub.saveCalls[key] >= from {
+			return err
+		}
 	}
 	stub.entries[key] = *entry
 	return nil
@@ -500,5 +510,36 @@ func TestMarkCycleStartManuallyAllowsFutureDateWithinTwoDays(t *testing.T) {
 	}
 	if !entry.IsPeriod || !entry.CycleStart {
 		t.Fatalf("expected tomorrow entry to be period+cycle_start, got %#v", entry)
+	}
+}
+
+// TestMarkCycleStartManuallyWrapsPersistenceFailure pins the typed-error
+// contract for the manual cycle-start write path: repository failures while
+// persisting the cycle-start flags surface as ErrManualCycleStartFailed
+// (errors.Is-matchable for the API error mapping), not as a raw repo error.
+func TestMarkCycleStartManuallyWrapsPersistenceFailure(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	targetDay := time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC)
+	logs.entries["2026-02-08"] = models.DailyLog{
+		ID:       2,
+		UserID:   10,
+		Date:     targetDay,
+		IsPeriod: true,
+		Flow:     models.FlowLight,
+	}
+	logs.saveErrByDay["2026-02-08"] = errors.New("disk full")
+	// Let the day upsert (first Save) succeed and fail the cycle-start flag
+	// write (second Save), so the error surfaces from the persist stage.
+	logs.saveErrFromCall["2026-02-08"] = 2
+
+	err := service.MarkCycleStartManually(context.Background(), 10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{})
+	if !errors.Is(err, ErrManualCycleStartFailed) {
+		t.Fatalf("expected ErrManualCycleStartFailed wrap, got %v", err)
+	}
+	if logs.entries["2026-02-08"].CycleStart {
+		t.Fatalf("failed persistence must not leave the cycle-start flag set in the read model")
 	}
 }
