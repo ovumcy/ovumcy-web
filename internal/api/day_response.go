@@ -10,8 +10,8 @@ import (
 // dayResponse is the transport DTO for a persisted day record on the public
 // /api/v1/days surface. It mirrors the `DailyLog` schema in docs/openapi.yaml
 // (snake_case keys, `date` as a calendar date-only string) so the wire format
-// conforms to the published contract. models.DailyLog stays transport-free per
-// AGENTS.md: serialization lives in the api layer, not on the model.
+// conforms to the published contract. models.DailyLog stays transport-free:
+// serialization lives in the api layer, not on the model.
 type dayResponse struct {
 	ID              uint      `json:"id"`
 	UserID          uint      `json:"user_id"`
