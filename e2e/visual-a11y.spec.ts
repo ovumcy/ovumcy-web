@@ -125,6 +125,64 @@ test.describe('Visual and accessibility regressions', () => {
     await expectVisibleFocusIndicator(logoutButton);
   });
 
+  test('skip-to-content link appears on focus and moves focus into main content', async ({
+    page,
+  }) => {
+    await registerOwnerAndReachDashboard(page, 'visual-skip-link');
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    const skipLink = page.locator('a.skip-link');
+    // Visually parked off-screen until focused — this is CSS behavior only a
+    // real browser can verify (the jsdom unit suite cannot see it).
+    await expect(skipLink).toHaveCSS('position', 'absolute');
+    const hiddenBox = await skipLink.boundingBox();
+    expect(hiddenBox === null || hiddenBox.y < 0).toBeTruthy();
+
+    // First Tab from a fresh page lands on the skip link and reveals it.
+    await page.keyboard.press('Tab');
+    await expect(skipLink).toBeFocused();
+    const visibleBox = await skipLink.boundingBox();
+    expect(visibleBox).not.toBeNull();
+    expect(visibleBox!.y).toBeGreaterThanOrEqual(0);
+
+    // Activating it moves focus into the main landmark, past the header.
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#main-content')).toBeFocused();
+  });
+
+  test('logout confirm dialog traps Tab and restores focus on dismiss', async ({
+    page,
+  }) => {
+    await registerOwnerAndReachDashboard(page, 'visual-focus-trap');
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    await page.goto('/dashboard');
+    const logoutButton = page.locator('.nav-logout-form button[type="submit"]').first();
+    await logoutButton.click();
+
+    const modal = page.locator('#confirm-modal');
+    await expect(modal).toBeVisible();
+    await expect(page.locator('#confirm-modal-cancel')).toBeFocused();
+
+    // Native Tab order must cycle inside the dialog: cancel -> accept ->
+    // back to cancel, never into the page behind the backdrop.
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#confirm-modal-accept')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#confirm-modal-cancel')).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(page.locator('#confirm-modal-accept')).toBeFocused();
+
+    // Escape closes the dialog and returns focus to the invoking button.
+    await page.keyboard.press('Escape');
+    await expect(modal).toBeHidden();
+    await expect(logoutButton).toBeFocused();
+    await expect(page).toHaveURL(/\/dashboard$/);
+  });
+
   test('stats insight state stays readable on mobile and exposes accessible summaries', async ({
     page,
   }) => {
