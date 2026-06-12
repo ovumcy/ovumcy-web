@@ -495,7 +495,6 @@
   "calendar.delete_entry": "Удалить запись",
   "calendar.delete_day": "Удалить",
   "calendar.confirm_delete_day": "Удалить запись за этот день? Это действие нельзя отменить.",
-  "calendar.error.period_flow_required": "Выберите интенсивность, если отмечаете день месячных.",
   "calendar.no_entry": "Запись не велась.",
   "calendar.select_day": "Выберите день в этом месяце для редактирования.",
   "calendar.autosave_hint": "Все изменения сохраняются только после нажатия «Сохранить».",

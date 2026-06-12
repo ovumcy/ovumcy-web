@@ -565,7 +565,6 @@
   "calendar.delete_entry": "Supprimer l'entrée",
   "calendar.delete_day": "Supprimer",
   "calendar.confirm_delete_day": "Supprimer l'entrée de ce jour ? Cette action est irréversible.",
-  "calendar.error.period_flow_required": "Veuillez sélectionner le flux lors du marquage d'un jour de règles.",
   "calendar.no_entry": "Aucun enregistrement conservé.",
   "calendar.select_day": "Sélectionnez un jour de ce mois pour le modifier.",
   "calendar.autosave_hint": "Les modifications ne sont sauvegardées qu'après avoir appuyé sur « Enregistrer ».",

@@ -495,7 +495,6 @@
   "calendar.delete_entry": "Eliminar entrada",
   "calendar.delete_day": "Eliminar",
   "calendar.confirm_delete_day": "¿Eliminar la entrada de este día? Esta acción no se puede deshacer.",
-  "calendar.error.period_flow_required": "Selecciona el flujo al marcar un día de periodo.",
   "calendar.no_entry": "No se llevó registro.",
   "calendar.select_day": "Selecciona un día de este mes para editarlo.",
   "calendar.autosave_hint": "Los cambios se guardan solo al pulsar \"Guardar\".",

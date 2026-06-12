@@ -58,7 +58,6 @@ var authErrorTranslationKeys = map[string]string{
 	"failed to update symptom":                        "settings.symptoms.error.update_failed",
 	"failed to hide symptom":                          "settings.symptoms.error.hide_failed",
 	"failed to restore symptom":                       "settings.symptoms.error.restore_failed",
-	"period flow is required":                         "calendar.error.period_flow_required",
 	"invalid mood value":                              "dashboard.error.invalid_mood",
 	"invalid sex activity value":                      "dashboard.error.invalid_sex_activity",
 	"invalid bbt value":                               "dashboard.error.invalid_bbt",

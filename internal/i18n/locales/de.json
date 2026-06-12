@@ -495,7 +495,6 @@
   "calendar.delete_entry": "Eintrag löschen",
   "calendar.delete_day": "Löschen",
   "calendar.confirm_delete_day": "Den Eintrag dieses Tages löschen? Dies kann nicht rückgängig gemacht werden.",
-  "calendar.error.period_flow_required": "Bitte wählen Sie die Stärke aus, wenn Sie einen Periodentag markieren.",
   "calendar.no_entry": "Es wurde kein Eintrag erfasst.",
   "calendar.select_day": "Wählen Sie einen Tag in diesem Monat aus, um ihn zu bearbeiten.",
   "calendar.autosave_hint": "Änderungen werden erst nach dem Klick auf „Speichern“ übernommen.",

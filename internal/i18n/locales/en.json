@@ -495,7 +495,6 @@
   "calendar.delete_entry": "Delete entry",
   "calendar.delete_day": "Delete",
   "calendar.confirm_delete_day": "Delete this day's entry? This cannot be undone.",
-  "calendar.error.period_flow_required": "Please select flow when marking a period day.",
   "calendar.no_entry": "No record was kept.",
   "calendar.select_day": "Select a day in this month to edit.",
   "calendar.autosave_hint": "Changes are saved only after pressing \"Save\".",
