@@ -48,11 +48,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# Local task notes and scratch files
-SKILL.md
-PROJECT_CONTEXT.md
-BUGFIXES.md
-TASK-*.md
+# Local and generated artifacts
 .tmp_*/
 .tmp*/
 .local/
