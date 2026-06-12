@@ -16,8 +16,8 @@ const PAGE_WITH_CSRF_META = `<!doctype html><html><head>
 
 const PAGE_WITHOUT_CSRF_META = `<!doctype html><html><head></head><body></body></html>`;
 
-function dispatchConfigRequest(window) {
-  const detail = { parameters: {}, headers: {} };
+function dispatchConfigRequest(window, verb = "post") {
+  const detail = { verb, parameters: {}, headers: {} };
   const event = new window.CustomEvent("htmx:configRequest", { detail });
   window.document.body.dispatchEvent(event);
   return detail;
@@ -29,6 +29,21 @@ test("htmx:configRequest copies the csrf-token meta into parameters and headers"
     const detail = dispatchConfigRequest(dom.window);
     assert.equal(detail.parameters.csrf_token, "csrf-token-abc-123", "csrf_token form parameter is required for the server's form-field CSRF check");
     assert.equal(detail.headers["X-CSRF-Token"], "csrf-token-abc-123", "X-CSRF-Token header mirrors the parameter so handlers that prefer the header also see the token");
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("htmx:configRequest keeps the csrf token OUT of GET parameters", async () => {
+  // htmx serializes parameters into the URL query string for GET
+  // (methodsThatUseUrlParams), and the token must never appear in URLs:
+  // browser history and reverse-proxy access logs retain them. GETs are
+  // not CSRF-checked server-side, so the header alone is correct there.
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: PAGE_WITH_CSRF_META });
+  try {
+    const detail = dispatchConfigRequest(dom.window, "get");
+    assert.equal(detail.parameters.csrf_token, undefined, "GET requests must not carry the token as a parameter (it would land in the URL)");
+    assert.equal(detail.headers["X-CSRF-Token"], "csrf-token-abc-123", "the header still rides along on GET requests");
   } finally {
     dom.window.close();
   }
