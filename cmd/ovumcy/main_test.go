@@ -16,7 +16,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
 	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -189,7 +188,8 @@ func TestResolveDatabaseConfigAcceptsPostgres(t *testing.T) {
 }
 
 func TestCSRFMiddlewareConfigUsesCookieSecureFlag(t *testing.T) {
-	secureConfig := csrfMiddlewareConfig(true)
+	handler := newRateLimitTestHandler(t)
+	secureConfig := csrfMiddlewareConfig(true, handler)
 	if !secureConfig.CookieSecure {
 		t.Fatal("expected csrf cookie secure flag to be enabled")
 	}
@@ -203,7 +203,7 @@ func TestCSRFMiddlewareConfigUsesCookieSecureFlag(t *testing.T) {
 		t.Fatalf("expected csrf key lookup form:csrf_token, got %q", secureConfig.KeyLookup)
 	}
 
-	insecureConfig := csrfMiddlewareConfig(false)
+	insecureConfig := csrfMiddlewareConfig(false, handler)
 	if insecureConfig.CookieSecure {
 		t.Fatal("expected csrf cookie secure flag to be disabled")
 	}
@@ -653,8 +653,8 @@ func assertProxyRuntimeConfig(t *testing.T, config runtimeConfig) {
 // TestLoadRuntimeConfigDefaultsAuditLogOff locks the privacy-first default:
 // when AUDIT_LOG_ENABLED is unset the runtime must NOT emit per-action audit
 // logs. This matches SECURITY.md and .env.example, both of which
-// state audit logging is off by default. (The existing audit-flag test forces
-// the flag with SetAuditLogEnabled and does not exercise the startup default.)
+// state audit logging is off by default. (The api-package audit-flag test
+// covers the request path; this one exercises the startup default.)
 func TestLoadRuntimeConfigDefaultsAuditLogOff(t *testing.T) {
 	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
 	t.Setenv("DB_DRIVER", "sqlite")
@@ -1346,17 +1346,15 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 }
 
 func TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII(t *testing.T) {
-	api.SetAuditLogEnabled(true)
-	t.Cleanup(func() { api.SetAuditLogEnabled(false) })
-
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
 
 	var output bytes.Buffer
 	log.SetOutput(&output)
 
+	handler := newRateLimitTestHandler(t)
 	app := fiber.New()
-	app.Use(csrf.New(csrfMiddlewareConfig(false)))
+	app.Use(csrf.New(csrfMiddlewareConfig(false, handler)))
 	app.Post("/settings/change-password", func(c *fiber.Ctx) error {
 		return c.SendStatus(http.StatusOK)
 	})
@@ -1391,9 +1389,6 @@ func TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII(t *testing.T) {
 }
 
 func TestAuthRateLimitHandlerLogsSecurityEventWithoutPII(t *testing.T) {
-	api.SetAuditLogEnabled(true)
-	t.Cleanup(func() { api.SetAuditLogEnabled(false) })
-
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
 

@@ -90,6 +90,7 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 			LoginAttempts:    bootstrap.AttemptLimit{Max: 8, Window: 15 * time.Minute},
 			RecoveryAttempts: bootstrap.AttemptLimit{Max: 8, Window: time.Hour},
 			LogoutAttempts:   &bootstrap.AttemptLimit{},
+			AuditLogEnabled:  true,
 		}),
 	)
 	if err != nil {

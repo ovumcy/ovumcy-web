@@ -11,16 +11,13 @@ import (
 )
 
 func TestCreateSymptomLogsMutationWithoutLeakingUserInput(t *testing.T) {
-	SetAuditLogEnabled(true)
-	t.Cleanup(func() { SetAuditLogEnabled(false) })
-
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
 
 	var output bytes.Buffer
 	log.SetOutput(&output)
 
-	ctx := newSettingsSecurityTestContext(t, "settings-symptom-audit@example.com")
+	ctx := newSettingsSecurityTestContextWithOptions(t, "settings-symptom-audit@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
 	form := url.Values{
 		"name": {"=Cycle secret"},
 		"icon": {"S"},
@@ -51,16 +48,13 @@ func TestCreateSymptomLogsMutationWithoutLeakingUserInput(t *testing.T) {
 }
 
 func TestUpsertDayLogsSanitizedPathWithoutConcreteDate(t *testing.T) {
-	SetAuditLogEnabled(true)
-	t.Cleanup(func() { SetAuditLogEnabled(false) })
-
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
 
 	var output bytes.Buffer
 	log.SetOutput(&output)
 
-	app, database := newOnboardingTestApp(t)
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{auditLogEnabled: true})
 	user := createOnboardingTestUser(t, database, "settings-day-audit@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 

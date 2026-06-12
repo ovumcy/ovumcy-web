@@ -98,7 +98,6 @@ func main() {
 	time.Local = location
 
 	config := mustLoadRuntimeConfig(location)
-	api.SetAuditLogEnabled(config.AuditLogEnabled)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
 	// codecov:ignore:start -- main() composition-root wiring; runs only in the binary (exercised by e2e). The shared bootstrap.BuildDependencies is unit-tested through the internal/api test helper.
@@ -108,6 +107,7 @@ func main() {
 		LoginAttempts:    bootstrap.AttemptLimit{Max: config.RateLimits.LoginMax, Window: config.RateLimits.LoginWindow},
 		RecoveryAttempts: bootstrap.AttemptLimit{Max: config.RateLimits.ForgotPasswordMax, Window: config.RateLimits.ForgotPasswordWindow},
 		LogoutAttempts:   &bootstrap.AttemptLimit{Max: config.RateLimits.LogoutMax, Window: config.RateLimits.LogoutWindow},
+		AuditLogEnabled:  config.AuditLogEnabled,
 	})
 	// codecov:ignore:end
 	handler := mustNewHandler(config, i18nManager, dependencies)
@@ -484,7 +484,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 		LimitReached: newAPIRateLimitHandler(handler),
 	}))
 	app.Use(handler.LanguageMiddleware)
-	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure)))
+	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure, handler)))
 }
 
 const requestLoggerFormat = "${time} | ${status} | ${latency} | ${method} | ${request_path} | ${safe_error}\n"
@@ -804,7 +804,7 @@ func parseCSV(value string) []string {
 	return result
 }
 
-func csrfMiddlewareConfig(cookieSecure bool) csrf.Config {
+func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 	return csrf.Config{
 		Next: func(c *fiber.Ctx) bool {
 			return c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath
@@ -817,7 +817,7 @@ func csrfMiddlewareConfig(cookieSecure bool) csrf.Config {
 		ContextKey:     "csrf",
 		Extractor:      api.CSRFTokenExtractor,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			api.LogSecurityEvent(c, "csrf", "denied", api.SecurityEventField{
+			handler.LogSecurityEvent(c, "csrf", "denied", api.SecurityEventField{
 				Key:   "reason",
 				Value: api.CSRFFailureReason(err),
 			})
@@ -833,7 +833,7 @@ type authRateLimitConfig struct {
 func newAuthRateLimitHandler(handler *api.Handler, config authRateLimitConfig) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		logRateLimitHit(c)
-		api.LogSecurityEvent(c, "rate_limit", "blocked",
+		handler.LogSecurityEvent(c, "rate_limit", "blocked",
 			api.SecurityEventField{Key: "scope", Value: "auth"},
 			api.SecurityEventField{Key: "reason", Value: config.ErrorCode},
 		)
@@ -844,7 +844,7 @@ func newAuthRateLimitHandler(handler *api.Handler, config authRateLimitConfig) f
 func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		logRateLimitHit(c)
-		api.LogSecurityEvent(c, "rate_limit", "blocked",
+		handler.LogSecurityEvent(c, "rate_limit", "blocked",
 			api.SecurityEventField{Key: "scope", Value: rateLimitScope(c)},
 			api.SecurityEventField{Key: "reason", Value: "too many requests"},
 		)

@@ -29,5 +29,6 @@ func (handler *Handler) withDependencies(dependencies Dependencies) *Handler {
 	handler.setupService = dependencies.SetupService
 	handler.totpService = dependencies.TOTPService
 	handler.registerPickupTokens = dependencies.RegisterPickupTokens
+	handler.auditLogEnabled = dependencies.AuditLogEnabled
 	return handler
 }

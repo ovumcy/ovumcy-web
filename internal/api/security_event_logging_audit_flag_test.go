@@ -15,9 +15,6 @@ import (
 // audited endpoint produces no `security event:` line on stderr. This is
 // the contract documented in SECURITY.md under "Logging Policy".
 func TestAuditLogDefaultOffSuppressesSecurityEvents(t *testing.T) {
-	t.Cleanup(func() { SetAuditLogEnabled(false) })
-	SetAuditLogEnabled(false)
-
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
 
@@ -53,16 +50,13 @@ func TestAuditLogDefaultOffSuppressesSecurityEvents(t *testing.T) {
 // TestAuditLogEnabledRestoresSecurityEvents confirms the flag is honored
 // in the opposite direction: turning it on re-enables the audit stream.
 func TestAuditLogEnabledRestoresSecurityEvents(t *testing.T) {
-	t.Cleanup(func() { SetAuditLogEnabled(false) })
-	SetAuditLogEnabled(true)
-
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
 
 	var output bytes.Buffer
 	log.SetOutput(&output)
 
-	app, database := newOnboardingTestApp(t)
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{auditLogEnabled: true})
 	user := createOnboardingTestUser(t, database, "audit-enabled@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
@@ -85,22 +79,5 @@ func TestAuditLogEnabledRestoresSecurityEvents(t *testing.T) {
 
 	if !strings.Contains(output.String(), `security event: action="health.day_upsert"`) {
 		t.Fatalf("expected security-event output with AUDIT_LOG_ENABLED=true, got %q", output.String())
-	}
-}
-
-// TestAuditLogEnabledReporter exposes the package-level getter for callers
-// (startup banner, future managed-deployment introspection) and confirms
-// the value tracks SetAuditLogEnabled.
-func TestAuditLogEnabledReporter(t *testing.T) {
-	t.Cleanup(func() { SetAuditLogEnabled(false) })
-
-	SetAuditLogEnabled(false)
-	if AuditLogEnabled() {
-		t.Fatalf("AuditLogEnabled() = true after SetAuditLogEnabled(false)")
-	}
-
-	SetAuditLogEnabled(true)
-	if !AuditLogEnabled() {
-		t.Fatalf("AuditLogEnabled() = false after SetAuditLogEnabled(true)")
 	}
 }

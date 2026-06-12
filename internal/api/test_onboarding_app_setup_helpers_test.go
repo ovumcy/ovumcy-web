@@ -42,6 +42,7 @@ type onboardingTestAppOptions struct {
 	enableCSRF       bool
 	registrationMode services.RegistrationMode
 	oidcService      OIDCWorkflowService
+	auditLogEnabled  bool
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -83,7 +84,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	app := fiber.New()
 	app.Use(handler.LanguageMiddleware)
 	if options.enableCSRF {
-		app.Use(csrf.New(testCSRFMiddlewareConfig(options.cookieSecure)))
+		app.Use(csrf.New(testCSRFMiddlewareConfig(options.cookieSecure, handler)))
 	}
 	RegisterRoutes(app, handler)
 	app.Use(handler.NotFound)
@@ -111,10 +112,11 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 		OIDCServiceOverride: appOptions.oidcService,
 		LoginAttempts:       bootstrap.AttemptLimit{Max: services.DefaultLoginAttemptsLimit, Window: services.DefaultLoginAttemptsWindow},
 		RecoveryAttempts:    bootstrap.AttemptLimit{Max: services.DefaultRecoveryAttemptsLimit, Window: time.Hour},
+		AuditLogEnabled:     appOptions.auditLogEnabled,
 	})
 }
 
-func testCSRFMiddlewareConfig(cookieSecure bool) csrf.Config {
+func testCSRFMiddlewareConfig(cookieSecure bool, handler *Handler) csrf.Config {
 	return csrf.Config{
 		Next: func(c *fiber.Ctx) bool {
 			return c.Path() == security.OIDCCallbackPath
@@ -127,7 +129,7 @@ func testCSRFMiddlewareConfig(cookieSecure bool) csrf.Config {
 		ContextKey:     "csrf",
 		Extractor:      CSRFTokenExtractor,
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			LogSecurityEvent(c, "csrf", "denied", SecurityEventField{
+			handler.LogSecurityEvent(c, "csrf", "denied", SecurityEventField{
 				Key:   "reason",
 				Value: testCSRFFailureReason(err),
 			})

@@ -48,6 +48,7 @@ type Handler struct {
 	setupService         *services.SetupService
 	totpService          *services.TOTPService
 	registerPickupTokens RegisterPickupTokenStore
+	auditLogEnabled      bool
 }
 
 type CalendarDay struct {

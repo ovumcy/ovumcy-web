@@ -30,6 +30,11 @@ type Dependencies struct {
 	SetupService         *services.SetupService
 	TOTPService          *services.TOTPService
 	RegisterPickupTokens RegisterPickupTokenStore
+
+	// AuditLogEnabled gates the per-action security-event audit stream
+	// (AUDIT_LOG_ENABLED). Runtime config, not a service, so Validate
+	// does not check it; false (the default) keeps the stream off.
+	AuditLogEnabled bool
 }
 
 // Validate reports the first missing dependency, so handler construction fails

@@ -25,8 +25,13 @@ type settingsSecurityTestContext struct {
 
 func newSettingsSecurityTestContext(t *testing.T, email string) settingsSecurityTestContext {
 	t.Helper()
+	return newSettingsSecurityTestContextWithOptions(t, email, onboardingTestAppOptions{enableCSRF: true})
+}
 
-	app, database := newOnboardingTestAppWithCSRF(t)
+func newSettingsSecurityTestContextWithOptions(t *testing.T, email string, options onboardingTestAppOptions) settingsSecurityTestContext {
+	t.Helper()
+
+	app, database := newOnboardingTestAppWithOptions(t, options)
 	user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
 	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)

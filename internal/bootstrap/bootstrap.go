@@ -41,6 +41,8 @@ type Options struct {
 	// LogoutAttempts, when non-nil, configures the logout attempt limiter.
 	// Production sets it; tests leave it nil to keep the service default.
 	LogoutAttempts *AttemptLimit
+	// AuditLogEnabled gates the per-action security-event audit stream.
+	AuditLogEnabled bool
 }
 
 // BuildDependencies wires the repositories and configuration into the domain
@@ -88,6 +90,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	}
 
 	return apideps.Dependencies{
+		AuditLogEnabled:      opts.AuditLogEnabled,
 		AuthService:          authService,
 		RegistrationService:  registrationService,
 		PasswordResetService: passwordResetService,

@@ -1189,9 +1189,6 @@ func TestShowOIDCLinkConfirmPageHidesTOTPFieldForNonTOTPTarget(t *testing.T) {
 // future refactor that swallows the "linked" event would leave the
 // post-incident audit trail silently incomplete.
 func TestCompleteOIDCLinkConfirmationEmitsAuditLogOnSuccess(t *testing.T) {
-	t.Cleanup(func() { SetAuditLogEnabled(false) })
-	SetAuditLogEnabled(true)
-
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
 
@@ -1200,8 +1197,9 @@ func TestCompleteOIDCLinkConfirmationEmitsAuditLogOnSuccess(t *testing.T) {
 
 	stub := newStubOIDCWorkflowService(true)
 	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
-		cookieSecure: true,
-		oidcService:  stub,
+		cookieSecure:    true,
+		oidcService:     stub,
+		auditLogEnabled: true,
 	})
 	user := createOnboardingTestUser(t, database, "link-audit@example.com", "StrongPass1", true)
 

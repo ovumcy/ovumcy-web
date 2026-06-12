@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync/atomic"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -16,30 +15,20 @@ type SecurityEventField struct {
 	Value string
 }
 
-// auditLogEnabled gates every LogSecurityEvent call. The zero value is
-// false, so the runtime emits no per-action audit logs unless the operator
-// explicitly opts in via AUDIT_LOG_ENABLED=true (see cmd/ovumcy/main.go).
-var auditLogEnabled atomic.Bool
-
-// SetAuditLogEnabled toggles the audit-log stream. Intended to be called
-// once at startup from main.go after loading the runtime configuration.
-// Tests that need to inspect security-event output should call this with
-// true and reset to false on cleanup.
-func SetAuditLogEnabled(enabled bool) {
-	auditLogEnabled.Store(enabled)
-}
-
-// AuditLogEnabled reports the current state of the audit-log flag. Exposed
-// for startup banner logging and tests; callers should not branch on this
-// for production logic.
-func AuditLogEnabled() bool {
-	return auditLogEnabled.Load()
-}
-
-func LogSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
-	if !auditLogEnabled.Load() {
+// LogSecurityEvent emits one audit line when the operator enabled the
+// audit stream (Dependencies.AuditLogEnabled, from AUDIT_LOG_ENABLED).
+// Exported for the entrypoint middleware (CSRF error handler, rate-limit
+// handlers); handler code uses the unexported helpers below. The flag is
+// carried per Handler instead of package state, so tests construct apps
+// with the stream on or off without mutating globals.
+func (handler *Handler) LogSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
+	if !handler.auditLogEnabled {
 		return
 	}
+	emitSecurityEvent(c, action, outcome, fields...)
+}
+
+func emitSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
 	if c == nil {
 		return
 	}
@@ -105,7 +94,7 @@ func securityEventField(key string, value string) SecurityEventField {
 }
 
 func (handler *Handler) logSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
-	LogSecurityEvent(c, action, outcome, fields...)
+	handler.LogSecurityEvent(c, action, outcome, fields...)
 }
 
 func (handler *Handler) logSecurityError(c *fiber.Ctx, action string, spec APIErrorSpec, fields ...SecurityEventField) {
