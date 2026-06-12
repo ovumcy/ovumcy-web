@@ -223,7 +223,7 @@ Behind a trusted proxy (`TRUST_PROXY_ENABLED=true`), the per-IP key is the **rig
 
 Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`internal/services/auth_attempt_policy.go`):
 
-- Login attempts: 8 failures / 15 minutes.
+- Login attempts: 8 failures / 15 minutes. The OIDC link-confirmation password challenge (`POST /auth/oidc/link-confirm`) draws from this same budget, so link-confirm cannot be used as a faster password oracle than the login form.
 - Logout attempts: 20 failures / 15 minutes (account-scoped).
 - TOTP login challenge: 5 failures / 15 minutes.
 - TOTP disable: 5 failures / 15 minutes.
@@ -427,6 +427,8 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Per-account rate-limit keys are HMAC-derived from `SECRET_KEY` (no raw identity persisted) | `TestAuthAttemptPolicyKeysUseScopedHMACFingerprint`, `TestAuthAttemptPolicyKeysOmitIdentityFingerprintForBlankIdentity` in [internal/services/auth_attempt_policy_test.go](internal/services/auth_attempt_policy_test.go) |
 | Attempt limiter respects window and reset semantics | `TestAttemptLimiterWindowAndReset`, `TestAttemptLimiterMultiKeyOperations` in [internal/services/attempt_limiter_test.go](internal/services/attempt_limiter_test.go) |
 | Logout endpoint is rate-limited per account | `auth_logout_rate_limit_regression_test.go` in `internal/api/` |
+| OIDC link-confirm password challenge shares the login failure budget (correct password refused once exhausted) | `TestCompleteOIDCLinkConfirmationRateLimitsPasswordAttempts` in [internal/api/auth_oidc_regressions_test.go](internal/api/auth_oidc_regressions_test.go) |
+| Attempt limiter memory is hard-capped under a fresh-key flood | `TestAttemptLimiterSizeCapUnderFreshKeyFlood`, `TestAttemptLimiterSizeCapEvictsColdestKeysFirst` in [internal/services/attempt_limiter_test.go](internal/services/attempt_limiter_test.go) |
 | TOTP login rate-limited at 5 failures / 15 min | `TestVerifyTOTPLoginRateLimitsRepeatedAttempts` (or sibling) in `handlers_auth_2fa_test.go` |
 | TOTP disable rate-limited at 5 failures / 15 min | `handlers_settings_2fa_test.go` |
 | Rate-limit error response is sanitized and contains no PII | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |

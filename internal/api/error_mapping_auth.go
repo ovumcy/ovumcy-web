@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -178,6 +180,26 @@ func authOIDCLinkConfirmExpiredErrorSpec() APIErrorSpec {
 
 func authOIDCLinkConfirmInvalidPasswordErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "sso link confirmation invalid password")
+}
+
+func authOIDCLinkConfirmRateLimitedErrorSpec() APIErrorSpec {
+	return authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many login attempts")
+}
+
+// mapOIDCLinkConfirmPasswordError maps failures of the link-confirm password
+// verification (which runs through LoginService.Authenticate) onto the
+// link-confirm error contract: rate-limited and reset-token-issue failures
+// keep their own specs, everything else is the generic invalid-password
+// response so account state never leaks through error granularity.
+func mapOIDCLinkConfirmPasswordError(err error) APIErrorSpec {
+	switch {
+	case errors.Is(err, services.ErrAuthLoginRateLimited):
+		return authOIDCLinkConfirmRateLimitedErrorSpec()
+	case errors.Is(err, services.ErrLoginResetTokenIssue):
+		return authResetTokenCreateErrorSpec()
+	default:
+		return authOIDCLinkConfirmInvalidPasswordErrorSpec()
+	}
 }
 
 func authOIDCLinkConfirmUnavailableErrorSpec() APIErrorSpec {

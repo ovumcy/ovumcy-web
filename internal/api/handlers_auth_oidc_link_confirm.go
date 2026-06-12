@@ -122,12 +122,24 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	}
 
-	if _, err := handler.authService.AuthenticateCredentials(c.UserContext(), targetUser.Email, password); err != nil {
-		// Do not clear the pending cookie on a single wrong password — the
-		// per-IP /auth/oidc/* rate limiter (configured in main.go) bounds
-		// brute-force volume. Keep the cookie so the user can retry within
-		// the 5-minute TTL.
-		spec := authOIDCLinkConfirmInvalidPasswordErrorSpec()
+	// Verify the password through the same LoginService path as the login
+	// form, so link-confirm shares the per-(client, identity) failure budget
+	// with login. The per-IP /auth/oidc/* HTTP limiter only bounds raw
+	// request volume; without the shared attempt policy this endpoint was a
+	// faster password oracle than the login form it mirrors.
+	result, err := handler.loginService.Authenticate(
+		c.UserContext(),
+		handler.secretKey,
+		c.IP(),
+		targetUser.Email,
+		password,
+		30*time.Minute,
+		time.Now(),
+	)
+	if err != nil {
+		// Do not clear the pending cookie on a failed attempt — keep it so
+		// the user can retry within the 5-minute TTL.
+		spec := mapOIDCLinkConfirmPasswordError(err)
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect(oidcLinkConfirmPath, fiber.StatusSeeOther)
@@ -166,19 +178,14 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 
 	handler.clearOIDCLinkPendingCookie(c)
 
-	if targetUser.MustChangePassword {
-		token, issueErr := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &targetUser, 30*time.Minute, time.Now())
-		if issueErr != nil {
+	if result.RequiresPasswordReset {
+		if err := handler.setResetPasswordCookie(c, result.ResetToken, true); err != nil {
+			// codecov:ignore:start -- defensive: sealing the reset cookie fails only on cipher init errors, which a boot-validated SECRET_KEY cannot produce in-process.
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect("/login", fiber.StatusSeeOther)
-		}
-		if err := handler.setResetPasswordCookie(c, token, true); err != nil {
-			spec := authResetTokenCreateErrorSpec()
-			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
-			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-			return c.Redirect("/login", fiber.StatusSeeOther)
+			// codecov:ignore:end
 		}
 		handler.logSecurityEvent(c, "auth.oidc_link_confirm", "reset_required")
 		return c.Redirect("/reset-password", fiber.StatusSeeOther)

@@ -1248,3 +1248,81 @@ func TestCompleteOIDCLinkConfirmationRejectsRequestWithoutCSRFToken(t *testing.T
 		t.Fatalf("expected csrf middleware to reject link-confirm POST without csrf_token (403), got %d", response.StatusCode)
 	}
 }
+
+// TestMapOIDCLinkConfirmPasswordError pins the password-verification error
+// contract of the link-confirm step: rate-limited maps to 429 with the
+// shared too-many-attempts key, reset-token issuance failures map to the
+// reset-token spec, and every other failure (wrong password, unknown error)
+// collapses into the generic invalid-password response.
+func TestMapOIDCLinkConfirmPasswordError(t *testing.T) {
+	t.Parallel()
+
+	if got := mapOIDCLinkConfirmPasswordError(services.ErrAuthLoginRateLimited); got != authOIDCLinkConfirmRateLimitedErrorSpec() {
+		t.Fatalf("rate-limited error mapped to %+v", got)
+	}
+	if got := mapOIDCLinkConfirmPasswordError(services.ErrLoginResetTokenIssue); got != authResetTokenCreateErrorSpec() {
+		t.Fatalf("reset-token issue mapped to %+v", got)
+	}
+	if got := mapOIDCLinkConfirmPasswordError(services.ErrAuthInvalidCreds); got != authOIDCLinkConfirmInvalidPasswordErrorSpec() {
+		t.Fatalf("invalid password mapped to %+v", got)
+	}
+	if got := mapOIDCLinkConfirmPasswordError(errors.New("boom")); got != authOIDCLinkConfirmInvalidPasswordErrorSpec() {
+		t.Fatalf("unknown error mapped to %+v", got)
+	}
+}
+
+// TestCompleteOIDCLinkConfirmationRateLimitsPasswordAttempts pins the
+// link-confirm password throttle: the endpoint verifies credentials through
+// the same LoginService attempt policy as the login form, so once the
+// per-(client, identity) failure budget is exhausted even the CORRECT
+// password is refused with the rate-limited error and no session is issued.
+// Without this, link-confirm was a faster password oracle than login,
+// bounded only by the per-IP HTTP limiter.
+func TestCompleteOIDCLinkConfirmationRateLimitsPasswordAttempts(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  newStubOIDCWorkflowService(true),
+	})
+	user := createOnboardingTestUser(t, database, "link-throttle@example.com", "StrongPass1", true)
+
+	pendingPayload, err := newOIDCLinkPendingPayload(time.Now().UTC(), user.ID, "https://idp.example", "subject-throttle", user.Email)
+	if err != nil {
+		t.Fatalf("newOIDCLinkPendingPayload: %v", err)
+	}
+	cookie := sealLinkPendingCookieForTest(t, pendingPayload)
+
+	postWithPassword := func(password string) *http.Response {
+		request := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
+			"password": {password},
+		}.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookie)
+		return mustAppResponse(t, app, request)
+	}
+
+	// Exhaust the shared login failure budget with wrong passwords.
+	for attempt := 0; attempt < services.DefaultLoginAttemptsLimit; attempt++ {
+		response := postWithPassword("WrongPass2")
+		assertStatusCode(t, response, http.StatusSeeOther)
+	}
+
+	// The correct password must now be refused with the rate-limited error.
+	response := postWithPassword("StrongPass1")
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != oidcLinkConfirmPath {
+		t.Fatalf("expected redirect back to link-confirm when rate limited, got %q", location)
+	}
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatal("did not expect auth cookie while rate limited")
+	}
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected flash cookie with rate-limited error")
+	}
+	payload := decodeFlashCookieForTest(t, flashCookie.Value)
+	if payload.AuthError != authOIDCLinkConfirmRateLimitedErrorSpec().Key {
+		t.Fatalf("expected flash auth_error %q, got %q", authOIDCLinkConfirmRateLimitedErrorSpec().Key, payload.AuthError)
+	}
+}
