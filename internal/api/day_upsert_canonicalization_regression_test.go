@@ -88,7 +88,10 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 				t.Fatalf("expected round-trip status 200, got %d", roundTripResponse.StatusCode)
 			}
 
-			var loaded models.DailyLog
+			// The /api/v1/days transport DTO emits `date` as a calendar
+			// date-only string (docs/openapi.yaml format: date), so decode
+			// into the response shape rather than models.DailyLog.
+			var loaded dayResponse
 			if err := json.NewDecoder(roundTripResponse.Body).Decode(&loaded); err != nil {
 				t.Fatalf("decode round-trip body: %v", err)
 			}
@@ -98,8 +101,8 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			if loaded.Flow != models.FlowMedium {
 				t.Fatalf("expected flow %q, got %q", models.FlowMedium, loaded.Flow)
 			}
-			if loaded.Date.Format("2006-01-02") != postedDayRaw {
-				t.Fatalf("expected calendar day %s preserved through round-trip, got %s", postedDayRaw, loaded.Date.Format("2006-01-02"))
+			if loaded.Date != postedDayRaw {
+				t.Fatalf("expected calendar day %s preserved through round-trip, got %s", postedDayRaw, loaded.Date)
 			}
 		})
 	}

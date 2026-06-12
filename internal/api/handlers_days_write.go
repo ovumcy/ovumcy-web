@@ -129,7 +129,7 @@ func (handler *Handler) respondUpsertDaySuccess(c *fiber.Ctx, entry models.Daily
 		}
 		return handler.sendDaySaveStatus(c, "")
 	}
-	return c.JSON(entry)
+	return c.JSON(newDayResponse(entry))
 }
 
 func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {

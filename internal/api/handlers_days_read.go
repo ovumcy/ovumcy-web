@@ -21,7 +21,7 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, dayLogsFetchErrorSpec())
 	}
 
-	return c.JSON(logs)
+	return c.JSON(newDayResponses(logs))
 }
 
 func (handler *Handler) GetDay(c *fiber.Ctx) error {
@@ -40,7 +40,7 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}
 
-	return c.JSON(logEntry)
+	return c.JSON(newDayResponse(logEntry))
 }
 
 func (handler *Handler) CheckDayExists(c *fiber.Ctx) error {

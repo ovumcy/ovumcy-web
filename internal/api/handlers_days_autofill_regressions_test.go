@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -410,4 +412,151 @@ func TestUpsertDayAutoFillPreservesManualNeighborsWhenAnchorToggledOff(t *testin
 	if !day13Entry.IsPeriod {
 		t.Fatalf("expected clearing to stop at the first manual day; day 13 should remain period")
 	}
+}
+
+var wireDateOnlyPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// TestDayAndSymptomJSONUseSnakeCaseWireKeys is the public-contract lock for the
+// /api/v1/days and /api/v1/symptoms JSON surfaces. The handlers serialize
+// transport DTOs (api.dayResponse / api.symptomResponse), not the raw GORM
+// models, so the wire format must expose the snake_case keys documented in
+// docs/openapi.yaml (DailyLog / Symptom schemas) and must never leak the
+// PascalCase Go field names of models.DailyLog / models.SymptomType. `date`
+// must be a calendar date (format: date), not an RFC3339 timestamp.
+func TestDayAndSymptomJSONUseSnakeCaseWireKeys(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "wire-keys-day-symptom@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	// Seed a fully-populated day directly so every documented field is present
+	// on the wire regardless of owner hidden-field preferences.
+	day := time.Date(2026, time.May, 17, 0, 0, 0, 0, time.UTC)
+	seed := models.DailyLog{
+		UserID:          user.ID,
+		Date:            day,
+		IsPeriod:        true,
+		CycleStart:      true,
+		IsUncertain:     true,
+		Flow:            models.FlowMedium,
+		Mood:            3,
+		SexActivity:     models.SexActivityProtected,
+		BBT:             36.6,
+		CervicalMucus:   models.CervicalMucusCreamy,
+		PregnancyTest:   models.PregnancyTestNegative,
+		CycleFactorKeys: []string{"stress"},
+		SymptomIDs:      []uint{},
+		Notes:           "wire-key note",
+	}
+	if err := database.Create(&seed).Error; err != nil {
+		t.Fatalf("seed daily log: %v", err)
+	}
+
+	dayKeys := decodeJSONObjectKeys(t, app, authCookie, "/api/v1/days/2026-05-17")
+	assertWireKeysPresent(t, dayKeys, "day", []string{
+		"id", "user_id", "date", "is_period", "cycle_start", "is_uncertain",
+		"flow", "mood", "sex_activity", "bbt", "cervical_mucus", "pregnancy_test",
+		"cycle_factor_keys", "symptom_ids", "notes", "created_at", "updated_at",
+	})
+	assertWireKeysAbsent(t, dayKeys, "day", []string{
+		"IsPeriod", "CycleStart", "IsUncertain", "SexActivity", "CervicalMucus",
+		"PregnancyTest", "CycleFactorKeys", "SymptomIDs",
+	})
+	assertWireDateOnly(t, dayKeys, "day", "/api/v1/days/2026-05-17", "2026-05-17")
+
+	// FetchSymptoms backfills builtin symptoms, so the list is always non-empty
+	// and includes is_builtin=true rows whose archived_at is null.
+	symptomKeys := decodeJSONArrayFirstObjectKeys(t, app, authCookie, "/api/v1/symptoms")
+	assertWireKeysPresent(t, symptomKeys, "symptom", []string{
+		"id", "user_id", "name", "icon", "color", "is_builtin", "archived_at",
+	})
+	assertWireKeysAbsent(t, symptomKeys, "symptom", []string{
+		"UserID", "IsBuiltin", "ArchivedAt",
+	})
+}
+
+// decodeJSONObjectKeys issues an Accept: application/json GET and returns the
+// top-level object decoded as raw-message keys so tests can assert exact wire
+// key names without binding to a Go struct.
+func decodeJSONObjectKeys(t *testing.T, app *fiber.App, authCookie, path string) map[string]json.RawMessage {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", authCookie)
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s: expected status 200, got %d", path, response.StatusCode)
+	}
+	var keys map[string]json.RawMessage
+	if err := json.NewDecoder(response.Body).Decode(&keys); err != nil {
+		t.Fatalf("decode %s object: %v", path, err)
+	}
+	return keys
+}
+
+// decodeJSONArrayFirstObjectKeys issues an Accept: application/json GET against
+// a list endpoint and returns the first element's raw-message keys.
+func decodeJSONArrayFirstObjectKeys(t *testing.T, app *fiber.App, authCookie, path string) map[string]json.RawMessage {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", authCookie)
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s: expected status 200, got %d", path, response.StatusCode)
+	}
+	var list []map[string]json.RawMessage
+	if err := json.NewDecoder(response.Body).Decode(&list); err != nil {
+		t.Fatalf("decode %s array: %v", path, err)
+	}
+	if len(list) == 0 {
+		t.Fatalf("GET %s: expected at least one element, got empty array", path)
+	}
+	return list[0]
+}
+
+func assertWireKeysPresent(t *testing.T, keys map[string]json.RawMessage, label string, expected []string) {
+	t.Helper()
+	for _, key := range expected {
+		if _, ok := keys[key]; !ok {
+			t.Fatalf("%s JSON: expected snake_case key %q to be present, got keys %v", label, key, sortedKeys(keys))
+		}
+	}
+}
+
+func assertWireKeysAbsent(t *testing.T, keys map[string]json.RawMessage, label string, forbidden []string) {
+	t.Helper()
+	for _, key := range forbidden {
+		if _, ok := keys[key]; ok {
+			t.Fatalf("%s JSON: PascalCase Go field %q leaked onto the wire; serialize the DTO, not the model", label, key)
+		}
+	}
+}
+
+func assertWireDateOnly(t *testing.T, keys map[string]json.RawMessage, label, path, expected string) {
+	t.Helper()
+	raw, ok := keys["date"]
+	if !ok {
+		t.Fatalf("%s JSON %s: missing date key", label, path)
+	}
+	var dateValue string
+	if err := json.Unmarshal(raw, &dateValue); err != nil {
+		t.Fatalf("%s JSON %s: decode date value: %v", label, path, err)
+	}
+	if !wireDateOnlyPattern.MatchString(dateValue) {
+		t.Fatalf("%s JSON %s: expected date-only value matching YYYY-MM-DD, got %q (a timestamp would break openapi format: date)", label, path, dateValue)
+	}
+	if dateValue != expected {
+		t.Fatalf("%s JSON %s: expected date %q, got %q", label, path, expected, dateValue)
+	}
+}
+
+func sortedKeys(keys map[string]json.RawMessage) []string {
+	out := make([]string, 0, len(keys))
+	for key := range keys {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }

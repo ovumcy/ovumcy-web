@@ -15,7 +15,7 @@ func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, symptomsFetchErrorSpec())
 	}
-	return c.JSON(symptoms)
+	return c.JSON(newSymptomResponses(symptoms))
 }
 
 func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
@@ -47,7 +47,7 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 	handler.logHealthDataMutation(c, "health.symptom_create", "success", "symptom")
 
 	if acceptsJSON(c) {
-		return c.Status(fiber.StatusCreated).JSON(symptom)
+		return c.Status(fiber.StatusCreated).JSON(newSymptomResponse(symptom))
 	}
 	return handler.respondSymptomMutationSuccess(c, user, fiber.StatusCreated, "symptom_created", settingsSymptomSectionState{})
 }
@@ -100,7 +100,7 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 	handler.logHealthDataMutation(c, "health.symptom_update", "success", "symptom")
 
 	if acceptsJSON(c) {
-		return c.JSON(symptom)
+		return c.JSON(newSymptomResponse(symptom))
 	}
 	return handler.respondSymptomMutationSuccess(c, user, fiber.StatusOK, "symptom_updated", settingsSymptomSectionState{
 		Row: settingsSymptomRowState{SymptomID: id},

@@ -42,7 +42,10 @@ func TestDayReadEndpointsUseRequestTimezoneForLocalCalendarDay(t *testing.T) {
 	listResponse := mustAppResponse(t, app, listRequest)
 	assertStatusCode(t, listResponse, http.StatusOK)
 
-	var listPayload []models.DailyLog
+	// The /api/v1/days transport DTO emits `date` as a calendar date-only
+	// string (docs/openapi.yaml format: date), so decode into the response
+	// shape rather than models.DailyLog (whose Date is RFC3339 time.Time).
+	var listPayload []dayResponse
 	if err := json.NewDecoder(listResponse.Body).Decode(&listPayload); err != nil {
 		t.Fatalf("decode day list payload: %v", err)
 	}
@@ -52,21 +55,27 @@ func TestDayReadEndpointsUseRequestTimezoneForLocalCalendarDay(t *testing.T) {
 	if listPayload[0].Notes != seed.Notes {
 		t.Fatalf("expected listed notes %q, got %q", seed.Notes, listPayload[0].Notes)
 	}
+	if listPayload[0].Date != localDayRaw {
+		t.Fatalf("expected listed date %q for request-local day, got %q", localDayRaw, listPayload[0].Date)
+	}
 
 	dayRequest := httptest.NewRequest(http.MethodGet, "/api/v1/days/"+localDayRaw, nil)
 	dayRequest.Header.Set("Accept", "application/json")
 	dayRequest.Header.Set("Cookie", cookieHeader)
 	dayRequest.Header.Set(timezoneHeaderName, timezoneName)
 
-	dayResponse := mustAppResponse(t, app, dayRequest)
-	assertStatusCode(t, dayResponse, http.StatusOK)
+	dayHTTPResponse := mustAppResponse(t, app, dayRequest)
+	assertStatusCode(t, dayHTTPResponse, http.StatusOK)
 
-	dayPayload := models.DailyLog{}
-	if err := json.NewDecoder(dayResponse.Body).Decode(&dayPayload); err != nil {
+	dayPayload := dayResponse{}
+	if err := json.NewDecoder(dayHTTPResponse.Body).Decode(&dayPayload); err != nil {
 		t.Fatalf("decode day payload: %v", err)
 	}
 	if dayPayload.Notes != seed.Notes {
 		t.Fatalf("expected fetched day notes %q, got %q", seed.Notes, dayPayload.Notes)
+	}
+	if dayPayload.Date != localDayRaw {
+		t.Fatalf("expected fetched date %q for request-local day, got %q", localDayRaw, dayPayload.Date)
 	}
 
 	existsRequest := httptest.NewRequest(http.MethodHead, "/api/v1/days/"+localDayRaw, nil)
