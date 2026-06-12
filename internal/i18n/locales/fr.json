@@ -52,7 +52,7 @@
 
   "role.owner": "Propriétaire",
 
-  "auth.welcome_back": "Bienvenue",
+  "auth.welcome_back": "Bon retour",
   "auth.login_title": "Connexion à votre compte",
   "auth.create_account": "Créer votre compte",
   "auth.login_subtitle": "Continuez votre journal de cycle privé.",
@@ -154,8 +154,6 @@
   "onboarding.step2.period_length": "Durée des règles",
   "onboarding.step2.period_length_hint": "C'est le nombre de jours avec un flux réel, sans compter les légères pertes avant le début.",
   "onboarding.step2.hint": "Cycle par défaut : 28 jours",
-  "onboarding.step2.cycle_warning": "Des valeurs de cycle supérieures à 45 jours devraient être discutées avec un médecin.",
-  "onboarding.step2.period_warning": "Une durée des règles supérieure à 8 jours devrait être discutée avec un médecin.",
   "onboarding.step2.error_incompatible": "La durée des règles est incompatible avec la longueur du cycle. Les menstruations ne peuvent pas occuper presque tout le cycle.",
   "onboarding.step2.warning_approximate": "Avec ces valeurs, l'ovulation ne peut pas être calculée de manière fiable. La prédiction sera approximative.",
   "onboarding.step2.info_period_long": "Une durée supérieure à 8 jours peut indiquer des irrégularités du cycle ; veuillez en discuter avec un médecin.",
@@ -187,8 +185,6 @@
   "settings.cycle.period_length": "Durée des règles",
   "settings.cycle.last_period_start": "Date de début des dernières règles",
   "settings.cycle.last_period_start_hint": "Optionnel. Utilisé comme point d'ancrage de secours lorsque votre journal n'a pas encore de début de cycle marqué.",
-  "settings.cycle.cycle_warning": "Des valeurs de cycle supérieures à 45 jours devraient être discutées avec un médecin.",
-  "settings.cycle.period_warning": "Une durée des règles supérieure à 8 jours devrait être discutée avec un médecin.",
   "settings.cycle.error_incompatible": "La durée des règles est incompatible avec la longueur du cycle. Les menstruations ne peuvent pas occuper presque tout le cycle.",
   "settings.cycle.warning_approximate": "Avec ces valeurs, l'ovulation ne peut pas être calculée de manière fiable. La prédiction sera approximative.",
   "settings.cycle.info_period_long": "Une durée supérieure à 8 jours peut indiquer des irrégularités du cycle ; veuillez en discuter avec un médecin.",

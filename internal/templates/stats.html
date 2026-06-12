@@ -130,7 +130,7 @@
         </article>
         <article class="journal-panel">
           <p class="stat-label">{{t .Messages "stats.cycle_range"}}</p>
-          <p class="stat-value mt-2">{{if gt .Stats.MinCycleLength 0}}{{printf (tn .Messages .Lang "stats.cycle_range_summary" .Stats.MaxCycleLength) .Stats.MinCycleLength .Stats.MaxCycleLength}}{{else}}{{.NoDataLabel}}{{end}}</p>
+          <p class="stat-value mt-2">{{if gt .Stats.MinCycleLength 0}}{{if eq .Stats.MinCycleLength .Stats.MaxCycleLength}}{{.Stats.MaxCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{printf (tn .Messages .Lang "stats.cycle_range_summary" .Stats.MaxCycleLength) .Stats.MinCycleLength .Stats.MaxCycleLength}}{{end}}{{else}}{{.NoDataLabel}}{{end}}</p>
         </article>
       </div>
     </section>
