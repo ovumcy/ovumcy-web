@@ -45,10 +45,6 @@ func (service *PasswordResetService) IssueResetTokenForUser(secretKey []byte, us
 	return service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, ttl, now)
 }
 
-func (service *PasswordResetService) ParseResetToken(secretKey []byte, rawToken string, now time.Time) (*PasswordResetClaims, error) {
-	return ParsePasswordResetToken(secretKey, rawToken, now)
-}
-
 func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKey []byte, limiterKey string, email string, rawRecoveryCode string, now time.Time, tokenTTL time.Duration) (string, error) {
 	if service.auth == nil {
 		return "", errors.New("auth service is required")

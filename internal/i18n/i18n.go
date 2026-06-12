@@ -124,18 +124,6 @@ func (manager *Manager) Messages(language string) map[string]string {
 	return result
 }
 
-func (manager *Manager) Translate(language string, key string) string {
-	messages := manager.Messages(language)
-	if value, ok := messages[key]; ok && strings.TrimSpace(value) != "" {
-		return value
-	}
-	return key
-}
-
-func (manager *Manager) Translatef(language string, key string, args ...any) string {
-	return fmt.Sprintf(manager.Translate(language, key), args...)
-}
-
 func (manager *Manager) isSupported(language string) bool {
 	if language == "" {
 		return false

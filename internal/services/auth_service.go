@@ -350,10 +350,6 @@ func (service *AuthService) ResolveUserByResetToken(ctx context.Context, secretK
 	return &user, nil
 }
 
-func (service *AuthService) GenerateRecoveryCodeHash() (string, string, error) {
-	return GenerateRecoveryCodeHash()
-}
-
 func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, userID uint) (string, error) {
 	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
 	if err != nil {

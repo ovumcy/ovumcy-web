@@ -10,7 +10,6 @@ import (
 
 func newTemplateFuncMap() template.FuncMap {
 	return template.FuncMap{
-		"formatDate":          formatTemplateDate,
 		"formatLocalizedDate": formatTemplateLocalizedDate,
 		"formatFloat":         formatTemplateFloat,
 		"t": func(messages map[string]string, key string) string {

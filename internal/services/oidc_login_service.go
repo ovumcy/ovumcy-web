@@ -113,10 +113,6 @@ func (service *OIDCLoginService) LocalPublicAuthEnabled() bool {
 	return service.config.LocalPublicAuthEnabled()
 }
 
-func (service *OIDCLoginService) OIDCOnly() bool {
-	return service.Enabled() && !service.LocalPublicAuthEnabled()
-}
-
 func (service *OIDCLoginService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
 	return service.startAuthWithExtra(ctx, state, nonce, codeVerifier, nil)
 }

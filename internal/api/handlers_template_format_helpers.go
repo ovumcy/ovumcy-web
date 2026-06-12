@@ -10,13 +10,6 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func formatTemplateDate(value time.Time, layout string) string {
-	if value.IsZero() {
-		return ""
-	}
-	return value.Format(layout)
-}
-
 func formatTemplateLocalizedDate(language string, value time.Time, style string) string {
 	switch style {
 	case "short":
