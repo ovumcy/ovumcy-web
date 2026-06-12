@@ -127,9 +127,23 @@ func TestRussianCountStringsAgainstRealLocales(t *testing.T) {
 	if got := fmt.Sprintf(rangePattern, 24, 31); got != "Ваши циклы: от 24 до 31 дня" {
 		t.Errorf("range one-form: got %q", got)
 	}
+	// .few (upper bound ends in 2-4) takes genitive singular «дня», not the
+	// genitive plural «дней». This case guards the exact form a prior bug
+	// shipped wrong because no test exercised the range string's .few.
+	rangePattern = TranslatePlural(messages, LangRU, "stats.cycle_range_summary", 24)
+	if got := fmt.Sprintf(rangePattern, 21, 24); got != "Ваши циклы: от 21 до 24 дня" {
+		t.Errorf("range few-form: got %q", got)
+	}
 	rangePattern = TranslatePlural(messages, LangRU, "stats.cycle_range_summary", 35)
 	if got := fmt.Sprintf(rangePattern, 24, 35); got != "Ваши циклы: от 24 до 35 дней" {
 		t.Errorf("range many-form: got %q", got)
+	}
+
+	// irregular_notice shares the same range-form contract; its .few was the
+	// other string the prior bug got wrong.
+	irregularFew := TranslatePlural(messages, LangRU, "stats.irregular_notice", 24)
+	if got := fmt.Sprintf(irregularFew, 21, 24); got != "Ваши циклы варьируются от 21 до 24 дня — это нерегулярный ритм. Прогнозы приблизительны." {
+		t.Errorf("irregular_notice few-form: got %q", got)
 	}
 }
 
