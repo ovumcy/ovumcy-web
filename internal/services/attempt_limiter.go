@@ -1,6 +1,7 @@
 package services
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -13,8 +14,13 @@ const (
 	// sweep rare enough to be O(1) amortised while bounding residual memory.
 	evictEveryN = 128
 
-	// evictAboveSize triggers an additional sweep when the map exceeds this many
-	// keys, capping memory growth even under a sustained multi-key attack.
+	// evictAboveSize is the hard cap on tracked keys. Exceeding it triggers a
+	// sweep on every add, and after the stale sweep the map is trimmed back to
+	// this size by evicting the keys with the oldest most-recent failure — a
+	// stale sweep alone cannot shrink the map when an attacker keeps minting
+	// fresh keys inside the window. Evicting the coldest keys loses the least:
+	// they are the closest to ageing out naturally, while an actively
+	// brute-forced key is among the freshest and is evicted last.
 	evictAboveSize = 1024
 )
 
@@ -85,9 +91,10 @@ func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, windo
 }
 
 // maybeEvictStaleLocked performs an opportunistic full-map sweep to remove keys
-// whose most-recent attempt is older than window. It fires when either the call
-// counter reaches evictEveryN or the map exceeds evictAboveSize entries. The
-// sweep is O(n) in map size but runs rarely, keeping amortised cost negligible.
+// whose most-recent attempt is older than window, then trims the map back to
+// the evictAboveSize hard cap. It fires when either the call counter reaches
+// evictEveryN or the map exceeds evictAboveSize entries. The sweep is O(n) in
+// map size but runs rarely below the cap, keeping amortised cost negligible.
 // Must be called with limiter.mu held.
 func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time, window time.Duration) {
 	if limiter.addCallsN < evictEveryN && len(limiter.attempts) < evictAboveSize {
@@ -105,6 +112,36 @@ func (limiter *AttemptLimiter) maybeEvictStaleLocked(now time.Time, window time.
 		if times[len(times)-1].Before(threshold) || times[len(times)-1].Equal(threshold) {
 			delete(limiter.attempts, key)
 		}
+	}
+
+	limiter.enforceSizeCapLocked()
+}
+
+// enforceSizeCapLocked bounds the map at evictAboveSize keys by evicting the
+// keys with the oldest most-recent failure first. The stale sweep alone only
+// removes keys whose window has lapsed, so under a sustained attack that
+// keeps minting fresh keys (identity:<hmac> material is attacker-influenced)
+// the map would otherwise grow without bound for the full window length.
+// Must be called with limiter.mu held.
+func (limiter *AttemptLimiter) enforceSizeCapLocked() {
+	excess := len(limiter.attempts) - evictAboveSize
+	if excess <= 0 {
+		return
+	}
+
+	type keyAge struct {
+		key    string
+		newest time.Time
+	}
+	ages := make([]keyAge, 0, len(limiter.attempts))
+	for key, times := range limiter.attempts {
+		ages = append(ages, keyAge{key: key, newest: times[len(times)-1]})
+	}
+	sort.Slice(ages, func(i, j int) bool {
+		return ages[i].newest.Before(ages[j].newest)
+	})
+	for _, entry := range ages[:excess] {
+		delete(limiter.attempts, entry.key)
 	}
 }
 

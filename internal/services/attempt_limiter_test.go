@@ -127,3 +127,63 @@ func TestNormalizeLimiterKey(t *testing.T) {
 		})
 	}
 }
+
+// TestAttemptLimiterSizeCapUnderFreshKeyFlood pins the hard memory bound: a
+// stale sweep cannot shrink the map while an attacker keeps minting fresh
+// keys inside the window, so after every sweep the map is trimmed back to
+// evictAboveSize by evicting the keys with the oldest most-recent failure.
+func TestAttemptLimiterSizeCapUnderFreshKeyFlood(t *testing.T) {
+	limiter := NewAttemptLimiter()
+	now := time.Now()
+	window := 15 * time.Minute
+
+	// Flood with fresh, distinct keys — far more than the cap, all inside
+	// the window so the stale sweep removes none of them.
+	total := evictAboveSize * 2
+	for index := 0; index < total; index++ {
+		limiter.AddFailure(fmt.Sprintf("identity:flood-%05d", index), now.Add(time.Duration(index)*time.Millisecond), window)
+	}
+
+	limiter.mu.Lock()
+	size := len(limiter.attempts)
+	limiter.mu.Unlock()
+	if size > evictAboveSize {
+		t.Fatalf("tracked keys = %d, want <= %d (hard cap must hold under a fresh-key flood)", size, evictAboveSize)
+	}
+}
+
+// TestAttemptLimiterSizeCapEvictsColdestKeysFirst proves the trim removes
+// the keys with the oldest most-recent failure, so an actively brute-forced
+// key (the freshest) survives the eviction pass.
+func TestAttemptLimiterSizeCapEvictsColdestKeysFirst(t *testing.T) {
+	limiter := NewAttemptLimiter()
+	base := time.Now()
+	window := time.Hour
+
+	// The victim key is the oldest entry but stays inside the window…
+	limiter.AddFailure("identity:victim-hot", base, window)
+	// …and is refreshed continuously while the flood runs, making it one of
+	// the newest entries by last-failure time.
+	for index := 0; index < evictAboveSize+200; index++ {
+		limiter.AddFailure(fmt.Sprintf("identity:cold-%05d", index), base.Add(time.Duration(index)*time.Millisecond), window)
+		if index%100 == 0 {
+			limiter.AddFailure("identity:victim-hot", base.Add(time.Duration(index)*time.Millisecond+time.Second), window)
+		}
+	}
+
+	limiter.mu.Lock()
+	_, victimSurvives := limiter.attempts["identity:victim-hot"]
+	_, coldestSurvives := limiter.attempts["identity:cold-00000"]
+	size := len(limiter.attempts)
+	limiter.mu.Unlock()
+
+	if !victimSurvives {
+		t.Fatal("actively refreshed key must survive the size-cap eviction")
+	}
+	if coldestSurvives {
+		t.Fatal("coldest flooded key must be evicted first by the size-cap trim")
+	}
+	if size > evictAboveSize {
+		t.Fatalf("tracked keys = %d, want <= %d", size, evictAboveSize)
+	}
+}
