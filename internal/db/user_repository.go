@@ -299,7 +299,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 }
 
 func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, userID uint) error {
-	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DailyLog{}).Error; err != nil {
 			return err
 		}
@@ -323,19 +323,25 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 		// belong to the deleted user from inside this transaction.
 		//
 		// Residual limitation: any unexpired oidc_logout_state rows minted
-		// for the deleted user's sessions will survive until their own TTL
-		// expires (typically minutes, bounded by the OIDC provider's
-		// id_token_hint TTL). This is acceptable: the rows are short-lived,
-		// carry no PII beyond what the OIDC provider already holds, and are
-		// inaccessible without the original session cookie.
-		//
-		// Best-effort mitigation: purge all globally expired rows at deletion
-		// time so the table does not accumulate stale data. The error is
-		// ignored — a purge failure must not roll back an otherwise-complete
-		// GDPR erasure.
-		_ = tx.Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
+		// for the deleted user's sessions survive until their own TTL
+		// expires — up to the full logout-state TTL (currently 7 days, see
+		// services.defaultOIDCLogoutStateTTL). This is accepted: the rows
+		// are inaccessible without the original session cookie and carry no
+		// PII beyond what the OIDC provider already holds.
 		return tx.Delete(&models.User{}, userID).Error
 	})
+	if err != nil {
+		return err
+	}
+	// Best-effort housekeeping after the erasure has committed: purge all
+	// globally expired logout-state rows so the table does not accumulate
+	// stale data. This must NOT run inside the erasure transaction — on
+	// Postgres any errored statement poisons the transaction (SQLSTATE
+	// 25P02), so an "ignored" purge failure would abort the erasure itself.
+	// The error is intentionally dropped here: a purge failure must not turn
+	// a completed erasure into a reported failure.
+	_ = repo.database.WithContext(ctx).Where("expires_at <= ?", time.Now().UTC()).Delete(&models.OIDCLogoutState{}).Error
+	return nil
 }
 
 func (repo *UserRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
