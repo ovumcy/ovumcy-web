@@ -48,14 +48,6 @@ func TestApplyTrackingSettings(t *testing.T) {
 	}
 }
 
-func TestResolveTrackingUpdateStatus(t *testing.T) {
-	service := NewSettingsService(nil)
-
-	if got := service.ResolveTrackingUpdateStatus(); got != "tracking_updated" {
-		t.Fatalf("expected tracking_updated, got %q", got)
-	}
-}
-
 func TestSaveTrackingSettings(t *testing.T) {
 	repo := &stubSettingsTrackingUserRepo{}
 	service := NewSettingsService(repo)

@@ -257,10 +257,10 @@ func (service *ExportService) BuildJSONEntries(ctx context.Context, userID uint,
 			IsUncertain:   logEntry.IsUncertain,
 			Flow:          normalizeExportFlow(logEntry.Flow),
 			MoodRating:    normalizeExportMood(logEntry.Mood),
-			SexActivity:   normalizeExportSexActivity(logEntry.SexActivity),
+			SexActivity:   NormalizeDaySexActivity(logEntry.SexActivity),
 			BBT:           normalizeExportBBT(logEntry.BBT),
-			CervicalMucus: normalizeExportCervicalMucus(logEntry.CervicalMucus),
-			PregnancyTest: normalizeExportPregnancyTest(logEntry.PregnancyTest),
+			CervicalMucus: NormalizeDayCervicalMucus(logEntry.CervicalMucus),
+			PregnancyTest: NormalizeDayPregnancyTest(logEntry.PregnancyTest),
 			CycleFactors:  normalizeExportCycleFactorKeys(logEntry.CycleFactorKeys),
 			Symptoms:      flags,
 			OtherSymptoms: other,
@@ -426,23 +426,11 @@ func normalizeExportMood(value int) int {
 	return 0
 }
 
-func normalizeExportSexActivity(value string) string {
-	return NormalizeDaySexActivity(value)
-}
-
 func normalizeExportBBT(value float64) float64 {
 	if IsValidDayBBT(value) {
 		return value
 	}
 	return 0
-}
-
-func normalizeExportCervicalMucus(value string) string {
-	return NormalizeDayCervicalMucus(value)
-}
-
-func normalizeExportPregnancyTest(value string) string {
-	return NormalizeDayPregnancyTest(value)
 }
 
 func csvMoodRating(value int) string {

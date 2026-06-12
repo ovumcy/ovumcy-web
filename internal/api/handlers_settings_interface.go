@@ -28,7 +28,7 @@ func (handler *Handler) UpdateInterfaceSettings(c *fiber.Ctx) error {
 	}
 
 	handler.setLanguageCookie(c, language)
-	status := handler.settingsService.ResolveInterfaceUpdateStatus()
+	status := services.SettingsInterfaceUpdatedStatus
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{

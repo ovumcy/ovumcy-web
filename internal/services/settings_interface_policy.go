@@ -18,6 +18,6 @@ func NormalizeInterfaceTheme(raw string) string {
 	}
 }
 
-func (service *SettingsService) ResolveInterfaceUpdateStatus() string {
-	return "interface_updated"
-}
+// SettingsInterfaceUpdatedStatus is the flash status emitted after a
+// successful interface-settings save (always the same outcome).
+const SettingsInterfaceUpdatedStatus = "interface_updated"

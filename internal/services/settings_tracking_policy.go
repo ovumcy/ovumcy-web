@@ -25,6 +25,6 @@ func (service *SettingsService) ApplyTrackingSettings(user *models.User, update 
 	user.ShowHistoricalPhases = update.ShowHistoricalPhases
 }
 
-func (service *SettingsService) ResolveTrackingUpdateStatus() string {
-	return "tracking_updated"
-}
+// SettingsTrackingUpdatedStatus is the flash status emitted after a
+// successful tracking-settings save (always the same outcome).
+const SettingsTrackingUpdatedStatus = "tracking_updated"

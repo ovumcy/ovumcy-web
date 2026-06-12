@@ -122,89 +122,63 @@ func LocalizedDashboardDate(language string, value time.Time) string {
 }
 
 func LocalizedDateDisplay(language string, value time.Time) string {
-	if value.IsZero() {
-		return ""
-	}
-
-	lang := dateLanguageOrDefault(language)
-	if lang == "ru" {
-		return value.Format("02.01.2006")
-	}
-	if lang == "es" {
-		months := monthShortNames[lang]
-		monthIndex := int(value.Month()) - 1
-		if monthIndex < 0 || monthIndex >= len(months) {
-			return value.Format("2 Jan 2006")
-		}
-		return fmt.Sprintf("%d %s %d", value.Day(), months[monthIndex], value.Year())
-	}
-	if lang == "de" {
-		months := monthShortNames[lang]
-		monthIndex := int(value.Month()) - 1
-		if monthIndex < 0 || monthIndex >= len(months) {
-			return value.Format("2 Jan 2006")
-		}
-		return fmt.Sprintf("%d. %s %d", value.Day(), months[monthIndex], value.Year())
-	}
-	if lang == "fr" {
-		months := monthShortNames[lang]
-		monthIndex := int(value.Month()) - 1
-		if monthIndex < 0 || monthIndex >= len(months) {
-			return value.Format("2 Jan 2006")
-		}
-		// French: "21 mar 2026"
-		return fmt.Sprintf("%d %s %d", value.Day(), months[monthIndex], value.Year())
-	}
-
-	months := monthShortNames["en"]
-	monthIndex := int(value.Month()) - 1
-	if monthIndex < 0 || monthIndex >= len(months) {
-		return value.Format("Jan 2, 2006")
-	}
-	return fmt.Sprintf("%s %d, %d", months[monthIndex], value.Day(), value.Year())
+	return localizedDayMonth(language, value, true)
 }
 
 func LocalizedDateShort(language string, value time.Time) string {
+	return localizedDayMonth(language, value, false)
+}
+
+// localizedDayMonth renders the compact day-month form shared by
+// LocalizedDateDisplay and LocalizedDateShort — the two differ only by the
+// year suffix, so the per-language ladder lives here once. Adding a sixth
+// language means one new case, not two.
+func localizedDayMonth(language string, value time.Time, withYear bool) string {
 	if value.IsZero() {
 		return ""
 	}
 
 	lang := dateLanguageOrDefault(language)
 	if lang == "ru" {
+		if withYear {
+			return value.Format("02.01.2006")
+		}
 		return value.Format("02.01")
 	}
-	if lang == "es" {
-		months := monthShortNames[lang]
-		monthIndex := int(value.Month()) - 1
-		if monthIndex < 0 || monthIndex >= len(months) {
-			return value.Format("2 Jan")
-		}
-		return fmt.Sprintf("%d %s", value.Day(), months[monthIndex])
-	}
-	if lang == "de" {
-		months := monthShortNames[lang]
-		monthIndex := int(value.Month()) - 1
-		if monthIndex < 0 || monthIndex >= len(months) {
-			return value.Format("2 Jan")
-		}
-		return fmt.Sprintf("%d. %s", value.Day(), months[monthIndex])
-	}
-	if lang == "fr" {
-		months := monthShortNames[lang]
-		monthIndex := int(value.Month()) - 1
-		if monthIndex < 0 || monthIndex >= len(months) {
-			return value.Format("2 Jan")
-		}
-		// French: "21 mar"
-		return fmt.Sprintf("%d %s", value.Day(), months[monthIndex])
-	}
 
-	months := monthShortNames["en"]
+	months := monthShortNames[lang]
 	monthIndex := int(value.Month()) - 1
 	if monthIndex < 0 || monthIndex >= len(months) {
-		return value.Format("Jan 2")
+		switch {
+		case lang == "en" && withYear:
+			return value.Format("Jan 2, 2006")
+		case lang == "en":
+			return value.Format("Jan 2")
+		case withYear:
+			return value.Format("2 Jan 2006")
+		default:
+			return value.Format("2 Jan")
+		}
 	}
-	return fmt.Sprintf("%s %d", months[monthIndex], value.Day())
+	month := months[monthIndex]
+
+	switch lang {
+	case "es", "fr":
+		if withYear {
+			return fmt.Sprintf("%d %s %d", value.Day(), month, value.Year())
+		}
+		return fmt.Sprintf("%d %s", value.Day(), month)
+	case "de":
+		if withYear {
+			return fmt.Sprintf("%d. %s %d", value.Day(), month, value.Year())
+		}
+		return fmt.Sprintf("%d. %s", value.Day(), month)
+	default:
+		if withYear {
+			return fmt.Sprintf("%s %d, %d", month, value.Day(), value.Year())
+		}
+		return fmt.Sprintf("%s %d", month, value.Day())
+	}
 }
 
 func dateLanguageOrDefault(language string) string {

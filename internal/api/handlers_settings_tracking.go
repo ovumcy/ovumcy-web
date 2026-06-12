@@ -36,7 +36,7 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 	}
 
 	handler.settingsService.ApplyTrackingSettings(user, update)
-	status := handler.settingsService.ResolveTrackingUpdateStatus()
+	status := services.SettingsTrackingUpdatedStatus
 	handler.logHealthDataMutation(c, "settings.tracking_update", "success", "tracking_settings")
 
 	if acceptsJSON(c) {

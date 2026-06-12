@@ -22,11 +22,3 @@ func TestNormalizeInterfaceTheme(t *testing.T) {
 		})
 	}
 }
-
-func TestResolveInterfaceUpdateStatus(t *testing.T) {
-	service := NewSettingsService(nil)
-
-	if got := service.ResolveInterfaceUpdateStatus(); got != "interface_updated" {
-		t.Fatalf("expected interface_updated, got %q", got)
-	}
-}
