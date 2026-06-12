@@ -230,6 +230,7 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"hide_sex_chip",
 			"hide_cycle_factors",
 			"hide_notes_field",
+			"show_historical_phases",
 			"shown_period_tip",
 			"age_group",
 			"usage_goal",

@@ -50,6 +50,7 @@ func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, f
 		"HideSexChip":            viewData.HideSexChip,
 		"HideCycleFactors":       viewData.HideCycleFactors,
 		"HideNotesField":         viewData.HideNotesField,
+		"ShowHistoricalPhases":   viewData.ShowHistoricalPhases,
 		"LastPeriodStart":        viewData.LastPeriodStart,
 		"TodayISO":               viewData.TodayISO,
 		"CycleStartMinISO":       viewData.CycleStartMinISO,

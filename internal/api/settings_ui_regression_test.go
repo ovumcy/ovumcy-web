@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"golang.org/x/net/html"
 )
 
@@ -131,6 +132,53 @@ func TestSettingsTrackingSectionRendersExpectedToggleContracts(t *testing.T) {
 		toggleText := normalizeHTMLText(htmlNodeText(toggle))
 		if toggleText == "" {
 			t.Fatalf("expected tracking toggle %q to render non-empty user-facing copy", attribute)
+		}
+	}
+}
+
+// TestSettingsTrackingTogglesReflectPersistedState pins that every tracking
+// toggle — including show-historical-phases, which was missing from the
+// settings render map so the toggle always rendered OFF regardless of the
+// saved value — reflects the persisted user setting on initial page load.
+func TestSettingsTrackingTogglesReflectPersistedState(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-state@example.com")
+
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Updates(map[string]any{
+		"track_bbt":              true,
+		"track_cervical_mucus":   true,
+		"hide_sex_chip":          true,
+		"hide_cycle_factors":     true,
+		"hide_notes_field":       true,
+		"show_historical_phases": true,
+	}).Error; err != nil {
+		t.Fatalf("persist tracking settings: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", ctx.authCookie)
+	response, err := ctx.app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("settings request failed: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
+	}
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	for _, toggle := range []string{
+		"track-bbt", "track-cervical-mucus", "hide-sex-chip",
+		"hide-cycle-factors", "hide-notes-field", "show-historical-phases",
+	} {
+		node := htmlFindElement(document, func(n *html.Node) bool {
+			return n.Type == html.ElementNode && htmlAttr(n, "data-tracking-setting") == toggle
+		})
+		if node == nil {
+			t.Fatalf("expected tracking toggle %q", toggle)
+		}
+		if htmlAttr(node, "data-active") != "true" {
+			t.Errorf("toggle %q must render data-active=true for a persisted enabled setting, got %q", toggle, htmlAttr(node, "data-active"))
 		}
 	}
 }
