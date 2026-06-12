@@ -75,7 +75,6 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	exportService := services.NewExportService(dayService, symptomService)
 	settingsService := services.NewSettingsService(repositories.Users)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
-	notificationService := services.NewNotificationService()
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 
 	var oidcService apideps.OIDCWorkflowService = services.NewOIDCLoginService(
@@ -103,7 +102,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		DashboardViewService: dashboardViewService,
 		ExportService:        exportService,
 		SettingsService:      settingsService,
-		SettingsViewService:  services.NewSettingsViewService(settingsService, notificationService, exportService, symptomService),
+		SettingsViewService:  services.NewSettingsViewService(settingsService, exportService, symptomService),
 		OnboardingService:    services.NewOnboardingService(repositories.Users),
 		SetupService:         services.NewSetupService(repositories.Users),
 		TOTPService:          totpService,

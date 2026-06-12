@@ -22,28 +22,29 @@ const (
 	SettingsPasswordChangeKeyWeakPassword     = "weak password"
 )
 
-type NotificationService struct{}
+// The functions below resolve settings flash messages into status keys and
+// error-routing targets. They are pure string classification — no state, no
+// dependencies — and live as plain policy functions like the rest of the
+// *_policy.go files in this package (they used to be methods on a
+// dependency-free NotificationService struct that cost a constructor param
+// and a nil-guard for nothing).
 
-func NewNotificationService() *NotificationService {
-	return &NotificationService{}
-}
-
-func (service *NotificationService) ResolveSettingsStatus(flashSuccess string) string {
+func ResolveSettingsStatus(flashSuccess string) string {
 	return firstNonEmptyTrimmed(flashSuccess)
 }
 
-func (service *NotificationService) ResolveSettingsErrorSource(flashError string) string {
+func ResolveSettingsErrorSource(flashError string) string {
 	return firstNonEmptyTrimmed(flashError)
 }
 
-func (service *NotificationService) ClassifySettingsErrorSource(errorSource string) SettingsErrorTarget {
-	if service.IsChangePasswordErrorMessage(errorSource) {
+func ClassifySettingsErrorSource(errorSource string) SettingsErrorTarget {
+	if IsChangePasswordErrorMessage(errorSource) {
 		return SettingsErrorTargetChangePassword
 	}
 	return SettingsErrorTargetGeneral
 }
 
-func (service *NotificationService) IsChangePasswordErrorMessage(message string) bool {
+func IsChangePasswordErrorMessage(message string) bool {
 	switch strings.ToLower(strings.TrimSpace(message)) {
 	case SettingsPasswordChangeKeyInvalidInput,
 		SettingsPasswordChangeKeyPasswordMismatch,

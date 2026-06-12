@@ -85,10 +85,9 @@ type SettingsPageViewData struct {
 }
 
 type SettingsViewService struct {
-	settings      SettingsViewLoader
-	notifications *NotificationService
-	export        SettingsViewExportBuilder
-	symptoms      SettingsViewSymptomProvider
+	settings SettingsViewLoader
+	export   SettingsViewExportBuilder
+	symptoms SettingsViewSymptomProvider
 }
 
 type settingsStatusKeys struct {
@@ -97,15 +96,11 @@ type settingsStatusKeys struct {
 	successKey             string
 }
 
-func NewSettingsViewService(settings SettingsViewLoader, notifications *NotificationService, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider) *SettingsViewService {
-	if notifications == nil {
-		notifications = NewNotificationService()
-	}
+func NewSettingsViewService(settings SettingsViewLoader, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider) *SettingsViewService {
 	return &SettingsViewService{
-		settings:      settings,
-		notifications: notifications,
-		export:        export,
-		symptoms:      symptoms,
+		settings: settings,
+		export:   export,
+		symptoms: symptoms,
 	}
 }
 
@@ -129,7 +124,7 @@ func (service *SettingsViewService) BuildSettingsPageViewData(ctx context.Contex
 }
 
 func (service *SettingsViewService) resolveSettingsStatusKeys(input SettingsViewInput) settingsStatusKeys {
-	status := service.notifications.ResolveSettingsStatus(input.FlashSuccess)
+	status := ResolveSettingsStatus(input.FlashSuccess)
 	keys := settingsStatusKeys{
 		successKey: SettingsStatusTranslationKey(status),
 	}
@@ -137,12 +132,12 @@ func (service *SettingsViewService) resolveSettingsStatusKeys(input SettingsView
 		return keys
 	}
 
-	errorSource := service.notifications.ResolveSettingsErrorSource(input.FlashError)
+	errorSource := ResolveSettingsErrorSource(input.FlashError)
 	translatedErrorKey := AuthErrorTranslationKey(errorSource)
 	if translatedErrorKey == "" {
 		return keys
 	}
-	if service.notifications.ClassifySettingsErrorSource(errorSource) == SettingsErrorTargetChangePassword {
+	if ClassifySettingsErrorSource(errorSource) == SettingsErrorTargetChangePassword {
 		keys.changePasswordErrorKey = translatedErrorKey
 		return keys
 	}
