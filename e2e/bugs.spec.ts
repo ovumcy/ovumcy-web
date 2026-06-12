@@ -576,7 +576,7 @@ test.describe('Bug regressions', () => {
       await dayEditorForm.locator('button[data-save-button]').click();
 
       await expect(page.locator('.toast-stack .toast-message').last()).toHaveText(
-        'Мажущие выделения могут быть не днём 1. Уточни завтра.'
+        'Мажущие выделения могут быть не днём 1. Уточните завтра.'
       );
     });
   });

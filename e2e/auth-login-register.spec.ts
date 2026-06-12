@@ -202,7 +202,7 @@ test.describe('Auth: register, login, logout', () => {
     await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
     await expect(page.locator('#register-client-status .status-error')).toContainText(
-      /valid email address|корректный email|correo válido/i
+      /valid email address|корректный адрес|correo válido/i
     );
     expect(
       consoleErrors.some((text) => /Pattern attribute value .* is not a valid regular expression/i.test(text))

@@ -70,7 +70,7 @@ test.describe('Cross-browser smoke', () => {
 
     await page.goto('/stats');
     await expect(page).toHaveURL(/\/stats$/);
-    await expect(page.locator('h1.journal-title')).toContainText(/Insights|Анализ|Análisis/);
+    await expect(page.locator('h1.journal-title')).toContainText(/Insights|Аналитика|Análisis/);
   });
 
   test('theme and language switches persist across core routes', async ({ page }) => {

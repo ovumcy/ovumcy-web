@@ -127,11 +127,12 @@ func TestRussianCountStringsAgainstRealLocales(t *testing.T) {
 	if got := fmt.Sprintf(rangePattern, 24, 31); got != "Ваши циклы: от 24 до 31 дня" {
 		t.Errorf("range one-form: got %q", got)
 	}
-	// .few (upper bound ends in 2-4) takes genitive singular «дня», not the
-	// genitive plural «дней». This case guards the exact form a prior bug
-	// shipped wrong because no test exercised the range string's .few.
+	// In «от X до Y …» the preposition «до» governs the genitive case, where
+	// counted nouns after 2-4 take the genitive plural «дней» («до 24 дней»),
+	// not «дня» — «до 24 дня» reads as the ordinal «до 24-го дня». Only the
+	// .one form keeps «дня» («до 31 дня», genitive singular after «один»).
 	rangePattern = TranslatePlural(messages, LangRU, "stats.cycle_range_summary", 24)
-	if got := fmt.Sprintf(rangePattern, 21, 24); got != "Ваши циклы: от 21 до 24 дня" {
+	if got := fmt.Sprintf(rangePattern, 21, 24); got != "Ваши циклы: от 21 до 24 дней" {
 		t.Errorf("range few-form: got %q", got)
 	}
 	rangePattern = TranslatePlural(messages, LangRU, "stats.cycle_range_summary", 35)
@@ -139,10 +140,10 @@ func TestRussianCountStringsAgainstRealLocales(t *testing.T) {
 		t.Errorf("range many-form: got %q", got)
 	}
 
-	// irregular_notice shares the same range-form contract; its .few was the
-	// other string the prior bug got wrong.
+	// irregular_notice shares the same range-form contract as the range
+	// summary above, including the genitive «дней» in its .few form.
 	irregularFew := TranslatePlural(messages, LangRU, "stats.irregular_notice", 24)
-	if got := fmt.Sprintf(irregularFew, 21, 24); got != "Ваши циклы варьируются от 21 до 24 дня — это нерегулярный ритм. Прогнозы приблизительны." {
+	if got := fmt.Sprintf(irregularFew, 21, 24); got != "Ваши циклы варьируются от 21 до 24 дней — это нерегулярный ритм. Прогнозы приблизительны." {
 		t.Errorf("irregular_notice few-form: got %q", got)
 	}
 }

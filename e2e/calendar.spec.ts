@@ -309,7 +309,7 @@ test.describe('Calendar page', () => {
 
     const manualStartButton = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"] [data-day-cycle-start-button]`);
     await expect(manualStartButton).toBeVisible();
-    await expect(page.locator('#day-editor')).toContainText(/recalculated|пересчитан|recalcular/i);
+    await expect(page.locator('#day-editor')).toContainText(/recalculated|пересчитается|recalcular/i);
 
     await Promise.all([
       page.waitForResponse((response) => {
