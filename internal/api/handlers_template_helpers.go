@@ -4,6 +4,7 @@ import (
 	"html/template"
 
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -14,6 +15,9 @@ func newTemplateFuncMap() template.FuncMap {
 		"formatFloat":         formatTemplateFloat,
 		"t": func(messages map[string]string, key string) string {
 			return translateMessage(messages, key)
+		},
+		"tn": func(messages map[string]string, language string, key string, n int) string {
+			return i18n.TranslatePlural(messages, language, key, n)
 		},
 		"phaseLabel": func(messages map[string]string, phase string) string {
 			return translateMessage(messages, services.PhaseTranslationKey(phase))

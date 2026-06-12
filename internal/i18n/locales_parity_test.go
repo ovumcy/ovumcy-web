@@ -23,13 +23,16 @@ func TestLocaleKeysParity(t *testing.T) {
 	}
 	sort.Strings(languages)
 
+	pluralBases := pluralBaseKeys(reference)
+
 	for _, language := range languages {
 		if language == LangEN {
 			continue
 		}
 
-		missing := missingKeys(reference, locales[language])
-		extra := missingKeys(locales[language], reference)
+		expected := expectedKeysForLanguage(language, reference, pluralBases)
+		missing := missingKeys(expected, locales[language])
+		extra := missingKeys(locales[language], expected)
 		if len(missing) == 0 && len(extra) == 0 {
 			continue
 		}
@@ -40,6 +43,52 @@ func TestLocaleKeysParity(t *testing.T) {
 			t.Errorf("unexpected keys in %s locale: %s", language, strings.Join(extra, ", "))
 		}
 	}
+}
+
+// pluralBaseKeys finds the base keys of plural groups in the reference
+// locale. A base key is a plural group only when the reference defines both
+// its ".one" and ".other" variants — so keys that merely end in a category
+// word (for example "symptoms.group.other") are not misread as plurals.
+func pluralBaseKeys(reference map[string]string) map[string]bool {
+	bases := map[string]bool{}
+	for key := range reference {
+		base, found := strings.CutSuffix(key, ".one")
+		if !found {
+			continue
+		}
+		if _, ok := reference[base+".other"]; ok {
+			bases[base] = true
+		}
+	}
+	return bases
+}
+
+// expectedKeysForLanguage projects the English reference key set onto a
+// target language: plain keys carry over verbatim, while plural groups must
+// provide exactly the CLDR categories that language can select (for example
+// Russian needs one/few/many and must not carry a dead ".other").
+func expectedKeysForLanguage(language string, reference map[string]string, pluralBases map[string]bool) map[string]string {
+	expected := make(map[string]string, len(reference))
+	for key := range reference {
+		base := pluralVariantBase(key, pluralBases)
+		if base == "" {
+			expected[key] = ""
+			continue
+		}
+		for _, category := range PluralCategories(language) {
+			expected[base+"."+category] = ""
+		}
+	}
+	return expected
+}
+
+func pluralVariantBase(key string, pluralBases map[string]bool) string {
+	for _, category := range []string{"one", "few", "many", "other"} {
+		if base, found := strings.CutSuffix(key, "."+category); found && pluralBases[base] {
+			return base
+		}
+	}
+	return ""
 }
 
 func mustLoadAllLocaleMessages(t *testing.T) map[string]map[string]string {

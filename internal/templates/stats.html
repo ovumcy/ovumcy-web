@@ -46,7 +46,7 @@
     <div class="journal-panel text-sm journal-muted" data-stats-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{t .Messages .PredictionExplanationPrimaryKey}}</div>
     {{end}}
     {{if .ShowIrregularityNotice}}
-    <div class="journal-panel text-sm journal-muted">{{printf (t .Messages "stats.irregular_notice") .Stats.MinCycleLength .Stats.MaxCycleLength}}</div>
+    <div class="journal-panel text-sm journal-muted">{{printf (tn .Messages .Lang "stats.irregular_notice" .Stats.MaxCycleLength) .Stats.MinCycleLength .Stats.MaxCycleLength}}</div>
     {{end}}
     {{if .ShowIrregularModeRecommendation}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_recommendation"}}</div>
@@ -92,9 +92,9 @@
         <p class="stat-value mt-2">{{t .Messages .PredictionReliabilityLabelKey}}</p>
         <p class="journal-muted mt-2 text-xs">
           {{if .PredictionSampleUsesRecentWindow}}
-            {{printf (t .Messages "stats.reliability.sample_recent") .PredictionSampleCount}}
+            {{printf (tn .Messages .Lang "stats.reliability.sample_recent" .PredictionSampleCount) .PredictionSampleCount}}
           {{else}}
-            {{printf (t .Messages "stats.reliability.sample") .PredictionSampleCount}}
+            {{printf (tn .Messages .Lang "stats.reliability.sample" .PredictionSampleCount) .PredictionSampleCount}}
           {{end}}
         </p>
         <p class="journal-muted mt-1 text-xs">{{t .Messages .PredictionReliabilityHintKey}}</p>
@@ -130,7 +130,7 @@
         </article>
         <article class="journal-panel">
           <p class="stat-label">{{t .Messages "stats.cycle_range"}}</p>
-          <p class="stat-value mt-2">{{if gt .Stats.MinCycleLength 0}}{{printf (t .Messages "stats.cycle_range_summary") .Stats.MinCycleLength .Stats.MaxCycleLength}}{{else}}{{.NoDataLabel}}{{end}}</p>
+          <p class="stat-value mt-2">{{if gt .Stats.MinCycleLength 0}}{{printf (tn .Messages .Lang "stats.cycle_range_summary" .Stats.MaxCycleLength) .Stats.MinCycleLength .Stats.MaxCycleLength}}{{else}}{{.NoDataLabel}}{{end}}</p>
         </article>
       </div>
     </section>
@@ -174,7 +174,7 @@
         {{range .RecentFactorCycles}}
         <article class="journal-panel space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="field-label">{{printf (t $.Messages "stats.factor_cycle_length") .CycleLength}}</p>
+            <p class="field-label">{{printf (tn $.Messages $.Lang "stats.factor_cycle_length" .CycleLength) .CycleLength}}</p>
             <span class="journal-muted text-xs">{{t $.Messages (printf "stats.factor_cycle_kind_%s" .ComparisonKind)}}</span>
           </div>
           <p class="journal-muted text-xs">{{printf (t $.Messages "stats.factor_cycle_dates") (formatLocalizedDate $.Lang .Start "display") (formatLocalizedDate $.Lang .End "display")}}</p>
@@ -351,7 +351,7 @@
             {{if .HasData}}
             <progress class="phase-mood-meter mt-3" value="{{formatFloat .Percentage}}" max="100">{{formatFloat .Percentage}}%</progress>
             <p class="mt-3 text-sm">{{formatFloat .AverageMood}} / 5</p>
-            <p class="journal-muted text-xs">{{printf (t $.Messages "stats.phase_mood_count") .EntryCount}}</p>
+            <p class="journal-muted text-xs">{{printf (tn $.Messages $.Lang "stats.phase_mood_count" .EntryCount) .EntryCount}}</p>
             {{else}}
             <p class="journal-muted mt-3 text-sm">{{t $.Messages "stats.phase_mood_empty"}}</p>
             {{end}}
@@ -386,7 +386,7 @@
               </li>
               {{end}}
             </ul>
-            <p class="journal-muted mt-3 text-xs">{{printf (t $.Messages "stats.phase_symptoms_days") .TotalDays}}</p>
+            <p class="journal-muted mt-3 text-xs">{{printf (tn $.Messages $.Lang "stats.phase_symptoms_days" .TotalDays) .TotalDays}}</p>
             {{else}}
             <p class="journal-muted mt-3 text-sm">{{t $.Messages "stats.phase_symptoms_empty"}}</p>
             {{end}}
