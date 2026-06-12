@@ -38,6 +38,8 @@ type recoveryCodePagePayload struct {
 	Surface        string `json:"surface,omitempty"`
 }
 
+var recoveryCodeCookieSpec = sealedCookieSpec{name: recoveryCodeCookieName, path: "/"}
+
 func (handler *Handler) setRecoveryCodeIssuanceCookie(c *fiber.Ctx, userID uint, recoveryCode string, continuePath string, surface string) error {
 	code := strings.TrimSpace(recoveryCode)
 	if code == "" {
@@ -58,25 +60,7 @@ func (handler *Handler) setRecoveryCodeIssuanceCookie(c *fiber.Ctx, userID uint,
 	if err != nil {
 		return err
 	}
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return err
-	}
-	encoded, err := codec.seal(recoveryCodeCookieName, serialized)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     recoveryCodeCookieName,
-		Value:    encoded,
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(recoveryCodeCookieTTL),
-	})
-	return nil
+	return handler.writeSealedCookie(c, recoveryCodeCookieSpec, serialized, time.Now().Add(recoveryCodeCookieTTL))
 }
 
 func sanitizeRecoveryCodeContinueTarget(target string) string {
@@ -178,13 +162,5 @@ func (handler *Handler) readRecoveryCodeDisplayState(c *fiber.Ctx, userID uint, 
 }
 
 func (handler *Handler) clearRecoveryCodePageCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     recoveryCodeCookieName,
-		Value:    "",
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, recoveryCodeCookieSpec)
 }

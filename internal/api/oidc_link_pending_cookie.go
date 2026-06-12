@@ -68,6 +68,8 @@ func (p oidcLinkPendingPayload) validAt(now time.Time) bool {
 		strings.TrimSpace(p.Subject) != ""
 }
 
+var oidcLinkPendingCookieSpec = sealedCookieSpec{name: oidcLinkPendingCookieName, path: oidcLinkConfirmPath}
+
 func (handler *Handler) setOIDCLinkPendingCookie(c *fiber.Ctx, payload oidcLinkPendingPayload) error {
 	if !payload.validAt(time.Now()) {
 		return errors.New("oidc link pending payload is required")
@@ -76,25 +78,7 @@ func (handler *Handler) setOIDCLinkPendingCookie(c *fiber.Ctx, payload oidcLinkP
 	if err != nil {
 		return err
 	}
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return err
-	}
-	encoded, err := codec.seal(oidcLinkPendingCookieName, serialized)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     oidcLinkPendingCookieName,
-		Value:    encoded,
-		Path:     oidcLinkConfirmPath,
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(oidcLinkPendingCookieTTL),
-	})
-	return nil
+	return handler.writeSealedCookie(c, oidcLinkPendingCookieSpec, serialized, time.Now().Add(oidcLinkPendingCookieTTL))
 }
 
 func (handler *Handler) readOIDCLinkPendingCookie(c *fiber.Ctx) (oidcLinkPendingPayload, bool) {
@@ -121,13 +105,5 @@ func (handler *Handler) readOIDCLinkPendingCookie(c *fiber.Ctx) (oidcLinkPending
 }
 
 func (handler *Handler) clearOIDCLinkPendingCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     oidcLinkPendingCookieName,
-		Value:    "",
-		Path:     oidcLinkConfirmPath,
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, oidcLinkPendingCookieSpec)
 }

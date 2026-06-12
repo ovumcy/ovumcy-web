@@ -121,7 +121,7 @@ func (handler *Handler) CompleteOIDCLogin(c *fiber.Ctx) error {
 		}
 	} else {
 		_ = handler.oidcLogoutStateSvc.Delete(c.UserContext(), sessionID)
-		handler.clearOIDCLogoutTransportCookies(c)
+		handler.clearOIDCLogoutBridgeCookie(c)
 	}
 
 	handler.logSecurityEvent(

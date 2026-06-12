@@ -10,6 +10,8 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+var authCookieSpec = sealedCookieSpec{name: authCookieName, path: "/"}
+
 func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberMe bool) (string, error) {
 	tokenTTL := defaultAuthTokenTTL
 	if rememberMe {
@@ -20,41 +22,25 @@ func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberM
 	if err != nil {
 		return "", err
 	}
-	encodedToken, err := handler.encodeAuthCookieToken(token)
-	if err != nil {
+	// Session-scoped unless remember-me: a zero expires keeps the cookie
+	// for the browser session while the token payload carries its own TTL.
+	var expires time.Time
+	if rememberMe {
+		expires = time.Now().Add(tokenTTL)
+	}
+	if err := handler.writeSealedCookie(c, authCookieSpec, []byte(token), expires); err != nil {
 		return "", err
 	}
-
-	cookie := &fiber.Cookie{
-		Name:     authCookieName,
-		Value:    encodedToken,
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-	}
-	if rememberMe {
-		cookie.Expires = time.Now().Add(tokenTTL)
-	}
-	c.Cookie(cookie)
 	return sessionID, nil
 }
 
 func (handler *Handler) clearAuthCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     authCookieName,
-		Value:    "",
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, authCookieSpec)
 }
 
 func (handler *Handler) clearAuthRelatedCookies(c *fiber.Ctx) {
 	handler.clearAuthCookie(c)
-	handler.clearOIDCLogoutTransportCookies(c)
+	handler.clearOIDCLogoutBridgeCookie(c)
 	handler.clearRecoveryCodePageCookie(c)
 	handler.clearResetPasswordCookie(c)
 	handler.clearTOTPPendingCookie(c)

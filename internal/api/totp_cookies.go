@@ -24,6 +24,11 @@ type totpSetupCookiePayload struct {
 
 // setTOTPPendingCookie writes a short-lived sealed cookie that carries the user's
 // ID and rememberMe flag across the 2FA challenge step.
+var (
+	totpPendingCookieSpec = sealedCookieSpec{name: totpPendingCookieName, path: "/"}
+	totpSetupCookieSpec   = sealedCookieSpec{name: totpSetupCookieName, path: "/"}
+)
+
 func (handler *Handler) setTOTPPendingCookie(c *fiber.Ctx, userID uint, rememberMe bool) error {
 	payload := totpPendingCookiePayload{
 		UserID:     userID,
@@ -35,25 +40,8 @@ func (handler *Handler) setTOTPPendingCookie(c *fiber.Ctx, userID uint, remember
 		return err
 	}
 
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return err
-	}
-	encoded, err := codec.seal(totpPendingCookieName, serialized)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     totpPendingCookieName,
-		Value:    encoded,
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		// Session-scoped (no Expires) — the payload carries its own ExpiresAt.
-	})
-	return nil
+	// Session-scoped (zero expires) — the payload carries its own ExpiresAt.
+	return handler.writeSealedCookie(c, totpPendingCookieSpec, serialized, time.Time{})
 }
 
 // parseTOTPPendingCookie decodes and validates the TOTP pending cookie.
@@ -89,15 +77,7 @@ func (handler *Handler) parseTOTPPendingCookie(c *fiber.Ctx) (uint, bool, error)
 
 // clearTOTPPendingCookie removes the TOTP pending cookie.
 func (handler *Handler) clearTOTPPendingCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     totpPendingCookieName,
-		Value:    "",
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, totpPendingCookieSpec)
 }
 
 // setTOTPSetupCookie writes a short-lived sealed cookie that carries the raw
@@ -112,24 +92,8 @@ func (handler *Handler) setTOTPSetupCookie(c *fiber.Ctx, rawSecret string) error
 		return err
 	}
 
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return err
-	}
-	encoded, err := codec.seal(totpSetupCookieName, serialized)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     totpSetupCookieName,
-		Value:    encoded,
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-	})
-	return nil
+	// Session-scoped (zero expires) — the payload carries its own ExpiresAt.
+	return handler.writeSealedCookie(c, totpSetupCookieSpec, serialized, time.Time{})
 }
 
 // parseTOTPSetupCookie decodes and validates the TOTP setup cookie.
@@ -165,13 +129,5 @@ func (handler *Handler) parseTOTPSetupCookie(c *fiber.Ctx) (string, error) {
 
 // clearTOTPSetupCookie removes the TOTP setup cookie.
 func (handler *Handler) clearTOTPSetupCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     totpSetupCookieName,
-		Value:    "",
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, totpSetupCookieSpec)
 }

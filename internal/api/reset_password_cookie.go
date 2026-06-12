@@ -16,6 +16,8 @@ type resetPasswordCookiePayload struct {
 	Forced bool   `json:"forced,omitempty"`
 }
 
+var resetPasswordCookieSpec = sealedCookieSpec{name: resetPasswordCookieName, path: "/"}
+
 func (handler *Handler) setResetPasswordCookie(c *fiber.Ctx, token string, forced bool) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -32,25 +34,7 @@ func (handler *Handler) setResetPasswordCookie(c *fiber.Ctx, token string, force
 		return err
 	}
 
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return err
-	}
-	encoded, err := codec.seal(resetPasswordCookieName, serialized)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     resetPasswordCookieName,
-		Value:    encoded,
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(resetPasswordCookieTTL),
-	})
-	return nil
+	return handler.writeSealedCookie(c, resetPasswordCookieSpec, serialized, time.Now().Add(resetPasswordCookieTTL))
 }
 
 func (handler *Handler) readResetPasswordCookie(c *fiber.Ctx) (string, bool) {
@@ -85,13 +69,5 @@ func (handler *Handler) readResetPasswordCookie(c *fiber.Ctx) (string, bool) {
 }
 
 func (handler *Handler) clearResetPasswordCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     resetPasswordCookieName,
-		Value:    "",
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, resetPasswordCookieSpec)
 }

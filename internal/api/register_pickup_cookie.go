@@ -181,6 +181,8 @@ func validPickupNonceShape(nonce string) bool {
 	return true
 }
 
+var registerPickupCookieSpec = sealedCookieSpec{name: registerPickupCookieName, path: "/"}
+
 func (handler *Handler) setRegisterPickupCookie(c *fiber.Ctx, payload registerPickupPayload) error {
 	if !payload.validAt(time.Now()) {
 		return errors.New("pickup cookie payload is invalid")
@@ -190,25 +192,7 @@ func (handler *Handler) setRegisterPickupCookie(c *fiber.Ctx, payload registerPi
 	if err != nil {
 		return err
 	}
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return err
-	}
-	encoded, err := codec.seal(registerPickupCookieName, serialized)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     registerPickupCookieName,
-		Value:    encoded,
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(registerPickupCookieTTL),
-	})
-	return nil
+	return handler.writeSealedCookie(c, registerPickupCookieSpec, serialized, time.Now().Add(registerPickupCookieTTL))
 }
 
 func (handler *Handler) popRegisterPickupCookie(c *fiber.Ctx) (registerPickupPayload, bool) {
@@ -238,13 +222,5 @@ func (handler *Handler) popRegisterPickupCookie(c *fiber.Ctx) (registerPickupPay
 }
 
 func (handler *Handler) clearRegisterPickupCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     registerPickupCookieName,
-		Value:    "",
-		Path:     "/",
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, registerPickupCookieSpec)
 }

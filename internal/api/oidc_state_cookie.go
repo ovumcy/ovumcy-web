@@ -58,6 +58,13 @@ func (state oidcAuthState) matchesState(candidate string) bool {
 	return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(state.State)), []byte(strings.TrimSpace(candidate))) == 1
 }
 
+var oidcStateCookieSpec = sealedCookieSpec{
+	name:        oidcStateCookieName,
+	path:        security.OIDCCallbackPath,
+	sameSite:    "None",
+	forceSecure: true,
+}
+
 func (handler *Handler) setOIDCStateCookie(c *fiber.Ctx, state oidcAuthState) error {
 	if !handler.cookieSecure {
 		return errors.New("oidc state cookie requires secure transport")
@@ -70,25 +77,7 @@ func (handler *Handler) setOIDCStateCookie(c *fiber.Ctx, state oidcAuthState) er
 	if err != nil {
 		return err
 	}
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return err
-	}
-	encoded, err := codec.seal(oidcStateCookieName, payload)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     oidcStateCookieName,
-		Value:    encoded,
-		Path:     security.OIDCCallbackPath,
-		HTTPOnly: true,
-		Secure:   true,
-		SameSite: "None",
-		Expires:  time.Now().Add(oidcStateCookieTTL),
-	})
-	return nil
+	return handler.writeSealedCookie(c, oidcStateCookieSpec, payload, time.Now().Add(oidcStateCookieTTL))
 }
 
 func (handler *Handler) popOIDCStateCookie(c *fiber.Ctx) oidcAuthState {
@@ -118,13 +107,5 @@ func (handler *Handler) popOIDCStateCookie(c *fiber.Ctx) oidcAuthState {
 }
 
 func (handler *Handler) clearOIDCStateCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     oidcStateCookieName,
-		Value:    "",
-		Path:     security.OIDCCallbackPath,
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "None",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
+	handler.clearSealedCookie(c, oidcStateCookieSpec)
 }

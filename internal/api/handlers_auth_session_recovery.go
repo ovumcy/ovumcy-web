@@ -110,7 +110,7 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.reset_password", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	handler.clearOIDCLogoutTransportCookies(c)
+	handler.clearOIDCLogoutBridgeCookie(c)
 	handler.clearResetPasswordCookie(c)
 	handler.logSecurityEvent(c, "auth.reset_password", "success")
 

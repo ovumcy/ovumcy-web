@@ -141,7 +141,7 @@ func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.register_pickup", spec)
 		return handler.redirectToPostRegisterSignin(c, "auth_cookie_failed")
 	}
-	handler.clearOIDCLogoutTransportCookies(c)
+	handler.clearOIDCLogoutBridgeCookie(c)
 
 	continuePath := services.PostLoginRedirectPath(&user)
 	if err := handler.setRecoveryCodeIssuanceCookie(c, user.ID, payload.RC, continuePath, recoveryCodeSurfaceInlineRegister); err != nil {

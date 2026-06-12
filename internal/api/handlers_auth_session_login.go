@@ -125,7 +125,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.login", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	handler.clearOIDCLogoutTransportCookies(c)
+	handler.clearOIDCLogoutBridgeCookie(c)
 
 	handler.logSecurityEvent(
 		c,

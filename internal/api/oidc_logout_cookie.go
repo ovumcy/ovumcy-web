@@ -10,6 +10,8 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+var oidcLogoutBridgeCookieSpec = sealedCookieSpec{name: oidcLogoutBridgeCookieName, path: oidcLogoutBridgePath}
+
 type oidcLogoutBridgeCookiePayload struct {
 	SessionID     string `json:"session_id"`
 	ExpiresAtUnix int64  `json:"expires_at_unix"`
@@ -34,21 +36,7 @@ func (handler *Handler) setOIDCLogoutBridgeCookie(c *fiber.Ctx, sessionID string
 	if err != nil {
 		return err
 	}
-	encoded, err := handler.sealCookieValue(oidcLogoutBridgeCookieName, serialized)
-	if err != nil {
-		return err
-	}
-
-	c.Cookie(&fiber.Cookie{
-		Name:     oidcLogoutBridgeCookieName,
-		Value:    encoded,
-		Path:     oidcLogoutBridgePath,
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  expiresAt,
-	})
-	return nil
+	return handler.writeSealedCookie(c, oidcLogoutBridgeCookieSpec, serialized, expiresAt)
 }
 
 func (handler *Handler) readOIDCLogoutBridgeCookie(c *fiber.Ctx, now time.Time) oidcLogoutBridgeCookiePayload {
@@ -72,19 +60,7 @@ func (handler *Handler) readOIDCLogoutBridgeCookie(c *fiber.Ctx, now time.Time) 
 }
 
 func (handler *Handler) clearOIDCLogoutBridgeCookie(c *fiber.Ctx) {
-	c.Cookie(&fiber.Cookie{
-		Name:     oidcLogoutBridgeCookieName,
-		Value:    "",
-		Path:     oidcLogoutBridgePath,
-		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
-		SameSite: "Lax",
-		Expires:  time.Now().Add(-1 * time.Hour),
-	})
-}
-
-func (handler *Handler) clearOIDCLogoutTransportCookies(c *fiber.Ctx) {
-	handler.clearOIDCLogoutBridgeCookie(c)
+	handler.clearSealedCookie(c, oidcLogoutBridgeCookieSpec)
 }
 
 func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLogoutState) string {
@@ -101,22 +77,6 @@ func (handler *Handler) providerLogoutRedirectURLFromState(state services.OIDCLo
 	query.Set("post_logout_redirect_uri", strings.TrimSpace(state.PostLogoutRedirectURL))
 	logoutURL.RawQuery = query.Encode()
 	return logoutURL.String()
-}
-
-func (handler *Handler) sealCookieValue(cookieName string, plaintext []byte) (string, error) {
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return "", err
-	}
-	return codec.seal(cookieName, plaintext)
-}
-
-func (handler *Handler) openCookieValue(cookieName string, raw string) ([]byte, error) {
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return nil, err
-	}
-	return codec.open(cookieName, raw)
 }
 
 func validOIDCLogoutState(payload services.OIDCLogoutState) bool {
