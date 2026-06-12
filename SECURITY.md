@@ -466,7 +466,6 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | --- | --- |
 | `AUDIT_LOG_ENABLED=false` (default) emits no `security event:` lines | `TestAuditLogDefaultOffSuppressesSecurityEvents` in [internal/api/security_event_logging_audit_flag_test.go](internal/api/security_event_logging_audit_flag_test.go) |
 | `AUDIT_LOG_ENABLED=true` emits security-event lines | `TestAuditLogEnabledRestoresSecurityEvents` in [internal/api/security_event_logging_audit_flag_test.go](internal/api/security_event_logging_audit_flag_test.go) |
-| `AuditLogEnabled()` getter reflects `SetAuditLogEnabled()` writes | `TestAuditLogEnabledReporter` in [internal/api/security_event_logging_audit_flag_test.go](internal/api/security_event_logging_audit_flag_test.go) |
 | When enabled, day-write logs the sanitized path `/api/v1/days/:date` (no concrete date) | `TestUpsertDayLogsSanitizedPathWithoutConcreteDate` in [internal/api/security_event_logging_mutation_regression_test.go](internal/api/security_event_logging_mutation_regression_test.go) |
 | When enabled, symptom mutation log does not leak the user-supplied symptom name | `TestCreateSymptomLogsMutationWithoutLeakingUserInput` in [internal/api/security_event_logging_mutation_regression_test.go](internal/api/security_event_logging_mutation_regression_test.go) |
 | CSRF middleware error path does not leak PII into the audit log | `TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
