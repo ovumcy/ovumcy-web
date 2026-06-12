@@ -194,6 +194,7 @@
   "settings.age_group.unknown": "Nicht angegeben",
   "stats.perimenopause_hint": "Nach 45 werden Zyklen oft weniger vorhersehbar. Wenn Sie wiederkehrende Unterschiede von 7 oder mehr Tagen zwischen aufeinanderfolgenden Zyklen bemerken, kann das ein frühes Anzeichen für die Perimenopause sein — sprechen Sie es mit einer medizinischen Fachperson an.",
   "stats.short_cycle_notice": "Mehrere Ihrer letzten Zyklen sind kürzer als 24 Tage. So kurze Zyklen sind seltener — besprechen Sie das gegebenenfalls mit einer Ärztin oder einem Arzt.",
+  "stats.long_cycle_notice": "Mehrere Ihrer letzten Zyklen sind länger als 45 Tage. So lange Zyklen sind seltener und können viele Ursachen haben — besprechen Sie das gegebenenfalls mit einer Ärztin oder einem Arzt.",
   "settings.goal.title": "Nutzungsziel",
   "settings.goal.hint": "Optional. Das ändert nur, wie fruchtbare Tage in der Oberfläche und in Zusammenfassungen dargestellt werden. Den Algorithmus verändert es nicht.",
   "settings.goal.avoid": "Schwangerschaft vermeiden",

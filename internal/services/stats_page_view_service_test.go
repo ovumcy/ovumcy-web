@@ -476,3 +476,28 @@ func TestShouldShowStatsShortCycleNotice(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldShowStatsLongCycleNotice(t *testing.T) {
+	owner := &models.User{Role: models.RoleOwner}
+
+	cases := []struct {
+		name    string
+		user    *models.User
+		lengths []int
+		want    bool
+	}{
+		{name: "three long cycles trigger the note", user: owner, lengths: []int{50, 47, 60, 28}, want: true},
+		{name: "two long cycles stay silent (missed-log guard)", user: owner, lengths: []int{90, 48, 28, 30}, want: false},
+		{name: "45 is not long (boundary)", user: owner, lengths: []int{45, 45, 45}, want: false},
+		{name: "normal cycles", user: owner, lengths: []int{28, 30, 27}, want: false},
+		{name: "nil user", user: nil, lengths: []int{50, 50, 50}, want: false},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := shouldShowStatsLongCycleNotice(testCase.user, testCase.lengths); got != testCase.want {
+				t.Fatalf("shouldShowStatsLongCycleNotice(%v) = %v, want %v", testCase.lengths, got, testCase.want)
+			}
+		})
+	}
+}

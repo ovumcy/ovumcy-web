@@ -194,6 +194,7 @@
   "settings.age_group.unknown": "Not set",
   "stats.perimenopause_hint": "After 45, cycles often become less predictable. If you notice persistent differences of 7 or more days between consecutive cycles, that can be an early sign of perimenopause — consider speaking with a healthcare professional.",
   "stats.short_cycle_notice": "Several of your recent cycles are shorter than 24 days. Cycles this short are less common — consider discussing them with a doctor.",
+  "stats.long_cycle_notice": "Several of your recent cycles are longer than 45 days. Cycles this long are less common and can have many causes — consider discussing them with a doctor.",
   "settings.goal.title": "Usage goal",
   "settings.goal.hint": "Optional. This changes how fertile days and summaries are framed in the UI. It does not change the algorithm.",
   "settings.goal.avoid": "Avoid pregnancy",

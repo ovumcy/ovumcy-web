@@ -194,6 +194,7 @@
   "settings.age_group.unknown": "Sin especificar",
   "stats.perimenopause_hint": "Después de los 45, los ciclos suelen volverse menos predecibles. Si observas diferencias persistentes de 7 o más días entre ciclos consecutivos, puede ser un signo temprano de perimenopausia — conviene comentarlo con un profesional de la salud.",
   "stats.short_cycle_notice": "Varios de tus ciclos recientes duran menos de 24 días. Los ciclos tan cortos son menos comunes; considera comentarlo con un médico.",
+  "stats.long_cycle_notice": "Varios de tus ciclos recientes duran más de 45 días. Los ciclos tan largos son menos comunes y pueden tener muchas causas; considera comentarlo con un médico.",
   "settings.goal.title": "Objetivo de uso",
   "settings.goal.hint": "Opcional. Cambia cómo se presentan los días fértiles en la interfaz y en los resúmenes, no el algoritmo.",
   "settings.goal.avoid": "Evitar embarazo",
