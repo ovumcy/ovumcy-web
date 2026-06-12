@@ -10,25 +10,19 @@ import (
 func (handler *Handler) DeleteDailyLog(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		spec := unauthorizedErrorSpec()
-		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, dayDeleteMutation, unauthorizedErrorSpec())
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Query("date"), location)
 	if err != nil {
-		spec := invalidDateErrorSpec()
-		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, dayDeleteMutation, invalidDateErrorSpec())
 	}
 	if err := handler.dayService.DeleteDayEntry(c.UserContext(), user.ID, day, location); err != nil {
-		spec := deleteDayPersistenceErrorSpec(err)
-		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, dayDeleteMutation, mapDayDeleteError(err))
 	}
 
-	handler.logHealthDataMutation(c, "health.day_delete", "success", "day_entry")
+	handler.logMutationSuccess(c, dayDeleteMutation)
 
 	source := strings.ToLower(strings.TrimSpace(c.Query("source")))
 	if isHTMX(c) {
@@ -50,28 +44,24 @@ func (handler *Handler) DeleteDailyLog(c *fiber.Ctx) error {
 	return c.SendStatus(204)
 }
 
+var dayDeleteMutation = healthMutationKind{action: "health.day_delete", target: "day_entry"}
+
 func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		spec := unauthorizedErrorSpec()
-		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, dayDeleteMutation, unauthorizedErrorSpec())
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
-		spec := invalidDateErrorSpec()
-		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, dayDeleteMutation, invalidDateErrorSpec())
 	}
 	if err := handler.dayService.DeleteDayEntry(c.UserContext(), user.ID, day, location); err != nil {
-		spec := deleteDayPersistenceErrorSpec(err)
-		handler.logHealthDataMutationError(c, "health.day_delete", spec, "day_entry")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, dayDeleteMutation, mapDayDeleteError(err))
 	}
 
-	handler.logHealthDataMutation(c, "health.day_delete", "success", "day_entry")
+	handler.logMutationSuccess(c, dayDeleteMutation)
 
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")

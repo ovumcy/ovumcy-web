@@ -16,10 +16,15 @@ type upsertDayRequest struct {
 	cleanSymptomIDs []uint
 }
 
+var (
+	dayUpsertMutation      = healthMutationKind{action: "health.day_upsert", target: "day_entry"}
+	cycleStartMarkMutation = healthMutationKind{action: "health.cycle_start_mark", target: "cycle_start"}
+)
+
 func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 	request, spec, ok := handler.resolveUpsertDayRequest(c)
 	if !ok {
-		handler.logHealthDataMutationError(c, "health.day_upsert", spec, "day_entry")
+		handler.logMutationError(c, dayUpsertMutation, spec)
 		return handler.respondMappedError(c, spec)
 	}
 
@@ -31,14 +36,12 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 		request.location,
 	)
 	if err != nil {
-		spec := upsertDayPersistenceErrorSpec(err)
-		handler.logHealthDataMutationError(c, "health.day_upsert", spec, "day_entry")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, dayUpsertMutation, mapDayUpsertError(err))
 	}
 
 	feedback, feedbackErr := handler.applyUpsertDayAcknowledgements(c, request)
 
-	handler.logHealthDataMutation(c, "health.day_upsert", "success", "day_entry")
+	handler.logMutationSuccess(c, dayUpsertMutation)
 	return handler.respondUpsertDaySuccess(c, entry, feedback, feedbackErr)
 }
 
@@ -135,17 +138,13 @@ func (handler *Handler) respondUpsertDaySuccess(c *fiber.Ctx, entry models.Daily
 func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		spec := unauthorizedErrorSpec()
-		handler.logHealthDataMutationError(c, "health.cycle_start_mark", spec, "cycle_start")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, cycleStartMarkMutation, unauthorizedErrorSpec())
 	}
 
 	location := handler.requestLocation(c)
 	day, err := services.ParseDayDate(c.Params("date"), location)
 	if err != nil {
-		spec := invalidDateErrorSpec()
-		handler.logHealthDataMutationError(c, "health.cycle_start_mark", spec, "cycle_start")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, cycleStartMarkMutation, invalidDateErrorSpec())
 	}
 
 	cycleStartPolicy, _ := handler.dayService.ResolveManualCycleStartPolicy(c.UserContext(), user, day, time.Now().In(location), location)
@@ -161,9 +160,7 @@ func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 			MarkUncertain:   services.ParseBoolLike(c.FormValue("mark_uncertain")),
 		},
 	); err != nil {
-		spec := upsertDayPersistenceErrorSpec(err)
-		handler.logHealthDataMutationError(c, "health.cycle_start_mark", spec, "cycle_start")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, cycleStartMarkMutation, mapDayUpsertError(err))
 	}
 	if !user.ShownPeriodTip && services.ParseBoolLike(c.FormValue("ack_period_tip")) {
 		if err := handler.dayService.AcknowledgePeriodTip(c.UserContext(), user.ID); err == nil { // codecov:ignore -- best-effort period-tip ack; error intentionally swallowed, happy path in e2e
@@ -171,7 +168,7 @@ func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 		}
 	}
 
-	handler.logHealthDataMutation(c, "health.cycle_start_mark", "success", "cycle_start")
+	handler.logMutationSuccess(c, cycleStartMarkMutation)
 
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")

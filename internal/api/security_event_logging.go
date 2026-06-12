@@ -122,6 +122,31 @@ func (handler *Handler) logHealthDataMutationError(c *fiber.Ctx, action string, 
 	handler.logSecurityError(c, action, spec, fields...)
 }
 
+// healthMutationKind names one audited health-data mutation: the security
+// event action plus its target field. Handlers declare kinds as file-level
+// constants and pass them to the helpers below, so a re-typed string
+// literal cannot silently mis-tag an audit line (the compiler has no
+// opinion on "health.symptom_craete").
+type healthMutationKind struct {
+	action string
+	target string
+}
+
+func (handler *Handler) logMutationSuccess(c *fiber.Ctx, kind healthMutationKind) {
+	handler.logHealthDataMutation(c, kind.action, "success", kind.target)
+}
+
+func (handler *Handler) logMutationError(c *fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) {
+	handler.logHealthDataMutationError(c, kind.action, spec, kind.target)
+}
+
+// failMutation is the common tail of mutation handlers: log the
+// denied/failed audit event and respond with the mapped error.
+func (handler *Handler) failMutation(c *fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) error {
+	handler.logMutationError(c, kind, spec)
+	return handler.respondMappedError(c, spec)
+}
+
 func securityEventOutcomeForSpec(spec APIErrorSpec) string {
 	if spec.Status >= fiber.StatusInternalServerError {
 		return "failure"

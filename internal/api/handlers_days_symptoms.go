@@ -18,18 +18,23 @@ func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
 	return c.JSON(newSymptomResponses(symptoms))
 }
 
+var (
+	symptomCreateMutation  = healthMutationKind{action: "health.symptom_create", target: "symptom"}
+	symptomUpdateMutation  = healthMutationKind{action: "health.symptom_update", target: "symptom"}
+	symptomRestoreMutation = healthMutationKind{action: "health.symptom_restore", target: "symptom"}
+	symptomArchiveMutation = healthMutationKind{action: "health.symptom_archive", target: "symptom"}
+)
+
 func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		spec := unauthorizedErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_create", spec, "symptom")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, symptomCreateMutation, unauthorizedErrorSpec())
 	}
 
 	payload := symptomPayload{}
 	if err := c.BodyParser(&payload); err != nil {
 		spec := settingsInvalidInputErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_create", spec, "symptom")
+		handler.logMutationError(c, symptomCreateMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
 			Draft: payload,
 		})
@@ -38,13 +43,13 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 	symptom, err := handler.symptomService.CreateSymptomForUser(c.UserContext(), user.ID, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
 		spec := mapSymptomCreateError(err)
-		handler.logHealthDataMutationError(c, "health.symptom_create", spec, "symptom")
+		handler.logMutationError(c, symptomCreateMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
 			Draft: payload,
 		})
 	}
 
-	handler.logHealthDataMutation(c, "health.symptom_create", "success", "symptom")
+	handler.logMutationSuccess(c, symptomCreateMutation)
 
 	if acceptsJSON(c) {
 		return c.Status(fiber.StatusCreated).JSON(newSymptomResponse(symptom))
@@ -55,22 +60,20 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		spec := unauthorizedErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_update", spec, "symptom")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, symptomUpdateMutation, unauthorizedErrorSpec())
 	}
 
 	id, err := parseRequestUint(c.Params("id"))
 	if err != nil {
 		spec := invalidSymptomIDErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_update", spec, "symptom")
+		handler.logMutationError(c, symptomUpdateMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{})
 	}
 
 	payload := symptomPayload{}
 	if err := c.BodyParser(&payload); err != nil {
 		spec := settingsInvalidInputErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_update", spec, "symptom")
+		handler.logMutationError(c, symptomUpdateMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
 			Row: settingsSymptomRowState{
 				SymptomID:      id,
@@ -87,7 +90,7 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 		if spec.Key == "symptom name is too long" {
 			useDraftValues = false
 		}
-		handler.logHealthDataMutationError(c, "health.symptom_update", spec, "symptom")
+		handler.logMutationError(c, symptomUpdateMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
 			Row: settingsSymptomRowState{
 				SymptomID:      id,
@@ -97,7 +100,7 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 		})
 	}
 
-	handler.logHealthDataMutation(c, "health.symptom_update", "success", "symptom")
+	handler.logMutationSuccess(c, symptomUpdateMutation)
 
 	if acceptsJSON(c) {
 		return c.JSON(newSymptomResponse(symptom))
@@ -114,26 +117,24 @@ func (handler *Handler) DeleteSymptom(c *fiber.Ctx) error {
 func (handler *Handler) RestoreSymptom(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		spec := unauthorizedErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_restore", spec, "symptom")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, symptomRestoreMutation, unauthorizedErrorSpec())
 	}
 
 	id, err := parseRequestUint(c.Params("id"))
 	if err != nil {
 		spec := invalidSymptomIDErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_restore", spec, "symptom")
+		handler.logMutationError(c, symptomRestoreMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{})
 	}
 	if err := handler.symptomService.RestoreSymptomForUser(c.UserContext(), user.ID, id); err != nil {
 		spec := mapSymptomRestoreError(err)
-		handler.logHealthDataMutationError(c, "health.symptom_restore", spec, "symptom")
+		handler.logMutationError(c, symptomRestoreMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
 			Row: settingsSymptomRowState{SymptomID: id},
 		})
 	}
 
-	handler.logHealthDataMutation(c, "health.symptom_restore", "success", "symptom")
+	handler.logMutationSuccess(c, symptomRestoreMutation)
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
@@ -146,26 +147,24 @@ func (handler *Handler) RestoreSymptom(c *fiber.Ctx) error {
 func (handler *Handler) archiveSymptom(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		spec := unauthorizedErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_archive", spec, "symptom")
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, symptomArchiveMutation, unauthorizedErrorSpec())
 	}
 
 	id, err := parseRequestUint(c.Params("id"))
 	if err != nil {
 		spec := invalidSymptomIDErrorSpec()
-		handler.logHealthDataMutationError(c, "health.symptom_archive", spec, "symptom")
+		handler.logMutationError(c, symptomArchiveMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{})
 	}
 	if err := handler.symptomService.ArchiveSymptomForUser(c.UserContext(), user.ID, id, time.Now()); err != nil {
 		spec := mapSymptomArchiveError(err)
-		handler.logHealthDataMutationError(c, "health.symptom_archive", spec, "symptom")
+		handler.logMutationError(c, symptomArchiveMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
 			Row: settingsSymptomRowState{SymptomID: id},
 		})
 	}
 
-	handler.logHealthDataMutation(c, "health.symptom_archive", "success", "symptom")
+	handler.logMutationSuccess(c, symptomArchiveMutation)
 
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
