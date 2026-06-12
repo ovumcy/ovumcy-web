@@ -34,10 +34,6 @@ func templateRenderErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to render template")
 }
 
-func partialNotFoundErrorSpec() APIErrorSpec {
-	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "partial not found")
-}
-
 func partialRenderErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to render partial")
 }

@@ -59,16 +59,3 @@ func UsageGoalSummaryTranslationKey(value string) string {
 		return "usage_goal.summary.health"
 	}
 }
-
-func AgeGroupTranslationKey(value string) string {
-	switch NormalizeAgeGroup(value) {
-	case models.AgeGroupUnder40:
-		return "settings.age_group.under_40"
-	case models.AgeGroup40To45:
-		return "settings.age_group.40_to_45"
-	case models.AgeGroup45Plus:
-		return "settings.age_group.45_plus"
-	default:
-		return "settings.age_group.unknown"
-	}
-}

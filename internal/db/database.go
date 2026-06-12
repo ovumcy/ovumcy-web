@@ -86,10 +86,3 @@ func OpenSQLite(dbPath string) (*gorm.DB, error) {
 		SQLitePath: dbPath,
 	})
 }
-
-func OpenPostgres(databaseURL string) (*gorm.DB, error) {
-	return OpenDatabase(Config{
-		Driver:      DriverPostgres,
-		PostgresURL: databaseURL,
-	})
-}

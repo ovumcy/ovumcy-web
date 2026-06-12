@@ -213,23 +213,6 @@ func TestDateAtLocationShiftsToNextLocalDayAcrossUTCBoundary(t *testing.T) {
 	}
 }
 
-func TestCalendarDayHelpers(t *testing.T) {
-	day := time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC)
-	sameDayLater := time.Date(2026, time.February, 17, 23, 59, 0, 0, time.UTC)
-	if !SameCalendarDay(day, sameDayLater) {
-		t.Fatal("expected same calendar day")
-	}
-
-	start := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
-	end := time.Date(2026, time.February, 20, 0, 0, 0, 0, time.UTC)
-	if !BetweenCalendarDaysInclusive(day, start, end) {
-		t.Fatal("expected day to be between inclusive bounds")
-	}
-	if BetweenCalendarDaysInclusive(day, time.Time{}, end) {
-		t.Fatal("expected false when start bound is zero")
-	}
-}
-
 func TestSymptomIDSet(t *testing.T) {
 	set := SymptomIDSet([]uint{3, 3, 5})
 	if len(set) != 2 {

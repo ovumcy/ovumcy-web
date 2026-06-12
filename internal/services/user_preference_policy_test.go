@@ -71,16 +71,4 @@ func TestUserPreferenceTranslationKeysUseNormalizedFallbacks(t *testing.T) {
 	if got := UsageGoalSummaryTranslationKey(models.UsageGoalTrying); got != "usage_goal.summary.trying" {
 		t.Fatalf("expected trying summary translation key, got %q", got)
 	}
-	if got := AgeGroupTranslationKey("unknown"); got != "settings.age_group.unknown" {
-		t.Fatalf("expected unknown fallback translation key, got %q", got)
-	}
-	if got := AgeGroupTranslationKey(models.AgeGroup45Plus); got != "settings.age_group.45_plus" {
-		t.Fatalf("expected 45+ translation key, got %q", got)
-	}
-	if got := AgeGroupTranslationKey(models.AgeGroup40To45); got != "settings.age_group.40_to_45" {
-		t.Fatalf("expected 40-45 translation key, got %q", got)
-	}
-	if got := AgeGroupTranslationKey(models.AgeGroupUnder40); got != "settings.age_group.under_40" {
-		t.Fatalf("expected under-40 translation key, got %q", got)
-	}
 }

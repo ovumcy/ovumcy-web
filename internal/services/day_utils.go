@@ -84,17 +84,6 @@ func CalendarDaysBetween(from time.Time, to time.Time) int {
 	return int(end.Sub(start).Hours() / 24)
 }
 
-func SameCalendarDay(a time.Time, b time.Time) bool {
-	return a.Format("2006-01-02") == b.Format("2006-01-02")
-}
-
-func BetweenCalendarDaysInclusive(day time.Time, start time.Time, end time.Time) bool {
-	if start.IsZero() || end.IsZero() {
-		return false
-	}
-	return (day.Equal(start) || day.After(start)) && (day.Equal(end) || day.Before(end))
-}
-
 func SymptomIDSet(ids []uint) map[uint]bool {
 	set := make(map[uint]bool, len(ids))
 	for _, id := range ids {
@@ -171,14 +160,4 @@ func IsAutoFilledPeriodCandidate(entry models.DailyLog) bool {
 		return false
 	}
 	return strings.TrimSpace(entry.Notes) == ""
-}
-
-func RemoveUint(values []uint, needle uint) []uint {
-	filtered := make([]uint, 0, len(values))
-	for _, value := range values {
-		if value != needle {
-			filtered = append(filtered, value)
-		}
-	}
-	return filtered
 }

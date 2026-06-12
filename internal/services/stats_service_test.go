@@ -77,27 +77,6 @@ func TestTrimTrailingCycleTrendLengths(t *testing.T) {
 	}
 }
 
-func TestOwnerBaselineCycleLength(t *testing.T) {
-	tests := []struct {
-		name string
-		user *models.User
-		want int
-	}{
-		{name: "nil user", user: nil, want: 0},
-		{name: "unsupported role", user: &models.User{Role: "legacy_viewer", CycleLength: 29}, want: 0},
-		{name: "owner invalid cycle length", user: &models.User{Role: models.RoleOwner, CycleLength: 120}, want: 0},
-		{name: "owner valid cycle length", user: &models.User{Role: models.RoleOwner, CycleLength: 28}, want: 28},
-	}
-
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			if got := OwnerBaselineCycleLength(testCase.user); got != testCase.want {
-				t.Fatalf("expected baseline %d, got %d", testCase.want, got)
-			}
-		})
-	}
-}
-
 func TestBuildCycleStatsForRangeAppliesOwnerBaseline(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-02-10"), IsPeriod: true},

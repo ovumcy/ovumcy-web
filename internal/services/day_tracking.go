@@ -124,10 +124,6 @@ func FormatDayBBTForInput(value float64, unit string) string {
 	return fmt.Sprintf("%.2f", normalized)
 }
 
-func ParseDayBBTRaw(raw string) (float64, error) {
-	return ParseDayBBTRawWithUnit(raw, TemperatureUnitCelsius)
-}
-
 func ParseDayBBTRawWithUnit(raw string, unit string) (float64, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {

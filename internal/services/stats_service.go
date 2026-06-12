@@ -80,13 +80,6 @@ func TrimTrailingCycleTrendLengths(lengths []int, maxPoints int) []int {
 	return lengths[len(lengths)-maxPoints:]
 }
 
-func OwnerBaselineCycleLength(user *models.User) int {
-	if !IsOwnerUser(user) || !IsValidOnboardingCycleLength(user.CycleLength) {
-		return 0
-	}
-	return user.CycleLength
-}
-
 func (service *StatsService) BuildTrend(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location, maxTrendPoints int) ([]int, int) {
 	lengths := CompletedCycleTrendLengths(logs, now, location)
 	lengths = TrimTrailingCycleTrendLengths(lengths, maxTrendPoints)

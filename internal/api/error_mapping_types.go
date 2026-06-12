@@ -29,10 +29,6 @@ type APIErrorSpec struct {
 	Target   APIErrorTarget
 }
 
-func (spec APIErrorSpec) IsFormError() bool {
-	return spec.Target == APIErrorTargetAuthForm || spec.Target == APIErrorTargetSettingsForm
-}
-
 func globalErrorSpec(status int, category APIErrorCategory, key string) APIErrorSpec {
 	return APIErrorSpec{
 		Category: category,

@@ -11,14 +11,6 @@ import (
 
 const flashCookieTTL = 5 * time.Minute
 
-func SetFlashCookie(c *fiber.Ctx, payload FlashPayload, secretKey []byte) {
-	writeFlashCookie(c, payload, false, secretKey)
-}
-
-func SetFlashCookieWithSecure(c *fiber.Ctx, payload FlashPayload, secure bool, secretKey []byte) {
-	writeFlashCookie(c, payload, secure, secretKey)
-}
-
 func (handler *Handler) setFlashCookie(c *fiber.Ctx, payload FlashPayload) {
 	writeFlashCookie(c, payload, handler.cookieSecure, handler.secretKey)
 }
