@@ -185,6 +185,7 @@ Both operations require the current password through `validateSettingsActionPass
 **Local passwords:**
 
 - Minimum length: 8 Unicode code points.
+- Maximum length: 72 bytes — bcrypt's hard input limit. Longer submissions fail validation with the same stable weak-password error on every password-accepting flow instead of surfacing bcrypt's opaque hashing error.
 - Required character classes: at least one uppercase letter, one lowercase letter, and one digit (`ValidatePasswordStrength` in `internal/services/password_policy.go`).
 - Storage: bcrypt with `bcrypt.DefaultCost` (currently cost 10) via `golang.org/x/crypto/bcrypt`. Hashes live in `users.password_hash`.
 
@@ -407,6 +408,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Claim | Enforced by |
 | --- | --- |
 | Passwords require ≥ 8 Unicode code points | `TestValidatePasswordStrength_RejectsWeakPasswords` (`"Short1"` case) in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
+| Passwords longer than 72 bytes are rejected at validation (bcrypt input limit) | `TestValidatePasswordStrength_EnforcesBcryptByteLimit` in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
 | Passwords require at least one uppercase, one lowercase, and one digit | `TestValidatePasswordStrength_RejectsWeakPasswords` (alllowercase / ALLUPPERCASE / NoDigitsHere cases) in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
 | Strong password passes | `TestValidatePasswordStrength_AcceptsStrongPassword` in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
 | Change-password rejects weak password and mismatch | `TestChangePasswordRejectsWeakNumericPassword`, `TestChangePasswordRejectsPasswordMismatch` in [internal/api/auth_change_password_validation_test.go](internal/api/auth_change_password_validation_test.go) |

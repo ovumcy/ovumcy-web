@@ -33,7 +33,7 @@ func TestRegisterPageDoesNotPersistEmailAfterPasswordValidationError(t *testing.
 	rendered := renderRegisterPageWithFlash(t, app, flashValue)
 	assertBodyContainsAll(t, rendered,
 		bodyStringMatch{fragment: `id="register-email"`, message: "expected register email input on validation-error page"},
-		bodyStringMatch{fragment: "Use at least 8 characters with uppercase, lowercase, and a number.", message: "expected localized weak password message from flash"},
+		bodyStringMatch{fragment: "Use 8 to 72 characters with uppercase, lowercase, and a number.", message: "expected localized weak password message from flash"},
 	)
 	// Email PII must not round-trip through the flash cookie (H-2).
 	assertBodyNotContainsAll(t, rendered,
@@ -43,7 +43,7 @@ func TestRegisterPageDoesNotPersistEmailAfterPasswordValidationError(t *testing.
 	clean := renderCleanRegisterPage(t, app)
 	assertBodyNotContainsAll(t, clean,
 		bodyStringMatch{fragment: `value="` + email + `"`, message: "did not expect register email to persist after flash is consumed"},
-		bodyStringMatch{fragment: "Use at least 8 characters with uppercase, lowercase, and a number.", message: "did not expect weak-password error after flash is consumed"},
+		bodyStringMatch{fragment: "Use 8 to 72 characters with uppercase, lowercase, and a number.", message: "did not expect weak-password error after flash is consumed"},
 	)
 }
 

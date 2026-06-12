@@ -252,7 +252,7 @@ components:
           type: string
           format: password
           minLength: 8
-          description: Must satisfy the password policy — 8+ Unicode code points, at least one uppercase letter, one lowercase letter, and one digit.
+          description: Must satisfy the password policy — 8+ Unicode code points, at most 72 bytes (bcrypt input limit), at least one uppercase letter, one lowercase letter, and one digit.
         confirm_password:
           type: string
           format: password
@@ -315,6 +315,7 @@ components:
           type: string
           format: password
           minLength: 8
+          description: Must satisfy the same password policy as registration — 8+ Unicode code points, at most 72 bytes (bcrypt input limit), with uppercase, lowercase, and a digit.
         confirm_password:
           type: string
           format: password
@@ -650,6 +651,7 @@ components:
           type: string
           format: password
           minLength: 8
+          description: Must satisfy the same password policy as registration — 8+ Unicode code points, at most 72 bytes (bcrypt input limit), with uppercase, lowercase, and a digit.
         confirm_password:
           type: string
           format: password
@@ -664,6 +666,7 @@ components:
           type: string
           format: password
           minLength: 8
+          description: Must satisfy the same password policy as registration — 8+ Unicode code points, at most 72 bytes (bcrypt input limit), with uppercase, lowercase, and a digit.
         confirm_password:
           type: string
           format: password
