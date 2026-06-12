@@ -9,6 +9,10 @@
   <div class="journal-panel text-sm journal-muted" data-stats-perimenopause-hint>{{t .Messages "stats.perimenopause_hint"}}</div>
   {{end}}
 
+  {{if .ShowShortCycleNotice}}
+  <div class="journal-panel text-sm journal-muted" data-stats-short-cycle-notice>{{t .Messages "stats.short_cycle_notice"}}</div>
+  {{end}}
+
   {{if not .HasInsights}}
   <section class="journal-card p-5 sm:p-6 space-y-4" data-stats-empty-state data-stats-completed-cycles="{{.CompletedCycleCount}}">
     <div class="stats-empty-hero" aria-hidden="true">

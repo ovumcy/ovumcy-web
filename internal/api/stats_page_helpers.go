@@ -189,6 +189,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"HasPhaseSymptomInsights":             viewData.HasPhaseSymptomInsights,
 		"ShowIrregularityNotice":              viewData.ShowIrregularityNotice,
 		"ShowIrregularInsufficientDataNotice": viewData.ShowIrregularInsufficientDataNotice,
+		"ShowShortCycleNotice":                viewData.ShowShortCycleNotice,
 		"ShowPerimenopauseHint":               viewData.ShowPerimenopauseHint,
 		"PredictionDisabled":                  viewData.PredictionDisabled,
 		"IsIrregularMode":                     viewData.IsIrregularMode,

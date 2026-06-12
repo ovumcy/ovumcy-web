@@ -449,3 +449,30 @@ func TestBuildStatsPageViewDataReturnsLoadSymptomsError(t *testing.T) {
 		t.Fatalf("expected ErrStatsPageViewLoadSymptoms, got %v", err)
 	}
 }
+
+func TestShouldShowStatsShortCycleNotice(t *testing.T) {
+	owner := &models.User{Role: models.RoleOwner}
+
+	cases := []struct {
+		name    string
+		user    *models.User
+		lengths []int
+		want    bool
+	}{
+		{name: "three short cycles trigger the note", user: owner, lengths: []int{22, 23, 20, 28}, want: true},
+		{name: "exactly the threshold count", user: owner, lengths: []int{21, 22, 23}, want: true},
+		{name: "two short cycles stay silent (single-event guard)", user: owner, lengths: []int{22, 23, 30, 29}, want: false},
+		{name: "24 is not short (boundary, matches info_cycle_short)", user: owner, lengths: []int{24, 24, 24}, want: false},
+		{name: "zero-length cycles are ignored, not counted as short", user: owner, lengths: []int{0, 0, 0, 28}, want: false},
+		{name: "no cycles", user: owner, lengths: nil, want: false},
+		{name: "nil user", user: nil, lengths: []int{20, 20, 20}, want: false},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := shouldShowStatsShortCycleNotice(testCase.user, testCase.lengths); got != testCase.want {
+				t.Fatalf("shouldShowStatsShortCycleNotice(%v) = %v, want %v", testCase.lengths, got, testCase.want)
+			}
+		})
+	}
+}

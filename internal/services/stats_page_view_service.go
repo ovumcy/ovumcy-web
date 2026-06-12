@@ -69,10 +69,15 @@ type StatsPageViewData struct {
 	// strings shown under one condition (was two always-equal fields).
 	ShowIrregularityNotice              bool
 	ShowIrregularInsufficientDataNotice bool
-	ShowPerimenopauseHint               bool
-	PredictionDisabled                  bool
-	IsIrregularMode                     bool
-	IsOwner                             bool
+	// ShowShortCycleNotice surfaces a soft, pattern-gated note when several
+	// recent completed cycles are clinically short (< 24 days). Gated at 3+
+	// occurrences so a single short or merged-log cycle never triggers it —
+	// deliberately anti-anxiety, framed as a pattern, not a single event.
+	ShowShortCycleNotice  bool
+	ShowPerimenopauseHint bool
+	PredictionDisabled    bool
+	IsIrregularMode       bool
+	IsOwner               bool
 }
 
 type statsPageBaseData struct {
@@ -111,6 +116,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 
 	showIrregularityNotice := shouldShowStatsIrregularityNotice(user, baseData.flags, baseData.stats)
 	showIrregularInsufficientDataNotice := shouldShowStatsIrregularInsufficientDataNotice(user, baseData.flags)
+	showShortCycleNotice := shouldShowStatsShortCycleNotice(user, CompletedCycleTrendLengths(baseData.logs, now, location))
 	showPerimenopauseHint := shouldShowStatsPerimenopauseHint(user)
 	predictionDisabled := DashboardPredictionDisabled(user)
 	isIrregularMode := isStatsIrregularMode(user)
@@ -156,6 +162,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		HasPhaseSymptomInsights:             ownerInsights.hasPhaseSymptomInsights,
 		ShowIrregularityNotice:              showIrregularityNotice,
 		ShowIrregularInsufficientDataNotice: showIrregularInsufficientDataNotice,
+		ShowShortCycleNotice:                showShortCycleNotice,
 		ShowPerimenopauseHint:               showPerimenopauseHint,
 		PredictionDisabled:                  predictionDisabled,
 		IsIrregularMode:                     isIrregularMode,
@@ -237,6 +244,34 @@ func shouldShowStatsIrregularityNotice(user *models.User, flags StatsFlags, stat
 
 func shouldShowStatsIrregularInsufficientDataNotice(user *models.User, flags StatsFlags) bool {
 	return user != nil && user.IrregularCycle && flags.CompletedCycleCount < 3
+}
+
+// shortCycleNoticeThresholdDays matches the app's existing "less common"
+// boundary (the settings/onboarding info_cycle_short advisory fires below
+// the same value), so the logged-cycle note and the cycle-length setting
+// stay consistent.
+const shortCycleNoticeThresholdDays = 24
+
+// shortCycleNoticeMinimumOccurrences requires a repeated pattern before the
+// note shows, so a one-off short cycle (or a missed-log artifact) never
+// surfaces medical wording.
+const shortCycleNoticeMinimumOccurrences = 3
+
+// shouldShowStatsShortCycleNotice surfaces a soft "several recent cycles are
+// short" note once the owner has at least shortCycleNoticeMinimumOccurrences
+// completed cycles below shortCycleNoticeThresholdDays. Pattern-gated on
+// purpose: a single short or merged-log cycle must not trigger medical copy.
+func shouldShowStatsShortCycleNotice(user *models.User, completedCycleLengths []int) bool {
+	if !IsOwnerUser(user) {
+		return false
+	}
+	short := 0
+	for _, length := range completedCycleLengths {
+		if length > 0 && length < shortCycleNoticeThresholdDays {
+			short++
+		}
+	}
+	return short >= shortCycleNoticeMinimumOccurrences
 }
 
 // shouldShowStatsPerimenopauseHint surfaces a STRAW+10-aligned educational

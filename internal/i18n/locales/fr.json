@@ -206,6 +206,7 @@
   "settings.age_group.45_plus": "45 ans et plus",
   "settings.age_group.unknown": "Non précisé",
   "stats.perimenopause_hint": "Après 45 ans, les cycles deviennent souvent moins prévisibles. Si vous remarquez des écarts persistants de 7 jours ou plus entre cycles consécutifs, cela peut être un signe précoce de périménopause — pensez à en parler à un·e professionnel·le de santé.",
+  "stats.short_cycle_notice": "Plusieurs de vos cycles récents durent moins de 24 jours. Des cycles aussi courts sont moins fréquents — pensez à en parler à un médecin.",
 
   "settings.goal.title": "Objectif d'utilisation",
   "settings.goal.hint": "Optionnel. Cela change la façon dont les jours fertiles sont présentés dans l'interface et les résumés. Cela ne modifie pas l'algorithme.",
