@@ -66,6 +66,17 @@ jobs:
       - name: Frontend build
         run: npm run build
 
+      - name: Committed bundles must match a fresh build
+        # Stale-bundle guard: the production image ships the committed
+        # web/static assets while e2e jobs test freshly built ones, so a
+        # source change committed without `npm run build` would ship bundles
+        # that were never tested. The build is hermetic and reproducible
+        # (explicit @source list in web/src/css/input.css; JS bundling is
+        # plain concatenation), so any diff here is a real stale bundle.
+        run: |
+          git diff --exit-code -- web/static/
+          test -z "$(git status --porcelain -- web/static/)"
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

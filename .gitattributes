@@ -8,5 +8,4 @@ package-lock.json linguist-generated=true
 web/static/css/tailwind.css linguist-generated=true
 web/static/js/app.js linguist-generated=true
 web/static/js/settings-export.js linguist-generated=true
-web/static/js/alpine.min.js linguist-vendored=true
 web/static/js/htmx.min.js linguist-vendored=true
