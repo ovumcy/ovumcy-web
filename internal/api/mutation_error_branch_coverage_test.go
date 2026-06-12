@@ -32,6 +32,11 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 		})
 	}
 
+	app.Get("/api/days", handler.GetDays)
+	app.Get("/api/days/:date", handler.GetDay)
+	app.Get("/api/v1/symptoms", handler.GetSymptoms)
+	app.Get("/api/v1/exports/csv", handler.ExportCSV)
+	app.Get("/api/v1/exports/json", handler.ExportJSON)
 	app.Delete("/api/days", handler.DeleteDailyLog)
 	app.Put("/api/days/:date", handler.UpsertDay)
 	app.Delete("/api/days/:date", handler.DeleteDay)
@@ -153,6 +158,11 @@ func TestMutationHandlersMapServiceFailuresThroughFailMutation(t *testing.T) {
 		{"cycle start mark", http.MethodPost, "/api/days/2026-02-17/cycle-start", "", ""},
 		{"cycle settings save", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"cycle_length": {"28"}, "period_length": {"5"}}.Encode(), form},
 		{"tracking settings save", http.MethodPatch, "/api/v1/users/current/tracking", url.Values{"track_bbt": {"true"}}.Encode(), form},
+		{"day list fetch", http.MethodGet, "/api/days?from=2026-01-01&to=2026-02-01", "", ""},
+		{"day fetch", http.MethodGet, "/api/days/2026-02-17", "", ""},
+		{"symptom list fetch", http.MethodGet, "/api/v1/symptoms", "", ""},
+		{"export csv fetch", http.MethodGet, "/api/v1/exports/csv", "", ""},
+		{"export json fetch", http.MethodGet, "/api/v1/exports/json", "", ""},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
