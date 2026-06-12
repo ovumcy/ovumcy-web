@@ -28,6 +28,8 @@
   "meta.description.privacy": "Politique de confidentialité Ovumcy - Zéro collecte de données, suivi du cycle auto-hébergé.",
 
   "nav.menu": "Menu",
+
+  "a11y.skip_to_content": "Aller au contenu principal",
   "nav.today": "Aujourd'hui",
   "nav.dashboard": "Tableau de bord",
   "nav.calendar": "Calendrier",

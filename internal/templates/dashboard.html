@@ -307,7 +307,7 @@
 
         <div class="flex flex-wrap items-center gap-3">
           <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if .TodayEntryExists}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_today"}}{{end}}</button>
-          <div id="save-status" class="save-status text-sm"></div>
+          <div id="save-status" class="save-status text-sm" aria-live="polite"></div>
           <div class="dashboard-autosave-indicator journal-muted text-xs" data-dashboard-autosave-indicator aria-live="polite">{{t .Messages "dashboard.autosave_idle"}}</div>
         </div>
       </form>

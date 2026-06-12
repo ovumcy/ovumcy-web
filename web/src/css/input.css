@@ -32,6 +32,29 @@
   @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
 }
 
+@utility skip-link {
+  position: absolute;
+  top: -100vh;
+  left: 1rem;
+  z-index: 60;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--header-border);
+  background: var(--header-bg);
+  color: var(--brand-color);
+  font-size: 0.875rem;
+  font-weight: 600;
+
+  &:focus {
+    top: 0.75rem;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(169, 137, 231, 0.58);
+    outline-offset: 3px;
+  }
+}
+
 @utility paper-header {
   position: sticky;
   top: 0;

@@ -788,6 +788,7 @@
     }
 
     var pendingResolve = null;
+    var previouslyFocused = null;
 
     function closeConfirm(accepted) {
       if (!pendingResolve) {
@@ -797,6 +798,10 @@
       pendingResolve = null;
       modal.classList.add("hidden");
       modal.setAttribute("aria-hidden", "true");
+      if (previouslyFocused && typeof previouslyFocused.focus === "function" && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
+      previouslyFocused = null;
       resolve(accepted);
     }
 
@@ -805,6 +810,10 @@
         pendingResolve(false);
         pendingResolve = null;
       }
+
+      previouslyFocused = document.activeElement && document.activeElement !== document.body
+        ? document.activeElement
+        : null;
 
       messageNode.textContent = question || "";
       cancelButton.textContent = document.body.getAttribute("data-confirm-cancel") || "Cancel";
@@ -837,6 +846,29 @@
     document.addEventListener("keydown", function (event) {
       if (event.key === "Escape") {
         closeConfirm(false);
+        return;
+      }
+
+      if (event.key !== "Tab" || !pendingResolve) {
+        return;
+      }
+
+      // The dialog exposes exactly two focusable controls, so the trap
+      // cycles between them; anything outside the modal re-enters at the
+      // edge matching the tab direction.
+      var first = cancelButton;
+      var last = acceptButton;
+      var active = document.activeElement;
+      if (event.shiftKey) {
+        if (active === first || !modal.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+      if (active === last || !modal.contains(active)) {
+        event.preventDefault();
+        first.focus();
       }
     });
 
@@ -1437,8 +1469,16 @@
   }
 
   function createToastStack() {
+    var existing = document.querySelector(".toast-stack");
+    if (existing) {
+      return existing;
+    }
     var stack = document.createElement("div");
     stack.className = "toast-stack";
+    // aria-live without role="status": status implies aria-atomic, which
+    // would re-announce every toast already in the stack each time a new
+    // one is appended.
+    stack.setAttribute("aria-live", "polite");
     document.body.appendChild(stack);
     return stack;
   }
@@ -1469,13 +1509,13 @@
   var successStatusClearTimers = new WeakMap();
 
   function initToastAPI() {
-    var stack = null;
+    // The live region must already be in the accessibility tree before the
+    // first toast lands in it — a region inserted and populated in the same
+    // breath is skipped by screen readers — so the stack is created eagerly
+    // instead of on first use.
+    var stack = createToastStack();
 
     function getStack() {
-      if (stack) {
-        return stack;
-      }
-      stack = createToastStack();
       return stack;
     }
 
