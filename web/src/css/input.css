@@ -1,4 +1,24 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
+
+/*
+  Hermetic content sources. Tailwind's automatic detection scans every file
+  not matched by the local .gitignore — including untracked operator notes
+  and files hidden only via a global git excludes file — so a stray word
+  like "outline" or "sticky" anywhere in the tree can mint an unused
+  utility into the shipped bundle and make builds machine-dependent.
+  Class names legitimately live only in the server templates, the shared
+  Go markup helpers (internal/httpx), and the client JS; scan exactly
+  those. The CI stale-bundle guard relies on this build being reproducible.
+*/
+@source "../../../internal/templates";
+@source "../../../internal/httpx";
+/* Calendar day-cell classes are composed in Go view helpers, not in the
+   templates (the template renders {{.CellClass}}). Scan exactly that file
+   rather than all of internal/api, so Go prose/comments elsewhere cannot
+   mint utilities. */
+@source "../../../internal/api/calendar_days_view_helpers.go";
+@source "../js";
+@source "../../static/js/chart-lite.js";
 
 @theme {
   --shadow-glow:
