@@ -18,22 +18,20 @@ func ParseExportRange(rawFrom string, rawTo string, location *time.Location) (*t
 
 	var from *time.Time
 	if fromRaw != "" {
-		parsedFrom, err := time.ParseInLocation("2006-01-02", fromRaw, location)
+		parsedFrom, err := ParseDayDate(fromRaw, location)
 		if err != nil {
 			return nil, nil, ErrExportFromDateInvalid
 		}
-		normalizedFrom := DateAtLocation(parsedFrom, location)
-		from = &normalizedFrom
+		from = &parsedFrom
 	}
 
 	var to *time.Time
 	if toRaw != "" {
-		parsedTo, err := time.ParseInLocation("2006-01-02", toRaw, location)
+		parsedTo, err := ParseDayDate(toRaw, location)
 		if err != nil {
 			return nil, nil, ErrExportToDateInvalid
 		}
-		normalizedTo := DateAtLocation(parsedTo, location)
-		to = &normalizedTo
+		to = &parsedTo
 	}
 
 	if from != nil && to != nil && to.Before(*from) {

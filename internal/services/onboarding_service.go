@@ -58,14 +58,16 @@ func (service *OnboardingService) ValidateAndParseStep1StartDate(raw string, now
 		return time.Time{}, ErrOnboardingStartDateRequired
 	}
 
-	parsed, err := time.ParseInLocation("2006-01-02", value, location)
+	parsed, err := ParseDayDate(value, location)
 	if err != nil {
 		return time.Time{}, ErrOnboardingStartDateInvalid
 	}
 	if err := service.ValidateStep1StartDate(parsed, now, location); err != nil {
 		return time.Time{}, err
 	}
-	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC), nil
+	// Stored date-only field: canonicalize to UTC midnight of the same
+	// calendar day (see day_utils.go on the two shapes).
+	return CalendarDay(parsed, time.UTC), nil
 }
 
 func (service *OnboardingService) SaveStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) (int, int, error) {

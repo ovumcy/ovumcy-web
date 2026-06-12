@@ -63,7 +63,7 @@ func (service *SettingsService) ValidateCycleSettings(input CycleSettingsValidat
 	if location == nil {
 		location = time.UTC
 	}
-	parsedDay, err := time.ParseInLocation("2006-01-02", rawDate, location)
+	parsedDay, err := ParseDayDate(rawDate, location)
 	if err != nil {
 		return CycleSettingsUpdate{}, ErrSettingsCycleStartDateInvalid
 	}
@@ -73,7 +73,9 @@ func (service *SettingsService) ValidateCycleSettings(input CycleSettingsValidat
 		return CycleSettingsUpdate{}, ErrSettingsCycleStartDateInvalid
 	}
 
-	canonical := time.Date(parsedDay.Year(), parsedDay.Month(), parsedDay.Day(), 0, 0, 0, 0, time.UTC)
+	// Stored date-only field: canonicalize to UTC midnight of the same
+	// calendar day (see day_utils.go on the two shapes).
+	canonical := CalendarDay(parsedDay, time.UTC)
 	update.LastPeriodStart = &canonical
 	return update, nil
 }

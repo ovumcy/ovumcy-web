@@ -88,11 +88,7 @@ func parseCalendarMonthQuery(raw string, now time.Time, location *time.Location)
 }
 
 func parseCalendarDayParam(raw string, location *time.Location) (time.Time, error) {
-	parsed, err := time.ParseInLocation("2006-01-02", raw, location)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return DateAtLocation(parsed, location), nil
+	return ParseDayDate(raw, location)
 }
 
 func clampCalendarMonthToMinimum(monthStart time.Time, minMonth time.Time, location *time.Location) time.Time {
