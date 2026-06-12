@@ -116,8 +116,25 @@ func main() {
 	defer stopSignals()
 
 	logStartup(config)
-	if err := app.Listen(":" + config.Port); err != nil {
+	// codecov:ignore:start -- main() run loop; closeDatabase itself is unit-tested.
+	err = app.Listen(":" + config.Port)
+	// Listen returns after a graceful Shutdown (or with a listener error);
+	// close the database so SQLite checkpoints its WAL and releases the file
+	// before the process exits.
+	closeDatabase(database)
+	if err != nil {
 		log.Fatalf("server exited: %v", err)
+	}
+	// codecov:ignore:end
+}
+
+func closeDatabase(database *gorm.DB) {
+	sqlDB, err := database.DB()
+	if err == nil {
+		err = sqlDB.Close()
+	}
+	if err != nil {
+		log.Printf("database close: %v", err) // codecov:ignore -- defensive: DB() on a healthy pool and Close on the sqlite pool do not error in-process.
 	}
 }
 

@@ -1523,3 +1523,27 @@ func mustRateLimitedResponse(t *testing.T, app *fiber.App, request *http.Request
 	})
 	return response
 }
+
+// TestCloseDatabaseClosesUnderlyingConnection verifies the close-on-exit
+// path actually releases the database: after closeDatabase the underlying
+// *sql.DB must reject further use, so SQLite has checkpointed its WAL and
+// freed the file before process exit.
+func TestCloseDatabaseClosesUnderlyingConnection(t *testing.T) {
+	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "close-test.db"))
+	if err != nil {
+		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+	}
+
+	closeDatabase(database)
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("database.DB() unexpected error: %v", err)
+	}
+	if err := sqlDB.Ping(); err == nil {
+		t.Fatal("expected Ping to fail after closeDatabase, got nil")
+	}
+
+	// A second close must stay quiet (idempotent exit path).
+	closeDatabase(database)
+}
