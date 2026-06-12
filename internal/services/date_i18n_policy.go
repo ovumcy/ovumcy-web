@@ -149,6 +149,11 @@ func localizedDayMonth(language string, value time.Time, withYear bool) string {
 	months := monthShortNames[lang]
 	monthIndex := int(value.Month()) - 1
 	if monthIndex < 0 || monthIndex >= len(months) {
+		// codecov:ignore:start -- defensive fallback: time.Month() is always
+		// 1-12 for any time.Time (time.Date normalizes out-of-range months)
+		// and every monthShortNames table has 12 entries, so this branch is
+		// unreachable. Kept so a future table edit degrades to a stdlib
+		// format instead of an index panic.
 		switch {
 		case lang == "en" && withYear:
 			return value.Format("Jan 2, 2006")
@@ -159,6 +164,7 @@ func localizedDayMonth(language string, value time.Time, withYear bool) string {
 		default:
 			return value.Format("2 Jan")
 		}
+		// codecov:ignore:end
 	}
 	month := months[monthIndex]
 

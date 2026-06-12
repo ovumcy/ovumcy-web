@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +58,30 @@ func TestSettingsChangePasswordReissuesSessionAndRejectsPreviousCookie(t *testin
 
 	if freshSessionResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected fresh auth cookie to stay valid, got %d", freshSessionResponse.StatusCode)
+	}
+}
+
+// TestSettingsChangePasswordHTMXRespondsWithSuccessStatusMarkup pins the
+// HTMX branch of respondPasswordChanged: the success response is the
+// shared dismissible status markup (localized, with the English fallback
+// policy living in htmxSettingsSuccessMarkup).
+func TestSettingsChangePasswordHTMXRespondsWithSuccessStatusMarkup(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "change-password-htmx@example.com")
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", url.Values{
+		"current_password": {"StrongPass1"},
+		"new_password":     {"EvenStronger2"},
+		"confirm_password": {"EvenStronger2"},
+	}, map[string]string{
+		"HX-Request": "true",
+	})
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+	body := mustReadBodyString(t, response.Body)
+	if !strings.Contains(body, "status-ok") {
+		t.Fatalf("expected dismissible status-ok markup in HTMX response, got %q", body)
 	}
 }
