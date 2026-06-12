@@ -11,7 +11,7 @@ import (
 // no-CSRF test app or a valid-token happy path. Each request is sent through the
 // real app (CSRF middleware mounted) with the auth and csrf cookies present but
 // no csrf_token form field, so the CSRF middleware must reject it with 403
-// before the handler runs. Per .agents/context/security.md, every state-mutating
+// before the handler runs. Per the CSRF security invariant, every state-mutating
 // endpoint needs its own missing-token 403 regression — adjacent coverage does
 // not satisfy the rule, so each route gets its own subtest assertion here.
 func TestStateMutatingEndpointsRejectMissingCSRFToken(t *testing.T) {

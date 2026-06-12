@@ -13,7 +13,7 @@ import (
 // switch as a backend contract: POST /lang sets the locale cookie, redirects
 // back to the requested path, and the subsequent login render carries the
 // matching <html lang="..."> attribute. Per the backend HTML regression
-// contract (.agents/context/security.md), exact localized phrasing is a
+// contract (docs/SECURITY_INVARIANTS.md), exact localized phrasing is a
 // Playwright concern (e2e/navigation-language.spec.ts) and is intentionally not
 // asserted here — only the structural locale wiring.
 func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {

@@ -14,7 +14,7 @@
 #   diff [ref]      Mutate only code changed vs <ref> (default origin/main).
 #                   Fast enough for CI. Advisory: never fails the build.
 #
-# The auditor skill (.claude/skills/test-suite-auditor) consumes the JSON output
+# The test-suite auditor consumes the JSON output
 # to triage survivors into "real test gap" vs "equivalent mutant".
 #
 # Mutation testing is intentionally scoped to business-logic + security packages.

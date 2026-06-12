@@ -56,12 +56,9 @@ TASK-*.md
 .tmp_*/
 .tmp*/
 .local/
-.agents/
-.codex/
 test-results/
 playwright-report/
 docs/screenshots/ovumcy-social-preview.png
-.claude/
 scripts/take-screenshots.mjs
 scripts/record-demo.mjs
 docs/demo.mp4

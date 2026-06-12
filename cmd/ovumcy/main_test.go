@@ -650,7 +650,7 @@ func assertProxyRuntimeConfig(t *testing.T, config runtimeConfig) {
 
 // TestLoadRuntimeConfigDefaultsAuditLogOff locks the privacy-first default:
 // when AUDIT_LOG_ENABLED is unset the runtime must NOT emit per-action audit
-// logs. This matches SECURITY.md, AI_CONTEXT.md, and .env.example, all of which
+// logs. This matches SECURITY.md and .env.example, both of which
 // state audit logging is off by default. (The existing audit-flag test forces
 // the flag with SetAuditLogEnabled and does not exercise the startup default.)
 func TestLoadRuntimeConfigDefaultsAuditLogOff(t *testing.T) {
@@ -664,7 +664,7 @@ func TestLoadRuntimeConfigDefaultsAuditLogOff(t *testing.T) {
 		t.Fatalf("load runtime config: %v", err)
 	}
 	if config.AuditLogEnabled {
-		t.Fatal("AUDIT_LOG_ENABLED must default to false (off by default per SECURITY.md / AI_CONTEXT.md / .env.example)")
+		t.Fatal("AUDIT_LOG_ENABLED must default to false (off by default per SECURITY.md / .env.example)")
 	}
 }
 

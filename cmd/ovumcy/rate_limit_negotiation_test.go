@@ -249,7 +249,7 @@ func TestAPIRateLimitHandlerReturnsStatusErrorMarkupForHTMX(t *testing.T) {
 }
 
 func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
-	// Privacy invariant from .agents/context/security.md:
+	// Privacy invariant:
 	// "Retry-After header on rate-limit responses MUST NOT expose precise
 	// internal timer state that could be used as an oracle." The Fiber
 	// limiter encodes a coarse integer second count bounded by the configured
