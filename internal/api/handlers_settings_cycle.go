@@ -31,11 +31,7 @@ func (handler *Handler) UpdateCycleSettings(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	}
 	if isHTMX(c) {
-		message := translateMessage(currentMessages(c), "settings.success.cycle_updated")
-		if message == "settings.success.cycle_updated" {
-			message = "Cycle settings updated successfully."
-		}
-		return c.SendString(htmxDismissibleSuccessStatusMarkup(currentMessages(c), message))
+		return c.SendString(htmxSettingsSuccessMarkup(c, "cycle_updated", "Cycle settings updated successfully."))
 	}
 
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "cycle_updated"})

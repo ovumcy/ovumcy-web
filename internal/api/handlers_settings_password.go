@@ -233,12 +233,7 @@ func (handler *Handler) respondPasswordChanged(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"ok": true})
 	}
 	if isHTMX(c) {
-		messageKey := services.SettingsStatusTranslationKey("password_changed")
-		message := translateMessage(currentMessages(c), messageKey)
-		if message == "" || message == messageKey {
-			message = "Password changed successfully."
-		}
-		return c.SendString(htmxDismissibleSuccessStatusMarkup(currentMessages(c), message))
+		return c.SendString(htmxSettingsSuccessMarkup(c, "password_changed", "Password changed successfully."))
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "password_changed"})
 	return redirectOrJSON(c, "/settings")

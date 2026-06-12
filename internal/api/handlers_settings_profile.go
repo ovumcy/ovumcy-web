@@ -5,7 +5,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/models"
-	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
@@ -38,12 +37,7 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 	}
 	if isHTMX(c) {
 		updatedUser := userAfterProfileUpdate(user, displayName)
-		messageKey := services.SettingsStatusTranslationKey(status)
-		message := translateMessage(currentMessages(c), messageKey)
-		if message == "" || message == messageKey {
-			message = "Profile updated successfully."
-		}
-		responseBody := htmxDismissibleSuccessStatusMarkup(currentMessages(c), message)
+		responseBody := htmxSettingsSuccessMarkup(c, status, "Profile updated successfully.")
 		oobMarkup, err := handler.renderPartialString(c, "current_user_identity_oob", fiber.Map{
 			"CurrentUser": updatedUser,
 		})

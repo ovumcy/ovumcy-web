@@ -53,12 +53,7 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 		})
 	}
 	if isHTMX(c) {
-		messageKey := services.SettingsStatusTranslationKey(status)
-		message := translateMessage(currentMessages(c), messageKey)
-		if message == "" || message == messageKey {
-			message = "Tracking settings updated successfully."
-		}
-		return c.SendString(htmxDismissibleSuccessStatusMarkup(currentMessages(c), message))
+		return c.SendString(htmxSettingsSuccessMarkup(c, status, "Tracking settings updated successfully."))
 	}
 
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: status})
