@@ -49,9 +49,7 @@ Thumbs.db
 *.swo
 
 # Local task notes and scratch files
-AGENTS.md
 SKILL.md
-AI_CONTEXT.md
 PROJECT_CONTEXT.md
 BUGFIXES.md
 TASK-*.md

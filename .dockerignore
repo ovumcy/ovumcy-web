@@ -32,8 +32,6 @@ profile.cov
 **/testdata/
 .mutation/
 
-AGENTS.md
-AI_CONTEXT.md
 PROJECT_CONTEXT.md
 BUGFIXES.md
 TASK-*.md

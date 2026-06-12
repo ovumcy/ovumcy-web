@@ -1,6 +1,6 @@
 # Security Invariants
 
-This file is the **repo-visible** mirror of the security-critical invariants the codebase enforces. The full developer-facing context lives in agent-only files (`AGENTS.md`, `AI_CONTEXT.md`, `.agents/context/`) that are intentionally gitignored. New contributors who only see the public repository should be able to follow the list below before changing any code that touches auth, cookies, role boundaries, or privacy data.
+This file is the **repo-visible** mirror of the security-critical invariants the codebase enforces. The full developer-facing context lives in agent-only files that are intentionally gitignored. New contributors who only see the public repository should be able to follow the list below before changing any code that touches auth, cookies, role boundaries, or privacy data.
 
 Every entry has a corresponding test or set of tests in `SECURITY.md → Test Enforcement Matrix`. If you change behaviour around an entry, the test must change in the same commit.
 
