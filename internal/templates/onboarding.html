@@ -61,7 +61,7 @@
         <div class="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6 onboarding-day-grid" data-onboarding-day-options></div>
 
         <button type="submit" class="btn-primary">{{t .Messages "onboarding.button.next"}}</button>
-        <div id="onboarding-step1-status" class="save-status text-sm"></div>
+        <div id="onboarding-step1-status" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
 
@@ -191,7 +191,7 @@
               data-onboarding-step2-submit>{{t .Messages "onboarding.button.finish"}}</button>
           </span>
         </div>
-        <div id="onboarding-step2-status" class="save-status text-sm"></div>
+        <div id="onboarding-step2-status" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
   </div>

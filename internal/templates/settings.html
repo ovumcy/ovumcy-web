@@ -174,7 +174,7 @@
           data-save-button
           data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.cycle.save"}}</button>
         <button type="button" class="btn-secondary" data-settings-cycle-discard>{{t .Messages "settings.draft.discard"}}</button>
-        <div id="settings-cycle-status" class="save-status text-sm"></div>
+        <div id="settings-cycle-status" class="save-status text-sm" aria-live="polite"></div>
       </div>
     </form>
   </section>
@@ -337,7 +337,7 @@
           data-save-button
           data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.tracking.save"}}</button>
         <button type="button" class="btn-secondary" data-settings-tracking-discard>{{t .Messages "settings.draft.discard"}}</button>
-        <div id="settings-tracking-status" class="save-status text-sm"></div>
+        <div id="settings-tracking-status" class="save-status text-sm" aria-live="polite"></div>
       </div>
     </form>
   </section>
@@ -743,7 +743,7 @@
           "Autocomplete" "current-password"
           "Required" true)}}
         <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.submit"}}</button>
-        <div id="settings-clear-data-status" class="save-status text-sm"></div>
+        <div id="settings-clear-data-status" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
     {{else}}
@@ -778,7 +778,7 @@
           "Required" true)}}
 
         <button type="submit" class="btn-danger">{{t .Messages "settings.delete_account.submit"}}</button>
-        <div id="delete-account-feedback" class="save-status text-sm"></div>
+        <div id="delete-account-feedback" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
     {{else}}

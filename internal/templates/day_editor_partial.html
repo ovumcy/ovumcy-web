@@ -117,7 +117,7 @@
     <div class="flex flex-wrap items-center gap-3">
       <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if gt .Log.ID 0}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_day"}}{{end}}</button>
       <button type="button" class="btn-secondary" hx-get="/calendar/day/{{.DateString}}" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-cancel>{{t .Messages "common.cancel"}}</button>
-      <div id="calendar-save-status" class="save-status text-sm"></div>
+      <div id="calendar-save-status" class="save-status text-sm" aria-live="polite"></div>
     </div>
   </form>
 
