@@ -19,6 +19,41 @@ file is the reviewed summary committed alongside the code.
 Efficacy over *killable* mutants is 100%: every survivor below is an equivalent
 mutant — a fault that cannot change any observable output — verified individually.
 
+## Round 3 hardening (2026-06-13)
+
+The 10 commits between `ac3a4af` and `main` (audit phases 2–3, robustness/auth
+hardening) introduced new code whose mutants were not yet covered, drifting the
+killable-survivor count up from 4. Round 3 adds six focused test files
+(`mutation_round3_{cycles,dashboard,day,i18n,stats,auth}_test.go`, ~52 tests)
+that close the genuine gaps. **Every kill was verified per-mutant**: the exact
+gremlins mutation was applied to the source and the targeted test confirmed to
+fail, then reverted. Verified-killed survivor classes include:
+
+- cycle math: `BuildCycleStats` observed-vs-detected starts, nil-location guards
+  (`cycle_anchor`, `cycle_baseline`), `CalcOvulationDay`/`PredictCycleWindow`/
+  `CycleLengthSpread`/`ResolveLutealPhase` boundaries;
+- dashboard: irregular range `Max==Min`, `dashboardCycleHeroCurrentPhase`
+  menstrual/ovulation/luteal day boundaries;
+- day/calendar: `DayHasData`/`IsAutoFilledPeriodCandidate` mood boundaries,
+  upsert/cycle-start transaction-error propagation;
+- i18n: `LocalizedMonthYear`/`LocalizedDateLabel`/`LocalizedDashboardDate` January
+  boundary, `russianPluralForm` lastDigit 1/2/4 boundaries;
+- stats: reliability thresholds (3/6 cycles), `phaseForCompletedCycleDay` phase
+  boundaries, `classifyStatsCycleFactorComparison` ±delta boundaries,
+  `predictionExplanationPrimaryKey` branch selection, `compareISODate`,
+  builtin-symptom sort;
+- auth: `AuthAttemptPolicy.Configure` window lower bound, `attempt_limiter` sweep
+  counter/size-guard, CAS session-version bump assertion.
+
+The headline efficacy figure is re-measured by the weekly CI `mutation.yml` job
+(clean Linux, stable Docker for the Postgres integration tests) and refreshes
+from there — local Windows re-measurement was not used for the number because
+(a) the Docker-backed Postgres integration tests (`testdb.StartPostgresDSN`)
+perturb gremlins' single coverage pass when Docker is slow/cold, and
+(b) gremlins' parallel-worker runs were not reproducible on this host. The
+per-mutant verification above is the authoritative evidence that these mutants
+are killed.
+
 ## Documented equivalent mutants
 
 ### 1–2. `cycles.go:315` — luteal-phase default guard (BOUNDARY, NEGATION)
