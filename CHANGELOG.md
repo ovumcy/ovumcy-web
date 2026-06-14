@@ -9,24 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.3.0] - 2026-06-13
 
+A large security-and-quality release: a multi-phase security audit follow-up
+across auth, sessions, OIDC, privacy, and accessibility; medically-aligned
+cycle prediction; a full ru/es/de/fr localization pass; major frontend
+dependency migrations (htmx 2, Tailwind 4); and substantial test, CI, and
+build-hardening work. No database migrations; no breaking API changes.
+
 ### Security
 
-- **Auth and OIDC hardening (audit follow-up).** Per-IP/identity rate-limit key generation reworked, OIDC discovery/token endpoints origin-pinned against SSRF, the AEAD sealed-cookie path consolidated, request-scoped `context.Context` threaded through the data layer, and the reset-token compare-and-swap folded into `AuthUserRepository` with its dead fallback removed. Behavior-preserving where it counts; defense-in-depth elsewhere.
-- **CSRF tokens are kept out of GET request URLs.** Token transport moved off the query string so it cannot leak via history, logs, or referrers.
-- **Contract and privacy fixes.** Auth/settings validation errors stay in flash/session state rather than URL query parameters, and enumeration-safety wording was tightened across registration and recovery.
+- **Storage and proxy hardening.** SQLite now boots with foreign-key enforcement and WAL mode; the per-request rate-limit keying behind a trusted proxy was corrected so limits key on the real client, not the proxy hop.
+- **Auth, sessions, and OIDC hardening.** Reworked per-IP / per-identity rate-limit key generation; origin-pinned the OIDC discovery and token endpoints against SSRF; consolidated the AEAD sealed-cookie path; threaded request-scoped `context.Context` through the data layer; and folded the reset-token compare-and-swap into `AuthUserRepository`, dropping its dead fallback. Behavior-preserving where it counts, defense-in-depth elsewhere.
+- **Robustness & auth hardening (audit phase 3).** Additional hardening of auth and recovery flows, with the security-claim test matrix kept in step.
+- **Contract & privacy fixes (audit phase 2).** Auth/settings validation errors stay in flash/session state instead of URL query parameters; registration and recovery wording was made enumeration-safe.
+- **CSRF tokens are kept out of GET request URLs.** Token transport moved off the query string so it cannot leak via browser history, logs, or `Referer`.
+- **Security-policy & docs corrections** carried through the audit follow-ups (claim matrix, documented headers/rate-limits) to keep `SECURITY.md` true to the code.
 
 ### Changed
 
 - **Cycle predictions now use the median cycle length, not the mean**, and the current cycle day is counted on a DST-immune calendar basis. Medical docs and on-screen labeling were aligned to match.
-- **Localization pass across ru/es/de/fr.** Count-bearing stats strings use CLDR plural categories; Russian copy uses the consistent formal «Вы» register; terminology was unified (e.g. ru «панель»/«Аналитика»/«Базовая линия»/«БТТ»). Walkthrough findings also fixed an i18n gap, a settings toggle bug, a dashboard label, and a short-cycle note.
-- **Accessibility hardening.** Focus management for the confirm modal, `aria-live` status/toast regions, and a skip-to-content link.
+- **Full localization pass across ru/es/de/fr.** Count-bearing stats strings use CLDR plural categories; Russian copy uses the consistent formal «Вы» register; terminology unified (e.g. ru «панель»/«Аналитика»/«Базовая линия»/«БТТ», es/de/fr canon). Walkthrough findings additionally fixed an i18n gap, a settings toggle bug, a dashboard label, and a short-cycle note.
+- **Accessibility hardening (audit phase 4).** Focus management/restoration for the confirm modal, `aria-live` status and toast regions, and a skip-to-content link.
+- **Operator docs:** documented `REGISTRATION_MODE=closed` as the recommended default for public deployments.
+
+### Dependencies
+
+- **htmx 1.9.12 → 2.0.10** (major) and **Tailwind CSS 3.4.19 → 4.3.0 → 4.3.1** (major) frontend migrations, with the committed `web/static` bundle rebuilt against the new toolchains.
+- Go: `golang.org/x/net` 0.55 → 0.56 and the `go-minor-patch` group (6 updates).
+- Tooling/base: Alpine 3.22.3 → 3.24.0, the GitHub Actions group (14 updates), `eslint` 10.4.1 → 10.5.0, `globals` 15.15.0 → 17.6.0, and other npm dev-dep minor/patch bumps.
 
 ### Internal
 
-- Hermetic asset builds with a CI stale-bundle guard (committed `web/static` must match a fresh `npm run build`); shared dependency wiring extracted into `internal/bootstrap`; secure-cookie codec deduplicated.
-- Test quality: coverage quality pass (dead-symbol removal, vacuous-test fixes), and a round-3 mutation-hardening pass adding per-mutant-verified tests for service-layer survivors introduced by the audit work.
-- OpenSSF Scorecard fix: renamed `.mutation/security.md` so it no longer shadows `SECURITY.md` in the basename-matched Security-Policy check.
-- Dependencies: `golang.org/x/net` 0.55 → 0.56; npm dev-deps (`@tailwindcss/cli`/`tailwindcss` 4.3.0 → 4.3.1, `eslint` 10.4.1 → 10.5.0) with the CSS bundle rebuilt.
+- **Hermetic asset builds + CI stale-bundle guard** — committed `web/static` must match a fresh `npm run build`, enforced in CI (audit #2).
+- **Refactors:** shared dependency wiring extracted into `internal/bootstrap`; the secure-cookie codec deduplicated via a lazy `Handler.cookieCodec()`; maintainability-debt cleanup (audit phase 6); internal document-collision elimination.
+- **Test quality:** a coverage quality pass (dead-symbol removal, vacuous-test fixes, meaningful gap-filling, browser a11y), structural `data-*` test rewrites + TOTP codec coverage, and a round-3 mutation-hardening pass adding per-mutant-verified tests for service-layer survivors introduced by the audit work.
+- **CI:** patch-coverage enforced in-CI via `scripts/patchcov`; browser e2e skipped on docs-only pull requests; OpenSSF Scorecard fix — renamed `.mutation/security.md` so it no longer shadows `SECURITY.md` in the basename-matched Security-Policy check.
 
 ## [1.2.0] - 2026-06-09
 
