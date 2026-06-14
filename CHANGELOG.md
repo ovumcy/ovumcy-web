@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-13
+
+### Security
+
+- **Auth and OIDC hardening (audit follow-up).** Per-IP/identity rate-limit key generation reworked, OIDC discovery/token endpoints origin-pinned against SSRF, the AEAD sealed-cookie path consolidated, request-scoped `context.Context` threaded through the data layer, and the reset-token compare-and-swap folded into `AuthUserRepository` with its dead fallback removed. Behavior-preserving where it counts; defense-in-depth elsewhere.
+- **CSRF tokens are kept out of GET request URLs.** Token transport moved off the query string so it cannot leak via history, logs, or referrers.
+- **Contract and privacy fixes.** Auth/settings validation errors stay in flash/session state rather than URL query parameters, and enumeration-safety wording was tightened across registration and recovery.
+
+### Changed
+
+- **Cycle predictions now use the median cycle length, not the mean**, and the current cycle day is counted on a DST-immune calendar basis. Medical docs and on-screen labeling were aligned to match.
+- **Localization pass across ru/es/de/fr.** Count-bearing stats strings use CLDR plural categories; Russian copy uses the consistent formal «Вы» register; terminology was unified (e.g. ru «панель»/«Аналитика»/«Базовая линия»/«БТТ»). Walkthrough findings also fixed an i18n gap, a settings toggle bug, a dashboard label, and a short-cycle note.
+- **Accessibility hardening.** Focus management for the confirm modal, `aria-live` status/toast regions, and a skip-to-content link.
+
+### Internal
+
+- Hermetic asset builds with a CI stale-bundle guard (committed `web/static` must match a fresh `npm run build`); shared dependency wiring extracted into `internal/bootstrap`; secure-cookie codec deduplicated.
+- Test quality: coverage quality pass (dead-symbol removal, vacuous-test fixes), and a round-3 mutation-hardening pass adding per-mutant-verified tests for service-layer survivors introduced by the audit work.
+- OpenSSF Scorecard fix: renamed `.mutation/security.md` so it no longer shadows `SECURITY.md` in the basename-matched Security-Policy check.
+- Dependencies: `golang.org/x/net` 0.55 → 0.56; npm dev-deps (`@tailwindcss/cli`/`tailwindcss` 4.3.0 → 4.3.1, `eslint` 10.4.1 → 10.5.0) with the CSS bundle rebuilt.
+
 ## [1.2.0] - 2026-06-09
 
 ### Added
@@ -468,7 +489,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.0.0...v1.1.0
