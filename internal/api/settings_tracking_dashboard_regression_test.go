@@ -70,6 +70,36 @@ func TestTrackingSettingsGateLHTestFieldOnDashboard(t *testing.T) {
 	)
 }
 
+func TestCalendarDayEditorRendersPersistedLHTestValue(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-lh-value@example.com")
+
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).
+		Update("track_lh_test", true).Error; err != nil {
+		t.Fatalf("enable lh tracking: %v", err)
+	}
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	if err := ctx.database.Create(&models.DailyLog{
+		UserID: ctx.user.ID,
+		Date:   today,
+		LHTest: models.LHTestPeak,
+	}).Error; err != nil {
+		t.Fatalf("seed persisted lh day: %v", err)
+	}
+
+	editorRequest := httptest.NewRequest(http.MethodGet, "/calendar/day/"+today.Format("2006-01-02")+"?mode=edit", nil)
+	editorRequest.Header.Set("Accept-Language", "en")
+	editorRequest.Header.Set("Cookie", ctx.authCookie)
+	editorResponse := mustAppResponse(t, ctx.app, editorRequest)
+	assertStatusCode(t, editorResponse, http.StatusOK)
+	rendered := mustReadBodyString(t, editorResponse.Body)
+
+	// A persisted value must render as the pre-selected radio (regression guard
+	// for the FindByUserAndDayRange column-select load path).
+	if !regexp.MustCompile(`value="peak"\s+class="choice-input"\s+checked`).MatchString(rendered) {
+		t.Fatal("expected persisted LH peak value to render as the checked option")
+	}
+}
+
 func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-recovery-return@example.com")
 

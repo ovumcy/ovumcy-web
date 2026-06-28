@@ -79,6 +79,7 @@ func (repo *DailyLogRepository) FindByUserAndDayRange(ctx context.Context, userI
 			"bbt",
 			"cervical_mucus",
 			"pregnancy_test",
+			"lh_test",
 			"cycle_factor_keys",
 			"symptom_ids",
 			"notes",

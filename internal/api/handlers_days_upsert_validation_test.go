@@ -253,3 +253,49 @@ func TestUpsertDayNormalizesUnknownPregnancyTest(t *testing.T) {
 		t.Fatalf("expected unknown pregnancy test normalized to %q, got %q", models.PregnancyTestNone, entry.PregnancyTest)
 	}
 }
+
+func TestUpsertDayPersistsLHTest(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "upsert-day-lh-test@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	payload := map[string]any{
+		"is_period":   false,
+		"flow":        models.FlowNone,
+		"lh_test":     models.LHTestPeak,
+		"symptom_ids": []uint{},
+		"notes":       "note",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-23", bytes.NewReader(body))
+	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("upsert request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	day, err := services.ParseDayDate("2026-02-23", time.UTC)
+	if err != nil {
+		t.Fatalf("parse day for assertion: %v", err)
+	}
+	entry, err := fetchLogByDateForTest(database, user.ID, day, time.UTC)
+	if err != nil {
+		t.Fatalf("load stored log: %v", err)
+	}
+	if entry.LHTest != models.LHTestPeak {
+		t.Fatalf("expected stored lh test %q, got %q", models.LHTestPeak, entry.LHTest)
+	}
+}
