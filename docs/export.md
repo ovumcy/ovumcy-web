@@ -36,7 +36,6 @@ Response body:
       "bbt": 36.7,
       "cervical_mucus": "creamy",
       "pregnancy_test": "negative",
-      "lh_test": "high",
       "cycle_factors": ["stress", "travel"],
       "symptoms": {
         "cramps": true,
@@ -76,7 +75,6 @@ Field semantics:
 | `bbt` | float | Basal body temperature in the unit selected per account (°C or °F). Zero means unset. |
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
 | `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
-| `lh_test` | string | One of `none`, `negative`, `high`, `peak`. Ovulation (LH) test result. |
 | `cycle_factors` | array of strings | Free-form factor keys recorded that day (e.g. `stress`, `travel`, `illness`). |
 | `symptoms` | object of booleans | Flags for the 15 built-in symptoms. Always present, even when all false. |
 | `other_symptoms` | array of strings | Names of owner-managed custom symptoms recorded that day. |
@@ -102,7 +100,7 @@ Date, Period, Flow, Mood rating, Sex activity, BBT (C), Cervical mucus,
 Cramps, Headache, Acne, Mood, Bloating, Fatigue, Breast tenderness,
 Back pain, Nausea, Spotting, Irritability, Insomnia, Food cravings,
 Diarrhea, Constipation, Cycle factors, Other, Notes, Pregnancy test,
-Cycle start, Uncertain, LH test
+Cycle start, Uncertain
 ```
 
 Cell semantics:
@@ -115,8 +113,7 @@ Cell semantics:
 - `Other` is a `;`-separated list of owner-managed custom symptom names; empty when none.
 - `Notes` is the free-text note; the CSV writer quotes the cell as needed.
 - `Pregnancy test` is one of `none`, `negative`, `positive`. It was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.
-- `Cycle start` and `Uncertain` are `Yes`/`No`. They were appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only and never appear for non-owner viewers.
-- `LH test` is one of `none`, `negative`, `high`, `peak`. It is the most recent addition and is appended as the final column so existing column positions stay stable, per the stability rule below. The day editor shows the LH field only when the owner enables it in tracking settings, but saved values always appear in exports.
+- `Cycle start` and `Uncertain` are `Yes`/`No`. They are the last two columns, appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only and never appear for non-owner viewers.
 
 ## Summary Export
 

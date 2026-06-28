@@ -6,7 +6,6 @@ type TrackingSettingsUpdate struct {
 	TrackBBT             bool
 	TemperatureUnit      string
 	TrackCervicalMucus   bool
-	TrackLHTest          bool
 	HideSexChip          bool
 	HideCycleFactors     bool
 	HideNotesField       bool
@@ -20,7 +19,6 @@ func (service *SettingsService) ApplyTrackingSettings(user *models.User, update 
 	user.TrackBBT = update.TrackBBT
 	user.TemperatureUnit = NormalizeTemperatureUnit(update.TemperatureUnit)
 	user.TrackCervicalMucus = update.TrackCervicalMucus
-	user.TrackLHTest = update.TrackLHTest
 	user.HideSexChip = update.HideSexChip
 	user.HideCycleFactors = update.HideCycleFactors
 	user.HideNotesField = update.HideNotesField

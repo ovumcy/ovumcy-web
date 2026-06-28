@@ -71,7 +71,6 @@ type SettingsPageViewData struct {
 	TrackBBT                bool
 	TemperatureUnit         string
 	TrackCervicalMucus      bool
-	TrackLHTest             bool
 	HideSexChip             bool
 	HideCycleFactors        bool
 	HideNotesField          bool
@@ -162,7 +161,6 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.TrackBBT = persisted.TrackBBT
 	resolvedUser.TemperatureUnit = NormalizeTemperatureUnit(persisted.TemperatureUnit)
 	resolvedUser.TrackCervicalMucus = persisted.TrackCervicalMucus
-	resolvedUser.TrackLHTest = persisted.TrackLHTest
 	resolvedUser.HideSexChip = persisted.HideSexChip
 	resolvedUser.HideCycleFactors = persisted.HideCycleFactors
 	resolvedUser.HideNotesField = persisted.HideNotesField
@@ -199,7 +197,6 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 		TrackBBT:               user.TrackBBT,
 		TemperatureUnit:        user.TemperatureUnit,
 		TrackCervicalMucus:     user.TrackCervicalMucus,
-		TrackLHTest:            user.TrackLHTest,
 		HideSexChip:            user.HideSexChip,
 		HideCycleFactors:       user.HideCycleFactors,
 		HideNotesField:         user.HideNotesField,

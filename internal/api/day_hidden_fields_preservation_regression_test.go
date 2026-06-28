@@ -20,7 +20,6 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 		"hide_notes_field":     true,
 		"track_bbt":            false,
 		"track_cervical_mucus": false,
-		"track_lh_test":        false,
 	}).Error; err != nil {
 		t.Fatalf("configure hidden tracking fields: %v", err)
 	}
@@ -33,7 +32,6 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 		SexActivity:     models.SexActivityProtected,
 		BBT:             36.65,
 		CervicalMucus:   models.CervicalMucusEggWhite,
-		LHTest:          models.LHTestPeak,
 		CycleFactorKeys: []string{models.CycleFactorStress},
 		Notes:           "keep me",
 	}
@@ -67,9 +65,6 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 	}
 	if saved.CervicalMucus != models.CervicalMucusEggWhite {
 		t.Fatalf("expected hidden cervical mucus to be preserved, got %q", saved.CervicalMucus)
-	}
-	if saved.LHTest != models.LHTestPeak {
-		t.Fatalf("expected hidden lh test to be preserved, got %q", saved.LHTest)
 	}
 	if len(saved.CycleFactorKeys) != 1 || saved.CycleFactorKeys[0] != models.CycleFactorStress {
 		t.Fatalf("expected hidden cycle factors to be preserved, got %#v", saved.CycleFactorKeys)
