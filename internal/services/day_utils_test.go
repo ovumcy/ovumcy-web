@@ -44,6 +44,11 @@ func TestDayHasData(t *testing.T) {
 			want:  true,
 		},
 		{
+			name:  "lh test present",
+			entry: models.DailyLog{LHTest: models.LHTestPeak},
+			want:  true,
+		},
+		{
 			name:  "empty entry",
 			entry: models.DailyLog{Flow: models.FlowNone},
 			want:  false,
@@ -128,6 +133,11 @@ func TestIsAutoFilledPeriodCandidate(t *testing.T) {
 		{
 			name:  "period day with cervical mucus",
 			entry: models.DailyLog{IsPeriod: true, CervicalMucus: models.CervicalMucusEggWhite},
+			want:  false,
+		},
+		{
+			name:  "period day with lh test",
+			entry: models.DailyLog{IsPeriod: true, LHTest: models.LHTestPeak},
 			want:  false,
 		},
 	}

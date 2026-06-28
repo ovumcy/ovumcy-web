@@ -387,3 +387,18 @@ func exportCSVIndexByHeader() map[string]int {
 	}
 	return indexByHeader
 }
+
+func TestCSVLHTestLabel(t *testing.T) {
+	cases := map[string]string{
+		models.LHTestNegative: "Negative",
+		models.LHTestHigh:     "High",
+		models.LHTestPeak:     "Peak",
+		models.LHTestNone:     "None",
+		"bogus":               "None",
+	}
+	for input, want := range cases {
+		if got := csvLHTestLabel(input); got != want {
+			t.Fatalf("csvLHTestLabel(%q) = %q, want %q", input, got, want)
+		}
+	}
+}

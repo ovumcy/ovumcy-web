@@ -100,6 +100,21 @@ func TestCalendarDayEditorRendersPersistedLHTestValue(t *testing.T) {
 	}
 }
 
+func TestTrackingSettingsJSONResponseIncludesLHTest(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-lh-json@example.com")
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
+		"track_lh_test":    {"true"},
+		"temperature_unit": {"c"},
+	}, map[string]string{
+		"Accept": "application/json",
+	})
+	assertStatusCode(t, response, http.StatusOK)
+	assertBodyContainsAll(t, mustReadBodyString(t, response.Body),
+		bodyStringMatch{fragment: `"track_lh_test":true`, message: "expected JSON tracking response to echo track_lh_test"},
+	)
+}
+
 func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-recovery-return@example.com")
 

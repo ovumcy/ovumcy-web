@@ -127,3 +127,24 @@ func TestNormalizeDayEntryInputNormalizesLHTest(t *testing.T) {
 		t.Fatalf("expected lh test %q, got %q", models.LHTestPeak, normalized.LHTest)
 	}
 }
+
+func TestNormalizeDayLHTestMapsEachValue(t *testing.T) {
+	cases := map[string]string{
+		" NEGATIVE ": models.LHTestNegative,
+		"high":       models.LHTestHigh,
+		"Peak":       models.LHTestPeak,
+		"bogus":      models.LHTestNone,
+		"":           models.LHTestNone,
+	}
+	for input, want := range cases {
+		if got := NormalizeDayLHTest(input); got != want {
+			t.Fatalf("NormalizeDayLHTest(%q) = %q, want %q", input, got, want)
+		}
+		if !IsValidDayLHTest(input) && want != models.LHTestNone {
+			t.Fatalf("IsValidDayLHTest(%q) = false, expected valid", input)
+		}
+	}
+	if IsValidDayLHTest("bogus") {
+		t.Fatal("IsValidDayLHTest(\"bogus\") = true, want false")
+	}
+}
