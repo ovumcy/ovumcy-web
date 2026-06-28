@@ -140,7 +140,6 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 					BBT:             36.7,
 					CervicalMucus:   models.CervicalMucusCreamy,
 					PregnancyTest:   models.PregnancyTestNegative,
-					LHTest:          models.LHTestPeak,
 					CycleStart:      true,
 					IsUncertain:     true,
 					CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorMedicationChange},
@@ -349,20 +348,13 @@ func assertExportCSVTrackingColumns(t *testing.T, columns []string, indexByHeade
 	if columns[indexByHeader["Uncertain"]] != "Yes" {
 		t.Fatalf("expected uncertain column Yes, got %q", columns[indexByHeader["Uncertain"]])
 	}
-	if columns[indexByHeader["LH test"]] != "Peak" {
-		t.Fatalf("expected lh test column Peak, got %q", columns[indexByHeader["LH test"]])
+	// Append-only stability contract: the two new tracking columns must remain the
+	// final two headers, after Pregnancy test (docs/export.md "Stability").
+	if got := ExportCSVHeaders[len(ExportCSVHeaders)-2]; got != "Cycle start" {
+		t.Fatalf("expected second-to-last header to be Cycle start, got %q", got)
 	}
-	// Append-only stability contract: new columns are appended at the end so existing
-	// positions stay stable (docs/export.md "Stability"). Pregnancy test, Cycle start,
-	// and Uncertain keep their relative order; LH test is the latest column and stays last.
-	if indexByHeader["Pregnancy test"] >= indexByHeader["Cycle start"] {
-		t.Fatalf("expected Pregnancy test before Cycle start")
-	}
-	if indexByHeader["Cycle start"] != indexByHeader["Uncertain"]-1 {
-		t.Fatalf("expected Cycle start immediately before Uncertain")
-	}
-	if got := ExportCSVHeaders[len(ExportCSVHeaders)-1]; got != "LH test" {
-		t.Fatalf("expected last header to be LH test, got %q", got)
+	if got := ExportCSVHeaders[len(ExportCSVHeaders)-1]; got != "Uncertain" {
+		t.Fatalf("expected last header to be Uncertain, got %q", got)
 	}
 }
 
@@ -386,19 +378,4 @@ func exportCSVIndexByHeader() map[string]int {
 		indexByHeader[header] = index
 	}
 	return indexByHeader
-}
-
-func TestCSVLHTestLabel(t *testing.T) {
-	cases := map[string]string{
-		models.LHTestNegative: "Negative",
-		models.LHTestHigh:     "High",
-		models.LHTestPeak:     "Peak",
-		models.LHTestNone:     "None",
-		"bogus":               "None",
-	}
-	for input, want := range cases {
-		if got := csvLHTestLabel(input); got != want {
-			t.Fatalf("csvLHTestLabel(%q) = %q, want %q", input, got, want)
-		}
-	}
 }

@@ -41,7 +41,6 @@ var ExportCSVHeaders = []string{
 	"Pregnancy test",
 	"Cycle start",
 	"Uncertain",
-	"LH test",
 }
 
 var exportSymptomColumnsByName = map[string]string{
@@ -160,7 +159,6 @@ type ExportJSONEntry struct {
 	BBT           float64            `json:"bbt"`
 	CervicalMucus string             `json:"cervical_mucus"`
 	PregnancyTest string             `json:"pregnancy_test"`
-	LHTest        string             `json:"lh_test"`
 	CycleFactors  []string           `json:"cycle_factors"`
 	Symptoms      ExportSymptomFlags `json:"symptoms"`
 	OtherSymptoms []string           `json:"other_symptoms"`
@@ -178,7 +176,6 @@ type ExportCSVRow struct {
 	BBT           float64
 	CervicalMucus string
 	PregnancyTest string
-	LHTest        string
 	CycleFactors  []string
 	Symptoms      ExportSymptomFlags
 	OtherSymptoms []string
@@ -264,7 +261,6 @@ func (service *ExportService) BuildJSONEntries(ctx context.Context, userID uint,
 			BBT:           normalizeExportBBT(logEntry.BBT),
 			CervicalMucus: NormalizeDayCervicalMucus(logEntry.CervicalMucus),
 			PregnancyTest: NormalizeDayPregnancyTest(logEntry.PregnancyTest),
-			LHTest:        NormalizeDayLHTest(logEntry.LHTest),
 			CycleFactors:  normalizeExportCycleFactorKeys(logEntry.CycleFactorKeys),
 			Symptoms:      flags,
 			OtherSymptoms: other,
@@ -294,7 +290,6 @@ func (service *ExportService) BuildCSVRows(ctx context.Context, userID uint, fro
 			BBT:           normalizeExportBBT(logEntry.BBT),
 			CervicalMucus: csvCervicalMucusLabel(logEntry.CervicalMucus),
 			PregnancyTest: csvPregnancyTestLabel(logEntry.PregnancyTest),
-			LHTest:        csvLHTestLabel(logEntry.LHTest),
 			CycleFactors:  csvCycleFactorLabels(logEntry.CycleFactorKeys),
 			Symptoms:      flags,
 			OtherSymptoms: other,
@@ -338,7 +333,6 @@ func (row ExportCSVRow) Columns() []string {
 		row.PregnancyTest,
 		csvYesNo(row.CycleStart),
 		csvYesNo(row.IsUncertain),
-		row.LHTest,
 	}
 }
 
@@ -486,19 +480,6 @@ func csvPregnancyTestLabel(value string) string {
 		return "Negative"
 	case models.PregnancyTestPositive:
 		return "Positive"
-	default:
-		return "None"
-	}
-}
-
-func csvLHTestLabel(value string) string {
-	switch NormalizeDayLHTest(value) {
-	case models.LHTestNegative:
-		return "Negative"
-	case models.LHTestHigh:
-		return "High"
-	case models.LHTestPeak:
-		return "Peak"
 	default:
 		return "None"
 	}
