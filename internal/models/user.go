@@ -41,6 +41,7 @@ type User struct {
 	TrackBBT             bool       `gorm:"column:track_bbt;not null;default:false"`
 	TemperatureUnit      string     `gorm:"column:temperature_unit;not null;default:c"`
 	TrackCervicalMucus   bool       `gorm:"column:track_cervical_mucus;not null;default:false"`
+	TrackLHTest          bool       `gorm:"column:track_lh_test;not null;default:false"`
 	HideSexChip          bool       `gorm:"column:hide_sex_chip;not null;default:false"`
 	HideCycleFactors     bool       `gorm:"column:hide_cycle_factors;not null;default:false"`
 	HideNotesField       bool       `gorm:"column:hide_notes_field;not null;default:false"`

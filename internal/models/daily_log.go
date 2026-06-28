@@ -26,6 +26,11 @@ const (
 	PregnancyTestNone     = "none"
 	PregnancyTestNegative = "negative"
 	PregnancyTestPositive = "positive"
+
+	LHTestNone     = "none"
+	LHTestNegative = "negative"
+	LHTestHigh     = "high"
+	LHTestPeak     = "peak"
 )
 
 type DailyLog struct {
@@ -41,6 +46,7 @@ type DailyLog struct {
 	BBT             float64   `gorm:"column:bbt;not null;default:0"`
 	CervicalMucus   string    `gorm:"column:cervical_mucus;not null;default:none"`
 	PregnancyTest   string    `gorm:"column:pregnancy_test;not null;default:none"`
+	LHTest          string    `gorm:"column:lh_test;not null;default:none"`
 	CycleFactorKeys []string  `gorm:"column:cycle_factor_keys;serializer:json"`
 	SymptomIDs      []uint    `gorm:"serializer:json"`
 	Notes           string
