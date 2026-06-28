@@ -25,6 +25,7 @@ type dayResponse struct {
 	BBT             float64   `json:"bbt"`
 	CervicalMucus   string    `json:"cervical_mucus"`
 	PregnancyTest   string    `json:"pregnancy_test"`
+	LHTest          string    `json:"lh_test"`
 	CycleFactorKeys []string  `json:"cycle_factor_keys"`
 	SymptomIDs      []uint    `json:"symptom_ids"`
 	Notes           string    `json:"notes"`
@@ -49,6 +50,7 @@ func newDayResponse(entry models.DailyLog) dayResponse {
 		BBT:             entry.BBT,
 		CervicalMucus:   entry.CervicalMucus,
 		PregnancyTest:   entry.PregnancyTest,
+		LHTest:          entry.LHTest,
 		CycleFactorKeys: entry.CycleFactorKeys,
 		SymptomIDs:      entry.SymptomIDs,
 		Notes:           entry.Notes,

@@ -111,6 +111,9 @@ func DayHasData(entry models.DailyLog) bool {
 	if NormalizeDayPregnancyTest(entry.PregnancyTest) != models.PregnancyTestNone {
 		return true
 	}
+	if NormalizeDayLHTest(entry.LHTest) != models.LHTestNone {
+		return true
+	}
 	if len(DayCycleFactorKeySet(entry.CycleFactorKeys)) > 0 {
 		return true
 	}
@@ -151,6 +154,9 @@ func IsAutoFilledPeriodCandidate(entry models.DailyLog) bool {
 		return false
 	}
 	if NormalizeDayPregnancyTest(entry.PregnancyTest) != models.PregnancyTestNone {
+		return false
+	}
+	if NormalizeDayLHTest(entry.LHTest) != models.LHTestNone {
 		return false
 	}
 	if len(DayCycleFactorKeySet(entry.CycleFactorKeys)) > 0 {

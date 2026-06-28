@@ -47,6 +47,7 @@ func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, f
 		"TrackBBT":               viewData.TrackBBT,
 		"TemperatureUnit":        viewData.TemperatureUnit,
 		"TrackCervicalMucus":     viewData.TrackCervicalMucus,
+		"TrackLHTest":            viewData.TrackLHTest,
 		"HideSexChip":            viewData.HideSexChip,
 		"HideCycleFactors":       viewData.HideCycleFactors,
 		"HideNotesField":         viewData.HideNotesField,

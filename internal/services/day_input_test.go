@@ -104,3 +104,26 @@ func TestNormalizeDayEntryInputNormalizesPregnancyTest(t *testing.T) {
 		t.Fatalf("expected pregnancy test %q, got %q", models.PregnancyTestPositive, normalized.PregnancyTest)
 	}
 }
+
+func TestNormalizeDayEntryInputRejectsInvalidLHTest(t *testing.T) {
+	_, err := NormalizeDayEntryInput(DayEntryInput{
+		Flow:   models.FlowNone,
+		LHTest: "bad-test",
+	})
+	if !errors.Is(err, ErrInvalidDayLHTest) {
+		t.Fatalf("expected ErrInvalidDayLHTest, got %v", err)
+	}
+}
+
+func TestNormalizeDayEntryInputNormalizesLHTest(t *testing.T) {
+	normalized, err := NormalizeDayEntryInput(DayEntryInput{
+		Flow:   models.FlowNone,
+		LHTest: " PEAK ",
+	})
+	if err != nil {
+		t.Fatalf("NormalizeDayEntryInput() unexpected error: %v", err)
+	}
+	if normalized.LHTest != models.LHTestPeak {
+		t.Fatalf("expected lh test %q, got %q", models.LHTestPeak, normalized.LHTest)
+	}
+}

@@ -602,6 +602,27 @@
   {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "positive" "Compact" .Compact)}}
 </div>
 {{end}}
+{{define "lh_test_option"}}
+<label class="choice-option">
+  <input
+    type="radio"
+    name="lh_test"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if eq .SelectedLHTest .Value}}checked{{end}}>
+  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+    <span>{{lhTestLabel .Messages .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "lh_test_options"}}
+<div class="cervical-mucus-row{{if .Compact}} cervical-mucus-row-compact{{end}}">
+  {{template "lh_test_option" (dict "Messages" .Messages "SelectedLHTest" .SelectedLHTest "Value" "none" "Compact" .Compact)}}
+  {{template "lh_test_option" (dict "Messages" .Messages "SelectedLHTest" .SelectedLHTest "Value" "negative" "Compact" .Compact)}}
+  {{template "lh_test_option" (dict "Messages" .Messages "SelectedLHTest" .SelectedLHTest "Value" "high" "Compact" .Compact)}}
+  {{template "lh_test_option" (dict "Messages" .Messages "SelectedLHTest" .SelectedLHTest "Value" "peak" "Compact" .Compact)}}
+</div>
+{{end}}
 {{define "symptom_option_item"}}
 {{$label := symptomLabel .Messages .Symptom.Name}}
 <label class="choice-option">

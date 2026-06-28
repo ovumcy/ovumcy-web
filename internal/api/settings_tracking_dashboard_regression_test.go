@@ -38,6 +38,38 @@ func TestTrackingSettingsExposeBBTAndCervicalMucusOnDashboard(t *testing.T) {
 	)
 }
 
+func TestTrackingSettingsGateLHTestFieldOnDashboard(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-lh@example.com")
+
+	// The LH test field is opt-in: it must stay absent until the owner enables it,
+	// then appear on the dashboard once track_lh_test is on (render-path gating).
+	beforeRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	beforeRequest.Header.Set("Accept-Language", "en")
+	beforeRequest.Header.Set("Cookie", ctx.authCookie)
+	beforeResponse := mustAppResponse(t, ctx.app, beforeRequest)
+	assertStatusCode(t, beforeResponse, http.StatusOK)
+	assertBodyNotContainsAll(t, mustReadBodyString(t, beforeResponse.Body),
+		bodyStringMatch{fragment: `name="lh_test"`, message: "did not expect dashboard LH test controls before enabling tracking"},
+	)
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
+		"track_lh_test":    {"true"},
+		"temperature_unit": {"c"},
+	}, map[string]string{
+		"HX-Request": "true",
+	})
+	assertStatusCode(t, response, http.StatusOK)
+
+	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	dashboardRequest.Header.Set("Accept-Language", "en")
+	dashboardRequest.Header.Set("Cookie", ctx.authCookie)
+	dashboardResponse := mustAppResponse(t, ctx.app, dashboardRequest)
+	assertStatusCode(t, dashboardResponse, http.StatusOK)
+	assertBodyContainsAll(t, mustReadBodyString(t, dashboardResponse.Body),
+		bodyStringMatch{fragment: `name="lh_test"`, message: "expected dashboard LH test controls after enabling tracking"},
+	)
+}
+
 func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-recovery-return@example.com")
 

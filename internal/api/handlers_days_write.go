@@ -80,6 +80,7 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *
 	preserveSexActivity := preserveHiddenFields && user != nil && user.HideSexChip
 	preserveBBT := preserveHiddenFields && user != nil && !user.TrackBBT
 	preserveCervicalMucus := preserveHiddenFields && user != nil && !user.TrackCervicalMucus
+	preserveLHTest := preserveHiddenFields && user != nil && !user.TrackLHTest
 	preserveCycleFactors := preserveHiddenFields && user != nil && user.HideCycleFactors
 	preserveNotes := preserveHiddenFields && user != nil && user.HideNotesField
 
@@ -91,12 +92,14 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *
 		BBT:                   payload.BBT,
 		CervicalMucus:         payload.CervicalMucus,
 		PregnancyTest:         payload.PregnancyTest,
+		LHTest:                payload.LHTest,
 		CycleFactorKeys:       payload.CycleFactorKeys,
 		Notes:                 payload.Notes,
 		SymptomIDs:            cleanSymptomIDs,
 		PreserveSexActivity:   preserveSexActivity,
 		PreserveBBT:           preserveBBT,
 		PreserveCervicalMucus: preserveCervicalMucus,
+		PreserveLHTest:        preserveLHTest,
 		PreserveCycleFactors:  preserveCycleFactors,
 		PreserveNotes:         preserveNotes,
 	}

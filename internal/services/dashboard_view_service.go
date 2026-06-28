@@ -56,6 +56,7 @@ type DashboardViewData struct {
 	ShowSexChip                       bool
 	ShowBBTField                      bool
 	ShowCervicalMucus                 bool
+	ShowLHTest                        bool
 	ShowCycleFactors                  bool
 	ShowNotesField                    bool
 	AllowManualCycleStart             bool
@@ -89,6 +90,7 @@ type DayEditorViewData struct {
 	ShowSexChip                bool
 	ShowBBTField               bool
 	ShowCervicalMucus          bool
+	ShowLHTest                 bool
 	ShowCycleFactors           bool
 	ShowNotesField             bool
 	AllowManualCycleStart      bool
@@ -175,6 +177,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowSexChip:                       visibility.ShowSexChip,
 		ShowBBTField:                      visibility.ShowBBTField,
 		ShowCervicalMucus:                 visibility.ShowCervicalMucus,
+		ShowLHTest:                        visibility.ShowLHTest,
 		ShowCycleFactors:                  visibility.ShowCycleFactors,
 		ShowNotesField:                    visibility.ShowNotesField,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
@@ -205,6 +208,7 @@ type dashboardOwnerVisibility struct {
 	ShowSexChip           bool
 	ShowBBTField          bool
 	ShowCervicalMucus     bool
+	ShowLHTest            bool
 	ShowCycleFactors      bool
 	ShowNotesField        bool
 	AllowManualCycleStart bool
@@ -216,6 +220,7 @@ func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.
 		ShowSexChip:           isOwner && !user.HideSexChip,
 		ShowBBTField:          isOwner && user.TrackBBT,
 		ShowCervicalMucus:     isOwner && user.TrackCervicalMucus,
+		ShowLHTest:            isOwner && user.TrackLHTest,
 		ShowCycleFactors:      isOwner && !user.HideCycleFactors,
 		ShowNotesField:        isOwner && !user.HideNotesField,
 		AllowManualCycleStart: isOwner && IsAllowedManualCycleStartDate(today, now, location),
@@ -273,6 +278,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 		ShowSexChip:                visibility.ShowSexChip,
 		ShowBBTField:               visibility.ShowBBTField,
 		ShowCervicalMucus:          visibility.ShowCervicalMucus,
+		ShowLHTest:                 visibility.ShowLHTest,
 		ShowCycleFactors:           visibility.ShowCycleFactors,
 		ShowNotesField:             visibility.ShowNotesField,
 		AllowManualCycleStart:      visibility.AllowManualCycleStart,

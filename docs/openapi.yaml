@@ -356,6 +356,10 @@ components:
           type: string
           enum: [none, negative, positive]
           default: none
+        lh_test:
+          type: string
+          enum: [none, negative, high, peak]
+          default: none
         cycle_factor_keys:
           type: array
           items: { type: string }
@@ -376,7 +380,7 @@ components:
       description: |
         A persisted day record. `date` is stored as UTC midnight on disk and
         rendered in the caller's timezone at read time.
-      required: [id, user_id, date, is_period, flow, mood, sex_activity, bbt, cervical_mucus, pregnancy_test]
+      required: [id, user_id, date, is_period, flow, mood, sex_activity, bbt, cervical_mucus, pregnancy_test, lh_test]
       properties:
         id:
           type: integer
@@ -406,6 +410,9 @@ components:
         pregnancy_test:
           type: string
           enum: [none, negative, positive]
+        lh_test:
+          type: string
+          enum: [none, negative, high, peak]
         cycle_factor_keys:
           type: array
           items: { type: string }
@@ -503,6 +510,9 @@ components:
         pregnancy_test:
           type: string
           enum: [none, negative, positive]
+        lh_test:
+          type: string
+          enum: [none, negative, high, peak]
         cycle_factors:
           type: array
           items: { type: string }
@@ -635,6 +645,7 @@ components:
           type: string
           enum: [c, f]
         track_cervical_mucus: { type: boolean }
+        track_lh_test: { type: boolean }
         hide_sex_chip: { type: boolean }
         hide_cycle_factors: { type: boolean }
         hide_notes_field: { type: boolean }

@@ -29,12 +29,14 @@ type DayEntryInput struct {
 	BBT                   float64
 	CervicalMucus         string
 	PregnancyTest         string
+	LHTest                string
 	CycleFactorKeys       []string
 	Notes                 string
 	SymptomIDs            []uint
 	PreserveSexActivity   bool
 	PreserveBBT           bool
 	PreserveCervicalMucus bool
+	PreserveLHTest        bool
 	PreserveCycleFactors  bool
 	PreserveNotes         bool
 }
@@ -138,6 +140,7 @@ func (service *DayService) FetchLogByDate(ctx context.Context, userID uint, day 
 			SexActivity:     models.SexActivityNone,
 			CervicalMucus:   models.CervicalMucusNone,
 			PregnancyTest:   models.PregnancyTestNone,
+			LHTest:          models.LHTestNone,
 			CycleFactorKeys: []string{},
 			SymptomIDs:      []uint{},
 		}, nil
@@ -145,6 +148,7 @@ func (service *DayService) FetchLogByDate(ctx context.Context, userID uint, day 
 	entry.SexActivity = NormalizeDaySexActivity(entry.SexActivity)
 	entry.CervicalMucus = NormalizeDayCervicalMucus(entry.CervicalMucus)
 	entry.PregnancyTest = NormalizeDayPregnancyTest(entry.PregnancyTest)
+	entry.LHTest = NormalizeDayLHTest(entry.LHTest)
 	entry.CycleFactorKeys, _ = NormalizeDayCycleFactorKeys(entry.CycleFactorKeys)
 	if !IsValidDayBBT(entry.BBT) {
 		entry.BBT = 0
@@ -201,6 +205,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		entry.BBT = payload.BBT
 		entry.CervicalMucus = payload.CervicalMucus
 		entry.PregnancyTest = payload.PregnancyTest
+		entry.LHTest = payload.LHTest
 		entry.CycleFactorKeys = payload.CycleFactorKeys
 		entry.SymptomIDs = payload.SymptomIDs
 		entry.Notes = payload.Notes
@@ -220,6 +225,7 @@ func (service *DayService) UpsertDayEntry(ctx context.Context, userID uint, dayS
 		BBT:             payload.BBT,
 		CervicalMucus:   payload.CervicalMucus,
 		PregnancyTest:   payload.PregnancyTest,
+		LHTest:          payload.LHTest,
 		CycleFactorKeys: payload.CycleFactorKeys,
 		Notes:           payload.Notes,
 		SymptomIDs:      payload.SymptomIDs,
@@ -243,6 +249,9 @@ func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput
 	}
 	if payload.PreserveCervicalMucus {
 		payload.CervicalMucus = NormalizeDayCervicalMucus(existing.CervicalMucus)
+	}
+	if payload.PreserveLHTest {
+		payload.LHTest = NormalizeDayLHTest(existing.LHTest)
 	}
 	if payload.PreserveCycleFactors {
 		normalized, _ := NormalizeDayCycleFactorKeys(existing.CycleFactorKeys)
@@ -492,6 +501,7 @@ func (service *DayService) manualCycleStartPayload(ctx context.Context, userID u
 		BBT:             existingEntry.BBT,
 		CervicalMucus:   NormalizeDayCervicalMucus(existingEntry.CervicalMucus),
 		PregnancyTest:   NormalizeDayPregnancyTest(existingEntry.PregnancyTest),
+		LHTest:          NormalizeDayLHTest(existingEntry.LHTest),
 		CycleFactorKeys: append([]string{}, existingEntry.CycleFactorKeys...),
 		Notes:           existingEntry.Notes,
 		SymptomIDs:      symptomIDs,
@@ -613,6 +623,7 @@ func (service *DayService) AutoFillFollowingPeriodDays(ctx context.Context, user
 			SexActivity:     models.SexActivityNone,
 			CervicalMucus:   models.CervicalMucusNone,
 			PregnancyTest:   models.PregnancyTestNone,
+			LHTest:          models.LHTestNone,
 			CycleFactorKeys: []string{},
 			SymptomIDs:      []uint{},
 		}

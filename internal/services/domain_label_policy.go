@@ -75,6 +75,19 @@ func PregnancyTestTranslationKey(value string) string {
 	}
 }
 
+func LHTestTranslationKey(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case models.LHTestNegative:
+		return "dashboard.lh_test.negative"
+	case models.LHTestHigh:
+		return "dashboard.lh_test.high"
+	case models.LHTestPeak:
+		return "dashboard.lh_test.peak"
+	default:
+		return "dashboard.lh_test.none"
+	}
+}
+
 func RoleTranslationKey(role string) string {
 	switch NormalizeUserRole(role) {
 	case models.RoleOwner:

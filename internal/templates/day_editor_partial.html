@@ -90,6 +90,13 @@
     </fieldset>
     {{end}}
 
+    {{if .ShowLHTest}}
+    <fieldset class="space-y-2">
+      <legend class="field-label">{{t .Messages "dashboard.lh_test"}}</legend>
+      {{template "lh_test_options" (dict "Messages" .Messages "SelectedLHTest" .Log.LHTest "Compact" true)}}
+    </fieldset>
+    {{end}}
+
     <fieldset class="space-y-2">
       <legend class="field-label">{{t .Messages "dashboard.pregnancy_test"}}</legend>
       {{template "pregnancy_test_options" (dict "Messages" .Messages "SelectedPregnancyTest" .Log.PregnancyTest "Compact" true)}}

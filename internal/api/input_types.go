@@ -16,6 +16,7 @@ type dayPayload struct {
 	BBT             float64  `json:"bbt"`
 	CervicalMucus   string   `json:"cervical_mucus"`
 	PregnancyTest   string   `json:"pregnancy_test"`
+	LHTest          string   `json:"lh_test"`
 	CycleFactorKeys []string `json:"cycle_factor_keys"`
 	SymptomIDs      []uint   `json:"symptom_ids"`
 	Notes           string   `json:"notes"`
@@ -68,6 +69,7 @@ type trackingSettingsInput struct {
 	TrackBBT             bool   `json:"track_bbt" form:"track_bbt"`
 	TemperatureUnit      string `json:"temperature_unit" form:"temperature_unit"`
 	TrackCervicalMucus   bool   `json:"track_cervical_mucus" form:"track_cervical_mucus"`
+	TrackLHTest          bool   `json:"track_lh_test" form:"track_lh_test"`
 	HideSexChip          bool   `json:"hide_sex_chip" form:"hide_sex_chip"`
 	HideCycleFactors     bool   `json:"hide_cycle_factors" form:"hide_cycle_factors"`
 	HideNotesField       bool   `json:"hide_notes_field" form:"hide_notes_field"`
