@@ -18,9 +18,11 @@ var dayImportMutation = healthMutationKind{action: "data.import", target: "day_e
 // OwnerOnly is declared explicitly on the route.
 func (handler *Handler) ImportJSON(c *fiber.Ctx) error {
 	user, ok := currentUser(c)
+	// codecov:ignore:start -- defensive: AuthRequired middleware guarantees a session user on this route, so this guard is unreachable via routing
 	if !ok || user == nil {
 		return handler.failMutation(c, dayImportMutation, unauthorizedErrorSpec())
 	}
+	// codecov:ignore:end
 
 	result, err := handler.importService.ImportJSON(
 		c.UserContext(),
