@@ -59,11 +59,12 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	loginService := services.NewLoginService(authService, passwordResetService, attemptLimiter)
 	loginService.ConfigureAttemptLimits(opts.LoginAttempts.Max, opts.LoginAttempts.Window)
 	dailyLogs := repositories.DailyLogs
-	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, func(ctx context.Context, fn func(services.DayLogRepository) error) error {
+	dayLogTxRunner := func(ctx context.Context, fn func(services.DayLogRepository) error) error {
 		return dailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error {
 			return fn(tx)
 		})
-	})
+	}
+	dayService := services.NewDayServiceWithTx(dailyLogs, repositories.Users, dayLogTxRunner)
 	var reservedSymptomNames []string
 	if i18nManager != nil {
 		reservedSymptomNames = services.BuiltinSymptomReservedNames(i18nManager)
@@ -75,6 +76,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	calendarViewService := services.NewCalendarViewService(dayService, statsService)
 	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
 	exportService := services.NewExportService(dayService, symptomService)
+	importService := services.NewImportService(dailyLogs, repositories.Users, symptomService, dayLogTxRunner)
 	settingsService := services.NewSettingsService(repositories.Users)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
@@ -104,6 +106,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		CalendarViewService:  calendarViewService,
 		DashboardViewService: dashboardViewService,
 		ExportService:        exportService,
+		ImportService:        importService,
 		SettingsService:      settingsService,
 		SettingsViewService:  services.NewSettingsViewService(settingsService, exportService, symptomService),
 		OnboardingService:    services.NewOnboardingService(repositories.Users),

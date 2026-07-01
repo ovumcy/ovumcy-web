@@ -40,8 +40,20 @@ func TestNotFoundPageForGuestUsesLoginPrimaryAction(t *testing.T) {
 	if !strings.Contains(rendered, `href="/login"`) {
 		t.Fatalf("expected login primary action for guest not-found page")
 	}
-	if strings.Contains(rendered, `href="/privacy" class="btn-secondary"`) {
-		t.Fatalf("did not expect inline privacy button when footer already provides privacy navigation")
+	// Privacy navigation belongs in the footer, not as an inline 404 action.
+	// Assert semantically (no /privacy anchor inside the not-found section)
+	// rather than pinning a class string that any styling change would break.
+	page := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-not-found-page")
+	})
+	if page == nil {
+		t.Fatalf("expected not-found page section with stable hook")
+	}
+	inlinePrivacy := htmlFindElements(page, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "a" && htmlAttr(node, "href") == "/privacy"
+	})
+	if len(inlinePrivacy) != 0 {
+		t.Fatalf("did not expect an inline privacy action in the not-found page; the footer already provides privacy navigation")
 	}
 }
 

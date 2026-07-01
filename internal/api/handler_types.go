@@ -42,6 +42,7 @@ type Handler struct {
 	calendarViewService  *services.CalendarViewService
 	dashboardViewService *services.DashboardViewService
 	exportService        *services.ExportService
+	importService        *services.ImportService
 	settingsService      *services.SettingsService
 	settingsViewService  *services.SettingsViewService
 	onboardingSvc        *services.OnboardingService
