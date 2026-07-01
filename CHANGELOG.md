@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-01
+
 ### Added
 
 - **Restore from JSON backup.** `Settings → Restore from backup` (and `POST /api/v1/imports/json`) re-imports a prior Ovumcy JSON export into the current account. The restore is additive — only days the account does not already have are created; existing days are never overwritten or deleted, so no password re-authentication is required. Every field of the (untrusted) file is re-validated and scoped to the session owner; malformed or duplicate records are skipped and reported in the result counts. Importing from other trackers (e.g. Drip) remains out of scope — see issue #116.
@@ -524,7 +526,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.1...v1.2.0
