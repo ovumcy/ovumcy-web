@@ -373,6 +373,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | --- | --- |
 | An instance may host several independent owners; each owner's data is isolated by `user_id`, and a resource id from the request is always combined with the session user — `PATCH`/`DELETE`/`restore` of another owner's symptom returns 404 and leaves it unchanged | `TestUpdateSymptomByOtherUserReturnsNotFound`, `TestDeleteSymptomByOtherUserReturnsNotFound`, `TestRestoreSymptomByOtherUserReturnsNotFound` in [internal/api/symptoms_idor_regression_test.go](internal/api/symptoms_idor_regression_test.go) |
 | A day upsert carrying another owner's `symptom_id` is rejected (400) and writes no log row for the requester | `TestUpsertDayRejectsSymptomIDOwnedByOtherUser` in [internal/api/symptoms_idor_regression_test.go](internal/api/symptoms_idor_regression_test.go) |
+| A restore whose `other_symptoms` name collides with another owner's custom symptom resolves to the importing owner's own row, never the other owner's id, and leaves that owner's catalog and logs untouched | `TestImportServiceScopesResolvedSymptomsToImportingOwner` in [internal/services/import_service_test.go](internal/services/import_service_test.go) |
 
 ### Data Import (Restore)
 

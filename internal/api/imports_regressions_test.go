@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -64,9 +65,19 @@ func TestImportJSONSucceedsWithCSRF(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", response.StatusCode)
 	}
-	payload, _ := io.ReadAll(response.Body)
-	if !strings.Contains(string(payload), `"added":2`) {
-		t.Fatalf("expected added:2 in response, got %s", string(payload))
+	// Decode the DTO so all three result counts are pinned to the wire, not just
+	// a substring of one of them.
+	var result struct {
+		OK       bool `json:"ok"`
+		Added    int  `json:"added"`
+		Skipped  int  `json:"skipped"`
+		Rejected int  `json:"rejected"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode import result: %v", err)
+	}
+	if !result.OK || result.Added != 2 || result.Skipped != 0 || result.Rejected != 0 {
+		t.Fatalf("expected {ok:true added:2 skipped:0 rejected:0}, got %+v", result)
 	}
 }
 
@@ -86,10 +97,8 @@ func TestImportJSONRejectsMalformedFile(t *testing.T) {
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", response.StatusCode)
 	}
-	payload, _ := io.ReadAll(response.Body)
-	if !strings.Contains(string(payload), "invalid import file") {
-		t.Fatalf("expected error key 'invalid import file', got %s", string(payload))
-	}
+	// The exact error key is pinned once in TestMapImportErrorCoversAllBranches;
+	// here we only assert the request-level status, not a duplicated wire-string.
 }
 
 // TestMapImportErrorCoversAllBranches unit-pins every arm of the import error

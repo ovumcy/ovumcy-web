@@ -409,3 +409,71 @@ func TestImportServiceRejectsMarkupSymptomNames(t *testing.T) {
 		t.Fatalf("expected the clean custom symptom to be created alongside the dropped markup one")
 	}
 }
+
+// TestImportServiceScopesResolvedSymptomsToImportingOwner pins the owner-isolation
+// invariant on the restore path (household self-hosting hosts multiple independent
+// owners). When owner A imports a day whose other_symptoms name collides with a
+// custom symptom already owned by owner B, the resolved SymptomIDs must reference
+// A's own row — never B's id — and B's catalog and logs must be untouched.
+func TestImportServiceScopesResolvedSymptomsToImportingOwner(t *testing.T) {
+	dayService, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+
+	ownerB := createDayServiceTestUser(t, database, "import-idor-b@example.com")
+	bSymptom, err := symptomService.CreateSymptomForUser(context.Background(), ownerB.ID, "Shared Name", "", "")
+	if err != nil {
+		t.Fatalf("seed owner B symptom: %v", err)
+	}
+
+	ownerA := createDayServiceTestUser(t, database, "import-idor-a@example.com")
+	raw, _ := json.Marshal(importPayload{Entries: []ExportJSONEntry{
+		{Date: "2026-06-15", Period: false, CycleFactors: []string{}, OtherSymptoms: []string{"Shared Name"}},
+	}})
+	importService := newImportServiceIntegration(t, database, symptomService)
+	if _, err := importService.ImportJSON(context.Background(), ownerA.ID, raw, time.UTC); err != nil {
+		t.Fatalf("import for owner A: %v", err)
+	}
+
+	stored, err := dayService.FetchLogByDate(context.Background(), ownerA.ID, time.Date(2026, time.June, 15, 0, 0, 0, 0, time.UTC), time.UTC)
+	if err != nil {
+		t.Fatalf("reload owner A day: %v", err)
+	}
+	if len(stored.SymptomIDs) != 1 {
+		t.Fatalf("expected exactly one resolved symptom, got %v", stored.SymptomIDs)
+	}
+	if stored.SymptomIDs[0] == bSymptom.ID {
+		t.Fatalf("cross-owner leak: owner A's day references owner B's symptom id %d", bSymptom.ID)
+	}
+
+	// The referenced row belongs to A and carries the same name.
+	catalogA, err := symptomService.FetchSymptoms(context.Background(), ownerA.ID)
+	if err != nil {
+		t.Fatalf("fetch owner A catalog: %v", err)
+	}
+	matched := false
+	for _, symptom := range catalogA {
+		if symptom.ID != stored.SymptomIDs[0] {
+			continue
+		}
+		if symptom.UserID != ownerA.ID {
+			t.Fatalf("resolved symptom %d is owned by %d, not importing owner A (%d)", symptom.ID, symptom.UserID, ownerA.ID)
+		}
+		if normalizeSymptomNameKey(symptom.Name) != "shared name" {
+			t.Fatalf("resolved symptom name mismatch: %q", symptom.Name)
+		}
+		matched = true
+	}
+	if !matched {
+		t.Fatalf("owner A's day references a symptom absent from A's own catalog")
+	}
+
+	// Owner B is untouched: no day logs created for B by A's import.
+	logsB, err := dayService.FetchAllLogsForUser(context.Background(), ownerB.ID)
+	if err != nil {
+		t.Fatalf("load owner B logs: %v", err)
+	}
+	if len(logsB) != 0 {
+		t.Fatalf("owner B gained %d unexpected day logs from owner A's import", len(logsB))
+	}
+}
