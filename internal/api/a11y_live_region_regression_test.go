@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"golang.org/x/net/html"
 )
 
 // These tests pin the a11y contract from audit task #26-A2: every HTMX
@@ -19,10 +20,19 @@ import (
 
 func assertLiveStatusContainers(t *testing.T, body string, ids ...string) {
 	t.Helper()
+	document := mustParseHTMLDocument(t, body)
 	for _, id := range ids {
-		fragment := `<div id="` + id + `" class="save-status text-sm" aria-live="polite">`
-		if !strings.Contains(body, fragment) {
-			t.Fatalf("expected %q to render as an aria-live polite save-status container", id)
+		targetID := id
+		node := htmlFindElement(document, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlAttr(node, "id") == targetID
+		})
+		if node == nil {
+			t.Fatalf("expected an element with id %q", targetID)
+		}
+		// The a11y contract is only id + aria-live=polite; the element's class
+		// list and attribute ordering are incidental styling, not the contract.
+		if got := htmlAttr(node, "aria-live"); got != "polite" {
+			t.Fatalf("expected %q to be an aria-live=polite region, got aria-live=%q", targetID, got)
 		}
 	}
 }
@@ -78,7 +88,10 @@ func TestBaseLayoutRendersSkipLink(t *testing.T) {
 
 	for _, path := range []string{"/dashboard", "/settings"} {
 		body := fetchPageBody(t, app, path, authCookie)
-		if !strings.Contains(body, `<a href="#main-content" class="skip-link">Skip to main content</a>`) {
+		// Structural hook only — the visible copy is i18n (a11y.skip_to_content)
+		// and the actual skip behavior is owned by visual-a11y.spec.ts; do not
+		// pin the English phrase here.
+		if !strings.Contains(body, `<a href="#main-content" class="skip-link">`) {
 			t.Fatalf("expected %s to render the skip-to-content link", path)
 		}
 		if !strings.Contains(body, `<main id="main-content" tabindex="-1"`) {
