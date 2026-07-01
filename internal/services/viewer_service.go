@@ -29,27 +29,15 @@ func NewViewerService(days ViewerDayReader, symptoms ViewerSymptomReader) *Viewe
 }
 
 func (service *ViewerService) FetchSymptomsForViewer(ctx context.Context, user *models.User, selectedIDs []uint) ([]models.SymptomType, error) {
-	if !ShouldExposeSymptomsForViewer(user) {
-		return []models.SymptomType{}, nil
-	}
 	return service.symptoms.FetchPickerSymptoms(ctx, user.ID, selectedIDs)
 }
 
 func (service *ViewerService) FetchLogsForViewer(ctx context.Context, user *models.User, from time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error) {
-	logs, err := service.days.FetchLogsForUser(ctx, user.ID, from, to, location)
-	if err != nil {
-		return nil, err
-	}
-	SanitizeLogsForViewer(user, logs)
-	return logs, nil
+	return service.days.FetchLogsForUser(ctx, user.ID, from, to, location)
 }
 
 func (service *ViewerService) FetchLogByDateForViewer(ctx context.Context, user *models.User, day time.Time, location *time.Location) (models.DailyLog, error) {
-	logEntry, err := service.days.FetchLogByDate(ctx, user.ID, day, location)
-	if err != nil {
-		return models.DailyLog{}, err
-	}
-	return SanitizeLogForViewer(user, logEntry), nil
+	return service.days.FetchLogByDate(ctx, user.ID, day, location)
 }
 
 func (service *ViewerService) FetchDayLogForViewer(ctx context.Context, user *models.User, day time.Time, location *time.Location) (models.DailyLog, []models.SymptomType, error) {

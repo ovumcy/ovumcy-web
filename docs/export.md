@@ -79,8 +79,8 @@ Field semantics:
 | `symptoms` | object of booleans | Flags for the 15 built-in symptoms. Always present, even when all false. |
 | `other_symptoms` | array of strings | Names of owner-managed custom symptoms recorded that day. |
 | `notes` | string | Free-text note. |
-| `cycle_start` | boolean | Whether the day is the manually marked start of a cycle. Owner-only; never emitted for non-owner viewers. |
-| `is_uncertain` | boolean | Whether the owner flagged this day's data as uncertain. Owner-only; never emitted for non-owner viewers. |
+| `cycle_start` | boolean | Whether the day is the manually marked start of a cycle. Owner-only. |
+| `is_uncertain` | boolean | Whether the owner flagged this day's data as uncertain. Owner-only. |
 
 The `symptoms` object always contains the same 15 keys, in this order: `cramps`, `headache`, `acne`, `mood`, `bloating`, `fatigue`, `breast_tenderness`, `back_pain`, `nausea`, `spotting`, `irritability`, `insomnia`, `food_cravings`, `diarrhea`, `constipation`. Any other symptom configured by the owner appears in `other_symptoms` as a free-text name.
 
@@ -113,7 +113,7 @@ Cell semantics:
 - `Other` is a `;`-separated list of owner-managed custom symptom names; empty when none.
 - `Notes` is the free-text note; the CSV writer quotes the cell as needed.
 - `Pregnancy test` is one of `none`, `negative`, `positive`. It was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.
-- `Cycle start` and `Uncertain` are `Yes`/`No`. They are the last two columns, appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only and never appear for non-owner viewers.
+- `Cycle start` and `Uncertain` are `Yes`/`No`. They are the last two columns, appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only.
 
 ## Summary Export
 
