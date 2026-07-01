@@ -64,6 +64,29 @@ func FuzzParseDayRange(f *testing.F) {
 
 // FuzzValidatePasswordStrength cross-checks the validator against an independent
 // reimplementation and a metamorphic property (appending never weakens).
+// passwordOracleValid is the independent fuzz oracle for
+// ValidatePasswordStrength — structured differently from the implementation and
+// kept as a standalone function so the fuzz body stays within complexity limits.
+// A password is strong iff it has at least 8 runes, at most maxPasswordBytes
+// bytes (bcrypt's hard input limit), and all three character classes.
+func passwordOracleValid(password string) bool {
+	var upper, lower, digit bool
+	for _, r := range password {
+		if unicode.IsUpper(r) {
+			upper = true
+		}
+		if unicode.IsLower(r) {
+			lower = true
+		}
+		if unicode.IsDigit(r) {
+			digit = true
+		}
+	}
+	return utf8.RuneCountInString(password) >= 8 &&
+		len(password) <= maxPasswordBytes &&
+		upper && lower && digit
+}
+
 func FuzzValidatePasswordStrength(f *testing.F) {
 	for _, seed := range []string{
 		"Abcdef12", "short", "alllowercase", "ALLUPPER123",
@@ -77,25 +100,7 @@ func FuzzValidatePasswordStrength(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, password string) {
 		err := ValidatePasswordStrength(password)
-
-		// Independent oracle, structured differently from the implementation.
-		var upper, lower, digit bool
-		for _, r := range password {
-			if unicode.IsUpper(r) {
-				upper = true
-			}
-			if unicode.IsLower(r) {
-				lower = true
-			}
-			if unicode.IsDigit(r) {
-				digit = true
-			}
-		}
-		// The validator enforces BOTH bounds: at least 8 runes and at most 72
-		// BYTES (bcrypt's hard input limit), plus the three character classes.
-		wantValid := utf8.RuneCountInString(password) >= 8 &&
-			len(password) <= maxPasswordBytes &&
-			upper && lower && digit
+		wantValid := passwordOracleValid(password)
 
 		switch {
 		case wantValid && err != nil:

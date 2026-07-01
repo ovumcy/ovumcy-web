@@ -7,7 +7,18 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"gorm.io/gorm"
 )
+
+// countWhere returns the row count for model matching query, failing the test
+// on a query error — folding the repeated count-and-check-err blocks out of the
+// erasure scenarios.
+func countWhere(t *testing.T, database *gorm.DB, model any, query string, args ...any) int64 {
+	t.Helper()
+	var count int64
+	requireNoErr(t, database.Model(model).Where(query, args...).Count(&count).Error, "count")
+	return count
+}
 
 // TestDeleteAccountAndRelatedDataRemovesAllUserRows proves account erasure is
 // complete across every user-scoped table — including register_pickup_tokens
@@ -17,9 +28,7 @@ import (
 func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 	dir := t.TempDir()
 	database, err := OpenSQLite(filepath.Join(dir, "erasure.db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	requireNoErr(t, err, "open sqlite")
 	t.Cleanup(func() {
 		if sqlDB, err := database.DB(); err == nil {
 			_ = sqlDB.Close()
@@ -37,9 +46,7 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		AutoPeriodFill:   true,
 		CreatedAt:        time.Now().UTC(),
 	}
-	if err := repos.Users.Create(context.Background(), user); err != nil {
-		t.Fatalf("create user: %v", err)
-	}
+	requireNoErr(t, repos.Users.Create(context.Background(), user), "create user")
 
 	seed := []any{
 		&models.DailyLog{UserID: user.ID, Date: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true},
@@ -52,20 +59,12 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		&models.OIDCLogoutState{SessionID: "sess-live", EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(time.Hour).UTC()},
 	}
 	for _, row := range seed {
-		if err := database.Create(row).Error; err != nil {
-			t.Fatalf("seed %T: %v", row, err)
-		}
+		requireNoErr(t, database.Create(row).Error, "seed row")
 	}
 
-	if err := repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID); err != nil {
-		t.Fatalf("delete account: %v", err)
-	}
+	requireNoErr(t, repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID), "delete account")
 
-	var usersLeft int64
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Count(&usersLeft).Error; err != nil {
-		t.Fatalf("count users: %v", err)
-	}
-	if usersLeft != 0 {
+	if usersLeft := countWhere(t, database, &models.User{}, "id = ?", user.ID); usersLeft != 0 {
 		t.Fatalf("users still has %d row(s) for the deleted account", usersLeft)
 	}
 
@@ -79,29 +78,17 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		{"register_pickup_tokens", &models.RegisterPickupToken{}},
 		{"oidc_identities", &models.OIDCIdentity{}},
 	} {
-		var remaining int64
-		if err := database.Model(tc.model).Where("user_id = ?", user.ID).Count(&remaining).Error; err != nil {
-			t.Fatalf("count %s: %v", tc.label, err)
-		}
-		if remaining != 0 {
+		if remaining := countWhere(t, database, tc.model, "user_id = ?", user.ID); remaining != 0 {
 			t.Fatalf("%s still has %d row(s) for the deleted user — account erasure incomplete", tc.label, remaining)
 		}
 	}
 
-	// The post-commit housekeeping purge drops expired logout states and
-	// keeps unexpired ones (they age out via their own TTL).
-	var expiredLeft int64
-	if err := database.Model(&models.OIDCLogoutState{}).Where("session_id = ?", "sess-expired").Count(&expiredLeft).Error; err != nil {
-		t.Fatalf("count expired logout states: %v", err)
-	}
-	if expiredLeft != 0 {
+	// The post-commit housekeeping purge drops expired logout states and keeps
+	// unexpired ones (they age out via their own TTL).
+	if expiredLeft := countWhere(t, database, &models.OIDCLogoutState{}, "session_id = ?", "sess-expired"); expiredLeft != 0 {
 		t.Fatalf("expected expired oidc_logout_states row to be purged after erasure, found %d", expiredLeft)
 	}
-	var liveLeft int64
-	if err := database.Model(&models.OIDCLogoutState{}).Where("session_id = ?", "sess-live").Count(&liveLeft).Error; err != nil {
-		t.Fatalf("count live logout states: %v", err)
-	}
-	if liveLeft != 1 {
+	if liveLeft := countWhere(t, database, &models.OIDCLogoutState{}, "session_id = ?", "sess-live"); liveLeft != 1 {
 		t.Fatalf("expected unexpired oidc_logout_states row to survive erasure, found %d", liveLeft)
 	}
 }
