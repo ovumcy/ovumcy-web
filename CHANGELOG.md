@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-07-01
+
+Adds declarative owner provisioning from the operator CLI and clarifies the
+product as owner-role-only with per-account isolation, enabling household
+self-hosting. No database migrations; no breaking API changes.
+
+### Added
+
+- **`ovumcy users create <email>` operator CLI command.** Provisions an owner account declaratively — for example from a YunoHost install script — without the open-register-then-close workaround. The password is read from stdin (for automation) or an interactive no-echo prompt, never from argv or the environment; `--show-recovery-code` prints the one-time recovery code on demand; `--skip-if-exists` makes re-runs idempotent.
+- **Household self-hosting.** A single instance may host several independent owner accounts, each the sole owner of its own data and isolated from the others. The privacy model is documented as owner-role-only in `SECURITY.md` and `docs/SECURITY_INVARIANTS.md`, with cross-owner isolation pinned by regression tests.
+
+### Internal
+
+- Removed the never-shipped non-owner "viewer" sanitization path; the day-read service now returns owner data directly. The role-integrity guard (`ValidateSupportedWebUser`) is retained.
+
 ## [1.3.0] - 2026-06-13
 
 A large security-and-quality release: a multi-phase security audit follow-up
@@ -505,7 +520,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/ovumcy/ovumcy-web/compare/v1.1.0...v1.1.1
