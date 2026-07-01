@@ -358,9 +358,11 @@ For deployment paths, reverse-proxy examples, backups, restores, and advanced Po
 
 ## Operator CLI
 
-For self-hosted operators, the binary includes a small local-only CLI for account audit, removal, and emergency password reset:
+For self-hosted operators, the binary includes a small local-only CLI for account provisioning, audit, removal, and emergency password reset:
 
 ```bash
+go run ./cmd/ovumcy users create owner@example.com
+printf '%s' "$OWNER_PASSWORD" | go run ./cmd/ovumcy users create owner@example.com
 go run ./cmd/ovumcy users list
 go run ./cmd/ovumcy users delete owner@example.com
 go run ./cmd/ovumcy users delete owner@example.com --yes
@@ -369,6 +371,7 @@ go run ./cmd/ovumcy reset-password owner@example.com
 
 Notes:
 
+- `users create <email>` provisions an owner account so an instance can be set up declaratively (for example a YunoHost install script), instead of opening registration, signing up, then closing it again. An instance can host several independent owners (household self-hosting) — run it once per person; each owner's data stays isolated by `user_id`, and only a duplicate email is rejected — pass `--skip-if-exists` to make re-runs idempotent (an existing email is skipped with a success exit code, never overwritten; use `reset-password` to change a password). On an interactive terminal it prompts for the password twice with echo disabled; when stdin is piped or redirected it reads the password from the first line of stdin, so the secret never appears in the command line or the environment. Each owner completes onboarding (last period start, cycle defaults) on first sign-in — that health data is intentionally never passed through provisioning. No recovery code is printed by default (so it cannot leak into install logs); pass `--show-recovery-code` to print it for an interactive operator, or sign in and regenerate one from Settings.
 - `users list` prints a minimal account audit table: `id`, `email`, `role`, `display name`, onboarding state, and creation time.
 - `users delete <email>` removes the selected account together with related health data and prompts for an explicit `DELETE` confirmation unless `--yes` is provided.
 - `reset-password <email>` prompts for a new password interactively, validates it against the password policy, writes its bcrypt hash to the account, and atomically bumps `auth_session_version` so every existing session is invalidated. Use this when an owner has lost both their password and their recovery code.

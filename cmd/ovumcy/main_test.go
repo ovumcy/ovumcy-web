@@ -1088,7 +1088,7 @@ func TestTryRunCLICommandWithHandlersRejectsMissingUsersSubcommand(t *testing.T)
 	if !handled {
 		t.Fatal("expected users command to be handled")
 	}
-	if err == nil || !strings.Contains(err.Error(), "usage: ovumcy users <list|delete>") {
+	if err == nil || !strings.Contains(err.Error(), "usage: ovumcy users <list|delete|create>") {
 		t.Fatalf("expected users usage error, got %v", err)
 	}
 }

@@ -13,7 +13,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 ## Role and access control
 
 - Every state-mutating `/api/v1/*` endpoint **must** chain `handler.OwnerOnly` after `handler.AuthRequired`, even though `AuthRequired` already rejects unsupported roles via `ErrAuthUnsupportedRole`. The matrix test `TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route` in `internal/api/owner_only_coverage_regression_test.go` walks every registered route and fails when a non-public mutation accepts an unsupported-role auth cookie.
-- Only the `RoleOwner` role exists on the web product path — every account is created as `owner`, and `AuthRequired` rejects any non-owner role via `ErrAuthUnsupportedRole`. Do not introduce other roles or user-facing flows for them.
+- Only the `RoleOwner` role exists on the web product path — every account is created as `owner`, and `AuthRequired` rejects any non-owner role via `ErrAuthUnsupportedRole`. Do not introduce other roles or user-facing flows for them. An instance may host more than one independent owner (household self-hosting; single-tenant, not multi-tenant SaaS): each is the sole owner of its own data and never sees another's — enforced by the per-`user_id` scoping in the next point, not by capping the account count.
 - Every per-user query at the repository layer filters by `user_id`. There are no path parameters carrying numeric user identifiers — handlers always read the current user from `c.Locals("currentUser")`.
 - Input DTOs in `internal/api/input_types.go` are strictly bounded. They never expose `Role`, `AuthSessionVersion`, `MustChangePassword`, `TOTPSecret`, or `RecoveryCodeHash` to client-supplied bodies.
 

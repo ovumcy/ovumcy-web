@@ -20,10 +20,12 @@ func TestRunUsersCommandUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "missing subcommand", args: nil, want: "usage: ovumcy users <list|delete>"},
-		{name: "unknown subcommand", args: []string{"export"}, want: "usage: ovumcy users <list|delete>"},
+		{name: "missing subcommand", args: nil, want: "usage: ovumcy users <list|delete|create>"},
+		{name: "unknown subcommand", args: []string{"export"}, want: "usage: ovumcy users <list|delete|create>"},
 		{name: "list with extra arg", args: []string{"list", "extra"}, want: "usage: ovumcy users list"},
 		{name: "delete without email", args: []string{"delete"}, want: "usage: ovumcy users delete <email> [--yes]"},
+		{name: "create without email", args: []string{"create"}, want: "usage: ovumcy users create <email> [--show-recovery-code] [--skip-if-exists]"},
+		{name: "create with unknown flag", args: []string{"create", "owner@example.com", "--oops"}, want: "usage: ovumcy users create <email> [--show-recovery-code] [--skip-if-exists]"},
 	}
 
 	for _, testCase := range tests {
@@ -169,11 +171,24 @@ func mustCLIUsersService(t *testing.T, databasePath string) *services.OperatorUs
 		_ = sqlDB.Close()
 	})
 
-	return services.NewOperatorUserService(db.NewRepositories(database).Users)
+	repositories := db.NewRepositories(database)
+	return services.NewOperatorUserService(repositories.Users, services.NewAuthService(repositories.Users))
 }
 
 func nowUTC() time.Time {
 	return time.Now().UTC()
+}
+
+func TestReadPasswordLineTrimsSurroundingWhitespace(t *testing.T) {
+	t.Parallel()
+
+	got, err := readPasswordLine(strings.NewReader("  StrongPass1  \r\n"))
+	if err != nil {
+		t.Fatalf("readPasswordLine returned error: %v", err)
+	}
+	if string(got) != "StrongPass1" {
+		t.Fatalf("expected surrounding whitespace trimmed to match web auth, got %q", string(got))
+	}
 }
 
 // TestRunUsersCommandReportsDatabaseInitFailure mirrors the reset command's

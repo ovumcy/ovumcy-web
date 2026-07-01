@@ -645,7 +645,7 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 		return true, handlers.runResetPassword(databaseConfig, email)
 	case "users":
 		if len(args) < 2 {
-			return true, fmt.Errorf("usage: ovumcy users <list|delete>")
+			return true, fmt.Errorf("usage: ovumcy users <list|delete|create>")
 		}
 		if handlers.runUsers == nil {
 			return true, fmt.Errorf("users handler is required")

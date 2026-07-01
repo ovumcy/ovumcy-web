@@ -18,6 +18,10 @@ type stubOperatorUserRepo struct {
 	deleteErr       error
 	deletedUserID   uint
 	deleteWasCalled bool
+	createErr       error
+	createWasCalled bool
+	createdUser     *models.User
+	createdSymptoms []models.SymptomType
 }
 
 func (stub *stubOperatorUserRepo) ListOperatorUserSummaries(context.Context) ([]models.OperatorUserSummary, error) {
@@ -40,6 +44,37 @@ func (stub *stubOperatorUserRepo) DeleteAccountAndRelatedData(ctx context.Contex
 	return stub.deleteErr
 }
 
+func (stub *stubOperatorUserRepo) CreateUserWithSymptoms(_ context.Context, user *models.User, symptoms []models.SymptomType) error {
+	stub.createWasCalled = true
+	stub.createdUser = user
+	stub.createdSymptoms = symptoms
+	if stub.createErr != nil {
+		return stub.createErr
+	}
+	user.ID = 1
+	return nil
+}
+
+type stubOwnerBuilder struct {
+	user models.User
+	code string
+	err  error
+}
+
+func (stub *stubOwnerBuilder) BuildOwnerUserWithRecovery(email string, _ string, _ time.Time) (models.User, string, error) {
+	if stub.err != nil {
+		return models.User{}, "", stub.err
+	}
+	user := stub.user
+	user.Email = email
+	return user, stub.code, nil
+}
+
+type fakeUniqueConstraintError struct{}
+
+func (fakeUniqueConstraintError) Error() string            { return "UNIQUE constraint failed: users.email" }
+func (fakeUniqueConstraintError) UniqueConstraint() string { return "users.email" }
+
 func TestOperatorUserServiceListUsers(t *testing.T) {
 	t.Parallel()
 
@@ -47,7 +82,7 @@ func TestOperatorUserServiceListUsers(t *testing.T) {
 		listUsers: []models.OperatorUserSummary{
 			{ID: 1, Email: "owner@example.com", Role: models.RoleOwner},
 		},
-	})
+	}, nil)
 
 	users, err := service.ListUsers(context.Background())
 	if err != nil {
@@ -72,7 +107,7 @@ func TestOperatorUserServiceGetUserByEmailNormalizesInput(t *testing.T) {
 			CreatedAt:           now,
 		},
 		found: true,
-	})
+	}, nil)
 
 	user, err := service.GetUserByEmail(context.Background(), " Owner@Example.com ")
 	if err != nil {
@@ -90,7 +125,7 @@ func TestOperatorUserServiceDeleteUserByEmail(t *testing.T) {
 		user:  models.User{ID: 9, Email: "owner@example.com", Role: models.RoleOwner},
 		found: true,
 	}
-	service := NewOperatorUserService(repo)
+	service := NewOperatorUserService(repo, nil)
 
 	user, err := service.DeleteUserByEmail(context.Background(), "owner@example.com")
 	if err != nil {
@@ -136,13 +171,109 @@ func TestOperatorUserServiceDeleteUserByEmailErrors(t *testing.T) {
 	for _, testCase := range testCases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
-			service := NewOperatorUserService(testCase.repo)
+			service := NewOperatorUserService(testCase.repo, nil)
 			_, err := service.DeleteUserByEmail(context.Background(), "not-an-email")
 			if testCase.name != "invalid email" {
 				_, err = service.DeleteUserByEmail(context.Background(), "owner@example.com")
 			}
 			if !errors.Is(err, testCase.err) {
 				t.Fatalf("expected error %v, got %v", testCase.err, err)
+			}
+		})
+	}
+}
+
+func TestOperatorUserServiceCreateOwnerProvisionsOwnerWithSymptoms(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{}
+	builder := &stubOwnerBuilder{
+		user: models.User{Role: models.RoleOwner, AuthSessionVersion: 1},
+		code: "OVUM-AAAA-BBBB-CCCC",
+	}
+	service := NewOperatorUserService(repo, builder)
+
+	summary, recoveryCode, err := service.CreateOwner(context.Background(), " Owner@Example.com ", "StrongPass1", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("CreateOwner() unexpected error: %v", err)
+	}
+	if !repo.createWasCalled {
+		t.Fatal("expected CreateUserWithSymptoms to be called")
+	}
+	if recoveryCode != "OVUM-AAAA-BBBB-CCCC" {
+		t.Fatalf("expected recovery code to be returned, got %q", recoveryCode)
+	}
+	if summary.Email != "owner@example.com" {
+		t.Fatalf("expected normalized email, got %q", summary.Email)
+	}
+	if len(repo.createdSymptoms) == 0 {
+		t.Fatal("expected built-in symptoms to be seeded")
+	}
+	if repo.createdUser == nil || repo.createdUser.Role != models.RoleOwner {
+		t.Fatalf("expected owner role on created user, got %#v", repo.createdUser)
+	}
+}
+
+func TestOperatorUserServiceCreateOwnerAllowsMultipleOwners(t *testing.T) {
+	t.Parallel()
+
+	// Household self-hosting: creating a second independent owner is allowed.
+	// Only a duplicate email is rejected (by the unique index — see next test).
+	repo := &stubOperatorUserRepo{}
+	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-DDDD-EEEE-FFFF"}
+	service := NewOperatorUserService(repo, builder)
+
+	summary, _, err := service.CreateOwner(context.Background(), "daughter@example.com", "StrongPass1", time.Now().UTC())
+	if err != nil {
+		t.Fatalf("CreateOwner() unexpected error for a second owner: %v", err)
+	}
+	if !repo.createWasCalled {
+		t.Fatal("expected the second owner account to be created")
+	}
+	if summary.Email != "daughter@example.com" {
+		t.Fatalf("expected normalized email, got %q", summary.Email)
+	}
+}
+
+func TestOperatorUserServiceCreateOwnerMapsDuplicateEmail(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{createErr: fakeUniqueConstraintError{}}
+	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-AAAA-BBBB-CCCC"}
+	service := NewOperatorUserService(repo, builder)
+
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", time.Now().UTC())
+	if !errors.Is(err, ErrOperatorUserEmailExists) {
+		t.Fatalf("expected ErrOperatorUserEmailExists from a duplicate email, got %v", err)
+	}
+}
+
+func TestOperatorUserServiceCreateOwnerValidatesInput(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name     string
+		email    string
+		password string
+		want     error
+	}{
+		{name: "invalid email", email: "not-an-email", password: "StrongPass1", want: ErrOperatorUserEmailInvalid},
+		{name: "empty email", email: "  ", password: "StrongPass1", want: ErrOperatorUserEmailRequired},
+		{name: "weak password", email: "owner@example.com", password: "weak", want: ErrOperatorUserPasswordWeak},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			repo := &stubOperatorUserRepo{}
+			service := NewOperatorUserService(repo, &stubOwnerBuilder{})
+			_, _, err := service.CreateOwner(context.Background(), testCase.email, testCase.password, time.Now().UTC())
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("expected %v, got %v", testCase.want, err)
+			}
+			if repo.createWasCalled {
+				t.Fatal("expected no creation on validation failure")
 			}
 		})
 	}

@@ -367,6 +367,13 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | `GET /register/welcome` second consumption falls through to `/login` | `register_pickup_handler_test.go` in `internal/api/` |
 | Recovery code shape `OVUM-XXXX-XXXX-XXXX` | `TestValidateRecoveryCodeFormat`, `TestNormalizeRecoveryCode` in [internal/services/auth_input_policy_test.go](internal/services/auth_input_policy_test.go) |
 
+### Cross-Owner Data Isolation (household self-hosting)
+
+| Claim | Enforced by |
+| --- | --- |
+| An instance may host several independent owners; each owner's data is isolated by `user_id`, and a resource id from the request is always combined with the session user — `PATCH`/`DELETE`/`restore` of another owner's symptom returns 404 and leaves it unchanged | `TestUpdateSymptomByOtherUserReturnsNotFound`, `TestDeleteSymptomByOtherUserReturnsNotFound`, `TestRestoreSymptomByOtherUserReturnsNotFound` in [internal/api/symptoms_idor_regression_test.go](internal/api/symptoms_idor_regression_test.go) |
+| A day upsert carrying another owner's `symptom_id` is rejected (400) and writes no log row for the requester | `TestUpsertDayRejectsSymptomIDOwnedByOtherUser` in [internal/api/symptoms_idor_regression_test.go](internal/api/symptoms_idor_regression_test.go) |
+
 ### Session Invalidation on Credential Rotation
 
 | Claim | Enforced by |
