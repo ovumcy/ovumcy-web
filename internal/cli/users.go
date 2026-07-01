@@ -65,8 +65,7 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 	case "create":
 		return runUsersCreate(service, args[1:], input, output)
 	default:
-		// codecov:ignore -- unreachable: the subcommand is validated in the switch above
-		return errors.New("usage: ovumcy users <list|delete|create>")
+		return errors.New("usage: ovumcy users <list|delete|create>") // codecov:ignore -- unreachable: the subcommand is validated in the switch above
 	}
 }
 
@@ -263,10 +262,11 @@ func parseUsersCreateArgs(args []string) (usersCreateOptions, error) {
 // — the declarative-provisioning path, e.g. a YunoHost install script — it reads
 // the password as the first line of stdin.
 func readCreatePassword(input io.Reader) ([]byte, error) {
+	// codecov:ignore:start -- interactive TTY prompt; the terminal branch needs a real terminal and is exercised only interactively
 	if file, ok := input.(*os.File); ok && stdinIsTerminal(file) {
-		// codecov:ignore -- interactive TTY prompt; not reachable without a real terminal
 		return promptNewPassword()
 	}
+	// codecov:ignore:end
 	return readPasswordLine(input)
 }
 
