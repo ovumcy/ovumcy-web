@@ -32,6 +32,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 - Auth and settings flash banners must come from sealed cookies or session state, never from URL query parameters. Do not introduce `?error=`, `?status=`, or `?email=` notification sources.
 - Public registration (`POST /api/v1/users`) requires explicit consent — the `consent` field must be truthy (`true`/`1`/`yes`/`on`). The browser checkbox lives on `/register`; the backend rejects requests without consent with `auth.error.consent_required`.
 - Health data is **owner-only**. The `clear-data` and `delete-account` flows require the current password and bump `auth_session_version`.
+- Restoring a JSON export (`POST /api/v1/imports/json`) is **additive and owner-scoped**: it only creates calendar days the account does not already have, never overwrites or deletes existing days, and re-validates every field of the (untrusted) file server-side. Because it destroys nothing, it needs no password re-authentication — but it is state-mutating and therefore owner-only and CSRF-protected.
 
 ## CSRF and CORS
 

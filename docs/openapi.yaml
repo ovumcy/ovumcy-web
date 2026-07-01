@@ -227,6 +227,24 @@ components:
           enum: [true]
       additionalProperties: false
 
+    ImportResult:
+      type: object
+      required: [ok, added, skipped, rejected]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        added:
+          type: integer
+          description: Days created that the account did not already have.
+        skipped:
+          type: integer
+          description: Days that already existed and were left untouched (never overwritten).
+        rejected:
+          type: integer
+          description: Malformed or duplicate day records dropped without writing.
+      additionalProperties: false
+
     OkRedirectResponse:
       type: object
       required: [ok, redirect]
@@ -1291,6 +1309,35 @@ paths:
               schema: { $ref: '#/components/schemas/ExportJSON' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/imports/json:
+    post:
+      tags: [export]
+      summary: Restore a prior JSON export into the current account (owner only).
+      description: |
+        Additive restore of a prior `/api/v1/exports/json` payload: creates only
+        the days the account does not already have. Existing days are never
+        overwritten or deleted, so no re-authentication is required (unlike
+        clear-data). Every field is re-validated server-side and scoped to the
+        session owner; malformed or duplicate day records are dropped and
+        reported in the counts rather than aborting the restore. State-mutating,
+        so CSRF-protected. See [docs/export.md](export.md).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExportJSON' }
+      responses:
+        '200':
+          description: Restore summary.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportResult' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413':
+          description: Payload exceeds the size or entry-count limit.
 
   # =========================================================================
   # users/current — whoami, settings, and account management

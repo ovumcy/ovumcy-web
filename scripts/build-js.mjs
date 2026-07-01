@@ -22,6 +22,10 @@ const settingsExportBundleSources = [
   "./web/src/js/settings-export/30-export-and-bootstrap.js"
 ];
 
+const settingsImportBundleSources = [
+  "./web/src/js/settings-import/00-restore.js"
+];
+
 function buildBundle(sources) {
   return sources
     .map((source) => readFileSync(source, "utf8").trimEnd())
@@ -35,6 +39,10 @@ writeFileSync("./web/static/js/app.js", appBundle, "utf8");
 const settingsExportBundle = buildBundle(settingsExportBundleSources);
 writeFileSync("./web/src/js/settings-export.js", settingsExportBundle, "utf8");
 writeFileSync("./web/static/js/settings-export.js", settingsExportBundle, "utf8");
+
+const settingsImportBundle = buildBundle(settingsImportBundleSources);
+writeFileSync("./web/src/js/settings-import.js", settingsImportBundle, "utf8");
+writeFileSync("./web/static/js/settings-import.js", settingsImportBundle, "utf8");
 
 const buildTargets = [
   ["./node_modules/htmx.org/dist/htmx.min.js", "./web/static/js/htmx.min.js"],

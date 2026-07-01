@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Restore from JSON backup.** `Settings → Restore from backup` (and `POST /api/v1/imports/json`) re-imports a prior Ovumcy JSON export into the current account. The restore is additive — only days the account does not already have are created; existing days are never overwritten or deleted, so no password re-authentication is required. Every field of the (untrusted) file is re-validated and scoped to the session owner; malformed or duplicate records are skipped and reported in the result counts. Importing from other trackers (e.g. Drip) remains out of scope — see issue #116.
+
 ## [1.4.0] - 2026-07-01
 
 Adds declarative owner provisioning from the operator CLI and clarifies the

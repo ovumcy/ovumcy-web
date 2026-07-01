@@ -135,6 +135,30 @@ Response is JSON (not a file download), used by the Settings UI before showing t
 
 `date_from`/`date_to` are absent or empty strings when the range is unbounded.
 
+## Import (restore)
+
+`POST /api/v1/imports/json` restores a prior JSON export back into the current account. It is the inverse of `GET /api/v1/exports/json` and consumes the exact `{ "exported_at": ..., "entries": [...] }` shape documented above (`exported_at` is ignored on import).
+
+Request: `Content-Type: application/json`, body = the raw export file. Requires the `owner` role, a valid auth session, and a CSRF token (`X-CSRF-Token` header or `csrf_token` form field) — it is state-mutating, unlike the GET exports.
+
+The restore is **additive**: each entry creates its day only if the account does not already have that calendar day. Existing days are never overwritten or deleted, so no password re-authentication is required (contrast clear-data / delete-account), and re-importing the same file is safe and idempotent.
+
+Every field is re-validated and sanitized server-side (the file is untrusted input): unknown enum values fall back to their neutral default, `notes` is length-capped, invalid cycle-factor keys are dropped, and `cycle_start`/`is_uncertain` are cleared on non-period days. Built-in symptom flags map back to the owner's own catalog; names in `other_symptoms` are matched to existing symptoms or created as custom symptoms. All writes are scoped to the session owner.
+
+Response `200`:
+
+```json
+{ "ok": true, "added": 128, "skipped": 14, "rejected": 0 }
+```
+
+- `added` — days created.
+- `skipped` — days that already existed and were left untouched.
+- `rejected` — malformed or duplicate day records dropped without writing.
+
+Error responses use stable, PII-free keys: `400 invalid import file` (not valid JSON), `413 import file too large`, `500 failed to import data`.
+
+Importing from other trackers (e.g. Drip) is out of scope for this endpoint — see [issue #116](https://github.com/ovumcy/ovumcy-web/issues/116).
+
 ## Stability
 
 The JSON entry shape and CSV columns are stable across Ovumcy patch and minor releases. Breaking changes (renaming or removing a field, changing the value vocabulary, reordering CSV columns) ship in a major release with a migration note in `CHANGELOG.md`. Adding a new field to the JSON entry or a new column at the end of the CSV is non-breaking and does not trigger a major bump.

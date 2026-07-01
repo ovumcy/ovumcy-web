@@ -65,6 +65,9 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	exports.Get("/summary", handler.ExportSummary)
 	exports.Get("/csv", handler.ExportCSV)
 	exports.Get("/json", handler.ExportJSON)
+
+	imports := v1.Group("/imports", handler.AuthRequired)
+	imports.Post("/json", handler.OwnerOnly, handler.ImportJSON)
 }
 
 func registerPageRoutes(app *fiber.App, handler *Handler) {

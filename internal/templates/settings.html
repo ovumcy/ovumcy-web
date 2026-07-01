@@ -710,6 +710,47 @@
   </section>
   {{end}}
 
+  {{if eq .CurrentUser.Role "owner"}}
+  <section
+    class="journal-card p-5 sm:p-6 space-y-4"
+    data-import-section
+    data-import-csrf="{{.CSRFToken}}"
+    data-import-success-template="{{t .Messages "settings.import_success"}}"
+    data-import-empty="{{t .Messages "settings.import_empty"}}"
+    data-import-failed="{{t .Messages "settings.import_failed"}}"
+    data-import-invalid-file="{{t .Messages "settings.import_invalid_file"}}"
+    data-import-too-large="{{t .Messages "settings.import_too_large"}}"
+    id="settings-import">
+    <div>
+      <h2 class="journal-subtitle">🗃️ {{t .Messages "settings.import_title"}}</h2>
+      <p id="settings-import-desc" class="journal-muted mt-2 text-sm">{{t .Messages "settings.import_description"}}</p>
+    </div>
+
+    <form data-import-form novalidate>
+      <div class="space-y-2">
+        <label class="field-label" for="settings-import-file">{{t .Messages "settings.import_choose_file"}}</label>
+        <input
+          id="settings-import-file"
+          type="file"
+          accept=".json,application/json"
+          class="input-field"
+          aria-describedby="settings-import-desc"
+          data-import-file>
+      </div>
+
+      <div class="settings-form-actions">
+        <button
+          type="submit"
+          class="btn-secondary"
+          data-import-submit
+          data-save-button
+          data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.import_submit"}}</button>
+        <div id="settings-import-status" class="save-status text-sm" data-import-status aria-live="polite"></div>
+      </div>
+    </form>
+  </section>
+  {{end}}
+
   <section id="settings-danger-zone" class="journal-card danger-card-strong p-5 sm:p-6 settings-danger-zone">
     <h2 class="journal-subtitle danger-title">⚠️ {{t .Messages "settings.danger_zone.title"}}</h2>
     <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
@@ -791,5 +832,6 @@
 </section>
 {{if eq .CurrentUser.Role "owner"}}
 <script defer src="/static/js/settings-export.js?v=20260312-1"></script>
+<script defer src="/static/js/settings-import.js?v=20260701-1"></script>
 {{end}}
 {{end}}
