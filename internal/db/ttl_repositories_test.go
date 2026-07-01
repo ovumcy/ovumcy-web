@@ -14,6 +14,18 @@ import (
 // row consumed in the same transaction (replay is indistinguishable from
 // missing), expired rows never consume, and DeleteExpired drops only the
 // expired ones.
+// assertPickupConsume consumes nonce at time `at` and asserts the returned
+// (userID, ok) pair, folding the repeated Consume-and-check blocks out of the
+// scenario so its cyclomatic complexity stays in range.
+func assertPickupConsume(t *testing.T, repo *RegisterPickupTokenRepository, nonce string, at time.Time, wantUserID uint, wantOK bool) {
+	t.Helper()
+	userID, ok, err := repo.Consume(context.Background(), nonce, at)
+	requireNoErr(t, err, "consume "+nonce)
+	if ok != wantOK || userID != wantUserID {
+		t.Fatalf("consume %q = (%d, %t), want (%d, %t)", nonce, userID, ok, wantUserID, wantOK)
+	}
+}
+
 func TestRegisterPickupTokenRepositoryIssueConsumeTTL(t *testing.T) {
 	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "pickup.db"))
 	repo := NewRegisterPickupTokenRepository(database)
@@ -33,51 +45,26 @@ func TestRegisterPickupTokenRepositoryIssueConsumeTTL(t *testing.T) {
 		t.Fatal("expected zero expiry to be rejected")
 	}
 
-	// Issue + consume returns the original user id once.
-	if err := repo.Issue(context.Background(), "nonce-a", 42, base.Add(5*time.Minute)); err != nil {
-		t.Fatalf("issue: %v", err)
-	}
-	if userID, ok, err := repo.Consume(context.Background(), "nonce-a", base); err != nil || !ok || userID != 42 {
-		t.Fatalf("first consume = (%d, %t, %v), want (42, true, nil)", userID, ok, err)
-	}
-
-	// Single-use: replay returns the same indistinguishable (0,false,nil).
-	if userID, ok, err := repo.Consume(context.Background(), "nonce-a", base); err != nil || ok || userID != 0 {
-		t.Fatalf("replay consume = (%d, %t, %v), want (0, false, nil)", userID, ok, err)
-	}
+	// Issue + consume returns the original user id once; replay is an
+	// indistinguishable no-op (single-use).
+	requireNoErr(t, repo.Issue(context.Background(), "nonce-a", 42, base.Add(5*time.Minute)), "issue nonce-a")
+	assertPickupConsume(t, repo, "nonce-a", base, 42, true)
+	assertPickupConsume(t, repo, "nonce-a", base, 0, false)
 
 	// Expired token cannot be consumed.
-	if err := repo.Issue(context.Background(), "nonce-expired", 7, base.Add(-1*time.Minute)); err != nil {
-		t.Fatalf("issue expired: %v", err)
-	}
-	if userID, ok, err := repo.Consume(context.Background(), "nonce-expired", base); err != nil || ok || userID != 0 {
-		t.Fatalf("expired consume = (%d, %t, %v), want (0, false, nil)", userID, ok, err)
-	}
+	requireNoErr(t, repo.Issue(context.Background(), "nonce-expired", 7, base.Add(-1*time.Minute)), "issue expired")
+	assertPickupConsume(t, repo, "nonce-expired", base, 0, false)
 
 	// Missing / empty nonce never consume.
-	if _, ok, _ := repo.Consume(context.Background(), "does-not-exist", base); ok {
-		t.Fatal("expected missing nonce to not consume")
-	}
-	if _, ok, _ := repo.Consume(context.Background(), "", base); ok {
-		t.Fatal("expected empty nonce to not consume")
-	}
+	assertPickupConsume(t, repo, "does-not-exist", base, 0, false)
+	assertPickupConsume(t, repo, "", base, 0, false)
 
 	// DeleteExpired drops only expired rows.
-	if err := repo.Issue(context.Background(), "nonce-future", 9, base.Add(5*time.Minute)); err != nil {
-		t.Fatalf("issue future: %v", err)
-	}
-	if err := repo.Issue(context.Background(), "nonce-stale", 9, base.Add(-2*time.Minute)); err != nil {
-		t.Fatalf("issue stale: %v", err)
-	}
-	if err := repo.DeleteExpired(context.Background(), base); err != nil {
-		t.Fatalf("delete expired: %v", err)
-	}
-	if _, ok, _ := repo.Consume(context.Background(), "nonce-stale", base); ok {
-		t.Fatal("expected stale row to be deleted by DeleteExpired")
-	}
-	if _, ok, _ := repo.Consume(context.Background(), "nonce-future", base); !ok {
-		t.Fatal("expected future row to survive DeleteExpired")
-	}
+	requireNoErr(t, repo.Issue(context.Background(), "nonce-future", 9, base.Add(5*time.Minute)), "issue future")
+	requireNoErr(t, repo.Issue(context.Background(), "nonce-stale", 9, base.Add(-2*time.Minute)), "issue stale")
+	requireNoErr(t, repo.DeleteExpired(context.Background(), base), "delete expired")
+	assertPickupConsume(t, repo, "nonce-stale", base, 0, false)
+	assertPickupConsume(t, repo, "nonce-future", base, 9, true)
 }
 
 // TestRegisterPickupTokenRepositoryIssuePurgesExpiredRows pins the retention
@@ -147,6 +134,21 @@ func TestRegisterPickupTokenRepositoryIssuePurgesExpiredRows(t *testing.T) {
 // TestOIDCLogoutStateRepositorySaveFindTTL covers the OIDC logout-state
 // persistence: save/find round-trip, session_id upsert, not-found, targeted
 // delete, and TTL sweep.
+// assertLogoutState finds sessionID and asserts presence, plus — when present
+// and wantEndpoint is set — the mutable columns, collapsing the repeated
+// find-and-check blocks out of the scenario.
+func assertLogoutState(t *testing.T, repo *OIDCLogoutStateRepository, sessionID string, wantOK bool, wantEndpoint, wantHint string) {
+	t.Helper()
+	got, ok, err := repo.FindBySessionID(context.Background(), sessionID)
+	requireNoErr(t, err, "find "+sessionID)
+	if ok != wantOK {
+		t.Fatalf("find %q ok=%t, want %t", sessionID, ok, wantOK)
+	}
+	if wantOK && wantEndpoint != "" && (got.EndSessionEndpoint != wantEndpoint || got.IDTokenHint != wantHint) {
+		t.Fatalf("find %q returned %#v, want endpoint=%q hint=%q", sessionID, got, wantEndpoint, wantHint)
+	}
+}
+
 func TestOIDCLogoutStateRepositorySaveFindTTL(t *testing.T) {
 	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "logout.db"))
 	repo := NewOIDCLogoutStateRepository(database)
@@ -163,57 +165,26 @@ func TestOIDCLogoutStateRepositorySaveFindTTL(t *testing.T) {
 	}
 
 	// nil is a no-op.
-	if err := repo.Save(context.Background(), nil); err != nil {
-		t.Fatalf("save nil: %v", err)
-	}
+	requireNoErr(t, repo.Save(context.Background(), nil), "save nil")
 
-	if err := repo.Save(context.Background(), newState("sess-1", "https://id.example.com/logout", "hint-1", base.Add(10*time.Minute))); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	got, ok, err := repo.FindBySessionID(context.Background(), "sess-1")
-	if err != nil || !ok {
-		t.Fatalf("find = (ok=%t, err=%v), want found", ok, err)
-	}
-	if got.EndSessionEndpoint != "https://id.example.com/logout" || got.IDTokenHint != "hint-1" {
-		t.Fatalf("find returned unexpected state: %#v", got)
-	}
+	requireNoErr(t, repo.Save(context.Background(), newState("sess-1", "https://id.example.com/logout", "hint-1", base.Add(10*time.Minute))), "save")
+	assertLogoutState(t, repo, "sess-1", true, "https://id.example.com/logout", "hint-1")
 
 	// Upsert on session_id conflict updates the mutable columns.
-	if err := repo.Save(context.Background(), newState("sess-1", "https://id.example.com/logout-v2", "hint-2", base.Add(10*time.Minute))); err != nil {
-		t.Fatalf("re-save: %v", err)
-	}
-	got, _, _ = repo.FindBySessionID(context.Background(), "sess-1")
-	if got.EndSessionEndpoint != "https://id.example.com/logout-v2" || got.IDTokenHint != "hint-2" {
-		t.Fatalf("expected upsert to update columns, got %#v", got)
-	}
+	requireNoErr(t, repo.Save(context.Background(), newState("sess-1", "https://id.example.com/logout-v2", "hint-2", base.Add(10*time.Minute))), "re-save")
+	assertLogoutState(t, repo, "sess-1", true, "https://id.example.com/logout-v2", "hint-2")
 
 	// Missing session.
-	if _, ok, _ := repo.FindBySessionID(context.Background(), "nope"); ok {
-		t.Fatal("expected missing session to return not-found")
-	}
+	assertLogoutState(t, repo, "nope", false, "", "")
 
 	// Targeted delete.
-	if err := repo.DeleteBySessionID(context.Background(), "sess-1"); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if _, ok, _ := repo.FindBySessionID(context.Background(), "sess-1"); ok {
-		t.Fatal("expected deleted session to be gone")
-	}
+	requireNoErr(t, repo.DeleteBySessionID(context.Background(), "sess-1"), "delete")
+	assertLogoutState(t, repo, "sess-1", false, "", "")
 
 	// TTL sweep drops only expired rows.
-	if err := repo.Save(context.Background(), newState("valid", "https://id.example.com/l", "h", base.Add(10*time.Minute))); err != nil {
-		t.Fatalf("save valid: %v", err)
-	}
-	if err := repo.Save(context.Background(), newState("stale", "https://id.example.com/l", "h", base.Add(-1*time.Minute))); err != nil {
-		t.Fatalf("save stale: %v", err)
-	}
-	if err := repo.DeleteExpired(context.Background(), base); err != nil {
-		t.Fatalf("delete expired: %v", err)
-	}
-	if _, ok, _ := repo.FindBySessionID(context.Background(), "stale"); ok {
-		t.Fatal("expected stale logout state to be deleted")
-	}
-	if _, ok, _ := repo.FindBySessionID(context.Background(), "valid"); !ok {
-		t.Fatal("expected valid logout state to survive")
-	}
+	requireNoErr(t, repo.Save(context.Background(), newState("valid", "https://id.example.com/l", "h", base.Add(10*time.Minute))), "save valid")
+	requireNoErr(t, repo.Save(context.Background(), newState("stale", "https://id.example.com/l", "h", base.Add(-1*time.Minute))), "save stale")
+	requireNoErr(t, repo.DeleteExpired(context.Background(), base), "delete expired")
+	assertLogoutState(t, repo, "stale", false, "", "")
+	assertLogoutState(t, repo, "valid", true, "", "")
 }
