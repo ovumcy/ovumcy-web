@@ -61,6 +61,21 @@ func TestViewerServiceFetchSymptomsForViewerLoadsOwnerSymptoms(t *testing.T) {
 	}
 }
 
+func TestViewerServiceFetchLogsForViewerReturnsOwnerLogs(t *testing.T) {
+	service := NewViewerService(
+		&stubViewerDayReader{logs: []models.DailyLog{{Notes: "n1"}, {Notes: "n2"}}},
+		&stubViewerSymptomReader{},
+	)
+
+	logs, err := service.FetchLogsForViewer(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.Now().UTC(), time.UTC)
+	if err != nil {
+		t.Fatalf("FetchLogsForViewer(owner) unexpected error: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("expected two owner logs, got %#v", logs)
+	}
+}
+
 func TestViewerServiceFetchDayLogForViewer_PropagatesErrors(t *testing.T) {
 	dayErr := errors.New("day fetch failed")
 	service := NewViewerService(&stubViewerDayReader{err: dayErr}, &stubViewerSymptomReader{})

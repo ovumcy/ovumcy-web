@@ -248,6 +248,35 @@ func TestOperatorUserServiceCreateOwnerMapsDuplicateEmail(t *testing.T) {
 	}
 }
 
+func TestOperatorUserServiceCreateOwnerWrapsBuilderError(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{}
+	builder := &stubOwnerBuilder{err: errors.New("hash failure")}
+	service := NewOperatorUserService(repo, builder)
+
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", time.Now().UTC())
+	if !errors.Is(err, ErrOperatorUserCreateFailed) {
+		t.Fatalf("expected ErrOperatorUserCreateFailed from builder error, got %v", err)
+	}
+	if repo.createWasCalled {
+		t.Fatal("expected no persistence when the builder fails")
+	}
+}
+
+func TestOperatorUserServiceCreateOwnerWrapsPersistenceError(t *testing.T) {
+	t.Parallel()
+
+	repo := &stubOperatorUserRepo{createErr: errors.New("db unavailable")}
+	builder := &stubOwnerBuilder{user: models.User{Role: models.RoleOwner}, code: "OVUM-AAAA-BBBB-CCCC"}
+	service := NewOperatorUserService(repo, builder)
+
+	_, _, err := service.CreateOwner(context.Background(), "owner@example.com", "StrongPass1", time.Now().UTC())
+	if !errors.Is(err, ErrOperatorUserCreateFailed) {
+		t.Fatalf("expected ErrOperatorUserCreateFailed from a non-unique persistence error, got %v", err)
+	}
+}
+
 func TestOperatorUserServiceCreateOwnerValidatesInput(t *testing.T) {
 	t.Parallel()
 

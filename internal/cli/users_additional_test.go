@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -188,6 +190,151 @@ func TestReadPasswordLineTrimsSurroundingWhitespace(t *testing.T) {
 	}
 	if string(got) != "StrongPass1" {
 		t.Fatalf("expected surrounding whitespace trimmed to match web auth, got %q", string(got))
+	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("read boom") }
+
+func TestReadPasswordLineErrors(t *testing.T) {
+	t.Parallel()
+
+	if _, err := readPasswordLine(nil); err == nil {
+		t.Fatal("expected error for nil input")
+	}
+	if _, err := readPasswordLine(strings.NewReader("")); err == nil {
+		t.Fatal("expected error for empty input")
+	}
+	if _, err := readPasswordLine(strings.NewReader("   \n")); err == nil {
+		t.Fatal("expected error for a blank password")
+	}
+	if _, err := readPasswordLine(failingReader{}); err == nil {
+		t.Fatal("expected a non-EOF read error to propagate")
+	}
+}
+
+func TestStdinIsTerminalReturnsFalseForRegularFile(t *testing.T) {
+	t.Parallel()
+
+	file, err := os.CreateTemp(t.TempDir(), "notty")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer file.Close()
+
+	if stdinIsTerminal(file) {
+		t.Fatal("expected a regular file not to be reported as a terminal")
+	}
+
+	closed, err := os.CreateTemp(t.TempDir(), "closed")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	closed.Close()
+	if stdinIsTerminal(closed) {
+		t.Fatal("expected a closed file (failed Stat) not to be reported as a terminal")
+	}
+}
+
+func TestReadCreatePasswordReadsFromNonTTYFile(t *testing.T) {
+	t.Parallel()
+
+	file, err := os.CreateTemp(t.TempDir(), "pw")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer file.Close()
+	if _, err := file.WriteString("StrongPass1\n"); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	if _, err := file.Seek(0, 0); err != nil {
+		t.Fatalf("seek temp file: %v", err)
+	}
+
+	got, err := readCreatePassword(file)
+	if err != nil {
+		t.Fatalf("readCreatePassword returned error: %v", err)
+	}
+	if string(got) != "StrongPass1" {
+		t.Fatalf("expected password read from a non-TTY file, got %q", string(got))
+	}
+}
+
+func TestMapUsersCreateError(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"email required", services.ErrOperatorUserEmailRequired, "email is required"},
+		{"invalid email", services.ErrOperatorUserEmailInvalid, "invalid email address"},
+		{"weak password", services.ErrOperatorUserPasswordWeak, "strength"},
+		{"duplicate", services.ErrOperatorUserEmailExists, "already exists"},
+		{"other", errors.New("boom"), "create owner"},
+	}
+	for _, testCase := range cases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			got := mapUsersCreateError(testCase.err)
+			if got == nil || !strings.Contains(got.Error(), testCase.want) {
+				t.Fatalf("mapUsersCreateError(%v) = %v, want contains %q", testCase.err, got, testCase.want)
+			}
+		})
+	}
+}
+
+func TestParseUsersCreateArgsAcceptsFlags(t *testing.T) {
+	t.Parallel()
+
+	opts, err := parseUsersCreateArgs([]string{"", "owner@example.com", "--show-recovery-code", "--skip-if-exists"})
+	if err != nil {
+		t.Fatalf("parseUsersCreateArgs returned error: %v", err)
+	}
+	if opts.email != "owner@example.com" || !opts.showRecoveryCode || !opts.skipIfExists {
+		t.Fatalf("unexpected parsed options: %#v", opts)
+	}
+
+	if _, err := parseUsersCreateArgs([]string{"a@example.com", "b@example.com"}); err == nil {
+		t.Fatal("expected error for a second positional email")
+	}
+}
+
+func TestRunUsersCreateReturnsParseError(t *testing.T) {
+	t.Parallel()
+
+	if err := runUsersCreate(nil, []string{"--nope"}, strings.NewReader(""), &bytes.Buffer{}); err == nil {
+		t.Fatal("expected a parse error for an unknown flag")
+	}
+}
+
+func TestRunUsersCreateReturnsPasswordError(t *testing.T) {
+	t.Parallel()
+
+	if err := runUsersCreate(nil, []string{"owner@example.com"}, strings.NewReader("\n"), &bytes.Buffer{}); err == nil {
+		t.Fatal("expected an empty-password error")
+	}
+}
+
+func TestRunUsersCreateDefaultsNilOutputOnSuccess(t *testing.T) {
+	databasePath := createCLIUsersDatabase(t)
+	service := mustCLIUsersService(t, databasePath)
+
+	if err := runUsersCreate(service, []string{"owner@example.com"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
+		t.Fatalf("runUsersCreate with nil output returned error: %v", err)
+	}
+}
+
+func TestRunUsersCreateDefaultsNilOutputOnSkip(t *testing.T) {
+	databasePath := createCLIUsersDatabase(t)
+	createCLIUsersUser(t, databasePath, "owner@example.com", "Owner", models.RoleOwner, true, time.Now().UTC())
+	service := mustCLIUsersService(t, databasePath)
+
+	if err := runUsersCreate(service, []string{"owner@example.com", "--skip-if-exists"}, strings.NewReader("StrongPass1\n"), nil); err != nil {
+		t.Fatalf("runUsersCreate skip with nil output returned error: %v", err)
 	}
 }
 

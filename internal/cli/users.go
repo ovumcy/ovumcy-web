@@ -65,6 +65,7 @@ func runUsersCommand(databaseConfig db.Config, args []string, input io.Reader, o
 	case "create":
 		return runUsersCreate(service, args[1:], input, output)
 	default:
+		// codecov:ignore -- unreachable: the subcommand is validated in the switch above
 		return errors.New("usage: ovumcy users <list|delete|create>")
 	}
 }
@@ -263,6 +264,7 @@ func parseUsersCreateArgs(args []string) (usersCreateOptions, error) {
 // the password as the first line of stdin.
 func readCreatePassword(input io.Reader) ([]byte, error) {
 	if file, ok := input.(*os.File); ok && stdinIsTerminal(file) {
+		// codecov:ignore -- interactive TTY prompt; not reachable without a real terminal
 		return promptNewPassword()
 	}
 	return readPasswordLine(input)
