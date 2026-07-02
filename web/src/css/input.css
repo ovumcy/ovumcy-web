@@ -1103,7 +1103,7 @@
   margin: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: #bf7d8a;
+  color: #a45161;
 
   :root[data-theme='dark'] & {
     color: #efb2bc;
@@ -4556,7 +4556,7 @@
     --text-muted: #6f5f50;
     --accent-primary: #d4a574;
     --accent-secondary: #e8c4a8;
-    --accent-strong: #ba8350;
+    --accent-strong: #8f6238;
     --brand-color: #4a3d6a;
     --header-bg: rgba(255, 249, 240, 0.9);
     --header-border: #ecd9c6;
