@@ -512,13 +512,7 @@ func TestImportServiceBBTCompatibilityAcrossLegacyAndCurrentPayloads(t *testing.
 
 	// Legacy 0, explicit null, and absent all persist as "not measured" (nil).
 	for _, day := range []string{"2026-07-01", "2026-07-02", "2026-07-03"} {
-		stored, err := dayService.FetchLogByDate(context.Background(), user.ID, mustParseExportDay(t, day), time.UTC)
-		if err != nil {
-			t.Fatalf("reload %s: %v", day, err)
-		}
-		if stored.BBT != nil {
-			t.Fatalf("expected %s BBT to be nil (not measured), got %v", day, *stored.BBT)
-		}
+		assertStoredBBTNil(t, dayService, user.ID, day)
 	}
 
 	// A real reading survives verbatim.
@@ -552,18 +546,39 @@ func TestImportServiceBBTCompatibilityAcrossLegacyAndCurrentPayloads(t *testing.
 
 	// The serialized JSON of an unmeasured day must carry no "bbt" key at all
 	// (omitempty), while the measured day must include it — the wire contract.
-	unmeasuredJSON, err := json.Marshal(byDate["2026-07-01"])
+	assertExportEntryOmitsBBT(t, byDate["2026-07-01"])
+	assertExportEntryHasBBT(t, byDate["2026-07-04"], "36.7")
+}
+
+func assertStoredBBTNil(t *testing.T, dayService *DayService, userID uint, day string) {
+	t.Helper()
+	stored, err := dayService.FetchLogByDate(context.Background(), userID, mustParseExportDay(t, day), time.UTC)
 	if err != nil {
-		t.Fatalf("marshal unmeasured entry: %v", err)
+		t.Fatalf("reload %s: %v", day, err)
 	}
-	if strings.Contains(string(unmeasuredJSON), "\"bbt\"") {
-		t.Fatalf("expected unmeasured export entry to omit the bbt key, got %s", unmeasuredJSON)
+	if stored.BBT != nil {
+		t.Fatalf("expected %s BBT to be nil (not measured), got %v", day, *stored.BBT)
 	}
-	measuredJSON, err := json.Marshal(byDate["2026-07-04"])
+}
+
+func assertExportEntryOmitsBBT(t *testing.T, entry ExportJSONEntry) {
+	t.Helper()
+	marshaled, err := json.Marshal(entry)
 	if err != nil {
-		t.Fatalf("marshal measured entry: %v", err)
+		t.Fatalf("marshal %s entry: %v", entry.Date, err)
 	}
-	if !strings.Contains(string(measuredJSON), "\"bbt\":36.7") {
-		t.Fatalf("expected measured export entry to include bbt:36.7, got %s", measuredJSON)
+	if strings.Contains(string(marshaled), "\"bbt\"") {
+		t.Fatalf("expected %s export entry to omit the bbt key, got %s", entry.Date, marshaled)
+	}
+}
+
+func assertExportEntryHasBBT(t *testing.T, entry ExportJSONEntry, want string) {
+	t.Helper()
+	marshaled, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal %s entry: %v", entry.Date, err)
+	}
+	if !strings.Contains(string(marshaled), "\"bbt\":"+want) {
+		t.Fatalf("expected %s export entry to include bbt:%s, got %s", entry.Date, want, marshaled)
 	}
 }

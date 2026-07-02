@@ -251,17 +251,17 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 	t.Helper()
 
 	var migratedLog struct {
-		CycleStart      bool    `gorm:"column:cycle_start"`
-		IsUncertain     bool    `gorm:"column:is_uncertain"`
-		Flow            string  `gorm:"column:flow"`
-		Mood            int     `gorm:"column:mood"`
+		CycleStart      bool     `gorm:"column:cycle_start"`
+		IsUncertain     bool     `gorm:"column:is_uncertain"`
+		Flow            string   `gorm:"column:flow"`
+		Mood            int      `gorm:"column:mood"`
 		SexActivity     string   `gorm:"column:sex_activity"`
 		BBT             *float64 `gorm:"column:bbt"`
 		CervicalMucus   string   `gorm:"column:cervical_mucus"`
-		PregnancyTest   string  `gorm:"column:pregnancy_test"`
-		CycleFactorKeys string  `gorm:"column:cycle_factor_keys"`
-		SymptomIDs      *string `gorm:"column:symptom_ids"`
-		Notes           string  `gorm:"column:notes"`
+		PregnancyTest   string   `gorm:"column:pregnancy_test"`
+		CycleFactorKeys string   `gorm:"column:cycle_factor_keys"`
+		SymptomIDs      *string  `gorm:"column:symptom_ids"`
+		Notes           string   `gorm:"column:notes"`
 	}
 	if err := database.
 		Table("daily_logs").
