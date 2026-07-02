@@ -672,6 +672,7 @@
   "common.saved_at": "Gespeichert um %s",
   "common.error.request_failed": "Anfrage fehlgeschlagen. Bitte versuchen Sie es erneut.",
   "common.error.too_many_requests": "Zu viele Anfragen. Bitte warten Sie und versuchen Sie es erneut.",
+  "common.error.request_too_large": "Diese Datei ist zu groß zum Hochladen. Bitte wählen Sie eine kleinere Datei.",
   "warning.future_date": "⚠️ Dieses Datum liegt in der Zukunft. Die Daten könnten ungenau sein.",
   "warning.future_cycle_start": "Vorhersagen werden neu berechnet, sobald dieser Tag erreicht ist.",
   "cycle start replace required": "Bestätigen Sie, dass der bereits markierte Zyklusbeginn ersetzt werden soll.",

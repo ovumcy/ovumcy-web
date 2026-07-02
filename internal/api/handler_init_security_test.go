@@ -2,7 +2,6 @@ package api
 
 import (
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -11,15 +10,6 @@ import (
 )
 
 func TestNewHandlerRejectsEmptySecret(t *testing.T) {
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve current test file path")
-	}
-
-	apiDir := filepath.Dir(testFile)
-	internalDir := filepath.Dir(apiDir)
-	templatesDir := filepath.Join(internalDir, "templates")
-	localesDir := filepath.Join(internalDir, "i18n", "locales")
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-handler-init-test.db")
 
 	database, err := db.OpenSQLite(databasePath)
@@ -34,12 +24,12 @@ func TestNewHandlerRejectsEmptySecret(t *testing.T) {
 		_ = sqlDB.Close()
 	})
 
-	i18nManager, err := i18n.NewManager("en", localesDir)
+	i18nManager, err := i18n.NewManager("en")
 	if err != nil {
 		t.Fatalf("init i18n: %v", err)
 	}
 
-	_, err = NewHandler("   ", templatesDir, time.UTC, i18nManager, false, newTestHandlerDependencies(database, i18nManager))
+	_, err = NewHandler("   ", time.UTC, i18nManager, false, newTestHandlerDependencies(database, i18nManager))
 	if err == nil {
 		t.Fatal("expected error for empty secret")
 	}

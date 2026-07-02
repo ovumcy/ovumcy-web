@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,37 +24,15 @@ import (
 func newRateLimitTestI18nManager(t *testing.T) *i18n.Manager {
 	t.Helper()
 
-	candidates := []string{
-		filepath.Join("..", "..", "internal", "i18n", "locales"),
-		filepath.Join("internal", "i18n", "locales"),
+	manager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("failed to initialize i18n manager for rate-limit tests: %v", err)
 	}
-	for _, candidate := range candidates {
-		manager, err := i18n.NewManager("en", candidate)
-		if err == nil {
-			return manager
-		}
-	}
-	t.Fatal("failed to initialize i18n manager for rate-limit tests")
-	return nil
+	return manager
 }
 
 func newRateLimitTestHandler(t *testing.T) *api.Handler {
 	t.Helper()
-
-	templateCandidates := []string{
-		filepath.Join("..", "..", "internal", "templates"),
-		filepath.Join("internal", "templates"),
-	}
-	templateDir := ""
-	for _, candidate := range templateCandidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			templateDir = candidate
-			break
-		}
-	}
-	if templateDir == "" {
-		t.Fatal("failed to locate templates directory for rate-limit tests")
-	}
 
 	tempDB, err := os.CreateTemp("", "ovumcy-rate-limit-*.db")
 	if err != nil {
@@ -80,7 +57,6 @@ func newRateLimitTestHandler(t *testing.T) *api.Handler {
 
 	handler, err := api.NewHandler(
 		"0123456789abcdef0123456789abcdef",
-		templateDir,
 		time.UTC,
 		i18nManager,
 		false,

@@ -2,8 +2,6 @@ package i18n
 
 import (
 	"fmt"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -150,11 +148,7 @@ func TestRussianCountStringsAgainstRealLocales(t *testing.T) {
 
 func mustNewTestManager(t *testing.T) *Manager {
 	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve test file path: runtime.Caller failed")
-	}
-	manager, err := NewManager(LangEN, filepath.Join(filepath.Dir(thisFile), "locales"))
+	manager, err := NewManager(LangEN)
 	if err != nil {
 		t.Fatalf("load locales: %v", err)
 	}

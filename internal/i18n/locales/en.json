@@ -672,6 +672,7 @@
   "common.saved_at": "Saved at %s",
   "common.error.request_failed": "Request failed. Please try again.",
   "common.error.too_many_requests": "Too many requests. Please wait and try again.",
+  "common.error.request_too_large": "That file is too large to upload. Please choose a smaller file.",
   "warning.future_date": "⚠️ This is a future date. Data may be inaccurate.",
   "warning.future_cycle_start": "Predictions will be recalculated when that day arrives.",
   "cycle start replace required": "Confirm replacing the already marked cycle start.",

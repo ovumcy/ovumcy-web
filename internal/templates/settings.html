@@ -831,7 +831,7 @@
   </section>
 </section>
 {{if eq .CurrentUser.Role "owner"}}
-<script defer src="/static/js/settings-export.js?v=20260312-1"></script>
-<script defer src="/static/js/settings-import.js?v=20260701-1"></script>
+<script defer src="/static/js/settings-export.js?v={{.AssetVersion}}"></script>
+<script defer src="/static/js/settings-import.js?v={{.AssetVersion}}"></script>
 {{end}}
 {{end}}

@@ -9,7 +9,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
-COPY web/static ./web/static
+COPY web ./web
 
 ENV CGO_ENABLED=0 GOOS=linux
 RUN go build -trimpath -ldflags="-s -w" -o /out/ovumcy ./cmd/ovumcy
@@ -30,9 +30,6 @@ COPY --from=runtime-assets /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-
 COPY --from=runtime-assets /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=runtime-assets --chown=10001:10001 /app/data /app/data
 COPY --from=builder --chown=10001:10001 /out/ovumcy /app/ovumcy
-COPY --from=builder --chown=10001:10001 /src/internal/templates /app/internal/templates
-COPY --from=builder --chown=10001:10001 /src/internal/i18n /app/internal/i18n
-COPY --from=builder --chown=10001:10001 /src/web/static /app/web/static
 
 USER 10001:10001
 

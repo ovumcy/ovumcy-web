@@ -37,6 +37,29 @@ func apiError(c *fiber.Ctx, spec APIErrorSpec) error {
 	})
 }
 
+// requestTooLargeErrorSpec maps a transport-level 413 (fiber's BodyLimit
+// rejection) to the shared error-spec shape. The stable key "request_too_large"
+// lets a JSON client (for example the settings restore flow, whose payload is
+// the one large body the app accepts) resolve a localized message without the
+// server ever echoing the rejected body. Kept as a global spec: the limit is
+// enforced before any handler runs, so there is no form to scope it to.
+func requestTooLargeErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusRequestEntityTooLarge, APIErrorCategoryTooLarge, "request_too_large")
+}
+
+// RespondRequestEntityTooLarge renders the mapped 413 through the same
+// content-negotiated formatting as every other mapped error: a stable JSON
+// envelope for API/HTMX-JSON clients, a localized status fragment for HTMX.
+// It is exported because fiber enforces BodyLimit in its core server error
+// path (App.serverErrorHandler) on a fresh context before app middleware runs,
+// so the top-level ErrorHandler in cmd/ovumcy must reach it directly rather
+// than through a route handler. Localization is best-effort: on that early
+// path request-scoped messages are absent, so the response falls back to the
+// stable key, which is exactly what a machine client keys on.
+func RespondRequestEntityTooLarge(c *fiber.Ctx) error {
+	return apiError(c, requestTooLargeErrorSpec())
+}
+
 func (handler *Handler) respondAuthError(c *fiber.Ctx, spec APIErrorSpec) error {
 	if (isV1AuthFormPath(c.Path()) || strings.HasPrefix(c.Path(), "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
 		flash := FlashPayload{AuthError: spec.Key}

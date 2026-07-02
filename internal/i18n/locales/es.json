@@ -672,6 +672,7 @@
   "common.saved_at": "Guardado a las %s",
   "common.error.request_failed": "La solicitud falló. Inténtalo de nuevo.",
   "common.error.too_many_requests": "Demasiadas solicitudes. Espera y vuelve a intentarlo.",
+  "common.error.request_too_large": "Ese archivo es demasiado grande para subirlo. Elige un archivo más pequeño.",
   "warning.future_date": "⚠️ Esta es una fecha futura. Los datos pueden ser inexactos.",
   "warning.future_cycle_start": "Las predicciones se recalcularán cuando llegue ese día.",
   "cycle start replace required": "Confirma que quieres reemplazar el inicio de ciclo ya marcado.",

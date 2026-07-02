@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -43,20 +42,12 @@ type onboardingTestAppOptions struct {
 	registrationMode services.RegistrationMode
 	oidcService      OIDCWorkflowService
 	auditLogEnabled  bool
+	assetVersion     string
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
 	t.Helper()
 
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve current test file path")
-	}
-
-	apiDir := filepath.Dir(testFile)
-	internalDir := filepath.Dir(apiDir)
-	templatesDir := filepath.Join(internalDir, "templates")
-	localesDir := filepath.Join(internalDir, "i18n", "locales")
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-onboarding-test.db")
 
 	database, err := db.OpenSQLite(databasePath)
@@ -71,14 +62,17 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 		_ = sqlDB.Close()
 	})
 
-	i18nManager, err := i18n.NewManager("en", localesDir)
+	i18nManager, err := i18n.NewManager("en")
 	if err != nil {
 		t.Fatalf("init i18n: %v", err)
 	}
 
-	handler, err := NewHandler("test-secret-key", templatesDir, time.UTC, i18nManager, options.cookieSecure, newTestHandlerDependencies(database, i18nManager, options))
+	handler, err := NewHandler("test-secret-key", time.UTC, i18nManager, options.cookieSecure, newTestHandlerDependencies(database, i18nManager, options))
 	if err != nil {
 		t.Fatalf("init handler: %v", err)
+	}
+	if options.assetVersion != "" {
+		handler.SetAssetVersion(options.assetVersion)
 	}
 
 	app := fiber.New()

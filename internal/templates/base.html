@@ -15,12 +15,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Ovumcy">
-  <script src="/static/js/theme-bootstrap.js?v=20260308-1"></script>
-  <script src="/static/js/timezone-bootstrap.js?v=20260309-1"></script>
-  <link rel="stylesheet" href="/static/css/tailwind.css?v=20260612-2">
-  <script defer src="/static/js/htmx.min.js?v=20260221-2"></script>
-  <script defer src="/static/js/chart-lite.js?v=20260404-1"></script>
-  <script defer src="/static/js/app.js?v=20260612-2"></script>
+  <script src="/static/js/theme-bootstrap.js?v={{.AssetVersion}}"></script>
+  <script src="/static/js/timezone-bootstrap.js?v={{.AssetVersion}}"></script>
+  <link rel="stylesheet" href="/static/css/tailwind.css?v={{.AssetVersion}}">
+  <script defer src="/static/js/htmx.min.js?v={{.AssetVersion}}"></script>
+  <script defer src="/static/js/chart-lite.js?v={{.AssetVersion}}"></script>
+  <script defer src="/static/js/app.js?v={{.AssetVersion}}"></script>
 </head>
 <body
   data-confirm-cancel="{{t .Messages "confirm.no"}}"

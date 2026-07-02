@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"mime"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/csrf"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
@@ -30,6 +33,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	staticassets "github.com/ovumcy/ovumcy-web/web"
 	"gorm.io/gorm"
 )
 
@@ -41,6 +45,7 @@ type runtimeConfig struct {
 	DefaultLanguage  string
 	RegistrationMode services.RegistrationMode
 	CookieSecure     bool
+	HSTSEnabled      bool
 	OIDC             security.OIDCConfig
 	RateLimits       rateLimitSettings
 	Proxy            proxySettings
@@ -83,6 +88,23 @@ const (
 	contentSecurityPolicyDefault         = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'"
 	strictTransportSecurityDefault       = "max-age=31536000; includeSubDomains"
 	maxSecretKeyFileBytes          int64 = 8 << 10
+
+	// maxRequestBodyBytes caps the raw HTTP request body. It is sized for the
+	// largest supported JSON restore: services.MaxImportEntries (20000) day
+	// records serialize to ~8-12 MiB, so 16 MiB keeps the documented import
+	// capacity reachable over HTTP with headroom, while still bounding the body
+	// far below fiber's per-connection buffers. Exceeding it yields a mapped 413
+	// (ovumcyErrorHandler → api.RespondRequestEntityTooLarge) rather than a bare
+	// fasthttp error.
+	maxRequestBodyBytes = 16 << 20
+
+	// staticAssetMaxAgeSeconds is the Cache-Control max-age (1 hour) fiber sets
+	// on /static responses. Assets are cache-busted by a ?v=<build revision>
+	// query on their <link>/<script> URLs (see base.html), so a stale bundle
+	// self-heals on the next release; the short TTL bounds how long an
+	// unversioned direct fetch can serve stale bytes while still avoiding
+	// constant revalidation.
+	staticAssetMaxAgeSeconds = 3600
 )
 
 func main() {
@@ -177,6 +199,11 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	}
 
 	cookieSecure := getEnvBool("COOKIE_SECURE", false)
+	// HSTS defaults to COOKIE_SECURE (preserving the historical coupling where
+	// enabling secure cookies also pinned HTTPS) but is an independent switch:
+	// HSTS_ENABLED=false lets an operator run secure cookies without pinning
+	// browsers to HTTPS for a year, and HSTS_ENABLED=true opts in explicitly.
+	hstsEnabled := getEnvBool("HSTS_ENABLED", cookieSecure)
 	oidcConfig, err := resolveOIDCConfig(cookieSecure, registrationMode)
 	if err != nil {
 		return runtimeConfig{}, err
@@ -190,6 +217,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		DefaultLanguage:  getEnv("DEFAULT_LANGUAGE", "en"),
 		RegistrationMode: registrationMode,
 		CookieSecure:     cookieSecure,
+		HSTSEnabled:      hstsEnabled,
 		OIDC:             oidcConfig,
 		RateLimits: rateLimitSettings{
 			LoginMax:             getEnvInt("RATE_LIMIT_LOGIN_MAX", 8),
@@ -264,7 +292,7 @@ func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 }
 
 func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
-	i18nManager, err := i18n.NewManager(defaultLanguage, filepath.Join("internal", "i18n", "locales"))
+	i18nManager, err := i18n.NewManager(defaultLanguage) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
 	if err != nil {
 		log.Fatalf("i18n init failed: %v", err)
 	}
@@ -272,10 +300,13 @@ func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
 }
 
 func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencies api.Dependencies) *api.Handler {
-	handler, err := api.NewHandler(config.SecretKey, filepath.Join("internal", "templates"), config.Location, i18nManager, config.CookieSecure, dependencies)
+	handler, err := api.NewHandler(config.SecretKey, config.Location, i18nManager, config.CookieSecure, dependencies) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
 	if err != nil {
 		log.Fatalf("handler init failed: %v", err)
 	}
+	// Cache-bust versioned static asset URLs (?v=<rev>) with the build
+	// revision so a release invalidates stale JS/CSS without operator action.
+	handler.SetAssetVersion(buildRevision()) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
 	return handler
 }
 
@@ -283,7 +314,7 @@ func newFiberApp(config runtimeConfig, handler *api.Handler) *fiber.App {
 	app := fiber.New(fiberConfig(config.Proxy))
 	configureFiberMiddleware(app, config, handler)
 	registerStaticContentTypes()
-	app.Static("/static", filepath.Join("web", "static"))
+	app.Use("/static", newStaticAssetHandler()) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
 	api.RegisterRoutes(app, handler)
 	app.Use(handler.NotFound)
 	return app
@@ -295,11 +326,29 @@ func registerStaticContentTypes() {
 	}
 }
 
+// newStaticAssetHandler serves the browser static assets embedded into the
+// binary (staticassets.Files) via fiber's filesystem middleware, so the
+// runtime needs no on-disk web/static directory. MaxAge preserves the same
+// public Cache-Control max-age (staticAssetMaxAgeSeconds) that app.Static
+// emitted; assets are cache-busted by the ?v=<build revision> query on their
+// URLs (see base.html).
+func newStaticAssetHandler() fiber.Handler {
+	assets, err := fs.Sub(staticassets.Files, "static")
+	if err != nil {
+		log.Fatalf("static assets init failed: %v", err) // codecov:ignore -- unreachable: the embedded static/ subtree always exists at build time.
+	}
+	return filesystem.New(filesystem.Config{
+		Root:   http.FS(assets),
+		MaxAge: staticAssetMaxAgeSeconds,
+	})
+}
+
 func fiberConfig(proxy proxySettings) fiber.Config {
 	appConfig := fiber.Config{
 		AppName:               "Ovumcy",
 		DisableStartupMessage: true,
 		ErrorHandler:          ovumcyErrorHandler,
+		BodyLimit:             maxRequestBodyBytes,
 		ReadTimeout:           30 * time.Second,
 		WriteTimeout:          60 * time.Second,
 		IdleTimeout:           120 * time.Second,
@@ -419,6 +468,13 @@ func rateLimitKeyGenerator(proxy proxySettings) func(*fiber.Ctx) string {
 func ovumcyErrorHandler(c *fiber.Ctx, err error) error {
 	var fiberErr *fiber.Error
 	if errors.As(err, &fiberErr) {
+		// A body exceeding BodyLimit is raised by fiber's core before any app
+		// middleware/handler runs, so route it through the shared error-spec
+		// negotiation (JSON envelope / localized HTMX fragment with a stable
+		// key) instead of leaking fasthttp's bare "Request Entity Too Large".
+		if fiberErr.Code == fiber.StatusRequestEntityTooLarge {
+			return api.RespondRequestEntityTooLarge(c)
+		}
 		return c.Status(fiberErr.Code).SendString(fiberErr.Message)
 	}
 	return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
@@ -429,7 +485,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	// X-Forwarded-For prefix cannot mint fresh per-IP buckets. See
 	// rateLimitKeyGenerator for the trust-boundary derivation.
 	keyGen := rateLimitKeyGenerator(config.Proxy)
-	app.Use(securityHeadersMiddleware(config.CookieSecure))
+	app.Use(securityHeadersMiddleware(config.HSTSEnabled))
 	app.Use(recover.New())
 	app.Use(newRequestLogger(nil))
 	app.Use(compress.New())
@@ -540,19 +596,23 @@ func installGracefulShutdown(app *fiber.App) context.CancelFunc {
 
 func logStartup(config runtimeConfig) {
 	log.Printf(
-		"Ovumcy listening on http://0.0.0.0:%s (rev: %s, tz: %s, registration=%s, oidc=%t, audit_log=%t, rate_limits: login=%d/%s api=%d/%s, trusted_proxy=%t)",
+		"Ovumcy listening on http://0.0.0.0:%s (rev: %s, tz: %s, registration=%s, oidc=%t, audit_log=%t, hsts=%t, rate_limits: login=%d/%s api=%d/%s, trusted_proxy=%t)",
 		config.Port,
 		buildRevision(),
 		config.Location.String(),
 		config.RegistrationMode,
 		config.OIDC.Enabled,
 		config.AuditLogEnabled,
+		config.HSTSEnabled,
 		config.RateLimits.LoginMax,
 		config.RateLimits.LoginWindow,
 		config.RateLimits.APIMax,
 		config.RateLimits.APIWindow,
 		config.Proxy.Enabled,
 	)
+	if config.HSTSEnabled {
+		log.Printf("NOTE: HSTS_ENABLED=true — sending Strict-Transport-Security with a 1-year max-age (max-age=31536000; includeSubDomains). Browsers will refuse plain HTTP for this host for a year; only enable when committed to HTTPS. Set HSTS_ENABLED=false to keep secure cookies without the HTTPS pin.")
+	}
 	if config.Proxy.Enabled {
 		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", config.Proxy.Header, len(config.Proxy.TrustedProxies))
 	}

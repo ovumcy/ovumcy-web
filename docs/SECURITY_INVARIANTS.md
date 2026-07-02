@@ -50,7 +50,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 
 - The CSP shipped from `cmd/ovumcy/main.go` is `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'`. Do not introduce `unsafe-inline`, `unsafe-eval`, `data:` outside `img-src`, or `*` in any directive.
 - Templates must not contain inline `<script>` blocks, inline event handlers (`onclick=`, `onload=`, …), inline style attributes, or `javascript:` URLs.
-- The same `securityHeadersMiddleware` (`cmd/ovumcy/main.go`) sets these companion headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (geolocation/camera/microphone/payment/usb/… all `()`), `Cross-Origin-Opener-Policy: same-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` (when `COOKIE_SECURE=true`).
+- The same `securityHeadersMiddleware` (`cmd/ovumcy/main.go`) sets these companion headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (geolocation/camera/microphone/payment/usb/… all `()`), `Cross-Origin-Opener-Policy: same-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` (controlled by `HSTS_ENABLED`, which defaults to the `COOKIE_SECURE` value; set `HSTS_ENABLED=false` to run secure cookies without the 1-year HTTPS pin).
 
 ## GDPR (Art. 6, 9, 13, 15–22, 30, 32, 33)
 

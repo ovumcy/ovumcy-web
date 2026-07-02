@@ -8,7 +8,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 )
 
-func NewHandler(secret string, templateDir string, location *time.Location, i18nManager *i18n.Manager, cookieSecure bool, dependencies Dependencies) (*Handler, error) {
+func NewHandler(secret string, location *time.Location, i18nManager *i18n.Manager, cookieSecure bool, dependencies Dependencies) (*Handler, error) {
 	secret = strings.TrimSpace(secret)
 	if location == nil {
 		location = time.Local
@@ -25,12 +25,12 @@ func NewHandler(secret string, templateDir string, location *time.Location, i18n
 
 	funcMap := newTemplateFuncMap()
 
-	templates, err := parsePageTemplates(templateDir, funcMap, pageTemplates)
+	templates, err := parsePageTemplates(funcMap, pageTemplates)
 	if err != nil {
 		return nil, err
 	}
 
-	partials, err := parsePartialTemplates(templateDir, funcMap, partialTemplateFiles)
+	partials, err := parsePartialTemplates(funcMap, partialTemplateFiles)
 	if err != nil {
 		return nil, err
 	}

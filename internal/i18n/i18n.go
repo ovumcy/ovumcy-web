@@ -3,11 +3,14 @@ package i18n
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 )
+
+// localesDir is the directory prefix under which locale JSON files are
+// embedded (see embed.go).
+const localesDir = "locales"
 
 const (
 	LangDE = "de"
@@ -23,25 +26,24 @@ type Manager struct {
 	supported       []string
 }
 
-func NewManager(defaultLanguage string, localesDir string) (*Manager, error) {
+func NewManager(defaultLanguage string) (*Manager, error) {
 	manager := &Manager{
 		locales: map[string]map[string]string{},
 	}
 
-	entries, err := os.ReadDir(localesDir)
+	entries, err := localeFiles.ReadDir(localesDir)
 	if err != nil {
 		return nil, fmt.Errorf("read locales dir: %w", err)
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() || path.Ext(entry.Name()) != ".json" {
 			continue
 		}
 
-		language := strings.TrimSuffix(strings.ToLower(entry.Name()), filepath.Ext(entry.Name()))
-		path := filepath.Join(localesDir, entry.Name())
-		// #nosec G304 -- localesDir is application-controlled and entry.Name() comes from os.ReadDir(localesDir).
-		content, err := os.ReadFile(path)
+		language := strings.TrimSuffix(strings.ToLower(entry.Name()), path.Ext(entry.Name()))
+		path := path.Join(localesDir, entry.Name())
+		content, err := localeFiles.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("read locale %s: %w", language, err)
 		}

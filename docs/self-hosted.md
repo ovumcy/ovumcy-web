@@ -65,7 +65,7 @@ Use one of the example stacks under `docs/examples/reverse-proxy/` for public HT
 - `TRUST_PROXY_ENABLED=true`
 - `PROXY_HEADER=X-Real-IP` — the example proxies set `X-Real-IP` to the real client IP, which a client cannot forge. Do not point this at `X-Forwarded-For`: the proxy appends the client-sent value and the app keys its per-IP rate limiter on the leftmost (attacker-controlled) entry, which would let an attacker bypass login/reset brute-force limits.
 - `TRUSTED_PROXIES` must match the exact proxy IP or private Docker subnet used by that stack
-- when `COOKIE_SECURE=true`, Ovumcy emits `Strict-Transport-Security: max-age=31536000; includeSubDomains` itself, so the example proxy configs do not add a second HSTS policy
+- with `COOKIE_SECURE=true`, Ovumcy emits `Strict-Transport-Security: max-age=31536000; includeSubDomains` itself (HSTS defaults to the `COOKIE_SECURE` value and is toggled independently via `HSTS_ENABLED`), so the example proxy configs do not add a second HSTS policy; set `HSTS_ENABLED=false` if you must keep secure cookies without pinning browsers to HTTPS for a year
 
 Do not start from the base compose file and then expose `8080` publicly as a shortcut. The supported public path is the dedicated proxy stack where only the reverse proxy publishes host ports.
 

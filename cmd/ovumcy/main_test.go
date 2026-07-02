@@ -2,13 +2,16 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -617,6 +620,9 @@ func assertBaseRuntimeConfig(t *testing.T, config runtimeConfig, location *time.
 	if !config.CookieSecure {
 		t.Fatal("expected cookie secure=true")
 	}
+	if !config.HSTSEnabled {
+		t.Fatal("expected HSTS to inherit COOKIE_SECURE=true when HSTS_ENABLED is unset")
+	}
 	if config.OIDC.Enabled {
 		t.Fatal("expected OIDC to remain disabled when env is unset")
 	}
@@ -685,6 +691,43 @@ func TestLoadRuntimeConfigHonorsAuditLogEnabled(t *testing.T) {
 	}
 }
 
+// TestLoadRuntimeConfigResolvesHSTSSwitch locks the HSTS_ENABLED contract: it
+// defaults to COOKIE_SECURE (the historical coupling, zero breaking change) but
+// an explicit true/false overrides in either direction, so an operator can run
+// secure cookies without pinning HTTPS (or opt into the pin over plain HTTP).
+func TestLoadRuntimeConfigResolvesHSTSSwitch(t *testing.T) {
+	tests := []struct {
+		name         string
+		cookieSecure string
+		hstsEnabled  string
+		want         bool
+	}{
+		{name: "inherits cookie secure true", cookieSecure: "true", hstsEnabled: "", want: true},
+		{name: "inherits cookie secure false", cookieSecure: "false", hstsEnabled: "", want: false},
+		{name: "explicit false overrides secure cookies", cookieSecure: "true", hstsEnabled: "false", want: false},
+		{name: "explicit true overrides insecure cookies", cookieSecure: "false", hstsEnabled: "true", want: true},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+			t.Setenv("DB_DRIVER", "sqlite")
+			t.Setenv("DB_PATH", "data/ovumcy.db")
+			t.Setenv("COOKIE_SECURE", tt.cookieSecure)
+			t.Setenv("HSTS_ENABLED", tt.hstsEnabled)
+
+			config, err := loadRuntimeConfig(time.UTC)
+			if err != nil {
+				t.Fatalf("load runtime config: %v", err)
+			}
+			if config.HSTSEnabled != tt.want {
+				t.Fatalf("HSTSEnabled = %t, want %t (COOKIE_SECURE=%q, HSTS_ENABLED=%q)", config.HSTSEnabled, tt.want, tt.cookieSecure, tt.hstsEnabled)
+			}
+		})
+	}
+}
+
 func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 	config := fiberConfig(proxySettings{
 		Enabled:        true,
@@ -703,6 +746,105 @@ func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 	}
 	if len(config.TrustedProxies) != 2 {
 		t.Fatalf("expected trusted proxies to be applied, got %#v", config.TrustedProxies)
+	}
+}
+
+// TestFiberConfigSetsImportSizedBodyLimit locks the transport body cap to the
+// named import-sized constant. Without an explicit BodyLimit fiber falls back
+// to its 4 MiB default, which is below a full services.MaxImportEntries JSON
+// restore (~8-12 MiB) — the documented import capacity would be unreachable
+// over HTTP.
+func TestFiberConfigSetsImportSizedBodyLimit(t *testing.T) {
+	config := fiberConfig(proxySettings{})
+
+	if config.BodyLimit != maxRequestBodyBytes {
+		t.Fatalf("expected BodyLimit=%d, got %d", maxRequestBodyBytes, config.BodyLimit)
+	}
+	if maxRequestBodyBytes <= fiber.DefaultBodyLimit {
+		t.Fatalf("expected body limit above fiber default %d, got %d", fiber.DefaultBodyLimit, maxRequestBodyBytes)
+	}
+}
+
+// TestOvumcyErrorHandlerMapsBodyLimitTo413 pins the mapping the top-level
+// ErrorHandler applies to fiber's body-limit rejection. Production reaches this
+// via App.serverErrorHandler, which maps fasthttp's ErrBodyTooLarge to a
+// *fiber.Error with code 413 and then calls ErrorHandler. Returning that same
+// fiber.ErrRequestEntityTooLarge from a handler routes through ErrorHandler the
+// same way (mirroring how the sibling 403 case is tested) and exercises our
+// branch: a JSON client must receive the stable {"error":"request_too_large"}
+// envelope, never fasthttp's bare "Request Entity Too Large" string. (The
+// in-memory app.Test transport surfaces the body-limit read error to the caller
+// rather than routing it through serverErrorHandler — enforcement of the cap
+// itself is covered by TestFiberAppEnforcesBodyLimit.)
+func TestOvumcyErrorHandlerMapsBodyLimitTo413(t *testing.T) {
+	app := fiber.New(fiber.Config{ErrorHandler: ovumcyErrorHandler})
+	app.Post("/api/v1/imports/json", func(c *fiber.Ctx) error {
+		return fiber.ErrRequestEntityTooLarge
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/imports/json", strings.NewReader("{}"))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413, got %d", response.StatusCode)
+	}
+	body := new(bytes.Buffer)
+	_, _ = body.ReadFrom(response.Body)
+	if strings.Contains(body.String(), "Request Entity Too Large") {
+		t.Fatalf("expected mapped envelope, got bare fasthttp message: %q", body.String())
+	}
+	payload := map[string]any{}
+	if err := json.Unmarshal(body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal JSON envelope %q: %v", body.String(), err)
+	}
+	if payload["error"] != "request_too_large" {
+		t.Fatalf("error key: got %v want %q", payload["error"], "request_too_large")
+	}
+	detail, ok := payload["error_detail"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error_detail object, got %v", payload["error_detail"])
+	}
+	if detail["category"] != "too_large" {
+		t.Fatalf("error_detail.category: got %v want %q", detail["category"], "too_large")
+	}
+}
+
+// TestFiberAppEnforcesBodyLimit proves the configured cap actually refuses an
+// oversized body. fiber enforces BodyLimit in fasthttp's request reader, so the
+// in-memory app.Test transport returns the body-limit error to the caller
+// rather than a routed response — asserting that error confirms the request is
+// rejected before any handler runs. A tiny BodyLimit keeps the body small.
+func TestFiberAppEnforcesBodyLimit(t *testing.T) {
+	app := fiber.New(fiber.Config{
+		ErrorHandler: ovumcyErrorHandler,
+		BodyLimit:    16,
+	})
+	handlerReached := false
+	app.Post("/api/v1/imports/json", func(c *fiber.Ctx) error {
+		handlerReached = true
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	oversized := strings.Repeat("a", 64)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/imports/json", strings.NewReader(oversized))
+	request.Header.Set("Content-Type", "application/json")
+
+	_, err := app.Test(request, -1)
+	if err == nil {
+		t.Fatal("expected body-limit rejection error from oversized request")
+	}
+	if !strings.Contains(err.Error(), "body size exceeds") {
+		t.Fatalf("expected body-size limit error, got %v", err)
+	}
+	if handlerReached {
+		t.Fatal("handler must not run for a body exceeding the limit")
 	}
 }
 
@@ -802,7 +944,7 @@ func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
 	registerStaticContentTypes()
 
 	app := fiber.New()
-	app.Static("/static", filepath.Join("..", "..", "web", "static"))
+	app.Use("/static", newStaticAssetHandler())
 
 	request := httptest.NewRequest(http.MethodGet, "/static/manifest.webmanifest", nil)
 	response, err := app.Test(request, -1)
@@ -816,6 +958,31 @@ func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
 	}
 	if contentType := response.Header.Get("Content-Type"); !strings.Contains(contentType, "application/manifest+json") {
 		t.Fatalf("expected web manifest content type, got %q", contentType)
+	}
+}
+
+// TestStaticAssetsSendCacheControlMaxAge locks the cache policy for /static:
+// fiber must emit a Cache-Control max-age (built from staticAssetMaxAgeSeconds)
+// so versioned assets are cached instead of heuristically revalidated. Paired
+// with the ?v=<build revision> cache-buster asserted in the api render tests, a
+// release still invalidates stale bundles.
+func TestStaticAssetsSendCacheControlMaxAge(t *testing.T) {
+	app := fiber.New()
+	app.Use("/static", newStaticAssetHandler())
+
+	request := httptest.NewRequest(http.MethodGet, "/static/manifest.webmanifest", nil)
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("static asset request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+	want := "public, max-age=" + strconv.Itoa(staticAssetMaxAgeSeconds)
+	if got := response.Header.Get("Cache-Control"); got != want {
+		t.Fatalf("expected Cache-Control=%q on static asset, got %q", want, got)
 	}
 }
 
@@ -934,6 +1101,41 @@ func TestLogStartupDoesNotLogForgotPasswordRateLimitDetail(t *testing.T) {
 	}
 	if !strings.Contains(logLine, "api=700/2m0s") {
 		t.Fatalf("expected api rate limit detail in startup log, got %q", logLine)
+	}
+}
+
+func TestLogStartupNotesHSTSPinOnlyWhenEnabled(t *testing.T) {
+	tests := []struct {
+		name        string
+		hstsEnabled bool
+		wantNote    bool
+	}{
+		{name: "enabled logs the one-year pin note", hstsEnabled: true, wantNote: true},
+		{name: "disabled stays silent about HSTS", hstsEnabled: false, wantNote: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalWriter := log.Writer()
+			defer log.SetOutput(originalWriter)
+
+			var output bytes.Buffer
+			log.SetOutput(&output)
+
+			logStartup(runtimeConfig{
+				Location:    time.UTC,
+				Port:        "9090",
+				HSTSEnabled: tt.hstsEnabled,
+			})
+
+			logLine := output.String()
+			if got := strings.Contains(logLine, "NOTE: HSTS_ENABLED=true"); got != tt.wantNote {
+				t.Fatalf("HSTS pin note present = %t, want %t in startup log: %q", got, tt.wantNote, logLine)
+			}
+			if !strings.Contains(logLine, fmt.Sprintf("hsts=%t", tt.hstsEnabled)) {
+				t.Fatalf("expected hsts=%t flag in startup log, got %q", tt.hstsEnabled, logLine)
+			}
+		})
 	}
 }
 

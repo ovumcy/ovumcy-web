@@ -77,6 +77,81 @@ func TestCommonErrorSpecs(t *testing.T) {
 	}
 }
 
+func TestRequestTooLargeErrorSpecIsCanonical(t *testing.T) {
+	got := requestTooLargeErrorSpec()
+	want := globalErrorSpec(fiber.StatusRequestEntityTooLarge, APIErrorCategoryTooLarge, "request_too_large")
+	if got != want {
+		t.Fatalf("request too large spec: got %#v want %#v", got, want)
+	}
+}
+
+// TestRespondRequestEntityTooLargeNegotiatesFormat pins the exported 413
+// responder (reached from cmd/ovumcy's ErrorHandler on the body-limit path):
+// a JSON client receives the stable envelope + error_detail, while an HTMX
+// client receives the shared status-error fragment carrying the stable key.
+func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
+	t.Run("json envelope", func(t *testing.T) {
+		app := fiber.New()
+		app.Post("/probe", RespondRequestEntityTooLarge)
+
+		request := httptest.NewRequest(http.MethodPost, "/probe", strings.NewReader("{}"))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json")
+
+		response, err := app.Test(request, -1)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status: got %d want 413", response.StatusCode)
+		}
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		payload := map[string]any{}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatalf("unmarshal JSON envelope %q: %v", body, err)
+		}
+		if payload["error"] != "request_too_large" {
+			t.Fatalf("error key: got %v want %q", payload["error"], "request_too_large")
+		}
+		detail, ok := payload["error_detail"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected error_detail object, got %v", payload["error_detail"])
+		}
+		if detail["key"] != "request_too_large" || detail["category"] != "too_large" || detail["target"] != "global" {
+			t.Fatalf("unexpected error_detail: %v", detail)
+		}
+	})
+
+	t.Run("htmx status fragment", func(t *testing.T) {
+		app := fiber.New()
+		app.Post("/probe", RespondRequestEntityTooLarge)
+
+		request := httptest.NewRequest(http.MethodPost, "/probe", strings.NewReader("{}"))
+		request.Header.Set("HX-Request", "true")
+
+		response, err := app.Test(request, -1)
+		if err != nil {
+			t.Fatalf("app.Test: %v", err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusRequestEntityTooLarge {
+			t.Fatalf("status: got %d want 413", response.StatusCode)
+		}
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		assertBodyContainsAll(t, string(body),
+			bodyStringMatch{fragment: `class="status-error"`, message: "expected shared status-error wrapper for HTMX 413"},
+			bodyStringMatch{fragment: `data-flash-key="request_too_large"`, message: "expected stable flash key on HTMX 413 fragment"},
+		)
+	})
+}
+
 func TestMapExportRangeError(t *testing.T) {
 	testCases := []struct {
 		name string

@@ -23,9 +23,10 @@ profile.cov
 
 # Test code must stay in the public repo but never ship in the runtime image.
 # The build runs only `go build`, which ignores these; CI tests from a repo
-# checkout, not the Docker context. internal/i18n and internal/templates are
-# copied wholesale into the scratch image, so without this their *_test.go files
-# would leak into production.
+# checkout, not the Docker context. Runtime assets (templates, i18n locales,
+# web/static) are embedded into the binary via go:embed, which matches only the
+# asset globs and never *_test.go — this exclusion keeps test sources out of the
+# build context as defense in depth.
 **/*_test.go
 **/testdata/
 .mutation/

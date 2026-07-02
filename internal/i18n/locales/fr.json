@@ -713,6 +713,7 @@
   "common.saved_at": "Enregistré à %s",
   "common.error.request_failed": "La requête a échoué. Veuillez réessayer.",
   "common.error.too_many_requests": "Trop de requêtes. Veuillez patienter et réessayer.",
+  "common.error.request_too_large": "Ce fichier est trop volumineux pour être importé. Veuillez choisir un fichier plus petit.",
 
   "warning.future_date": "⚠️ Cette date est dans le futur. Les données peuvent être inexactes.",
   "warning.future_cycle_start": "Les prédictions seront recalculées à l'arrivée de ce jour.",

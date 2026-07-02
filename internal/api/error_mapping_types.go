@@ -11,6 +11,7 @@ const (
 	APIErrorCategoryUnauthorized APIErrorCategory = "unauthorized"
 	APIErrorCategoryForbidden    APIErrorCategory = "forbidden"
 	APIErrorCategoryRateLimited  APIErrorCategory = "rate_limited"
+	APIErrorCategoryTooLarge     APIErrorCategory = "too_large"
 	APIErrorCategoryInternal     APIErrorCategory = "internal"
 )
 

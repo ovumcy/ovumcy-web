@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -307,15 +306,6 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 func newOnboardingTestAppWithLocation(t *testing.T, location *time.Location) (*fiber.App, *gorm.DB, *time.Location) {
 	t.Helper()
 
-	_, testFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve current test file path")
-	}
-
-	apiDir := filepath.Dir(testFile)
-	internalDir := filepath.Dir(apiDir)
-	templatesDir := filepath.Join(internalDir, "templates")
-	localesDir := filepath.Join(internalDir, "i18n", "locales")
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-onboarding-test-tz.db")
 
 	database, err := db.OpenSQLite(databasePath)
@@ -330,12 +320,12 @@ func newOnboardingTestAppWithLocation(t *testing.T, location *time.Location) (*f
 		_ = sqlDB.Close()
 	})
 
-	i18nManager, err := i18n.NewManager("en", localesDir)
+	i18nManager, err := i18n.NewManager("en")
 	if err != nil {
 		t.Fatalf("init i18n: %v", err)
 	}
 
-	handler, err := NewHandler("test-secret-key", templatesDir, location, i18nManager, false, newTestHandlerDependencies(database, i18nManager))
+	handler, err := NewHandler("test-secret-key", location, i18nManager, false, newTestHandlerDependencies(database, i18nManager))
 	if err != nil {
 		t.Fatalf("init handler: %v", err)
 	}

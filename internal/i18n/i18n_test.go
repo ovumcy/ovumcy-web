@@ -1,8 +1,6 @@
 package i18n
 
 import (
-	"path/filepath"
-	"runtime"
 	"slices"
 	"testing"
 )
@@ -39,12 +37,7 @@ func TestManagerFallsBackToDefaultForUnsupportedLanguage(t *testing.T) {
 func newTestI18nManager(t *testing.T, defaultLanguage string) *Manager {
 	t.Helper()
 
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("resolve test file path: runtime.Caller failed")
-	}
-	localesDir := filepath.Join(filepath.Dir(thisFile), "locales")
-	manager, err := NewManager(defaultLanguage, localesDir)
+	manager, err := NewManager(defaultLanguage)
 	if err != nil {
 		t.Fatalf("NewManager() unexpected error: %v", err)
 	}

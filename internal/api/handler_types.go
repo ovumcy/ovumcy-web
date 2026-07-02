@@ -50,6 +50,7 @@ type Handler struct {
 	totpService          *services.TOTPService
 	registerPickupTokens RegisterPickupTokenStore
 	auditLogEnabled      bool
+	assetVersion         string
 }
 
 type CalendarDay struct {

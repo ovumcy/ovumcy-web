@@ -75,6 +75,10 @@ func (handler *Handler) withTemplateDefaults(c *fiber.Ctx, data fiber.Map) fiber
 		data["CSRFToken"] = csrfToken(c)
 	}
 
+	if _, ok := data["AssetVersion"]; !ok {
+		data["AssetVersion"] = handler.assetVersion
+	}
+
 	if _, ok := data["NoDataLabel"]; !ok {
 		noData := translateMessage(messages, "common.not_available")
 		if noData == "common.not_available" {
