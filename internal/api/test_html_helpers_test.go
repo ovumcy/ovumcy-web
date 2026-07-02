@@ -56,6 +56,12 @@ func htmlElementByTagAndClass(root *html.Node, tag string, className string) *ht
 	})
 }
 
+func htmlElementByAttr(root *html.Node, name string, value string) *html.Node {
+	return htmlFindElement(root, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, name) == value
+	})
+}
+
 func htmlSectionIDs(root *html.Node) []string {
 	sections := htmlFindElements(root, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && node.Data == "section" && htmlAttr(node, "id") != ""

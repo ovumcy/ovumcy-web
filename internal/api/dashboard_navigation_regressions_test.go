@@ -176,8 +176,16 @@ func TestCalendarSelectedDayLoadsEditModeWhenRequested(t *testing.T) {
 	if !strings.Contains(rendered, `data-selected-date="2026-03-12"`) {
 		t.Fatalf("expected calendar page to keep the selected day in the view state, got %q", rendered)
 	}
-	if !strings.Contains(rendered, `id="day-editor"`) || !strings.Contains(rendered, `hx-get="/calendar/day/2026-03-12?mode=edit"`) {
-		t.Fatalf("expected selected calendar day to lazy-load edit mode in the day editor, got %q", rendered)
+	dayEditor := htmlElementByID(mustParseHTMLDocument(t, rendered), "day-editor")
+	if dayEditor == nil {
+		t.Fatalf("expected a #day-editor container on the calendar page, got %q", rendered)
+	}
+	loader := htmlElementByAttr(dayEditor, "hx-trigger", "load")
+	if loader == nil {
+		t.Fatalf("expected #day-editor to hold an hx-trigger=load lazy-loader, got %q", rendered)
+	}
+	if got := htmlAttr(loader, "hx-get"); got != "/calendar/day/2026-03-12?mode=edit" {
+		t.Fatalf("expected the #day-editor lazy-loader to fetch edit mode from /calendar/day/2026-03-12?mode=edit, got hx-get=%q", got)
 	}
 }
 
