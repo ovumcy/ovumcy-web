@@ -44,7 +44,6 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 
 	days := v1.Group("/days", handler.AuthRequired)
 	days.Get("", handler.OwnerOnly, handler.GetDays)
-	days.Delete("", handler.OwnerOnly, handler.DeleteDailyLog)
 	days.Head("/:date", handler.OwnerOnly, handler.CheckDayExists)
 	days.Get("/:date", handler.OwnerOnly, handler.GetDay)
 	days.Put("/:date", handler.OwnerOnly, handler.UpsertDay)

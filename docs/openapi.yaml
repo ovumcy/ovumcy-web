@@ -1045,36 +1045,6 @@ paths:
                 items: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '422': { $ref: '#/components/responses/ValidationError' }
-    delete:
-      tags: [days]
-      summary: Delete the user's daily log entry for a single day (owner only).
-      description: |
-        Deletes the daily log row identified by the `date` query parameter.
-        The `source` query parameter (`dashboard` or `calendar`) selects the
-        HTMX response shape used by the browser UI; programmatic clients can
-        omit it and receive `204 No Content`.
-      parameters:
-        - in: query
-          name: date
-          required: true
-          schema: { $ref: '#/components/schemas/DateParam' }
-          description: Calendar date to delete in the request timezone.
-        - in: query
-          name: source
-          required: false
-          schema: { type: string, enum: [dashboard, calendar] }
-          description: HTMX response selector (browser UI only).
-      responses:
-        '204':
-          description: Deleted (programmatic client).
-        '200':
-          description: HTMX/browser response.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/OkResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/days/{date}:
     parameters:
@@ -1128,9 +1098,24 @@ paths:
     delete:
       tags: [days]
       summary: Delete a single day's entry (owner only).
+      description: |
+        The optional `source` query parameter (`dashboard` or `calendar`)
+        selects the HTMX response shape used by the browser UI; programmatic
+        clients can omit it and receive `204 No Content`.
+      parameters:
+        - in: query
+          name: source
+          required: false
+          schema: { type: string, enum: [dashboard, calendar] }
+          description: HTMX response selector (browser UI only).
       responses:
         '204':
-          description: Deleted.
+          description: Deleted (programmatic client).
+        '200':
+          description: HTMX/browser response.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
