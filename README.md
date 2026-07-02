@@ -382,7 +382,8 @@ Notes:
 Common commands from the repository root:
 
 ```bash
-go test ./...
+# scoped past node_modules/, where a vendored JS dep ships a .go file
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
 npm run build
 go run ./cmd/ovumcy
 ```

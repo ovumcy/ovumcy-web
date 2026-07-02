@@ -93,8 +93,10 @@ verify it against the numbers.
 ## Running the suite
 
 ```bash
-# Go: unit + integration + property + fuzz seeds
-go test ./...
+# Go: unit + integration + property + fuzz seeds.
+# Scoped to the module's Go trees (not ./...) so a local node_modules/ — where a
+# vendored JS dependency ships a .go file — isn't swept into the wildcard.
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
 
 # Active fuzzing of a single target
 go test ./internal/services/ -run '^$' -fuzz FuzzParseDayDate -fuzztime 30s

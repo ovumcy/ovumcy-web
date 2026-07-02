@@ -14,7 +14,8 @@ npm ci
 3. Run checks locally:
 
 ```bash
-go test ./...
+# scoped past node_modules/, where a vendored JS dep ships a .go file
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
 npm run lint:js
 npm run build
 ```

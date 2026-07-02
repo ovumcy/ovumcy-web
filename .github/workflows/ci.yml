@@ -51,17 +51,24 @@ jobs:
         # git SHA for v0.6.1 (tag 2025.1.1): b8ec13ce4d00445d75da053c47498e6f9ec5d7d6 (verified via go list -m -json)
         run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
 
+      # The Go wildcards in this job are scoped to our module's package trees
+      # (cmd, internal, migrations, scripts, web) instead of ./... on purpose:
+      # `npm ci` above installs node_modules/, where a vendored JS dep (flatted)
+      # ships a .go file that ./... would otherwise sweep into staticcheck, vet,
+      # and coverage. Keep the tree list in sync with `go list ./...`.
       - name: Staticcheck
-        run: '"$(go env GOPATH)/bin/staticcheck" ./...'
+        run: '"$(go env GOPATH)/bin/staticcheck" ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
 
       - name: Go vet
-        run: go vet ./...
+        run: go vet ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
 
       - name: Go test with coverage
-        # -coverpkg=./... credits a line when ANY test exercises it (including
+        # -coverpkg credits a line when ANY test exercises it (including
         # cross-package integration tests), not only its own package's unit
-        # tests. The patch-coverage gate consumes this profile.
-        run: go test ./... -coverprofile=coverage.out -covermode=atomic -coverpkg=./...
+        # tests. The patch-coverage gate consumes this profile. Scoped to the
+        # module trees (see the note above the Staticcheck step) so node_modules/
+        # is excluded from both the test set and coverage instrumentation.
+        run: go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
 
       - name: Frontend build
         run: npm run build
