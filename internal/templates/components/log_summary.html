@@ -1,0 +1,77 @@
+{{define "readonly_log_summary"}}
+<div class="journal-panel space-y-3 text-sm">
+  <p><span class="journal-muted">{{t .Messages "dashboard.period_day"}}:</span> {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p>
+  {{if .Log.IsPeriod}}
+  <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}:</span> {{flowLabel .Messages .Log.Flow}}</p>
+  {{end}}
+  <p><span class="journal-muted">{{t .Messages "dashboard.mood"}}:</span> {{if gt .Log.Mood 0}}{{moodEmoji .Log.Mood}} {{.Log.Mood}}/5{{else}}{{.NoDataLabel}}{{end}}</p>
+  <div>
+    <p class="journal-muted">{{t .Messages "dashboard.symptoms"}}</p>
+    <p class="mt-1">{{if gt (len .Log.SymptomIDs) 0}}{{t .Messages "dashboard.owner_only_details"}}{{else}}{{.NoDataLabel}}{{end}}</p>
+  </div>
+  <div {{if eq .Log.Notes ""}}hidden{{end}}>
+    <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
+    <p class="mt-1 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
+  </div>
+</div>
+{{end}}
+{{define "owner_log_summary"}}
+<div class="journal-panel space-y-4 text-sm">
+  <div class="grid gap-3 sm:grid-cols-2">
+    <p><span class="journal-muted">{{t .Messages "dashboard.period_day"}}:</span> {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p>
+    <p><span class="journal-muted">{{t .Messages "dashboard.mood"}}:</span> {{if gt .Log.Mood 0}}{{moodEmoji .Log.Mood}} {{.Log.Mood}}/5{{else}}{{.NoDataLabel}}{{end}}</p>
+    {{if .Log.IsPeriod}}
+    <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}:</span> {{if .Log.IsPeriod}}{{flowLabel .Messages .Log.Flow}}{{else}}{{.NoDataLabel}}{{end}}</p>
+    {{end}}
+  </div>
+
+  <div>
+    <p class="journal-muted">{{t .Messages "dashboard.symptoms"}}</p>
+    <ul class="mt-2 flex flex-wrap gap-2" {{if eq (len .Log.SymptomIDs) 0}}hidden{{end}}>
+      {{range .Symptoms}}
+      {{if hasSymptom $.SelectedSymptomID .ID}}
+      <li class="check-chip check-chip-static" title="{{symptomLabel $.Messages .Name}}">
+        <span class="symptom-icon">{{.Icon}}</span>
+        <span class="symptom-label">{{symptomLabel $.Messages .Name}}</span>
+      </li>
+      {{end}}
+      {{end}}
+    </ul>
+    <p class="mt-2" {{if gt (len .Log.SymptomIDs) 0}}hidden{{end}}>{{.NoDataLabel}}</p>
+  </div>
+
+  <div {{if eq (len .Log.CycleFactorKeys) 0}}hidden{{end}}>
+    <p class="journal-muted">{{t .Messages "dashboard.cycle_factors"}}</p>
+    <ul class="mt-2 flex flex-wrap gap-2">
+      {{range .Log.CycleFactorKeys}}
+      <li class="check-chip check-chip-static">
+        <span class="symptom-icon">{{cycleFactorIcon .}}</span>
+        <span class="symptom-label">{{cycleFactorLabel $.Messages .}}</span>
+      </li>
+      {{end}}
+    </ul>
+  </div>
+
+  {{if or (ne .Log.SexActivity "none") (hasBBT .Log.BBT) (ne .Log.CervicalMucus "none") (ne .Log.PregnancyTest "none")}}
+  <div class="grid gap-3 sm:grid-cols-2">
+    {{if ne .Log.SexActivity "none"}}
+    <p><span class="journal-muted">{{t .Messages "dashboard.sex"}}:</span> {{sexActivityLabel .Messages .Log.SexActivity}}</p>
+    {{end}}
+    {{if hasBBT .Log.BBT}}
+    <p><span class="journal-muted">{{t .Messages "dashboard.bbt"}}:</span> {{displayBBT .Log.BBT .TemperatureUnit}} {{temperatureUnitSymbol .TemperatureUnit}}</p>
+    {{end}}
+    {{if ne .Log.CervicalMucus "none"}}
+    <p><span class="journal-muted">{{t .Messages "dashboard.cervical_mucus"}}:</span> {{cervicalMucusLabel .Messages .Log.CervicalMucus}}</p>
+    {{end}}
+    {{if ne .Log.PregnancyTest "none"}}
+    <p><span class="journal-muted">{{t .Messages "dashboard.pregnancy_test"}}:</span> {{pregnancyTestLabel .Messages .Log.PregnancyTest}}</p>
+    {{end}}
+  </div>
+  {{end}}
+
+  <div {{if eq .Log.Notes ""}}hidden{{end}}>
+    <p class="journal-muted">{{t .Messages "dashboard.notes"}}</p>
+    <p class="mt-2 whitespace-pre-wrap wrap-break-word">{{.Log.Notes}}</p>
+  </div>
+</div>
+{{end}}

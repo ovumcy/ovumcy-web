@@ -1,0 +1,222 @@
+{{define "symptom_icon_control"}}
+<div class="settings-symptom-field settings-symptom-icon-field">
+  <label class="field-label" id="{{.LabelID}}">{{t .Messages "settings.symptoms.icon"}}</label>
+  <div class="symptom-icon-control" data-icon-control>
+    <input id="{{.FieldID}}" type="hidden" name="icon" value="{{.Icon}}" data-icon-value>
+    <div class="symptom-icon-options" role="group" aria-labelledby="{{.LabelID}}">
+      {{range .Options}}
+      <button
+        type="button"
+        class="symptom-icon-option{{if .IsCustom}} symptom-icon-option-custom{{end}}"
+        data-icon-option="{{.Value}}"
+        data-selected="{{if .Selected}}true{{else}}false{{end}}"
+        aria-pressed="{{if .Selected}}true{{else}}false{{end}}"
+        aria-label="{{.Value}}">
+        <span aria-hidden="true">{{.Value}}</span>
+      </button>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+{{define "settings_custom_symptom_card"}}
+<div
+  class="journal-panel settings-symptom-card space-y-4"
+  data-custom-symptom-row
+  data-symptom-id="{{.Symptom.ID}}"
+  data-symptom-name="{{.Symptom.Name}}"
+  data-symptom-state="{{if .Symptom.IsActive}}active{{else}}archived{{end}}">
+  <div class="settings-symptom-card-header">
+    <div class="min-w-0 space-y-1">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="text-sm" aria-hidden="true">{{.FormIcon}}</span>
+        <p class="field-label wrap-break-word" data-symptom-card-title>{{.FormName}}</p>
+      </div>
+      <p class="journal-muted text-xs">{{.Heading}}</p>
+    </div>
+    {{if not .Symptom.IsActive}}
+    <span class="warning-amber text-xs">{{t .Messages "settings.symptoms.archived_badge"}}</span>
+    {{end}}
+  </div>
+
+  <form
+    action="/api/v1/symptoms/{{.Symptom.ID}}"
+    method="post"
+    hx-patch="/api/v1/symptoms/{{.Symptom.ID}}"
+    hx-target="#settings-symptoms-section"
+    hx-swap="outerHTML"
+    class="settings-symptom-form"
+    data-symptom-edit-form>
+    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+
+    <div class="settings-symptom-grid">
+      <div class="settings-symptom-field settings-symptom-name-field">
+        <label class="field-label" for="settings-symptom-name-{{.Symptom.ID}}">{{t .Messages "settings.symptoms.name"}}</label>
+        <input
+          id="settings-symptom-name-{{.Symptom.ID}}"
+          type="text"
+          name="name"
+          value="{{.FormName}}"
+          maxlength="40"
+          data-symptom-name-input
+          class="input-field"
+          autocomplete="off">
+        <p class="journal-muted text-xs" data-symptom-name-count></p>
+      </div>
+
+      {{template "symptom_icon_control" (dict
+        "Messages" $.Messages
+        "LabelID" (printf "settings-symptom-icon-label-%d" .Symptom.ID)
+        "FieldID" (printf "settings-symptom-icon-%d" .Symptom.ID)
+        "Icon" .FormIcon
+        "Options" .IconOptions)}}
+
+    </div>
+
+    {{if .ErrorMessage}}
+    <div class="status-error flex items-center gap-2" data-symptom-row-error><span aria-hidden="true">⚠️</span><span>{{.ErrorMessage}}</span></div>
+    {{end}}
+    {{if .SuccessMessage}}{{dismissibleStatusOK $.Messages .SuccessMessage}}{{end}}
+
+    <div class="settings-symptom-action-stack">
+      <button type="submit" class="btn-secondary">{{t .Messages "settings.symptoms.save"}}</button>
+    </div>
+  </form>
+
+  <div class="settings-symptom-card-actions">
+    {{if .Symptom.IsActive}}
+    <form
+      action="/api/v1/symptoms/{{.Symptom.ID}}"
+      method="post"
+      hx-delete="/api/v1/symptoms/{{.Symptom.ID}}"
+      hx-target="#settings-symptoms-section"
+      hx-swap="outerHTML"
+      data-confirm="{{t $.Messages "settings.symptoms.confirm_hide"}}"
+      data-confirm-accept="{{t $.Messages "settings.symptoms.hide"}}">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn-secondary">{{t $.Messages "settings.symptoms.hide"}}</button>
+    </form>
+    {{else}}
+    <form
+      action="/api/v1/symptoms/{{.Symptom.ID}}/restore"
+      method="post"
+      hx-post="/api/v1/symptoms/{{.Symptom.ID}}/restore"
+      hx-target="#settings-symptoms-section"
+      hx-swap="outerHTML">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn-secondary">{{t $.Messages "settings.symptoms.restore"}}</button>
+    </form>
+    {{end}}
+  </div>
+</div>
+{{end}}
+{{define "settings_symptoms_section_content"}}
+<section id="settings-symptoms-section" class="journal-card p-5 sm:p-6 space-y-5" data-settings-symptoms>
+  <div>
+    <h2 class="journal-subtitle">🧩 {{t .Messages "settings.symptoms.title"}}</h2>
+    <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
+  </div>
+
+  <form
+    action="/api/v1/symptoms"
+    method="post"
+    hx-post="/api/v1/symptoms"
+    hx-target="#settings-symptoms-section"
+    hx-swap="outerHTML"
+    class="settings-symptom-form"
+    data-symptom-create-form>
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    <div class="settings-symptom-grid">
+      <div class="settings-symptom-field settings-symptom-name-field">
+        <label class="field-label" for="settings-new-symptom-name">{{t .Messages "settings.symptoms.name"}}</label>
+        <input
+          id="settings-new-symptom-name"
+          type="text"
+          name="name"
+          value="{{.SymptomDraftName}}"
+          placeholder="{{t .Messages "settings.symptoms.name_placeholder"}}"
+          maxlength="40"
+          data-symptom-name-input
+          class="input-field"
+          autocomplete="off">
+        <p class="journal-muted text-xs" data-symptom-name-count></p>
+      </div>
+
+      {{template "symptom_icon_control" (dict
+        "Messages" .Messages
+        "LabelID" "settings-new-symptom-icon-label"
+        "FieldID" "settings-new-symptom-icon"
+        "Icon" .SymptomDraftIcon
+        "Options" .SymptomIconOptions)}}
+
+    </div>
+
+    {{if .SymptomErrorMessage}}
+    <div class="status-error flex items-center gap-2"><span aria-hidden="true">⚠️</span><span>{{.SymptomErrorMessage}}</span></div>
+    {{end}}
+    {{if .SymptomStatusMessage}}{{dismissibleStatusOK .Messages .SymptomStatusMessage}}{{end}}
+
+    <div class="settings-symptom-action-stack">
+      <button type="submit" class="btn-primary">{{t .Messages "settings.symptoms.add"}}</button>
+    </div>
+  </form>
+
+  <div class="space-y-4">
+    {{if .HasCustomSymptoms}}
+    <div class="space-y-3" data-symptom-group="active">
+      <div class="space-y-1">
+        <h3 class="field-label">{{t .Messages "settings.symptoms.active_heading"}}</h3>
+        <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.active_hint"}}</p>
+      </div>
+      <div class="space-y-3">
+        {{range .ActiveCustomSymptoms}}
+        {{template "settings_custom_symptom_card" (dict
+          "Messages" $.Messages
+          "CSRFToken" $.CSRFToken
+          "Symptom" .Symptom
+          "FormName" .FormName
+          "FormIcon" .FormIcon
+          "IconOptions" .IconOptions
+          "ErrorMessage" .ErrorMessage
+          "SuccessMessage" .SuccessMessage
+          "Heading" (t $.Messages "settings.symptoms.active_item"))}}
+        {{end}}
+      </div>
+    </div>
+    {{else if .HasArchivedSymptoms}}
+    <div class="journal-panel space-y-2" data-symptom-empty-state="active">
+      <p class="field-label">{{t .Messages "settings.symptoms.active_heading"}}</p>
+      <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.empty_active"}}</p>
+    </div>
+    {{else}}
+    <div class="journal-panel space-y-2" data-symptom-empty-state="empty">
+      <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.empty"}}</p>
+    </div>
+    {{end}}
+
+    {{if .HasArchivedSymptoms}}
+    <div class="space-y-3" data-symptom-group="archived">
+      <div class="space-y-1">
+        <h3 class="field-label">{{t .Messages "settings.symptoms.archived_heading"}}</h3>
+        <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.archived_hint"}}</p>
+      </div>
+      <div class="space-y-3">
+        {{range .ArchivedCustomSymptoms}}
+        {{template "settings_custom_symptom_card" (dict
+          "Messages" $.Messages
+          "CSRFToken" $.CSRFToken
+          "Symptom" .Symptom
+          "FormName" .FormName
+          "FormIcon" .FormIcon
+          "IconOptions" .IconOptions
+          "ErrorMessage" .ErrorMessage
+          "SuccessMessage" .SuccessMessage
+          "Heading" (t $.Messages "settings.symptoms.archived_item"))}}
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}

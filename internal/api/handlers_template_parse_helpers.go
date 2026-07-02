@@ -14,6 +14,7 @@ func parsePageTemplates(funcMap template.FuncMap, pages []string) (map[string]*t
 		tmpl, err := template.New("base").Funcs(funcMap).ParseFS(
 			templates.Files,
 			"base.html",
+			"components/*.html",
 			page+".html",
 		)
 		if err != nil {
@@ -31,6 +32,7 @@ func parsePartialTemplates(funcMap template.FuncMap, partialFiles []string) (map
 		tmpl, err := template.New(name).Funcs(funcMap).ParseFS(
 			templates.Files,
 			"base.html",
+			"components/*.html",
 			partial,
 		)
 		if err != nil {

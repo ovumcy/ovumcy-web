@@ -1,0 +1,141 @@
+{{define "temperature_input_field"}}
+<fieldset class="space-y-2">
+  <legend id="{{.FieldID}}-legend" class="field-label">{{t .Messages "dashboard.bbt"}}</legend>
+  <div class="measurement-field-row">
+    <input
+      type="text"
+      id="{{.FieldID}}"
+      name="bbt"
+      value="{{.Value}}"
+      inputmode="decimal"
+      autocomplete="off"
+      class="input-field measurement-field-input"
+      aria-labelledby="{{.FieldID}}-legend"
+      aria-describedby="{{.FieldID}}-hint"
+      data-temperature-input
+      data-temperature-unit="{{.TemperatureUnit}}"
+      data-temperature-min="{{.TemperatureInputMin}}"
+      data-temperature-max="{{.TemperatureInputMax}}"
+      data-temperature-range-error="{{.TemperatureRangeError}}">
+    <span class="measurement-field-unit">{{.TemperatureUnitSymbol}}</span>
+  </div>
+  <p id="{{.FieldID}}-hint" class="journal-muted text-xs">{{.TemperatureRangeHint}}</p>
+</fieldset>
+{{end}}
+{{define "period_flow_option"}}
+<label class="choice-option">
+  <input
+    type="radio"
+    name="flow"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if .DisableWhenNotPeriod}}data-disable-without-period="true"{{if not .CurrentIsPeriod}} disabled{{end}}{{end}}
+    {{if eq .SelectedFlow .Value}}checked{{end}}>
+  <span class="{{if .Compact}}radio-tile radio-tile-sm radio-tile-inline{{else}}radio-tile radio-tile-inline{{end}}">
+    <span class="radio-icon radio-icon-inline">{{if eq .Value "none"}}○{{else if eq .Value "spotting"}}◌{{else if eq .Value "light"}}◔{{else if eq .Value "medium"}}◑{{else}}◕{{end}}</span>
+    <span>{{flowLabel .Messages .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "period_flow_options"}}
+<div class="{{if .Compact}}flow-radio-row flow-radio-row-compact{{else}}flow-radio-row{{end}}">
+  {{template "period_flow_option" (dict "Messages" .Messages "SelectedFlow" .SelectedFlow "Value" "none" "Compact" .Compact "DisableWhenNotPeriod" .DisableWhenNotPeriod "CurrentIsPeriod" .CurrentIsPeriod)}}
+  {{template "period_flow_option" (dict "Messages" .Messages "SelectedFlow" .SelectedFlow "Value" "spotting" "Compact" .Compact "DisableWhenNotPeriod" .DisableWhenNotPeriod "CurrentIsPeriod" .CurrentIsPeriod)}}
+  {{template "period_flow_option" (dict "Messages" .Messages "SelectedFlow" .SelectedFlow "Value" "light" "Compact" .Compact "DisableWhenNotPeriod" .DisableWhenNotPeriod "CurrentIsPeriod" .CurrentIsPeriod)}}
+  {{template "period_flow_option" (dict "Messages" .Messages "SelectedFlow" .SelectedFlow "Value" "medium" "Compact" .Compact "DisableWhenNotPeriod" .DisableWhenNotPeriod "CurrentIsPeriod" .CurrentIsPeriod)}}
+  {{template "period_flow_option" (dict "Messages" .Messages "SelectedFlow" .SelectedFlow "Value" "heavy" "Compact" .Compact "DisableWhenNotPeriod" .DisableWhenNotPeriod "CurrentIsPeriod" .CurrentIsPeriod)}}
+</div>
+{{end}}
+{{define "mood_option"}}
+<label class="choice-option">
+  <input
+    type="radio"
+    name="mood"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if eq .SelectedMood .Value}}checked{{end}}>
+  <span class="{{if .Compact}}mood-chip mood-chip-sm{{else}}mood-chip{{end}}" title="{{.Value}}/5">
+    <span class="mood-chip-emoji">{{moodEmoji .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "mood_picker"}}
+<div class="{{if .Compact}}mood-row mood-row-compact{{else}}mood-row{{end}}">
+  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 1 "Compact" .Compact)}}
+  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 2 "Compact" .Compact)}}
+  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 3 "Compact" .Compact)}}
+  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 4 "Compact" .Compact)}}
+  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 5 "Compact" .Compact)}}
+</div>
+{{end}}
+{{define "sex_activity_option"}}
+<label class="choice-option" data-sex-activity-option="{{.Value}}">
+  <input
+    type="radio"
+    name="sex_activity"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if eq .SelectedSexActivity .Value}}checked{{end}}>
+  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+    <span>{{sexActivityLabel .Messages .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "sex_activity_field"}}
+<details class="sex-activity-details" data-sex-activity-details {{if ne .SelectedSexActivity "none"}}open{{end}}>
+  <summary class="sex-chip-summary">
+    <span class="{{if .Compact}}check-chip check-chip-sm check-chip-static{{else}}check-chip check-chip-static{{end}} sex-chip-summary-pill{{if ne .SelectedSexActivity "none"}} choice-chip-active{{end}}">
+      <span class="symptom-icon sex-heart-icon">♥</span>
+      <span class="symptom-label">{{t .Messages "dashboard.sex"}}</span>
+      <span class="sex-chip-chevron" aria-hidden="true">▼</span>
+    </span>
+  </summary>
+  <div class="mt-3 sex-activity-row{{if .Compact}} sex-activity-row-compact{{end}}">
+    {{template "sex_activity_option" (dict "Messages" .Messages "SelectedSexActivity" .SelectedSexActivity "Value" "none" "Compact" .Compact)}}
+    {{template "sex_activity_option" (dict "Messages" .Messages "SelectedSexActivity" .SelectedSexActivity "Value" "protected" "Compact" .Compact)}}
+    {{template "sex_activity_option" (dict "Messages" .Messages "SelectedSexActivity" .SelectedSexActivity "Value" "unprotected" "Compact" .Compact)}}
+  </div>
+</details>
+{{end}}
+{{define "cervical_mucus_option"}}
+<label class="choice-option">
+  <input
+    type="radio"
+    name="cervical_mucus"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if eq .SelectedCervicalMucus .Value}}checked{{end}}>
+  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+    <span>{{cervicalMucusLabel .Messages .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "cervical_mucus_options"}}
+<div class="cervical-mucus-row{{if .Compact}} cervical-mucus-row-compact{{end}}">
+  {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "none" "Compact" .Compact)}}
+  {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "dry" "Compact" .Compact)}}
+  {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "moist" "Compact" .Compact)}}
+  {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "creamy" "Compact" .Compact)}}
+  {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "eggwhite" "Compact" .Compact)}}
+</div>
+{{end}}
+{{define "pregnancy_test_option"}}
+<label class="choice-option">
+  <input
+    type="radio"
+    name="pregnancy_test"
+    value="{{.Value}}"
+    class="choice-input"
+    {{if eq .SelectedPregnancyTest .Value}}checked{{end}}>
+  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+    <span>{{pregnancyTestLabel .Messages .Value}}</span>
+  </span>
+</label>
+{{end}}
+{{define "pregnancy_test_options"}}
+<div class="cervical-mucus-row{{if .Compact}} cervical-mucus-row-compact{{end}}">
+  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "none" "Compact" .Compact)}}
+  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "negative" "Compact" .Compact)}}
+  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "positive" "Compact" .Compact)}}
+</div>
+{{end}}
