@@ -17,7 +17,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..", "..");
 
 export function readAppBundle() {
-  return readFileSync(path.join(repoRoot, "web", "src", "js", "app.js"), "utf8");
+  return readFileSync(path.join(repoRoot, "web", "static", "js", "app.js"), "utf8");
 }
 
 export function readTimezoneBootstrap() {

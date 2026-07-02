@@ -33,15 +33,12 @@ function buildBundle(sources) {
 }
 
 const appBundle = buildBundle(appBundleSources);
-writeFileSync("./web/src/js/app.js", appBundle, "utf8");
 writeFileSync("./web/static/js/app.js", appBundle, "utf8");
 
 const settingsExportBundle = buildBundle(settingsExportBundleSources);
-writeFileSync("./web/src/js/settings-export.js", settingsExportBundle, "utf8");
 writeFileSync("./web/static/js/settings-export.js", settingsExportBundle, "utf8");
 
 const settingsImportBundle = buildBundle(settingsImportBundleSources);
-writeFileSync("./web/src/js/settings-import.js", settingsImportBundle, "utf8");
 writeFileSync("./web/static/js/settings-import.js", settingsImportBundle, "utf8");
 
 const buildTargets = [
