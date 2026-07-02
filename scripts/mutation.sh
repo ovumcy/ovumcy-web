@@ -17,9 +17,10 @@
 # The test-suite auditor consumes the JSON output
 # to triage survivors into "real test gap" vs "equivalent mutant".
 #
-# Mutation testing is intentionally scoped to business-logic + security packages.
-# internal/api is markup-heavy and far slower to mutate; services/security carry
-# the behavioral signal worth mutating.
+# Mutation testing is scoped to business-logic + security + transport packages.
+# internal/api is the largest package (~8.5k source lines) and carries heavy
+# integration tests against a real database, so it is by far the slowest target
+# here — budget accordingly (see MUTATION_WORKERS below and the weekly CI job).
 
 set -euo pipefail
 
@@ -28,10 +29,11 @@ WORKERS="${MUTATION_WORKERS:-4}"
 TMP_DIR=".tmp/mutation"
 BASELINE_DIR=".mutation"
 
-# Packages worth mutating: domain behavior + security, not markup plumbing.
+# Packages worth mutating: domain behavior, security, and transport/HTTP handling.
 TARGETS=(
   "./internal/services"
   "./internal/security"
+  "./internal/api"
 )
 
 usage() {

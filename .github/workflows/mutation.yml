@@ -18,6 +18,12 @@ permissions:
 jobs:
   mutation-baseline:
     runs-on: ubuntu-latest
+    # internal/api joined the baseline scope (largest package, ~8.5k source
+    # lines, heavy DB-integration tests) alongside services/security, so this
+    # sequential three-package run needs real headroom over GitHub's 360min
+    # default job timeout — this is a hang guard, not a runtime target; the
+    # job is advisory (continue-on-error below) regardless.
+    timeout-minutes: 240
     permissions:
       contents: read
     env:
