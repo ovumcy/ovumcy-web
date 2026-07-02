@@ -7,17 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+### Added
 
-- **OIDC HTTP redirects are origin-pinned.** The HTTP client used for OIDC discovery, the JWKS key fetch, and the authorization-code exchange now refuses to follow any redirect that leaves the configured issuer origin, extending the existing `jwks_uri` / `token_endpoint` / `end_session_endpoint` origin pins to the HTTP requests themselves. A provider that redirects these requests cross-origin now fails closed at sign-in; same-origin redirects (path normalization) keep working.
+- **Single-binary packaging.** HTML templates, locales, and `web/static` are embedded into the binary via `go:embed`; the runtime image ships only the binary (`FROM scratch`) and the app runs from any working directory. Static asset URLs are cache-busted with `?v=<build revision>` and served with `Cache-Control: public, max-age=3600`, so a release invalidates stale JS/CSS without operator action.
 
 ### Changed
 
+- **`HSTS_ENABLED` switch.** `Strict-Transport-Security` is now governed by an explicit `HSTS_ENABLED` environment variable (default inherits `COOKIE_SECURE`, exact prior behavior). Operators can keep secure cookies without pinning browsers to HTTPS for a year, or opt in explicitly; enabling it logs a startup note about the one-year pin.
+- **BBT stored as nullable.** `daily_logs.bbt` drops `NOT NULL DEFAULT 0` (migration 024, SQLite and Postgres; existing `0` rows are migrated to `NULL`). `nil` now means "not measured", retiring the 0°C sentinel.
 - **Breaking (export shape):** `bbt` (basal body temperature) is now omitted from JSON export entries on days without a measurement, instead of always being present as `0`. Consumers parsing the export must treat a missing `bbt` key as "not measured". Restore stays fully backward-compatible — import reads an absent key, an explicit `null`, and the legacy `0` all as "not measured" (`docs/export.md` and `docs/openapi.yaml` updated).
+
+### Fixed
+
+- **Light-theme accent contrast raised to WCAG AA.** The two colours behind the only axe colour-contrast violation (2.96:1 against the hero gradient) now clear 4.5:1; hue preserved, dark theme untouched.
 
 ### Removed
 
 - **Breaking:** removed the query-string form of the day-delete endpoint (`DELETE /api/v1/days?date=YYYY-MM-DD`). Use `DELETE /api/v1/days/{date}` instead (the optional `source` selector, if used, moves from the `date`-bearing query string to a plain `?source=` query param on the path form). `docs/openapi.yaml` and the browser UI have been updated accordingly.
+- **Redundant `daily_logs` date index dropped** (migration 025, both dialects). Every query path is user-scoped and already served by the `(user_id, date)` index; the bare-date index only added write amplification.
+
+### Security
+
+- **OIDC HTTP redirects are origin-pinned.** The HTTP client used for OIDC discovery, the JWKS key fetch, and the authorization-code exchange now refuses to follow any redirect that leaves the configured issuer origin, extending the existing `jwks_uri` / `token_endpoint` / `end_session_endpoint` origin pins to the HTTP requests themselves. A provider that redirects these requests cross-origin now fails closed at sign-in; same-origin redirects (path normalization) keep working.
+- **Request bodies are bounded (16 MiB).** An explicit `BodyLimit` sized to the documented JSON-restore maximum; the transport-level 413 now returns the mapped, localized `request_too_large` envelope instead of fasthttp's bare text.
+
+### Internal
+
+- Lifted the transitive SQLite (`modernc.org/sqlite`) and `fasthttp` engines to current upstream.
+- Split `base.html` into a components library under `internal/templates/components/` (byte-identical defines; `base.html` keeps only the page skeleton).
+- Retired the sentinel→enum error-classification layer across all domains; error mapping now switches directly on service sentinels.
 
 ## [1.5.0] - 2026-07-01
 
