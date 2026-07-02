@@ -79,7 +79,7 @@ func TestDashboardTodayActionsUseRequestTimezoneHeaderAndCookie(t *testing.T) {
 
 	tzCookieHeader := joinCookieHeader(authCookie, timezoneCookieName+"="+timezoneName)
 
-	clearResponse := dashboardTimezoneActionResponse(t, app, http.MethodDelete, "/api/v1/days?date="+todayRaw+"&source=dashboard", nil, tzCookieHeader, timezoneName)
+	clearResponse := dashboardTimezoneActionResponse(t, app, http.MethodDelete, "/api/v1/days/"+todayRaw+"?source=dashboard", nil, tzCookieHeader, timezoneName)
 	assertStatusCode(t, clearResponse, http.StatusOK)
 	if clearResponse.Header.Get("HX-Redirect") != "/dashboard" {
 		t.Fatalf("expected HX-Redirect /dashboard on clear, got %q", clearResponse.Header.Get("HX-Redirect"))

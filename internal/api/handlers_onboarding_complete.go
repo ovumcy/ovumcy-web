@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -12,10 +14,10 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 	}
 
 	if err := services.ValidateOnboardingCompletionEligibility(user); err != nil {
-		switch services.ClassifyOnboardingCompletionError(err) {
-		case services.OnboardingCompletionErrorNotNeeded:
+		switch {
+		case errors.Is(err, services.ErrOnboardingCompletionNotNeeded):
 			return redirectOrJSON(c, "/dashboard")
-		case services.OnboardingCompletionErrorStepsRequired:
+		case errors.Is(err, services.ErrOnboardingStepsRequired):
 			return handler.respondMappedError(c, onboardingStepsRequiredErrorSpec())
 		default:
 			return handler.respondMappedError(c, onboardingFinishErrorSpec())
@@ -23,7 +25,7 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 	}
 	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.UserContext(), user.ID, handler.requestLocationFromOnboardingForm(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
 	if err != nil {
-		if services.ClassifyOnboardingCompletionError(err) == services.OnboardingCompletionErrorStepsRequired {
+		if errors.Is(err, services.ErrOnboardingStepsRequired) {
 			return handler.respondMappedError(c, onboardingStepsRequiredErrorSpec())
 		}
 		return handler.respondMappedError(c, onboardingFinishErrorSpec())

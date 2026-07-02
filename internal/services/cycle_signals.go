@@ -83,7 +83,7 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) []cycleBBTPoint {
 	points := make([]cycleBBTPoint, 0)
 	for _, logEntry := range logs {
-		if !IsValidDayBBT(logEntry.BBT) || logEntry.BBT <= 0 {
+		if logEntry.BBT == nil || !IsValidDayBBT(logEntry.BBT) {
 			continue
 		}
 
@@ -95,7 +95,7 @@ func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, nextSta
 		points = append(points, cycleBBTPoint{
 			Date:     day,
 			CycleDay: int(day.Sub(cycleStart).Hours()/24) + 1,
-			Value:    logEntry.BBT,
+			Value:    *logEntry.BBT,
 		})
 	}
 

@@ -82,8 +82,15 @@ func IsValidDayPregnancyTest(value string) bool {
 	}
 }
 
-func IsValidDayBBT(value float64) bool {
-	return value == 0 || (value >= MinDayBBTCelsius && value <= MaxDayBBTCelsius)
+// IsValidDayBBT reports whether a basal body temperature value is acceptable
+// for storage. A nil pointer means "not measured" and is always valid; a
+// measured value is valid only inside the physiological range. There is no
+// sentinel: an unmeasured reading is nil, not 0.
+func IsValidDayBBT(value *float64) bool {
+	if value == nil {
+		return true
+	}
+	return *value >= MinDayBBTCelsius && *value <= MaxDayBBTCelsius
 }
 
 func NormalizeTemperatureUnit(raw string) string {
@@ -113,39 +120,47 @@ func TemperatureUnitRange(unit string) (float64, float64) {
 	}
 }
 
-func FormatDayBBTForInput(value float64, unit string) string {
+func FormatDayBBTForInput(value *float64, unit string) string {
 	normalized := normalizeStoredDayBBT(value)
-	if normalized <= 0 {
+	if normalized == nil {
 		return ""
 	}
 	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
-		return fmt.Sprintf("%.2f", roundTemperatureValue(celsiusToFahrenheit(normalized)))
+		return fmt.Sprintf("%.2f", roundTemperatureValue(celsiusToFahrenheit(*normalized)))
 	}
-	return fmt.Sprintf("%.2f", normalized)
+	return fmt.Sprintf("%.2f", *normalized)
 }
 
-func ParseDayBBTRawWithUnit(raw string, unit string) (float64, error) {
+// ParseDayBBTRawWithUnit parses a raw temperature form field into a nullable
+// stored value. An empty field means "not measured" and yields nil; a parsed
+// value is normalized (and unit-converted) and returned as a pointer.
+func ParseDayBBTRawWithUnit(raw string, unit string) (*float64, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return 0, nil
+		return nil, nil
 	}
 
 	normalized := strings.ReplaceAll(trimmed, ",", ".")
 	value, err := strconv.ParseFloat(normalized, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid day bbt: %w", err)
+		return nil, fmt.Errorf("invalid day bbt: %w", err)
 	}
 	if NormalizeTemperatureUnit(unit) == TemperatureUnitFahrenheit {
 		value = fahrenheitToCelsius(value)
 	}
-	return normalizeStoredDayBBT(value), nil
+	return normalizeStoredDayBBT(&value), nil
 }
 
-func normalizeStoredDayBBT(value float64) float64 {
-	if value <= 0 {
-		return 0
+// normalizeStoredDayBBT collapses any non-measurement (nil or a non-positive
+// value, the old sentinel range) to nil, and rounds a genuine reading. The
+// result is the canonical stored form: nil for unmeasured, a rounded pointer
+// otherwise.
+func normalizeStoredDayBBT(value *float64) *float64 {
+	if value == nil || *value <= 0 {
+		return nil
 	}
-	return roundTemperatureValue(value)
+	rounded := roundTemperatureValue(*value)
+	return &rounded
 }
 
 func roundTemperatureValue(value float64) float64 {

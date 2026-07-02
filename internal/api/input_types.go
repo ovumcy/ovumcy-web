@@ -13,7 +13,7 @@ type dayPayload struct {
 	Flow            string   `json:"flow"`
 	Mood            int      `json:"mood"`
 	SexActivity     string   `json:"sex_activity"`
-	BBT             float64  `json:"bbt"`
+	BBT             *float64 `json:"bbt"`
 	CervicalMucus   string   `json:"cervical_mucus"`
 	PregnancyTest   string   `json:"pregnancy_test"`
 	CycleFactorKeys []string `json:"cycle_factor_keys"`

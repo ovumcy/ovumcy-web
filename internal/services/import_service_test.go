@@ -71,13 +71,13 @@ func TestImportServiceRoundTripPreservesEntries(t *testing.T) {
 		{
 			UserID: source.ID, Date: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 			IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowHeavy, Mood: 3,
-			SexActivity: models.SexActivityProtected, BBT: 36.7, CervicalMucus: models.CervicalMucusCreamy,
+			SexActivity: models.SexActivityProtected, BBT: models.NewBBT(36.7), CervicalMucus: models.CervicalMucusCreamy,
 			PregnancyTest: models.PregnancyTestNegative, CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorTravel},
 			SymptomIDs: []uint{crampsID, moodSwingsID, customID}, Notes: "heavy day",
 		},
 		{
 			UserID: source.ID, Date: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
-			Mood: 5, BBT: 36.9, PregnancyTest: models.PregnancyTestPositive,
+			Mood: 5, BBT: models.NewBBT(36.9), PregnancyTest: models.PregnancyTestPositive,
 			SymptomIDs: []uint{swellingID}, CycleFactorKeys: []string{},
 		},
 	}
@@ -282,7 +282,7 @@ func TestImportServiceSanitizesGarbageValues(t *testing.T) {
 
 	payload := importPayload{Entries: []ExportJSONEntry{
 		{
-			Date: "2026-10-01", Period: true, Flow: "ZZZ", MoodRating: 999, BBT: 9999,
+			Date: "2026-10-01", Period: true, Flow: "ZZZ", MoodRating: 999, BBT: models.NewBBT(9999),
 			SexActivity: "??", CervicalMucus: "??", PregnancyTest: "??",
 			CycleFactors: []string{"not_a_factor"},
 		},
@@ -302,7 +302,7 @@ func TestImportServiceSanitizesGarbageValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if stored.Flow != models.FlowNone || stored.Mood != 0 || stored.BBT != 0 {
+	if stored.Flow != models.FlowNone || stored.Mood != 0 || stored.BBT != nil {
 		t.Fatalf("garbage flow/mood/bbt not sanitized: flow=%q mood=%d bbt=%v", stored.Flow, stored.Mood, stored.BBT)
 	}
 	if stored.SexActivity != models.SexActivityNone || stored.CervicalMucus != models.CervicalMucusNone || stored.PregnancyTest != models.PregnancyTestNone {
@@ -475,5 +475,95 @@ func TestImportServiceScopesResolvedSymptomsToImportingOwner(t *testing.T) {
 	}
 	if len(logsB) != 0 {
 		t.Fatalf("owner B gained %d unexpected day logs from owner A's import", len(logsB))
+	}
+}
+
+// TestImportServiceBBTCompatibilityAcrossLegacyAndCurrentPayloads pins the
+// public JSON restore contract for the nullable-BBT change: an importer must
+// accept every historical and current spelling of "not measured" — an absent
+// key, an explicit null, and the legacy numeric 0 sentinel — and store all of
+// them as NULL (nil), while a genuine reading imports verbatim. Each case is
+// driven from raw JSON bytes so the wire format (not a Go struct) is exercised,
+// and each day is re-exported to prove the round-trip semantics: unmeasured
+// days omit `bbt` entirely, and a measured day re-emits the same value.
+func TestImportServiceBBTCompatibilityAcrossLegacyAndCurrentPayloads(t *testing.T) {
+	dayService, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+	exportService := NewExportService(dayService, symptomService)
+	user := createDayServiceTestUser(t, database, "import-bbt-compat@example.com")
+
+	// Raw JSON: legacy sentinel 0, explicit null, absent key, and a real reading.
+	raw := []byte(`{"entries":[
+		{"date":"2026-07-01","period":false,"bbt":0,"cycle_factors":[]},
+		{"date":"2026-07-02","period":false,"bbt":null,"cycle_factors":[]},
+		{"date":"2026-07-03","period":false,"cycle_factors":[]},
+		{"date":"2026-07-04","period":false,"bbt":36.7,"cycle_factors":[]}
+	]}`)
+
+	importService := newImportServiceIntegration(t, database, symptomService)
+	result, err := importService.ImportJSON(context.Background(), user.ID, raw, time.UTC)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if result.Added != 4 || result.Rejected != 0 {
+		t.Fatalf("expected 4 added / 0 rejected, got %+v", result)
+	}
+
+	// Legacy 0, explicit null, and absent all persist as "not measured" (nil).
+	for _, day := range []string{"2026-07-01", "2026-07-02", "2026-07-03"} {
+		stored, err := dayService.FetchLogByDate(context.Background(), user.ID, mustParseExportDay(t, day), time.UTC)
+		if err != nil {
+			t.Fatalf("reload %s: %v", day, err)
+		}
+		if stored.BBT != nil {
+			t.Fatalf("expected %s BBT to be nil (not measured), got %v", day, *stored.BBT)
+		}
+	}
+
+	// A real reading survives verbatim.
+	measured, err := dayService.FetchLogByDate(context.Background(), user.ID, mustParseExportDay(t, "2026-07-04"), time.UTC)
+	if err != nil {
+		t.Fatalf("reload measured day: %v", err)
+	}
+	if measured.BBT == nil || *measured.BBT != 36.7 {
+		t.Fatalf("expected measured BBT 36.7, got %v", measured.BBT)
+	}
+
+	// Round-trip: unmeasured days omit the bbt key entirely; the measured day
+	// re-emits its value. Re-exporting proves the stored semantics survive the
+	// full export path (pointer + omitempty).
+	entries, err := exportService.BuildJSONEntries(context.Background(), user.ID, nil, nil, time.UTC)
+	if err != nil {
+		t.Fatalf("re-export: %v", err)
+	}
+	byDate := make(map[string]ExportJSONEntry, len(entries))
+	for _, entry := range entries {
+		byDate[entry.Date] = entry
+	}
+	for _, day := range []string{"2026-07-01", "2026-07-02", "2026-07-03"} {
+		if got := byDate[day].BBT; got != nil {
+			t.Fatalf("expected re-exported %s to omit bbt (nil), got %v", day, *got)
+		}
+	}
+	if got := byDate["2026-07-04"].BBT; got == nil || *got != 36.7 {
+		t.Fatalf("expected re-exported measured day bbt 36.7, got %v", got)
+	}
+
+	// The serialized JSON of an unmeasured day must carry no "bbt" key at all
+	// (omitempty), while the measured day must include it — the wire contract.
+	unmeasuredJSON, err := json.Marshal(byDate["2026-07-01"])
+	if err != nil {
+		t.Fatalf("marshal unmeasured entry: %v", err)
+	}
+	if strings.Contains(string(unmeasuredJSON), "\"bbt\"") {
+		t.Fatalf("expected unmeasured export entry to omit the bbt key, got %s", unmeasuredJSON)
+	}
+	measuredJSON, err := json.Marshal(byDate["2026-07-04"])
+	if err != nil {
+		t.Fatalf("marshal measured entry: %v", err)
+	}
+	if !strings.Contains(string(measuredJSON), "\"bbt\":36.7") {
+		t.Fatalf("expected measured export entry to include bbt:36.7, got %s", measuredJSON)
 	}
 }

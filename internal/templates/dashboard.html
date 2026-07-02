@@ -352,7 +352,7 @@
       <div class="dashboard-danger-actions">
         <button
           type="button"
-          hx-delete="/api/v1/days?date={{.Today}}&source=dashboard"
+          hx-delete="/api/v1/days/{{.Today}}?source=dashboard"
           hx-swap="none"
           hx-confirm="{{t .Messages "confirm.delete_entry"}}"
           data-confirm-accept="{{t .Messages "confirm.yes"}}"

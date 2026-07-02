@@ -86,8 +86,8 @@ func TestParseDayPayloadFromFormWithFahrenheitPreference(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	payload := parseDayPayloadForUser(t, request, &models.User{TemperatureUnit: services.TemperatureUnitFahrenheit})
-	if payload.BBT != 37.00 {
-		t.Fatalf("expected converted BBT 37.00, got %.2f", payload.BBT)
+	if payload.BBT == nil || *payload.BBT != 37.00 {
+		t.Fatalf("expected converted BBT 37.00, got %v", payload.BBT)
 	}
 }
 

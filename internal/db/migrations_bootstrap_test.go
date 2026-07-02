@@ -255,9 +255,9 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 		IsUncertain     bool    `gorm:"column:is_uncertain"`
 		Flow            string  `gorm:"column:flow"`
 		Mood            int     `gorm:"column:mood"`
-		SexActivity     string  `gorm:"column:sex_activity"`
-		BBT             float64 `gorm:"column:bbt"`
-		CervicalMucus   string  `gorm:"column:cervical_mucus"`
+		SexActivity     string   `gorm:"column:sex_activity"`
+		BBT             *float64 `gorm:"column:bbt"`
+		CervicalMucus   string   `gorm:"column:cervical_mucus"`
 		PregnancyTest   string  `gorm:"column:pregnancy_test"`
 		CycleFactorKeys string  `gorm:"column:cycle_factor_keys"`
 		SymptomIDs      *string `gorm:"column:symptom_ids"`
@@ -286,8 +286,10 @@ func assertMigratedLegacyDailyLogDefaults(t *testing.T, database *gorm.DB) {
 	if migratedLog.SexActivity != models.SexActivityNone {
 		t.Fatalf("expected migrated sex_activity default to be %q, got %q", models.SexActivityNone, migratedLog.SexActivity)
 	}
-	if migratedLog.BBT != 0 {
-		t.Fatalf("expected migrated bbt default to be 0, got %v", migratedLog.BBT)
+	// Migration 024 rewrites the legacy `bbt = 0` sentinel to NULL, so a legacy
+	// row that never recorded a temperature must migrate to NULL (not measured).
+	if migratedLog.BBT != nil {
+		t.Fatalf("expected migrated bbt sentinel 0 to become NULL, got %v", *migratedLog.BBT)
 	}
 	if migratedLog.CervicalMucus != models.CervicalMucusNone {
 		t.Fatalf("expected migrated cervical_mucus default to be %q, got %q", models.CervicalMucusNone, migratedLog.CervicalMucus)

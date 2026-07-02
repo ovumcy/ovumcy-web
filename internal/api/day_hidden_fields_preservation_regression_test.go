@@ -30,7 +30,7 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 		Date:            today,
 		Mood:            2,
 		SexActivity:     models.SexActivityProtected,
-		BBT:             36.65,
+		BBT:             models.NewBBT(36.65),
 		CervicalMucus:   models.CervicalMucusEggWhite,
 		CycleFactorKeys: []string{models.CycleFactorStress},
 		Notes:           "keep me",
@@ -60,8 +60,8 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 	if saved.SexActivity != models.SexActivityProtected {
 		t.Fatalf("expected hidden sex activity to be preserved, got %q", saved.SexActivity)
 	}
-	if saved.BBT != 36.65 {
-		t.Fatalf("expected hidden BBT to be preserved, got %.2f", saved.BBT)
+	if saved.BBT == nil || *saved.BBT != 36.65 {
+		t.Fatalf("expected hidden BBT to be preserved, got %v", saved.BBT)
 	}
 	if saved.CervicalMucus != models.CervicalMucusEggWhite {
 		t.Fatalf("expected hidden cervical mucus to be preserved, got %q", saved.CervicalMucus)

@@ -122,7 +122,7 @@ func TestIsAutoFilledPeriodCandidate(t *testing.T) {
 		},
 		{
 			name:  "period day with bbt reading",
-			entry: models.DailyLog{IsPeriod: true, BBT: 36.5},
+			entry: models.DailyLog{IsPeriod: true, BBT: models.NewBBT(36.5)},
 			want:  false,
 		},
 		{

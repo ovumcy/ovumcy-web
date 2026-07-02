@@ -365,7 +365,12 @@ components:
         bbt:
           type: number
           format: float
-          description: Basal body temperature in the unit selected per account (°C or °F). Zero means unset.
+          nullable: true
+          description: >-
+            Basal body temperature in the unit selected per account (°C or °F).
+            Omitted or null means not measured. On write, a null, an omitted
+            field, or a non-positive value (legacy 0 sentinel) is stored as
+            "not measured".
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]
@@ -394,7 +399,7 @@ components:
       description: |
         A persisted day record. `date` is stored as UTC midnight on disk and
         rendered in the caller's timezone at read time.
-      required: [id, user_id, date, is_period, flow, mood, sex_activity, bbt, cervical_mucus, pregnancy_test]
+      required: [id, user_id, date, is_period, flow, mood, sex_activity, cervical_mucus, pregnancy_test]
       properties:
         id:
           type: integer
@@ -418,6 +423,8 @@ components:
         bbt:
           type: number
           format: float
+          nullable: true
+          description: Present only when measured; absent when not measured.
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]
@@ -515,6 +522,11 @@ components:
         bbt:
           type: number
           format: float
+          nullable: true
+          description: >-
+            Emitted only when measured; absent otherwise. On import, absent,
+            null, or a non-positive value (legacy 0 sentinel) all mean "not
+            measured".
         cervical_mucus:
           type: string
           enum: [none, dry, moist, creamy, eggwhite]

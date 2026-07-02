@@ -215,7 +215,7 @@ func collectCurrentCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, 
 	recordedDays := make([]int, 0)
 	for _, logEntry := range sortDailyLogs(filterLogsNotAfter(logs, today)) {
 		localDay := CalendarDay(logEntry.Date, location)
-		if localDay.Before(cycleStart) || localDay.After(today) || !IsValidDayBBT(logEntry.BBT) || logEntry.BBT <= 0 {
+		if localDay.Before(cycleStart) || localDay.After(today) || logEntry.BBT == nil || !IsValidDayBBT(logEntry.BBT) {
 			continue
 		}
 
@@ -226,7 +226,7 @@ func collectCurrentCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, 
 		if _, exists := dayValues[dayNumber]; !exists {
 			recordedDays = append(recordedDays, dayNumber)
 		}
-		dayValues[dayNumber] = logEntry.BBT
+		dayValues[dayNumber] = *logEntry.BBT
 	}
 
 	sort.Ints(recordedDays)

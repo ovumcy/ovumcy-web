@@ -89,7 +89,7 @@ func seedBackupSourceDatabase(t *testing.T, path string) (*models.User, []models
 		},
 		{
 			UserID: user.ID, Date: backupRestoreDay(t, "2026-02-02"),
-			IsPeriod: true, Flow: "light", BBT: 36.5,
+			IsPeriod: true, Flow: "light", BBT: models.NewBBT(36.5),
 		},
 		{
 			UserID: user.ID, Date: backupRestoreDay(t, "2026-02-15"),
@@ -147,8 +147,17 @@ func assertRestoredLogsMatch(t *testing.T, seedLogs, restoredLogs []models.Daily
 func dailyLogScalarsEqual(a, b models.DailyLog) bool {
 	return a.IsPeriod == b.IsPeriod && a.CycleStart == b.CycleStart &&
 		a.Flow == b.Flow && a.Mood == b.Mood && a.Notes == b.Notes &&
-		a.BBT == b.BBT && a.SexActivity == b.SexActivity &&
+		bbtPointersEqual(a.BBT, b.BBT) && a.SexActivity == b.SexActivity &&
 		a.CervicalMucus == b.CervicalMucus
+}
+
+// bbtPointersEqual compares two nullable BBT values by content: both nil, or
+// both set to the same reading. A pointer `==` would compare addresses.
+func bbtPointersEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func backupRestoreDay(t *testing.T, value string) time.Time {

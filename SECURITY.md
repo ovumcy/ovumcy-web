@@ -145,7 +145,7 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 **`daily_logs`** — one row per (user, calendar day). Dates are stored as UTC midnight and rendered in the user's timezone at read time.
 
 - Period: `is_period`, `cycle_start`, `is_uncertain`, `flow` (`none|spotting|light|medium|heavy`).
-- Wellbeing: `mood` (signed scale), `sex_activity` (`none|protected|unprotected`), `bbt` (float, unit selected per account), `cervical_mucus` (`none|dry|moist|creamy|eggwhite`), `pregnancy_test` (`none|negative|positive`).
+- Wellbeing: `mood` (signed scale), `sex_activity` (`none|protected|unprotected`), `bbt` (nullable float, unit selected per account; NULL = not measured), `cervical_mucus` (`none|dry|moist|creamy|eggwhite`), `pregnancy_test` (`none|negative|positive`).
 - `cycle_factor_keys` (JSON list), `symptom_ids` (JSON list, references owner-managed symptoms), `notes` (free text).
 - The string value domains listed above (`flow`, `sex_activity`, `cervical_mucus`, `pregnancy_test`) are normalized and validated in `internal/services`, not by DB `CHECK` constraints — the columns are plain `TEXT`. (An early `flow` `CHECK` omitted `spotting` and was dropped in migration 003.)
 

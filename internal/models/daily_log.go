@@ -38,7 +38,7 @@ type DailyLog struct {
 	Flow            string    `gorm:"not null;default:none"`
 	Mood            int       `gorm:"not null;default:0"`
 	SexActivity     string    `gorm:"column:sex_activity;not null;default:none"`
-	BBT             float64   `gorm:"column:bbt;not null;default:0"`
+	BBT             *float64  `gorm:"column:bbt"`
 	CervicalMucus   string    `gorm:"column:cervical_mucus;not null;default:none"`
 	PregnancyTest   string    `gorm:"column:pregnancy_test;not null;default:none"`
 	CycleFactorKeys []string  `gorm:"column:cycle_factor_keys;serializer:json"`
@@ -46,6 +46,12 @@ type DailyLog struct {
 	Notes           string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+}
+
+// NewBBT wraps a measured basal body temperature as a nullable pointer. A nil
+// BBT means "not measured"; use this helper to build a measured value.
+func NewBBT(value float64) *float64 {
+	return &value
 }
 
 func (logEntry *DailyLog) BeforeSave(*gorm.DB) error {

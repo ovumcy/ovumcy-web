@@ -156,7 +156,7 @@ type ExportJSONEntry struct {
 	Flow          string             `json:"flow"`
 	MoodRating    int                `json:"mood_rating"`
 	SexActivity   string             `json:"sex_activity"`
-	BBT           float64            `json:"bbt"`
+	BBT           *float64           `json:"bbt,omitempty"`
 	CervicalMucus string             `json:"cervical_mucus"`
 	PregnancyTest string             `json:"pregnancy_test"`
 	CycleFactors  []string           `json:"cycle_factors"`
@@ -173,7 +173,7 @@ type ExportCSVRow struct {
 	Flow          string
 	MoodRating    int
 	SexActivity   string
-	BBT           float64
+	BBT           *float64
 	CervicalMucus string
 	PregnancyTest string
 	CycleFactors  []string
@@ -426,11 +426,15 @@ func normalizeExportMood(value int) int {
 	return 0
 }
 
-func normalizeExportBBT(value float64) float64 {
-	if IsValidDayBBT(value) {
-		return value
+// normalizeExportBBT canonicalizes a stored BBT for export/import: an
+// unmeasured (nil) or out-of-range value becomes nil so it is emitted as
+// absent, and a valid reading is passed through. Combined with the
+// `omitempty` tag on the export entry, an unmeasured day carries no `bbt` key.
+func normalizeExportBBT(value *float64) *float64 {
+	if value == nil || !IsValidDayBBT(value) {
+		return nil
 	}
-	return 0
+	return value
 }
 
 func csvMoodRating(value int) string {
@@ -451,12 +455,14 @@ func csvSexActivityLabel(value string) string {
 	}
 }
 
-func csvBBTValue(value float64) string {
+// csvBBTValue keeps the historical CSV cell shape for an unmeasured reading: an
+// empty cell (never "0"). A measured value renders with two decimals.
+func csvBBTValue(value *float64) string {
 	normalized := normalizeExportBBT(value)
-	if normalized <= 0 {
+	if normalized == nil {
 		return ""
 	}
-	return fmt.Sprintf("%.2f", normalized)
+	return fmt.Sprintf("%.2f", *normalized)
 }
 
 func csvCervicalMucusLabel(value string) string {

@@ -93,7 +93,7 @@ func TestExportBuildJSONEntriesNormalizesFlowAndMapsSymptoms(t *testing.T) {
 					Flow:            "unexpected-flow",
 					Mood:            4,
 					SexActivity:     models.SexActivityProtected,
-					BBT:             36.55,
+					BBT:             models.NewBBT(36.55),
 					CervicalMucus:   models.CervicalMucusEggWhite,
 					PregnancyTest:   models.PregnancyTestPositive,
 					CycleStart:      true,
@@ -137,7 +137,7 @@ func TestExportBuildCSVRowsBuildsExpectedColumns(t *testing.T) {
 					Flow:            models.FlowLight,
 					Mood:            5,
 					SexActivity:     models.SexActivityUnprotected,
-					BBT:             36.7,
+					BBT:             models.NewBBT(36.7),
 					CervicalMucus:   models.CervicalMucusCreamy,
 					PregnancyTest:   models.PregnancyTestNegative,
 					CycleStart:      true,
@@ -282,8 +282,8 @@ func assertExportJSONEntryTrackingFields(t *testing.T, entry ExportJSONEntry) {
 	if entry.SexActivity != models.SexActivityProtected {
 		t.Fatalf("expected protected sex activity, got %q", entry.SexActivity)
 	}
-	if entry.BBT != 36.55 {
-		t.Fatalf("expected BBT 36.55, got %.2f", entry.BBT)
+	if entry.BBT == nil || *entry.BBT != 36.55 {
+		t.Fatalf("expected BBT 36.55, got %v", entry.BBT)
 	}
 	if entry.CervicalMucus != models.CervicalMucusEggWhite {
 		t.Fatalf("expected eggwhite cervical mucus, got %q", entry.CervicalMucus)

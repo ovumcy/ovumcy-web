@@ -102,7 +102,7 @@ func DayHasData(entry models.DailyLog) bool {
 	if NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone {
 		return true
 	}
-	if IsValidDayBBT(entry.BBT) && entry.BBT > 0 {
+	if entry.BBT != nil && IsValidDayBBT(entry.BBT) {
 		return true
 	}
 	if NormalizeDayCervicalMucus(entry.CervicalMucus) != models.CervicalMucusNone {
@@ -144,7 +144,7 @@ func IsAutoFilledPeriodCandidate(entry models.DailyLog) bool {
 	if NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone {
 		return false
 	}
-	if IsValidDayBBT(entry.BBT) && entry.BBT > 0 {
+	if entry.BBT != nil && IsValidDayBBT(entry.BBT) {
 		return false
 	}
 	if NormalizeDayCervicalMucus(entry.CervicalMucus) != models.CervicalMucusNone {

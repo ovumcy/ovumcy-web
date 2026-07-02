@@ -26,7 +26,7 @@ type DayEntryInput struct {
 	Flow                  string
 	Mood                  int
 	SexActivity           string
-	BBT                   float64
+	BBT                   *float64
 	CervicalMucus         string
 	PregnancyTest         string
 	CycleFactorKeys       []string
@@ -147,7 +147,7 @@ func (service *DayService) FetchLogByDate(ctx context.Context, userID uint, day 
 	entry.PregnancyTest = NormalizeDayPregnancyTest(entry.PregnancyTest)
 	entry.CycleFactorKeys, _ = NormalizeDayCycleFactorKeys(entry.CycleFactorKeys)
 	if !IsValidDayBBT(entry.BBT) {
-		entry.BBT = 0
+		entry.BBT = nil
 	}
 	return entry, nil
 }
@@ -238,7 +238,7 @@ func mergePreservedDayEntryInput(existing models.DailyLog, payload DayEntryInput
 		if IsValidDayBBT(existing.BBT) {
 			payload.BBT = existing.BBT
 		} else {
-			payload.BBT = 0
+			payload.BBT = nil
 		}
 	}
 	if payload.PreserveCervicalMucus {

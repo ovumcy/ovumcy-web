@@ -54,10 +54,10 @@ func newTemplateFuncMap() template.FuncMap {
 			return translateMessage(messages, services.RoleTranslationKey(role))
 		},
 		"moodEmoji": services.MoodEmoji,
-		"hasBBT": func(value float64) bool {
-			return services.IsValidDayBBT(value) && value > 0
+		"hasBBT": func(value *float64) bool {
+			return value != nil && services.IsValidDayBBT(value)
 		},
-		"displayBBT": func(value float64, unit string) string {
+		"displayBBT": func(value *float64, unit string) string {
 			return services.FormatDayBBTForInput(value, unit)
 		},
 		"temperatureUnitSymbol": services.TemperatureUnitSymbol,

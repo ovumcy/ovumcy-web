@@ -443,7 +443,7 @@ func TestDayAndSymptomJSONUseSnakeCaseWireKeys(t *testing.T) {
 		Flow:            models.FlowMedium,
 		Mood:            3,
 		SexActivity:     models.SexActivityProtected,
-		BBT:             36.6,
+		BBT:             models.NewBBT(36.6),
 		CervicalMucus:   models.CervicalMucusCreamy,
 		PregnancyTest:   models.PregnancyTestNegative,
 		CycleFactorKeys: []string{"stress"},

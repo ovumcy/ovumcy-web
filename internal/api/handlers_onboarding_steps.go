@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -64,7 +65,7 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, onboardingSaveStepErrorSpec())
 	}
 	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.UserContext(), user.ID, handler.requestLocationFromOnboardingForm(c)); err != nil {
-		if services.ClassifyOnboardingCompletionError(err) == services.OnboardingCompletionErrorStepsRequired {
+		if errors.Is(err, services.ErrOnboardingStepsRequired) {
 			if acceptsJSON(c) {
 				return c.JSON(fiber.Map{"ok": true})
 			}

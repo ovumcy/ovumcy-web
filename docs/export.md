@@ -72,7 +72,7 @@ Field semantics:
 | `flow` | string | One of `none`, `spotting`, `light`, `medium`, `heavy`. |
 | `mood_rating` | integer | User-selected mood scale. Zero means unset. |
 | `sex_activity` | string | One of `none`, `protected`, `unprotected`. |
-| `bbt` | float | Basal body temperature in the unit selected per account (°C or °F). Zero means unset. |
+| `bbt` | float | Basal body temperature in the unit selected per account (°C or °F). Emitted only when measured; the key is absent on unmeasured days. On import, an absent key, an explicit `null`, or a legacy `0` are all read as "not measured". |
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
 | `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
 | `cycle_factors` | array of strings | Free-form factor keys recorded that day (e.g. `stress`, `travel`, `illness`). |
@@ -108,7 +108,7 @@ Cell semantics:
 - `Date` is `YYYY-MM-DD` in the user's timezone.
 - `Period`, and the 15 symptom columns, are `true`/`false`.
 - `Flow`, `Sex activity`, `Cervical mucus` carry the same string vocabulary as the JSON export.
-- `BBT (C)` is the float value in the unit selected on the account; the header keeps the literal text `BBT (C)` for stability and does not change to `BBT (F)` for Fahrenheit accounts. Operators reading the file should consult the account's `temperature_unit` setting (or the source UI) to interpret the unit.
+- `BBT (C)` is the float value in the unit selected on the account; the cell is empty on days with no measurement. The header keeps the literal text `BBT (C)` for stability and does not change to `BBT (F)` for Fahrenheit accounts. Operators reading the file should consult the account's `temperature_unit` setting (or the source UI) to interpret the unit.
 - `Cycle factors` is a `;`-separated list of factor keys; empty when none were recorded.
 - `Other` is a `;`-separated list of owner-managed custom symptom names; empty when none.
 - `Notes` is the free-text note; the CSV writer quotes the cell as needed.
