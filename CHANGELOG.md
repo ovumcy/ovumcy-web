@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **OIDC HTTP redirects are origin-pinned.** The HTTP client used for OIDC discovery, the JWKS key fetch, and the authorization-code exchange now refuses to follow any redirect that leaves the configured issuer origin, extending the existing `jwks_uri` / `token_endpoint` / `end_session_endpoint` origin pins to the HTTP requests themselves. A provider that redirects these requests cross-origin now fails closed at sign-in; same-origin redirects (path normalization) keep working.
+
 ### Changed
 
 - **Breaking (export shape):** `bbt` (basal body temperature) is now omitted from JSON export entries on days without a measurement, instead of always being present as `0`. Consumers parsing the export must treat a missing `bbt` key as "not measured". Restore stays fully backward-compatible — import reads an absent key, an explicit `null`, and the legacy `0` all as "not measured" (`docs/export.md` and `docs/openapi.yaml` updated).

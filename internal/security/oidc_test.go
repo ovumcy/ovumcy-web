@@ -3,6 +3,7 @@ package security
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,6 +43,47 @@ func TestOIDCClientContextInjectsConfiguredHTTPClient(t *testing.T) {
 	if got := ctx.Value(parentKey); got != "value" {
 		t.Fatalf("expected parent context values to be preserved, got %#v", got)
 	}
+}
+
+func TestOIDCRedirectPolicyPinsIssuerOrigin(t *testing.T) {
+	policy := oidcRedirectPolicy("https://idp.example")
+
+	sameOrigin := &http.Request{URL: mustParseTestURL(t, "https://idp.example/alt-discovery")}
+	if err := policy(sameOrigin, nil); err != nil {
+		t.Fatalf("same-origin redirect must be followed, got %v", err)
+	}
+
+	crossOrigin := &http.Request{URL: mustParseTestURL(t, "https://attacker.example/jwks")}
+	if err := policy(crossOrigin, nil); err == nil {
+		t.Fatal("cross-origin redirect must be refused")
+	}
+
+	downgrade := &http.Request{URL: mustParseTestURL(t, "http://idp.example/token")}
+	if err := policy(downgrade, nil); err == nil {
+		t.Fatal("scheme-downgrade redirect must be refused")
+	}
+
+	via := make([]*http.Request, 10)
+	for i := range via {
+		via[i] = sameOrigin
+	}
+	if err := policy(sameOrigin, via); err == nil {
+		t.Fatal("redirect chain longer than ten hops must be refused")
+	}
+
+	unpinnable := oidcRedirectPolicy("://not-a-url")
+	if err := unpinnable(sameOrigin, nil); err == nil {
+		t.Fatal("redirects must be refused outright when the issuer URL cannot be parsed")
+	}
+}
+
+func mustParseTestURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
+	}
+	return parsed
 }
 
 func TestOIDCConfigAllowsAutoProvisionHonorsDomainAllowlist(t *testing.T) {

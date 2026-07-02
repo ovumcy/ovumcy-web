@@ -126,6 +126,12 @@ type mockOIDCProvider struct {
 	// exercise the token_endpoint origin-pin rejection in loadProvider.
 	tokenEndpoint string
 
+	// discoveryRedirectTo, when set, makes the canonical discovery path
+	// answer 302 to this URL instead of serving the document. Tests use it
+	// to exercise the redirect origin-pin on the OIDC HTTP client (a
+	// same-origin target must be followed, a cross-origin one refused).
+	discoveryRedirectTo string
+
 	// issuer is the URL returned in discovery and in JWT iss claims.
 	// httptest.NewTLSServer assigns it at startup.
 	issuer string
@@ -142,6 +148,7 @@ func newMockOIDCProvider(t *testing.T) (*mockOIDCProvider, []byte) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", mock.serveDiscovery)
+	mux.HandleFunc("/alt-discovery", mock.serveDiscoveryDocument)
 	mux.HandleFunc("/jwks", mock.serveJWKS)
 	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "authorize stub: PoC tests do not drive the browser flow", http.StatusNotImplemented)
@@ -162,6 +169,14 @@ func newMockOIDCProvider(t *testing.T) (*mockOIDCProvider, []byte) {
 }
 
 func (m *mockOIDCProvider) serveDiscovery(w http.ResponseWriter, r *http.Request) {
+	if m.discoveryRedirectTo != "" {
+		http.Redirect(w, r, m.discoveryRedirectTo, http.StatusFound)
+		return
+	}
+	m.serveDiscoveryDocument(w, r)
+}
+
+func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http.Request) {
 	jwksURI := m.issuer + "/jwks"
 	if m.jwksURI != "" {
 		jwksURI = m.jwksURI
@@ -354,6 +369,59 @@ func TestOIDC_RuntimePoC_TokenEndpointOriginPinRejectsCrossOrigin(t *testing.T) 
 
 	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err == nil {
 		t.Fatal("token_endpoint origin pin failed: a cross-origin token_endpoint was accepted; loadProvider must refuse it")
+	}
+}
+
+// TestOIDC_RuntimePoC_DiscoveryRedirectCrossOriginRefused is the runtime
+// contract for the redirect origin-pin on the OIDC HTTP client. The
+// endpoints from discovery are origin-pinned as URLs, but without a
+// CheckRedirect policy the HTTP requests themselves could still be steered
+// off-origin by a redirecting response. A discovery fetch answered with a
+// 302 to another host must fail closed — the policy refuses before any
+// cross-origin request is sent.
+func TestOIDC_RuntimePoC_DiscoveryRedirectCrossOriginRefused(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	mock.discoveryRedirectTo = "https://attacker.example/.well-known/openid-configuration"
+
+	caFile := writeIssuerCAFile(t, caPEM)
+	client := NewOIDCClient(OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    mock.issuer,
+		ClientID:     "ovumcy",
+		ClientSecret: "test-secret",
+		RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+		CAFile:       caFile,
+		LoginMode:    OIDCLoginModeHybrid,
+		LogoutMode:   OIDCLogoutModeAuto,
+	})
+
+	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err == nil {
+		t.Fatal("redirect origin pin failed: a cross-origin discovery redirect was followed; loadProvider must refuse it")
+	}
+}
+
+// TestOIDC_RuntimePoC_DiscoveryRedirectSameOriginFollowed is the happy-path
+// companion: a same-origin redirect (an IdP normalizing its discovery path)
+// must still be followed, otherwise the redirect pin would break legitimate
+// deployments whose well-known path answers with a local redirect.
+func TestOIDC_RuntimePoC_DiscoveryRedirectSameOriginFollowed(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	mock.discoveryRedirectTo = mock.issuer + "/alt-discovery"
+
+	caFile := writeIssuerCAFile(t, caPEM)
+	client := NewOIDCClient(OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    mock.issuer,
+		ClientID:     "ovumcy",
+		ClientSecret: "test-secret",
+		RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+		CAFile:       caFile,
+		LoginMode:    OIDCLoginModeHybrid,
+		LogoutMode:   OIDCLogoutModeAuto,
+	})
+
+	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err != nil {
+		t.Fatalf("same-origin discovery redirect must be followed: %v", err)
 	}
 }
 

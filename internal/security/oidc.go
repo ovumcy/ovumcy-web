@@ -645,8 +645,36 @@ func newOIDCHTTPClient(config OIDCConfig) *http.Client {
 	}
 
 	return &http.Client{
-		Timeout:   defaultOIDCHTTPTimeout,
-		Transport: transport,
+		Timeout:       defaultOIDCHTTPTimeout,
+		Transport:     transport,
+		CheckRedirect: oidcRedirectPolicy(config.IssuerURL),
+	}
+}
+
+// oidcRedirectPolicy is the CheckRedirect policy for the OIDC HTTP client.
+// Every outbound OIDC request (discovery, JWKS fetch, code exchange) starts
+// at a URL that is origin-pinned to the configured issuer; this extends the
+// same pin to HTTP redirects, so a redirecting response cannot steer a
+// request — or the client secret and authorization code the exchange
+// carries — off the issuer origin after the initial URL validation passed
+// (SSRF via redirect). Same-origin redirects (an IdP normalizing its
+// discovery path) follow normally; the stdlib ten-hop cap is re-applied
+// because installing a custom CheckRedirect replaces the default that
+// enforced it.
+func oidcRedirectPolicy(issuerURL string) func(req *http.Request, via []*http.Request) error {
+	parsedIssuer, err := url.Parse(strings.TrimSpace(issuerURL))
+	issuerPinnable := err == nil && parsedIssuer.IsAbs()
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("oidc http request stopped after 10 redirects")
+		}
+		if !issuerPinnable {
+			return errors.New("oidc http redirect refused: issuer URL is not pinnable")
+		}
+		if !sameOriginURL(req.URL, parsedIssuer) {
+			return errors.New("oidc http redirect left the issuer origin")
+		}
+		return nil
 	}
 }
 
