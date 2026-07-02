@@ -384,28 +384,6 @@ func ClassifySymptomRestoreError(err error) SymptomRestoreErrorKind {
 	}
 }
 
-type ExportRangeErrorKind uint8
-
-const (
-	ExportRangeErrorUnknown ExportRangeErrorKind = iota
-	ExportRangeErrorFromInvalid
-	ExportRangeErrorToInvalid
-	ExportRangeErrorInvalid
-)
-
-func ClassifyExportRangeError(err error) ExportRangeErrorKind {
-	switch {
-	case errors.Is(err, ErrExportFromDateInvalid):
-		return ExportRangeErrorFromInvalid
-	case errors.Is(err, ErrExportToDateInvalid):
-		return ExportRangeErrorToInvalid
-	case errors.Is(err, ErrExportRangeInvalid):
-		return ExportRangeErrorInvalid
-	default:
-		return ExportRangeErrorUnknown
-	}
-}
-
 type OnboardingStep1ErrorKind uint8
 
 const (

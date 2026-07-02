@@ -143,15 +143,12 @@ func TestClassifySymptomAndSettingsErrors(t *testing.T) {
 	}
 }
 
-func TestClassifyOnboardingAndExportErrors(t *testing.T) {
+func TestClassifyOnboardingErrors(t *testing.T) {
 	if got := ClassifyOnboardingStep1Error(ErrOnboardingStartDateRequired); got != OnboardingStep1ErrorDateRequired {
 		t.Fatalf("expected OnboardingStep1ErrorDateRequired, got %v", got)
 	}
 	if got := ClassifyOnboardingCompletionError(ErrOnboardingCompletionNotNeeded); got != OnboardingCompletionErrorNotNeeded {
 		t.Fatalf("expected OnboardingCompletionErrorNotNeeded, got %v", got)
-	}
-	if got := ClassifyExportRangeError(ErrExportToDateInvalid); got != ExportRangeErrorToInvalid {
-		t.Fatalf("expected ExportRangeErrorToInvalid, got %v", got)
 	}
 }
 
