@@ -979,6 +979,42 @@ func TestMapOIDCLinkConfirmError(t *testing.T) {
 	}
 }
 
+// TestMapAuthOIDCError locks the OIDCService-failure -> APIErrorSpec contract
+// consumed by the sign-in/callback handlers: sentinel classes collapse onto a
+// small set of enumeration-safe specs (unavailable vs authentication failed vs
+// account unavailable) so provider/auth failures never leak account state
+// through error granularity, and every unmapped error falls back to the
+// generic authentication-failed response.
+func TestMapAuthOIDCError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want APIErrorSpec
+	}{
+		{name: "disabled maps to unavailable", err: services.ErrOIDCDisabled, want: authOIDCUnavailableErrorSpec()},
+		{name: "unavailable maps to unavailable", err: services.ErrOIDCUnavailable, want: authOIDCUnavailableErrorSpec()},
+		{name: "callback invalid maps to authentication failed", err: services.ErrOIDCCallbackInvalid, want: authOIDCAuthenticationFailedErrorSpec()},
+		{name: "authentication failed maps to authentication failed", err: services.ErrOIDCAuthenticationFailed, want: authOIDCAuthenticationFailedErrorSpec()},
+		{name: "account unavailable maps to account unavailable", err: services.ErrOIDCAccountUnavailable, want: authOIDCAccountUnavailableErrorSpec()},
+		{name: "identity resolve failed maps to unavailable", err: services.ErrOIDCIdentityResolveFailed, want: authOIDCUnavailableErrorSpec()},
+		{name: "link failed maps to unavailable", err: services.ErrOIDCLinkFailed, want: authOIDCUnavailableErrorSpec()},
+		{name: "provision failed maps to unavailable", err: services.ErrOIDCProvisionFailed, want: authOIDCUnavailableErrorSpec()},
+		{name: "unknown falls back to authentication failed", err: errors.New("unmapped oidc error"), want: authOIDCAuthenticationFailedErrorSpec()},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := mapAuthOIDCError(tt.err); got != tt.want {
+				t.Fatalf("unexpected mapped error: got %#v want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
 // Step-up 2FA gate on /auth/oidc/link-confirm. Audit finding HIGH-1: handler
 // was issuing an auth cookie after the password challenge without ever
 // running the TOTP factor, while the canonical Login path (LoginService.

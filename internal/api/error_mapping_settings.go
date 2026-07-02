@@ -1,6 +1,8 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -66,10 +68,10 @@ func settingsProfileUpdateErrorSpec() APIErrorSpec {
 }
 
 func mapSettingsProfileNormalizeError(err error) APIErrorSpec {
-	switch services.ClassifySettingsProfileError(err) {
-	case services.SettingsProfileErrorDisplayNameTooLong:
+	switch {
+	case errors.Is(err, services.ErrSettingsDisplayNameTooLong):
 		return settingsValidationErrorSpec("display name too long")
-	case services.SettingsProfileErrorDisplayNameInvalidCharacters:
+	case errors.Is(err, services.ErrSettingsDisplayNameInvalidCharacters):
 		return settingsValidationErrorSpec("display name contains invalid characters")
 	default:
 		return settingsValidationErrorSpec("invalid profile input")
@@ -77,12 +79,12 @@ func mapSettingsProfileNormalizeError(err error) APIErrorSpec {
 }
 
 func mapSettingsDeleteAccountPasswordError(err error) APIErrorSpec {
-	switch services.ClassifySettingsDeleteAccountPasswordError(err) {
-	case services.SettingsDeleteAccountPasswordErrorMissing:
+	switch {
+	case errors.Is(err, services.ErrSettingsPasswordMissing):
 		return settingsMissingPasswordErrorSpec()
-	case services.SettingsDeleteAccountPasswordErrorInvalid:
+	case errors.Is(err, services.ErrSettingsPasswordInvalid):
 		return settingsInvalidPasswordErrorSpec()
-	case services.SettingsDeleteAccountPasswordErrorLocalPasswordNotSet:
+	case errors.Is(err, services.ErrSettingsLocalPasswordNotSet):
 		return settingsLocalPasswordRequiredErrorSpec()
 	default:
 		return settingsValidatePasswordErrorSpec()

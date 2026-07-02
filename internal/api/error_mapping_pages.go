@@ -1,14 +1,16 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func mapCalendarViewError(err error) APIErrorSpec {
-	switch services.ClassifyCalendarViewError(err) {
-	case services.CalendarViewErrorLoadLogs:
+	switch {
+	case errors.Is(err, services.ErrCalendarViewLoadLogs):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load calendar")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load stats")
@@ -16,10 +18,10 @@ func mapCalendarViewError(err error) APIErrorSpec {
 }
 
 func mapDashboardViewError(err error) APIErrorSpec {
-	switch services.ClassifyDashboardViewError(err) {
-	case services.DashboardViewErrorLoadTodayLog:
+	switch {
+	case errors.Is(err, services.ErrDashboardViewLoadTodayLog):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load today log")
-	case services.DashboardViewErrorLoadLogs:
+	case errors.Is(err, services.ErrDashboardViewLoadLogs):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load symptom history")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load logs")
@@ -27,12 +29,12 @@ func mapDashboardViewError(err error) APIErrorSpec {
 }
 
 func mapDayEditorViewError(err error) APIErrorSpec {
-	switch services.ClassifyDashboardViewError(err) {
-	case services.DashboardViewErrorLoadDayState:
+	switch {
+	case errors.Is(err, services.ErrDashboardViewLoadDayState):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load day state")
-	case services.DashboardViewErrorLoadDayLog:
+	case errors.Is(err, services.ErrDashboardViewLoadDayLog):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load day log")
-	case services.DashboardViewErrorLoadLogs:
+	case errors.Is(err, services.ErrDashboardViewLoadLogs):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load symptom history")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load day")
@@ -40,8 +42,8 @@ func mapDayEditorViewError(err error) APIErrorSpec {
 }
 
 func mapStatsPageViewError(err error) APIErrorSpec {
-	switch services.ClassifyStatsPageViewError(err) {
-	case services.StatsPageViewErrorLoadSymptoms:
+	switch {
+	case errors.Is(err, services.ErrStatsPageViewLoadSymptoms):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load symptom stats")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load stats")

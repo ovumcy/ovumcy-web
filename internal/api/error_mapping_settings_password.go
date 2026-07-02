@@ -1,27 +1,29 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {
-	switch services.ClassifySettingsPasswordChangeError(err) {
-	case services.SettingsPasswordChangeErrorInvalidInput:
+	switch {
+	case errors.Is(err, services.ErrSettingsPasswordChangeInvalidInput):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyInvalidInput)
-	case services.SettingsPasswordChangeErrorPasswordMismatch:
+	case errors.Is(err, services.ErrSettingsPasswordMismatch):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyPasswordMismatch)
-	case services.SettingsPasswordChangeErrorInvalidCurrentPassword:
+	case errors.Is(err, services.ErrSettingsInvalidCurrentPassword):
 		return settingsFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, services.SettingsPasswordChangeKeyInvalidCurrent)
-	case services.SettingsPasswordChangeErrorLocalPasswordNotSet:
+	case errors.Is(err, services.ErrSettingsLocalPasswordNotSet):
 		return settingsLocalPasswordRequiredErrorSpec()
-	case services.SettingsPasswordChangeErrorNewPasswordMustDiffer:
+	case errors.Is(err, services.ErrSettingsNewPasswordMustDiffer):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyMustDiffer)
-	case services.SettingsPasswordChangeErrorWeakPassword:
+	case errors.Is(err, services.ErrSettingsWeakPassword):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyWeakPassword)
-	case services.SettingsPasswordChangeErrorHashFailed, services.SettingsPasswordChangeErrorRecoveryCodeFailed:
+	case errors.Is(err, services.ErrSettingsPasswordHashFailed), errors.Is(err, services.ErrSettingsRecoveryCodeGenerateFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to secure password")
-	case services.SettingsPasswordChangeErrorUpdateFailed:
+	case errors.Is(err, services.ErrSettingsPasswordUpdateFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update password")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update password")

@@ -1,23 +1,25 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func mapSymptomCreateError(err error) APIErrorSpec {
-	switch services.ClassifySymptomCreateError(err) {
-	case services.SymptomCreateErrorNameRequired:
+	switch {
+	case errors.Is(err, services.ErrSymptomNameRequired):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name is required")
-	case services.SymptomCreateErrorNameTooLong:
+	case errors.Is(err, services.ErrSymptomNameTooLong):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name is too long")
-	case services.SymptomCreateErrorNameInvalidCharacters:
+	case errors.Is(err, services.ErrSymptomNameInvalidCharacters):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name contains invalid characters")
-	case services.SymptomCreateErrorInvalidColor:
+	case errors.Is(err, services.ErrInvalidSymptomColor):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid symptom color")
-	case services.SymptomCreateErrorDuplicateName:
+	case errors.Is(err, services.ErrSymptomNameAlreadyExists):
 		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "symptom name already exists")
-	case services.SymptomCreateErrorFailed:
+	case errors.Is(err, services.ErrCreateSymptomFailed):
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create symptom")
 	default:
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create symptom")
@@ -25,22 +27,22 @@ func mapSymptomCreateError(err error) APIErrorSpec {
 }
 
 func mapSymptomUpdateError(err error) APIErrorSpec {
-	switch services.ClassifySymptomUpdateError(err) {
-	case services.SymptomUpdateErrorNotFound:
+	switch {
+	case errors.Is(err, services.ErrSymptomNotFound):
 		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "symptom not found")
-	case services.SymptomUpdateErrorNameRequired:
+	case errors.Is(err, services.ErrSymptomNameRequired):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name is required")
-	case services.SymptomUpdateErrorNameTooLong:
+	case errors.Is(err, services.ErrSymptomNameTooLong):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name is too long")
-	case services.SymptomUpdateErrorNameInvalidCharacters:
+	case errors.Is(err, services.ErrSymptomNameInvalidCharacters):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name contains invalid characters")
-	case services.SymptomUpdateErrorInvalidColor:
+	case errors.Is(err, services.ErrInvalidSymptomColor):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid symptom color")
-	case services.SymptomUpdateErrorDuplicateName:
+	case errors.Is(err, services.ErrSymptomNameAlreadyExists):
 		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "symptom name already exists")
-	case services.SymptomUpdateErrorBuiltinForbidden:
+	case errors.Is(err, services.ErrBuiltinSymptomEditForbidden):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "built-in symptom cannot be edited")
-	case services.SymptomUpdateErrorFailed:
+	case errors.Is(err, services.ErrUpdateSymptomFailed):
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update symptom")
 	default:
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update symptom")
@@ -48,12 +50,12 @@ func mapSymptomUpdateError(err error) APIErrorSpec {
 }
 
 func mapSymptomArchiveError(err error) APIErrorSpec {
-	switch services.ClassifySymptomArchiveError(err) {
-	case services.SymptomArchiveErrorNotFound:
+	switch {
+	case errors.Is(err, services.ErrSymptomNotFound):
 		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "symptom not found")
-	case services.SymptomArchiveErrorBuiltinForbidden:
+	case errors.Is(err, services.ErrBuiltinSymptomHideForbidden):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "built-in symptom cannot be hidden")
-	case services.SymptomArchiveErrorFailed:
+	case errors.Is(err, services.ErrArchiveSymptomFailed):
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to hide symptom")
 	default:
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to hide symptom")
@@ -61,14 +63,14 @@ func mapSymptomArchiveError(err error) APIErrorSpec {
 }
 
 func mapSymptomRestoreError(err error) APIErrorSpec {
-	switch services.ClassifySymptomRestoreError(err) {
-	case services.SymptomRestoreErrorNotFound:
+	switch {
+	case errors.Is(err, services.ErrSymptomNotFound):
 		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "symptom not found")
-	case services.SymptomRestoreErrorBuiltinForbidden:
+	case errors.Is(err, services.ErrBuiltinSymptomShowForbidden):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "built-in symptom cannot be restored")
-	case services.SymptomRestoreErrorDuplicateName:
+	case errors.Is(err, services.ErrSymptomNameAlreadyExists):
 		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "symptom name already exists")
-	case services.SymptomRestoreErrorFailed:
+	case errors.Is(err, services.ErrRestoreSymptomFailed):
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to restore symptom")
 	default:
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to restore symptom")

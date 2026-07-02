@@ -37,7 +37,6 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 	app.Get("/api/v1/symptoms", handler.GetSymptoms)
 	app.Get("/api/v1/exports/csv", handler.ExportCSV)
 	app.Get("/api/v1/exports/json", handler.ExportJSON)
-	app.Delete("/api/days", handler.DeleteDailyLog)
 	app.Put("/api/days/:date", handler.UpsertDay)
 	app.Delete("/api/days/:date", handler.DeleteDay)
 	app.Post("/api/days/:date/cycle-start", handler.MarkCycleStart)
@@ -79,7 +78,6 @@ func TestMutationHandlersRejectMissingUserAtHandlerLevel(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodDelete, "/api/days?date=2026-02-17"},
 		{http.MethodPut, "/api/days/2026-02-17"},
 		{http.MethodDelete, "/api/days/2026-02-17"},
 		{http.MethodPost, "/api/days/2026-02-17/cycle-start"},
@@ -110,7 +108,7 @@ func TestMutationHandlersMapInvalidInputThroughFailMutation(t *testing.T) {
 		body        string
 		contentType string
 	}{
-		{"day delete invalid date", http.MethodDelete, "/api/days?date=garbage", "", ""},
+		{"day delete invalid date", http.MethodDelete, "/api/days/garbage", "", ""},
 		{"cycle start invalid date", http.MethodPost, "/api/days/garbage/cycle-start", "", ""},
 		{"symptom create empty name", http.MethodPost, "/api/v1/symptoms", url.Values{"name": {"   "}}.Encode(), form},
 		{"symptom create malformed json", http.MethodPost, "/api/v1/symptoms", "{", "application/json"},
@@ -152,7 +150,6 @@ func TestMutationHandlersMapServiceFailuresThroughFailMutation(t *testing.T) {
 		body        string
 		contentType string
 	}{
-		{"day delete by query", http.MethodDelete, "/api/days?date=2026-02-17", "", ""},
 		{"day delete by path", http.MethodDelete, "/api/days/2026-02-17", "", ""},
 		{"day upsert", http.MethodPut, "/api/days/2026-02-17", url.Values{"is_period": {"true"}, "flow": {"medium"}}.Encode(), form},
 		{"cycle start mark", http.MethodPost, "/api/days/2026-02-17/cycle-start", "", ""},

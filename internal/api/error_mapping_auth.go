@@ -48,20 +48,20 @@ func passwordChangeRequiredErrorSpec() APIErrorSpec {
 }
 
 func mapAuthRegisterError(err error) APIErrorSpec {
-	switch services.ClassifyAuthRegisterError(err) {
-	case services.AuthRegisterErrorRegistrationDisabled:
+	switch {
+	case errors.Is(err, services.ErrAuthRegistrationDisabled):
 		return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "registration disabled")
-	case services.AuthRegisterErrorPasswordMismatch:
+	case errors.Is(err, services.ErrAuthPasswordMismatch):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password mismatch")
-	case services.AuthRegisterErrorWeakPassword:
+	case errors.Is(err, services.ErrAuthWeakPassword):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password")
-	case services.AuthRegisterErrorEmailExists:
+	case errors.Is(err, services.ErrAuthEmailExists):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input")
-	case services.AuthRegisterErrorInvalidInput:
+	case errors.Is(err, services.ErrAuthRegisterInvalid):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input")
-	case services.AuthRegisterErrorSeedSymptoms:
+	case errors.Is(err, services.ErrRegistrationSeedSymptoms):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to seed symptoms")
-	case services.AuthRegisterErrorFailed:
+	case errors.Is(err, services.ErrAuthRegisterFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create account")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create account")
@@ -69,14 +69,14 @@ func mapAuthRegisterError(err error) APIErrorSpec {
 }
 
 func mapAuthLoginError(err error) APIErrorSpec {
-	switch services.ClassifyAuthLoginError(err) {
-	case services.AuthLoginErrorRateLimited:
+	switch {
+	case errors.Is(err, services.ErrAuthLoginRateLimited):
 		return authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many login attempts")
-	case services.AuthLoginErrorUnsupportedRole:
+	case errors.Is(err, services.ErrAuthUnsupportedRole):
 		return authWebSignInUnavailableErrorSpec()
-	case services.AuthLoginErrorResetTokenIssue:
+	case errors.Is(err, services.ErrLoginResetTokenIssue):
 		return authResetTokenCreateErrorSpec()
-	case services.AuthLoginErrorInvalidCredentials:
+	case errors.Is(err, services.ErrAuthInvalidCreds):
 		return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
 	default:
 		return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
@@ -84,14 +84,14 @@ func mapAuthLoginError(err error) APIErrorSpec {
 }
 
 func mapAuthOIDCError(err error) APIErrorSpec {
-	switch services.ClassifyOIDCAuthError(err) {
-	case services.OIDCAuthErrorDisabled, services.OIDCAuthErrorUnavailable:
+	switch {
+	case errors.Is(err, services.ErrOIDCDisabled), errors.Is(err, services.ErrOIDCUnavailable):
 		return authOIDCUnavailableErrorSpec()
-	case services.OIDCAuthErrorCallbackInvalid, services.OIDCAuthErrorAuthenticationFailed:
+	case errors.Is(err, services.ErrOIDCCallbackInvalid), errors.Is(err, services.ErrOIDCAuthenticationFailed):
 		return authOIDCAuthenticationFailedErrorSpec()
-	case services.OIDCAuthErrorAccountUnavailable:
+	case errors.Is(err, services.ErrOIDCAccountUnavailable):
 		return authOIDCAccountUnavailableErrorSpec()
-	case services.OIDCAuthErrorIdentityResolveFailed, services.OIDCAuthErrorLinkFailed, services.OIDCAuthErrorProvisionFailed:
+	case errors.Is(err, services.ErrOIDCIdentityResolveFailed), errors.Is(err, services.ErrOIDCLinkFailed), errors.Is(err, services.ErrOIDCProvisionFailed):
 		return authOIDCUnavailableErrorSpec()
 	default:
 		return authOIDCAuthenticationFailedErrorSpec()
@@ -111,12 +111,12 @@ func authWebSignInUnavailableErrorSpec() APIErrorSpec {
 }
 
 func mapPasswordRecoveryStartError(err error) APIErrorSpec {
-	switch services.ClassifyPasswordRecoveryStartError(err) {
-	case services.PasswordRecoveryStartErrorRateLimited:
+	switch {
+	case errors.Is(err, services.ErrPasswordRecoveryRateLimited):
 		return authFormErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many recovery attempts")
-	case services.PasswordRecoveryStartErrorInvalidInput:
+	case errors.Is(err, services.ErrPasswordRecoveryInputInvalid):
 		return authInvalidInputErrorSpec()
-	case services.PasswordRecoveryStartErrorInvalidCode:
+	case errors.Is(err, services.ErrPasswordRecoveryCodeInvalid):
 		return authValidationErrorSpec("invalid recovery code")
 	default:
 		return authResetTokenCreateErrorSpec()
@@ -124,14 +124,14 @@ func mapPasswordRecoveryStartError(err error) APIErrorSpec {
 }
 
 func mapPasswordResetCompleteError(err error) APIErrorSpec {
-	switch services.ClassifyPasswordResetCompleteError(err) {
-	case services.PasswordResetCompleteErrorPasswordMismatch:
+	switch {
+	case errors.Is(err, services.ErrAuthPasswordMismatch):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password mismatch")
-	case services.PasswordResetCompleteErrorWeakPassword:
+	case errors.Is(err, services.ErrAuthWeakPassword):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password")
-	case services.PasswordResetCompleteErrorInvalidInput:
+	case errors.Is(err, services.ErrAuthResetInvalid):
 		return authInvalidInputErrorSpec()
-	case services.PasswordResetCompleteErrorInvalidToken:
+	case errors.Is(err, services.ErrInvalidResetToken):
 		return invalidResetTokenErrorSpec()
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to reset password")

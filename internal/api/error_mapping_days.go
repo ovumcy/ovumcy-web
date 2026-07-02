@@ -1,17 +1,19 @@
 package api
 
 import (
+	"errors"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func mapDayRangeError(err error) APIErrorSpec {
-	switch services.ClassifyDayRangeError(err) {
-	case services.DayRangeErrorFromInvalid:
+	switch {
+	case errors.Is(err, services.ErrDayRangeFromInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid from date")
-	case services.DayRangeErrorToInvalid:
+	case errors.Is(err, services.ErrDayRangeToInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid to date")
-	case services.DayRangeErrorInvalid:
+	case errors.Is(err, services.ErrDayRangeInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid range")
 	default:
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid range")
@@ -19,32 +21,35 @@ func mapDayRangeError(err error) APIErrorSpec {
 }
 
 func mapDayUpsertError(err error) APIErrorSpec {
-	switch services.ClassifyDayUpsertError(err) {
-	case services.DayUpsertErrorInvalidCycleStartDate:
+	switch {
+	case errors.Is(err, services.ErrManualCycleStartDateInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle start day")
-	case services.DayUpsertErrorCycleStartReplaceRequired:
+	case errors.Is(err, services.ErrManualCycleStartReplaceRequired):
 		return globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle start replace required")
-	case services.DayUpsertErrorCycleStartConfirmationRequired:
+	case errors.Is(err, services.ErrManualCycleStartConfirmationNeeded):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "cycle start confirmation required")
-	case services.DayUpsertErrorInvalidFlow:
+	case errors.Is(err, services.ErrInvalidDayFlow):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid flow value")
-	case services.DayUpsertErrorInvalidMood:
+	case errors.Is(err, services.ErrInvalidDayMood):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid mood value")
-	case services.DayUpsertErrorInvalidSexActivity:
+	case errors.Is(err, services.ErrInvalidDaySexActivity):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid sex activity value")
-	case services.DayUpsertErrorInvalidBBT:
+	case errors.Is(err, services.ErrInvalidDayBBT):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid bbt value")
-	case services.DayUpsertErrorInvalidCervicalMucus:
+	case errors.Is(err, services.ErrInvalidDayCervicalMucus):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cervical mucus value")
-	case services.DayUpsertErrorInvalidPregnancyTest:
+	case errors.Is(err, services.ErrInvalidDayPregnancyTest):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid pregnancy test value")
-	case services.DayUpsertErrorInvalidCycleFactors:
+	case errors.Is(err, services.ErrInvalidDayCycleFactors):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cycle factor values")
-	case services.DayUpsertErrorLoadFailed:
+	case errors.Is(err, services.ErrDayAutoFillLoadFailed),
+		errors.Is(err, services.ErrDayAutoFillCheckFailed),
+		errors.Is(err, services.ErrDayEntryLoadFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load day")
-	case services.DayUpsertErrorCreateFailed:
+	case errors.Is(err, services.ErrDayEntryCreateFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create day")
-	case services.DayUpsertErrorUpdateFailed:
+	case errors.Is(err, services.ErrDayAutoFillApplyFailed),
+		errors.Is(err, services.ErrDayEntryUpdateFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day")
@@ -52,8 +57,8 @@ func mapDayUpsertError(err error) APIErrorSpec {
 }
 
 func mapDayDeleteError(err error) APIErrorSpec {
-	switch services.ClassifyDayDeleteError(err) {
-	case services.DayDeleteErrorDeleteFailed:
+	switch {
+	case errors.Is(err, services.ErrDeleteDayFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day")
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day")
