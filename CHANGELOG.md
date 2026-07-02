@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (export shape):** `bbt` (basal body temperature) is now omitted from JSON export entries on days without a measurement, instead of always being present as `0`. Consumers parsing the export must treat a missing `bbt` key as "not measured". Restore stays fully backward-compatible — import reads an absent key, an explicit `null`, and the legacy `0` all as "not measured" (`docs/export.md` and `docs/openapi.yaml` updated).
+
 ### Removed
 
 - **Breaking:** removed the query-string form of the day-delete endpoint (`DELETE /api/v1/days?date=YYYY-MM-DD`). Use `DELETE /api/v1/days/{date}` instead (the optional `source` selector, if used, moves from the `date`-bearing query string to a plain `?source=` query param on the path form). `docs/openapi.yaml` and the browser UI have been updated accordingly.

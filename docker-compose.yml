@@ -13,6 +13,7 @@ services:
       - DB_PATH=/app/data/ovumcy.db
       - DATABASE_URL=${DATABASE_URL:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - HSTS_ENABLED=${HSTS_ENABLED:-}
       - OIDC_ENABLED=${OIDC_ENABLED:-false}
       - OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-}
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
