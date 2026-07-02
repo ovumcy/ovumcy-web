@@ -460,11 +460,17 @@ async function main() {
   const appLogStream = createWriteStream(appLogPath, { flags: "a" });
 
   const workerOverrideFromEnv = Number.parseInt(process.env.E2E_PLAYWRIGHT_WORKERS ?? "", 10);
+  const fastModeNeedsWin32Cap = mode === "fast" && process.platform === "win32";
+  if (fastModeNeedsWin32Cap && !(Number.isInteger(workerOverrideFromEnv) && workerOverrideFromEnv > 0)) {
+    console.log("[e2e] win32 detected in fast mode: capping to 1 worker (SQLite-backed scenarios need serial execution here)");
+  }
   const workerOverride =
     Number.isInteger(workerOverrideFromEnv) && workerOverrideFromEnv > 0
       ? workerOverrideFromEnv
       : mode === "fast"
-        ? null
+        ? fastModeNeedsWin32Cap
+          ? 1
+          : null
         : 1;
 
   const runContext = {
