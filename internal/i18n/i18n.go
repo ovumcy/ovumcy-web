@@ -18,6 +18,7 @@ const (
 	LangEN = "en"
 	LangES = "es"
 	LangFR = "fr"
+	LangIT = "it"
 )
 
 type Manager struct {

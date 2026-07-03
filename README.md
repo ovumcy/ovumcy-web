@@ -164,6 +164,7 @@ a prediction is made and check it against the numbers yourself.
 | Spanish | `es` | Full first-party UI localization | Supported |
 | French | `fr` | Full first-party UI localization | Supported |
 | German | `de` | Full first-party UI localization | Supported |
+| Italian | `it` | Full first-party UI localization | Supported |
 
 These are the currently supported first-party UI languages. Operators can set `DEFAULT_LANGUAGE` to any of the codes above, and users can switch language from the UI without changing deployment defaults.
 
@@ -337,7 +338,7 @@ Important notes:
 - Always set a strong secret through `SECRET_KEY` or `SECRET_KEY_FILE`.
 - `SECRET_KEY_FILE` must point to a readable file path for the running process. In Docker-based deployments, that means a path inside the container after you mount the file.
 - `SECRET_KEY` takes precedence if both `SECRET_KEY` and `SECRET_KEY_FILE` are set.
-- `DEFAULT_LANGUAGE` supports `en`, `ru`, `es`, `fr`, and `de`.
+- `DEFAULT_LANGUAGE` supports `en`, `ru`, `es`, `fr`, `de`, and `it`.
 - `REGISTRATION_MODE` supports `open` and `closed`; use `closed` for pre-provisioned or otherwise operator-restricted internet-facing instances where self-service sign-up must stay disabled.
 - `HOST_BIND_ADDRESS=127.0.0.1` keeps the base compose path local/private by default. Only change it deliberately for a specific private-network bind.
 - Set `COOKIE_SECURE=true` when serving over HTTPS.
