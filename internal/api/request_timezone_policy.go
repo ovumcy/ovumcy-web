@@ -37,6 +37,17 @@ func parseRequestTimezone(raw string) (*time.Location, string, bool) {
 	if !isSafeTimezoneIdentifier(value) {
 		return nil, "", false
 	}
+	// Reject the "Local" special token by input. time.LoadLocation("Local")
+	// returns the server's own zone (time.Local); the canonical check below only
+	// catches it when time.Local.String() == "Local", which holds when TZ is
+	// unset (Windows dev, default CI runner) but NOT when an operator sets TZ —
+	// common on self-hosted Linux Docker — where the loaded zone stringifies to
+	// its real name and slips through, letting a client pin requests to the
+	// server's timezone. Guarding the input keeps rejection deterministic across
+	// platforms and TZ configs.
+	if strings.EqualFold(value, "Local") {
+		return nil, "", false
+	}
 
 	location, err := time.LoadLocation(value)
 	if err != nil {
