@@ -35,9 +35,19 @@ func TestMapAuthRegisterError(t *testing.T) {
 			want: authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"),
 		},
 		{
+			name: "register invalid",
+			err:  services.ErrAuthRegisterInvalid,
+			want: authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"),
+		},
+		{
 			name: "seed symptoms",
 			err:  services.ErrRegistrationSeedSymptoms,
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to seed symptoms"),
+		},
+		{
+			name: "register failed",
+			err:  services.ErrAuthRegisterFailed,
+			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create account"),
 		},
 		{
 			name: "unknown",

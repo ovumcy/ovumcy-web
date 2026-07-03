@@ -46,6 +46,7 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 	app.Post("/api/v1/symptoms/:id/restore", handler.RestoreSymptom)
 	app.Patch("/api/v1/users/current/tracking", handler.UpdateTrackingSettings)
 	app.Patch("/api/v1/users/current/cycle", handler.UpdateCycleSettings)
+	app.Post("/api/v1/onboarding/complete", handler.OnboardingComplete)
 	return app, database
 }
 
@@ -117,6 +118,8 @@ func TestMutationHandlersMapInvalidInputThroughFailMutation(t *testing.T) {
 		{"symptom update empty name", http.MethodPatch, "/api/v1/symptoms/1", url.Values{"name": {"   "}}.Encode(), form},
 		{"symptom restore invalid id", http.MethodPost, "/api/v1/symptoms/garbage/restore", "", ""},
 		{"tracking malformed json", http.MethodPatch, "/api/v1/users/current/tracking", "{", "application/json"},
+		{"cycle length out of range", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"cycle_length": {"999"}, "period_length": {"5"}}.Encode(), form},
+		{"onboarding complete steps required", http.MethodPost, "/api/v1/onboarding/complete", "", ""},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

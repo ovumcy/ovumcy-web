@@ -89,6 +89,52 @@ func assertDayServiceFetchLogByDateFindsZuluStoredRowForLocalCalendarDay(t *test
 	}
 }
 
+func TestDayServiceFetchLogByDateNilsOutOfRangeStoredBBT(t *testing.T) {
+	service, database := newDayServiceIntegration(t)
+	user := createDayServiceTestUser(t, database, "out-of-range-bbt-service@example.com")
+
+	// Insert a stored BBT outside the accepted range via raw SQL so no GORM hook
+	// normalizes it first; FetchLogByDate must defensively nil it on read.
+	now := time.Now().UTC()
+	if err := database.Exec(
+		`INSERT INTO daily_logs (user_id, date, is_period, flow, bbt, symptom_ids, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		user.ID,
+		"2026-02-18T00:00:00Z",
+		false,
+		models.FlowNone,
+		200.0,
+		"[]",
+		"",
+		now,
+		now,
+	).Error; err != nil {
+		t.Fatalf("insert out-of-range bbt row: %v", err)
+	}
+
+	day, err := ParseDayDate("2026-02-18", time.UTC)
+	if err != nil {
+		t.Fatalf("parse day: %v", err)
+	}
+
+	entry, err := service.FetchLogByDate(context.Background(), user.ID, day, time.UTC)
+	if err != nil {
+		t.Fatalf("FetchLogByDate: %v", err)
+	}
+	if entry.BBT != nil {
+		t.Fatalf("expected out-of-range stored bbt to be normalized to nil, got %v", *entry.BBT)
+	}
+}
+
+func TestMergePreservedDayEntryInputDropsOutOfRangeExistingBBT(t *testing.T) {
+	outOfRange := 200.0
+	existing := models.DailyLog{BBT: &outOfRange}
+
+	merged := mergePreservedDayEntryInput(existing, DayEntryInput{PreserveBBT: true})
+	if merged.BBT != nil {
+		t.Fatalf("expected preserved out-of-range bbt to be dropped to nil, got %v", *merged.BBT)
+	}
+}
+
 func createDayServiceTestUser(t *testing.T, database *gorm.DB, email string) models.User {
 	t.Helper()
 

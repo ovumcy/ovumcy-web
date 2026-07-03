@@ -78,6 +78,26 @@ func TestMapSymptomUpdateArchiveAndRestoreErrors(t *testing.T) {
 			want: settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name is too long"),
 		},
 		{
+			name: "update name required",
+			got:  mapSymptomUpdateError(services.ErrSymptomNameRequired),
+			want: settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name is required"),
+		},
+		{
+			name: "update name invalid characters",
+			got:  mapSymptomUpdateError(services.ErrSymptomNameInvalidCharacters),
+			want: settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "symptom name contains invalid characters"),
+		},
+		{
+			name: "update invalid color",
+			got:  mapSymptomUpdateError(services.ErrInvalidSymptomColor),
+			want: settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid symptom color"),
+		},
+		{
+			name: "update failed",
+			got:  mapSymptomUpdateError(services.ErrUpdateSymptomFailed),
+			want: settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update symptom"),
+		},
+		{
 			name: "archive builtin forbidden",
 			got:  mapSymptomArchiveError(services.ErrBuiltinSymptomHideForbidden),
 			want: settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "built-in symptom cannot be hidden"),

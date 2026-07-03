@@ -42,9 +42,13 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 			return nil, errors.New("invalid token")
 		}
 		switch {
+		// codecov:ignore:start -- unreachable from this call site: decodeSealedAuthCookieToken
+		// rejects an empty inner token before ResolveAuthSession runs, so ParseAuthSessionToken
+		// never returns ErrAuthSessionTokenMissing here.
 		case errors.Is(err, services.ErrAuthSessionTokenMissing):
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "missing auth cookie"))
 			return nil, errors.New("missing auth cookie")
+		// codecov:ignore:end
 		case errors.Is(err, services.ErrAuthSessionTokenExpired):
 			handler.clearAuthCookie(c)
 			handler.logSecurityEvent(c, "auth.session", "denied", securityEventField("reason", "token expired"))

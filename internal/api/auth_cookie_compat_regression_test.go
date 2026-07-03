@@ -167,3 +167,76 @@ func forceResetPasswordHash(t *testing.T, database *gorm.DB, userID uint, passwo
 		t.Fatalf("mark user forced-reset state: %v", err)
 	}
 }
+
+// TestAuthMiddlewareMapsSessionResolveErrorsToClearedAuthCookie drives the
+// authenticateRequest switch that maps ResolveAuthSession failures onto the
+// generic "clear the cookie and bounce to /login" response. Two arms are
+// reachable with a sealed cookie: an expired-but-well-formed token, and a valid
+// token whose user id no longer resolves (ErrAuthInvalidCreds).
+func TestAuthMiddlewareMapsSessionResolveErrorsToClearedAuthCookie(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "auth-session-resolve-errors@example.com", "StrongPass1", true)
+
+	codec, err := newSecureCookieCodec([]byte("test-secret-key"))
+	if err != nil {
+		t.Fatalf("init secure cookie codec: %v", err)
+	}
+
+	// A well-formed session token whose TTL already elapsed: parsing reports
+	// expiry before any user lookup, exercising the token-expired arm.
+	expiredToken, err := services.BuildAuthSessionToken([]byte("test-secret-key"), user.ID, user.Role, time.Hour, time.Now().Add(-2*time.Hour))
+	if err != nil {
+		t.Fatalf("build expired session token: %v", err)
+	}
+	sealedExpired, err := codec.seal(authCookieName, []byte(expiredToken))
+	if err != nil {
+		t.Fatalf("seal expired session token: %v", err)
+	}
+
+	// A valid, unexpired token for a user id that does not exist, so
+	// ResolveAuthSession's FindByID fails and returns ErrAuthInvalidCreds.
+	unknownUserToken, _, err := services.BuildAuthSessionTokenWithVersionAndSessionID([]byte("test-secret-key"), user.ID+900000, user.Role, 0, time.Hour, time.Now())
+	if err != nil {
+		t.Fatalf("build unknown-user session token: %v", err)
+	}
+	sealedUnknownUser, err := codec.seal(authCookieName, []byte(unknownUserToken))
+	if err != nil {
+		t.Fatalf("seal unknown-user session token: %v", err)
+	}
+
+	testCases := []struct {
+		name        string
+		cookieValue string
+	}{
+		{name: "expired session token", cookieValue: sealedExpired},
+		{name: "unknown user credentials", cookieValue: sealedUnknownUser},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+			request.Header.Set("Cookie", authCookieName+"="+testCase.cookieValue)
+
+			response, err := app.Test(request, -1)
+			if err != nil {
+				t.Fatalf("dashboard request failed: %v", err)
+			}
+			defer response.Body.Close()
+
+			if response.StatusCode != http.StatusSeeOther {
+				t.Fatalf("expected status 303, got %d", response.StatusCode)
+			}
+			if location := response.Header.Get("Location"); location != "/login" {
+				t.Fatalf("expected redirect to /login, got %q", location)
+			}
+			clearedCookie := responseCookie(response.Cookies(), authCookieName)
+			if clearedCookie == nil {
+				t.Fatal("expected response to clear the auth cookie")
+			}
+			if clearedCookie.Value != "" {
+				t.Fatalf("expected cleared auth cookie value, got %q", clearedCookie.Value)
+			}
+		})
+	}
+}

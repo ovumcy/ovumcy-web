@@ -88,6 +88,36 @@ func TestMapDayUpsertError(t *testing.T) {
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day"),
 		},
 		{
+			name: "cycle start replace required",
+			err:  services.ErrManualCycleStartReplaceRequired,
+			want: globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle start replace required"),
+		},
+		{
+			name: "cycle start confirmation required",
+			err:  services.ErrManualCycleStartConfirmationNeeded,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "cycle start confirmation required"),
+		},
+		{
+			name: "invalid mood",
+			err:  services.ErrInvalidDayMood,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid mood value"),
+		},
+		{
+			name: "invalid sex activity",
+			err:  services.ErrInvalidDaySexActivity,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid sex activity value"),
+		},
+		{
+			name: "invalid bbt",
+			err:  services.ErrInvalidDayBBT,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid bbt value"),
+		},
+		{
+			name: "invalid cervical mucus",
+			err:  services.ErrInvalidDayCervicalMucus,
+			want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid cervical mucus value"),
+		},
+		{
 			name: "unknown",
 			err:  errors.New("unknown"),
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day"),

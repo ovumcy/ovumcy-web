@@ -48,6 +48,11 @@ func TestMapDashboardViewError(t *testing.T) {
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load today log"),
 		},
 		{
+			name: "load logs",
+			err:  services.ErrDashboardViewLoadLogs,
+			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load symptom history"),
+		},
+		{
 			name: "unknown",
 			err:  errors.New("unknown"),
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load logs"),
@@ -74,6 +79,16 @@ func TestMapDayEditorViewError(t *testing.T) {
 			name: "load day state",
 			err:  services.ErrDashboardViewLoadDayState,
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load day state"),
+		},
+		{
+			name: "load day log",
+			err:  services.ErrDashboardViewLoadDayLog,
+			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load day log"),
+		},
+		{
+			name: "load symptom history",
+			err:  services.ErrDashboardViewLoadLogs,
+			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load symptom history"),
 		},
 		{
 			name: "unknown",

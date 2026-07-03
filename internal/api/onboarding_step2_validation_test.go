@@ -73,6 +73,36 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	}
 }
 
+func TestOnboardingStep1RejectsUnparseableLastPeriodStart(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "step1-invalid-date@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	form := url.Values{"last_period_start": {"not-a-real-date"}}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/onboarding/steps/1", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, -1)
+	if err != nil {
+		t.Fatalf("step1 invalid-date request failed: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for an unparseable last period start, got %d", response.StatusCode)
+	}
+
+	var reloaded models.User
+	if err := database.First(&reloaded, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if reloaded.LastPeriodStart != nil {
+		t.Fatalf("expected no last_period_start persisted on invalid input, got %v", reloaded.LastPeriodStart)
+	}
+}
+
 func TestOnboardingStep2IgnoresUnexpectedPeriodEndInput(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "step2-extra-period-end@example.com", "StrongPass1", false)

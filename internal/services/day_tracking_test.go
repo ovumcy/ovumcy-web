@@ -7,6 +7,18 @@ func bbtPtr(value float64) *float64 {
 	return &value
 }
 
+func TestParseDayBBTRawWithUnitRejectsNonNumeric(t *testing.T) {
+	t.Parallel()
+
+	got, err := ParseDayBBTRawWithUnit("not-a-number", TemperatureUnitCelsius)
+	if err == nil {
+		t.Fatalf("expected an error for a non-numeric bbt, got value %v", got)
+	}
+	if got != nil {
+		t.Fatalf("expected a nil value on parse error, got %v", *got)
+	}
+}
+
 func TestParseDayBBTRawWithUnitCelsius(t *testing.T) {
 	t.Parallel()
 
