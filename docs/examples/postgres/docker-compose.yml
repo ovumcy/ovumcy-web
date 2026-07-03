@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
 
   ovumcy:
-    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v1.5.0}
+    image: ${OVUMCY_IMAGE:-ghcr.io/ovumcy/ovumcy-web:v1.6.0}
     pull_policy: always
     depends_on:
       postgres:

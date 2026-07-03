@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-03
+
 ### Added
 
 - **Single-binary packaging.** HTML templates, locales, and `web/static` are embedded into the binary via `go:embed`; the runtime image ships only the binary (`FROM scratch`) and the app runs from any working directory. Static asset URLs are cache-busted with `?v=<build revision>` and served with `Cache-Control: public, max-age=3600`, so a release invalidates stale JS/CSS without operator action.
@@ -556,7 +558,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.2.0...v1.3.0
