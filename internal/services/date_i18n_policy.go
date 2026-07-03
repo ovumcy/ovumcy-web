@@ -12,6 +12,7 @@ var monthNames = map[string][]string{
 	"es": {"Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"},
 	"fr": {"Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"},
 	"ru": {"Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"},
+	"it": {"Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"},
 }
 
 var monthLongNames = map[string][]string{
@@ -20,6 +21,7 @@ var monthLongNames = map[string][]string{
 	"es": {"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"},
 	"fr": {"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"},
 	"ru": {"января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"},
+	"it": {"gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"},
 }
 
 var weekdayShortNames = map[string][]string{
@@ -28,6 +30,7 @@ var weekdayShortNames = map[string][]string{
 	"es": {"dom", "lun", "mar", "mié", "jue", "vie", "sáb"},
 	"fr": {"dim", "lun", "mar", "mer", "jeu", "ven", "sam"},
 	"ru": {"Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"},
+	"it": {"dom", "lun", "mar", "mer", "gio", "ven", "sab"},
 }
 
 var weekdayLongNames = map[string][]string{
@@ -36,6 +39,7 @@ var weekdayLongNames = map[string][]string{
 	"es": {"domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"},
 	"fr": {"dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"},
 	"ru": {"воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"},
+	"it": {"domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"},
 }
 
 var monthShortNames = map[string][]string{
@@ -44,6 +48,7 @@ var monthShortNames = map[string][]string{
 	"es": {"ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"},
 	"fr": {"jan", "fév", "mar", "avr", "mai", "jun", "jul", "aoû", "sep", "oct", "nov", "déc"},
 	"ru": {"Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"},
+	"it": {"gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"},
 }
 
 func LocalizedMonthYear(language string, value time.Time) string {
@@ -85,7 +90,7 @@ func LocalizedDateLabel(language string, value time.Time) string {
 	if lang == "de" {
 		return fmt.Sprintf("%s, %d. %s", weekday, value.Day(), month)
 	}
-	if lang == "fr" {
+	if lang == "fr" || lang == "it" {
 		return fmt.Sprintf("%s %d %s", weekday, value.Day(), month)
 	}
 	return fmt.Sprintf("%s, %s %d", weekday, month, value.Day())
@@ -114,8 +119,8 @@ func LocalizedDashboardDate(language string, value time.Time) string {
 	if lang == "de" {
 		return fmt.Sprintf("%s, %d. %s %d", weekday, value.Day(), month, value.Year())
 	}
-	if lang == "fr" {
-		// French: "lundi 21 mars 2026"
+	if lang == "fr" || lang == "it" {
+		// French and Italian: "lundi 21 mars 2026" / "lunedì 21 luglio 2026"
 		return fmt.Sprintf("%s %d %s %d", weekday, value.Day(), month, value.Year())
 	}
 	return fmt.Sprintf("%s %d, %d, %s", month, value.Day(), value.Year(), weekday)
@@ -169,7 +174,7 @@ func localizedDayMonth(language string, value time.Time, withYear bool) string {
 	month := months[monthIndex]
 
 	switch lang {
-	case "es", "fr":
+	case "es", "fr", "it":
 		if withYear {
 			return fmt.Sprintf("%d %s %d", value.Day(), month, value.Year())
 		}

@@ -55,6 +55,16 @@ func TestLocalizedDashboardDateFrench(t *testing.T) {
 	}
 }
 
+func TestLocalizedDashboardDateItalian(t *testing.T) {
+	value := time.Date(2026, time.February, 18, 0, 0, 0, 0, time.UTC)
+
+	got := LocalizedDashboardDate("it", value)
+	want := "mercoledì 18 febbraio 2026"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
 func TestLocalizedMonthYear(t *testing.T) {
 	value := time.Date(2026, time.February, 18, 0, 0, 0, 0, time.UTC)
 
@@ -72,6 +82,9 @@ func TestLocalizedMonthYear(t *testing.T) {
 	}
 	if got := LocalizedMonthYear("fr", value); got != "Février 2026" {
 		t.Fatalf("expected french month-year, got %q", got)
+	}
+	if got := LocalizedMonthYear("it", value); got != "Febbraio 2026" {
+		t.Fatalf("expected italian month-year, got %q", got)
 	}
 }
 
@@ -93,6 +106,9 @@ func TestLocalizedDateLabel(t *testing.T) {
 	if got := LocalizedDateLabel("fr", value); got != "mer 18 fév" {
 		t.Fatalf("expected french date label, got %q", got)
 	}
+	if got := LocalizedDateLabel("it", value); got != "mer 18 feb" {
+		t.Fatalf("expected italian date label, got %q", got)
+	}
 }
 
 func TestLocalizedDateDisplay(t *testing.T) {
@@ -113,6 +129,9 @@ func TestLocalizedDateDisplay(t *testing.T) {
 	if got := LocalizedDateDisplay("fr", value); got != "29 jan 2026" {
 		t.Fatalf("expected french display date, got %q", got)
 	}
+	if got := LocalizedDateDisplay("it", value); got != "29 gen 2026" {
+		t.Fatalf("expected italian display date, got %q", got)
+	}
 }
 
 func TestLocalizedDateShort(t *testing.T) {
@@ -132,5 +151,8 @@ func TestLocalizedDateShort(t *testing.T) {
 	}
 	if got := LocalizedDateShort("fr", value); got != "29 jan" {
 		t.Fatalf("expected french short date, got %q", got)
+	}
+	if got := LocalizedDateShort("it", value); got != "29 gen" {
+		t.Fatalf("expected italian short date, got %q", got)
 	}
 }
