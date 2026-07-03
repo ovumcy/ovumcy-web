@@ -126,8 +126,11 @@ test.describe('Auth: OIDC login entry', () => {
       await completeOnboardingIfPresent(page);
       await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
     } else {
-      await expect(page).toHaveURL(/\/register$/);
-      await expect(page.locator('#register-client-status .status-error, [data-auth-server-error]')).toBeVisible();
+      // providerEmail already exists in the shared e2e DB (for example a prior
+      // browser project registered it). Registration is enumeration-safe, so a
+      // duplicate email lands on the neutral /login, not /register — sign in
+      // with the existing account instead.
+      await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
       await loginViaUI(page, credentials);
       await completeOnboardingIfPresent(page);
       await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
