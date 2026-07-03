@@ -32,7 +32,7 @@ func TestSealedCookieTransportFailsClosedWithoutSecret(t *testing.T) {
 		return c.SendStatus(http.StatusNoContent)
 	})
 
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/write", nil))
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/write", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestSetFlashCookieClearsOnEmptyPayload(t *testing.T) {
 		return c.SendStatus(http.StatusNoContent)
 	})
 
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/flash", nil))
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/flash", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestHTMXSettingsSuccessMarkupFallsBackWithoutTranslation(t *testing.T) {
 		return c.SendString(htmxSettingsSuccessMarkup(c, "tracking_updated", "Fallback message."))
 	})
 
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/markup", nil))
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/markup", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}

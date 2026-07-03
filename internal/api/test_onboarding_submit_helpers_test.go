@@ -18,7 +18,7 @@ func submitOnboardingStep1(t *testing.T, app *fiber.App, authCookie string, form
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("step1 request failed: %v", err)
 	}
@@ -37,7 +37,7 @@ func submitOnboardingStep2(t *testing.T, app *fiber.App, authCookie string, form
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("step2 request failed: %v", err)
 	}
@@ -55,7 +55,7 @@ func submitOnboardingComplete(t *testing.T, app *fiber.App, authCookie string) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("step3 request failed: %v", err)
 	}

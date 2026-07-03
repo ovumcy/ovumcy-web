@@ -29,7 +29,7 @@ func evaluateAuthPageBuilderWithCookie(t *testing.T, query url.Values, cookieHea
 	if cookieHeader != "" {
 		request.Header.Set("Cookie", cookieHeader)
 	}
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app test failed: %v", err)
 	}

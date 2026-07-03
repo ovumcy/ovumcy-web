@@ -41,7 +41,7 @@ func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 			switchRequest := httptest.NewRequest(http.MethodPost, "/lang", strings.NewReader(switchForm.Encode()))
 			switchRequest.Header.Set("Accept-Language", "en")
 			switchRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			switchResponse, err := app.Test(switchRequest)
+			switchResponse, err := app.Test(switchRequest, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("switch language request failed: %v", err)
 			}
@@ -61,7 +61,7 @@ func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 
 			loginRequest := httptest.NewRequest(http.MethodGet, "/login", nil)
 			loginRequest.Header.Set("Cookie", "ovumcy_lang="+languageCookie)
-			loginResponse, err := app.Test(loginRequest)
+			loginResponse, err := app.Test(loginRequest, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("localized login request failed: %v", err)
 			}
@@ -85,7 +85,7 @@ func TestLoginPageRendersVisibleLanguageSwitchForm(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)
 	request.Header.Set("Accept-Language", "ru")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("login page request failed: %v", err)
 	}

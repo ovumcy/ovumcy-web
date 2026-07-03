@@ -45,16 +45,20 @@ func (handler *Handler) startOIDCLinkConfirmation(c fiber.Ctx, result services.O
 		result.User.Email,
 	)
 	if err != nil {
+		// codecov:ignore:start -- defensive: the pending-link payload fails only on a crypto/rand error
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		// codecov:ignore:end
 	}
 	if err := handler.setOIDCLinkPendingCookie(c, payload); err != nil {
+		// codecov:ignore:start -- defensive: the pending-link cookie setter fails only on an AEAD seal error
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		// codecov:ignore:end
 	}
 
 	handler.logSecurityEvent(c, "auth.oidc_callback", "link_confirmation_required")
@@ -192,6 +196,9 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 	}
 
 	if _, err := handler.setAuthCookie(c, &targetUser, false); err != nil {
+		// codecov:ignore:start -- defensive: the LoginService password gate above already refuses
+		// unsupported roles (TestFullPageFallbackLinkConfirmRejectsUnsupportedRoleTarget), so this
+		// arm is reachable only through an AEAD seal error.
 		spec := authSessionCreateErrorSpec()
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			spec = authOIDCAccountUnavailableErrorSpec()
@@ -199,6 +206,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		// codecov:ignore:end
 	}
 
 	handler.logSecurityEvent(c, "auth.oidc_link_confirm", "linked")

@@ -19,7 +19,7 @@ type bodyStringMatch struct {
 func mustAppResponse(t *testing.T, app *fiber.App, request *http.Request) *http.Response {
 	t.Helper()
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}

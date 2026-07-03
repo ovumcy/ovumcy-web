@@ -19,7 +19,7 @@ func TestSettingsPageRendersSingleIrregularCycleHint(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndDangerZone(t *testing.
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestSettingsTrackingSectionRendersExpectedToggleContracts(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestSettingsTrackingTogglesReflectPersistedState(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestSettingsInterfaceSectionRendersSaveDiscardContract(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestSettingsDangerZoneDeleteAccountCardShowsVisibleTitle(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestSettingsCycleAndTrackingSectionsRenderDraftDiscardContract(t *testing.T
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T)
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("forgot-password email step request failed: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T)
 	followRequest.Header.Set("Accept-Language", "en")
 	followRequest.Header.Set("Cookie", flashCookieName+"="+flashValue)
 
-	followResponse, err := app.Test(followRequest)
+	followResponse, err := app.Test(followRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("forgot-password follow-up request failed: %v", err)
 	}

@@ -10,7 +10,7 @@ func TestSetupStatusRouteIsNotPubliclyExposed(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/auth/setup-status", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("setup-status request failed: %v", err)
 	}

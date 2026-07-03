@@ -26,7 +26,7 @@ func TestDaysUpsertPostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("days upsert without csrf failed: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestOnboardingStep1PostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("onboarding step1 without csrf failed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestOnboardingStep2PostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("onboarding step2 without csrf failed: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestOnboardingCompletePostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("onboarding complete without csrf failed: %v", err)
 	}

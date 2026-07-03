@@ -64,7 +64,7 @@ func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", recoveryCodeCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", recoveryCodeCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", recoveryCodeCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest)
+	openResponse, err := openingApp.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}

@@ -524,6 +524,14 @@ async function main() {
     TZ: process.env.TZ ?? "UTC",
     DEFAULT_LANGUAGE: process.env.DEFAULT_LANGUAGE ?? "en",
     COOKIE_SECURE: process.env.COOKIE_SECURE ?? (useHTTPSProxy ? "true" : "false"),
+    // Behind the harness TLS terminator the app must trust its forwarded
+    // headers (the proxy already sends x-forwarded-proto/-host): Fiber v3's
+    // CSRF middleware validates the browser Origin against the app-observed
+    // scheme+host, so without trust the proxied origin mismatches and every
+    // form POST is rejected 403. Mirrors the documented reverse-proxy posture
+    // (TRUST_PROXY_ENABLED=true in docs/examples/reverse-proxy/*).
+    TRUST_PROXY_ENABLED: process.env.TRUST_PROXY_ENABLED ?? (useHTTPSProxy ? "true" : "false"),
+    TRUSTED_PROXIES: process.env.TRUSTED_PROXIES ?? (useHTTPSProxy ? "127.0.0.1,::1" : ""),
     RATE_LIMIT_LOGIN_MAX: process.env.RATE_LIMIT_LOGIN_MAX ?? "500",
     RATE_LIMIT_FORGOT_PASSWORD_MAX: process.env.RATE_LIMIT_FORGOT_PASSWORD_MAX ?? "500",
     RATE_LIMIT_REGISTER_MAX: process.env.RATE_LIMIT_REGISTER_MAX ?? "500",

@@ -43,7 +43,7 @@ func TestStatsChartExcludesCycleEndingToday(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/stats", nil)
 	request.Header.Set("Cookie", authCookie)
 	request.Header.Set("Accept-Language", "en")
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("stats request failed: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestStatsPageKeepsMetricGridHiddenAfterOneCompletedCycle(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/stats", nil)
 	request.Header.Set("Cookie", authCookie)
 	request.Header.Set("Accept-Language", "en")
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("stats request failed: %v", err)
 	}

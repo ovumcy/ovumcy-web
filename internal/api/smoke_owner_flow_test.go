@@ -47,7 +47,7 @@ func TestOwnerCriticalFlowSmoke(t *testing.T) {
 	upsertRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	upsertRequest.Header.Set("Cookie", authCookie)
 
-	upsertResponse, err := app.Test(upsertRequest)
+	upsertResponse, err := app.Test(upsertRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert day request failed: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestOwnerCriticalFlowSmoke(t *testing.T) {
 
 	exportRequest := newExportRequestForTest(t, "/api/v1/exports/csv?from=2026-02-01&to=2026-02-28", authCookie)
 
-	exportResponse, err := app.Test(exportRequest)
+	exportResponse, err := app.Test(exportRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("export request failed: %v", err)
 	}

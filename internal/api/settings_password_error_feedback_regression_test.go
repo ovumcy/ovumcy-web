@@ -36,7 +36,7 @@ func TestSettingsChangePasswordInvalidCurrentPasswordShowsTopErrorBanner(t *test
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	followRequest.Header.Set("Accept-Language", "en")
 	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
-	followResponse, err := ctx.app.Test(followRequest)
+	followResponse, err := ctx.app.Test(followRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("follow-up settings request failed: %v", err)
 	}

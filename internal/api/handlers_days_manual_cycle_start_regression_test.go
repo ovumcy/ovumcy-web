@@ -19,7 +19,7 @@ func TestMarkCycleStartRequiresAuthJSON(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/days/2026-02-19/cycle-start", nil)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("unauthenticated cycle-start request failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestMarkCycleStartRejectsUnsupportedLegacyRoleJSON(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("unsupported legacy role cycle-start request failed: %v", err)
 	}

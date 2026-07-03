@@ -140,7 +140,7 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil))
+	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 	})
 	popReq := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	popReq.Header.Set("Cookie", oidcStepupCookieName+"="+cookieValue)
-	popResp, err := popApp.Test(popReq)
+	popResp, err := popApp.Test(popReq, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil))
+	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 	})
 	popReq := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	popReq.Header.Set("Cookie", oidcStepupCookieName+"="+cookieValue)
-	popResp, err := popApp.Test(popReq)
+	popResp, err := popApp.Test(popReq, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestPopOIDCStepupCookieExpiredPayload(t *testing.T) {
 	})
 	req := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	req.Header.Set("Cookie", oidcStepupCookieName+"="+sealed)
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestClearOIDCStepupCookieExpiresInPast(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	req := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
-	resp, err := app.Test(req)
+	resp, err := app.Test(req, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}

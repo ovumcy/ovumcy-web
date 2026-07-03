@@ -37,7 +37,7 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	followRequest.Header.Set("Accept-Language", "en")
 	followRequest.Header.Set("Cookie", joinCookieHeader(authCookieHeader, flashCookieName+"="+flashValue))
 
-	followResponse, err := ctx.app.Test(followRequest)
+	followResponse, err := ctx.app.Test(followRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("follow-up settings request failed: %v", err)
 	}
@@ -62,7 +62,7 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	afterFlashRequest.Header.Set("Accept-Language", "en")
 	afterFlashRequest.Header.Set("Cookie", authCookieHeader)
 
-	afterFlashResponse, err := ctx.app.Test(afterFlashRequest)
+	afterFlashResponse, err := ctx.app.Test(afterFlashRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request after flash consumption failed: %v", err)
 	}

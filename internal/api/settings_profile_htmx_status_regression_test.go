@@ -23,7 +23,7 @@ func TestProfileUpdateHTMXStatusMarkupIsNonTransient(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("profile update htmx request failed: %v", err)
 	}

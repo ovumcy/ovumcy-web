@@ -98,7 +98,7 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept", "application/json")
 
-		response, err := app.Test(request)
+		response, err := app.Test(request, testConfigNoTimeout)
 		if err != nil {
 			t.Fatalf("app.Test: %v", err)
 		}
@@ -133,7 +133,7 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/probe", strings.NewReader("{}"))
 		request.Header.Set("HX-Request", "true")
 
-		response, err := app.Test(request)
+		response, err := app.Test(request, testConfigNoTimeout)
 		if err != nil {
 			t.Fatalf("app.Test: %v", err)
 		}
@@ -384,7 +384,7 @@ func TestRetryAfterSecondsParsesHeader(t *testing.T) {
 				observed = retryAfterSeconds(c)
 				return c.SendStatus(fiber.StatusNoContent)
 			})
-			_, _ = app.Test(httptest.NewRequest(http.MethodGet, "/probe", nil))
+			_, _ = app.Test(httptest.NewRequest(http.MethodGet, "/probe", nil), testConfigNoTimeout)
 			if observed != tt.want {
 				t.Fatalf("retryAfterSeconds(%q) = %d, want %d", tt.header, observed, tt.want)
 			}
@@ -429,7 +429,7 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 			if tt.accept != "" {
 				request.Header.Set("Accept", tt.accept)
 			}
-			response, err := app.Test(request)
+			response, err := app.Test(request, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("app.Test: %v", err)
 			}
@@ -478,7 +478,7 @@ func TestRespondAPIRateLimitedWithoutJSONAcceptFallsBackToMappedError(t *testing
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/days", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestRespondAuthRateLimitedFallsBackThroughAuthFlash(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader("email=test"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}

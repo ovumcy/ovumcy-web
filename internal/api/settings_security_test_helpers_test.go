@@ -108,7 +108,7 @@ func loadSettingsCSRFContext(t *testing.T, app *fiber.App, authCookie string) (*
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request for csrf context failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func settingsFormRequestWithCSRF(t *testing.T, ctx settingsSecurityTestContext, 
 		request.Header.Set(key, value)
 	}
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request %s %s failed: %v", method, path, err)
 	}

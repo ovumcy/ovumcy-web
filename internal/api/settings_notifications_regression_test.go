@@ -31,7 +31,7 @@ func TestSettingsFlashErrorTakesPrecedenceOverQueryError(t *testing.T) {
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings?error=invalid%20profile%20input", nil)
 	followRequest.Header.Set("Accept-Language", "en")
 	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
-	followResponse, err := ctx.app.Test(followRequest)
+	followResponse, err := ctx.app.Test(followRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestSettingsStatusIgnoresQueryWhenFlashMissing(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSettingsFlashSuccessTakesPrecedenceOverQueryStatus(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestSettingsFlashSuccessTakesPrecedenceOverQueryStatus(t *testing.T) {
 	followRequest := httptest.NewRequest(http.MethodGet, "/settings?status=password_changed", nil)
 	followRequest.Header.Set("Accept-Language", "en")
 	followRequest.Header.Set("Cookie", ctx.authCookie+"; "+flashCookieName+"="+flashValue)
-	followResponse, err := ctx.app.Test(followRequest)
+	followResponse, err := ctx.app.Test(followRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}

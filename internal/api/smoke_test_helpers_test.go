@@ -15,7 +15,7 @@ func smokeGET(t *testing.T, app *fiber.App, authCookie string, path string, expe
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("GET %s failed: %v", path, err)
 	}

@@ -23,7 +23,7 @@ func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 	seedRequest.Header.Set("Cookie", authCookie)
 	seedRequest.Header.Set("HX-Request", "true")
 
-	seedResponse, err := app.Test(seedRequest)
+	seedResponse, err := app.Test(seedRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seed profile update request failed: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 	clearRequest.Header.Set("HX-Request", "true")
 	clearRequest.Header.Set("Accept-Language", "en")
 
-	clearResponse, err := app.Test(clearRequest)
+	clearResponse, err := app.Test(clearRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("clear profile update request failed: %v", err)
 	}

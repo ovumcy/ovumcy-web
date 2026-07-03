@@ -48,7 +48,7 @@ func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestUpsertDayAutoFillsFollowingPeriodDays(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestUpsertDayAutoFillSkipsWhenRecentPeriodDayExists(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
@@ -300,7 +300,7 @@ func putDayPayloadExpectOK(t *testing.T, app *fiber.App, authCookie, dateISO str
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+dateISO, bytes.NewReader(body))
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("%s request failed: %v", label, err)
 	}
@@ -352,7 +352,7 @@ func TestUpsertDayAutoFillPreservesManualNeighborsWhenAnchorToggledOff(t *testin
 	onRequest := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-10", bytes.NewReader(onBody))
 	onRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	onRequest.Header.Set("Cookie", authCookie)
-	onResponse, _ := app.Test(onRequest)
+	onResponse, _ := app.Test(onRequest, testConfigNoTimeout)
 	defer onResponse.Body.Close()
 
 	manualDay, _ := services.ParseDayDate("2026-02-12", time.UTC)
@@ -375,7 +375,7 @@ func TestUpsertDayAutoFillPreservesManualNeighborsWhenAnchorToggledOff(t *testin
 	offRequest := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-10", bytes.NewReader(offBody))
 	offRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	offRequest.Header.Set("Cookie", authCookie)
-	offResponse, err := app.Test(offRequest)
+	offResponse, err := app.Test(offRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("off request failed: %v", err)
 	}

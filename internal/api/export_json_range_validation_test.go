@@ -16,7 +16,7 @@ func TestExportJSONRejectsInvalidDateRange(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	request := newExportRequestForTest(t, "/api/v1/exports/json?from=2026-02-20&to=2026-02-10", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("export json request with invalid range failed: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestExportJSONRejectsInvalidFromDate(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	request := newExportRequestForTest(t, "/api/v1/exports/json?from=not-a-date&to=2026-02-10", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("export json request with invalid from failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestExportJSONRejectsInvalidToDate(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	request := newExportRequestForTest(t, "/api/v1/exports/json?from=2026-02-10&to=not-a-date", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("export json request with invalid to failed: %v", err)
 	}

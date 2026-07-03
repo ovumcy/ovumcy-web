@@ -26,7 +26,7 @@ func TestCurrentUserOrRedirectToLoginRedirectsWhenMissing(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app test failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestCurrentUserOrRedirectToLoginReturnsUserWhenPresent(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app test failed: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestCurrentUserOrUnauthorizedWhenMissing(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app test failed: %v", err)
 	}

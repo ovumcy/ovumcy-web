@@ -83,9 +83,13 @@ func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 		case "/api/v1/sessions/2fa-challenge":
 			handler.setFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/auth/2fa")
+		// codecov:ignore:start -- forward-compat safety net: every current isV1AuthFormPath member
+		// either has an explicit case above or (logout) responds through global specs, so this arm
+		// is unreachable until a new auth-form path is enumerated.
 		default:
 			handler.setFlashCookie(c, flash)
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+			// codecov:ignore:end
 		}
 	}
 	return apiError(c, spec)

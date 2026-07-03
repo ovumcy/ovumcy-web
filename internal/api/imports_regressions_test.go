@@ -34,7 +34,7 @@ func TestImportJSONRejectsMissingCSRF(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "import-csrf-missing@example.com")
 	body := `{"entries":[{"date":"2026-07-01","period":true,"flow":"medium","cycle_factors":[]}]}`
 
-	response, err := ctx.app.Test(newImportRequest(ctx, body, false))
+	response, err := ctx.app.Test(newImportRequest(ctx, body, false), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("import without csrf failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestImportJSONSucceedsWithCSRF(t *testing.T) {
 		`{"date":"2026-07-02","period":false,"cycle_factors":[]}` +
 		`]}`
 
-	response, err := ctx.app.Test(newImportRequest(ctx, body, true))
+	response, err := ctx.app.Test(newImportRequest(ctx, body, true), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("import with csrf failed: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestImportJSONRejectsMalformedFile(t *testing.T) {
 
 	ctx := newSettingsSecurityTestContext(t, "import-malformed@example.com")
 
-	response, err := ctx.app.Test(newImportRequest(ctx, "{not valid json", true))
+	response, err := ctx.app.Test(newImportRequest(ctx, "{not valid json", true), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("import malformed failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestImportJSONHTMXSuccessReturnsStatusMarkup(t *testing.T) {
 	request := newImportRequest(ctx, `{"entries":[{"date":"2026-07-01","period":true,"flow":"medium","cycle_factors":[]}]}`, true)
 	request.Header.Set("HX-Request", "true")
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("htmx import failed: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestImportJSONFormFallbackRedirects(t *testing.T) {
 	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
 	request.Header.Set("X-CSRF-Token", ctx.csrfToken)
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("form import failed: %v", err)
 	}

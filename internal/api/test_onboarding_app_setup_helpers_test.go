@@ -129,3 +129,8 @@ func testCSRFMiddlewareConfig(cookieSecure bool, handler *Handler) csrf.Config {
 		},
 	}
 }
+
+// testConfigNoTimeout restores fiber v2's app.Test(req, -1) "no timeout"
+// semantics: v3's default TestConfig times out after 1s, which bcrypt-heavy
+// auth tests exceed under coverage instrumentation.
+var testConfigNoTimeout = fiber.TestConfig{Timeout: 0, FailOnTimeout: false}

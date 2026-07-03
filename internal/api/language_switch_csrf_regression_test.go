@@ -17,7 +17,7 @@ func TestLanguageSwitchRequiresCSRFTokenWhenEnabled(t *testing.T) {
 	}.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("language switch request without csrf failed: %v", err)
 	}
@@ -32,7 +32,7 @@ func TestLanguageSwitchAcceptsValidCSRFTokenWhenEnabled(t *testing.T) {
 	app, _ := newOnboardingTestAppWithCSRF(t)
 
 	loginRequest := httptest.NewRequest(http.MethodGet, "/login", nil)
-	loginResponse, err := app.Test(loginRequest)
+	loginResponse, err := app.Test(loginRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("login page request for csrf token failed: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestLanguageSwitchAcceptsValidCSRFTokenWhenEnabled(t *testing.T) {
 	switchRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	switchRequest.Header.Set("Cookie", cookiePair(csrfCookie))
 
-	switchResponse, err := app.Test(switchRequest)
+	switchResponse, err := app.Test(switchRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("language switch request with csrf failed: %v", err)
 	}

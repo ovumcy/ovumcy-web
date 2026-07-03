@@ -79,7 +79,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 
 	first := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", bytes.NewBufferString(""))
 	first.Header.Set("Accept", "application/json")
-	firstResp, err := app.Test(first)
+	firstResp, err := app.Test(first, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("first logout request failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 
 	second := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", bytes.NewBufferString(""))
 	second.Header.Set("Accept", "application/json")
-	secondResp, err := app.Test(second)
+	secondResp, err := app.Test(second, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("second logout request failed: %v", err)
 	}

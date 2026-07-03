@@ -35,7 +35,7 @@ func TestUpsertDayNormalizesFlowWhenNotPeriod(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestUpsertDayAllowsPeriodWithoutExplicitFlow(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestUpsertDayPreservesSymptomsWhenNotPeriod(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestUpsertDayPersistsPregnancyTest(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestUpsertDayNormalizesUnknownPregnancyTest(t *testing.T) {
 	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}

@@ -60,7 +60,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+location.String()))
 			request.Header.Set(timezoneHeaderName, location.String())
 
-			response, err := app.Test(request)
+			response, err := app.Test(request, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("upsert request failed: %v", err)
 			}
@@ -79,7 +79,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			roundTripRequest.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+location.String()))
 			roundTripRequest.Header.Set(timezoneHeaderName, location.String())
 
-			roundTripResponse, err := app.Test(roundTripRequest)
+			roundTripResponse, err := app.Test(roundTripRequest, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("round-trip GET failed: %v", err)
 			}

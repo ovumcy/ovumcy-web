@@ -97,7 +97,7 @@ func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testi
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	dashboardRequest.Header.Set("Accept-Language", "en")
 	dashboardRequest.Header.Set("Cookie", authCookie)
-	dashboardResponse, err := app.Test(dashboardRequest)
+	dashboardResponse, err := app.Test(dashboardRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	statsRequest := httptest.NewRequest(http.MethodGet, "/stats", nil)
 	statsRequest.Header.Set("Accept-Language", "en")
 	statsRequest.Header.Set("Cookie", authCookie)
-	statsResponse, err := app.Test(statsRequest)
+	statsResponse, err := app.Test(statsRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("stats request failed: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	saveRequest.Header.Set("Accept-Language", "en")
 	saveRequest.Header.Set("Cookie", authCookie)
 
-	saveResponse, err := app.Test(saveRequest)
+	saveResponse, err := app.Test(saveRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("save request failed: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	dashboardRequest.Header.Set("Accept-Language", "en")
 	dashboardRequest.Header.Set("Cookie", authCookie)
 
-	dashboardResponse, err := app.Test(dashboardRequest)
+	dashboardResponse, err := app.Test(dashboardRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}

@@ -145,7 +145,7 @@ func TestRateLimitKeyGeneratorBucketing(t *testing.T) {
 			for i, value := range tc.values {
 				req := httptest.NewRequest(http.MethodGet, "/probe", nil)
 				req.Header.Set(tc.headerName, value)
-				resp, err := app.Test(req)
+				resp, err := app.Test(req, testConfigNoTimeout)
 				if err != nil {
 					t.Fatalf("request %d failed: %v", i, err)
 				}

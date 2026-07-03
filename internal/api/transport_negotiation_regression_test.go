@@ -24,7 +24,7 @@ func TestRegisterJSONContentTypeWithoutAcceptReturnsJSONError(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestSettingsCycleJSONContentTypeWithoutAcceptReturnsJSONError(t *testing.T)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings cycle request failed: %v", err)
 	}

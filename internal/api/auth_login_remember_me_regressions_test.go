@@ -20,7 +20,7 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 	sessionRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(sessionForm.Encode()))
 	sessionRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	sessionResponse, err := app.Test(sessionRequest)
+	sessionResponse, err := app.Test(sessionRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("session login request failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 	rememberRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(rememberForm.Encode()))
 	rememberRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	rememberResponse, err := app.Test(rememberRequest)
+	rememberResponse, err := app.Test(rememberRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("remember-me login request failed: %v", err)
 	}

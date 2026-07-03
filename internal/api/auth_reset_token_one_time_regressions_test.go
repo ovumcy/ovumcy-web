@@ -30,7 +30,7 @@ func TestResetPasswordTokenCannotBeReusedAfterSuccessfulReset(t *testing.T) {
 	firstResetRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	firstResetRequest.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
-	firstResetResponse, err := app.Test(firstResetRequest)
+	firstResetResponse, err := app.Test(firstResetRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("first reset-password request failed: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestResetPasswordTokenCannotBeReusedAfterSuccessfulReset(t *testing.T) {
 	secondResetRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	secondResetRequest.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
-	secondResetResponse, err := app.Test(secondResetRequest)
+	secondResetResponse, err := app.Test(secondResetRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("second reset-password request failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestResetPasswordRejectsExpiredResetToken(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("reset-password request with expired token failed: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestResetPasswordRejectsInvalidOrTamperedResetToken(t *testing.T) {
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
-			response, err := app.Test(request)
+			response, err := app.Test(request, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("reset-password request failed: %v", err)
 			}
@@ -156,7 +156,7 @@ func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
 	resetRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resetRequest.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
-	resetResponse, err := app.Test(resetRequest)
+	resetResponse, err := app.Test(resetRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("reset-password request failed: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
 	retryRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(retryForm.Encode()))
 	retryRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	retryResponse, err := app.Test(retryRequest)
+	retryResponse, err := app.Test(retryRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("retry forgot-password request failed: %v", err)
 	}
@@ -201,7 +201,7 @@ func requestResetCookieByRecoveryCode(t *testing.T, app *fiber.App, email string
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("forgot-password request failed: %v", err)
 	}

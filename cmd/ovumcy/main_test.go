@@ -789,7 +789,7 @@ func TestOvumcyErrorHandlerMapsBodyLimitTo413(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -839,7 +839,7 @@ func TestFiberAppEnforcesBodyLimit(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/imports/json", strings.NewReader(oversized))
 	request.Header.Set("Content-Type", "application/json")
 
-	_, err := app.Test(request)
+	_, err := app.Test(request, testConfigNoTimeout)
 	if err == nil {
 		t.Fatal("expected body-limit rejection error from oversized request")
 	}
@@ -859,7 +859,7 @@ func TestSecurityHeadersMiddlewareSetsHeadersOnHTMLResponses(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("html request failed: %v", err)
 	}
@@ -876,7 +876,7 @@ func TestSecurityHeadersMiddlewareSetsHeadersOnAPIResponses(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/ping", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("api request failed: %v", err)
 	}
@@ -893,7 +893,7 @@ func TestSecurityHeadersMiddlewareAddsHSTSWhenSecureCookiesEnabled(t *testing.T)
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("secure html request failed: %v", err)
 	}
@@ -911,7 +911,7 @@ func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
 		return errors.New("internal users table secret column leaked")
 	})
 
-	fiberErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/fiber-error", nil))
+	fiberErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/fiber-error", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("fiber-error request failed: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
 		t.Fatalf("fiber.Error body = %q, want %q (status/message preserved)", fiberBody.String(), "Forbidden")
 	}
 
-	rawErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/raw-error", nil))
+	rawErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/raw-error", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("raw-error request failed: %v", err)
 	}
@@ -950,7 +950,7 @@ func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
 	app.Use("/static", newStaticAssetHandler())
 
 	request := httptest.NewRequest(http.MethodGet, "/static/manifest.webmanifest", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("manifest request failed: %v", err)
 	}
@@ -974,7 +974,7 @@ func TestStaticAssetsSendCacheControlMaxAge(t *testing.T) {
 	app.Use("/static", newStaticAssetHandler())
 
 	request := httptest.NewRequest(http.MethodGet, "/static/manifest.webmanifest", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("static asset request failed: %v", err)
 	}
@@ -1036,7 +1036,7 @@ func TestSecurityHeadersMiddlewareSetsNoCacheOnDynamicRoutes(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dynamic route request failed: %v", err)
 	}
@@ -1058,7 +1058,7 @@ func TestSecurityHeadersMiddlewareDoesNotSetNoCacheOnStaticAssets(t *testing.T) 
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/static/app.js", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("static asset request failed: %v", err)
 	}
@@ -1397,7 +1397,7 @@ func TestDefaultRequestLoggerDoesNotLogQueryPII(t *testing.T) {
 		nil,
 	)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -1440,7 +1440,7 @@ func TestDefaultRequestLoggerDoesNotLogFormSecrets(t *testing.T) {
 	)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -1473,7 +1473,7 @@ func TestRequestLoggerUsesSafeRouteTemplateWithoutIP(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-17", nil)
 	request.RemoteAddr = "203.0.113.9:43123"
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -1519,7 +1519,7 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.RemoteAddr = "203.0.113.9:43123"
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("rate limit request failed: %v", err)
 	}
@@ -1571,7 +1571,7 @@ func TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII(t *testing.T) {
 	)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("csrf request failed: %v", err)
 	}
@@ -1614,7 +1614,7 @@ func TestAuthRateLimitHandlerLogsSecurityEventWithoutPII(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("rate-limit handler request failed: %v", err)
 	}
@@ -1716,7 +1716,7 @@ func TestConfigureFiberMiddlewareRateLimitsOIDCCallback(t *testing.T) {
 func mustRateLimitedResponse(t *testing.T, app *fiber.App, request *http.Request) *http.Response {
 	t.Helper()
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("rate-limit request failed: %v", err)
 	}
@@ -1838,3 +1838,8 @@ func TestCloseDatabaseLogsWhenPoolUnavailable(t *testing.T) {
 		t.Fatalf("expected close failure to be logged, got %q", buffer.String())
 	}
 }
+
+// testConfigNoTimeout restores fiber v2's app.Test(req, -1) "no timeout"
+// semantics: v3's default TestConfig times out after 1s, which bcrypt-heavy
+// tests exceed under coverage instrumentation.
+var testConfigNoTimeout = fiber.TestConfig{Timeout: 0, FailOnTimeout: false}

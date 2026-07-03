@@ -33,7 +33,7 @@ func TestParseCredentialsValidation(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/credentials", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, testConfigNoTimeout)
 		if err != nil {
 			t.Fatalf("request failed: %v", err)
 		}
@@ -63,7 +63,7 @@ func TestParseCredentialsValidation(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/credentials", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		resp, err := app.Test(req)
+		resp, err := app.Test(req, testConfigNoTimeout)
 		if err != nil {
 			t.Fatalf("request failed: %v", err)
 		}

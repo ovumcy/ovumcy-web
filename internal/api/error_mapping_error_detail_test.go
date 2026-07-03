@@ -30,7 +30,7 @@ func TestApiErrorJSONEmitsErrorDetailEnvelope(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/test/global-validation", nil)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("global validation request failed: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestApiErrorJSONErrorDetailReflectsTarget(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, "/api/test/case", nil)
 			request.Header.Set("Accept", "application/json")
 
-			response, err := app.Test(request)
+			response, err := app.Test(request, testConfigNoTimeout)
 			if err != nil {
 				t.Fatalf("request failed: %v", err)
 			}

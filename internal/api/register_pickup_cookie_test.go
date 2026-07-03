@@ -136,7 +136,7 @@ func TestSetAndPopRegisterPickupCookieRoundTrip(t *testing.T) {
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil))
+	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestSetAndPopRegisterPickupCookieRoundTrip(t *testing.T) {
 	})
 	popReq := httptest.NewRequest("GET", "/welcome", nil)
 	popReq.Header.Set("Cookie", registerPickupCookieName+"="+cookieValue)
-	popResp, err := popApp.Test(popReq)
+	popResp, err := popApp.Test(popReq, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestPopRegisterPickupCookieWrongKeyReturnsEmpty(t *testing.T) {
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil))
+	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestPopRegisterPickupCookieWrongKeyReturnsEmpty(t *testing.T) {
 	})
 	popReq := httptest.NewRequest("GET", "/welcome", nil)
 	popReq.Header.Set("Cookie", registerPickupCookieName+"="+cookieValue)
-	popResp, err := popApp.Test(popReq)
+	popResp, err := popApp.Test(popReq, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestPopRegisterPickupCookieTamperedValueReturnsEmpty(t *testing.T) {
 
 	popReq := httptest.NewRequest("GET", "/welcome", nil)
 	popReq.Header.Set("Cookie", registerPickupCookieName+"=v2.garbage-payload")
-	popResp, err := popApp.Test(popReq)
+	popResp, err := popApp.Test(popReq, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}

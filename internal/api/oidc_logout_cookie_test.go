@@ -38,7 +38,7 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", oidcLogoutBridgeCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", oidcLogoutBridgeCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", oidcLogoutBridgeCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest)
+	openResponse, err := openingApp.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}

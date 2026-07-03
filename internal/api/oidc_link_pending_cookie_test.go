@@ -56,7 +56,7 @@ func TestOIDCLinkPendingCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestOIDCLinkPendingCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestOIDCLinkPendingCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestOIDCLinkPendingCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestOIDCLinkPendingCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestOIDCLinkPendingCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest)
+	openResponse, err := openingApp.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestOIDCLinkPendingCookieRejectsCrossPurposeAAD(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+foreignSealed)
-	response, err := app.Test(openRequest)
+	response, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open cross-purpose request: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestOIDCLinkPendingCookieRejectsExpiredPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+sealed)
-	response, err := app.Test(openRequest)
+	response, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open expired request: %v", err)
 	}

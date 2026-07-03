@@ -21,7 +21,7 @@ func TestDashboardLogoutFormsRequireConfirmation(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestDashboardNavigationShowsDisplayNameWithoutEmailFallback(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestCalendarSelectedDayLoadsEditModeWhenRequested(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar request failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func mustRenderDashboard(t *testing.T, app *fiber.App, authCookie string, langua
 		request.Header.Set("Cookie", authCookie+"; ovumcy_lang="+languageCookie)
 	}
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}

@@ -61,7 +61,7 @@ func renderCalendarMonthHTML(t *testing.T, app *fiber.App, authCookie string, mo
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar request for month %s failed: %v", month, err)
 	}

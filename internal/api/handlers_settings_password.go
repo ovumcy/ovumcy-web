@@ -132,10 +132,13 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 // password.
 func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidcStepupState) error {
 	if state.Purpose != oidcStepupPurposeLocalPasswordSetup {
+		// codecov:ignore:start -- forward-compat guard: local_password_setup is the only stepup
+		// purpose value today, so a mismatching sealed payload cannot be minted.
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+		// codecov:ignore:end
 	}
 
 	// /auth/oidc/callback runs without AuthRequired middleware (the ordinary

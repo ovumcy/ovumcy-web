@@ -47,7 +47,26 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 	app.Patch("/api/v1/users/current/tracking", handler.UpdateTrackingSettings)
 	app.Patch("/api/v1/users/current/cycle", handler.UpdateCycleSettings)
 	app.Post("/api/v1/onboarding/complete", handler.OnboardingComplete)
+	app.Get("/onboarding", handler.ShowOnboarding)
+	app.Get("/settings/2fa", handler.ShowTOTPSetupPage)
 	return app, database
+}
+
+// Full-page handlers guard currentUser with a redirect rather than a 401 —
+// same defense-in-depth contract, HTML-shaped response.
+func TestPageHandlersRedirectMissingUserAtHandlerLevel(t *testing.T) {
+	app, _ := newMutationBranchTestApp(t, false)
+
+	for _, path := range []string{"/onboarding", "/settings/2fa"} {
+		response := mutationBranchRequest(t, app, http.MethodGet, path, "", "")
+		if response.StatusCode != http.StatusSeeOther {
+			t.Errorf("GET %s without user: expected 303, got %d", path, response.StatusCode)
+		}
+		if location := response.Header.Get("Location"); location != "/login" {
+			t.Errorf("GET %s without user: expected redirect to /login, got %q", path, location)
+		}
+		response.Body.Close()
+	}
 }
 
 func mutationBranchRequest(t *testing.T, app *fiber.App, method string, path string, body string, contentType string) *http.Response {
@@ -65,7 +84,7 @@ func mutationBranchRequest(t *testing.T, app *fiber.App, method string, path str
 	}
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("%s %s failed: %v", method, path, err)
 	}

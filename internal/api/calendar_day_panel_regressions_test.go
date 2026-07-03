@@ -71,7 +71,7 @@ func TestCalendarDayPanelEditModeRendersDeleteActionForExistingEntry(t *testing.
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar day panel request failed: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCalendarDayPanelEditModePreservesAndSavesPeriodToggle(t *testing.T) {
 	panelRequest.Header.Set("Accept-Language", "en")
 	panelRequest.Header.Set("Cookie", authCookie)
 
-	panelResponse, err := app.Test(panelRequest)
+	panelResponse, err := app.Test(panelRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar day panel request failed: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestCalendarDayPanelEditModePreservesAndSavesPeriodToggle(t *testing.T) {
 	saveRequest.Header.Set("Accept-Language", "en")
 	saveRequest.Header.Set("Cookie", authCookie)
 
-	saveResponse, err := app.Test(saveRequest)
+	saveResponse, err := app.Test(saveRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("save request failed: %v", err)
 	}

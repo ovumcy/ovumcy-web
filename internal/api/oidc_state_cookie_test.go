@@ -47,7 +47,7 @@ func TestPopOIDCStateCookieRejectsExpiredPayload(t *testing.T) {
 
 	request := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	request.Header.Set("Cookie", oidcStateCookieName+"="+sealed)
-	response, testErr := app.Test(request)
+	response, testErr := app.Test(request, testConfigNoTimeout)
 	if testErr != nil {
 		t.Fatalf("request failed: %v", testErr)
 	}
@@ -85,7 +85,7 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	openRequest.Header.Set("Cookie", oidcStateCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	openRequest.Header.Set("Cookie", oidcStateCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest)
+	openResponse, err := openingApp.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	openRequest.Header.Set("Cookie", oidcStateCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest)
+	openResponse, err := app.Test(openRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}

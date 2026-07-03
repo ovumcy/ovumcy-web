@@ -31,7 +31,7 @@ func TestDashboardStableHeroRendersEnglishPredictionWindowWithoutFallbackStatus(
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestDashboardEnglishRendersSharedSparsePredictionExplanationForIrregularMod
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}

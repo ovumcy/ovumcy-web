@@ -14,10 +14,12 @@ const oidcExternalRequestTimeout = 10 * time.Second
 func (handler *Handler) StartOIDCLogin(c fiber.Ctx) error {
 	state, err := newOIDCAuthState(time.Now())
 	if err != nil {
+		// codecov:ignore:start -- defensive: newOIDCAuthState fails only on a crypto/rand error
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_start", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+		// codecov:ignore:end
 	}
 	if err := handler.setOIDCStateCookie(c, state); err != nil {
 		spec := authOIDCUnavailableErrorSpec()
@@ -85,16 +87,20 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	if result.User.MustChangePassword {
 		token, issueErr := handler.passwordResetSvc.IssueResetTokenForUser(handler.secretKey, &result.User, 30*time.Minute, time.Now())
 		if issueErr != nil {
+			// codecov:ignore:start -- defensive: reset-token issuance fails only on an HMAC signing error
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+			// codecov:ignore:end
 		}
 		if err := handler.setResetPasswordCookie(c, token, true); err != nil {
+			// codecov:ignore:start -- defensive: the reset cookie setter fails only on an AEAD seal error
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
+			// codecov:ignore:end
 		}
 		handler.logSecurityEvent(c, "auth.oidc_callback", "reset_required")
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/reset-password")

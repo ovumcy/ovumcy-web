@@ -22,7 +22,7 @@ func TestOptionalAuthenticatedUserWithoutCookieReturnsNil(t *testing.T) {
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app test failed: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestRedirectAuthenticatedUserIfPresentRedirectsAuthenticatedRequest(t *test
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.AddCookie(&http.Cookie{Name: authCookieName, Value: sealedToken})
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app test failed: %v", err)
 	}

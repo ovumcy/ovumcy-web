@@ -33,7 +33,7 @@ func TestSettingsChangePasswordReissuesSessionAndRejectsPreviousCookie(t *testin
 	oldSessionRequest.Header.Set("Accept-Language", "en")
 	oldSessionRequest.Header.Set("Cookie", ctx.authCookie)
 
-	oldSessionResponse, err := ctx.app.Test(oldSessionRequest)
+	oldSessionResponse, err := ctx.app.Test(oldSessionRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("old session settings request failed: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestSettingsChangePasswordReissuesSessionAndRejectsPreviousCookie(t *testin
 	freshSessionRequest.Header.Set("Accept-Language", "en")
 	freshSessionRequest.Header.Set("Cookie", cookiePair(newAuthCookie))
 
-	freshSessionResponse, err := ctx.app.Test(freshSessionRequest)
+	freshSessionResponse, err := ctx.app.Test(freshSessionRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("fresh session settings request failed: %v", err)
 	}

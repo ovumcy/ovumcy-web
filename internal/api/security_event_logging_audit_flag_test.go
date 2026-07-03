@@ -32,7 +32,7 @@ func TestAuditLogDefaultOffSuppressesSecurityEvents(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("day upsert request failed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestAuditLogEnabledRestoresSecurityEvents(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("day upsert request failed: %v", err)
 	}

@@ -44,7 +44,7 @@ func readNegotiationSnapshot(t *testing.T, headers map[string]string) negotiatio
 		request.Header.Set(key, value)
 	}
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("app test request failed: %v", err)
 	}
@@ -134,3 +134,6 @@ func TestHTMXWinsOverJSONNegotiation(t *testing.T) {
 		t.Fatalf("expected HTMX response format to win, got %q", snapshot.ResponseFormat)
 	}
 }
+
+// testConfigNoTimeout restores fiber v2's app.Test(req, -1) semantics.
+var testConfigNoTimeout = fiber.TestConfig{Timeout: 0, FailOnTimeout: false}

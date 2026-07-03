@@ -14,7 +14,7 @@ func TestBaseTemplateAvoidsInlineScriptsUnderStrictCSP(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}

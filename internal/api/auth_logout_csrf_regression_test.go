@@ -30,7 +30,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 		),
 	)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("logout POST request with csrf failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestAuthLogoutPostRevokesPreviousSessionCookie(t *testing.T) {
 	logoutRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	logoutRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
-	logoutResponse, err := app.Test(logoutRequest)
+	logoutResponse, err := app.Test(logoutRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("logout POST request failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestAuthLogoutPostRevokesPreviousSessionCookie(t *testing.T) {
 	replayRequest.Header.Set("Accept-Language", "en")
 	replayRequest.Header.Set("Cookie", authCookie)
 
-	replayResponse, err := app.Test(replayRequest)
+	replayResponse, err := app.Test(replayRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard replay request failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestAuthLogoutPostMissingCSRFRejectedByMiddleware(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("logout POST request without csrf failed: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestAuthLogoutPostInvalidCSRFRejectedByMiddleware(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("logout POST request with invalid csrf failed: %v", err)
 	}
@@ -164,7 +164,7 @@ func prepareAuthenticatedLogoutCSRFContext(t *testing.T) (*fiber.App, string, *h
 	csrfRequest.Header.Set("Accept-Language", "en")
 	csrfRequest.Header.Set("Cookie", authCookie)
 
-	csrfResponse, err := app.Test(csrfRequest)
+	csrfResponse, err := app.Test(csrfRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request for csrf context failed: %v", err)
 	}
@@ -209,7 +209,7 @@ func assertAuthenticatedDashboardAccess(t *testing.T, app *fiber.App, authCookie
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("dashboard request after csrf failure failed: %v", err)
 	}

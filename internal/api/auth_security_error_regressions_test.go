@@ -47,7 +47,7 @@ func TestRegisterReturnsSeedFailureAndRollsBackUser(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestLoginReturnsResetTokenIssueError(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestLoginReturnsRateLimitedError(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestLoginForcedResetCookieWriteFailureReturns500(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestRenderRecoveryCodeResponseCookieWriteFailureReturns500(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/api/auth/recovery-response-test", nil)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("recovery response request failed: %v", err)
 	}

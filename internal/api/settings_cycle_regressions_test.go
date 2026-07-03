@@ -81,7 +81,7 @@ func TestSettingsCycleUsesRequestTimezoneForLastPeriodStartValidation(t *testing
 	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+timezoneName))
 	request.Header.Set(timezoneHeaderName, timezoneName)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings cycle request failed: %v", err)
 	}

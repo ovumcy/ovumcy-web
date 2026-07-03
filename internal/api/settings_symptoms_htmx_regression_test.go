@@ -104,7 +104,7 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 	updateRequest.Header.Set("HX-Request", "true")
 	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
-	updateResponse, err := app.Test(updateRequest)
+	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("update duplicate symptom htmx request failed: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	createRequest.Header.Set("HX-Request", "true")
 	createRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
-	createResponse, err := app.Test(createRequest)
+	createResponse, err := app.Test(createRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("create too-long symptom htmx request failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSettingsSymptomsHTMXUpdateTooLongKeepsStoredSymptomUnchanged(t *testing
 	updateRequest.Header.Set("HX-Request", "true")
 	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
-	updateResponse, err := app.Test(updateRequest)
+	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("update too-long symptom htmx request failed: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestSettingsSymptomsHTMXUpdateWithoutColorPreservesStoredValue(t *testing.T
 	updateRequest.Header.Set("HX-Request", "true")
 	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
 
-	updateResponse, err := app.Test(updateRequest)
+	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("update symptom htmx request failed: %v", err)
 	}
@@ -313,7 +313,7 @@ func performSettingsSymptomsHTMXRequest(t *testing.T, ctx settingsSymptomsHTMXTe
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie)))
 
-	response, err := ctx.app.Test(request)
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("settings symptoms htmx request failed: %v", err)
 	}

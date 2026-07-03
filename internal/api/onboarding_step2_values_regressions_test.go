@@ -25,7 +25,7 @@ func TestOnboardingPageRendersPersistedStep2Values(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}

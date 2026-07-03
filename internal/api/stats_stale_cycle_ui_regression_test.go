@@ -60,7 +60,7 @@ func renderStatsPageWithStaleCycleData(t *testing.T) *html.Node {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("stats request failed: %v", err)
 	}

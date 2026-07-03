@@ -14,7 +14,7 @@ func TestCalendarInvalidMonthHTMLRedirectsToCurrentMonth(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/calendar?month=9999-99", nil)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar request failed: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestCalendarInvalidMonthHTMXRedirectsToCurrentMonth(t *testing.T) {
 	request.Header.Set("Cookie", authCookie)
 	request.Header.Set("HX-Request", "true")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar htmx request failed: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestCalendarInvalidMonthJSONKeepsValidationError(t *testing.T) {
 	request.Header.Set("Cookie", authCookie)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request)
+	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("calendar json request failed: %v", err)
 	}
