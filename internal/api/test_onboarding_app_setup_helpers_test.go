@@ -1,13 +1,12 @@
 package api
 
 import (
-	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/csrf"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/csrf"
 	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
@@ -112,35 +111,21 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 
 func testCSRFMiddlewareConfig(cookieSecure bool, handler *Handler) csrf.Config {
 	return csrf.Config{
-		Next: func(c *fiber.Ctx) bool {
+		Next: func(c fiber.Ctx) bool {
 			return c.Path() == security.OIDCCallbackPath
 		},
-		KeyLookup:      "form:csrf_token",
 		CookieName:     "ovumcy_csrf",
 		CookieSameSite: "Lax",
 		CookieHTTPOnly: true,
 		CookieSecure:   cookieSecure,
-		ContextKey:     "csrf",
-		Extractor:      CSRFTokenExtractor,
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
+		IdleTimeout:    time.Hour,
+		Extractor:      CSRFTokenExtractor(),
+		ErrorHandler: func(c fiber.Ctx, err error) error {
 			handler.LogSecurityEvent(c, "csrf", "denied", SecurityEventField{
 				Key:   "reason",
-				Value: testCSRFFailureReason(err),
+				Value: CSRFFailureReason(err),
 			})
 			return fiber.ErrForbidden
 		},
-	}
-}
-
-func testCSRFFailureReason(err error) string {
-	switch {
-	case errors.Is(err, csrf.ErrTokenInvalid):
-		return "invalid token"
-	case errors.Is(err, csrf.ErrTokenNotFound):
-		return "missing token"
-	case errors.Is(err, csrf.ErrNoReferer), errors.Is(err, csrf.ErrBadReferer):
-		return "invalid referer"
-	default:
-		return "csrf rejected"
 	}
 }

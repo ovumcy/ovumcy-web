@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type bodyStringMatch struct {
@@ -19,7 +19,7 @@ type bodyStringMatch struct {
 func mustAppResponse(t *testing.T, app *fiber.App, request *http.Request) *http.Response {
 	t.Helper()
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}

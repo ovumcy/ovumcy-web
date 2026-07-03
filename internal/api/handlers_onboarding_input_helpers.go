@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 const onboardingTimezoneFieldName = "client_timezone"
 
-func onboardingFormTimezoneValue(c *fiber.Ctx) string {
+func onboardingFormTimezoneValue(c fiber.Ctx) string {
 	raw := strings.TrimSpace(string(c.Request().PostArgs().Peek(onboardingTimezoneFieldName)))
 	if raw != "" {
 		return raw
@@ -26,7 +26,7 @@ func onboardingFormTimezoneValue(c *fiber.Ctx) string {
 	return strings.TrimSpace(values.Get(onboardingTimezoneFieldName))
 }
 
-func (handler *Handler) requestLocationFromOnboardingForm(c *fiber.Ctx) *time.Location {
+func (handler *Handler) requestLocationFromOnboardingForm(c fiber.Ctx) *time.Location {
 	if location, canonical, ok := parseRequestTimezone(c.Get(timezoneHeaderName)); ok {
 		if strings.TrimSpace(c.Cookies(timezoneCookieName)) != canonical {
 			handler.setTimezoneCookie(c, canonical)
@@ -47,9 +47,9 @@ func (handler *Handler) requestLocationFromOnboardingForm(c *fiber.Ctx) *time.Lo
 	return handler.requestLocation(c)
 }
 
-func (handler *Handler) parseOnboardingStep1Values(c *fiber.Ctx, today time.Time, location *time.Location) (onboardingStep1Values, string) {
+func (handler *Handler) parseOnboardingStep1Values(c fiber.Ctx, today time.Time, location *time.Location) (onboardingStep1Values, string) {
 	input := onboardingStep1Input{}
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return onboardingStep1Values{}, "invalid input"
 	}
 	parsedDay, err := handler.onboardingSvc.ValidateAndParseStep1StartDate(input.LastPeriodStart, today, location)
@@ -71,11 +71,11 @@ func (handler *Handler) parseOnboardingStep1Values(c *fiber.Ctx, today time.Time
 	}, ""
 }
 
-func (handler *Handler) parseOnboardingStep2Input(c *fiber.Ctx) (onboardingStep2Input, string) {
+func (handler *Handler) parseOnboardingStep2Input(c fiber.Ctx) (onboardingStep2Input, string) {
 	input := onboardingStep2Input{}
 
 	if hasJSONBody(c) {
-		if err := c.BodyParser(&input); err != nil {
+		if err := c.Bind().Body(&input); err != nil {
 			return onboardingStep2Input{}, "invalid input"
 		}
 	} else {

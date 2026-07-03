@@ -35,7 +35,7 @@ func TestVerifyTOTP2FAEnrollment_MissingPassword_DoesNotEnable(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie), setupCookie))
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestVerifyTOTP2FAEnrollment_WrongPassword_DoesNotEnable(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie), setupCookie))
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}

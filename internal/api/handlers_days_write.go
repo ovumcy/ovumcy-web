@@ -3,7 +3,7 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -21,7 +21,7 @@ var (
 	cycleStartMarkMutation = healthMutationKind{action: "health.cycle_start_mark", target: "cycle_start"}
 )
 
-func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
+func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 	request, spec, ok := handler.resolveUpsertDayRequest(c)
 	if !ok {
 		handler.logMutationError(c, dayUpsertMutation, spec)
@@ -29,7 +29,7 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 	}
 
 	entry, err := handler.dayService.UpsertDayEntryWithAutoFill(
-		c.UserContext(),
+		c.Context(),
 		request.user.ID,
 		request.day,
 		buildUpsertDayEntryInput(request.payload, request.cleanSymptomIDs, request.user, !hasJSONBody(c)),
@@ -45,7 +45,7 @@ func (handler *Handler) UpsertDay(c *fiber.Ctx) error {
 	return handler.respondUpsertDaySuccess(c, entry, feedback, feedbackErr)
 }
 
-func (handler *Handler) resolveUpsertDayRequest(c *fiber.Ctx) (upsertDayRequest, APIErrorSpec, bool) {
+func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, APIErrorSpec, bool) {
 	user, ok := currentUser(c)
 	if !ok {
 		return upsertDayRequest{}, unauthorizedErrorSpec(), false
@@ -62,7 +62,7 @@ func (handler *Handler) resolveUpsertDayRequest(c *fiber.Ctx) (upsertDayRequest,
 		return upsertDayRequest{}, invalidPayloadErrorSpec(), false
 	}
 
-	cleanIDs, err := handler.symptomService.ValidateSymptomIDs(c.UserContext(), user.ID, payload.SymptomIDs)
+	cleanIDs, err := handler.symptomService.ValidateSymptomIDs(c.Context(), user.ID, payload.SymptomIDs)
 	if err != nil {
 		return upsertDayRequest{}, invalidSymptomIDsErrorSpec(), false
 	}
@@ -102,16 +102,16 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *
 	}
 }
 
-func (handler *Handler) applyUpsertDayAcknowledgements(c *fiber.Ctx, request upsertDayRequest) (services.DayFeedbackState, error) {
+func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upsertDayRequest) (services.DayFeedbackState, error) {
 	if !request.user.ShownPeriodTip && request.payload.IsPeriod && services.ParseBoolLike(c.FormValue("ack_period_tip")) {
-		if err := handler.dayService.AcknowledgePeriodTip(c.UserContext(), request.user.ID); err == nil { // codecov:ignore -- best-effort period-tip ack; error intentionally swallowed, happy path in e2e
+		if err := handler.dayService.AcknowledgePeriodTip(c.Context(), request.user.ID); err == nil { // codecov:ignore -- best-effort period-tip ack; error intentionally swallowed, happy path in e2e
 			request.user.ShownPeriodTip = true
 		}
 	}
 
-	feedback, feedbackErr := handler.dayService.ResolveDayFeedback(c.UserContext(), request.user, request.day, time.Now().In(request.location), request.location)
+	feedback, feedbackErr := handler.dayService.ResolveDayFeedback(c.Context(), request.user, request.day, time.Now().In(request.location), request.location)
 	if feedbackErr == nil && feedback.ShowLongPeriodWarning && !feedback.LongPeriodCycleStart.IsZero() {
-		if err := handler.dayService.AcknowledgeLongPeriodWarning(c.UserContext(), request.user.ID, feedback.LongPeriodCycleStart, request.location); err == nil { // codecov:ignore -- best-effort long-period-warning ack; error intentionally swallowed
+		if err := handler.dayService.AcknowledgeLongPeriodWarning(c.Context(), request.user.ID, feedback.LongPeriodCycleStart, request.location); err == nil { // codecov:ignore -- best-effort long-period-warning ack; error intentionally swallowed
 			warnedAt := feedback.LongPeriodCycleStart
 			request.user.LongPeriodWarnedAt = &warnedAt
 		}
@@ -119,7 +119,7 @@ func (handler *Handler) applyUpsertDayAcknowledgements(c *fiber.Ctx, request ups
 	return feedback, feedbackErr
 }
 
-func (handler *Handler) respondUpsertDaySuccess(c *fiber.Ctx, entry models.DailyLog, feedback services.DayFeedbackState, feedbackErr error) error {
+func (handler *Handler) respondUpsertDaySuccess(c fiber.Ctx, entry models.DailyLog, feedback services.DayFeedbackState, feedbackErr error) error {
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")
 		if feedbackErr == nil {
@@ -135,7 +135,7 @@ func (handler *Handler) respondUpsertDaySuccess(c *fiber.Ctx, entry models.Daily
 	return c.JSON(newDayResponse(entry))
 }
 
-func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
+func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, cycleStartMarkMutation, unauthorizedErrorSpec())
@@ -147,10 +147,10 @@ func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 		return handler.failMutation(c, cycleStartMarkMutation, invalidDateErrorSpec())
 	}
 
-	cycleStartPolicy, _ := handler.dayService.ResolveManualCycleStartPolicy(c.UserContext(), user, day, time.Now().In(location), location)
+	cycleStartPolicy, _ := handler.dayService.ResolveManualCycleStartPolicy(c.Context(), user, day, time.Now().In(location), location)
 
 	if err := handler.dayService.MarkCycleStartManually(
-		c.UserContext(),
+		c.Context(),
 		user.ID,
 		day,
 		time.Now().In(location),
@@ -163,7 +163,7 @@ func (handler *Handler) MarkCycleStart(c *fiber.Ctx) error {
 		return handler.failMutation(c, cycleStartMarkMutation, mapDayUpsertError(err))
 	}
 	if !user.ShownPeriodTip && services.ParseBoolLike(c.FormValue("ack_period_tip")) {
-		if err := handler.dayService.AcknowledgePeriodTip(c.UserContext(), user.ID); err == nil { // codecov:ignore -- best-effort period-tip ack; error intentionally swallowed, happy path in e2e
+		if err := handler.dayService.AcknowledgePeriodTip(c.Context(), user.ID); err == nil { // codecov:ignore -- best-effort period-tip ack; error intentionally swallowed, happy path in e2e
 			user.ShownPeriodTip = true
 		}
 	}

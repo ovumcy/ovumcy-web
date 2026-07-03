@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestRecoveryCodePageRedirectsToDashboardWhenCookieMissing(t *testing.T) {
@@ -18,7 +18,7 @@ func TestRecoveryCodePageRedirectsToDashboardWhenCookieMissing(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("recovery-code request failed: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestRecoveryCodePageRejectsCookieFromDifferentUser(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
 	request.Header.Set("Cookie", authCookieUserB+"; "+recoveryCodeCookieName+"="+recoveryCookieUserA)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("recovery-code request failed: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRecoveryCodePageRejectsTamperedRecoveryCookie(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
 	request.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+tampered)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("recovery-code request with tampered cookie failed: %v", err)
 	}
@@ -132,7 +132,7 @@ func registerAndExtractRecoveryCookies(t *testing.T, app *fiber.App, email strin
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	registerResponse, err := app.Test(request, -1)
+	registerResponse, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func registerAndExtractRecoveryCookies(t *testing.T, app *fiber.App, email strin
 
 	pickupRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
 	pickupRequest.Header.Set("Cookie", registerPickupCookieName+"="+pickup)
-	pickupResponse, err := app.Test(pickupRequest, -1)
+	pickupResponse, err := app.Test(pickupRequest)
 	if err != nil {
 		t.Fatalf("register/welcome request failed: %v", err)
 	}

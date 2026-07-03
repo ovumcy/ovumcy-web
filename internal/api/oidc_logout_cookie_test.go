@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
@@ -20,13 +20,13 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 
 	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setOIDCLogoutBridgeCookie(c, "session-id-abc", now); err != nil {
 			t.Fatalf("set oidc logout bridge cookie: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get("/open", func(c *fiber.Ctx) error {
+	app.Get("/open", func(c fiber.Ctx) error {
 		payload := handler.readOIDCLogoutBridgeCookie(c, now)
 		if payload.SessionID != "session-id-abc" {
 			t.Fatalf("expected session id to round-trip, got %q", payload.SessionID)
@@ -38,7 +38,7 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", oidcLogoutBridgeCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -68,13 +68,13 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setOIDCLogoutBridgeCookie(c, "session-id-tamper", now); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get("/open", func(c *fiber.Ctx) error {
+	app.Get("/open", func(c fiber.Ctx) error {
 		payload := handler.readOIDCLogoutBridgeCookie(c, now)
 		if payload.SessionID != "" || payload.ExpiresAtUnix != 0 {
 			t.Fatalf("expected tampered logout bridge cookie to yield empty payload, got %+v", payload)
@@ -82,7 +82,7 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", oidcLogoutBridgeCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
@@ -117,14 +117,14 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 	now := time.Date(2026, 5, 13, 12, 0, 0, 0, time.UTC)
 
 	sealingApp := fiber.New()
-	sealingApp.Get("/seal", func(c *fiber.Ctx) error {
+	sealingApp.Get("/seal", func(c fiber.Ctx) error {
 		if err := sealingHandler.setOIDCLogoutBridgeCookie(c, "session-id-foreign", now); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	openingApp := fiber.New()
-	openingApp.Get("/open", func(c *fiber.Ctx) error {
+	openingApp.Get("/open", func(c fiber.Ctx) error {
 		payload := openingHandler.readOIDCLogoutBridgeCookie(c, now)
 		if payload.SessionID != "" || payload.ExpiresAtUnix != 0 {
 			t.Fatalf("expected rotated-key handler to reject sealed cookie, got %+v", payload)
@@ -132,7 +132,7 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", oidcLogoutBridgeCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest, -1)
+	openResponse, err := openingApp.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}

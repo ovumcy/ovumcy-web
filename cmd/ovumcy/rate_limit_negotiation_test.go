@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/db"
@@ -86,7 +86,7 @@ func TestAuthRateLimitHandlerTreatsJSONContentTypeAsJSONRequest(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(`{"email":"rate-limit@example.com"}`))
 	request.Header.Set("Content-Type", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("auth rate-limit request failed: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestAuthRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader("email=rate-limit%40example.com"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("auth rate-limit redirect request failed: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestOIDCRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 	}))
 
 	request := httptest.NewRequest(http.MethodGet, "/auth/oidc/start?error=access_denied", nil)
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("oidc rate-limit redirect request failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestSettingsAPIRateLimitHandlerRedirectsToSettings(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader("display_name=Owner"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("settings rate-limit request failed: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestAPIRateLimitHandlerReturnsStatusErrorMarkupForHTMX(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("api rate-limit htmx request failed: %v", err)
 	}
@@ -245,14 +245,14 @@ func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 			ErrorCode: "too_many_login_attempts",
 		}),
 	}))
-	app.Post("/api/v1/sessions", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/sessions", func(c fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
 	// Burn the single allowed request.
 	first := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
 	first.Header.Set("Content-Type", "application/json")
-	firstResponse, err := app.Test(first, -1)
+	firstResponse, err := app.Test(first)
 	if err != nil {
 		t.Fatalf("first request failed: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 	// Second request must trip the limiter.
 	second := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", nil)
 	second.Header.Set("Content-Type", "application/json")
-	secondResponse, err := app.Test(second, -1)
+	secondResponse, err := app.Test(second)
 	if err != nil {
 		t.Fatalf("second request failed: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestAPIRateLimitHandlerReturnsJSONForGenericBrowserRequests(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-17", strings.NewReader("notes=test"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("generic api rate-limit request failed: %v", err)
 	}

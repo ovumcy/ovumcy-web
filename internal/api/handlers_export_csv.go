@@ -5,17 +5,17 @@ import (
 	"encoding/csv"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) ExportCSV(c *fiber.Ctx) error {
+func (handler *Handler) ExportCSV(c fiber.Ctx) error {
 	user, from, to, spec := handler.exportUserAndRange(c)
 	if spec != nil {
 		return handler.respondMappedError(c, *spec)
 	}
 	location := handler.requestLocation(c)
-	rows, err := handler.exportService.BuildCSVRows(c.UserContext(), user.ID, from, to, location)
+	rows, err := handler.exportService.BuildCSVRows(c.Context(), user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "csv"))

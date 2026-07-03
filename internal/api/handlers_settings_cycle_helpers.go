@@ -6,16 +6,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) parseCycleSettingsInput(c *fiber.Ctx) (services.CycleSettingsUpdate, string) {
+func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx) (services.CycleSettingsUpdate, string) {
 	input := cycleSettingsInput{}
 	location := handler.requestLocation(c)
 
 	if hasJSONBody(c) {
-		if err := c.BodyParser(&input); err != nil {
+		if err := c.Bind().Body(&input); err != nil {
 			return services.CycleSettingsUpdate{}, "invalid settings input"
 		}
 		input.LastPeriodStart = strings.TrimSpace(input.LastPeriodStart)

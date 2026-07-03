@@ -3,18 +3,18 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) buildSettingsViewData(c *fiber.Ctx, user *models.User, flash FlashPayload) (fiber.Map, error) {
+func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, flash FlashPayload) (fiber.Map, error) {
 	messages := currentMessages(c)
 	language := currentLanguage(c)
 	location := handler.requestLocation(c)
 
 	viewData, err := handler.settingsViewService.BuildSettingsPageViewData(
-		c.UserContext(),
+		c.Context(),
 		user,
 		language,
 		services.SettingsViewInput{

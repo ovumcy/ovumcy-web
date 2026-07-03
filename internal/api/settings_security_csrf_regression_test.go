@@ -87,7 +87,7 @@ func settingsRequestWithoutCSRF(t *testing.T, ctx settingsSecurityTestContext, m
 		request.Header.Set(key, value)
 	}
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("settings request without csrf %s %s failed: %v", method, path, err)
 	}

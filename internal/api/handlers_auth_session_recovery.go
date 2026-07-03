@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
+func (handler *Handler) ForgotPassword(c fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
 		spec := authLocalRecoveryDisabledErrorSpec()
 		handler.logSecurityError(c, "auth.recovery_start", spec)
@@ -17,7 +17,7 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 			return handler.respondMappedError(c, spec)
 		}
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	now := time.Now().In(handler.location)
 	input, parseError := parseForgotPasswordInput(c)
@@ -41,7 +41,7 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 	}
 
 	token, err := handler.passwordResetSvc.StartRecovery(
-		c.UserContext(),
+		c.Context(),
 		handler.secretKey,
 		c.IP(),
 		input.Email,
@@ -70,7 +70,7 @@ func (handler *Handler) ForgotPassword(c *fiber.Ctx) error {
 	return redirectToPath(c, "/reset-password")
 }
 
-func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
+func (handler *Handler) ResetPassword(c fiber.Ctx) error {
 	input, parseError := parseResetPasswordInput(c)
 	if parseError != "" {
 		spec := authValidationErrorSpec(parseError)
@@ -86,7 +86,7 @@ func (handler *Handler) ResetPassword(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	user, recoveryCode, err := handler.passwordResetSvc.CompleteReset(
-		c.UserContext(),
+		c.Context(),
 		handler.secretKey,
 		token,
 		input.Password,

@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestBuildRegisterPageDataUsesOnlyFlashSources(t *testing.T) {
@@ -18,7 +18,7 @@ func TestBuildRegisterPageDataUsesOnlyFlashSources(t *testing.T) {
 		AuthError: "email already exists",
 	}
 
-	payload := evaluateAuthPageBuilder(t, query, func(c *fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
 		return c.JSON(buildRegisterPageData(map[string]string{}, flash, true, true))
 	})
 
@@ -44,7 +44,7 @@ func TestBuildRegisterPageDataIgnoresRegisterQueryFallback(t *testing.T) {
 		"email": {"query@example.com"},
 	}
 
-	payload := evaluateAuthPageBuilder(t, query, func(c *fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
 		return c.JSON(buildRegisterPageData(map[string]string{}, FlashPayload{}, false, true))
 	})
 
@@ -62,7 +62,7 @@ func TestBuildRegisterPageDataIgnoresRegisterQueryFallback(t *testing.T) {
 func TestBuildRegisterPageDataDefaultsToRegistrationDisabledWhenClosed(t *testing.T) {
 	t.Parallel()
 
-	payload := evaluateAuthPageBuilder(t, url.Values{}, func(c *fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, url.Values{}, func(c fiber.Ctx) error {
 		return c.JSON(buildRegisterPageData(map[string]string{}, FlashPayload{}, false, false))
 	})
 

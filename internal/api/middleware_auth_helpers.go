@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) {
+func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 	rawToken := strings.TrimSpace(c.Cookies(authCookieName))
 	if rawToken == "" {
 		return nil, errors.New("missing auth cookie")
@@ -29,7 +29,7 @@ func (handler *Handler) authenticateRequest(c *fiber.Ctx) (*models.User, error) 
 		return nil, errors.New("invalid token")
 	}
 
-	user, claims, err := handler.authService.ResolveAuthSession(c.UserContext(), handler.secretKey, tokenValue, time.Now())
+	user, claims, err := handler.authService.ResolveAuthSession(c.Context(), handler.secretKey, tokenValue, time.Now())
 	if err != nil {
 		if errors.Is(err, services.ErrAuthUnsupportedRole) {
 			handler.clearAuthRelatedCookies(c)

@@ -23,7 +23,7 @@ func TestProfileUpdatePersistsDisplayNameAndShowsItInNavigation(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestProfileUpdatePersistsDisplayNameAndShowsItInNavigation(t *testing.T) {
 	settingsRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	settingsRequest.Header.Set("Accept-Language", "en")
 	settingsRequest.Header.Set("Cookie", authCookie+"; "+flashCookieName+"="+flashValue)
-	settingsResponse, err := app.Test(settingsRequest, -1)
+	settingsResponse, err := app.Test(settingsRequest)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestProfileUpdatePersistsDisplayNameAndShowsItInNavigation(t *testing.T) {
 	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	dashboardRequest.Header.Set("Accept-Language", "en")
 	dashboardRequest.Header.Set("Cookie", authCookie)
-	dashboardResponse, err := app.Test(dashboardRequest, -1)
+	dashboardResponse, err := app.Test(dashboardRequest)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestProfileUpdateRejectsMarkupLikeDisplayName(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestProfileUpdateRejectsMarkupLikeDisplayName(t *testing.T) {
 	settingsRequest := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	settingsRequest.Header.Set("Accept-Language", "en")
 	settingsRequest.Header.Set("Cookie", authCookie+"; "+flashCookieName+"="+flashValue)
-	settingsResponse, err := app.Test(settingsRequest, -1)
+	settingsResponse, err := app.Test(settingsRequest)
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}

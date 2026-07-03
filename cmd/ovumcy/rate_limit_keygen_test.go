@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 )
 
 func TestTrustedProxyMatcher(t *testing.T) {
@@ -137,7 +137,7 @@ func TestRateLimitKeyGeneratorBucketing(t *testing.T) {
 				Expiration:   time.Minute,
 				KeyGenerator: rateLimitKeyGenerator(tc.proxy),
 			}))
-			app.Get("/probe", func(c *fiber.Ctx) error {
+			app.Get("/probe", func(c fiber.Ctx) error {
 				return c.SendStatus(fiber.StatusNoContent)
 			})
 
@@ -145,7 +145,7 @@ func TestRateLimitKeyGeneratorBucketing(t *testing.T) {
 			for i, value := range tc.values {
 				req := httptest.NewRequest(http.MethodGet, "/probe", nil)
 				req.Header.Set(tc.headerName, value)
-				resp, err := app.Test(req, -1)
+				resp, err := app.Test(req)
 				if err != nil {
 					t.Fatalf("request %d failed: %v", i, err)
 				}

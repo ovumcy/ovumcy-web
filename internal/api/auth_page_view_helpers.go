@@ -3,7 +3,7 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -45,7 +45,7 @@ func buildForgotPasswordPageData(messages map[string]string, flash FlashPayload)
 	}
 }
 
-func (handler *Handler) buildResetPasswordPageData(c *fiber.Ctx, messages map[string]string, flash FlashPayload) fiber.Map {
+func (handler *Handler) buildResetPasswordPageData(c fiber.Ctx, messages map[string]string, flash FlashPayload) fiber.Map {
 	token, forcedReset := handler.readResetPasswordCookie(c)
 	invalidToken := false
 	if token != "" {

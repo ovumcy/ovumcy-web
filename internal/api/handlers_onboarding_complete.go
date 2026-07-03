@@ -3,11 +3,11 @@ package api
 import (
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
+func (handler *Handler) OnboardingComplete(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -23,7 +23,7 @@ func (handler *Handler) OnboardingComplete(c *fiber.Ctx) error {
 			return handler.respondMappedError(c, onboardingFinishErrorSpec())
 		}
 	}
-	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.UserContext(), user.ID, handler.requestLocationFromOnboardingForm(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
+	_, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.requestLocationFromOnboardingForm(c)) // codecov:ignore -- onboarding completion covered by the e2e onboarding flow
 	if err != nil {
 		// codecov:ignore:start -- defensive: eligibility (incl. steps-required) is validated above
 		// against the request user before CompleteOnboardingForUser re-reads the row, so this

@@ -27,7 +27,7 @@ func TestRegisterRejectsWeakNumericPassword(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestRegisterRejectsPasswordMismatch(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register mismatch request failed: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestRegisterRejectsCaseInsensitiveDuplicateEmail(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register duplicate request failed: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestRegisterRejectsExactDuplicateEmail(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register exact duplicate request failed: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestRegisterRejectsExactDuplicateEmailHTMLFlow(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register exact duplicate html request failed: %v", err)
 	}

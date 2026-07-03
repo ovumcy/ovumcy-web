@@ -3,12 +3,12 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) CalendarDayPanel(c *fiber.Ctx) error {
+func (handler *Handler) CalendarDayPanel(c fiber.Ctx) error {
 	user, handled, err := currentUserOrUnauthorized(c)
 	if err != nil {
 		return err
@@ -26,10 +26,10 @@ func (handler *Handler) CalendarDayPanel(c *fiber.Ctx) error {
 	return handler.renderDayEditorPartial(c, user, day)
 }
 
-func (handler *Handler) renderDayEditorPartial(c *fiber.Ctx, user *models.User, day time.Time) error {
+func (handler *Handler) renderDayEditorPartial(c fiber.Ctx, user *models.User, day time.Time) error {
 	language, messages, now := handler.currentPageViewContext(c)
 	location := handler.requestLocation(c)
-	payload, err := handler.buildDayEditorPartialData(c.UserContext(), user, language, messages, day, now, location, c.Query("mode") == "edit")
+	payload, err := handler.buildDayEditorPartialData(c.Context(), user, language, messages, day, now, location, c.Query("mode") == "edit")
 	if err != nil {
 		return handler.respondMappedError(c, mapDayEditorViewError(err))
 	}

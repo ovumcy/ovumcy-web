@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 const totpPendingCookieTTL = 5 * time.Minute
@@ -29,7 +29,7 @@ var (
 	totpSetupCookieSpec   = sealedCookieSpec{name: totpSetupCookieName, path: "/"}
 )
 
-func (handler *Handler) setTOTPPendingCookie(c *fiber.Ctx, userID uint, rememberMe bool) error {
+func (handler *Handler) setTOTPPendingCookie(c fiber.Ctx, userID uint, rememberMe bool) error {
 	payload := totpPendingCookiePayload{
 		UserID:     userID,
 		RememberMe: rememberMe,
@@ -46,7 +46,7 @@ func (handler *Handler) setTOTPPendingCookie(c *fiber.Ctx, userID uint, remember
 
 // parseTOTPPendingCookie decodes and validates the TOTP pending cookie.
 // Returns the userID, rememberMe flag, and any error (including expiry).
-func (handler *Handler) parseTOTPPendingCookie(c *fiber.Ctx) (uint, bool, error) {
+func (handler *Handler) parseTOTPPendingCookie(c fiber.Ctx) (uint, bool, error) {
 	raw := strings.TrimSpace(c.Cookies(totpPendingCookieName))
 	if raw == "" {
 		return 0, false, errors.New("totp pending cookie missing")
@@ -76,13 +76,13 @@ func (handler *Handler) parseTOTPPendingCookie(c *fiber.Ctx) (uint, bool, error)
 }
 
 // clearTOTPPendingCookie removes the TOTP pending cookie.
-func (handler *Handler) clearTOTPPendingCookie(c *fiber.Ctx) {
+func (handler *Handler) clearTOTPPendingCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, totpPendingCookieSpec)
 }
 
 // setTOTPSetupCookie writes a short-lived sealed cookie that carries the raw
 // TOTP secret during the enrollment flow (before the user has confirmed their code).
-func (handler *Handler) setTOTPSetupCookie(c *fiber.Ctx, rawSecret string) error {
+func (handler *Handler) setTOTPSetupCookie(c fiber.Ctx, rawSecret string) error {
 	payload := totpSetupCookiePayload{
 		RawSecret: rawSecret,
 		ExpiresAt: time.Now().Add(totpPendingCookieTTL),
@@ -98,7 +98,7 @@ func (handler *Handler) setTOTPSetupCookie(c *fiber.Ctx, rawSecret string) error
 
 // parseTOTPSetupCookie decodes and validates the TOTP setup cookie.
 // Returns the raw TOTP secret and any error (including expiry).
-func (handler *Handler) parseTOTPSetupCookie(c *fiber.Ctx) (string, error) {
+func (handler *Handler) parseTOTPSetupCookie(c fiber.Ctx) (string, error) {
 	raw := strings.TrimSpace(c.Cookies(totpSetupCookieName))
 	if raw == "" {
 		return "", errors.New("totp setup cookie missing")
@@ -128,6 +128,6 @@ func (handler *Handler) parseTOTPSetupCookie(c *fiber.Ctx) (string, error) {
 }
 
 // clearTOTPSetupCookie removes the TOTP setup cookie.
-func (handler *Handler) clearTOTPSetupCookie(c *fiber.Ctx) {
+func (handler *Handler) clearTOTPSetupCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, totpSetupCookieSpec)
 }

@@ -1,6 +1,6 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
 type APIErrorCategory string
 
@@ -57,11 +57,11 @@ func settingsFormErrorSpec(status int, category APIErrorCategory, key string) AP
 	}
 }
 
-func respondGlobalMappedError(c *fiber.Ctx, spec APIErrorSpec) error {
+func respondGlobalMappedError(c fiber.Ctx, spec APIErrorSpec) error {
 	return apiError(c, spec)
 }
 
-func (handler *Handler) respondMappedError(c *fiber.Ctx, spec APIErrorSpec) error {
+func (handler *Handler) respondMappedError(c fiber.Ctx, spec APIErrorSpec) error {
 	switch spec.Target {
 	case APIErrorTargetAuthForm:
 		return handler.respondAuthError(c, spec)

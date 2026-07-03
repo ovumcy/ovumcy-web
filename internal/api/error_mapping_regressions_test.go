@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -98,7 +98,7 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Accept", "application/json")
 
-		response, err := app.Test(request, -1)
+		response, err := app.Test(request)
 		if err != nil {
 			t.Fatalf("app.Test: %v", err)
 		}
@@ -133,7 +133,7 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/probe", strings.NewReader("{}"))
 		request.Header.Set("HX-Request", "true")
 
-		response, err := app.Test(request, -1)
+		response, err := app.Test(request)
 		if err != nil {
 			t.Fatalf("app.Test: %v", err)
 		}
@@ -377,14 +377,14 @@ func TestRetryAfterSecondsParsesHeader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			app := fiber.New()
 			var observed int
-			app.Get("/probe", func(c *fiber.Ctx) error {
+			app.Get("/probe", func(c fiber.Ctx) error {
 				if tt.header != "" {
 					c.Response().Header.Set(fiber.HeaderRetryAfter, tt.header)
 				}
 				observed = retryAfterSeconds(c)
 				return c.SendStatus(fiber.StatusNoContent)
 			})
-			_, _ = app.Test(httptest.NewRequest(http.MethodGet, "/probe", nil), -1)
+			_, _ = app.Test(httptest.NewRequest(http.MethodGet, "/probe", nil))
 			if observed != tt.want {
 				t.Fatalf("retryAfterSeconds(%q) = %d, want %d", tt.header, observed, tt.want)
 			}
@@ -418,7 +418,7 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := &Handler{}
 			app := fiber.New()
-			app.Get(tt.path, func(c *fiber.Ctx) error {
+			app.Get(tt.path, func(c fiber.Ctx) error {
 				if tt.wantRetryAfter > 0 {
 					c.Response().Header.Set(fiber.HeaderRetryAfter, strconv.Itoa(tt.wantRetryAfter))
 				}
@@ -429,7 +429,7 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 			if tt.accept != "" {
 				request.Header.Set("Accept", tt.accept)
 			}
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("app.Test: %v", err)
 			}
@@ -473,12 +473,12 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 func TestRespondAPIRateLimitedWithoutJSONAcceptFallsBackToMappedError(t *testing.T) {
 	handler := &Handler{}
 	app := fiber.New()
-	app.Get("/api/v1/days", func(c *fiber.Ctx) error {
+	app.Get("/api/v1/days", func(c fiber.Ctx) error {
 		return handler.RespondAPIRateLimited(c)
 	})
 
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/days", nil)
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
@@ -505,13 +505,13 @@ func TestRespondAuthRateLimitedFallsBackThroughAuthFlash(t *testing.T) {
 		cookieSecure: true,
 	}
 	app := fiber.New()
-	app.Post("/api/v1/sessions", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/sessions", func(c fiber.Ctx) error {
 		return handler.RespondAuthRateLimited(c, "too many login attempts")
 	})
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader("email=test"))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
@@ -108,7 +108,7 @@ func loadSettingsCSRFContext(t *testing.T, app *fiber.App, authCookie string) (*
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("settings request for csrf context failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func settingsFormRequestWithCSRF(t *testing.T, ctx settingsSecurityTestContext, 
 		request.Header.Set(key, value)
 	}
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("settings request %s %s failed: %v", method, path, err)
 	}

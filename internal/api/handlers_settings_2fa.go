@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -18,10 +18,10 @@ const totpIssuer = "Ovumcy"
 // If TOTP is already enabled it shows the management view (status + disable button).
 // If not enabled it generates a new key, stores the raw secret in a short-lived
 // sealed cookie, and renders the QR code + manual secret.
-func (handler *Handler) ShowTOTPSetupPage(c *fiber.Ctx) error {
+func (handler *Handler) ShowTOTPSetupPage(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	messages := currentMessages(c)
@@ -69,7 +69,7 @@ func (handler *Handler) ShowTOTPSetupPage(c *fiber.Ctx) error {
 // VerifyTOTP2FAEnrollment confirms TOTP enrollment by validating the user-supplied
 // code against the secret held in the setup cookie, then persists the encrypted
 // secret and marks TOTP as enabled.
-func (handler *Handler) VerifyTOTP2FAEnrollment(c *fiber.Ctx) error {
+func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -95,7 +95,7 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, totpInvalidCodeErrorSpec())
 	}
 
-	if err := handler.totpService.EnableTOTP(c.UserContext(), user.ID, rawSecret); err != nil {
+	if err := handler.totpService.EnableTOTP(c.Context(), user.ID, rawSecret); err != nil {
 		handler.logSecurityError(c, "settings.2fa.verify", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}
@@ -120,11 +120,11 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c *fiber.Ctx) error {
 		)
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "settings.2fa.enabled_status"})
-	return c.Redirect("/settings/2fa", fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/2fa")
 }
 
 // DisableTOTP2FA disables TOTP for the current user after verifying their password.
-func (handler *Handler) DisableTOTP2FA(c *fiber.Ctx) error {
+func (handler *Handler) DisableTOTP2FA(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -141,7 +141,7 @@ func (handler *Handler) DisableTOTP2FA(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if _, err := handler.authService.AuthenticateCredentials(c.UserContext(), user.Email, password); err != nil {
+	if _, err := handler.authService.AuthenticateCredentials(c.Context(), user.Email, password); err != nil {
 		handler.totpService.RecordDisableFailure(handler.secretKey, c.IP(), user.ID, time.Now())
 		spec := authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
 		handler.logSecurityError(c, "settings.2fa.disable", spec)
@@ -150,7 +150,7 @@ func (handler *Handler) DisableTOTP2FA(c *fiber.Ctx) error {
 
 	handler.totpService.ResetDisableAttempts(handler.secretKey, c.IP(), user.ID)
 
-	if err := handler.totpService.DisableTOTP(c.UserContext(), user.ID); err != nil {
+	if err := handler.totpService.DisableTOTP(c.Context(), user.ID); err != nil {
 		handler.logSecurityError(c, "settings.2fa.disable", totpInternalErrorSpec())
 		return handler.respondMappedError(c, totpInternalErrorSpec())
 	}
@@ -174,5 +174,5 @@ func (handler *Handler) DisableTOTP2FA(c *fiber.Ctx) error {
 		)
 	}
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "settings.2fa.disabled_status"})
-	return c.Redirect("/settings/2fa", fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/settings/2fa")
 }

@@ -25,7 +25,7 @@ func TestRegisterClosedModeReturnsForbiddenJSONError(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestRegisterClosedModeRedirectDoesNotLeakEmailOrErrorInQuery(t *testing.T) 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestRegisterPageClosedModeRendersDisabledStateWithoutForm(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/register", nil)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register page request failed: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestLoginPageClosedModeHidesSignupCTA(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("login page request failed: %v", err)
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -40,7 +40,7 @@ type recoveryCodePagePayload struct {
 
 var recoveryCodeCookieSpec = sealedCookieSpec{name: recoveryCodeCookieName, path: "/"}
 
-func (handler *Handler) setRecoveryCodeIssuanceCookie(c *fiber.Ctx, userID uint, recoveryCode string, continuePath string, surface string) error {
+func (handler *Handler) setRecoveryCodeIssuanceCookie(c fiber.Ctx, userID uint, recoveryCode string, continuePath string, surface string) error {
 	code := strings.TrimSpace(recoveryCode)
 	if code == "" {
 		handler.clearRecoveryCodePageCookie(c)
@@ -105,7 +105,7 @@ func sanitizeRecoveryCodeSurface(surface string) string {
 	}
 }
 
-func (handler *Handler) readRecoveryCodeDisplayState(c *fiber.Ctx, userID uint, fallbackContinuePath string) recoveryCodeDisplayState {
+func (handler *Handler) readRecoveryCodeDisplayState(c fiber.Ctx, userID uint, fallbackContinuePath string) recoveryCodeDisplayState {
 	fallback := services.SanitizeRedirectPath(strings.TrimSpace(fallbackContinuePath), "/dashboard")
 	fallbackTarget := recoveryCodeContinueTargetFromPath(fallback)
 	state := recoveryCodeDisplayState{
@@ -161,6 +161,6 @@ func (handler *Handler) readRecoveryCodeDisplayState(c *fiber.Ctx, userID uint, 
 	return state
 }
 
-func (handler *Handler) clearRecoveryCodePageCookie(c *fiber.Ctx) {
+func (handler *Handler) clearRecoveryCodePageCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, recoveryCodeCookieSpec)
 }

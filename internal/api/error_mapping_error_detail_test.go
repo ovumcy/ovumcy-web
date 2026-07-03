@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // TestApiErrorJSONEmitsErrorDetailEnvelope enforces the Phase 2C contract:
@@ -19,7 +19,7 @@ func TestApiErrorJSONEmitsErrorDetailEnvelope(t *testing.T) {
 	t.Parallel()
 
 	app := fiber.New()
-	app.Get("/api/test/global-validation", func(c *fiber.Ctx) error {
+	app.Get("/api/test/global-validation", func(c fiber.Ctx) error {
 		return respondGlobalMappedError(c, globalErrorSpec(
 			fiber.StatusBadRequest,
 			APIErrorCategoryValidation,
@@ -30,7 +30,7 @@ func TestApiErrorJSONEmitsErrorDetailEnvelope(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/test/global-validation", nil)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("global validation request failed: %v", err)
 	}
@@ -115,14 +115,14 @@ func TestApiErrorJSONErrorDetailReflectsTarget(t *testing.T) {
 
 			app := fiber.New()
 			spec := tc.spec
-			app.Get("/api/test/case", func(c *fiber.Ctx) error {
+			app.Get("/api/test/case", func(c fiber.Ctx) error {
 				return apiError(c, spec)
 			})
 
 			request := httptest.NewRequest(http.MethodGet, "/api/test/case", nil)
 			request.Header.Set("Accept", "application/json")
 
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("request failed: %v", err)
 			}

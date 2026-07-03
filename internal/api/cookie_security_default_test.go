@@ -21,7 +21,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	loginRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(loginForm.Encode()))
 	loginRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	loginResponse, err := app.Test(loginRequest, -1)
+	loginResponse, err := app.Test(loginRequest)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	registerRequest := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(registerForm.Encode()))
 	registerRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	registerResponse, err := app.Test(registerRequest, -1)
+	registerResponse, err := app.Test(registerRequest)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 
 	pickupRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
 	pickupRequest.Header.Set("Cookie", registerPickupCookieName+"="+pickupCookie.Value)
-	pickupResponse, err := app.Test(pickupRequest, -1)
+	pickupResponse, err := app.Test(pickupRequest)
 	if err != nil {
 		t.Fatalf("pickup request failed: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	}
 	languageRequest := httptest.NewRequest(http.MethodPost, "/lang", strings.NewReader(languageForm.Encode()))
 	languageRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	languageResponse, err := app.Test(languageRequest, -1)
+	languageResponse, err := app.Test(languageRequest)
 	if err != nil {
 		t.Fatalf("language switch request failed: %v", err)
 	}

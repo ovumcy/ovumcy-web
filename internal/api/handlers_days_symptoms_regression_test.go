@@ -21,7 +21,7 @@ func TestCreateSymptomRejectsInvalidName(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("create symptom request failed: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestCreateSymptomRejectsInvalidColor(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("create symptom request failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestCreateSymptomRejectsDuplicateName(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("create duplicate symptom request failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestCreateSymptomRejectsLocalizedBuiltinName(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("create localized builtin symptom request failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestCreateSymptomRejectsMarkupLikeName(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("create markup symptom request failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestCreateSymptomRejectsTooLongName(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("create too-long symptom request failed: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestArchiveSymptomReturnsNotFoundWhenMissing(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("archive missing symptom request failed: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestArchiveSymptomRejectsBuiltinSymptom(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("archive builtin symptom request failed: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestArchiveSymptomRejectsOutOfRangeID(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("archive out-of-range symptom request failed: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestRestoreSymptomRejectsDuplicateActiveName(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("restore duplicate symptom request failed: %v", err)
 	}

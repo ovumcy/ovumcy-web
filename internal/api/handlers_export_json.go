@@ -4,16 +4,16 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
-func (handler *Handler) ExportJSON(c *fiber.Ctx) error {
+func (handler *Handler) ExportJSON(c fiber.Ctx) error {
 	user, from, to, spec := handler.exportUserAndRange(c)
 	if spec != nil {
 		return handler.respondMappedError(c, *spec)
 	}
 	location := handler.requestLocation(c)
-	entries, err := handler.exportService.BuildJSONEntries(c.UserContext(), user.ID, from, to, location)
+	entries, err := handler.exportService.BuildJSONEntries(c.Context(), user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "json"))

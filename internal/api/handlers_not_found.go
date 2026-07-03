@@ -3,10 +3,10 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
-func (handler *Handler) NotFound(c *fiber.Ctx) error {
+func (handler *Handler) NotFound(c fiber.Ctx) error {
 	if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) || isHTMX(c) {
 		return respondNotFoundMappedError(c)
 	}

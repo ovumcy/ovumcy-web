@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // Health reports process liveness only. It does NOT query the database or
@@ -12,11 +12,11 @@ import (
 // not that it is ready to serve traffic. This is a deliberate trade-off:
 // adding an unauthenticated DB ping would expose a recon/load surface. Wire
 // a separate readiness probe if you need DB-health visibility.
-func (handler *Handler) Health(c *fiber.Ctx) error {
+func (handler *Handler) Health(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
-func (handler *Handler) render(c *fiber.Ctx, name string, data fiber.Map) error {
+func (handler *Handler) render(c fiber.Ctx, name string, data fiber.Map) error {
 	tmpl, ok := handler.templates[name]
 	if !ok {
 		return respondGlobalMappedError(c, templateNotFoundErrorSpec())
@@ -30,7 +30,7 @@ func (handler *Handler) render(c *fiber.Ctx, name string, data fiber.Map) error 
 	return c.Send(output.Bytes())
 }
 
-func (handler *Handler) renderPartial(c *fiber.Ctx, name string, data fiber.Map) error {
+func (handler *Handler) renderPartial(c fiber.Ctx, name string, data fiber.Map) error {
 	output, err := handler.renderPartialString(c, name, data)
 	if err != nil {
 		return respondGlobalMappedError(c, partialRenderErrorSpec())
@@ -39,7 +39,7 @@ func (handler *Handler) renderPartial(c *fiber.Ctx, name string, data fiber.Map)
 	return c.SendString(output)
 }
 
-func (handler *Handler) renderPartialString(c *fiber.Ctx, name string, data fiber.Map) (string, error) {
+func (handler *Handler) renderPartialString(c fiber.Ctx, name string, data fiber.Map) (string, error) {
 	tmpl, ok := handler.partials[name]
 	if !ok {
 		return "", fmt.Errorf("partial template %q not found", name)

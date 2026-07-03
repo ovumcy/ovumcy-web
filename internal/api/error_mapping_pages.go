@@ -3,7 +3,7 @@ package api
 import (
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -54,7 +54,7 @@ func statsFetchErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to fetch stats")
 }
 
-func respondNotFoundMappedError(c *fiber.Ctx) error {
+func respondNotFoundMappedError(c fiber.Ctx) error {
 	spec := notFoundErrorSpec()
 	if isHTMX(c) {
 		message := translateMessage(currentMessages(c), "not_found.title")

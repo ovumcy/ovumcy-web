@@ -1,14 +1,14 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
-func (handler *Handler) ExportSummary(c *fiber.Ctx) error {
+func (handler *Handler) ExportSummary(c fiber.Ctx) error {
 	user, from, to, spec := handler.exportUserAndRange(c)
 	if spec != nil {
 		return handler.respondMappedError(c, *spec)
 	}
 	location := handler.requestLocation(c)
-	summary, err := handler.exportService.BuildSummary(c.UserContext(), user.ID, from, to, location)
+	summary, err := handler.exportService.BuildSummary(c.Context(), user.ID, from, to, location)
 	if err != nil {
 		spec := exportFetchLogsErrorSpec()
 		handler.logSecurityError(c, "data.export", spec, securityEventField("export_format", "summary"))

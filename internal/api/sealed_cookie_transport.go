@@ -3,7 +3,7 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // sealedCookieSpec describes the transport attributes of one sealed-cookie
@@ -35,7 +35,7 @@ func (spec sealedCookieSpec) sameSiteOrLax() string {
 // the canonical attribute set (HttpOnly, SameSite, Secure per deployment).
 // A zero expires writes a session-scoped cookie (payloads carry their own
 // TTL in that case).
-func (handler *Handler) writeSealedCookie(c *fiber.Ctx, spec sealedCookieSpec, plaintext []byte, expires time.Time) error {
+func (handler *Handler) writeSealedCookie(c fiber.Ctx, spec sealedCookieSpec, plaintext []byte, expires time.Time) error {
 	encoded, err := handler.sealCookieValue(spec.name, plaintext)
 	if err != nil {
 		return err
@@ -58,7 +58,7 @@ func (handler *Handler) writeSealedCookie(c *fiber.Ctx, spec sealedCookieSpec, p
 
 // clearSealedCookie expires the spec's cookie with attributes matching the
 // write path, so the browser reliably drops it.
-func (handler *Handler) clearSealedCookie(c *fiber.Ctx, spec sealedCookieSpec) {
+func (handler *Handler) clearSealedCookie(c fiber.Ctx, spec sealedCookieSpec) {
 	c.Cookie(&fiber.Cookie{
 		Name:     spec.name,
 		Value:    "",

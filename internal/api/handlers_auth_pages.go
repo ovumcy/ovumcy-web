@@ -1,11 +1,11 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
+func (handler *Handler) ShowLoginPage(c fiber.Ctx) error {
 	redirected, err := handler.redirectAuthenticatedUserIfPresent(c)
 	if err != nil {
 		return err
@@ -13,7 +13,7 @@ func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
 	if redirected {
 		return nil
 	}
-	needsSetup, err := handler.setupService.RequiresInitialSetup(c.UserContext())
+	needsSetup, err := handler.setupService.RequiresInitialSetup(c.Context())
 	if err != nil {
 		return handler.respondMappedError(c, setupStateLoadErrorSpec())
 	}
@@ -30,9 +30,9 @@ func (handler *Handler) ShowLoginPage(c *fiber.Ctx) error {
 	return handler.render(c, "login", data)
 }
 
-func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
+func (handler *Handler) ShowRegisterPage(c fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	if user := handler.optionalAuthenticatedUser(c); user != nil {
 		recoveryState := handler.readRecoveryCodeDisplayState(c, user.ID, services.PostLoginRedirectPath(user))
@@ -49,12 +49,12 @@ func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
 			data["ShowInlineRecoveryCode"] = true
 			return handler.render(c, "register", data)
 		}
-		if redirectErr := c.Redirect(services.PostLoginRedirectPath(user), fiber.StatusSeeOther); redirectErr != nil {
+		if redirectErr := c.Redirect().Status(fiber.StatusSeeOther).To(services.PostLoginRedirectPath(user)); redirectErr != nil {
 			return redirectErr
 		}
 		return nil
 	}
-	needsSetup, err := handler.setupService.RequiresInitialSetup(c.UserContext())
+	needsSetup, err := handler.setupService.RequiresInitialSetup(c.Context())
 	if err != nil {
 		return handler.respondMappedError(c, setupStateLoadErrorSpec())
 	}
@@ -64,20 +64,20 @@ func (handler *Handler) ShowRegisterPage(c *fiber.Ctx) error {
 	return handler.render(c, "register", data)
 }
 
-func (handler *Handler) ShowRecoveryCodePage(c *fiber.Ctx) error {
+func (handler *Handler) ShowRecoveryCodePage(c fiber.Ctx) error {
 	user, err := handler.authenticateRequest(c)
 	if err != nil {
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	c.Locals(contextUserKey, user)
 
 	fallbackContinuePath := services.PostLoginRedirectPath(user)
 	recoveryState := handler.readRecoveryCodeDisplayState(c, user.ID, fallbackContinuePath)
 	if recoveryState.RecoveryCode == "" {
-		return c.Redirect(fallbackContinuePath, fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To(fallbackContinuePath)
 	}
 	if recoveryState.Surface == recoveryCodeSurfaceInlineRegister {
-		return c.Redirect("/register", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
 	}
 	handler.clearRecoveryCodePageCookie(c)
 
@@ -90,16 +90,16 @@ func (handler *Handler) ShowRecoveryCodePage(c *fiber.Ctx) error {
 	})
 }
 
-func (handler *Handler) ShowForgotPasswordPage(c *fiber.Ctx) error {
+func (handler *Handler) ShowForgotPasswordPage(c fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	flash := handler.popFlashCookie(c)
 	data := buildForgotPasswordPageData(currentMessages(c), flash)
 	return handler.render(c, "forgot_password", data)
 }
 
-func (handler *Handler) ShowResetPasswordPage(c *fiber.Ctx) error {
+func (handler *Handler) ShowResetPasswordPage(c fiber.Ctx) error {
 	flash := handler.popFlashCookie(c)
 	data := handler.buildResetPasswordPageData(c, currentMessages(c), flash)
 	return handler.render(c, "reset_password", data)

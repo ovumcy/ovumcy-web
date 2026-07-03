@@ -26,7 +26,7 @@ func TestResetPasswordInvalidTokenJSONResponseDoesNotExposeSecrets(t *testing.T)
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("reset-password json request failed: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestResetPasswordInvalidTokenHTMLResponseDoesNotExposeSecrets(t *testing.T)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", resetPasswordCookieName+"="+resetCookieValue)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("reset-password html request failed: %v", err)
 	}

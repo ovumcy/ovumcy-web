@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type negotiationSnapshot struct {
@@ -21,7 +21,7 @@ func readNegotiationSnapshot(t *testing.T, headers map[string]string) negotiatio
 	t.Helper()
 
 	app := fiber.New()
-	app.Post("/", func(c *fiber.Ctx) error {
+	app.Post("/", func(c fiber.Ctx) error {
 		format := "html"
 		switch NegotiateResponseFormat(c, JSONModeAcceptOrContentType) {
 		case ResponseFormatHTMX:
@@ -44,7 +44,7 @@ func readNegotiationSnapshot(t *testing.T, headers map[string]string) negotiatio
 		request.Header.Set(key, value)
 	}
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("app test request failed: %v", err)
 	}

@@ -24,7 +24,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	futureRequest.Header.Set("HX-Request", "true")
 	futureRequest.Header.Set("Cookie", authCookie)
 
-	futureResponse, err := app.Test(futureRequest, -1)
+	futureResponse, err := app.Test(futureRequest)
 	if err != nil {
 		t.Fatalf("future date request failed: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	oldRequest.Header.Set("HX-Request", "true")
 	oldRequest.Header.Set("Cookie", authCookie)
 
-	oldResponse, err := app.Test(oldRequest, -1)
+	oldResponse, err := app.Test(oldRequest)
 	if err != nil {
 		t.Fatalf("old date request failed: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestOnboardingStep1IgnoresUnexpectedPeriodEndInput(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("step1 request failed: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestOnboardingStep1RejectsFarHistoricalDate(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("far historical date request failed: %v", err)
 	}

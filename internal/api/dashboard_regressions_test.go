@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -97,7 +97,7 @@ func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testi
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	dashboardRequest.Header.Set("Accept-Language", "en")
 	dashboardRequest.Header.Set("Cookie", authCookie)
-	dashboardResponse, err := app.Test(dashboardRequest, -1)
+	dashboardResponse, err := app.Test(dashboardRequest)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	statsRequest := httptest.NewRequest(http.MethodGet, "/stats", nil)
 	statsRequest.Header.Set("Accept-Language", "en")
 	statsRequest.Header.Set("Cookie", authCookie)
-	statsResponse, err := app.Test(statsRequest, -1)
+	statsResponse, err := app.Test(statsRequest)
 	if err != nil {
 		t.Fatalf("stats request failed: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	saveRequest.Header.Set("Accept-Language", "en")
 	saveRequest.Header.Set("Cookie", authCookie)
 
-	saveResponse, err := app.Test(saveRequest, -1)
+	saveResponse, err := app.Test(saveRequest)
 	if err != nil {
 		t.Fatalf("save request failed: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	dashboardRequest.Header.Set("Accept-Language", "en")
 	dashboardRequest.Header.Set("Cookie", authCookie)
 
-	dashboardResponse, err := app.Test(dashboardRequest, -1)
+	dashboardResponse, err := app.Test(dashboardRequest)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}

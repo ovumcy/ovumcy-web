@@ -22,7 +22,7 @@ func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *tes
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *tes
 
 	pickupRequest := httptest.NewRequest(http.MethodGet, "/register/welcome", nil)
 	pickupRequest.Header.Set("Cookie", registerPickupCookieName+"="+pickup)
-	pickupResponse, err := app.Test(pickupRequest, -1)
+	pickupResponse, err := app.Test(pickupRequest)
 	if err != nil {
 		t.Fatalf("pickup request failed: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *tes
 	recoveryRequest.Header.Set("Accept-Language", "en")
 	recoveryRequest.Header.Set("Cookie", authCookieName+"="+authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
 
-	recoveryResponse, err := app.Test(recoveryRequest, -1)
+	recoveryResponse, err := app.Test(recoveryRequest)
 	if err != nil {
 		t.Fatalf("recovery page request failed: %v", err)
 	}

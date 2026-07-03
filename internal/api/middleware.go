@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -30,12 +30,12 @@ const (
 	contextLocationKey           = "current_location"
 )
 
-func currentUser(c *fiber.Ctx) (*models.User, bool) {
+func currentUser(c fiber.Ctx) (*models.User, bool) {
 	user, ok := c.Locals(contextUserKey).(*models.User)
 	return user, ok
 }
 
-func currentAuthSession(c *fiber.Ctx) (*services.AuthSessionClaims, bool) {
+func currentAuthSession(c fiber.Ctx) (*services.AuthSessionClaims, bool) {
 	session, ok := c.Locals(contextAuthSessionKey).(*services.AuthSessionClaims)
 	return session, ok
 }

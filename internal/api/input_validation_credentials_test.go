@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestParseCredentialsValidation(t *testing.T) {
 	t.Parallel()
 
 	app := fiber.New()
-	app.Post("/credentials", func(c *fiber.Ctx) error {
+	app.Post("/credentials", func(c fiber.Ctx) error {
 		credentials, err := parseCredentials(c)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
@@ -33,7 +33,7 @@ func TestParseCredentialsValidation(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/credentials", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		resp, err := app.Test(req, -1)
+		resp, err := app.Test(req)
 		if err != nil {
 			t.Fatalf("request failed: %v", err)
 		}
@@ -63,7 +63,7 @@ func TestParseCredentialsValidation(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/credentials", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		resp, err := app.Test(req, -1)
+		resp, err := app.Test(req)
 		if err != nil {
 			t.Fatalf("request failed: %v", err)
 		}

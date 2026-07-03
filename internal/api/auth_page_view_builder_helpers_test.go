@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func evaluateAuthPageBuilder(t *testing.T, query url.Values, handler fiber.Handler) map[string]any {

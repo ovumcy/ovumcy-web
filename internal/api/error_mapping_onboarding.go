@@ -1,6 +1,6 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
 func onboardingValidationErrorSpec(key string) APIErrorSpec {
 	return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, key)

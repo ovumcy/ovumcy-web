@@ -39,7 +39,7 @@ func TestSettingsChangePasswordInvalidInputJSONStatus(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("change-password request failed: %v", err)
 	}

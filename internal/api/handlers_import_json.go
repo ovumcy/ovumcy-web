@@ -3,7 +3,7 @@ package api
 import (
 	"strconv"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -16,7 +16,7 @@ var dayImportMutation = healthMutationKind{action: "data.import", target: "day_e
 // outcome. Owner scoping, validation, and the additive (skip-existing) contract
 // all live in services.ImportService. CSRF is enforced by global middleware;
 // OwnerOnly is declared explicitly on the route.
-func (handler *Handler) ImportJSON(c *fiber.Ctx) error {
+func (handler *Handler) ImportJSON(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	// codecov:ignore:start -- defensive: AuthRequired middleware guarantees a session user on this route, so this guard is unreachable via routing
 	if !ok || user == nil {
@@ -25,7 +25,7 @@ func (handler *Handler) ImportJSON(c *fiber.Ctx) error {
 	// codecov:ignore:end
 
 	result, err := handler.importService.ImportJSON(
-		c.UserContext(),
+		c.Context(),
 		user.ID,
 		c.Body(),
 		handler.requestLocation(c),
@@ -47,7 +47,7 @@ func (handler *Handler) ImportJSON(c *fiber.Ctx) error {
 	return handler.respondImportSuccess(c, result)
 }
 
-func (handler *Handler) respondImportSuccess(c *fiber.Ctx, result services.ImportResult) error {
+func (handler *Handler) respondImportSuccess(c fiber.Ctx, result services.ImportResult) error {
 	if isHTMX(c) {
 		return c.SendString(htmxSettingsSuccessMarkup(c, "data_imported", "Restored your data."))
 	}

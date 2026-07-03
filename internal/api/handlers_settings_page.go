@@ -1,8 +1,8 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
-func (handler *Handler) ShowSettings(c *fiber.Ctx) error {
+func (handler *Handler) ShowSettings(c fiber.Ctx) error {
 	user, handled, err := handler.currentUserOrRedirectToLogin(c)
 	if err != nil {
 		return err

@@ -22,7 +22,7 @@ func TestRegisterValidationErrorRedirectDoesNotLeakEmailOrErrorInQuery(t *testin
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestRegisterSuccessIssuesPickupCookieAndRedirectsToWelcome(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register success request failed: %v", err)
 	}

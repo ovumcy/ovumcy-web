@@ -19,7 +19,7 @@ func TestLoginRedirectsToOnboardingWhenOnboardingIncomplete(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}

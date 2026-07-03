@@ -5,12 +5,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // SafeRequestLogPath returns a privacy-safe request path for logs.
 // It prefers the matched route template and falls back to a sanitized raw path.
-func SafeRequestLogPath(c *fiber.Ctx) string {
+func SafeRequestLogPath(c fiber.Ctx) string {
 	if c == nil {
 		return "/"
 	}

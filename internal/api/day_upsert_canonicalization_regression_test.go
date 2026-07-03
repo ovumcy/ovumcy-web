@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
@@ -60,7 +60,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+location.String()))
 			request.Header.Set(timezoneHeaderName, location.String())
 
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("upsert request failed: %v", err)
 			}
@@ -79,7 +79,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			roundTripRequest.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+location.String()))
 			roundTripRequest.Header.Set(timezoneHeaderName, location.String())
 
-			roundTripResponse, err := app.Test(roundTripRequest, -1)
+			roundTripResponse, err := app.Test(roundTripRequest)
 			if err != nil {
 				t.Fatalf("round-trip GET failed: %v", err)
 			}

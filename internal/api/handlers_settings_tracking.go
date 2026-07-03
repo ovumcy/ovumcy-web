@@ -1,13 +1,13 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 var trackingSettingsMutation = healthMutationKind{action: "settings.tracking_update", target: "tracking_settings"}
 
-func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
+func (handler *Handler) UpdateTrackingSettings(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, trackingSettingsMutation, unauthorizedErrorSpec())
@@ -27,7 +27,7 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 		HideNotesField:       input.HideNotesField,
 		ShowHistoricalPhases: input.ShowHistoricalPhases,
 	}
-	if err := handler.settingsService.SaveTrackingSettings(c.UserContext(), user.ID, update); err != nil {
+	if err := handler.settingsService.SaveTrackingSettings(c.Context(), user.ID, update); err != nil {
 		return handler.failMutation(c, trackingSettingsMutation, settingsTrackingUpdateErrorSpec())
 	}
 
@@ -56,10 +56,10 @@ func (handler *Handler) UpdateTrackingSettings(c *fiber.Ctx) error {
 	return redirectOrJSON(c, "/settings")
 }
 
-func parseTrackingSettingsInput(c *fiber.Ctx) (trackingSettingsInput, error) {
+func parseTrackingSettingsInput(c fiber.Ctx) (trackingSettingsInput, error) {
 	input := trackingSettingsInput{}
 	if hasJSONBody(c) {
-		if err := c.BodyParser(&input); err != nil {
+		if err := c.Bind().Body(&input); err != nil {
 			return trackingSettingsInput{}, err
 		}
 		return input, nil

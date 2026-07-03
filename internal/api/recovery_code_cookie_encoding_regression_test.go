@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestRecoveryCodeCookieIsNotPlaintextJSON(t *testing.T) {
@@ -44,13 +44,13 @@ func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setRecoveryCodeIssuanceCookie(c, 99, "OVUM-TESTCODE-9999", "/settings", recoveryCodeSurfaceDedicated); err != nil {
 			t.Fatalf("seal recovery cookie: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get("/open", func(c *fiber.Ctx) error {
+	app.Get("/open", func(c fiber.Ctx) error {
 		state := handler.readRecoveryCodeDisplayState(c, 99, "/dashboard")
 		if state.RecoveryCode != "OVUM-TESTCODE-9999" {
 			t.Fatalf("expected recovery code to round-trip, got %q", state.RecoveryCode)
@@ -64,7 +64,7 @@ func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", recoveryCodeCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -93,13 +93,13 @@ func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setRecoveryCodeIssuanceCookie(c, 99, "OVUM-TAMPER-CODE0", "/settings", recoveryCodeSurfaceDedicated); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get("/open", func(c *fiber.Ctx) error {
+	app.Get("/open", func(c fiber.Ctx) error {
 		state := handler.readRecoveryCodeDisplayState(c, 99, "/dashboard")
 		if state.RecoveryCode != "" {
 			t.Fatalf("expected tampered recovery cookie to yield empty code, got %q", state.RecoveryCode)
@@ -107,7 +107,7 @@ func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", recoveryCodeCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
@@ -141,14 +141,14 @@ func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
 	}
 
 	sealingApp := fiber.New()
-	sealingApp.Get("/seal", func(c *fiber.Ctx) error {
+	sealingApp.Get("/seal", func(c fiber.Ctx) error {
 		if err := sealingHandler.setRecoveryCodeIssuanceCookie(c, 99, "OVUM-FOREIGN-CODE", "/settings", recoveryCodeSurfaceDedicated); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	openingApp := fiber.New()
-	openingApp.Get("/open", func(c *fiber.Ctx) error {
+	openingApp.Get("/open", func(c fiber.Ctx) error {
 		state := openingHandler.readRecoveryCodeDisplayState(c, 99, "/dashboard")
 		if state.RecoveryCode != "" {
 			t.Fatalf("expected rotated-key handler to reject sealed recovery cookie, got %q", state.RecoveryCode)
@@ -156,7 +156,7 @@ func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", recoveryCodeCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest, -1)
+	openResponse, err := openingApp.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}

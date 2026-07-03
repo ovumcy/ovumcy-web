@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/pquerna/otp/totp"
@@ -109,7 +109,7 @@ func doTOTPChallengeRequest(t *testing.T, app *fiber.App, cookies string, code s
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Cookie", cookies)
 	req.Header.Set("Accept-Language", "en")
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestShowTOTPChallengePage_MissingPendingCookie_RedirectsToLogin(t *testing.
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
 	req.Header.Set("Accept-Language", "en")
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /auth/2fa: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestShowTOTPChallengePage_ValidPendingCookie_Renders200(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Cookie", pendingCookie)
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /auth/2fa: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 		req.Header.Set("HX-Request", "true")
 		req.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
 		req.Header.Set("Accept-Language", "en")
-		resp, err := app.Test(req, -1)
+		resp, err := app.Test(req)
 		if err != nil {
 			t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
 		}
@@ -344,7 +344,7 @@ func extractCSRFCookieAndToken(t *testing.T, app *fiber.App) (string, string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	req.Header.Set("Accept-Language", "en")
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /login for csrf: %v", err)
 	}

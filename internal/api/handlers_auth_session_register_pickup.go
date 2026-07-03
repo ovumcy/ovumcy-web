@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -45,7 +45,7 @@ func registerPickupOutcomeDecoy(now time.Time) registerPickupOutcome {
 	return registerPickupOutcome{payload: payload, err: err}
 }
 
-func (handler *Handler) respondRegisterPickup(c *fiber.Ctx, outcome registerPickupOutcome) error {
+func (handler *Handler) respondRegisterPickup(c fiber.Ctx, outcome registerPickupOutcome) error {
 	if outcome.err != nil {
 		spec := registerPickupCookieErrorSpec()
 		handler.logSecurityError(c, "auth.register", spec)
@@ -59,7 +59,7 @@ func (handler *Handler) respondRegisterPickup(c *fiber.Ctx, outcome registerPick
 	// server-side guarantee that closes the cookie-replay window.
 	if outcome.userID != 0 {
 		expiresAt := time.Now().UTC().Add(registerPickupCookieTTL)
-		if err := handler.registerPickupTokens.Issue(c.UserContext(), outcome.payload.Nonce, outcome.userID, expiresAt); err != nil {
+		if err := handler.registerPickupTokens.Issue(c.Context(), outcome.payload.Nonce, outcome.userID, expiresAt); err != nil {
 			spec := registerPickupCookieErrorSpec()
 			handler.logSecurityError(c, "auth.register", spec)
 			return handler.respondMappedError(c, spec)
@@ -100,10 +100,10 @@ func (handler *Handler) respondRegisterPickup(c *fiber.Ctx, outcome registerPick
 // See SECURITY.md "Register enumeration" for the residual two-step oracle
 // (which redirect target the holder of a pickup cookie observes after their
 // own POST /api/v1/users).
-func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
+func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
 		handler.clearRegisterPickupCookie(c)
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	payload, ok := handler.popRegisterPickupCookie(c)
@@ -115,7 +115,7 @@ func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
 	// exchanged once, or a decoy whose nonce was never persisted, returns
 	// consumed == false here and falls through to the same neutral
 	// "register pickup unavailable" /login redirect.
-	userID, consumed, err := handler.registerPickupTokens.Consume(c.UserContext(), payload.Nonce, time.Now())
+	userID, consumed, err := handler.registerPickupTokens.Consume(c.Context(), payload.Nonce, time.Now())
 	if err != nil {
 		return handler.redirectToPostRegisterSignin(c, "consume_failed")
 	}
@@ -123,7 +123,7 @@ func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
 		return handler.redirectToPostRegisterSignin(c, "decoy_or_replay")
 	}
 
-	user, err := handler.authService.FindByID(c.UserContext(), userID)
+	user, err := handler.authService.FindByID(c.Context(), userID)
 	if err != nil {
 		return handler.redirectToPostRegisterSignin(c, "user_not_found")
 	}
@@ -152,14 +152,14 @@ func (handler *Handler) PickupRegister(c *fiber.Ctx) error {
 	}
 
 	handler.logSecurityEvent(c, "auth.register_pickup", "success")
-	return c.Redirect("/register", fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
 }
 
-func (handler *Handler) redirectToPostRegisterSignin(c *fiber.Ctx, reason string) error {
+func (handler *Handler) redirectToPostRegisterSignin(c fiber.Ctx, reason string) error {
 	handler.clearRegisterPickupCookie(c)
 	handler.setFlashCookie(c, FlashPayload{AuthError: "register pickup unavailable"})
 	if reason != "" {
 		handler.logSecurityEvent(c, "auth.register_pickup", "redirect_signin", securityEventField("reason", reason))
 	}
-	return c.Redirect("/login", fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 }

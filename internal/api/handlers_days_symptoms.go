@@ -3,15 +3,15 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
-func (handler *Handler) GetSymptoms(c *fiber.Ctx) error {
+func (handler *Handler) GetSymptoms(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
-	symptoms, err := handler.symptomService.FetchSymptoms(c.UserContext(), user.ID)
+	symptoms, err := handler.symptomService.FetchSymptoms(c.Context(), user.ID)
 	if err != nil {
 		return handler.respondMappedError(c, symptomsFetchErrorSpec())
 	}
@@ -25,14 +25,14 @@ var (
 	symptomArchiveMutation = healthMutationKind{action: "health.symptom_archive", target: "symptom"}
 )
 
-func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
+func (handler *Handler) CreateSymptom(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, symptomCreateMutation, unauthorizedErrorSpec())
 	}
 
 	payload := symptomPayload{}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		spec := settingsInvalidInputErrorSpec()
 		handler.logMutationError(c, symptomCreateMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
@@ -40,7 +40,7 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 		})
 	}
 
-	symptom, err := handler.symptomService.CreateSymptomForUser(c.UserContext(), user.ID, payload.Name, payload.Icon, payload.Color)
+	symptom, err := handler.symptomService.CreateSymptomForUser(c.Context(), user.ID, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
 		spec := mapSymptomCreateError(err)
 		handler.logMutationError(c, symptomCreateMutation, spec)
@@ -57,7 +57,7 @@ func (handler *Handler) CreateSymptom(c *fiber.Ctx) error {
 	return handler.respondSymptomMutationSuccess(c, user, fiber.StatusCreated, "symptom_created", settingsSymptomSectionState{})
 }
 
-func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
+func (handler *Handler) UpdateSymptom(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, symptomUpdateMutation, unauthorizedErrorSpec())
@@ -71,7 +71,7 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 	}
 
 	payload := symptomPayload{}
-	if err := c.BodyParser(&payload); err != nil {
+	if err := c.Bind().Body(&payload); err != nil {
 		spec := settingsInvalidInputErrorSpec()
 		handler.logMutationError(c, symptomUpdateMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
@@ -83,7 +83,7 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 		})
 	}
 
-	symptom, err := handler.symptomService.UpdateSymptomForUser(c.UserContext(), user.ID, id, payload.Name, payload.Icon, payload.Color)
+	symptom, err := handler.symptomService.UpdateSymptomForUser(c.Context(), user.ID, id, payload.Name, payload.Icon, payload.Color)
 	if err != nil {
 		useDraftValues := true
 		spec := mapSymptomUpdateError(err)
@@ -113,11 +113,11 @@ func (handler *Handler) UpdateSymptom(c *fiber.Ctx) error {
 // DeleteSymptom intentionally archives instead of erasing: the symptom is
 // restorable from settings and its name persists until clear-data or
 // account deletion (documented in docs/gdpr.md under Rectification).
-func (handler *Handler) DeleteSymptom(c *fiber.Ctx) error {
+func (handler *Handler) DeleteSymptom(c fiber.Ctx) error {
 	return handler.archiveSymptom(c)
 }
 
-func (handler *Handler) RestoreSymptom(c *fiber.Ctx) error {
+func (handler *Handler) RestoreSymptom(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, symptomRestoreMutation, unauthorizedErrorSpec())
@@ -129,7 +129,7 @@ func (handler *Handler) RestoreSymptom(c *fiber.Ctx) error {
 		handler.logMutationError(c, symptomRestoreMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{})
 	}
-	if err := handler.symptomService.RestoreSymptomForUser(c.UserContext(), user.ID, id); err != nil {
+	if err := handler.symptomService.RestoreSymptomForUser(c.Context(), user.ID, id); err != nil {
 		spec := mapSymptomRestoreError(err)
 		handler.logMutationError(c, symptomRestoreMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{
@@ -147,7 +147,7 @@ func (handler *Handler) RestoreSymptom(c *fiber.Ctx) error {
 	})
 }
 
-func (handler *Handler) archiveSymptom(c *fiber.Ctx) error {
+func (handler *Handler) archiveSymptom(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, symptomArchiveMutation, unauthorizedErrorSpec())
@@ -159,7 +159,7 @@ func (handler *Handler) archiveSymptom(c *fiber.Ctx) error {
 		handler.logMutationError(c, symptomArchiveMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{})
 	}
-	if err := handler.symptomService.ArchiveSymptomForUser(c.UserContext(), user.ID, id, time.Now()); err != nil {
+	if err := handler.symptomService.ArchiveSymptomForUser(c.Context(), user.ID, id, time.Now()); err != nil {
 		spec := mapSymptomArchiveError(err)
 		handler.logMutationError(c, symptomArchiveMutation, spec)
 		return handler.respondSymptomMutationError(c, user, spec, settingsSymptomSectionState{

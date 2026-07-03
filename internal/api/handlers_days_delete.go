@@ -3,7 +3,7 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -12,7 +12,7 @@ var dayDeleteMutation = healthMutationKind{action: "health.day_delete", target: 
 // DeleteDay handles DELETE /api/v1/days/:date. The optional "source" query
 // param ("calendar" or "dashboard") selects which HTMX response shape the
 // browser UI expects; programmatic clients can omit it and receive 204.
-func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
+func (handler *Handler) DeleteDay(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, dayDeleteMutation, unauthorizedErrorSpec())
@@ -23,7 +23,7 @@ func (handler *Handler) DeleteDay(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.failMutation(c, dayDeleteMutation, invalidDateErrorSpec())
 	}
-	if err := handler.dayService.DeleteDayEntry(c.UserContext(), user.ID, day, location); err != nil {
+	if err := handler.dayService.DeleteDayEntry(c.Context(), user.ID, day, location); err != nil {
 		return handler.failMutation(c, dayDeleteMutation, mapDayDeleteError(err))
 	}
 

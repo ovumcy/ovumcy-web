@@ -5,14 +5,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 var authCookieSpec = sealedCookieSpec{name: authCookieName, path: "/"}
 
-func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberMe bool) (string, error) {
+func (handler *Handler) setAuthCookie(c fiber.Ctx, user *models.User, rememberMe bool) (string, error) {
 	tokenTTL := defaultAuthTokenTTL
 	if rememberMe {
 		tokenTTL = rememberAuthTokenTTL
@@ -34,11 +34,11 @@ func (handler *Handler) setAuthCookie(c *fiber.Ctx, user *models.User, rememberM
 	return sessionID, nil
 }
 
-func (handler *Handler) clearAuthCookie(c *fiber.Ctx) {
+func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, authCookieSpec)
 }
 
-func (handler *Handler) clearAuthRelatedCookies(c *fiber.Ctx) {
+func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 	handler.clearAuthCookie(c)
 	handler.clearOIDCLogoutBridgeCookie(c)
 	handler.clearRecoveryCodePageCookie(c)
@@ -59,7 +59,7 @@ func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Dura
 	return handler.authService.BuildAuthSessionTokenWithSessionID(handler.secretKey, user.ID, user.Role, user.AuthSessionVersion, ttl, time.Now())
 }
 
-func (handler *Handler) rotateOIDCLogoutState(c *fiber.Ctx, newSessionID string) error {
+func (handler *Handler) rotateOIDCLogoutState(c fiber.Ctx, newSessionID string) error {
 	if handler == nil || handler.oidcLogoutStateSvc == nil {
 		return nil
 	}
@@ -79,24 +79,24 @@ func (handler *Handler) rotateOIDCLogoutState(c *fiber.Ctx, newSessionID string)
 		return nil
 	}
 
-	logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.UserContext(), oldSessionID, time.Now())
+	logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), oldSessionID, time.Now())
 	if err != nil || !found {
 		return err
 	}
 	if !validOIDCLogoutState(logoutState) {
-		return handler.oidcLogoutStateSvc.Delete(c.UserContext(), oldSessionID) // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
+		return handler.oidcLogoutStateSvc.Delete(c.Context(), oldSessionID) // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
 	}
-	if err := handler.oidcLogoutStateSvc.Save(c.UserContext(), newSessionID, logoutState, time.Now()); err != nil { // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
+	if err := handler.oidcLogoutStateSvc.Save(c.Context(), newSessionID, logoutState, time.Now()); err != nil { // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
 		return err
 	}
-	return handler.oidcLogoutStateSvc.Delete(c.UserContext(), oldSessionID) // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
+	return handler.oidcLogoutStateSvc.Delete(c.Context(), oldSessionID) // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
 }
 
 // refreshCurrentSession re-issues the auth cookie for the request's user
 // after an operation that bumped auth_session_version, so the originating
 // device stays signed in while every other session is invalidated. The
 // `scope` argument is used for security-event logging only.
-func (handler *Handler) refreshCurrentSession(c *fiber.Ctx, user *models.User, scope string) error {
+func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, scope string) error {
 	sessionID, err := handler.setAuthCookie(c, user, false)
 	if err != nil {
 		handler.clearAuthCookie(c)

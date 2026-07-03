@@ -3,13 +3,13 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) buildSettingsSymptomsSectionData(c *fiber.Ctx, user *models.User, state settingsSymptomSectionState) (fiber.Map, error) {
-	viewData, err := handler.settingsViewService.BuildSettingsSymptomsViewData(c.UserContext(), user)
+func (handler *Handler) buildSettingsSymptomsSectionData(c fiber.Ctx, user *models.User, state settingsSymptomSectionState) (fiber.Map, error) {
+	viewData, err := handler.settingsViewService.BuildSettingsSymptomsViewData(c.Context(), user)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (handler *Handler) buildSettingsSymptomsSectionData(c *fiber.Ctx, user *mod
 	}, nil
 }
 
-func (handler *Handler) respondSymptomMutationError(c *fiber.Ctx, user *models.User, spec APIErrorSpec, state settingsSymptomSectionState) error {
+func (handler *Handler) respondSymptomMutationError(c fiber.Ctx, user *models.User, spec APIErrorSpec, state settingsSymptomSectionState) error {
 	if isHTMX(c) {
 		if state.Row.SymptomID != 0 {
 			state.Row.ErrorMessage = spec.Key
@@ -54,12 +54,12 @@ func (handler *Handler) respondSymptomMutationError(c *fiber.Ctx, user *models.U
 
 	if !acceptsJSON(c) {
 		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 	return handler.respondMappedError(c, spec)
 }
 
-func (handler *Handler) respondSymptomMutationSuccess(c *fiber.Ctx, user *models.User, statusCode int, successStatus string, state settingsSymptomSectionState) error {
+func (handler *Handler) respondSymptomMutationSuccess(c fiber.Ctx, user *models.User, statusCode int, successStatus string, state settingsSymptomSectionState) error {
 	if isHTMX(c) {
 		if state.Row.SymptomID != 0 {
 			state.Row.SuccessStatus = successStatus
@@ -79,13 +79,13 @@ func (handler *Handler) respondSymptomMutationSuccess(c *fiber.Ctx, user *models
 
 	if !acceptsJSON(c) {
 		handler.setFlashCookie(c, FlashPayload{SettingsSuccess: successStatus})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 
 	return c.SendStatus(statusCode)
 }
 
-func localizedSettingsSymptomError(c *fiber.Ctx, source string) string {
+func localizedSettingsSymptomError(c fiber.Ctx, source string) string {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return ""
@@ -100,7 +100,7 @@ func localizedSettingsSymptomError(c *fiber.Ctx, source string) string {
 	return source
 }
 
-func localizedSettingsSymptomStatus(c *fiber.Ctx, status string) string {
+func localizedSettingsSymptomStatus(c fiber.Ctx, status string) string {
 	status = strings.TrimSpace(status)
 	if status == "" {
 		return ""

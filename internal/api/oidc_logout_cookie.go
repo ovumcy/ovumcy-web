@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -17,7 +17,7 @@ type oidcLogoutBridgeCookiePayload struct {
 	ExpiresAtUnix int64  `json:"expires_at_unix"`
 }
 
-func (handler *Handler) setOIDCLogoutBridgeCookie(c *fiber.Ctx, sessionID string, now time.Time) error {
+func (handler *Handler) setOIDCLogoutBridgeCookie(c fiber.Ctx, sessionID string, now time.Time) error {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		handler.clearOIDCLogoutBridgeCookie(c)
@@ -39,7 +39,7 @@ func (handler *Handler) setOIDCLogoutBridgeCookie(c *fiber.Ctx, sessionID string
 	return handler.writeSealedCookie(c, oidcLogoutBridgeCookieSpec, serialized, expiresAt)
 }
 
-func (handler *Handler) readOIDCLogoutBridgeCookie(c *fiber.Ctx, now time.Time) oidcLogoutBridgeCookiePayload {
+func (handler *Handler) readOIDCLogoutBridgeCookie(c fiber.Ctx, now time.Time) oidcLogoutBridgeCookiePayload {
 	raw := strings.TrimSpace(c.Cookies(oidcLogoutBridgeCookieName))
 	if raw == "" {
 		return oidcLogoutBridgeCookiePayload{}
@@ -59,7 +59,7 @@ func (handler *Handler) readOIDCLogoutBridgeCookie(c *fiber.Ctx, now time.Time) 
 	return payload
 }
 
-func (handler *Handler) clearOIDCLogoutBridgeCookie(c *fiber.Ctx) {
+func (handler *Handler) clearOIDCLogoutBridgeCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, oidcLogoutBridgeCookieSpec)
 }
 

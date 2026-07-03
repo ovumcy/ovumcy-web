@@ -3,12 +3,12 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func parseDayPayload(c *fiber.Ctx, user *models.User) (dayPayload, error) {
+func parseDayPayload(c fiber.Ctx, user *models.User) (dayPayload, error) {
 	payload := dayPayload{Flow: models.FlowNone, SymptomIDs: []uint{}}
 	temperatureUnit := services.DefaultTemperatureUnit
 	if user != nil {
@@ -16,7 +16,7 @@ func parseDayPayload(c *fiber.Ctx, user *models.User) (dayPayload, error) {
 	}
 
 	if hasJSONBody(c) {
-		if err := c.BodyParser(&payload); err != nil {
+		if err := c.Bind().Body(&payload); err != nil {
 			return payload, err
 		}
 	} else {
@@ -33,7 +33,7 @@ func parseDayPayload(c *fiber.Ctx, user *models.User) (dayPayload, error) {
 			return payload, err
 		}
 
-		symptomRaw := c.Context().PostArgs().PeekMulti("symptom_ids")
+		symptomRaw := c.RequestCtx().PostArgs().PeekMulti("symptom_ids")
 		for _, value := range symptomRaw {
 			parsed, err := parseRequestUint(string(value))
 			if err == nil {
@@ -41,7 +41,7 @@ func parseDayPayload(c *fiber.Ctx, user *models.User) (dayPayload, error) {
 			}
 		}
 
-		cycleFactorRaw := c.Context().PostArgs().PeekMulti("cycle_factor_keys")
+		cycleFactorRaw := c.RequestCtx().PostArgs().PeekMulti("cycle_factor_keys")
 		for _, value := range cycleFactorRaw {
 			payload.CycleFactorKeys = append(payload.CycleFactorKeys, string(value))
 		}

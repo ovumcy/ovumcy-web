@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // registerPickupCookieTTL caps how long the sealed register-pickup cookie is
@@ -183,7 +183,7 @@ func validPickupNonceShape(nonce string) bool {
 
 var registerPickupCookieSpec = sealedCookieSpec{name: registerPickupCookieName, path: "/"}
 
-func (handler *Handler) setRegisterPickupCookie(c *fiber.Ctx, payload registerPickupPayload) error {
+func (handler *Handler) setRegisterPickupCookie(c fiber.Ctx, payload registerPickupPayload) error {
 	if !payload.validAt(time.Now()) {
 		return errors.New("pickup cookie payload is invalid")
 	}
@@ -195,7 +195,7 @@ func (handler *Handler) setRegisterPickupCookie(c *fiber.Ctx, payload registerPi
 	return handler.writeSealedCookie(c, registerPickupCookieSpec, serialized, time.Now().Add(registerPickupCookieTTL))
 }
 
-func (handler *Handler) popRegisterPickupCookie(c *fiber.Ctx) (registerPickupPayload, bool) {
+func (handler *Handler) popRegisterPickupCookie(c fiber.Ctx) (registerPickupPayload, bool) {
 	raw := strings.TrimSpace(c.Cookies(registerPickupCookieName))
 	if raw == "" {
 		return registerPickupPayload{}, false
@@ -221,6 +221,6 @@ func (handler *Handler) popRegisterPickupCookie(c *fiber.Ctx) (registerPickupPay
 	return payload, true
 }
 
-func (handler *Handler) clearRegisterPickupCookie(c *fiber.Ctx) {
+func (handler *Handler) clearRegisterPickupCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, registerPickupCookieSpec)
 }

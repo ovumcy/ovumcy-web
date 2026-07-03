@@ -44,7 +44,7 @@ func TestSymptomRoutesRequireAuthJSON(t *testing.T) {
 			}
 			request.Header.Set("Accept", "application/json")
 
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("symptom auth-required request failed: %v", err)
 			}
@@ -102,7 +102,7 @@ func TestSymptomRoutesRejectUnsupportedLegacyRoleJSON(t *testing.T) {
 			request.Header.Set("Accept", "application/json")
 			request.Header.Set("Cookie", authCookie)
 
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("unsupported legacy role symptom request failed: %v", err)
 			}

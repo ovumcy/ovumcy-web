@@ -57,7 +57,7 @@ func TestShowTOTPSetupPage_Unauthenticated_RedirectsToLogin(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/settings/2fa", nil)
 	req.Header.Set("Accept-Language", "en")
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /settings/2fa: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestShowTOTPSetupPage_TOTPNotEnabled_RendersQRAndSecret(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/settings/2fa", nil)
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Cookie", ctx.authCookie)
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /settings/2fa: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestShowTOTPSetupPage_TOTPEnabled_ShowsManagementView(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/settings/2fa", nil)
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Cookie", ctx.authCookie)
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /settings/2fa: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestVerifyTOTP2FAEnrollment_ValidCode_EnablesTOTP(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie), setupCookie))
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie), setupCookie))
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
@@ -219,7 +219,7 @@ func TestVerifyTOTP2FAEnrollment_MissingSetupCookie_ReturnsError(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept-Language", "en")
 	req.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}

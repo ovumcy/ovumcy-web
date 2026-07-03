@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // --- helpers for cookie tests ---
@@ -22,29 +22,29 @@ func newTOTPCookieTestApp(t *testing.T, secretKey []byte) (*fiber.App, *Handler)
 	t.Helper()
 	handler := &Handler{secretKey: secretKey, cookieSecure: false}
 	app := fiber.New()
-	app.Get("/seal-pending", func(c *fiber.Ctx) error {
-		userID := uint(c.QueryInt("user_id", 0))
-		remember := c.QueryBool("remember_me", false)
+	app.Get("/seal-pending", func(c fiber.Ctx) error {
+		userID := uint(fiber.Query[int](c, "user_id", 0))
+		remember := fiber.Query[bool](c, "remember_me", false)
 		if err := handler.setTOTPPendingCookie(c, userID, remember); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		return c.SendStatus(fiber.StatusOK)
 	})
-	app.Get("/parse-pending", func(c *fiber.Ctx) error {
+	app.Get("/parse-pending", func(c fiber.Ctx) error {
 		uid, remember, err := handler.parseTOTPPendingCookie(c)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).SendString(err.Error())
 		}
 		return c.JSON(fiber.Map{"user_id": uid, "remember_me": remember})
 	})
-	app.Get("/seal-setup", func(c *fiber.Ctx) error {
+	app.Get("/seal-setup", func(c fiber.Ctx) error {
 		raw := c.Query("raw_secret", "")
 		if err := handler.setTOTPSetupCookie(c, raw); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		return c.SendStatus(fiber.StatusOK)
 	})
-	app.Get("/parse-setup", func(c *fiber.Ctx) error {
+	app.Get("/parse-setup", func(c fiber.Ctx) error {
 		raw, err := handler.parseTOTPSetupCookie(c)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).SendString(err.Error())
@@ -86,7 +86,7 @@ func TestTOTPPendingCookie_RoundTrip(t *testing.T) {
 	app, _ := newTOTPCookieTestApp(t, []byte("test-secret-key"))
 
 	sealReq := httptest.NewRequest(http.MethodGet, "/seal-pending?user_id=42&remember_me=true", nil)
-	sealResp, err := app.Test(sealReq, -1)
+	sealResp, err := app.Test(sealReq)
 	if err != nil {
 		t.Fatalf("GET /seal-pending: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestTOTPPendingCookie_RoundTrip(t *testing.T) {
 
 	parseReq := httptest.NewRequest(http.MethodGet, "/parse-pending", nil)
 	parseReq.Header.Set("Cookie", totpPendingCookieName+"="+cookieValue)
-	parseResp, err := app.Test(parseReq, -1)
+	parseResp, err := app.Test(parseReq)
 	if err != nil {
 		t.Fatalf("GET /parse-pending: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestTOTPPendingCookie_ExpiredPayload_ParseError(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/parse-pending", nil)
 	req.Header.Set("Cookie", totpPendingCookieName+"="+sealed)
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /parse-pending: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestTOTPPendingCookie_WrongSigningKey_ParseError(t *testing.T) {
 
 	sealApp, _ := newTOTPCookieTestApp(t, sealedSecret)
 	sealReq := httptest.NewRequest(http.MethodGet, "/seal-pending?user_id=7", nil)
-	sealResp, err := sealApp.Test(sealReq, -1)
+	sealResp, err := sealApp.Test(sealReq)
 	if err != nil {
 		t.Fatalf("GET /seal-pending: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestTOTPPendingCookie_WrongSigningKey_ParseError(t *testing.T) {
 	openApp, _ := newTOTPCookieTestApp(t, openSecret)
 	parseReq := httptest.NewRequest(http.MethodGet, "/parse-pending", nil)
 	parseReq.Header.Set("Cookie", totpPendingCookieName+"="+cookieValue)
-	parseResp, err := openApp.Test(parseReq, -1)
+	parseResp, err := openApp.Test(parseReq)
 	if err != nil {
 		t.Fatalf("GET /parse-pending: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestTOTPSetupCookie_RoundTrip(t *testing.T) {
 	const rawSecret = "JBSWY3DPEHPK3PXP"
 
 	sealReq := httptest.NewRequest(http.MethodGet, "/seal-setup?raw_secret="+rawSecret, nil)
-	sealResp, err := app.Test(sealReq, -1)
+	sealResp, err := app.Test(sealReq)
 	if err != nil {
 		t.Fatalf("GET /seal-setup: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestTOTPSetupCookie_RoundTrip(t *testing.T) {
 
 	parseReq := httptest.NewRequest(http.MethodGet, "/parse-setup", nil)
 	parseReq.Header.Set("Cookie", totpSetupCookieName+"="+cookieValue)
-	parseResp, err := app.Test(parseReq, -1)
+	parseResp, err := app.Test(parseReq)
 	if err != nil {
 		t.Fatalf("GET /parse-setup: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestTOTPSetupCookie_ExpiredPayload_ParseError(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/parse-setup", nil)
 	req.Header.Set("Cookie", totpSetupCookieName+"="+sealed)
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("GET /parse-setup: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestTOTPSetupCookie_WrongSigningKey_ParseError(t *testing.T) {
 
 	sealApp, _ := newTOTPCookieTestApp(t, sealedSecret)
 	sealReq := httptest.NewRequest(http.MethodGet, "/seal-setup?raw_secret=JBSWY3DPEHPK3PXP", nil)
-	sealResp, err := sealApp.Test(sealReq, -1)
+	sealResp, err := sealApp.Test(sealReq)
 	if err != nil {
 		t.Fatalf("GET /seal-setup: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestTOTPSetupCookie_WrongSigningKey_ParseError(t *testing.T) {
 	openApp, _ := newTOTPCookieTestApp(t, openSecret)
 	parseReq := httptest.NewRequest(http.MethodGet, "/parse-setup", nil)
 	parseReq.Header.Set("Cookie", totpSetupCookieName+"="+cookieValue)
-	parseResp, err := openApp.Test(parseReq, -1)
+	parseResp, err := openApp.Test(parseReq)
 	if err != nil {
 		t.Fatalf("GET /parse-setup: %v", err)
 	}

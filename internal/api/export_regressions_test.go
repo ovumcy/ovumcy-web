@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
@@ -49,7 +49,7 @@ func TestExportCSVRespectsRequestedDateRange(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	request := newExportRequestForTest(t, "/api/v1/exports/csv?from=2026-02-05&to=2026-02-12", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("export csv request with range failed: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestExportSummaryRespectsRequestedDateRange(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	request := newExportRequestForTest(t, "/api/v1/exports/summary?from=2026-02-10&to=2026-02-19", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("export summary request with range failed: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestExportSummaryRejectsInvalidDateRange(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	request := newExportRequestForTest(t, "/api/v1/exports/summary?from=2026-02-20&to=2026-02-10", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("export summary request with invalid range failed: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestExportSummaryUsesRequestTimezoneForRangeParsing(t *testing.T) {
 	request := newExportRequestForTest(t, "/api/v1/exports/summary?from=2026-03-13&to=2026-03-13", joinCookieHeader(authCookie, timezoneCookieName+"=Pacific/Kiritimati"))
 	request.Header.Set(timezoneHeaderName, "Pacific/Kiritimati")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("timezone export summary request failed: %v", err)
 	}

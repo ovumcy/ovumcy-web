@@ -3,18 +3,18 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
+func (handler *Handler) UpdateProfile(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	input := profileSettingsInput{}
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return handler.respondMappedError(c, settingsValidationErrorSpec("invalid profile input"))
 	}
 	displayName, err := handler.settingsService.NormalizeDisplayName(input.DisplayName)
@@ -22,7 +22,7 @@ func (handler *Handler) UpdateProfile(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, mapSettingsProfileNormalizeError(err))
 	}
 
-	if err := handler.settingsService.UpdateDisplayName(c.UserContext(), user.ID, displayName); err != nil {
+	if err := handler.settingsService.UpdateDisplayName(c.Context(), user.ID, displayName); err != nil {
 		return handler.respondMappedError(c, settingsProfileUpdateErrorSpec())
 	}
 

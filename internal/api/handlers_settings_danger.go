@@ -1,12 +1,12 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) ValidateClearDataPassword(c *fiber.Ctx) error {
+func (handler *Handler) ValidateClearDataPassword(c fiber.Ctx) error {
 	_, spec, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
 		handler.logSecurityError(c, "settings.clear_data_validate", spec)
@@ -19,13 +19,13 @@ func (handler *Handler) ValidateClearDataPassword(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
+func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 	user, spec, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
 		handler.logSecurityError(c, "settings.clear_data", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.settingsService.ClearAllData(c.UserContext(), user.ID); err != nil {
+	if err := handler.settingsService.ClearAllData(c.Context(), user.ID); err != nil {
 		spec := settingsClearDataErrorSpec()
 		handler.logSecurityError(c, "settings.clear_data", spec)
 		return handler.respondMappedError(c, spec)
@@ -49,14 +49,14 @@ func (handler *Handler) ClearAllData(c *fiber.Ctx) error {
 	return redirectOrJSON(c, "/settings")
 }
 
-func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
+func (handler *Handler) DeleteAccount(c fiber.Ctx) error {
 	user, spec, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
 		handler.logSecurityError(c, "settings.delete_account", spec)
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.settingsService.DeleteAccount(c.UserContext(), user.ID); err != nil {
+	if err := handler.settingsService.DeleteAccount(c.Context(), user.ID); err != nil {
 		spec := settingsDeleteAccountErrorSpec()
 		handler.logSecurityError(c, "settings.delete_account", spec)
 		return handler.respondMappedError(c, spec)
@@ -70,9 +70,9 @@ func (handler *Handler) DeleteAccount(c *fiber.Ctx) error {
 	return redirectOrJSON(c, "/login")
 }
 
-func parsePasswordProtectedSettingsAction(c *fiber.Ctx) (string, APIErrorSpec, bool) {
+func parsePasswordProtectedSettingsAction(c fiber.Ctx) (string, APIErrorSpec, bool) {
 	input := passwordProtectedSettingsInput{}
-	if err := c.BodyParser(&input); err != nil && hasJSONBody(c) {
+	if err := c.Bind().Body(&input); err != nil && hasJSONBody(c) {
 		spec := settingsMissingPasswordErrorSpec()
 		return "", spec, false
 	}
@@ -83,7 +83,7 @@ func parsePasswordProtectedSettingsAction(c *fiber.Ctx) (string, APIErrorSpec, b
 	return input.Password, APIErrorSpec{}, true
 }
 
-func (handler *Handler) validateSettingsActionPassword(c *fiber.Ctx) (*models.User, APIErrorSpec, bool) {
+func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (*models.User, APIErrorSpec, bool) {
 	user, ok := currentUser(c)
 	if !ok {
 		return nil, unauthorizedErrorSpec(), false

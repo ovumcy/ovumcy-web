@@ -3,14 +3,14 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func parseForgotPasswordInput(c *fiber.Ctx) (forgotPasswordInput, string) {
+func parseForgotPasswordInput(c fiber.Ctx) (forgotPasswordInput, string) {
 	input := forgotPasswordInput{}
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return forgotPasswordInput{}, "invalid input"
 	}
 	input.Email = services.NormalizeAuthEmail(input.Email)
@@ -32,9 +32,9 @@ func parseForgotPasswordInput(c *fiber.Ctx) (forgotPasswordInput, string) {
 	return input, ""
 }
 
-func parseResetPasswordInput(c *fiber.Ctx) (resetPasswordInput, string) {
+func parseResetPasswordInput(c fiber.Ctx) (resetPasswordInput, string) {
 	input := resetPasswordInput{}
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return resetPasswordInput{}, "invalid input"
 	}
 
@@ -48,15 +48,15 @@ func parseResetPasswordInput(c *fiber.Ctx) (resetPasswordInput, string) {
 	return input, ""
 }
 
-func redirectToPath(c *fiber.Ctx, path string) error {
+func redirectToPath(c fiber.Ctx, path string) error {
 	if isHTMX(c) {
 		c.Set("HX-Redirect", path)
 		return c.SendStatus(fiber.StatusOK)
 	}
-	return c.Redirect(path, fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To(path)
 }
 
-func (handler *Handler) renderRecoveryCodeResponse(c *fiber.Ctx, user *models.User, recoveryCode string, status int) error {
+func (handler *Handler) renderRecoveryCodeResponse(c fiber.Ctx, user *models.User, recoveryCode string, status int) error {
 	continuePath := "/dashboard"
 	if user != nil {
 		continuePath = services.PostLoginRedirectPath(user)
@@ -64,11 +64,11 @@ func (handler *Handler) renderRecoveryCodeResponse(c *fiber.Ctx, user *models.Us
 	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
 }
 
-func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c *fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string) error {
+func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string) error {
 	return handler.renderRecoveryCodeResponseWithSurface(c, user, recoveryCode, status, continuePath, recoveryCodeSurfaceDedicated)
 }
 
-func (handler *Handler) renderRecoveryCodeResponseWithSurface(c *fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string, surface string) error {
+func (handler *Handler) renderRecoveryCodeResponseWithSurface(c fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string, surface string) error {
 	userID := uint(0)
 	if user != nil {
 		userID = user.ID

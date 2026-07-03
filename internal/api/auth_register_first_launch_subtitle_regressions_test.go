@@ -14,7 +14,7 @@ func TestRegisterPageShowsFirstLaunchSubtitleWhenNoUsers(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/register", nil)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register page request failed: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestRegisterPageHidesFirstLaunchSubtitleWhenUserExists(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/register", nil)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("register page request failed: %v", err)
 	}

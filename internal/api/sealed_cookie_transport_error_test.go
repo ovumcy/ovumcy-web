@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
@@ -19,7 +19,7 @@ func TestSealedCookieTransportFailsClosedWithoutSecret(t *testing.T) {
 	broken := &Handler{}
 
 	app := fiber.New()
-	app.Get("/write", func(c *fiber.Ctx) error {
+	app.Get("/write", func(c fiber.Ctx) error {
 		if err := broken.writeSealedCookie(c, flashCookieSpec, []byte("payload"), time.Now().Add(time.Minute)); err == nil {
 			t.Error("writeSealedCookie with an empty secret must fail")
 		}
@@ -32,7 +32,7 @@ func TestSealedCookieTransportFailsClosedWithoutSecret(t *testing.T) {
 		return c.SendStatus(http.StatusNoContent)
 	})
 
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/write", nil), -1)
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/write", nil))
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -53,12 +53,12 @@ func TestSetFlashCookieClearsOnEmptyPayload(t *testing.T) {
 	handler := &Handler{secretKey: []byte("test-secret-key")}
 
 	app := fiber.New()
-	app.Get("/flash", func(c *fiber.Ctx) error {
+	app.Get("/flash", func(c fiber.Ctx) error {
 		handler.setFlashCookie(c, FlashPayload{AuthError: "   "})
 		return c.SendStatus(http.StatusNoContent)
 	})
 
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/flash", nil), -1)
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/flash", nil))
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -80,11 +80,11 @@ func TestSetFlashCookieClearsOnEmptyPayload(t *testing.T) {
 // when the status key has no translation in the request's messages.
 func TestHTMXSettingsSuccessMarkupFallsBackWithoutTranslation(t *testing.T) {
 	app := fiber.New()
-	app.Get("/markup", func(c *fiber.Ctx) error {
+	app.Get("/markup", func(c fiber.Ctx) error {
 		return c.SendString(htmxSettingsSuccessMarkup(c, "tracking_updated", "Fallback message."))
 	})
 
-	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/markup", nil), -1)
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/markup", nil))
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}

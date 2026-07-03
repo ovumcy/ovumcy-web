@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -20,7 +20,7 @@ func htmxDismissibleSuccessStatusMarkup(messages map[string]string, message stri
 // the status has no translation. The missing-translation policy for
 // settings HTMX success responses lives here once; handlers must not
 // re-implement the translate-and-fallback dance inline.
-func htmxSettingsSuccessMarkup(c *fiber.Ctx, status string, defaultMessage string) string {
+func htmxSettingsSuccessMarkup(c fiber.Ctx, status string, defaultMessage string) string {
 	messages := currentMessages(c)
 	messageKey := services.SettingsStatusTranslationKey(status)
 	message := translateMessage(messages, messageKey)
@@ -38,7 +38,7 @@ func localizedStatusDismissLabel(messages map[string]string) string {
 	return closeLabel
 }
 
-func setEncodedResponseNotice(c *fiber.Ctx, message string) {
+func setEncodedResponseNotice(c fiber.Ctx, message string) {
 	trimmed := strings.TrimSpace(message)
 	if trimmed == "" {
 		return
@@ -46,7 +46,7 @@ func setEncodedResponseNotice(c *fiber.Ctx, message string) {
 	c.Set("X-Ovumcy-Notice", url.QueryEscape(trimmed))
 }
 
-func (handler *Handler) sendDaySaveStatus(c *fiber.Ctx, messageKey string) error {
+func (handler *Handler) sendDaySaveStatus(c fiber.Ctx, messageKey string) error {
 	timestamp := time.Now().In(handler.requestLocation(c)).Format("15:04")
 	patternKey := messageKey
 	if patternKey == "" {

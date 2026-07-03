@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
@@ -134,13 +134,13 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 
 	var cookieValue string
 	setApp := fiber.New()
-	setApp.Get("/set", func(c *fiber.Ctx) error {
+	setApp.Get("/set", func(c fiber.Ctx) error {
 		if err := handler.setOIDCStepupCookie(c, original); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil), -1)
+	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil))
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
@@ -156,13 +156,13 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 
 	popApp := fiber.New()
 	var popped oidcStepupState
-	popApp.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	popApp.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		popped = handler.popOIDCStepupCookie(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	popReq := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	popReq.Header.Set("Cookie", oidcStepupCookieName+"="+cookieValue)
-	popResp, err := popApp.Test(popReq, -1)
+	popResp, err := popApp.Test(popReq)
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
@@ -202,13 +202,13 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 
 	var cookieValue string
 	setApp := fiber.New()
-	setApp.Get("/set", func(c *fiber.Ctx) error {
+	setApp.Get("/set", func(c fiber.Ctx) error {
 		if err := signer.setOIDCStepupCookie(c, state); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil), -1)
+	setResp, err := setApp.Test(httptest.NewRequest("GET", "/set", nil))
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
@@ -221,13 +221,13 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 
 	popApp := fiber.New()
 	var popped oidcStepupState
-	popApp.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	popApp.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		popped = verifier.popOIDCStepupCookie(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	popReq := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	popReq.Header.Set("Cookie", oidcStepupCookieName+"="+cookieValue)
-	popResp, err := popApp.Test(popReq, -1)
+	popResp, err := popApp.Test(popReq)
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
@@ -267,13 +267,13 @@ func TestPopOIDCStepupCookieExpiredPayload(t *testing.T) {
 
 	app := fiber.New()
 	var popped oidcStepupState
-	app.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		popped = handler.popOIDCStepupCookie(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	req := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	req.Header.Set("Cookie", oidcStepupCookieName+"="+sealed)
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
@@ -289,12 +289,12 @@ func TestClearOIDCStepupCookieExpiresInPast(t *testing.T) {
 
 	handler := newStepupTestHandler(t)
 	app := fiber.New()
-	app.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		handler.clearOIDCStepupCookie(c)
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	req := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
-	resp, err := app.Test(req, -1)
+	resp, err := app.Test(req)
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}

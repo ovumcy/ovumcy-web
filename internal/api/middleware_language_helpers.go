@@ -4,10 +4,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
-func (handler *Handler) LanguageMiddleware(c *fiber.Ctx) error {
+func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 	requestLocation, timezoneCookieValue := resolveRequestLocation(
 		c.Get(timezoneHeaderName),
 		c.Cookies(timezoneCookieName),
@@ -29,7 +29,7 @@ func (handler *Handler) LanguageMiddleware(c *fiber.Ctx) error {
 	return c.Next()
 }
 
-func (handler *Handler) setLanguageCookie(c *fiber.Ctx, language string) {
+func (handler *Handler) setLanguageCookie(c fiber.Ctx, language string) {
 	c.Cookie(&fiber.Cookie{
 		Name:     languageCookieName,
 		Value:    handler.i18n.NormalizeLanguage(language),
@@ -41,7 +41,7 @@ func (handler *Handler) setLanguageCookie(c *fiber.Ctx, language string) {
 	})
 }
 
-func (handler *Handler) setTimezoneCookie(c *fiber.Ctx, timezone string) {
+func (handler *Handler) setTimezoneCookie(c fiber.Ctx, timezone string) {
 	c.Cookie(&fiber.Cookie{
 		Name:     timezoneCookieName,
 		Value:    timezone,

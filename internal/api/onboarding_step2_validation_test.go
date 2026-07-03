@@ -24,7 +24,7 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	invalidCycleRequest.Header.Set("HX-Request", "true")
 	invalidCycleRequest.Header.Set("Cookie", authCookie)
 
-	invalidCycleResponse, err := app.Test(invalidCycleRequest, -1)
+	invalidCycleResponse, err := app.Test(invalidCycleRequest)
 	if err != nil {
 		t.Fatalf("invalid cycle request failed: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	incompatibleRequest.Header.Set("HX-Request", "true")
 	incompatibleRequest.Header.Set("Cookie", authCookie)
 
-	incompatibleResponse, err := app.Test(incompatibleRequest, -1)
+	incompatibleResponse, err := app.Test(incompatibleRequest)
 	if err != nil {
 		t.Fatalf("incompatible request failed: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestOnboardingStep1RejectsUnparseableLastPeriodStart(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("step1 invalid-date request failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestOnboardingStep2IgnoresUnexpectedPeriodEndInput(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("unexpected period-end request failed: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestOnboardingStep2SanitizesSliderValuesEvenWhenUnexpectedPeriodEndIsPresen
 			request.Header.Set("HX-Request", "true")
 			request.Header.Set("Cookie", authCookie)
 
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("sanitize request failed: %v", err)
 			}

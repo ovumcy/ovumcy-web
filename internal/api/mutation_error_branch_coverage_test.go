@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
@@ -26,7 +26,7 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 
 	app := fiber.New()
 	if injectUser {
-		app.Use(func(c *fiber.Ctx) error {
+		app.Use(func(c fiber.Ctx) error {
 			c.Locals(contextUserKey, &models.User{ID: 1, Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5})
 			return c.Next()
 		})
@@ -65,7 +65,7 @@ func mutationBranchRequest(t *testing.T, app *fiber.App, method string, path str
 	}
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("%s %s failed: %v", method, path, err)
 	}

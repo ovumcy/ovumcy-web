@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"golang.org/x/oauth2"
 )
@@ -65,7 +65,7 @@ var oidcStateCookieSpec = sealedCookieSpec{
 	forceSecure: true,
 }
 
-func (handler *Handler) setOIDCStateCookie(c *fiber.Ctx, state oidcAuthState) error {
+func (handler *Handler) setOIDCStateCookie(c fiber.Ctx, state oidcAuthState) error {
 	if !handler.cookieSecure {
 		return errors.New("oidc state cookie requires secure transport")
 	}
@@ -80,7 +80,7 @@ func (handler *Handler) setOIDCStateCookie(c *fiber.Ctx, state oidcAuthState) er
 	return handler.writeSealedCookie(c, oidcStateCookieSpec, payload, time.Now().Add(oidcStateCookieTTL))
 }
 
-func (handler *Handler) popOIDCStateCookie(c *fiber.Ctx) oidcAuthState {
+func (handler *Handler) popOIDCStateCookie(c fiber.Ctx) oidcAuthState {
 	raw := strings.TrimSpace(c.Cookies(oidcStateCookieName))
 	if raw == "" {
 		return oidcAuthState{}
@@ -106,6 +106,6 @@ func (handler *Handler) popOIDCStateCookie(c *fiber.Ctx) oidcAuthState {
 	return state
 }
 
-func (handler *Handler) clearOIDCStateCookie(c *fiber.Ctx) {
+func (handler *Handler) clearOIDCStateCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, oidcStateCookieSpec)
 }

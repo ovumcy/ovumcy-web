@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
@@ -21,7 +21,7 @@ func TestDashboardLogoutFormsRequireConfirmation(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestDashboardNavigationShowsDisplayNameWithoutEmailFallback(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestCalendarSelectedDayLoadsEditModeWhenRequested(t *testing.T) {
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("calendar request failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func mustRenderDashboard(t *testing.T, app *fiber.App, authCookie string, langua
 		request.Header.Set("Cookie", authCookie+"; ovumcy_lang="+languageCookie)
 	}
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}

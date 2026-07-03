@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -71,7 +71,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
+	app.Use(func(c fiber.Ctx) error {
 		c.Locals(contextUserKey, &models.User{ID: 1, Role: models.RoleOwner})
 		return c.Next()
 	})
@@ -79,7 +79,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 
 	first := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", bytes.NewBufferString(""))
 	first.Header.Set("Accept", "application/json")
-	firstResp, err := app.Test(first, -1)
+	firstResp, err := app.Test(first)
 	if err != nil {
 		t.Fatalf("first logout request failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 
 	second := httptest.NewRequest(http.MethodDelete, "/api/v1/sessions/current", bytes.NewBufferString(""))
 	second.Header.Set("Accept", "application/json")
-	secondResp, err := app.Test(second, -1)
+	secondResp, err := app.Test(second)
 	if err != nil {
 		t.Fatalf("second logout request failed: %v", err)
 	}

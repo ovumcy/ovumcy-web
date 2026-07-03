@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -13,7 +13,7 @@ const flashCookieTTL = 5 * time.Minute
 
 var flashCookieSpec = sealedCookieSpec{name: flashCookieName, path: "/"}
 
-func (handler *Handler) setFlashCookie(c *fiber.Ctx, payload FlashPayload) {
+func (handler *Handler) setFlashCookie(c fiber.Ctx, payload FlashPayload) {
 	payload = normalizeFlashPayload(payload)
 	if flashPayloadEmpty(payload) {
 		handler.clearFlashCookie(c)
@@ -27,7 +27,7 @@ func (handler *Handler) setFlashCookie(c *fiber.Ctx, payload FlashPayload) {
 	_ = handler.writeSealedCookie(c, flashCookieSpec, serialized, time.Now().Add(flashCookieTTL))
 }
 
-func (handler *Handler) popFlashCookie(c *fiber.Ctx) FlashPayload {
+func (handler *Handler) popFlashCookie(c fiber.Ctx) FlashPayload {
 	raw := strings.TrimSpace(c.Cookies(flashCookieName))
 	if raw == "" {
 		return FlashPayload{}
@@ -51,7 +51,7 @@ func (handler *Handler) popFlashCookie(c *fiber.Ctx) FlashPayload {
 	return normalizeFlashPayload(payload)
 }
 
-func (handler *Handler) clearFlashCookie(c *fiber.Ctx) {
+func (handler *Handler) clearFlashCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, flashCookieSpec)
 }
 

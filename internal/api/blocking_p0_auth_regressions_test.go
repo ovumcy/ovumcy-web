@@ -13,7 +13,7 @@ func TestLoginPageUsesLoginHeadingOnFirstLaunch(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/login", nil)
 	request.Header.Set("Accept-Language", "ru")
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestOnboardingStep1ShowsLocalizedErrorWhenDateMissing(t *testing.T) {
 	request.Header.Set("Accept-Language", "ru")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("step1 request failed: %v", err)
 	}

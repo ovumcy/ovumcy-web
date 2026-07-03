@@ -1,8 +1,8 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
-func (handler *Handler) ShowStats(c *fiber.Ctx) error {
+func (handler *Handler) ShowStats(c fiber.Ctx) error {
 	user, handled, err := handler.currentUserOrRedirectToLogin(c)
 	if err != nil {
 		return err
@@ -12,7 +12,7 @@ func (handler *Handler) ShowStats(c *fiber.Ctx) error {
 	}
 
 	language, messages, now := handler.currentPageViewContext(c)
-	data, err := handler.buildStatsPageData(c.UserContext(), user, language, messages, now, handler.requestLocation(c))
+	data, err := handler.buildStatsPageData(c.Context(), user, language, messages, now, handler.requestLocation(c))
 	if err != nil {
 		return handler.respondMappedError(c, mapStatsPageViewError(err))
 	}

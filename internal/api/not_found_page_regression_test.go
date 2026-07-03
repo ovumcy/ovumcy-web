@@ -16,7 +16,7 @@ func TestNotFoundPageForGuestUsesLoginPrimaryAction(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/missing-page", nil)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("not-found page request failed: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestNotFoundPageForAuthenticatedUserUsesDashboardPrimaryAction(t *testing.T
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("authenticated not-found page request failed: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestNotFoundAPIPathReturnsJSONError(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/missing-endpoint", nil)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("not-found api request failed: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestNotFoundHTMXPathReturnsLocalizedStatusErrorMarkup(t *testing.T) {
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "ru")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("not-found htmx request failed: %v", err)
 	}

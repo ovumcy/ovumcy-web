@@ -15,7 +15,7 @@ func TestOnboardingDateInputUsesCurrentLanguage(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=en")
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestOnboardingDateFieldUsesRussianLabels(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=ru")
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestOnboardingDateFieldUsesSpanishLabels(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=es")
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestOnboardingDateFieldUsesFrenchLabels(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=fr")
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestOnboardingDateFieldUsesGermanLabels(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=de")
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Web framework upgraded to Fiber v3.** `gofiber/fiber` moves from v2.52.13 to v3.4.0, removing GHSA-gcfq-8gqf-4876 / CVE-2026-45045 (X-Real-IP spoofing in fiber's proxy middleware) from the dependency graph entirely — the vulnerable module was never compiled into Ovumcy, and `govulncheck` now reports no known vulnerabilities. No operator-visible behavior change: routes, JSON shapes, cookie attributes, security headers, rate limiting, and CSRF semantics are preserved; the CSRF token lifetime is pinned explicitly to the previous 1-hour value (Fiber v3's new default would otherwise shorten it to 30 minutes).
+
 ## [1.6.0] - 2026-07-03
 
 ### Added

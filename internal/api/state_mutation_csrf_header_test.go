@@ -32,7 +32,7 @@ func TestStateMutationAcceptsCSRFTokenViaXCSRFTokenHeader(t *testing.T) {
 	request.Header.Set("X-CSRF-Token", ctx.csrfToken)
 	request.Header.Set("Accept", "application/json")
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("settings profile request via header CSRF failed: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestStateMutationRejectsInvalidCSRFTokenInHeader(t *testing.T) {
 	request.Header.Set("X-CSRF-Token", "definitely-not-the-real-token")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("settings profile request with bogus header token failed: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestStateMutationPrefersFormCSRFFieldOverHeader(t *testing.T) {
 	request.Header.Set("X-CSRF-Token", "stale-or-bogus")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("settings profile request with form + header failed: %v", err)
 	}

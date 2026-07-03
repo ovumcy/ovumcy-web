@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func submitSettingsCycleUpdate(t *testing.T, app *fiber.App, authCookie string, csrfCookie *http.Cookie, csrfToken string, form url.Values) string {

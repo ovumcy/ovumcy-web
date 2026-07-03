@@ -3,17 +3,17 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) ShowOnboarding(c *fiber.Ctx) error {
+func (handler *Handler) ShowOnboarding(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	if !services.RequiresOnboarding(user) {
-		return c.Redirect("/dashboard", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/dashboard")
 	}
 
 	location := handler.requestLocation(c)

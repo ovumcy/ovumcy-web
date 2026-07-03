@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -100,7 +100,7 @@ func parseDayPayloadForUser(t *testing.T, request *http.Request, user *models.Us
 	t.Helper()
 
 	app := fiber.New()
-	app.Post("/day", func(c *fiber.Ctx) error {
+	app.Post("/day", func(c fiber.Ctx) error {
 		payload, err := parseDayPayload(c, user)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})

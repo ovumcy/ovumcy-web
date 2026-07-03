@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
@@ -47,7 +47,7 @@ func TestOwnerCriticalFlowSmoke(t *testing.T) {
 	upsertRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	upsertRequest.Header.Set("Cookie", authCookie)
 
-	upsertResponse, err := app.Test(upsertRequest, -1)
+	upsertResponse, err := app.Test(upsertRequest)
 	if err != nil {
 		t.Fatalf("upsert day request failed: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestOwnerCriticalFlowSmoke(t *testing.T) {
 
 	exportRequest := newExportRequestForTest(t, "/api/v1/exports/csv?from=2026-02-01&to=2026-02-28", authCookie)
 
-	exportResponse, err := app.Test(exportRequest, -1)
+	exportResponse, err := app.Test(exportRequest)
 	if err != nil {
 		t.Fatalf("export request failed: %v", err)
 	}

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestRespondMappedErrorGlobalJSONReturnsStableErrorPayload(t *testing.T) {
@@ -110,17 +110,17 @@ func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 	handler := &Handler{secretKey: []byte("test-error-mapping-secret")}
 	app := fiber.New()
 
-	app.Get("/api/test/global", func(c *fiber.Ctx) error {
+	app.Get("/api/test/global", func(c fiber.Ctx) error {
 		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"))
 	})
-	app.Get("/api/test/htmx", func(c *fiber.Ctx) error {
+	app.Get("/api/test/htmx", func(c fiber.Ctx) error {
 		c.Locals(contextMessagesKey, map[string]string{"not found": "Localized not found."})
 		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "not found"))
 	})
-	app.Post("/api/v1/users", func(c *fiber.Ctx) error {
+	app.Post("/api/v1/users", func(c fiber.Ctx) error {
 		return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password"))
 	})
-	app.Patch("/api/v1/users/current/profile", func(c *fiber.Ctx) error {
+	app.Patch("/api/v1/users/current/profile", func(c fiber.Ctx) error {
 		return handler.respondMappedError(c, settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid settings input"))
 	})
 

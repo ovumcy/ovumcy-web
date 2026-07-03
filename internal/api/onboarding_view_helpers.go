@@ -3,12 +3,12 @@ package api
 import (
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) buildOnboardingViewData(c *fiber.Ctx, user *models.User, now time.Time, location *time.Location) fiber.Map {
+func (handler *Handler) buildOnboardingViewData(c fiber.Ctx, user *models.User, now time.Time, location *time.Location) fiber.Map {
 	messages := currentMessages(c)
 	state := services.BuildOnboardingViewState(user, c.Query("step"), now, location)
 

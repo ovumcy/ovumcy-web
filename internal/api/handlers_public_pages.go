@@ -3,11 +3,11 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) SetLanguage(c *fiber.Ctx) error {
+func (handler *Handler) SetLanguage(c fiber.Ctx) error {
 	languageInput := strings.TrimSpace(c.FormValue("lang"))
 	if languageInput == "" {
 		return fiber.ErrBadRequest
@@ -21,10 +21,10 @@ func (handler *Handler) SetLanguage(c *fiber.Ctx) error {
 		c.Set("HX-Redirect", nextPath)
 		return c.SendStatus(fiber.StatusOK)
 	}
-	return c.Redirect(nextPath, fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To(nextPath)
 }
 
-func (handler *Handler) ShowPrivacyPage(c *fiber.Ctx) error {
+func (handler *Handler) ShowPrivacyPage(c fiber.Ctx) error {
 	messages := currentMessages(c)
 	authenticatedUser := handler.optionalAuthenticatedUser(c)
 	data := buildPrivacyPageData(messages, c.Query("back"), authenticatedUser)

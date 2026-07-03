@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func authRateLimitErrorSpec(key string) APIErrorSpec {
@@ -23,11 +23,11 @@ func globalRateLimitErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusTooManyRequests, APIErrorCategoryRateLimited, "too many requests")
 }
 
-func (handler *Handler) RespondAuthRateLimited(c *fiber.Ctx, errorKey string) error {
+func (handler *Handler) RespondAuthRateLimited(c fiber.Ctx, errorKey string) error {
 	return handler.respondRateLimitedMappedError(c, authRateLimitErrorSpec(errorKey))
 }
 
-func (handler *Handler) RespondAPIRateLimited(c *fiber.Ctx) error {
+func (handler *Handler) RespondAPIRateLimited(c fiber.Ctx) error {
 	switch {
 	case isV1AuthFormPath(c.Path()):
 		return handler.respondRateLimitedMappedError(c, authRateLimitErrorSpec("too many requests"))
@@ -38,7 +38,7 @@ func (handler *Handler) RespondAPIRateLimited(c *fiber.Ctx) error {
 	}
 }
 
-func (handler *Handler) respondRateLimitedMappedError(c *fiber.Ctx, spec APIErrorSpec) error {
+func (handler *Handler) respondRateLimitedMappedError(c fiber.Ctx, spec APIErrorSpec) error {
 	if acceptsJSON(c) {
 		payload := fiber.Map{"error": spec.Key}
 		if retryAfter := retryAfterSeconds(c); retryAfter > 0 {
@@ -49,7 +49,7 @@ func (handler *Handler) respondRateLimitedMappedError(c *fiber.Ctx, spec APIErro
 	return handler.respondMappedError(c, spec)
 }
 
-func retryAfterSeconds(c *fiber.Ctx) int {
+func retryAfterSeconds(c fiber.Ctx) int {
 	value := strings.TrimSpace(string(c.Response().Header.Peek(fiber.HeaderRetryAfter)))
 	if value == "" {
 		return 0

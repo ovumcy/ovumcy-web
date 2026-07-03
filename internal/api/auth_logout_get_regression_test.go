@@ -17,7 +17,7 @@ func TestAuthLogoutHandlerSupportsPostRequestWithoutCSRFMiddleware(t *testing.T)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("logout POST request failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestLogoutPageRoutePostHandlerClearsAuthCookiesWithoutCSRFMiddleware(t *tes
 		),
 	)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("logout page route POST request failed: %v", err)
 	}

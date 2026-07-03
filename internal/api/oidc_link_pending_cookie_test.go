@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // The OIDC link-pending cookie hands a user from a partial OIDC callback to
@@ -36,13 +36,13 @@ func TestOIDCLinkPendingCookieRoundTripPreservesPayload(t *testing.T) {
 	payload := newOIDCLinkPendingTestPayload(t, time.Now().UTC())
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setOIDCLinkPendingCookie(c, payload); err != nil {
 			t.Fatalf("set oidc link pending cookie: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get(oidcLinkConfirmPath, func(c *fiber.Ctx) error {
+	app.Get(oidcLinkConfirmPath, func(c fiber.Ctx) error {
 		recovered, ok := handler.readOIDCLinkPendingCookie(c)
 		if !ok {
 			t.Fatal("expected sealed link-pending cookie to round-trip, got !ok")
@@ -56,7 +56,7 @@ func TestOIDCLinkPendingCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestOIDCLinkPendingCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -86,20 +86,20 @@ func TestOIDCLinkPendingCookieRejectsTamperedByte(t *testing.T) {
 	payload := newOIDCLinkPendingTestPayload(t, time.Now().UTC())
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setOIDCLinkPendingCookie(c, payload); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get(oidcLinkConfirmPath, func(c *fiber.Ctx) error {
+	app.Get(oidcLinkConfirmPath, func(c fiber.Ctx) error {
 		if _, ok := handler.readOIDCLinkPendingCookie(c); ok {
 			t.Fatal("expected tampered link-pending cookie to be rejected")
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestOIDCLinkPendingCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
@@ -134,21 +134,21 @@ func TestOIDCLinkPendingCookieRejectsForeignKey(t *testing.T) {
 	payload := newOIDCLinkPendingTestPayload(t, time.Now().UTC())
 
 	sealingApp := fiber.New()
-	sealingApp.Get("/seal", func(c *fiber.Ctx) error {
+	sealingApp.Get("/seal", func(c fiber.Ctx) error {
 		if err := sealingHandler.setOIDCLinkPendingCookie(c, payload); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	openingApp := fiber.New()
-	openingApp.Get(oidcLinkConfirmPath, func(c *fiber.Ctx) error {
+	openingApp.Get(oidcLinkConfirmPath, func(c fiber.Ctx) error {
 		if _, ok := openingHandler.readOIDCLinkPendingCookie(c); ok {
 			t.Fatal("expected rotated-key handler to reject sealed link-pending cookie")
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestOIDCLinkPendingCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest, -1)
+	openResponse, err := openingApp.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestOIDCLinkPendingCookieRejectsCrossPurposeAAD(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get(oidcLinkConfirmPath, func(c *fiber.Ctx) error {
+	app.Get(oidcLinkConfirmPath, func(c fiber.Ctx) error {
 		if _, ok := handler.readOIDCLinkPendingCookie(c); ok {
 			t.Fatal("expected cross-purpose sealed cookie to be rejected by AAD binding")
 		}
@@ -207,7 +207,7 @@ func TestOIDCLinkPendingCookieRejectsCrossPurposeAAD(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+foreignSealed)
-	response, err := app.Test(openRequest, -1)
+	response, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open cross-purpose request: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestOIDCLinkPendingCookieRejectsExpiredPayload(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get(oidcLinkConfirmPath, func(c *fiber.Ctx) error {
+	app.Get(oidcLinkConfirmPath, func(c fiber.Ctx) error {
 		if _, ok := handler.readOIDCLinkPendingCookie(c); ok {
 			t.Fatal("expected expired link-pending payload to be rejected by validAt() TTL gate")
 		}
@@ -256,7 +256,7 @@ func TestOIDCLinkPendingCookieRejectsExpiredPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", oidcLinkConfirmPath, nil)
 	openRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+sealed)
-	response, err := app.Test(openRequest, -1)
+	response, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open expired request: %v", err)
 	}

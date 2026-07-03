@@ -1,11 +1,11 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) GetDays(c *fiber.Ctx) error {
+func (handler *Handler) GetDays(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -16,7 +16,7 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, mapDayRangeError(err))
 	}
-	logs, err := handler.viewerService.FetchLogsForViewer(c.UserContext(), user, from, to, location)
+	logs, err := handler.viewerService.FetchLogsForViewer(c.Context(), user, from, to, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayLogsFetchErrorSpec())
 	}
@@ -24,7 +24,7 @@ func (handler *Handler) GetDays(c *fiber.Ctx) error {
 	return c.JSON(newDayResponses(logs))
 }
 
-func (handler *Handler) GetDay(c *fiber.Ctx) error {
+func (handler *Handler) GetDay(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -35,7 +35,7 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	logEntry, err := handler.viewerService.FetchLogByDateForViewer(c.UserContext(), user, day, location)
+	logEntry, err := handler.viewerService.FetchLogByDateForViewer(c.Context(), user, day, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}
@@ -43,7 +43,7 @@ func (handler *Handler) GetDay(c *fiber.Ctx) error {
 	return c.JSON(newDayResponse(logEntry))
 }
 
-func (handler *Handler) CheckDayExists(c *fiber.Ctx) error {
+func (handler *Handler) CheckDayExists(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -54,7 +54,7 @@ func (handler *Handler) CheckDayExists(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, invalidDateErrorSpec())
 	}
-	exists, err := handler.dayService.DayHasDataForDate(c.UserContext(), user.ID, day, location)
+	exists, err := handler.dayService.DayHasDataForDate(c.Context(), user.ID, day, location)
 	if err != nil {
 		return handler.respondMappedError(c, dayFetchErrorSpec())
 	}

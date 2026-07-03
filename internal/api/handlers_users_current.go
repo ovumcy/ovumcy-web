@@ -1,6 +1,6 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
 // GetCurrentUser returns a small, stable representation of the session
 // subject. The shape is the minimum needed for an external wrapper to learn
@@ -9,7 +9,7 @@ import "github.com/gofiber/fiber/v2"
 // issuing mutating calls (onboarding_completed, local_auth_enabled,
 // must_change_password). Sensitive fields (password/recovery hashes, TOTP
 // secret) are never included.
-func (handler *Handler) GetCurrentUser(c *fiber.Ctx) error {
+func (handler *Handler) GetCurrentUser(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())

@@ -82,7 +82,7 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.
 		),
 	)
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("delete-account request failed: %v", err)
 	}

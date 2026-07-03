@@ -3,7 +3,7 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/httpx"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -13,7 +13,7 @@ import (
 // standard envelope with both the legacy top-level `error` string key and the
 // richer `error_detail` object describing category and target. The top-level
 // key stays for backward compatibility with clients that already parse it.
-func apiError(c *fiber.Ctx, spec APIErrorSpec) error {
+func apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
 		rendered := spec.Key
 		flashKey := spec.Key
@@ -56,36 +56,36 @@ func requestTooLargeErrorSpec() APIErrorSpec {
 // than through a route handler. Localization is best-effort: on that early
 // path request-scoped messages are absent, so the response falls back to the
 // stable key, which is exactly what a machine client keys on.
-func RespondRequestEntityTooLarge(c *fiber.Ctx) error {
+func RespondRequestEntityTooLarge(c fiber.Ctx) error {
 	return apiError(c, requestTooLargeErrorSpec())
 }
 
-func (handler *Handler) respondAuthError(c *fiber.Ctx, spec APIErrorSpec) error {
+func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 	if (isV1AuthFormPath(c.Path()) || strings.HasPrefix(c.Path(), "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
 		flash := FlashPayload{AuthError: spec.Key}
 		switch c.Path() {
 		case "/api/v1/users":
 			handler.setFlashCookie(c, flash)
-			return c.Redirect("/register", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
 		case "/api/v1/sessions":
 			handler.setFlashCookie(c, flash)
-			return c.Redirect("/login", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		case "/api/v1/password-resets":
 			flash.ForgotEmail = services.NormalizeAuthEmail(c.FormValue("email"))
 			handler.setFlashCookie(c, flash)
-			return c.Redirect("/forgot-password", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/forgot-password")
 		case "/auth/oidc", "/auth/oidc/start", "/auth/oidc/callback":
 			handler.setFlashCookie(c, flash)
-			return c.Redirect("/login", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		case "/api/v1/password-resets/redeem":
 			handler.setFlashCookie(c, flash)
-			return c.Redirect("/reset-password", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/reset-password")
 		case "/api/v1/sessions/2fa-challenge":
 			handler.setFlashCookie(c, flash)
-			return c.Redirect("/auth/2fa", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/auth/2fa")
 		default:
 			handler.setFlashCookie(c, flash)
-			return c.Redirect("/login", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		}
 	}
 	return apiError(c, spec)
@@ -106,7 +106,7 @@ func isV1AuthFormPath(path string) bool {
 	return false
 }
 
-func (handler *Handler) respondSettingsError(c *fiber.Ctx, spec APIErrorSpec) error {
+func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) error {
 	if isHTMX(c) {
 		rendered := spec.Key
 		flashKey := spec.Key
@@ -120,7 +120,7 @@ func (handler *Handler) respondSettingsError(c *fiber.Ctx, spec APIErrorSpec) er
 	}
 	if strings.HasPrefix(c.Path(), "/api/v1/users/current") && !acceptsJSON(c) {
 		handler.setFlashCookie(c, FlashPayload{SettingsError: spec.Key})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 	return apiError(c, spec)
 }

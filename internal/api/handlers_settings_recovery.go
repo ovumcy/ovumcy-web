@@ -3,11 +3,11 @@ package api
 import (
 	"errors"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) RegenerateRecoveryCode(c *fiber.Ctx) error {
+func (handler *Handler) RegenerateRecoveryCode(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		spec := unauthorizedErrorSpec()
@@ -23,7 +23,7 @@ func (handler *Handler) RegenerateRecoveryCode(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	recoveryCode, err := handler.authService.RegenerateRecoveryCode(c.UserContext(), user.ID)
+	recoveryCode, err := handler.authService.RegenerateRecoveryCode(c.Context(), user.ID)
 	if err != nil {
 		spec := mapRecoveryCodeRegenerationError(err)
 		handler.logSecurityError(c, "auth.recovery_code_regenerate", spec)

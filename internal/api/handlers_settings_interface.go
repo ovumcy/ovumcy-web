@@ -3,17 +3,17 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) UpdateInterfaceSettings(c *fiber.Ctx) error {
+func (handler *Handler) UpdateInterfaceSettings(c fiber.Ctx) error {
 	if _, ok := currentUser(c); !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
 	}
 
 	input := interfaceSettingsInput{}
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
 

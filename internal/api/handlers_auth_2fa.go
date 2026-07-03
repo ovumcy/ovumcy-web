@@ -4,17 +4,17 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // ShowTOTPChallengePage renders the 2FA code entry page after a successful
 // password login when the user has TOTP enabled.
-func (handler *Handler) ShowTOTPChallengePage(c *fiber.Ctx) error {
+func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
 	_, _, err := handler.parseTOTPPendingCookie(c)
 	if err != nil {
 		// No valid pending cookie — send back to login.
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	flash := handler.popFlashCookie(c)
@@ -28,7 +28,7 @@ func (handler *Handler) ShowTOTPChallengePage(c *fiber.Ctx) error {
 
 // VerifyTOTPLogin validates the 6-digit TOTP code submitted on the challenge page.
 // On success it issues the auth session cookie and redirects to the dashboard.
-func (handler *Handler) VerifyTOTPLogin(c *fiber.Ctx) error {
+func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 	userID, rememberMe, err := handler.parseTOTPPendingCookie(c)
 	if err != nil {
 		spec := totpSessionExpiredErrorSpec()
@@ -53,14 +53,14 @@ func (handler *Handler) VerifyTOTPLogin(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	user, err := handler.authService.FindByID(c.UserContext(), userID)
+	user, err := handler.authService.FindByID(c.Context(), userID)
 	if err != nil || !user.TOTPEnabled {
 		spec := totpSessionExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
 		return handler.respondMappedError(c, spec)
 	}
 
-	valid, err := handler.totpService.ValidateCode(c.UserContext(), userID, user.TOTPSecret, code)
+	valid, err := handler.totpService.ValidateCode(c.Context(), userID, user.TOTPSecret, code)
 	if errors.Is(err, services.ErrTOTPReplayed) {
 		// Same response shape as a plain invalid code so an attacker cannot
 		// distinguish replay from a wrong guess. We log replay separately for

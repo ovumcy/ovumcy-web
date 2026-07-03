@@ -39,7 +39,7 @@ func TestVerifyTOTP2FAEnrollment_BumpsSessionVersion(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/2fa", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie), setupCookie))
-	resp, err := ctx.app.Test(req, -1)
+	resp, err := ctx.app.Test(req)
 	if err != nil {
 		t.Fatalf("verify enroll: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestVerifyTOTP2FAEnrollment_BumpsSessionVersion(t *testing.T) {
 
 	otherProbe := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	otherProbe.Header.Set("Cookie", otherSessionCookie)
-	otherResp, err := ctx.app.Test(otherProbe, -1)
+	otherResp, err := ctx.app.Test(otherProbe)
 	if err != nil {
 		t.Fatalf("other-session probe: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestDisableTOTP2FA_BumpsSessionVersion(t *testing.T) {
 
 	otherProbe := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	otherProbe.Header.Set("Cookie", preDisableCookie)
-	otherResp, err := ctx.app.Test(otherProbe, -1)
+	otherResp, err := ctx.app.Test(otherProbe)
 	if err != nil {
 		t.Fatalf("other-session probe: %v", err)
 	}

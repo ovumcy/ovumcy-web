@@ -9,7 +9,6 @@ import (
 	"log"
 	"mime"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,13 +18,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/compress"
-	"github.com/gofiber/fiber/v2/middleware/csrf"
-	"github.com/gofiber/fiber/v2/middleware/filesystem"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/compress"
+	"github.com/gofiber/fiber/v3/middleware/csrf"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
+	"github.com/gofiber/fiber/v3/middleware/logger"
+	"github.com/gofiber/fiber/v3/middleware/recover"
+	"github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/ovumcy/ovumcy-web/internal/api"
 	"github.com/ovumcy/ovumcy-web/internal/bootstrap"
 	"github.com/ovumcy/ovumcy-web/internal/cli"
@@ -149,7 +148,9 @@ func main() {
 // stop completes, then closes the database so SQLite checkpoints its WAL
 // and releases the file before the process exits — on both exit paths.
 func runServer(app *fiber.App, database *gorm.DB, address string) error {
-	err := app.Listen(address)
+	// Fiber v3 moved DisableStartupMessage out of fiber.Config and into the
+	// per-listen ListenConfig; keep the banner suppressed as before.
+	err := app.Listen(address, fiber.ListenConfig{DisableStartupMessage: true})
 	closeDatabase(database)
 	return err
 }
@@ -327,39 +328,48 @@ func registerStaticContentTypes() {
 }
 
 // newStaticAssetHandler serves the browser static assets embedded into the
-// binary (staticassets.Files) via fiber's filesystem middleware, so the
-// runtime needs no on-disk web/static directory. MaxAge preserves the same
-// public Cache-Control max-age (staticAssetMaxAgeSeconds) that app.Static
-// emitted; assets are cache-busted by the ?v=<build revision> query on their
-// URLs (see base.html).
+// binary (staticassets.Files) via fiber's static middleware, so the runtime
+// needs no on-disk web/static directory. MaxAge preserves the same public
+// Cache-Control max-age (staticAssetMaxAgeSeconds) the handler emitted under
+// Fiber v2; assets are cache-busted by the ?v=<build revision> query on their
+// URLs (see base.html). The root argument is empty because the assets are
+// supplied as an io/fs.FS via Config.FS (Fiber v3 requires an empty root for
+// fs.FS-backed serving); on a miss the middleware resets to a clean response
+// and calls c.Next(), so unknown /static paths fall through to the app's
+// NotFound handler exactly as before.
 func newStaticAssetHandler() fiber.Handler {
 	assets, err := fs.Sub(staticassets.Files, "static")
 	if err != nil {
 		log.Fatalf("static assets init failed: %v", err) // codecov:ignore -- unreachable: the embedded static/ subtree always exists at build time.
 	}
-	return filesystem.New(filesystem.Config{
-		Root:   http.FS(assets),
+	return static.New("", static.Config{
+		FS:     assets,
 		MaxAge: staticAssetMaxAgeSeconds,
 	})
 }
 
 func fiberConfig(proxy proxySettings) fiber.Config {
 	appConfig := fiber.Config{
-		AppName:               "Ovumcy",
-		DisableStartupMessage: true,
-		ErrorHandler:          ovumcyErrorHandler,
-		BodyLimit:             maxRequestBodyBytes,
-		ReadTimeout:           30 * time.Second,
-		WriteTimeout:          60 * time.Second,
-		IdleTimeout:           120 * time.Second,
+		AppName:      "Ovumcy",
+		ErrorHandler: ovumcyErrorHandler,
+		BodyLimit:    maxRequestBodyBytes,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	if !proxy.Enabled {
 		return appConfig
 	}
+	// Fiber v3 collapses v2's EnableTrustedProxyCheck+TrustedProxies into
+	// TrustProxy (the on/off switch) plus TrustProxyConfig.Proxies (the exact
+	// IP/CIDR allowlist). EnableIPValidation keeps the same name and meaning.
+	// Proxies must list only literal IPs/CIDRs (no Loopback/Private/LinkLocal
+	// convenience flags) so fiber's trusted set stays byte-for-byte identical to
+	// the boundary trustedProxyMatcher parses for the rate-limit key generator.
 	appConfig.ProxyHeader = proxy.Header
-	appConfig.EnableTrustedProxyCheck = true
+	appConfig.TrustProxy = true
 	appConfig.EnableIPValidation = true
-	appConfig.TrustedProxies = proxy.TrustedProxies
+	appConfig.TrustProxyConfig = fiber.TrustProxyConfig{Proxies: proxy.TrustedProxies}
 	return appConfig
 }
 
@@ -442,11 +452,11 @@ func rightmostUntrustedIP(forwarded []string, trusted trustedProxyMatcher) strin
 //     when every hop is trusted.
 //   - Peer is a trusted proxy and the header is a single-value header the proxy
 //     overwrites (for example X-Real-IP): defer to fiber's parsed c.IP().
-func rateLimitKeyGenerator(proxy proxySettings) func(*fiber.Ctx) string {
+func rateLimitKeyGenerator(proxy proxySettings) func(fiber.Ctx) string {
 	trusted := newTrustedProxyMatcher(proxy.TrustedProxies)
 	headerIsXForwardedFor := strings.EqualFold(strings.TrimSpace(proxy.Header), fiber.HeaderXForwardedFor)
-	return func(c *fiber.Ctx) string {
-		peer := c.Context().RemoteIP()
+	return func(c fiber.Ctx) string {
+		peer := c.RequestCtx().RemoteIP()
 		if !proxy.Enabled || !trusted.contains(peer) {
 			return peer.String()
 		}
@@ -465,7 +475,7 @@ func rateLimitKeyGenerator(proxy proxySettings) func(*fiber.Ctx) string {
 // for example the 403 raised by the CSRF middleware) but never forwards a raw
 // error or recovered panic value to the client, since those can carry internal
 // detail such as table names, file paths, or driver messages.
-func ovumcyErrorHandler(c *fiber.Ctx, err error) error {
+func ovumcyErrorHandler(c fiber.Ctx, err error) error {
 	var fiberErr *fiber.Error
 	if errors.As(err, &fiberErr) {
 		// A body exceeding BodyLimit is raised by fiber's core before any app
@@ -549,22 +559,23 @@ func newRequestLogger(output io.Writer) fiber.Handler {
 	config := logger.Config{
 		Format: requestLoggerFormat,
 		CustomTags: map[string]logger.LogFunc{
-			"request_path": func(buffer logger.Buffer, c *fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
+			"request_path": func(buffer logger.Buffer, c fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
 				return buffer.WriteString(api.SafeRequestLogPath(c))
 			},
-			"safe_error": func(buffer logger.Buffer, c *fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
+			"safe_error": func(buffer logger.Buffer, c fiber.Ctx, data *logger.Data, extraParam string) (int, error) {
 				return buffer.WriteString(api.SafeLogError(data.ChainErr))
 			},
 		},
 	}
 	if output != nil {
-		config.Output = output
+		// Fiber v3 renamed logger.Config.Output to Stream (still an io.Writer).
+		config.Stream = output
 	}
 	return logger.New(config)
 }
 
 func securityHeadersMiddleware(enableStrictTransportSecurity bool) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		c.Set(headerXContentTypeOptions, xContentTypeOptionsNoSniff)
 		c.Set(headerReferrerPolicy, referrerPolicyStrictOrigin)
 		c.Set(headerPermissionsPolicy, permissionsPolicyDefault)
@@ -866,17 +877,22 @@ func parseCSV(value string) []string {
 
 func csrfMiddlewareConfig(cookieSecure bool, handler *api.Handler) csrf.Config {
 	return csrf.Config{
-		Next: func(c *fiber.Ctx) bool {
+		Next: func(c fiber.Ctx) bool {
 			return c.Method() == fiber.MethodPost && c.Path() == security.OIDCCallbackPath
 		},
-		KeyLookup:      "form:csrf_token",
+		// Fiber v3 removed KeyLookup and ContextKey: the token source is now a
+		// typed extractors.Extractor (see api.CSRFTokenExtractor, form-then-
+		// header) and the token is read back via csrf.TokenFromContext.
 		CookieName:     "ovumcy_csrf",
 		CookieSameSite: "Lax",
 		CookieHTTPOnly: true,
 		CookieSecure:   cookieSecure,
-		ContextKey:     "csrf",
-		Extractor:      api.CSRFTokenExtractor,
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
+		// Behavior-preserving pin: Fiber v2 used Expiration=1h; v3 renamed this
+		// to IdleTimeout and defaults it to 30m. Pin 1h so the token lifetime
+		// (and thus form/session validity window) is unchanged by the upgrade.
+		IdleTimeout: time.Hour,
+		Extractor:   api.CSRFTokenExtractor(),
+		ErrorHandler: func(c fiber.Ctx, err error) error {
 			handler.LogSecurityEvent(c, "csrf", "denied", api.SecurityEventField{
 				Key:   "reason",
 				Value: api.CSRFFailureReason(err),
@@ -891,7 +907,7 @@ type authRateLimitConfig struct {
 }
 
 func newAuthRateLimitHandler(handler *api.Handler, config authRateLimitConfig) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		logRateLimitHit(c)
 		handler.LogSecurityEvent(c, "rate_limit", "blocked",
 			api.SecurityEventField{Key: "scope", Value: "auth"},
@@ -902,7 +918,7 @@ func newAuthRateLimitHandler(handler *api.Handler, config authRateLimitConfig) f
 }
 
 func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
-	return func(c *fiber.Ctx) error {
+	return func(c fiber.Ctx) error {
 		logRateLimitHit(c)
 		handler.LogSecurityEvent(c, "rate_limit", "blocked",
 			api.SecurityEventField{Key: "scope", Value: rateLimitScope(c)},
@@ -912,7 +928,7 @@ func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
 	}
 }
 
-func rateLimitScope(c *fiber.Ctx) string {
+func rateLimitScope(c fiber.Ctx) string {
 	path := c.Path()
 	switch {
 	case strings.HasPrefix(path, "/api/v1/users/current"):
@@ -944,13 +960,13 @@ func isV1AuthPath(path string) bool {
 // this filter a limiter wired to "/api/v1/sessions" would also fire on
 // sibling routes such as POST /api/v1/sessions/2fa-challenge that share the
 // prefix, silently broadening the rate-limit budget.
-func rateLimitOnlyFor(method, path string) func(*fiber.Ctx) bool {
-	return func(c *fiber.Ctx) bool {
+func rateLimitOnlyFor(method, path string) func(fiber.Ctx) bool {
+	return func(c fiber.Ctx) bool {
 		return !(c.Method() == method && c.Path() == path)
 	}
 }
 
-func logRateLimitHit(c *fiber.Ctx) {
+func logRateLimitHit(c fiber.Ctx) {
 	retryAfter := strings.TrimSpace(string(c.Response().Header.Peek(fiber.HeaderRetryAfter)))
 	if retryAfter == "" {
 		retryAfter = "unknown"

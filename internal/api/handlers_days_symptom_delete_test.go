@@ -44,7 +44,7 @@ func TestDeleteSymptomArchivesAndKeepsIDsInLogs(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("hide symptom request failed: %v", err)
 	}

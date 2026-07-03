@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestBuildLoginPageDataUsesFlashPriorityAndSetupFlag(t *testing.T) {
@@ -18,7 +18,7 @@ func TestBuildLoginPageDataUsesFlashPriorityAndSetupFlag(t *testing.T) {
 		AuthError: "invalid credentials",
 	}
 
-	payload := evaluateAuthPageBuilder(t, query, func(c *fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
 		return c.JSON(buildLoginPageData(map[string]string{}, flash, true, false, false, true))
 	})
 

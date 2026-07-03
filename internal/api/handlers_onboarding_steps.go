@@ -4,11 +4,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
+func (handler *Handler) OnboardingStep1(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -23,7 +23,7 @@ func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
 	if validationError != "" {
 		return handler.respondMappedError(c, onboardingValidationErrorSpec(validationError))
 	}
-	if err := handler.onboardingSvc.SaveStep1(c.UserContext(), user.ID, values.Start); err != nil {
+	if err := handler.onboardingSvc.SaveStep1(c.Context(), user.ID, values.Start); err != nil {
 		return handler.respondMappedError(c, onboardingSaveStepErrorSpec())
 	}
 
@@ -33,10 +33,10 @@ func (handler *Handler) OnboardingStep1(c *fiber.Ctx) error {
 	if isHTMX(c) {
 		return c.SendStatus(fiber.StatusNoContent)
 	}
-	return c.Redirect("/onboarding?step=2", fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/onboarding?step=2")
 }
 
-func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
+func (handler *Handler) OnboardingStep2(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.respondMappedError(c, unauthorizedErrorSpec())
@@ -52,7 +52,7 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, onboardingValidationErrorSpec(validationError))
 	}
 	_, _, err := handler.onboardingSvc.SaveStep2(
-		c.UserContext(),
+		c.Context(),
 		user.ID,
 		values.CycleLength,
 		values.PeriodLength,
@@ -64,7 +64,7 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 	if err != nil {
 		return handler.respondMappedError(c, onboardingSaveStepErrorSpec())
 	}
-	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.UserContext(), user.ID, handler.requestLocationFromOnboardingForm(c)); err != nil {
+	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.requestLocationFromOnboardingForm(c)); err != nil {
 		if errors.Is(err, services.ErrOnboardingStepsRequired) {
 			if acceptsJSON(c) {
 				return c.JSON(fiber.Map{"ok": true})
@@ -72,7 +72,7 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 			if isHTMX(c) {
 				return c.SendStatus(fiber.StatusNoContent)
 			}
-			return c.Redirect("/onboarding?step=1", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/onboarding?step=1")
 		}
 		return handler.respondMappedError(c, onboardingFinishErrorSpec())
 	}
@@ -83,5 +83,5 @@ func (handler *Handler) OnboardingStep2(c *fiber.Ctx) error {
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}
-	return c.Redirect("/dashboard", fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/dashboard")
 }

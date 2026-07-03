@@ -44,7 +44,7 @@ func TestClearAllData_BumpsSessionVersion(t *testing.T) {
 
 	otherProbe := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	otherProbe.Header.Set("Cookie", otherSessionCookie)
-	otherResp, err := ctx.app.Test(otherProbe, -1)
+	otherResp, err := ctx.app.Test(otherProbe)
 	if err != nil {
 		t.Fatalf("other-session probe: %v", err)
 	}

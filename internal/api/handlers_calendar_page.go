@@ -3,11 +3,11 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) ShowCalendar(c *fiber.Ctx) error {
+func (handler *Handler) ShowCalendar(c fiber.Ctx) error {
 	user, handled, err := handler.currentUserOrRedirectToLogin(c)
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func (handler *Handler) ShowCalendar(c *fiber.Ctx) error {
 		return redirectOrJSON(c, "/calendar")
 	}
 
-	data, err := handler.buildCalendarViewData(c.UserContext(), user, language, messages, now, activeMonth, selectedDate, location)
+	data, err := handler.buildCalendarViewData(c.Context(), user, language, messages, now, activeMonth, selectedDate, location)
 	if err != nil {
 		return handler.respondMappedError(c, mapCalendarViewError(err))
 	}

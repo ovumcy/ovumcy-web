@@ -3,7 +3,7 @@ package api
 import (
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func translateMessage(messages map[string]string, key string) string {
@@ -18,7 +18,7 @@ func translateMessage(messages map[string]string, key string) string {
 	return key
 }
 
-func currentLanguage(c *fiber.Ctx) string {
+func currentLanguage(c fiber.Ctx) string {
 	language, ok := c.Locals(contextLanguageKey).(string)
 	if !ok || strings.TrimSpace(language) == "" {
 		return ""
@@ -26,7 +26,7 @@ func currentLanguage(c *fiber.Ctx) string {
 	return language
 }
 
-func currentMessages(c *fiber.Ctx) map[string]string {
+func currentMessages(c fiber.Ctx) map[string]string {
 	messages, ok := c.Locals(contextMessagesKey).(map[string]string)
 	if !ok || messages == nil {
 		return map[string]string{}
@@ -34,7 +34,7 @@ func currentMessages(c *fiber.Ctx) map[string]string {
 	return messages
 }
 
-func (handler *Handler) withTemplateDefaults(c *fiber.Ctx, data fiber.Map) fiber.Map {
+func (handler *Handler) withTemplateDefaults(c fiber.Ctx, data fiber.Map) fiber.Map {
 	if data == nil {
 		data = fiber.Map{}
 	}
@@ -90,7 +90,7 @@ func (handler *Handler) withTemplateDefaults(c *fiber.Ctx, data fiber.Map) fiber
 	return data
 }
 
-func currentPathWithQuery(c *fiber.Ctx) string {
+func currentPathWithQuery(c fiber.Ctx) string {
 	path := string(c.Request().URI().RequestURI())
 	if path == "" {
 		return c.Path()

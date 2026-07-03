@@ -15,7 +15,7 @@ func TestPrivacyRouteRendersPublicPage(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/privacy", nil)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestPrivacyRouteBackLinkForAuthenticatedUser(t *testing.T) {
 	request.Header.Set("Cookie", authCookie)
 	request.Header.Set("Accept-Language", "en")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}

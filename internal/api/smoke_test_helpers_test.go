@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func smokeGET(t *testing.T, app *fiber.App, authCookie string, path string, expectedStatus int) string {
@@ -15,7 +15,7 @@ func smokeGET(t *testing.T, app *fiber.App, authCookie string, path string, expe
 	request := httptest.NewRequest(http.MethodGet, path, nil)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("GET %s failed: %v", path, err)
 	}

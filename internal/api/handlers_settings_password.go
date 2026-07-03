@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -17,7 +17,7 @@ import (
 // replayed to bypass the re-auth requirement.
 const stepupReauthMaxAge = 5 * time.Minute
 
-func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
+func (handler *Handler) ChangePassword(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		spec := unauthorizedErrorSpec()
@@ -43,7 +43,7 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.settingsService.ChangePassword(c.UserContext(), user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
+	if err := handler.settingsService.ChangePassword(c.Context(), user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
 		return handler.respondPasswordChangeError(c, err)
 	}
 
@@ -61,7 +61,7 @@ func (handler *Handler) ChangePassword(c *fiber.Ctx) error {
 // returns a redirect URL pointing at the provider authorize endpoint with
 // prompt=login + max_age=0 so the provider is forced to re-authenticate the
 // user interactively. Nothing is written to the database here.
-func (handler *Handler) StartLocalPasswordSetupReauth(c *fiber.Ctx) error {
+func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		spec := unauthorizedErrorSpec()
@@ -122,7 +122,7 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c *fiber.Ctx) error {
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true, "redirect_url": authURL})
 	}
-	return c.Redirect(authURL, fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To(authURL)
 }
 
 // completeLocalPasswordSetupReauth is dispatched from CompleteOIDCLogin when
@@ -130,12 +130,12 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c *fiber.Ctx) error {
 // the ordinary login state cookie. It must verify the OIDC exchange against
 // the same user that initiated the flow before committing the prepared
 // password.
-func (handler *Handler) completeLocalPasswordSetupReauth(c *fiber.Ctx, state oidcStepupState) error {
+func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidcStepupState) error {
 	if state.Purpose != oidcStepupPurposeLocalPasswordSetup {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 
 	// /auth/oidc/callback runs without AuthRequired middleware (the ordinary
@@ -146,11 +146,11 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c *fiber.Ctx, state oid
 		spec := settingsOIDCReauthMismatchErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 	if user.LocalAuthEnabled {
 		// Another flow finished first; nothing left to do.
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 
 	callbackState := c.FormValue("state")
@@ -159,13 +159,13 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c *fiber.Ctx, state oid
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 	if c.FormValue("error") != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 
 	ctx, cancel := oidcRequestContext(c)
@@ -174,10 +174,10 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c *fiber.Ctx, state oid
 		spec := mapLocalPasswordSetupReauthError(err)
 		handler.logSecurityError(c, "auth.local_password_setup.callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/settings", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
 
-	recoveryCode, err := handler.settingsService.FinalizeLocalPasswordSetup(c.UserContext(), user, state.PasswordHash)
+	recoveryCode, err := handler.settingsService.FinalizeLocalPasswordSetup(c.Context(), user, state.PasswordHash)
 	if err != nil {
 		return handler.respondPasswordChangeError(c, err)
 	}
@@ -210,25 +210,25 @@ func mapLocalPasswordSetupReauthError(err error) APIErrorSpec {
 	}
 }
 
-func parseChangePasswordInput(c *fiber.Ctx) (changePasswordInput, error) {
+func parseChangePasswordInput(c fiber.Ctx) (changePasswordInput, error) {
 	input := changePasswordInput{}
-	if err := c.BodyParser(&input); err != nil {
+	if err := c.Bind().Body(&input); err != nil {
 		return changePasswordInput{}, err
 	}
 	return input, nil
 }
 
-func (handler *Handler) refreshPasswordChangeSession(c *fiber.Ctx, user *models.User) error {
+func (handler *Handler) refreshPasswordChangeSession(c fiber.Ctx, user *models.User) error {
 	return handler.refreshCurrentSession(c, user, "auth.password_change")
 }
 
-func (handler *Handler) respondPasswordChangeError(c *fiber.Ctx, err error) error {
+func (handler *Handler) respondPasswordChangeError(c fiber.Ctx, err error) error {
 	spec := mapSettingsPasswordChangeError(err)
 	handler.logSecurityError(c, "auth.password_change", spec)
 	return handler.respondMappedError(c, spec)
 }
 
-func (handler *Handler) respondPasswordChanged(c *fiber.Ctx) error {
+func (handler *Handler) respondPasswordChanged(c fiber.Ctx) error {
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}

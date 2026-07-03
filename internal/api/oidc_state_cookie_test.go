@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 )
 
@@ -37,7 +37,7 @@ func TestPopOIDCStateCookieRejectsExpiredPayload(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		state := handler.popOIDCStateCookie(c)
 		if state.State != "" || state.Nonce != "" || state.CodeVerifier != "" {
 			t.Fatalf("expected expired OIDC state cookie to be rejected, got %+v", state)
@@ -47,7 +47,7 @@ func TestPopOIDCStateCookieRejectsExpiredPayload(t *testing.T) {
 
 	request := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	request.Header.Set("Cookie", oidcStateCookieName+"="+sealed)
-	response, testErr := app.Test(request, -1)
+	response, testErr := app.Test(request)
 	if testErr != nil {
 		t.Fatalf("request failed: %v", testErr)
 	}
@@ -71,13 +71,13 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setOIDCStateCookie(c, state); err != nil {
 			t.Fatalf("set oidc state cookie: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		recovered := handler.popOIDCStateCookie(c)
 		if recovered.State != state.State || recovered.Nonce != state.Nonce || recovered.CodeVerifier != state.CodeVerifier {
 			t.Fatalf("expected oidc state to round-trip, got %+v", recovered)
@@ -85,7 +85,7 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	openRequest.Header.Set("Cookie", oidcStateCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -122,14 +122,14 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 	}
 
 	sealingApp := fiber.New()
-	sealingApp.Get("/seal", func(c *fiber.Ctx) error {
+	sealingApp.Get("/seal", func(c fiber.Ctx) error {
 		if err := sealingHandler.setOIDCStateCookie(c, state); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	openingApp := fiber.New()
-	openingApp.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	openingApp.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		recovered := openingHandler.popOIDCStateCookie(c)
 		if recovered.State != "" || recovered.Nonce != "" || recovered.CodeVerifier != "" {
 			t.Fatalf("expected rotated-key handler to reject sealed state cookie, got %+v", recovered)
@@ -137,7 +137,7 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	openRequest.Header.Set("Cookie", oidcStateCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest, -1)
+	openResponse, err := openingApp.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -170,13 +170,13 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setOIDCStateCookie(c, state); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get(security.OIDCCallbackPath, func(c *fiber.Ctx) error {
+	app.Get(security.OIDCCallbackPath, func(c fiber.Ctx) error {
 		recovered := handler.popOIDCStateCookie(c)
 		if recovered.State != "" || recovered.Nonce != "" || recovered.CodeVerifier != "" {
 			t.Fatalf("expected tampered oidc state cookie to be rejected, got %+v", recovered)
@@ -184,7 +184,7 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", security.OIDCCallbackPath, nil)
 	openRequest.Header.Set("Cookie", oidcStateCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}

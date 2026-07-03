@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -17,12 +17,12 @@ import (
 // pair has never been linked. Auto-linking in that situation would let a
 // malicious or sloppy upstream IdP take over the account, so we issue a sealed
 // pending-link cookie and hand the user off to the password-confirmation page.
-func (handler *Handler) startOIDCLinkConfirmation(c *fiber.Ctx, result services.OIDCLoginResult) error {
+func (handler *Handler) startOIDCLinkConfirmation(c fiber.Ctx, result services.OIDCLoginResult) error {
 	if result.PendingLinkClaims == nil || result.User.ID == 0 {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	if !result.User.LocalAuthEnabled {
@@ -34,7 +34,7 @@ func (handler *Handler) startOIDCLinkConfirmation(c *fiber.Ctx, result services.
 		spec := authOIDCLinkConfirmUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	payload, err := newOIDCLinkPendingPayload(
@@ -48,32 +48,32 @@ func (handler *Handler) startOIDCLinkConfirmation(c *fiber.Ctx, result services.
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	if err := handler.setOIDCLinkPendingCookie(c, payload); err != nil {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	handler.logSecurityEvent(c, "auth.oidc_callback", "link_confirmation_required")
-	return c.Redirect(oidcLinkConfirmPath, fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To(oidcLinkConfirmPath)
 }
 
 // ShowOIDCLinkConfirmPage renders the password challenge that gates the
 // pending OIDC identity link. When the target account has TOTP enabled, the
 // page also surfaces the 2FA code field so the link cannot be completed
 // without the second factor.
-func (handler *Handler) ShowOIDCLinkConfirmPage(c *fiber.Ctx) error {
+func (handler *Handler) ShowOIDCLinkConfirmPage(c fiber.Ctx) error {
 	payload, ok := handler.readOIDCLinkPendingCookie(c)
 	if !ok {
 		handler.clearOIDCLinkPendingCookie(c)
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	totpRequired := false
-	if targetUser, err := handler.authService.FindByID(c.UserContext(), payload.TargetUserID); err == nil {
+	if targetUser, err := handler.authService.FindByID(c.Context(), payload.TargetUserID); err == nil {
 		totpRequired = targetUser.TOTPEnabled
 	}
 
@@ -91,14 +91,14 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c *fiber.Ctx) error {
 // CompleteOIDCLinkConfirmation verifies the current password for the target
 // account and, on success, persists the OIDC identity link and issues a fresh
 // auth session for the target user.
-func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
+func (handler *Handler) CompleteOIDCLinkConfirmation(c fiber.Ctx) error {
 	payload, ok := handler.readOIDCLinkPendingCookie(c)
 	if !ok {
 		handler.clearOIDCLinkPendingCookie(c)
 		spec := authOIDCLinkConfirmExpiredErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	password := strings.TrimSpace(c.FormValue("password"))
@@ -106,20 +106,20 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		spec := authOIDCLinkConfirmInvalidPasswordErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect(oidcLinkConfirmPath, fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To(oidcLinkConfirmPath)
 	}
 
 	// Cross-check that the cookie still resolves to a live user with local
 	// auth enabled. If the user's local auth was disabled between cookie
 	// issuance and submission, refuse — confirming via password no longer
 	// proves possession.
-	targetUser, err := handler.authService.FindByID(c.UserContext(), payload.TargetUserID)
+	targetUser, err := handler.authService.FindByID(c.Context(), payload.TargetUserID)
 	if err != nil || !targetUser.LocalAuthEnabled {
 		handler.clearOIDCLinkPendingCookie(c)
 		spec := authOIDCLinkConfirmUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	// Verify the password through the same LoginService path as the login
@@ -128,7 +128,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 	// request volume; without the shared attempt policy this endpoint was a
 	// faster password oracle than the login form it mirrors.
 	result, err := handler.loginService.Authenticate(
-		c.UserContext(),
+		c.Context(),
 		handler.secretKey,
 		c.IP(),
 		targetUser.Email,
@@ -142,7 +142,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		spec := mapOIDCLinkConfirmPasswordError(err)
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect(oidcLinkConfirmPath, fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To(oidcLinkConfirmPath)
 	}
 
 	// Step-up 2FA gate. If the target user has TOTP enabled, the link-confirm
@@ -159,7 +159,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		if spec, ok := handler.verifyTOTPForLinkConfirm(c, &targetUser); !ok {
 			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-			return c.Redirect(oidcLinkConfirmPath, fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To(oidcLinkConfirmPath)
 		}
 	}
 
@@ -168,12 +168,12 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		Subject: payload.Subject,
 		Email:   payload.Email,
 	}
-	if err := handler.oidcService.ConfirmAndLinkIdentity(c.UserContext(), payload.TargetUserID, claims, time.Now()); err != nil {
+	if err := handler.oidcService.ConfirmAndLinkIdentity(c.Context(), payload.TargetUserID, claims, time.Now()); err != nil {
 		handler.clearOIDCLinkPendingCookie(c)
 		spec := mapOIDCLinkConfirmError(err)
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	handler.clearOIDCLinkPendingCookie(c)
@@ -184,11 +184,11 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 			spec := authResetTokenCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-			return c.Redirect("/login", fiber.StatusSeeOther)
+			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 			// codecov:ignore:end
 		}
 		handler.logSecurityEvent(c, "auth.oidc_link_confirm", "reset_required")
-		return c.Redirect("/reset-password", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/reset-password")
 	}
 
 	if _, err := handler.setAuthCookie(c, &targetUser, false); err != nil {
@@ -198,11 +198,11 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 		}
 		handler.logSecurityError(c, "auth.oidc_link_confirm", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
 	handler.logSecurityEvent(c, "auth.oidc_link_confirm", "linked")
-	return c.Redirect(services.PostLoginRedirectPath(&targetUser), fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To(services.PostLoginRedirectPath(&targetUser))
 }
 
 // verifyTOTPForLinkConfirm runs the same checks as VerifyTOTPLogin (rate-limit,
@@ -210,7 +210,7 @@ func (handler *Handler) CompleteOIDCLinkConfirmation(c *fiber.Ctx) error {
 // On failure it returns an APIErrorSpec the caller can flash + redirect with.
 // On success it resets the per-(ip,user) failure counter so a clean unlink+
 // relink cycle doesn't carry stale attempts.
-func (handler *Handler) verifyTOTPForLinkConfirm(c *fiber.Ctx, targetUser *models.User) (APIErrorSpec, bool) {
+func (handler *Handler) verifyTOTPForLinkConfirm(c fiber.Ctx, targetUser *models.User) (APIErrorSpec, bool) {
 	if err := handler.totpService.CheckRateLimit(handler.secretKey, c.IP(), targetUser.ID, time.Now()); err != nil {
 		return totpRateLimitedErrorSpec(), false
 	}
@@ -219,7 +219,7 @@ func (handler *Handler) verifyTOTPForLinkConfirm(c *fiber.Ctx, targetUser *model
 		handler.totpService.RecordFailure(handler.secretKey, c.IP(), targetUser.ID, time.Now())
 		return totpInvalidCodeErrorSpec(), false
 	}
-	valid, err := handler.totpService.ValidateCode(c.UserContext(), targetUser.ID, targetUser.TOTPSecret, code)
+	valid, err := handler.totpService.ValidateCode(c.Context(), targetUser.ID, targetUser.TOTPSecret, code)
 	if errors.Is(err, services.ErrTOTPReplayed) {
 		handler.totpService.RecordFailure(handler.secretKey, c.IP(), targetUser.ID, time.Now())
 		handler.logSecurityEvent(c, "auth.oidc_link_confirm", "totp_replay_rejected")

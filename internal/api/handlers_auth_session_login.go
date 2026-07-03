@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func (handler *Handler) Register(c *fiber.Ctx) error {
+func (handler *Handler) Register(c fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
 		spec := authLocalSignInDisabledErrorSpec()
 		handler.logSecurityError(c, "auth.register", spec)
@@ -17,7 +17,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 			return handler.respondMappedError(c, spec)
 		}
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	credentials, err := parseCredentials(c)
 	if err != nil {
@@ -39,7 +39,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 	// See SECURITY.md "Register enumeration" for the residual two-step oracle.
 	now := time.Now().In(handler.location)
 	user, recoveryCode, err := handler.registrationService.RegisterOwnerAccount(
-		c.UserContext(),
+		c.Context(),
 		credentials.Email,
 		credentials.Password,
 		credentials.ConfirmPassword,
@@ -59,7 +59,7 @@ func (handler *Handler) Register(c *fiber.Ctx) error {
 	return handler.respondRegisterPickup(c, registerPickupOutcomeReal(now, user.ID, recoveryCode))
 }
 
-func (handler *Handler) Login(c *fiber.Ctx) error {
+func (handler *Handler) Login(c fiber.Ctx) error {
 	if !handler.localPublicAuthEnabled() {
 		spec := authLocalSignInDisabledErrorSpec()
 		handler.logSecurityError(c, "auth.login", spec)
@@ -67,7 +67,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 			return handler.respondMappedError(c, spec)
 		}
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
-		return c.Redirect("/login", fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 	credentials, err := parseCredentials(c)
 	if err != nil {
@@ -76,7 +76,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	result, err := handler.loginService.Authenticate(
-		c.UserContext(),
+		c.Context(),
 		handler.secretKey,
 		c.IP(),
 		credentials.Email,
@@ -136,7 +136,7 @@ func (handler *Handler) Login(c *fiber.Ctx) error {
 	return redirectOrJSON(c, services.PostLoginRedirectPath(&user))
 }
 
-func (handler *Handler) Logout(c *fiber.Ctx) error {
+func (handler *Handler) Logout(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		spec := unauthorizedErrorSpec()
@@ -153,7 +153,7 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 		handler.logSecurityError(c, "auth.logout", spec)
 		return handler.respondMappedError(c, spec)
 	}
-	if err := handler.authService.RevokeAuthSessions(c.UserContext(), user.ID); err != nil {
+	if err := handler.authService.RevokeAuthSessions(c.Context(), user.ID); err != nil {
 		handler.clearAuthRelatedCookies(c)
 		spec := authSessionRevokeErrorSpec()
 		handler.logSecurityError(c, "auth.logout", spec)
@@ -164,7 +164,7 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 	sessionClaims, hasSession := currentAuthSession(c)
 	handler.clearAuthRelatedCookies(c)
 	if hasSession && sessionClaims != nil {
-		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.UserContext(), sessionClaims.SessionID, time.Now())
+		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), sessionClaims.SessionID, time.Now())
 		if err != nil {
 			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")
 		} else if found && validOIDCLogoutState(logoutState) {
@@ -182,7 +182,7 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 		if acceptsJSON(c) {
 			return c.JSON(fiber.Map{"ok": true, "redirect": logoutTransportPath})
 		}
-		return c.Redirect(logoutTransportPath, fiber.StatusSeeOther)
+		return c.Redirect().Status(fiber.StatusSeeOther).To(logoutTransportPath)
 	}
 	if isHTMX(c) {
 		c.Set("HX-Redirect", "/login")
@@ -191,5 +191,5 @@ func (handler *Handler) Logout(c *fiber.Ctx) error {
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}
-	return c.Redirect("/login", fiber.StatusSeeOther)
+	return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 }

@@ -26,7 +26,7 @@ func TestLoginSetsSealedAuthCookieValue(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Cookie", authCookieName+"="+legacyToken)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request with legacy jwt cookie failed: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieAfterForcedResetForHTML(t 
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request with revoked auth cookie failed: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieForAPI(t *testing.T) {
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cookie", authCookie)
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("api request with revoked auth cookie failed: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestAuthMiddlewareMapsSessionResolveErrorsToClearedAuthCookie(t *testing.T)
 			request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 			request.Header.Set("Cookie", authCookieName+"="+testCase.cookieValue)
 
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("dashboard request failed: %v", err)
 			}

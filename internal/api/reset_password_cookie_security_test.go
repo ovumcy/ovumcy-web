@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestResetPasswordCookieFlagsFollowCookieSecureConfig(t *testing.T) {
@@ -49,7 +49,7 @@ func TestResetPasswordCookieFlagsFollowCookieSecureConfig(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-			response, err := app.Test(request, -1)
+			response, err := app.Test(request)
 			if err != nil {
 				t.Fatalf("forgot-password request failed: %v", err)
 			}
@@ -85,13 +85,13 @@ func TestResetPasswordCookieRoundTripPreservesPayload(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setResetPasswordCookie(c, "reset-token-xyz", true); err != nil {
 			t.Fatalf("seal reset password cookie: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get("/open", func(c *fiber.Ctx) error {
+	app.Get("/open", func(c fiber.Ctx) error {
 		token, forced := handler.readResetPasswordCookie(c)
 		if token != "reset-token-xyz" {
 			t.Fatalf("expected reset token to round-trip, got %q", token)
@@ -102,7 +102,7 @@ func TestResetPasswordCookieRoundTripPreservesPayload(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestResetPasswordCookieRoundTripPreservesPayload(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", resetPasswordCookieName+"="+cookieValue)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
@@ -131,13 +131,13 @@ func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
 	}
 
 	app := fiber.New()
-	app.Get("/seal", func(c *fiber.Ctx) error {
+	app.Get("/seal", func(c fiber.Ctx) error {
 		if err := handler.setResetPasswordCookie(c, "reset-tamper", false); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
-	app.Get("/open", func(c *fiber.Ctx) error {
+	app.Get("/open", func(c fiber.Ctx) error {
 		token, forced := handler.readResetPasswordCookie(c)
 		if token != "" || forced {
 			t.Fatalf("expected tampered reset password cookie to yield empty token, got %q forced=%t", token, forced)
@@ -145,7 +145,7 @@ func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := app.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
 	tampered := flipLastBaseEncodedByte(t, cookieValue)
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", resetPasswordCookieName+"="+tampered)
-	openResponse, err := app.Test(openRequest, -1)
+	openResponse, err := app.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
@@ -179,14 +179,14 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 	}
 
 	sealingApp := fiber.New()
-	sealingApp.Get("/seal", func(c *fiber.Ctx) error {
+	sealingApp.Get("/seal", func(c fiber.Ctx) error {
 		if err := sealingHandler.setResetPasswordCookie(c, "reset-foreign", true); err != nil {
 			t.Fatalf("seal: %v", err)
 		}
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 	openingApp := fiber.New()
-	openingApp.Get("/open", func(c *fiber.Ctx) error {
+	openingApp.Get("/open", func(c fiber.Ctx) error {
 		token, forced := openingHandler.readResetPasswordCookie(c)
 		if token != "" || forced {
 			t.Fatalf("expected rotated-key handler to reject sealed cookie, got %q forced=%t", token, forced)
@@ -194,7 +194,7 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
 
-	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil), -1)
+	sealResponse, err := sealingApp.Test(httptest.NewRequest("GET", "/seal", nil))
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 
 	openRequest := httptest.NewRequest("GET", "/open", nil)
 	openRequest.Header.Set("Cookie", resetPasswordCookieName+"="+cookieValue)
-	openResponse, err := openingApp.Test(openRequest, -1)
+	openResponse, err := openingApp.Test(openRequest)
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}

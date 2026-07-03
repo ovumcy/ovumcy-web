@@ -21,7 +21,7 @@ func TestExportCSVDoesNotRequireCSRFForGET(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/exports/csv?from=2026-02-01&to=2026-02-28", nil)
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("export GET without csrf failed: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestExportCSVSucceedsForAuthenticatedGET(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/exports/csv?from=2026-02-01&to=2026-02-28", nil)
 	request.Header.Set("Cookie", ctx.authCookie)
 
-	response, err := ctx.app.Test(request, -1)
+	response, err := ctx.app.Test(request)
 	if err != nil {
 		t.Fatalf("export GET failed: %v", err)
 	}

@@ -23,7 +23,7 @@ func TestForgotPasswordDoesNotExposeResetTokenInRedirect(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("forgot-password request failed: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestForgotPasswordEmailStepDoesNotExposeEmailInRedirect(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("forgot-password email-step request failed: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestForgotPasswordJSONDoesNotExposeResetToken(t *testing.T) {
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
 
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("forgot-password json request failed: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestLoginForcedResetDoesNotExposeResetToken(t *testing.T) {
 
 	htmlRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	htmlRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	htmlResponse, err := app.Test(htmlRequest, -1)
+	htmlResponse, err := app.Test(htmlRequest)
 	if err != nil {
 		t.Fatalf("forced-reset login html request failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestLoginForcedResetDoesNotExposeResetToken(t *testing.T) {
 	jsonRequest := httptest.NewRequest(http.MethodPost, "/api/v1/sessions", strings.NewReader(form.Encode()))
 	jsonRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	jsonRequest.Header.Set("Accept", "application/json")
-	jsonResponse, err := app.Test(jsonRequest, -1)
+	jsonResponse, err := app.Test(jsonRequest)
 	if err != nil {
 		t.Fatalf("forced-reset login json request failed: %v", err)
 	}

@@ -1,12 +1,12 @@
 package api
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 var cycleSettingsMutation = healthMutationKind{action: "settings.cycle_update", target: "cycle_settings"}
 
-func (handler *Handler) UpdateCycleSettings(c *fiber.Ctx) error {
+func (handler *Handler) UpdateCycleSettings(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, cycleSettingsMutation, unauthorizedErrorSpec())
@@ -16,7 +16,7 @@ func (handler *Handler) UpdateCycleSettings(c *fiber.Ctx) error {
 	if parseError != "" {
 		return handler.failMutation(c, cycleSettingsMutation, settingsValidationErrorSpec(parseError))
 	}
-	if err := handler.settingsService.SaveCycleSettings(c.UserContext(), user.ID, input); err != nil {
+	if err := handler.settingsService.SaveCycleSettings(c.Context(), user.ID, input); err != nil {
 		return handler.failMutation(c, cycleSettingsMutation, settingsCycleUpdateErrorSpec())
 	}
 

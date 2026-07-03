@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestBuildForgotPasswordPageDataUsesFlashEmailForRecoveryStep(t *testing.T) {
@@ -19,7 +19,7 @@ func TestBuildForgotPasswordPageDataUsesFlashEmailForRecoveryStep(t *testing.T) 
 		ForgotEmail: " Owner@Example.com ",
 	}
 
-	payload := evaluateAuthPageBuilder(t, query, func(c *fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
 		return c.JSON(buildForgotPasswordPageData(map[string]string{}, flash))
 	})
 
@@ -41,7 +41,7 @@ func TestBuildForgotPasswordPageDataDoesNotUseQueryEmail(t *testing.T) {
 		"email": {"query@example.com"},
 	}
 
-	payload := evaluateAuthPageBuilder(t, query, func(c *fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
 		return c.JSON(buildForgotPasswordPageData(map[string]string{}, FlashPayload{}))
 	})
 

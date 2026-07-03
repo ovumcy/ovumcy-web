@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 type SecurityEventField struct {
@@ -21,14 +21,14 @@ type SecurityEventField struct {
 // handlers); handler code uses the unexported helpers below. The flag is
 // carried per Handler instead of package state, so tests construct apps
 // with the stream on or off without mutating globals.
-func (handler *Handler) LogSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
+func (handler *Handler) LogSecurityEvent(c fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
 	if !handler.auditLogEnabled {
 		return
 	}
 	emitSecurityEvent(c, action, outcome, fields...)
 }
 
-func emitSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
+func emitSecurityEvent(c fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
 	if c == nil {
 		return
 	}
@@ -78,7 +78,7 @@ func normalizeSecurityEventKey(key string) string {
 	return strings.ReplaceAll(normalized, " ", "_")
 }
 
-func securityEventRequestFormat(c *fiber.Ctx) string {
+func securityEventRequestFormat(c fiber.Ctx) string {
 	switch {
 	case isHTMX(c):
 		return "htmx"
@@ -93,11 +93,11 @@ func securityEventField(key string, value string) SecurityEventField {
 	return SecurityEventField{Key: key, Value: value}
 }
 
-func (handler *Handler) logSecurityEvent(c *fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
+func (handler *Handler) logSecurityEvent(c fiber.Ctx, action string, outcome string, fields ...SecurityEventField) {
 	handler.LogSecurityEvent(c, action, outcome, fields...)
 }
 
-func (handler *Handler) logSecurityError(c *fiber.Ctx, action string, spec APIErrorSpec, fields ...SecurityEventField) {
+func (handler *Handler) logSecurityError(c fiber.Ctx, action string, spec APIErrorSpec, fields ...SecurityEventField) {
 	combined := make([]SecurityEventField, 0, len(fields)+1)
 	combined = append(combined, fields...)
 	if strings.TrimSpace(spec.Key) != "" {
@@ -106,7 +106,7 @@ func (handler *Handler) logSecurityError(c *fiber.Ctx, action string, spec APIEr
 	handler.logSecurityEvent(c, action, securityEventOutcomeForSpec(spec), combined...)
 }
 
-func (handler *Handler) logHealthDataMutation(c *fiber.Ctx, action string, outcome string, target string) {
+func (handler *Handler) logHealthDataMutation(c fiber.Ctx, action string, outcome string, target string) {
 	fields := []SecurityEventField{securityEventField("domain", "health_data")}
 	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
 		fields = append(fields, securityEventField("target", normalizedTarget))
@@ -114,7 +114,7 @@ func (handler *Handler) logHealthDataMutation(c *fiber.Ctx, action string, outco
 	handler.logSecurityEvent(c, action, outcome, fields...)
 }
 
-func (handler *Handler) logHealthDataMutationError(c *fiber.Ctx, action string, spec APIErrorSpec, target string) {
+func (handler *Handler) logHealthDataMutationError(c fiber.Ctx, action string, spec APIErrorSpec, target string) {
 	fields := []SecurityEventField{securityEventField("domain", "health_data")}
 	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
 		fields = append(fields, securityEventField("target", normalizedTarget))
@@ -132,17 +132,17 @@ type healthMutationKind struct {
 	target string
 }
 
-func (handler *Handler) logMutationSuccess(c *fiber.Ctx, kind healthMutationKind) {
+func (handler *Handler) logMutationSuccess(c fiber.Ctx, kind healthMutationKind) {
 	handler.logHealthDataMutation(c, kind.action, "success", kind.target)
 }
 
-func (handler *Handler) logMutationError(c *fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) {
+func (handler *Handler) logMutationError(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) {
 	handler.logHealthDataMutationError(c, kind.action, spec, kind.target)
 }
 
 // failMutation is the common tail of mutation handlers: log the
 // denied/failed audit event and respond with the mapped error.
-func (handler *Handler) failMutation(c *fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) error {
+func (handler *Handler) failMutation(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) error {
 	handler.logMutationError(c, kind, spec)
 	return handler.respondMappedError(c, spec)
 }

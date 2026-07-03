@@ -1,6 +1,6 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import "github.com/gofiber/fiber/v3"
 
 func RegisterRoutes(app *fiber.App, handler *Handler) {
 	registerPageRoutes(app, handler)
@@ -99,6 +99,6 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/settings/2fa", handler.AuthRequired, handler.ShowTOTPSetupPage)
 }
 
-func sendNoContent(c *fiber.Ctx) error {
+func sendNoContent(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }

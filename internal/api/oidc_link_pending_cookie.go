@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v3"
 )
 
 // OIDC link-pending cookie. Issued by the OIDC callback when an authenticated
@@ -70,7 +70,7 @@ func (p oidcLinkPendingPayload) validAt(now time.Time) bool {
 
 var oidcLinkPendingCookieSpec = sealedCookieSpec{name: oidcLinkPendingCookieName, path: oidcLinkConfirmPath}
 
-func (handler *Handler) setOIDCLinkPendingCookie(c *fiber.Ctx, payload oidcLinkPendingPayload) error {
+func (handler *Handler) setOIDCLinkPendingCookie(c fiber.Ctx, payload oidcLinkPendingPayload) error {
 	if !payload.validAt(time.Now()) {
 		return errors.New("oidc link pending payload is required")
 	}
@@ -81,7 +81,7 @@ func (handler *Handler) setOIDCLinkPendingCookie(c *fiber.Ctx, payload oidcLinkP
 	return handler.writeSealedCookie(c, oidcLinkPendingCookieSpec, serialized, time.Now().Add(oidcLinkPendingCookieTTL))
 }
 
-func (handler *Handler) readOIDCLinkPendingCookie(c *fiber.Ctx) (oidcLinkPendingPayload, bool) {
+func (handler *Handler) readOIDCLinkPendingCookie(c fiber.Ctx) (oidcLinkPendingPayload, bool) {
 	raw := strings.TrimSpace(c.Cookies(oidcLinkPendingCookieName))
 	if raw == "" {
 		return oidcLinkPendingPayload{}, false
@@ -104,6 +104,6 @@ func (handler *Handler) readOIDCLinkPendingCookie(c *fiber.Ctx) (oidcLinkPending
 	return payload, true
 }
 
-func (handler *Handler) clearOIDCLinkPendingCookie(c *fiber.Ctx) {
+func (handler *Handler) clearOIDCLinkPendingCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, oidcLinkPendingCookieSpec)
 }

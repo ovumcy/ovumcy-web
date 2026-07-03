@@ -44,7 +44,7 @@ func TestDashboardSymptomsNotesPanelUsesSavedSymptomsAndNotesState(t *testing.T)
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestDashboardEmptyNotesUseAddNoteDisclosure(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestDashboardShowsCurrentUsageGoalSummaryForOwner(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
-	response, err := app.Test(request, -1)
+	response, err := app.Test(request)
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
