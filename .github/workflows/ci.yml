@@ -430,3 +430,58 @@ jobs:
             test-results
             .tmp/e2e
           if-no-files-found: ignore
+
+  image-smoke:
+    # Boots the actual FROM-scratch runtime image and hits its public surfaces.
+    # The unit/e2e jobs exercise the app under `go run`; only this job proves the
+    # embedded templates/locales/web-static (go:embed) and the static.New asset
+    # middleware serve correctly from the shell-less scratch image, and that the
+    # in-container `ovumcy healthcheck` self-probe passes. Runs on code changes so
+    # an asset/embed/packaging regression cannot reach a release tag unnoticed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    needs:
+      - changes
+    if: needs.changes.outputs.run_e2e == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Build runtime image
+        run: docker build --tag ovumcy-image-smoke:${{ github.sha }} .
+
+      - name: Boot image and smoke public surfaces
+        run: |
+          set -euo pipefail
+          secret="$(openssl rand -hex 32)"
+          cid="$(docker run -d --rm -p 18080:8080 -e SECRET_KEY="$secret" ovumcy-image-smoke:${{ github.sha }})"
+          trap 'docker stop "$cid" >/dev/null 2>&1 || true' EXIT
+
+          # The scratch image has no shell/curl, so probe readiness from the host.
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:18080/healthz >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then echo "app did not become healthy"; docker logs "$cid" || true; exit 1; fi
+
+          curl -fsS http://localhost:18080/healthz | grep -q '"status":"ok"'
+
+          # /login renders from embedded templates.
+          login="$(curl -fsS http://localhost:18080/login)"
+          printf '%s' "$login" | grep -q 'id="login-form"'
+
+          # A versioned /static asset serves via static.New from the embedded FS
+          # with the release cache header.
+          asset="$(printf '%s' "$login" | grep -oE '/static/[^"?]+\?v=[A-Za-z0-9]+' | head -1)"
+          if [ -z "$asset" ]; then echo "no versioned static asset found in /login"; exit 1; fi
+          curl -fsS -D - -o /dev/null "http://localhost:18080$asset" \
+            | tr -d '\r' | grep -iq '^cache-control: public, max-age=3600'
+
+          # The container's own HEALTHCHECK command (the binary self-probe).
+          docker exec "$cid" /app/ovumcy healthcheck
+
+          echo "image smoke OK: healthz + login + static ($asset) + in-container healthcheck"

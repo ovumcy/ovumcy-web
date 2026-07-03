@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-03
+
 ### Security
 
 - **Web framework upgraded to Fiber v3.** `gofiber/fiber` moves from v2.52.13 to v3.4.0, removing GHSA-gcfq-8gqf-4876 / CVE-2026-45045 (X-Real-IP spoofing in fiber's proxy middleware) from the dependency graph entirely — the vulnerable module was never compiled into Ovumcy, and `govulncheck` now reports no known vulnerabilities. Routes, JSON shapes, cookie attributes, security headers, and rate limiting are preserved; the CSRF token lifetime is pinned explicitly to the previous 1-hour value (Fiber v3's new default would otherwise shorten it to 30 minutes).
@@ -563,7 +565,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.3.0...v1.4.0
