@@ -59,6 +59,13 @@ jobs:
       - name: Staticcheck
         run: '"$(go env GOPATH)/bin/staticcheck" ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
 
+      - name: Install golangci-lint
+        # git SHA for v2.12.2: c0d3ddc9cf3faa61a4e378e879ece580256d76e5 (verified via go list -m -json)
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+
+      - name: golangci-lint
+        run: '"$(go env GOPATH)/bin/golangci-lint" run ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
+
       - name: Go vet
         run: go vet ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
 
