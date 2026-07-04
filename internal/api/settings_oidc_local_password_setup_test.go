@@ -166,7 +166,7 @@ func TestOIDCStartLocalPasswordSetupIssuesRedirectAndStepupCookie(t *testing.T) 
 	fixture := newOIDCStepupFixture(t, "settings-stepup-start@example.com")
 
 	response := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusOK)
 	body := mustReadBodyString(t, response.Body)
@@ -206,7 +206,7 @@ func TestOIDCStartLocalPasswordSetupRejectsWeakPassword(t *testing.T) {
 
 	fixture := newOIDCStepupFixture(t, "settings-stepup-weak@example.com")
 	response := fixture.postStart(t, "short", "short")
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusBadRequest)
 	if got := readAPIError(t, response.Body); got != "weak password" {
@@ -229,12 +229,12 @@ func TestOIDCCompleteLocalPasswordSetupFinalizesOnFreshReauth(t *testing.T) {
 	fixture.oidcStub.reauthErr = nil
 
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
-	defer startResponse.Body.Close()
+	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
 	state := extractStepupCallbackState(t, fixture, stepupCookie)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
-	defer callbackResponse.Body.Close()
+	defer func() { _ = callbackResponse.Body.Close() }()
 
 	if callbackResponse.StatusCode != http.StatusOK && callbackResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 200/303 after fresh reauth, got %d", callbackResponse.StatusCode)
@@ -268,12 +268,12 @@ func TestOIDCCompleteLocalPasswordSetupRejectsStaleReauth(t *testing.T) {
 	fixture.oidcStub.reauthErr = services.ErrOIDCReauthStale
 
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
-	defer startResponse.Body.Close()
+	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
 	state := extractStepupCallbackState(t, fixture, stepupCookie)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
-	defer callbackResponse.Body.Close()
+	defer func() { _ = callbackResponse.Body.Close() }()
 
 	if callbackResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected redirect after stale reauth, got %d", callbackResponse.StatusCode)
@@ -298,12 +298,12 @@ func TestOIDCCompleteLocalPasswordSetupRejectsIdentityMismatch(t *testing.T) {
 	fixture.oidcStub.reauthErr = services.ErrOIDCReauthIdentityMismatch
 
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
-	defer startResponse.Body.Close()
+	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
 	state := extractStepupCallbackState(t, fixture, stepupCookie)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
-	defer callbackResponse.Body.Close()
+	defer func() { _ = callbackResponse.Body.Close() }()
 
 	if callbackResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected redirect after identity mismatch, got %d", callbackResponse.StatusCode)

@@ -28,7 +28,7 @@ func TestRegisterJSONContentTypeWithoutAcceptReturnsJSONError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -51,7 +51,7 @@ func TestSettingsCycleJSONContentTypeWithoutAcceptReturnsJSONError(t *testing.T)
 	if err != nil {
 		t.Fatalf("settings cycle request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)

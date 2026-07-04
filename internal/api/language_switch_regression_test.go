@@ -45,7 +45,7 @@ func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 			if err != nil {
 				t.Fatalf("switch language request failed: %v", err)
 			}
-			defer switchResponse.Body.Close()
+			defer func() { _ = switchResponse.Body.Close() }()
 
 			if switchResponse.StatusCode != http.StatusSeeOther {
 				t.Fatalf("expected status 303, got %d", switchResponse.StatusCode)
@@ -65,7 +65,7 @@ func TestLanguageSwitchSetsCookieAndRendersLocalizedLogin(t *testing.T) {
 			if err != nil {
 				t.Fatalf("localized login request failed: %v", err)
 			}
-			defer loginResponse.Body.Close()
+			defer func() { _ = loginResponse.Body.Close() }()
 
 			loginBody, err := io.ReadAll(loginResponse.Body)
 			if err != nil {
@@ -89,7 +89,7 @@ func TestLoginPageRendersVisibleLanguageSwitchForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login page request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected login page status 200, got %d", response.StatusCode)

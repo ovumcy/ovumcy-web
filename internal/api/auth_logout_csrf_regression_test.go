@@ -34,7 +34,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logout POST request with csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -80,7 +80,7 @@ func TestAuthLogoutPostRevokesPreviousSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logout POST request failed: %v", err)
 	}
-	defer logoutResponse.Body.Close()
+	defer func() { _ = logoutResponse.Body.Close() }()
 
 	if logoutResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected logout status 303, got %d", logoutResponse.StatusCode)
@@ -94,7 +94,7 @@ func TestAuthLogoutPostRevokesPreviousSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard replay request failed: %v", err)
 	}
-	defer replayResponse.Body.Close()
+	defer func() { _ = replayResponse.Body.Close() }()
 
 	if replayResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected replayed cookie to be rejected with 303, got %d", replayResponse.StatusCode)
@@ -123,7 +123,7 @@ func TestAuthLogoutPostMissingCSRFRejectedByMiddleware(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logout POST request without csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected csrf middleware status 403, got %d", response.StatusCode)
@@ -144,7 +144,7 @@ func TestAuthLogoutPostInvalidCSRFRejectedByMiddleware(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logout POST request with invalid csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected csrf middleware status 403, got %d", response.StatusCode)
@@ -168,7 +168,7 @@ func prepareAuthenticatedLogoutCSRFContext(t *testing.T) (*fiber.App, string, *h
 	if err != nil {
 		t.Fatalf("dashboard request for csrf context failed: %v", err)
 	}
-	defer csrfResponse.Body.Close()
+	defer func() { _ = csrfResponse.Body.Close() }()
 
 	if csrfResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected dashboard status 200 while preparing csrf context, got %d", csrfResponse.StatusCode)
@@ -213,7 +213,7 @@ func assertAuthenticatedDashboardAccess(t *testing.T, app *fiber.App, authCookie
 	if err != nil {
 		t.Fatalf("dashboard request after csrf failure failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected dashboard status 200 after csrf failure, got %d", response.StatusCode)

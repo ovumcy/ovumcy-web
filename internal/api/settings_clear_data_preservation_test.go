@@ -62,7 +62,7 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected clear data status 200, got %d", response.StatusCode)

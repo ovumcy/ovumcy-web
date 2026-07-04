@@ -19,7 +19,7 @@ func TestSettingsChangePasswordInvalidCurrentPasswordJSONStatus(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", form, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", response.StatusCode)
@@ -43,7 +43,7 @@ func TestSettingsChangePasswordInvalidInputJSONStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("change-password request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -65,7 +65,7 @@ func TestSettingsChangePasswordInvalidCurrentPasswordHTMXInlineError(t *testing.
 		"HX-Request":      "true",
 		"Accept-Language": "en",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 for htmx inline error, got %d", response.StatusCode)

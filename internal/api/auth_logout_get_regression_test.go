@@ -21,7 +21,7 @@ func TestAuthLogoutHandlerSupportsPostRequestWithoutCSRFMiddleware(t *testing.T)
 	if err != nil {
 		t.Fatalf("logout POST request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -51,7 +51,7 @@ func TestLogoutPageRoutePostHandlerClearsAuthCookiesWithoutCSRFMiddleware(t *tes
 	if err != nil {
 		t.Fatalf("logout page route POST request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)

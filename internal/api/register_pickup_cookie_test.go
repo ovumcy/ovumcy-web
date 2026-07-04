@@ -140,7 +140,7 @@ func TestSetAndPopRegisterPickupCookieRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
-	defer setResp.Body.Close()
+	defer func() { _ = setResp.Body.Close() }()
 	for _, c := range setResp.Cookies() {
 		if c.Name == registerPickupCookieName {
 			cookieValue = c.Value
@@ -163,7 +163,7 @@ func TestSetAndPopRegisterPickupCookieRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
-	defer popResp.Body.Close()
+	defer func() { _ = popResp.Body.Close() }()
 
 	if !poppedOK {
 		t.Fatal("expected popRegisterPickupCookie to succeed")
@@ -203,7 +203,7 @@ func TestPopRegisterPickupCookieWrongKeyReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
-	defer setResp.Body.Close()
+	defer func() { _ = setResp.Body.Close() }()
 	for _, c := range setResp.Cookies() {
 		if c.Name == registerPickupCookieName {
 			cookieValue = c.Value
@@ -223,7 +223,7 @@ func TestPopRegisterPickupCookieWrongKeyReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
-	defer popResp.Body.Close()
+	defer func() { _ = popResp.Body.Close() }()
 
 	if poppedOK {
 		t.Fatalf("expected wrong-key pop to fail, got %+v", popped)
@@ -247,7 +247,7 @@ func TestPopRegisterPickupCookieTamperedValueReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
-	defer popResp.Body.Close()
+	defer func() { _ = popResp.Body.Close() }()
 
 	if poppedOK {
 		t.Fatal("expected tampered pickup cookie to be rejected")

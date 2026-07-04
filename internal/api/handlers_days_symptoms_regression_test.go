@@ -25,7 +25,7 @@ func TestCreateSymptomRejectsInvalidName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -49,7 +49,7 @@ func TestCreateSymptomRejectsInvalidColor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -83,7 +83,7 @@ func TestCreateSymptomRejectsDuplicateName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create duplicate symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusConflict {
 		t.Fatalf("expected status 409, got %d", response.StatusCode)
@@ -107,7 +107,7 @@ func TestCreateSymptomRejectsLocalizedBuiltinName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create localized builtin symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusConflict {
 		t.Fatalf("expected status 409, got %d", response.StatusCode)
@@ -131,7 +131,7 @@ func TestCreateSymptomRejectsMarkupLikeName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create markup symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -155,7 +155,7 @@ func TestCreateSymptomRejectsTooLongName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create too-long symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -178,7 +178,7 @@ func TestArchiveSymptomReturnsNotFoundWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archive missing symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", response.StatusCode)
@@ -212,7 +212,7 @@ func TestArchiveSymptomRejectsBuiltinSymptom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archive builtin symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -235,7 +235,7 @@ func TestArchiveSymptomRejectsOutOfRangeID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("archive out-of-range symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -280,7 +280,7 @@ func TestRestoreSymptomRejectsDuplicateActiveName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restore duplicate symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusConflict {
 		t.Fatalf("expected status 409, got %d", response.StatusCode)

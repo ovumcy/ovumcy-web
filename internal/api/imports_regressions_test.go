@@ -38,7 +38,7 @@ func TestImportJSONRejectsMissingCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import without csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 without csrf, got %d", response.StatusCode)
@@ -60,7 +60,7 @@ func TestImportJSONSucceedsWithCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import with csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", response.StatusCode)
@@ -92,7 +92,7 @@ func TestImportJSONRejectsMalformedFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import malformed failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", response.StatusCode)
@@ -138,7 +138,7 @@ func TestImportJSONHTMXSuccessReturnsStatusMarkup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("htmx import failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", response.StatusCode)
@@ -164,7 +164,7 @@ func TestImportJSONFormFallbackRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("form import failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303 redirect for non-JSON client, got %d", response.StatusCode)

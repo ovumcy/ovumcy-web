@@ -53,7 +53,7 @@ func TestResetPasswordCookieFlagsFollowCookieSecureConfig(t *testing.T) {
 			if err != nil {
 				t.Fatalf("forgot-password request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			if response.StatusCode != http.StatusSeeOther {
 				t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -106,7 +106,7 @@ func TestResetPasswordCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), resetPasswordCookieName)
 	if cookieValue == "" {
@@ -119,7 +119,7 @@ func TestResetPasswordCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
@@ -149,7 +149,7 @@ func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), resetPasswordCookieName)
 	if cookieValue == "" {
@@ -163,7 +163,7 @@ func TestResetPasswordCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
@@ -198,7 +198,7 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), resetPasswordCookieName)
 	if cookieValue == "" {
@@ -211,5 +211,5 @@ func TestResetPasswordCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }

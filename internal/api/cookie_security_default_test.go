@@ -25,7 +25,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer loginResponse.Body.Close()
+	defer func() { _ = loginResponse.Body.Close() }()
 
 	authCookie := responseCookie(loginResponse.Cookies(), authCookieName)
 	assertSessionCookieInsecure(t, authCookie, "auth")
@@ -43,7 +43,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer registerResponse.Body.Close()
+	defer func() { _ = registerResponse.Body.Close() }()
 
 	if registerResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected register status 303, got %d", registerResponse.StatusCode)
@@ -58,7 +58,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pickup request failed: %v", err)
 	}
-	defer pickupResponse.Body.Close()
+	defer func() { _ = pickupResponse.Body.Close() }()
 
 	recoveryCookie := responseCookie(pickupResponse.Cookies(), recoveryCodeCookieName)
 	assertSessionCookieInsecure(t, recoveryCookie, "recovery")
@@ -73,7 +73,7 @@ func TestSecureCookiesDisabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("language switch request failed: %v", err)
 	}
-	defer languageResponse.Body.Close()
+	defer func() { _ = languageResponse.Body.Close() }()
 
 	languageCookie := responseCookie(languageResponse.Cookies(), languageCookieName)
 	if languageCookie == nil {

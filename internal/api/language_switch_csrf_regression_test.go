@@ -21,7 +21,7 @@ func TestLanguageSwitchRequiresCSRFTokenWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("language switch request without csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected csrf middleware status 403, got %d", response.StatusCode)
@@ -36,7 +36,7 @@ func TestLanguageSwitchAcceptsValidCSRFTokenWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login page request for csrf token failed: %v", err)
 	}
-	defer loginResponse.Body.Close()
+	defer func() { _ = loginResponse.Body.Close() }()
 
 	if loginResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected login page status 200, got %d", loginResponse.StatusCode)
@@ -61,7 +61,7 @@ func TestLanguageSwitchAcceptsValidCSRFTokenWhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("language switch request with csrf failed: %v", err)
 	}
-	defer switchResponse.Body.Close()
+	defer func() { _ = switchResponse.Body.Close() }()
 
 	if switchResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", switchResponse.StatusCode)

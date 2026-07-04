@@ -37,7 +37,7 @@ func TestParseCredentialsValidation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("request failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected status 200, got %d", resp.StatusCode)
@@ -67,7 +67,7 @@ func TestParseCredentialsValidation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("request failed: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("expected status 400, got %d", resp.StatusCode)

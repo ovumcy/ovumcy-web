@@ -90,7 +90,7 @@ func TestTOTPPendingCookie_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /seal-pending: %v", err)
 	}
-	defer sealResp.Body.Close()
+	defer func() { _ = sealResp.Body.Close() }()
 	if sealResp.StatusCode != http.StatusOK {
 		t.Fatalf("seal status = %d, want 200", sealResp.StatusCode)
 	}
@@ -102,7 +102,7 @@ func TestTOTPPendingCookie_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /parse-pending: %v", err)
 	}
-	defer parseResp.Body.Close()
+	defer func() { _ = parseResp.Body.Close() }()
 	if parseResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(parseResp.Body)
 		t.Fatalf("parse status = %d, body = %q", parseResp.StatusCode, body)
@@ -138,7 +138,7 @@ func TestTOTPPendingCookie_ExpiredPayload_ParseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /parse-pending: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
@@ -158,7 +158,7 @@ func TestTOTPPendingCookie_WrongSigningKey_ParseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /seal-pending: %v", err)
 	}
-	defer sealResp.Body.Close()
+	defer func() { _ = sealResp.Body.Close() }()
 	cookieValue := captureCookieValue(t, sealResp, totpPendingCookieName)
 
 	openApp, _ := newTOTPCookieTestApp(t, openSecret)
@@ -168,7 +168,7 @@ func TestTOTPPendingCookie_WrongSigningKey_ParseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /parse-pending: %v", err)
 	}
-	defer parseResp.Body.Close()
+	defer func() { _ = parseResp.Body.Close() }()
 	if parseResp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", parseResp.StatusCode)
 	}
@@ -190,7 +190,7 @@ func TestTOTPSetupCookie_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /seal-setup: %v", err)
 	}
-	defer sealResp.Body.Close()
+	defer func() { _ = sealResp.Body.Close() }()
 	if sealResp.StatusCode != http.StatusOK {
 		t.Fatalf("seal status = %d, want 200", sealResp.StatusCode)
 	}
@@ -202,7 +202,7 @@ func TestTOTPSetupCookie_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /parse-setup: %v", err)
 	}
-	defer parseResp.Body.Close()
+	defer func() { _ = parseResp.Body.Close() }()
 	if parseResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(parseResp.Body)
 		t.Fatalf("parse status = %d, body = %q", parseResp.StatusCode, body)
@@ -234,7 +234,7 @@ func TestTOTPSetupCookie_ExpiredPayload_ParseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /parse-setup: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
@@ -254,7 +254,7 @@ func TestTOTPSetupCookie_WrongSigningKey_ParseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /seal-setup: %v", err)
 	}
-	defer sealResp.Body.Close()
+	defer func() { _ = sealResp.Body.Close() }()
 	cookieValue := captureCookieValue(t, sealResp, totpSetupCookieName)
 
 	openApp, _ := newTOTPCookieTestApp(t, openSecret)
@@ -264,7 +264,7 @@ func TestTOTPSetupCookie_WrongSigningKey_ParseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /parse-setup: %v", err)
 	}
-	defer parseResp.Body.Close()
+	defer func() { _ = parseResp.Body.Close() }()
 	if parseResp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", parseResp.StatusCode)
 	}

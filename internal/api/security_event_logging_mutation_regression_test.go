@@ -26,7 +26,7 @@ func TestCreateSymptomLogsMutationWithoutLeakingUserInput(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/symptoms", form, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", response.StatusCode)
@@ -69,7 +69,7 @@ func TestUpsertDayLogsSanitizedPathWithoutConcreteDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("day upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

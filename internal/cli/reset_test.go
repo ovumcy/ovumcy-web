@@ -105,7 +105,7 @@ func createCLIResetUser(t *testing.T, databasePath string, email string, passwor
 	if err != nil {
 		t.Fatalf("open sql db: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -138,7 +138,7 @@ func loadCLIResetUser(t *testing.T, databasePath string, email string) models.Us
 	if err != nil {
 		t.Fatalf("open sql db: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	var user models.User
 	if err := database.Where("email = ?", strings.ToLower(strings.TrimSpace(email))).First(&user).Error; err != nil {

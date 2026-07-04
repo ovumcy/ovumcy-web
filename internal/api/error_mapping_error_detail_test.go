@@ -34,7 +34,7 @@ func TestApiErrorJSONEmitsErrorDetailEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("global validation request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -126,7 +126,7 @@ func TestApiErrorJSONErrorDetailReflectsTarget(t *testing.T) {
 			if err != nil {
 				t.Fatalf("request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			if response.StatusCode != tc.expectStatus {
 				t.Fatalf("expected status %d, got %d", tc.expectStatus, response.StatusCode)

@@ -139,7 +139,7 @@ func fullPageRequest(t *testing.T, app *fiber.App, method string, path string, f
 
 func assertSeeOther(t *testing.T, response *http.Response, wantLocation string) {
 	t.Helper()
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
 	}
@@ -193,7 +193,7 @@ func TestFullPageFallbackRedirectsOnDefaultApp(t *testing.T) {
 
 	t.Run("favicon responds no content", func(t *testing.T) {
 		response := fullPageRequest(t, app, http.MethodGet, "/favicon.ico", nil, "")
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		if response.StatusCode != http.StatusNoContent {
 			t.Fatalf("expected status 204, got %d", response.StatusCode)
 		}
@@ -221,7 +221,7 @@ func TestFullPageFallbackOnboardingAndSettingsRedirects(t *testing.T) {
 		if err != nil {
 			t.Fatalf("step2 malformed json request failed: %v", err)
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		if response.StatusCode != http.StatusBadRequest {
 			t.Fatalf("expected status 400, got %d", response.StatusCode)
 		}
@@ -305,7 +305,7 @@ func TestFullPageFallbackOIDCCallbackRedirects(t *testing.T) {
 		app, _, _ := newFullPageFallbackApp(t, onboardingTestAppOptions{oidcService: stub, cookieSecure: true})
 
 		cookieHeader, seedResponse := seedCookieHeader(t, app, "/__seed/oidc-state")
-		defer seedResponse.Body.Close()
+		defer func() { _ = seedResponse.Body.Close() }()
 		var seeded struct {
 			State string `json:"state"`
 		}
@@ -325,7 +325,7 @@ func TestFullPageFallbackOIDCCallbackRedirects(t *testing.T) {
 		app, _, _ := newFullPageFallbackApp(t, onboardingTestAppOptions{oidcService: stub, cookieSecure: true})
 
 		cookieHeader, seedResponse := seedCookieHeader(t, app, "/__seed/oidc-state")
-		defer seedResponse.Body.Close()
+		defer func() { _ = seedResponse.Body.Close() }()
 		var seeded struct {
 			State string `json:"state"`
 		}
@@ -346,14 +346,14 @@ func TestFullPageFallbackStepupRedirects(t *testing.T) {
 
 	t.Run("stepup callback without session redirects to settings", func(t *testing.T) {
 		stepupCookie, seedResponse := seedCookieHeader(t, app, "/__seed/oidc-stepup?user_id=777")
-		seedResponse.Body.Close()
+		_ = seedResponse.Body.Close()
 		response := fullPageRequest(t, app, http.MethodPost, "/auth/oidc/callback", url.Values{"state": {"x"}}, stepupCookie)
 		assertSeeOther(t, response, "/settings")
 	})
 
 	t.Run("stepup callback with local-auth user redirects to settings", func(t *testing.T) {
 		stepupCookie, seedResponse := seedCookieHeader(t, app, "/__seed/oidc-stepup?user_id="+utoa(localUser.ID))
-		seedResponse.Body.Close()
+		_ = seedResponse.Body.Close()
 		response := fullPageRequest(t, app, http.MethodPost, "/auth/oidc/callback", url.Values{"state": {"x"}}, joinCookieHeader(localCookie, stepupCookie))
 		assertSeeOther(t, response, "/settings")
 	})
@@ -393,7 +393,7 @@ func TestFullPageFallbackStepupRedirects(t *testing.T) {
 
 	t.Run("logout bridge redirect with empty provider url redirects to login", func(t *testing.T) {
 		bridgeCookie, seedResponse := seedCookieHeader(t, app, "/__seed/logout-bridge?sid=fullpage-session")
-		seedResponse.Body.Close()
+		_ = seedResponse.Body.Close()
 		response := fullPageRequest(t, app, http.MethodGet, oidcLogoutBridgeRedirectPath, nil, bridgeCookie)
 		assertSeeOther(t, response, "/login")
 	})
@@ -426,7 +426,7 @@ func TestFullPageFallbackLinkConfirmRejectsUnsupportedRoleTarget(t *testing.T) {
 	}
 
 	pendingCookie, seedResponse := seedCookieHeader(t, app, "/__seed/link-pending?user_id="+utoa(legacy.ID)+"&email="+url.QueryEscape(legacy.Email))
-	seedResponse.Body.Close()
+	_ = seedResponse.Body.Close()
 
 	form := url.Values{"password": {"StrongPass1"}}
 	response := fullPageRequest(t, app, http.MethodPost, oidcLinkConfirmPath, form, pendingCookie)
@@ -493,7 +493,7 @@ func TestDaySaveSpottingWarningSetsEncodedNotice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("day save failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
 	}

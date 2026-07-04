@@ -16,7 +16,7 @@ func TestSettingsChangePasswordMissingCSRFRejectedByMiddleware(t *testing.T) {
 		"new_password":     {"EvenStronger2"},
 		"confirm_password": {"EvenStronger2"},
 	}, nil)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
 }
@@ -28,7 +28,7 @@ func TestSettingsInterfaceMissingCSRFRejectedByMiddleware(t *testing.T) {
 		"language": {"en"},
 		"theme":    {"dark"},
 	}, nil)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
 }
@@ -37,7 +37,7 @@ func TestSettingsRegenerateRecoveryCodeMissingCSRFRejectedByMiddleware(t *testin
 	ctx := newSettingsSecurityTestContext(t, "settings-regenerate-csrf@example.com")
 
 	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/recovery-code", url.Values{}, nil)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
 }
@@ -48,7 +48,7 @@ func TestSettingsClearDataMissingCSRFRejectedByMiddleware(t *testing.T) {
 	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
 		"password": {"StrongPass1"},
 	}, nil)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
 }
@@ -59,7 +59,7 @@ func TestSettingsClearDataValidateMissingCSRFRejectedByMiddleware(t *testing.T) 
 	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe/validate", url.Values{
 		"password": {"StrongPass1"},
 	}, nil)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
 }
@@ -72,7 +72,7 @@ func TestSettingsDeleteAccountMissingCSRFRejectedByMiddleware(t *testing.T) {
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
 }

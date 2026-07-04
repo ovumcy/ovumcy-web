@@ -29,7 +29,7 @@ func TestRegisterClosedModeReturnsForbiddenJSONError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d", response.StatusCode)
@@ -55,7 +55,7 @@ func TestRegisterClosedModeRedirectDoesNotLeakEmailOrErrorInQuery(t *testing.T) 
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -80,7 +80,7 @@ func TestRegisterPageClosedModeRendersDisabledStateWithoutForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register page request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -110,7 +110,7 @@ func TestLoginPageClosedModeHidesSignupCTA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login page request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

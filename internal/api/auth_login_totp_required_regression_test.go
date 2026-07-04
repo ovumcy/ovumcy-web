@@ -32,7 +32,7 @@ func TestLogin_TOTPEnabledUser_IssuesPendingCookieAndRedirectsTo2FAChallenge(t *
 	if err != nil {
 		t.Fatalf("POST /api/v1/sessions: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("status = %d, want 303", resp.StatusCode)

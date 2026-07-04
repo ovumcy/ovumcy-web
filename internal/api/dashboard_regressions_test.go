@@ -101,7 +101,7 @@ func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testi
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -153,7 +153,7 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer dashboardResponse.Body.Close()
+	defer func() { _ = dashboardResponse.Body.Close() }()
 
 	dashboardDocument := mustParseHTMLDocument(t, mustReadBodyString(t, dashboardResponse.Body))
 	dashboardStatusLine := dashboardElementByDataAttr(dashboardDocument, "data-dashboard-status-line")
@@ -171,7 +171,7 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stats request failed: %v", err)
 	}
-	defer statsResponse.Body.Close()
+	defer func() { _ = statsResponse.Body.Close() }()
 
 	statsDocument := mustParseHTMLDocument(t, mustReadBodyString(t, statsResponse.Body))
 	if dashboardElementByDataAttr(statsDocument, "data-stats-empty-state") == nil {
@@ -268,7 +268,7 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save request failed: %v", err)
 	}
-	defer saveResponse.Body.Close()
+	defer func() { _ = saveResponse.Body.Close() }()
 
 	if saveResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", saveResponse.StatusCode)
@@ -282,7 +282,7 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer dashboardResponse.Body.Close()
+	defer func() { _ = dashboardResponse.Body.Close() }()
 
 	if dashboardResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", dashboardResponse.StatusCode)

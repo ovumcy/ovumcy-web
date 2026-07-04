@@ -22,7 +22,7 @@ func TestRecoveryCodePageRedirectsToDashboardWhenCookieMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recovery-code request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -54,7 +54,7 @@ func TestRecoveryCodePageRejectsCookieFromDifferentUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recovery-code request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -102,7 +102,7 @@ func TestRecoveryCodePageRejectsTamperedRecoveryCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recovery-code request with tampered cookie failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -136,7 +136,7 @@ func registerAndExtractRecoveryCookies(t *testing.T, app *fiber.App, email strin
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer registerResponse.Body.Close()
+	defer func() { _ = registerResponse.Body.Close() }()
 
 	if registerResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected register status 303, got %d", registerResponse.StatusCode)
@@ -153,7 +153,7 @@ func registerAndExtractRecoveryCookies(t *testing.T, app *fiber.App, email strin
 	if err != nil {
 		t.Fatalf("register/welcome request failed: %v", err)
 	}
-	defer pickupResponse.Body.Close()
+	defer func() { _ = pickupResponse.Body.Close() }()
 
 	authCookie := responseCookieValue(pickupResponse.Cookies(), authCookieName)
 	recoveryCookie := responseCookieValue(pickupResponse.Cookies(), recoveryCodeCookieName)

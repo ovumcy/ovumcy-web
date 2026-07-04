@@ -51,7 +51,7 @@ func TestRegisterReturnsSeedFailureAndRollsBackUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", response.StatusCode)
@@ -88,7 +88,7 @@ func TestLoginReturnsResetTokenIssueError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", response.StatusCode)
@@ -115,7 +115,7 @@ func TestLoginReturnsRateLimitedError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429, got %d", response.StatusCode)
@@ -152,7 +152,7 @@ func TestLoginForcedResetCookieWriteFailureReturns500(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", response.StatusCode)
@@ -182,7 +182,7 @@ func TestRenderRecoveryCodeResponseCookieWriteFailureReturns500(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recovery response request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected status 500, got %d", response.StatusCode)

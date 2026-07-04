@@ -75,7 +75,7 @@ func TestOIDCOnlySettingsSensitiveActionsRequireLocalPassword(t *testing.T) {
 			response := settingsFormRequestWithCSRF(t, ctx, testCase.method, testCase.path, testCase.form, map[string]string{
 				"Accept": "application/json",
 			})
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			assertStatusCode(t, response, http.StatusForbidden)
 			if got := readAPIError(t, response.Body); got != testCase.wantError {
@@ -103,7 +103,7 @@ func TestOIDCOnlySettingsChangePasswordRequiresReauth(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", form, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
 	if got := readAPIError(t, response.Body); got != "oidc reauth required" {

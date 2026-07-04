@@ -26,7 +26,7 @@ func TestRegisterValidationErrorRedirectDoesNotLeakEmailOrErrorInQuery(t *testin
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -196,7 +196,7 @@ func TestRegisterSuccessIssuesPickupCookieAndRedirectsToWelcome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register success request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)

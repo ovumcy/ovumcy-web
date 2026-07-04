@@ -31,7 +31,7 @@ func ReadBoundedRegularFile(path string, label string, maxBytes int64) ([]byte, 
 	if err != nil {
 		return nil, fmt.Errorf("%s could not be read: %s: %w", label, rawPath, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	reader := io.Reader(file)
 	if maxBytes > 0 {

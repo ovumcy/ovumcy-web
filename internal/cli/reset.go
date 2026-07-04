@@ -72,9 +72,9 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 	if output == nil {
 		output = os.Stdout
 	}
-	fmt.Fprintln(output, "✅ Password reset successful")
-	fmt.Fprintln(output, "Existing auth sessions were invalidated.")
-	fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")
+	_, _ = fmt.Fprintln(output, "✅ Password reset successful")
+	_, _ = fmt.Fprintln(output, "Existing auth sessions were invalidated.")
+	_, _ = fmt.Fprintln(output, "User must sign in again and reset the password before continuing.")
 
 	return nil
 }
@@ -106,11 +106,11 @@ func promptNewPassword() ([]byte, error) {
 
 func readPasswordFromTerminal(prompt string) ([]byte, error) {
 	if strings.TrimSpace(prompt) != "" {
-		fmt.Fprint(os.Stdout, prompt)
+		_, _ = fmt.Fprint(os.Stdout, prompt)
 	}
 
 	password, err := readPasswordNoEcho(os.Stdin)
-	fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout)
 	if err != nil {
 		return nil, errors.New("secure password prompt requires an interactive terminal")
 	}

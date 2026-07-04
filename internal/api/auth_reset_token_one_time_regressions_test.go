@@ -34,7 +34,7 @@ func TestResetPasswordTokenCannotBeReusedAfterSuccessfulReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first reset-password request failed: %v", err)
 	}
-	defer firstResetResponse.Body.Close()
+	defer func() { _ = firstResetResponse.Body.Close() }()
 
 	if firstResetResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected first reset status 303, got %d", firstResetResponse.StatusCode)
@@ -55,7 +55,7 @@ func TestResetPasswordTokenCannotBeReusedAfterSuccessfulReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second reset-password request failed: %v", err)
 	}
-	defer secondResetResponse.Body.Close()
+	defer func() { _ = secondResetResponse.Body.Close() }()
 
 	if secondResetResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected second reset status 303, got %d", secondResetResponse.StatusCode)
@@ -83,7 +83,7 @@ func TestResetPasswordRejectsExpiredResetToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reset-password request with expired token failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -122,7 +122,7 @@ func TestResetPasswordRejectsInvalidOrTamperedResetToken(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reset-password request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			if response.StatusCode != http.StatusSeeOther {
 				t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -160,7 +160,7 @@ func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reset-password request failed: %v", err)
 	}
-	defer resetResponse.Body.Close()
+	defer func() { _ = resetResponse.Body.Close() }()
 	if resetResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected reset status 303, got %d", resetResponse.StatusCode)
 	}
@@ -181,7 +181,7 @@ func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry forgot-password request failed: %v", err)
 	}
-	defer retryResponse.Body.Close()
+	defer func() { _ = retryResponse.Body.Close() }()
 
 	if location := retryResponse.Header.Get("Location"); location == "/reset-password" {
 		t.Fatalf("stale recovery code must not enter the reset flow, got redirect to %q", location)
@@ -205,7 +205,7 @@ func requestResetCookieByRecoveryCode(t *testing.T, app *fiber.App, email string
 	if err != nil {
 		t.Fatalf("forgot-password request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected forgot-password status 303, got %d", response.StatusCode)

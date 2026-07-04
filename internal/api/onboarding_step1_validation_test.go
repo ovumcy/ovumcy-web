@@ -28,7 +28,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("future date request failed: %v", err)
 	}
-	defer futureResponse.Body.Close()
+	defer func() { _ = futureResponse.Body.Close() }()
 	if futureResponse.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected future date status 400, got %d", futureResponse.StatusCode)
 	}
@@ -46,7 +46,7 @@ func TestOnboardingStep1RejectsFutureAndTooOldDates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("old date request failed: %v", err)
 	}
-	defer oldResponse.Body.Close()
+	defer func() { _ = oldResponse.Body.Close() }()
 	if oldResponse.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected old date status 400, got %d", oldResponse.StatusCode)
 	}
@@ -71,7 +71,7 @@ func TestOnboardingStep1IgnoresUnexpectedPeriodEndInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("step1 request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
 	}
@@ -104,7 +104,7 @@ func TestOnboardingStep1RejectsFarHistoricalDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("far historical date request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected far historical date status 400, got %d", response.StatusCode)

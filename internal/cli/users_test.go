@@ -150,7 +150,7 @@ func createCLIUsersUser(t *testing.T, databasePath string, email string, display
 	if err != nil {
 		t.Fatalf("open sql db: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
 	if err != nil {
@@ -185,7 +185,7 @@ func listCLIUserEmails(t *testing.T, databasePath string) []string {
 	if err != nil {
 		t.Fatalf("open sql db: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	users := make([]models.User, 0)
 	if err := database.Order("email ASC").Find(&users).Error; err != nil {
@@ -210,7 +210,7 @@ func seedCLIUsersHealthData(t *testing.T, databasePath string, userID uint) {
 	if err != nil {
 		t.Fatalf("open sql db: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	symptom := models.SymptomType{
 		UserID:    userID,
@@ -247,7 +247,7 @@ func assertCLIUsersDataCounts(t *testing.T, databasePath string, userID uint, wa
 	if err != nil {
 		t.Fatalf("open sql db: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	assertCLIUsersCountForModel(t, database, &models.User{}, "id = ?", userID, wantUsers)
 	assertCLIUsersCountForModel(t, database, &models.SymptomType{}, "user_id = ?", userID, wantSymptoms)
@@ -434,7 +434,7 @@ func countCLISymptomTypes(t *testing.T, databasePath string) int64 {
 	if err != nil {
 		t.Fatalf("open sql db: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	var count int64
 	if err := database.Model(&models.SymptomType{}).Count(&count).Error; err != nil {

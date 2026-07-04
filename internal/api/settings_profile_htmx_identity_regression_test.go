@@ -27,7 +27,7 @@ func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 for htmx profile update, got %d", response.StatusCode)
@@ -75,7 +75,7 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 	if err != nil {
 		t.Fatalf("seed profile update request failed: %v", err)
 	}
-	seedResponse.Body.Close()
+	_ = seedResponse.Body.Close()
 	if seedResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 for seed htmx profile update, got %d", seedResponse.StatusCode)
 	}
@@ -93,7 +93,7 @@ func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testi
 	if err != nil {
 		t.Fatalf("clear profile update request failed: %v", err)
 	}
-	defer clearResponse.Body.Close()
+	defer func() { _ = clearResponse.Body.Close() }()
 
 	if clearResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 for clear htmx profile update, got %d", clearResponse.StatusCode)

@@ -83,7 +83,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first logout request failed: %v", err)
 	}
-	defer firstResp.Body.Close()
+	defer func() { _ = firstResp.Body.Close() }()
 	if firstResp.StatusCode != http.StatusOK && firstResp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected first logout to succeed (200 or 303), got %d", firstResp.StatusCode)
 	}
@@ -94,7 +94,7 @@ func TestLogoutHandlerEnforcesPerAccountRateLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second logout request failed: %v", err)
 	}
-	defer secondResp.Body.Close()
+	defer func() { _ = secondResp.Body.Close() }()
 
 	if secondResp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429 on rate-limited logout, got %d", secondResp.StatusCode)

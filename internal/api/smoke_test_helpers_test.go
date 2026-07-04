@@ -19,7 +19,7 @@ func smokeGET(t *testing.T, app *fiber.App, authCookie string, path string, expe
 	if err != nil {
 		t.Fatalf("GET %s failed: %v", path, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {

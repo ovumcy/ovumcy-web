@@ -95,7 +95,7 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 	if claims.Purpose != passwordResetTokenPurpose {
 		return nil, ErrPasswordResetTokenInvalidPurpose
 	}
-	if claims.ExpiresAt == nil || claims.ExpiresAt.Time.Before(now) {
+	if claims.ExpiresAt == nil || claims.ExpiresAt.Before(now) {
 		return nil, ErrPasswordResetTokenExpired
 	}
 	if claims.UserID == 0 {
@@ -171,7 +171,7 @@ func isCanonicalRecoveryCodeBody(value string) bool {
 	}
 	for i := 0; i < len(value); i++ {
 		c := value[i]
-		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
 			return false
 		}
 	}

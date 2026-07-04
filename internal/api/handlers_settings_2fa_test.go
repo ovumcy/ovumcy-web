@@ -61,7 +61,7 @@ func TestShowTOTPSetupPage_Unauthenticated_RedirectsToLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /settings/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("status = %d, want 303", resp.StatusCode)
@@ -78,7 +78,7 @@ func TestShowTOTPSetupPage_TOTPNotEnabled_RendersQRAndSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /settings/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -110,7 +110,7 @@ func TestShowTOTPSetupPage_TOTPEnabled_ShowsManagementView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /settings/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -159,7 +159,7 @@ func TestVerifyTOTP2FAEnrollment_ValidCode_EnablesTOTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("status = %d, want 200 or 303", resp.StatusCode)
@@ -197,7 +197,7 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var reloaded models.User
 	if err := ctx.database.First(&reloaded, ctx.user.ID).Error; err != nil {
@@ -223,7 +223,7 @@ func TestVerifyTOTP2FAEnrollment_MissingSetupCookie_ReturnsError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Without a setup cookie the handler maps to totpSessionExpiredErrorSpec
 	// (401). /api/v1/users/current/2fa is not in the auth-redirect path, so the
@@ -256,7 +256,7 @@ func TestDisableTOTP2FA_CorrectPassword_DisablesTOTP(t *testing.T) {
 
 	form := url.Values{"password": {"StrongPass1"}}
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", form, map[string]string{"Accept-Language": "en"})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("status = %d, want 200 or 303", resp.StatusCode)
@@ -287,7 +287,7 @@ func TestDisableTOTP2FA_WrongPassword_ReturnsError(t *testing.T) {
 
 	form := url.Values{"password": {"WrongPassword1"}}
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", form, map[string]string{"Accept-Language": "en", "Accept": "application/json"})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("wrong password: status = %d, want 401", resp.StatusCode)
@@ -324,13 +324,13 @@ func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 		if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusTooManyRequests {
 			t.Fatalf("attempt %d: status = %d, want 401 or 429", attempt, resp.StatusCode)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Even the correct password must be rejected once the limiter has tripped.
 	correctForm := url.Values{"password": {"StrongPass1"}}
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", correctForm, map[string]string{"Accept-Language": "en", "Accept": "application/json"})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("rate-limited disable: status = %d, want 429", resp.StatusCode)

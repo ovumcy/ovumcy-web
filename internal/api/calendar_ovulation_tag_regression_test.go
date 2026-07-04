@@ -65,7 +65,7 @@ func renderCalendarMonthHTML(t *testing.T, app *fiber.App, authCookie string, mo
 	if err != nil {
 		t.Fatalf("calendar request for month %s failed: %v", month, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 for month %s, got %d", month, response.StatusCode)

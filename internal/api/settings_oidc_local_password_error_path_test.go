@@ -54,7 +54,7 @@ func TestOIDCStartLocalPasswordSetupRejectsLocalAuthAlreadyEnabled(t *testing.T)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cookie", settingsCookieHeader(authCookie, csrfCookie))
 	resp := mustAppResponse(t, app, req)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assertStatusCode(t, resp, http.StatusBadRequest)
 	if got := readAPIError(t, resp.Body); got != "invalid settings input" {
@@ -99,7 +99,7 @@ func TestOIDCStartLocalPasswordSetupOIDCServiceDisabled(t *testing.T) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cookie", settingsCookieHeader(authCookie, csrfCookie))
 	resp := mustAppResponse(t, app, req)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assertStatusCode(t, resp, http.StatusServiceUnavailable)
 	if got := readAPIError(t, resp.Body); got != "sso temporarily unavailable" {
@@ -114,7 +114,7 @@ func TestOIDCStartLocalPasswordSetupStartReauthError(t *testing.T) {
 	fixture.oidcStub.reauthStartErr = services.ErrOIDCUnavailable
 
 	resp := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assertStatusCode(t, resp, http.StatusServiceUnavailable)
 	for _, c := range resp.Cookies() {
@@ -130,11 +130,11 @@ func TestOIDCCompleteLocalPasswordSetupStateMismatch(t *testing.T) {
 	fixture := newOIDCStepupFixture(t, "stepup-state-mismatch@example.com")
 
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
-	defer startResponse.Body.Close()
+	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, "wrong-state-value", "code")
-	defer callbackResponse.Body.Close()
+	defer func() { _ = callbackResponse.Body.Close() }()
 
 	if callbackResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected redirect on state mismatch, got %d", callbackResponse.StatusCode)
@@ -150,7 +150,7 @@ func TestOIDCCompleteLocalPasswordSetupProviderErrorParam(t *testing.T) {
 	fixture := newOIDCStepupFixture(t, "stepup-provider-error@example.com")
 
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
-	defer startResponse.Body.Close()
+	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
 	state := extractStepupCallbackState(t, fixture, stepupCookie)
 
@@ -163,7 +163,7 @@ func TestOIDCCompleteLocalPasswordSetupProviderErrorParam(t *testing.T) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, stepupCookie))
 	callbackResponse := mustAppResponse(t, fixture.app, req)
-	defer callbackResponse.Body.Close()
+	defer func() { _ = callbackResponse.Body.Close() }()
 
 	if callbackResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected redirect on provider error, got %d", callbackResponse.StatusCode)

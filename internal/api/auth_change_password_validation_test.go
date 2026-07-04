@@ -20,7 +20,7 @@ func TestChangePasswordRejectsWeakNumericPassword(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", form, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -54,7 +54,7 @@ func TestChangePasswordRejectsPasswordMismatch(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", form, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)

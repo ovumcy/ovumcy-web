@@ -17,7 +17,7 @@ func TestLoginPageUsesLoginHeadingOnFirstLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected login status 200, got %d", response.StatusCode)
@@ -50,7 +50,7 @@ func TestOnboardingStep1ShowsLocalizedErrorWhenDateMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("step1 request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected step1 status 400, got %d", response.StatusCode)

@@ -30,7 +30,7 @@ func TestLoginSetsSealedAuthCookieValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	authCookie := responseCookie(response.Cookies(), authCookieName)
 	if authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
@@ -58,7 +58,7 @@ func TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard request with legacy jwt cookie failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303 with rejected legacy jwt cookie, got %d", response.StatusCode)
@@ -89,7 +89,7 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieAfterForcedResetForHTML(t 
 	if err != nil {
 		t.Fatalf("dashboard request with revoked auth cookie failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303 with revoked auth cookie, got %d", response.StatusCode)
@@ -121,7 +121,7 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieForAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("api request with revoked auth cookie failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected status 401 with revoked auth cookie, got %d", response.StatusCode)
@@ -222,7 +222,7 @@ func TestAuthMiddlewareMapsSessionResolveErrorsToClearedAuthCookie(t *testing.T)
 			if err != nil {
 				t.Fatalf("dashboard request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			if response.StatusCode != http.StatusSeeOther {
 				t.Fatalf("expected status 303, got %d", response.StatusCode)

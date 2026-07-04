@@ -793,7 +793,7 @@ func TestOvumcyErrorHandlerMapsBodyLimitTo413(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("expected 413, got %d", response.StatusCode)
@@ -863,7 +863,7 @@ func TestSecurityHeadersMiddlewareSetsHeadersOnHTMLResponses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("html request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertDefaultSecurityHeaders(t, response, false)
 }
@@ -880,7 +880,7 @@ func TestSecurityHeadersMiddlewareSetsHeadersOnAPIResponses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("api request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertDefaultSecurityHeaders(t, response, false)
 }
@@ -897,7 +897,7 @@ func TestSecurityHeadersMiddlewareAddsHSTSWhenSecureCookiesEnabled(t *testing.T)
 	if err != nil {
 		t.Fatalf("secure html request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertDefaultSecurityHeaders(t, response, true)
 }
@@ -915,7 +915,7 @@ func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fiber-error request failed: %v", err)
 	}
-	defer fiberErrResp.Body.Close()
+	defer func() { _ = fiberErrResp.Body.Close() }()
 	if fiberErrResp.StatusCode != fiber.StatusForbidden {
 		t.Fatalf("fiber.Error status = %d, want 403", fiberErrResp.StatusCode)
 	}
@@ -929,7 +929,7 @@ func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("raw-error request failed: %v", err)
 	}
-	defer rawErrResp.Body.Close()
+	defer func() { _ = rawErrResp.Body.Close() }()
 	if rawErrResp.StatusCode != fiber.StatusInternalServerError {
 		t.Fatalf("raw error status = %d, want 500", rawErrResp.StatusCode)
 	}
@@ -954,7 +954,7 @@ func TestStaticManifestUsesWebManifestContentType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manifest request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -978,7 +978,7 @@ func TestStaticAssetsSendCacheControlMaxAge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("static asset request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -1040,7 +1040,7 @@ func TestSecurityHeadersMiddlewareSetsNoCacheOnDynamicRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dynamic route request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if value := response.Header.Get("Cache-Control"); value != "no-store" {
 		t.Fatalf("expected Cache-Control=no-store on dynamic route, got %q", value)
@@ -1062,7 +1062,7 @@ func TestSecurityHeadersMiddlewareDoesNotSetNoCacheOnStaticAssets(t *testing.T) 
 	if err != nil {
 		t.Fatalf("static asset request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if value := response.Header.Get("Cache-Control"); value == "no-store" {
 		t.Fatalf("did not expect Cache-Control=no-store on /static asset, got %q", value)
@@ -1401,7 +1401,7 @@ func TestDefaultRequestLoggerDoesNotLogQueryPII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
@@ -1444,7 +1444,7 @@ func TestDefaultRequestLoggerDoesNotLogFormSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
@@ -1477,7 +1477,7 @@ func TestRequestLoggerUsesSafeRouteTemplateWithoutIP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
@@ -1523,7 +1523,7 @@ func TestRateLimitLogDoesNotLogQueryPII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rate limit request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429, got %d", response.StatusCode)
@@ -1575,7 +1575,7 @@ func TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("csrf request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d", response.StatusCode)
@@ -1618,7 +1618,7 @@ func TestAuthRateLimitHandlerLogsSecurityEventWithoutPII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rate-limit handler request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429, got %d", response.StatusCode)

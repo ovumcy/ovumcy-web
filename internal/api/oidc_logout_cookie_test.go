@@ -42,7 +42,7 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcLogoutBridgeCookieName)
 	if cookieValue == "" {
@@ -55,7 +55,7 @@ func TestOIDCLogoutBridgeCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
@@ -86,7 +86,7 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcLogoutBridgeCookieName)
 	if cookieValue == "" {
@@ -100,7 +100,7 @@ func TestOIDCLogoutBridgeCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
@@ -136,7 +136,7 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcLogoutBridgeCookieName)
 	if cookieValue == "" {
@@ -149,7 +149,7 @@ func TestOIDCLogoutBridgeCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 // flipLastBaseEncodedByte XORs the last byte of the base64url-decoded portion

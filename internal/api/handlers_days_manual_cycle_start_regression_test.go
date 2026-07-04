@@ -23,7 +23,7 @@ func TestMarkCycleStartRequiresAuthJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unauthenticated cycle-start request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", response.StatusCode)
@@ -50,7 +50,7 @@ func TestMarkCycleStartRejectsUnsupportedLegacyRoleJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unsupported legacy role cycle-start request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d", response.StatusCode)

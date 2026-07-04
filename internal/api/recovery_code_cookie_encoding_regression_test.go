@@ -68,7 +68,7 @@ func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), recoveryCodeCookieName)
 	if cookieValue == "" {
@@ -81,7 +81,7 @@ func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
@@ -111,7 +111,7 @@ func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), recoveryCodeCookieName)
 	if cookieValue == "" {
@@ -125,7 +125,7 @@ func TestRecoveryCodeCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
@@ -160,7 +160,7 @@ func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), recoveryCodeCookieName)
 	if cookieValue == "" {
@@ -173,5 +173,5 @@ func TestRecoveryCodeCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }

@@ -48,7 +48,7 @@ func TestSymptomRoutesRequireAuthJSON(t *testing.T) {
 			if err != nil {
 				t.Fatalf("symptom auth-required request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			if response.StatusCode != http.StatusUnauthorized {
 				t.Fatalf("expected status 401, got %d", response.StatusCode)
@@ -106,7 +106,7 @@ func TestSymptomRoutesRejectUnsupportedLegacyRoleJSON(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unsupported legacy role symptom request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			if response.StatusCode != http.StatusForbidden {
 				t.Fatalf("expected status 403, got %d", response.StatusCode)

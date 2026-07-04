@@ -64,7 +64,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			if err != nil {
 				t.Fatalf("upsert request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			if response.StatusCode != http.StatusOK {
 				t.Fatalf("expected upsert status 200, got %d", response.StatusCode)
 			}
@@ -83,7 +83,7 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 			if err != nil {
 				t.Fatalf("round-trip GET failed: %v", err)
 			}
-			defer roundTripResponse.Body.Close()
+			defer func() { _ = roundTripResponse.Body.Close() }()
 			if roundTripResponse.StatusCode != http.StatusOK {
 				t.Fatalf("expected round-trip status 200, got %d", roundTripResponse.StatusCode)
 			}

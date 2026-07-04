@@ -39,7 +39,7 @@ func TestVerifyTOTP2FAEnrollment_MissingPassword_DoesNotEnable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400 (missing password)", resp.StatusCode)
@@ -83,7 +83,7 @@ func TestVerifyTOTP2FAEnrollment_WrongPassword_DoesNotEnable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /api/v1/users/current/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401 (wrong password)", resp.StatusCode)

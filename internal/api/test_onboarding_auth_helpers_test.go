@@ -29,7 +29,7 @@ func loginAndExtractAuthCookie(t *testing.T, app *fiber.App, email string, passw
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected login status 303, got %d", response.StatusCode)
@@ -53,7 +53,7 @@ func loginAndExtractAuthCookieWithCSRF(t *testing.T, app *fiber.App, email strin
 	if err != nil {
 		t.Fatalf("load login page for csrf token failed: %v", err)
 	}
-	defer csrfResponse.Body.Close()
+	defer func() { _ = csrfResponse.Body.Close() }()
 
 	if csrfResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected login page status 200, got %d", csrfResponse.StatusCode)
@@ -82,7 +82,7 @@ func loginAndExtractAuthCookieWithCSRF(t *testing.T, app *fiber.App, email strin
 	if err != nil {
 		t.Fatalf("login request with csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected login status 303, got %d", response.StatusCode)

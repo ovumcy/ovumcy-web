@@ -20,7 +20,7 @@ func TestNotFoundPageForGuestUsesLoginPrimaryAction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("not-found page request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", response.StatusCode)
@@ -70,7 +70,7 @@ func TestNotFoundPageForAuthenticatedUserUsesDashboardPrimaryAction(t *testing.T
 	if err != nil {
 		t.Fatalf("authenticated not-found page request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", response.StatusCode)
@@ -99,7 +99,7 @@ func TestNotFoundAPIPathReturnsJSONError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("not-found api request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", response.StatusCode)
@@ -125,7 +125,7 @@ func TestNotFoundHTMXPathReturnsLocalizedStatusErrorMarkup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("not-found htmx request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", response.StatusCode)

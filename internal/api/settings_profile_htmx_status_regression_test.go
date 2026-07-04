@@ -27,7 +27,7 @@ func TestProfileUpdateHTMXStatusMarkupIsNonTransient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profile update htmx request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

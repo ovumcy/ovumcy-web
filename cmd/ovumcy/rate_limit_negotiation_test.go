@@ -90,7 +90,7 @@ func TestAuthRateLimitHandlerTreatsJSONContentTypeAsJSONRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auth rate-limit request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429, got %d", response.StatusCode)
@@ -120,7 +120,7 @@ func TestAuthRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("auth rate-limit redirect request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -151,7 +151,7 @@ func TestOIDCRateLimitHandlerRedirectUsesSealedFlashCookie(t *testing.T) {
 	if err != nil {
 		t.Fatalf("oidc rate-limit redirect request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -182,7 +182,7 @@ func TestSettingsAPIRateLimitHandlerRedirectsToSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings rate-limit request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -206,7 +206,7 @@ func TestAPIRateLimitHandlerReturnsStatusErrorMarkupForHTMX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("api rate-limit htmx request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429, got %d", response.StatusCode)
@@ -256,7 +256,7 @@ func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first request failed: %v", err)
 	}
-	defer firstResponse.Body.Close()
+	defer func() { _ = firstResponse.Body.Close() }()
 	if firstResponse.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected first request to succeed (204), got %d", firstResponse.StatusCode)
 	}
@@ -268,7 +268,7 @@ func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second request failed: %v", err)
 	}
-	defer secondResponse.Body.Close()
+	defer func() { _ = secondResponse.Body.Close() }()
 	if secondResponse.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected second request to trip limiter (429), got %d", secondResponse.StatusCode)
 	}
@@ -309,7 +309,7 @@ func TestAPIRateLimitHandlerReturnsJSONForGenericBrowserRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generic api rate-limit request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected status 429, got %d", response.StatusCode)

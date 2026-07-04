@@ -52,7 +52,7 @@ func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -153,7 +153,7 @@ func TestUpsertDayAutoFillsFollowingPeriodDays(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -232,7 +232,7 @@ func TestUpsertDayAutoFillSkipsWhenRecentPeriodDayExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -304,7 +304,7 @@ func putDayPayloadExpectOK(t *testing.T, app *fiber.App, authCookie, dateISO str
 	if err != nil {
 		t.Fatalf("%s request failed: %v", label, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 on %s, got %d", label, response.StatusCode)
 	}
@@ -353,7 +353,7 @@ func TestUpsertDayAutoFillPreservesManualNeighborsWhenAnchorToggledOff(t *testin
 	onRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
 	onRequest.Header.Set("Cookie", authCookie)
 	onResponse, _ := app.Test(onRequest, testConfigNoTimeout)
-	defer onResponse.Body.Close()
+	defer func() { _ = onResponse.Body.Close() }()
 
 	manualDay, _ := services.ParseDayDate("2026-02-12", time.UTC)
 	manualEntry, err := fetchLogByDateForTest(database, user.ID, manualDay, time.UTC)
@@ -379,7 +379,7 @@ func TestUpsertDayAutoFillPreservesManualNeighborsWhenAnchorToggledOff(t *testin
 	if err != nil {
 		t.Fatalf("off request failed: %v", err)
 	}
-	defer offResponse.Body.Close()
+	defer func() { _ = offResponse.Body.Close() }()
 	if offResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200 on toggle off, got %d", offResponse.StatusCode)
 	}

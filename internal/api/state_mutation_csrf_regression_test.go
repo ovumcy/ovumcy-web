@@ -30,7 +30,7 @@ func TestDaysUpsertPostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("days upsert without csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected csrf middleware to reject days upsert with 403, got %d", response.StatusCode)
@@ -53,7 +53,7 @@ func TestOnboardingStep1PostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding step1 without csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected csrf middleware to reject onboarding step1 with 403, got %d", response.StatusCode)
@@ -76,7 +76,7 @@ func TestOnboardingStep2PostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding step2 without csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected csrf middleware to reject onboarding step2 with 403, got %d", response.StatusCode)
@@ -96,7 +96,7 @@ func TestOnboardingCompletePostRejectsRequestsMissingCSRFToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding complete without csrf failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected csrf middleware to reject onboarding complete with 403, got %d", response.StatusCode)

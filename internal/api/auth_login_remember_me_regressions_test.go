@@ -24,7 +24,7 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session login request failed: %v", err)
 	}
-	defer sessionResponse.Body.Close()
+	defer func() { _ = sessionResponse.Body.Close() }()
 
 	if sessionResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", sessionResponse.StatusCode)
@@ -50,7 +50,7 @@ func TestLoginRememberMeControlsCookiePersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remember-me login request failed: %v", err)
 	}
-	defer rememberResponse.Body.Close()
+	defer func() { _ = rememberResponse.Body.Close() }()
 
 	if rememberResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", rememberResponse.StatusCode)

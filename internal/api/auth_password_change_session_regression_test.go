@@ -18,7 +18,7 @@ func TestSettingsChangePasswordReissuesSessionAndRejectsPreviousCookie(t *testin
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -37,7 +37,7 @@ func TestSettingsChangePasswordReissuesSessionAndRejectsPreviousCookie(t *testin
 	if err != nil {
 		t.Fatalf("old session settings request failed: %v", err)
 	}
-	defer oldSessionResponse.Body.Close()
+	defer func() { _ = oldSessionResponse.Body.Close() }()
 
 	if oldSessionResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected previous auth cookie to be rejected with 303, got %d", oldSessionResponse.StatusCode)
@@ -54,7 +54,7 @@ func TestSettingsChangePasswordReissuesSessionAndRejectsPreviousCookie(t *testin
 	if err != nil {
 		t.Fatalf("fresh session settings request failed: %v", err)
 	}
-	defer freshSessionResponse.Body.Close()
+	defer func() { _ = freshSessionResponse.Body.Close() }()
 
 	if freshSessionResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected fresh auth cookie to stay valid, got %d", freshSessionResponse.StatusCode)
@@ -75,7 +75,7 @@ func TestSettingsChangePasswordHTMXRespondsWithSuccessStatusMarkup(t *testing.T)
 	}, map[string]string{
 		"HX-Request": "true",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

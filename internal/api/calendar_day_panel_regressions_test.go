@@ -75,7 +75,7 @@ func TestCalendarDayPanelEditModeRendersDeleteActionForExistingEntry(t *testing.
 	if err != nil {
 		t.Fatalf("calendar day panel request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -118,7 +118,7 @@ func TestCalendarDayPanelEditModePreservesAndSavesPeriodToggle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("calendar day panel request failed: %v", err)
 	}
-	defer panelResponse.Body.Close()
+	defer func() { _ = panelResponse.Body.Close() }()
 
 	if panelResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", panelResponse.StatusCode)
@@ -147,7 +147,7 @@ func TestCalendarDayPanelEditModePreservesAndSavesPeriodToggle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("save request failed: %v", err)
 	}
-	defer saveResponse.Body.Close()
+	defer func() { _ = saveResponse.Body.Close() }()
 
 	if saveResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected save status 200, got %d", saveResponse.StatusCode)

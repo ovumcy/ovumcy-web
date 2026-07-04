@@ -30,7 +30,7 @@ func TestResetPasswordInvalidTokenJSONResponseDoesNotExposeSecrets(t *testing.T)
 	if err != nil {
 		t.Fatalf("reset-password json request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -63,7 +63,7 @@ func TestResetPasswordInvalidTokenHTMLResponseDoesNotExposeSecrets(t *testing.T)
 	if err != nil {
 		t.Fatalf("reset-password html request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)

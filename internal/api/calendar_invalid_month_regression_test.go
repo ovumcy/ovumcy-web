@@ -18,7 +18,7 @@ func TestCalendarInvalidMonthHTMLRedirectsToCurrentMonth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("calendar request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -41,7 +41,7 @@ func TestCalendarInvalidMonthHTMXRedirectsToCurrentMonth(t *testing.T) {
 	if err != nil {
 		t.Fatalf("calendar htmx request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -64,7 +64,7 @@ func TestCalendarInvalidMonthJSONKeepsValidationError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("calendar json request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)

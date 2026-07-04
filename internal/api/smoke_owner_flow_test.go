@@ -51,7 +51,7 @@ func TestOwnerCriticalFlowSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert day request failed: %v", err)
 	}
-	defer upsertResponse.Body.Close()
+	defer func() { _ = upsertResponse.Body.Close() }()
 
 	if upsertResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected upsert status 200, got %d", upsertResponse.StatusCode)
@@ -68,7 +68,7 @@ func TestOwnerCriticalFlowSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export request failed: %v", err)
 	}
-	defer exportResponse.Body.Close()
+	defer func() { _ = exportResponse.Body.Close() }()
 
 	if exportResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected export status 200, got %d", exportResponse.StatusCode)

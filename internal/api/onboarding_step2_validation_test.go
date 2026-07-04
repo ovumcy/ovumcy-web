@@ -28,7 +28,7 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invalid cycle request failed: %v", err)
 	}
-	defer invalidCycleResponse.Body.Close()
+	defer func() { _ = invalidCycleResponse.Body.Close() }()
 	if invalidCycleResponse.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected invalid cycle status 204, got %d", invalidCycleResponse.StatusCode)
 	}
@@ -57,7 +57,7 @@ func TestOnboardingStep2SanitizesOutOfRangeAndIncompatibleValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("incompatible request failed: %v", err)
 	}
-	defer incompatibleResponse.Body.Close()
+	defer func() { _ = incompatibleResponse.Body.Close() }()
 	if incompatibleResponse.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected incompatible values status 204, got %d", incompatibleResponse.StatusCode)
 	}
@@ -88,7 +88,7 @@ func TestOnboardingStep1RejectsUnparseableLastPeriodStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("step1 invalid-date request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400 for an unparseable last period start, got %d", response.StatusCode)
@@ -123,7 +123,7 @@ func TestOnboardingStep2IgnoresUnexpectedPeriodEndInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected period-end request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
 	}
@@ -186,7 +186,7 @@ func TestOnboardingStep2SanitizesSliderValuesEvenWhenUnexpectedPeriodEndIsPresen
 			if err != nil {
 				t.Fatalf("sanitize request failed: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			if response.StatusCode != http.StatusNoContent {
 				t.Fatalf("expected status 204, got %d", response.StatusCode)
 			}

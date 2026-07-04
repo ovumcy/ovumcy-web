@@ -35,7 +35,7 @@ func TestDashboardStableHeroRendersEnglishPredictionWindowWithoutFallbackStatus(
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -94,7 +94,7 @@ func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -158,7 +158,7 @@ func TestDashboardEnglishRendersSharedSparsePredictionExplanationForIrregularMod
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

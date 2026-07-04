@@ -15,7 +15,7 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	ctx := newSettingsSecurityTestContext(t, "settings-user@example.com")
 
 	response := settingsFormRequestWithCSRF(t, ctx, method, path, form, nil)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -41,7 +41,7 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	if err != nil {
 		t.Fatalf("follow-up settings request failed: %v", err)
 	}
-	defer followResponse.Body.Close()
+	defer func() { _ = followResponse.Body.Close() }()
 
 	if followResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected follow-up status 200, got %d", followResponse.StatusCode)
@@ -66,7 +66,7 @@ func assertSettingsFlashSuccessScenario(t *testing.T, method string, path string
 	if err != nil {
 		t.Fatalf("settings request after flash consumption failed: %v", err)
 	}
-	defer afterFlashResponse.Body.Close()
+	defer func() { _ = afterFlashResponse.Body.Close() }()
 
 	afterFlashDocument := mustParseHTMLDocument(t, mustReadBodyString(t, afterFlashResponse.Body))
 	if htmlFlashByKey(afterFlashDocument, successKey) != nil {

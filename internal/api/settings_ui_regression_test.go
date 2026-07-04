@@ -23,7 +23,7 @@ func TestSettingsPageRendersSingleIrregularCycleHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
@@ -49,7 +49,7 @@ func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndDangerZone(t *testing.
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
@@ -94,7 +94,7 @@ func TestSettingsTrackingSectionRendersExpectedToggleContracts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
@@ -161,7 +161,7 @@ func TestSettingsTrackingTogglesReflectPersistedState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
 	}
@@ -194,7 +194,7 @@ func TestSettingsInterfaceSectionRendersSaveDiscardContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
@@ -243,7 +243,7 @@ func TestSettingsDangerZoneDeleteAccountCardShowsVisibleTitle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
@@ -281,7 +281,7 @@ func TestSettingsCycleAndTrackingSectionsRenderDraftDiscardContract(t *testing.T
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
@@ -311,7 +311,7 @@ func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T)
 	if err != nil {
 		t.Fatalf("forgot-password email step request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -330,7 +330,7 @@ func TestForgotPasswordEmailStepUsesGenericEnumerationSafeSubtitle(t *testing.T)
 	if err != nil {
 		t.Fatalf("forgot-password follow-up request failed: %v", err)
 	}
-	defer followResponse.Body.Close()
+	defer func() { _ = followResponse.Body.Close() }()
 
 	if followResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected forgot-password follow-up status 200, got %d", followResponse.StatusCode)

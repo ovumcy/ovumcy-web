@@ -53,7 +53,7 @@ func TestExportCSVRespectsRequestedDateRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export csv request with range failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -353,7 +353,7 @@ func TestExportSummaryRespectsRequestedDateRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export summary request with range failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -401,7 +401,7 @@ func TestExportSummaryRejectsInvalidDateRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export summary request with invalid range failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -449,7 +449,7 @@ func TestExportSummaryUsesRequestTimezoneForRangeParsing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("timezone export summary request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

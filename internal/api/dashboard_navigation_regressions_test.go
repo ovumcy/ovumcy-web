@@ -25,7 +25,7 @@ func TestDashboardLogoutFormsRequireConfirmation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -73,7 +73,7 @@ func TestDashboardNavigationShowsDisplayNameWithoutEmailFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -166,7 +166,7 @@ func TestCalendarSelectedDayLoadsEditModeWhenRequested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("calendar request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -204,7 +204,7 @@ func mustRenderDashboard(t *testing.T, app *fiber.App, authCookie string, langua
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

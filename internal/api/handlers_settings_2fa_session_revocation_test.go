@@ -43,7 +43,7 @@ func TestVerifyTOTP2FAEnrollment_BumpsSessionVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verify enroll: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("verify enroll status = %d, want 200 or 303", resp.StatusCode)
 	}
@@ -67,7 +67,7 @@ func TestVerifyTOTP2FAEnrollment_BumpsSessionVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("other-session probe: %v", err)
 	}
-	defer otherResp.Body.Close()
+	defer func() { _ = otherResp.Body.Close() }()
 	if otherResp.StatusCode == http.StatusOK {
 		t.Fatalf("pre-toggle cookie still accepted on /dashboard (status=%d); session-version bump did not invalidate it", otherResp.StatusCode)
 	}
@@ -88,7 +88,7 @@ func TestDisableTOTP2FA_BumpsSessionVersion(t *testing.T) {
 
 	form := url.Values{"password": {"StrongPass1"}}
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", form, nil)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("disable status = %d, want 200 or 303", resp.StatusCode)
 	}
@@ -112,7 +112,7 @@ func TestDisableTOTP2FA_BumpsSessionVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("other-session probe: %v", err)
 	}
-	defer otherResp.Body.Close()
+	defer func() { _ = otherResp.Body.Close() }()
 	if otherResp.StatusCode == http.StatusOK {
 		t.Fatalf("pre-toggle cookie still accepted on /dashboard (status=%d); session-version bump did not invalidate it", otherResp.StatusCode)
 	}

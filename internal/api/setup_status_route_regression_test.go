@@ -14,7 +14,7 @@ func TestSetupStatusRouteIsNotPubliclyExposed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("setup-status request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected setup-status route to be absent with 404, got %d", response.StatusCode)

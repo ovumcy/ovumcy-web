@@ -31,7 +31,7 @@ func TestRegisterRejectsWeakNumericPassword(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -69,7 +69,7 @@ func TestRegisterRejectsPasswordMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register mismatch request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -164,7 +164,7 @@ func TestRegisterRejectsCaseInsensitiveDuplicateEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register duplicate request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertRegisterDuplicateResponseLooksLikeSuccess(t, response)
 
@@ -214,7 +214,7 @@ func TestRegisterRejectsExactDuplicateEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register exact duplicate request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertRegisterDuplicateResponseLooksLikeSuccess(t, response)
 
@@ -263,7 +263,7 @@ func TestRegisterRejectsExactDuplicateEmailHTMLFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register exact duplicate html request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)

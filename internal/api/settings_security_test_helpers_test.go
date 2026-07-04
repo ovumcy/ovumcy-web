@@ -112,7 +112,7 @@ func loadSettingsCSRFContext(t *testing.T, app *fiber.App, authCookie string) (*
 	if err != nil {
 		t.Fatalf("settings request for csrf context failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)

@@ -22,7 +22,7 @@ func submitOnboardingStep1(t *testing.T, app *fiber.App, authCookie string, form
 	if err != nil {
 		t.Fatalf("step1 request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected step1 status 204, got %d", response.StatusCode)
@@ -41,7 +41,7 @@ func submitOnboardingStep2(t *testing.T, app *fiber.App, authCookie string, form
 	if err != nil {
 		t.Fatalf("step2 request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("expected step2 status 204, got %d", response.StatusCode)
@@ -59,7 +59,7 @@ func submitOnboardingComplete(t *testing.T, app *fiber.App, authCookie string) {
 	if err != nil {
 		t.Fatalf("step3 request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected step3 status 200, got %d", response.StatusCode)

@@ -39,7 +39,7 @@ func TestUpsertDayNormalizesFlowWhenNotPeriod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -84,7 +84,7 @@ func TestUpsertDayAllowsPeriodWithoutExplicitFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -143,7 +143,7 @@ func TestUpsertDayPreservesSymptomsWhenNotPeriod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -189,7 +189,7 @@ func TestUpsertDayPersistsPregnancyTest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -235,7 +235,7 @@ func TestUpsertDayNormalizesUnknownPregnancyTest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upsert request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

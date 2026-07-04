@@ -20,7 +20,7 @@ func TestExportJSONRejectsInvalidDateRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export json request with invalid range failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -55,7 +55,7 @@ func TestExportJSONRejectsInvalidFromDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export json request with invalid from failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -90,7 +90,7 @@ func TestExportJSONRejectsInvalidToDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("export json request with invalid to failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)

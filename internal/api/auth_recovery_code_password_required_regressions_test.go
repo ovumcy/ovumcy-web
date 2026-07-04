@@ -17,7 +17,7 @@ func TestRegenerateRecoveryCodeRejectsMissingPassword(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/recovery-code", url.Values{}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusBadRequest)
 	if got := readAPIError(t, response.Body); got != "invalid password" {
@@ -36,7 +36,7 @@ func TestRegenerateRecoveryCodeRejectsWrongPassword(t *testing.T) {
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusUnauthorized)
 	if got := readAPIError(t, response.Body); got != "invalid password" {

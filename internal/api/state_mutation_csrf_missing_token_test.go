@@ -39,7 +39,7 @@ func TestStateMutatingEndpointsRejectMissingCSRFToken(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			response := settingsRequestWithoutCSRF(t, ctx, tc.method, tc.path, url.Values{}, nil)
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 
 			assertStatusCode(t, response, http.StatusForbidden)
 		})

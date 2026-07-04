@@ -19,7 +19,7 @@ func TestClearDataRemovesTrackedCalendarEntriesAndResetsCycleSettings(t *testing
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected clear data status 200, got %d", response.StatusCode)
@@ -39,7 +39,7 @@ func TestClearDataRejectsMissingPassword(t *testing.T) {
 	}, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected clear data status 400, got %d", response.StatusCode)
@@ -63,7 +63,7 @@ func TestClearDataRejectsInvalidPassword(t *testing.T) {
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected clear data status 401, got %d", response.StatusCode)
@@ -87,7 +87,7 @@ func TestValidateClearDataPasswordAcceptsCorrectPassword(t *testing.T) {
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected validate clear data status 200, got %d", response.StatusCode)
@@ -107,7 +107,7 @@ func TestValidateClearDataPasswordRejectsInvalidPassword(t *testing.T) {
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected validate clear data status 401, got %d", response.StatusCode)

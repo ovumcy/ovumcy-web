@@ -27,7 +27,7 @@ func TestProfileUpdatePersistsDisplayNameAndShowsItInNavigation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -56,7 +56,7 @@ func TestProfileUpdatePersistsDisplayNameAndShowsItInNavigation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer settingsResponse.Body.Close()
+	defer func() { _ = settingsResponse.Body.Close() }()
 
 	settingsBody, err := io.ReadAll(settingsResponse.Body)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestProfileUpdatePersistsDisplayNameAndShowsItInNavigation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dashboard request failed: %v", err)
 	}
-	defer dashboardResponse.Body.Close()
+	defer func() { _ = dashboardResponse.Body.Close() }()
 
 	dashboardBody, err := io.ReadAll(dashboardResponse.Body)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestProfileUpdateRejectsMarkupLikeDisplayName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -133,7 +133,7 @@ func TestProfileUpdateRejectsMarkupLikeDisplayName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer settingsResponse.Body.Close()
+	defer func() { _ = settingsResponse.Body.Close() }()
 
 	settingsDocument := mustParseHTMLDocument(t, mustReadBodyString(t, settingsResponse.Body))
 	if htmlFlashByKey(settingsDocument, "settings.error.display_name_invalid_characters") == nil {

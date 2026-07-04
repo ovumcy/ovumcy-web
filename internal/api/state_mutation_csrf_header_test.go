@@ -36,7 +36,7 @@ func TestStateMutationAcceptsCSRFTokenViaXCSRFTokenHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings profile request via header CSRF failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode == http.StatusForbidden {
 		t.Fatalf("expected CSRF middleware to accept X-CSRF-Token header, got 403")
@@ -63,7 +63,7 @@ func TestStateMutationRejectsInvalidCSRFTokenInHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings profile request with bogus header token failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected CSRF middleware to reject bogus X-CSRF-Token header with 403, got %d", response.StatusCode)
@@ -92,7 +92,7 @@ func TestStateMutationPrefersFormCSRFFieldOverHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings profile request with form + header failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected form CSRF field to take precedence and succeed (200), got %d", response.StatusCode)

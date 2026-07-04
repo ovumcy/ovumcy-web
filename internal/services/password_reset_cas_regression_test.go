@@ -32,16 +32,16 @@ func (s *casStubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(
 	s.casOldHashSeen = oldPasswordHash
 	// Simulate the DB CAS: if the stored password already differs from
 	// oldPasswordHash, return ErrResetTokenAlreadyConsumed (0 rows affected).
-	if s.stubAuthUserRepo.user.PasswordHash != oldPasswordHash {
+	if s.user.PasswordHash != oldPasswordHash {
 		return ErrResetTokenAlreadyConsumed
 	}
 	// First winner: apply the write.
 	s.casConsumed = true
-	s.stubAuthUserRepo.user.PasswordHash = newPasswordHash
-	s.stubAuthUserRepo.user.RecoveryCodeHash = recoveryHash
-	s.stubAuthUserRepo.user.LocalAuthEnabled = true
-	s.stubAuthUserRepo.user.MustChangePassword = false
-	s.stubAuthUserRepo.user.AuthSessionVersion = NormalizeAuthSessionVersion(s.stubAuthUserRepo.user.AuthSessionVersion) + 1
+	s.user.PasswordHash = newPasswordHash
+	s.user.RecoveryCodeHash = recoveryHash
+	s.user.LocalAuthEnabled = true
+	s.user.MustChangePassword = false
+	s.user.AuthSessionVersion = NormalizeAuthSessionVersion(s.user.AuthSessionVersion) + 1
 	return nil
 }
 
@@ -56,7 +56,7 @@ func TestResetPasswordAndRotateRecoveryCodeCASRejectsReplay(t *testing.T) {
 	}
 
 	repo := &casStubAuthUserRepo{}
-	repo.stubAuthUserRepo.user = models.User{
+	repo.user = models.User{
 		ID:                 7,
 		PasswordHash:       string(originalHash),
 		RecoveryCodeHash:   "old-recovery",
@@ -68,7 +68,7 @@ func TestResetPasswordAndRotateRecoveryCodeCASRejectsReplay(t *testing.T) {
 	service := NewAuthService(repo)
 
 	// First redeem — must succeed.
-	userSnap := repo.stubAuthUserRepo.user // copy for the CAS call
+	userSnap := repo.user // copy for the CAS call
 	_, err = service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &userSnap, string(originalHash), "EvenStronger2")
 	if err != nil {
 		t.Fatalf("first redeem: unexpected error: %v", err)
@@ -76,20 +76,20 @@ func TestResetPasswordAndRotateRecoveryCodeCASRejectsReplay(t *testing.T) {
 	if !repo.casConsumed {
 		t.Fatal("expected CAS UPDATE to be called on first redeem")
 	}
-	if repo.stubAuthUserRepo.user.AuthSessionVersion != 2 {
-		t.Fatalf("expected auth_session_version 2 after first redeem, got %d", repo.stubAuthUserRepo.user.AuthSessionVersion)
+	if repo.user.AuthSessionVersion != 2 {
+		t.Fatalf("expected auth_session_version 2 after first redeem, got %d", repo.user.AuthSessionVersion)
 	}
 
 	// Second redeem with the SAME oldPasswordHash — must fail.
-	userSnap2 := repo.stubAuthUserRepo.user // state after first write
+	userSnap2 := repo.user // state after first write
 	_, err = service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &userSnap2, string(originalHash), "AnotherPass3")
 	if !errors.Is(err, ErrResetTokenAlreadyConsumed) {
 		t.Fatalf("second redeem: expected ErrResetTokenAlreadyConsumed, got %v", err)
 	}
 
 	// auth_session_version must still be 2 (incremented exactly once).
-	if repo.stubAuthUserRepo.user.AuthSessionVersion != 2 {
-		t.Fatalf("expected auth_session_version to remain 2 after rejected replay, got %d", repo.stubAuthUserRepo.user.AuthSessionVersion)
+	if repo.user.AuthSessionVersion != 2 {
+		t.Fatalf("expected auth_session_version to remain 2 after rejected replay, got %d", repo.user.AuthSessionVersion)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	}
 
 	repo := &casStubAuthUserRepo{}
-	repo.stubAuthUserRepo.user = models.User{
+	repo.user = models.User{
 		ID:                 42,
 		PasswordHash:       string(originalHash),
 		LocalAuthEnabled:   true,
@@ -134,8 +134,8 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	if recoveryCode == "" {
 		t.Fatal("expected non-empty rotated recovery code")
 	}
-	if repo.stubAuthUserRepo.user.AuthSessionVersion != 2 {
-		t.Fatalf("expected auth_session_version 2 after first reset, got %d", repo.stubAuthUserRepo.user.AuthSessionVersion)
+	if repo.user.AuthSessionVersion != 2 {
+		t.Fatalf("expected auth_session_version 2 after first reset, got %d", repo.user.AuthSessionVersion)
 	}
 
 	// Second CompleteReset with the same token — token fingerprint still
@@ -153,7 +153,7 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	}
 
 	// auth_session_version must still be 2 — bumped at most once.
-	if repo.stubAuthUserRepo.user.AuthSessionVersion != 2 {
-		t.Fatalf("expected auth_session_version to remain 2 after rejected replay, got %d", repo.stubAuthUserRepo.user.AuthSessionVersion)
+	if repo.user.AuthSessionVersion != 2 {
+		t.Fatalf("expected auth_session_version to remain 2 after rejected replay, got %d", repo.user.AuthSessionVersion)
 	}
 }

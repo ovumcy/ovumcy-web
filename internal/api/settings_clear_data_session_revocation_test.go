@@ -24,7 +24,7 @@ func TestClearAllData_BumpsSessionVersion(t *testing.T) {
 
 	form := url.Values{"password": {"StrongPass1"}}
 	resp := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", form, map[string]string{"Accept": "application/json"})
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("clear-data status = %d, want 200 or 303", resp.StatusCode)
 	}
@@ -48,7 +48,7 @@ func TestClearAllData_BumpsSessionVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("other-session probe: %v", err)
 	}
-	defer otherResp.Body.Close()
+	defer func() { _ = otherResp.Body.Close() }()
 	if otherResp.StatusCode == http.StatusOK {
 		t.Fatalf("pre-wipe cookie still accepted on /dashboard (status=%d); clear-data must invalidate other sessions", otherResp.StatusCode)
 	}

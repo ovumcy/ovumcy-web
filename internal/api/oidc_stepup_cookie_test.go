@@ -144,7 +144,7 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
-	defer setResp.Body.Close()
+	defer func() { _ = setResp.Body.Close() }()
 	for _, c := range setResp.Cookies() {
 		if c.Name == oidcStepupCookieName {
 			cookieValue = c.Value
@@ -166,7 +166,7 @@ func TestSetAndPopOIDCStepupCookieRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
-	defer popResp.Body.Close()
+	defer func() { _ = popResp.Body.Close() }()
 
 	if popped.UserID != original.UserID {
 		t.Fatalf("expected user ID %d, got %d", original.UserID, popped.UserID)
@@ -212,7 +212,7 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set request: %v", err)
 	}
-	defer setResp.Body.Close()
+	defer func() { _ = setResp.Body.Close() }()
 	for _, c := range setResp.Cookies() {
 		if c.Name == oidcStepupCookieName {
 			cookieValue = c.Value
@@ -231,7 +231,7 @@ func TestPopOIDCStepupCookieWrongKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pop request: %v", err)
 	}
-	defer popResp.Body.Close()
+	defer func() { _ = popResp.Body.Close() }()
 
 	if popped.UserID != 0 || popped.State != "" {
 		t.Fatalf("expected empty state when key mismatches, got %+v", popped)
@@ -277,7 +277,7 @@ func TestPopOIDCStepupCookieExpiredPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if popped.UserID != 0 || popped.State != "" {
 		t.Fatalf("expected empty state for expired cookie, got %+v", popped)
@@ -298,7 +298,7 @@ func TestClearOIDCStepupCookieExpiresInPast(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	for _, c := range resp.Cookies() {
 		if c.Name == oidcStepupCookieName {

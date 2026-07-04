@@ -962,7 +962,7 @@ func isV1AuthPath(path string) bool {
 // prefix, silently broadening the rate-limit budget.
 func rateLimitOnlyFor(method, path string) func(fiber.Ctx) bool {
 	return func(c fiber.Ctx) bool {
-		return !(c.Method() == method && c.Path() == path)
+		return c.Method() != method || c.Path() != path
 	}
 }
 

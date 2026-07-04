@@ -102,7 +102,7 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("app.Test: %v", err)
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		if response.StatusCode != http.StatusRequestEntityTooLarge {
 			t.Fatalf("status: got %d want 413", response.StatusCode)
 		}
@@ -137,7 +137,7 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("app.Test: %v", err)
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		if response.StatusCode != http.StatusRequestEntityTooLarge {
 			t.Fatalf("status: got %d want 413", response.StatusCode)
 		}
@@ -433,7 +433,7 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 			if err != nil {
 				t.Fatalf("app.Test: %v", err)
 			}
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			if response.StatusCode != tt.wantStatus {
 				t.Fatalf("status: got %d want %d", response.StatusCode, tt.wantStatus)
 			}
@@ -482,7 +482,7 @@ func TestRespondAPIRateLimitedWithoutJSONAcceptFallsBackToMappedError(t *testing
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != fiber.StatusTooManyRequests {
 		t.Fatalf("expected 429 from HTML fallback, got %d", response.StatusCode)
 	}
@@ -515,7 +515,7 @@ func TestRespondAuthRateLimitedFallsBackThroughAuthFlash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("app.Test: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != fiber.StatusSeeOther {
 		t.Fatalf("expected 303 redirect for HTML rate-limited auth form, got %d", response.StatusCode)
 	}

@@ -19,7 +19,7 @@ func TestSettingsChangePasswordInvalidCurrentPasswordShowsTopErrorBanner(t *test
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", form, map[string]string{
 		"Accept-Language": "en",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -40,7 +40,7 @@ func TestSettingsChangePasswordInvalidCurrentPasswordShowsTopErrorBanner(t *test
 	if err != nil {
 		t.Fatalf("follow-up settings request failed: %v", err)
 	}
-	defer followResponse.Body.Close()
+	defer func() { _ = followResponse.Body.Close() }()
 
 	rendered := mustReadBodyString(t, followResponse.Body)
 	document := mustParseHTMLDocument(t, rendered)

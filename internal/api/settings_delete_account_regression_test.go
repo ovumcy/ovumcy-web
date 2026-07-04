@@ -17,7 +17,7 @@ func TestSettingsDeleteAccountRejectsMissingPassword(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current", url.Values{}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", response.StatusCode)
@@ -43,7 +43,7 @@ func TestSettingsDeleteAccountRejectsInvalidPassword(t *testing.T) {
 	}, map[string]string{
 		"Accept": "application/json",
 	})
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", response.StatusCode)
@@ -86,7 +86,7 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.
 	if err != nil {
 		t.Fatalf("delete-account request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)

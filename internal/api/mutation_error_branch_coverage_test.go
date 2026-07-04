@@ -65,7 +65,7 @@ func TestPageHandlersRedirectMissingUserAtHandlerLevel(t *testing.T) {
 		if location := response.Header.Get("Location"); location != "/login" {
 			t.Errorf("GET %s without user: expected redirect to /login, got %q", path, location)
 		}
-		response.Body.Close()
+		_ = response.Body.Close()
 	}
 }
 
@@ -113,7 +113,7 @@ func TestMutationHandlersRejectMissingUserAtHandlerLevel(t *testing.T) {
 		if response.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s %s without user: expected 401, got %d", testCase.method, testCase.path, response.StatusCode)
 		}
-		response.Body.Close()
+		_ = response.Body.Close()
 	}
 }
 
@@ -143,7 +143,7 @@ func TestMutationHandlersMapInvalidInputThroughFailMutation(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			response := mutationBranchRequest(t, app, testCase.method, testCase.path, testCase.body, testCase.contentType)
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			if response.StatusCode < 400 || response.StatusCode >= 500 {
 				t.Fatalf("expected a 4xx validation error, got %d", response.StatusCode)
 			}
@@ -186,7 +186,7 @@ func TestMutationHandlersMapServiceFailuresThroughFailMutation(t *testing.T) {
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			response := mutationBranchRequest(t, app, testCase.method, testCase.path, testCase.body, testCase.contentType)
-			defer response.Body.Close()
+			defer func() { _ = response.Body.Close() }()
 			if response.StatusCode < 400 {
 				t.Fatalf("expected a mapped error with the database down, got %d", response.StatusCode)
 			}

@@ -19,7 +19,7 @@ func TestOnboardingDateInputUsesCurrentLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
@@ -47,7 +47,7 @@ func TestOnboardingDateFieldUsesRussianLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
@@ -80,7 +80,7 @@ func TestOnboardingDateFieldUsesSpanishLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
@@ -107,7 +107,7 @@ func TestOnboardingDateFieldUsesFrenchLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
@@ -140,7 +140,7 @@ func TestOnboardingDateFieldUsesGermanLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)

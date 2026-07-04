@@ -23,7 +23,7 @@ func TestLoginRedirectsToOnboardingWhenOnboardingIncomplete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("login request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)

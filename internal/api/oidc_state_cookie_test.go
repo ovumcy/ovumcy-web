@@ -51,7 +51,7 @@ func TestPopOIDCStateCookieRejectsExpiredPayload(t *testing.T) {
 	if testErr != nil {
 		t.Fatalf("request failed: %v", testErr)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
@@ -89,7 +89,7 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcStateCookieName)
 	if cookieValue == "" {
@@ -102,7 +102,7 @@ func TestOIDCStateCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
@@ -141,7 +141,7 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcStateCookieName)
 	if cookieValue == "" {
@@ -154,7 +154,7 @@ func TestOIDCStateCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
@@ -188,7 +188,7 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcStateCookieName)
 	if cookieValue == "" {
@@ -202,5 +202,5 @@ func TestOIDCStateCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }

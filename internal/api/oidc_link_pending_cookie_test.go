@@ -60,7 +60,7 @@ func TestOIDCLinkPendingCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcLinkPendingCookieName)
 	if cookieValue == "" {
@@ -73,7 +73,7 @@ func TestOIDCLinkPendingCookieRoundTripPreservesPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestOIDCLinkPendingCookieRejectsTamperedByte(t *testing.T) {
@@ -103,7 +103,7 @@ func TestOIDCLinkPendingCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcLinkPendingCookieName)
 	if cookieValue == "" {
@@ -117,7 +117,7 @@ func TestOIDCLinkPendingCookieRejectsTamperedByte(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open tampered request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 func TestOIDCLinkPendingCookieRejectsForeignKey(t *testing.T) {
@@ -152,7 +152,7 @@ func TestOIDCLinkPendingCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seal request: %v", err)
 	}
-	defer sealResponse.Body.Close()
+	defer func() { _ = sealResponse.Body.Close() }()
 
 	cookieValue := responseCookieValue(sealResponse.Cookies(), oidcLinkPendingCookieName)
 	if cookieValue == "" {
@@ -165,7 +165,7 @@ func TestOIDCLinkPendingCookieRejectsForeignKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open request: %v", err)
 	}
-	defer openResponse.Body.Close()
+	defer func() { _ = openResponse.Body.Close() }()
 }
 
 // TestOIDCLinkPendingCookieRejectsCrossPurposeAAD seals the link-pending
@@ -211,7 +211,7 @@ func TestOIDCLinkPendingCookieRejectsCrossPurposeAAD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open cross-purpose request: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 }
 
 // TestOIDCLinkPendingCookieRejectsExpiredPayload locks the TTL gate. The
@@ -260,7 +260,7 @@ func TestOIDCLinkPendingCookieRejectsExpiredPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open expired request: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 }
 
 // TestNewOIDCLinkPendingPayloadRequiresIdentityFields locks the builder

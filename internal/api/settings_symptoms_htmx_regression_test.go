@@ -108,7 +108,7 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update duplicate symptom htmx request failed: %v", err)
 	}
-	defer updateResponse.Body.Close()
+	defer func() { _ = updateResponse.Body.Close() }()
 
 	if updateResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected htmx update status 200, got %d", updateResponse.StatusCode)
@@ -151,7 +151,7 @@ func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create too-long symptom htmx request failed: %v", err)
 	}
-	defer createResponse.Body.Close()
+	defer func() { _ = createResponse.Body.Close() }()
 
 	if createResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected htmx create status 200, got %d", createResponse.StatusCode)
@@ -204,7 +204,7 @@ func TestSettingsSymptomsHTMXUpdateTooLongKeepsStoredSymptomUnchanged(t *testing
 	if err != nil {
 		t.Fatalf("update too-long symptom htmx request failed: %v", err)
 	}
-	defer updateResponse.Body.Close()
+	defer func() { _ = updateResponse.Body.Close() }()
 
 	if updateResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected htmx update status 200, got %d", updateResponse.StatusCode)
@@ -257,7 +257,7 @@ func TestSettingsSymptomsHTMXUpdateWithoutColorPreservesStoredValue(t *testing.T
 	if err != nil {
 		t.Fatalf("update symptom htmx request failed: %v", err)
 	}
-	defer updateResponse.Body.Close()
+	defer func() { _ = updateResponse.Body.Close() }()
 
 	if updateResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected htmx update status 200, got %d", updateResponse.StatusCode)
@@ -317,7 +317,7 @@ func performSettingsSymptomsHTMXRequest(t *testing.T, ctx settingsSymptomsHTMXTe
 	if err != nil {
 		t.Fatalf("settings symptoms htmx request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected htmx status 200, got %d", response.StatusCode)

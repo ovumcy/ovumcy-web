@@ -127,7 +127,7 @@ func TestShowTOTPChallengePage_MissingPendingCookie_RedirectsToLogin(t *testing.
 	if err != nil {
 		t.Fatalf("GET /auth/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("status = %d, want 303", resp.StatusCode)
@@ -150,7 +150,7 @@ func TestShowTOTPChallengePage_ValidPendingCookie_Renders200(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /auth/2fa: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -168,7 +168,7 @@ func TestVerifyTOTPLogin_MissingPendingCookie_ReturnsError(t *testing.T) {
 	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
 
 	resp := doTOTPChallengeRequest(t, app, csrfCookieHeader, "123456", csrfToken)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// HTML form path: respondAuthError redirects with 303 to /auth/2fa.
 	if resp.StatusCode != http.StatusSeeOther {
@@ -187,7 +187,7 @@ func TestVerifyTOTPLogin_ExpiredPendingCookie_ReturnsError(t *testing.T) {
 	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
 
 	resp := doTOTPChallengeRequest(t, app, joinCookieHeader(expiredCookie, csrfCookieHeader), "123456", csrfToken)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("status = %d, want 303 (redirect to challenge page with error)", resp.StatusCode)
@@ -214,7 +214,7 @@ func TestVerifyTOTPLogin_ValidCode_IssuesSessionAndRedirects(t *testing.T) {
 	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
 	cookies := joinCookieHeader(pendingCookie, csrfCookieHeader)
 	resp := doTOTPChallengeRequest(t, app, cookies, code, csrfToken)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusSeeOther {
 		t.Errorf("status = %d, want 303", resp.StatusCode)
@@ -240,7 +240,7 @@ func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 	cookies := joinCookieHeader(pendingCookie, csrfCookieHeader)
 	// "000000" is almost certainly invalid
 	resp := doTOTPChallengeRequest(t, app, cookies, "000000", csrfToken)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	authCookie := responseCookie(resp.Cookies(), authCookieName)
 	if authCookie != nil && authCookie.Value != "" {
@@ -279,7 +279,7 @@ func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 	for attempt := 0; attempt < services.DefaultTOTPAttemptsLimit; attempt++ {
 		resp := doHTMX("000000")
 		status := resp.StatusCode
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if status == http.StatusTooManyRequests {
 			t.Fatalf("attempt %d returned 429 too early (limit is %d)", attempt+1, services.DefaultTOTPAttemptsLimit)
 		}
@@ -289,7 +289,7 @@ func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 	}
 
 	resp := doHTMX("000000")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("status after %d failed attempts = %d, want 429", services.DefaultTOTPAttemptsLimit, resp.StatusCode)
 	}
@@ -318,7 +318,7 @@ func TestVerifyTOTPLogin_ReplayCode_Rejected(t *testing.T) {
 	resp1 := doTOTPChallengeRequest(t, app, joinCookieHeader(pending1, csrfCookieHeader), code, csrfToken)
 	status1 := resp1.StatusCode
 	cookies1 := resp1.Cookies()
-	resp1.Body.Close()
+	_ = resp1.Body.Close()
 
 	if status1 != http.StatusSeeOther {
 		t.Fatalf("first submission status = %d, want 303", status1)
@@ -331,7 +331,7 @@ func TestVerifyTOTPLogin_ReplayCode_Rejected(t *testing.T) {
 	// reject it; no new auth cookie may be issued.
 	pending2 := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
 	resp2 := doTOTPChallengeRequest(t, app, joinCookieHeader(pending2, csrfCookieHeader), code, csrfToken)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 
 	if c := responseCookie(resp2.Cookies(), authCookieName); c != nil && c.Value != "" {
 		t.Error("replayed code must not issue a new auth cookie — replay protection failed")
@@ -348,7 +348,7 @@ func extractCSRFCookieAndToken(t *testing.T, app *fiber.App) (string, string) {
 	if err != nil {
 		t.Fatalf("GET /login for csrf: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	token := extractCSRFTokenFromHTML(t, string(body))
 	c := responseCookie(resp.Cookies(), "ovumcy_csrf")

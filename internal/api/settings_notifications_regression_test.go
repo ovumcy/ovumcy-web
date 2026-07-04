@@ -17,7 +17,7 @@ func TestSettingsFlashErrorTakesPrecedenceOverQueryError(t *testing.T) {
 		"confirm_password": {"EvenStronger2"},
 	}
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPut, "/api/v1/users/current/password", form, nil)
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -35,7 +35,7 @@ func TestSettingsFlashErrorTakesPrecedenceOverQueryError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer followResponse.Body.Close()
+	defer func() { _ = followResponse.Body.Close() }()
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, followResponse.Body))
 	if htmlFlashByKey(document, "settings.error.invalid_current_password") == nil {
@@ -57,7 +57,7 @@ func TestSettingsStatusIgnoresQueryWhenFlashMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
 	if htmlFlashByKey(document, "settings.success.password_changed") != nil {
@@ -78,7 +78,7 @@ func TestSettingsFlashSuccessTakesPrecedenceOverQueryStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profile update request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -96,7 +96,7 @@ func TestSettingsFlashSuccessTakesPrecedenceOverQueryStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings request failed: %v", err)
 	}
-	defer followResponse.Body.Close()
+	defer func() { _ = followResponse.Body.Close() }()
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, followResponse.Body))
 	if htmlFlashByKey(document, "settings.success.profile_updated") == nil {

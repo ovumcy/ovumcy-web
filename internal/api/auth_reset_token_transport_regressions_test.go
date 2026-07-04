@@ -27,7 +27,7 @@ func TestForgotPasswordDoesNotExposeResetTokenInRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forgot-password request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -58,7 +58,7 @@ func TestForgotPasswordEmailStepDoesNotExposeEmailInRedirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forgot-password email-step request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -89,7 +89,7 @@ func TestForgotPasswordJSONDoesNotExposeResetToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forgot-password json request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
@@ -131,7 +131,7 @@ func TestLoginForcedResetDoesNotExposeResetToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forced-reset login html request failed: %v", err)
 	}
-	defer htmlResponse.Body.Close()
+	defer func() { _ = htmlResponse.Body.Close() }()
 
 	if htmlResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected html status 303, got %d", htmlResponse.StatusCode)
@@ -155,7 +155,7 @@ func TestLoginForcedResetDoesNotExposeResetToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forced-reset login json request failed: %v", err)
 	}
-	defer jsonResponse.Body.Close()
+	defer func() { _ = jsonResponse.Body.Close() }()
 
 	if jsonResponse.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected json status 403, got %d", jsonResponse.StatusCode)

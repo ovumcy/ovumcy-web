@@ -48,7 +48,7 @@ func TestDeleteSymptomArchivesAndKeepsIDsInLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hide symptom request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(response.Body)

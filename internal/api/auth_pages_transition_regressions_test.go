@@ -26,7 +26,7 @@ func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *tes
 	if err != nil {
 		t.Fatalf("register request failed: %v", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected status 303, got %d", response.StatusCode)
@@ -46,7 +46,7 @@ func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *tes
 	if err != nil {
 		t.Fatalf("pickup request failed: %v", err)
 	}
-	defer pickupResponse.Body.Close()
+	defer func() { _ = pickupResponse.Body.Close() }()
 	if pickupResponse.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected pickup status 303, got %d", pickupResponse.StatusCode)
 	}
@@ -65,7 +65,7 @@ func TestRegisterInlineRecoveryStepRendersCopyDownloadAndContinueControls(t *tes
 	if err != nil {
 		t.Fatalf("recovery page request failed: %v", err)
 	}
-	defer recoveryResponse.Body.Close()
+	defer func() { _ = recoveryResponse.Body.Close() }()
 
 	if recoveryResponse.StatusCode != http.StatusOK {
 		t.Fatalf("expected recovery status 200, got %d", recoveryResponse.StatusCode)

@@ -221,7 +221,7 @@ func TestStdinIsTerminalReturnsFalseForRegularFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if stdinIsTerminal(file) {
 		t.Fatal("expected a regular file not to be reported as a terminal")
@@ -231,7 +231,7 @@ func TestStdinIsTerminalReturnsFalseForRegularFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
-	closed.Close()
+	_ = closed.Close()
 	if stdinIsTerminal(closed) {
 		t.Fatal("expected a closed file (failed Stat) not to be reported as a terminal")
 	}
@@ -244,7 +244,7 @@ func TestReadCreatePasswordReadsFromNonTTYFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	if _, err := file.WriteString("StrongPass1\n"); err != nil {
 		t.Fatalf("write temp file: %v", err)
 	}
