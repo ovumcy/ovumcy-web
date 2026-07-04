@@ -4,7 +4,6 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13130/badge)](https://www.bestpractices.dev/projects/13130)
 [![Coverage](https://codecov.io/gh/ovumcy/ovumcy-web/graph/badge.svg)](https://app.codecov.io/gh/ovumcy/ovumcy-web)
 [![Tested](https://img.shields.io/badge/tested-mutation%20%C2%B7%20fuzz%20%C2%B7%20property-2ea44f)](https://github.com/ovumcy/ovumcy-web/blob/main/TESTING.md)
-[![Go Report Card](https://goreportcard.com/badge/github.com/ovumcy/ovumcy-web)](https://goreportcard.com/report/github.com/ovumcy/ovumcy-web)
 [![Release](https://img.shields.io/github/v/release/ovumcy/ovumcy-web?display_name=tag)](https://github.com/ovumcy/ovumcy-web/releases)
 [![Last Commit](https://img.shields.io/github/last-commit/ovumcy/ovumcy-web)](https://github.com/ovumcy/ovumcy-web/commits/main)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
@@ -129,7 +128,7 @@ Period and fertile-window predictions in particular are statistical estimates de
 - CSV and JSON export for backup, portability, and personal review.
 - Optional OIDC sign-in in hybrid or SSO-only mode, with guarded owner auto-provision and provider logout support.
 - Optional TOTP two-factor authentication for owner sign-in, compatible with any RFC 6238 authenticator app (Google Authenticator, 1Password, Aegis, etc.).
-- English, Russian, Spanish, French, and German localization.
+- English, Russian, Spanish, French, German, and Italian localization.
 - Self-hosted deployment with Docker or a single Go binary.
 
 ## How Predictions Work
