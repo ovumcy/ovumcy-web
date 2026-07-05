@@ -56,7 +56,7 @@ func (service *SettingsService) ChangePassword(ctx context.Context, user *models
 	}
 
 	newPassword = strings.TrimSpace(newPassword)
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrSettingsPasswordHashFailed, err)
 	}
@@ -96,7 +96,7 @@ func (service *SettingsService) PrepareLocalPasswordHash(user *models.User, newP
 		return "", ErrSettingsWeakPassword
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrSettingsPasswordHashFailed, err)
 	}
