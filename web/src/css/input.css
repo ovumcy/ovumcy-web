@@ -453,6 +453,7 @@
   align-items: center;
   justify-content: center;
   min-width: 2.85rem;
+  min-height: 2.5rem;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
@@ -4325,6 +4326,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 2.75rem;
   border-radius: 0.78rem;
   padding: 0.42rem 0.28rem;
   color: var(--text-muted);
