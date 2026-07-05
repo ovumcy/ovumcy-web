@@ -209,4 +209,85 @@ test.describe('Visual and accessibility regressions', () => {
     await cycleSummary.scrollIntoViewIfNeeded();
     await expectElementAboveMobileTabbar(page, cycleSummary);
   });
+
+  test('mobile tap targets meet the minimum size (tabbar 44px, language pills 40px)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    // Pre-auth language pills are auth-free — check them before registering.
+    await page.goto('/login');
+    const pills = page.locator('.lang-switch .lang-link');
+    const pillCount = await pills.count();
+    expect(pillCount).toBeGreaterThan(0);
+    const pillRowTops = new Set<number>();
+    for (let index = 0; index < pillCount; index++) {
+      const box = await pills.nth(index).boundingBox();
+      expect(box, `language pill ${index} must have a visible box`).not.toBeNull();
+      expect(box!.height, 'language pill must be at least 40px tall').toBeGreaterThanOrEqual(40);
+      pillRowTops.add(Math.round(box!.y));
+    }
+    // Enlarging the tap area must not break the single-row layout at 390px.
+    expect(pillRowTops.size, 'language pills must stay on a single row at 390px').toBe(1);
+    await assertNoHorizontalOverflow(page);
+
+    // Owner bottom tabbar links must fill the visible bar (>=44px effective).
+    await registerOwnerAndReachDashboard(page, 'visual-tap-target');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/dashboard');
+    const tabbarLinks = page.locator('nav.mobile-tabbar a');
+    const linkCount = await tabbarLinks.count();
+    expect(linkCount).toBeGreaterThan(0);
+    for (let index = 0; index < linkCount; index++) {
+      const box = await tabbarLinks.nth(index).boundingBox();
+      expect(box, `tabbar link ${index} must have a visible box`).not.toBeNull();
+      expect(box!.height, 'tabbar link must be at least 44px tall').toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('owner pages expose a single h1 and never skip heading levels', async ({ page }) => {
+    await registerOwnerAndReachDashboard(page, 'visual-heading-order');
+
+    const assertHeadingStructure = async (label: string): Promise<void> => {
+      const result = await page.evaluate(() => {
+        const nodes = Array.from(
+          document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6'),
+        );
+        const levels = nodes.map((node) => Number(node.tagName[1]));
+        const h1Count = levels.filter((level) => level === 1).length;
+        let skipsLevel = false;
+        let previous = 0;
+        for (const level of levels) {
+          if (previous !== 0 && level > previous + 1) skipsLevel = true;
+          previous = level;
+        }
+        return { h1Count, skipsLevel, levels };
+      });
+      expect(result.h1Count, `${label} must have exactly one <h1> (levels: ${result.levels.join(',')})`).toBe(1);
+      expect(
+        result.skipsLevel,
+        `${label} must not skip a heading level (levels: ${result.levels.join(',')})`,
+      ).toBe(false);
+    };
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await assertHeadingStructure('/dashboard');
+
+    await page.goto('/stats');
+    await expect(page).toHaveURL(/\/stats$/);
+    await assertHeadingStructure('/stats');
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await assertHeadingStructure('/settings');
+
+    // Calendar: open a day so the day panel heading (h2 under the page h1) renders.
+    const today = await todayISOFromDashboard(page);
+    await page.goto('/calendar');
+    await expect(page).toHaveURL(/\/calendar/);
+    await page.locator(`[data-day-editor-open="${today}"]`).first().click();
+    await expect(page.locator('#day-editor h2')).toBeVisible();
+    await assertHeadingStructure('/calendar');
+  });
 });
