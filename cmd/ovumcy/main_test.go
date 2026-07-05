@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -1776,9 +1777,14 @@ func TestRunServerClosesDatabaseOnListenError(t *testing.T) {
 // TestRunServerClosesDatabaseAfterGracefulStop pins the graceful exit path:
 // Listen returns nil after a graceful stop, and runServer closes the
 // database before handing control back to main. The stop is issued only
-// after a TCP dial against the bound listener succeeds — calling Shutdown
-// straight from the OnListen hook races the accept loop and can fire before
-// the server is stoppable, hanging Listen forever.
+// after a full HTTP exchange against the bound listener completes. A bare
+// dial is not enough: the kernel listener exists before Listen enters
+// Serve, so a dial can succeed while fasthttp has no registered listener
+// yet, and a Shutdown issued in that window returns nil without stopping
+// anything (fasthttp's ShutdownWithContext no-ops when s.ln is nil) — the
+// stop is lost and Listen hangs forever (the 30s CI flake). A served
+// response proves the accept loop is running, which is the precondition
+// for Shutdown to take effect.
 func TestRunServerClosesDatabaseAfterGracefulStop(t *testing.T) {
 	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "runserver-stop.db"))
 	if err != nil {
@@ -1795,12 +1801,23 @@ func TestRunServerClosesDatabaseAfterGracefulStop(t *testing.T) {
 		address := <-addrCh
 		for {
 			conn, dialErr := net.Dial("tcp", address)
-			if dialErr == nil {
-				_ = conn.Close()
-				_ = app.Shutdown()
-				return
+			if dialErr != nil {
+				time.Sleep(10 * time.Millisecond)
+				continue
 			}
-			time.Sleep(10 * time.Millisecond)
+			// HTTP/1.0 implies Connection: close, so the server ends the
+			// exchange and io.Copy returns once the response is written.
+			_, _ = conn.Write([]byte("GET / HTTP/1.0\r\n\r\n"))
+			served, _ := io.Copy(io.Discard, conn)
+			_ = conn.Close()
+			if served == 0 {
+				// No response bytes: the accept loop may not be running
+				// yet, so a stop now could be silently lost. Retry.
+				time.Sleep(10 * time.Millisecond)
+				continue
+			}
+			_ = app.Shutdown()
+			return
 		}
 	}()
 
