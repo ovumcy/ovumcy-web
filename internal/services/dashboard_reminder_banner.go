@@ -3,10 +3,14 @@ package services
 import "time"
 
 // DashboardReminderBannerWindowDays is the threshold policy for issue #123:
-// the in-app reminder banner ("Period likely in ~N days" / "Ovulation
-// likely in ~N days") only shows once the predicted date is within this many
-// days of today, so the dashboard is not permanently cluttered with a
+// the in-app reminder banner ("Period likely today/tomorrow", or "…likely in
+// ~N days" further out) only shows once the predicted date is within this
+// many days of today, so the dashboard is not permanently cluttered with a
 // months-away estimate.
+//
+// This is the fallback default for the planned per-user `reminder_lead_days`
+// setting (a separate PR): keep it as a single named constant so wiring the
+// setting later is a one-line swap.
 const DashboardReminderBannerWindowDays = 3
 
 const (
@@ -20,13 +24,23 @@ const (
 	DashboardReminderBannerKindOvulation = "ovulation"
 )
 
-// DashboardReminderBannerPeriodKey and DashboardReminderBannerOvulationKey are
-// the i18n plural-group base keys (".one"/".few"/".many"/".other" per
-// internal/i18n/plural.go) for the two banner copies. Callers resolve the
-// final string via i18n.TranslatePlural(messages, language, key, DaysUntil).
+// The banner copy is chosen by how close the predicted date is:
+//   - day 0 (the event is today) uses the flat "_today" key,
+//   - day 1 (tomorrow) uses the flat "_tomorrow" key,
+//   - day 2 up to the threshold uses the "~N days" plural base key
+//     (".one"/".few"/".many"/".other" per internal/i18n/plural.go), resolved
+//     via i18n.TranslatePlural(messages, language, key, DaysUntil).
+//
+// The "_today"/"_tomorrow" keys are deliberately not plural groups (no
+// ".one"/".other" siblings), so the locale parity test treats them as plain
+// keys required verbatim in every locale rather than as CLDR plural bases.
 const (
-	DashboardReminderBannerPeriodKey    = "dashboard.reminder_banner_period"
-	DashboardReminderBannerOvulationKey = "dashboard.reminder_banner_ovulation"
+	DashboardReminderBannerPeriodKey            = "dashboard.reminder_banner_period"
+	DashboardReminderBannerPeriodTodayKey       = "dashboard.reminder_banner_period_today"
+	DashboardReminderBannerPeriodTomorrowKey    = "dashboard.reminder_banner_period_tomorrow"
+	DashboardReminderBannerOvulationKey         = "dashboard.reminder_banner_ovulation"
+	DashboardReminderBannerOvulationTodayKey    = "dashboard.reminder_banner_ovulation_today"
+	DashboardReminderBannerOvulationTomorrowKey = "dashboard.reminder_banner_ovulation_tomorrow"
 )
 
 // DashboardReminderBanner is the pure result of the threshold policy: whether
@@ -35,11 +49,17 @@ const (
 // rendering concerns beyond the i18n key selection — the disclaimer and
 // estimate qualifier are rendered by the existing dashboard prediction
 // surface (dashboard.prediction_disclaimer), not duplicated here.
+//
+// Countable reports whether TitleKey is the "~N days" plural copy (which the
+// caller resolves with the day count) rather than the fixed "today"/"tomorrow"
+// copy: only the plural variant carries a %d verb, so the template must not
+// printf the count into the today/tomorrow strings.
 type DashboardReminderBanner struct {
 	Show        bool
 	Kind        string
 	TitleKey    string
 	DaysUntil   int
+	Countable   bool
 	Approximate bool
 }
 
@@ -86,11 +106,18 @@ func dashboardReminderBannerForPeriod(cycleContext DashboardCycleContext, today 
 	if !ok {
 		return DashboardReminderBanner{}, false
 	}
+	titleKey, countable := dashboardReminderBannerCopy(
+		daysUntil,
+		DashboardReminderBannerPeriodTodayKey,
+		DashboardReminderBannerPeriodTomorrowKey,
+		DashboardReminderBannerPeriodKey,
+	)
 	return DashboardReminderBanner{
 		Show:      true,
 		Kind:      DashboardReminderBannerKindPeriod,
-		TitleKey:  DashboardReminderBannerPeriodKey,
+		TitleKey:  titleKey,
 		DaysUntil: daysUntil,
+		Countable: countable,
 	}, true
 }
 
@@ -102,13 +129,36 @@ func dashboardReminderBannerForOvulation(cycleContext DashboardCycleContext, tod
 	if !ok {
 		return DashboardReminderBanner{}, false
 	}
+	titleKey, countable := dashboardReminderBannerCopy(
+		daysUntil,
+		DashboardReminderBannerOvulationTodayKey,
+		DashboardReminderBannerOvulationTomorrowKey,
+		DashboardReminderBannerOvulationKey,
+	)
 	return DashboardReminderBanner{
 		Show:        true,
 		Kind:        DashboardReminderBannerKindOvulation,
-		TitleKey:    DashboardReminderBannerOvulationKey,
+		TitleKey:    titleKey,
 		DaysUntil:   daysUntil,
+		Countable:   countable,
 		Approximate: !cycleContext.DisplayOvulationExact,
 	}, true
+}
+
+// dashboardReminderBannerCopy selects the i18n key for a reminder banner from
+// how many days away the predicted date is: day 0 uses the fixed "today"
+// copy, day 1 the fixed "tomorrow" copy, and day 2+ the "~N days" plural
+// base key. The bool return (countable) is true only for the plural case,
+// where the caller interpolates the day count.
+func dashboardReminderBannerCopy(daysUntil int, todayKey string, tomorrowKey string, countKey string) (string, bool) {
+	switch daysUntil {
+	case 0:
+		return todayKey, false
+	case 1:
+		return tomorrowKey, false
+	default:
+		return countKey, true
+	}
 }
 
 // dashboardReminderBannerDaysUntil applies the threshold policy to a single

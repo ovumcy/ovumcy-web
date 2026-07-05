@@ -131,7 +131,7 @@
     {{if and .IsOwner .ShowReminderBanner}}
     <div class="journal-panel text-sm" data-dashboard-reminder-banner data-reminder-banner-key="{{.ReminderBannerTitleKey}}">
       <p class="field-label">
-        {{printf (tn .Messages .Lang .ReminderBannerTitleKey .ReminderBannerDaysUntil) .ReminderBannerDaysUntil}}
+        {{if .ReminderBannerCountable}}{{printf (tn .Messages .Lang .ReminderBannerTitleKey .ReminderBannerDaysUntil) .ReminderBannerDaysUntil}}{{else}}{{t .Messages .ReminderBannerTitleKey}}{{end}}
         {{if .ReminderBannerApproximate}} <span class="journal-muted" data-dashboard-ovulation-approximate>{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
       </p>
     </div>

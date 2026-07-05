@@ -45,6 +45,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"ShowReminderBanner":                    viewData.ReminderBanner.Show,
 		"ReminderBannerTitleKey":                viewData.ReminderBanner.TitleKey,
 		"ReminderBannerDaysUntil":               viewData.ReminderBanner.DaysUntil,
+		"ReminderBannerCountable":               viewData.ReminderBanner.Countable,
 		"ReminderBannerApproximate":             viewData.ReminderBanner.Approximate,
 		"Today":                                 viewData.Today.Format("2006-01-02"),
 		"TodayDateRaw":                          viewData.Today,

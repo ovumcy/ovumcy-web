@@ -13,24 +13,40 @@ func TestBuildDashboardReminderBannerPeriodThresholdBoundaries(t *testing.T) {
 		nextPeriodStart string
 		wantShow        bool
 		wantDaysUntil   int
+		wantTitleKey    string
+		wantCountable   bool
 	}{
 		{
-			name:            "due today shows the banner at zero days",
+			name:            "due today uses the dedicated today copy",
 			nextPeriodStart: "2026-03-10",
 			wantShow:        true,
 			wantDaysUntil:   0,
+			wantTitleKey:    DashboardReminderBannerPeriodTodayKey,
+			wantCountable:   false,
 		},
 		{
-			name:            "a few days away within the window shows the banner",
+			name:            "due tomorrow uses the dedicated tomorrow copy",
+			nextPeriodStart: "2026-03-11",
+			wantShow:        true,
+			wantDaysUntil:   1,
+			wantTitleKey:    DashboardReminderBannerPeriodTomorrowKey,
+			wantCountable:   false,
+		},
+		{
+			name:            "two days away uses the ~N days plural copy",
 			nextPeriodStart: "2026-03-12",
 			wantShow:        true,
 			wantDaysUntil:   2,
+			wantTitleKey:    DashboardReminderBannerPeriodKey,
+			wantCountable:   true,
 		},
 		{
-			name:            "exactly at the threshold shows the banner",
+			name:            "exactly at the threshold uses the ~N days plural copy",
 			nextPeriodStart: "2026-03-13",
 			wantShow:        true,
 			wantDaysUntil:   DashboardReminderBannerWindowDays,
+			wantTitleKey:    DashboardReminderBannerPeriodKey,
+			wantCountable:   true,
 		},
 		{
 			name:            "one day beyond the threshold hides the banner",
@@ -65,8 +81,11 @@ func TestBuildDashboardReminderBannerPeriodThresholdBoundaries(t *testing.T) {
 			if banner.Kind != DashboardReminderBannerKindPeriod {
 				t.Fatalf("expected period banner kind, got %q", banner.Kind)
 			}
-			if banner.TitleKey != DashboardReminderBannerPeriodKey {
-				t.Fatalf("expected period title key, got %q", banner.TitleKey)
+			if banner.TitleKey != tc.wantTitleKey {
+				t.Fatalf("expected title key %q, got %q", tc.wantTitleKey, banner.TitleKey)
+			}
+			if banner.Countable != tc.wantCountable {
+				t.Fatalf("expected Countable=%v, got %v", tc.wantCountable, banner.Countable)
 			}
 			if banner.DaysUntil != tc.wantDaysUntil {
 				t.Fatalf("expected DaysUntil=%d, got %d", tc.wantDaysUntil, banner.DaysUntil)
@@ -144,30 +163,56 @@ func TestBuildDashboardReminderBannerOvulationThresholdBoundaries(t *testing.T) 
 		exact         bool
 		wantShow      bool
 		wantDaysUntil int
+		wantTitleKey  string
+		wantCountable bool
 		wantApprox    bool
 	}{
 		{
-			name:          "exact ovulation within the window shows the banner",
+			name:          "ovulation today uses the dedicated today copy",
+			ovulationDate: "2026-03-10",
+			exact:         true,
+			wantShow:      true,
+			wantDaysUntil: 0,
+			wantTitleKey:  DashboardReminderBannerOvulationTodayKey,
+			wantCountable: false,
+		},
+		{
+			name:          "exact ovulation tomorrow uses the dedicated tomorrow copy",
 			ovulationDate: "2026-03-11",
 			exact:         true,
 			wantShow:      true,
 			wantDaysUntil: 1,
+			wantTitleKey:  DashboardReminderBannerOvulationTomorrowKey,
+			wantCountable: false,
 			wantApprox:    false,
 		},
 		{
-			name:          "approximate ovulation within the window is flagged approximate",
+			name:          "approximate ovulation tomorrow is flagged approximate",
 			ovulationDate: "2026-03-11",
 			exact:         false,
 			wantShow:      true,
 			wantDaysUntil: 1,
+			wantTitleKey:  DashboardReminderBannerOvulationTomorrowKey,
+			wantCountable: false,
 			wantApprox:    true,
 		},
 		{
-			name:          "exactly at the threshold shows the banner",
+			name:          "two days away uses the ~N days plural copy",
+			ovulationDate: "2026-03-12",
+			exact:         true,
+			wantShow:      true,
+			wantDaysUntil: 2,
+			wantTitleKey:  DashboardReminderBannerOvulationKey,
+			wantCountable: true,
+		},
+		{
+			name:          "exactly at the threshold uses the ~N days plural copy",
 			ovulationDate: "2026-03-13",
 			exact:         true,
 			wantShow:      true,
 			wantDaysUntil: DashboardReminderBannerWindowDays,
+			wantTitleKey:  DashboardReminderBannerOvulationKey,
+			wantCountable: true,
 		},
 		{
 			name:          "beyond the threshold hides the banner",
@@ -202,8 +247,11 @@ func TestBuildDashboardReminderBannerOvulationThresholdBoundaries(t *testing.T) 
 			if banner.Kind != DashboardReminderBannerKindOvulation {
 				t.Fatalf("expected ovulation banner kind, got %q", banner.Kind)
 			}
-			if banner.TitleKey != DashboardReminderBannerOvulationKey {
-				t.Fatalf("expected ovulation title key, got %q", banner.TitleKey)
+			if banner.TitleKey != tc.wantTitleKey {
+				t.Fatalf("expected title key %q, got %q", tc.wantTitleKey, banner.TitleKey)
+			}
+			if banner.Countable != tc.wantCountable {
+				t.Fatalf("expected Countable=%v, got %v", tc.wantCountable, banner.Countable)
 			}
 			if banner.DaysUntil != tc.wantDaysUntil {
 				t.Fatalf("expected DaysUntil=%d, got %d", tc.wantDaysUntil, banner.DaysUntil)
@@ -264,20 +312,62 @@ func TestBuildDashboardReminderBannerOvulationSuppressedCases(t *testing.T) {
 // that when both the next period and ovulation predictions fall inside the
 // reminder window on the same request, the period reminder wins — it is the
 // more actionable of the two for the owner, and showing both would clutter
-// the dashboard with two banners for one underlying cycle prediction.
+// the dashboard with two banners for one underlying cycle prediction. The
+// period's own day count drives which copy variant is chosen, independent of
+// how far away the (suppressed) ovulation date is.
 func TestBuildDashboardReminderBannerPeriodTakesPriorityOverOvulation(t *testing.T) {
 	today := mustParseDashboardDay(t, "2026-03-10")
-	cycleContext := DashboardCycleContext{
-		DisplayNextPeriodStart: mustParseDashboardDay(t, "2026-03-12"),
-		DisplayOvulationDate:   mustParseDashboardDay(t, "2026-03-11"),
-		DisplayOvulationExact:  true,
+
+	cases := []struct {
+		name            string
+		nextPeriodStart string
+		ovulationDate   string
+		wantTitleKey    string
+		wantCountable   bool
+		wantDaysUntil   int
+	}{
+		{
+			name:            "period two days out wins with the plural copy over a nearer ovulation",
+			nextPeriodStart: "2026-03-12",
+			ovulationDate:   "2026-03-11",
+			wantTitleKey:    DashboardReminderBannerPeriodKey,
+			wantCountable:   true,
+			wantDaysUntil:   2,
+		},
+		{
+			name:            "period today wins with the today copy over a later ovulation",
+			nextPeriodStart: "2026-03-10",
+			ovulationDate:   "2026-03-12",
+			wantTitleKey:    DashboardReminderBannerPeriodTodayKey,
+			wantCountable:   false,
+			wantDaysUntil:   0,
+		},
 	}
 
-	banner := BuildDashboardReminderBanner(cycleContext, today)
-	if !banner.Show {
-		t.Fatalf("expected a banner to show")
-	}
-	if banner.Kind != DashboardReminderBannerKindPeriod {
-		t.Fatalf("expected period banner to take priority, got kind %q", banner.Kind)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cycleContext := DashboardCycleContext{
+				DisplayNextPeriodStart: mustParseDashboardDay(t, tc.nextPeriodStart),
+				DisplayOvulationDate:   mustParseDashboardDay(t, tc.ovulationDate),
+				DisplayOvulationExact:  true,
+			}
+
+			banner := BuildDashboardReminderBanner(cycleContext, today)
+			if !banner.Show {
+				t.Fatalf("expected a banner to show")
+			}
+			if banner.Kind != DashboardReminderBannerKindPeriod {
+				t.Fatalf("expected period banner to take priority, got kind %q", banner.Kind)
+			}
+			if banner.TitleKey != tc.wantTitleKey {
+				t.Fatalf("expected title key %q, got %q", tc.wantTitleKey, banner.TitleKey)
+			}
+			if banner.Countable != tc.wantCountable {
+				t.Fatalf("expected Countable=%v, got %v", tc.wantCountable, banner.Countable)
+			}
+			if banner.DaysUntil != tc.wantDaysUntil {
+				t.Fatalf("expected DaysUntil=%d, got %d", tc.wantDaysUntil, banner.DaysUntil)
+			}
+		})
 	}
 }
