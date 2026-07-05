@@ -128,6 +128,15 @@
     <p class="journal-muted text-sm" data-dashboard-prediction-explainer data-explainer-key="{{.PredictionExplanationPrimaryKey}}">{{t .Messages .PredictionExplanationPrimaryKey}}</p>
     {{end}}
 
+    {{if and .IsOwner .ShowReminderBanner}}
+    <div class="journal-panel text-sm" data-dashboard-reminder-banner data-reminder-banner-key="{{.ReminderBannerTitleKey}}">
+      <p class="field-label">
+        {{if .ReminderBannerCountable}}{{printf (tn .Messages .Lang .ReminderBannerTitleKey .ReminderBannerDaysUntil) .ReminderBannerDaysUntil}}{{else}}{{t .Messages .ReminderBannerTitleKey}}{{end}}
+        {{if .ReminderBannerApproximate}} <span class="journal-muted" data-dashboard-ovulation-approximate>{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
+      </p>
+    </div>
+    {{end}}
+
     {{if .IsOwner}}
     <p class="journal-muted text-sm" data-dashboard-prediction-disclaimer>{{t .Messages "dashboard.prediction_disclaimer"}}</p>
     {{end}}

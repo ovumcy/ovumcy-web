@@ -2,11 +2,34 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
+
+// busyRetryAttempts / busyRetryBackoff bound the application-level retry on
+// SQLITE_BUSY. `_txlock=immediate` (see sqlite.go) removes the
+// SQLITE_BUSY_SNAPSHOT (517) class that bypasses the busy handler, but under
+// heavy concurrent writers the plain SQLITE_BUSY (5) can still surface when the
+// busy handler declines to wait to avoid a write-lock livelock. A short bounded
+// retry of the whole transaction absorbs that residue so concurrent day writes
+// never surface a 500. Non-BUSY errors are never retried.
+const (
+	busyRetryAttempts = 6
+	busyRetryBackoff  = 5 * time.Millisecond
+)
+
+// isSQLiteBusy reports whether err is a SQLITE_BUSY / "database is locked"
+// contention error that is safe to retry with a fresh transaction.
+func isSQLiteBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "SQLITE_BUSY") || strings.Contains(strings.ToLower(msg), "database is locked")
+}
 
 type DailyLogRepository struct {
 	database *gorm.DB
@@ -117,8 +140,25 @@ func (repo *DailyLogRepository) UpdateSymptomIDs(ctx context.Context, entry *mod
 // WithinTransaction runs fn against a transaction-scoped repository bound to a
 // single DB transaction. The provided repository must be used for all reads and
 // writes inside fn so they commit or roll back atomically.
+//
+// The transaction is retried a bounded number of times on SQLITE_BUSY (see
+// busyRetryAttempts); each retry runs fn again against a fresh transaction, so
+// fn must be idempotent with respect to its own reads (the day upsert is: it
+// re-reads before writing). Non-BUSY errors return immediately.
 func (repo *DailyLogRepository) WithinTransaction(ctx context.Context, fn func(*DailyLogRepository) error) error {
-	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return fn(&DailyLogRepository{database: tx})
-	})
+	var err error
+	for attempt := range busyRetryAttempts {
+		err = repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			return fn(&DailyLogRepository{database: tx})
+		})
+		if !isSQLiteBusy(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(busyRetryBackoff * time.Duration(attempt+1)):
+		}
+	}
+	return err
 }

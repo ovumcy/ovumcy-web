@@ -358,7 +358,7 @@ func TestFullPageFallbackStepupRedirects(t *testing.T) {
 		assertSeeOther(t, response, "/settings")
 	})
 
-	t.Run("stepup start for oidc-only user redirects to provider", func(t *testing.T) {
+	t.Run("stepup start for oidc-only user bridges to provider via interstitial", func(t *testing.T) {
 		oidcOnly := models.User{
 			Email:               "fullpage-stepup-oidc@example.com",
 			PasswordHash:        "",
@@ -388,7 +388,22 @@ func TestFullPageFallbackStepupRedirects(t *testing.T) {
 
 		form := url.Values{"new_password": {"FreshStrong2"}, "confirm_password": {"FreshStrong2"}}
 		response := fullPageRequest(t, app, http.MethodPost, "/api/v1/users/current/password/step-up", form, authCookieName+"="+sealed)
-		assertSeeOther(t, response, stub.reauthURL)
+		defer func() { _ = response.Body.Close() }()
+
+		// The browser form submit must not be answered with a cross-origin 3xx:
+		// CSP form-action 'self' would abort that redirect (net::ERR_ABORTED).
+		// It returns a same-origin 200 interstitial that meta-refreshes to the
+		// provider authorize URL instead.
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 interstitial, got %d", response.StatusCode)
+		}
+		if location := response.Header.Get("Location"); location != "" {
+			t.Fatalf("browser step-up path must not emit a Location redirect, got %q", location)
+		}
+		body := mustReadBodyString(t, response.Body)
+		if !strings.Contains(body, `http-equiv="refresh"`) || !strings.Contains(body, stub.reauthURL) {
+			t.Fatalf("expected meta-refresh interstitial targeting %q, got %q", stub.reauthURL, body)
+		}
 	})
 
 	t.Run("logout bridge redirect with empty provider url redirects to login", func(t *testing.T) {

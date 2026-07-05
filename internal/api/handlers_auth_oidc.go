@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"html"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -152,6 +153,21 @@ func boolString(value bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+// oidcSameOriginRedirectInterstitial returns a minimal same-origin HTML
+// document that bounces the browser to target via a meta-refresh. A browser
+// form submission cannot 3xx-redirect straight to the cross-origin IdP: the
+// page CSP pins form-action to 'self', and Chromium enforces that across the
+// whole redirect chain of a form navigation, so a cross-origin hop aborts as
+// net::ERR_ABORTED. Returning a same-origin 200 whose meta-refresh performs the
+// hop keeps the cross-origin navigation out of the form submission — where
+// form-action does not apply — the same technique the provider-logout bridge
+// uses. target is server-built (config + random OIDC state), never user input,
+// but is HTML-escaped as defense-in-depth for the attribute context.
+func oidcSameOriginRedirectInterstitial(target string) string {
+	return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=` +
+		html.EscapeString(target) + `"></head><body></body></html>`
 }
 
 func (handler *Handler) ShowOIDCLogoutBridge(c fiber.Ctx) error {

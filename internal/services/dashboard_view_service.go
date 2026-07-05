@@ -41,6 +41,7 @@ type DashboardViewData struct {
 	Stats                             CycleStats
 	CycleContext                      DashboardCycleContext
 	CycleHero                         DashboardCycleHero
+	ReminderBanner                    DashboardReminderBanner
 	Today                             time.Time
 	Yesterday                         time.Time
 	YesterdayMonth                    string
@@ -151,11 +152,16 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	visibility := dashboardOwnerVisibilityState(user, today, now, location)
 	showHighFertilityBadge := dashboardHighFertilityBadge(user, todayLog)
 	showSpottingCycleWarning := dashboardSpottingCycleWarning(logs, todayLog, today, location)
+	reminderBanner := DashboardReminderBanner{}
+	if IsOwnerUser(user) {
+		reminderBanner = BuildDashboardReminderBanner(cycleContext, today)
+	}
 
 	return DashboardViewData{
 		Stats:                             stats,
 		CycleContext:                      cycleContext,
 		CycleHero:                         BuildDashboardCycleHero(user, stats, cycleContext),
+		ReminderBanner:                    reminderBanner,
 		Today:                             today,
 		Yesterday:                         yesterday,
 		YesterdayMonth:                    yesterday.Format("2006-01"),

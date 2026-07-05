@@ -116,35 +116,54 @@ func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 	return ovDay, ovulationExact
 }
 
+// CycleWindowPrediction is the named-field result of PredictCycleWindow.
+// Calculable reports whether a window could be predicted at all; when it is
+// false every other field holds its zero value. OvulationExact distinguishes
+// an exact luteal-phase fit from a clamped estimate.
+type CycleWindowPrediction struct {
+	OvulationDate        time.Time
+	FertilityWindowStart time.Time
+	FertilityWindowEnd   time.Time
+	OvulationExact       bool
+	Calculable           bool
+}
+
 // PredictCycleWindow returns ovulation date and fertility window for the cycle
 // that starts at periodStart.
 // Invariants:
 // - ovulation is strictly before next period start
 // - fertility window is the 6-day range [ovulation-5, ovulation]
 // - fertility window may overlap menstruation on short cycles
-func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int) (time.Time, time.Time, time.Time, bool, bool) {
+func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int) CycleWindowPrediction {
 	if periodStart.IsZero() || cycleLength <= 0 {
-		return time.Time{}, time.Time{}, time.Time{}, false, false
+		return CycleWindowPrediction{}
 	}
 	ovulationDay, ovulationExact := CalcOvulationDay(cycleLength, lutealPhase)
 	if ovulationDay <= 0 {
-		return time.Time{}, time.Time{}, time.Time{}, false, false
+		return CycleWindowPrediction{}
 	}
 
 	nextPeriodStart := dateOnly(periodStart.AddDate(0, 0, cycleLength))
 	// ovulationDay is one-based relative to periodStart (cycle day 1).
 	ovulationDate := dateOnly(periodStart.AddDate(0, 0, ovulationDay-1))
 	if !ovulationDate.Before(nextPeriodStart) {
-		return time.Time{}, time.Time{}, time.Time{}, false, false
+		// codecov:ignore -- defensive invariant: CalcOvulationDay caps ovulationDay at
+		// cycleLen-minLutealPhaseDays, so ovulationDate is always strictly before nextPeriodStart.
+		return CycleWindowPrediction{}
 	}
 
 	fertilityStart := dateOnly(ovulationDate.AddDate(0, 0, -5))
 	if fertilityStart.Before(periodStart) {
 		fertilityStart = dateOnly(periodStart)
 	}
-	fertilityEnd := ovulationDate
 
-	return ovulationDate, fertilityStart, fertilityEnd, ovulationExact, true
+	return CycleWindowPrediction{
+		OvulationDate:        ovulationDate,
+		FertilityWindowStart: fertilityStart,
+		FertilityWindowEnd:   ovulationDate,
+		OvulationExact:       ovulationExact,
+		Calculable:           true,
+	}
 }
 
 func DetectCycleStarts(logs []models.DailyLog) []time.Time {
@@ -320,21 +339,21 @@ func applyPredictedCycleStats(stats *CycleStats) {
 	}
 
 	stats.NextPeriodStart = dateOnly(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength))
-	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(
+	window := PredictCycleWindow(
 		stats.LastPeriodStart,
 		predictionCycleLength,
 		stats.LutealPhase,
 	)
-	if !ovulationCalculable {
+	if !window.Calculable {
 		clearPredictedCycleWindow(stats)
 		return
 	}
 
-	stats.OvulationDate = ovulationDate
-	stats.OvulationExact = ovulationExact
+	stats.OvulationDate = window.OvulationDate
+	stats.OvulationExact = window.OvulationExact
 	stats.OvulationImpossible = false
-	stats.FertilityWindowStart = fertilityWindowStart
-	stats.FertilityWindowEnd = fertilityWindowEnd
+	stats.FertilityWindowStart = window.FertilityWindowStart
+	stats.FertilityWindowEnd = window.FertilityWindowEnd
 }
 
 func predictedCycleLength(median int, average float64) int {

@@ -119,7 +119,8 @@ func TestCycles_CalcOvulationDay_ExactFloorBoundary(t *testing.T) {
 // TestCycles_PredictCycleWindow_ZeroPeriodStart exercises the
 // periodStart.IsZero() branch at line 123.
 func TestCycles_PredictCycleWindow_ZeroPeriodStart(t *testing.T) {
-	ovul, fs, fe, exact, calc := PredictCycleWindow(time.Time{}, 28, 14)
+	window := PredictCycleWindow(time.Time{}, 28, 14)
+	ovul, fs, fe, exact, calc := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
 	if calc || exact {
 		t.Fatalf("expected (false, false) for zero periodStart, got calc=%t exact=%t", calc, exact)
 	}
@@ -132,7 +133,8 @@ func TestCycles_PredictCycleWindow_ZeroPeriodStart(t *testing.T) {
 // cycleLength <= 0 branch at line 123.
 func TestCycles_PredictCycleWindow_ZeroCycleLength(t *testing.T) {
 	periodStart := cyclesCovDay(t, "2026-03-01")
-	ovul, fs, fe, exact, calc := PredictCycleWindow(periodStart, 0, 14)
+	window := PredictCycleWindow(periodStart, 0, 14)
+	ovul, fs, fe, exact, calc := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
 	if calc || exact {
 		t.Fatalf("expected (false, false) for zero cycleLength, got calc=%t exact=%t", calc, exact)
 	}
@@ -141,8 +143,8 @@ func TestCycles_PredictCycleWindow_ZeroCycleLength(t *testing.T) {
 	}
 
 	// Negative cycleLength must also be rejected.
-	ovul2, _, _, _, calc2 := PredictCycleWindow(periodStart, -5, 14)
-	if calc2 || !ovul2.IsZero() {
+	negative := PredictCycleWindow(periodStart, -5, 14)
+	if negative.Calculable || !negative.OvulationDate.IsZero() {
 		t.Fatalf("expected non-calculable for negative cycleLength")
 	}
 }

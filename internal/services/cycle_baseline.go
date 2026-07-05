@@ -82,21 +82,21 @@ func applyProjectedBaseline(stats *CycleStats, cycleLength int, lutealPhase int,
 	stats.NextPeriodStart = CalendarDay(stats.LastPeriodStart.AddDate(0, 0, predictionCycleLength), location)
 	stats.LutealPhase = ResolveLutealPhase(lutealPhase)
 
-	ovulationDate, fertilityWindowStart, fertilityWindowEnd, ovulationExact, ovulationCalculable := PredictCycleWindow(
+	window := PredictCycleWindow(
 		stats.LastPeriodStart,
 		predictionCycleLength,
 		stats.LutealPhase,
 	)
-	if !ovulationCalculable {
+	if !window.Calculable {
 		clearPredictedCycleWindow(stats)
 		return
 	}
 
-	stats.OvulationDate = CalendarDay(ovulationDate, location)
-	stats.OvulationExact = ovulationExact
+	stats.OvulationDate = CalendarDay(window.OvulationDate, location)
+	stats.OvulationExact = window.OvulationExact
 	stats.OvulationImpossible = false
-	stats.FertilityWindowStart = locationDateOrZero(fertilityWindowStart, location)
-	stats.FertilityWindowEnd = locationDateOrZero(fertilityWindowEnd, location)
+	stats.FertilityWindowStart = locationDateOrZero(window.FertilityWindowStart, location)
+	stats.FertilityWindowEnd = locationDateOrZero(window.FertilityWindowEnd, location)
 }
 
 func locationDateOrZero(day time.Time, location *time.Location) time.Time {
