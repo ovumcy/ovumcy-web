@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1821,6 +1822,55 @@ func TestRunServerClosesDatabaseAfterGracefulStop(t *testing.T) {
 	}
 	if err := sqlDB.Ping(); err == nil {
 		t.Fatal("expected database to be closed after a graceful stop")
+	}
+}
+
+// TestRetryShutdownBridgesBootWindow pins the boot-window hardening: a single
+// app.ShutdownWithContext call is a silent no-op while fasthttp's s.ln is
+// still nil (the gap between fiber's net.Listen and fasthttp's Serve
+// registering the listener) — without a retry, Listen would serve forever
+// and runServer would never return. retryShutdown is started against an
+// app that has not been Listen'd yet, guaranteeing its first attempts land
+// in that gap deterministically (no reliance on real signal timing, unlike
+// the actual boot-window race), then Listen is started afterward; the retry
+// loop must still notice and bridge the gap once Serve registers the
+// listener.
+func TestRetryShutdownBridgesBootWindow(t *testing.T) {
+	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "boot-window-stop.db"))
+	if err != nil {
+		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+	}
+	app := fiber.New()
+
+	served := make(chan struct{})
+	go retryShutdown(app, context.Background(), served)
+
+	// Give retryShutdown a few iterations against the not-yet-listening app,
+	// so its early attempts are guaranteed genuine no-ops (s.ln == nil).
+	time.Sleep(60 * time.Millisecond)
+
+	done := make(chan error, 1)
+	go func() {
+		err := runServer(app, database, "127.0.0.1:0")
+		close(served)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runServer after boot-window stop: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("runServer did not return after a boot-window stop; retry did not bridge the gap")
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("database.DB() unexpected error: %v", err)
+	}
+	if err := sqlDB.Ping(); err == nil {
+		t.Fatal("expected database to be closed after a boot-window stop")
 	}
 }
 

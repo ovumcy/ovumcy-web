@@ -133,12 +133,15 @@ func main() {
 	// codecov:ignore:end
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
-	stopSignals := installGracefulShutdown(app)
+	served := make(chan struct{})
+	stopSignals := installGracefulShutdown(app, served)
 	defer stopSignals()
 
 	logStartup(config)
 	// codecov:ignore:start -- main() run loop; runServer itself is unit-tested.
-	if err := runServer(app, database, ":"+config.Port); err != nil {
+	err = runServer(app, database, ":"+config.Port)
+	close(served)
+	if err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
 	// codecov:ignore:end
@@ -592,17 +595,46 @@ func securityHeadersMiddleware(enableStrictTransportSecurity bool) fiber.Handler
 	}
 }
 
-func installGracefulShutdown(app *fiber.App) context.CancelFunc {
+// installGracefulShutdown wires SIGINT/SIGTERM to a graceful stop. served
+// must be closed once app.Listen (inside runServer) returns, for any reason —
+// it bounds retryShutdown so a signal arriving after the server already
+// exited doesn't spin.
+func installGracefulShutdown(app *fiber.App, served <-chan struct{}) context.CancelFunc {
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCtx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := app.ShutdownWithContext(shutdownCtx); err != nil {
-			log.Printf("server shutdown failed: %v", err)
-		}
+		retryShutdown(app, shutdownCtx, served)
 	}()
 	return stopSignals
+}
+
+// retryShutdown calls app.ShutdownWithContext until it takes effect.
+// fasthttp's ShutdownWithContext silently no-ops ("if s.ln == nil { return
+// nil }") when called before Serve has registered the listener — the boot
+// window between fiber's net.Listen and fasthttp registering it, which fiber
+// v3's own OnListen hook fires strictly *before* (listen.go: runOnListenHooks
+// precedes app.server.Serve(ln)). A single call can silently lose the stop
+// request in that window; retrying until served closes (Listen has returned,
+// so either the stop already landed or there's nothing left to stop) bridges
+// it without slowing down the common, non-racing case.
+func retryShutdown(app *fiber.App, ctx context.Context, served <-chan struct{}) {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := app.ShutdownWithContext(ctx); err != nil {
+			log.Printf("server shutdown failed: %v", err)
+			return
+		}
+		select {
+		case <-served:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func logStartup(config runtimeConfig) {
