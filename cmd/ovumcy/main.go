@@ -612,6 +612,12 @@ func installGracefulShutdown(app *fiber.App, served <-chan struct{}) context.Can
 	return stopSignals
 }
 
+// shutdownRetryInterval is how often retryShutdown re-attempts the graceful
+// stop while it is still being silently no-oped in the boot window. It is a
+// named constant (not an inline literal) so the retry loop and the tests that
+// drive it deterministically share one source of truth.
+const shutdownRetryInterval = 20 * time.Millisecond
+
 // retryShutdown calls app.ShutdownWithContext until it takes effect.
 // fasthttp's ShutdownWithContext silently no-ops ("if s.ln == nil { return
 // nil }") when called before Serve has registered the listener — the boot
@@ -622,10 +628,23 @@ func installGracefulShutdown(app *fiber.App, served <-chan struct{}) context.Can
 // so either the stop already landed or there's nothing left to stop) bridges
 // it without slowing down the common, non-racing case.
 func retryShutdown(app *fiber.App, ctx context.Context, served <-chan struct{}) {
-	ticker := time.NewTicker(20 * time.Millisecond)
+	retryShutdownFunc(app.ShutdownWithContext, ctx, served, shutdownRetryInterval)
+}
+
+// retryShutdownFunc is the interval-driven retry loop behind retryShutdown,
+// with the shutdown call and tick interval injected. Production passes
+// app.ShutdownWithContext and shutdownRetryInterval, so retryShutdown's
+// behavior is byte-for-byte unchanged; the seam exists purely so tests can
+// exercise the retry/log/terminate contract deterministically. A stub
+// shutdown func lets the error-branch test force a persistent failure without
+// depending on real fasthttp accept timing (whether the raw connection is
+// counted as open at the instant of the stop call) — the race that made
+// TestRetryShutdownLogsPersistentShutdownError flaky under load.
+func retryShutdownFunc(shutdown func(context.Context) error, ctx context.Context, served <-chan struct{}, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if err := app.ShutdownWithContext(ctx); err != nil {
+		if err := shutdown(ctx); err != nil {
 			log.Printf("server shutdown failed: %v", err)
 			return
 		}
