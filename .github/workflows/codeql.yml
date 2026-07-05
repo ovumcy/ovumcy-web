@@ -51,6 +51,12 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-extended
+          config: |
+            paths-ignore:
+              - web/src/js/app/00-core.js
+              - web/src/js/app/90-bootstrap.js
+              - web/src/js/settings-export/00-core.js
+              - web/src/js/settings-export/30-export-and-bootstrap.js
 
       - name: Build Go packages
         if: matrix.language == 'go'
