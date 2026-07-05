@@ -223,9 +223,17 @@ func (service *SymptomService) SeedBuiltinSymptoms(ctx context.Context, userID u
 }
 
 func (service *SymptomService) EnsureBuiltinSymptoms(ctx context.Context, userID uint) error {
+	_, err := service.ensureBuiltinSymptomsListed(ctx, userID)
+	return err
+}
+
+// ensureBuiltinSymptomsListed lists the user's symptoms, creating any missing
+// builtins first, and returns the up-to-date list. When nothing was missing,
+// it reuses the list already fetched for the check instead of re-querying.
+func (service *SymptomService) ensureBuiltinSymptomsListed(ctx context.Context, userID uint) ([]models.SymptomType, error) {
 	existing, err := service.symptoms.ListByUser(ctx, userID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	existingByName := make(map[string]struct{}, len(existing))
 	for _, symptom := range existing {
@@ -237,16 +245,16 @@ func (service *SymptomService) EnsureBuiltinSymptoms(ctx context.Context, userID
 
 	missing := MissingBuiltinSymptomsForUser(userID, existingByName)
 	if len(missing) == 0 {
-		return nil
+		return existing, nil
 	}
-	return service.symptoms.CreateBatch(ctx, missing)
+	if err := service.symptoms.CreateBatch(ctx, missing); err != nil {
+		return nil, err
+	}
+	return service.symptoms.ListByUser(ctx, userID)
 }
 
 func (service *SymptomService) FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error) {
-	if err := service.EnsureBuiltinSymptoms(ctx, userID); err != nil {
-		return nil, err
-	}
-	symptoms, err := service.symptoms.ListByUser(ctx, userID)
+	symptoms, err := service.ensureBuiltinSymptomsListed(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

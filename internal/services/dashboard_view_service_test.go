@@ -21,6 +21,10 @@ func (stub *stubDashboardStatsProvider) BuildCycleStatsForRange(ctx context.Cont
 	return stub.stats, nil, nil
 }
 
+func (stub *stubDashboardStatsProvider) BuildCycleStatsFromLogs(_ *models.User, _ []models.DailyLog, _ time.Time, _ *time.Location) CycleStats {
+	return stub.stats
+}
+
 type stubDashboardViewerProvider struct {
 	logEntry models.DailyLog
 	symptoms []models.SymptomType
@@ -109,13 +113,28 @@ func TestBuildDashboardViewDataReturnsTypedErrors(t *testing.T) {
 	user := &models.User{ID: 2, Role: models.RoleOwner}
 	now := mustParseDashboardServiceDay(t, "2026-02-21")
 
+	// Non-owner with <2 symptoms doesn't need entry-context logs, so stats
+	// still take the single ranged-query path (BuildCycleStatsForRange).
+	nonOwner := &models.User{ID: 20, Role: "viewer"}
 	statsErrService := NewDashboardViewService(
 		&stubDashboardStatsProvider{err: errors.New("stats fail")},
 		&stubDashboardViewerProvider{},
 		&stubDashboardDayStateProvider{},
 	)
-	if _, err := statsErrService.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadStats) {
+	if _, err := statsErrService.BuildDashboardViewData(context.Background(), nonOwner, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadStats) {
 		t.Fatalf("expected ErrDashboardViewLoadStats, got %v", err)
+	}
+
+	// Owner view needs entry-context logs, so stats are derived from the
+	// FetchAllLogsForUser fetch; a failure there surfaces as
+	// ErrDashboardViewLoadLogs instead of ErrDashboardViewLoadStats.
+	logsErrService := NewDashboardViewService(
+		&stubDashboardStatsProvider{},
+		&stubDashboardViewerProvider{},
+		&stubDashboardDayStateProvider{err: errors.New("logs fail")},
+	)
+	if _, err := logsErrService.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadLogs) {
+		t.Fatalf("expected ErrDashboardViewLoadLogs, got %v", err)
 	}
 
 	dayErrService := NewDashboardViewService(
