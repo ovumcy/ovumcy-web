@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"math"
 	"time"
 
@@ -27,11 +26,20 @@ func formatTemplateFloat(value float64) string {
 	return fmt.Sprintf("%.1f", rounded)
 }
 
-func templateToJSON(value any) template.JS {
+// templateToJSON serializes a value for embedding in HTML data-* attributes
+// (base.html data-supported-languages, stats.html data-chart). It returns a
+// plain string — NOT template.JS/template.HTML — so html/template applies full
+// contextual escaping in the attribute context. Browser-side consumers read
+// the attribute via getAttribute/dataset (chart-lite.js), which entity-decodes
+// before JSON.parse, so the escaping round-trips transparently.
+//
+// Do not "optimize" this back to template.JS: a typed-string return would
+// bypass the attribute escaper and make safety depend solely on json.Marshal's
+// escaping behavior (the retired #nosec G203 pattern).
+func templateToJSON(value any) string {
 	serialized, err := json.Marshal(value)
 	if err != nil {
-		return template.JS("null")
+		return "null"
 	}
-	// #nosec G203 -- json.Marshal escapes script-breaking characters before embedding a JS literal in the template.
-	return template.JS(serialized)
+	return string(serialized)
 }
