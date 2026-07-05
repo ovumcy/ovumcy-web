@@ -71,6 +71,24 @@ func DayRange(value time.Time, location *time.Location) (time.Time, time.Time) {
 	return start, start.AddDate(0, 0, 1)
 }
 
+// FilterLogsByDateRange narrows an already-fetched, unbounded log slice down
+// to the same [from, to] window that DayService.FetchLogsForUser would query
+// for, so a caller holding a superset of logs in memory can derive the
+// narrower range without a second daily_logs round-trip. Bounds and inclusion
+// match FetchLogsForUser exactly (half-open [fromStart, toEnd) via DayRange).
+func FilterLogsByDateRange(logs []models.DailyLog, from time.Time, to time.Time, location *time.Location) []models.DailyLog {
+	fromStart, _ := DayRange(from, location)
+	_, toEnd := DayRange(to, location)
+	filtered := make([]models.DailyLog, 0, len(logs))
+	for _, entry := range logs {
+		if entry.Date.Before(fromStart) || !entry.Date.Before(toEnd) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
 // CalendarDaysBetween returns the signed number of calendar days from `from`
 // to `to`, comparing only the calendar components of the two values. Each
 // operand is re-anchored to UTC-midnight of its own calendar day before

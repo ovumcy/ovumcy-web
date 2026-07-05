@@ -51,13 +51,19 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 	if err != nil {
 		return CycleStats{}, nil, err
 	}
+	return service.BuildCycleStatsFromLogs(user, logs, now, location), logs, nil
+}
 
+// BuildCycleStatsFromLogs computes cycle stats from already-fetched logs, for
+// callers that have the relevant range in memory and want to avoid a
+// redundant daily_logs query.
+func (service *StatsService) BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
 	stats := BuildCycleStats(logs, now)
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
 	if _, paused := ResolvePregnancyPause(logs); paused {
 		stats.PregnancyPaused = true
 	}
-	return stats, logs, nil
+	return stats
 }
 
 func StatsOverviewRange(now time.Time) (time.Time, time.Time) {

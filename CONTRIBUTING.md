@@ -46,7 +46,7 @@ Security issues should not be reported publicly. Use [SECURITY.md](SECURITY.md).
 
 - Keep changes scoped and atomic.
 - Add/adjust tests for behavioral changes.
-- `internal/i18n/locales/en.json` is the canonical source for UI strings. When you add or rename strings, mirror the change in `ru.json`, `es.json`, `fr.json`, and `de.json` (the five locales advertised as supported in the README). If you cannot provide a native translation for a non-`en` locale, copy the English string verbatim and leave a `TODO(<locale>)` next to it so the gap is visible in review and search.
+- `internal/i18n/locales/en.json` is the canonical source for UI strings. When you add or rename strings, mirror the change in `ru.json`, `es.json`, `fr.json`, `de.json`, and `it.json` (the six locales advertised as supported in the README). If you cannot provide a native translation for a non-`en` locale, copy the English string verbatim and leave a `TODO(<locale>)` next to it so the gap is visible in review and search.
 - Do not introduce legacy compatibility paths unless explicitly required.
 
 ## API Stability Contract

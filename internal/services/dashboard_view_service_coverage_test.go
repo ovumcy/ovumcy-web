@@ -16,6 +16,7 @@ type dashboardviewserviceCovCapturingStatsProvider struct {
 	stats    CycleStats
 	captFrom time.Time
 	captTo   time.Time
+	captLogs []models.DailyLog
 }
 
 func (s *dashboardviewserviceCovCapturingStatsProvider) BuildCycleStatsForRange(ctx context.Context,
@@ -26,27 +27,38 @@ func (s *dashboardviewserviceCovCapturingStatsProvider) BuildCycleStatsForRange(
 	return s.stats, nil, nil
 }
 
+func (s *dashboardviewserviceCovCapturingStatsProvider) BuildCycleStatsFromLogs(_ *models.User, logs []models.DailyLog, _ time.Time, _ *time.Location) CycleStats {
+	s.captLogs = logs
+	return s.stats
+}
+
 // ---------------------------------------------------------------------------
 // Line 112: stats range must look back exactly two years from today
 // ---------------------------------------------------------------------------
 
+// An owner view feeds stats from the already-fetched entry-context logs
+// (filtered to the 2-year window in memory), rather than a separate ranged
+// query, so this asserts the window via which logs reach BuildCycleStatsFromLogs.
 func TestDashboardviewserviceCovStatsRangeIsTwoYears(t *testing.T) {
 	user := &models.User{ID: 1, Role: models.RoleOwner}
 	now, _ := time.ParseInLocation("2006-01-02", "2026-06-07", time.UTC)
 	wantFrom, _ := time.ParseInLocation("2006-01-02", "2024-06-07", time.UTC)
 
+	insideWindow := models.DailyLog{Date: wantFrom}
+	outsideWindow := models.DailyLog{Date: wantFrom.AddDate(0, 0, -1)}
+
 	capturing := &dashboardviewserviceCovCapturingStatsProvider{}
 	svc := NewDashboardViewService(
 		capturing,
 		&stubDashboardViewerProvider{},
-		&stubDashboardDayStateProvider{},
+		&stubDashboardDayStateProvider{logs: []models.DailyLog{outsideWindow, insideWindow}},
 	)
 	if _, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !capturing.captFrom.Equal(wantFrom) {
-		t.Fatalf("expected stats from=%s (2 years back), got %s",
-			wantFrom.Format("2006-01-02"), capturing.captFrom.Format("2006-01-02"))
+	if len(capturing.captLogs) != 1 || !capturing.captLogs[0].Date.Equal(wantFrom) {
+		t.Fatalf("expected stats derived from logs no earlier than %s (2 years back), got %#v",
+			wantFrom.Format("2006-01-02"), capturing.captLogs)
 	}
 }
 
@@ -449,5 +461,36 @@ func TestDashboardviewserviceCovFirstMissingTrackedDayRequiresThreeMissed(t *tes
 	}
 	if firstMissed.Format("2006-01-02") != "2026-02-11" {
 		t.Fatalf("expected first missed day 2026-02-11, got %s", firstMissed.Format("2006-01-02"))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Line 313: buildDashboardStats falls back to the single ranged query (and
+// returns nil logs) when requiresEntryContextLogs is false, instead of
+// deriving stats from the full log history.
+// ---------------------------------------------------------------------------
+
+func TestDashboardviewserviceCovStatsFallsBackToRangedQueryWhenLogsNotRequired(t *testing.T) {
+	// A non-owner user with fewer than 2 symptoms does not require entry
+	// context logs, so stats must come from the ranged query alone.
+	user := &models.User{ID: 9, Role: "viewer"}
+	now, _ := time.ParseInLocation("2006-01-02", "2026-03-15", time.UTC)
+
+	capturing := &dashboardviewserviceCovCapturingStatsProvider{}
+	svc := NewDashboardViewService(
+		capturing,
+		&stubDashboardViewerProvider{symptoms: []models.SymptomType{{ID: 1, Name: "Cramps"}}},
+		&stubDashboardDayStateProvider{logs: []models.DailyLog{
+			{Date: now, IsPeriod: true},
+		}},
+	)
+	if _, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturing.captFrom.IsZero() || capturing.captTo.IsZero() {
+		t.Fatal("expected BuildCycleStatsForRange to be called with a non-zero range")
+	}
+	if capturing.captLogs != nil {
+		t.Fatalf("expected BuildCycleStatsFromLogs NOT to be called, got logs %#v", capturing.captLogs)
 	}
 }
