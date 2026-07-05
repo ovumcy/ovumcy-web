@@ -137,6 +137,10 @@
       {{end}}
     </aside>
   </div>
+
+  {{if .IsOwner}}
+  <p class="journal-muted text-sm" data-calendar-prediction-disclaimer>{{t .Messages "dashboard.prediction_disclaimer"}}</p>
+  {{end}}
 </section>
 
 {{end}}
