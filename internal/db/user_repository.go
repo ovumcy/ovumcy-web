@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -173,6 +174,36 @@ func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.Webh
 		return nil, err
 	}
 	return records, nil
+}
+
+// webhookWatermarkColumns maps a reminder kind to its watermark column. Only
+// these two kinds have a watermark; any other value is rejected so a typo can
+// never write an unexpected column.
+var webhookWatermarkColumns = map[string]string{
+	models.WebhookReminderTypePeriod:    "webhook_period_last_sent_cycle_start",
+	models.WebhookReminderTypeOvulation: "webhook_ovulation_last_sent_cycle_start",
+}
+
+// UpdateWebhookWatermark advances the per-kind "last sent" watermark for one
+// owner after a SUCCESSFUL webhook delivery (issue #124, slice 3), scoped
+// strictly to userID. reminderType selects the column (period/ovulation);
+// cycleAnchor is the cycle-start the reminder covered.
+//
+// cycleAnchor is canonicalized to UTC-midnight HERE because this write uses
+// Updates(map[string]any{...}), which bypasses the model's BeforeSave hook that
+// normally does it — so a raw location-bearing time would otherwise be stored
+// verbatim and could compare unequal to a UTC-midnight anchor on the next pass,
+// breaking idempotency. It touches only the one watermark column: NOT
+// auth_session_version (advancing a send watermark is not a security-posture
+// change) and NOT any other setting.
+func (repo *UserRepository) UpdateWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time) error {
+	column, ok := webhookWatermarkColumns[reminderType]
+	if !ok {
+		return fmt.Errorf("unknown webhook reminder type %q", reminderType)
+	}
+	year, month, day := cycleAnchor.Date()
+	anchorUTC := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update(column, anchorUTC).Error
 }
 
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {

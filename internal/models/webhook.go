@@ -2,6 +2,17 @@ package models
 
 import "time"
 
+const (
+	// WebhookReminderTypePeriod and WebhookReminderTypeOvulation identify which
+	// upcoming prediction a webhook reminder summarizes. They are the single
+	// source of truth for the reminder-kind strings shared across layers: the
+	// services decision (DueReminderType*) aliases them, and the db watermark
+	// write maps them to their per-kind column — so the wire value, the decision
+	// value, and the persisted watermark key can never drift.
+	WebhookReminderTypePeriod    = "period-soon"
+	WebhookReminderTypeOvulation = "ovulation-soon"
+)
+
 // WebhookSettingsColumns is the transport-free narrow payload written by the
 // webhook-settings save path (issue #124). EncryptedURL is already CIPHERTEXT —
 // the service encrypts the plaintext endpoint before building this struct, so
