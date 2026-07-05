@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +12,67 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
+
+// openConcurrencyRepo opens a throwaway SQLite-backed repository set for the
+// WithinTransaction retry tests below.
+func openConcurrencyRepo(t *testing.T) *Repositories {
+	t.Helper()
+	dir := t.TempDir()
+	database, err := OpenSQLite(filepath.Join(dir, "retry.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := database.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	return NewRepositories(database)
+}
+
+// TestWithinTransactionRetriesOnBusyThenReturnsError exercises the bounded-retry
+// backoff branch: a fn that keeps returning SQLITE_BUSY must be re-run exactly
+// busyRetryAttempts times and the final BUSY error surfaced (not swallowed).
+func TestWithinTransactionRetriesOnBusyThenReturnsError(t *testing.T) {
+	repos := openConcurrencyRepo(t)
+
+	busyErr := errors.New("SQLITE_BUSY: database is locked (retryable)")
+	var calls int
+	err := repos.DailyLogs.WithinTransaction(context.Background(), func(*DailyLogRepository) error {
+		calls++
+		return busyErr
+	})
+
+	if calls != busyRetryAttempts {
+		t.Fatalf("fn ran %d times, want %d (one per attempt)", calls, busyRetryAttempts)
+	}
+	if !isSQLiteBusy(err) {
+		t.Fatalf("want residual SQLITE_BUSY error surfaced, got %v", err)
+	}
+}
+
+// TestWithinTransactionRespectsContextCancellation exercises the ctx.Done branch
+// of the retry select: once the caller's context is cancelled, the retry loop
+// aborts with ctx.Err() instead of consuming further attempts.
+func TestWithinTransactionRespectsContextCancellation(t *testing.T) {
+	repos := openConcurrencyRepo(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	busyErr := errors.New("SQLITE_BUSY: database is locked (retryable)")
+	var calls int
+	err := repos.DailyLogs.WithinTransaction(ctx, func(*DailyLogRepository) error {
+		calls++
+		cancel() // cancel before the retry backoff so ctx.Done wins the select
+		return busyErr
+	})
+
+	if calls != 1 {
+		t.Fatalf("fn ran %d times, want 1 before cancellation aborts the retry", calls)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
+	}
+}
 
 // TestSQLiteConcurrentDayWritesNoBusyError is the regression for the
 // SQLITE_BUSY-on-concurrent-writes defect. Under WAL, GORM's deferred write
