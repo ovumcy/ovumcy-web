@@ -4314,7 +4314,7 @@
   border: 1px solid var(--line-soft);
   background: rgba(255, 249, 240, 0.96);
   box-shadow: 0 12px 24px rgba(120, 85, 52, 0.2);
-  padding: 0.42rem;
+  padding: 0.24rem 0.42rem;
 
   :root[data-theme='dark'] & {
     background: rgba(30, 24, 40, 0.95);
