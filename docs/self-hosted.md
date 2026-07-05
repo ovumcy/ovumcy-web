@@ -73,7 +73,7 @@ Do not start from the base compose file and then expose `8080` publicly as a sho
 
 These settings are valid, but they are not required for a safe first deployment:
 
-- `TZ` and `DEFAULT_LANGUAGE` (`en`, `ru`, `es`, `fr`, `de`) for operator preference
+- `TZ` and `DEFAULT_LANGUAGE` (`en`, `ru`, `es`, `fr`, `de`, `it`) for operator preference
 - rate-limit variables if you need stricter or looser local policy
 - optional OIDC variables when you want the login page to offer external sign-in: `OIDC_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL`, `OIDC_CA_FILE`, `OIDC_LOGIN_MODE`, `OIDC_AUTO_PROVISION`, `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS`, `OIDC_LOGOUT_MODE`, and `OIDC_POST_LOGOUT_REDIRECT_URL`
 - `PROXY_HEADER` only if your trusted proxy publishes the real client IP under a header other than `X-Real-IP`
