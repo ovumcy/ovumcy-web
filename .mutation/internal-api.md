@@ -15,6 +15,16 @@ Windows run. This file will be filled in — measuring commit, killed/lived/time
 out/not-covered counts, efficacy, and any documented equivalent mutants — once
 that job has produced its first `internal/api` result.
 
+A single unsharded CI run exceeds the job's 3h timeout before finishing (issue
+#161), so `mutation.yml` runs `internal/api` as 5 file-subset shards
+(`internal_api_1`..`internal_api_5` matrix entries, each excluding every file
+not assigned to it — see `scripts/mutation.sh`'s `api_shard_*` functions) and a
+follow-up job merges the 5 shard JSON reports into one `internal_api.json` via
+`scripts/mutationmerge`, matching the single-file-per-target convention
+`internal_services.json`/`internal_security.json` already use. The numbers
+below, once filled in, are the combined total across all 5 shards — the same
+number a hypothetical single unsharded run would have produced.
+
 | Metric | Value |
 |--------|-------|
 | Killed | pending first weekly CI run |

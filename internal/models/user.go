@@ -6,6 +6,11 @@ const (
 	RoleOwner           = "owner"
 	DefaultCycleLength  = 28
 	DefaultPeriodLength = 5
+	// DefaultReminderLeadDays is the column default for users.reminder_lead_days
+	// (issue #124) — the SHARED banner + webhook lead window. It matches
+	// services.DashboardReminderBannerWindowDays; kept in models so the db
+	// clear-data reset can reference it without importing services (layering).
+	DefaultReminderLeadDays = 3
 	// Age brackets are calibrated to the medical literature: 35–39 is the
 	// lowest-variability cohort in Gibson et al., npj Digital Medicine 2023
 	// (Apple Women's Health Study, n=12,608), with within-individual cycle SD
@@ -61,4 +66,32 @@ type User struct {
 	// browser. Nullable/empty when never observed; only validated IANA values
 	// are written (see api.parseRequestTimezone). Not sensitive, not a secret.
 	Timezone string `gorm:"column:timezone"`
+	// Webhook notification settings (issue #124). A future request-free batch
+	// pass reads these to decide whether to POST a period/ovulation reminder to
+	// an owner-configured webhook. This block is storage only — no reminder
+	// decision, delivery, or CLI lives here (later slices).
+	//
+	// WebhookEnabled is the master switch for outbound webhook reminders.
+	WebhookEnabled bool `gorm:"column:webhook_enabled;not null;default:false"`
+	// WebhookURL holds CIPHERTEXT, never the plaintext endpoint — encrypted at
+	// rest via security.EncryptField and aad-bound to this user's id
+	// ("ovumcy.field.webhook_url:<id>"), exactly like TOTPSecret. Nullable/empty
+	// when no webhook is configured. Never expose this raw in transport or logs.
+	WebhookURL string `gorm:"column:webhook_url"`
+	// WebhookNotifyPeriod / WebhookNotifyOvulation are the per-kind opt-ins;
+	// both default true so enabling the webhook sends both reminder kinds unless
+	// the owner narrows it.
+	WebhookNotifyPeriod    bool `gorm:"column:webhook_notify_period;not null;default:true"`
+	WebhookNotifyOvulation bool `gorm:"column:webhook_notify_ovulation;not null;default:true"`
+	// WebhookPeriodLastSentCycleStart / WebhookOvulationLastSentCycleStart are
+	// watermarks storing the cycle-start anchor a reminder of each kind was last
+	// sent for, so the future notify pass sends at most one reminder per cycle.
+	// Nil until the first send. Stored as UTC-midnight DATE like LastPeriodStart.
+	WebhookPeriodLastSentCycleStart    *time.Time `gorm:"column:webhook_period_last_sent_cycle_start;type:date"`
+	WebhookOvulationLastSentCycleStart *time.Time `gorm:"column:webhook_ovulation_last_sent_cycle_start;type:date"`
+	// ReminderLeadDays is the SHARED lead window (in days) for BOTH the in-app
+	// dashboard banner (issue #123) and webhook reminders: a reminder surfaces
+	// once the predicted event is within this many days of "today". Default 3
+	// matches services.DashboardReminderBannerWindowDays; bounded 0–14 at save.
+	ReminderLeadDays int `gorm:"column:reminder_lead_days;not null;default:3"`
 }
