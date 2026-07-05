@@ -201,6 +201,50 @@ func TestOIDCStartLocalPasswordSetupIssuesRedirectAndStepupCookie(t *testing.T) 
 	}
 }
 
+// A real browser submits the local-password step-up form as an ordinary HTML
+// form POST (Accept: text/html), not via fetch. The settings page CSP pins
+// form-action to 'self', and Chromium enforces that across the whole redirect
+// chain of a form navigation — so answering the submit with a 303 to the
+// cross-origin provider authorize endpoint aborts client-side
+// (net::ERR_ABORTED, reproduced in the oidc_only e2e lane). The browser path
+// must instead return a same-origin 200 interstitial whose meta-refresh
+// performs the cross-origin hop, keeping it out of the form submission.
+func TestOIDCStartLocalPasswordSetupBrowserPathReturnsSameOriginInterstitial(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-stepup-browser@example.com")
+
+	csrfCookie, csrfToken := fixture.settingsCSRF(t)
+	form := url.Values{
+		"new_password":     {"EvenStronger2"},
+		"confirm_password": {"EvenStronger2"},
+		"csrf_token":       {csrfToken},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/password/step-up", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "text/html,application/xhtml+xml")
+	request.Header.Set("Cookie", settingsCookieHeader(fixture.authCookie, csrfCookie))
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusOK)
+	if location := response.Header.Get("Location"); location != "" {
+		t.Fatalf("browser step-up path must not emit a redirect the form navigation would follow; got Location %q", location)
+	}
+	if ct := response.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("expected an html interstitial, got content-type %q", ct)
+	}
+	body := mustReadBodyString(t, response.Body)
+	if !strings.Contains(body, `http-equiv="refresh"`) {
+		t.Fatalf("expected a meta-refresh interstitial, got %q", body)
+	}
+	if !strings.Contains(body, fixture.oidcStub.reauthURL) {
+		t.Fatalf("expected the interstitial to target the provider authorize URL %q, got %q", fixture.oidcStub.reauthURL, body)
+	}
+	// The sealed step-up cookie must still ride along so the callback can finalize.
+	_ = readStepupCookie(t, response)
+}
+
 func TestOIDCStartLocalPasswordSetupRejectsWeakPassword(t *testing.T) {
 	t.Parallel()
 
