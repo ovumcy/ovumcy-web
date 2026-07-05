@@ -35,7 +35,7 @@ func (s *oidcCovMissThenFindUserStore) FindByNormalizedEmailOptional(_ context.C
 	return s.fallback, true, nil
 }
 
-func TestOidcloginserviceCovAutoProvisionFallbackUnsupportedRoleReachesLine374(t *testing.T) {
+func TestOIDCLoginServiceAutoProvisionConflictFallbackRejectsUnsupportedRole(t *testing.T) {
 	t.Parallel()
 
 	provisioner := &stubOIDCAutoProvisioner{err: ErrAuthEmailExists}

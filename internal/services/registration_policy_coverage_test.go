@@ -6,7 +6,7 @@ package services
 
 import "testing"
 
-func TestRegistrationpolicyCovParseModeEmptyDefaultsToOpen(t *testing.T) {
+func TestRegistrationPolicyParseModeEmptyDefaultsToOpen(t *testing.T) {
 	// Line 20–21: empty (or whitespace-only) input must default to "open".
 	for _, raw := range []string{"", "   ", "\t\n"} {
 		mode, err := ParseRegistrationMode(raw)
@@ -19,7 +19,7 @@ func TestRegistrationpolicyCovParseModeEmptyDefaultsToOpen(t *testing.T) {
 	}
 }
 
-func TestRegistrationpolicyCovParseModeNormalizesValidValues(t *testing.T) {
+func TestRegistrationPolicyParseModeNormalizesValidValues(t *testing.T) {
 	// Line 23–26: a non-empty value passes through Validate and is lower-cased.
 	cases := map[string]RegistrationMode{
 		"open":    RegistrationModeOpen,
@@ -38,14 +38,14 @@ func TestRegistrationpolicyCovParseModeNormalizesValidValues(t *testing.T) {
 	}
 }
 
-func TestRegistrationpolicyCovParseModeRejectsUnknown(t *testing.T) {
+func TestRegistrationPolicyParseModeRejectsUnknown(t *testing.T) {
 	// Line 23–24: an unknown value reaches Validate and is rejected.
 	if _, err := ParseRegistrationMode("banana"); err == nil {
 		t.Fatal("ParseRegistrationMode(\"banana\") expected error, got nil")
 	}
 }
 
-func TestRegistrationpolicyCovIsOpen(t *testing.T) {
+func TestRegistrationPolicyIsOpen(t *testing.T) {
 	if !RegistrationModeOpen.IsOpen() {
 		t.Fatal("RegistrationModeOpen.IsOpen() = false, want true")
 	}

@@ -41,7 +41,7 @@ func cyclesignalsCovMucusLog(t *testing.T, date string, mucus string) models.Dai
 // must produce results identical to passing time.UTC explicitly.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferUserLutealPhase_NilLocationDoesNotPanic(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_NilLocationDoesNotPanic(t *testing.T) {
 	// Build enough period logs to form >= 3 observed cycle starts and
 	// enough BBT readings to detect ovulation in each cycle.
 	logs := cyclesignalsCovBuildLutealLogs(t)
@@ -62,7 +62,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_NilLocationDoesNotPanic(t *testing
 // Line 23 — guard: fewer than 3 observed starts must return the default.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferUserLutealPhase_FewerThanThreeStartsReturnsDefault(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_FewerThanThreeStartsReturnsDefault(t *testing.T) {
 	// Only 2 period clusters → 2 observed starts → must return default, false.
 	logs := []models.DailyLog{
 		cyclesignalsCovPeriodLog(t, "2025-01-01"),
@@ -79,7 +79,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_FewerThanThreeStartsReturnsDefault
 	}
 }
 
-func TestCyclesignalsCov_InferUserLutealPhase_ExactlyThreeStartsIsAccepted(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_ExactlyThreeStartsIsAccepted(t *testing.T) {
 	// 3 starts + valid BBT + enough data to produce >= 2 luteal lengths.
 	// Cycles: Jan1→Jan29 (28 days), Jan29→Feb26 (28 days).
 	logs := cyclesignalsCovBuildLutealLogs(t)
@@ -97,7 +97,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_ExactlyThreeStartsIsAccepted(t *te
 // by that last pair.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferUserLutealPhase_LastStartPairIsIncluded(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_LastStartPairIsIncluded(t *testing.T) {
 	// Three starts: Jan1, Jan29, Feb26.
 	// First pair (Jan1→Jan29): add BBT readings for ovulation ~Jan15.
 	// Second pair (Jan29→Feb26): add BBT readings for ovulation ~Feb12.
@@ -121,7 +121,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_LastStartPairIsIncluded(t *testing
 // must be silently skipped, and a cycle with a valid length must be counted.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *testing.T) {
 	// Three starts: Jan1, Jan29, Feb26 (28-day cycles).
 	// Cycle 1 (Jan1→Jan29): ovulation Jan15 → luteal = 14 days (valid).
 	// Cycle 2 (Jan29→Feb26): ovulation Feb25 → luteal = 1 day (< minLutealPhaseDays → skipped).
@@ -167,7 +167,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t 
 	}
 }
 
-func TestCyclesignalsCov_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *testing.T) {
 	// Cycle where ovulation is very early (day 2) → luteal > 20 → skipped.
 	// Three starts: Jan1, Jan29, Feb26.
 	// Cycle 1: ovulation Jan7 → luteal = Jan29−Jan7 = 22 days (> 20 → skipped).
@@ -214,7 +214,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t 
 // Line 43 — guard: fewer than 2 valid luteal lengths returns default.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferUserLutealPhase_FewerThanTwoValidLutealLengthsReturnsDefault(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_FewerThanTwoValidLutealLengthsReturnsDefault(t *testing.T) {
 	// Three observed starts but no BBT data → no ovulation dates found →
 	// no luteal lengths accumulated → returns default, false.
 	logs := []models.DailyLog{
@@ -235,7 +235,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_FewerThanTwoValidLutealLengthsRetu
 // Line 43 — guard positive side: exactly 2 valid luteal lengths must succeed.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferUserLutealPhase_TwoValidLutealLengthsProducesResult(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_TwoValidLutealLengthsProducesResult(t *testing.T) {
 	logs := cyclesignalsCovBuildLutealLogs(t)
 	_, ok := InferUserLutealPhase(logs, time.UTC)
 	if !ok {
@@ -248,7 +248,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_TwoValidLutealLengthsProducesResul
 // returns no ovulation date.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferBBTOvulationDate_FewerThanFivePointsReturnsZero(t *testing.T) {
+func TestCycleSignals_InferBBTOvulationDate_FewerThanFivePointsReturnsZero(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -265,7 +265,7 @@ func TestCyclesignalsCov_InferBBTOvulationDate_FewerThanFivePointsReturnsZero(t 
 	}
 }
 
-func TestCyclesignalsCov_InferBBTOvulationDate_ExactlyFivePointsButNoStreakReturnsZero(t *testing.T) {
+func TestCycleSignals_InferBBTOvulationDate_ExactlyFivePointsButNoStreakReturnsZero(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -288,7 +288,7 @@ func TestCyclesignalsCov_InferBBTOvulationDate_ExactlyFivePointsButNoStreakRetur
 // count toward the streak (>= not >).
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferBBTOvulationDate_ExactlyAtThresholdCountsAsStreak(t *testing.T) {
+func TestCycleSignals_InferBBTOvulationDate_ExactlyAtThresholdCountsAsStreak(t *testing.T) {
 	// Use an integer-valued baseline (36.00) so that baseline+0.2 = 36.20 is
 	// representable exactly in float64, allowing us to test the >= boundary
 	// without float64 rounding artefacts.
@@ -326,7 +326,7 @@ func TestCyclesignalsCov_InferBBTOvulationDate_ExactlyAtThresholdCountsAsStreak(
 // Line 86 — BBT=0 must be excluded: a log with BBT=0 is not a valid reading.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_CollectCycleBBTPoints_ZeroBBTIsExcluded(t *testing.T) {
+func TestCycleSignals_CollectCycleBBTPoints_ZeroBBTIsExcluded(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -348,7 +348,7 @@ func TestCyclesignalsCov_CollectCycleBBTPoints_ZeroBBTIsExcluded(t *testing.T) {
 // Line 97 — CycleDay must be one-based: day == cycleStart must give CycleDay=1.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_CollectCycleBBTPoints_CycleDayIsOneBased(t *testing.T) {
+func TestCycleSignals_CollectCycleBBTPoints_CycleDayIsOneBased(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -384,7 +384,7 @@ func TestCyclesignalsCov_CollectCycleBBTPoints_CycleDayIsOneBased(t *testing.T) 
 // update the ovulation date; other mucus types must be ignored.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferEggWhiteOvulationDate_OnlyEggWhiteIsAccepted(t *testing.T) {
+func TestCycleSignals_InferEggWhiteOvulationDate_OnlyEggWhiteIsAccepted(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -406,7 +406,7 @@ func TestCyclesignalsCov_InferEggWhiteOvulationDate_OnlyEggWhiteIsAccepted(t *te
 	}
 }
 
-func TestCyclesignalsCov_InferEggWhiteOvulationDate_NoEggWhiteReturnsZero(t *testing.T) {
+func TestCycleSignals_InferEggWhiteOvulationDate_NoEggWhiteReturnsZero(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -421,7 +421,7 @@ func TestCyclesignalsCov_InferEggWhiteOvulationDate_NoEggWhiteReturnsZero(t *tes
 	}
 }
 
-func TestCyclesignalsCov_InferEggWhiteOvulationDate_ReturnsLastEggWhiteInCycleWindow(t *testing.T) {
+func TestCycleSignals_InferEggWhiteOvulationDate_ReturnsLastEggWhiteInCycleWindow(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -444,7 +444,7 @@ func TestCyclesignalsCov_InferEggWhiteOvulationDate_ReturnsLastEggWhiteInCycleWi
 // This exercises lines 36-37, 43, and 46.
 // ---------------------------------------------------------------------------
 
-func TestCyclesignalsCov_InferUserLutealPhase_CorrectValueFromBBT(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_CorrectValueFromBBT(t *testing.T) {
 	// Two cycles with BBT-confirmed ovulation, each yielding luteal ~14 days.
 	logs := cyclesignalsCovBuildLutealLogs(t)
 	phase, ok := InferUserLutealPhase(logs, time.UTC)

@@ -10,14 +10,14 @@ import (
 	"testing"
 )
 
-func TestDayserviceCovAcknowledgePeriodTipUpdatesUser(t *testing.T) {
+func TestDayServiceAcknowledgePeriodTipUpdatesUser(t *testing.T) {
 	service := dayserviceCovNewService(&dayLogRepositoryStub{}, &dayserviceCovUserStub{})
 	if err := service.AcknowledgePeriodTip(context.Background(), 7); err != nil {
 		t.Fatalf("AcknowledgePeriodTip() unexpected error: %v", err)
 	}
 }
 
-func TestDayserviceCovAcknowledgePeriodTipNilServiceReturnsNil(t *testing.T) {
+func TestDayServiceAcknowledgePeriodTipNilServiceReturnsNil(t *testing.T) {
 	// Calling on a nil receiver must short-circuit. A `||` → `&&` mutation on the
 	// guard would dereference service.users here and panic.
 	var service *DayService
@@ -26,14 +26,14 @@ func TestDayserviceCovAcknowledgePeriodTipNilServiceReturnsNil(t *testing.T) {
 	}
 }
 
-func TestDayserviceCovAcknowledgePeriodTipNilUsersReturnsNil(t *testing.T) {
+func TestDayServiceAcknowledgePeriodTipNilUsersReturnsNil(t *testing.T) {
 	service := &DayService{}
 	if err := service.AcknowledgePeriodTip(context.Background(), 7); err != nil {
 		t.Fatalf("AcknowledgePeriodTip() with nil users = %v, want nil", err)
 	}
 }
 
-func TestDayserviceCovAcknowledgePeriodTipPropagatesUpdateError(t *testing.T) {
+func TestDayServiceAcknowledgePeriodTipPropagatesUpdateError(t *testing.T) {
 	wantErr := errors.New("update failed")
 	service := dayserviceCovNewService(&dayLogRepositoryStub{}, &dayserviceCovUserStub{updateErr: wantErr})
 	if err := service.AcknowledgePeriodTip(context.Background(), 7); !errors.Is(err, wantErr) {

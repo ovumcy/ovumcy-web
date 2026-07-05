@@ -20,7 +20,7 @@ import (
 // produce HasPredictionExplanationSecondary=false.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovPredictionExplanationSecondaryAbsentWhenHintKeysEmpty(t *testing.T) {
+func TestStatsPageViewServicePredictionExplanationSecondaryAbsentWhenHintKeysEmpty(t *testing.T) {
 	// Logs: 4 period starts, 3 completed cycles with irregular spread (>7 days)
 	// but NO CycleFactorKeys on any log, so HintFactorKeys will be empty.
 	logs := []models.DailyLog{
@@ -58,7 +58,7 @@ func TestStatspageviewserviceCovPredictionExplanationSecondaryAbsentWhenHintKeys
 // HasLastCycleSymptoms must be false.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovHasLastCycleSymptomsIsFalseWhenNoneLogged(t *testing.T) {
+func TestStatsPageViewServiceHasLastCycleSymptomsIsFalseWhenNoneLogged(t *testing.T) {
 	// Owner with logs but no symptom IDs on any log entry and no symptom types
 	// in the catalog: lastCycleSymptoms will be empty, so HasLastCycleSymptoms
 	// must be false.  The stubStatsSymptomReader with an empty symptoms slice
@@ -93,7 +93,7 @@ func TestStatspageviewserviceCovHasLastCycleSymptomsIsFalseWhenNoneLogged(t *tes
 // Same nil-reader scenario: symptomPatterns is empty.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovHasSymptomPatternsIsFalseWhenNoneAvailable(t *testing.T) {
+func TestStatsPageViewServiceHasSymptomPatternsIsFalseWhenNoneAvailable(t *testing.T) {
 	// No symptom types and no symptom IDs on logs → symptomPatterns empty.
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
@@ -125,7 +125,7 @@ func TestStatspageviewserviceCovHasSymptomPatternsIsFalseWhenNoneAvailable(t *te
 // An owner without BBT data must have HasCurrentCycleBBTChart=false.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovHasCurrentCycleBBTChartIsFalseWhenNoBBTData(t *testing.T) {
+func TestStatsPageViewServiceHasCurrentCycleBBTChartIsFalseWhenNoBBTData(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true},
@@ -157,7 +157,7 @@ func TestStatspageviewserviceCovHasCurrentCycleBBTChartIsFalseWhenNoBBTData(t *t
 // We use stubStatsDayReader.gotFrom to verify the range start.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovBaseDataRangeStartsExactlyTwoYearsBack(t *testing.T) {
+func TestStatsPageViewServiceBaseDataRangeStartsExactlyTwoYearsBack(t *testing.T) {
 	dayReader := &stubStatsDayReader{}
 	service := NewStatsService(dayReader, &stubStatsSymptomReader{})
 	user := &models.User{ID: 50, Role: models.RoleOwner, CycleLength: 28}
@@ -199,7 +199,7 @@ func statspageviewserviceCovLogsWithNCompletedCycles(t *testing.T, n int) []mode
 	return logs
 }
 
-func TestStatspageviewserviceCovIrregularInsufficientDataNoticeAbsentAtThreeCycles(t *testing.T) {
+func TestStatsPageViewServiceIrregularInsufficientDataNoticeAbsentAtThreeCycles(t *testing.T) {
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 3)
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	// last log date is ~84 days after start; use a date shortly after
@@ -217,7 +217,7 @@ func TestStatspageviewserviceCovIrregularInsufficientDataNoticeAbsentAtThreeCycl
 	}
 }
 
-func TestStatspageviewserviceCovIrregularInsufficientDataNoticeAbsentForNonIrregularUser(t *testing.T) {
+func TestStatsPageViewServiceIrregularInsufficientDataNoticeAbsentForNonIrregularUser(t *testing.T) {
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 1)
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
@@ -240,7 +240,7 @@ func TestStatspageviewserviceCovIrregularInsufficientDataNoticeAbsentForNonIrreg
 // PredictionDisabled in view data must be true iff UnpredictableCycle=true.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovPredictionDisabledReflectsUnpredictableCycleFlag(t *testing.T) {
+func TestStatsPageViewServicePredictionDisabledReflectsUnpredictableCycleFlag(t *testing.T) {
 	service := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	now := mustParseStatsServiceDay(t, "2026-04-10")
 
@@ -271,7 +271,7 @@ func TestStatspageviewserviceCovPredictionDisabledReflectsUnpredictableCycleFlag
 // erroneously get ShowPredictionReliability=true.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovPredictionReliabilityHiddenForUnpredictableOwnerWithEnoughCycles(t *testing.T) {
+func TestStatsPageViewServicePredictionReliabilityHiddenForUnpredictableOwnerWithEnoughCycles(t *testing.T) {
 	// 3 completed cycles is enough for statsMinimumInsightsCycles (2), but
 	// UnpredictableCycle=true must suppress reliability display.
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 3)
@@ -300,7 +300,7 @@ func TestStatspageviewserviceCovPredictionReliabilityHiddenForUnpredictableOwner
 // PredictionSampleUsesRecentWindow must be true.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovPredictionWindowCapAtSixCycles(t *testing.T) {
+func TestStatsPageViewServicePredictionWindowCapAtSixCycles(t *testing.T) {
 	// 6 completed cycles – should NOT be capped.
 	logs6 := statspageviewserviceCovLogsWithNCompletedCycles(t, 6)
 	now6 := logs6[len(logs6)-1].Date.AddDate(0, 0, 5)
@@ -375,7 +375,7 @@ func statspageviewserviceCovIrregularSpreadLogs(t *testing.T, nExtraCycles int) 
 	return logs
 }
 
-func TestStatspageviewserviceCovVariablePatternViaIrregularCycleFlagThreeCompletedCycles(t *testing.T) {
+func TestStatsPageViewServiceVariablePatternViaIrregularCycleFlagThreeCompletedCycles(t *testing.T) {
 	// IrregularCycle=true, 3 completed cycles (= minimumPhaseInsightCycles=3).
 	// Right branch of || cannot activate (no spread with uniform 28-day cycles).
 	// Left branch (user.IrregularCycle) makes variablePattern=true AND
@@ -396,7 +396,7 @@ func TestStatspageviewserviceCovVariablePatternViaIrregularCycleFlagThreeComplet
 	}
 }
 
-func TestStatspageviewserviceCovVariablePatternViaSpreadForNonIrregularUser(t *testing.T) {
+func TestStatsPageViewServiceVariablePatternViaSpreadForNonIrregularUser(t *testing.T) {
 	// IrregularCycle=false, 3 completed cycles with irregular spread.
 	// Right branch activates: CompletedCycleCount(3) >= minimumPhaseInsightCycles(3) && IsIrregularCycleSpread(stats).
 	// The spread logs have cycle lengths 14 and 35 (spread=21 > 7).
@@ -416,7 +416,7 @@ func TestStatspageviewserviceCovVariablePatternViaSpreadForNonIrregularUser(t *t
 	}
 }
 
-func TestStatspageviewserviceCovVariablePatternAbsentForNonIrregularRegularSpread(t *testing.T) {
+func TestStatsPageViewServiceVariablePatternAbsentForNonIrregularRegularSpread(t *testing.T) {
 	// IrregularCycle=false, 3 completed cycles all 28 days (spread=0).
 	// variablePattern=false → label must NOT be "variable".
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 3)
@@ -443,7 +443,7 @@ func TestStatspageviewserviceCovVariablePatternAbsentForNonIrregularRegularSprea
 // Line 279: minimumPhaseInsightCycles(3) <= sampleCount < cyclePredictionWindow(6) && !variablePattern → "building"
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovPredictionReliabilityVariableLabelAtThreeOrMoreCycles(t *testing.T) {
+func TestStatsPageViewServicePredictionReliabilityVariableLabelAtThreeOrMoreCycles(t *testing.T) {
 	// IrregularCycle=true, 4 completed cycles (>= minimumPhaseInsightCycles=3).
 	// Line 275 branch: variablePattern=true && sampleCount(4) >= 3 → "variable".
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 4)
@@ -462,7 +462,7 @@ func TestStatspageviewserviceCovPredictionReliabilityVariableLabelAtThreeOrMoreC
 	}
 }
 
-func TestStatspageviewserviceCovPredictionReliabilityStableLabelAtSixOrMoreRegularCycles(t *testing.T) {
+func TestStatsPageViewServicePredictionReliabilityStableLabelAtSixOrMoreRegularCycles(t *testing.T) {
 	// IrregularCycle=false, 6 completed cycles, regular spread (all 28 days).
 	// variablePattern=false, sampleCount(6) >= cyclePredictionWindow(6) → "stable".
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 6)
@@ -481,7 +481,7 @@ func TestStatspageviewserviceCovPredictionReliabilityStableLabelAtSixOrMoreRegul
 	}
 }
 
-func TestStatspageviewserviceCovPredictionReliabilityBuildingLabelAtThreeToFiveCycles(t *testing.T) {
+func TestStatsPageViewServicePredictionReliabilityBuildingLabelAtThreeToFiveCycles(t *testing.T) {
 	// IrregularCycle=false, exactly 4 cycles, regular spread.
 	// variablePattern=false, minimumPhaseInsightCycles(3) <= 4 < cyclePredictionWindow(6) → "building".
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 4)
@@ -505,7 +505,7 @@ func TestStatspageviewserviceCovPredictionReliabilityBuildingLabelAtThreeToFiveC
 // variablePattern → hint_variable, otherwise hint.
 // ---------------------------------------------------------------------------
 
-func TestStatspageviewserviceCovHintKeyIsVariableForIrregularPattern(t *testing.T) {
+func TestStatsPageViewServiceHintKeyIsVariableForIrregularPattern(t *testing.T) {
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 3)
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)
@@ -522,7 +522,7 @@ func TestStatspageviewserviceCovHintKeyIsVariableForIrregularPattern(t *testing.
 	}
 }
 
-func TestStatspageviewserviceCovHintKeyIsStandardForRegularPattern(t *testing.T) {
+func TestStatsPageViewServiceHintKeyIsStandardForRegularPattern(t *testing.T) {
 	logs := statspageviewserviceCovLogsWithNCompletedCycles(t, 3)
 	service := NewStatsService(&stubStatsDayReader{logsForRange: logs}, &stubStatsSymptomReader{})
 	now := logs[len(logs)-1].Date.AddDate(0, 0, 5)

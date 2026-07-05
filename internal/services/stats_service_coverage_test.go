@@ -29,10 +29,10 @@ func (r *statsserviceCovFailDayReader) FetchAllLogsForUser(ctx context.Context, 
 // Line 66 — BuildOverviewStats error path
 // ---------------------------------------------------------------------------
 
-// TestStatsserviceCovBuildOverviewStatsPropagatesToStorage verifies that when
+// TestStatsServiceBuildOverviewStatsPropagatesToStorage verifies that when
 // the underlying FetchLogsForUser fails, BuildOverviewStats returns the same
 // error (not nil, not a different error), so callers can inspect the cause.
-func TestStatsserviceCovBuildOverviewStatsPropagatesToStorage(t *testing.T) {
+func TestStatsServiceBuildOverviewStatsPropagatesToStorage(t *testing.T) {
 	svc := NewStatsService(&statsserviceCovFailDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{ID: 1, Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-05-01")
@@ -50,11 +50,11 @@ func TestStatsserviceCovBuildOverviewStatsPropagatesToStorage(t *testing.T) {
 // Line 73 — TrimTrailingCycleTrendLengths boundary conditions
 // ---------------------------------------------------------------------------
 
-// TestStatsserviceCovTrimTrailingCycleTrendLengthsZeroMaxPoints verifies that a
+// TestStatsServiceTrimTrailingCycleTrendLengthsZeroMaxPoints verifies that a
 // maxPoints of 0 (non-positive) returns the original slice unchanged, not an
 // empty slice.  A mutant that drops the "maxPoints <= 0" guard would return
 // lengths[len(lengths)-0:] = lengths[len(lengths):] = empty.
-func TestStatsserviceCovTrimTrailingCycleTrendLengthsZeroMaxPoints(t *testing.T) {
+func TestStatsServiceTrimTrailingCycleTrendLengthsZeroMaxPoints(t *testing.T) {
 	input := []int{10, 20, 30}
 	got := TrimTrailingCycleTrendLengths(input, 0)
 	if len(got) != 3 {
@@ -65,9 +65,9 @@ func TestStatsserviceCovTrimTrailingCycleTrendLengthsZeroMaxPoints(t *testing.T)
 	}
 }
 
-// TestStatsserviceCovTrimTrailingCycleTrendLengthsNegativeMaxPoints mirrors the
+// TestStatsServiceTrimTrailingCycleTrendLengthsNegativeMaxPoints mirrors the
 // zero case for negative values.
-func TestStatsserviceCovTrimTrailingCycleTrendLengthsNegativeMaxPoints(t *testing.T) {
+func TestStatsServiceTrimTrailingCycleTrendLengthsNegativeMaxPoints(t *testing.T) {
 	input := []int{5, 6}
 	got := TrimTrailingCycleTrendLengths(input, -1)
 	if len(got) != 2 {
@@ -75,10 +75,10 @@ func TestStatsserviceCovTrimTrailingCycleTrendLengthsNegativeMaxPoints(t *testin
 	}
 }
 
-// TestStatsserviceCovTrimTrailingCycleTrendLengthsExactEquality verifies that
+// TestStatsServiceTrimTrailingCycleTrendLengthsExactEquality verifies that
 // when len(lengths) == maxPoints the slice is returned as-is (no trim).
 // A mutant that changes "<=" to "<" would incorrectly trim the slice.
-func TestStatsserviceCovTrimTrailingCycleTrendLengthsExactEquality(t *testing.T) {
+func TestStatsServiceTrimTrailingCycleTrendLengthsExactEquality(t *testing.T) {
 	input := []int{11, 22, 33}
 	got := TrimTrailingCycleTrendLengths(input, 3) // len == maxPoints
 	if len(got) != 3 || got[0] != 11 || got[2] != 33 {
@@ -93,10 +93,10 @@ func TestStatsserviceCovTrimTrailingCycleTrendLengthsExactEquality(t *testing.T)
 // statsserviceCovEmptyLogs is a shared empty log slice for flag boundary tests.
 var statsserviceCovEmptyLogs []models.DailyLog
 
-// TestStatsserviceCovBuildFlagsHasObservedCycleDataFalseAtZero verifies that
+// TestStatsServiceBuildFlagsHasObservedCycleDataFalseAtZero verifies that
 // HasObservedCycleData is false when there are no logs at all.
 // A mutant changing "> 0" to ">= 0" would set this true even with zero cycles.
-func TestStatsserviceCovBuildFlagsHasObservedCycleDataFalseAtZero(t *testing.T) {
+func TestStatsServiceBuildFlagsHasObservedCycleDataFalseAtZero(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-05-01")
@@ -107,10 +107,10 @@ func TestStatsserviceCovBuildFlagsHasObservedCycleDataFalseAtZero(t *testing.T) 
 	}
 }
 
-// TestStatsserviceCovBuildFlagsHasTrendDataFalseAtZero verifies that HasTrendData
+// TestStatsServiceBuildFlagsHasTrendDataFalseAtZero verifies that HasTrendData
 // is false when trendPointCount == 0.
 // A mutant changing "> 0" to ">= 0" on line 104 would set this true.
-func TestStatsserviceCovBuildFlagsHasTrendDataFalseAtZero(t *testing.T) {
+func TestStatsServiceBuildFlagsHasTrendDataFalseAtZero(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-05-01")
@@ -126,10 +126,10 @@ func TestStatsserviceCovBuildFlagsHasTrendDataFalseAtZero(t *testing.T) {
 	}
 }
 
-// TestStatsserviceCovBuildFlagsHasInsightsTrueAtExactMinimum verifies that
+// TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum verifies that
 // HasInsights is true when completedCycleCount equals statsMinimumInsightsCycles
 // (which is 2).  A mutant changing ">=" to ">" on line 105 would set this false.
-func TestStatsserviceCovBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
+func TestStatsServiceBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-04-10")
@@ -147,10 +147,10 @@ func TestStatsserviceCovBuildFlagsHasInsightsTrueAtExactMinimum(t *testing.T) {
 	}
 }
 
-// TestStatsserviceCovBuildFlagsHasReliableTrendTrueAtExactMinimum verifies that
+// TestStatsServiceBuildFlagsHasReliableTrendTrueAtExactMinimum verifies that
 // HasReliableTrend is true when trendPointCount equals statsReliableTrendCycles
 // (which is 3).  A mutant changing ">=" to ">" on line 106 would set this false.
-func TestStatsserviceCovBuildFlagsHasReliableTrendTrueAtExactMinimum(t *testing.T) {
+func TestStatsServiceBuildFlagsHasReliableTrendTrueAtExactMinimum(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-05-01")
@@ -166,12 +166,12 @@ func TestStatsserviceCovBuildFlagsHasReliableTrendTrueAtExactMinimum(t *testing.
 // Lines 114 & 119 — statsInsightProgress boundary conditions
 // ---------------------------------------------------------------------------
 
-// TestStatsserviceCovStatsInsightProgressZeroCompletedCycles verifies that
+// TestStatsServiceStatsInsightProgressZeroCompletedCycles verifies that
 // InsightProgress is 0 when completedCycleCount is 0.
 // A mutant changing "<= 0" to "< 0" on line 114 would skip the guard and
 // produce 0*100/2 = 0 anyway — but the concrete branch is still untested,
 // so we confirm the return value AND that completedCycleCount=0 produces 0.
-func TestStatsserviceCovStatsInsightProgressZeroCompletedCycles(t *testing.T) {
+func TestStatsServiceStatsInsightProgressZeroCompletedCycles(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-05-01")
@@ -187,13 +187,13 @@ func TestStatsserviceCovStatsInsightProgressZeroCompletedCycles(t *testing.T) {
 	}
 }
 
-// TestStatsserviceCovStatsInsightProgressAtExactHundred verifies that when
+// TestStatsServiceStatsInsightProgressAtExactHundred verifies that when
 // progress equals 100 exactly, the function returns 100 and does NOT fall into
 // the "progress > 100 → 100" branch.  A mutant changing "> 100" to ">= 100" on
 // line 119 would incorrectly force the return-100 path even when progress==100,
 // which is fine numerically but tests a different code path; the real concern is
 // the one-below edge: progress=99 must NOT be capped to 100.
-func TestStatsserviceCovStatsInsightProgressAtExactHundred(t *testing.T) {
+func TestStatsServiceStatsInsightProgressAtExactHundred(t *testing.T) {
 	// statsMinimumInsightsCycles = 2; completedCycleCount = 2 → progress = 2*100/2 = 100.
 	// Should return 100 (not capped, just equal).
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
@@ -213,11 +213,11 @@ func TestStatsserviceCovStatsInsightProgressAtExactHundred(t *testing.T) {
 	}
 }
 
-// TestStatsserviceCovStatsInsightProgressBelowHundredNotCapped verifies that a
+// TestStatsServiceStatsInsightProgressBelowHundredNotCapped verifies that a
 // progress value below 100 is returned as-is without being capped.
 // Concretely completedCycleCount=1, statsMinimumInsightsCycles=2: 1*100/2=50.
 // If the "progress > 100" guard were changed to "> 0", 50 would be capped to 100.
-func TestStatsserviceCovStatsInsightProgressBelowHundredNotCapped(t *testing.T) {
+func TestStatsServiceStatsInsightProgressBelowHundredNotCapped(t *testing.T) {
 	svc := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	now := mustParseStatsServiceDay(t, "2026-03-01")

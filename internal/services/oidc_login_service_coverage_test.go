@@ -26,7 +26,7 @@ import (
 // now would pass (now.Sub(now) == 0 <= 0).  This test detects that mutation.
 // ---------------------------------------------------------------------------
 
-func TestOidcloginserviceCovReauthClaimsFreshZeroMaxAuthAgeReturnsFalse(t *testing.T) {
+func TestOIDCLoginServiceReauthClaimsFreshZeroMaxAuthAgeReturnsFalse(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
@@ -39,7 +39,7 @@ func TestOidcloginserviceCovReauthClaimsFreshZeroMaxAuthAgeReturnsFalse(t *testi
 	}
 }
 
-func TestOidcloginserviceCovReauthClaimsFreshNegativeMaxAuthAgeReturnsFalse(t *testing.T) {
+func TestOIDCLoginServiceReauthClaimsFreshNegativeMaxAuthAgeReturnsFalse(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
@@ -52,7 +52,7 @@ func TestOidcloginserviceCovReauthClaimsFreshNegativeMaxAuthAgeReturnsFalse(t *t
 
 // Positive companion: maxAuthAge > 0 with a fresh reference must return true,
 // so we know the zero test is not just "always false".
-func TestOidcloginserviceCovReauthClaimsFreshPositiveMaxAuthAgeReturnsTrue(t *testing.T) {
+func TestOIDCLoginServiceReauthClaimsFreshPositiveMaxAuthAgeReturnsTrue(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
@@ -71,7 +71,7 @@ func TestOidcloginserviceCovReauthClaimsFreshPositiveMaxAuthAgeReturnsTrue(t *te
 // must be REJECTED; reference exactly at now must be ACCEPTED.
 // ---------------------------------------------------------------------------
 
-func TestOidcloginserviceCovReauthClaimsFreshExactlyOneMinuteInFutureIsRejected(t *testing.T) {
+func TestOIDCLoginServiceReauthClaimsFreshExactlyOneMinuteInFutureIsRejected(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
@@ -92,7 +92,7 @@ func TestOidcloginserviceCovReauthClaimsFreshExactlyOneMinuteInFutureIsRejected(
 	}
 }
 
-func TestOidcloginserviceCovReauthClaimsFreshWithinSkewToleranceIsAccepted(t *testing.T) {
+func TestOIDCLoginServiceReauthClaimsFreshWithinSkewToleranceIsAccepted(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
@@ -114,7 +114,7 @@ func TestOidcloginserviceCovReauthClaimsFreshWithinSkewToleranceIsAccepted(t *te
 // A reference exactly maxAuthAge seconds in the past must be ACCEPTED.
 // ---------------------------------------------------------------------------
 
-func TestOidcloginserviceCovReauthClaimsFreshExactlyAtMaxAuthAgeIsAccepted(t *testing.T) {
+func TestOIDCLoginServiceReauthClaimsFreshExactlyAtMaxAuthAgeIsAccepted(t *testing.T) {
 	t.Parallel()
 
 	maxAge := 5 * time.Minute
@@ -128,7 +128,7 @@ func TestOidcloginserviceCovReauthClaimsFreshExactlyAtMaxAuthAgeIsAccepted(t *te
 	}
 }
 
-func TestOidcloginserviceCovReauthClaimsFreshOneNanosecondBeyondMaxAuthAgeIsRejected(t *testing.T) {
+func TestOIDCLoginServiceReauthClaimsFreshOneNanosecondBeyondMaxAuthAgeIsRejected(t *testing.T) {
 	t.Parallel()
 
 	maxAge := 5 * time.Minute
@@ -146,7 +146,7 @@ func TestOidcloginserviceCovReauthClaimsFreshOneNanosecondBeyondMaxAuthAgeIsReje
 // Line 110 — LocalPublicAuthEnabled: nil receiver returns true
 // ---------------------------------------------------------------------------
 
-func TestOidcloginserviceCovLocalPublicAuthEnabledNilServiceReturnsTrue(t *testing.T) {
+func TestOIDCLoginServiceLocalPublicAuthEnabledNilServiceReturnsTrue(t *testing.T) {
 	t.Parallel()
 
 	var svc *OIDCLoginService
@@ -162,7 +162,7 @@ func TestOidcloginserviceCovLocalPublicAuthEnabledNilServiceReturnsTrue(t *testi
 // finds nothing → must return ErrOIDCProvisionFailed.
 // ---------------------------------------------------------------------------
 
-func TestOidcloginserviceCovAutoProvisionFallbackUserNotFoundReturnsProvisionFailed(t *testing.T) {
+func TestOIDCLoginServiceAutoProvisionFallbackUserNotFoundReturnsProvisionFailed(t *testing.T) {
 	t.Parallel()
 
 	provisioner := &stubOIDCAutoProvisioner{err: ErrAuthEmailExists}
@@ -201,7 +201,7 @@ func TestOidcloginserviceCovAutoProvisionFallbackUserNotFoundReturnsProvisionFai
 // variant is covered in oidc_login_service_fallback_coverage_test.go.
 // ---------------------------------------------------------------------------
 
-func TestOidcloginserviceCovDirectFoundUnsupportedRoleReturnsAccountUnavailable(t *testing.T) {
+func TestOIDCLoginServiceDirectFoundUnsupportedRoleReturnsAccountUnavailable(t *testing.T) {
 	t.Parallel()
 
 	provisioner := &stubOIDCAutoProvisioner{err: ErrAuthEmailExists}
@@ -291,7 +291,7 @@ func oidcloginserviceCovLinkedIdentitySetup(cfg security.OIDCConfig, session sec
 	}, identities, users, nil)
 }
 
-func TestOidcloginserviceCovBuildLogoutStateReturnsNilWhenEndpointMissing(t *testing.T) {
+func TestOIDCLoginServiceBuildLogoutStateReturnsNilWhenEndpointMissing(t *testing.T) {
 	t.Parallel()
 
 	cfg := oidcloginserviceCovLogoutConfig()
@@ -310,7 +310,7 @@ func TestOidcloginserviceCovBuildLogoutStateReturnsNilWhenEndpointMissing(t *tes
 	}
 }
 
-func TestOidcloginserviceCovBuildLogoutStateReturnsNilWhenIDTokenHintMissing(t *testing.T) {
+func TestOIDCLoginServiceBuildLogoutStateReturnsNilWhenIDTokenHintMissing(t *testing.T) {
 	t.Parallel()
 
 	cfg := oidcloginserviceCovLogoutConfig()
@@ -329,7 +329,7 @@ func TestOidcloginserviceCovBuildLogoutStateReturnsNilWhenIDTokenHintMissing(t *
 	}
 }
 
-func TestOidcloginserviceCovBuildLogoutStatePopulatedWhenAllFieldsPresent(t *testing.T) {
+func TestOIDCLoginServiceBuildLogoutStatePopulatedWhenAllFieldsPresent(t *testing.T) {
 	t.Parallel()
 
 	cfg := oidcloginserviceCovLogoutConfig()

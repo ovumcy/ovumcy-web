@@ -1,7 +1,10 @@
 package services
 
-// dashboardcycleheroCov — coverage and mutation-kill tests for dashboard_cycle_hero.go.
-// Prefix "dashboardcycleheroCov" guards all helpers/types against collisions.
+// dashboard_cycle_hero_coverage_test.go — behavior tests for the dashboard
+// hero ring geometry and render gating in dashboard_cycle_hero.go (segment
+// dash arrays, marker position, phase fallbacks, invisible-render guards).
+// Written to kill surviving mutants (gremlins). The "dashboardcycleheroCov"
+// prefix guards this file's helpers/types against package-wide collisions.
 
 import (
 	"math"
@@ -36,11 +39,11 @@ func dashboardcycleheroCovExactContext() DashboardCycleContext {
 // NOT COVERED — line 16: dashboardCycleHeroCircumference
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovCircumferenceValue exercises the package-level
+// TestDashboardCycleHeroCircumferenceValue exercises the package-level
 // circumference constant used by segment and dash-array calculations.
 // Mutating the formula (e.g. replacing 2*Pi*r with Pi*r) produces a
 // wrong value that propagates into DashArray strings.
-func TestDashboardcycleheroCovCircumferenceValue(t *testing.T) {
+func TestDashboardCycleHeroCircumferenceValue(t *testing.T) {
 	want := 2 * math.Pi * 78.0
 	if math.Abs(dashboardCycleHeroCircumference-want) > 1e-9 {
 		t.Fatalf("expected circumference %.6f, got %.6f", want, dashboardCycleHeroCircumference)
@@ -51,10 +54,10 @@ func TestDashboardcycleheroCovCircumferenceValue(t *testing.T) {
 // SURVIVING — line 55: periodLength >= cycleLength guard
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovPeriodLengthEqualsCycleLengthReturnsInvisible tests
+// TestDashboardCycleHeroPeriodLengthEqualsCycleLengthReturnsInvisible tests
 // the exact-equality boundary: if period == cycle, the hero must be invisible.
 // A mutant that weakens >= to > would expose the hero when they are equal.
-func TestDashboardcycleheroCovPeriodLengthEqualsCycleLengthReturnsInvisible(t *testing.T) {
+func TestDashboardCycleHeroPeriodLengthEqualsCycleLengthReturnsInvisible(t *testing.T) {
 	// AveragePeriodLength 20.5 rounds to 21 (predictedPeriodLength adds 0.5 before truncating).
 	// cycleLength == 21 (AverageCycleLength 21.0 rounds to 21 via DashboardCycleReferenceLength).
 	user := &models.User{Role: models.RoleOwner, CycleLength: 21}
@@ -75,7 +78,7 @@ func TestDashboardcycleheroCovPeriodLengthEqualsCycleLengthReturnsInvisible(t *t
 // will reject it), while a slightly smaller period does succeed.
 // The key assertion: the hero DOES NOT render when period+1 == cycleLength
 // because no room for an ovulation day plus a luteal phase.
-func TestDashboardcycleheroCovPeriodLengthOneLessThanCycleLengthIsGated(t *testing.T) {
+func TestDashboardCycleHeroPeriodLengthOneLessThanCycleLengthIsGated(t *testing.T) {
 	// cycleLength=17, periodLength=16 → period < cycle (passes guard at line 55)
 	// ovulationDay for cycle=17, luteal=14 would be 3, which is ≤ periodLength+1=17,
 	// so it will be rejected at the ovulation guard. Hero invisible is correct.
@@ -96,10 +99,10 @@ func TestDashboardcycleheroCovPeriodLengthOneLessThanCycleLengthIsGated(t *testi
 // SURVIVING — line 60: ovulationDay <= periodLength+1 || ovulationDay > cycleLength
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovOvulationDayEqualsPerioLengthPlusOneReturnsInvisible
+// TestDashboardCycleHeroOvulationDayEqualsPerioLengthPlusOneReturnsInvisible
 // pins the exact-equality boundary on the left side of the OR.
 // Mutant: change <= to < makes the equality case slip through.
-func TestDashboardcycleheroCovOvulationDayEqualsPerioLengthPlusOneReturnsInvisible(t *testing.T) {
+func TestDashboardCycleHeroOvulationDayEqualsPerioLengthPlusOneReturnsInvisible(t *testing.T) {
 	// cycle=28, luteal=22 → ovDay = 28-22 = 6; periodLength=5 → 6 == 5+1 → invisible
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	stats := CycleStats{
@@ -114,9 +117,9 @@ func TestDashboardcycleheroCovOvulationDayEqualsPerioLengthPlusOneReturnsInvisib
 	}
 }
 
-// TestDashboardcycleheroCovOvulationDayOneMoreThanPeriodPlusOneRendersOK pins
+// TestDashboardCycleHeroOvulationDayOneMoreThanPeriodPlusOneRendersOK pins
 // the other side of the boundary: ovDay = periodLength+2 must allow rendering.
-func TestDashboardcycleheroCovOvulationDayOneMoreThanPeriodPlusOneRendersOK(t *testing.T) {
+func TestDashboardCycleHeroOvulationDayOneMoreThanPeriodPlusOneRendersOK(t *testing.T) {
 	// cycle=28, luteal=21 → ovDay = 28-21 = 7; periodLength=5 → 7 > 5+1 → allowed
 	user := &models.User{Role: models.RoleOwner, CycleLength: 28}
 	stats := CycleStats{
@@ -131,10 +134,10 @@ func TestDashboardcycleheroCovOvulationDayOneMoreThanPeriodPlusOneRendersOK(t *t
 	}
 }
 
-// TestDashboardcycleheroCovOvulationDayEqualsCycleLengthReturnsInvisible pins
+// TestDashboardCycleHeroOvulationDayEqualsCycleLengthReturnsInvisible pins
 // the right-side boundary of the OR at line 60.
 // Mutant: change > to >= would also kill this.
-func TestDashboardcycleheroCovOvulationDayEqualsCycleLengthReturnsInvisible(t *testing.T) {
+func TestDashboardCycleHeroOvulationDayEqualsCycleLengthReturnsInvisible(t *testing.T) {
 	// cycle=28, luteal=0 → CalcOvulationDay resolves luteal to default (14) → ovDay=14
 	// We need ovDay == cycleLength: cycle=10, luteal=0 → resolved luteal min → ovDay depends.
 	// Use cycle=10, luteal=9 → resolvedLuteal = min(9, 10-1=9)=9 → ovDay=10-9=1 which is <minOvulationCycleDay
@@ -163,10 +166,10 @@ func TestDashboardcycleheroCovOvulationDayEqualsCycleLengthReturnsInvisible(t *t
 // SURVIVING — line 77: float64(currentDay)-0.5
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovMarkerOffsetIsHalfDayBehindCurrentDay asserts that
+// TestDashboardCycleHeroMarkerOffsetIsHalfDayBehindCurrentDay asserts that
 // the current-day marker X,Y coordinates correspond to day N-0.5, not day N.
 // A mutant removing -0.5 would place the marker at a full integer day position.
-func TestDashboardcycleheroCovMarkerOffsetIsHalfDayBehindCurrentDay(t *testing.T) {
+func TestDashboardCycleHeroMarkerOffsetIsHalfDayBehindCurrentDay(t *testing.T) {
 	cycleLength := 28
 
 	// Day 1 with -0.5 offset → dayIndex=0.5
@@ -203,12 +206,12 @@ func TestDashboardcycleheroCovMarkerOffsetIsHalfDayBehindCurrentDay(t *testing.T
 // SURVIVING — lines 83-85: canRenderDashboardCycleHero boundary conditions
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovCycleLengthZeroBlocksRender pins line 83: cycleLength > 0.
+// TestDashboardCycleHeroCycleLengthZeroBlocksRender pins line 83: cycleLength > 0.
 // DashboardCycleReferenceLength always returns a positive value (defaults to 28),
 // so line 83 is only exercisable by calling canRenderDashboardCycleHero directly.
 // A mutant changing > to >= would make cycleLength==0 pass, but also cycleLength==1 fail.
 // We cover the contract directly.
-func TestDashboardcycleheroCovCycleLengthZeroBlocksRender(t *testing.T) {
+func TestDashboardCycleHeroCycleLengthZeroBlocksRender(t *testing.T) {
 	// canRenderDashboardCycleHero with cycleLength=0 must return false.
 	stats := CycleStats{CurrentCycleDay: 3}
 	ctx := DashboardCycleContext{DisplayOvulationExact: true}
@@ -217,9 +220,9 @@ func TestDashboardcycleheroCovCycleLengthZeroBlocksRender(t *testing.T) {
 	}
 }
 
-// TestDashboardcycleheroCovCycleLengthPositiveAllowsRender ensures that a positive
+// TestDashboardCycleHeroCycleLengthPositiveAllowsRender ensures that a positive
 // cycleLength (e.g. 1) is not incorrectly blocked — kills the >= mutation.
-func TestDashboardcycleheroCovCycleLengthPositiveAllowsRender(t *testing.T) {
+func TestDashboardCycleHeroCycleLengthPositiveAllowsRender(t *testing.T) {
 	stats := CycleStats{CurrentCycleDay: 1}
 	ctx := DashboardCycleContext{DisplayOvulationExact: true}
 	// Should pass the cycleLength check (returns true for that condition alone).
@@ -229,9 +232,9 @@ func TestDashboardcycleheroCovCycleLengthPositiveAllowsRender(t *testing.T) {
 	}
 }
 
-// TestDashboardcycleheroCovCurrentCycleDayZeroReturnsInvisible pins line 84: CurrentCycleDay > 0.
+// TestDashboardCycleHeroCurrentCycleDayZeroReturnsInvisible pins line 84: CurrentCycleDay > 0.
 // Mutant: change > to >= would reject day==1 (valid first day) as invisible.
-func TestDashboardcycleheroCovCurrentCycleDayZeroReturnsInvisible(t *testing.T) {
+func TestDashboardCycleHeroCurrentCycleDayZeroReturnsInvisible(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
 		CurrentCycleDay:     0, // zero → must be invisible
@@ -244,9 +247,9 @@ func TestDashboardcycleheroCovCurrentCycleDayZeroReturnsInvisible(t *testing.T) 
 	}
 }
 
-// TestDashboardcycleheroCovCurrentCycleDayOneRendersVisible pins the other side:
+// TestDashboardCycleHeroCurrentCycleDayOneRendersVisible pins the other side:
 // day==1 must render (kills the mutant that would flip > to >=).
-func TestDashboardcycleheroCovCurrentCycleDayOneRendersVisible(t *testing.T) {
+func TestDashboardCycleHeroCurrentCycleDayOneRendersVisible(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
 		CurrentCycleDay:     1,
@@ -260,10 +263,10 @@ func TestDashboardcycleheroCovCurrentCycleDayOneRendersVisible(t *testing.T) {
 	}
 }
 
-// TestDashboardcycleheroCovCurrentCycleDayExceedsCycleLengthReturnsInvisible pins
+// TestDashboardCycleHeroCurrentCycleDayExceedsCycleLengthReturnsInvisible pins
 // line 85: CurrentCycleDay <= cycleLength.
 // Mutant: change <= to < makes day==cycleLength invisible when it should render.
-func TestDashboardcycleheroCovCurrentCycleDayExceedsCycleLengthReturnsInvisible(t *testing.T) {
+func TestDashboardCycleHeroCurrentCycleDayExceedsCycleLengthReturnsInvisible(t *testing.T) {
 	user := dashboardcycleheroCovUser28() // cycleLength=28
 	stats := CycleStats{
 		CurrentCycleDay:     29, // > 28 → must be invisible
@@ -276,9 +279,9 @@ func TestDashboardcycleheroCovCurrentCycleDayExceedsCycleLengthReturnsInvisible(
 	}
 }
 
-// TestDashboardcycleheroCovCurrentCycleDayEqualsLengthRendersVisible pins the
+// TestDashboardCycleHeroCurrentCycleDayEqualsLengthRendersVisible pins the
 // equality side: day == cycleLength must render.
-func TestDashboardcycleheroCovCurrentCycleDayEqualsLengthRendersVisible(t *testing.T) {
+func TestDashboardCycleHeroCurrentCycleDayEqualsLengthRendersVisible(t *testing.T) {
 	user := dashboardcycleheroCovUser28() // cycleLength=28
 	stats := CycleStats{
 		CurrentCycleDay:     28, // == cycleLength → must render
@@ -299,10 +302,10 @@ func TestDashboardcycleheroCovCurrentCycleDayEqualsLengthRendersVisible(t *testi
 // SURVIVING — lines 133-134: segment day-count and dash calculation
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovSegmentDashArrayEncodesPhaseDuration asserts that each
+// TestDashboardCycleHeroSegmentDashArrayEncodesPhaseDuration asserts that each
 // segment's DashArray encodes the correct fraction of circumference for its phase.
 // A mutant that removes the +1 in (EndDay - StartDay + 1) shrinks every segment by 1 day.
-func TestDashboardcycleheroCovSegmentDashArrayEncodesPhaseDuration(t *testing.T) {
+func TestDashboardCycleHeroSegmentDashArrayEncodesPhaseDuration(t *testing.T) {
 	// cycle=28, period=5, ovulation=14
 	// menstrual: days 1-5 → 5 days
 	// follicular: days 6-13 → 8 days
@@ -357,10 +360,10 @@ func dashboardcycleheroCovFormatFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
-// TestDashboardcycleheroCovSegmentDashOffsetAccumulates asserts that the DashOffset
+// TestDashboardCycleHeroSegmentDashOffsetAccumulates asserts that the DashOffset
 // for each segment accumulates from the previous segments' dashes.
 // A mutant that skips offset accumulation (offset += dash) would make all offsets 0.
-func TestDashboardcycleheroCovSegmentDashOffsetAccumulates(t *testing.T) {
+func TestDashboardCycleHeroSegmentDashOffsetAccumulates(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
 		CurrentCycleDay:     3,
@@ -400,11 +403,11 @@ func TestDashboardcycleheroCovSegmentDashOffsetAccumulates(t *testing.T) {
 // SURVIVING — line 138: dashboardCycleHeroFloat(-offset)
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovSecondSegmentOffsetIsNegative pins the negation at line 138:
+// TestDashboardCycleHeroSecondSegmentOffsetIsNegative pins the negation at line 138:
 // dashboardCycleHeroFloat(-offset). For segment index ≥ 1, offset is positive,
 // so -offset must be negative. A mutant removing the minus sign would produce
 // a positive DashOffset for all segments after the first.
-func TestDashboardcycleheroCovSecondSegmentOffsetIsNegative(t *testing.T) {
+func TestDashboardCycleHeroSecondSegmentOffsetIsNegative(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
 		CurrentCycleDay:     3,
@@ -434,10 +437,10 @@ func TestDashboardcycleheroCovSecondSegmentOffsetIsNegative(t *testing.T) {
 // SURVIVING — lines 166-169: dashboardCycleHeroMarkerAtDay math
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovMarkerAtDay0IsTopOfCircle asserts that day index 0
+// TestDashboardCycleHeroMarkerAtDay0IsTopOfCircle asserts that day index 0
 // maps to the top of the circle (angle = -π/2 → cos=0, sin=-1).
 // This pins line 167 (angle formula) and lines 168-169 (x, y calculation).
-func TestDashboardcycleheroCovMarkerAtDay0IsTopOfCircle(t *testing.T) {
+func TestDashboardCycleHeroMarkerAtDay0IsTopOfCircle(t *testing.T) {
 	marker := dashboardCycleHeroMarkerAtDay(0, 28)
 	// angle = -π/2 → x = centerX + r*cos(-π/2) = 110 + 78*0 = 110
 	//               → y = centerY + r*sin(-π/2) = 110 + 78*(-1) = 32
@@ -451,10 +454,10 @@ func TestDashboardcycleheroCovMarkerAtDay0IsTopOfCircle(t *testing.T) {
 	}
 }
 
-// TestDashboardcycleheroCovMarkerAtHalfCycleIsBottomOfCircle asserts that day index
+// TestDashboardCycleHeroMarkerAtHalfCycleIsBottomOfCircle asserts that day index
 // == cycleLength/2 maps to the bottom of the circle.
 // Pins the ratio computation (line 166) and full math (167-169).
-func TestDashboardcycleheroCovMarkerAtHalfCycleIsBottomOfCircle(t *testing.T) {
+func TestDashboardCycleHeroMarkerAtHalfCycleIsBottomOfCircle(t *testing.T) {
 	// dayIndex=14, cycleLength=28 → ratio=0.5 → angle = -π/2 + π = π/2
 	// cos(π/2)≈0, sin(π/2)=1 → x=110, y=110+78=188
 	marker := dashboardCycleHeroMarkerAtDay(14, 28)
@@ -468,10 +471,10 @@ func TestDashboardcycleheroCovMarkerAtHalfCycleIsBottomOfCircle(t *testing.T) {
 	}
 }
 
-// TestDashboardcycleheroCovMarkerRatioUsesCorrectCycleLength asserts that the
+// TestDashboardCycleHeroMarkerRatioUsesCorrectCycleLength asserts that the
 // ratio is dayIndex/cycleLength. A mutant replacing cycleLength with a constant
 // would break for any cycle not equal to that constant.
-func TestDashboardcycleheroCovMarkerRatioUsesCorrectCycleLength(t *testing.T) {
+func TestDashboardCycleHeroMarkerRatioUsesCorrectCycleLength(t *testing.T) {
 	// Same dayIndex but different cycle lengths → different markers.
 	m28 := dashboardCycleHeroMarkerAtDay(7, 28) // ratio=0.25
 	m32 := dashboardCycleHeroMarkerAtDay(7, 32) // ratio≈0.219
@@ -485,9 +488,9 @@ func TestDashboardcycleheroCovMarkerRatioUsesCorrectCycleLength(t *testing.T) {
 // dashboardCycleHeroCurrentPhase (called when currentPhase is unrecognised)
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToNumericMenstrual covers
+// TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericMenstrual covers
 // line 154: currentDay >= 1 && currentDay <= periodLength → "menstrual".
-func TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToNumericMenstrual(t *testing.T) {
+func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericMenstrual(t *testing.T) {
 	// Pass an unrecognised currentPhase ("") so the first switch falls through.
 	// currentDay=3 is within periodLength=5 → should return "menstrual".
 	got := dashboardCycleHeroCurrentPhase("", 3, 5, 14, 28)
@@ -496,27 +499,27 @@ func TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToNumericMenstrual(t *
 	}
 }
 
-// TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToNumericOvulation covers
+// TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericOvulation covers
 // line 156: currentDay == ovulationDay → "ovulation".
-func TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToNumericOvulation(t *testing.T) {
+func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericOvulation(t *testing.T) {
 	got := dashboardCycleHeroCurrentPhase("", 14, 5, 14, 28)
 	if got != "ovulation" {
 		t.Fatalf("expected ovulation fallback for day == ovulationDay, got %q", got)
 	}
 }
 
-// TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToNumericLuteal covers
+// TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericLuteal covers
 // line 158: currentDay > ovulationDay && currentDay <= cycleLength → "luteal".
-func TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToNumericLuteal(t *testing.T) {
+func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToNumericLuteal(t *testing.T) {
 	got := dashboardCycleHeroCurrentPhase("", 20, 5, 14, 28)
 	if got != "luteal" {
 		t.Fatalf("expected luteal fallback for day 20 (past ovulation), got %q", got)
 	}
 }
 
-// TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToFollicular covers the
+// TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToFollicular covers the
 // default branch: a day between period and ovulation (exclusive) → "follicular".
-func TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToFollicular(t *testing.T) {
+func TestDashboardCycleHeroCurrentPhaseUnknownFallsBackToFollicular(t *testing.T) {
 	// day=10 is after period (5) and before ovulation (14) → follicular
 	got := dashboardCycleHeroCurrentPhase("", 10, 5, 14, 28)
 	if got != "follicular" {
@@ -524,9 +527,9 @@ func TestDashboardcycleheroCovCurrentPhaseUnknownFallsBackToFollicular(t *testin
 	}
 }
 
-// TestDashboardcycleheroCovCurrentPhaseKnownValuesPassThrough asserts that the first
+// TestDashboardCycleHeroCurrentPhaseKnownValuesPassThrough asserts that the first
 // switch correctly passes through recognised phase strings without numeric override.
-func TestDashboardcycleheroCovCurrentPhaseKnownValuesPassThrough(t *testing.T) {
+func TestDashboardCycleHeroCurrentPhaseKnownValuesPassThrough(t *testing.T) {
 	cases := []struct {
 		input string
 		want  string
@@ -549,9 +552,9 @@ func TestDashboardcycleheroCovCurrentPhaseKnownValuesPassThrough(t *testing.T) {
 // Integration: CycleDataStale blocks rendering (survives line 83-85 area)
 // ---------------------------------------------------------------------------
 
-// TestDashboardcycleheroCovStaleDataBlocksRender ensures CycleDataStale=true
+// TestDashboardCycleHeroStaleDataBlocksRender ensures CycleDataStale=true
 // makes hero invisible even with otherwise valid inputs.
-func TestDashboardcycleheroCovStaleDataBlocksRender(t *testing.T) {
+func TestDashboardCycleHeroStaleDataBlocksRender(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := dashboardcycleheroCovBaseStats()
 	ctx := DashboardCycleContext{
@@ -564,9 +567,9 @@ func TestDashboardcycleheroCovStaleDataBlocksRender(t *testing.T) {
 	}
 }
 
-// TestDashboardcycleheroCovDisplayOvulationImpossibleBlocksRender ensures
+// TestDashboardCycleHeroDisplayOvulationImpossibleBlocksRender ensures
 // DisplayOvulationImpossible=true blocks rendering.
-func TestDashboardcycleheroCovDisplayOvulationImpossibleBlocksRender(t *testing.T) {
+func TestDashboardCycleHeroDisplayOvulationImpossibleBlocksRender(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := dashboardcycleheroCovBaseStats()
 	ctx := DashboardCycleContext{
