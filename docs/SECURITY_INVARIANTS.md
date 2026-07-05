@@ -44,7 +44,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 - AEAD: AES-256-GCM (sealed cookies, field encryption), implemented once in `internal/security/sealed_cipher.go`. Key derivation: HKDF-SHA256 with versioned, purpose-specific salt and info labels; the two purposes derive distinct keys, so cross-purpose opens fail (see `SECURITY.md → SECRET_KEY Usage Map`).
 - Randomness: `crypto/rand` for nonces, session IDs, OIDC state/nonce, PKCE verifiers, recovery codes. **Never `math/rand` for security-sensitive values.**
 - Comparisons: `crypto/subtle.ConstantTimeCompare` for OIDC state, recovery-code hashes (via `bcrypt.CompareHashAndPassword`), TOTP code validation, and password-state fingerprints.
-- Passwords are bcrypt cost 10. Minimum length 8 with at least one uppercase, one lowercase, and one digit.
+- Passwords are bcrypt cost 12 (a successful login re-hashes any older, lower-cost hash in place without invalidating the session). Minimum length 8 with at least one uppercase, one lowercase, and one digit.
 
 ## Content Security Policy
 
