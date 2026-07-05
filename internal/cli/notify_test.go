@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -104,6 +106,19 @@ func TestRunNotifyCommandDryRunPropagates(t *testing.T) {
 	}
 }
 
+// TestRunNotifyCommandNilOutputDefaultsToStdout proves the nil-output guard:
+// runNotifyCommand tolerates a nil writer (falling back to os.Stdout) instead of
+// panicking. The stub runner keeps it DB- and socket-free.
+func TestRunNotifyCommandNilOutputDefaultsToStdout(t *testing.T) {
+	runner := &stubNotifyRunner{report: services.NotifyReport{OwnersScanned: 1}}
+	if err := runNotifyCommand(runner, notifyOptions{}, time.Now(), time.UTC, nil); err != nil {
+		t.Fatalf("nil output should default to stdout, got %v", err)
+	}
+	if !runner.called {
+		t.Fatal("service was never invoked")
+	}
+}
+
 // TestRunNotifyCommandZeroDueExitsZero proves the exit-code contract: a completed
 // pass with nothing due returns nil (exit 0).
 func TestRunNotifyCommandZeroDueExitsZero(t *testing.T) {
@@ -178,5 +193,59 @@ func TestRunNotifyCommandReportPrintsCountsOnly(t *testing.T) {
 		if strings.Contains(text, banned) {
 			t.Fatalf("report leaked a secret-shaped substring %q: %q", banned, text)
 		}
+	}
+}
+
+// testNotifySecretKey is a syntactically valid SECRET_KEY (>= 32 chars) for the
+// wiring tests. It only constructs the decrypt service; with zero owners it is
+// never used to open a ciphertext, so its value is inert here.
+const testNotifySecretKey = "0123456789abcdef0123456789abcdef"
+
+// TestRunNotifyCommandEndToEndZeroOwners drives the real RunNotifyCommand wiring
+// against a fresh migrated SQLite DB with no owners: it opens the DB, builds the
+// notify service via bootstrap.BuildNotifyService, runs one pass, and returns nil
+// with a zero-count report. This covers the DB-open + service-build path that the
+// stub-based command tests deliberately bypass.
+func TestRunNotifyCommandEndToEndZeroOwners(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cli-notify-test.db")
+	config := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
+
+	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, nil)
+	if err != nil {
+		t.Fatalf("zero-owner notify pass should succeed, got %v", err)
+	}
+}
+
+// TestRunNotifyCommandEndToEndDryRun proves the same real wiring honors --dry-run
+// (no request, no watermark — enforced in the service tests) and completes.
+func TestRunNotifyCommandEndToEndDryRun(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cli-notify-dry.db")
+	config := db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath}
+
+	if err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, []string{"--dry-run"}); err != nil {
+		t.Fatalf("dry-run notify pass should succeed, got %v", err)
+	}
+}
+
+// TestRunNotifyCommandRejectsBadArgs proves argument validation happens before
+// any DB work: an unknown flag returns the usage error and never opens the DB.
+func TestRunNotifyCommandRejectsBadArgs(t *testing.T) {
+	config := db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "unused.db")}
+
+	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, []string{"--nope"})
+	if err == nil || !strings.Contains(err.Error(), "usage: ovumcy notify") {
+		t.Fatalf("expected usage error for a bad flag, got %v", err)
+	}
+}
+
+// TestRunNotifyCommandReportsDatabaseInitFailure proves a bad DB config surfaces
+// as a pass-level error (the "database init failed" branch), not a panic.
+func TestRunNotifyCommandReportsDatabaseInitFailure(t *testing.T) {
+	// An empty SQLite path fails db.Config validation inside OpenDatabase.
+	config := db.Config{Driver: db.DriverSQLite, SQLitePath: ""}
+
+	err := RunNotifyCommand(config, testNotifySecretKey, "en", time.UTC, false, nil)
+	if err == nil {
+		t.Fatal("expected a database init failure, got nil")
 	}
 }

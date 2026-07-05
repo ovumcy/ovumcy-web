@@ -67,6 +67,10 @@ func RunNotifyCommand(
 	}
 	sqlDB, err := database.DB()
 	if err != nil {
+		// codecov:ignore -- defensive: (*gorm.DB).DB() only errors when the
+		// underlying connection pool is unavailable, which cannot happen on the
+		// handle OpenDatabase just returned successfully. Mirrors the same guard in
+		// users.go; kept so a future driver change fails cleanly instead of panicking.
 		return fmt.Errorf("database init failed: %w", err)
 	}
 	defer func() {
@@ -75,6 +79,11 @@ func RunNotifyCommand(
 
 	i18nManager, err := i18n.NewManager(defaultLanguage)
 	if err != nil {
+		// codecov:ignore -- unreachable from the CLI: NewManager only errors on
+		// corrupt/missing EMBEDDED locales or an absent required locale; the "en"
+		// bundle is embedded and always present, and an unknown defaultLanguage is
+		// normalized (never errors). Kept as a fail-safe against a build that ships
+		// a broken embedded locale set.
 		return fmt.Errorf("i18n init failed: %w", err)
 	}
 

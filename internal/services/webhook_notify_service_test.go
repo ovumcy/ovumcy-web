@@ -76,10 +76,11 @@ type watermarkWrite struct {
 // stubNotifyRepo serves a fixed record set and records every watermark write, so
 // a test can assert watermarks advance ONLY on success.
 type stubNotifyRepo struct {
-	records    []models.WebhookNotifyRecord
-	listErr    error
-	mu         sync.Mutex
-	watermarks []watermarkWrite
+	records      []models.WebhookNotifyRecord
+	listErr      error
+	watermarkErr error
+	mu           sync.Mutex
+	watermarks   []watermarkWrite
 }
 
 func (stub *stubNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookNotifyRecord, error) {
@@ -93,7 +94,7 @@ func (stub *stubNotifyRepo) UpdateWebhookWatermark(_ context.Context, userID uin
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	stub.watermarks = append(stub.watermarks, watermarkWrite{userID: userID, reminderType: reminderType, anchor: anchor})
-	return nil
+	return stub.watermarkErr
 }
 
 func (stub *stubNotifyRepo) writes() []watermarkWrite {
@@ -104,12 +105,16 @@ func (stub *stubNotifyRepo) writes() []watermarkWrite {
 	return out
 }
 
-// stubLogReader serves per-user logs from a map.
+// stubLogReader serves per-user logs from a map, or errors when err is set.
 type stubLogReader struct {
 	byUser map[uint][]models.DailyLog
+	err    error
 }
 
 func (stub stubLogReader) ListByUser(_ context.Context, userID uint) ([]models.DailyLog, error) {
+	if stub.err != nil {
+		return nil, stub.err
+	}
 	return stub.byUser[userID], nil
 }
 
@@ -505,5 +510,198 @@ func TestNotifySkipsDisabledOwner(t *testing.T) {
 	}
 	if len(deliverer.deliveries()) != 0 || report.Sent != 0 {
 		t.Fatalf("disabled owner must not be contacted, deliveries=%d sent=%d", len(deliverer.deliveries()), report.Sent)
+	}
+}
+
+// TestNotifySkipsOwnerWithEmptyDecryptedURL proves an enabled owner whose stored
+// URL decrypts to empty (webhook armed but no endpoint) is skipped with no
+// delivery — the "nothing deliverable" branch.
+func TestNotifySkipsOwnerWithEmptyDecryptedURL(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "", now, 26) // empty ciphertext token -> decryptor echoes ""
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.OwnersScanned != 1 {
+		t.Fatalf("expected 1 owner scanned, got %d", report.OwnersScanned)
+	}
+	if len(deliverer.deliveries()) != 0 || report.Sent != 0 || report.Due != 0 {
+		t.Fatalf("owner with empty endpoint must not be contacted, deliveries=%d sent=%d due=%d", len(deliverer.deliveries()), report.Sent, report.Due)
+	}
+}
+
+// TestNotifySkipsOwnerWhenLogReadFails proves a per-owner log-read failure is
+// contained: that owner is skipped and the pass does not error.
+func TestNotifySkipsOwnerWhenLogReadFails(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	logs := stubLogReader{err: errors.New("logs table gone")}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("a per-owner log-read failure must not fail the pass: %v", err)
+	}
+	if report.OwnersScanned != 1 {
+		t.Fatalf("expected 1 owner scanned, got %d", report.OwnersScanned)
+	}
+	if len(deliverer.deliveries()) != 0 || report.Sent != 0 {
+		t.Fatalf("owner with unreadable logs must be skipped, deliveries=%d sent=%d", len(deliverer.deliveries()), report.Sent)
+	}
+}
+
+// TestNotifyWatermarkWriteFailureStillCountsSent proves the delivery-vs-watermark
+// split: a watermark write that fails AFTER a successful 2xx is logged but does
+// NOT turn the send into a failure — the reminder was delivered, so it counts as
+// sent (a stuck watermark would at worst re-send next pass, never lose data).
+func TestNotifyWatermarkWriteFailureStillCountsSent(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}, watermarkErr: errors.New("watermark write failed")}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.Sent != 1 {
+		t.Fatalf("a delivered reminder counts as sent even when the watermark write fails, sent=%d", report.Sent)
+	}
+	if report.Failed != 0 {
+		t.Fatalf("a watermark write failure is not a delivery failure, failed=%d", report.Failed)
+	}
+}
+
+// ovulationDueRecord returns a record whose predicted ovulation is inside the
+// lead window: with a 28-day cycle and a 14-day luteal phase, ovulation is ~day
+// 14 of the cycle, so a last period ~12 days ago puts it ~2 days out. Both kinds
+// are on so the ovulation branch (and its copy) is exercised.
+func ovulationDueRecord(id uint, urlToken string, now time.Time) models.WebhookNotifyRecord {
+	last := now.AddDate(0, 0, -12)
+	last = time.Date(last.Year(), last.Month(), last.Day(), 0, 0, 0, 0, time.UTC)
+	return models.WebhookNotifyRecord{
+		ID:                     id,
+		CycleLength:            28,
+		PeriodLength:           5,
+		LutealPhase:            14,
+		LastPeriodStart:        &last,
+		WebhookEnabled:         true,
+		WebhookURL:             urlToken,
+		WebhookNotifyPeriod:    true,
+		WebhookNotifyOvulation: true,
+		ReminderLeadDays:       3,
+	}
+}
+
+// TestNotifyDeliversOvulationReminderCopy proves the ovulation reminder path:
+// an ovulation-due owner gets a payload whose title/message use the ovulation
+// copy (not the period copy), covering the ovulation branch of reminderCopy.
+func TestNotifyDeliversOvulationReminderCopy(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := ovulationDueRecord(1, "https://a.example/hook", now)
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+
+	var ovulation *capturedDelivery
+	for i := range deliverer.deliveries() {
+		d := deliverer.deliveries()[i]
+		if d.payload.Type == DueReminderTypeOvulation {
+			ovulation = &d
+			break
+		}
+	}
+	if ovulation == nil {
+		t.Fatalf("expected an ovulation reminder to be delivered (sent=%d, due=%d)", report.Sent, report.Due)
+	}
+	if !strings.Contains(ovulation.payload.Title, "Ovulation") {
+		t.Fatalf("ovulation payload should use the ovulation title, got %q", ovulation.payload.Title)
+	}
+	if !strings.Contains(ovulation.payload.Message, "ovulation") {
+		t.Fatalf("ovulation payload should use the ovulation message, got %q", ovulation.payload.Message)
+	}
+}
+
+// TestAppendUniqueID pins the failed-owner dedup helper directly: appending an
+// id already present is a no-op (so an owner with multiple failing reminders is
+// listed once); a new id is appended. Driving the helper directly makes the
+// "already present" branch deterministic without depending on a cycle position
+// that yields two simultaneously-due reminders.
+func TestAppendUniqueID(t *testing.T) {
+	var ids []uint
+
+	ids = appendUniqueID(ids, 7)
+	if len(ids) != 1 || ids[0] != 7 {
+		t.Fatalf("expected [7], got %v", ids)
+	}
+
+	ids = appendUniqueID(ids, 7) // duplicate -> no-op
+	if len(ids) != 1 {
+		t.Fatalf("appending a duplicate must be a no-op, got %v", ids)
+	}
+
+	ids = appendUniqueID(ids, 9) // new id -> appended
+	if len(ids) != 2 || ids[1] != 9 {
+		t.Fatalf("expected [7 9], got %v", ids)
+	}
+}
+
+// TestResolveOwnerLocationPrefersPersistedTimezone proves the per-owner timezone
+// resolution: a valid persisted IANA zone is used; an invalid one falls back to
+// the server location; an empty one falls back too.
+func TestResolveOwnerLocationPrefersPersistedTimezone(t *testing.T) {
+	fallback := time.UTC
+
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+
+	if got := resolveOwnerLocation("America/New_York", fallback); got.String() != ny.String() {
+		t.Fatalf("valid persisted zone should be used, got %q", got.String())
+	}
+	if got := resolveOwnerLocation("Not/AZone", fallback); got != fallback {
+		t.Fatalf("invalid persisted zone should fall back to server location, got %q", got.String())
+	}
+	if got := resolveOwnerLocation("   ", fallback); got != fallback {
+		t.Fatalf("empty persisted zone should fall back to server location, got %q", got.String())
+	}
+}
+
+// TestNotifyUsesOwnerPersistedTimezone drives the persisted-timezone path end to
+// end: an owner with a persisted zone is scanned and its decision runs against
+// that zone (the pass completes without error), covering resolveOwnerLocation's
+// success return from within RunOnce.
+func TestNotifyUsesOwnerPersistedTimezone(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+	record.Timezone = "America/New_York"
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce with a persisted owner timezone: %v", err)
+	}
+	if report.OwnersScanned != 1 {
+		t.Fatalf("expected 1 owner scanned, got %d", report.OwnersScanned)
 	}
 }

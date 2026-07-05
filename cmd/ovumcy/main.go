@@ -806,7 +806,7 @@ func tryRunCLICommand() (bool, error) {
 		runResetPassword: cli.RunResetPasswordCommand,
 		runUsers:         cli.RunUsersCommand,
 		runHealthcheck:   cli.RunHealthcheckCommand,
-		runNotify:        cli.RunNotifyCommand,
+		runNotify:        cli.RunNotifyCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 	})
 }
 

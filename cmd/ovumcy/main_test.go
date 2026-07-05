@@ -1377,6 +1377,132 @@ func TestTryRunCLICommandWithHandlersPropagatesHealthcheckError(t *testing.T) {
 	}
 }
 
+func TestTryRunCLICommandWithHandlersDispatchesNotify(t *testing.T) {
+	// SECRET_KEY is required by the notify dispatch (it resolves the decrypt key
+	// before invoking the handler); provide a valid one and the flags to forward.
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TZ", "UTC")
+	t.Setenv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", "true")
+
+	var (
+		receivedArgs         []string
+		receivedBlock        bool
+		receivedSecretNonNil bool
+		receivedLangNonEmpty bool
+	)
+	handled, err := tryRunCLICommandWithHandlers([]string{"notify", "--dry-run"}, cliCommandHandlers{
+		runNotify: func(_ db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error {
+			receivedArgs = args
+			receivedBlock = blockPrivateAddresses
+			receivedSecretNonNil = secretKey != ""
+			receivedLangNonEmpty = defaultLanguage != ""
+			if location == nil {
+				t.Fatal("expected a non-nil location forwarded to the notify handler")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !handled {
+		t.Fatal("expected notify command to be handled")
+	}
+	if len(receivedArgs) != 1 || receivedArgs[0] != "--dry-run" {
+		t.Fatalf("expected --dry-run forwarded as args, got %v", receivedArgs)
+	}
+	if !receivedBlock {
+		t.Fatal("expected WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true forwarded as true")
+	}
+	if !receivedSecretNonNil {
+		t.Fatal("expected the resolved SECRET_KEY forwarded to the notify handler")
+	}
+	if !receivedLangNonEmpty {
+		t.Fatal("expected a default language forwarded to the notify handler")
+	}
+}
+
+func TestTryRunCLICommandWithHandlersNotifyRequiresHandler(t *testing.T) {
+	handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{})
+	if !handled {
+		t.Fatal("expected notify command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "notify handler is required") {
+		t.Fatalf("expected notify-handler-required error, got %v", err)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersNotifyReportsInvalidSecretKey(t *testing.T) {
+	// No SECRET_KEY set -> the notify dispatch fails at key resolution before the
+	// handler runs.
+	t.Setenv("SECRET_KEY", "")
+	t.Setenv("SECRET_KEY_FILE", "")
+
+	handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
+		runNotify: func(db.Config, string, string, *time.Location, bool, []string) error {
+			t.Fatal("did not expect the notify handler to be called without a SECRET_KEY")
+			return nil
+		},
+	})
+	if !handled {
+		t.Fatal("expected notify command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
+		t.Fatalf("expected an invalid-SECRET_KEY error, got %v", err)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersNotifyReportsInvalidDatabaseConfig(t *testing.T) {
+	// The notify dispatch resolves the database config first; an unsupported
+	// DB_DRIVER fails validation before the handler runs.
+	t.Setenv("DB_DRIVER", "mysql")
+
+	handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
+		runNotify: func(db.Config, string, string, *time.Location, bool, []string) error {
+			t.Fatal("did not expect the notify handler to be called with an invalid DB config")
+			return nil
+		},
+	})
+	if !handled {
+		t.Fatal("expected notify command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid database config") {
+		t.Fatalf("expected an invalid-database-config error, got %v", err)
+	}
+}
+
+func TestResolveBoolEnv(t *testing.T) {
+	cases := []struct {
+		name     string
+		value    string
+		set      bool
+		fallback bool
+		want     bool
+	}{
+		{name: "unset returns fallback true", set: false, fallback: true, want: true},
+		{name: "unset returns fallback false", set: false, fallback: false, want: false},
+		{name: "true", value: "true", set: true, fallback: false, want: true},
+		{name: "1", value: "1", set: true, fallback: false, want: true},
+		{name: "false", value: "false", set: true, fallback: true, want: false},
+		{name: "0", value: "0", set: true, fallback: true, want: false},
+		{name: "blank returns fallback", value: "   ", set: true, fallback: true, want: true},
+		{name: "unparseable returns fallback", value: "notabool", set: true, fallback: true, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			const key = "OVUMCY_TEST_BOOL_ENV"
+			if tc.set {
+				t.Setenv(key, tc.value)
+			} else {
+				t.Setenv(key, "")
+			}
+			if got := resolveBoolEnv(key, tc.fallback); got != tc.want {
+				t.Fatalf("resolveBoolEnv(%q, %v) = %v, want %v", tc.value, tc.fallback, got, tc.want)
+			}
+		})
+	}
+}
+
 func testResponseCookie(cookies []*http.Cookie, name string) *http.Cookie {
 	for _, cookie := range cookies {
 		if cookie != nil && cookie.Name == name {
