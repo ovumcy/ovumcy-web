@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -300,6 +301,117 @@ func TestDashboardTodaySavePersistsAndRendersWithNonUTCTimezone(t *testing.T) {
 	}
 	if !strings.Contains(rendered, note) {
 		t.Fatalf("expected notes to be restored in dashboard textarea, got body without %q", note)
+	}
+}
+
+// TestDashboardRendersReminderBannerWhenPeriodIsDueSoon covers issue #123:
+// once the existing next-period prediction falls inside the reminder
+// window, the dashboard must render the banner with its plural day-count
+// copy, and the always-on medical-safety disclaimer must still be present
+// immediately alongside it.
+func TestDashboardRendersReminderBannerWhenPeriodIsDueSoon(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-reminder-due@example.com", "StrongPass1", true)
+
+	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	// A 28-day cycle started 26 days ago predicts the next period in 2
+	// days — inside the default reminder window.
+	lastPeriodStart := today.AddDate(0, 0, -26)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": lastPeriodStart,
+	}).Error; err != nil {
+		t.Fatalf("update due-soon cycle context: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	body := mustReadBodyString(t, response.Body)
+	document := mustParseHTMLDocument(t, body)
+
+	banner := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-dashboard-reminder-banner")
+	})
+	if banner == nil {
+		t.Fatal("expected dashboard reminder banner to render when the next period is due soon")
+	}
+	if got := htmlAttr(banner, "data-reminder-banner-key"); got != "dashboard.reminder_banner_period" {
+		t.Fatalf("expected period reminder banner key, got %q", got)
+	}
+	if !strings.Contains(body, "Period likely in ~2 days") {
+		t.Fatalf("expected rendered period reminder copy for 2 days out, got body without it")
+	}
+
+	for _, fragment := range []string{
+		`data-dashboard-prediction-disclaimer`,
+		"not medical advice or a method of contraception",
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("expected the medical-safety disclaimer fragment %q to render alongside the reminder banner", fragment)
+		}
+	}
+}
+
+// TestDashboardOmitsReminderBannerWhenPeriodIsNotYetDueSoon is the negative
+// counterpart of TestDashboardRendersReminderBannerWhenPeriodIsDueSoon: a
+// prediction far outside the reminder window must not render the banner,
+// while every other dashboard prediction surface (and its disclaimer) keeps
+// working exactly as before.
+func TestDashboardOmitsReminderBannerWhenPeriodIsNotYetDueSoon(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-reminder-not-due@example.com", "StrongPass1", true)
+
+	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	// A 28-day cycle started 2 days ago predicts the next period in 26
+	// days — far outside the default reminder window.
+	lastPeriodStart := today.AddDate(0, 0, -2)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": lastPeriodStart,
+	}).Error; err != nil {
+		t.Fatalf("update not-due cycle context: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+	if htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-dashboard-reminder-banner")
+	}) != nil {
+		t.Fatal("did not expect a reminder banner when the prediction is far outside the window")
+	}
+}
+
+// TestBuildDashboardViewDataOmitsReminderBannerForNonOwner exercises the
+// view-data builder directly (bypassing HTTP/session plumbing) to pin that a
+// non-owner never receives reminder-banner fields, matching how every other
+// owner-only prediction field on the dashboard behaves.
+func TestBuildDashboardViewDataOmitsReminderBannerForNonOwner(t *testing.T) {
+	handler, database := newDataAccessTestHandler(t)
+	user := createDataAccessTestUser(t, database, "dashboard-reminder-non-owner@example.com")
+	user.Role = "viewer"
+
+	now := time.Date(2026, time.March, 10, 12, 0, 0, 0, time.UTC)
+	data, err := handler.buildDashboardViewData(context.Background(), &user, "en", map[string]string{}, now, time.UTC)
+	if err != nil {
+		t.Fatalf("build dashboard view data: %v", err)
+	}
+
+	if show, ok := data["ShowReminderBanner"].(bool); !ok || show {
+		t.Fatalf("expected ShowReminderBanner=false for a non-owner, got %v (ok=%v)", show, ok)
 	}
 }
 
