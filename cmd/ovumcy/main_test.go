@@ -1918,51 +1918,57 @@ func TestRetryShutdownReturnsOnContextDeadline(t *testing.T) {
 }
 
 // TestRetryShutdownLogsPersistentShutdownError pins the error-return branch:
-// once app.ShutdownWithContext itself fails (its own bounding context expires
-// while a connection is still open), retryShutdown must log the failure and
-// stop retrying rather than spinning on a shutdown that will never succeed.
+// once the shutdown call itself fails (in production, app.ShutdownWithContext
+// returning its context error while a connection is still open), retryShutdown
+// must log the failure and stop retrying rather than spinning on a shutdown
+// that will never succeed.
+//
+// The shutdown func is injected (retryShutdownFunc, the exact loop production's
+// retryShutdown runs) so the error is produced deterministically. The previous
+// version drove a real listener + a raw connection and relied on fasthttp still
+// counting that connection as open at the instant of the stop call to force the
+// error; under a loaded runner the stop could win the race against fasthttp's
+// accept loop, leave open == 0, and return nil — no error, no log — flaking the
+// assertion. A stub shutdown removes that timing dependence entirely while still
+// exercising the real loop: it no-ops twice (the boot-window path) before
+// failing, proving retryShutdown retries, then logs and terminates on the error.
 func TestRetryShutdownLogsPersistentShutdownError(t *testing.T) {
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "shutdown-error.db"))
-	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
-	}
-	app := fiber.New()
-
-	addrCh := make(chan string, 1)
-	app.Hooks().OnListen(func(listenData fiber.ListenData) error {
-		addrCh <- net.JoinHostPort(listenData.Host, listenData.Port)
-		return nil
-	})
-
-	listenDone := make(chan error, 1)
-	go func() { listenDone <- runServer(app, database, "127.0.0.1:0") }()
-
-	address := <-addrCh
-	// A raw connection that never sends a request stays counted as open
-	// (not idle), so fasthttp's own ShutdownWithContext can never drain it
-	// and is guaranteed to time out.
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		t.Fatalf("net.Dial() unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-
 	var buffer bytes.Buffer
 	log.SetOutput(&buffer)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 
-	served := make(chan struct{})
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer shutdownCancel()
-	retryShutdown(app, shutdownCtx, served)
-
-	if !strings.Contains(buffer.String(), "server shutdown failed") {
-		t.Fatalf("expected a logged shutdown failure, got %q", buffer.String())
+	shutdownErr := errors.New("shutdown context deadline exceeded")
+	var calls int
+	shutdown := func(context.Context) error {
+		calls++
+		if calls <= 2 {
+			return nil // boot-window no-op: keep retrying
+		}
+		return shutdownErr
 	}
 
-	_ = conn.Close()
-	_ = app.Shutdown()
-	<-listenDone
+	served := make(chan struct{}) // never closed: only the error may end the loop
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// A tiny interval keeps the two no-op retries instant; the loop still
+		// exits on the injected error, not on the tick or the context.
+		retryShutdownFunc(shutdown, context.Background(), served, time.Millisecond)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("retryShutdown did not terminate after a persistent shutdown error")
+	}
+
+	if calls != 3 {
+		t.Fatalf("shutdown call count = %d, want 3 (two boot-window no-ops then the failure)", calls)
+	}
+	if got := buffer.String(); !strings.Contains(got, "server shutdown failed") ||
+		!strings.Contains(got, shutdownErr.Error()) {
+		t.Fatalf("expected a logged shutdown failure carrying %q, got %q", shutdownErr, got)
+	}
 }
 
 // TestInstallGracefulShutdownBridgesSIGTERM pins the signal-wiring itself:
