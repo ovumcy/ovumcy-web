@@ -110,6 +110,16 @@ func (repo *UserRepository) UpdateDisplayName(ctx context.Context, userID uint, 
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("display_name", displayName).Error
 }
 
+// UpdateUserTimezone persists the owner's IANA timezone name (e.g.
+// "Europe/Belgrade"), scoped strictly to userID. The caller (the settings
+// service) is responsible for passing only a value that has already cleared the
+// request-timezone validator; this method never validates and only writes the
+// single column. It touches no security-posture field, so it deliberately does
+// not bump auth_session_version.
+func (repo *UserRepository) UpdateUserTimezone(ctx context.Context, userID uint, timezone string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("timezone", timezone).Error
+}
+
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"recovery_code_hash":   recoveryHash,

@@ -85,3 +85,45 @@ func TestParseRequestTimezoneRejectsUnsafeInputs(t *testing.T) {
 		t.Fatal("expected oversized timezone to be rejected")
 	}
 }
+
+func TestRequestTimezoneNamePrefersValidHeader(t *testing.T) {
+	name, ok := requestTimezoneName("Europe/Belgrade", "Asia/Tokyo")
+	if !ok {
+		t.Fatal("expected a valid header timezone to resolve")
+	}
+	if name != "Europe/Belgrade" {
+		t.Fatalf("expected header timezone Europe/Belgrade, got %q", name)
+	}
+}
+
+func TestRequestTimezoneNameFallsBackToCookieWhenHeaderInvalid(t *testing.T) {
+	name, ok := requestTimezoneName("Europe/Belgrade\nInjected", "Asia/Tokyo")
+	if !ok {
+		t.Fatal("expected the cookie timezone to resolve when the header is unsafe")
+	}
+	if name != "Asia/Tokyo" {
+		t.Fatalf("expected cookie timezone Asia/Tokyo, got %q", name)
+	}
+}
+
+func TestRequestTimezoneNameAcceptsEncodedCookie(t *testing.T) {
+	name, ok := requestTimezoneName("", "Europe%2FBelgrade")
+	if !ok {
+		t.Fatal("expected an encoded cookie timezone to resolve")
+	}
+	if name != "Europe/Belgrade" {
+		t.Fatalf("expected decoded cookie timezone Europe/Belgrade, got %q", name)
+	}
+}
+
+func TestRequestTimezoneNameRejectsUnsafeInputs(t *testing.T) {
+	if _, ok := requestTimezoneName("Local", "Local"); ok {
+		t.Fatal("expected the Local token to be rejected in header and cookie")
+	}
+	if _, ok := requestTimezoneName("", ""); ok {
+		t.Fatal("expected empty header and cookie to resolve nothing")
+	}
+	if _, ok := requestTimezoneName("bad zone", "also/bad zone"); ok {
+		t.Fatal("expected malformed header and cookie to resolve nothing")
+	}
+}

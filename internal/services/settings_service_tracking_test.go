@@ -105,6 +105,10 @@ func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(context.Context, uin
 	return nil
 }
 
+func (stub *stubSettingsTrackingUserRepo) UpdateUserTimezone(context.Context, uint, string) error {
+	return nil
+}
+
 func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, string, bool) error {
 	return nil
 }

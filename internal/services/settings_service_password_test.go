@@ -182,6 +182,10 @@ func (stub *stubSettingsUserRepo) UpdateDisplayName(context.Context, uint, strin
 	return nil
 }
 
+func (stub *stubSettingsUserRepo) UpdateUserTimezone(context.Context, uint, string) error {
+	return nil
+}
+
 func (stub *stubSettingsUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error {
 	stub.updatePasswordCalled = true
 	stub.updatedUserID = userID

@@ -55,4 +55,10 @@ type User struct {
 	TOTPSecret           string     `gorm:"column:totp_secret"`
 	TOTPEnabled          bool       `gorm:"column:totp_enabled;not null;default:false"`
 	TOTPLastUsedStep     int64      `gorm:"column:totp_last_used_step;not null;default:0"`
+	// Timezone is the owner's last known IANA timezone name (e.g.
+	// "Europe/Belgrade"), persisted from the request so request-free batch
+	// passes (webhook reminders, issue #124) can resolve "today" without a
+	// browser. Nullable/empty when never observed; only validated IANA values
+	// are written (see api.parseRequestTimezone). Not sensitive, not a secret.
+	Timezone string `gorm:"column:timezone"`
 }

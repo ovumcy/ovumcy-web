@@ -18,6 +18,7 @@ var (
 
 type SettingsUserRepository interface {
 	UpdateDisplayName(ctx context.Context, userID uint, displayName string) error
+	UpdateUserTimezone(ctx context.Context, userID uint, timezone string) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
 	UpdateByID(ctx context.Context, userID uint, updates map[string]any) error
@@ -48,6 +49,23 @@ func NewSettingsService(users SettingsUserRepository) *SettingsService {
 
 func (service *SettingsService) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {
 	return service.users.UpdateDisplayName(ctx, userID, displayName)
+}
+
+// PersistTimezone stores the owner's IANA timezone name, scoped to userID, but
+// only when it differs from the value already persisted. currentTimezone is the
+// value loaded on the authenticated user; newTimezone must be an IANA name the
+// caller has already validated with the shared request-timezone parser (the
+// transport layer resolves and validates it before calling this). When the two
+// match, no DB UPDATE is issued so the common per-request path stays read-only.
+// Returns true when a write occurred.
+func (service *SettingsService) PersistTimezone(ctx context.Context, userID uint, currentTimezone string, newTimezone string) (bool, error) {
+	if newTimezone == "" || newTimezone == currentTimezone {
+		return false, nil
+	}
+	if err := service.users.UpdateUserTimezone(ctx, userID, newTimezone); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (service *SettingsService) ValidateCurrentPassword(passwordHash string, rawPassword string) error {

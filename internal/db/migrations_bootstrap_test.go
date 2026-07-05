@@ -455,6 +455,7 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"totp_secret",
 		"totp_enabled",
 		"totp_last_used_step",
+		"timezone",
 	}
 
 	for _, column := range expectedColumns {
