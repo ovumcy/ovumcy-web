@@ -178,6 +178,10 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 		HideCycleFactors     bool   `gorm:"column:hide_cycle_factors"`
 		HideNotesField       bool   `gorm:"column:hide_notes_field"`
 		ShowHistoricalPhases bool   `gorm:"column:show_historical_phases"`
+		WebhookEnabled       bool   `gorm:"column:webhook_enabled"`
+		WebhookNotifyPeriod  bool   `gorm:"column:webhook_notify_period"`
+		WebhookNotifyOvul    bool   `gorm:"column:webhook_notify_ovulation"`
+		ReminderLeadDays     int    `gorm:"column:reminder_lead_days"`
 	}
 	if err := database.
 		Table("users").
@@ -199,6 +203,10 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 			"hide_cycle_factors",
 			"hide_notes_field",
 			"show_historical_phases",
+			"webhook_enabled",
+			"webhook_notify_period",
+			"webhook_notify_ovulation",
+			"reminder_lead_days",
 		).
 		Where("email = ?", "legacy@example.com").
 		First(&migratedUser).Error; err != nil {
@@ -221,6 +229,12 @@ func assertMigratedLegacyUserDefaults(t *testing.T, database *gorm.DB) {
 	assertBoolDefault(t, "hide_cycle_factors", migratedUser.HideCycleFactors, false)
 	assertBoolDefault(t, "hide_notes_field", migratedUser.HideNotesField, false)
 	assertBoolDefault(t, "show_historical_phases", migratedUser.ShowHistoricalPhases, false)
+	// Webhook notification columns (migration 027) backfill NOT NULL defaults
+	// onto the legacy row: delivery off, both per-kind opt-ins on, lead window 3.
+	assertBoolDefault(t, "webhook_enabled", migratedUser.WebhookEnabled, false)
+	assertBoolDefault(t, "webhook_notify_period", migratedUser.WebhookNotifyPeriod, true)
+	assertBoolDefault(t, "webhook_notify_ovulation", migratedUser.WebhookNotifyOvul, true)
+	assertIntDefault(t, "reminder_lead_days", migratedUser.ReminderLeadDays, 3)
 }
 
 func assertStringDefault(t *testing.T, field string, got string, want string) {
@@ -456,6 +470,14 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"totp_enabled",
 		"totp_last_used_step",
 		"timezone",
+		// Webhook notification settings (migration 027, issue #124).
+		"webhook_enabled",
+		"webhook_url",
+		"webhook_notify_period",
+		"webhook_notify_ovulation",
+		"webhook_period_last_sent_cycle_start",
+		"webhook_ovulation_last_sent_cycle_start",
+		"reminder_lead_days",
 	}
 
 	for _, column := range expectedColumns {

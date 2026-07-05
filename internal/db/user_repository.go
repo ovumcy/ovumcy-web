@@ -120,6 +120,61 @@ func (repo *UserRepository) UpdateUserTimezone(ctx context.Context, userID uint,
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("timezone", timezone).Error
 }
 
+// SaveWebhookSettings persists an owner's webhook notification settings
+// (issue #124), scoped strictly to userID. The webhook_url value MUST already
+// be ciphertext — the caller (WebhookSettingsService) encrypts the plaintext
+// endpoint before this method runs, so persistence never writes a plaintext
+// URL. It touches only the notification-settings columns, deliberately NOT
+// bumping auth_session_version: a notification-preference change is not a change
+// to the account's security posture, so no active session should be revoked.
+// It does not clear the *_last_sent_cycle_start watermarks — those are owned by
+// the future notify pass, not by a settings edit.
+func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint, settings models.WebhookSettingsColumns) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"webhook_enabled":          settings.Enabled,
+		"webhook_url":              settings.EncryptedURL,
+		"webhook_notify_period":    settings.NotifyPeriod,
+		"webhook_notify_ovulation": settings.NotifyOvulation,
+		"reminder_lead_days":       settings.ReminderLeadDays,
+	}).Error
+}
+
+// ListAllForNotify returns the per-owner projection a future request-free batch
+// pass needs to decide and send webhook reminders (issue #124). It selects a
+// deliberately narrow column whitelist — cycle-prediction inputs, the webhook
+// settings, the per-kind watermarks, the encrypted URL, and the timezone — and
+// nothing else, so the batch query never over-reads sensitive per-account data.
+// This is a dedicated method, NOT an overload of LoadSettingsByID (which stays
+// the single settings whitelist). webhook_url is returned as CIPHERTEXT;
+// decrypt via WebhookSettingsService.DecryptWebhookURL.
+func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.WebhookNotifyRecord, error) {
+	records := make([]models.WebhookNotifyRecord, 0)
+	if err := repo.database.WithContext(ctx).
+		Model(&models.User{}).
+		Select(
+			"id",
+			"cycle_length",
+			"period_length",
+			"luteal_phase",
+			"irregular_cycle",
+			"unpredictable_cycle",
+			"last_period_start",
+			"timezone",
+			"webhook_enabled",
+			"webhook_url",
+			"webhook_notify_period",
+			"webhook_notify_ovulation",
+			"reminder_lead_days",
+			"webhook_period_last_sent_cycle_start",
+			"webhook_ovulation_last_sent_cycle_start",
+		).
+		Order("id ASC").
+		Find(&records).Error; err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"recovery_code_hash":   recoveryHash,
@@ -309,6 +364,19 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"unpredictable_cycle":             false,
 			"long_period_warning_cycle_start": nil,
 			"last_period_start":               nil,
+			// Webhook notification settings (issue #124) are owner data: a
+			// clear-data wipe disarms delivery, clears the encrypted endpoint,
+			// resets the shared lead window to its default, and clears the
+			// per-kind watermarks so no stale reminder fires against the freshly
+			// emptied account. The per-kind opt-ins return to their column
+			// defaults (both true) to match a fresh account.
+			"webhook_enabled":                         false,
+			"webhook_url":                             "",
+			"webhook_notify_period":                   true,
+			"webhook_notify_ovulation":                true,
+			"webhook_period_last_sent_cycle_start":    nil,
+			"webhook_ovulation_last_sent_cycle_start": nil,
+			"reminder_lead_days":                      models.DefaultReminderLeadDays,
 			// Bump auth_session_version inside the same transaction so a
 			// successful clear-data wipe also revokes every auth cookie that
 			// existed before the wipe. Without this bump a stolen session that
