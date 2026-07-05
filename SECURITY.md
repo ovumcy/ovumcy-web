@@ -252,6 +252,8 @@ Both HKDF label pairs live next to the shared AEAD primitive (`SealedCipher` in 
 
 Plan secret rotation as planned maintenance, communicate it in advance, and consider asking users to disable 2FA before the rotation window.
 
+**If the secret is lost entirely (not rotated, gone with no backup):** this is distinct from a planned rotation because there is no old key to coordinate a migration from. Every `users.totp_secret` ciphertext becomes permanently unrecoverable — HKDF derivation means the encryption key only ever existed as a function of `SECRET_KEY`, and there is no escrow. Every sealed cookie and session invalidates, same as a rotation. Affected users follow the same recovery options above (recovery code + re-enrolment, or operator reset), except a user with `local_auth_enabled=false` and no retained recovery code has no self-service option and requires an operator-run `ovumcy reset-password <email>`. Total secret loss should be treated as a data-loss incident, not routine key rotation.
+
 ## Threat Model
 
 **In scope** — Ovumcy actively defends against:
