@@ -126,6 +126,17 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 	}).Error
 }
 
+// UpdatePasswordHashOnly rewrites only the password_hash column without bumping
+// auth_session_version and without touching must_change_password or
+// local_auth_enabled. It exists for the transparent bcrypt-cost upgrade the
+// auth service performs after a successful login (mirrors
+// UpdateTOTPSecretCiphertext for the TOTP secret): the account's security
+// posture is unchanged — same password, stronger hash — so no active session
+// should be revoked by what is an internal storage upgrade.
+func (repo *UserRepository) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("password_hash", passwordHash).Error
+}
+
 func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"password_hash":        passwordHash,

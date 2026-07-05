@@ -32,12 +32,15 @@ var (
 )
 
 // recoveryCodeTimingEqualizationHash and credentialsTimingEqualizationHash are
-// fixed bcrypt-cost-10 placeholder hashes used by the equalize* helpers below
-// to spend bcrypt compute time on the early-return paths in recovery and
-// login. They are never compared against a real credential — the result of
+// fixed placeholder hashes used by the equalize* helpers below to spend bcrypt
+// compute time on the early-return paths in recovery and login. They are never
+// compared against a real credential — the result of
 // bcrypt.CompareHashAndPassword is discarded — and never authenticate anyone.
-const recoveryCodeTimingEqualizationHash = "$2a$10$ReZgUuXu2GXtC.RZ/q2QyesBFX182a3ycbr78sbtgURmuOyc3ygtG" // #nosec G101 -- fixed placeholder bcrypt hash, see comment above; never authenticates a real user
-const credentialsTimingEqualizationHash = "$2a$10$h7pMPVpw/fZjbsXnbtpfD.UzmSCNk0FmbmMkP7wKDlO7IqhsBVX1m"  // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
+// Their embedded cost MUST stay equal to passwordHashCost (test-pinned): a
+// cheaper placeholder would make the equalized paths measurably faster than a
+// real comparison and reintroduce the account-enumeration timing oracle.
+const recoveryCodeTimingEqualizationHash = "$2a$12$KeFGg3nMPoiaOcsZpE9qUevfmpFV3VlY5cAQ.8FazuuHUIgnQrBwS" // #nosec G101 -- fixed placeholder bcrypt hash, see comment above; never authenticates a real user
+const credentialsTimingEqualizationHash = "$2a$12$pI5aDx1kby9ZEk9.2NzhBeq77y41xgUaCrP/vyyRCgdGnvaV.UxZm"  // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
 
 type AuthUserRepository interface {
 	ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error)
@@ -50,6 +53,11 @@ type AuthUserRepository interface {
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error
+	// UpdatePasswordHashOnly rewrites password_hash WITHOUT bumping
+	// auth_session_version — a transparent storage-format upgrade (bcrypt cost
+	// rise), not a credential change. Used only by the opportunistic rehash on
+	// successful login; the caller has already proven the password.
+	UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error
 	BumpAuthSessionVersion(ctx context.Context, userID uint) error
 }
 
@@ -57,6 +65,15 @@ const (
 	DefaultLogoutAttemptsLimit  = 20
 	DefaultLogoutAttemptsWindow = 15 * time.Minute
 )
+
+// passwordHashCost is the bcrypt cost used for every password and recovery-code
+// hash written by this package. It is deliberately higher than
+// bcrypt.DefaultCost (10) to widen the offline-guessing margin if the database
+// and SECRET_KEY ever leak together. Successful logins opportunistically
+// rehash any stored password below this cost (see AuthenticateCredentials), so
+// the effective floor rises without forcing a reset. Raising this value is a
+// per-hash CPU trade-off: bcrypt work doubles per +1.
+const passwordHashCost = 12
 
 type AuthService struct {
 	users               AuthUserRepository
@@ -183,7 +200,7 @@ func (service *AuthService) ForceResetPasswordByEmail(ctx context.Context, email
 		return fmt.Errorf("%w: %v", ErrAuthUserLookupFailed, err)
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordHash, err)
 	}
@@ -196,7 +213,7 @@ func (service *AuthService) ForceResetPasswordByEmail(ctx context.Context, email
 }
 
 func (service *AuthService) BuildOwnerUserWithRecovery(email string, rawPassword string, createdAt time.Time) (models.User, string, error) {
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(rawPassword), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(rawPassword), passwordHashCost)
 	if err != nil {
 		return models.User{}, "", err
 	}
@@ -258,7 +275,37 @@ func (service *AuthService) AuthenticateCredentials(ctx context.Context, email s
 	if err := ValidateSupportedWebUser(&user); err != nil {
 		return models.User{}, err
 	}
+	service.rehashPasswordIfStale(ctx, &user, password)
 	return user, nil
+}
+
+// rehashPasswordIfStale opportunistically re-hashes a valid password whose
+// stored bcrypt cost is below passwordHashCost, so the effective cost floor
+// rises for pre-existing accounts without forcing a reset. It runs only after
+// a successful CompareHashAndPassword (the plaintext is proven), rewrites the
+// hash in place via UpdatePasswordHashOnly (no auth_session_version bump — the
+// credential itself is unchanged), and mutates user.PasswordHash so a caller
+// that persists the struct sees the upgraded hash.
+//
+// Best-effort by design: a costing/read error or a failed write is swallowed
+// so it can never turn a valid login into a failure. On the next login the
+// upgrade is simply retried.
+func (service *AuthService) rehashPasswordIfStale(ctx context.Context, user *models.User, password string) {
+	if user == nil || user.ID == 0 {
+		return
+	}
+	cost, err := bcrypt.Cost([]byte(user.PasswordHash))
+	if err != nil || cost >= passwordHashCost {
+		return
+	}
+	upgraded, err := bcrypt.GenerateFromPassword([]byte(password), passwordHashCost)
+	if err != nil {
+		return
+	}
+	if err := service.users.UpdatePasswordHashOnly(ctx, user.ID, string(upgraded)); err != nil {
+		return
+	}
+	user.PasswordHash = string(upgraded)
 }
 
 func (service *AuthService) FindUserByEmailAndRecoveryCode(ctx context.Context, email string, code string) (*models.User, error) {
@@ -406,7 +453,7 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCode(ctx context.Conte
 		return "", ErrAuthUserRequired
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
 	if err != nil {
 		return "", err
 	}
@@ -441,7 +488,7 @@ func (service *AuthService) ResetPasswordAndRotateRecoveryCodeCAS(ctx context.Co
 		return "", ErrAuthUserRequired // codecov:ignore -- defensive; callers always pass a resolved user
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
 	if err != nil {
 		return "", err // codecov:ignore -- bcrypt only errors on an out-of-range cost
 	}

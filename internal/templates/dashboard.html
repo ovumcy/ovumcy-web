@@ -1,5 +1,6 @@
 {{define "content"}}
 <section class="space-y-6">
+  <h1 class="sr-only">{{t .Messages "nav.dashboard"}}</h1>
   <section class="space-y-3" data-dashboard-shell data-phase="{{.Stats.CurrentPhase}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
     {{if .CycleHero.Visible}}
     <section class="journal-card journal-hero dashboard-cycle-hero reveal" data-dashboard-cycle-hero{{if .CycleHero.Approximate}} data-cycle-hero-approximate="true"{{end}}>
@@ -128,7 +129,7 @@
     {{end}}
 
     {{if .IsOwner}}
-    <p class="journal-muted text-xs" data-dashboard-prediction-disclaimer>{{t .Messages "dashboard.prediction_disclaimer"}}</p>
+    <p class="journal-muted text-sm" data-dashboard-prediction-disclaimer>{{t .Messages "dashboard.prediction_disclaimer"}}</p>
     {{end}}
 
     {{if .IsOwner}}
