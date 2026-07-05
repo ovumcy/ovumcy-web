@@ -130,7 +130,7 @@ func GenerateRecoveryCodeHash() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(code), passwordHashCost)
 	if err != nil {
 		return "", "", err
 	}

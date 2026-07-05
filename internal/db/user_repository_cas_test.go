@@ -116,3 +116,61 @@ func TestOpenSQLiteConnectionPoolLimits(t *testing.T) {
 		t.Fatalf("expected MaxOpenConnections 4, got %d", stats.MaxOpenConnections)
 	}
 }
+
+// TestUpdatePasswordHashOnlyPreservesSessionVersion asserts the transparent
+// bcrypt-cost upgrade rewrites password_hash without bumping
+// auth_session_version and without disturbing the other credential columns —
+// the account's security posture is unchanged, so no active session may be
+// revoked by an internal storage upgrade.
+func TestUpdatePasswordHashOnlyPreservesSessionVersion(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenSQLite(filepath.Join(dir, "rehash_test.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := database.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	repo := NewUserRepository(database)
+
+	user := &models.User{
+		Email:              "rehash@example.com",
+		PasswordHash:       "legacy-hash",
+		RecoveryCodeHash:   "recovery-hash",
+		LocalAuthEnabled:   true,
+		MustChangePassword: false,
+		AuthSessionVersion: 4,
+		Role:               models.RoleOwner,
+		CycleLength:        models.DefaultCycleLength,
+		PeriodLength:       models.DefaultPeriodLength,
+		AutoPeriodFill:     true,
+		CreatedAt:          time.Now().UTC(),
+	}
+	if err := repo.Create(context.Background(), user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	if err := repo.UpdatePasswordHashOnly(context.Background(), user.ID, "upgraded-hash"); err != nil {
+		t.Fatalf("UpdatePasswordHashOnly: %v", err)
+	}
+
+	got, err := repo.FindByID(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("find after rehash: %v", err)
+	}
+	if got.PasswordHash != "upgraded-hash" {
+		t.Fatalf("expected password_hash 'upgraded-hash', got %q", got.PasswordHash)
+	}
+	if got.AuthSessionVersion != 4 {
+		t.Fatalf("expected auth_session_version to stay 4 (no revoke), got %d", got.AuthSessionVersion)
+	}
+	if got.RecoveryCodeHash != "recovery-hash" {
+		t.Fatalf("expected recovery_code_hash untouched, got %q", got.RecoveryCodeHash)
+	}
+	if !got.LocalAuthEnabled {
+		t.Fatal("expected local_auth_enabled untouched (true)")
+	}
+}
