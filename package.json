@@ -2,6 +2,9 @@
   "name": "ovumcy-assets",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build:css": "node ./scripts/build-css.mjs",
     "build:js": "node ./scripts/build-js.mjs",
