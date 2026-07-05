@@ -525,3 +525,31 @@ func TestDashboardcycleCovNeedsOvulationDataRequiresNonZeroLastPeriodStart(t *te
 		t.Fatal("expected DisplayOvulationNeedsData=false when LastPeriodStart is zero")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Lines 189-194 — DashboardUpcomingPredictions: a cycle length too short to
+// place ovulation (window not calculable) must clear the ovulation date and
+// mark OvulationImpossible while still projecting the next period start.
+// ---------------------------------------------------------------------------
+
+func TestDashboardcycleCovUpcomingPredictionsMarksOvulationImpossibleForShortCycle(t *testing.T) {
+	stats := CycleStats{
+		LastPeriodStart: mustParseDashboardDay(t, "2026-03-01"),
+	}
+	// cycleLength 14 < minLutealPhaseDays+minOvulationCycleDay, so
+	// PredictCycleWindow reports Calculable=false.
+	got := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-03-10"), 14)
+
+	if !got.OvulationImpossible {
+		t.Fatal("expected OvulationImpossible=true for a non-calculable short cycle")
+	}
+	if got.OvulationExact {
+		t.Fatal("expected OvulationExact=false when ovulation is impossible")
+	}
+	if !got.OvulationDate.IsZero() {
+		t.Fatalf("expected zero OvulationDate when ovulation is impossible, got %v", got.OvulationDate)
+	}
+	if got.NextPeriodStart.IsZero() {
+		t.Fatal("expected a projected NextPeriodStart even when ovulation is impossible")
+	}
+}

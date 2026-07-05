@@ -177,6 +177,8 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 
 	cycleStart, _, projectionOK := ProjectCycleStart(stats.LastPeriodStart, cycleLength, today)
 	if !projectionOK {
+		// codecov:ignore -- defensive: ProjectCycleStart only reports !ok for a zero
+		// LastPeriodStart or non-positive cycleLength, both already returned above.
 		return prediction
 	}
 

@@ -147,6 +147,8 @@ func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int)
 	// ovulationDay is one-based relative to periodStart (cycle day 1).
 	ovulationDate := dateOnly(periodStart.AddDate(0, 0, ovulationDay-1))
 	if !ovulationDate.Before(nextPeriodStart) {
+		// codecov:ignore -- defensive invariant: CalcOvulationDay caps ovulationDay at
+		// cycleLen-minLutealPhaseDays, so ovulationDate is always strictly before nextPeriodStart.
 		return CycleWindowPrediction{}
 	}
 
