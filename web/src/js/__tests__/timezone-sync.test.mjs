@@ -38,6 +38,10 @@ function captureFetch(window, { ok = true } = {}) {
   return calls;
 }
 
+// pageWithPersistedTz builds a page fixture. `persisted === null` omits the
+// data-persisted-timezone attribute entirely (the auth/anonymous case — the
+// base layout renders it only for a signed-in owner); a string value renders it
+// (an empty string models a brand-new owner with no stored zone yet).
 function pageWithPersistedTz(persisted, { csrf = "csrf-token-abc-123" } = {}) {
   const csrfMeta = csrf === null ? "" : `<meta name="csrf-token" content="${csrf}">`;
   const persistedAttr = persisted === null ? "" : ` data-persisted-timezone="${persisted}"`;
@@ -96,6 +100,44 @@ test("does not post on an anonymous page (no csrf token)", async () => {
     dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
     await flushMicrotasks();
     assert.equal(calls.length, 0, "without a csrf token there is no authenticated owner to sync for");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// Regression for the register-flow leak: auth pages (login/register/forgot)
+// DO render the csrf-token meta but omit data-persisted-timezone (no
+// CurrentUser). The sync must not fire there — otherwise its POST to
+// /api/v1/users/current/timezone is miscounted by the register e2e guard that
+// asserts zero requests to /api/v1/users.
+test("does not post on an auth page (csrf present but no persisted-timezone attribute)", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz(null),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 0, "a page without data-persisted-timezone must never sync, even with a csrf token");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// A brand-new owner has no stored zone yet: the attribute is present but empty,
+// which differs from the detected zone, so the first page view must sync.
+test("posts for a new owner whose persisted timezone is empty", async () => {
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: pageWithPersistedTz(""),
+    beforeRun: stubTimezone("Europe/Belgrade"),
+  });
+  const calls = captureFetch(dom.window);
+  try {
+    dom.window.document.dispatchEvent(new dom.window.Event("DOMContentLoaded", { bubbles: true }));
+    await flushMicrotasks();
+    assert.equal(calls.length, 1, "a new owner (empty persisted zone) must sync the detected zone");
+    assert.match(calls[0].options.body, /timezone=Europe%2FBelgrade/);
   } finally {
     dom.window.close();
   }

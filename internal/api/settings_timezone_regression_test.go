@@ -144,3 +144,73 @@ func TestSettingsTimezoneEndpointRejectsUnauthenticated(t *testing.T) {
 		t.Fatalf("expected no timezone persisted for unauthenticated caller, got %q", got)
 	}
 }
+
+// timezoneJSONRequestWithCSRF posts a raw JSON body carrying the auth + csrf
+// cookies and the CSRF token in the X-CSRF-Token header (a JSON body has no
+// csrf_token form field, so the header is the token source the extractor uses).
+func timezoneJSONRequestWithCSRF(t *testing.T, ctx settingsSecurityTestContext, body string, headers map[string]string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/timezone", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("timezone json request failed: %v", err)
+	}
+	return response
+}
+
+// TestSettingsTimezoneEndpointAcceptsJSONBody covers the JSON body-binding path
+// (Content-Type: application/json) end to end.
+func TestSettingsTimezoneEndpointAcceptsJSONBody(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "timezone-endpoint-json@example.com")
+
+	response := timezoneJSONRequestWithCSRF(t, ctx, `{"timezone":"Europe/Belgrade"}`, map[string]string{
+		"Accept": "application/json",
+	})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusOK)
+	if got := reloadUserTimezoneForTest(t, ctx, ctx.user.ID); got != "Europe/Belgrade" {
+		t.Fatalf("expected JSON-body timezone Europe/Belgrade to persist, got %q", got)
+	}
+}
+
+// TestSettingsTimezoneEndpointRejectsMalformedJSON covers the body-parse error
+// branch: a Content-Type: application/json request with an unparseable body is
+// rejected with 400 and persists nothing.
+func TestSettingsTimezoneEndpointRejectsMalformedJSON(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "timezone-endpoint-badjson@example.com")
+
+	response := timezoneJSONRequestWithCSRF(t, ctx, `{"timezone":`, map[string]string{
+		"Accept": "application/json",
+	})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusBadRequest)
+	if got := reloadUserTimezoneForTest(t, ctx, ctx.user.ID); got != "" {
+		t.Fatalf("expected malformed JSON to persist nothing, got %q", got)
+	}
+}
+
+// TestSettingsTimezoneEndpointHTMXReturnsNoContent covers the HTMX response
+// branch: an HX-Request save returns 204 No Content and still persists.
+func TestSettingsTimezoneEndpointHTMXReturnsNoContent(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "timezone-endpoint-htmx@example.com")
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/timezone", url.Values{
+		"timezone": {"America/Toronto"},
+	}, map[string]string{"HX-Request": "true"})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusNoContent)
+	if got := reloadUserTimezoneForTest(t, ctx, ctx.user.ID); got != "America/Toronto" {
+		t.Fatalf("expected HTMX timezone save to persist America/Toronto, got %q", got)
+	}
+}

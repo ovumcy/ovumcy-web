@@ -9,6 +9,19 @@
     return String(meta.getAttribute("content") || "").trim();
   }
 
+  // isAuthenticatedOwnerPage reports whether the current page belongs to a
+  // signed-in owner. The base layout renders the data-persisted-timezone
+  // attribute ONLY when a CurrentUser is present, so its mere presence is the
+  // authenticated-owner marker. Auth/anonymous pages (login, register,
+  // forgot-password) omit it entirely — even though they still render the
+  // csrf-token meta — so the sync must never fire there. This also keeps the
+  // sync POST off /api/v1/users/current/timezone on the register page, where an
+  // e2e guard asserts zero requests to /api/v1/users.
+  function isAuthenticatedOwnerPage() {
+    var body = document.body;
+    return !!(body && typeof body.hasAttribute === "function" && body.hasAttribute("data-persisted-timezone"));
+  }
+
   function persistedTimezone() {
     var body = document.body;
     if (!body || typeof body.getAttribute !== "function") {
@@ -46,13 +59,20 @@
       return;
     }
 
+    // Only ever run for a signed-in owner on a normal app page. On auth pages
+    // (login/register/forgot-password) there is no owner to sync for, and firing
+    // a POST to /api/v1/users/current/timezone there would both 401 and be
+    // miscounted by the register-flow e2e guard (it watches /api/v1/users).
+    if (!isAuthenticatedOwnerPage()) {
+      return;
+    }
+
     var detected = currentClientTimezone();
     if (!detected || !isSafeClientTimezone(detected)) {
       return;
     }
 
-    // No csrf token means either an anonymous page or a page that never rendered
-    // the meta — in both cases there is no authenticated owner to sync for.
+    // Defense in depth: the csrf token is required to POST anyway.
     var token = csrfTokenFromMeta();
     if (!token) {
       return;

@@ -45,6 +45,7 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 	app.Delete("/api/v1/symptoms/:id", handler.DeleteSymptom)
 	app.Post("/api/v1/symptoms/:id/restore", handler.RestoreSymptom)
 	app.Patch("/api/v1/users/current/tracking", handler.UpdateTrackingSettings)
+	app.Post("/api/v1/users/current/timezone", handler.UpdateTimezone)
 	app.Patch("/api/v1/users/current/cycle", handler.UpdateCycleSettings)
 	app.Post("/api/v1/onboarding/complete", handler.OnboardingComplete)
 	app.Get("/onboarding", handler.ShowOnboarding)
@@ -106,6 +107,7 @@ func TestMutationHandlersRejectMissingUserAtHandlerLevel(t *testing.T) {
 		{http.MethodDelete, "/api/v1/symptoms/1"},
 		{http.MethodPost, "/api/v1/symptoms/1/restore"},
 		{http.MethodPatch, "/api/v1/users/current/tracking"},
+		{http.MethodPost, "/api/v1/users/current/timezone"},
 		{http.MethodPatch, "/api/v1/users/current/cycle"},
 	}
 	for _, testCase := range cases {
@@ -137,6 +139,8 @@ func TestMutationHandlersMapInvalidInputThroughFailMutation(t *testing.T) {
 		{"symptom update empty name", http.MethodPatch, "/api/v1/symptoms/1", url.Values{"name": {"   "}}.Encode(), form},
 		{"symptom restore invalid id", http.MethodPost, "/api/v1/symptoms/garbage/restore", "", ""},
 		{"tracking malformed json", http.MethodPatch, "/api/v1/users/current/tracking", "{", "application/json"},
+		{"timezone malformed json", http.MethodPost, "/api/v1/users/current/timezone", "{", "application/json"},
+		{"timezone unsafe value", http.MethodPost, "/api/v1/users/current/timezone", url.Values{"timezone": {"Local"}}.Encode(), form},
 		{"cycle length out of range", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"cycle_length": {"999"}, "period_length": {"5"}}.Encode(), form},
 		{"onboarding complete steps required", http.MethodPost, "/api/v1/onboarding/complete", "", ""},
 	}
@@ -177,6 +181,10 @@ func TestMutationHandlersMapServiceFailuresThroughFailMutation(t *testing.T) {
 		{"cycle start mark", http.MethodPost, "/api/days/2026-02-17/cycle-start", "", ""},
 		{"cycle settings save", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"cycle_length": {"28"}, "period_length": {"5"}}.Encode(), form},
 		{"tracking settings save", http.MethodPatch, "/api/v1/users/current/tracking", url.Values{"track_bbt": {"true"}}.Encode(), form},
+		// A valid IANA zone that differs from the stub user's empty Timezone
+		// reaches PersistTimezone -> the repo UPDATE, which fails with the DB
+		// closed (settingsTimezoneUpdateErrorSpec tail).
+		{"timezone settings save", http.MethodPost, "/api/v1/users/current/timezone", url.Values{"timezone": {"Europe/Belgrade"}}.Encode(), form},
 		{"day list fetch", http.MethodGet, "/api/days?from=2026-01-01&to=2026-02-01", "", ""},
 		{"day fetch", http.MethodGet, "/api/days/2026-02-17", "", ""},
 		{"symptom list fetch", http.MethodGet, "/api/v1/symptoms", "", ""},
