@@ -32,6 +32,7 @@
     initToastAPI();
     initHTMXHooks();
     initCSPFriendlyComponents();
+    syncClientTimezone();
 
     document.body.addEventListener("htmx:afterSwap", function () {
       initCSPFriendlyComponents();

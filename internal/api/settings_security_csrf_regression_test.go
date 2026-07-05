@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
 func TestSettingsChangePasswordMissingCSRFRejectedByMiddleware(t *testing.T) {
@@ -40,6 +42,27 @@ func TestSettingsRegenerateRecoveryCodeMissingCSRFRejectedByMiddleware(t *testin
 	defer func() { _ = response.Body.Close() }()
 
 	assertStatusCode(t, response, http.StatusForbidden)
+}
+
+func TestSettingsTimezoneMissingCSRFRejectedByMiddleware(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-timezone-csrf@example.com")
+
+	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/timezone", url.Values{
+		"timezone": {"Europe/Belgrade"},
+	}, map[string]string{
+		"Accept": "application/json",
+	})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusForbidden)
+
+	var reloaded models.User
+	if err := ctx.database.First(&reloaded, ctx.user.ID).Error; err != nil {
+		t.Fatalf("reload user after csrf-rejected timezone post: %v", err)
+	}
+	if reloaded.Timezone != "" {
+		t.Fatalf("expected no timezone persisted when CSRF rejects the request, got %q", reloaded.Timezone)
+	}
 }
 
 func TestSettingsClearDataMissingCSRFRejectedByMiddleware(t *testing.T) {

@@ -9,6 +9,7 @@ const appBundleSources = [
   "./web/src/js/app/22b-clear-data-confirm.js",
   "./web/src/js/app/23-cycle-start-confirm.js",
   "./web/src/js/app/24-pwa-install.js",
+  "./web/src/js/app/25-timezone-sync.js",
   "./web/src/js/app/30-feedback-htmx.js",
   "./web/src/js/app/40-shared-utils.js",
   "./web/src/js/app/50-window-factories.js",

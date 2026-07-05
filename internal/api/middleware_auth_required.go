@@ -26,7 +26,6 @@ func (handler *Handler) AuthRequired(c fiber.Ctx) error {
 	}
 
 	c.Locals(contextUserKey, user)
-	handler.persistRequestTimezone(c, user)
 	if services.RequiresOnboarding(user) && services.ShouldEnforceOnboardingAccess(c.Path()) {
 		if strings.HasPrefix(c.Path(), "/api/") || acceptsJSON(c) {
 			return respondGlobalMappedError(c, onboardingRequiredErrorSpec())

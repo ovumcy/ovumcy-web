@@ -22,24 +22,6 @@ func resolveRequestLocation(headerValue string, cookieValue string, fallback *ti
 	return fallback, ""
 }
 
-// requestTimezoneName returns the canonical IANA timezone name the client
-// supplied via the X-Ovumcy-Timezone header or, failing that, the ovumcy_tz
-// cookie, using the same header→cookie precedence and the same validator
-// (parseRequestTimezone) as resolveRequestLocation. It reports ok=false when
-// neither carries a value that clears the validator (unsafe/malformed input or
-// the "Local" token), so the server fallback zone is never mistaken for a
-// client-supplied timezone worth persisting. This is the safe-value gate for
-// the per-user timezone write path — an unvalidated value can never reach it.
-func requestTimezoneName(headerValue string, cookieValue string) (string, bool) {
-	if _, canonical, ok := parseRequestTimezone(headerValue); ok {
-		return canonical, true
-	}
-	if _, canonical, ok := parseRequestTimezone(cookieValue); ok {
-		return canonical, true
-	}
-	return "", false
-}
-
 func parseRequestTimezone(raw string) (*time.Location, string, bool) {
 	value := strings.TrimSpace(raw)
 	if value == "" || len(value) > maxRequestTimezoneLength {

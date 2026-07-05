@@ -29,6 +29,7 @@
   data-request-failed="{{t .Messages "common.error.request_failed"}}"
   data-period-tip-message="{{t .Messages "dashboard.period_tip_once"}}"
   data-period-tip-pending="{{if and .CurrentUser (not .CurrentUser.ShownPeriodTip)}}true{{else}}false{{end}}"
+  data-persisted-timezone="{{if .CurrentUser}}{{.CurrentUser.Timezone}}{{end}}"
   data-theme-label-dark="{{t .Messages "theme.switch_to_dark"}}"
   data-theme-label-light="{{t .Messages "theme.switch_to_light"}}"
   data-theme-name-dark="{{t .Messages "theme.name.dark"}}"

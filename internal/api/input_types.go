@@ -77,3 +77,7 @@ type trackingSettingsInput struct {
 type passwordProtectedSettingsInput struct {
 	Password string `json:"password" form:"password"`
 }
+
+type timezoneSettingsInput struct {
+	Timezone string `json:"timezone" form:"timezone"`
+}

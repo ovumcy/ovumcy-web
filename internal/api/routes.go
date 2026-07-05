@@ -19,6 +19,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Patch("/profile", handler.OwnerOnly, handler.UpdateProfile)
 	usersCurrent.Patch("/interface", handler.OwnerOnly, handler.UpdateInterfaceSettings)
 	usersCurrent.Patch("/tracking", handler.OwnerOnly, handler.UpdateTrackingSettings)
+	usersCurrent.Post("/timezone", handler.OwnerOnly, handler.UpdateTimezone)
 	usersCurrent.Patch("/cycle", handler.OwnerOnly, handler.UpdateCycleSettings)
 	usersCurrent.Put("/password", handler.OwnerOnly, handler.ChangePassword)
 	usersCurrent.Post("/password/step-up", handler.OwnerOnly, handler.StartLocalPasswordSetupReauth)
