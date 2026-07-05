@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,6 +74,53 @@ func TestRunResetPasswordCommandReturnsPromptError(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "read new password") {
 		t.Fatalf("expected prompt error from runResetPasswordCommand, got %v", err)
+	}
+}
+
+// TestReadPasswordFromTerminalRejectsNonInteractiveStdin locks the two
+// terminal-echo statements in readPasswordFromTerminal: the prompt is
+// written to stdout before the read attempt, and the trailing newline is
+// written unconditionally, even when the underlying read fails because
+// stdin is not an interactive terminal (as here, a regular temp file).
+// Not run with t.Parallel(): it swaps the package-global os.Stdin/os.Stdout.
+func TestReadPasswordFromTerminalRejectsNonInteractiveStdin(t *testing.T) {
+	originalStdin := os.Stdin
+	originalStdout := os.Stdout
+	t.Cleanup(func() {
+		os.Stdin = originalStdin
+		os.Stdout = originalStdout
+	})
+
+	stdinFile, err := os.CreateTemp(t.TempDir(), "stdin")
+	if err != nil {
+		t.Fatalf("create temp stdin file: %v", err)
+	}
+	defer func() { _ = stdinFile.Close() }()
+	os.Stdin = stdinFile
+
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+
+	os.Stdout = stdoutWriter
+	password, promptErr := readPasswordFromTerminal("Enter test password: ")
+	_ = stdoutWriter.Close()
+	os.Stdout = originalStdout
+
+	captured, err := io.ReadAll(stdoutReader)
+	if err != nil {
+		t.Fatalf("read captured stdout: %v", err)
+	}
+
+	if promptErr == nil {
+		t.Fatal("expected error reading password from non-interactive stdin")
+	}
+	if password != nil {
+		t.Fatalf("expected nil password on error, got %q", password)
+	}
+	if !strings.Contains(string(captured), "Enter test password: ") {
+		t.Fatalf("expected prompt to be echoed to stdout, got %q", captured)
 	}
 }
 
