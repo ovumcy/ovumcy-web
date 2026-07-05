@@ -53,10 +53,13 @@ jobs:
           queries: security-extended
           config: |
             paths-ignore:
-              - web/src/js/app/00-core.js
-              - web/src/js/app/90-bootstrap.js
-              - web/src/js/settings-export/00-core.js
-              - web/src/js/settings-export/30-export-and-bootstrap.js
+              # The app/ and settings-export/ sources are non-standalone IIFE
+              # fragments (wrapper open/close and shared closure split across
+              # files), so they fail standalone extraction. Their logic is
+              # analyzed through the concatenated bundles in web/static/js,
+              # which build-js.mjs keeps in sync (CI stale-bundle guard).
+              - web/src/js/app
+              - web/src/js/settings-export
 
       - name: Build Go packages
         if: matrix.language == 'go'
