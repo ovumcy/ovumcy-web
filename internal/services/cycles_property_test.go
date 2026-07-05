@@ -82,7 +82,8 @@ func TestPredictCycleWindowProperty(t *testing.T) {
 		cycleLen := rapid.IntRange(1, 120).Draw(t, "cycleLen")
 		luteal := rapid.IntRange(-50, 120).Draw(t, "luteal")
 
-		ovulation, fertStart, fertEnd, _, calculable := PredictCycleWindow(periodStart, cycleLen, luteal)
+		window := PredictCycleWindow(periodStart, cycleLen, luteal)
+		ovulation, fertStart, fertEnd, calculable := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.Calculable
 		if !calculable {
 			return
 		}

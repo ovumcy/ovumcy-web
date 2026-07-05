@@ -152,39 +152,52 @@ func DashboardOvulationRange(nextPeriodRangeStart time.Time, nextPeriodRangeEnd 
 	return rangeStart, rangeEnd, true
 }
 
-func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today time.Time, cycleLength int) (time.Time, time.Time, bool, bool) {
-	nextPeriodStart := stats.NextPeriodStart
-	ovulationDate := stats.OvulationDate
-	ovulationExact := stats.OvulationExact
-	ovulationImpossible := stats.OvulationImpossible
+// DashboardUpcomingPrediction is the named-field result of
+// DashboardUpcomingPredictions: the next-period / ovulation pair the dashboard
+// displays. OvulationImpossible mirrors CycleStats.OvulationImpossible — true
+// when no ovulation date can be predicted for the projected cycle.
+type DashboardUpcomingPrediction struct {
+	NextPeriodStart     time.Time
+	OvulationDate       time.Time
+	OvulationExact      bool
+	OvulationImpossible bool
+}
+
+func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today time.Time, cycleLength int) DashboardUpcomingPrediction {
+	prediction := DashboardUpcomingPrediction{
+		NextPeriodStart:     stats.NextPeriodStart,
+		OvulationDate:       stats.OvulationDate,
+		OvulationExact:      stats.OvulationExact,
+		OvulationImpossible: stats.OvulationImpossible,
+	}
 
 	if stats.LastPeriodStart.IsZero() || cycleLength <= 0 {
-		return nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible
+		return prediction
 	}
 
 	cycleStart, _, projectionOK := ProjectCycleStart(stats.LastPeriodStart, cycleLength, today)
 	if !projectionOK {
-		return nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible
+		// codecov:ignore -- defensive: ProjectCycleStart only reports !ok for a zero
+		// LastPeriodStart or non-positive cycleLength, both already returned above.
+		return prediction
 	}
 
-	nextPeriodStart = CalendarDay(cycleStart.AddDate(0, 0, cycleLength), today.Location())
-	ovulationDate, _, _, ovulationExact, ovulationCalculable := PredictCycleWindow(
-		cycleStart,
-		cycleLength,
-		stats.LutealPhase,
-	)
-	if ovulationCalculable && ovulationDate.Before(today) {
-		cycleStart = ShiftCycleStartToFutureOvulation(cycleStart, ovulationDate, cycleLength, today)
-		ovulationDate, _, _, ovulationExact, ovulationCalculable = PredictCycleWindow(
-			cycleStart,
-			cycleLength,
-			stats.LutealPhase,
-		)
+	prediction.NextPeriodStart = CalendarDay(cycleStart.AddDate(0, 0, cycleLength), today.Location())
+	window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
+	if window.Calculable && window.OvulationDate.Before(today) {
+		cycleStart = ShiftCycleStartToFutureOvulation(cycleStart, window.OvulationDate, cycleLength, today)
+		window = PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
 	}
-	if !ovulationCalculable {
-		return nextPeriodStart, time.Time{}, false, true
+	if !window.Calculable {
+		prediction.OvulationDate = time.Time{}
+		prediction.OvulationExact = false
+		prediction.OvulationImpossible = true
+		return prediction
 	}
-	return nextPeriodStart, ovulationDate, ovulationExact, false
+	prediction.OvulationDate = window.OvulationDate
+	prediction.OvulationExact = window.OvulationExact
+	prediction.OvulationImpossible = false
+	return prediction
 }
 
 func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.Time, location *time.Location) DashboardCycleContext {
@@ -235,7 +248,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 }
 
 func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today time.Time, location *time.Location, cycleDayReference int) dashboardPredictionDisplay {
-	nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible := DashboardUpcomingPredictions(
+	prediction := DashboardUpcomingPredictions(
 		stats,
 		user,
 		today,
@@ -243,14 +256,14 @@ func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today 
 	)
 
 	display := dashboardPredictionDisplay{
-		nextPeriodStart:     nextPeriodStart,
-		nextPeriodEnd:       dashboardNextPeriodEnd(nextPeriodStart, stats, location),
+		nextPeriodStart:     prediction.NextPeriodStart,
+		nextPeriodEnd:       dashboardNextPeriodEnd(prediction.NextPeriodStart, stats, location),
 		nextPeriodPrompt:    stats.LastPeriodStart.IsZero(),
-		nextPeriodNeedsData: dashboardNeedsNextPeriodData(user, stats, nextPeriodStart),
-		ovulationDate:       ovulationDate,
+		nextPeriodNeedsData: dashboardNeedsNextPeriodData(user, stats, prediction.NextPeriodStart),
+		ovulationDate:       prediction.OvulationDate,
 		ovulationNeedsData:  dashboardNeedsOvulationData(user, stats),
-		ovulationExact:      ovulationExact,
-		ovulationImpossible: ovulationImpossible,
+		ovulationExact:      prediction.OvulationExact,
+		ovulationImpossible: prediction.OvulationImpossible,
 	}
 	if display.nextPeriodPrompt || display.nextPeriodNeedsData {
 		return finalizeDashboardPredictionDisplay(display)

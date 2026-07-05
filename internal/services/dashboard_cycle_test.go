@@ -254,7 +254,8 @@ func TestDashboardUpcomingPredictionsClampsShortCycleOvulationAwayFromCycleStart
 	}
 	today := mustParseDashboardDay(t, "2026-02-10")
 
-	nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible := DashboardUpcomingPredictions(stats, &models.User{}, today, 15)
+	prediction := DashboardUpcomingPredictions(stats, &models.User{}, today, 15)
+	nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible := prediction.NextPeriodStart, prediction.OvulationDate, prediction.OvulationExact, prediction.OvulationImpossible
 	if got := nextPeriodStart.Format("2006-01-02"); got != "2026-02-25" {
 		t.Fatalf("expected next period start 2026-02-25, got %s", got)
 	}
@@ -276,7 +277,8 @@ func TestDashboardUpcomingPredictionsKeepsNearestUpcomingPeriodWhenCurrentOvulat
 	}
 	today := mustParseDashboardDay(t, "2026-04-15")
 
-	nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible := DashboardUpcomingPredictions(stats, &models.User{}, today, 28)
+	prediction := DashboardUpcomingPredictions(stats, &models.User{}, today, 28)
+	nextPeriodStart, ovulationDate, ovulationExact, ovulationImpossible := prediction.NextPeriodStart, prediction.OvulationDate, prediction.OvulationExact, prediction.OvulationImpossible
 	if got := nextPeriodStart.Format("2006-01-02"); got != "2026-04-29" {
 		t.Fatalf("expected nearest next period start 2026-04-29, got %s", got)
 	}
