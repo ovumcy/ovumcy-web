@@ -37,7 +37,7 @@ TARGETS=(
 )
 
 usage() {
-  echo "usage: $0 {baseline|diff [ref]}" >&2
+  echo "usage: $0 {baseline [pkg-slug]|diff [ref]}" >&2
   exit 2
 }
 
@@ -50,10 +50,17 @@ require_gremlins() {
 }
 
 run_baseline() {
+  # Optional single package slug (e.g. "internal_api") to run just one
+  # target — used by CI's per-target matrix jobs so each gets a fresh
+  # runner instead of accumulating disk/cache across all three targets.
+  local only="${1:-}"
   mkdir -p "$TMP_DIR" "$BASELINE_DIR"
   for pkg in "${TARGETS[@]}"; do
     local slug
     slug="$(echo "$pkg" | sed 's#^\./##; s#/#_#g')"
+    if [[ -n "$only" && "$slug" != "$only" ]]; then
+      continue
+    fi
     echo ">> baseline mutation: $pkg"
     "$GREMLINS" unleash "$pkg" \
       --workers "$WORKERS" \
@@ -77,7 +84,7 @@ main() {
   require_gremlins
   local mode="${1:-diff}"
   case "$mode" in
-    baseline) run_baseline ;;
+    baseline) run_baseline "${2:-}" ;;
     diff)     run_diff "${2:-}" ;;
     *)        usage ;;
   esac
