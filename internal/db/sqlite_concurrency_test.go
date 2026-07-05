@@ -123,13 +123,13 @@ func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 
-	for w := 0; w < workers; w++ {
+	for w := range workers {
 		wg.Add(1)
 		go func(worker int) {
 			defer wg.Done()
 			<-start
 			ctx := context.Background()
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				// Disjoint per-worker day block => no UNIQUE races; the only
 				// contention is the concurrent-writer lock upgrade we want to
 				// exercise. Revisiting the block hits Create then Find+Save.

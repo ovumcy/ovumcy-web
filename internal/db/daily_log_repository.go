@@ -147,7 +147,7 @@ func (repo *DailyLogRepository) UpdateSymptomIDs(ctx context.Context, entry *mod
 // re-reads before writing). Non-BUSY errors return immediately.
 func (repo *DailyLogRepository) WithinTransaction(ctx context.Context, fn func(*DailyLogRepository) error) error {
 	var err error
-	for attempt := 0; attempt < busyRetryAttempts; attempt++ {
+	for attempt := range busyRetryAttempts {
 		err = repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			return fn(&DailyLogRepository{database: tx})
 		})
