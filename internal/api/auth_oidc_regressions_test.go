@@ -1005,7 +1005,7 @@ func TestMapAuthOIDCError(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			if got := mapAuthOIDCError(tt.err); got != tt.want {
@@ -1337,7 +1337,7 @@ func TestCompleteOIDCLinkConfirmationRateLimitsPasswordAttempts(t *testing.T) {
 	}
 
 	// Exhaust the shared login failure budget with wrong passwords.
-	for attempt := 0; attempt < services.DefaultLoginAttemptsLimit; attempt++ {
+	for range services.DefaultLoginAttemptsLimit {
 		response := postWithPassword("WrongPass2")
 		assertStatusCode(t, response, http.StatusSeeOther)
 	}

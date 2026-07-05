@@ -8,7 +8,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestStatspageviewserviceCovPredictionExplanationSecondaryAbsentWhenHintKeysEmptyButOldCycleFactorsExist(t *testing.T) {
+func TestStatsPageViewServicePredictionExplanationSecondaryAbsentWhenHintKeysEmptyButOldCycleFactorsExist(t *testing.T) {
 	// Three period starts 28 days apart => two completed cycles. A cycle factor
 	// (stress) is logged on 2026-01-10, inside the first completed cycle
 	// [2026-01-01, 2026-01-29). now is pushed to 2026-06-01 so the 90-day recent
@@ -49,7 +49,7 @@ func TestStatspageviewserviceCovPredictionExplanationSecondaryAbsentWhenHintKeys
 	}
 }
 
-func TestStatspageviewserviceCovHasRecentCycleFactorsFalseWhenOnlyOldCycleFactorsExist(t *testing.T) {
+func TestStatsPageViewServiceHasRecentCycleFactorsFalseWhenOnlyOldCycleFactorsExist(t *testing.T) {
 	// Stress factor logged 2026-01-10 (inside completed cycle 1) with now far
 	// enough out (2026-06-01) that the recent 90-day window excludes it. The
 	// explanation is present via pattern/recent-cycle context, but RecentFactors
@@ -82,7 +82,7 @@ func TestStatspageviewserviceCovHasRecentCycleFactorsFalseWhenOnlyOldCycleFactor
 	}
 }
 
-func TestStatspageviewserviceCovHasCycleFactorPatternSummariesFalseWhenFactorsOnlyInOngoingCycle(t *testing.T) {
+func TestStatsPageViewServiceHasCycleFactorPatternSummariesFalseWhenFactorsOnlyInOngoingCycle(t *testing.T) {
 	// Three period starts (two completed cycles ending 2026-02-26). The only
 	// cycle factor is logged 2026-03-05, AFTER the last cycle start, i.e. in the
 	// ongoing/incomplete cycle, and inside the recent 90-day window for
@@ -117,7 +117,7 @@ func TestStatspageviewserviceCovHasCycleFactorPatternSummariesFalseWhenFactorsOn
 	}
 }
 
-func TestStatspageviewserviceCovHasRecentFactorCyclesFalseWhenFactorsOnlyInOngoingCycle(t *testing.T) {
+func TestStatsPageViewServiceHasRecentFactorCyclesFalseWhenFactorsOnlyInOngoingCycle(t *testing.T) {
 	// Same shape as the pattern-summary case: the lone cycle factor (2026-03-05)
 	// sits in the ongoing cycle (after the last start 2026-02-26) and within the
 	// recent 90-day window for now=2026-03-10. RecentFactors is non-empty so the
@@ -151,7 +151,7 @@ func TestStatspageviewserviceCovHasRecentFactorCyclesFalseWhenFactorsOnlyInOngoi
 	}
 }
 
-func TestStatspageviewserviceCovHasPredictionFactorHintFalseWhenOnlyOldCycleFactorsExist(t *testing.T) {
+func TestStatsPageViewServiceHasPredictionFactorHintFalseWhenOnlyOldCycleFactorsExist(t *testing.T) {
 	// Stress factor logged 2026-01-10 (inside completed cycle 1) with now far out
 	// (2026-06-01) so the recent 90-day window excludes it. The explanation is
 	// present via pattern/recent-cycle context, but HintFactorKeys (derived from
@@ -184,7 +184,7 @@ func TestStatspageviewserviceCovHasPredictionFactorHintFalseWhenOnlyOldCycleFact
 	}
 }
 
-func TestStatspageviewserviceCovPredictionReliabilityShownAtExactlyTwoCompletedCycles(t *testing.T) {
+func TestStatsPageViewServicePredictionReliabilityShownAtExactlyTwoCompletedCycles(t *testing.T) {
 	// Exactly two completed cycles (three period starts 28 days apart) for a
 	// predictable owner. statsMinimumInsightsCycles is 2, so CompletedCycleCount
 	// (2) is NOT < 2: reliability must be shown with an uncapped sample count of

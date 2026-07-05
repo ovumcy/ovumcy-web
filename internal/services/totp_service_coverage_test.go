@@ -191,7 +191,7 @@ func TestTOTPService_findValidatedTOTPStep_WrongCodeRejected(t *testing.T) {
 
 	// Iterate through all 6-digit codes and find one that is not valid for any step.
 	wrongCode := ""
-	for n := 0; n <= 999999; n++ {
+	for n := range 1000000 {
 		candidate := fmt.Sprintf("%06d", n)
 		if !validCodes[candidate] {
 			wrongCode = candidate
@@ -260,7 +260,7 @@ func TestTOTPService_CheckRateLimit_WindowExpiry(t *testing.T) {
 	// They must NOT trip the limiter when checked at "now".
 	staleTime := time.Now().Add(-(DefaultTOTPAttemptsWindow + time.Second))
 	now := time.Now()
-	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+	for range DefaultTOTPAttemptsLimit {
 		svc.RecordFailure(secretKey, "10.0.0.1", 50, staleTime)
 	}
 
@@ -271,7 +271,7 @@ func TestTOTPService_CheckRateLimit_WindowExpiry(t *testing.T) {
 
 	// Now record the same number of failures just inside the window — they must trip the limiter.
 	freshTime := now.Add(-(DefaultTOTPAttemptsWindow - time.Second))
-	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+	for range DefaultTOTPAttemptsLimit {
 		svc.RecordFailure(secretKey, "10.0.0.2", 51, freshTime)
 	}
 
@@ -290,7 +290,7 @@ func TestTOTPService_CheckDisableRateLimit_WindowExpiry(t *testing.T) {
 
 	staleTime := time.Now().Add(-(DefaultTOTPDisableAttemptsWindow + time.Second))
 	now := time.Now()
-	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+	for range DefaultTOTPDisableAttemptsLimit {
 		svc.RecordDisableFailure(secretKey, "10.0.0.3", 60, staleTime)
 	}
 
@@ -300,7 +300,7 @@ func TestTOTPService_CheckDisableRateLimit_WindowExpiry(t *testing.T) {
 	}
 
 	freshTime := now.Add(-(DefaultTOTPDisableAttemptsWindow - time.Second))
-	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+	for range DefaultTOTPDisableAttemptsLimit {
 		svc.RecordDisableFailure(secretKey, "10.0.0.4", 61, freshTime)
 	}
 

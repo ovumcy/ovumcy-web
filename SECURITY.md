@@ -416,6 +416,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Login issues a sealed `ovumcy_auth` cookie (not a legacy JWT) | `TestLoginSetsSealedAuthCookieValue`, `TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
 | Remember-me toggles cookie persistence | `TestLoginRememberMeControlsCookiePersistence` in [internal/api/auth_login_remember_me_regressions_test.go](internal/api/auth_login_remember_me_regressions_test.go) |
 | State-changing endpoints require a valid CSRF token | `state_mutation_csrf_regression_test.go`, `auth_logout_csrf_regression_test.go`, `settings_security_csrf_regression_test.go`, `export_csrf_regression_test.go`, `language_switch_csrf_regression_test.go` in `internal/api/` |
+| The CSRF middleware exempts exactly ONE route — `POST /auth/oidc/callback` (POST-bound) — and every other mutating route in the real app refuses a token-less request with 403 | `TestCSRFExemptionListIsExactlyOneRoute`, `TestCSRFDeniesEveryMutatingRouteWithoutToken` in [cmd/ovumcy/csrf_exemption_guard_test.go](cmd/ovumcy/csrf_exemption_guard_test.go) |
 
 ### Retention and Deletion
 
@@ -496,3 +497,11 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | CSRF middleware error path does not leak PII into the audit log | `TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | Rate-limit handler does not leak PII into the audit log | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | The Fiber request log's error field is sanitized (emails → `:email`, opaque tokens → `:token`) | `TestSafeLogError` in [internal/api/request_logging_test.go](internal/api/request_logging_test.go) |
+
+### Medical Safety Disclaimer
+
+The backend HTML contract normally forbids asserting localized copy, but the persistent medical-safety disclaimer is a deliberate exception: its exact wording is the invariant, so these tests pin both the surface's stable `data-*` hook and the safety string.
+
+| Claim | Enforced by |
+| --- | --- |
+| Every owner-facing prediction surface (dashboard, stats, calendar) renders the persistent "estimates, not medical advice or a method of contraception" disclaimer, so a template refactor cannot silently drop it from a health-prediction page | `TestDashboardRendersPredictionDisclaimer`, `TestStatsRendersPredictionDisclaimer`, `TestCalendarRendersPredictionDisclaimer` in [internal/api/dashboard_prediction_disclaimer_test.go](internal/api/dashboard_prediction_disclaimer_test.go) |

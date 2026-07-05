@@ -21,7 +21,7 @@ func (r setupserviceCovUserRepo) CountUsers(context.Context) (int64, error) {
 	return r.count, r.err
 }
 
-func TestSetupserviceCovRequiresSetupWhenNoUsers(t *testing.T) {
+func TestSetupServiceRequiresSetupWhenNoUsers(t *testing.T) {
 	// Line 22: zero users → initial setup is required.
 	service := NewSetupService(setupserviceCovUserRepo{count: 0})
 	required, err := service.RequiresInitialSetup(context.Background())
@@ -33,7 +33,7 @@ func TestSetupserviceCovRequiresSetupWhenNoUsers(t *testing.T) {
 	}
 }
 
-func TestSetupserviceCovNoSetupWhenUsersExist(t *testing.T) {
+func TestSetupServiceNoSetupWhenUsersExist(t *testing.T) {
 	// Line 22: any existing user → setup already done. Distinguishes the
 	// `usersCount == 0` comparison from a mutated constant/operator.
 	for _, count := range []int64{1, 2, 100} {
@@ -48,7 +48,7 @@ func TestSetupserviceCovNoSetupWhenUsersExist(t *testing.T) {
 	}
 }
 
-func TestSetupserviceCovPropagatesCountError(t *testing.T) {
+func TestSetupServicePropagatesCountError(t *testing.T) {
 	// Line 19–20: a repository error is returned and setup is reported false.
 	wantErr := errors.New("count failed")
 	service := NewSetupService(setupserviceCovUserRepo{count: 0, err: wantErr})

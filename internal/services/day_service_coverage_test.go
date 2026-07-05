@@ -64,10 +64,10 @@ func dayserviceCovNewService(logs *dayLogRepositoryStub, users *dayserviceCovUse
 // test only verifies the "true" branch; we need both sides.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainFalseWhenNoShortGap
+// TestDayService_PersistManualCycleStartFlags_IsUncertainFalseWhenNoShortGap
 // verifies that IsUncertain stays false when MarkUncertain is true but the
 // policy has ShortGapDays == 0.
-func TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainFalseWhenNoShortGap(t *testing.T) {
+func TestDayService_PersistManualCycleStartFlags_IsUncertainFalseWhenNoShortGap(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayserviceCovUserStub{}
 	service := dayserviceCovNewService(logs, users)
@@ -98,10 +98,10 @@ func TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainFalseWhenNoShortG
 	}
 }
 
-// TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainTrueWhenShortGap
+// TestDayService_PersistManualCycleStartFlags_IsUncertainTrueWhenShortGap
 // verifies the complementary branch: IsUncertain becomes true when both
 // options.MarkUncertain is true AND policy.ShortGapDays > 0.
-func TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainTrueWhenShortGap(t *testing.T) {
+func TestDayService_PersistManualCycleStartFlags_IsUncertainTrueWhenShortGap(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayserviceCovUserStub{}
 	service := dayserviceCovNewService(logs, users)
@@ -137,9 +137,9 @@ func TestDayserviceCov_PersistManualCycleStartFlags_IsUncertainTrueWhenShortGap(
 // exercise both edges.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_LoadAutoFillSettings_ClampsBelowOne checks that a stored
+// TestDayService_LoadAutoFillSettings_ClampsBelowOne checks that a stored
 // PeriodLength of 0 is replaced with DefaultPeriodLength.
-func TestDayserviceCov_LoadAutoFillSettings_ClampsBelowOne(t *testing.T) {
+func TestDayService_LoadAutoFillSettings_ClampsBelowOne(t *testing.T) {
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 0, AutoPeriodFill: true}}
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), users)
 
@@ -155,9 +155,9 @@ func TestDayserviceCov_LoadAutoFillSettings_ClampsBelowOne(t *testing.T) {
 	}
 }
 
-// TestDayserviceCov_LoadAutoFillSettings_ClampsAbove14 checks that a stored
+// TestDayService_LoadAutoFillSettings_ClampsAbove14 checks that a stored
 // PeriodLength of 15 is replaced with DefaultPeriodLength.
-func TestDayserviceCov_LoadAutoFillSettings_ClampsAbove14(t *testing.T) {
+func TestDayService_LoadAutoFillSettings_ClampsAbove14(t *testing.T) {
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 15, AutoPeriodFill: false}}
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), users)
 
@@ -170,9 +170,9 @@ func TestDayserviceCov_LoadAutoFillSettings_ClampsAbove14(t *testing.T) {
 	}
 }
 
-// TestDayserviceCov_LoadAutoFillSettings_AcceptsValidRange checks that an
+// TestDayService_LoadAutoFillSettings_AcceptsValidRange checks that an
 // in-range PeriodLength is returned as-is.
-func TestDayserviceCov_LoadAutoFillSettings_AcceptsValidRange(t *testing.T) {
+func TestDayService_LoadAutoFillSettings_AcceptsValidRange(t *testing.T) {
 	for _, pl := range []int{1, 7, 14} {
 		users := &dayserviceCovUserStub{settings: models.User{PeriodLength: pl}}
 		service := dayserviceCovNewService(newDayLogRepositoryStub(), users)
@@ -196,9 +196,9 @@ func TestDayserviceCov_LoadAutoFillSettings_AcceptsValidRange(t *testing.T) {
 // Mutants remove one guard at a time; we need tests for each branch.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenDisabled checks the
+// TestDayService_ShouldAutoFill_ReturnsFalseWhenDisabled checks the
 // autoPeriodFillEnabled guard.
-func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenDisabled(t *testing.T) {
+func TestDayService_ShouldAutoFill_ReturnsFalseWhenDisabled(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	should, err := service.ShouldAutoFillPeriodDays(context.Background(), 10, day, false, false, 5, time.UTC)
@@ -210,9 +210,9 @@ func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenDisabled(t *testing.T) {
 	}
 }
 
-// TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenPeriodLengthOne checks
+// TestDayService_ShouldAutoFill_ReturnsFalseWhenPeriodLengthOne checks
 // the periodLength <= 1 guard.
-func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenPeriodLengthOne(t *testing.T) {
+func TestDayService_ShouldAutoFill_ReturnsFalseWhenPeriodLengthOne(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	should, err := service.ShouldAutoFillPeriodDays(context.Background(), 10, day, false, true, 1, time.UTC)
@@ -224,9 +224,9 @@ func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenPeriodLengthOne(t *testing
 	}
 }
 
-// TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenWasPeriod checks the
+// TestDayService_ShouldAutoFill_ReturnsFalseWhenWasPeriod checks the
 // wasPeriod guard: if this day was already a period, do not re-fill.
-func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenWasPeriod(t *testing.T) {
+func TestDayService_ShouldAutoFill_ReturnsFalseWhenWasPeriod(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	should, err := service.ShouldAutoFillPeriodDays(context.Background(), 10, day, true, true, 5, time.UTC)
@@ -248,10 +248,10 @@ func TestDayserviceCov_ShouldAutoFill_ReturnsFalseWhenWasPeriod(t *testing.T) {
 // nearby day is, so the correct day being checked matters.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_ShouldAutoFill_ChecksExactPreviousDay verifies that the
+// TestDayService_ShouldAutoFill_ChecksExactPreviousDay verifies that the
 // function looks at day-1 (not day itself or day-2) when deciding whether to
 // autofill.
-func TestDayserviceCov_ShouldAutoFill_ChecksExactPreviousDay(t *testing.T) {
+func TestDayService_ShouldAutoFill_ChecksExactPreviousDay(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -284,9 +284,9 @@ func TestDayserviceCov_ShouldAutoFill_ChecksExactPreviousDay(t *testing.T) {
 // exclusive: with periodLength=3 we fill offsets 1 and 2 only (not 3).
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_AutoFill_NoOpForPeriodLengthOne verifies the guard at
+// TestDayService_AutoFill_NoOpForPeriodLengthOne verifies the guard at
 // line 567: single-day periods must not create any extra entries.
-func TestDayserviceCov_AutoFill_NoOpForPeriodLengthOne(t *testing.T) {
+func TestDayService_AutoFill_NoOpForPeriodLengthOne(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	start := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -300,10 +300,10 @@ func TestDayserviceCov_AutoFill_NoOpForPeriodLengthOne(t *testing.T) {
 	}
 }
 
-// TestDayserviceCov_AutoFill_LoopBoundIsExclusive verifies that the loop
+// TestDayService_AutoFill_LoopBoundIsExclusive verifies that the loop
 // fills exactly periodLength-1 days (offsets 1..periodLength-1) not
 // periodLength days.
-func TestDayserviceCov_AutoFill_LoopBoundIsExclusive(t *testing.T) {
+func TestDayService_AutoFill_LoopBoundIsExclusive(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	start := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -332,9 +332,9 @@ func TestDayserviceCov_AutoFill_LoopBoundIsExclusive(t *testing.T) {
 // Line 570 — AutoFillFollowingPeriodDays: nil location fallback
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_AutoFill_NilLocationFallsBackToUTC verifies that passing
+// TestDayService_AutoFill_NilLocationFallsBackToUTC verifies that passing
 // a nil location does not panic and still creates entries (using UTC).
-func TestDayserviceCov_AutoFill_NilLocationFallsBackToUTC(t *testing.T) {
+func TestDayService_AutoFill_NilLocationFallsBackToUTC(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	start := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -357,10 +357,10 @@ func TestDayserviceCov_AutoFill_NilLocationFallsBackToUTC(t *testing.T) {
 // propagate from AutoFillFollowingPeriodDays.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_AutoFill_SaveErrorPropagatesForExistingEntry exercises
+// TestDayService_AutoFill_SaveErrorPropagatesForExistingEntry exercises
 // the Save-error path at line 595 by pre-populating an entry (ID!=0,
 // IsPeriod=false) and injecting a Save error for that day.
-func TestDayserviceCov_AutoFill_SaveErrorPropagatesForExistingEntry(t *testing.T) {
+func TestDayService_AutoFill_SaveErrorPropagatesForExistingEntry(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 
 	start := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -398,9 +398,9 @@ func TestDayserviceCov_AutoFill_SaveErrorPropagatesForExistingEntry(t *testing.T
 // 626: if err != nil — error propagation.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_HasPeriodInRecentDays_ZeroLookback tests the guard at
+// TestDayService_HasPeriodInRecentDays_ZeroLookback tests the guard at
 // line 620: zero lookbackDays must return false immediately.
-func TestDayserviceCov_HasPeriodInRecentDays_ZeroLookback(t *testing.T) {
+func TestDayService_HasPeriodInRecentDays_ZeroLookback(t *testing.T) {
 	service := dayserviceCovNewService(newDayLogRepositoryStub(), &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	has, err := service.hasPeriodInRecentDays(context.Background(), 10, day, 0, time.UTC)
@@ -412,10 +412,10 @@ func TestDayserviceCov_HasPeriodInRecentDays_ZeroLookback(t *testing.T) {
 	}
 }
 
-// TestDayserviceCov_HasPeriodInRecentDays_InclusiveBound verifies the loop
+// TestDayService_HasPeriodInRecentDays_InclusiveBound verifies the loop
 // bound at line 623 is inclusive (offset <= lookbackDays). With lookbackDays=2,
 // both day-1 and day-2 must be checked. We place a period exactly at day-2.
-func TestDayserviceCov_HasPeriodInRecentDays_InclusiveBound(t *testing.T) {
+func TestDayService_HasPeriodInRecentDays_InclusiveBound(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -447,11 +447,11 @@ func TestDayserviceCov_HasPeriodInRecentDays_InclusiveBound(t *testing.T) {
 	}
 }
 
-// TestDayserviceCov_HasPeriodInRecentDays_ExactOffset verifies the exact
+// TestDayService_HasPeriodInRecentDays_ExactOffset verifies the exact
 // day offset at line 624. We place a period at exactly day-3 and use
 // lookbackDays=3. If the offset were off by one (e.g., -offset+1), the lookup
 // would land on the wrong day.
-func TestDayserviceCov_HasPeriodInRecentDays_ExactOffset(t *testing.T) {
+func TestDayService_HasPeriodInRecentDays_ExactOffset(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -472,9 +472,9 @@ func TestDayserviceCov_HasPeriodInRecentDays_ExactOffset(t *testing.T) {
 	}
 }
 
-// TestDayserviceCov_HasPeriodInRecentDays_ErrorPropagates verifies that a
+// TestDayService_HasPeriodInRecentDays_ErrorPropagates verifies that a
 // repository error at line 626 is returned (not swallowed).
-func TestDayserviceCov_HasPeriodInRecentDays_ErrorPropagates(t *testing.T) {
+func TestDayService_HasPeriodInRecentDays_ErrorPropagates(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 	// Inject a Find error for the first lookback day (day-1 = 2026-02-09).
@@ -497,10 +497,10 @@ func TestDayserviceCov_HasPeriodInRecentDays_ErrorPropagates(t *testing.T) {
 // IsUncertain=false on the demoted entry.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_ClearCompetingCycleStarts_ClearsIsUncertain verifies that
+// TestDayService_ClearCompetingCycleStarts_ClearsIsUncertain verifies that
 // when a competing cycle start is demoted, its IsUncertain flag is also
 // cleared (line 658).
-func TestDayserviceCov_ClearCompetingCycleStarts_ClearsIsUncertain(t *testing.T) {
+func TestDayService_ClearCompetingCycleStarts_ClearsIsUncertain(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 
@@ -552,10 +552,10 @@ func TestDayserviceCov_ClearCompetingCycleStarts_ClearsIsUncertain(t *testing.T)
 // users==nil and logs==nil branches by constructing a service with those fields.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_RefreshDerivedCycleSettings_NilUsersNoOp verifies that
+// TestDayService_RefreshDerivedCycleSettings_NilUsersNoOp verifies that
 // refreshDerivedCycleSettings is a no-op when service.users is nil, and does
 // not panic.
-func TestDayserviceCov_RefreshDerivedCycleSettings_NilUsersNoOp(t *testing.T) {
+func TestDayService_RefreshDerivedCycleSettings_NilUsersNoOp(t *testing.T) {
 	// Build a service with nil users to trigger the nil-guard early return.
 	service := &DayService{
 		logs:  newDayLogRepositoryStub(),
@@ -565,10 +565,10 @@ func TestDayserviceCov_RefreshDerivedCycleSettings_NilUsersNoOp(t *testing.T) {
 	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
 }
 
-// TestDayserviceCov_RefreshDerivedCycleSettings_NilLogsNoOp verifies that
+// TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp verifies that
 // refreshDerivedCycleSettings is a no-op when service.logs is nil, and does
 // not panic.
-func TestDayserviceCov_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
+func TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
 	service := &DayService{
 		logs:  nil,
 		users: &dayserviceCovUserStub{},
@@ -589,11 +589,11 @@ func TestDayserviceCov_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
 // control flow.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_RefreshDerivedCycleSettings_ListLogsErrorNoOp confirms
+// TestDayService_RefreshDerivedCycleSettings_ListLogsErrorNoOp confirms
 // that a log-list error (line 671-674) causes a silent early return (no panic,
 // no state mutation) rather than propagating the error — because
 // refreshDerivedCycleSettings intentionally swallows errors via log.Printf.
-func TestDayserviceCov_RefreshDerivedCycleSettings_ListLogsErrorNoOp(t *testing.T) {
+func TestDayService_RefreshDerivedCycleSettings_ListLogsErrorNoOp(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 5}}
 	service := dayserviceCovNewService(logs, users)
@@ -617,10 +617,10 @@ func TestDayserviceCov_RefreshDerivedCycleSettings_ListLogsErrorNoOp(t *testing.
 // withinTransaction runner.
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_UpsertWithAutoFillAt_TxErrorPropagates verifies that when
+// TestDayService_UpsertWithAutoFillAt_TxErrorPropagates verifies that when
 // a DayLogTxRunner itself returns an error (simulating a transaction rollback),
 // UpsertDayEntryWithAutoFillAt propagates the error to the caller.
-func TestDayserviceCov_UpsertWithAutoFillAt_TxErrorPropagates(t *testing.T) {
+func TestDayService_UpsertWithAutoFillAt_TxErrorPropagates(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 5}}
 
@@ -649,10 +649,10 @@ func TestDayserviceCov_UpsertWithAutoFillAt_TxErrorPropagates(t *testing.T) {
 // (NOT COVERED)
 // ---------------------------------------------------------------------------
 
-// TestDayserviceCov_MarkCycleStartManually_TxErrorPropagates verifies that
+// TestDayService_MarkCycleStartManually_TxErrorPropagates verifies that
 // when the transaction runner injected into MarkCycleStartManually returns
 // an error, the error propagates to the caller.
-func TestDayserviceCov_MarkCycleStartManually_TxErrorPropagates(t *testing.T) {
+func TestDayService_MarkCycleStartManually_TxErrorPropagates(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayserviceCovUserStub{}
 

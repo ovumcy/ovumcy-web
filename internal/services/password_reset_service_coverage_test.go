@@ -12,7 +12,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestPasswordresetserviceCovIssueResetTokenRejectsNilUser(t *testing.T) {
+func TestIssueResetTokenRejectsNilUser(t *testing.T) {
 	// Line 42–43: a nil user is rejected before any token is built, so the
 	// (here unconfigured) auth dependency is never dereferenced.
 	service := NewPasswordResetService(NewAuthService(nil), nil)
@@ -26,7 +26,7 @@ func TestPasswordresetserviceCovIssueResetTokenRejectsNilUser(t *testing.T) {
 	}
 }
 
-func TestPasswordresetserviceCovIssueResetTokenForValidUser(t *testing.T) {
+func TestIssueResetTokenForValidUser(t *testing.T) {
 	// Line 45: a valid user yields a parseable reset token carrying that user id.
 	service := NewPasswordResetService(NewAuthService(nil), nil)
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)

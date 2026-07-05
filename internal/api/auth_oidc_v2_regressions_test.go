@@ -100,7 +100,7 @@ func TestOIDCOnlyModeRejectsLocalPublicAuthEndpoints(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, testCase.path, strings.NewReader(testCase.form.Encode()))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")

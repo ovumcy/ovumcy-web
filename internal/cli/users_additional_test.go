@@ -31,7 +31,7 @@ func TestRunUsersCommandUsageErrors(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -81,7 +81,7 @@ func TestParseUsersDeleteArgs(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -119,7 +119,7 @@ func TestReadDeleteConfirmation(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -276,7 +276,7 @@ func TestMapUsersCreateError(t *testing.T) {
 		{"other", errors.New("boom"), "create owner"},
 	}
 	for _, testCase := range cases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			got := mapUsersCreateError(testCase.err)

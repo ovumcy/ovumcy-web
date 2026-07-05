@@ -72,7 +72,7 @@ func drawCycleHistory(t *rapid.T) cycleHistory {
 	}
 
 	cursor := firstStart
-	for c := 0; c < numCycles; c++ {
+	for range numCycles {
 		// Per-cycle period length varies by +/-1 around the base, clamped to a
 		// sane band so a "true" period is always a real contiguous run.
 		periodLen := basePeriod + rapid.IntRange(-1, 1).Draw(t, "periodVar")
@@ -84,7 +84,7 @@ func drawCycleHistory(t *rapid.T) cycleHistory {
 		}
 
 		run := make([]time.Time, 0, periodLen)
-		for d := 0; d < periodLen; d++ {
+		for d := range periodLen {
 			run = append(run, cursor.AddDate(0, 0, d))
 		}
 		hist.startDates = append(hist.startDates, cursor)
@@ -206,7 +206,7 @@ func TestPipeline_ContiguousRunYieldsOneStart(t *testing.T) {
 		runLen := rapid.IntRange(1, 12).Draw(t, "runLen")
 
 		logs := make([]models.DailyLog, 0, runLen)
-		for d := 0; d < runLen; d++ {
+		for d := range runLen {
 			logs = append(logs, models.DailyLog{
 				Date:     start.AddDate(0, 0, d),
 				IsPeriod: true,

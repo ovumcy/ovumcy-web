@@ -14,7 +14,7 @@ import (
 // calendarviewpolicyCovNilLocationUsesUTC verifies that passing a nil location
 // does not panic and behaves identically to passing time.UTC explicitly.
 // Mutation: removing the nil guard (line 18) causes a nil-pointer dereference.
-func TestCalendarviewpolicyCovNilLocationUsesUTC(t *testing.T) {
+func TestCalendarViewPolicyNilLocationUsesUTC(t *testing.T) {
 	now := time.Date(2026, time.March, 15, 9, 0, 0, 0, time.UTC)
 
 	withNil, selNil, errNil := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, nil, time.Time{})
@@ -37,7 +37,7 @@ func TestCalendarviewpolicyCovNilLocationUsesUTC(t *testing.T) {
 
 // calendarviewpolicyCovNilLocationViaWrapper verifies the same nil-guard through
 // the public ResolveCalendarMonthAndSelectedDate wrapper (which chains through).
-func TestCalendarviewpolicyCovNilLocationViaWrapper(t *testing.T) {
+func TestCalendarViewPolicyNilLocationViaWrapper(t *testing.T) {
 	now := time.Date(2026, time.April, 5, 12, 0, 0, 0, time.UTC)
 
 	withNil, selNil, err := ResolveCalendarMonthAndSelectedDate("", "2026-04-05", now, nil)
@@ -59,7 +59,7 @@ func TestCalendarviewpolicyCovNilLocationViaWrapper(t *testing.T) {
 // calendarviewpolicyCovMinMonthNilLocation verifies that CalendarMinimumNavigableMonth
 // does not panic with a nil location and returns the same result as UTC.
 // Mutation: removing the nil guard (line 70) causes a nil-pointer dereference.
-func TestCalendarviewpolicyCovMinMonthNilLocation(t *testing.T) {
+func TestCalendarViewPolicyMinMonthNilLocation(t *testing.T) {
 	user := &models.User{
 		CreatedAt: time.Date(2025, time.June, 20, 8, 0, 0, 0, time.UTC),
 	}
@@ -81,7 +81,7 @@ func TestCalendarviewpolicyCovMinMonthNilLocation(t *testing.T) {
 
 // calendarviewpolicyCovMinMonthNonUTC verifies that the location is actually
 // applied when non-nil — so a mutation that swaps nil/non-nil semantics is caught.
-func TestCalendarviewpolicyCovMinMonthNonUTC(t *testing.T) {
+func TestCalendarViewPolicyMinMonthNonUTC(t *testing.T) {
 	// CreatedAt at 23:30 UTC on June 20 is June 21 in UTC+2.
 	berlin := time.FixedZone("CET", 2*60*60)
 	user := &models.User{
@@ -105,7 +105,7 @@ func TestCalendarviewpolicyCovMinMonthNonUTC(t *testing.T) {
 // calendarviewpolicyCovMonthBeforeExactMinimum verifies that a month that equals
 // the minimum is NOT considered "before" it.
 // Mutation: changing < to <= on line 115 would return true for this case.
-func TestCalendarviewpolicyCovMonthBeforeExactMinimum(t *testing.T) {
+func TestCalendarViewPolicyMonthBeforeExactMinimum(t *testing.T) {
 	minMonth := time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC)
 	month := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
 
@@ -136,7 +136,7 @@ func TestCalendarviewpolicyCovMonthBeforeExactMinimum(t *testing.T) {
 // calendarviewpolicyCovMonthBeforeEarlierYear verifies that a month in an earlier
 // year is correctly identified as "before" the minimum.
 // Mutation: changing < to > on line 113 would make earlier years appear "after".
-func TestCalendarviewpolicyCovMonthBeforeEarlierYear(t *testing.T) {
+func TestCalendarViewPolicyMonthBeforeEarlierYear(t *testing.T) {
 	minMonth := time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
@@ -153,7 +153,7 @@ func TestCalendarviewpolicyCovMonthBeforeEarlierYear(t *testing.T) {
 // calendarviewpolicyCovMonthBeforeLaterYear verifies that a month in a later
 // year is NOT clamped.
 // Mutation: changing < to > on line 113 would clamp later years incorrectly.
-func TestCalendarviewpolicyCovMonthBeforeLaterYear(t *testing.T) {
+func TestCalendarViewPolicyMonthBeforeLaterYear(t *testing.T) {
 	minMonth := time.Date(2023, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
@@ -170,7 +170,7 @@ func TestCalendarviewpolicyCovMonthBeforeLaterYear(t *testing.T) {
 // same year, an earlier month is correctly identified as "before" the minimum.
 // Mutation: changing < to <= on line 115 would also match the equal case (wrong).
 // This test catches a mutation that changes < to > on line 115.
-func TestCalendarviewpolicyCovMonthBeforeSameYearEarlierMonth(t *testing.T) {
+func TestCalendarViewPolicyMonthBeforeSameYearEarlierMonth(t *testing.T) {
 	minMonth := time.Date(2023, time.June, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
@@ -186,7 +186,7 @@ func TestCalendarviewpolicyCovMonthBeforeSameYearEarlierMonth(t *testing.T) {
 
 // calendarviewpolicyCovMonthBeforeSameYearLaterMonth verifies that a later month
 // in the same year as the minimum is NOT clamped.
-func TestCalendarviewpolicyCovMonthBeforeSameYearLaterMonth(t *testing.T) {
+func TestCalendarViewPolicyMonthBeforeSameYearLaterMonth(t *testing.T) {
 	minMonth := time.Date(2023, time.June, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
@@ -213,7 +213,7 @@ func TestCalendarviewpolicyCovMonthBeforeSameYearLaterMonth(t *testing.T) {
 // embedded location, the non-nil explicit location wins.
 // Mutation on line 119: changing != nil to == nil would invert this, returning
 // the fallback location instead of the supplied one — the result location would differ.
-func TestCalendarviewpolicyCovResolveLocationNonNilReturnsIt(t *testing.T) {
+func TestCalendarViewPolicyResolveLocationNonNilReturnsIt(t *testing.T) {
 	berlinLoc := time.FixedZone("Berlin", 2*60*60)
 	tokyoLoc := time.FixedZone("Tokyo", 9*60*60)
 
@@ -245,8 +245,8 @@ func TestCalendarviewpolicyCovResolveLocationNonNilReturnsIt(t *testing.T) {
 // resolveCalendarLocation a non-nil (UTC) location and the clamped month carries
 // UTC. The unexported helper's own fallback branch (line 122) is reachable
 // directly in a white-box test and is covered by
-// TestCalendarviewpolicyCovResolveLocationNilDirectFallback below.
-func TestCalendarviewpolicyCovResolveLocationNilUseFallback(t *testing.T) {
+// TestCalendarViewPolicyResolveLocationNilDirectFallback below.
+func TestCalendarViewPolicyResolveLocationNilUseFallback(t *testing.T) {
 	tokyoLoc := time.FixedZone("Tokyo", 9*60*60)
 	minMonth := time.Date(2023, time.June, 1, 0, 0, 0, 0, tokyoLoc)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
@@ -271,7 +271,7 @@ func TestCalendarviewpolicyCovResolveLocationNilUseFallback(t *testing.T) {
 // calendarviewpolicyCovResolveLocationNonNilPreferred confirms the non-nil branch
 // (line 119–120) with a concrete timezone change so a mutation flipping the
 // condition from != to == would return the wrong location and fail this assertion.
-func TestCalendarviewpolicyCovResolveLocationNonNilPreferred(t *testing.T) {
+func TestCalendarViewPolicyResolveLocationNonNilPreferred(t *testing.T) {
 	tokyoLoc := time.FixedZone("Tokyo", 9*60*60)
 	pacificLoc := time.FixedZone("PST", -8*60*60)
 
@@ -294,12 +294,12 @@ func TestCalendarviewpolicyCovResolveLocationNonNilPreferred(t *testing.T) {
 	}
 }
 
-// TestCalendarviewpolicyCovResolveLocationNilDirectFallback exercises line 122
+// TestCalendarViewPolicyResolveLocationNilDirectFallback exercises line 122
 // directly: resolveCalendarLocation is an unexported helper this white-box test
 // can call with a nil location. The fallback time carries a concrete zone, so
 // its Location() must be returned (line 123). A mutation flipping line 122's
 // `!= nil` to `== nil` would fall through to the time.UTC default and fail here.
-func TestCalendarviewpolicyCovResolveLocationNilDirectFallback(t *testing.T) {
+func TestCalendarViewPolicyResolveLocationNilDirectFallback(t *testing.T) {
 	tokyo := time.FixedZone("Tokyo", 9*60*60)
 	fallback := time.Date(2024, time.January, 1, 0, 0, 0, 0, tokyo)
 
