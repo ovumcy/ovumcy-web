@@ -240,6 +240,7 @@ Treat the application secret as part of the deployment identity, whether you pas
 - Rotating the application secret invalidates existing sealed cookies and active sign-ins.
 - Restoring SQLite data with a different application secret is valid, but users should expect a fresh sign-in and new sealed-cookie state.
 - Rotating the secret on a database with TOTP-enabled accounts will leave their `users.totp_secret` ciphertexts undecryptable; affected users must sign in with their recovery code (or have the operator run `ovumcy reset-password <email>`) and re-enrol TOTP under the new secret. See the *SECRET_KEY Usage Map* section in [SECURITY.md](../SECURITY.md) for the full impact map.
+- **If the secret is lost entirely** (no backup, no way to recover the old value), this is worse than a planned rotation: there is no key to roll forward from, so every `users.totp_secret` ciphertext is permanently unrecoverable — not just temporarily undecryptable — because the encryption key is derived from `SECRET_KEY` via HKDF with no escrow copy stored anywhere. All existing sealed cookies and sessions invalidate the same as with a rotation. Any 2FA-enabled account can still recover via its recovery code and TOTP re-enrolment. But an account with `local_auth_enabled=false` (OIDC-only) that also has no retained recovery code has no self-service path back in at all; it needs an operator to run `ovumcy reset-password <email>` to regain access. Treat total secret loss as a data-loss event, not a rotation, in your incident runbook.
 - Do not paste the application secret, backup archives, or certificate material into issue trackers, chat logs, or shared shell history.
 
 ## Backup and Restore Contract
@@ -339,6 +340,8 @@ Use this sequence for routine upgrades:
 4. Wait for the container healthcheck to report healthy.
 5. Confirm `/healthz` through the correct deployment-mode health check and open the main UI once to confirm the app is responding.
 6. If the new version fails to start cleanly, roll back to the previous image tag and restore from backup if needed.
+
+Migrations apply automatically on every boot: there is no `-migrate` flag or manual step to run (unlike tools such as Miniflux). Starting the new binary or image runs any pending embedded migrations against the database before the server accepts traffic, in order, forward-only, with no down-migration path — this is why step 2 (backup before restart) is mandatory rather than optional.
 
 Practical Docker flow for the local/private base compose path:
 

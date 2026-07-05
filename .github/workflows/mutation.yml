@@ -3,9 +3,10 @@ name: Mutation
 # Advisory mutation testing. Changes land through PRs, but full mutation runs
 # are far too slow to gate merges, so this stays advisory: it runs on a weekly
 # schedule to track test efficacy over time, plus on demand via
-# workflow_dispatch. It never fails the build — a low score is a signal to
-# review test strength. Fast iteration is done locally with
-# scripts/mutation.sh (baseline | diff <ref>).
+# workflow_dispatch. It never fails the build on a low score — but an
+# infrastructure failure (missing output for a target) fails the job loudly
+# instead of silently leaving that target's report stale. Fast iteration is
+# done locally with scripts/mutation.sh (baseline | diff <ref>).
 
 on:
   schedule:
@@ -18,14 +19,26 @@ permissions:
 jobs:
   mutation-baseline:
     runs-on: ubuntu-latest
-    # internal/api joined the baseline scope (largest package, ~8.5k source
-    # lines, heavy DB-integration tests) alongside services/security, so this
-    # sequential three-package run needs real headroom over GitHub's 360min
-    # default job timeout — this is a hang guard, not a runtime target; the
-    # job is advisory (continue-on-error below) regardless.
-    timeout-minutes: 240
+    # One job per target instead of one sequential job for all three: each
+    # target gets its own fresh runner disk. Running services+security+api
+    # back-to-back on a single runner previously drove free disk space down
+    # to ~61MB (go build cache + gremlins temp output accumulating across
+    # targets) before internal/api — by far the largest, slowest target —
+    # ever got a turn. Splitting also improves wall-clock via parallelism.
+    # internal/services alone has taken ~1h47m in CI; internal/api (largest
+    # package, heaviest DB-integration tests) is expected to run at least as
+    # long. This is a hang guard, not a runtime target — the job is advisory
+    # (continue-on-error below) regardless.
+    timeout-minutes: 180
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: internal_services
+          - slug: internal_security
+          - slug: internal_api
     env:
       GOBIN: ${{ github.workspace }}/.bin
       MUTATION_WORKERS: "2"
@@ -45,16 +58,29 @@ jobs:
 
       - name: Run mutation baseline
         # Advisory: gremlins runs without thresholds, so it exits 0 regardless of
-        # score. continue-on-error guards against infrastructure hiccups too.
+        # score. continue-on-error guards against infrastructure hiccups too —
+        # the next step turns a missing report into a hard failure instead.
         continue-on-error: true
         env:
           GREMLINS: ${{ github.workspace }}/.bin/gremlins
-        run: bash scripts/mutation.sh baseline
+        run: bash scripts/mutation.sh baseline "${{ matrix.slug }}"
+
+      - name: Verify mutation output was produced
+        # Silent-failure guard: if the step above died partway (OOM, disk
+        # exhaustion, timeout) without gremlins ever writing its report, fail
+        # the job loudly instead of leaving .mutation/<slug>.md permanently
+        # reading "pending first weekly CI run".
+        run: |
+          out=".tmp/mutation/${{ matrix.slug }}.json"
+          if [ ! -s "$out" ]; then
+            echo "::error::no mutation report produced for ${{ matrix.slug }} ($out missing or empty)"
+            exit 1
+          fi
 
       - name: Upload mutation results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: mutation-baseline-results
+          name: mutation-baseline-results-${{ matrix.slug }}
           path: .tmp/mutation/
           if-no-files-found: ignore
