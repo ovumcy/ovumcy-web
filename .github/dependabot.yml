@@ -1,5 +1,6 @@
-# Dependabot keeps Go modules, npm packages, GitHub Actions (SHA pins), and the
-# Docker base image current between manual review passes.
+# Dependabot keeps Go modules, npm packages, GitHub Actions (SHA pins), the
+# Docker base image, and compose-file image tags current between manual
+# review passes.
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates
 version: 2
 updates:
@@ -35,3 +36,23 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+
+  # docker-compose (GA since 2025) tracks image: tags in compose manifests —
+  # the operator baseline at the repo root plus every example stack under
+  # docs/examples/ (postgres, caddy, nginx and their combinations), so pinned
+  # postgres/caddy/nginx release tags don't silently age. One grouped PR per
+  # directory keeps a multi-image stack bump reviewable as a unit.
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/"
+      - "/docs/examples/postgres"
+      - "/docs/examples/reverse-proxy/caddy"
+      - "/docs/examples/reverse-proxy/caddy-postgres"
+      - "/docs/examples/reverse-proxy/nginx"
+      - "/docs/examples/reverse-proxy/nginx-postgres"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      compose-images:
+        patterns: ["*"]
