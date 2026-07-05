@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -2045,3 +2046,159 @@ func TestCloseDatabaseLogsWhenPoolUnavailable(t *testing.T) {
 // semantics: v3's default TestConfig times out after 1s, which bcrypt-heavy
 // tests exceed under coverage instrumentation.
 var testConfigNoTimeout = fiber.TestConfig{Timeout: 0, FailOnTimeout: false}
+
+// buildInfoWithSettings assembles the minimal debug.BuildInfo shape the
+// asset-version helpers read: only Settings matters to them.
+func buildInfoWithSettings(settings ...debug.BuildSetting) *debug.BuildInfo {
+	return &debug.BuildInfo{Settings: settings}
+}
+
+func TestVCSRevisionFromBuildInfo(t *testing.T) {
+	tests := []struct {
+		name         string
+		info         *debug.BuildInfo
+		wantRevision string
+		wantModified bool
+	}{
+		{name: "nil info", info: nil, wantRevision: "", wantModified: false},
+		{name: "no settings", info: buildInfoWithSettings(), wantRevision: "", wantModified: false},
+		{
+			name:         "clean revision",
+			info:         buildInfoWithSettings(debug.BuildSetting{Key: "vcs.revision", Value: "abcdef1234567890"}),
+			wantRevision: "abcdef1234567890",
+			wantModified: false,
+		},
+		{
+			name: "blank revision value is unusable",
+			info: buildInfoWithSettings(
+				debug.BuildSetting{Key: "vcs.revision", Value: "   "},
+				debug.BuildSetting{Key: "vcs.modified", Value: "false"},
+			),
+			wantRevision: "",
+			wantModified: false,
+		},
+		{
+			name: "modified true",
+			info: buildInfoWithSettings(
+				debug.BuildSetting{Key: "vcs.revision", Value: "abcdef1234567890"},
+				debug.BuildSetting{Key: "vcs.modified", Value: "true"},
+			),
+			wantRevision: "abcdef1234567890",
+			wantModified: true,
+		},
+		{
+			name: "modified flag tolerates surrounding space",
+			info: buildInfoWithSettings(
+				debug.BuildSetting{Key: "vcs.revision", Value: "abcdef1234567890"},
+				debug.BuildSetting{Key: "vcs.modified", Value: " true "},
+			),
+			wantRevision: "abcdef1234567890",
+			wantModified: true,
+		},
+		{
+			name: "unrelated settings ignored",
+			info: buildInfoWithSettings(
+				debug.BuildSetting{Key: "-ldflags", Value: "-s -w"},
+				debug.BuildSetting{Key: "vcs.time", Value: "2026-07-05T00:00:00Z"},
+			),
+			wantRevision: "",
+			wantModified: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			revision, modified := vcsRevisionFromBuildInfo(tt.info)
+			if revision != tt.wantRevision || modified != tt.wantModified {
+				t.Fatalf("vcsRevisionFromBuildInfo() = (%q, %t), want (%q, %t)",
+					revision, modified, tt.wantRevision, tt.wantModified)
+			}
+		})
+	}
+}
+
+func TestAssetCacheBustTokenFallbackChain(t *testing.T) {
+	fullRevision := "0123456789abcdef0123456789abcdef01234567"
+	processStart := time.Date(2026, time.July, 5, 12, 0, 0, 0, time.UTC)
+	infoWithRevision := buildInfoWithSettings(debug.BuildSetting{Key: "vcs.revision", Value: fullRevision})
+
+	tests := []struct {
+		name           string
+		ldflagsVersion string
+		info           *debug.BuildInfo
+		want           string
+	}{
+		{
+			name:           "ldflags version wins over VCS revision",
+			ldflagsVersion: "v1.7.0",
+			info:           infoWithRevision,
+			want:           "v1.7.0",
+		},
+		{
+			name:           "whitespace-only ldflags version falls through to VCS",
+			ldflagsVersion: "   ",
+			info:           infoWithRevision,
+			want:           fullRevision[:assetVersionShortRevisionLength],
+		},
+		{
+			name: "clean revision is shortened",
+			info: infoWithRevision,
+			want: fullRevision[:assetVersionShortRevisionLength],
+		},
+		{
+			name: "revision shorter than the cap is kept whole",
+			info: buildInfoWithSettings(debug.BuildSetting{Key: "vcs.revision", Value: "abc123"}),
+			want: "abc123",
+		},
+		{
+			name: "dirty revision keeps the marker within the api token cap",
+			info: buildInfoWithSettings(
+				debug.BuildSetting{Key: "vcs.revision", Value: fullRevision},
+				debug.BuildSetting{Key: "vcs.modified", Value: "true"},
+			),
+			want: fullRevision[:assetVersionShortRevisionLength] + "-dirty",
+		},
+		{
+			name: "nil build info falls back to process start",
+			info: nil,
+			want: "dev-" + strconv.FormatInt(processStart.Unix(), 10),
+		},
+		{
+			name: "build info without VCS settings falls back to process start",
+			info: buildInfoWithSettings(debug.BuildSetting{Key: "-ldflags", Value: "-s -w"}),
+			want: "dev-" + strconv.FormatInt(processStart.Unix(), 10),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token := assetCacheBustToken(tt.ldflagsVersion, tt.info, processStart)
+			if token != tt.want {
+				t.Fatalf("assetCacheBustToken(%q, ...) = %q, want %q", tt.ldflagsVersion, token, tt.want)
+			}
+		})
+	}
+}
+
+// TestAssetCacheBustTokenChangesAcrossProcessStarts pins the reason the
+// timestamp fallback exists: two source-only deployments (no ldflags, no VCS
+// stamping — `go run`'s case) must not share one constant token, or assets
+// cached against the first deployment survive the second.
+func TestAssetCacheBustTokenChangesAcrossProcessStarts(t *testing.T) {
+	first := assetCacheBustToken("", nil, time.Date(2026, time.July, 5, 12, 0, 0, 0, time.UTC))
+	second := assetCacheBustToken("", nil, time.Date(2026, time.July, 5, 12, 0, 1, 0, time.UTC))
+	if first == second {
+		t.Fatalf("tokens for distinct process starts must differ, both = %q", first)
+	}
+}
+
+// TestResolveAssetVersionNeverUnknown locks the composition-root behavior the
+// fallback chain was added for: whatever environment the binary finds itself
+// in, the cache-bust token is non-empty and never the shared constant
+// "unknown" that pre-fallback from-source builds served.
+func TestResolveAssetVersionNeverUnknown(t *testing.T) {
+	token := resolveAssetVersion()
+	if token == "" || token == "unknown" {
+		t.Fatalf("resolveAssetVersion() = %q, want a non-empty, non-\"unknown\" token", token)
+	}
+}

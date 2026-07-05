@@ -11,8 +11,14 @@ COPY internal ./internal
 COPY migrations ./migrations
 COPY web ./web
 
+# Release identity for the asset cache-bust token (?v=<token>). The build
+# context carries no .git, so without this the binary cannot learn its own
+# revision and falls back to a per-start timestamp token; CI passes the commit
+# sha. Empty default keeps plain `docker build .` working unchanged.
+ARG BUILD_REVISION=""
+
 ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -trimpath -ldflags="-s -w" -o /out/ovumcy ./cmd/ovumcy
+RUN go build -trimpath -ldflags="-s -w -X main.buildVersion=${BUILD_REVISION}" -o /out/ovumcy ./cmd/ovumcy
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runtime-assets
 WORKDIR /app
