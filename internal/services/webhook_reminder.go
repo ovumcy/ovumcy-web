@@ -206,13 +206,16 @@ func decideOvulationReminder(stats CycleStats, settings WebhookReminderSettings,
 		return DueReminder{}, false
 	}
 	anchor := ovulationCycleAnchor(stats, today, cycleLength)
+	// codecov:ignore:start -- defensive and unreachable from this call path: an
+	// in-window ovulation (reminderWithinWindow true above ⇒ non-zero, and
+	// OvulationImpossible false) is only produced by DashboardUpcomingPredictions
+	// when LastPeriodStart is non-zero and cycleLength > 0, which is exactly what
+	// ovulationCycleAnchor needs to return a non-zero anchor. Kept so a reminder
+	// is never emitted without a watermark key the delivery slice can dedupe on.
 	if anchor.IsZero() {
-		// Defensive: a calculable ovulation always has a projectable cycle
-		// start. If projection somehow declines, skip rather than emit a
-		// reminder with no watermark key (which the delivery slice could not
-		// dedupe). Not expected to be reachable given the guards above.
 		return DueReminder{}, false
 	}
+	// codecov:ignore:end
 	if watermarkCoversAnchor(settings.OvulationWatermark, anchor) {
 		return DueReminder{}, false
 	}
@@ -263,6 +266,9 @@ func ovulationCycleAnchor(stats CycleStats, today time.Time, cycleLength int) ti
 	}
 	cycleStart, _, ok := ProjectCycleStart(stats.LastPeriodStart, cycleLength, today)
 	if !ok {
+		// codecov:ignore -- defensive: ProjectCycleStart only reports !ok for a
+		// zero LastPeriodStart or non-positive cycleLength, both already returned
+		// by the guard above.
 		return time.Time{}
 	}
 	window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)

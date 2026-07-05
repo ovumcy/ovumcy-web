@@ -508,3 +508,46 @@ func TestDecideDueRemindersNoDataEmitsNothing(t *testing.T) {
 		t.Fatalf("expected no reminders without cycle data, got %#v", reminders)
 	}
 }
+
+// TestOvulationCycleAnchor exercises the anchor derivation directly, including
+// the guards the public decision path cannot reach with consistent stats (a
+// zero last-period-start / non-positive cycle length), plus the same-cycle and
+// forward-shifted cases. It mirrors DashboardUpcomingPredictions' own
+// projection: with a last period start of 2026-03-01 (28-day cycle, 14-day
+// luteal), ovulation is 2026-03-14 in the current cycle; once "today" is past
+// that ovulation, the anchor advances one cycle to 2026-03-29.
+func TestOvulationCycleAnchor(t *testing.T) {
+	baseStats := CycleStats{
+		LastPeriodStart: mustParseWebhookReminderDay(t, "2026-03-01", time.UTC),
+		LutealPhase:     14,
+	}
+
+	t.Run("zero last period start yields no anchor", func(t *testing.T) {
+		got := ovulationCycleAnchor(CycleStats{LutealPhase: 14}, mustParseWebhookReminderDay(t, "2026-03-10", time.UTC), 28)
+		if !got.IsZero() {
+			t.Fatalf("expected zero anchor for zero last period start, got %s", got.Format("2006-01-02"))
+		}
+	})
+
+	t.Run("non-positive cycle length yields no anchor", func(t *testing.T) {
+		got := ovulationCycleAnchor(baseStats, mustParseWebhookReminderDay(t, "2026-03-10", time.UTC), 0)
+		if !got.IsZero() {
+			t.Fatalf("expected zero anchor for zero cycle length, got %s", got.Format("2006-01-02"))
+		}
+	})
+
+	t.Run("current cycle anchors at the last period start", func(t *testing.T) {
+		got := ovulationCycleAnchor(baseStats, mustParseWebhookReminderDay(t, "2026-03-10", time.UTC), 28)
+		if want := "2026-03-01"; got.Format("2006-01-02") != want {
+			t.Fatalf("expected anchor %s, got %s", want, got.Format("2006-01-02"))
+		}
+	})
+
+	t.Run("past ovulation shifts the anchor forward one cycle", func(t *testing.T) {
+		// today after the 2026-03-14 ovulation => shift to the next cycle.
+		got := ovulationCycleAnchor(baseStats, mustParseWebhookReminderDay(t, "2026-03-20", time.UTC), 28)
+		if want := "2026-03-29"; got.Format("2006-01-02") != want {
+			t.Fatalf("expected shifted anchor %s, got %s", want, got.Format("2006-01-02"))
+		}
+	})
+}
