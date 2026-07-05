@@ -545,7 +545,7 @@ components:
 
     ExportSymptomFlags:
       type: object
-      description: 15 fixed boolean flags for built-in symptoms. Always present with all keys, even when all values are false.
+      description: 16 fixed boolean flags for built-in symptoms. Always present with all keys, even when all values are false.
       required:
         - cramps
         - headache
@@ -562,6 +562,7 @@ components:
         - food_cravings
         - diarrhea
         - constipation
+        - swelling
       properties:
         cramps: { type: boolean }
         headache: { type: boolean }
@@ -578,6 +579,7 @@ components:
         food_cravings: { type: boolean }
         diarrhea: { type: boolean }
         constipation: { type: boolean }
+        swelling: { type: boolean }
       additionalProperties: false
 
     ExportJSON:

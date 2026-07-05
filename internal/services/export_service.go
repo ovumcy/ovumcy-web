@@ -35,6 +35,7 @@ var ExportCSVHeaders = []string{
 	"Food cravings",
 	"Diarrhea",
 	"Constipation",
+	"Swelling",
 	"Cycle factors",
 	"Other",
 	"Notes",
@@ -60,6 +61,7 @@ var exportSymptomColumnsByName = map[string]string{
 	"food cravings":     "food_cravings",
 	"diarrhea":          "diarrhea",
 	"constipation":      "constipation",
+	"swelling":          "swelling",
 }
 
 var exportSymptomFlagSetters = map[string]func(*ExportSymptomFlags){
@@ -108,6 +110,9 @@ var exportSymptomFlagSetters = map[string]func(*ExportSymptomFlags){
 	"constipation": func(flags *ExportSymptomFlags) {
 		flags.Constipation = true
 	},
+	"swelling": func(flags *ExportSymptomFlags) {
+		flags.Swelling = true
+	},
 }
 
 type ExportDayReader interface {
@@ -146,6 +151,7 @@ type ExportSymptomFlags struct {
 	FoodCravings     bool `json:"food_cravings"`
 	Diarrhea         bool `json:"diarrhea"`
 	Constipation     bool `json:"constipation"`
+	Swelling         bool `json:"swelling"`
 }
 
 type ExportJSONEntry struct {
@@ -327,6 +333,7 @@ func (row ExportCSVRow) Columns() []string {
 		csvYesNo(row.Symptoms.FoodCravings),
 		csvYesNo(row.Symptoms.Diarrhea),
 		csvYesNo(row.Symptoms.Constipation),
+		csvYesNo(row.Symptoms.Swelling),
 		cycleFactors,
 		otherSymptoms,
 		notes,

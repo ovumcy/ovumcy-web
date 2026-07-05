@@ -52,7 +52,8 @@ Response body:
         "insomnia": false,
         "food_cravings": false,
         "diarrhea": false,
-        "constipation": false
+        "constipation": false,
+        "swelling": false
       },
       "other_symptoms": ["my-custom-symptom"],
       "notes": "felt tired all afternoon"
@@ -76,13 +77,13 @@ Field semantics:
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
 | `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
 | `cycle_factors` | array of strings | Free-form factor keys recorded that day (e.g. `stress`, `travel`, `illness`). |
-| `symptoms` | object of booleans | Flags for the 15 built-in symptoms. Always present, even when all false. |
+| `symptoms` | object of booleans | Flags for the 16 built-in symptoms. Always present, even when all false. |
 | `other_symptoms` | array of strings | Names of owner-managed custom symptoms recorded that day. |
 | `notes` | string | Free-text note. |
 | `cycle_start` | boolean | Whether the day is the manually marked start of a cycle. Owner-only. |
 | `is_uncertain` | boolean | Whether the owner flagged this day's data as uncertain. Owner-only. |
 
-The `symptoms` object always contains the same 15 keys, in this order: `cramps`, `headache`, `acne`, `mood`, `bloating`, `fatigue`, `breast_tenderness`, `back_pain`, `nausea`, `spotting`, `irritability`, `insomnia`, `food_cravings`, `diarrhea`, `constipation`. Any other symptom configured by the owner appears in `other_symptoms` as a free-text name.
+The `symptoms` object always contains the same 16 keys, in this order: `cramps`, `headache`, `acne`, `mood`, `bloating`, `fatigue`, `breast_tenderness`, `back_pain`, `nausea`, `spotting`, `irritability`, `insomnia`, `food_cravings`, `diarrhea`, `constipation`, `swelling`. Any other symptom configured by the owner appears in `other_symptoms` as a free-text name.
 
 ## CSV Export
 
@@ -99,14 +100,15 @@ Columns (in order, single header row):
 Date, Period, Flow, Mood rating, Sex activity, BBT (C), Cervical mucus,
 Cramps, Headache, Acne, Mood, Bloating, Fatigue, Breast tenderness,
 Back pain, Nausea, Spotting, Irritability, Insomnia, Food cravings,
-Diarrhea, Constipation, Cycle factors, Other, Notes, Pregnancy test,
+Diarrhea, Constipation, Swelling, Cycle factors, Other, Notes, Pregnancy test,
 Cycle start, Uncertain
 ```
 
 Cell semantics:
 
 - `Date` is `YYYY-MM-DD` in the user's timezone.
-- `Period`, and the 15 symptom columns, are `true`/`false`.
+- `Period`, and the 16 symptom columns, are `true`/`false`.
+- `Swelling` was appended after `Constipation` (the last symptom column at the time) rather than at the very end of the file; every column at or after `Cycle factors` therefore shifted one position to the right for files generated after this change. Downstream consumers reading columns by position (not by header name) must account for the shift.
 - `Flow`, `Sex activity`, `Cervical mucus` carry the same string vocabulary as the JSON export.
 - `BBT (C)` is the float value in the unit selected on the account; the cell is empty on days with no measurement. The header keeps the literal text `BBT (C)` for stability and does not change to `BBT (F)` for Fahrenheit accounts. Operators reading the file should consult the account's `temperature_unit` setting (or the source UI) to interpret the unit.
 - `Cycle factors` is a `;`-separated list of factor keys; empty when none were recorded.
