@@ -69,3 +69,14 @@ func TestTemplateToJSONEscapesSafelyInSingleQuotedAttribute(t *testing.T) {
 		t.Fatalf("payload mutated in the escape round trip:\n  want %#v\n  got  %#v", payload, roundTripped)
 	}
 }
+
+// TestTemplateToJSONReturnsNullOnMarshalError pins the fail-safe branch: when a
+// value cannot be JSON-serialized (e.g. a channel), templateToJSON returns the
+// literal "null" rather than propagating an error or emitting a partial string.
+func TestTemplateToJSONReturnsNullOnMarshalError(t *testing.T) {
+	t.Parallel()
+
+	if got := templateToJSON(make(chan int)); got != "null" {
+		t.Fatalf("expected %q on marshal error, got %q", "null", got)
+	}
+}
