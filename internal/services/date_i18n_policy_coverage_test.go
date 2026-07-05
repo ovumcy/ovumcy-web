@@ -33,12 +33,12 @@ var datei18npolicyCovJanuary = time.Date(2026, time.January, 5, 0, 0, 0, 0, time
 // LocalizedMonthYear – line 55 guard
 // ---------------------------------------------------------------------------
 
-// TestDatei18nPolicyCovMonthYearJanuary ensures that January is formatted with
+// TestDateI18nPolicyMonthYearJanuary ensures that January is formatted with
 // the locale-specific name, not the English fallback.  A mutation of
 // "monthIndex < 0" to "monthIndex <= 0" would redirect index 0 (January) to
 // value.Format("January 2006"), producing "January 2026" for every locale
 // instead of the expected translated month name.
-func TestDatei18nPolicyCovMonthYearJanuary(t *testing.T) {
+func TestDateI18nPolicyMonthYearJanuary(t *testing.T) {
 	tests := []struct {
 		lang string
 		want string
@@ -64,11 +64,11 @@ func TestDatei18nPolicyCovMonthYearJanuary(t *testing.T) {
 // LocalizedDateLabel – line 69 guard (all locales) and line 77 guard (ru)
 // ---------------------------------------------------------------------------
 
-// TestDatei18nPolicyCovDateLabelJanuary ensures that January is formatted with
+// TestDateI18nPolicyDateLabelJanuary ensures that January is formatted with
 // locale-specific month names.  The mutations guarded at lines 69 and 77 would
 // cause January to fall through to the English fallback "Mon, Jan 5" instead
 // of the correct translated representation.
-func TestDatei18nPolicyCovDateLabelJanuary(t *testing.T) {
+func TestDateI18nPolicyDateLabelJanuary(t *testing.T) {
 	// Jan 5, 2026 is a Monday.
 	tests := []struct {
 		lang string
@@ -97,11 +97,11 @@ func TestDatei18nPolicyCovDateLabelJanuary(t *testing.T) {
 // LocalizedDashboardDate – line 102 guard
 // ---------------------------------------------------------------------------
 
-// TestDatei18nPolicyCovDashboardDateJanuary ensures that January is formatted
+// TestDateI18nPolicyDashboardDateJanuary ensures that January is formatted
 // with locale-specific month names rather than the English fallback.  A
 // "monthIndex <= 0" mutation on line 102 would redirect January to
 // value.Format("January 2, 2006, Monday") for every locale.
-func TestDatei18nPolicyCovDashboardDateJanuary(t *testing.T) {
+func TestDateI18nPolicyDashboardDateJanuary(t *testing.T) {
 	// Jan 5, 2026 is a Monday.
 	tests := []struct {
 		lang string

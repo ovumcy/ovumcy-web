@@ -80,11 +80,11 @@ func (r *symptomserviceCovRepo) Update(ctx context.Context, symptom *models.Symp
 
 // --- Line 205/207: CalculateFrequencies sort order ---
 
-// TestSymptomServiceCovFrequenciesSortsByCountDescending verifies that
+// TestSymptomServiceFrequenciesSortsByCountDescending verifies that
 // CalculateFrequencies returns the highest-count symptom first (line 207:
 // result[i].Count > result[j].Count). A mutation reversing the comparator
 // would place B (count=1) before A (count=3).
-func TestSymptomServiceCovFrequenciesSortsByCountDescending(t *testing.T) {
+func TestSymptomServiceFrequenciesSortsByCountDescending(t *testing.T) {
 	repo := &symptomserviceCovRepo{
 		countBuiltinCnt: 1,
 		listed: []models.SymptomType{
@@ -122,11 +122,11 @@ func TestSymptomServiceCovFrequenciesSortsByCountDescending(t *testing.T) {
 	}
 }
 
-// TestSymptomServiceCovFrequenciesTiebreakAlphabetical verifies that equal-count
+// TestSymptomServiceFrequenciesTiebreakAlphabetical verifies that equal-count
 // symptoms are sorted alphabetically (line 205: result[i].Name < result[j].Name).
 // Uses three tied symptoms so that a missing tie-break cannot produce the correct
 // ordering by accident.
-func TestSymptomServiceCovFrequenciesTiebreakAlphabetical(t *testing.T) {
+func TestSymptomServiceFrequenciesTiebreakAlphabetical(t *testing.T) {
 	repo := &symptomserviceCovRepo{
 		countBuiltinCnt: 1,
 		listed: []models.SymptomType{
@@ -157,12 +157,12 @@ func TestSymptomServiceCovFrequenciesTiebreakAlphabetical(t *testing.T) {
 
 // --- Line 305: ValidateSymptomIDs sort order ---
 
-// TestSymptomServiceCovValidateSymptomIDsSortedAscending verifies that
+// TestSymptomServiceValidateSymptomIDsSortedAscending verifies that
 // ValidateSymptomIDs returns IDs in ascending order (line 305).
 // The existing test covers deduplication + ascending order, but this test
 // uses a larger and deliberately reversed input to make a wrong comparator
 // observable regardless of map-iteration order.
-func TestSymptomServiceCovValidateSymptomIDsSortedAscending(t *testing.T) {
+func TestSymptomServiceValidateSymptomIDsSortedAscending(t *testing.T) {
 	// 5 unique IDs, repo says all 5 match.
 	repo := &symptomserviceCovRepo{countByIDs: 5}
 	service := NewSymptomService(repo)
@@ -190,7 +190,7 @@ func TestSymptomServiceCovValidateSymptomIDsSortedAscending(t *testing.T) {
 
 // --- Line 345: ensureSymptomNameAvailable excludeID guard ---
 
-// TestSymptomServiceCovUpdateDoesNotConflictWithSelf verifies that a symptom
+// TestSymptomServiceUpdateDoesNotConflictWithSelf verifies that a symptom
 // being renamed to its own *current* name succeeds (line 345: excludeID != 0
 // guard skips the symptom being updated from the duplicate check).
 // If the guard is removed or inverted, the symptom's own existing name entry
@@ -198,7 +198,7 @@ func TestSymptomServiceCovValidateSymptomIDsSortedAscending(t *testing.T) {
 // ErrSymptomNameAlreadyExists.
 // NOTE: the name must not collide with any default builtin (which are blocked
 // by the reserved-name check before line 345 is reached).
-func TestSymptomServiceCovUpdateDoesNotConflictWithSelf(t *testing.T) {
+func TestSymptomServiceUpdateDoesNotConflictWithSelf(t *testing.T) {
 	repo := &symptomserviceCovRepo{
 		findResult: models.SymptomType{
 			ID:     42,
@@ -224,11 +224,11 @@ func TestSymptomServiceCovUpdateDoesNotConflictWithSelf(t *testing.T) {
 	}
 }
 
-// TestSymptomServiceCovExcludeIDZeroDoesNotSkipAnySymptom verifies that when
+// TestSymptomServiceExcludeIDZeroDoesNotSkipAnySymptom verifies that when
 // excludeID == 0 (e.g., during CreateSymptomForUser), every existing symptom is
 // considered for duplicate detection. This is the complementary case to the one
 // above: the guard `excludeID != 0` must not skip entries when excludeID is 0.
-func TestSymptomServiceCovExcludeIDZeroDoesNotSkipAnySymptom(t *testing.T) {
+func TestSymptomServiceExcludeIDZeroDoesNotSkipAnySymptom(t *testing.T) {
 	repo := &symptomserviceCovRepo{
 		// ID=0 in the listed entry to confirm that even a symptom with ID=0
 		// is NOT skipped when excludeID is also 0.
@@ -246,12 +246,12 @@ func TestSymptomServiceCovExcludeIDZeroDoesNotSkipAnySymptom(t *testing.T) {
 
 // --- Lines 425/426/427: SortSymptomsByBuiltinAndName builtin-order switch ---
 
-// TestSymptomServiceCovSortBuiltinOrderPreservesCanonicalSequence verifies
+// TestSymptomServiceSortBuiltinOrderPreservesCanonicalSequence verifies
 // lines 425/426: when two builtin symptoms both have known canonical indices
 // and their indices differ, the one with the smaller index comes first.
 // Also exercises line 427: when one builtin has an unknown canonical index
 // and the other does not, the known-index one comes first.
-func TestSymptomServiceCovSortBuiltinOrderPreservesCanonicalSequence(t *testing.T) {
+func TestSymptomServiceSortBuiltinOrderPreservesCanonicalSequence(t *testing.T) {
 	// Use real default builtin names so they have known canonical positions.
 	// "Cramps" is index 0, "Headache" is index 1 in DefaultBuiltinSymptoms.
 	// Deliberately place them reversed to prove the sort moves them correctly.
@@ -269,10 +269,10 @@ func TestSymptomServiceCovSortBuiltinOrderPreservesCanonicalSequence(t *testing.
 	}
 }
 
-// TestSymptomServiceCovSortBuiltinUnknownNameFallsAfterKnown verifies
+// TestSymptomServiceSortBuiltinUnknownNameFallsAfterKnown verifies
 // line 427: a builtin symptom whose name is not in the canonical order map
 // (i.e., rightHas=false, leftHas=true) is sorted after a known builtin.
-func TestSymptomServiceCovSortBuiltinUnknownNameFallsAfterKnown(t *testing.T) {
+func TestSymptomServiceSortBuiltinUnknownNameFallsAfterKnown(t *testing.T) {
 	// "Cramps" is the canonical index-0 builtin.
 	// "XYZ-unknown-symptom" is not in the default catalog.
 	symptoms := []models.SymptomType{
@@ -292,7 +292,7 @@ func TestSymptomServiceCovSortBuiltinUnknownNameFallsAfterKnown(t *testing.T) {
 // TestSymptomServiceCovSortBuiltinTwoUnknownNamesAlphabetically verifies the
 // fallback at line 431: two builtins both lacking canonical positions are
 // sorted by normalised name key.
-func TestSymptomServiceCovSortBuiltinTwoUnknownNamesAlphabetical(t *testing.T) {
+func TestSymptomServiceSortBuiltinTwoUnknownNamesAlphabetical(t *testing.T) {
 	symptoms := []models.SymptomType{
 		{ID: 1, Name: "Zebra symptom", IsBuiltin: true},
 		{ID: 2, Name: "Apple symptom", IsBuiltin: true},
@@ -306,9 +306,9 @@ func TestSymptomServiceCovSortBuiltinTwoUnknownNamesAlphabetical(t *testing.T) {
 
 // --- Lines 215/218: SeedBuiltinSymptoms error + early exit ---
 
-// TestSymptomServiceCovSeedBuiltinSymptomsReturnsCountError verifies line 215:
+// TestSymptomServiceSeedBuiltinSymptomsReturnsCountError verifies line 215:
 // when CountBuiltinByUser returns an error, SeedBuiltinSymptoms propagates it.
-func TestSymptomServiceCovSeedBuiltinSymptomsReturnsCountError(t *testing.T) {
+func TestSymptomServiceSeedBuiltinSymptomsReturnsCountError(t *testing.T) {
 	sentinel := errors.New("db failure")
 	repo := &symptomserviceCovRepo{countBuiltinErr: sentinel}
 	service := NewSymptomService(repo)
@@ -318,10 +318,10 @@ func TestSymptomServiceCovSeedBuiltinSymptomsReturnsCountError(t *testing.T) {
 	}
 }
 
-// TestSymptomServiceCovSeedBuiltinSymptomsSkipsWhenAlreadySeeded verifies
+// TestSymptomServiceSeedBuiltinSymptomsSkipsWhenAlreadySeeded verifies
 // line 218: when CountBuiltinByUser returns count > 0, SeedBuiltinSymptoms
 // returns nil without calling CreateBatch.
-func TestSymptomServiceCovSeedBuiltinSymptomsSkipsWhenAlreadySeeded(t *testing.T) {
+func TestSymptomServiceSeedBuiltinSymptomsSkipsWhenAlreadySeeded(t *testing.T) {
 	repo := &symptomserviceCovRepo{countBuiltinCnt: 5}
 	service := NewSymptomService(repo)
 
@@ -335,11 +335,11 @@ func TestSymptomServiceCovSeedBuiltinSymptomsSkipsWhenAlreadySeeded(t *testing.T
 
 // --- Lines 226-228 / 250-252: EnsureBuiltinSymptoms propagates a CreateBatch error ---
 
-// TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesCreateBatchError verifies
+// TestSymptomServiceEnsureBuiltinSymptomsPropagatesCreateBatchError verifies
 // that EnsureBuiltinSymptoms (line 226-228) surfaces the error returned by
 // ensureBuiltinSymptomsListed when CreateBatch fails while backfilling
 // missing builtins (line 250-252).
-func TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesCreateBatchError(t *testing.T) {
+func TestSymptomServiceEnsureBuiltinSymptomsPropagatesCreateBatchError(t *testing.T) {
 	sentinel := errors.New("create batch failure")
 	repo := &symptomserviceCovRepo{createBatchErr: sentinel}
 	service := NewSymptomService(repo)
@@ -349,10 +349,10 @@ func TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesCreateBatchError(t *tes
 	}
 }
 
-// TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesListError verifies that
+// TestSymptomServiceEnsureBuiltinSymptomsPropagatesListError verifies that
 // ensureBuiltinSymptomsListed's initial ListByUser error (line 236) is
 // propagated as-is through EnsureBuiltinSymptoms.
-func TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesListError(t *testing.T) {
+func TestSymptomServiceEnsureBuiltinSymptomsPropagatesListError(t *testing.T) {
 	sentinel := errors.New("list failure")
 	repo := &symptomserviceCovRepo{listErr: sentinel}
 	service := NewSymptomService(repo)

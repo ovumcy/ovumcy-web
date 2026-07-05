@@ -5,7 +5,7 @@ import "testing"
 // i18npolicyCovRussianPluralNegativeValue verifies that russianPluralForm handles
 // negative values correctly by normalising them to their absolute value before
 // computing plural form. Covers lines 160–161 (the `if absolute < 0` branch).
-func TestI18npolicyCovRussianPluralNegativeValue(t *testing.T) {
+func TestI18nPolicyRussianPluralNegativeValue(t *testing.T) {
 	// A negative value whose absolute is 1 should return the "one" form,
 	// not the "many" form (which would happen if negation were skipped).
 	got := russianPluralForm(-1, "один", "несколько", "много")
@@ -26,10 +26,10 @@ func TestI18npolicyCovRussianPluralNegativeValue(t *testing.T) {
 	}
 }
 
-// TestI18npolicyCovRussianPluralTeenBoundary verifies the upper boundary of the
+// TestI18nPolicyRussianPluralTeenBoundary verifies the upper boundary of the
 // teen exception (11–14). Line 164 mutant: `<= 14` might be changed to `<= 13`.
 // Value 14 must return the "many" form (teen exception), not "few" (lastDigit == 4).
-func TestI18npolicyCovRussianPluralTeenBoundary(t *testing.T) {
+func TestI18nPolicyRussianPluralTeenBoundary(t *testing.T) {
 	// 14 is in the teen range → many
 	got := russianPluralForm(14, "раз", "раза", "раз")
 	if got != "раз" {
@@ -58,9 +58,9 @@ func TestI18npolicyCovRussianPluralTeenBoundary(t *testing.T) {
 	}
 }
 
-// TestI18npolicyCovRussianPluralSwitchCases directly exercises lines 170 and 172
+// TestI18nPolicyRussianPluralSwitchCases directly exercises lines 170 and 172
 // (the switch cases for lastDigit==1 and lastDigit in 2–4).
-func TestI18npolicyCovRussianPluralSwitchCases(t *testing.T) {
+func TestI18nPolicyRussianPluralSwitchCases(t *testing.T) {
 	tests := []struct {
 		value    int
 		wantForm string // "one", "few", or "many" signalled by distinct strings below
@@ -91,13 +91,13 @@ func TestI18npolicyCovRussianPluralSwitchCases(t *testing.T) {
 	}
 }
 
-// TestI18npolicyCovFrenchCountSingular covers line 137 (`if count == 1` in the
+// TestI18nPolicyFrenchCountSingular covers line 137 (`if count == 1` in the
 // French branch). French does not change the word for "fois" between singular
 // and plural — both are "fois" — so the branch is equivalent for count-word
 // purposes. However the branch IS executed for count==1, and the test below
 // verifies the full output is correct so that any mutation to the surrounding
 // logic (e.g. flipping to lang=="de") is caught.
-func TestI18npolicyCovFrenchCountSingular(t *testing.T) {
+func TestI18nPolicyFrenchCountSingular(t *testing.T) {
 	// count==1, days==1 → singular day form
 	got := LocalizedSymptomFrequencySummary("fr", 1, 1)
 	want := "1 fois (en 1 jour)"

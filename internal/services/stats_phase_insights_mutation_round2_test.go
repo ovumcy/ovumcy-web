@@ -18,9 +18,9 @@ import (
 //     (stats_service.go, stats_service_test.go)
 //   - mustParseStatsServiceDay (stats_service_test.go)
 
-// TestStatsphaseinsightsCovBuildContextsExcludesShortOvulationlessCycles kills
+// TestStatsPhaseInsightsBuildContextsExcludesShortOvulationlessCycles kills
 // the CONDITIONALS_BOUNDARY mutant at line 74 (ovulationDay <= 0 -> < 0).
-func TestStatsphaseinsightsCovBuildContextsExcludesShortOvulationlessCycles(t *testing.T) {
+func TestStatsPhaseInsightsBuildContextsExcludesShortOvulationlessCycles(t *testing.T) {
 	// Period days chosen so DetectCycleStarts (new start when a period day is
 	// >= 6 calendar days after the previous one) yields five starts and thus four
 	// completed cycles:
@@ -53,9 +53,9 @@ func TestStatsphaseinsightsCovBuildContextsExcludesShortOvulationlessCycles(t *t
 	}
 }
 
-// TestStatsphaseinsightsCovMoodInsightEmptyPhaseHasNoData kills the
+// TestStatsPhaseInsightsMoodInsightEmptyPhaseHasNoData kills the
 // CONDITIONALS_BOUNDARY mutant at line 164 (current.count > 0 -> >= 0).
-func TestStatsphaseinsightsCovMoodInsightEmptyPhaseHasNoData(t *testing.T) {
+func TestStatsPhaseInsightsMoodInsightEmptyPhaseHasNoData(t *testing.T) {
 	service := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	owner := statsphaseinsightsCovOwner(123)
 
@@ -94,9 +94,9 @@ func TestStatsphaseinsightsCovMoodInsightEmptyPhaseHasNoData(t *testing.T) {
 	}
 }
 
-// TestStatsphaseinsightsCovHasPhaseSymptomInsightDataRequiresPositiveTotalDays
+// TestStatsPhaseInsightsHasPhaseSymptomInsightDataRequiresPositiveTotalDays
 // kills the CONDITIONALS_BOUNDARY mutant at line 305 (totalDays > 0 -> >= 0).
-func TestStatsphaseinsightsCovHasPhaseSymptomInsightDataRequiresPositiveTotalDays(t *testing.T) {
+func TestStatsPhaseInsightsHasPhaseSymptomInsightDataRequiresPositiveTotalDays(t *testing.T) {
 	counters := newPhaseSymptomCounters()
 	// A phase that has symptom counts but zero observed days must NOT be treated
 	// as having data: totalDays>0 is a required part of the guard alongside

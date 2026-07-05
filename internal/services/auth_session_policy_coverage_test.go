@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestAuthsessionpolicyCovBuildDefaultsNonPositiveTTL(t *testing.T) {
+func TestAuthSessionPolicyBuildDefaultsNonPositiveTTL(t *testing.T) {
 	secret := []byte("test-auth-secret")
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 

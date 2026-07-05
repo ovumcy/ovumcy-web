@@ -8,7 +8,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// TestSettingsviewserviceCovExportDateBoundsWhitespacePaddedToEqualsToday
+// TestSettingsViewServiceExportDateBoundsWhitespacePaddedToEqualsToday
 // kills the CONDITIONALS_BOUNDARY mutant at line 282 of settings_view_service.go
 // (`compareISODate(availableSummary.DateTo, selectableMax) > 0` -> `>= 0`).
 //
@@ -19,7 +19,7 @@ import (
 // " 2026-06-01". selectableMax is returned verbatim into SelectableDateMax
 // WITHOUT re-trimming, so the divergence is observable on the returned struct
 // field (not logs/markup/errors).
-func TestSettingsviewserviceCovExportDateBoundsWhitespacePaddedToEqualsToday(t *testing.T) {
+func TestSettingsViewServiceExportDateBoundsWhitespacePaddedToEqualsToday(t *testing.T) {
 	loader := &stubSettingsViewLoader{
 		user: models.User{CycleLength: 28, PeriodLength: 5},
 	}
