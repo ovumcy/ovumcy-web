@@ -122,7 +122,13 @@ func (handler *Handler) StartLocalPasswordSetupReauth(c fiber.Ctx) error {
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true, "redirect_url": authURL})
 	}
-	return c.Redirect().Status(fiber.StatusSeeOther).To(authURL)
+	// A plain HTML form submit cannot 303 straight to the cross-origin provider
+	// authorize endpoint: the settings page CSP pins form-action to 'self' and
+	// Chromium enforces that across the form navigation's redirect chain, so the
+	// cross-origin hop aborts client-side (net::ERR_ABORTED). Hand back a
+	// same-origin interstitial whose meta-refresh performs the hop instead.
+	c.Type("html", "utf-8")
+	return c.SendString(oidcSameOriginRedirectInterstitial(authURL))
 }
 
 // completeLocalPasswordSetupReauth is dispatched from CompleteOIDCLogin when
