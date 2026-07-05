@@ -365,7 +365,8 @@ func TestDashboardCycleUpcomingPredictionsZeroLastPeriodStartPassesThroughStats(
 		OvulationExact:      true,
 		OvulationImpossible: false,
 	}
-	np, ov, exact, impossible := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 28)
+	prediction := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 28)
+	np, ov, exact, impossible := prediction.NextPeriodStart, prediction.OvulationDate, prediction.OvulationExact, prediction.OvulationImpossible
 	if !np.Equal(statsPeriod) {
 		t.Fatalf("expected pass-through NextPeriodStart=%v, got %v", statsPeriod, np)
 	}
@@ -388,7 +389,8 @@ func TestDashboardCycleUpcomingPredictionsZeroCycleLengthPassesThroughStats(t *t
 		OvulationExact:      false,
 		OvulationImpossible: true,
 	}
-	np, _, _, impossible := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 0)
+	prediction := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 0)
+	np, impossible := prediction.NextPeriodStart, prediction.OvulationImpossible
 	if !np.Equal(statsPeriod) {
 		t.Fatalf("expected pass-through NextPeriodStart for cycleLength=0, got %v", np)
 	}
@@ -522,5 +524,33 @@ func TestDashboardCycleNeedsOvulationDataRequiresNonZeroLastPeriodStart(t *testi
 	ctx := BuildDashboardCycleContext(user, stats, mustParseDashboardDay(t, "2026-03-10"), time.UTC)
 	if ctx.DisplayOvulationNeedsData {
 		t.Fatal("expected DisplayOvulationNeedsData=false when LastPeriodStart is zero")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Lines 189-194 — DashboardUpcomingPredictions: a cycle length too short to
+// place ovulation (window not calculable) must clear the ovulation date and
+// mark OvulationImpossible while still projecting the next period start.
+// ---------------------------------------------------------------------------
+
+func TestDashboardcycleCovUpcomingPredictionsMarksOvulationImpossibleForShortCycle(t *testing.T) {
+	stats := CycleStats{
+		LastPeriodStart: mustParseDashboardDay(t, "2026-03-01"),
+	}
+	// cycleLength 14 < minLutealPhaseDays+minOvulationCycleDay, so
+	// PredictCycleWindow reports Calculable=false.
+	got := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-03-10"), 14)
+
+	if !got.OvulationImpossible {
+		t.Fatal("expected OvulationImpossible=true for a non-calculable short cycle")
+	}
+	if got.OvulationExact {
+		t.Fatal("expected OvulationExact=false when ovulation is impossible")
+	}
+	if !got.OvulationDate.IsZero() {
+		t.Fatalf("expected zero OvulationDate when ovulation is impossible, got %v", got.OvulationDate)
+	}
+	if got.NextPeriodStart.IsZero() {
+		t.Fatal("expected a projected NextPeriodStart even when ovulation is impossible")
 	}
 }

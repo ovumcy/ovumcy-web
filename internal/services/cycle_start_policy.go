@@ -87,16 +87,17 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 		return 0, false
 	}
 
-	ovulationDate, _, _, _, calculable := PredictCycleWindow(previousStart, cycleLength, stats.LutealPhase)
-	if !calculable || ovulationDate.IsZero() {
+	window := PredictCycleWindow(previousStart, cycleLength, stats.LutealPhase)
+	if !window.Calculable || window.OvulationDate.IsZero() {
 		return 0, false
 	}
 
-	// ovulationDate is a UTC-midnight date-only value from PredictCycleWindow
-	// while targetDay is a location-midnight working value; compare calendar
-	// days instead of instants. DateAtLocation on the UTC-midnight value would
-	// shift the day backward in UTC-minus locales (issue #48 class).
-	gapDays := CalendarDaysBetween(ovulationDate, targetDay)
+	// window.OvulationDate is a UTC-midnight date-only value from
+	// PredictCycleWindow while targetDay is a location-midnight working value;
+	// compare calendar days instead of instants. DateAtLocation on the
+	// UTC-midnight value would shift the day backward in UTC-minus locales
+	// (issue #48 class).
+	gapDays := CalendarDaysBetween(window.OvulationDate, targetDay)
 	if gapDays >= 6 && gapDays <= 12 {
 		return gapDays, true
 	}

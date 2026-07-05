@@ -34,14 +34,14 @@ async function signInViaOIDCOnlyAndEnableLocalPassword(page: Page) {
 
   const localPasswordForm = page.locator('[data-settings-local-password-form]');
   if (await localPasswordForm.isVisible().catch(() => false)) {
-    // OIDC-only users now must complete a step-up re-auth before a local
-    // password is committed. Submitting the form posts to
-    // /api/v1/users/current/password/step-up, which redirects to the
-    // provider's authorize endpoint with prompt=login + max_age=0. The full
-    // round-trip back through /auth/oidc/callback into /recovery-code depends
-    // on the test provider honoring those parameters and cannot be exercised
-    // without a controllable IdP — assert the redirect to the provider as the
-    // closest end-to-end signal.
+    // OIDC-only users must complete a step-up re-auth before a local password
+    // is committed. Submitting the form posts to
+    // /api/v1/users/current/password/step-up, which hands back a same-origin
+    // interstitial that bounces to the provider's authorize endpoint with
+    // prompt=login + max_age=0. Against the controllable local IdP the round
+    // trip runs to completion — provider re-auth, /auth/oidc/callback, then the
+    // freshly-issued recovery code — so wait for that terminal /recovery-code
+    // page as the end-to-end signal.
     await expect(page.locator('[data-settings-recovery-code-unavailable]')).toBeVisible();
     await expect(page.locator('form[action="/api/v1/users/current/recovery-code"]')).toHaveCount(0);
     await expect(localPasswordForm).toHaveAttribute('action', '/api/v1/users/current/password/step-up');
@@ -49,8 +49,11 @@ async function signInViaOIDCOnlyAndEnableLocalPassword(page: Page) {
     const localPassword = 'LocalStrongPass2';
     await page.locator('#settings-new-password').fill(localPassword);
     await page.locator('#settings-confirm-password').fill(localPassword);
+    // Wait for the concrete terminal URL, not `(url) => !url.startsWith(page.url())`:
+    // page.url() is re-read on every predicate call and tracks the live location,
+    // so it always equals the URL under test and the predicate never fires.
     await Promise.all([
-      page.waitForURL((url) => !url.toString().startsWith(page.url())),
+      page.waitForURL(/\/recovery-code(?:\?.*)?$/),
       page.locator('[data-settings-local-password-form] button[type="submit"]').click(),
     ]);
     expect(page.url()).not.toMatch(/\/settings(?:\?.*)?$/);
