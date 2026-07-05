@@ -25,9 +25,22 @@ jobs:
     # to ~61MB (go build cache + gremlins temp output accumulating across
     # targets) before internal/api — by far the largest, slowest target —
     # ever got a turn. Splitting also improves wall-clock via parallelism.
-    # internal/services alone has taken ~1h47m in CI; internal/api (largest
-    # package, heaviest DB-integration tests) is expected to run at least as
-    # long. This is a hang guard, not a runtime target — the job is advisory
+    # internal/services alone has taken ~1h47m in CI.
+    #
+    # internal/api is additionally split into 5 file-subset shards (issue
+    # #161): a single unsharded internal_api run (manual dispatch 28741574692,
+    # job 85225182461) was killed at the 3h0m0s hard cap, having reached only
+    # ~85% of the package's files at a steady, non-decelerating mutant rate —
+    # internal/services, a comparably-sized target, finished its *whole* run
+    # in 1h53m, so internal/api's heavier DB-integration tests (not raw file
+    # count) are the bottleneck. gremlins v0.6.0 has no package-subdivision or
+    # --include-files flag, only repeatable --exclude-files <regexp>, so
+    # scripts/mutation.sh partitions internal/api's own files into 5 groups at
+    # run time (round-robin over a live, sorted directory listing — never a
+    # hardcoded file list) and each shard excludes every file not in its
+    # group. 5 shards puts each at ~22 files with comfortable margin under the
+    # timeout even versus a pessimistic multi-hour full-package estimate.
+    # This is a hang guard, not a runtime target — the job is advisory
     # (continue-on-error below) regardless.
     timeout-minutes: 180
     permissions:
@@ -38,7 +51,11 @@ jobs:
         include:
           - slug: internal_services
           - slug: internal_security
-          - slug: internal_api
+          - slug: internal_api_1
+          - slug: internal_api_2
+          - slug: internal_api_3
+          - slug: internal_api_4
+          - slug: internal_api_5
     env:
       GOBIN: ${{ github.workspace }}/.bin
       MUTATION_WORKERS: "2"
@@ -55,6 +72,16 @@ jobs:
 
       - name: Install gremlins
         run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+
+      - name: Verify internal/api shard partition
+        # Cheap, gremlins-independent guard: proves every internal/api
+        # non-test .go file is assigned to exactly one shard (no gaps, no
+        # overlaps) before any shard spends time mutating. Runs in every
+        # matrix entry (including services/security, where it is a no-op
+        # check over the same fixed partition) so a broken partition fails
+        # loudly on the very next push instead of silently mis-scoping a
+        # shard's coverage.
+        run: bash scripts/mutation.sh verify-shards
 
       - name: Run mutation baseline
         # Advisory: gremlins runs without thresholds, so it exits 0 regardless of
@@ -83,4 +110,49 @@ jobs:
         with:
           name: mutation-baseline-results-${{ matrix.slug }}
           path: .tmp/mutation/
+          if-no-files-found: ignore
+
+  mutation-api-merge:
+    # Combines the 5 internal_api shard JSON reports into one
+    # .tmp/mutation/internal_api.json so downstream consumers (the test-suite
+    # auditor, a future internal-api.md score refresh) can read a single file
+    # matching the naming convention every other target already uses, instead
+    # of learning about 5 shard-specific filenames. Runs after all shards
+    # finish; always attempts the merge (if: always()) so a partial set of
+    # shard artifacts still produces a partial combined report rather than
+    # nothing, but the completeness check below still fails the job loudly if
+    # any shard's contribution is missing.
+    needs: mutation-baseline
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download internal_api shard artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutation-baseline-results-internal_api_*
+          path: .tmp/mutation-shards
+          merge-multiple: false
+
+      - name: Merge shard reports
+        # scripts/mutation.sh merge-api-shards shells out to `go run
+        # ./scripts/mutationmerge` — needs the Go toolchain from the step above.
+        run: bash scripts/mutation.sh merge-api-shards
+
+      - name: Upload merged internal_api results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-baseline-results-internal_api
+          path: .tmp/mutation/internal_api.json
           if-no-files-found: ignore

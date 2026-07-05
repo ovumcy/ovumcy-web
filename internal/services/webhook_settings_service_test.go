@@ -53,6 +53,10 @@ func TestValidateWebhookURL(t *testing.T) {
 		{name: "hostless http rejected", raw: "http:///nohost", wantErr: true},
 		{name: "CRLF rejected", raw: "https://example.com/\r\nHost: evil", wantErr: true},
 		{name: "uppercase scheme accepted", raw: "HTTPS://example.com/hook", wantErr: false},
+		// Passes the CRLF guard but fails url.Parse itself (invalid percent
+		// escape), so it exercises the parse-error branch rather than the
+		// scheme/host checks.
+		{name: "unparseable url rejected", raw: "http://example.com/%zz", wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -228,6 +232,111 @@ func TestSaveWebhookSettingsDisabledWithNoURLClearsCiphertext(t *testing.T) {
 	}
 	if repo.savedColumns.Enabled {
 		t.Fatal("expected webhook_enabled=false persisted")
+	}
+}
+
+// TestSaveWebhookSettingsDisabledWithURLPersistsCiphertext covers the "disabled
+// but an endpoint was supplied" path: the owner turned delivery off yet kept a
+// valid URL in the form. The URL must still be validated and encrypted so
+// re-enabling later needs no re-entry, and webhook_enabled must persist as
+// false. The stored value is ciphertext (not the plaintext) and round-trips
+// back through DecryptWebhookURL.
+func TestSaveWebhookSettingsDisabledWithURLPersistsCiphertext(t *testing.T) {
+	svc, repo := newWebhookServiceForTest()
+	const userID = 11
+	const plaintextURL = "https://hooks.example.com/kept-while-disabled"
+
+	if err := svc.SaveWebhookSettings(context.Background(), userID, WebhookSettingsUpdate{
+		Enabled:          false,
+		URL:              plaintextURL,
+		NotifyPeriod:     true,
+		NotifyOvulation:  true,
+		ReminderLeadDays: 2,
+	}); err != nil {
+		t.Fatalf("SaveWebhookSettings: %v", err)
+	}
+
+	if repo.saveCalls != 1 {
+		t.Fatalf("expected exactly one save, got %d", repo.saveCalls)
+	}
+	if repo.savedColumns.Enabled {
+		t.Fatal("expected webhook_enabled=false persisted while disabled")
+	}
+	stored := repo.savedColumns.EncryptedURL
+	if stored == "" {
+		t.Fatal("expected the kept URL to be stored as ciphertext, got empty")
+	}
+	if stored == plaintextURL {
+		t.Fatal("stored webhook_url must be ciphertext, not the plaintext URL")
+	}
+	if repo.savedColumns.ReminderLeadDays != 2 {
+		t.Fatalf("expected reminder_lead_days=2 persisted, got %d", repo.savedColumns.ReminderLeadDays)
+	}
+
+	got, err := svc.DecryptWebhookURL(userID, stored)
+	if err != nil {
+		t.Fatalf("DecryptWebhookURL: %v", err)
+	}
+	if got != plaintextURL {
+		t.Fatalf("round-trip mismatch: got %q, want %q", got, plaintextURL)
+	}
+}
+
+// TestSaveWebhookSettingsDisabledWithInvalidURLRejected covers the validation
+// branch of the "disabled but URL supplied" path: an unparseable/other-scheme
+// URL is rejected even when delivery is off, so a bad value never reaches
+// persistence.
+func TestSaveWebhookSettingsDisabledWithInvalidURLRejected(t *testing.T) {
+	svc, repo := newWebhookServiceForTest()
+
+	err := svc.SaveWebhookSettings(context.Background(), 12, WebhookSettingsUpdate{
+		Enabled:         false,
+		URL:             "file:///etc/passwd",
+		NotifyPeriod:    true,
+		NotifyOvulation: true,
+	})
+	if !errors.Is(err, ErrWebhookURLInvalid) {
+		t.Fatalf("expected ErrWebhookURLInvalid for a bad URL while disabled, got %v", err)
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("expected no persistence when the URL is rejected, got %d save calls", repo.saveCalls)
+	}
+}
+
+// TestSaveWebhookSettingsEncryptFailurePropagates covers the encrypt-error
+// branches in both the enabled and the disabled-with-URL paths: a service built
+// with an empty secret key makes security.EncryptField fail, and the wrapped
+// error must surface (no partial save). EncryptField requires a non-empty key,
+// so an empty key deterministically triggers the failure without touching real
+// crypto internals.
+func TestSaveWebhookSettingsEncryptFailurePropagates(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+	}{
+		{name: "enabled path", enabled: true},
+		{name: "disabled-with-url path", enabled: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &stubWebhookRepo{}
+			svc := NewWebhookSettingsService(repo, nil) // empty secret key
+
+			err := svc.SaveWebhookSettings(context.Background(), 13, WebhookSettingsUpdate{
+				Enabled:         tc.enabled,
+				URL:             "https://hooks.example.com/enc-fail",
+				NotifyPeriod:    true,
+				NotifyOvulation: true,
+			})
+			if err == nil {
+				t.Fatal("expected an encrypt failure to surface, got nil")
+			}
+			if errors.Is(err, ErrWebhookURLInvalid) {
+				t.Fatalf("expected an encrypt error, not a validation error: %v", err)
+			}
+			if repo.saveCalls != 0 {
+				t.Fatalf("expected no persistence when encryption fails, got %d save calls", repo.saveCalls)
+			}
+		})
 	}
 }
 

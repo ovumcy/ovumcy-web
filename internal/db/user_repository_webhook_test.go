@@ -234,3 +234,24 @@ func TestClearAllDataResetsWebhookColumns(t *testing.T) {
 		t.Fatalf("expected watermarks cleared after clear-data, got period=%v ovulation=%v", got.WebhookPeriodLastSentCycleStart, got.WebhookOvulationLastSentCycleStart)
 	}
 }
+
+// TestListAllForNotifyReturnsErrorOnQueryFailure exercises the error-return
+// branch of ListAllForNotify: when the underlying SELECT fails (here because the
+// users table has been dropped), the method must propagate the error and return
+// a nil slice rather than report empty success. Mirrors the drop-table technique
+// the account-erasure tests use to reach their own error branches.
+func TestListAllForNotifyReturnsErrorOnQueryFailure(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+
+	if err := repo.database.Exec("DROP TABLE users").Error; err != nil {
+		t.Fatalf("drop users table: %v", err)
+	}
+
+	records, err := repo.ListAllForNotify(context.Background())
+	if err == nil {
+		t.Fatal("expected ListAllForNotify to error when the users table is missing")
+	}
+	if records != nil {
+		t.Fatalf("expected nil records on error, got %v", records)
+	}
+}
