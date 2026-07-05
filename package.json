@@ -7,7 +7,7 @@
     "build:js": "node ./scripts/build-js.mjs",
     "build": "npm run build:css && npm run build:js",
     "lint": "npm run lint:js",
-    "lint:js": "eslint --max-warnings=0 web/src/js web/static/js/chart-lite.js scripts",
+    "lint:js": "eslint --max-warnings=0 web/src/js web/static/js/chart-lite.js web/static/js/app.js web/static/js/settings-export.js scripts",
     "test:unit": "node --test web/src/js/__tests__/*.test.mjs",
     "e2e": "node ./scripts/run-e2e.mjs --mode=stable --project=chromium",
     "e2e:ci": "node ./scripts/run-e2e.mjs --mode=ci --project=chromium",
