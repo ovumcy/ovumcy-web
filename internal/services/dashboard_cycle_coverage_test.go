@@ -364,7 +364,8 @@ func TestDashboardcycleCovUpcomingPredictionsZeroLastPeriodStartPassesThroughSta
 		OvulationExact:      true,
 		OvulationImpossible: false,
 	}
-	np, ov, exact, impossible := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 28)
+	prediction := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 28)
+	np, ov, exact, impossible := prediction.NextPeriodStart, prediction.OvulationDate, prediction.OvulationExact, prediction.OvulationImpossible
 	if !np.Equal(statsPeriod) {
 		t.Fatalf("expected pass-through NextPeriodStart=%v, got %v", statsPeriod, np)
 	}
@@ -387,7 +388,8 @@ func TestDashboardcycleCovUpcomingPredictionsZeroCycleLengthPassesThroughStats(t
 		OvulationExact:      false,
 		OvulationImpossible: true,
 	}
-	np, _, _, impossible := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 0)
+	prediction := DashboardUpcomingPredictions(stats, &models.User{}, mustParseDashboardDay(t, "2026-04-10"), 0)
+	np, impossible := prediction.NextPeriodStart, prediction.OvulationImpossible
 	if !np.Equal(statsPeriod) {
 		t.Fatalf("expected pass-through NextPeriodStart for cycleLength=0, got %v", np)
 	}

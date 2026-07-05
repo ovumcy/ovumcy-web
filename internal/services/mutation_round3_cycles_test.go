@@ -96,8 +96,7 @@ func TestMR3Cycles_CalcOvulationDayMinCycleBoundary(t *testing.T) {
 // pins the user-facing contract regardless.
 func TestMR3Cycles_PredictCycleWindowZeroCycleLength(t *testing.T) {
 	periodStart := mr3cycDay(2026, time.March, 10)
-	_, _, _, _, calculable := PredictCycleWindow(periodStart, 0, defaultLutealPhaseDays)
-	if calculable {
+	if PredictCycleWindow(periodStart, 0, defaultLutealPhaseDays).Calculable {
 		t.Fatalf("cycleLength==0 must yield calculable=false")
 	}
 }

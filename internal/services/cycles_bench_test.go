@@ -52,6 +52,6 @@ func BenchmarkPredictCycleWindow(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _, _, _ = PredictCycleWindow(periodStart, 28, 14)
+		_ = PredictCycleWindow(periodStart, 28, 14)
 	}
 }

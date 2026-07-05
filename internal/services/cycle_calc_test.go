@@ -40,7 +40,8 @@ func TestPredictCycleWindow_InvalidWhenCycleIsShorterThanSupportedPredictionFloo
 	t.Parallel()
 
 	periodStart := mustParseDay(t, "2026-02-10")
-	ovulationDate, fertilityStart, fertilityEnd, exact, calculable := PredictCycleWindow(periodStart, 14, 15)
+	window := PredictCycleWindow(periodStart, 14, 15)
+	ovulationDate, fertilityStart, fertilityEnd, exact, calculable := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
 
 	if calculable {
 		t.Fatalf("expected incompatible values to be non-calculable")
@@ -60,7 +61,8 @@ func TestPredictCycleWindow_FertilityWindowMayOverlapPeriodDays(t *testing.T) {
 	t.Parallel()
 
 	periodStart := mustParseDay(t, "2026-02-10")
-	ovulationDate, fertilityStart, fertilityEnd, exact, calculable := PredictCycleWindow(periodStart, 15, 10)
+	window := PredictCycleWindow(periodStart, 15, 10)
+	ovulationDate, fertilityStart, fertilityEnd, exact, calculable := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
 
 	if !calculable {
 		t.Fatalf("expected calculable prediction for short cycle")
@@ -85,7 +87,8 @@ func TestPredictCycleWindow_NormalCycle(t *testing.T) {
 	t.Parallel()
 
 	periodStart := mustParseDay(t, "2026-02-10")
-	ovulationDate, fertilityStart, fertilityEnd, exact, calculable := PredictCycleWindow(periodStart, 28, 14)
+	window := PredictCycleWindow(periodStart, 28, 14)
+	ovulationDate, fertilityStart, fertilityEnd, exact, calculable := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
 
 	if !calculable {
 		t.Fatalf("expected calculable prediction for regular cycle")
@@ -110,7 +113,8 @@ func TestPredictCycleWindow_UsesOneBasedCycleDayCounting(t *testing.T) {
 	t.Parallel()
 
 	periodStart := mustParseDay(t, "2026-03-10")
-	ovulationDate, _, _, exact, calculable := PredictCycleWindow(periodStart, 28, 14)
+	window := PredictCycleWindow(periodStart, 28, 14)
+	ovulationDate, exact, calculable := window.OvulationDate, window.OvulationExact, window.Calculable
 
 	if !calculable {
 		t.Fatalf("expected calculable prediction for regular cycle")
@@ -144,11 +148,12 @@ func TestPredictCycleWindow_InvariantsAcrossRanges(t *testing.T) {
 	for _, testCase := range cases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
-			ovulationDate, fertilityStart, fertilityEnd, _, calculable := PredictCycleWindow(
+			window := PredictCycleWindow(
 				periodStart,
 				testCase.cycleLength,
 				testCase.lutealPhase,
 			)
+			ovulationDate, fertilityStart, fertilityEnd, calculable := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.Calculable
 			if calculable != testCase.wantCalculable {
 				t.Fatalf("expected calculable=%v, got %v", testCase.wantCalculable, calculable)
 			}

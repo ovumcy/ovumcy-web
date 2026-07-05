@@ -122,7 +122,8 @@ func TestCyclePrediction_ReferenceVectors(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ovul, fertFrom, fertTo, exact, calc := PredictCycleWindow(tc.periodStart, tc.cycleLen, tc.luteal)
+			window := PredictCycleWindow(tc.periodStart, tc.cycleLen, tc.luteal)
+			ovul, fertFrom, fertTo, exact, calc := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
 			if calc != tc.wantCalc {
 				t.Fatalf("calculable = %t, want %t", calc, tc.wantCalc)
 			}
