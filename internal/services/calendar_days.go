@@ -111,11 +111,11 @@ func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleS
 	fertilityStart := CalendarDay(stats.FertilityWindowStart, location)
 	if fertilityStart.IsZero() {
 		cycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
-		_, computedFertilityStart, _, _, calculable := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
-		if !calculable || computedFertilityStart.IsZero() {
+		window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
+		if !window.Calculable || window.FertilityWindowStart.IsZero() {
 			return
 		}
-		fertilityStart = computedFertilityStart
+		fertilityStart = window.FertilityWindowStart
 	}
 
 	preFertileEnd := fertilityStart.AddDate(0, 0, -1)
@@ -199,15 +199,15 @@ func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[
 		if cycleLen <= 0 {
 			continue
 		}
-		ovulationDate, fertilityStart, fertilityEnd, _, calculable := PredictCycleWindow(cycleStart, cycleLen, luteal)
-		if !calculable {
+		window := PredictCycleWindow(cycleStart, cycleLen, luteal)
+		if !window.Calculable {
 			continue
 		}
 		preFertileStart := cycleStart.AddDate(0, 0, periodLength)
-		preFertileEnd := fertilityStart.AddDate(0, 0, -1)
+		preFertileEnd := window.FertilityWindowStart.AddDate(0, 0, -1)
 		appendCalendarDateRange(preFertileMap, preFertileStart, preFertileEnd)
-		ovulationMap[ovulationDate.Format("2006-01-02")] = true
-		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, fertilityStart, fertilityEnd, ovulationDate)
+		ovulationMap[window.OvulationDate.Format("2006-01-02")] = true
+		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationDate)
 	}
 }
 
@@ -219,16 +219,16 @@ func appendPredictedPeriod(predictedPeriodMap map[string]bool, cycleStart time.T
 }
 
 func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int, lutealPhase int) {
-	ovulationDate, fertilityStart, fertilityEnd, _, calculable := PredictCycleWindow(cycleStart, predictedCycleLength, ResolveLutealPhase(lutealPhase))
-	if !calculable {
+	window := PredictCycleWindow(cycleStart, predictedCycleLength, ResolveLutealPhase(lutealPhase))
+	if !window.Calculable {
 		return
 	}
 
 	preFertileStart := cycleStart.AddDate(0, 0, predictedPeriodLength)
-	preFertileEnd := fertilityStart.AddDate(0, 0, -1)
+	preFertileEnd := window.FertilityWindowStart.AddDate(0, 0, -1)
 	appendCalendarDateRange(preFertileMap, preFertileStart, preFertileEnd)
-	ovulationMap[ovulationDate.Format("2006-01-02")] = true
-	appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, fertilityStart, fertilityEnd, ovulationDate)
+	ovulationMap[window.OvulationDate.Format("2006-01-02")] = true
+	appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationDate)
 }
 
 func appendCurrentCycleBBTSignal(user *models.User, logs []models.DailyLog, stats CycleStats, now time.Time, ovulationMap map[string]bool, tentativeOvulationMap map[string]bool, location *time.Location) {

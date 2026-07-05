@@ -497,3 +497,11 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | CSRF middleware error path does not leak PII into the audit log | `TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | Rate-limit handler does not leak PII into the audit log | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | The Fiber request log's error field is sanitized (emails → `:email`, opaque tokens → `:token`) | `TestSafeLogError` in [internal/api/request_logging_test.go](internal/api/request_logging_test.go) |
+
+### Medical Safety Disclaimer
+
+The backend HTML contract normally forbids asserting localized copy, but the persistent medical-safety disclaimer is a deliberate exception: its exact wording is the invariant, so these tests pin both the surface's stable `data-*` hook and the safety string.
+
+| Claim | Enforced by |
+| --- | --- |
+| Every owner-facing prediction surface (dashboard, stats, calendar) renders the persistent "estimates, not medical advice or a method of contraception" disclaimer, so a template refactor cannot silently drop it from a health-prediction page | `TestDashboardRendersPredictionDisclaimer`, `TestStatsRendersPredictionDisclaimer`, `TestCalendarRendersPredictionDisclaimer` in [internal/api/dashboard_prediction_disclaimer_test.go](internal/api/dashboard_prediction_disclaimer_test.go) |
