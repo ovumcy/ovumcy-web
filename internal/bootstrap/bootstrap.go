@@ -45,6 +45,44 @@ type Options struct {
 	AuditLogEnabled bool
 }
 
+// i18nDisclaimerProvider adapts the i18n Manager to services.DisclaimerProvider:
+// it returns the localized medical-safety disclaimer (i18n key
+// dashboard.prediction_disclaimer) for a language, falling back to the manager's
+// default language (Messages merges the default over the target). It is the seam
+// the request-free webhook notify pass uses so every payload carries the
+// owner-localized "estimates, not medical advice or a method of contraception"
+// string without importing the whole Manager into internal/services.
+type i18nDisclaimerProvider struct {
+	manager *i18n.Manager
+}
+
+const disclaimerMessageKey = "dashboard.prediction_disclaimer"
+
+func (provider i18nDisclaimerProvider) Disclaimer(language string) string {
+	if provider.manager == nil {
+		return ""
+	}
+	return provider.manager.Messages(language)[disclaimerMessageKey]
+}
+
+// BuildNotifyService assembles the request-free webhook notify pass (issue #124,
+// slice 3) from the SAME repositories and secret the web path uses, so a future
+// in-process scheduler (#125) can reuse this exact recipe. secretKey decrypts
+// each owner's stored webhook_url (aad-bound to the owner id); blockPrivateAddresses
+// wires the off-by-default WEBHOOK_BLOCK_PRIVATE_ADDRESSES egress gate. The
+// returned service reaches a real socket only through the hardened deliverer.
+func BuildNotifyService(repositories *db.Repositories, secretKey []byte, i18nManager *i18n.Manager, blockPrivateAddresses bool) *services.WebhookNotifyService {
+	webhookSettings := services.NewWebhookSettingsService(repositories.Users, secretKey)
+	deliverer := services.NewWebhookDeliverer(blockPrivateAddresses)
+	return services.NewWebhookNotifyService(
+		repositories.Users,
+		repositories.DailyLogs,
+		webhookSettings,
+		deliverer,
+		i18nDisclaimerProvider{manager: i18nManager},
+	)
+}
+
 // BuildDependencies wires the repositories and configuration into the domain
 // services the HTTP handler requires. Both the production binary and the
 // internal/api test helpers call it so their wiring stays identical.
