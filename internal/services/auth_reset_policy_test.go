@@ -80,6 +80,36 @@ func TestParsePasswordResetTokenRejectsWrongPurpose(t *testing.T) {
 	}
 }
 
+// TestParsePasswordResetTokenRejectsMissingExpiry locks the defensive
+// claims.ExpiresAt == nil branch (auth_reset_policy.go): BuildPasswordResetToken
+// always sets ExpiresAt, but the jwt/v5 parser does not require the exp claim
+// by default, so a hand-crafted token omitting it must still be rejected as
+// expired rather than parsed with a nil expiry.
+func TestParsePasswordResetTokenRejectsMissingExpiry(t *testing.T) {
+	secret := []byte("test-secret")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+
+	claims := PasswordResetClaims{
+		UserID:        7,
+		Purpose:       passwordResetTokenPurpose,
+		PasswordState: "state",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:  strconv.FormatUint(7, 10),
+			IssuedAt: jwt.NewNumericDate(now),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	signed, err := token.SignedString(secret)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+
+	_, err = ParsePasswordResetToken(secret, signed, now)
+	if !errors.Is(err, ErrPasswordResetTokenExpired) {
+		t.Fatalf("expected ErrPasswordResetTokenExpired for token with no exp claim, got %v", err)
+	}
+}
+
 func TestPasswordStateFingerprintMatch(t *testing.T) {
 	hash := "$2a$10$testhashvaluefortokenclaims"
 	fingerprint := PasswordStateFingerprint(hash)
