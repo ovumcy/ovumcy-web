@@ -12,8 +12,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1871,6 +1873,139 @@ func TestRetryShutdownBridgesBootWindow(t *testing.T) {
 	}
 	if err := sqlDB.Ping(); err == nil {
 		t.Fatal("expected database to be closed after a boot-window stop")
+	}
+}
+
+// TestRetryShutdownReturnsOnContextDeadline pins the ctx.Done() exit: a
+// signal that arrives but never sees the server finish (served never
+// closes) must still let retryShutdown return once its bounding context
+// expires, rather than looping forever.
+func TestRetryShutdownReturnsOnContextDeadline(t *testing.T) {
+	app := fiber.New()
+	served := make(chan struct{}) // deliberately never closed
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		retryShutdown(app, ctx, served)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("retryShutdown did not return after its context deadline expired")
+	}
+}
+
+// TestRetryShutdownLogsPersistentShutdownError pins the error-return branch:
+// once app.ShutdownWithContext itself fails (its own bounding context expires
+// while a connection is still open), retryShutdown must log the failure and
+// stop retrying rather than spinning on a shutdown that will never succeed.
+func TestRetryShutdownLogsPersistentShutdownError(t *testing.T) {
+	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "shutdown-error.db"))
+	if err != nil {
+		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+	}
+	app := fiber.New()
+
+	addrCh := make(chan string, 1)
+	app.Hooks().OnListen(func(listenData fiber.ListenData) error {
+		addrCh <- net.JoinHostPort(listenData.Host, listenData.Port)
+		return nil
+	})
+
+	listenDone := make(chan error, 1)
+	go func() { listenDone <- runServer(app, database, "127.0.0.1:0") }()
+
+	address := <-addrCh
+	// A raw connection that never sends a request stays counted as open
+	// (not idle), so fasthttp's own ShutdownWithContext can never drain it
+	// and is guaranteed to time out.
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		t.Fatalf("net.Dial() unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	var buffer bytes.Buffer
+	log.SetOutput(&buffer)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	served := make(chan struct{})
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer shutdownCancel()
+	retryShutdown(app, shutdownCtx, served)
+
+	if !strings.Contains(buffer.String(), "server shutdown failed") {
+		t.Fatalf("expected a logged shutdown failure, got %q", buffer.String())
+	}
+
+	_ = conn.Close()
+	_ = app.Shutdown()
+	<-listenDone
+}
+
+// TestInstallGracefulShutdownBridgesSIGTERM pins the signal-wiring itself:
+// a real SIGTERM delivered to the process must reach retryShutdown through
+// installGracefulShutdown's goroutine, not just via a direct call to
+// retryShutdown (as the other regressions in this file exercise). os.Process
+// only supports delivering os.Kill on windows (any other signal, including
+// SIGTERM, returns "not supported by windows"), so this is validated on
+// Linux (dev container / CI) and skipped on windows.
+func TestInstallGracefulShutdownBridgesSIGTERM(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("SIGTERM self-delivery is not supported by the Go runtime on windows; validated in Linux CI")
+	}
+
+	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "sigterm-stop.db"))
+	if err != nil {
+		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+	}
+	app := fiber.New()
+
+	served := make(chan struct{})
+	stopSignals := installGracefulShutdown(app, served)
+	defer stopSignals()
+
+	addrCh := make(chan string, 1)
+	app.Hooks().OnListen(func(listenData fiber.ListenData) error {
+		addrCh <- net.JoinHostPort(listenData.Host, listenData.Port)
+		return nil
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		err := runServer(app, database, "127.0.0.1:0")
+		close(served)
+		done <- err
+	}()
+	<-addrCh
+
+	proc, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("os.FindProcess() unexpected error: %v", err)
+	}
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("failed to deliver SIGTERM to self: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runServer after SIGTERM: %v", err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("runServer did not return after SIGTERM within 15s")
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("database.DB() unexpected error: %v", err)
+	}
+	if err := sqlDB.Ping(); err == nil {
+		t.Fatal("expected database to be closed after a SIGTERM-triggered stop")
 	}
 }
 
