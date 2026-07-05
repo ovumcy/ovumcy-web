@@ -8,9 +8,9 @@ import (
 
 // -- RankSymptomsForEntryPicker: uncovered lines 10, 19, 26 --
 
-// TestSymptompickerviewCovRankEarlyReturnSingleSymptom exercises line 10
+// TestSymptomPickerViewRankEarlyReturnSingleSymptom exercises line 10
 // (len(symptoms) < 2) and verifies the early-return copy path.
-func TestSymptompickerviewCovRankEarlyReturnSingleSymptom(t *testing.T) {
+func TestSymptomPickerViewRankEarlyReturnSingleSymptom(t *testing.T) {
 	symptoms := []models.SymptomType{{ID: 1, Name: "Cramps"}}
 	logs := []models.DailyLog{{ID: 1, SymptomIDs: []uint{1}}}
 
@@ -23,10 +23,10 @@ func TestSymptompickerviewCovRankEarlyReturnSingleSymptom(t *testing.T) {
 	}
 }
 
-// TestSymptompickerviewCovRankEarlyReturnEmptyLogs exercises line 10
+// TestSymptomPickerViewRankEarlyReturnEmptyLogs exercises line 10
 // (len(logs) == 0) and verifies the early-return copy path preserves all
 // symptoms.
-func TestSymptompickerviewCovRankEarlyReturnEmptyLogs(t *testing.T) {
+func TestSymptomPickerViewRankEarlyReturnEmptyLogs(t *testing.T) {
 	symptoms := []models.SymptomType{
 		{ID: 1, Name: "Cramps"},
 		{ID: 2, Name: "Fatigue"},
@@ -39,9 +39,9 @@ func TestSymptompickerviewCovRankEarlyReturnEmptyLogs(t *testing.T) {
 	}
 }
 
-// TestSymptompickerviewCovRankByFrequency exercises lines 19 and 26.
+// TestSymptomPickerViewRankByFrequency exercises lines 19 and 26.
 // The symptom that appears in more logs must sort to the front.
-func TestSymptompickerviewCovRankByFrequency(t *testing.T) {
+func TestSymptomPickerViewRankByFrequency(t *testing.T) {
 	symptoms := []models.SymptomType{
 		{ID: 1, Name: "Cramps"},
 		{ID: 2, Name: "Fatigue"},
@@ -63,9 +63,9 @@ func TestSymptompickerviewCovRankByFrequency(t *testing.T) {
 	}
 }
 
-// TestSymptompickerviewCovRankStable ensures the sort is stable:
+// TestSymptomPickerViewRankStable ensures the sort is stable:
 // two symptoms with the same frequency keep their original relative order.
-func TestSymptompickerviewCovRankStable(t *testing.T) {
+func TestSymptomPickerViewRankStable(t *testing.T) {
 	symptoms := []models.SymptomType{
 		{ID: 1, Name: "A"},
 		{ID: 2, Name: "B"},
@@ -82,9 +82,9 @@ func TestSymptompickerviewCovRankStable(t *testing.T) {
 	}
 }
 
-// TestSymptompickerviewCovRankDoesNotMutateInput verifies that the original
+// TestSymptomPickerViewRankDoesNotMutateInput verifies that the original
 // slice passed in is not reordered by the ranking function.
-func TestSymptompickerviewCovRankDoesNotMutateInput(t *testing.T) {
+func TestSymptomPickerViewRankDoesNotMutateInput(t *testing.T) {
 	symptoms := []models.SymptomType{
 		{ID: 1, Name: "Cramps"},
 		{ID: 2, Name: "Fatigue"},
@@ -106,10 +106,10 @@ func TestSymptompickerviewCovRankDoesNotMutateInput(t *testing.T) {
 
 // -- SplitSymptomsForCollapsedPicker: surviving mutant on line 32 --
 
-// TestSymptompickerviewCovSplitZeroPrimaryLimit exercises the primaryLimit == 0
+// TestSymptomPickerViewSplitZeroPrimaryLimit exercises the primaryLimit == 0
 // boundary that a mutation of `<= 0` to `< 0` would bypass.  When limit is
 // exactly 0 the early-return path must fire and all symptoms are in primary.
-func TestSymptompickerviewCovSplitZeroPrimaryLimit(t *testing.T) {
+func TestSymptomPickerViewSplitZeroPrimaryLimit(t *testing.T) {
 	symptoms := []models.SymptomType{
 		{ID: 1, Name: "Cramps", IsBuiltin: true},
 		{ID: 2, Name: "Fatigue", IsBuiltin: true},
@@ -124,9 +124,9 @@ func TestSymptompickerviewCovSplitZeroPrimaryLimit(t *testing.T) {
 	}
 }
 
-// TestSymptompickerviewCovSplitNegativePrimaryLimit ensures negative limit is also
+// TestSymptomPickerViewSplitNegativePrimaryLimit ensures negative limit is also
 // treated as the early-return path (boundary of `<= 0`).
-func TestSymptompickerviewCovSplitNegativePrimaryLimit(t *testing.T) {
+func TestSymptomPickerViewSplitNegativePrimaryLimit(t *testing.T) {
 	symptoms := []models.SymptomType{
 		{ID: 1, Name: "Cramps", IsBuiltin: true},
 	}
@@ -142,11 +142,11 @@ func TestSymptompickerviewCovSplitNegativePrimaryLimit(t *testing.T) {
 
 // -- SplitSymptomsForCollapsedPicker: surviving mutant on line 60 --
 
-// TestSymptompickerviewCovSplitCustomFillsExactLimit exercises line 60 exactly at
+// TestSymptomPickerViewSplitCustomFillsExactLimit exercises line 60 exactly at
 // the boundary: a custom symptom fills the last available primary slot.
 // A mutation that changes `<` to `<=` would leave that last slot unfilled —
 // len(primary) would be one short and len(extra) one too long.
-func TestSymptompickerviewCovSplitCustomFillsExactLimit(t *testing.T) {
+func TestSymptomPickerViewSplitCustomFillsExactLimit(t *testing.T) {
 	// primaryLimit = 2; one selected symptom already pins ID 1.
 	// ID 2 is custom (not builtin, active).  It must fill the remaining slot.
 	// ID 3 is a plain builtin and should overflow to extra.
@@ -170,10 +170,10 @@ func TestSymptompickerviewCovSplitCustomFillsExactLimit(t *testing.T) {
 	}
 }
 
-// TestSymptompickerviewCovSplitCustomOverflowsWhenLimitFull verifies that custom
+// TestSymptomPickerViewSplitCustomOverflowsWhenLimitFull verifies that custom
 // symptoms overflow to extra once primary is already full (the other side of the
 // line-60 branch).
-func TestSymptompickerviewCovSplitCustomOverflowsWhenLimitFull(t *testing.T) {
+func TestSymptomPickerViewSplitCustomOverflowsWhenLimitFull(t *testing.T) {
 	// primaryLimit = 1; one selected symptom already fills it.
 	// ID 2 is custom but the limit is already reached — it must go to extra.
 	symptoms := []models.SymptomType{

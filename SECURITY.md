@@ -416,6 +416,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Login issues a sealed `ovumcy_auth` cookie (not a legacy JWT) | `TestLoginSetsSealedAuthCookieValue`, `TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
 | Remember-me toggles cookie persistence | `TestLoginRememberMeControlsCookiePersistence` in [internal/api/auth_login_remember_me_regressions_test.go](internal/api/auth_login_remember_me_regressions_test.go) |
 | State-changing endpoints require a valid CSRF token | `state_mutation_csrf_regression_test.go`, `auth_logout_csrf_regression_test.go`, `settings_security_csrf_regression_test.go`, `export_csrf_regression_test.go`, `language_switch_csrf_regression_test.go` in `internal/api/` |
+| The CSRF middleware exempts exactly ONE route — `POST /auth/oidc/callback` (POST-bound) — and every other mutating route in the real app refuses a token-less request with 403 | `TestCSRFExemptionListIsExactlyOneRoute`, `TestCSRFDeniesEveryMutatingRouteWithoutToken` in [cmd/ovumcy/csrf_exemption_guard_test.go](cmd/ovumcy/csrf_exemption_guard_test.go) |
 
 ### Retention and Deletion
 

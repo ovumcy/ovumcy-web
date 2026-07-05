@@ -115,7 +115,7 @@ func TestMR3Auth_AddFailureAllSweepCounterIncrements(t *testing.T) {
 
 	// Pre-seed stale keys directly so we don't perturb the call counter.
 	staleCount := evictEveryN - 1
-	for i := 0; i < staleCount; i++ {
+	for i := range staleCount {
 		limiter.attempts[fmt.Sprintf("mr3auth-stale-%d", i)] = []time.Time{past}
 	}
 
@@ -162,7 +162,7 @@ func TestMR3Auth_SweepSizeGuardBoundary(t *testing.T) {
 	// and does NOT grow the map, so len stays == evictAboveSize at the guard.
 	limiter.attempts[liveKey] = []time.Time{past}
 	staleCount := evictAboveSize - 1
-	for i := 0; i < staleCount; i++ {
+	for i := range staleCount {
 		limiter.attempts[fmt.Sprintf("mr3auth-stale-%05d", i)] = []time.Time{past}
 	}
 

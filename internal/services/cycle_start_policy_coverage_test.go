@@ -33,11 +33,11 @@ func cyclestartpolicyCovDay(t *testing.T, s string) time.Time {
 // Lines 28 + 39: nil location in manualCycleStartMaxDate / IsAllowedManualCycleStartDate
 // ---------------------------------------------------------------------------
 
-// TestCyclestartpolicyCov_IsAllowedManualCycleStartDate_NilLocation verifies
+// TestCycleStartPolicy_IsAllowedManualCycleStartDate_NilLocation verifies
 // that passing a nil *time.Location falls back to UTC and does not panic.
 // The mutation that removes or inverts the nil-guard would cause a nil-pointer
 // dereference in time.In(nil) before this function returns.
-func TestCyclestartpolicyCov_IsAllowedManualCycleStartDate_NilLocation(t *testing.T) {
+func TestCycleStartPolicy_IsAllowedManualCycleStartDate_NilLocation(t *testing.T) {
 	// today and same day: must be allowed regardless of location nil-ness.
 	now := cyclestartpolicyCovDay(t, "2026-04-15")
 	day := cyclestartpolicyCovDay(t, "2026-04-15")
@@ -67,10 +67,10 @@ func TestCyclestartpolicyCov_IsAllowedManualCycleStartDate_NilLocation(t *testin
 // Line 48: nil location in ResolveManualCycleStartPolicy
 // ---------------------------------------------------------------------------
 
-// TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_NilLocation verifies
+// TestCycleStartPolicy_ResolveManualCycleStartPolicy_NilLocation verifies
 // that nil location falls back to UTC. Without the nil-guard the function
 // would panic when it calls DateAtLocation(day.In(nil), nil).
-func TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_NilLocation(t *testing.T) {
+func TestCycleStartPolicy_ResolveManualCycleStartPolicy_NilLocation(t *testing.T) {
 	prevStart := cyclestartpolicyCovDay(t, "2026-01-01")
 	user := &models.User{}
 	logs := []models.DailyLog{
@@ -100,10 +100,10 @@ func TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_NilLocation(t *testin
 // Line 103: nil location in LatestCycleStartAnchorBeforeOrOn
 // ---------------------------------------------------------------------------
 
-// TestCyclestartpolicyCov_LatestCycleStartAnchorBeforeOrOn_NilLocation verifies
+// TestCycleStartPolicy_LatestCycleStartAnchorBeforeOrOn_NilLocation verifies
 // that nil location falls back to UTC and returns the expected anchor.
 // The nil-guard is on line 103; removing it causes a panic inside DateAtLocation.
-func TestCyclestartpolicyCov_LatestCycleStartAnchorBeforeOrOn_NilLocation(t *testing.T) {
+func TestCycleStartPolicy_LatestCycleStartAnchorBeforeOrOn_NilLocation(t *testing.T) {
 	periodDay := cyclestartpolicyCovDay(t, "2026-03-01")
 	user := &models.User{}
 	logs := []models.DailyLog{
@@ -126,7 +126,7 @@ func TestCyclestartpolicyCov_LatestCycleStartAnchorBeforeOrOn_NilLocation(t *tes
 // Line 61: AddDate(0,0,-1) — anchor search is strictly *before* targetDay
 // ---------------------------------------------------------------------------
 
-// TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_AnchorOnTargetDayExcluded
+// TestCycleStartPolicy_ResolveManualCycleStartPolicy_AnchorOnTargetDayExcluded
 // verifies that a cycle-start log on the exact targetDay is NOT used as the
 // previousStart (the code passes targetDay.AddDate(0,0,-1) to
 // LatestCycleStartAnchorBeforeOrOn). If the "-1" offset were removed (the
@@ -134,7 +134,7 @@ func TestCyclestartpolicyCov_LatestCycleStartAnchorBeforeOrOn_NilLocation(t *tes
 // and suppressing the short-gap flag unexpectedly for the *following* evaluation.
 // Here we test the correct behaviour: when the only known anchor IS the
 // target day, previousStart must be zero → no short-gap, no implantation flag.
-func TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_AnchorOnTargetDayExcluded(t *testing.T) {
+func TestCycleStartPolicy_ResolveManualCycleStartPolicy_AnchorOnTargetDayExcluded(t *testing.T) {
 	targetDay := cyclestartpolicyCovDay(t, "2026-03-15")
 	user := &models.User{}
 	// Only one log: a cycle start on the target day itself.
@@ -158,10 +158,10 @@ func TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_AnchorOnTargetDayExcl
 	}
 }
 
-// TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_AnchorDayBeforeTargetIncluded
+// TestCycleStartPolicy_ResolveManualCycleStartPolicy_AnchorDayBeforeTargetIncluded
 // is the complementary case: an anchor one day before the target IS found,
 // producing a short gap (gapDays = 1, which is > 0 and < 15).
-func TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_AnchorDayBeforeTargetIncluded(t *testing.T) {
+func TestCycleStartPolicy_ResolveManualCycleStartPolicy_AnchorDayBeforeTargetIncluded(t *testing.T) {
 	anchorDay := cyclestartpolicyCovDay(t, "2026-03-14")
 	targetDay := cyclestartpolicyCovDay(t, "2026-03-15")
 	user := &models.User{}
@@ -186,7 +186,7 @@ func TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_AnchorDayBeforeTarget
 //          a cycle-start log ON targetDay must not influence implantation stats.
 // ---------------------------------------------------------------------------
 
-// TestCyclestartpolicyCov_PotentialImplantationGapDays_TargetDayLogExcluded
+// TestCycleStartPolicy_PotentialImplantationGapDays_TargetDayLogExcluded
 // verifies that a CycleStart log dated on targetDay itself is excluded from the
 // stats that feed potentialImplantationGapDays. The mutation would change the
 // cutoff to targetDay (inclusive), potentially skewing the cycle-length stats.
@@ -198,7 +198,7 @@ func TestCyclestartpolicyCov_ResolveManualCycleStartPolicy_AnchorDayBeforeTarget
 // We add a synthetic "future" CycleStart on targetDay itself. If that log
 // leaks into stats it would shorten the computed cycle length and shift the
 // ovulation date, potentially making the result (6,true) differ.
-func TestCyclestartpolicyCov_PotentialImplantationGapDays_TargetDayLogExcluded(t *testing.T) {
+func TestCycleStartPolicy_PotentialImplantationGapDays_TargetDayLogExcluded(t *testing.T) {
 	user := &models.User{CycleLength: 28}
 	previousStart := cyclestartpolicyCovDay(t, "2026-02-26")
 	targetDay := cyclestartpolicyCovDay(t, "2026-03-17") // 6 days after ovulation

@@ -121,7 +121,7 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.2rem;
+  gap: 0.15rem;
   border-radius: 999px;
   border: 1px solid var(--line-soft);
   background: var(--surface-tint);
@@ -452,11 +452,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2.85rem;
+  min-width: 2rem;
+  min-height: 2.5rem;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
-  padding: 0.28rem 0.72rem;
+  padding: 0.28rem 0.34rem;
   font-family: inherit;
   font-size: 0.72rem;
   line-height: 1.25;
@@ -505,8 +506,8 @@
   }
 
   @media (max-width: 640px) {
-    min-width: 2.2rem;
-    padding: 0.24rem 0.55rem;
+    min-width: 1.85rem;
+    padding: 0.24rem 0.3rem;
     font-size: 0.68rem;
   }
 }
@@ -4313,7 +4314,7 @@
   border: 1px solid var(--line-soft);
   background: rgba(255, 249, 240, 0.96);
   box-shadow: 0 12px 24px rgba(120, 85, 52, 0.2);
-  padding: 0.42rem;
+  padding: 0.24rem 0.42rem;
 
   :root[data-theme='dark'] & {
     background: rgba(30, 24, 40, 0.95);
@@ -4325,6 +4326,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-height: 2.75rem;
   border-radius: 0.78rem;
   padding: 0.42rem 0.28rem;
   color: var(--text-muted);

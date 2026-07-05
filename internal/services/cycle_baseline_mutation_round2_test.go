@@ -78,7 +78,7 @@ func TestApplyUserCycleBaseline_NoHistoryDoesNotClobberProvidedMedianWhenUserCyc
 // so line 75 alone decides whether projection runs.
 //   - original (<=0): predictionCycleLength becomes 28 -> NextPeriodStart set.
 //   - mutant   (<0):  predictionCycleLength stays 0 -> line 78 early-returns -> zero.
-func TestCyclebaselineCov_FractionalAverageTriggersCycleLengthFallback(t *testing.T) {
+func TestCycleBaseline_FractionalAverageTriggersCycleLengthFallback(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-02-01")
 	user := &models.User{
 		Role:            models.RoleOwner,
@@ -129,7 +129,7 @@ func TestCyclebaselineCov_FractionalAverageTriggersCycleLengthFallback(t *testin
 //   - mutant   (<0):  falls through -> NextPeriodStart = LastPeriodStart + 0d (non-zero),
 //     then PredictCycleWindow(.,0,.) is not calculable -> clearPredictedCycleWindow
 //     sets OvulationImpossible = true.
-func TestCyclebaselineCov_NoProjectionWhenResolvedCycleLengthIsZero(t *testing.T) {
+func TestCycleBaseline_NoProjectionWhenResolvedCycleLengthIsZero(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")
 	// CycleLength 0 is invalid (IsValidOnboardingCycleLength requires >=15),
 	// so resolveUserCycleLengths returns cycleLength = 0 -> line 76 keeps
