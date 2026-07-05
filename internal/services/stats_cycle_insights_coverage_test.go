@@ -54,9 +54,9 @@ func statscycleinsightsCovSymptomMap(syms ...models.SymptomType) map[uint]models
 // buildCompletedCycleSpans – line 39: len(starts) < 2 boundary
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovBuildCompletedCycleSpansSingleStartReturnsNil checks that
+// TestStatsCycleInsightsBuildCompletedCycleSpansSingleStartReturnsNil checks that
 // exactly one observed period start yields nil (the < 2 guard on line 39).
-func TestStatscycleinsightsCovBuildCompletedCycleSpansSingleStartReturnsNil(t *testing.T) {
+func TestStatsCycleInsightsBuildCompletedCycleSpansSingleStartReturnsNil(t *testing.T) {
 	logs := []models.DailyLog{
 		statscycleinsightsCovLog(t, "2026-01-01", true),
 		{Date: statscycleinsightsCovDay(t, "2026-01-03"), IsPeriod: false},
@@ -67,10 +67,10 @@ func TestStatscycleinsightsCovBuildCompletedCycleSpansSingleStartReturnsNil(t *t
 	}
 }
 
-// TestStatscycleinsightsCovBuildCompletedCycleSpansTwoStartsYieldsOneSpan checks that
+// TestStatsCycleInsightsBuildCompletedCycleSpansTwoStartsYieldsOneSpan checks that
 // exactly two starts produce exactly one completed span (the < 2 boundary is not
 // off-by-one; a mutant that changes to <= 2 would return nil instead).
-func TestStatscycleinsightsCovBuildCompletedCycleSpansTwoStartsYieldsOneSpan(t *testing.T) {
+func TestStatsCycleInsightsBuildCompletedCycleSpansTwoStartsYieldsOneSpan(t *testing.T) {
 	logs := []models.DailyLog{
 		statscycleinsightsCovLog(t, "2026-01-01", true),
 		statscycleinsightsCovLog(t, "2026-01-29", true),
@@ -88,9 +88,9 @@ func TestStatscycleinsightsCovBuildCompletedCycleSpansTwoStartsYieldsOneSpan(t *
 // buildCompletedCycleSpans – line 46: loop boundary (index+1 < len(starts))
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovBuildCompletedCycleSpansCountMatchesStarts verifies that
+// TestStatsCycleInsightsBuildCompletedCycleSpansCountMatchesStarts verifies that
 // three starts produce exactly two spans (loop iterates index 0 and 1 only).
-func TestStatscycleinsightsCovBuildCompletedCycleSpansCountMatchesStarts(t *testing.T) {
+func TestStatsCycleInsightsBuildCompletedCycleSpansCountMatchesStarts(t *testing.T) {
 	logs := []models.DailyLog{
 		statscycleinsightsCovLog(t, "2026-01-01", true),
 		statscycleinsightsCovLog(t, "2026-01-29", true),
@@ -106,14 +106,14 @@ func TestStatscycleinsightsCovBuildCompletedCycleSpansCountMatchesStarts(t *test
 // buildCompletedCycleSpans – line 50: cycleLength <= 0 guard
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovBuildCompletedCycleSpansPositiveCycleLengthKept verifies
+// TestStatsCycleInsightsBuildCompletedCycleSpansPositiveCycleLengthKept verifies
 // that the cycleLength <= 0 guard on line 50 does not discard valid (positive)
 // cycle lengths.  Two period starts exactly one day apart yield a cycleLength of 1
 // which is > 0 and must be kept.
 // Note: period days within 5 days of each other merge into a single cluster in
 // buildPeriodClusters, so we need a gap >= 5 days to generate two distinct starts.
 // A gap of exactly 6 days yields cycleLength=6.
-func TestStatscycleinsightsCovBuildCompletedCycleSpansPositiveCycleLengthKept(t *testing.T) {
+func TestStatsCycleInsightsBuildCompletedCycleSpansPositiveCycleLengthKept(t *testing.T) {
 	// Gap of 6 days forces two distinct period clusters -> two observed starts.
 	logs := []models.DailyLog{
 		statscycleinsightsCovLog(t, "2026-01-01", true),
@@ -132,10 +132,10 @@ func TestStatscycleinsightsCovBuildCompletedCycleSpansPositiveCycleLengthKept(t 
 // buildCompletedCycleSpans – line 55: periodLength <= 0 → DefaultPeriodLength
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovBuildCompletedCycleSpansPeriodLengthDefaultsWhenZero
+// TestStatsCycleInsightsBuildCompletedCycleSpansPeriodLengthDefaultsWhenZero
 // constructs a period start with no consecutive IsPeriod days so buildCycles
 // assigns PeriodLength=0; the span should carry DefaultPeriodLength.
-func TestStatscycleinsightsCovBuildCompletedCycleSpansPeriodLengthDefaultsWhenZero(t *testing.T) {
+func TestStatsCycleInsightsBuildCompletedCycleSpansPeriodLengthDefaultsWhenZero(t *testing.T) {
 	// The period start log has IsPeriod=true but the following day does not,
 	// so buildCycles computes periodLength=1 (the start day itself counts).
 	// To force 0 we need a scenario where no day in the period window matches
@@ -165,10 +165,10 @@ func TestStatscycleinsightsCovBuildCompletedCycleSpansPeriodLengthDefaultsWhenZe
 // buildLastCycleSymptomCounts – line 84: totalLoggedDays increment
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovLastCycleSymptomCountsTotalDaysCountedCorrectly checks
+// TestStatsCycleInsightsLastCycleSymptomCountsTotalDaysCountedCorrectly checks
 // that TotalDays on each item reflects the number of days with any log entry
 // inside the last cycle window (line 84 increment).
-func TestStatscycleinsightsCovLastCycleSymptomCountsTotalDaysCountedCorrectly(t *testing.T) {
+func TestStatsCycleInsightsLastCycleSymptomCountsTotalDaysCountedCorrectly(t *testing.T) {
 	syms := statscycleinsightsCovSymptomMap(
 		models.SymptomType{ID: 1, Name: "Cramps", Icon: "C"},
 	)
@@ -200,9 +200,9 @@ func TestStatscycleinsightsCovLastCycleSymptomCountsTotalDaysCountedCorrectly(t 
 // buildLastCycleSymptomCounts – line 110: sort descending by count
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovLastCycleSymptomCountsSortsByCountDescending verifies
+// TestStatsCycleInsightsLastCycleSymptomCountsSortsByCountDescending verifies
 // that the item with the higher count appears first (line 110 sort comparator).
-func TestStatscycleinsightsCovLastCycleSymptomCountsSortsByCountDescending(t *testing.T) {
+func TestStatsCycleInsightsLastCycleSymptomCountsSortsByCountDescending(t *testing.T) {
 	syms := statscycleinsightsCovSymptomMap(
 		models.SymptomType{ID: 1, Name: "Cramps", Icon: "C"},
 		models.SymptomType{ID: 2, Name: "Headache", Icon: "H"},
@@ -234,9 +234,9 @@ func TestStatscycleinsightsCovLastCycleSymptomCountsSortsByCountDescending(t *te
 // buildLastCycleSymptomCounts – line 108: sort tie-break by name
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovLastCycleSymptomCountsTieBreaksByName verifies that
+// TestStatsCycleInsightsLastCycleSymptomCountsTieBreaksByName verifies that
 // when two items share the same count they are ordered alphabetically (line 108).
-func TestStatscycleinsightsCovLastCycleSymptomCountsTieBreaksByName(t *testing.T) {
+func TestStatsCycleInsightsLastCycleSymptomCountsTieBreaksByName(t *testing.T) {
 	syms := statscycleinsightsCovSymptomMap(
 		models.SymptomType{ID: 1, Name: "Zapping", Icon: "Z"},
 		models.SymptomType{ID: 2, Name: "Acne", Icon: "A"},
@@ -267,9 +267,9 @@ func TestStatscycleinsightsCovLastCycleSymptomCountsTieBreaksByName(t *testing.T
 // buildLastCycleSymptomCounts – line 112: truncate to top 3
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovLastCycleSymptomCountsTruncatesToThree verifies that
+// TestStatsCycleInsightsLastCycleSymptomCountsTruncatesToThree verifies that
 // when more than three distinct symptoms are logged only the top three are returned.
-func TestStatscycleinsightsCovLastCycleSymptomCountsTruncatesToThree(t *testing.T) {
+func TestStatsCycleInsightsLastCycleSymptomCountsTruncatesToThree(t *testing.T) {
 	syms := statscycleinsightsCovSymptomMap(
 		models.SymptomType{ID: 1, Name: "Acne", Icon: "A"},
 		models.SymptomType{ID: 2, Name: "Bloating", Icon: "B"},
@@ -291,9 +291,9 @@ func TestStatscycleinsightsCovLastCycleSymptomCountsTruncatesToThree(t *testing.
 	}
 }
 
-// TestStatscycleinsightsCovLastCycleSymptomCountsExactlyThreeNotTruncated verifies
+// TestStatsCycleInsightsLastCycleSymptomCountsExactlyThreeNotTruncated verifies
 // that exactly three items are returned in full when len==3 (> 3 guard, not >= 3).
-func TestStatscycleinsightsCovLastCycleSymptomCountsExactlyThreeNotTruncated(t *testing.T) {
+func TestStatsCycleInsightsLastCycleSymptomCountsExactlyThreeNotTruncated(t *testing.T) {
 	syms := statscycleinsightsCovSymptomMap(
 		models.SymptomType{ID: 1, Name: "Acne", Icon: "A"},
 		models.SymptomType{ID: 2, Name: "Bloating", Icon: "B"},
@@ -318,10 +318,10 @@ func TestStatscycleinsightsCovLastCycleSymptomCountsExactlyThreeNotTruncated(t *
 // buildSymptomPatternInsights – lines 148/151: dayStart/dayEnd tracking
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovSymptomPatternInsightsDayRangeTracked verifies that
+// TestStatsCycleInsightsSymptomPatternInsightsDayRangeTracked verifies that
 // DayStart and DayEnd on a pattern reflect the earliest and latest cycle day on
 // which the symptom was logged (lines 148 and 151).
-func TestStatscycleinsightsCovSymptomPatternInsightsDayRangeTracked(t *testing.T) {
+func TestStatsCycleInsightsSymptomPatternInsightsDayRangeTracked(t *testing.T) {
 	// Three completed cycles needed for minimumPhaseInsightCycles.
 	spans := []completedCycleSpan{
 		{Start: statscycleinsightsCovDay(t, "2026-01-01"), NextStart: statscycleinsightsCovDay(t, "2026-01-29")},
@@ -359,9 +359,9 @@ func TestStatscycleinsightsCovSymptomPatternInsightsDayRangeTracked(t *testing.T
 // buildSymptomPatternInsights – line 173: sort descending by count
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovSymptomPatternInsightsSortsByCountDescending checks that
+// TestStatsCycleInsightsSymptomPatternInsightsSortsByCountDescending checks that
 // the pattern with the higher occurrence count appears first (line 173).
-func TestStatscycleinsightsCovSymptomPatternInsightsSortsByCountDescending(t *testing.T) {
+func TestStatsCycleInsightsSymptomPatternInsightsSortsByCountDescending(t *testing.T) {
 	spans := []completedCycleSpan{
 		{Start: statscycleinsightsCovDay(t, "2026-01-01"), NextStart: statscycleinsightsCovDay(t, "2026-01-29")},
 		{Start: statscycleinsightsCovDay(t, "2026-01-29"), NextStart: statscycleinsightsCovDay(t, "2026-02-26")},
@@ -390,9 +390,9 @@ func TestStatscycleinsightsCovSymptomPatternInsightsSortsByCountDescending(t *te
 // buildSymptomPatternInsights – line 171: NOT COVERED — name tie-break
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovSymptomPatternInsightsTieBreaksByName exercises line 171
+// TestStatsCycleInsightsSymptomPatternInsightsTieBreaksByName exercises line 171
 // (the name-based tie-break inside the sort comparator for equal counts).
-func TestStatscycleinsightsCovSymptomPatternInsightsTieBreaksByName(t *testing.T) {
+func TestStatsCycleInsightsSymptomPatternInsightsTieBreaksByName(t *testing.T) {
 	spans := []completedCycleSpan{
 		{Start: statscycleinsightsCovDay(t, "2026-01-01"), NextStart: statscycleinsightsCovDay(t, "2026-01-29")},
 		{Start: statscycleinsightsCovDay(t, "2026-01-29"), NextStart: statscycleinsightsCovDay(t, "2026-02-26")},
@@ -424,9 +424,9 @@ func TestStatscycleinsightsCovSymptomPatternInsightsTieBreaksByName(t *testing.T
 // buildSymptomPatternInsights – line 175: truncate to top 2
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovSymptomPatternInsightsTruncatesToTwo verifies that more
+// TestStatsCycleInsightsSymptomPatternInsightsTruncatesToTwo verifies that more
 // than two patterns are capped at two results (line 175 guard).
-func TestStatscycleinsightsCovSymptomPatternInsightsTruncatesToTwo(t *testing.T) {
+func TestStatsCycleInsightsSymptomPatternInsightsTruncatesToTwo(t *testing.T) {
 	spans := []completedCycleSpan{
 		{Start: statscycleinsightsCovDay(t, "2026-01-01"), NextStart: statscycleinsightsCovDay(t, "2026-01-29")},
 		{Start: statscycleinsightsCovDay(t, "2026-01-29"), NextStart: statscycleinsightsCovDay(t, "2026-02-26")},
@@ -447,9 +447,9 @@ func TestStatscycleinsightsCovSymptomPatternInsightsTruncatesToTwo(t *testing.T)
 	}
 }
 
-// TestStatscycleinsightsCovSymptomPatternInsightsExactlyTwoNotTruncated verifies
+// TestStatsCycleInsightsSymptomPatternInsightsExactlyTwoNotTruncated verifies
 // that exactly two patterns pass through without truncation (> 2, not >= 2).
-func TestStatscycleinsightsCovSymptomPatternInsightsExactlyTwoNotTruncated(t *testing.T) {
+func TestStatsCycleInsightsSymptomPatternInsightsExactlyTwoNotTruncated(t *testing.T) {
 	spans := []completedCycleSpan{
 		{Start: statscycleinsightsCovDay(t, "2026-01-01"), NextStart: statscycleinsightsCovDay(t, "2026-01-29")},
 		{Start: statscycleinsightsCovDay(t, "2026-01-29"), NextStart: statscycleinsightsCovDay(t, "2026-02-26")},
@@ -473,10 +473,10 @@ func TestStatscycleinsightsCovSymptomPatternInsightsExactlyTwoNotTruncated(t *te
 // resolveCurrentCycleBBTBounds – line 201: nil location fallback
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovResolveCurrentCycleBBTBoundsNilLocationFallsBackToUTC
+// TestStatsCycleInsightsResolveCurrentCycleBBTBoundsNilLocationFallsBackToUTC
 // passes a nil location and verifies that it does not panic and returns valid
 // bounds (line 201 nil-location guard).
-func TestStatscycleinsightsCovResolveCurrentCycleBBTBoundsNilLocationFallsBackToUTC(t *testing.T) {
+func TestStatsCycleInsightsResolveCurrentCycleBBTBoundsNilLocationFallsBackToUTC(t *testing.T) {
 	periodStart := statscycleinsightsCovDay(t, "2026-01-01")
 	stats := CycleStats{LastPeriodStart: periodStart}
 	now := statscycleinsightsCovDay(t, "2026-01-10")
@@ -497,9 +497,9 @@ func TestStatscycleinsightsCovResolveCurrentCycleBBTBoundsNilLocationFallsBackTo
 // buildCurrentCycleBBTSeries – line 237: minimum 5 recorded days
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesRequiresFivePoints checks that
+// TestStatsCycleInsightsBuildCurrentCycleBBTSeriesRequiresFivePoints checks that
 // fewer than five recorded days returns the empty/false sentinel (line 237).
-func TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesRequiresFivePoints(t *testing.T) {
+func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesRequiresFivePoints(t *testing.T) {
 	recorded := []int{1, 2, 3, 4}
 	dayValues := map[int]float64{1: 36.5, 2: 36.5, 3: 36.5, 4: 36.5}
 	labels, values, baseline, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
@@ -508,9 +508,9 @@ func TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesRequiresFivePoints(t *te
 	}
 }
 
-// TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesExactlyFiveSucceeds checks that
+// TestStatsCycleInsightsBuildCurrentCycleBBTSeriesExactlyFiveSucceeds checks that
 // exactly five recorded points are accepted (boundary is < 5, not <= 5).
-func TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesExactlyFiveSucceeds(t *testing.T) {
+func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesExactlyFiveSucceeds(t *testing.T) {
 	recorded := []int{1, 2, 3, 4, 5}
 	dayValues := map[int]float64{1: 36.4, 2: 36.5, 3: 36.45, 4: 36.42, 5: 36.48}
 	_, _, baseline, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
@@ -528,10 +528,10 @@ func TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesExactlyFiveSucceeds(t *t
 // buildCurrentCycleBBTSeries – line 245: label range covers 1..maxDay
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesLabelsMatchMaxDay verifies that
+// TestStatsCycleInsightsBuildCurrentCycleBBTSeriesLabelsMatchMaxDay verifies that
 // the returned label slice has length equal to the highest recorded day and that
 // labels are the string representations of 1..maxDay (line 245 loop).
-func TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesLabelsMatchMaxDay(t *testing.T) {
+func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesLabelsMatchMaxDay(t *testing.T) {
 	// Recorded days 1,3,5,7,9 — maxDay=9, so we expect 9 labels.
 	recorded := []int{1, 3, 5, 7, 9}
 	dayValues := map[int]float64{1: 36.4, 3: 36.45, 5: 36.5, 7: 36.52, 9: 36.55}
@@ -562,10 +562,10 @@ func TestStatscycleinsightsCovBuildCurrentCycleBBTSeriesLabelsMatchMaxDay(t *tes
 // detectProbableOvulationMarker – line 290: threshold = baseline + 0.2
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovDetectProbableOvulationMarkerThresholdExact verifies that
+// TestStatsCycleInsightsDetectProbableOvulationMarkerThresholdExact verifies that
 // three consecutive days where all values equal exactly baseline+0.2 are accepted
 // (>= threshold, not > threshold) — and days just below are rejected.
-func TestStatscycleinsightsCovDetectProbableOvulationMarkerThresholdExact(t *testing.T) {
+func TestStatsCycleInsightsDetectProbableOvulationMarkerThresholdExact(t *testing.T) {
 	baseline := 36.40
 	threshold := baseline + 0.2 // 36.60
 
@@ -592,10 +592,10 @@ func TestStatscycleinsightsCovDetectProbableOvulationMarkerThresholdExact(t *tes
 // detectProbableOvulationMarker – line 291: loop starts at index 5
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovDetectProbableOvulationMarkerSkipsFirstFiveBaseline checks
+// TestStatsCycleInsightsDetectProbableOvulationMarkerSkipsFirstFiveBaseline checks
 // that a rising triple at days 3,4,5 (indices 2,3,4) — before the index=5 threshold
 // — is not recognised as a marker. Only triples starting at or after index 5 count.
-func TestStatscycleinsightsCovDetectProbableOvulationMarkerSkipsFirstFiveBaseline(t *testing.T) {
+func TestStatsCycleInsightsDetectProbableOvulationMarkerSkipsFirstFiveBaseline(t *testing.T) {
 	baseline := 36.40
 	threshold := baseline + 0.2
 
@@ -616,10 +616,10 @@ func TestStatscycleinsightsCovDetectProbableOvulationMarkerSkipsFirstFiveBaselin
 // detectProbableOvulationMarker – line 298: all three days must exceed threshold
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovDetectProbableOvulationMarkerAllThreeDaysMustExceedThreshold
+// TestStatsCycleInsightsDetectProbableOvulationMarkerAllThreeDaysMustExceedThreshold
 // verifies that the marker is only emitted when dayOne, dayTwo, AND dayThree all
 // meet the threshold (line 298 compound condition).
-func TestStatscycleinsightsCovDetectProbableOvulationMarkerAllThreeDaysMustExceedThreshold(t *testing.T) {
+func TestStatsCycleInsightsDetectProbableOvulationMarkerAllThreeDaysMustExceedThreshold(t *testing.T) {
 	baseline := 36.40
 	threshold := baseline + 0.2
 
@@ -656,12 +656,12 @@ func TestStatscycleinsightsCovDetectProbableOvulationMarkerAllThreeDaysMustExcee
 // detectProbableOvulationMarker – line 303: markerDay < 1 guard
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovDetectProbableOvulationMarkerDayOneAtBoundary checks the
+// TestStatsCycleInsightsDetectProbableOvulationMarkerDayOneAtBoundary checks the
 // edge case where the detected triple starts at the earliest possible position (day
 // recorded[5] = 6) so that markerDay = dayOne-1 = 5, which is >= 1 and therefore
 // the fallback (markerDay = dayOne) on line 304 is NOT taken.  We also verify the
 // index returned is markerDay-1 (zero-based).
-func TestStatscycleinsightsCovDetectProbableOvulationMarkerDayOneAtBoundary(t *testing.T) {
+func TestStatsCycleInsightsDetectProbableOvulationMarkerDayOneAtBoundary(t *testing.T) {
 	baseline := 36.40
 	threshold := baseline + 0.2
 
@@ -680,13 +680,13 @@ func TestStatscycleinsightsCovDetectProbableOvulationMarkerDayOneAtBoundary(t *t
 	}
 }
 
-// TestStatscycleinsightsCovDetectProbableOvulationMarkerMarkerDayFallbackDocumented
+// TestStatsCycleInsightsDetectProbableOvulationMarkerMarkerDayFallbackDocumented
 // documents that the markerDay < 1 branch (line 303-304) is unreachable in
 // practice.  When recordedDays is sorted ascending and has >= 8 elements,
 // recorded[5] (the 6th smallest day) is always >= 6, so dayOne-1 >= 5 >= 1 and
 // the fallback never fires.  This test just exercises the normal marker detection
 // path to ensure the index returned equals markerDay-1 in zero-based form.
-func TestStatscycleinsightsCovDetectProbableOvulationMarkerMarkerDayFallbackDocumented(t *testing.T) {
+func TestStatsCycleInsightsDetectProbableOvulationMarkerMarkerDayFallbackDocumented(t *testing.T) {
 	baseline := 36.40
 	threshold := baseline + 0.2
 
@@ -711,9 +711,9 @@ func TestStatscycleinsightsCovDetectProbableOvulationMarkerMarkerDayFallbackDocu
 // collectCurrentCycleBBTPoints – line 218: BBT filter
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovCollectCurrentCycleBBTPointsFiltersInvalidBBT checks that
+// TestStatsCycleInsightsCollectCurrentCycleBBTPointsFiltersInvalidBBT checks that
 // a log entry with BBT=0 (unset) is excluded from the collected points (line 218).
-func TestStatscycleinsightsCovCollectCurrentCycleBBTPointsFiltersInvalidBBT(t *testing.T) {
+func TestStatsCycleInsightsCollectCurrentCycleBBTPointsFiltersInvalidBBT(t *testing.T) {
 	cycleStart := statscycleinsightsCovDay(t, "2026-01-01")
 	today := statscycleinsightsCovDay(t, "2026-01-10")
 	logs := []models.DailyLog{
@@ -730,9 +730,9 @@ func TestStatscycleinsightsCovCollectCurrentCycleBBTPointsFiltersInvalidBBT(t *t
 	}
 }
 
-// TestStatscycleinsightsCovCollectCurrentCycleBBTPointsFiltersBeforeCycleStart checks
+// TestStatsCycleInsightsCollectCurrentCycleBBTPointsFiltersBeforeCycleStart checks
 // that entries before cycleStart are excluded (line 218 Before(cycleStart) guard).
-func TestStatscycleinsightsCovCollectCurrentCycleBBTPointsFiltersBeforeCycleStart(t *testing.T) {
+func TestStatsCycleInsightsCollectCurrentCycleBBTPointsFiltersBeforeCycleStart(t *testing.T) {
 	cycleStart := statscycleinsightsCovDay(t, "2026-01-05")
 	today := statscycleinsightsCovDay(t, "2026-01-10")
 	logs := []models.DailyLog{
@@ -750,10 +750,10 @@ func TestStatscycleinsightsCovCollectCurrentCycleBBTPointsFiltersBeforeCycleStar
 // completedCycleDayNumber – helper used by buildSymptomPatternInsights
 // ---------------------------------------------------------------------------
 
-// TestStatscycleinsightsCovCompletedCycleDayNumberReturnsDayInFirstMatchingCycle
+// TestStatsCycleInsightsCompletedCycleDayNumberReturnsDayInFirstMatchingCycle
 // verifies that completedCycleDayNumber returns the 1-based cycle day within the
 // containing span and false for out-of-range dates.
-func TestStatscycleinsightsCovCompletedCycleDayNumberReturnsDayInFirstMatchingCycle(t *testing.T) {
+func TestStatsCycleInsightsCompletedCycleDayNumberReturnsDayInFirstMatchingCycle(t *testing.T) {
 	spans := []completedCycleSpan{
 		{Start: statscycleinsightsCovDay(t, "2026-01-01"), NextStart: statscycleinsightsCovDay(t, "2026-01-29")},
 		{Start: statscycleinsightsCovDay(t, "2026-01-29"), NextStart: statscycleinsightsCovDay(t, "2026-02-26")},

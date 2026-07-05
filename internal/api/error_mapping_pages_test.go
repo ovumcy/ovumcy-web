@@ -27,7 +27,7 @@ func TestMapCalendarViewError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapCalendarViewError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -60,7 +60,7 @@ func TestMapDashboardViewError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapDashboardViewError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -98,7 +98,7 @@ func TestMapDayEditorViewError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapDayEditorViewError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -126,7 +126,7 @@ func TestMapStatsPageViewError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapStatsPageViewError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)

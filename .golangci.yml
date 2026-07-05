@@ -1,0 +1,39 @@
+# golangci-lint v2 configuration (CI pins v2.12.2 in .github/workflows/ci.yml).
+#
+# Baseline: the standard default linters (errcheck, govet, ineffassign,
+# staticcheck, unused) — exactly what CI ran before this file existed, so
+# adding the file changes nothing about the checks the repo already passed.
+#
+# Additions are conservative, objective linters the tree is verifiably clean
+# under (CI's zero-issue run enforces it stays that way) with no style churn
+# or subjective rules:
+#   - copyloopvar: flags loop-variable copies made redundant by Go 1.22
+#     per-iteration loop variables; pure dead code under go 1.26.
+#   - intrange: canonical Go 1.22 `for i := range n` counting loops instead
+#     of the three-clause form.
+#   - misspell: objective spelling fixes in comments and strings; locale left
+#     at the default, matching the codebase's existing spelling.
+#   - unconvert: removes type conversions that are no-ops; they only obscure
+#     the actual types in security-relevant code.
+#
+# Evaluated against the codebase and deliberately NOT enabled:
+#   - gocritic: its default set flags intentional test patterns here (mapKey
+#     on a whitespace-trimming case, appendAssign on deliberate base-slice
+#     reuse) and the guarded exit path in cmd/ovumcy (exitAfterDefer); making
+#     it pass would need inline suppressions or disabling most of what fired.
+#   - unparam: every finding is a signature change (always-nil error results,
+#     constant test-helper parameters) — refactors to weigh case by case, not
+#     mechanical hygiene.
+#
+# The repo carries zero //nolint directives; keep it that way. If a new
+# finding is a false positive, prefer narrowing the linter's settings here
+# (with a comment) over inline suppressions.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - copyloopvar
+    - intrange
+    - misspell
+    - unconvert

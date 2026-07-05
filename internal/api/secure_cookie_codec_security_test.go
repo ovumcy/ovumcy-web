@@ -38,7 +38,7 @@ func TestSecureCookieCodecRoundtripsAllKnownPurposes(t *testing.T) {
 	plaintext := []byte(`{"hello":"world","n":42}`)
 
 	for _, purpose := range purposes {
-		purpose := purpose
+
 		t.Run(purpose, func(t *testing.T) {
 			t.Parallel()
 
@@ -83,7 +83,7 @@ func TestSecureCookieCodecRejectsCrossPurposeOpen(t *testing.T) {
 		totpSetupCookieName,
 	}
 	for _, purpose := range otherPurposes {
-		purpose := purpose
+
 		t.Run("opened_as_"+purpose, func(t *testing.T) {
 			t.Parallel()
 
@@ -151,7 +151,7 @@ func TestSecureCookieCodecRejectsTamperedCiphertextForTOTPAndLinkPendingCookies(
 	}
 
 	for _, purpose := range []string{oidcLinkPendingCookieName, totpPendingCookieName, totpSetupCookieName} {
-		purpose := purpose
+
 		t.Run(purpose, func(t *testing.T) {
 			t.Parallel()
 
@@ -218,7 +218,7 @@ func TestSecureCookieCodecRejectsTruncatedPayload(t *testing.T) {
 		{name: "exactly_nonce_no_ciphertext", value: secureCookieVersion + "." + base64.RawURLEncoding.EncodeToString(randomBytes(t, codec.aead.NonceSize()))},
 	}
 	for _, tc := range cases {
-		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -197,7 +197,7 @@ func TestDashboardPredictionRangeIgnoresAgeGroup(t *testing.T) {
 		models.AgeGroup40To45,
 		models.AgeGroup45Plus,
 	} {
-		ageGroup := ageGroup
+
 		t.Run(ageGroup, func(t *testing.T) {
 			rangeStart, rangeEnd, ok := DashboardPredictionRange(&models.User{AgeGroup: ageGroup}, stats, predictedStart, time.UTC)
 			if !ok {

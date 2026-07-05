@@ -10,9 +10,9 @@ import "testing"
 // operators coincide with their - and / mutants; these tests use a
 // non-degenerate angle so the ARITHMETIC_BASE mutants are distinguished.
 
-// TestDashboardcycleheroCovMarkerXUsesPlusRadiusCosine kills the ARITHMETIC_BASE
+// TestDashboardCycleHeroMarkerXUsesPlusRadiusCosine kills the ARITHMETIC_BASE
 // mutant at line 168 (centerX + radius*cos -> centerX - radius*cos).
-func TestDashboardcycleheroCovMarkerXUsesPlusRadiusCosine(t *testing.T) {
+func TestDashboardCycleHeroMarkerXUsesPlusRadiusCosine(t *testing.T) {
 	// dayIndex=7, cycleLength=28 -> ratio=0.25 -> angle=0 -> cos(angle)=1.
 	// Original X = centerX + radius*cos = 110 + 78*1 = 188.0.
 	// The +->- mutation would yield 110 - 78 = 32.0.
@@ -22,9 +22,9 @@ func TestDashboardcycleheroCovMarkerXUsesPlusRadiusCosine(t *testing.T) {
 	}
 }
 
-// TestDashboardcycleheroCovMarkerYUsesRadiusTimesSine kills the ARITHMETIC_BASE
+// TestDashboardCycleHeroMarkerYUsesRadiusTimesSine kills the ARITHMETIC_BASE
 // mutant at line 169 (centerY + radius*sin -> centerY + radius/sin).
-func TestDashboardcycleheroCovMarkerYUsesRadiusTimesSine(t *testing.T) {
+func TestDashboardCycleHeroMarkerYUsesRadiusTimesSine(t *testing.T) {
 	// dayIndex=7, cycleLength=21 -> ratio=1/3 -> angle=pi/6 -> sin(angle)=0.5.
 	// Original Y = centerY + radius*sin = 110 + 78*0.5 = 149.0.
 	// The *->/ mutation would yield 110 + 78/0.5 = 266.0.

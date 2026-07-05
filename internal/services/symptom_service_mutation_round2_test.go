@@ -7,12 +7,12 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// TestSymptomServiceCovSeedBuiltinSymptomsSeedsWhenEmpty verifies line 219:
+// TestSymptomServiceSeedBuiltinSymptomsSeedsWhenEmpty verifies line 219:
 // when CountBuiltinByUser returns 0 (a user with no builtin symptoms yet),
 // SeedBuiltinSymptoms must call CreateBatch to seed the catalog. Mutating the
 // guard `count > 0` to `count >= 0` would skip seeding for count==0, leaving
 // batchCreated false and failing this test.
-func TestSymptomServiceCovSeedBuiltinSymptomsSeedsWhenEmpty(t *testing.T) {
+func TestSymptomServiceSeedBuiltinSymptomsSeedsWhenEmpty(t *testing.T) {
 	repo := &symptomserviceCovRepo{countBuiltinCnt: 0}
 	service := NewSymptomService(repo)
 

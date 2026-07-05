@@ -52,7 +52,7 @@ func TestMapSymptomCreateError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapSymptomCreateError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -125,7 +125,7 @@ func TestMapSymptomUpdateArchiveAndRestoreErrors(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if testCase.got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", testCase.got, testCase.want)

@@ -165,7 +165,7 @@ func TestOnboardingStep2SanitizesSliderValuesEvenWhenUnexpectedPeriodEndIsPresen
 	}
 
 	for _, testCase := range cases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			app, database := newOnboardingTestApp(t)
 			user := createOnboardingTestUser(t, database, "step2-extra-input-sanitize-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com", "StrongPass1", false)

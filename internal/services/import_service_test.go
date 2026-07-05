@@ -239,7 +239,7 @@ func TestImportServiceCapsCustomSymptomCreation(t *testing.T) {
 	user := createDayServiceTestUser(t, database, "import-symptom-cap@example.com")
 
 	names := make([]string, 0, MaxImportCustomSymptoms+25)
-	for i := 0; i < MaxImportCustomSymptoms+25; i++ {
+	for i := range MaxImportCustomSymptoms + 25 {
 		names = append(names, fmt.Sprintf("custom-%04d", i))
 	}
 	payload := importPayload{Entries: []ExportJSONEntry{

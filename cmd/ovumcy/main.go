@@ -308,9 +308,11 @@ func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencie
 	if err != nil {
 		log.Fatalf("handler init failed: %v", err)
 	}
-	// Cache-bust versioned static asset URLs (?v=<rev>) with the build
-	// revision so a release invalidates stale JS/CSS without operator action.
-	handler.SetAssetVersion(buildRevision()) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
+	// Cache-bust versioned static asset URLs (?v=<token>) so a new build
+	// invalidates stale JS/CSS without operator action; resolveAssetVersion
+	// falls back ldflags → VCS revision → process start, so even a `go run`
+	// deployment never serves a shared constant token across builds.
+	handler.SetAssetVersion(resolveAssetVersion()) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
 	return handler
 }
 
@@ -687,6 +689,15 @@ func proxyHeaderRateLimitWarning(proxy proxySettings) string {
 	return ""
 }
 
+// buildVersion is the release identity injected at build time:
+//
+//	go build -ldflags "-X main.buildVersion=<version>"
+//
+// The Dockerfile forwards its BUILD_REVISION build-arg here. It stays empty
+// for builds that do not pass the flag (go run, plain go build); the asset
+// cache-bust token then falls back to VCS or process-start identity.
+var buildVersion string
+
 func buildRevision() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info == nil {
@@ -710,6 +721,65 @@ func buildRevision() string {
 		return revision + "-dirty"
 	}
 	return revision
+}
+
+// vcsRevisionFromBuildInfo extracts the raw vcs.revision stamped into info
+// and whether the working tree was modified. revision is "" when info is nil
+// or carries no usable revision — `go run` never stamps VCS settings, and
+// neither does a build from a tree without .git (the Docker build context
+// only copies the source directories).
+func vcsRevisionFromBuildInfo(info *debug.BuildInfo) (revision string, modified bool) {
+	if info == nil {
+		return "", false
+	}
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if strings.TrimSpace(setting.Value) != "" {
+				revision = setting.Value
+			}
+		case "vcs.modified":
+			modified = strings.TrimSpace(setting.Value) == "true"
+		}
+	}
+	return revision, modified
+}
+
+// assetVersionShortRevisionLength trims a full 40-char commit sha to a short
+// prefix so the "-dirty" marker still fits within the api layer's 16-char
+// asset-version token cap; a prefix is just as good a cache-bust token as the
+// full sha.
+const assetVersionShortRevisionLength = 10
+
+// resolveAssetVersion picks the cache-busting token for versioned static
+// asset URLs (?v=<token>): the ldflags-injected buildVersion when set (the
+// release image path), else the short VCS revision when the binary carries
+// one (go build from a git checkout), else a process-start timestamp — so a
+// from-source deployment (`go run`, .git-less build) gets a token that
+// changes per start instead of the shared constant "unknown" every such
+// build used to serve, which let stale cached assets survive upgrades.
+func resolveAssetVersion() string {
+	info, _ := debug.ReadBuildInfo()
+	return assetCacheBustToken(buildVersion, info, time.Now())
+}
+
+// assetCacheBustToken implements resolveAssetVersion's fallback chain on
+// explicit inputs so each step stays unit-testable.
+func assetCacheBustToken(ldflagsVersion string, info *debug.BuildInfo, processStart time.Time) string {
+	if version := strings.TrimSpace(ldflagsVersion); version != "" {
+		return version
+	}
+	if revision, modified := vcsRevisionFromBuildInfo(info); revision != "" {
+		revision = strings.TrimSpace(revision)
+		if len(revision) > assetVersionShortRevisionLength {
+			revision = revision[:assetVersionShortRevisionLength]
+		}
+		if modified {
+			return revision + "-dirty"
+		}
+		return revision
+	}
+	return "dev-" + strconv.FormatInt(processStart.Unix(), 10)
 }
 
 func tryRunCLICommand() (bool, error) {

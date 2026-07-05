@@ -27,7 +27,7 @@ import (
 //
 // January 2026 gives a month that does NOT start on Sunday:
 //   - monthStart.Weekday() = Thursday(4) → gridStart = 2025-12-28
-func TestCalendardaysCovGridBoundsFebruary2026(t *testing.T) {
+func TestCalendarDaysGridBoundsFebruary2026(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
 	gridStart, gridEnd := calendarGridBounds(monthStart)
 
@@ -41,7 +41,7 @@ func TestCalendardaysCovGridBoundsFebruary2026(t *testing.T) {
 	}
 }
 
-func TestCalendardaysCovGridBoundsMarch2026(t *testing.T) {
+func TestCalendarDaysGridBoundsMarch2026(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	gridStart, gridEnd := calendarGridBounds(monthStart)
 
@@ -55,7 +55,7 @@ func TestCalendardaysCovGridBoundsMarch2026(t *testing.T) {
 	}
 }
 
-func TestCalendardaysCovGridBoundsJanuary2026(t *testing.T) {
+func TestCalendarDaysGridBoundsJanuary2026(t *testing.T) {
 	// January 2026: monthStart = Thursday(4) → gridStart must retreat to Sunday.
 	monthStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	gridStart, gridEnd := calendarGridBounds(monthStart)
@@ -70,10 +70,10 @@ func TestCalendardaysCovGridBoundsJanuary2026(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovGridBoundsGridAlwaysStartsOnSunday ensures gridStart is
+// TestCalendarDaysGridBoundsGridAlwaysStartsOnSunday ensures gridStart is
 // always a Sunday (Weekday == 0), catching mutations to the sign or offset in
 // line 51.
-func TestCalendardaysCovGridBoundsGridAlwaysStartsOnSunday(t *testing.T) {
+func TestCalendarDaysGridBoundsGridAlwaysStartsOnSunday(t *testing.T) {
 	cases := []struct {
 		year  int
 		month time.Month
@@ -106,11 +106,11 @@ func TestCalendardaysCovGridBoundsGridAlwaysStartsOnSunday(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovGridBoundsMonthEndIsLastDayOfMonth verifies line 50:
+// TestCalendarDaysGridBoundsMonthEndIsLastDayOfMonth verifies line 50:
 // monthEnd must be the last calendar day of the given month, not the first day
 // of the following month. We exercise this indirectly via the range that is
 // actually included in the grid.
-func TestCalendardaysCovGridBoundsMonthEndIsLastDayOfMonth(t *testing.T) {
+func TestCalendarDaysGridBoundsMonthEndIsLastDayOfMonth(t *testing.T) {
 	// April 2026 ends on 2026-04-30 (Thursday). If AddDate(0,1,-1) were
 	// AddDate(0,1,0) the monthEnd would be 2026-05-01 (Friday), shifting
 	// gridEnd by one week.
@@ -128,11 +128,11 @@ func TestCalendardaysCovGridBoundsMonthEndIsLastDayOfMonth(t *testing.T) {
 // buildCalendarLogMaps – line 62 (first-log insertion / tie-break logic)
 // ---------------------------------------------------------------------------
 
-// TestCalendardaysCovLogMapsFirstLogIsStoredEvenWithoutPrior ensures that when
+// TestCalendarDaysLogMapsFirstLogIsStoredEvenWithoutPrior ensures that when
 // only a single log exists for a date it is stored (testing the !exists branch
 // of line 62). A mutation that flips !exists → exists would store nothing,
 // leaving IsPeriod=false even though the single log has IsPeriod=true.
-func TestCalendardaysCovLogMapsFirstLogIsStoredEvenWithoutPrior(t *testing.T) {
+func TestCalendarDaysLogMapsFirstLogIsStoredEvenWithoutPrior(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 
@@ -152,12 +152,12 @@ func TestCalendardaysCovLogMapsFirstLogIsStoredEvenWithoutPrior(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovLogMapsLaterTimestampWinsOverEarlier verifies the
+// TestCalendarDaysLogMapsLaterTimestampWinsOverEarlier verifies the
 // logEntry.Date.After(existing.Date) branch at line 62. Two logs for the same
 // calendar day: the later timestamp (12:00) has IsPeriod=false and must win
 // over the earlier (08:00, IsPeriod=true). A mutation to Before would reverse
 // the winner.
-func TestCalendardaysCovLogMapsLaterTimestampWinsOverEarlier(t *testing.T) {
+func TestCalendarDaysLogMapsLaterTimestampWinsOverEarlier(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 
@@ -185,10 +185,10 @@ func TestCalendardaysCovLogMapsLaterTimestampWinsOverEarlier(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovLogMapsHasDataReflectsAllLogsForDay ensures that HasData
+// TestCalendarDaysLogMapsHasDataReflectsAllLogsForDay ensures that HasData
 // aggregates across ALL logs for a calendar day (line 65), even when a
 // later-timestamp log wins the tie-break but carries no data itself.
-func TestCalendardaysCovLogMapsHasDataReflectsAllLogsForDay(t *testing.T) {
+func TestCalendarDaysLogMapsHasDataReflectsAllLogsForDay(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 
@@ -221,11 +221,11 @@ func TestCalendardaysCovLogMapsHasDataReflectsAllLogsForDay(t *testing.T) {
 // appendCurrentBaselinePreFertile – line 121
 // ---------------------------------------------------------------------------
 
-// TestCalendardaysCovPreFertileEndIsOneDayBeforeFertilityStart verifies that
+// TestCalendarDaysPreFertileEndIsOneDayBeforeFertilityStart verifies that
 // the pre-fertile window ends exactly one day before the fertility window
 // starts (line 121: preFertileEnd = fertilityStart - 1 day). If mutated to
 // AddDate(0,0,0) the pre-fertile window would overlap with the fertility window.
-func TestCalendardaysCovPreFertileEndIsOneDayBeforeFertilityStart(t *testing.T) {
+func TestCalendarDaysPreFertileEndIsOneDayBeforeFertilityStart(t *testing.T) {
 	// LastPeriodStart = 2026-03-01, AveragePeriodLength = 5 days,
 	// FertilityWindowStart = 2026-03-16 (provided explicitly).
 	// Pre-fertile window should run 2026-03-06 .. 2026-03-15.
@@ -260,7 +260,7 @@ func TestCalendardaysCovPreFertileEndIsOneDayBeforeFertilityStart(t *testing.T) 
 // appendFertilityWindow – line 149 (peak threshold: offset <= 2)
 // ---------------------------------------------------------------------------
 
-// TestCalendardaysCovFertilityWindowPeakThreshold verifies the offset <= 2
+// TestCalendarDaysFertilityWindowPeakThreshold verifies the offset <= 2
 // boundary at line 149. Days 0, 1, 2 before ovulation are peak; day 3 before
 // ovulation is edge. A mutation to offset <= 1 would make day 2 an edge day.
 //
@@ -272,7 +272,7 @@ func TestCalendardaysCovPreFertileEndIsOneDayBeforeFertilityStart(t *testing.T) 
 //	  2026-03-13 → 2 (peak ← boundary being tested)
 //	  2026-03-14 → 1 (peak)
 //	  2026-03-15 → 0 (ovulation, peak marker present)
-func TestCalendardaysCovFertilityWindowPeakThreshold(t *testing.T) {
+func TestCalendarDaysFertilityWindowPeakThreshold(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
 
@@ -310,7 +310,7 @@ func TestCalendardaysCovFertilityWindowPeakThreshold(t *testing.T) {
 // (preFertileEnd = fertilityStart - 1)
 // ---------------------------------------------------------------------------
 
-// TestCalendardaysCovHistoricalCycleLenRounding verifies that the cycle length
+// TestCalendarDaysHistoricalCycleLen28Days verifies that the cycle length
 // at line 199 is correctly rounded via math.Round. Two cycle starts 27.5 days
 // apart: math.Round gives 28, truncation gives 27. A 27-day cycle uses
 // luteal=14 → ovulation on day 13, but a 28-day cycle puts ovulation on day 14.
@@ -319,7 +319,7 @@ func TestCalendardaysCovFertilityWindowPeakThreshold(t *testing.T) {
 // However, exact half-day offsets are hard to express in calendar dates.
 // Instead, use two starts exactly N days apart and verify the derived ovulation
 // date matches the expected cycle length.
-func TestCalendardaysCovHistoricalCycleLen28Days(t *testing.T) {
+func TestCalendarDaysHistoricalCycleLen28Days(t *testing.T) {
 	// Cycle starts: 2026-01-01 → 2026-01-29 = 28 days.
 	// With luteal=14: ovulationDay = 28 - 14 = 14 (1-based) → 2026-01-01 + 13 days = 2026-01-14.
 	monthStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -347,7 +347,7 @@ func TestCalendardaysCovHistoricalCycleLen28Days(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovHistoricalPreFertileEndIsOneDayBeforeFertilityStart checks
+// TestCalendarDaysHistoricalPreFertileEndIsOneDayBeforeFertilityStart checks
 // line 207: preFertileEnd = fertilityStart - 1 day. The day immediately before
 // fertilityStart must be pre-fertile, and fertilityStart itself must NOT be
 // pre-fertile (it is the fertile window start).
@@ -356,7 +356,7 @@ func TestCalendardaysCovHistoricalCycleLen28Days(t *testing.T) {
 // PredictCycleWindow: ovulation = day 14 = 2026-01-14; fertilityStart = 2026-01-09;
 // preFertileStart = 2026-01-06 (after 5-day period); preFertileEnd = 2026-01-08.
 // So 2026-01-08 must be pre-fertile and 2026-01-09 must NOT be pre-fertile.
-func TestCalendardaysCovHistoricalPreFertileEndIsOneDayBeforeFertilityStart(t *testing.T) {
+func TestCalendarDaysHistoricalPreFertileEndIsOneDayBeforeFertilityStart(t *testing.T) {
 	monthStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.February, 15, 0, 0, 0, 0, time.UTC)
 
@@ -391,7 +391,7 @@ func TestCalendardaysCovHistoricalPreFertileEndIsOneDayBeforeFertilityStart(t *t
 // appendPredictedWindow – line 228 (preFertileEnd = fertilityStart - 1)
 // ---------------------------------------------------------------------------
 
-// TestCalendardaysCovPredictedWindowPreFertileEndBoundary verifies line 228:
+// TestCalendarDaysPredictedWindowPreFertileEndBoundary verifies line 228:
 // preFertileEnd must be one day before fertilityStart, so the last pre-fertile
 // day and the first fertility day are distinct. Uses a future predicted cycle.
 //
@@ -401,7 +401,7 @@ func TestCalendardaysCovHistoricalPreFertileEndIsOneDayBeforeFertilityStart(t *t
 // fertilityStart = 2026-04-20 - 5 = 2026-04-15.
 // preFertileStart = 2026-04-07 + 5 = 2026-04-12.
 // preFertileEnd   = 2026-04-15 - 1 = 2026-04-14.
-func TestCalendardaysCovPredictedWindowPreFertileEndBoundary(t *testing.T) {
+func TestCalendarDaysPredictedWindowPreFertileEndBoundary(t *testing.T) {
 	monthStart := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
 
@@ -433,12 +433,12 @@ func TestCalendardaysCovPredictedWindowPreFertileEndBoundary(t *testing.T) {
 // buildCalendarDayState – line 268 (InMonth) and line 269 (IsToday)
 // ---------------------------------------------------------------------------
 
-// TestCalendardaysCovInMonthDistinguishesGridPaddingDays verifies line 268:
+// TestCalendarDaysInMonthDistinguishesGridPaddingDays verifies line 268:
 // days whose month differs from monthStart must have InMonth=false. Grid
 // padding days (before/after the target month) must be marked as outside the
 // current month. A mutation that replaces == with != would invert InMonth for
 // every day.
-func TestCalendardaysCovInMonthDistinguishesGridPaddingDays(t *testing.T) {
+func TestCalendarDaysInMonthDistinguishesGridPaddingDays(t *testing.T) {
 	// January 2026 starts on Thursday → gridStart = 2025-12-28.
 	// Days 2025-12-28 through 2025-12-31 must be InMonth=false.
 	monthStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
@@ -463,10 +463,10 @@ func TestCalendardaysCovInMonthDistinguishesGridPaddingDays(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovIsTodayMatchesExactDate verifies line 269: IsToday must
+// TestCalendarDaysIsTodayMatchesExactDate verifies line 269: IsToday must
 // be true for exactly the current date and false for all adjacent days. A
 // mutation that changes == to != would invert IsToday for every day.
-func TestCalendardaysCovIsTodayMatchesExactDate(t *testing.T) {
+func TestCalendarDaysIsTodayMatchesExactDate(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 15, 9, 30, 0, 0, time.UTC) // mid-day
 
@@ -492,10 +492,10 @@ func TestCalendardaysCovIsTodayMatchesExactDate(t *testing.T) {
 // buildCalendarDayState – line 280 (HasSex)
 // ---------------------------------------------------------------------------
 
-// TestCalendardaysCovHasSexIsTrueWhenLogHasSexActivity verifies line 280:
+// TestCalendarDaysHasSexIsTrueWhenLogHasSexActivity verifies line 280:
 // HasSex must be true when the log carries a non-none sex activity value. A
 // mutation to == models.SexActivityNone would invert HasSex.
-func TestCalendardaysCovHasSexIsTrueWhenLogHasSexActivity(t *testing.T) {
+func TestCalendarDaysHasSexIsTrueWhenLogHasSexActivity(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
 
@@ -525,10 +525,10 @@ func TestCalendardaysCovHasSexIsTrueWhenLogHasSexActivity(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovHasSexIsTrueForUnprotectedActivity verifies that
+// TestCalendarDaysHasSexIsTrueForUnprotectedActivity verifies that
 // unprotected sex activity also sets HasSex=true (NormalizeDaySexActivity
 // must return non-none for "unprotected").
-func TestCalendardaysCovHasSexIsTrueForUnprotectedActivity(t *testing.T) {
+func TestCalendarDaysHasSexIsTrueForUnprotectedActivity(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
 
@@ -548,10 +548,10 @@ func TestCalendardaysCovHasSexIsTrueForUnprotectedActivity(t *testing.T) {
 	}
 }
 
-// TestCalendardaysCovHasSexFalseWhenNoLog verifies that a day with no log
+// TestCalendarDaysHasSexFalseWhenNoLog verifies that a day with no log
 // entry has HasSex=false (the hasEntry guard in line 280 prevents a nil-log
 // false positive).
-func TestCalendardaysCovHasSexFalseWhenNoLog(t *testing.T) {
+func TestCalendarDaysHasSexFalseWhenNoLog(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
 

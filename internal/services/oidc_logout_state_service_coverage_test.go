@@ -52,7 +52,7 @@ func (s *oidclogoutstateserviceCovStore) DeleteExpired(ctx context.Context, cuto
 // TTL constant (line 10): Save should compute ExpiresAt = now + 7*24h
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovSaveTTLIs7Days(t *testing.T) {
+func TestOIDCLogoutStateServiceSaveTTLIs7Days(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
@@ -81,7 +81,7 @@ func TestOIDCLogoutStateServiceCovSaveTTLIs7Days(t *testing.T) {
 // Line 28: nil service / nil store guard in Save
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovSaveNilServiceReturnsNil(t *testing.T) {
+func TestOIDCLogoutStateServiceSaveNilServiceReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	var svc *OIDCLogoutStateService
@@ -90,7 +90,7 @@ func TestOIDCLogoutStateServiceCovSaveNilServiceReturnsNil(t *testing.T) {
 	}
 }
 
-func TestOIDCLogoutStateServiceCovSaveNilStoreReturnsNil(t *testing.T) {
+func TestOIDCLogoutStateServiceSaveNilStoreReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	svc := &OIDCLogoutStateService{store: nil}
@@ -103,7 +103,7 @@ func TestOIDCLogoutStateServiceCovSaveNilStoreReturnsNil(t *testing.T) {
 // Line 32: empty sessionID guard in Save (after TrimSpace)
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovSaveEmptySessionIDReturnsNil(t *testing.T) {
+func TestOIDCLogoutStateServiceSaveEmptySessionIDReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
@@ -121,7 +121,7 @@ func TestOIDCLogoutStateServiceCovSaveEmptySessionIDReturnsNil(t *testing.T) {
 // Line 41: DeleteExpired error propagation in Save
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovSaveDeleteExpiredErrorPropagates(t *testing.T) {
+func TestOIDCLogoutStateServiceSaveDeleteExpiredErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("db error deleting expired")
@@ -141,7 +141,7 @@ func TestOIDCLogoutStateServiceCovSaveDeleteExpiredErrorPropagates(t *testing.T)
 // Line 64: nil service / nil store guard in Delete
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovDeleteNilServiceReturnsNil(t *testing.T) {
+func TestOIDCLogoutStateServiceDeleteNilServiceReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	var svc *OIDCLogoutStateService
@@ -150,7 +150,7 @@ func TestOIDCLogoutStateServiceCovDeleteNilServiceReturnsNil(t *testing.T) {
 	}
 }
 
-func TestOIDCLogoutStateServiceCovDeleteNilStoreReturnsNil(t *testing.T) {
+func TestOIDCLogoutStateServiceDeleteNilStoreReturnsNil(t *testing.T) {
 	t.Parallel()
 
 	svc := &OIDCLogoutStateService{store: nil}
@@ -160,7 +160,7 @@ func TestOIDCLogoutStateServiceCovDeleteNilStoreReturnsNil(t *testing.T) {
 }
 
 // Delete happy path — also exercises the TrimSpace inside Delete
-func TestOIDCLogoutStateServiceCovDeleteTrimSpaceAndDelegates(t *testing.T) {
+func TestOIDCLogoutStateServiceDeleteTrimSpaceAndDelegates(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
@@ -178,7 +178,7 @@ func TestOIDCLogoutStateServiceCovDeleteTrimSpaceAndDelegates(t *testing.T) {
 // Line 71: nil service / nil store guard in load (via Load and Consume)
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovLoadNilServiceReturnsEmpty(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadNilServiceReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	var svc *OIDCLogoutStateService
@@ -188,7 +188,7 @@ func TestOIDCLogoutStateServiceCovLoadNilServiceReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestOIDCLogoutStateServiceCovLoadNilStoreReturnsEmpty(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadNilStoreReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	svc := &OIDCLogoutStateService{store: nil}
@@ -202,7 +202,7 @@ func TestOIDCLogoutStateServiceCovLoadNilStoreReturnsEmpty(t *testing.T) {
 // Line 75: empty sessionID guard in load
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovLoadEmptySessionIDReturnsEmpty(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadEmptySessionIDReturnsEmpty(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
@@ -221,7 +221,7 @@ func TestOIDCLogoutStateServiceCovLoadEmptySessionIDReturnsEmpty(t *testing.T) {
 // Line 83: DeleteExpired error propagation in load
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovLoadDeleteExpiredErrorPropagates(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadDeleteExpiredErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("db error in load")
@@ -241,7 +241,7 @@ func TestOIDCLogoutStateServiceCovLoadDeleteExpiredErrorPropagates(t *testing.T)
 // Line 88: not-found path (FindBySessionID returns found=false)
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovLoadNotFoundReturnsFalse(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadNotFoundReturnsFalse(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{findFound: false}
@@ -254,7 +254,7 @@ func TestOIDCLogoutStateServiceCovLoadNotFoundReturnsFalse(t *testing.T) {
 }
 
 // Line 88: FindBySessionID error propagation
-func TestOIDCLogoutStateServiceCovLoadFindErrorPropagates(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadFindErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("find error")
@@ -274,7 +274,7 @@ func TestOIDCLogoutStateServiceCovLoadFindErrorPropagates(t *testing.T) {
 // Line 92: expired-record path (ExpiresAt <= now → delete and return not found)
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovLoadExpiredRecordDeletedAndNotFound(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadExpiredRecordDeletedAndNotFound(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -301,7 +301,7 @@ func TestOIDCLogoutStateServiceCovLoadExpiredRecordDeletedAndNotFound(t *testing
 }
 
 // Line 92: record exactly at expiry boundary (ExpiresAt == now → also expired)
-func TestOIDCLogoutStateServiceCovLoadExactExpiryBoundaryIsExpired(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadExactExpiryBoundaryIsExpired(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -321,7 +321,7 @@ func TestOIDCLogoutStateServiceCovLoadExactExpiryBoundaryIsExpired(t *testing.T)
 }
 
 // Line 92: DeleteBySessionID error propagates when record is expired
-func TestOIDCLogoutStateServiceCovLoadExpiredDeleteErrorPropagates(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadExpiredDeleteErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -346,7 +346,7 @@ func TestOIDCLogoutStateServiceCovLoadExpiredDeleteErrorPropagates(t *testing.T)
 // Line 92: non-expired record → Load returns data (IsZero ExpiresAt guard too)
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovLoadValidRecordReturnsData(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadValidRecordReturnsData(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -382,7 +382,7 @@ func TestOIDCLogoutStateServiceCovLoadValidRecordReturnsData(t *testing.T) {
 }
 
 // ExpiresAt.IsZero() → treated as non-expired (defensive: zero means no expiry set)
-func TestOIDCLogoutStateServiceCovLoadZeroExpiresAtNotExpired(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadZeroExpiresAtNotExpired(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -407,7 +407,7 @@ func TestOIDCLogoutStateServiceCovLoadZeroExpiresAtNotExpired(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // Consume should delete the record after returning it
-func TestOIDCLogoutStateServiceCovConsumeDeletesRecord(t *testing.T) {
+func TestOIDCLogoutStateServiceConsumeDeletesRecord(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -439,7 +439,7 @@ func TestOIDCLogoutStateServiceCovConsumeDeletesRecord(t *testing.T) {
 }
 
 // Load should NOT delete the record
-func TestOIDCLogoutStateServiceCovLoadDoesNotDeleteRecord(t *testing.T) {
+func TestOIDCLogoutStateServiceLoadDoesNotDeleteRecord(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -463,7 +463,7 @@ func TestOIDCLogoutStateServiceCovLoadDoesNotDeleteRecord(t *testing.T) {
 }
 
 // Consume: DeleteBySessionID error propagates
-func TestOIDCLogoutStateServiceCovConsumeDeleteErrorPropagates(t *testing.T) {
+func TestOIDCLogoutStateServiceConsumeDeleteErrorPropagates(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
@@ -488,7 +488,7 @@ func TestOIDCLogoutStateServiceCovConsumeDeleteErrorPropagates(t *testing.T) {
 // Save: fields are trimmed and UTC-normalised
 // ---------------------------------------------------------------------------
 
-func TestOIDCLogoutStateServiceCovSaveFieldsTrimmedAndUTC(t *testing.T) {
+func TestOIDCLogoutStateServiceSaveFieldsTrimmedAndUTC(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}
@@ -526,7 +526,7 @@ func TestOIDCLogoutStateServiceCovSaveFieldsTrimmedAndUTC(t *testing.T) {
 }
 
 // Save: DeleteExpired is called with the current time
-func TestOIDCLogoutStateServiceCovSaveDeleteExpiredCalledWithNow(t *testing.T) {
+func TestOIDCLogoutStateServiceSaveDeleteExpiredCalledWithNow(t *testing.T) {
 	t.Parallel()
 
 	store := &oidclogoutstateserviceCovStore{}

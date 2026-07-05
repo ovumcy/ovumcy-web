@@ -319,7 +319,7 @@ func TestDisableTOTP2FA_RateLimited_AfterRepeatedWrongPassword(t *testing.T) {
 	ctx.refreshAuthCookie(t)
 
 	wrongForm := url.Values{"password": {"WrongPassword1"}}
-	for attempt := 0; attempt < services.DefaultTOTPDisableAttemptsLimit; attempt++ {
+	for attempt := range services.DefaultTOTPDisableAttemptsLimit {
 		resp := settingsFormRequestWithCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/2fa", wrongForm, map[string]string{"Accept-Language": "en", "Accept": "application/json"})
 		if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusTooManyRequests {
 			t.Fatalf("attempt %d: status = %d, want 401 or 429", attempt, resp.StatusCode)

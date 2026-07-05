@@ -29,11 +29,11 @@ func statsphaseinsightsCovOwner(id uint) *models.User {
 // Line 52: len(starts) < 2 — gate on minimum two cycle starts
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovBuildContextsReturnNilForSingleStart verifies that
+// TestStatsPhaseInsightsBuildContextsReturnNilForSingleStart verifies that
 // buildCompletedCyclePhaseContexts returns nil when only one cycle start is
 // detected (boundary: exactly len(starts)==1). A mutant changing < 2 to < 1
 // would allow this through and produce unexpected context entries.
-func TestStatsphaseinsightsCovBuildContextsReturnNilForSingleStart(t *testing.T) {
+func TestStatsPhaseInsightsBuildContextsReturnNilForSingleStart(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: statsphaseinsightsCovDay(t, "2026-01-05"), Mood: 3},
@@ -44,10 +44,10 @@ func TestStatsphaseinsightsCovBuildContextsReturnNilForSingleStart(t *testing.T)
 	}
 }
 
-// TestStatsphaseinsightsCovBuildContextsBuildsContextsForTwoStarts verifies
+// TestStatsPhaseInsightsBuildContextsBuildsContextsForTwoStarts verifies
 // that two cycle starts (one complete cycle) produce exactly one context
 // — the earliest observable positive case past the line-52 boundary.
-func TestStatsphaseinsightsCovBuildContextsBuildsContextsForTwoStarts(t *testing.T) {
+func TestStatsPhaseInsightsBuildContextsBuildsContextsForTwoStarts(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true},
@@ -65,11 +65,11 @@ func TestStatsphaseinsightsCovBuildContextsBuildsContextsForTwoStarts(t *testing
 // Line 63: cycleLength <= 0 — skip zero-length cycles
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovBuildContextsSkipsZeroLengthCycle verifies that a
+// TestStatsPhaseInsightsBuildContextsSkipsZeroLengthCycle verifies that a
 // cycle whose two consecutive start dates map to the same calendar day (cycleLength==0)
 // is skipped and produces no context. A mutant changing <= 0 to < 0 would
 // include the zero-length cycle, corrupting phase assignments.
-func TestStatsphaseinsightsCovBuildContextsSkipsZeroLengthCycle(t *testing.T) {
+func TestStatsPhaseInsightsBuildContextsSkipsZeroLengthCycle(t *testing.T) {
 	// Two starts at the same wall-clock date but different times produce
 	// a zero-length calendar cycle.
 	sameDay := statsphaseinsightsCovDay(t, "2026-01-01")
@@ -103,12 +103,12 @@ func TestStatsphaseinsightsCovBuildContextsSkipsZeroLengthCycle(t *testing.T) {
 // Line 68: periodLength <= 0 — fall back to DefaultPeriodLength
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovBuildContextsAppliesDefaultPeriodLengthWhenZero
+// TestStatsPhaseInsightsBuildContextsAppliesDefaultPeriodLengthWhenZero
 // verifies that a cycle whose detected period length is 0 (no IsPeriod=true
 // days at the start of the cycle) falls back to models.DefaultPeriodLength (5).
 // A mutant changing <= 0 to < 0 would allow periodLength==0 through, causing
 // the menstrual phase to span zero days.
-func TestStatsphaseinsightsCovBuildContextsAppliesDefaultPeriodLengthWhenZero(t *testing.T) {
+func TestStatsPhaseInsightsBuildContextsAppliesDefaultPeriodLengthWhenZero(t *testing.T) {
 	// The first log has IsPeriod=false, so buildCycles infers periodLength=0
 	// for that cycle. We use two starts to produce one context.
 	logs := []models.DailyLog{
@@ -153,12 +153,12 @@ func TestStatsphaseinsightsCovBuildContextsAppliesDefaultPeriodLengthWhenZero(t 
 	}
 }
 
-// TestStatsphaseinsightsCovMenstrualPhaseUsesDefaultPeriodLength verifies
+// TestStatsPhaseInsightsMenstrualPhaseUsesDefaultPeriodLength verifies
 // the observable consequence of the periodLength fallback: when no IsPeriod
 // days are recorded at the start of a cycle, mood logs on early days of that
 // cycle are still classified as "menstrual" (using the default period length),
 // not as "follicular". We exercise this via BuildPhaseMoodInsights.
-func TestStatsphaseinsightsCovMenstrualPhaseUsesDefaultPeriodLength(t *testing.T) {
+func TestStatsPhaseInsightsMenstrualPhaseUsesDefaultPeriodLength(t *testing.T) {
 	service := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	owner := statsphaseinsightsCovOwner(99)
 
@@ -199,12 +199,12 @@ func TestStatsphaseinsightsCovMenstrualPhaseUsesDefaultPeriodLength(t *testing.T
 // Line 73: ovulationDay <= 0 — skip cycle too short for valid ovulation
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovBuildContextsSkipsTooShortCycle verifies that a
+// TestStatsPhaseInsightsBuildContextsSkipsTooShortCycle verifies that a
 // cycle too short for a valid ovulation day (CalcOvulationDay returns 0) is
 // excluded from the resulting contexts. A mutant changing <= 0 to < 0 would
 // include such a cycle, producing an ovulationDay==0 context that breaks
 // phase classification.
-func TestStatsphaseinsightsCovBuildContextsSkipsTooShortCycle(t *testing.T) {
+func TestStatsPhaseInsightsBuildContextsSkipsTooShortCycle(t *testing.T) {
 	// A 3-day cycle is below the minimum required for a valid ovulation day.
 	// DetectCycleStarts needs IsPeriod=true. We'll build three starts but
 	// the first two have a 3-day gap, the second-third have a 28-day gap.
@@ -247,9 +247,9 @@ func statsphaseinsightsCovMakeCycle(t *testing.T, startDate string) completedCyc
 	}
 }
 
-// TestStatsphaseinsightsCovPhaseForCompletedCycleDayMenstrual covers line 97:
+// TestStatsPhaseInsightsPhaseForCompletedCycleDayMenstrual covers line 97:
 // dayNumber <= cycle.PeriodLength → "menstrual".
-func TestStatsphaseinsightsCovPhaseForCompletedCycleDayMenstrual(t *testing.T) {
+func TestStatsPhaseInsightsPhaseForCompletedCycleDayMenstrual(t *testing.T) {
 	cycle := statsphaseinsightsCovMakeCycle(t, "2026-01-01")
 
 	cases := []struct {
@@ -269,9 +269,9 @@ func TestStatsphaseinsightsCovPhaseForCompletedCycleDayMenstrual(t *testing.T) {
 	}
 }
 
-// TestStatsphaseinsightsCovPhaseForCompletedCycleDayOvulation covers line 99:
+// TestStatsPhaseInsightsPhaseForCompletedCycleDayOvulation covers line 99:
 // dayNumber == cycle.OvulationDay → "ovulation".
-func TestStatsphaseinsightsCovPhaseForCompletedCycleDayOvulation(t *testing.T) {
+func TestStatsPhaseInsightsPhaseForCompletedCycleDayOvulation(t *testing.T) {
 	cycle := statsphaseinsightsCovMakeCycle(t, "2026-01-01")
 	// OvulationDay=14, so Jan 14 is day 14 of the cycle.
 	day := statsphaseinsightsCovDay(t, "2026-01-14")
@@ -281,9 +281,9 @@ func TestStatsphaseinsightsCovPhaseForCompletedCycleDayOvulation(t *testing.T) {
 	}
 }
 
-// TestStatsphaseinsightsCovPhaseForCompletedCycleDayFollicular covers line 101:
+// TestStatsPhaseInsightsPhaseForCompletedCycleDayFollicular covers line 101:
 // dayNumber < cycle.OvulationDay (and > PeriodLength) → "follicular".
-func TestStatsphaseinsightsCovPhaseForCompletedCycleDayFollicular(t *testing.T) {
+func TestStatsPhaseInsightsPhaseForCompletedCycleDayFollicular(t *testing.T) {
 	cycle := statsphaseinsightsCovMakeCycle(t, "2026-01-01")
 	// Day 6 is after PeriodLength(5) and before OvulationDay(14) → follicular.
 	day := statsphaseinsightsCovDay(t, "2026-01-06")
@@ -293,9 +293,9 @@ func TestStatsphaseinsightsCovPhaseForCompletedCycleDayFollicular(t *testing.T) 
 	}
 }
 
-// TestStatsphaseinsightsCovPhaseForCompletedCycleDayLuteal covers the default
+// TestStatsPhaseInsightsPhaseForCompletedCycleDayLuteal covers the default
 // branch: dayNumber > cycle.OvulationDay → "luteal".
-func TestStatsphaseinsightsCovPhaseForCompletedCycleDayLuteal(t *testing.T) {
+func TestStatsPhaseInsightsPhaseForCompletedCycleDayLuteal(t *testing.T) {
 	cycle := statsphaseinsightsCovMakeCycle(t, "2026-01-01")
 	// Day 15 is after OvulationDay(14) → luteal.
 	day := statsphaseinsightsCovDay(t, "2026-01-15")
@@ -305,9 +305,9 @@ func TestStatsphaseinsightsCovPhaseForCompletedCycleDayLuteal(t *testing.T) {
 	}
 }
 
-// TestStatsphaseinsightsCovPhaseForCompletedCycleDayOutsideCycle verifies
+// TestStatsPhaseInsightsPhaseForCompletedCycleDayOutsideCycle verifies
 // that a day before or after the cycle window returns "".
-func TestStatsphaseinsightsCovPhaseForCompletedCycleDayOutsideCycle(t *testing.T) {
+func TestStatsPhaseInsightsPhaseForCompletedCycleDayOutsideCycle(t *testing.T) {
 	cycle := statsphaseinsightsCovMakeCycle(t, "2026-01-01")
 
 	before := statsphaseinsightsCovDay(t, "2025-12-31")
@@ -325,10 +325,10 @@ func TestStatsphaseinsightsCovPhaseForCompletedCycleDayOutsideCycle(t *testing.T
 // Line 163: EntryCount field in StatsPhaseMoodInsight
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovMoodInsightEntryCountMatchesLogCount verifies that
+// TestStatsPhaseInsightsMoodInsightEntryCountMatchesLogCount verifies that
 // EntryCount is set to the number of qualifying mood log entries for each phase.
 // A mutant dropping or zeroing EntryCount would leave all phases with count=0.
-func TestStatsphaseinsightsCovMoodInsightEntryCountMatchesLogCount(t *testing.T) {
+func TestStatsPhaseInsightsMoodInsightEntryCountMatchesLogCount(t *testing.T) {
 	service := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{})
 	owner := statsphaseinsightsCovOwner(42)
 
@@ -380,11 +380,11 @@ func TestStatsphaseinsightsCovMoodInsightEntryCountMatchesLogCount(t *testing.T)
 // Line 267: HasData in StatsPhaseSymptomInsight
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovSymptomInsightHasDataFalseForPhaseWithNoItems
+// TestStatsPhaseInsightsSymptomInsightHasDataFalseForPhaseWithNoItems
 // verifies that a phase with no symptom occurrences has HasData=false.
 // A mutant replacing len(items)>0 with true would incorrectly mark empty
 // phases as having data.
-func TestStatsphaseinsightsCovSymptomInsightHasDataFalseForPhaseWithNoItems(t *testing.T) {
+func TestStatsPhaseInsightsSymptomInsightHasDataFalseForPhaseWithNoItems(t *testing.T) {
 	// Only menstrual phase logs carry symptoms. Follicular, ovulation, luteal
 	// phases will have no symptom data.
 	symptomByID := map[uint]models.SymptomType{
@@ -452,10 +452,10 @@ func statsphaseinsightsCovParseDay(s string) time.Time {
 // Line 286: Percentage in StatsPhaseSymptomInsightItem
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovSymptomInsightPercentageCalculation verifies that
+// TestStatsPhaseInsightsSymptomInsightPercentageCalculation verifies that
 // Percentage = count*100/totalDays. A mutant removing the *100 factor or
 // swapping operands would produce a wrong value.
-func TestStatsphaseinsightsCovSymptomInsightPercentageCalculation(t *testing.T) {
+func TestStatsPhaseInsightsSymptomInsightPercentageCalculation(t *testing.T) {
 	symptomByID := map[uint]models.SymptomType{
 		1: {ID: 1, Name: "Acne", Icon: "A"},
 	}
@@ -516,11 +516,11 @@ func TestStatsphaseinsightsCovSymptomInsightPercentageCalculation(t *testing.T) 
 // Lines 291, 293: sort comparator (name tie-breaker and primary count sort)
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovSymptomItemsSortedDescendingByCount verifies that
+// TestStatsPhaseInsightsSymptomItemsSortedDescendingByCount verifies that
 // items are sorted in descending order by Count. A mutant changing > to < on
 // line 293 would produce ascending order, making the lowest-count item appear
 // first. We use a fixture where count values are unambiguous (no ties).
-func TestStatsphaseinsightsCovSymptomItemsSortedDescendingByCount(t *testing.T) {
+func TestStatsPhaseInsightsSymptomItemsSortedDescendingByCount(t *testing.T) {
 	symptomByID := map[uint]models.SymptomType{
 		1: {ID: 1, Name: "Acne", Icon: "A"},
 		2: {ID: 2, Name: "Bloating", Icon: "B"},
@@ -586,11 +586,11 @@ func TestStatsphaseinsightsCovSymptomItemsSortedDescendingByCount(t *testing.T) 
 	}
 }
 
-// TestStatsphaseinsightsCovSymptomItemsTiesBrokenAlphabetically verifies that
+// TestStatsPhaseInsightsSymptomItemsTiesBrokenAlphabetically verifies that
 // items with equal Count are sorted alphabetically by Name. A mutant changing
 // items[i].Name < items[j].Name to > would reverse the alphabetical tie-break,
 // putting "Cramps" before "Acne" when both have count=3.
-func TestStatsphaseinsightsCovSymptomItemsTiesBrokenAlphabetically(t *testing.T) {
+func TestStatsPhaseInsightsSymptomItemsTiesBrokenAlphabetically(t *testing.T) {
 	symptomByID := map[uint]models.SymptomType{
 		1: {ID: 1, Name: "Acne", Icon: "A"},
 		2: {ID: 2, Name: "Cramps", Icon: "C"},
@@ -635,11 +635,11 @@ func TestStatsphaseinsightsCovSymptomItemsTiesBrokenAlphabetically(t *testing.T)
 // Line 295: len(items) > 3 — truncation boundary
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovSymptomInsightsTruncatesAtThree verifies that
+// TestStatsPhaseInsightsSymptomInsightsTruncatesAtThree verifies that
 // exactly 3 items are returned when 4 symptoms are present. A mutant changing
 // > 3 to >= 3 would truncate to 3 even when only 3 items exist (returning 2
 // items instead), or a mutant changing to > 4 would let 4 items through.
-func TestStatsphaseinsightsCovSymptomInsightsTruncatesAtThree(t *testing.T) {
+func TestStatsPhaseInsightsSymptomInsightsTruncatesAtThree(t *testing.T) {
 	symptomByID := map[uint]models.SymptomType{
 		1: {ID: 1, Name: "Acne", Icon: "A"},
 		2: {ID: 2, Name: "Bloating", Icon: "B"},
@@ -678,11 +678,11 @@ func TestStatsphaseinsightsCovSymptomInsightsTruncatesAtThree(t *testing.T) {
 	}
 }
 
-// TestStatsphaseinsightsCovSymptomInsightsKeepsThreeItemsWhenExactlyThree
+// TestStatsPhaseInsightsSymptomInsightsKeepsThreeItemsWhenExactlyThree
 // verifies that exactly 3 symptoms are NOT truncated (the > 3 boundary: when
 // len==3, items[:3] must NOT be applied). A mutant changing > 3 to >= 3 would
 // incorrectly truncate 3 items to 2.
-func TestStatsphaseinsightsCovSymptomInsightsKeepsThreeItemsWhenExactlyThree(t *testing.T) {
+func TestStatsPhaseInsightsSymptomInsightsKeepsThreeItemsWhenExactlyThree(t *testing.T) {
 	symptomByID := map[uint]models.SymptomType{
 		1: {ID: 1, Name: "Acne", Icon: "A"},
 		2: {ID: 2, Name: "Bloating", Icon: "B"},
@@ -720,11 +720,11 @@ func TestStatsphaseinsightsCovSymptomInsightsKeepsThreeItemsWhenExactlyThree(t *
 // Line 304: hasPhaseSymptomInsightData guard conditions
 // ---------------------------------------------------------------------------
 
-// TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsFalseWhenNoData
+// TestStatsPhaseInsightsHasPhaseSymptomInsightDataReturnsFalseWhenNoData
 // verifies that hasPhaseSymptomInsightData returns false when all counters have
 // totalDays=0 (no log entries fell in any phase). A mutant removing the
 // totalDays>0 condition would return true spuriously.
-func TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsFalseWhenNoData(t *testing.T) {
+func TestStatsPhaseInsightsHasPhaseSymptomInsightDataReturnsFalseWhenNoData(t *testing.T) {
 	counters := newPhaseSymptomCounters()
 	// All counters have totalDays=0 and empty counts by default.
 	got := hasPhaseSymptomInsightData(counters)
@@ -733,11 +733,11 @@ func TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsFalseWhenNoData(t
 	}
 }
 
-// TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsFalseWhenDaysButNoCounts
+// TestStatsPhaseInsightsHasPhaseSymptomInsightDataReturnsFalseWhenDaysButNoCounts
 // verifies that a counter with totalDays>0 but no symptom counts (len(counts)==0)
 // does NOT trigger hasData. A mutant dropping the len(counts)>0 check would
 // incorrectly return true.
-func TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsFalseWhenDaysButNoCounts(t *testing.T) {
+func TestStatsPhaseInsightsHasPhaseSymptomInsightDataReturnsFalseWhenDaysButNoCounts(t *testing.T) {
 	counters := newPhaseSymptomCounters()
 	counters["menstrual"].totalDays = 5 // days observed, but no symptoms recorded
 	got := hasPhaseSymptomInsightData(counters)
@@ -746,9 +746,9 @@ func TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsFalseWhenDaysButN
 	}
 }
 
-// TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsTrueWhenOnePhaseFull
+// TestStatsPhaseInsightsHasPhaseSymptomInsightDataReturnsTrueWhenOnePhaseFull
 // verifies that a single phase with both totalDays>0 and counts>0 returns true.
-func TestStatsphaseinsightsCovHasPhaseSymptomInsightDataReturnsTrueWhenOnePhaseFull(t *testing.T) {
+func TestStatsPhaseInsightsHasPhaseSymptomInsightDataReturnsTrueWhenOnePhaseFull(t *testing.T) {
 	counters := newPhaseSymptomCounters()
 	counters["luteal"].totalDays = 3
 	counters["luteal"].counts[1] = 2
