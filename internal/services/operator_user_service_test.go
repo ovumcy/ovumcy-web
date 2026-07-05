@@ -169,7 +169,7 @@ func TestOperatorUserServiceDeleteUserByEmailErrors(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			service := NewOperatorUserService(testCase.repo, nil)
 			_, err := service.DeleteUserByEmail(context.Background(), "not-an-email")
@@ -292,7 +292,7 @@ func TestOperatorUserServiceCreateOwnerValidatesInput(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			repo := &stubOperatorUserRepo{}

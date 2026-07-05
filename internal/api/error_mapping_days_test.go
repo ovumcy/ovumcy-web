@@ -37,7 +37,7 @@ func TestMapDayRangeError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapDayRangeError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -125,7 +125,7 @@ func TestMapDayUpsertError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapDayUpsertError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -153,7 +153,7 @@ func TestMapDayDeleteError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapDayDeleteError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)

@@ -507,7 +507,7 @@ func runOIDCConfigValidationCases(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			setValidOIDCTestEnv(t)
 			assertResolveOIDCConfigError(t, tc.cookieSecure, tc.registrationMode, tc.wantContains, tc.setup)
@@ -717,7 +717,7 @@ func TestLoadRuntimeConfigResolvesHSTSSwitch(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
 			t.Setenv("DB_DRIVER", "sqlite")

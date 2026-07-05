@@ -285,7 +285,7 @@ func TestFullPageFallbackRedirectsWhenLocalAuthDisabled(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			response := fullPageRequest(t, app, testCase.method, testCase.path, testCase.form, "")
 			assertSeeOther(t, response, "/login")
@@ -460,7 +460,7 @@ func TestCSRFFailureReasonMapsAllSentinels(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := CSRFFailureReason(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected csrf failure reason: got %q want %q", got, testCase.want)

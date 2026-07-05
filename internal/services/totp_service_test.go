@@ -335,7 +335,7 @@ func TestTOTPService_CheckRateLimit_BelowLimit_ReturnsNil(t *testing.T) {
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPAttemptsLimit-1; i++ {
+	for range DefaultTOTPAttemptsLimit - 1 {
 		svc.RecordFailure(secretKey, "1.2.3.4", 1, now)
 	}
 
@@ -350,7 +350,7 @@ func TestTOTPService_CheckRateLimit_AtLimit_ReturnsErrTOTPRateLimited(t *testing
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+	for range DefaultTOTPAttemptsLimit {
 		svc.RecordFailure(secretKey, "1.2.3.4", 1, now)
 	}
 
@@ -366,7 +366,7 @@ func TestTOTPService_ResetAttempts_ClearsLimit(t *testing.T) {
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+	for range DefaultTOTPAttemptsLimit {
 		svc.RecordFailure(secretKey, "1.2.3.4", 1, now)
 	}
 	if err := svc.CheckRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPRateLimited) {
@@ -390,7 +390,7 @@ func TestTOTPService_CheckRateLimit_IdentityIsolation(t *testing.T) {
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+	for range DefaultTOTPAttemptsLimit {
 		svc.RecordFailure(secretKey, "client-A", 1, now)
 	}
 
@@ -411,7 +411,7 @@ func TestTOTPService_CheckRateLimit_ClientIPIsolation(t *testing.T) {
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPAttemptsLimit; i++ {
+	for range DefaultTOTPAttemptsLimit {
 		svc.RecordFailure(secretKey, "1.1.1.1", 100, now)
 	}
 
@@ -431,7 +431,7 @@ func TestTOTPService_CheckDisableRateLimit_BelowLimit_ReturnsNil(t *testing.T) {
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPDisableAttemptsLimit-1; i++ {
+	for range DefaultTOTPDisableAttemptsLimit - 1 {
 		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
 	}
 
@@ -446,7 +446,7 @@ func TestTOTPService_CheckDisableRateLimit_AtLimit_ReturnsErrTOTPDisableRateLimi
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+	for range DefaultTOTPDisableAttemptsLimit {
 		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
 	}
 
@@ -462,7 +462,7 @@ func TestTOTPService_ResetDisableAttempts_ClearsLimit(t *testing.T) {
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+	for range DefaultTOTPDisableAttemptsLimit {
 		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
 	}
 	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {
@@ -485,7 +485,7 @@ func TestTOTPService_DisableAndVerifyLimitsAreIndependent(t *testing.T) {
 	svc := NewTOTPService(repo, secretKey, nil)
 	now := time.Now()
 
-	for i := 0; i < DefaultTOTPDisableAttemptsLimit; i++ {
+	for range DefaultTOTPDisableAttemptsLimit {
 		svc.RecordDisableFailure(secretKey, "1.2.3.4", 1, now)
 	}
 	if err := svc.CheckDisableRateLimit(secretKey, "1.2.3.4", 1, now); !errors.Is(err, ErrTOTPDisableRateLimited) {

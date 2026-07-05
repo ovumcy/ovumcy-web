@@ -220,7 +220,7 @@ func buildStatsCycleFactorHintKeys(items []StatsCycleFactorContextItem) []string
 		limit = len(items)
 	}
 	keys := make([]string, 0, limit)
-	for index := 0; index < limit; index++ {
+	for index := range limit {
 		keys = append(keys, items[index].Key)
 	}
 	return keys

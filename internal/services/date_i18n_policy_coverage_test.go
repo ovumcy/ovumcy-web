@@ -50,7 +50,7 @@ func TestDateI18nPolicyMonthYearJanuary(t *testing.T) {
 		{"en", "January 2026"},
 	}
 	for _, tc := range tests {
-		tc := tc
+
 		t.Run(tc.lang, func(t *testing.T) {
 			got := LocalizedMonthYear(tc.lang, datei18npolicyCovJanuary)
 			if got != tc.want {
@@ -83,7 +83,7 @@ func TestDateI18nPolicyDateLabelJanuary(t *testing.T) {
 		{"en", "Mon, Jan 5"},
 	}
 	for _, tc := range tests {
-		tc := tc
+
 		t.Run(tc.lang, func(t *testing.T) {
 			got := LocalizedDateLabel(tc.lang, datei18npolicyCovJanuary)
 			if got != tc.want {
@@ -114,7 +114,7 @@ func TestDateI18nPolicyDashboardDateJanuary(t *testing.T) {
 		{"en", "January 5, 2026, Monday"},
 	}
 	for _, tc := range tests {
-		tc := tc
+
 		t.Run(tc.lang, func(t *testing.T) {
 			got := LocalizedDashboardDate(tc.lang, datei18npolicyCovJanuary)
 			if got != tc.want {

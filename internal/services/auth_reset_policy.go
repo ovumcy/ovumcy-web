@@ -169,7 +169,7 @@ func isCanonicalRecoveryCodeBody(value string) bool {
 	if len(value) != 12 {
 		return false
 	}
-	for i := 0; i < len(value); i++ {
+	for i := range len(value) {
 		c := value[i]
 		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
 			return false
