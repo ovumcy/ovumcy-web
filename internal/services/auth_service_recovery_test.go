@@ -36,6 +36,10 @@ type stubAuthUserRepo struct {
 	updatedRecoveryHash      string
 	updatedPasswordHash      string
 	updatedMustChange        bool
+	updateHashOnlyErr        error
+	updateHashOnlyCalls      int
+	updateHashOnlyUserID     uint
+	updateHashOnlyHash       string
 }
 
 func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(context.Context, string) (bool, error) {
@@ -135,6 +139,17 @@ func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx co
 
 func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error {
 	return stub.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, userID, newPasswordHash, recoveryHash, false)
+}
+
+func (stub *stubAuthUserRepo) UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error {
+	stub.updateHashOnlyCalls++
+	if stub.updateHashOnlyErr != nil {
+		return stub.updateHashOnlyErr
+	}
+	stub.updateHashOnlyUserID = userID
+	stub.updateHashOnlyHash = passwordHash
+	stub.user.PasswordHash = passwordHash
+	return nil
 }
 
 func (stub *stubAuthUserRepo) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
