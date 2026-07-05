@@ -61,7 +61,7 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 	}
 
 	var baselineTotal float64
-	for index := 0; index < 5; index++ {
+	for index := range 5 {
 		baselineTotal += points[index].Value
 	}
 	baseline := baselineTotal / 5.0

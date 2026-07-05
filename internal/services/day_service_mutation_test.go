@@ -28,7 +28,7 @@ import (
 // previousEntry.IsPeriod term is decisive. dayStart itself and the FOLLOWING
 // day are periods. Correct code looks at day-1 (empty) and returns true. A
 // mutant that reads day+1 (or dayStart) sees a period and wrongly returns false.
-func TestDayserviceCov_ShouldAutoFill_UsesPreviousDayNotFollowingDay(t *testing.T) {
+func TestDayService_ShouldAutoFill_UsesPreviousDayNotFollowingDay(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
@@ -57,7 +57,7 @@ func TestDayserviceCov_ShouldAutoFill_UsesPreviousDayNotFollowingDay(t *testing.
 //
 // Kills the CONDITIONALS_NEGATION mutant (err != nil -> err == nil), which would
 // return after the first successful Save and leave later competing starts set.
-func TestDayserviceCov_ClearCompetingCycleStarts_ClearsAllCompetingStartsNotJustFirst(t *testing.T) {
+func TestDayService_ClearCompetingCycleStarts_ClearsAllCompetingStartsNotJustFirst(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 
@@ -101,7 +101,7 @@ func TestDayserviceCov_ClearCompetingCycleStarts_ClearsAllCompetingStartsNotJust
 // blocks (line 675 and line 680) are identical, so a single test function covers
 // both. With no cycle history InferUserLutealPhase returns (14, false) and the
 // service must persist luteal_phase=14 via UpdateByID at the end of the upsert.
-func TestDayserviceCov_RefreshDerivedCycleSettings_WritesLutealPhaseAfterUpsert(t *testing.T) {
+func TestDayService_RefreshDerivedCycleSettings_WritesLutealPhaseAfterUpsert(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	// Stored luteal phase starts at 0 so the write is observable: with no
 	// cycle history InferUserLutealPhase returns (14, false) and the service

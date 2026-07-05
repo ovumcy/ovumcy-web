@@ -36,7 +36,7 @@ func cyclebaselineCovPeriodLog(t *testing.T, date string) models.DailyLog {
 // ── Line 13 ─────────────────────────────────────────────────────────────────
 // ApplyUserCycleBaseline: nil location must not panic and must fall back to UTC.
 
-func TestCyclebaselineCov_NilLocationFallbackInApply(t *testing.T) {
+func TestCycleBaseline_NilLocationFallbackInApply(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-01-10")
 	user := cyclebaselineCovOwner(28, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-01-10")}
@@ -55,7 +55,7 @@ func TestCyclebaselineCov_NilLocationFallbackInApply(t *testing.T) {
 // the period length stays 0 and applyObservedBaseline writes 0 to
 // stats.AveragePeriodLength.
 
-func TestCyclebaselineCov_InvalidPeriodLengthDefaultsToModelDefault(t *testing.T) {
+func TestCycleBaseline_InvalidPeriodLengthDefaultsToModelDefault(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")
 	// PeriodLength 0 is invalid per IsValidOnboardingPeriodLength
 	user := cyclebaselineCovOwner(28, 0, 0, &lp)
@@ -75,7 +75,7 @@ func TestCyclebaselineCov_InvalidPeriodLengthDefaultsToModelDefault(t *testing.T
 // is valid, stats.AverageCycleLength and MedianCycleLength must be filled from
 // the user setting. Zero cycleLength must NOT overwrite them.
 
-func TestCyclebaselineCov_ZeroCycleLengthDoesNotOverwriteStatsWhenNoHistory(t *testing.T) {
+func TestCycleBaseline_ZeroCycleLengthDoesNotOverwriteStatsWhenNoHistory(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")
 	// CycleLength 0 is not valid — must not fill stats.
 	user := cyclebaselineCovOwner(0, 5, 0, &lp)
@@ -92,7 +92,7 @@ func TestCyclebaselineCov_ZeroCycleLengthDoesNotOverwriteStatsWhenNoHistory(t *t
 	}
 }
 
-func TestCyclebaselineCov_ValidCycleLengthFillsStatsWhenNoHistory(t *testing.T) {
+func TestCycleBaseline_ValidCycleLengthFillsStatsWhenNoHistory(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")
 	user := cyclebaselineCovOwner(30, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
@@ -111,7 +111,7 @@ func TestCyclebaselineCov_ValidCycleLengthFillsStatsWhenNoHistory(t *testing.T) 
 // applyObservedBaseline: AveragePeriodLength must be filled from the user's
 // period length when there are no observed cycle lengths and period length > 0.
 
-func TestCyclebaselineCov_ValidPeriodLengthFillsAveragePeriodLengthWhenNoHistory(t *testing.T) {
+func TestCycleBaseline_ValidPeriodLengthFillsAveragePeriodLengthWhenNoHistory(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")
 	user := cyclebaselineCovOwner(28, 7, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
@@ -131,7 +131,7 @@ func TestCyclebaselineCov_ValidPeriodLengthFillsAveragePeriodLengthWhenNoHistory
 // (equivalent mutants). We keep a smoke test confirming that projection runs
 // normally and produces a valid NextPeriodStart for a typical no-history user.
 
-func TestCyclebaselineCov_ProjectionProducesNextPeriodStartForNoHistoryUser(t *testing.T) {
+func TestCycleBaseline_ProjectionProducesNextPeriodStartForNoHistoryUser(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")
 	user := cyclebaselineCovOwner(28, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
@@ -152,7 +152,7 @@ func TestCyclebaselineCov_ProjectionProducesNextPeriodStartForNoHistoryUser(t *t
 // ── Line 117 ─────────────────────────────────────────────────────────────────
 // DetectCurrentPhase: nil location must not panic and must fall back to UTC.
 
-func TestCyclebaselineCov_DetectCurrentPhaseNilLocationFallback(t *testing.T) {
+func TestCycleBaseline_DetectCurrentPhaseNilLocationFallback(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")
 	user := cyclebaselineCovOwner(28, 5, 0, &lp)
 	logs := []models.DailyLog{cyclebaselineCovPeriodLog(t, "2026-03-01")}
@@ -171,7 +171,7 @@ func TestCyclebaselineCov_DetectCurrentPhaseNilLocationFallback(t *testing.T) {
 // A today on the 5th day of period must return "menstrual"; if truncated (=4),
 // day 5 would fall outside the window and return a different phase.
 
-func TestCyclebaselineCov_DetectCurrentPhaseRoundsAveragePeriodLengthUp(t *testing.T) {
+func TestCycleBaseline_DetectCurrentPhaseRoundsAveragePeriodLengthUp(t *testing.T) {
 	lastPeriodStart := mustParseBaselineDay(t, "2026-04-01")
 	// Craft stats with AveragePeriodLength=4.6 (rounds to 5) and known OvulationDate.
 	stats := CycleStats{
@@ -194,7 +194,7 @@ func TestCyclebaselineCov_DetectCurrentPhaseRoundsAveragePeriodLengthUp(t *testi
 // DetectCurrentPhase: when AveragePeriodLength rounds to 0, the default must
 // be applied so that today on day 1 is still detected as "menstrual".
 
-func TestCyclebaselineCov_DetectCurrentPhaseZeroPeriodLengthUsesDefault(t *testing.T) {
+func TestCycleBaseline_DetectCurrentPhaseZeroPeriodLengthUsesDefault(t *testing.T) {
 	lastPeriodStart := mustParseBaselineDay(t, "2026-04-01")
 	stats := CycleStats{
 		LastPeriodStart:      lastPeriodStart,
@@ -217,7 +217,7 @@ func TestCyclebaselineCov_DetectCurrentPhaseZeroPeriodLengthUsesDefault(t *testi
 // DetectCurrentPhase: period end is LastPeriodStart + (periodLength-1) days.
 // Day `periodLength` must be OUTSIDE the menstrual window (one day too late).
 
-func TestCyclebaselineCov_DetectCurrentPhaseLastDayOfPeriodIsInclusive(t *testing.T) {
+func TestCycleBaseline_DetectCurrentPhaseLastDayOfPeriodIsInclusive(t *testing.T) {
 	lastPeriodStart := mustParseBaselineDay(t, "2026-04-01")
 	stats := CycleStats{
 		LastPeriodStart:      lastPeriodStart,
@@ -243,7 +243,7 @@ func TestCyclebaselineCov_DetectCurrentPhaseLastDayOfPeriodIsInclusive(t *testin
 // ProjectCycleStart: zero lastPeriodStart or non-positive cycleLength must
 // return (zero, 0, false).
 
-func TestCyclebaselineCov_ProjectCycleStartRejectsZeroLastPeriodStart(t *testing.T) {
+func TestCycleBaseline_ProjectCycleStartRejectsZeroLastPeriodStart(t *testing.T) {
 	today := mustParseBaselineDay(t, "2026-04-10")
 	start, day, ok := ProjectCycleStart(time.Time{}, 28, today)
 	if ok {
@@ -251,7 +251,7 @@ func TestCyclebaselineCov_ProjectCycleStartRejectsZeroLastPeriodStart(t *testing
 	}
 }
 
-func TestCyclebaselineCov_ProjectCycleStartRejectsZeroCycleLength(t *testing.T) {
+func TestCycleBaseline_ProjectCycleStartRejectsZeroCycleLength(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-04-01")
 	today := mustParseBaselineDay(t, "2026-04-10")
 	start, day, ok := ProjectCycleStart(lp, 0, today)
@@ -260,7 +260,7 @@ func TestCyclebaselineCov_ProjectCycleStartRejectsZeroCycleLength(t *testing.T) 
 	}
 }
 
-func TestCyclebaselineCov_ProjectCycleStartRejectsNegativeCycleLength(t *testing.T) {
+func TestCycleBaseline_ProjectCycleStartRejectsNegativeCycleLength(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-04-01")
 	today := mustParseBaselineDay(t, "2026-04-10")
 	start, day, ok := ProjectCycleStart(lp, -1, today)
@@ -273,7 +273,7 @@ func TestCyclebaselineCov_ProjectCycleStartRejectsNegativeCycleLength(t *testing
 // ProjectCycleStart: projectedCycleDay must be 1-based (first day of a new
 // cycle has cycleDay=1, not 0).
 
-func TestCyclebaselineCov_ProjectCycleStartReturnsCycleDay1OnFirstDay(t *testing.T) {
+func TestCycleBaseline_ProjectCycleStartReturnsCycleDay1OnFirstDay(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-04-01")
 	// today == lastPeriodStart → elapsedDays=0, cycleDay should be 1.
 	start, day, ok := ProjectCycleStart(lp, 28, lp)
@@ -288,7 +288,7 @@ func TestCyclebaselineCov_ProjectCycleStartReturnsCycleDay1OnFirstDay(t *testing
 	}
 }
 
-func TestCyclebaselineCov_ProjectCycleStartReturnsCycleDay1AtCycleBoundary(t *testing.T) {
+func TestCycleBaseline_ProjectCycleStartReturnsCycleDay1AtCycleBoundary(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-04-01")
 	// After exactly one full cycle (28 days), we're on the first day of the next cycle.
 	today := mustParseBaselineDay(t, "2026-04-29") // lp + 28 days
@@ -305,7 +305,7 @@ func TestCyclebaselineCov_ProjectCycleStartReturnsCycleDay1AtCycleBoundary(t *te
 	}
 }
 
-func TestCyclebaselineCov_ProjectCycleStartMidCycleDayIsCorrect(t *testing.T) {
+func TestCycleBaseline_ProjectCycleStartMidCycleDayIsCorrect(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-04-01")
 	// Day 15 of cycle (14 days elapsed) → cycleDay should be 15.
 	today := mustParseBaselineDay(t, "2026-04-15") // lp + 14 days
@@ -323,7 +323,7 @@ func TestCyclebaselineCov_ProjectCycleStartMidCycleDayIsCorrect(t *testing.T) {
 // the future (>= today), and must shift when ovulationDate is strictly in the
 // past.
 
-func TestCyclebaselineCov_ShiftCycleStartNoShiftWhenOvulationIsFuture(t *testing.T) {
+func TestCycleBaseline_ShiftCycleStartNoShiftWhenOvulationIsFuture(t *testing.T) {
 	today := mustParseBaselineDay(t, "2026-04-10")
 	cycleStart := mustParseBaselineDay(t, "2026-04-01")
 	ovulationFuture := mustParseBaselineDay(t, "2026-04-15") // after today
@@ -333,7 +333,7 @@ func TestCyclebaselineCov_ShiftCycleStartNoShiftWhenOvulationIsFuture(t *testing
 	}
 }
 
-func TestCyclebaselineCov_ShiftCycleStartNoShiftWhenOvulationIsToday(t *testing.T) {
+func TestCycleBaseline_ShiftCycleStartNoShiftWhenOvulationIsToday(t *testing.T) {
 	today := mustParseBaselineDay(t, "2026-04-10")
 	cycleStart := mustParseBaselineDay(t, "2026-04-01")
 	// ovulationDate == today → not strictly before today → no shift.
@@ -343,7 +343,7 @@ func TestCyclebaselineCov_ShiftCycleStartNoShiftWhenOvulationIsToday(t *testing.
 	}
 }
 
-func TestCyclebaselineCov_ShiftCycleStartShiftsWhenOvulationIsPast(t *testing.T) {
+func TestCycleBaseline_ShiftCycleStartShiftsWhenOvulationIsPast(t *testing.T) {
 	today := mustParseBaselineDay(t, "2026-04-20")
 	cycleStart := mustParseBaselineDay(t, "2026-04-01")
 	ovulationPast := mustParseBaselineDay(t, "2026-04-10") // before today
@@ -357,7 +357,7 @@ func TestCyclebaselineCov_ShiftCycleStartShiftsWhenOvulationIsPast(t *testing.T)
 	}
 }
 
-func TestCyclebaselineCov_ShiftCycleStartNoShiftWhenCycleLengthIsZero(t *testing.T) {
+func TestCycleBaseline_ShiftCycleStartNoShiftWhenCycleLengthIsZero(t *testing.T) {
 	today := mustParseBaselineDay(t, "2026-04-20")
 	cycleStart := mustParseBaselineDay(t, "2026-04-01")
 	ovulationPast := mustParseBaselineDay(t, "2026-04-10")

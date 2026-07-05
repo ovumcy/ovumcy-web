@@ -17,7 +17,7 @@ func TestResolveDayFeedbackNoLongPeriodWarningAtEightConsecutiveDays(t *testing.
 	// Exactly eight consecutive period days: 2026-03-01 .. 2026-03-08.
 	// The streak at the eighth day is 8, which is the boundary: the warning
 	// fires only at nine or more consecutive days (streak > 8).
-	for offset := 0; offset < 8; offset++ {
+	for offset := range 8 {
 		day := cycleStart.AddDate(0, 0, offset)
 		logs.entries[day.Format("2006-01-02")] = models.DailyLog{
 			UserID:   10,

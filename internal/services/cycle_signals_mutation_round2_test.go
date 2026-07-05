@@ -7,7 +7,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestCyclesignalsCov_InferUserLutealPhase_RespectsNonUTCLocationAcrossDST(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_RespectsNonUTCLocationAcrossDST(t *testing.T) {
 	// America/Toronto springs forward on 2025-03-09. The first cycle's
 	// ovulation (Mar 6, BBT rise) and next period start (Mar 20) bracket that
 	// transition, so its luteal length is one day SHORTER when computed in a
@@ -61,7 +61,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_RespectsNonUTCLocationAcrossDST(t 
 	}
 }
 
-func TestCyclesignalsCov_InferUserLutealPhase_LutealLengthExactlyMinIsKept(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyMinIsKept(t *testing.T) {
 	// A cycle whose BBT-inferred luteal length is EXACTLY minLutealPhaseDays (10)
 	// must be counted (the filter is `< min`, inclusive of the boundary). Paired
 	// with one more valid cycle (luteal 14) this yields two valid lengths and a
@@ -108,7 +108,7 @@ func TestCyclesignalsCov_InferUserLutealPhase_LutealLengthExactlyMinIsKept(t *te
 	}
 }
 
-func TestCyclesignalsCov_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *testing.T) {
 	// A cycle whose BBT-inferred luteal length is EXACTLY 20 must be counted
 	// (the upper filter is `> 20`, which keeps 20). Paired with one more valid
 	// cycle (luteal 14) this yields two valid lengths and a successful

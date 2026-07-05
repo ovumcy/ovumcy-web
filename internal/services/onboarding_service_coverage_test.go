@@ -27,7 +27,7 @@ func (s *onboardingserviceCovStep2Repo) SaveOnboardingStep2(ctx context.Context,
 // Line 80: NOT COVERED — SaveStep2 error path
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovSaveStep2PropagatesRepoError(t *testing.T) {
+func TestOnboardingServiceSaveStep2PropagatesRepoError(t *testing.T) {
 	sentinel := errors.New("db unavailable")
 	repo := &onboardingserviceCovStep2Repo{saveStep2Err: sentinel}
 	svc := NewOnboardingService(repo)
@@ -38,7 +38,7 @@ func TestOnboardingserviceCovSaveStep2PropagatesRepoError(t *testing.T) {
 	}
 }
 
-func TestOnboardingserviceCovSaveStep2ReturnsSanitizedValues(t *testing.T) {
+func TestOnboardingServiceSaveStep2ReturnsSanitizedValues(t *testing.T) {
 	repo := &onboardingserviceCovStep2Repo{}
 	svc := NewOnboardingService(repo)
 
@@ -65,7 +65,7 @@ func TestOnboardingserviceCovSaveStep2ReturnsSanitizedValues(t *testing.T) {
 // When safePeriodLength == maxPeriodLength the period must NOT be reduced.
 // A >= mutant would leave period unchanged here (same result), but testing the
 // boundary explicitly ensures the > predicate is correct.
-func TestOnboardingserviceCovSanitizePeriodNotCappedWhenExactlyAtMax(t *testing.T) {
+func TestOnboardingServiceSanitizePeriodNotCappedWhenExactlyAtMax(t *testing.T) {
 	// cycle=20 → maxPeriodLength = 20-10 = 10
 	// period=10 → ClampOnboardingPeriodLength(10) = 10
 	// safePeriodLength(10) == maxPeriodLength(10): must NOT reduce period.
@@ -76,7 +76,7 @@ func TestOnboardingserviceCovSanitizePeriodNotCappedWhenExactlyAtMax(t *testing.
 }
 
 // When safePeriodLength == maxPeriodLength + 1 it must be capped down.
-func TestOnboardingserviceCovSanitizePeriodCappedWhenOneAboveMax(t *testing.T) {
+func TestOnboardingServiceSanitizePeriodCappedWhenOneAboveMax(t *testing.T) {
 	// cycle=20 → maxPeriodLength=10; period=11 → ClampOnboardingPeriodLength(11)=11 > 10 → must become 10
 	_, period := SanitizeOnboardingCycleAndPeriod(20, 11)
 	if period != 10 {
@@ -93,7 +93,7 @@ func TestOnboardingserviceCovSanitizePeriodCappedWhenOneAboveMax(t *testing.T) {
 // Line 135: if maxPeriodLength > 14 — boundary at cycle=24 (max=14) vs cycle=25 (max=15→capped to 14)
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovMaxPeriodLengthForCycleCapsAt14(t *testing.T) {
+func TestOnboardingServiceMaxPeriodLengthForCycleCapsAt14(t *testing.T) {
 	// cycle=25: maxPeriodLength = 25-10 = 15 > 14 → must return 14
 	got := MaxPeriodLengthForCycle(25)
 	if got != 14 {
@@ -101,7 +101,7 @@ func TestOnboardingserviceCovMaxPeriodLengthForCycleCapsAt14(t *testing.T) {
 	}
 }
 
-func TestOnboardingserviceCovMaxPeriodLengthForCycleNotCappedAt14(t *testing.T) {
+func TestOnboardingServiceMaxPeriodLengthForCycleNotCappedAt14(t *testing.T) {
 	// cycle=24: maxPeriodLength = 24-10 = 14, not > 14 → must return 14 (not reduced further)
 	got := MaxPeriodLengthForCycle(24)
 	if got != 14 {
@@ -109,7 +109,7 @@ func TestOnboardingserviceCovMaxPeriodLengthForCycleNotCappedAt14(t *testing.T) 
 	}
 }
 
-func TestOnboardingserviceCovMaxPeriodLengthForCycleBelowCap(t *testing.T) {
+func TestOnboardingServiceMaxPeriodLengthForCycleBelowCap(t *testing.T) {
 	// cycle=20: maxPeriodLength = 20-10 = 10, not > 14 → must return 10
 	got := MaxPeriodLengthForCycle(20)
 	if got != 10 {
@@ -117,7 +117,7 @@ func TestOnboardingserviceCovMaxPeriodLengthForCycleBelowCap(t *testing.T) {
 	}
 }
 
-func TestOnboardingserviceCovMaxPeriodLengthForCycleAtMaxCycle(t *testing.T) {
+func TestOnboardingServiceMaxPeriodLengthForCycleAtMaxCycle(t *testing.T) {
 	// cycle=90: maxPeriodLength = 90-10 = 80 > 14 → must return 14
 	got := MaxPeriodLengthForCycle(90)
 	if got != 14 {
@@ -129,7 +129,7 @@ func TestOnboardingserviceCovMaxPeriodLengthForCycleAtMaxCycle(t *testing.T) {
 // Line 142: IsCompatibleCycleAndPeriod boundary
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovIsCompatibleCycleAndPeriodBoundaries(t *testing.T) {
+func TestOnboardingServiceIsCompatibleCycleAndPeriodBoundaries(t *testing.T) {
 	tests := []struct {
 		cycle  int
 		period int
@@ -162,7 +162,7 @@ func TestOnboardingserviceCovIsCompatibleCycleAndPeriodBoundaries(t *testing.T) 
 // Line 146: ClampOnboardingCycleLength — lower boundary at 15
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovClampCycleLengthLowerBoundary(t *testing.T) {
+func TestOnboardingServiceClampCycleLengthLowerBoundary(t *testing.T) {
 	tests := []struct {
 		input int
 		want  int
@@ -187,7 +187,7 @@ func TestOnboardingserviceCovClampCycleLengthLowerBoundary(t *testing.T) {
 // Line 149: ClampOnboardingCycleLength — upper boundary at 90
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovClampCycleLengthUpperBoundary(t *testing.T) {
+func TestOnboardingServiceClampCycleLengthUpperBoundary(t *testing.T) {
 	tests := []struct {
 		input int
 		want  int
@@ -211,7 +211,7 @@ func TestOnboardingserviceCovClampCycleLengthUpperBoundary(t *testing.T) {
 // Line 156: ClampOnboardingPeriodLength — lower boundary at 1
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovClampPeriodLengthLowerBoundary(t *testing.T) {
+func TestOnboardingServiceClampPeriodLengthLowerBoundary(t *testing.T) {
 	tests := []struct {
 		input int
 		want  int
@@ -235,7 +235,7 @@ func TestOnboardingserviceCovClampPeriodLengthLowerBoundary(t *testing.T) {
 // Line 159: ClampOnboardingPeriodLength — upper boundary at 14
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovClampPeriodLengthUpperBoundary(t *testing.T) {
+func TestOnboardingServiceClampPeriodLengthUpperBoundary(t *testing.T) {
 	tests := []struct {
 		input int
 		want  int
@@ -259,7 +259,7 @@ func TestOnboardingserviceCovClampPeriodLengthUpperBoundary(t *testing.T) {
 // Line 166: IsValidOnboardingCycleLength — boundary semantics
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovIsValidCycleLengthBoundaries(t *testing.T) {
+func TestOnboardingServiceIsValidCycleLengthBoundaries(t *testing.T) {
 	tests := []struct {
 		value int
 		want  bool
@@ -285,7 +285,7 @@ func TestOnboardingserviceCovIsValidCycleLengthBoundaries(t *testing.T) {
 // Line 170: IsValidOnboardingPeriodLength — boundary semantics
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovIsValidPeriodLengthBoundaries(t *testing.T) {
+func TestOnboardingServiceIsValidPeriodLengthBoundaries(t *testing.T) {
 	tests := []struct {
 		value int
 		want  bool
@@ -312,7 +312,7 @@ func TestOnboardingserviceCovIsValidPeriodLengthBoundaries(t *testing.T) {
 // and returns them to caller (regression guard for line 80 error path context)
 // ---------------------------------------------------------------------------
 
-func TestOnboardingserviceCovSaveStep2SanitizesBeforePersist(t *testing.T) {
+func TestOnboardingServiceSaveStep2SanitizesBeforePersist(t *testing.T) {
 	repo := &onboardingserviceCovStep2Repo{}
 	svc := NewOnboardingService(repo)
 
@@ -338,7 +338,7 @@ func TestOnboardingserviceCovSaveStep2SanitizesBeforePersist(t *testing.T) {
 
 // Verify the zero-time guard: CompleteOnboardingForUser with a repo error
 // propagates it and does not call CompleteOnboarding.
-func TestOnboardingserviceCovCompleteOnboardingForUserPropagatesRepoFindError(t *testing.T) {
+func TestOnboardingServiceCompleteOnboardingForUserPropagatesRepoFindError(t *testing.T) {
 	sentinel := errors.New("connection refused")
 	repo := &stubOnboardingRepo{findErr: sentinel}
 	svc := NewOnboardingService(repo)

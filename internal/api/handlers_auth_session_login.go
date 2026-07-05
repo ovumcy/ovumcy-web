@@ -144,7 +144,7 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	if handler.authService.CheckAndRecordLogoutAttempt(
-		[]byte(handler.secretKey),
+		handler.secretKey,
 		c.IP(),
 		strconv.FormatUint(uint64(user.ID), 10),
 		time.Now(),

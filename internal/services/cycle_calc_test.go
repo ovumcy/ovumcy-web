@@ -23,7 +23,7 @@ func TestCalcOvulationDay(t *testing.T) {
 	}
 
 	for _, testCase := range cases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			gotDay, gotExact := CalcOvulationDay(testCase.cycleLength, testCase.lutealPhase)
 			if gotDay != testCase.wantDay {
@@ -146,7 +146,7 @@ func TestPredictCycleWindow_InvariantsAcrossRanges(t *testing.T) {
 
 	periodStart := mustParseDay(t, "2026-02-10")
 	for _, testCase := range cases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			window := PredictCycleWindow(
 				periodStart,

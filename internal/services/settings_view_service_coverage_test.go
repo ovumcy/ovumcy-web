@@ -19,7 +19,7 @@ import (
 // settingsviewserviceCovExportDateBoundsEarlierFrom verifies that when
 // availableSummary.DateFrom is strictly earlier than today, selectableMin is set
 // to DateFrom (line 276 condition `< 0` must be satisfied).
-func TestSettingsviewserviceCovExportDateBoundsEarlierFrom(t *testing.T) {
+func TestSettingsViewServiceExportDateBoundsEarlierFrom(t *testing.T) {
 	loader := &stubSettingsViewLoader{
 		user: models.User{CycleLength: 28, PeriodLength: 5},
 	}
@@ -52,7 +52,7 @@ func TestSettingsviewserviceCovExportDateBoundsEarlierFrom(t *testing.T) {
 // settingsviewserviceCovExportDateBoundsFromNotEarlierThanToday verifies that when
 // availableSummary.DateFrom equals today, selectableMin stays at today (the < 0
 // condition on line 276 is NOT satisfied and the override is skipped).
-func TestSettingsviewserviceCovExportDateBoundsFromEqualsToday(t *testing.T) {
+func TestSettingsViewServiceExportDateBoundsFromEqualsToday(t *testing.T) {
 	loader := &stubSettingsViewLoader{
 		user: models.User{CycleLength: 28, PeriodLength: 5},
 	}
@@ -79,7 +79,7 @@ func TestSettingsviewserviceCovExportDateBoundsFromEqualsToday(t *testing.T) {
 // settingsviewserviceCovExportDateBoundsLaterTo verifies that when
 // availableSummary.DateTo is strictly later than today, selectableMax is set to
 // DateTo (line 280 condition `> 0` must be satisfied).
-func TestSettingsviewserviceCovExportDateBoundsLaterTo(t *testing.T) {
+func TestSettingsViewServiceExportDateBoundsLaterTo(t *testing.T) {
 	loader := &stubSettingsViewLoader{
 		user: models.User{CycleLength: 28, PeriodLength: 5},
 	}
@@ -106,7 +106,7 @@ func TestSettingsviewserviceCovExportDateBoundsLaterTo(t *testing.T) {
 // settingsviewserviceCovExportDateBoundsToEqualsToday verifies that when
 // availableSummary.DateTo equals today, selectableMax stays at today (the > 0
 // condition on line 280 is NOT satisfied).
-func TestSettingsviewserviceCovExportDateBoundsToEqualsToday(t *testing.T) {
+func TestSettingsViewServiceExportDateBoundsToEqualsToday(t *testing.T) {
 	loader := &stubSettingsViewLoader{
 		user: models.User{CycleLength: 28, PeriodLength: 5},
 	}
@@ -136,7 +136,7 @@ func TestSettingsviewserviceCovExportDateBoundsToEqualsToday(t *testing.T) {
 
 // settingsviewserviceCovCompareISODateEqual exercises the equal branch (line 314,
 // returns 0) by passing two identical trimmed strings.
-func TestSettingsviewserviceCovCompareISODateEqual(t *testing.T) {
+func TestSettingsViewServiceCompareISODateEqual(t *testing.T) {
 	result := compareISODate("2026-06-01", "2026-06-01")
 	if result != 0 {
 		t.Fatalf("compareISODate equal strings: expected 0, got %d", result)
@@ -145,7 +145,7 @@ func TestSettingsviewserviceCovCompareISODateEqual(t *testing.T) {
 
 // settingsviewserviceCovCompareISODateEqualWithSpaces exercises line 314 via the
 // TrimSpace path: leading/trailing spaces should still yield 0.
-func TestSettingsviewserviceCovCompareISODateEqualWithSpaces(t *testing.T) {
+func TestSettingsViewServiceCompareISODateEqualWithSpaces(t *testing.T) {
 	result := compareISODate("  2026-06-01  ", "2026-06-01")
 	if result != 0 {
 		t.Fatalf("compareISODate equal after trim: expected 0, got %d", result)
@@ -154,7 +154,7 @@ func TestSettingsviewserviceCovCompareISODateEqualWithSpaces(t *testing.T) {
 
 // settingsviewserviceCovCompareISODateLess exercises the less-than branch
 // (line 316, returns -1).
-func TestSettingsviewserviceCovCompareISODateLess(t *testing.T) {
+func TestSettingsViewServiceCompareISODateLess(t *testing.T) {
 	result := compareISODate("2026-01-01", "2026-06-01")
 	if result != -1 {
 		t.Fatalf("compareISODate left < right: expected -1, got %d", result)
@@ -163,7 +163,7 @@ func TestSettingsviewserviceCovCompareISODateLess(t *testing.T) {
 
 // settingsviewserviceCovCompareISODateGreater exercises the default branch
 // (returns 1) so all three branches are covered.
-func TestSettingsviewserviceCovCompareISODateGreater(t *testing.T) {
+func TestSettingsViewServiceCompareISODateGreater(t *testing.T) {
 	result := compareISODate("2026-12-31", "2026-06-01")
 	if result != 1 {
 		t.Fatalf("compareISODate left > right: expected 1, got %d", result)
@@ -177,7 +177,7 @@ func TestSettingsviewserviceCovCompareISODateGreater(t *testing.T) {
 // settingsviewserviceCovSymptomsAllBuiltinNoFlags verifies that when the only
 // symptoms are builtin, both HasCustomSymptoms and HasArchivedSymptoms remain
 // false (line 348 and 349 evaluate len == 0).
-func TestSettingsviewserviceCovSymptomsAllBuiltinNoFlags(t *testing.T) {
+func TestSettingsViewServiceSymptomsAllBuiltinNoFlags(t *testing.T) {
 	loader := &stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5}}
 	symptomProvider := &stubSettingsViewSymptomProvider{
 		symptoms: []models.SymptomType{
@@ -202,7 +202,7 @@ func TestSettingsviewserviceCovSymptomsAllBuiltinNoFlags(t *testing.T) {
 // settingsviewserviceCovSymptomsOnlyActiveCustomFlag verifies that a single active
 // custom symptom sets HasCustomSymptoms=true (line 348) but HasArchivedSymptoms
 // remains false (line 349).
-func TestSettingsviewserviceCovSymptomsOnlyActiveCustomFlag(t *testing.T) {
+func TestSettingsViewServiceSymptomsOnlyActiveCustomFlag(t *testing.T) {
 	loader := &stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5}}
 	symptomProvider := &stubSettingsViewSymptomProvider{
 		symptoms: []models.SymptomType{
@@ -227,7 +227,7 @@ func TestSettingsviewserviceCovSymptomsOnlyActiveCustomFlag(t *testing.T) {
 // settingsviewserviceCovSymptomsOnlyArchivedCustomFlag verifies that a single archived
 // custom symptom sets HasArchivedSymptoms=true (line 349) but HasCustomSymptoms
 // remains false (line 348).
-func TestSettingsviewserviceCovSymptomsOnlyArchivedCustomFlag(t *testing.T) {
+func TestSettingsViewServiceSymptomsOnlyArchivedCustomFlag(t *testing.T) {
 	loader := &stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5}}
 	archived := mustParseSettingsViewDay2("2026-05-01")
 	symptomProvider := &stubSettingsViewSymptomProvider{

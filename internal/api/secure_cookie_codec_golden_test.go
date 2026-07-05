@@ -45,7 +45,7 @@ func TestSecureCookieCodecOpensPreConsolidationGoldenValues(t *testing.T) {
 	}
 
 	for _, golden := range goldens {
-		golden := golden
+
 		t.Run(golden.purpose, func(t *testing.T) {
 			t.Parallel()
 

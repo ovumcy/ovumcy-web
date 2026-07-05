@@ -30,11 +30,11 @@ func cyclesCovPeriodLog(t *testing.T, date string) models.DailyLog {
 // returns empty (no logs with CycleStart=true or uncertain flags).
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_BuildCycleStats_ObservedStartsFallback exercises the branch at
+// TestCycles_BuildCycleStats_ObservedStartsFallback exercises the branch at
 // line 63 where observedStarts is empty and the code falls back to using
 // detectedStarts. The fallback is the only path that populates LastPeriodStart
 // correctly in this scenario.
-func TestCyclesCov_BuildCycleStats_ObservedStartsFallback(t *testing.T) {
+func TestCycles_BuildCycleStats_ObservedStartsFallback(t *testing.T) {
 	// Two plain period clusters – no CycleStart flag, no IsUncertain flag.
 	// ObservedCycleStarts will find clusters but with no ExplicitStart and
 	// HasUncertainExplicit=false, so it returns the cluster.Start values.
@@ -66,9 +66,9 @@ func TestCyclesCov_BuildCycleStats_ObservedStartsFallback(t *testing.T) {
 // L86, L88 – ResolveLutealPhase branch coverage (NOT COVERED paths)
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_ResolveLutealPhase_ZeroReturnsDefault covers line 86
+// TestCycles_ResolveLutealPhase_ZeroReturnsDefault covers line 86
 // (case value <= 0) and line 87 (return defaultLutealPhaseDays).
-func TestCyclesCov_ResolveLutealPhase_ZeroReturnsDefault(t *testing.T) {
+func TestCycles_ResolveLutealPhase_ZeroReturnsDefault(t *testing.T) {
 	for _, v := range []int{0, -1, -100} {
 		if got := ResolveLutealPhase(v); got != defaultLutealPhaseDays {
 			t.Fatalf("ResolveLutealPhase(%d) = %d, want %d (defaultLutealPhaseDays)",
@@ -77,9 +77,9 @@ func TestCyclesCov_ResolveLutealPhase_ZeroReturnsDefault(t *testing.T) {
 	}
 }
 
-// TestCyclesCov_ResolveLutealPhase_BelowMinClampsToMin covers line 88
+// TestCycles_ResolveLutealPhase_BelowMinClampsToMin covers line 88
 // (case value < minLutealPhaseDays) and line 89 (return minLutealPhaseDays).
-func TestCyclesCov_ResolveLutealPhase_BelowMinClampsToMin(t *testing.T) {
+func TestCycles_ResolveLutealPhase_BelowMinClampsToMin(t *testing.T) {
 	for _, v := range []int{1, 5, minLutealPhaseDays - 1} {
 		if got := ResolveLutealPhase(v); got != minLutealPhaseDays {
 			t.Fatalf("ResolveLutealPhase(%d) = %d, want %d (minLutealPhaseDays)",
@@ -92,10 +92,10 @@ func TestCyclesCov_ResolveLutealPhase_BelowMinClampsToMin(t *testing.T) {
 // L100 – CalcOvulationDay threshold boundary: cycleLen exactly at the floor
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_CalcOvulationDay_ExactFloorBoundary asserts the boundary
+// TestCycles_CalcOvulationDay_ExactFloorBoundary asserts the boundary
 // between too-short (cycleLen = minLutealPhaseDays+minOvulationCycleDay-1)
 // and just-valid (cycleLen = minLutealPhaseDays+minOvulationCycleDay).
-func TestCyclesCov_CalcOvulationDay_ExactFloorBoundary(t *testing.T) {
+func TestCycles_CalcOvulationDay_ExactFloorBoundary(t *testing.T) {
 	floor := minLutealPhaseDays + minOvulationCycleDay // 10+5 = 15
 
 	// One below the floor: must return (0, false).
@@ -116,9 +116,9 @@ func TestCyclesCov_CalcOvulationDay_ExactFloorBoundary(t *testing.T) {
 // L123 – PredictCycleWindow guard: zero periodStart or non-positive cycleLength
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_PredictCycleWindow_ZeroPeriodStart exercises the
+// TestCycles_PredictCycleWindow_ZeroPeriodStart exercises the
 // periodStart.IsZero() branch at line 123.
-func TestCyclesCov_PredictCycleWindow_ZeroPeriodStart(t *testing.T) {
+func TestCycles_PredictCycleWindow_ZeroPeriodStart(t *testing.T) {
 	window := PredictCycleWindow(time.Time{}, 28, 14)
 	ovul, fs, fe, exact, calc := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
 	if calc || exact {
@@ -129,9 +129,9 @@ func TestCyclesCov_PredictCycleWindow_ZeroPeriodStart(t *testing.T) {
 	}
 }
 
-// TestCyclesCov_PredictCycleWindow_ZeroCycleLength exercises the
+// TestCycles_PredictCycleWindow_ZeroCycleLength exercises the
 // cycleLength <= 0 branch at line 123.
-func TestCyclesCov_PredictCycleWindow_ZeroCycleLength(t *testing.T) {
+func TestCycles_PredictCycleWindow_ZeroCycleLength(t *testing.T) {
 	periodStart := cyclesCovDay(t, "2026-03-01")
 	window := PredictCycleWindow(periodStart, 0, 14)
 	ovul, fs, fe, exact, calc := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
@@ -153,11 +153,11 @@ func TestCyclesCov_PredictCycleWindow_ZeroCycleLength(t *testing.T) {
 // L168 – DetectCycleStarts gap calculation: the -1 matters
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_DetectCycleStarts_GapBoundary pins that a gap of exactly 4
+// TestCycles_DetectCycleStarts_GapBoundary pins that a gap of exactly 4
 // calendar days between consecutive period-logged days (which yields gapDays=3
 // after the -1 subtraction) does NOT start a new cycle, while a gap of 6
 // calendar days (gapDays=5) does.
-func TestCyclesCov_DetectCycleStarts_GapBoundary(t *testing.T) {
+func TestCycles_DetectCycleStarts_GapBoundary(t *testing.T) {
 	// Gap of exactly 5 calendar days: day.Sub(prev) = 5 days → gapDays = 4 → no new start.
 	logs5 := []models.DailyLog{
 		cyclesCovPeriodLog(t, "2026-01-01"),
@@ -183,11 +183,11 @@ func TestCyclesCov_DetectCycleStarts_GapBoundary(t *testing.T) {
 // L297 – populateObservedCycleStats: LastPeriodLength guard
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_PopulateObservedCycleStats_LastPeriodLength verifies that
+// TestCycles_PopulateObservedCycleStats_LastPeriodLength verifies that
 // LastPeriodLength is set to the last completed cycle's PeriodLength when
 // completedCycleCount > 0 and len(cycles) >= completedCycleCount.
 // The complementary case (completedCycleCount=0) should leave it as 0.
-func TestCyclesCov_PopulateObservedCycleStats_LastPeriodLength(t *testing.T) {
+func TestCycles_PopulateObservedCycleStats_LastPeriodLength(t *testing.T) {
 	// Two complete cycles, period lengths 3 and 5.
 	cycles := []detectedCycle{
 		{Start: cyclesCovDay(t, "2025-01-01"), End: cyclesCovDay(t, "2025-01-28"), PeriodLength: 3},
@@ -217,10 +217,10 @@ func TestCyclesCov_PopulateObservedCycleStats_LastPeriodLength(t *testing.T) {
 // L305 – recentPositivePeriodLengths: zero-length filter
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_RecentPositivePeriodLengths_ZeroExcluded asserts that cycles
+// TestCycles_RecentPositivePeriodLengths_ZeroExcluded asserts that cycles
 // with PeriodLength=0 are excluded from the returned slice, and thus don't
 // influence AveragePeriodLength.
-func TestCyclesCov_RecentPositivePeriodLengths_ZeroExcluded(t *testing.T) {
+func TestCycles_RecentPositivePeriodLengths_ZeroExcluded(t *testing.T) {
 	cycles := []detectedCycle{
 		{PeriodLength: 0},
 		{PeriodLength: 4},
@@ -240,9 +240,9 @@ func TestCyclesCov_RecentPositivePeriodLengths_ZeroExcluded(t *testing.T) {
 // L348 – predictedPeriodLength: zero average falls back to default
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_PredictedPeriodLength_ZeroAverageFallsBackToDefault exercises
+// TestCycles_PredictedPeriodLength_ZeroAverageFallsBackToDefault exercises
 // line 348 where length=0 triggers the fallback to models.DefaultPeriodLength.
-func TestCyclesCov_PredictedPeriodLength_ZeroAverageFallsBackToDefault(t *testing.T) {
+func TestCycles_PredictedPeriodLength_ZeroAverageFallsBackToDefault(t *testing.T) {
 	got := predictedPeriodLength(0.0)
 	if got != models.DefaultPeriodLength {
 		t.Fatalf("predictedPeriodLength(0) = %d, want DefaultPeriodLength (%d)", got, models.DefaultPeriodLength)
@@ -260,10 +260,10 @@ func TestCyclesCov_PredictedPeriodLength_ZeroAverageFallsBackToDefault(t *testin
 // L418 – buildCycles: last cycle's End equals its Start (no next start)
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_BuildCycles_LastCycleEndEqualsStart verifies that when there
+// TestCycles_BuildCycles_LastCycleEndEqualsStart verifies that when there
 // is only one start (no following start), the last cycle's End field equals
 // its Start field (i.e., we don't panic or mutate it to next-1).
-func TestCyclesCov_BuildCycles_LastCycleEndEqualsStart(t *testing.T) {
+func TestCycles_BuildCycles_LastCycleEndEqualsStart(t *testing.T) {
 	starts := []time.Time{cyclesCovDay(t, "2026-01-01")}
 	logs := []models.DailyLog{
 		{Date: cyclesCovDay(t, "2026-01-01"), IsPeriod: true},
@@ -296,9 +296,9 @@ func TestCyclesCov_BuildCycles_LastCycleEndEqualsStart(t *testing.T) {
 // L444 – cycleLengths: single start returns nil
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_CycleLengths_SingleStartReturnsNil covers the guard at line
+// TestCycles_CycleLengths_SingleStartReturnsNil covers the guard at line
 // 444 where len(starts) < 2 triggers an early nil return.
-func TestCyclesCov_CycleLengths_SingleStartReturnsNil(t *testing.T) {
+func TestCycles_CycleLengths_SingleStartReturnsNil(t *testing.T) {
 	single := []time.Time{cyclesCovDay(t, "2026-01-01")}
 	if result := cycleLengths(single); result != nil {
 		t.Fatalf("cycleLengths(single start) = %v, want nil", result)
@@ -322,9 +322,9 @@ func TestCyclesCov_CycleLengths_SingleStartReturnsNil(t *testing.T) {
 // L452, L455 – tailInts: NOT COVERED truncation path
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_TailInts_TruncatesWhenExceedsN covers the branch at line 452
+// TestCycles_TailInts_TruncatesWhenExceedsN covers the branch at line 452
 // (len > n) and the return at line 455.
-func TestCyclesCov_TailInts_TruncatesWhenExceedsN(t *testing.T) {
+func TestCycles_TailInts_TruncatesWhenExceedsN(t *testing.T) {
 	values := []int{10, 20, 30, 40, 50}
 
 	// len(values)=5 > n=3: should return the last 3.
@@ -353,9 +353,9 @@ func TestCyclesCov_TailInts_TruncatesWhenExceedsN(t *testing.T) {
 // L459, L462 – tailCycles: NOT COVERED truncation path
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_TailCycles_TruncatesWhenExceedsN covers the branch at line
+// TestCycles_TailCycles_TruncatesWhenExceedsN covers the branch at line
 // 459 (len > n) and the return at line 462.
-func TestCyclesCov_TailCycles_TruncatesWhenExceedsN(t *testing.T) {
+func TestCycles_TailCycles_TruncatesWhenExceedsN(t *testing.T) {
 	base := cyclesCovDay(t, "2026-01-01")
 	cycles := make([]detectedCycle, 8)
 	for i := range cycles {
@@ -388,10 +388,10 @@ func TestCyclesCov_TailCycles_TruncatesWhenExceedsN(t *testing.T) {
 // L484, L487 – minMaxInts: min/max not at index 0
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_MinMaxInts_MinAndMaxNotAtFirstPosition ensures the update
+// TestCycles_MinMaxInts_MinAndMaxNotAtFirstPosition ensures the update
 // branches at lines 484 and 487 are exercised and that the returned min/max
 // reflect the actual extremes regardless of position.
-func TestCyclesCov_MinMaxInts_MinAndMaxNotAtFirstPosition(t *testing.T) {
+func TestCycles_MinMaxInts_MinAndMaxNotAtFirstPosition(t *testing.T) {
 	// Descending: min is last, max is first.
 	desc := []int{30, 25, 20, 15}
 	mn, mx := minMaxInts(desc)
@@ -434,9 +434,9 @@ func TestCyclesCov_MinMaxInts_MinAndMaxNotAtFirstPosition(t *testing.T) {
 // L495 – CycleLengthSpread guard conditions
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_CycleLengthSpread_GuardConditions exercises every branch of
+// TestCycles_CycleLengthSpread_GuardConditions exercises every branch of
 // the guard at line 495: zero min, zero max, and max < min all return 0.
-func TestCyclesCov_CycleLengthSpread_GuardConditions(t *testing.T) {
+func TestCycles_CycleLengthSpread_GuardConditions(t *testing.T) {
 	cases := []struct {
 		name string
 		min  int
@@ -464,9 +464,9 @@ func TestCyclesCov_CycleLengthSpread_GuardConditions(t *testing.T) {
 // L502 – IsIrregularCycleSpread boundary at irregularCycleSpreadDays (7)
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_IsIrregularCycleSpread_Boundary pins that a spread of exactly
+// TestCycles_IsIrregularCycleSpread_Boundary pins that a spread of exactly
 // irregularCycleSpreadDays (7) is NOT irregular, while 8 IS.
-func TestCyclesCov_IsIrregularCycleSpread_Boundary(t *testing.T) {
+func TestCycles_IsIrregularCycleSpread_Boundary(t *testing.T) {
 	atBound := CycleStats{MinCycleLength: 21, MaxCycleLength: 21 + irregularCycleSpreadDays}
 	if IsIrregularCycleSpread(atBound) {
 		t.Fatalf("spread == %d should not be irregular (requires > %d)", irregularCycleSpreadDays, irregularCycleSpreadDays)
@@ -487,9 +487,9 @@ func TestCyclesCov_IsIrregularCycleSpread_Boundary(t *testing.T) {
 // L532 – sameDay: different days return false
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_SameDay pins that sameDay returns true only for dates with
+// TestCycles_SameDay pins that sameDay returns true only for dates with
 // identical YYYY-MM-DD, regardless of time-of-day, and false otherwise.
-func TestCyclesCov_SameDay(t *testing.T) {
+func TestCycles_SameDay(t *testing.T) {
 	a := time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)
 	b := time.Date(2026, 3, 15, 23, 59, 59, 0, time.UTC)
 	if !sameDay(a, b) {
@@ -513,10 +513,10 @@ func TestCyclesCov_SameDay(t *testing.T) {
 // L547 – filterLogsNotAfter: cutoff.IsZero() returns the original slice
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_FilterLogsNotAfter_ZeroCutoffReturnsAll exercises the
+// TestCycles_FilterLogsNotAfter_ZeroCutoffReturnsAll exercises the
 // cutoff.IsZero() branch at line 547. A zero cutoff must return all logs
 // unfiltered.
-func TestCyclesCov_FilterLogsNotAfter_ZeroCutoffReturnsAll(t *testing.T) {
+func TestCycles_FilterLogsNotAfter_ZeroCutoffReturnsAll(t *testing.T) {
 	logs := []models.DailyLog{
 		{Date: cyclesCovDay(t, "2026-01-01"), IsPeriod: true},
 		{Date: cyclesCovDay(t, "2026-06-01"), IsPeriod: true},
@@ -547,8 +547,8 @@ func TestCyclesCov_FilterLogsNotAfter_ZeroCutoffReturnsAll(t *testing.T) {
 // L562 – stddevInts: empty input returns 0
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_StddevInts_EmptyReturnsZero covers the guard at line 562.
-func TestCyclesCov_StddevInts_EmptyReturnsZero(t *testing.T) {
+// TestCycles_StddevInts_EmptyReturnsZero covers the guard at line 562.
+func TestCycles_StddevInts_EmptyReturnsZero(t *testing.T) {
 	if got := stddevInts(nil); got != 0 {
 		t.Fatalf("stddevInts(nil) = %v, want 0", got)
 	}
@@ -561,11 +561,11 @@ func TestCyclesCov_StddevInts_EmptyReturnsZero(t *testing.T) {
 // L569, L570, L572 – stddevInts: formula correctness
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_StddevInts_Formula pins the sample standard deviation
+// TestCycles_StddevInts_Formula pins the sample standard deviation
 // (n-1 denominator) calculation against known values. Observed cycle
 // lengths are a small sample of an ongoing process, so the sample
 // estimator is used; fewer than two values have no defined spread.
-func TestCyclesCov_StddevInts_Formula(t *testing.T) {
+func TestCycles_StddevInts_Formula(t *testing.T) {
 	// Single element: spread is undefined, must return 0.
 	if got := stddevInts([]int{42}); got != 0 {
 		t.Fatalf("stddevInts([42]) = %v, want 0", got)
@@ -600,11 +600,11 @@ func TestCyclesCov_StddevInts_Formula(t *testing.T) {
 // (classified equivalent, but tested here to confirm the zero-value behavior)
 // --------------------------------------------------------------------------
 
-// TestCyclesCov_PopulateObservedCycleStats_EmptyLeavesFieldsZero confirms
+// TestCycles_PopulateObservedCycleStats_EmptyLeavesFieldsZero confirms
 // that when both lengths and cycles are nil, all derived stats remain at zero
 // (i.e., mutating the guard at L282 or L293 would be equivalent because
 // averageInts(nil) and medianInt(nil) both return 0).
-func TestCyclesCov_PopulateObservedCycleStats_EmptyLeavesFieldsZero(t *testing.T) {
+func TestCycles_PopulateObservedCycleStats_EmptyLeavesFieldsZero(t *testing.T) {
 	var stats CycleStats
 	populateObservedCycleStats(&stats, nil, nil)
 	if stats.AverageCycleLength != 0 || stats.MedianCycleLength != 0 || stats.AveragePeriodLength != 0 {

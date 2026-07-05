@@ -136,7 +136,7 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 **`users`** — one row per account:
 
 - Identity: `id`, `email` (unique), `display_name`, `role` (default `owner`), `created_at`.
-- Credentials: `password_hash` (bcrypt cost 10), `recovery_code_hash` (bcrypt cost 10), `local_auth_enabled`, `auth_session_version`, `must_change_password`.
+- Credentials: `password_hash` (bcrypt cost 12), `recovery_code_hash` (bcrypt cost 12), `local_auth_enabled`, `auth_session_version`, `must_change_password`.
 - Onboarding: `onboarding_completed`.
 - Cycle preferences: `cycle_length`, `period_length`, `luteal_phase`, `auto_period_fill`, `irregular_cycle`, `unpredictable_cycle`, `age_group`, `usage_goal`, `last_period_start`, `long_period_warning_cycle_start`.
 - Tracking preferences: `track_bbt`, `temperature_unit`, `track_cervical_mucus`, `hide_sex_chip`, `hide_cycle_factors`, `hide_notes_field`, `show_historical_phases`, `shown_period_tip`.
@@ -187,7 +187,7 @@ Both operations require the current password through `validateSettingsActionPass
 - Minimum length: 8 Unicode code points.
 - Maximum length: 72 bytes — bcrypt's hard input limit. Longer submissions fail validation with the same stable weak-password error on every password-accepting flow instead of surfacing bcrypt's opaque hashing error.
 - Required character classes: at least one uppercase letter, one lowercase letter, and one digit (`ValidatePasswordStrength` in `internal/services/password_policy.go`).
-- Storage: bcrypt with `bcrypt.DefaultCost` (currently cost 10) via `golang.org/x/crypto/bcrypt`. Hashes live in `users.password_hash`.
+- Storage: bcrypt at cost 12 (the `passwordHashCost` constant in `internal/services`, above the library `bcrypt.DefaultCost` of 10) via `golang.org/x/crypto/bcrypt`. Hashes live in `users.password_hash`. A successful login whose stored hash predates this floor is opportunistically re-hashed at cost 12 in place (`UpdatePasswordHashOnly`), so the effective cost rises for existing accounts without forcing a reset; this transparent upgrade does **not** bump `auth_session_version` (the credential is unchanged).
 
 **Recovery codes:**
 
@@ -366,6 +366,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | --- | --- |
 | `POST /api/v1/users` emits an identical-shape sealed pickup cookie for new and duplicate emails | `auth_register_regressions_test.go`, `auth_register_email_persistence_regressions_test.go` in `internal/api/` |
 | Duplicate-email branch runs equalized bcrypt timing | `TestAuthenticateCredentialsEqualizesTimingForMissingUser`, `TestAuthenticateCredentialsEqualizesTimingForDisabledLocalAuth` in [internal/services/auth_service_credentials_timing_test.go](internal/services/auth_service_credentials_timing_test.go) |
+| Timing-equalization placeholder hashes carry the production bcrypt cost (equalized paths are not measurably faster than a real compare) | `TestTimingEqualizationHashesMatchTargetCost` in [internal/services/auth_service_hash_cost_test.go](internal/services/auth_service_hash_cost_test.go) |
 | Pickup nonce is single-use via `register_pickup_tokens` (atomic UPDATE) | `register_pickup_handler_test.go` in `internal/api/` |
 | `GET /register/welcome` second consumption falls through to `/login` | `register_pickup_handler_test.go` in `internal/api/` |
 | Recovery code shape `OVUM-XXXX-XXXX-XXXX` | `TestValidateRecoveryCodeFormat`, `TestNormalizeRecoveryCode` in [internal/services/auth_input_policy_test.go](internal/services/auth_input_policy_test.go) |
@@ -399,6 +400,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | TOTP enable bumps `auth_session_version` and refreshes originating session | `handlers_settings_2fa_session_revocation_test.go` in `internal/api/` |
 | TOTP disable bumps `auth_session_version` and refreshes originating session | `handlers_settings_2fa_session_revocation_test.go` in `internal/api/` |
 | `clear-data` bumps `auth_session_version` atomically with the wipe | `settings_clear_data_session_revocation_test.go` in `internal/api/` |
+| Opportunistic bcrypt-cost rehash on login rewrites `password_hash` without bumping `auth_session_version` (the authenticating session survives) | `TestUpdatePasswordHashOnlyPreservesSessionVersion` in [internal/db/user_repository_cas_test.go](internal/db/user_repository_cas_test.go), `TestAuthenticateCredentialsRehashesStaleCost` in [internal/services/auth_service_hash_cost_test.go](internal/services/auth_service_hash_cost_test.go) |
 | `ovumcy_auth` cookie verifies against current `auth_session_version`; revoked sessions are rejected | `TestAuthMiddlewareRejectsRevokedAuthSessionCookieForAPI`, `TestAuthMiddlewareRejectsRevokedAuthSessionCookieAfterForcedResetForHTML` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
 
 ### Cookies
@@ -414,6 +416,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Login issues a sealed `ovumcy_auth` cookie (not a legacy JWT) | `TestLoginSetsSealedAuthCookieValue`, `TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
 | Remember-me toggles cookie persistence | `TestLoginRememberMeControlsCookiePersistence` in [internal/api/auth_login_remember_me_regressions_test.go](internal/api/auth_login_remember_me_regressions_test.go) |
 | State-changing endpoints require a valid CSRF token | `state_mutation_csrf_regression_test.go`, `auth_logout_csrf_regression_test.go`, `settings_security_csrf_regression_test.go`, `export_csrf_regression_test.go`, `language_switch_csrf_regression_test.go` in `internal/api/` |
+| The CSRF middleware exempts exactly ONE route — `POST /auth/oidc/callback` (POST-bound) — and every other mutating route in the real app refuses a token-less request with 403 | `TestCSRFExemptionListIsExactlyOneRoute`, `TestCSRFDeniesEveryMutatingRouteWithoutToken` in [cmd/ovumcy/csrf_exemption_guard_test.go](cmd/ovumcy/csrf_exemption_guard_test.go) |
 
 ### Retention and Deletion
 
@@ -435,6 +438,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Strong password passes | `TestValidatePasswordStrength_AcceptsStrongPassword` in [internal/services/password_policy_test.go](internal/services/password_policy_test.go) |
 | Change-password rejects weak password and mismatch | `TestChangePasswordRejectsWeakNumericPassword`, `TestChangePasswordRejectsPasswordMismatch` in [internal/api/auth_change_password_validation_test.go](internal/api/auth_change_password_validation_test.go) |
 | Recovery code is bcrypt-hashed at rest | `TestGenerateRecoveryCodeHash` in [internal/services/auth_reset_policy_test.go](internal/services/auth_reset_policy_test.go) |
+| New password and recovery-code hashes are stamped at cost 12 (`passwordHashCost`, above `bcrypt.DefaultCost`) | `TestNewPasswordHashesUseConfiguredCost`, `TestPasswordHashCostIsAboveDefault` in [internal/services/auth_service_hash_cost_test.go](internal/services/auth_service_hash_cost_test.go) |
 | TOTP secret is encrypted under a key derived from `SECRET_KEY`; stored value not equal to plaintext | `internal/security/field_crypto_test.go` (see Field-Level Encryption above) |
 | TOTP code reuse within the same 30-second step is rejected | `totp_service_test.go`, `user_repository_totp_step_test.go`, `handlers_auth_2fa_test.go` |
 | TOTP enrollment rejects 6-digit codes that do not match | `handlers_settings_2fa_test.go` |
@@ -493,3 +497,11 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | CSRF middleware error path does not leak PII into the audit log | `TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | Rate-limit handler does not leak PII into the audit log | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | The Fiber request log's error field is sanitized (emails → `:email`, opaque tokens → `:token`) | `TestSafeLogError` in [internal/api/request_logging_test.go](internal/api/request_logging_test.go) |
+
+### Medical Safety Disclaimer
+
+The backend HTML contract normally forbids asserting localized copy, but the persistent medical-safety disclaimer is a deliberate exception: its exact wording is the invariant, so these tests pin both the surface's stable `data-*` hook and the safety string.
+
+| Claim | Enforced by |
+| --- | --- |
+| Every owner-facing prediction surface (dashboard, stats, calendar) renders the persistent "estimates, not medical advice or a method of contraception" disclaimer, so a template refactor cannot silently drop it from a health-prediction page | `TestDashboardRendersPredictionDisclaimer`, `TestStatsRendersPredictionDisclaimer`, `TestCalendarRendersPredictionDisclaimer` in [internal/api/dashboard_prediction_disclaimer_test.go](internal/api/dashboard_prediction_disclaimer_test.go) |

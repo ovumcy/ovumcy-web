@@ -29,7 +29,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestStatscycleinsightsCovBuildCompletedCycleSpansPeriodLengthMatchesObservedNotDefault(t *testing.T) {
+func TestStatsCycleInsightsBuildCompletedCycleSpansPeriodLengthMatchesObservedNotDefault(t *testing.T) {
 	// Only the first day of each period is logged as IsPeriod, so buildCycles
 	// computes an observed period length of exactly 1 for the first span.
 	// The fallback-to-DefaultPeriodLength branch (line 55) must NOT fire, because

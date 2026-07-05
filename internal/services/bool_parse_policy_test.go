@@ -22,7 +22,7 @@ func TestParseBoolLike(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			if got := ParseBoolLike(testCase.raw); got != testCase.value {

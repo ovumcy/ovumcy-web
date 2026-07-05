@@ -11,7 +11,7 @@ func BuildCycleTrendLabels(cycleLabelPattern string, pointCount int) []string {
 	}
 
 	labels := make([]string, 0, pointCount)
-	for index := 0; index < pointCount; index++ {
+	for index := range pointCount {
 		labels = append(labels, fmt.Sprintf(cycleLabelPattern, index+1))
 	}
 	return labels

@@ -73,6 +73,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Stamp the commit sha into the binary (main.buildVersion) so the
+          # published image serves a per-release asset cache-bust token.
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
           sbom: true
           cache-from: type=gha
           cache-to: type=gha,mode=max

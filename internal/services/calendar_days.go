@@ -192,7 +192,7 @@ func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[
 	luteal := ResolveLutealPhase(stats.LutealPhase)
 	periodLength := predictedPeriodLength(stats.AveragePeriodLength)
 
-	for index := 0; index < len(starts)-1; index++ {
+	for index := range len(starts) - 1 {
 		cycleStart := starts[index]
 		nextStart := starts[index+1]
 		cycleLen := int(math.Round(nextStart.Sub(cycleStart).Hours() / 24))
@@ -212,7 +212,7 @@ func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[
 }
 
 func appendPredictedPeriod(predictedPeriodMap map[string]bool, cycleStart time.Time, predictedPeriodLength int) {
-	for offset := 0; offset < predictedPeriodLength; offset++ {
+	for offset := range predictedPeriodLength {
 		day := cycleStart.AddDate(0, 0, offset)
 		predictedPeriodMap[day.Format("2006-01-02")] = true
 	}

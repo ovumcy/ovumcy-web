@@ -130,7 +130,7 @@ func GenerateRecoveryCodeHash() (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(code), passwordHashCost)
 	if err != nil {
 		return "", "", err
 	}
@@ -169,7 +169,7 @@ func isCanonicalRecoveryCodeBody(value string) bool {
 	if len(value) != 12 {
 		return false
 	}
-	for i := 0; i < len(value); i++ {
+	for i := range len(value) {
 		c := value[i]
 		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
 			return false

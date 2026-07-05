@@ -231,18 +231,17 @@ func DetectExplicitCycleStarts(logs []models.DailyLog) []time.Time {
 
 	sorted := sortDailyLogs(logs)
 	starts := make([]time.Time, 0)
-	seen := make(map[string]struct{}, len(sorted))
+	seen := make(map[time.Time]struct{}, len(sorted))
 	for _, logEntry := range sorted {
 		if !logEntry.IsPeriod || !logEntry.CycleStart {
 			continue
 		}
 
 		day := dateOnly(logEntry.Date)
-		key := day.Format("2006-01-02")
-		if _, exists := seen[key]; exists {
+		if _, exists := seen[day]; exists {
 			continue
 		}
-		seen[key] = struct{}{}
+		seen[day] = struct{}{}
 		starts = append(starts, day)
 	}
 	return starts
@@ -417,9 +416,9 @@ func detectCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time)
 }
 
 func periodLoggedOnDay(logs []models.DailyLog, day time.Time) bool {
-	dayKey := day.Format("2006-01-02")
+	dayKey := dateOnly(day)
 	for _, log := range logs {
-		if log.IsPeriod && dateOnly(log.Date).Format("2006-01-02") == dayKey {
+		if log.IsPeriod && dateOnly(log.Date).Equal(dayKey) {
 			return true
 		}
 	}
@@ -436,10 +435,9 @@ func buildCycles(starts []time.Time, logs []models.DailyLog) []detectedCycle {
 		return nil
 	}
 
-	isPeriodByDate := make(map[string]bool, len(logs))
+	isPeriodByDate := make(map[time.Time]bool, len(logs))
 	for _, log := range logs {
-		day := dateOnly(log.Date).Format("2006-01-02")
-		isPeriodByDate[day] = log.IsPeriod
+		isPeriodByDate[dateOnly(log.Date)] = log.IsPeriod
 	}
 
 	cycles := make([]detectedCycle, 0, len(starts))
@@ -451,7 +449,7 @@ func buildCycles(starts []time.Time, logs []models.DailyLog) []detectedCycle {
 
 		periodLength := 0
 		for day := start; !day.After(start.AddDate(0, 0, 10)); day = day.AddDate(0, 0, 1) {
-			if !isPeriodByDate[day.Format("2006-01-02")] {
+			if !isPeriodByDate[dateOnly(day)] {
 				break
 			}
 			periodLength++
@@ -559,8 +557,11 @@ func betweenInclusive(day, start, end time.Time) bool {
 	return (day.Equal(start) || day.After(start)) && (day.Equal(end) || day.Before(end))
 }
 
+// sameDay reports whether a and b fall on the same calendar day, each read in
+// its own location — exactly the comparison the former string-key form
+// (Format("2006-01-02") equality) expressed, without the two allocations.
 func sameDay(a, b time.Time) bool {
-	return a.Format("2006-01-02") == b.Format("2006-01-02")
+	return dateOnly(a).Equal(dateOnly(b))
 }
 
 // dateOnly reduces an instant to the midnight of its calendar day, rebuilt at

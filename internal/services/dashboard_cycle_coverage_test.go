@@ -1,9 +1,10 @@
 package services
 
-// dashboardCycleCoverage tests — generated to kill surviving mutants in
-// dashboard_cycle.go.  Every test asserts observable behavior (return values,
-// computed dates, boolean flags) and is prefixed with "dashboardcycleCov" to
-// avoid collisions when merged with other test files.
+// dashboard_cycle_coverage_test.go — behavior tests for the dashboard cycle
+// summary logic in dashboard_cycle.go: reference-length fallbacks, long-cycle
+// and stale-data detection, prediction ranges, and next-period/ovulation data
+// gating. Written to kill surviving mutants (gremlins); every test asserts
+// observable behavior (return values, computed dates, boolean flags).
 
 import (
 	"testing"
@@ -19,7 +20,7 @@ import (
 // we also verify that a nil user still returns DefaultCycleLength.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovReferenceLengthFallsBackToUserCycleLength(t *testing.T) {
+func TestDashboardCycleReferenceLengthFallsBackToUserCycleLength(t *testing.T) {
 	user := &models.User{CycleLength: 32}
 	stats := CycleStats{} // no AverageCycleLength, no MedianCycleLength
 
@@ -29,7 +30,7 @@ func TestDashboardcycleCovReferenceLengthFallsBackToUserCycleLength(t *testing.T
 	}
 }
 
-func TestDashboardcycleCovReferenceLengthNilUserFallsBackToDefault(t *testing.T) {
+func TestDashboardCycleReferenceLengthNilUserFallsBackToDefault(t *testing.T) {
 	// When user is nil and stats are empty, the function must NOT panic and
 	// must return DefaultCycleLength.
 	got := DashboardCycleReferenceLength(nil, CycleStats{})
@@ -38,7 +39,7 @@ func TestDashboardcycleCovReferenceLengthNilUserFallsBackToDefault(t *testing.T)
 	}
 }
 
-func TestDashboardcycleCovReferenceLengthInvalidUserCycleUsesDefault(t *testing.T) {
+func TestDashboardCycleReferenceLengthInvalidUserCycleUsesDefault(t *testing.T) {
 	// An invalid onboarding cycle length (e.g. 0 or 200) should be rejected
 	// and DefaultCycleLength returned.
 	user := &models.User{CycleLength: 0}
@@ -59,19 +60,19 @@ func TestDashboardcycleCovReferenceLengthInvalidUserCycleUsesDefault(t *testing.
 // or referenceLength <= 0 must return false)
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovCycleDayLooksLongZeroDayReturnsFalse(t *testing.T) {
+func TestDashboardCycleCycleDayLooksLongZeroDayReturnsFalse(t *testing.T) {
 	if DashboardCycleDayLooksLong(0, 28) {
 		t.Fatal("expected false for currentDay=0")
 	}
 }
 
-func TestDashboardcycleCovCycleDayLooksLongNegativeDayReturnsFalse(t *testing.T) {
+func TestDashboardCycleCycleDayLooksLongNegativeDayReturnsFalse(t *testing.T) {
 	if DashboardCycleDayLooksLong(-1, 28) {
 		t.Fatal("expected false for currentDay=-1")
 	}
 }
 
-func TestDashboardcycleCovCycleDayLooksLongZeroReferenceReturnsFalse(t *testing.T) {
+func TestDashboardCycleCycleDayLooksLongZeroReferenceReturnsFalse(t *testing.T) {
 	if DashboardCycleDayLooksLong(40, 0) {
 		t.Fatal("expected false when referenceLength=0")
 	}
@@ -82,7 +83,7 @@ func TestDashboardcycleCovCycleDayLooksLongZeroReferenceReturnsFalse(t *testing.
 // A day exactly at referenceLength+7 must NOT trigger; referenceLength+8 must.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovCycleDayLooksLongBoundaryAtPlusSeven(t *testing.T) {
+func TestDashboardCycleCycleDayLooksLongBoundaryAtPlusSeven(t *testing.T) {
 	const ref = 28
 	// exactly at the boundary: not long
 	if DashboardCycleDayLooksLong(ref+7, ref) {
@@ -101,14 +102,14 @@ func TestDashboardcycleCovCycleDayLooksLongBoundaryAtPlusSeven(t *testing.T) {
 //   - today before lastPeriodStart returns false
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovDataLooksStaleZeroAnchorReturnsFalse(t *testing.T) {
+func TestDashboardCycleDataLooksStaleZeroAnchorReturnsFalse(t *testing.T) {
 	today := mustParseDashboardDay(t, "2026-04-10")
 	if DashboardCycleDataLooksStale(time.Time{}, today, 28) {
 		t.Fatal("expected false for zero lastPeriodStart")
 	}
 }
 
-func TestDashboardcycleCovDataLooksStaleZeroReferenceReturnsFalse(t *testing.T) {
+func TestDashboardCycleDataLooksStaleZeroReferenceReturnsFalse(t *testing.T) {
 	anchor := mustParseDashboardDay(t, "2026-03-01")
 	today := mustParseDashboardDay(t, "2026-04-10")
 	if DashboardCycleDataLooksStale(anchor, today, 0) {
@@ -116,7 +117,7 @@ func TestDashboardcycleCovDataLooksStaleZeroReferenceReturnsFalse(t *testing.T) 
 	}
 }
 
-func TestDashboardcycleCovDataLooksStaleTodayBeforeAnchorReturnsFalse(t *testing.T) {
+func TestDashboardCycleDataLooksStaleTodayBeforeAnchorReturnsFalse(t *testing.T) {
 	anchor := mustParseDashboardDay(t, "2026-04-10")
 	today := mustParseDashboardDay(t, "2026-03-01")
 	if DashboardCycleDataLooksStale(anchor, today, 28) {
@@ -130,7 +131,7 @@ func TestDashboardcycleCovDataLooksStaleTodayBeforeAnchorReturnsFalse(t *testing
 // For a reference length of 1, that is NOT stale (1 > 1 is false).
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovDataLooksStaleFirstDayNotStale(t *testing.T) {
+func TestDashboardCycleDataLooksStaleFirstDayNotStale(t *testing.T) {
 	anchor := mustParseDashboardDay(t, "2026-04-01")
 	today := mustParseDashboardDay(t, "2026-04-01") // same day, cycle day 1
 	// ref=1: cycle day (1) > ref (1) is false => not stale
@@ -148,7 +149,7 @@ func TestDashboardcycleCovDataLooksStaleFirstDayNotStale(t *testing.T) {
 // Exactly at ref: not stale. One beyond: stale.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovDataLooksStaleBoundary(t *testing.T) {
+func TestDashboardCycleDataLooksStaleBoundary(t *testing.T) {
 	anchor := mustParseDashboardDay(t, "2026-03-01")
 	const ref = 28
 
@@ -170,14 +171,14 @@ func TestDashboardcycleCovDataLooksStaleBoundary(t *testing.T) {
 // Mutations targeting user==nil check, user.LastPeriodStart==nil, or IsZero().
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovStaleAnchorNilUserWithEmptyStatsReturnsZero(t *testing.T) {
+func TestDashboardCycleStaleAnchorNilUserWithEmptyStatsReturnsZero(t *testing.T) {
 	anchor := DashboardCycleStaleAnchor(nil, CycleStats{}, time.UTC)
 	if !anchor.IsZero() {
 		t.Fatalf("expected zero time for nil user and empty stats, got %v", anchor)
 	}
 }
 
-func TestDashboardcycleCovStaleAnchorNonNilUserNilLastPeriodStartReturnsZero(t *testing.T) {
+func TestDashboardCycleStaleAnchorNonNilUserNilLastPeriodStartReturnsZero(t *testing.T) {
 	user := &models.User{LastPeriodStart: nil}
 	anchor := DashboardCycleStaleAnchor(user, CycleStats{}, time.UTC)
 	if !anchor.IsZero() {
@@ -185,7 +186,7 @@ func TestDashboardcycleCovStaleAnchorNonNilUserNilLastPeriodStartReturnsZero(t *
 	}
 }
 
-func TestDashboardcycleCovStaleAnchorUserLastPeriodStartUsedWhenStatsEmpty(t *testing.T) {
+func TestDashboardCycleStaleAnchorUserLastPeriodStartUsedWhenStatsEmpty(t *testing.T) {
 	lps := mustParseDashboardDay(t, "2026-02-15")
 	user := &models.User{LastPeriodStart: &lps}
 	anchor := DashboardCycleStaleAnchor(user, CycleStats{}, time.UTC)
@@ -199,7 +200,7 @@ func TestDashboardcycleCovStaleAnchorUserLastPeriodStartUsedWhenStatsEmpty(t *te
 // Line 102 — CycleLengthStdDev <= 0 also returns 0
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovPredictionRangeNeedsAtLeastThreeCycles(t *testing.T) {
+func TestDashboardCyclePredictionRangeNeedsAtLeastThreeCycles(t *testing.T) {
 	// Two completed cycles: no range
 	rangeStart, rangeEnd, ok := DashboardPredictionRange(
 		&models.User{},
@@ -212,7 +213,7 @@ func TestDashboardcycleCovPredictionRangeNeedsAtLeastThreeCycles(t *testing.T) {
 	}
 }
 
-func TestDashboardcycleCovPredictionRangeThreeCyclesWithZeroStdDevNoRange(t *testing.T) {
+func TestDashboardCyclePredictionRangeThreeCyclesWithZeroStdDevNoRange(t *testing.T) {
 	// Three completed cycles but stddev=0: still no range
 	_, _, ok := DashboardPredictionRange(
 		&models.User{},
@@ -233,7 +234,7 @@ func TestDashboardcycleCovPredictionRangeThreeCyclesWithZeroStdDevNoRange(t *tes
 // Confirm directly on span boundary: 3 cycles, stddev = 0.3 (rounds to 0 -> 1).
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovRegularSpanClampedToOneForVeryLowStdDev(t *testing.T) {
+func TestDashboardCycleRegularSpanClampedToOneForVeryLowStdDev(t *testing.T) {
 	predictedStart := mustParseDashboardDay(t, "2026-04-07")
 	rangeStart, rangeEnd, ok := DashboardPredictionRange(
 		&models.User{},
@@ -258,7 +259,7 @@ func TestDashboardcycleCovRegularSpanClampedToOneForVeryLowStdDev(t *testing.T) 
 // (already tested for stddev=8.7 in existing file, but we add a boundary test)
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovRegularSpanClampedToFiveForVeryHighStdDev(t *testing.T) {
+func TestDashboardCycleRegularSpanClampedToFiveForVeryHighStdDev(t *testing.T) {
 	predictedStart := mustParseDashboardDay(t, "2026-04-07")
 	rangeStart, rangeEnd, ok := DashboardPredictionRange(
 		&models.User{},
@@ -282,7 +283,7 @@ func TestDashboardcycleCovRegularSpanClampedToFiveForVeryHighStdDev(t *testing.T
 // A mutant removing any single condition must be caught.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovIrregularRangeRequiresIrregularFlag(t *testing.T) {
+func TestDashboardCycleIrregularRangeRequiresIrregularFlag(t *testing.T) {
 	// user.IrregularCycle = false → should NOT use irregular range
 	user := &models.User{IrregularCycle: false}
 	stats := CycleStats{
@@ -298,7 +299,7 @@ func TestDashboardcycleCovIrregularRangeRequiresIrregularFlag(t *testing.T) {
 	}
 }
 
-func TestDashboardcycleCovIrregularRangeRequiresThreeCompletedCycles(t *testing.T) {
+func TestDashboardCycleIrregularRangeRequiresThreeCompletedCycles(t *testing.T) {
 	// CompletedCycleCount < 3 → should NOT use irregular range even with flag set
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{
@@ -315,7 +316,7 @@ func TestDashboardcycleCovIrregularRangeRequiresThreeCompletedCycles(t *testing.
 	}
 }
 
-func TestDashboardcycleCovIrregularRangeRequiresPositiveMinLength(t *testing.T) {
+func TestDashboardCycleIrregularRangeRequiresPositiveMinLength(t *testing.T) {
 	// MinCycleLength = 0 → should NOT use irregular range
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{
@@ -332,7 +333,7 @@ func TestDashboardcycleCovIrregularRangeRequiresPositiveMinLength(t *testing.T) 
 	}
 }
 
-func TestDashboardcycleCovIrregularRangeRequiresMaxGeMin(t *testing.T) {
+func TestDashboardCycleIrregularRangeRequiresMaxGeMin(t *testing.T) {
 	// MaxCycleLength < MinCycleLength → should NOT use irregular range
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{
@@ -354,7 +355,7 @@ func TestDashboardcycleCovIrregularRangeRequiresMaxGeMin(t *testing.T) {
 // cycleLength <= 0 returns raw stats values unchanged.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovUpcomingPredictionsZeroLastPeriodStartPassesThroughStats(t *testing.T) {
+func TestDashboardCycleUpcomingPredictionsZeroLastPeriodStartPassesThroughStats(t *testing.T) {
 	statsPeriod := mustParseDashboardDay(t, "2026-05-01")
 	statsOv := mustParseDashboardDay(t, "2026-04-17")
 	stats := CycleStats{
@@ -380,7 +381,7 @@ func TestDashboardcycleCovUpcomingPredictionsZeroLastPeriodStartPassesThroughSta
 	}
 }
 
-func TestDashboardcycleCovUpcomingPredictionsZeroCycleLengthPassesThroughStats(t *testing.T) {
+func TestDashboardCycleUpcomingPredictionsZeroCycleLengthPassesThroughStats(t *testing.T) {
 	statsPeriod := mustParseDashboardDay(t, "2026-05-01")
 	stats := CycleStats{
 		LastPeriodStart:     mustParseDashboardDay(t, "2026-04-01"),
@@ -403,7 +404,7 @@ func TestDashboardcycleCovUpcomingPredictionsZeroCycleLengthPassesThroughStats(t
 // Exercised via BuildDashboardCycleContext since the function is unexported.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovNeedsNextPeriodDataRequiresIrregularFlag(t *testing.T) {
+func TestDashboardCycleNeedsNextPeriodDataRequiresIrregularFlag(t *testing.T) {
 	// IrregularCycle=false → DisplayNextPeriodNeedsData must be false
 	user := &models.User{IrregularCycle: false}
 	stats := CycleStats{
@@ -418,7 +419,7 @@ func TestDashboardcycleCovNeedsNextPeriodDataRequiresIrregularFlag(t *testing.T)
 	}
 }
 
-func TestDashboardcycleCovNeedsNextPeriodDataRequiresFewCycles(t *testing.T) {
+func TestDashboardCycleNeedsNextPeriodDataRequiresFewCycles(t *testing.T) {
 	// CompletedCycleCount >= 3 with IrregularCycle → needs-data flag must be false
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{
@@ -435,7 +436,7 @@ func TestDashboardcycleCovNeedsNextPeriodDataRequiresFewCycles(t *testing.T) {
 	}
 }
 
-func TestDashboardcycleCovNeedsNextPeriodDataRequiresNonZeroNextPeriod(t *testing.T) {
+func TestDashboardCycleNeedsNextPeriodDataRequiresNonZeroNextPeriod(t *testing.T) {
 	// IrregularCycle=true, <3 cycles, but no period data at all → nextPeriodStart
 	// remains zero (DashboardUpcomingPredictions passes through stats.NextPeriodStart
 	// which is also zero), so needs-data must be false.
@@ -459,14 +460,14 @@ func TestDashboardcycleCovNeedsNextPeriodDataRequiresNonZeroNextPeriod(t *testin
 // When nextPeriodStart is zero, verify a zero end date.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovNextPeriodEndZeroStartReturnsZero(t *testing.T) {
+func TestDashboardCycleNextPeriodEndZeroStartReturnsZero(t *testing.T) {
 	end := dashboardNextPeriodEnd(time.Time{}, CycleStats{AveragePeriodLength: 5}, time.UTC)
 	if !end.IsZero() {
 		t.Fatalf("expected zero end for zero start, got %v", end)
 	}
 }
 
-func TestDashboardcycleCovNextPeriodEndZeroAveragePeriodUsesDefault(t *testing.T) {
+func TestDashboardCycleNextPeriodEndZeroAveragePeriodUsesDefault(t *testing.T) {
 	// AveragePeriodLength=0 should not return zero time; DefaultPeriodLength kicks in.
 	start := mustParseDashboardDay(t, "2026-04-07")
 	end := dashboardNextPeriodEnd(start, CycleStats{AveragePeriodLength: 0}, time.UTC)
@@ -484,7 +485,7 @@ func TestDashboardcycleCovNextPeriodEndZeroAveragePeriodUsesDefault(t *testing.T
 // Exercised via BuildDashboardCycleContext.
 // ---------------------------------------------------------------------------
 
-func TestDashboardcycleCovNeedsOvulationDataRequiresIrregularFlag(t *testing.T) {
+func TestDashboardCycleNeedsOvulationDataRequiresIrregularFlag(t *testing.T) {
 	user := &models.User{IrregularCycle: false}
 	stats := CycleStats{
 		LastPeriodStart:     mustParseDashboardDay(t, "2026-03-01"),
@@ -497,7 +498,7 @@ func TestDashboardcycleCovNeedsOvulationDataRequiresIrregularFlag(t *testing.T) 
 	}
 }
 
-func TestDashboardcycleCovNeedsOvulationDataRequiresFewCycles(t *testing.T) {
+func TestDashboardCycleNeedsOvulationDataRequiresFewCycles(t *testing.T) {
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{
 		LastPeriodStart:     mustParseDashboardDay(t, "2026-03-01"),
@@ -512,7 +513,7 @@ func TestDashboardcycleCovNeedsOvulationDataRequiresFewCycles(t *testing.T) {
 	}
 }
 
-func TestDashboardcycleCovNeedsOvulationDataRequiresNonZeroLastPeriodStart(t *testing.T) {
+func TestDashboardCycleNeedsOvulationDataRequiresNonZeroLastPeriodStart(t *testing.T) {
 	// IrregularCycle=true, <3 cycles, but LastPeriodStart is zero → needs-data must be false
 	user := &models.User{IrregularCycle: true}
 	stats := CycleStats{

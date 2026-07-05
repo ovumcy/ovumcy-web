@@ -44,13 +44,18 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 - AEAD: AES-256-GCM (sealed cookies, field encryption), implemented once in `internal/security/sealed_cipher.go`. Key derivation: HKDF-SHA256 with versioned, purpose-specific salt and info labels; the two purposes derive distinct keys, so cross-purpose opens fail (see `SECURITY.md → SECRET_KEY Usage Map`).
 - Randomness: `crypto/rand` for nonces, session IDs, OIDC state/nonce, PKCE verifiers, recovery codes. **Never `math/rand` for security-sensitive values.**
 - Comparisons: `crypto/subtle.ConstantTimeCompare` for OIDC state, recovery-code hashes (via `bcrypt.CompareHashAndPassword`), TOTP code validation, and password-state fingerprints.
-- Passwords are bcrypt cost 10. Minimum length 8 with at least one uppercase, one lowercase, and one digit.
+- Passwords are bcrypt cost 12 (a successful login re-hashes any older, lower-cost hash in place without invalidating the session). Minimum length 8 with at least one uppercase, one lowercase, and one digit.
 
 ## Content Security Policy
 
 - The CSP shipped from `cmd/ovumcy/main.go` is `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'none'`. Do not introduce `unsafe-inline`, `unsafe-eval`, `data:` outside `img-src`, or `*` in any directive.
 - Templates must not contain inline `<script>` blocks, inline event handlers (`onclick=`, `onload=`, …), inline style attributes, or `javascript:` URLs.
 - The same `securityHeadersMiddleware` (`cmd/ovumcy/main.go`) sets these companion headers on every response: `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (geolocation/camera/microphone/payment/usb/… all `()`), `Cross-Origin-Opener-Policy: same-origin`, `X-Frame-Options: DENY`, and `Strict-Transport-Security` (controlled by `HSTS_ENABLED`, which defaults to the `COOKIE_SECURE` value; set `HSTS_ENABLED=false` to run secure cookies without the 1-year HTTPS pin).
+
+## Medical safety
+
+- Health predictions are estimates, never fact. Every owner-facing prediction surface — dashboard, stats, and calendar — renders a persistent "estimates, not medical advice or a method of contraception" disclaimer alongside the estimate qualifiers.
+- A template refactor cannot silently drop it: backend regressions assert the disclaimer on each surface via a stable `data-*` hook plus the exact safety string (`TestDashboardRendersPredictionDisclaimer`, `TestStatsRendersPredictionDisclaimer`, `TestCalendarRendersPredictionDisclaimer`). This is the one place backend tests deliberately pin localized copy, because the wording itself is the invariant.
 
 ## GDPR (Art. 6, 9, 13, 15–22, 30, 32, 33)
 
@@ -59,7 +64,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 
 ## Backend HTML regression contract
 
-- Backend tests in `internal/api/*_test.go` assert structural contracts only (`id="..."`, `aria-*`, `data-*` hooks, `data-flash-key`, `data-error-key`, `data-explainer-key`). They never assert exact localized UI copy — the rendered phrase is a Playwright concern.
+- Backend tests in `internal/api/*_test.go` assert structural contracts only (`id="..."`, `aria-*`, `data-*` hooks, `data-flash-key`, `data-error-key`, `data-explainer-key`). They never assert exact localized UI copy — the rendered phrase is a Playwright concern. The one deliberate exception is the medical-safety disclaimer (see *Medical safety* above), where the exact wording is itself the invariant.
 - Service-layer tests own derived values (counts, thresholds, key-selection policy). When a `data-explainer-key` (or similar `data-*-key`) attribute is exposed on a template element, backend assertions read the attribute, not the rendered phrase.
 
 ## Migrations

@@ -36,7 +36,7 @@ func TestValidateRequiredFields(t *testing.T) {
 		{name: "redirect url", mutate: func(c *OIDCConfig) { c.RedirectURL = "" }},
 	}
 	for _, tc := range missing {
-		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			config := complete
@@ -107,7 +107,7 @@ func TestAllowsAutoProvisionGatesOnDomainNotLocalPart(t *testing.T) {
 		{name: "case is normalized before matching", email: "Owner@Example.COM", want: true},
 	}
 	for _, tc := range cases {
-		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if got := config.AllowsAutoProvision(tc.email); got != tc.want {

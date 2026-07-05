@@ -39,7 +39,7 @@ func (s *dashboardviewserviceCovCapturingStatsProvider) BuildCycleStatsFromLogs(
 // An owner view feeds stats from the already-fetched entry-context logs
 // (filtered to the 2-year window in memory), rather than a separate ranged
 // query, so this asserts the window via which logs reach BuildCycleStatsFromLogs.
-func TestDashboardviewserviceCovStatsRangeIsTwoYears(t *testing.T) {
+func TestDashboardViewServiceStatsRangeIsTwoYears(t *testing.T) {
 	user := &models.User{ID: 1, Role: models.RoleOwner}
 	now, _ := time.ParseInLocation("2006-01-02", "2026-06-07", time.UTC)
 	wantFrom, _ := time.ParseInLocation("2006-01-02", "2024-06-07", time.UTC)
@@ -66,7 +66,7 @@ func TestDashboardviewserviceCovStatsRangeIsTwoYears(t *testing.T) {
 // Line 141: Yesterday field is today-1 day
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovYesterdayIsOneDayBack(t *testing.T) {
+func TestDashboardViewServiceYesterdayIsOneDayBack(t *testing.T) {
 	user := &models.User{ID: 2, Role: models.RoleOwner}
 	now, _ := time.ParseInLocation("2006-01-02", "2026-03-15", time.UTC)
 	wantYesterday, _ := time.ParseInLocation("2006-01-02", "2026-03-14", time.UTC)
@@ -93,7 +93,7 @@ func TestDashboardviewserviceCovYesterdayIsOneDayBack(t *testing.T) {
 // Line 167: TodayEntryExists reflects whether the log has a non-zero ID
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovTodayEntryExistsWithID(t *testing.T) {
+func TestDashboardViewServiceTodayEntryExistsWithID(t *testing.T) {
 	user := &models.User{ID: 3, Role: models.RoleOwner}
 	now, _ := time.ParseInLocation("2006-01-02", "2026-03-15", time.UTC)
 
@@ -128,7 +128,7 @@ func TestDashboardviewserviceCovTodayEntryExistsWithID(t *testing.T) {
 // Line 171: HasExtraSymptoms = true when extra bucket is non-empty (dashboard)
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDashboard(t *testing.T) {
+func TestDashboardViewServiceHasExtraSymptomsPopulatedInDashboard(t *testing.T) {
 	user := &models.User{ID: 4, Role: models.RoleOwner}
 	now, _ := time.ParseInLocation("2006-01-02", "2026-03-15", time.UTC)
 
@@ -180,7 +180,7 @@ func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDashboard(t *testing.
 //           requires BOTH hasCycleFactorExplanation AND non-empty hint keys
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovPredictionFactorHintRequiresBothConditions(t *testing.T) {
+func TestDashboardViewServicePredictionFactorHintRequiresBothConditions(t *testing.T) {
 	user := &models.User{ID: 5, Role: models.RoleOwner}
 	cycleContext := DashboardCycleContext{}
 
@@ -211,7 +211,7 @@ func TestDashboardviewserviceCovPredictionFactorHintRequiresBothConditions(t *te
 // Line 269: HasExtraSymptoms = true when extra bucket is non-empty (day editor)
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDayEditor(t *testing.T) {
+func TestDashboardViewServiceHasExtraSymptomsPopulatedInDayEditor(t *testing.T) {
 	user := &models.User{ID: 6, Role: models.RoleOwner}
 	now, _ := time.ParseInLocation("2006-01-02", "2026-03-15", time.UTC)
 	day, _ := time.ParseInLocation("2006-01-02", "2026-03-14", time.UTC)
@@ -259,7 +259,7 @@ func TestDashboardviewserviceCovHasExtraSymptomsPopulatedInDayEditor(t *testing.
 //           (even for a non-owner user with exactly 2 symptoms)
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovEntryContextLogsLoadedForTwoSymptoms(t *testing.T) {
+func TestDashboardViewServiceEntryContextLogsLoadedForTwoSymptoms(t *testing.T) {
 	// Use a viewer user (not owner) with exactly 2 symptoms – should still load logs.
 	user := &models.User{ID: 7, Role: "viewer"}
 
@@ -305,7 +305,7 @@ func TestDashboardviewserviceCovEntryContextLogsLoadedForTwoSymptoms(t *testing.
 //           AND completedCycleCountFromLogs >= 2
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovSymptomRankingRequiresTwoSymptomsAndTwoCycles(t *testing.T) {
+func TestDashboardViewServiceSymptomRankingRequiresTwoSymptomsAndTwoCycles(t *testing.T) {
 	user := &models.User{ID: 8, Role: models.RoleOwner}
 	now, _ := time.ParseInLocation("2006-01-02", "2026-04-01", time.UTC)
 
@@ -355,7 +355,7 @@ func TestDashboardviewserviceCovSymptomRankingRequiresTwoSymptomsAndTwoCycles(t 
 // Lines 321 & 324 (not covered): completedCycleCountFromLogs
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovCompletedCycleCountFromLogsZeroWhenFewerThanTwoStarts(t *testing.T) {
+func TestDashboardViewServiceCompletedCycleCountFromLogsZeroWhenFewerThanTwoStarts(t *testing.T) {
 	// Zero starts → 0
 	if got := completedCycleCountFromLogs(nil); got != 0 {
 		t.Fatalf("expected 0 for nil logs, got %d", got)
@@ -369,7 +369,7 @@ func TestDashboardviewserviceCovCompletedCycleCountFromLogsZeroWhenFewerThanTwoS
 	}
 }
 
-func TestDashboardviewserviceCovCompletedCycleCountFromLogsCountsCompletedCycles(t *testing.T) {
+func TestDashboardViewServiceCompletedCycleCountFromLogsCountsCompletedCycles(t *testing.T) {
 	// Three cycle starts → 2 completed cycles (len(starts) - 1).
 	threeCycleStarts := []models.DailyLog{
 		{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
@@ -392,7 +392,7 @@ func TestDashboardviewserviceCovCompletedCycleCountFromLogsCountsCompletedCycles
 // Line 328: firstMissingTrackedDay enforces minimum lookback of 3 days
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovFirstMissingTrackedDayMinimumLookback(t *testing.T) {
+func TestDashboardViewServiceFirstMissingTrackedDayMinimumLookback(t *testing.T) {
 	// lookbackDays = 1 (< 3) should be silently raised to 3.
 	// With today = Feb-21 and trackingStart = Feb-18 and no logs in the 3-day
 	// window [Feb-18, Feb-19, Feb-20], all 3 days are missed → show link.
@@ -421,7 +421,7 @@ func TestDashboardviewserviceCovFirstMissingTrackedDayMinimumLookback(t *testing
 // Line 357: firstMissingTrackedDay threshold – exactly 3 missed needed
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovFirstMissingTrackedDayRequiresThreeMissed(t *testing.T) {
+func TestDashboardViewServiceFirstMissingTrackedDayRequiresThreeMissed(t *testing.T) {
 	today := mustParseDashboardServiceDay(t, "2026-02-21")
 	trackingStart := mustParseDashboardServiceDay(t, "2026-02-10")
 
@@ -470,7 +470,7 @@ func TestDashboardviewserviceCovFirstMissingTrackedDayRequiresThreeMissed(t *tes
 // deriving stats from the full log history.
 // ---------------------------------------------------------------------------
 
-func TestDashboardviewserviceCovStatsFallsBackToRangedQueryWhenLogsNotRequired(t *testing.T) {
+func TestDashboardViewServiceStatsFallsBackToRangedQueryWhenLogsNotRequired(t *testing.T) {
 	// A non-owner user with fewer than 2 symptoms does not require entry
 	// context logs, so stats must come from the ranged query alone.
 	user := &models.User{ID: 9, Role: "viewer"}

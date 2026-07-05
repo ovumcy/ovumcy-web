@@ -24,7 +24,7 @@ func mr3cycPeriodLog(day time.Time, cycleStart bool, uncertain bool) models.Dail
 
 // mr3cycCluster appends `days` consecutive period days starting at `start`.
 func mr3cycCluster(logs []models.DailyLog, start time.Time, days int, cycleStart bool, uncertain bool) []models.DailyLog {
-	for i := 0; i < days; i++ {
+	for i := range days {
 		day := start.AddDate(0, 0, i)
 		// Only the first day of a cluster carries the cycle-start / uncertain flags.
 		logs = append(logs, mr3cycPeriodLog(day, cycleStart && i == 0, uncertain && i == 0))

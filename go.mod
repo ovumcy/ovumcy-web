@@ -48,3 +48,12 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	modernc.org/sqlite v1.53.0 // indirect
 )
+
+// gorm.io/driver/sqlite and github.com/mattn/go-sqlite3 show up in
+// `go list -m all` / `go mod graph` (and therefore in go.sum) but never in
+// this file: gorm.io/gorm's own go.mod requires them directly (`go mod why -m
+// gorm.io/driver/sqlite` traces .../gorm -> gorm.io/driver/sqlite ->
+// github.com/mattn/go-sqlite3), so they enter ovumcy-web's module graph as a
+// floor even though no package here imports them — this module's own sqlite
+// support goes through github.com/glebarez/sqlite instead. `go mod tidy`
+// correctly leaves both out of the require blocks above; nothing to clean up.

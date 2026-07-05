@@ -276,7 +276,7 @@ func TestVerifyTOTPLogin_RateLimited_HTMXReturns429(t *testing.T) {
 		return resp
 	}
 
-	for attempt := 0; attempt < services.DefaultTOTPAttemptsLimit; attempt++ {
+	for attempt := range services.DefaultTOTPAttemptsLimit {
 		resp := doHTMX("000000")
 		status := resp.StatusCode
 		_ = resp.Body.Close()
