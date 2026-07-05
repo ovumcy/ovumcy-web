@@ -366,6 +366,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | --- | --- |
 | `POST /api/v1/users` emits an identical-shape sealed pickup cookie for new and duplicate emails | `auth_register_regressions_test.go`, `auth_register_email_persistence_regressions_test.go` in `internal/api/` |
 | Duplicate-email branch runs equalized bcrypt timing | `TestAuthenticateCredentialsEqualizesTimingForMissingUser`, `TestAuthenticateCredentialsEqualizesTimingForDisabledLocalAuth` in [internal/services/auth_service_credentials_timing_test.go](internal/services/auth_service_credentials_timing_test.go) |
+| Timing-equalization placeholder hashes carry the production bcrypt cost (equalized paths are not measurably faster than a real compare) | `TestTimingEqualizationHashesMatchTargetCost` in [internal/services/auth_service_hash_cost_test.go](internal/services/auth_service_hash_cost_test.go) |
 | Pickup nonce is single-use via `register_pickup_tokens` (atomic UPDATE) | `register_pickup_handler_test.go` in `internal/api/` |
 | `GET /register/welcome` second consumption falls through to `/login` | `register_pickup_handler_test.go` in `internal/api/` |
 | Recovery code shape `OVUM-XXXX-XXXX-XXXX` | `TestValidateRecoveryCodeFormat`, `TestNormalizeRecoveryCode` in [internal/services/auth_input_policy_test.go](internal/services/auth_input_policy_test.go) |

@@ -32,12 +32,15 @@ var (
 )
 
 // recoveryCodeTimingEqualizationHash and credentialsTimingEqualizationHash are
-// fixed bcrypt-cost-10 placeholder hashes used by the equalize* helpers below
-// to spend bcrypt compute time on the early-return paths in recovery and
-// login. They are never compared against a real credential — the result of
+// fixed placeholder hashes used by the equalize* helpers below to spend bcrypt
+// compute time on the early-return paths in recovery and login. They are never
+// compared against a real credential — the result of
 // bcrypt.CompareHashAndPassword is discarded — and never authenticate anyone.
-const recoveryCodeTimingEqualizationHash = "$2a$10$ReZgUuXu2GXtC.RZ/q2QyesBFX182a3ycbr78sbtgURmuOyc3ygtG" // #nosec G101 -- fixed placeholder bcrypt hash, see comment above; never authenticates a real user
-const credentialsTimingEqualizationHash = "$2a$10$h7pMPVpw/fZjbsXnbtpfD.UzmSCNk0FmbmMkP7wKDlO7IqhsBVX1m"  // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
+// Their embedded cost MUST stay equal to passwordHashCost (test-pinned): a
+// cheaper placeholder would make the equalized paths measurably faster than a
+// real comparison and reintroduce the account-enumeration timing oracle.
+const recoveryCodeTimingEqualizationHash = "$2a$12$KeFGg3nMPoiaOcsZpE9qUevfmpFV3VlY5cAQ.8FazuuHUIgnQrBwS" // #nosec G101 -- fixed placeholder bcrypt hash, see comment above; never authenticates a real user
+const credentialsTimingEqualizationHash = "$2a$12$pI5aDx1kby9ZEk9.2NzhBeq77y41xgUaCrP/vyyRCgdGnvaV.UxZm"  // #nosec G101 -- fixed placeholder bcrypt hash, see comment on recoveryCodeTimingEqualizationHash
 
 type AuthUserRepository interface {
 	ExistsByNormalizedEmail(ctx context.Context, email string) (bool, error)

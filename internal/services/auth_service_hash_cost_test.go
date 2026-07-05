@@ -30,6 +30,23 @@ func TestPasswordHashCostIsAboveDefault(t *testing.T) {
 	}
 }
 
+// TestTimingEqualizationHashesMatchTargetCost pins the placeholder hashes used
+// by the timing equalizers to the production cost. A cheaper placeholder makes
+// the equalized early-return paths (missing account, OIDC-only account,
+// duplicate-email registration) measurably faster than a real bcrypt compare
+// at passwordHashCost, reintroducing the account-enumeration timing oracle the
+// equalizers exist to close.
+func TestTimingEqualizationHashesMatchTargetCost(t *testing.T) {
+	for name, hash := range map[string]string{
+		"recoveryCodeTimingEqualizationHash": recoveryCodeTimingEqualizationHash,
+		"credentialsTimingEqualizationHash":  credentialsTimingEqualizationHash,
+	} {
+		if got := mustBcryptCost(t, hash); got != passwordHashCost {
+			t.Fatalf("%s cost = %d, want passwordHashCost (%d)", name, got, passwordHashCost)
+		}
+	}
+}
+
 // TestNewPasswordHashesUseConfiguredCost asserts every service path that mints
 // a fresh password or recovery-code hash stamps it at passwordHashCost, not the
 // library default. Each sub-case reads the cost straight out of the produced
