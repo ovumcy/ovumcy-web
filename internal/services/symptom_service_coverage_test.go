@@ -332,3 +332,32 @@ func TestSymptomServiceCovSeedBuiltinSymptomsSkipsWhenAlreadySeeded(t *testing.T
 		t.Fatal("expected CreateBatch to be skipped when count > 0")
 	}
 }
+
+// --- Lines 226-228 / 250-252: EnsureBuiltinSymptoms propagates a CreateBatch error ---
+
+// TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesCreateBatchError verifies
+// that EnsureBuiltinSymptoms (line 226-228) surfaces the error returned by
+// ensureBuiltinSymptomsListed when CreateBatch fails while backfilling
+// missing builtins (line 250-252).
+func TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesCreateBatchError(t *testing.T) {
+	sentinel := errors.New("create batch failure")
+	repo := &symptomserviceCovRepo{createBatchErr: sentinel}
+	service := NewSymptomService(repo)
+
+	if err := service.EnsureBuiltinSymptoms(context.Background(), 99); !errors.Is(err, sentinel) {
+		t.Fatalf("expected create batch failure error, got %v", err)
+	}
+}
+
+// TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesListError verifies that
+// ensureBuiltinSymptomsListed's initial ListByUser error (line 236) is
+// propagated as-is through EnsureBuiltinSymptoms.
+func TestSymptomServiceCovEnsureBuiltinSymptomsPropagatesListError(t *testing.T) {
+	sentinel := errors.New("list failure")
+	repo := &symptomserviceCovRepo{listErr: sentinel}
+	service := NewSymptomService(repo)
+
+	if err := service.EnsureBuiltinSymptoms(context.Background(), 99); !errors.Is(err, sentinel) {
+		t.Fatalf("expected list failure error, got %v", err)
+	}
+}

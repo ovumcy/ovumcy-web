@@ -463,3 +463,34 @@ func TestDashboardviewserviceCovFirstMissingTrackedDayRequiresThreeMissed(t *tes
 		t.Fatalf("expected first missed day 2026-02-11, got %s", firstMissed.Format("2006-01-02"))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Line 313: buildDashboardStats falls back to the single ranged query (and
+// returns nil logs) when requiresEntryContextLogs is false, instead of
+// deriving stats from the full log history.
+// ---------------------------------------------------------------------------
+
+func TestDashboardviewserviceCovStatsFallsBackToRangedQueryWhenLogsNotRequired(t *testing.T) {
+	// A non-owner user with fewer than 2 symptoms does not require entry
+	// context logs, so stats must come from the ranged query alone.
+	user := &models.User{ID: 9, Role: "viewer"}
+	now, _ := time.ParseInLocation("2006-01-02", "2026-03-15", time.UTC)
+
+	capturing := &dashboardviewserviceCovCapturingStatsProvider{}
+	svc := NewDashboardViewService(
+		capturing,
+		&stubDashboardViewerProvider{symptoms: []models.SymptomType{{ID: 1, Name: "Cramps"}}},
+		&stubDashboardDayStateProvider{logs: []models.DailyLog{
+			{Date: now, IsPeriod: true},
+		}},
+	)
+	if _, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturing.captFrom.IsZero() || capturing.captTo.IsZero() {
+		t.Fatal("expected BuildCycleStatsForRange to be called with a non-zero range")
+	}
+	if capturing.captLogs != nil {
+		t.Fatalf("expected BuildCycleStatsFromLogs NOT to be called, got logs %#v", capturing.captLogs)
+	}
+}
