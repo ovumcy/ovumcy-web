@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17.6-alpine3.22
+    image: postgres:18.4-alpine3.22
     pull_policy: always
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ovumcy}
