@@ -87,7 +87,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Post("/auth/oidc/callback", handler.CompleteOIDCLogin)
 	app.Get(oidcLinkConfirmPath, handler.ShowOIDCLinkConfirmPage)
 	app.Post(oidcLinkConfirmPath, handler.CompleteOIDCLinkConfirmation)
-	app.Post("/logout", handler.AuthRequired, handler.Logout)
+	app.Post("/logout", handler.AuthRequired, handler.OwnerOnly, handler.Logout)
 	app.Get("/privacy", handler.ShowPrivacyPage)
 	app.Get("/onboarding", handler.AuthRequired, handler.ShowOnboarding)
 	app.Get("/", handler.AuthRequired, handler.ShowDashboard)
