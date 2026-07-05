@@ -76,12 +76,8 @@ func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
 	return stats
 }
 
-// PredictCycleWindow returns ovulation date and fertility window for the cycle
-// that starts at periodStart.
-// Invariants:
-// - ovulation is strictly before next period start
-// - fertility window is the 6-day range [ovulation-5, ovulation]
-// - fertility window may overlap menstruation on short cycles
+// ResolveLutealPhase clamps a raw luteal phase length to the supported range,
+// falling back to defaultLutealPhaseDays when value is unset or non-positive.
 func ResolveLutealPhase(value int) int {
 	switch {
 	case value <= 0:
@@ -120,6 +116,12 @@ func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 	return ovDay, ovulationExact
 }
 
+// PredictCycleWindow returns ovulation date and fertility window for the cycle
+// that starts at periodStart.
+// Invariants:
+// - ovulation is strictly before next period start
+// - fertility window is the 6-day range [ovulation-5, ovulation]
+// - fertility window may overlap menstruation on short cycles
 func PredictCycleWindow(periodStart time.Time, cycleLength int, lutealPhase int) (time.Time, time.Time, time.Time, bool, bool) {
 	if periodStart.IsZero() || cycleLength <= 0 {
 		return time.Time{}, time.Time{}, time.Time{}, false, false

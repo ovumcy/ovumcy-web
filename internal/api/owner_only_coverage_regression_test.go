@@ -8,12 +8,12 @@ import (
 )
 
 // TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route is a forward-looking
-// defense-in-depth matrix: it iterates every route registered on the Fiber app,
-// filters down to /api/v1/* mutations that should require an authenticated
-// owner, and asserts that an `ovumcy_auth` cookie issued for an unsupported
-// (legacy partner) role is rejected on each one. New state-mutating endpoints
-// inherit this coverage automatically; an explicit exclusion list documents the
-// public auth flows that intentionally accept anonymous traffic.
+// defense-in-depth matrix: it iterates every route registered on the Fiber app
+// — both /api/v1/* JSON routes and server-rendered page routes — and asserts
+// that an `ovumcy_auth` cookie issued for an unsupported (legacy partner) role
+// is rejected on each one requiring authentication. New endpoints inherit this
+// coverage automatically; an explicit exclusion list documents the public
+// auth/page flows that intentionally accept anonymous traffic.
 //
 // The contract is: AuthRequired must reject unsupported roles before any
 // handler runs, even if the route forgets to add handler.OwnerOnly. Combined
@@ -22,12 +22,29 @@ import (
 func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 	t.Parallel()
 
-	publicAPIRoutes := map[string]struct{}{
+	publicRoutes := map[string]struct{}{
 		"POST /api/v1/users":                  {},
 		"POST /api/v1/sessions":               {},
 		"POST /api/v1/sessions/2fa-challenge": {},
 		"POST /api/v1/password-resets":        {},
 		"POST /api/v1/password-resets/redeem": {},
+		"GET /healthz":                        {},
+		"GET /favicon.ico":                    {},
+		"POST /lang":                          {},
+		"GET /login":                          {},
+		"GET /auth/oidc/start":                {},
+		"GET " + oidcLogoutBridgePath:         {},
+		"GET " + oidcLogoutBridgeRedirectPath: {},
+		"GET /register":                       {},
+		"GET /register/welcome":               {},
+		"GET /recovery-code":                  {},
+		"GET /forgot-password":                {},
+		"GET /reset-password":                 {},
+		"GET /auth/2fa":                       {},
+		"POST /auth/oidc/callback":            {},
+		"GET " + oidcLinkConfirmPath:          {},
+		"POST " + oidcLinkConfirmPath:         {},
+		"GET /privacy":                        {},
 	}
 
 	app, database := newOnboardingTestApp(t)
@@ -40,14 +57,18 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 
 	covered := 0
 	for _, route := range app.GetRoutes() {
-		if !strings.HasPrefix(route.Path, "/api/v1/") {
-			continue
-		}
 		if route.Method == http.MethodHead {
 			continue
 		}
+		if route.Path == "/" && route.Method != http.MethodGet {
+			// The app-wide app.Use(handler.NotFound) catch-all (no path given)
+			// registers under Fiber's root "/" node for every HTTP method; only
+			// GET / is an actual page route (ShowDashboard). These synthetic
+			// entries never reach AuthRequired, so they are not real endpoints.
+			continue
+		}
 		key := route.Method + " " + route.Path
-		if _, isPublic := publicAPIRoutes[key]; isPublic {
+		if _, isPublic := publicRoutes[key]; isPublic {
 			continue
 		}
 
@@ -71,7 +92,7 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 	}
 
 	if covered == 0 {
-		t.Fatal("expected at least one /api/v1/* route to be covered by the unsupported-role matrix; recheck route discovery")
+		t.Fatal("expected at least one authenticated route to be covered by the unsupported-role matrix; recheck route discovery")
 	}
 }
 

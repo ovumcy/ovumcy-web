@@ -13,8 +13,9 @@ Use these assets in this order when building a short walkthrough or landing-page
 3. Calendar: [`docs/screenshots/calendar.jpg`](./screenshots/calendar.jpg)
 4. Settings and export: [`docs/screenshots/settings-export.jpg`](./screenshots/settings-export.jpg)
 5. Mobile install prompt: [`docs/screenshots/install-prompt.png`](./screenshots/install-prompt.png)
+6. Dark theme: [`docs/screenshots/dark-theme.jpg`](./screenshots/dark-theme.jpg)
 
-This sequence matches the current product story: create an account, log today quickly, review the month, export or tune settings, then install the app on a phone home screen.
+This sequence matches the current product story: create an account, log today quickly, review the month, export or tune settings, install the app on a phone home screen, then show the dark theme option.
 
 ## Privacy Rules
 
@@ -33,6 +34,7 @@ The current asset pack is intentionally static-first:
 - `calendar.jpg` covers month review and cycle context.
 - `settings-export.jpg` covers data ownership and export.
 - `install-prompt.png` covers phone install CTA behavior.
+- `dark-theme.jpg` covers the dark theme option.
 
 For short release clips or social cuts, prefer stitching these assets together over recording a live server session unless a release specifically needs motion.
 
@@ -43,4 +45,5 @@ When regenerating the pack:
 1. Start a local instance with a private demo account and seeded sample data.
 2. Capture the four authenticated surfaces from that local instance.
 3. Capture the mobile install prompt on `/login` with a mobile viewport and a synthetic `beforeinstallprompt` event.
-4. Review every frame for accidental PII before publishing.
+4. Capture the dark theme surface with the dark theme option enabled.
+5. Review every frame for accidental PII before publishing.
