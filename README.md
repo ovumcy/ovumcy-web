@@ -318,6 +318,18 @@ TRUSTED_PROXIES=127.0.0.1,::1
 # Per-action audit logs to stderr. Default off. Enable only when investigating an incident.
 AUDIT_LOG_ENABLED=false
 
+# Rate limits (defaults shown); see SECURITY.md's Rate Limits section for the full policy
+# RATE_LIMIT_LOGIN_MAX=8
+# RATE_LIMIT_LOGIN_WINDOW=15m
+# RATE_LIMIT_REGISTER_MAX=8
+# RATE_LIMIT_REGISTER_WINDOW=15m
+# RATE_LIMIT_FORGOT_PASSWORD_MAX=8
+# RATE_LIMIT_FORGOT_PASSWORD_WINDOW=1h
+# RATE_LIMIT_LOGOUT_MAX=60
+# RATE_LIMIT_LOGOUT_WINDOW=15m
+# RATE_LIMIT_API_MAX=300
+# RATE_LIMIT_API_WINDOW=1m
+
 # Optional OIDC sign-in / SSO
 # OIDC_ENABLED=true
 # OIDC_ISSUER_URL=https://id.example.com
