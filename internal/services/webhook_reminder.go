@@ -27,8 +27,8 @@ const (
 	// prediction a due reminder summarizes. They mirror the in-app banner kinds
 	// (DashboardReminderBannerKind*) so downstream copy selection can stay
 	// aligned with the dashboard.
-	DueReminderTypePeriod    = "period-soon"
-	DueReminderTypeOvulation = "ovulation-soon"
+	DueReminderTypePeriod    = models.WebhookReminderTypePeriod
+	DueReminderTypeOvulation = models.WebhookReminderTypeOvulation
 )
 
 // DueReminder is the transport-free result of the decision: one upcoming
