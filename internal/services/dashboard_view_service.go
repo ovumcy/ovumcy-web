@@ -19,6 +19,7 @@ var (
 
 type DashboardStatsProvider interface {
 	BuildCycleStatsForRange(ctx context.Context, user *models.User, from time.Time, to time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error)
+	BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats
 }
 
 type DashboardViewerProvider interface {
@@ -110,16 +111,12 @@ func NewDashboardViewService(stats DashboardStatsProvider, viewer DashboardViewe
 func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context, user *models.User, language string, now time.Time, location *time.Location) (DashboardViewData, error) {
 	today := DateAtLocation(now, location)
 
-	stats, _, err := service.stats.BuildCycleStatsForRange(ctx, user, today.AddDate(-2, 0, 0), today, now, location)
-	if err != nil {
-		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadStats, err)
-	}
-
 	todayLog, symptoms, err := service.viewer.FetchDayLogForViewer(ctx, user, today, location)
 	if err != nil {
 		return DashboardViewData{}, fmt.Errorf("%w: %v", ErrDashboardViewLoadTodayLog, err)
 	}
-	logs, err := service.entryContextLogs(ctx, user, symptoms)
+
+	stats, logs, err := service.buildDashboardStats(ctx, user, symptoms, today, now, location)
 	if err != nil {
 		return DashboardViewData{}, err
 	}
@@ -284,9 +281,12 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 	}, nil
 }
 
+func requiresEntryContextLogs(user *models.User, symptoms []models.SymptomType) bool {
+	return len(symptoms) >= 2 || IsOwnerUser(user)
+}
+
 func (service *DashboardViewService) entryContextLogs(ctx context.Context, user *models.User, symptoms []models.SymptomType) ([]models.DailyLog, error) {
-	requiresLogs := len(symptoms) >= 2 || IsOwnerUser(user)
-	if !requiresLogs {
+	if !requiresEntryContextLogs(user, symptoms) {
 		return nil, nil
 	}
 
@@ -295,6 +295,31 @@ func (service *DashboardViewService) entryContextLogs(ctx context.Context, user 
 		return nil, fmt.Errorf("%w: %v", ErrDashboardViewLoadLogs, err)
 	}
 	return logs, nil
+}
+
+// buildDashboardStats computes the dashboard's 2-year cycle stats. When entry
+// context logs are needed anyway (owner view, or >=2 symptoms — the common
+// case), it fetches the full log history once via entryContextLogs and
+// derives the 2-year stats window from it in memory, instead of issuing a
+// second, near-duplicate daily_logs query for a range that mostly overlaps
+// the full history. Otherwise it falls back to the single ranged query.
+func (service *DashboardViewService) buildDashboardStats(ctx context.Context, user *models.User, symptoms []models.SymptomType, today time.Time, now time.Time, location *time.Location) (CycleStats, []models.DailyLog, error) {
+	statsFrom := today.AddDate(-2, 0, 0)
+	if !requiresEntryContextLogs(user, symptoms) {
+		stats, _, err := service.stats.BuildCycleStatsForRange(ctx, user, statsFrom, today, now, location)
+		if err != nil {
+			return CycleStats{}, nil, fmt.Errorf("%w: %v", ErrDashboardViewLoadStats, err)
+		}
+		return stats, nil, nil
+	}
+
+	logs, err := service.entryContextLogs(ctx, user, symptoms)
+	if err != nil {
+		return CycleStats{}, nil, err
+	}
+	rangeLogs := FilterLogsByDateRange(logs, statsFrom, today, location)
+	stats := service.stats.BuildCycleStatsFromLogs(user, rangeLogs, now, location)
+	return stats, logs, nil
 }
 
 func (service *DashboardViewService) buildPickerViewState(user *models.User, day time.Time, now time.Time, logEntry models.DailyLog, symptoms []models.SymptomType, logs []models.DailyLog, location *time.Location) (map[uint]bool, []models.SymptomType, []models.SymptomType, []models.SymptomType, ManualCycleStartPolicy, bool, error) {
