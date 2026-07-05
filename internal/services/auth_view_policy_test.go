@@ -58,7 +58,7 @@ func TestIsResetPasswordTokenValid(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			if got := IsResetPasswordTokenValid(secret, testCase.token, testCase.when); got != testCase.want {

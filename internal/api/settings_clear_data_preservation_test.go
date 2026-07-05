@@ -97,7 +97,7 @@ func assertUserIdentityPreserved(t *testing.T, before, after models.User, displa
 		{"email", before.Email, after.Email},
 		{"password_hash", before.PasswordHash, after.PasswordHash},
 		{"recovery_code_hash", before.RecoveryCodeHash, after.RecoveryCodeHash},
-		{"role", string(before.Role), string(after.Role)},
+		{"role", before.Role, after.Role},
 		{"display_name", displayName, after.DisplayName},
 		{"totp_secret", totpSecret, after.TOTPSecret},
 	}

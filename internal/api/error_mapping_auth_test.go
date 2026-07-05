@@ -57,7 +57,7 @@ func TestMapAuthRegisterError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapAuthRegisterError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -95,7 +95,7 @@ func TestMapAuthLoginError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapAuthLoginError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -133,7 +133,7 @@ func TestMapPasswordRecoveryStartError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapPasswordRecoveryStartError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -176,7 +176,7 @@ func TestMapPasswordResetCompleteError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapPasswordResetCompleteError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)

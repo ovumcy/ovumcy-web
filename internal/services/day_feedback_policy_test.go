@@ -117,7 +117,7 @@ func TestResolveDayFeedbackShowsLongPeriodWarningOnlyOncePerCycle(t *testing.T) 
 	service := NewDayService(logs, users)
 	cycleStart := mustParseDayFeedbackDate(t, "2026-03-01")
 
-	for offset := 0; offset < 9; offset++ {
+	for offset := range 9 {
 		day := cycleStart.AddDate(0, 0, offset)
 		logs.entries[day.Format("2006-01-02")] = models.DailyLog{
 			UserID:   10,

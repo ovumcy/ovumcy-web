@@ -247,7 +247,7 @@ func TestBuildCalendarDayStatesKeepsBBTDemotedDashInGridOnEveryRunDate(t *testin
 	firstRunDate := time.Date(2026, time.January, 1, 0, 0, 0, 0, location)
 	user := &models.User{TrackBBT: true}
 
-	for offset := 0; offset < 366; offset++ {
+	for offset := range 366 {
 		today := firstRunDate.AddDate(0, 0, offset)
 		todayKey := today.Format("2006-01-02")
 		cycleStart := today.AddDate(0, 0, -13)

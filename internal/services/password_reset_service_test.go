@@ -19,7 +19,7 @@ func TestPasswordResetServiceStartRecoveryRateLimited(t *testing.T) {
 
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	key := "127.0.0.1"
-	for index := 0; index < DefaultRecoveryAttemptsLimit; index++ {
+	for range DefaultRecoveryAttemptsLimit {
 		service.recoveryPolicy.AddFailure(secretKey, key, "owner@example.com", now.Add(-1*time.Minute))
 	}
 

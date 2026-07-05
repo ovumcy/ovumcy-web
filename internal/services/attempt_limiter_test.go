@@ -74,7 +74,7 @@ func TestAttemptLimiterStaleKeyEviction(t *testing.T) {
 	// before the threshold relative to 'live'; however we add them directly
 	// to the map to avoid triggering the sweep counter prematurely).
 	staleCount := evictEveryN - 1
-	for i := 0; i < staleCount; i++ {
+	for i := range staleCount {
 		key := fmt.Sprintf("stale-key-%d", i)
 		limiter.attempts[key] = []time.Time{past}
 	}
@@ -118,7 +118,7 @@ func TestNormalizeLimiterKey(t *testing.T) {
 	}
 
 	for _, testCase := range tests {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			if got := NormalizeLimiterKey(testCase.raw); got != testCase.want {
@@ -140,7 +140,7 @@ func TestAttemptLimiterSizeCapUnderFreshKeyFlood(t *testing.T) {
 	// Flood with fresh, distinct keys — far more than the cap, all inside
 	// the window so the stale sweep removes none of them.
 	total := evictAboveSize * 2
-	for index := 0; index < total; index++ {
+	for index := range total {
 		limiter.AddFailure(fmt.Sprintf("identity:flood-%05d", index), now.Add(time.Duration(index)*time.Millisecond), window)
 	}
 
@@ -164,7 +164,7 @@ func TestAttemptLimiterSizeCapEvictsColdestKeysFirst(t *testing.T) {
 	limiter.AddFailure("identity:victim-hot", base, window)
 	// …and is refreshed continuously while the flood runs, making it one of
 	// the newest entries by last-failure time.
-	for index := 0; index < evictAboveSize+200; index++ {
+	for index := range evictAboveSize + 200 {
 		limiter.AddFailure(fmt.Sprintf("identity:cold-%05d", index), base.Add(time.Duration(index)*time.Millisecond), window)
 		if index%100 == 0 {
 			limiter.AddFailure("identity:victim-hot", base.Add(time.Duration(index)*time.Millisecond+time.Second), window)

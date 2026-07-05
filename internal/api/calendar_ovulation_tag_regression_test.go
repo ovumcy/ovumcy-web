@@ -25,7 +25,7 @@ func TestCalendarRendersOvulationTagWithoutFertileOverride(t *testing.T) {
 		t.Fatalf("update user cycle settings: %v", err)
 	}
 
-	for offset := 0; offset < 5; offset++ {
+	for offset := range 5 {
 		if err := database.Create(&models.DailyLog{
 			UserID:   user.ID,
 			Date:     periodStart.AddDate(0, 0, offset),

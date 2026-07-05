@@ -68,7 +68,7 @@ func TestCommonErrorSpecs(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if testCase.got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", testCase.got, testCase.want)
@@ -181,7 +181,7 @@ func TestMapExportRangeError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapExportRangeError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -219,7 +219,7 @@ func TestOnboardingErrorSpecs(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if testCase.got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", testCase.got, testCase.want)
@@ -287,7 +287,7 @@ func TestMapSettingsPasswordChangeError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapSettingsPasswordChangeError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -320,7 +320,7 @@ func TestMapRecoveryCodeRegenerationError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapRecoveryCodeRegenerationError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -373,7 +373,7 @@ func TestRetryAfterSecondsParsesHeader(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
 			app := fiber.New()
 			var observed int
@@ -414,7 +414,7 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
 			handler := &Handler{}
 			app := fiber.New()

@@ -361,7 +361,7 @@ func statspageviewserviceCovIrregularSpreadLogs(t *testing.T, nExtraCycles int) 
 	// Start: 2025-01-01, next: +14, next: +35, then 28-day cadence for extras
 	offsets := []int{0, 14, 49}
 	cur := 49
-	for i := 0; i < nExtraCycles; i++ {
+	for range nExtraCycles {
 		cur += 28
 		offsets = append(offsets, cur)
 	}

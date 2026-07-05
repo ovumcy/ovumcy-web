@@ -62,7 +62,7 @@ func TestSettingsGeneralErrorSpecs(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if testCase.got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", testCase.got, testCase.want)
@@ -95,7 +95,7 @@ func TestMapSettingsProfileNormalizeError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapSettingsProfileNormalizeError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
@@ -133,7 +133,7 @@ func TestMapSettingsDeleteAccountPasswordError(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		testCase := testCase
+
 		t.Run(testCase.name, func(t *testing.T) {
 			if got := mapSettingsDeleteAccountPasswordError(testCase.err); got != testCase.want {
 				t.Fatalf("unexpected mapped error: got %#v want %#v", got, testCase.want)
