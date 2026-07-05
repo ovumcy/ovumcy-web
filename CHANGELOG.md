@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (export shape):** the built-in `swelling` symptom (added 2026-03-09) now has its own `swelling` boolean flag in the JSON `symptoms` object and its own `Swelling` CSV column, instead of falling through to `other_symptoms`/`Other` indistinguishably from an owner-created custom symptom. The `Swelling` CSV column is inserted after `Constipation` to stay adjacent to the other symptom columns, so every column from `Cycle factors` onward shifts one position to the right in files generated after this change; consumers reading CSV columns by position (not by header name) must account for the shift. `docs/export.md` and `docs/openapi.yaml` updated; import accepts both the new flag and legacy files that still carry `swelling` only via `other_symptoms`.
+
 ## [1.7.0] - 2026-07-03
 
 ### Security

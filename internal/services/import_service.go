@@ -59,6 +59,7 @@ var importSymptomFlagGetters = map[string]func(ExportSymptomFlags) bool{
 	"food_cravings":     func(f ExportSymptomFlags) bool { return f.FoodCravings },
 	"diarrhea":          func(f ExportSymptomFlags) bool { return f.Diarrhea },
 	"constipation":      func(f ExportSymptomFlags) bool { return f.Constipation },
+	"swelling":          func(f ExportSymptomFlags) bool { return f.Swelling },
 }
 
 // ImportResult reports the outcome of a restore. Added and Skipped sum to the
