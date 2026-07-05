@@ -48,8 +48,8 @@ func symptomIDByName(t *testing.T, symptomService *SymptomService, userID uint, 
 // exporting an owner's data, importing it into a fresh account, and exporting
 // that account must yield an identical entry set. This exercises the reverse
 // symptom mapping end to end — built-in flags (incl. the mood→"Mood swings"
-// alias), the swelling→other_symptoms path, and custom-symptom find-or-create —
-// against a real database.
+// alias and the swelling flag) and custom-symptom find-or-create — against a
+// real database.
 func TestImportServiceRoundTripPreservesEntries(t *testing.T) {
 	dayService, database := newDayServiceIntegration(t)
 	repositories := db.NewRepositories(database)
