@@ -9,9 +9,36 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { startLocalHTTPSProxy, startLocalOIDCProvider } from "./e2e-runtime.mjs";
 
-const RUN_TIMEOUT_MS = 60_000;
+// Docker/container-level readiness (pg_isready, host port reachability). This
+// is a separate concern from app boot readiness below: Docker reporting the
+// Postgres container ready is normally fast even under load, so it keeps its
+// own fixed ceiling rather than sharing a knob with the app-boot timeout.
+const CONTAINER_READY_TIMEOUT_MS = 60_000;
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 const REDACTED = "[REDACTED]";
+
+// How long to wait for the app (`go run ./cmd/ovumcy`) to answer its
+// readiness probe after spawn. On the Postgres lane this window covers the Go
+// compile, container-to-host handshake, app boot, AND schema migrations that
+// run on startup, which legitimately take longer than the SQLite lane under a
+// loaded shared CI runner. Configurable so operators/CI can tune it without a
+// code change; defaults differ per DB driver because Postgres cold-start is
+// the slow path.
+const DEFAULT_APP_READY_TIMEOUT_MS = { sqlite: 120_000, postgres: 180_000 };
+const APP_READY_POLL_INTERVAL_MS = 500;
+
+function resolveAppReadyTimeoutMs(dbDriver) {
+  const configured = String(process.env.E2E_READINESS_TIMEOUT_MS ?? "").trim();
+  if (configured) {
+    const parsed = Number.parseInt(configured, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error(`Invalid E2E_READINESS_TIMEOUT_MS: ${configured}`);
+    }
+    return parsed;
+  }
+
+  return DEFAULT_APP_READY_TIMEOUT_MS[dbDriver] ?? DEFAULT_APP_READY_TIMEOUT_MS.sqlite;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -235,7 +262,7 @@ async function waitForServer(url, child, timeoutMs) {
       // Server is still booting.
     }
 
-    await delay(500);
+    await delay(APP_READY_POLL_INTERVAL_MS);
   }
 
   throw new Error(`App did not become ready within ${timeoutMs} ms`);
@@ -256,6 +283,7 @@ function printRunContext(context) {
     console.log(`[e2e] app_url=${context.appURL}`);
   }
   console.log(`[e2e] db_driver=${context.dbDriver}`);
+  console.log(`[e2e] app_ready_timeout_ms=${context.appReadyTimeoutMs}`);
   console.log(`[e2e] log_file=${context.appLogPath}`);
   if (context.dbDriver === "sqlite") {
     console.log(`[e2e] db_path=${context.dbPath}`);
@@ -346,7 +374,7 @@ async function generateLocalTLSFixture(tmpDir, runID) {
 
 async function waitForDockerPostgres(containerID, user, databaseName) {
   const startedAt = Date.now();
-  while (Date.now() - startedAt < RUN_TIMEOUT_MS) {
+  while (Date.now() - startedAt < CONTAINER_READY_TIMEOUT_MS) {
     try {
       await runDockerCapture(["exec", containerID, "pg_isready", "-U", user, "-d", databaseName]);
       return;
@@ -375,7 +403,7 @@ async function loadDockerPort(containerID) {
 
 async function waitForHostPort(host, port) {
   const startedAt = Date.now();
-  while (Date.now() - startedAt < RUN_TIMEOUT_MS) {
+  while (Date.now() - startedAt < CONTAINER_READY_TIMEOUT_MS) {
     try {
       await onceConnect(host, port);
       return;
@@ -473,6 +501,8 @@ async function main() {
           : null
         : 1;
 
+  const appReadyTimeoutMs = resolveAppReadyTimeoutMs(db);
+
   const runContext = {
     mode,
     baseURL,
@@ -482,6 +512,7 @@ async function main() {
     dbDriver: db,
     localOIDCIssuer,
     workerOverride,
+    appReadyTimeoutMs,
   };
   printRunContext(runContext);
 
@@ -575,7 +606,7 @@ async function main() {
   appProcess.stderr.pipe(appLogStream);
 
   try {
-    await waitForServer(`${appURL}/login`, appProcess, RUN_TIMEOUT_MS);
+    await waitForServer(`${appURL}/login`, appProcess, appReadyTimeoutMs);
 
     const playwrightArgs = [playwrightCLIPath, "test"];
     if (workerOverride !== null && !hasWorkersArg(passthrough)) {
