@@ -30,17 +30,17 @@ import (
 //     hash is stored; the verifier plaintext is never persisted. The full token
 //     is shown to the owner exactly once at generation, like a recovery code.
 //
-// Both halves draw from calendarFeedTokenAlphabet: 32 unambiguous URL/path-safe
+// Both halves draw from calendarFeedAlphabet: 32 unambiguous URL/path-safe
 // characters (the recovery-code alphabet — no I/O/0/1). With a 32-char alphabet
 // each character carries 5 bits, so the 16-char selector is ~80 bits (ample for
 // a non-secret, collision-resistant lookup id) and the 32-char verifier is ~160
 // bits, comfortably above the ≥128-bit secret floor.
 const (
-	// calendarFeedTokenAlphabet is the 32-char unambiguous alphabet shared by the
+	// calendarFeedAlphabet is the 32-char unambiguous alphabet shared by the
 	// selector and verifier (identical to the recovery-code alphabet). Every
 	// character is URL/path-safe, so the concatenated token drops straight into a
 	// feed URL path with no escaping.
-	calendarFeedTokenAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	calendarFeedAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	// calendarFeedSelectorLength is the selector length in characters (~80 bits
 	// over the 32-char alphabet). Non-secret; sized for collision resistance as a
 	// lookup id, not for secrecy.
@@ -62,11 +62,11 @@ const (
 // both, invalidating the previous token because the old verifier no longer
 // matches the new hash.
 func GenerateCalendarFeedToken() (fullToken string, selector string, verifierHash string, err error) {
-	selector, err = security.RandomString(calendarFeedSelectorLength, calendarFeedTokenAlphabet)
+	selector, err = security.RandomString(calendarFeedSelectorLength, calendarFeedAlphabet)
 	if err != nil {
 		return "", "", "", err
 	}
-	verifier, err := security.RandomString(calendarFeedVerifierLength, calendarFeedTokenAlphabet)
+	verifier, err := security.RandomString(calendarFeedVerifierLength, calendarFeedAlphabet)
 	if err != nil {
 		return "", "", "", err
 	}

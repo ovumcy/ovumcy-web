@@ -29,7 +29,7 @@ func TestGenerateCalendarFeedTokenRoundTrip(t *testing.T) {
 		t.Fatalf("expected full token %q to start with the selector %q", fullToken, selector)
 	}
 	// Every character must come from the URL/path-safe token alphabet.
-	if strings.Trim(fullToken, calendarFeedTokenAlphabet) != "" {
+	if strings.Trim(fullToken, calendarFeedAlphabet) != "" {
 		t.Fatalf("full token %q contains characters outside the token alphabet", fullToken)
 	}
 	if got := mustBcryptCost(t, verifierHash); got != passwordHashCost {
