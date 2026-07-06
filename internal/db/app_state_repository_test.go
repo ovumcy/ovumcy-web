@@ -79,3 +79,32 @@ func TestAppStateRepositoryRejectsBlankKey(t *testing.T) {
 		t.Fatal("expected Set with a blank key to return an error")
 	}
 }
+
+// TestAppStateRepositoryGetSurfacesNonNotFoundError covers the error branch of
+// Get: a query failure that is NOT gorm.ErrRecordNotFound (here a closed
+// connection) must propagate, not be swallowed as "missing". The scheduler
+// relies on this so a real DB failure fails its catch-up safe rather than
+// silently reading "never ran".
+func TestAppStateRepositoryGetSurfacesNonNotFoundError(t *testing.T) {
+	database, err := OpenSQLite(filepath.Join(t.TempDir(), "app-state-closed.db"))
+	if err != nil {
+		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+	}
+	repo := NewAppStateRepository(database)
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("database.DB() unexpected error: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	value, ok, err := repo.Get(context.Background(), models.AppStateKeyLastReminderRunDate)
+	if err == nil {
+		t.Fatal("expected Get on a closed database to surface an error")
+	}
+	if ok || value != "" {
+		t.Fatalf("expected a failed Get to return the zero value, got value=%q ok=%v", value, ok)
+	}
+}

@@ -2316,6 +2316,40 @@ func TestRetryShutdownLogsPersistentShutdownError(t *testing.T) {
 	}
 }
 
+// TestInstallGracefulShutdownReturnsSignalContextAndStop covers the wiring
+// contract cross-platform (the SIGTERM self-delivery test below is Linux-only):
+// installGracefulShutdown returns a non-nil signal context (observed by the
+// reminder scheduler) plus a stop function, and calling the stop function
+// cancels that context and unblocks the internal goroutine. served is closed up
+// front so the goroutine's retryShutdown returns promptly once the stop fires.
+func TestInstallGracefulShutdownReturnsSignalContextAndStop(t *testing.T) {
+	app := fiber.New()
+	served := make(chan struct{})
+	close(served) // retryShutdown returns as soon as it observes served closed
+
+	sigCtx, stopSignals := installGracefulShutdown(app, served)
+	if sigCtx == nil {
+		t.Fatal("expected a non-nil signal context for the scheduler to observe")
+	}
+	if stopSignals == nil {
+		t.Fatal("expected a non-nil stop function")
+	}
+
+	select {
+	case <-sigCtx.Done():
+		t.Fatal("signal context should still be live before stop is called or a signal arrives")
+	default:
+	}
+
+	stopSignals() // cancels sigCtx and unblocks the internal goroutine
+
+	select {
+	case <-sigCtx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop function did not cancel the signal context")
+	}
+}
+
 // TestInstallGracefulShutdownBridgesSIGTERM pins the signal-wiring itself:
 // a real SIGTERM delivered to the process must reach retryShutdown through
 // installGracefulShutdown's goroutine, not just via a direct call to

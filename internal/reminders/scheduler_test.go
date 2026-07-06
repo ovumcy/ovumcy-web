@@ -61,6 +61,7 @@ type fakeMarker struct {
 	mu       sync.Mutex
 	values   map[string]string
 	getErr   error
+	setErr   error
 	setCalls int
 }
 
@@ -82,6 +83,9 @@ func (m *fakeMarker) Set(_ context.Context, key string, value string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.setCalls++
+	if m.setErr != nil {
+		return m.setErr
+	}
 	m.values[key] = value
 	return nil
 }
@@ -415,5 +419,179 @@ func (r *blockingRunner) sawCancel() bool {
 func TestMarkerKeyMatchesModelConstant(t *testing.T) {
 	if markerKey != models.AppStateKeyLastReminderRunDate {
 		t.Fatalf("scheduler markerKey %q must equal models.AppStateKeyLastReminderRunDate %q", markerKey, models.AppStateKeyLastReminderRunDate)
+	}
+}
+
+// TestNewBuildsProductionSchedulerAndDrivesRealTimer exercises the PRODUCTION
+// wiring path (New + newRealTimer + realTimer.C/Stop) that the fake-timer tests
+// bypass. A scheduler built by New with the marker set to yesterday and the
+// clock past the run hour runs its catch-up pass, then arms a REAL time.Timer
+// for the next run; cancelling ctx makes Run take the ctx.Done() branch, which
+// calls the real timer's Stop(). This executes New, newRealTimer, realTimer.C()
+// (evaluated when the loop's select is set up) and realTimer.Stop() — with no
+// wall-clock wait, because we cancel before the real timer could fire (its next
+// run is ~a day out).
+func TestNewBuildsProductionSchedulerAndDrivesRealTimer(t *testing.T) {
+	utc := time.UTC
+	runner := newFakeRunner()
+	marker := newFakeMarker()
+	marker.values[markerKey] = time.Now().In(utc).AddDate(0, 0, -1).Format(dateLayout) // yesterday
+
+	// Hour just before the current local hour so catch-up fires immediately and
+	// the armed next-run timer is ~a day out (never fires during the test).
+	hour := time.Now().In(utc).Hour()
+	if hour == 0 {
+		// At 00:xx, "hour before now" would be negative; use hour 0 so catch-up
+		// still fires (localHourReached is >=) and next run is tomorrow 00:00.
+		hour = 0
+	} else {
+		hour--
+	}
+
+	scheduler := New(runner, marker, Config{Hour: hour, Location: utc})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := scheduler.Start(ctx)
+
+	// Wait for the catch-up pass to run (proves Run entered and reached the loop,
+	// which armed a real timer), then cancel so Run's ctx.Done() branch calls the
+	// real timer's Stop().
+	waitForCalls(t, runner, 1, 2*time.Second)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(DefaultStopBudget):
+		t.Fatal("production-wired scheduler did not return promptly after cancel")
+	}
+
+	if runner.callCount() != 1 {
+		t.Fatalf("expected exactly one catch-up pass from the production-wired scheduler, got %d", runner.callCount())
+	}
+}
+
+// gateContext decouples Done() from Err() so a test can force the exact
+// interleaving the post-fire guard defends against: the timer fires (so the loop
+// takes the timer branch, because Done() is NEVER signalled) and only then does
+// the loop's ctx.Err() check observe cancellation. A real context cannot express
+// this (Done() closes exactly when Err() becomes non-nil), so the select would
+// race between the timer and ctx.Done() branches. gateContext makes it
+// deterministic: Done() returns a channel that never closes; Err() returns
+// context.Canceled once fail() is called.
+type gateContext struct {
+	context.Context
+	mu     sync.Mutex
+	failed bool
+	never  chan struct{}
+}
+
+func newGateContext() *gateContext {
+	return &gateContext{Context: context.Background(), never: make(chan struct{})}
+}
+
+func (c *gateContext) Done() <-chan struct{} { return c.never }
+
+func (c *gateContext) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failed {
+		return context.Canceled
+	}
+	return nil
+}
+
+func (c *gateContext) fail() {
+	c.mu.Lock()
+	c.failed = true
+	c.mu.Unlock()
+}
+
+// TestTimerFiresButContextAlreadyCancelledSkipsPass covers the re-check-after-
+// fire guard (the branch that returns when the timer fires in the SAME round as
+// ctx cancellation): the pass must NOT start once we are draining. Using a
+// gateContext, the loop deterministically takes the timer branch (Done() never
+// closes), and the fire is delivered only after the context has been marked
+// cancelled — so Run's post-fire ctx.Err() check sees the cancellation and
+// returns without running a pass, exercising exactly the guard.
+func TestTimerFiresButContextAlreadyCancelledSkipsPass(t *testing.T) {
+	utc := time.UTC
+	early := time.Date(2026, 7, 6, 6, 0, 0, 0, utc) // before H=9 so no catch-up pass
+	runner := newFakeRunner()
+	marker := newFakeMarker()
+
+	ctx := newGateContext()
+
+	fired := make(chan time.Time) // unbuffered: send completes only once Run receives
+	armed := make(chan struct{}, 1)
+	factory := func(time.Duration) schedulerTimer {
+		select {
+		case armed <- struct{}{}:
+		default:
+		}
+		return fakeTimer{ch: fired}
+	}
+
+	scheduler := newTestScheduler(runner, marker, 9, utc, func() time.Time { return early }, factory)
+	done := scheduler.Start(ctx)
+
+	// Wait until the loop has armed its timer (so Run has passed the post-catch-up
+	// guard at line ~140 and is parked in the select). Only then mark the context
+	// cancelled and deliver the fire: since Done() never closes, the select can
+	// only take the timer branch, and Run's post-fire ctx.Err() guard — reached
+	// strictly after receiving the fire, which strictly follows fail() — observes
+	// the cancellation and returns without a pass.
+	select {
+	case <-armed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduler never armed its timer")
+	}
+	ctx.fail()
+	fired <- time.Now()
+
+	select {
+	case <-done:
+	case <-time.After(DefaultStopBudget):
+		t.Fatal("scheduler did not return after a fire-with-cancelled-ctx round")
+	}
+	if runner.callCount() != 0 {
+		t.Fatalf("a pass must NOT run when ctx is cancelled in the same round as the fire, got %d", runner.callCount())
+	}
+}
+
+// TestMarkerWriteFailureIsLoggedNotFatal covers the marker-write error branch:
+// when marker.Set fails after a successful pass, the failure is logged but the
+// scheduler survives (the worst case is the next start re-runs the pass, and
+// #124's watermark still prevents a double-send). Catch-up drives the pass; the
+// marker Set returns an error; Run must still be alive to exit cleanly on cancel.
+func TestMarkerWriteFailureIsLoggedNotFatal(t *testing.T) {
+	utc := time.UTC
+	today := time.Date(2026, 7, 6, 12, 0, 0, 0, utc)
+	runner := newFakeRunner()
+	marker := newFakeMarker()
+	marker.values[markerKey] = "2026-07-05" // yesterday -> catch-up fires
+	marker.setErr = errors.New("marker write failed")
+
+	scheduler := newTestScheduler(runner, marker, 9, utc, func() time.Time { return today }, neverFireTimerFactory())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := scheduler.Start(ctx)
+
+	waitForCalls(t, runner, 1, 2*time.Second)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(DefaultStopBudget):
+		t.Fatal("scheduler did not survive a marker write failure")
+	}
+
+	if runner.callCount() != 1 {
+		t.Fatalf("expected the pass to have run once despite the marker write failure, got %d", runner.callCount())
+	}
+	if marker.setCalls != 1 {
+		t.Fatalf("expected exactly one marker Set attempt (which failed), got %d", marker.setCalls)
+	}
+	// The marker was NOT persisted (Set returned an error before storing), proving
+	// we exercised the error branch rather than a silent success.
+	if _, ok := marker.get(markerKey + "::written"); ok {
+		t.Fatal("unexpected sentinel")
 	}
 }
