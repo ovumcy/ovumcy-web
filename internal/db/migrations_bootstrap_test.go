@@ -24,6 +24,7 @@ func TestOpenSQLiteAppliesEmbeddedMigrationsOnCleanDatabase(t *testing.T) {
 	assertDailyLogsSchemaReconciled(t, database)
 	assertOIDCLogoutStateSchemaReconciled(t, database)
 	assertNormalizedEmailIndexExists(t, database)
+	assertCalendarFeedSelectorUniqueIndexExists(t, database)
 	assertAllEmbeddedMigrationsApplied(t, database)
 }
 
@@ -38,6 +39,7 @@ func TestOpenSQLiteUpgradesLegacyInitSchema(t *testing.T) {
 	assertDailyLogsSchemaReconciled(t, database)
 	assertOIDCLogoutStateSchemaReconciled(t, database)
 	assertNormalizedEmailIndexExists(t, database)
+	assertCalendarFeedSelectorUniqueIndexExists(t, database)
 	assertAllEmbeddedMigrationsApplied(t, database)
 
 	assertMigratedLegacyUserDefaults(t, database)
@@ -478,6 +480,9 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"webhook_period_last_sent_cycle_start",
 		"webhook_ovulation_last_sent_cycle_start",
 		"reminder_lead_days",
+		// Calendar (.ics) feed subscription token (migration 029).
+		"calendar_feed_selector",
+		"calendar_feed_verifier_hash",
 	}
 
 	for _, column := range expectedColumns {
@@ -552,6 +557,37 @@ func assertNormalizedEmailIndexExists(t *testing.T, database *gorm.DB) {
 	}
 	if !strings.Contains(definition, "lower(trim(email))") {
 		t.Fatalf("expected normalized email index to use lower(trim(email)), got %q", indexSQL)
+	}
+}
+
+// assertCalendarFeedSelectorUniqueIndexExists locks migration 029's PARTIAL
+// UNIQUE index on users.calendar_feed_selector: the by-selector feed lookup
+// relies on it to resolve exactly one row, and cross-owner uniqueness of an armed
+// selector is a correctness invariant of the token scheme. The index must be
+// partial (predicate on non-empty selector) so every feed-off owner can share the
+// empty-string zero value without colliding — a plain unique index would reject
+// the second feed-off insert. SQLite-only (reads sqlite_master); the Postgres
+// bootstrap proves column presence via the shared assertUsersSchemaReconciled,
+// and its clean-boot insert path would fail if the partial predicate were missing.
+func assertCalendarFeedSelectorUniqueIndexExists(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
+	indexSQL := loadSQLiteObjectSQL(t, database, "index", "idx_users_calendar_feed_selector")
+	definition := strings.ToLower(strings.Join(strings.Fields(indexSQL), ""))
+	if definition == "" {
+		t.Fatal("expected calendar feed selector index definition to exist")
+	}
+	if !strings.Contains(definition, "uniqueindex") {
+		t.Fatalf("expected calendar feed selector index to be UNIQUE, got %q", indexSQL)
+	}
+	if !strings.Contains(definition, "calendar_feed_selector") {
+		t.Fatalf("expected calendar feed selector index to key on calendar_feed_selector, got %q", indexSQL)
+	}
+	// The partial predicate is what lets multiple feed-off rows coexist. Assert
+	// it is present so a future edit cannot silently drop it and reintroduce the
+	// empty-string collision.
+	if !strings.Contains(definition, "wherecalendar_feed_selector<>''") {
+		t.Fatalf("expected calendar feed selector index to be PARTIAL on non-empty selector, got %q", indexSQL)
 	}
 }
 

@@ -54,4 +54,15 @@ useDefault = true
     '''53QMWFBK3KWC4KFNCMZSP37SHKGEJNEG''', # mut2totpserviceCollidingSecret (internal/services/totp_service_mutation_round2_test.go)
     '''v1\.AQIDBAUGBwgJCgsMgMCNVdfeoxzg5RdfW2gB0u8QSayB''', # legacyV1AuthCookieValueForTest (internal/api/secure_cookie_codec_rotation_test.go)
     '''NewStrongPass2''', # e2e fixture password (e2e/settings-password-export-danger.spec.ts)
+    # NOT a secret: the fixed, ambiguity-stripped 32-char CHARACTER ALPHABET that
+    # security.RandomString draws from to GENERATE tokens (identical to the
+    # recovery-code alphabet in internal/services/auth_reset_policy.go). generic-api-key
+    # flagged it in the calendar-feed token generator only because the identifier
+    # there embedded the keyword "Token"; HEAD renames it to calendarFeedAlphabet
+    # (keyword-free) so no non-test source matches going forward. This exact-value
+    # entry covers the historical commit that still carries the old name (force-push
+    # is disabled, so that commit cannot be rewritten) and guards the identical
+    # recovery-code alphabet against a future keyword-adjacent rename. No real key
+    # equals this sorted, de-duplicated alphabet.
+    '''ABCDEFGHJKLMNPQRSTUVWXYZ23456789''',
   ]
