@@ -217,6 +217,65 @@ func (repo *UserRepository) UpdateWebhookWatermark(ctx context.Context, userID u
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update(column, anchorUTC).Error
 }
 
+// SaveCalendarFeedToken sets (creates or rotates) the calendar-feed token
+// columns for one owner, scoped strictly to userID. The VerifierHash MUST
+// already be a bcrypt hash — the caller (a later slice) hashes the secret
+// verifier via services.GenerateCalendarFeedToken before this method runs, so
+// persistence never writes the verifier plaintext. Selector is the non-secret,
+// UNIQUE-indexed lookup id.
+//
+// Rotation reuses this method: writing a fresh (selector, verifierHash) pair
+// overwrites the previous one, so the old token stops verifying (its verifier no
+// longer matches the new hash, and its selector no longer resolves). It touches
+// only the two feed-token columns and deliberately does NOT bump
+// auth_session_version: a feed token is a per-surface capability, not an account
+// credential, so rotating it must not revoke the owner's login sessions.
+func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"calendar_feed_selector":      columns.Selector,
+		"calendar_feed_verifier_hash": columns.VerifierHash,
+	}).Error
+}
+
+// ClearCalendarFeedToken revokes an owner's calendar feed by NULLing both feed
+// token columns, scoped strictly to userID. After this the feed URL 404s (its
+// selector resolves no row). Like SaveCalendarFeedToken it does not bump
+// auth_session_version — revoking a per-surface capability is not a change to the
+// account's login security posture. Uses a typed nil so the columns become SQL
+// NULL (feed off), matching the "both NULL = off" default.
+func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID uint) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"calendar_feed_selector":      nil,
+		"calendar_feed_verifier_hash": nil,
+	}).Error
+}
+
+// FindByCalendarFeedSelector resolves the single owner whose calendar_feed_selector
+// equals selector, for the by-selector feed lookup (a later slice). It returns
+// (user, true, nil) on a hit and (zero, false, nil) when no row matches — the
+// same not-found shape as FindByNormalizedEmailOptional — so the caller can keep
+// a missing selector and a wrong verifier observationally identical (no oracle).
+//
+// An empty selector is treated as an immediate miss and never hits the database:
+// a feed-off row stores NULL (not the empty string), and an equality match on the
+// empty string would never match a NULL column anyway, but the guard makes the
+// intent explicit and avoids a pointless query. The returned user carries
+// CalendarFeedVerifierHash so the caller can constant-time-verify the verifier
+// half without a second read.
+func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, selector string) (models.User, bool, error) {
+	if selector == "" {
+		return models.User{}, false, nil
+	}
+	var user models.User
+	if err := repo.database.WithContext(ctx).Where("calendar_feed_selector = ?", selector).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return models.User{}, false, nil
+		}
+		return models.User{}, false, err
+	}
+	return user, true, nil
+}
+
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"recovery_code_hash":   recoveryHash,
@@ -428,6 +487,14 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"webhook_period_last_sent_cycle_start":    nil,
 			"webhook_ovulation_last_sent_cycle_start": nil,
 			"reminder_lead_days":                      models.DefaultReminderLeadDays,
+			// Calendar (.ics) feed token: a clear-data wipe revokes the feed by
+			// NULLing both columns, so any previously-issued feed URL 404s against
+			// the freshly emptied account (its selector no longer resolves). This
+			// is the data-reset arm of the approved force-rotate-on-recovery rule;
+			// the password-reset / operator-reset / recovery-regen force-rotate
+			// hooks are a later slice.
+			"calendar_feed_selector":      nil,
+			"calendar_feed_verifier_hash": nil,
 			// Bump auth_session_version inside the same transaction so a
 			// successful clear-data wipe also revokes every auth cookie that
 			// existed before the wipe. Without this bump a stolen session that

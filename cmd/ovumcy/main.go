@@ -30,6 +30,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/cli"
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
+	"github.com/ovumcy/ovumcy-web/internal/reminders"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	staticassets "github.com/ovumcy/ovumcy-web/web"
@@ -49,6 +50,22 @@ type runtimeConfig struct {
 	RateLimits       rateLimitSettings
 	Proxy            proxySettings
 	AuditLogEnabled  bool
+	// WebhookBlockPrivate mirrors the off-by-default WEBHOOK_BLOCK_PRIVATE_ADDRESSES
+	// egress gate the notify CLI reads, so the built-in scheduler wires the same
+	// deliverer hardening.
+	WebhookBlockPrivate bool
+	ReminderScheduler   reminderSchedulerSettings
+}
+
+// reminderSchedulerSettings configures the optional built-in reminder scheduler
+// (issue #125). Enabled is DEFAULT FALSE: the always-on outbound component ships
+// off and is opted into explicitly via REMINDER_SCHEDULER_ENABLED. Hour is the
+// LOCAL hour-of-day (0-23) the daily pass runs at (REMINDER_SCHEDULER_HOUR,
+// default 9); the scheduler reuses config.Location, there is no separate
+// reminder timezone.
+type reminderSchedulerSettings struct {
+	Enabled bool
+	Hour    int
 }
 
 type rateLimitSettings struct {
@@ -134,29 +151,74 @@ func main() {
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	served := make(chan struct{})
-	stopSignals := installGracefulShutdown(app, served)
+	sigCtx, stopSignals := installGracefulShutdown(app, served)
 	defer stopSignals()
+
+	// Optional built-in reminder scheduler (issue #125). Started AFTER the
+	// signal context is wired and BEFORE runServer, gated on config (default
+	// OFF). It observes sigCtx — the same context that stops the server — and is
+	// launched with `go` inside Start, so it can neither delay app.Listen nor
+	// touch served/app shutdown. schedulerDone closes when it has fully drained
+	// (an already-closed channel when the scheduler is disabled).
+	schedulerDone := startReminderScheduler(sigCtx, config, database, i18nManager)
 
 	logStartup(config)
 	// codecov:ignore:start -- main() run loop; runServer itself is unit-tested.
-	err = runServer(app, database, ":"+config.Port)
+	err = runServer(app, ":"+config.Port)
 	close(served)
+	// The server has stopped. If the scheduler is running, wait (bounded) for any
+	// in-flight pass to finish reading/writing the DB, THEN close the DB — so the
+	// database outlives the last reminder access on this single exit path.
+	reminders.Drain(schedulerDone, reminders.DefaultStopBudget)
+	closeDatabase(database)
 	if err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
 	// codecov:ignore:end
 }
 
-// runServer blocks in app.Listen until the listener fails or a graceful
-// stop completes, then closes the database so SQLite checkpoints its WAL
-// and releases the file before the process exits — on both exit paths.
-func runServer(app *fiber.App, database *gorm.DB, address string) error {
+// runServer blocks in app.Listen until the listener fails or a graceful stop
+// completes, then returns the listen error. It no longer closes the database:
+// the optional reminder scheduler may still be draining an in-flight pass that
+// reads/writes the DB, so closeDatabase is sequenced by main AFTER the scheduler
+// drain (see main). The database is still closed on BOTH exit paths — there is
+// one main return path and main always closes it — SQLite still checkpoints its
+// WAL and releases the file before the process exits.
+func runServer(app *fiber.App, address string) error {
 	// Fiber v3 moved DisableStartupMessage out of fiber.Config and into the
 	// per-listen ListenConfig; keep the banner suppressed as before.
-	err := app.Listen(address, fiber.ListenConfig{DisableStartupMessage: true})
-	closeDatabase(database)
-	return err
+	return app.Listen(address, fiber.ListenConfig{DisableStartupMessage: true})
 }
+
+// startReminderScheduler builds and launches the optional built-in reminder
+// scheduler (issue #125) when REMINDER_SCHEDULER_ENABLED is on, returning a
+// channel that closes once the scheduler goroutine has fully drained. When the
+// scheduler is OFF (the default) it returns an already-closed channel so the
+// caller's drain is an instant no-op and no goroutine, timer, or outbound
+// component is created. The scheduler reuses the SAME notify service recipe the
+// `ovumcy notify` CLI uses (bootstrap.BuildNotifyService) plus the app_state
+// marker repository, and observes sigCtx for shutdown.
+//
+// codecov:ignore:start -- main() composition-root wiring; the scheduler logic
+// (nextRun, catch-up, marker, drain) is unit-tested in internal/reminders and
+// this glue only assembles boot-built collaborators.
+func startReminderScheduler(sigCtx context.Context, config runtimeConfig, database *gorm.DB, i18nManager *i18n.Manager) <-chan struct{} {
+	if !config.ReminderScheduler.Enabled {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+
+	repositories := db.NewRepositories(database)
+	notifyService := bootstrap.BuildNotifyService(repositories, []byte(config.SecretKey), i18nManager, config.WebhookBlockPrivate)
+	scheduler := reminders.New(notifyService, repositories.AppState, reminders.Config{
+		Hour:     config.ReminderScheduler.Hour,
+		Location: config.Location,
+	})
+	return scheduler.Start(sigCtx)
+}
+
+// codecov:ignore:end
 
 func closeDatabase(database *gorm.DB) {
 	sqlDB, err := database.DB()
@@ -235,8 +297,15 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			APIMax:               getEnvInt("RATE_LIMIT_API_MAX", 300),
 			APIWindow:            getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
 		},
-		Proxy:           proxy,
-		AuditLogEnabled: getEnvBool("AUDIT_LOG_ENABLED", false),
+		Proxy:               proxy,
+		AuditLogEnabled:     getEnvBool("AUDIT_LOG_ENABLED", false),
+		WebhookBlockPrivate: getEnvBool("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false),
+		ReminderScheduler: reminderSchedulerSettings{
+			Enabled: getEnvBool("REMINDER_SCHEDULER_ENABLED", false),
+			// getEnvInt rejects values <1, so hour 0 (valid) would be lost; use a
+			// dedicated range helper that accepts the full 0-23 clock.
+			Hour: getEnvIntInRange("REMINDER_SCHEDULER_HOUR", 9, 0, 23),
+		},
 	}, nil
 }
 
@@ -601,7 +670,14 @@ func securityHeadersMiddleware(enableStrictTransportSecurity bool) fiber.Handler
 // must be closed once app.Listen (inside runServer) returns, for any reason —
 // it bounds retryShutdown so a signal arriving after the server already
 // exited doesn't spin.
-func installGracefulShutdown(app *fiber.App, served <-chan struct{}) context.CancelFunc {
+//
+// It returns both the stop function (to release the signal registration on
+// exit) AND the signal context. The context is observed by the optional
+// reminder scheduler so it stops on the SAME SIGINT/SIGTERM that stops the
+// server. The scheduler only reads that context — it NEVER references served,
+// the fiber app, or app shutdown, so it stays entirely clear of the boot-window
+// shutdown race that retryShutdown/served exist to bridge.
+func installGracefulShutdown(app *fiber.App, served <-chan struct{}) (context.Context, context.CancelFunc) {
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigCtx.Done()
@@ -609,7 +685,7 @@ func installGracefulShutdown(app *fiber.App, served <-chan struct{}) context.Can
 		defer cancel()
 		retryShutdown(app, shutdownCtx, served)
 	}()
-	return stopSignals
+	return sigCtx, stopSignals
 }
 
 // shutdownRetryInterval is how often retryShutdown re-attempts the graceful
@@ -676,6 +752,9 @@ func logStartup(config runtimeConfig) {
 	)
 	if config.HSTSEnabled {
 		log.Printf("NOTE: HSTS_ENABLED=true — sending Strict-Transport-Security with a 1-year max-age (max-age=31536000; includeSubDomains). Browsers will refuse plain HTTP for this host for a year; only enable when committed to HTTPS. Set HSTS_ENABLED=false to keep secure cookies without the HTTPS pin.")
+	}
+	if config.ReminderScheduler.Enabled {
+		log.Printf("NOTE: REMINDER_SCHEDULER_ENABLED=true — the built-in daily reminder scheduler is ON and will make outbound webhook calls once per day at local hour %02d:00 (%s) from this process. This is an always-on component; disable it instantly with REMINDER_SCHEDULER_ENABLED=false (delivery also still requires each owner's webhook to be configured and enabled).", config.ReminderScheduler.Hour, config.Location.String())
 	}
 	if config.Proxy.Enabled {
 		log.Printf("trusted proxy config: header=%s trusted_proxy_count=%d", config.Proxy.Header, len(config.Proxy.TrustedProxies))
@@ -998,6 +1077,24 @@ func getEnvInt(key string, fallback int) int {
 
 	parsed, err := strconv.Atoi(value)
 	if err != nil || parsed < 1 {
+		log.Printf("invalid %s=%q, using fallback %d", key, value, fallback)
+		return fallback
+	}
+	return parsed
+}
+
+// getEnvIntInRange parses an integer env var and accepts it only within the
+// inclusive [min, max] range, falling back otherwise. Unlike getEnvInt (which
+// rejects anything below 1), it admits 0, which is required for
+// REMINDER_SCHEDULER_HOUR where 0 is a valid midnight run hour.
+func getEnvIntInRange(key string, fallback, minValue, maxValue int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < minValue || parsed > maxValue {
 		log.Printf("invalid %s=%q, using fallback %d", key, value, fallback)
 		return fallback
 	}

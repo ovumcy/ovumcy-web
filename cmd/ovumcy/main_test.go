@@ -699,6 +699,123 @@ func TestLoadRuntimeConfigHonorsAuditLogEnabled(t *testing.T) {
 	}
 }
 
+// TestLoadRuntimeConfigDefaultsReminderSchedulerOff locks the HIGH-RISK default:
+// the built-in reminder scheduler (an always-on outbound component) ships OFF
+// and runs at local hour 9 when its env is unset. This is the instant-rollback
+// contract (REMINDER_SCHEDULER_ENABLED=false).
+func TestLoadRuntimeConfigDefaultsReminderSchedulerOff(t *testing.T) {
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_PATH", "data/ovumcy.db")
+	t.Setenv("REMINDER_SCHEDULER_ENABLED", "")
+	t.Setenv("REMINDER_SCHEDULER_HOUR", "")
+
+	config, err := loadRuntimeConfig(time.UTC)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if config.ReminderScheduler.Enabled {
+		t.Fatal("REMINDER_SCHEDULER_ENABLED must default to false (always-on outbound component ships off)")
+	}
+	if config.ReminderScheduler.Hour != 9 {
+		t.Fatalf("REMINDER_SCHEDULER_HOUR must default to 9, got %d", config.ReminderScheduler.Hour)
+	}
+}
+
+// TestLoadRuntimeConfigHonorsReminderSchedulerSettings covers the enabled path
+// and hour override, including hour 0 (midnight) which getEnvInt would have
+// rejected — the dedicated range helper must accept it.
+func TestLoadRuntimeConfigHonorsReminderSchedulerSettings(t *testing.T) {
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_PATH", "data/ovumcy.db")
+	t.Setenv("REMINDER_SCHEDULER_ENABLED", "true")
+	t.Setenv("REMINDER_SCHEDULER_HOUR", "0")
+
+	config, err := loadRuntimeConfig(time.UTC)
+	if err != nil {
+		t.Fatalf("load runtime config: %v", err)
+	}
+	if !config.ReminderScheduler.Enabled {
+		t.Fatal("REMINDER_SCHEDULER_ENABLED=true must enable the scheduler")
+	}
+	if config.ReminderScheduler.Hour != 0 {
+		t.Fatalf("REMINDER_SCHEDULER_HOUR=0 (midnight) must be accepted, got %d", config.ReminderScheduler.Hour)
+	}
+}
+
+// TestGetEnvIntInRange pins the helper the scheduler hour needs: it accepts the
+// full inclusive range (crucially 0, unlike getEnvInt), and falls back on unset,
+// non-numeric, or out-of-range input.
+func TestGetEnvIntInRange(t *testing.T) {
+	const key = "TEST_ENV_INT_IN_RANGE"
+	cases := []struct {
+		name  string
+		value string
+		set   bool
+		want  int
+	}{
+		{name: "unset -> fallback", set: false, want: 9},
+		{name: "zero accepted at lower bound", value: "0", set: true, want: 0},
+		{name: "max accepted at upper bound", value: "23", set: true, want: 23},
+		{name: "mid-range accepted", value: "14", set: true, want: 14},
+		{name: "below range -> fallback", value: "-1", set: true, want: 9},
+		{name: "above range -> fallback", value: "24", set: true, want: 9},
+		{name: "non-numeric -> fallback", value: "noon", set: true, want: 9},
+		{name: "blank -> fallback", value: "   ", set: true, want: 9},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.set {
+				t.Setenv(key, tc.value)
+			} else if err := os.Unsetenv(key); err != nil {
+				t.Fatalf("unset %s: %v", key, err)
+			}
+			if got := getEnvIntInRange(key, 9, 0, 23); got != tc.want {
+				t.Fatalf("getEnvIntInRange(%q) = %d, want %d", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestLogStartupNotesReminderSchedulerOnlyWhenEnabled pins the operator NOTE: the
+// always-on outbound scheduler must announce itself (with its local run hour and
+// the instant-rollback env) when enabled, and stay silent when off.
+func TestLogStartupNotesReminderSchedulerOnlyWhenEnabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		enabled  bool
+		hour     int
+		wantNote bool
+	}{
+		{name: "enabled announces the daily outbound pass", enabled: true, hour: 9, wantNote: true},
+		{name: "disabled stays silent", enabled: false, hour: 9, wantNote: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalWriter := log.Writer()
+			defer log.SetOutput(originalWriter)
+
+			var output bytes.Buffer
+			log.SetOutput(&output)
+
+			logStartup(runtimeConfig{
+				Location:          time.UTC,
+				Port:              "9090",
+				ReminderScheduler: reminderSchedulerSettings{Enabled: tt.enabled, Hour: tt.hour},
+			})
+
+			logLine := output.String()
+			if got := strings.Contains(logLine, "NOTE: REMINDER_SCHEDULER_ENABLED=true"); got != tt.wantNote {
+				t.Fatalf("scheduler note present = %t, want %t in startup log: %q", got, tt.wantNote, logLine)
+			}
+			if tt.wantNote && !strings.Contains(logLine, "REMINDER_SCHEDULER_ENABLED=false") {
+				t.Fatalf("enabled note must cite the instant-rollback env, got %q", logLine)
+			}
+		})
+	}
+}
+
 // TestLoadRuntimeConfigResolvesHSTSSwitch locks the HSTS_ENABLED contract: it
 // defaults to COOKIE_SECURE (the historical coupling, zero breaking change) but
 // an explicit true/false overrides in either direction, so an operator can run
@@ -1971,41 +2088,47 @@ func TestCloseDatabaseClosesUnderlyingConnection(t *testing.T) {
 	closeDatabase(database)
 }
 
-// TestRunServerClosesDatabaseOnListenError pins the failure exit path: when
-// the listener cannot bind, runServer must still close the database before
-// returning the error, so SQLite checkpoints its WAL even on a failed start.
-func TestRunServerClosesDatabaseOnListenError(t *testing.T) {
+// TestRunServerReturnsListenError pins the failure exit path: when the listener
+// cannot bind, runServer returns the error. runServer no longer closes the
+// database itself (main sequences closeDatabase after the scheduler drain, on
+// this same exit path); this test asserts the error is surfaced and that main's
+// subsequent closeDatabase still checkpoints and closes it, so SQLite releases
+// the file even on a failed start.
+func TestRunServerReturnsListenError(t *testing.T) {
 	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "runserver-err.db"))
 	if err != nil {
 		t.Fatalf("OpenSQLite() unexpected error: %v", err)
 	}
 	app := fiber.New()
 
-	if err := runServer(app, database, "256.256.256.256:0"); err == nil {
+	if err := runServer(app, "256.256.256.256:0"); err == nil {
 		t.Fatal("expected runServer to fail on an unbindable address")
 	}
+
+	// main closes the DB after runServer returns on both exit paths; mirror that.
+	closeDatabase(database)
 
 	sqlDB, err := database.DB()
 	if err != nil {
 		t.Fatalf("database.DB() unexpected error: %v", err)
 	}
 	if err := sqlDB.Ping(); err == nil {
-		t.Fatal("expected database to be closed after a failed listen")
+		t.Fatal("expected database to be closed after main's post-runServer close")
 	}
 }
 
-// TestRunServerClosesDatabaseAfterGracefulStop pins the graceful exit path:
-// Listen returns nil after a graceful stop, and runServer closes the
-// database before handing control back to main. The stop is issued only
-// after a full HTTP exchange against the bound listener completes. A bare
-// dial is not enough: the kernel listener exists before Listen enters
-// Serve, so a dial can succeed while fasthttp has no registered listener
-// yet, and a Shutdown issued in that window returns nil without stopping
-// anything (fasthttp's ShutdownWithContext no-ops when s.ln is nil) — the
-// stop is lost and Listen hangs forever (the 30s CI flake). A served
-// response proves the accept loop is running, which is the precondition
-// for Shutdown to take effect.
-func TestRunServerClosesDatabaseAfterGracefulStop(t *testing.T) {
+// TestRunServerReturnsAfterGracefulStop pins the graceful exit path: Listen
+// returns nil after a graceful stop and hands control back to the caller. The
+// stop is issued only after a full HTTP exchange against the bound listener
+// completes. A bare dial is not enough: the kernel listener exists before
+// Listen enters Serve, so a dial can succeed while fasthttp has no registered
+// listener yet, and a Shutdown issued in that window returns nil without
+// stopping anything (fasthttp's ShutdownWithContext no-ops when s.ln is nil) —
+// the stop is lost and Listen hangs forever (the 30s CI flake). A served
+// response proves the accept loop is running, which is the precondition for
+// Shutdown to take effect. The DB close now happens in main after runServer
+// returns; this test mirrors that final close and asserts the file is released.
+func TestRunServerReturnsAfterGracefulStop(t *testing.T) {
 	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "runserver-stop.db"))
 	if err != nil {
 		t.Fatalf("OpenSQLite() unexpected error: %v", err)
@@ -2042,7 +2165,7 @@ func TestRunServerClosesDatabaseAfterGracefulStop(t *testing.T) {
 	}()
 
 	done := make(chan error, 1)
-	go func() { done <- runServer(app, database, "127.0.0.1:0") }()
+	go func() { done <- runServer(app, "127.0.0.1:0") }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -2052,12 +2175,15 @@ func TestRunServerClosesDatabaseAfterGracefulStop(t *testing.T) {
 		t.Fatal("runServer did not return within 30s of the graceful stop")
 	}
 
+	// main closes the DB after runServer returns (after the scheduler drain).
+	closeDatabase(database)
+
 	sqlDB, err := database.DB()
 	if err != nil {
 		t.Fatalf("database.DB() unexpected error: %v", err)
 	}
 	if err := sqlDB.Ping(); err == nil {
-		t.Fatal("expected database to be closed after a graceful stop")
+		t.Fatal("expected database to be closed after main's post-runServer close")
 	}
 }
 
@@ -2087,7 +2213,7 @@ func TestRetryShutdownBridgesBootWindow(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		err := runServer(app, database, "127.0.0.1:0")
+		err := runServer(app, "127.0.0.1:0")
 		close(served)
 		done <- err
 	}()
@@ -2101,12 +2227,15 @@ func TestRetryShutdownBridgesBootWindow(t *testing.T) {
 		t.Fatal("runServer did not return after a boot-window stop; retry did not bridge the gap")
 	}
 
+	// main closes the DB after runServer returns; mirror that final close.
+	closeDatabase(database)
+
 	sqlDB, err := database.DB()
 	if err != nil {
 		t.Fatalf("database.DB() unexpected error: %v", err)
 	}
 	if err := sqlDB.Ping(); err == nil {
-		t.Fatal("expected database to be closed after a boot-window stop")
+		t.Fatal("expected database to be closed after main's post-runServer close")
 	}
 }
 
@@ -2187,6 +2316,40 @@ func TestRetryShutdownLogsPersistentShutdownError(t *testing.T) {
 	}
 }
 
+// TestInstallGracefulShutdownReturnsSignalContextAndStop covers the wiring
+// contract cross-platform (the SIGTERM self-delivery test below is Linux-only):
+// installGracefulShutdown returns a non-nil signal context (observed by the
+// reminder scheduler) plus a stop function, and calling the stop function
+// cancels that context and unblocks the internal goroutine. served is closed up
+// front so the goroutine's retryShutdown returns promptly once the stop fires.
+func TestInstallGracefulShutdownReturnsSignalContextAndStop(t *testing.T) {
+	app := fiber.New()
+	served := make(chan struct{})
+	close(served) // retryShutdown returns as soon as it observes served closed
+
+	sigCtx, stopSignals := installGracefulShutdown(app, served)
+	if sigCtx == nil {
+		t.Fatal("expected a non-nil signal context for the scheduler to observe")
+	}
+	if stopSignals == nil {
+		t.Fatal("expected a non-nil stop function")
+	}
+
+	select {
+	case <-sigCtx.Done():
+		t.Fatal("signal context should still be live before stop is called or a signal arrives")
+	default:
+	}
+
+	stopSignals() // cancels sigCtx and unblocks the internal goroutine
+
+	select {
+	case <-sigCtx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop function did not cancel the signal context")
+	}
+}
+
 // TestInstallGracefulShutdownBridgesSIGTERM pins the signal-wiring itself:
 // a real SIGTERM delivered to the process must reach retryShutdown through
 // installGracefulShutdown's goroutine, not just via a direct call to
@@ -2206,7 +2369,7 @@ func TestInstallGracefulShutdownBridgesSIGTERM(t *testing.T) {
 	app := fiber.New()
 
 	served := make(chan struct{})
-	stopSignals := installGracefulShutdown(app, served)
+	_, stopSignals := installGracefulShutdown(app, served)
 	defer stopSignals()
 
 	addrCh := make(chan string, 1)
@@ -2217,7 +2380,7 @@ func TestInstallGracefulShutdownBridgesSIGTERM(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		err := runServer(app, database, "127.0.0.1:0")
+		err := runServer(app, "127.0.0.1:0")
 		close(served)
 		done <- err
 	}()
@@ -2239,6 +2402,9 @@ func TestInstallGracefulShutdownBridgesSIGTERM(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("runServer did not return after SIGTERM within 15s")
 	}
+
+	// main closes the DB after runServer returns; mirror that final close.
+	closeDatabase(database)
 
 	sqlDB, err := database.DB()
 	if err != nil {

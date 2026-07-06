@@ -94,4 +94,39 @@ type User struct {
 	// once the predicted event is within this many days of "today". Default 3
 	// matches services.DashboardReminderBannerWindowDays; bounded 0–14 at save.
 	ReminderLeadDays int `gorm:"column:reminder_lead_days;not null;default:3"`
+	// Calendar (.ics) feed subscription token (slice 1: storage only). Backs a
+	// pull-based feed URL whose path carries a bearer capability token; a
+	// calendar client polls it for the owner's own cycle events. Both columns are
+	// empty when the feed is off (the default zero value). This block is storage
+	// only — no endpoint, .ics builder, rate-limit, or settings UI lives here
+	// (later slices).
+	//
+	// The token is split SELECTOR + VERIFIER so a feed request (which carries no
+	// email) resolves the row with one indexed lookup instead of an O(N) bcrypt
+	// scan over every user.
+	//
+	// CalendarFeedSelector is the NON-secret lookup id: high-entropy but it only
+	// NAMES the row, so it is stored in plaintext. A PARTIAL unique index (on
+	// non-empty values, migration 029) enforces cross-owner uniqueness for armed
+	// feeds while letting every feed-off owner share the empty-string zero value.
+	// It is not a credential on its own.
+	CalendarFeedSelector string `gorm:"column:calendar_feed_selector"`
+	// CalendarFeedVerifierHash holds the BCRYPT hash of the secret verifier half,
+	// never the verifier plaintext. The full token (selector+verifier) is shown
+	// to the owner exactly once at generation and is not retrievable afterward,
+	// mirroring the recovery-code shown-once model. Verification looks the row up
+	// by selector, then constant-time bcrypt-compares the verifier; a missing
+	// selector and a wrong verifier both resolve to the same "not found".
+	CalendarFeedVerifierHash string `gorm:"column:calendar_feed_verifier_hash"`
+}
+
+// CalendarFeedTokenColumns is the transport-free narrow payload written by the
+// calendar-feed token write path (slice 1). Selector is the NON-secret,
+// UNIQUE-indexed lookup id; VerifierHash is already a BCRYPT hash — the service
+// hashes the secret verifier before building this struct, so persistence never
+// sees the verifier plaintext. It carries only the two feed-token columns and
+// no security-posture field: writing it must not bump auth_session_version.
+type CalendarFeedTokenColumns struct {
+	Selector     string
+	VerifierHash string
 }

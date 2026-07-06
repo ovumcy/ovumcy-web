@@ -9,6 +9,7 @@ type Repositories struct {
 	DailyLogs            *DailyLogRepository
 	Symptoms             *SymptomRepository
 	RegisterPickupTokens *RegisterPickupTokenRepository
+	AppState             *AppStateRepository
 }
 
 func NewRepositories(database *gorm.DB) *Repositories {
@@ -19,5 +20,6 @@ func NewRepositories(database *gorm.DB) *Repositories {
 		DailyLogs:            NewDailyLogRepository(database),
 		Symptoms:             NewSymptomRepository(database),
 		RegisterPickupTokens: NewRegisterPickupTokenRepository(database),
+		AppState:             NewAppStateRepository(database),
 	}
 }
