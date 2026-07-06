@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,27 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
+
+// webhookJSONRequestWithCSRF posts a raw JSON body carrying the auth + csrf
+// cookies and the CSRF token in the X-CSRF-Token header (a JSON body has no
+// csrf_token form field, so the header is the token source the extractor uses).
+func webhookJSONRequestWithCSRF(t *testing.T, ctx settingsSecurityTestContext, body string, headers map[string]string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/webhook", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("webhook json request failed: %v", err)
+	}
+	return response
+}
 
 // webhookTestAppSecretKey mirrors the "test-secret-key" the onboarding test app
 // wires into BuildDependencies, so a test-side WebhookSettingsService decrypts
@@ -329,5 +351,89 @@ func TestWebhookSaveScopedToOwner(t *testing.T) {
 	}
 	if decrypted != "https://ntfy.example/owner-b" {
 		t.Fatalf("owner B row should hold owner B endpoint, got %q", decrypted)
+	}
+}
+
+// TestWebhookSaveHTMXReturnsSuccessMarkup covers the HTMX response branch: an
+// HX-Request save returns 200 with dismissible success status markup (not a
+// redirect), mirroring the other settings HTMX saves.
+func TestWebhookSaveHTMXReturnsSuccessMarkup(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "webhook-htmx@example.com")
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/webhook", url.Values{
+		"webhook_enabled":          {"true"},
+		"webhook_url":              {"https://ntfy.example/htmx-topic"},
+		"webhook_notify_period":    {"true"},
+		"webhook_notify_ovulation": {"true"},
+	}, map[string]string{"HX-Request": "true", "Accept-Language": "en"})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusOK)
+	if htmlElementByTagAndClass(mustParseHTMLDocument(t, mustReadBodyString(t, response.Body)), "div", "status-ok") == nil {
+		t.Fatal("expected htmx success status markup for webhook update")
+	}
+}
+
+// TestWebhookSaveAcceptsJSONBody covers the JSON body-binding path and the JSON
+// success response block: a Content-Type: application/json save persists and the
+// endpoint echoes the ok/status/toggle payload.
+func TestWebhookSaveAcceptsJSONBody(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "webhook-json-body@example.com")
+
+	response := webhookJSONRequestWithCSRF(t, ctx, `{"webhook_enabled":true,"webhook_url":"https://ntfy.example/json-topic","webhook_notify_period":true,"webhook_notify_ovulation":false}`, map[string]string{
+		"Accept": "application/json",
+	})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusOK)
+
+	reloaded := reloadUserForWebhook(t, ctx, ctx.user.ID)
+	if !reloaded.WebhookEnabled {
+		t.Fatal("expected webhook_enabled=true persisted from JSON body")
+	}
+	if reloaded.WebhookNotifyOvulation {
+		t.Fatal("expected webhook_notify_ovulation=false persisted from JSON body")
+	}
+	decrypted, err := webhookDecryptService(t, ctx).DecryptWebhookURL(reloaded.ID, reloaded.WebhookURL)
+	if err != nil {
+		t.Fatalf("decrypt json-body url: %v", err)
+	}
+	if decrypted != "https://ntfy.example/json-topic" {
+		t.Fatalf("expected JSON-body endpoint stored, got %q", decrypted)
+	}
+}
+
+// TestWebhookSaveRejectsMalformedJSONBody covers the JSON-bind parse-error
+// branch of parseWebhookSettingsInput: a syntactically broken JSON body is a 400
+// invalid-input (not a 500), and nothing is persisted.
+func TestWebhookSaveRejectsMalformedJSONBody(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "webhook-bad-json@example.com")
+
+	response := webhookJSONRequestWithCSRF(t, ctx, `{"webhook_enabled":true,`, map[string]string{
+		"Accept": "application/json",
+	})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusBadRequest)
+
+	reloaded := reloadUserForWebhook(t, ctx, ctx.user.ID)
+	if reloaded.WebhookEnabled || reloaded.WebhookURL != "" {
+		t.Fatal("expected nothing persisted after a malformed JSON webhook body")
+	}
+}
+
+// TestMapSettingsWebhookSaveErrorDefaultsToInternal pins the error-mapping
+// contract directly: ErrWebhookURLInvalid maps to a 400 validation spec, and any
+// other error maps to the 500 internal spec (the default branch a live handler
+// only reaches on a persistence failure).
+func TestMapSettingsWebhookSaveErrorDefaultsToInternal(t *testing.T) {
+	invalid := mapSettingsWebhookSaveError(services.ErrWebhookURLInvalid)
+	if invalid.Status != http.StatusBadRequest {
+		t.Fatalf("expected ErrWebhookURLInvalid -> 400, got %d", invalid.Status)
+	}
+
+	other := mapSettingsWebhookSaveError(errors.New("db write exploded"))
+	if other.Status != http.StatusInternalServerError {
+		t.Fatalf("expected a generic error -> 500, got %d", other.Status)
 	}
 }

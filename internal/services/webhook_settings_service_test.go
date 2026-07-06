@@ -566,3 +566,70 @@ func TestBuildWebhookURLDisplay(t *testing.T) {
 		t.Fatalf("un-openable ciphertext should be configured-but-hostless, got %+v", unopenable)
 	}
 }
+
+// TestBuildWebhookURLDisplayUnparseableStoredURLHasNoHost covers the
+// webhookURLHost parse-error branch: a stored (decryptable) value that url.Parse
+// rejects yields configured-but-hostless rather than leaking or crashing. A
+// control character makes url.Parse fail.
+func TestBuildWebhookURLDisplayUnparseableStoredURLHasNoHost(t *testing.T) {
+	const userID = 33
+	svc, _ := newWebhookServiceForTest()
+	// Seal a value that decrypts fine but is not a parseable URL (control char).
+	ciphertext := storeWebhookURLForForm(t, userID, "http://ntfy.example.com/\x7f")
+	got := svc.BuildWebhookURLDisplay(userID, ciphertext)
+	if !got.Configured {
+		t.Fatal("expected configured=true for a stored (decryptable) value")
+	}
+	if got.Host != "" {
+		t.Fatalf("expected empty host for an unparseable stored URL, got %q", got.Host)
+	}
+}
+
+// TestSaveWebhookSettingsFromFormUndecryptableStoredURLDisabledClears covers the
+// decrypt-break branch: with the URL omitted (URLProvided=false) and delivery
+// being turned OFF, a stored ciphertext that will not open is cleared to empty
+// (the empty URL is accepted while disabled) rather than erroring.
+func TestSaveWebhookSettingsFromFormUndecryptableStoredURLDisabledClears(t *testing.T) {
+	const userID = 34
+	svc, repo := newWebhookServiceForTest()
+	// A ciphertext sealed under a different owner's aad will not open under userID.
+	repo.loadUser = models.User{WebhookURL: storeWebhookURLForForm(t, userID+1, "https://ntfy.example/foreign"), ReminderLeadDays: 4}
+
+	if err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
+		Enabled:         false,
+		NotifyPeriod:    true,
+		NotifyOvulation: true,
+		URLProvided:     false,
+	}); err != nil {
+		t.Fatalf("SaveWebhookSettingsFromForm (disabled, undecryptable stored): %v", err)
+	}
+	if repo.savedColumns.Enabled {
+		t.Fatal("expected delivery persisted as disabled")
+	}
+	if repo.savedColumns.EncryptedURL != "" {
+		t.Fatalf("expected the un-openable stored endpoint cleared to empty, got %q", repo.savedColumns.EncryptedURL)
+	}
+}
+
+// TestSaveWebhookSettingsFromFormUndecryptableStoredURLEnableRejected covers the
+// same decrypt-break branch when the owner is ENABLING delivery: the cleared
+// empty URL is rejected by SaveWebhookSettings, so a webhook is never armed
+// against an endpoint the server can no longer read.
+func TestSaveWebhookSettingsFromFormUndecryptableStoredURLEnableRejected(t *testing.T) {
+	const userID = 35
+	svc, repo := newWebhookServiceForTest()
+	repo.loadUser = models.User{WebhookURL: storeWebhookURLForForm(t, userID+1, "https://ntfy.example/foreign"), ReminderLeadDays: 4}
+
+	err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
+		Enabled:         true,
+		NotifyPeriod:    true,
+		NotifyOvulation: true,
+		URLProvided:     false,
+	})
+	if !errors.Is(err, ErrWebhookURLInvalid) {
+		t.Fatalf("expected ErrWebhookURLInvalid enabling over an un-openable stored URL, got %v", err)
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("expected no persistence, got %d save calls", repo.saveCalls)
+	}
+}
