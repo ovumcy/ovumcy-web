@@ -123,6 +123,21 @@ const (
 	staticAssetMaxAgeSeconds = 3600
 )
 
+// codecov:ignore:start -- main() composition root: this whole function body is
+// sequencing/wiring, never business logic. Every function it calls
+// (mustLoadLocation, mustLoadRuntimeConfig, mustOpenDatabase,
+// mustNewI18nManager, mustNewHandler, newFiberApp, installGracefulShutdown,
+// startReminderScheduler, logStartup, runServer, closeDatabase, ...) already
+// carries its own direct unit tests or its own narrower codecov:ignore with a
+// reason (bootstrap.BuildDependencies is exercised via the internal/api test
+// helper; startReminderScheduler's own glue is covered in internal/reminders).
+// main() itself is invoked only by the built binary and is exercised by
+// image-smoke/e2e, never `go test` — there is no seam to unit-test "does main
+// call these in the right order" other than running the real process. Do NOT
+// add a per-line ignore here for a new call in this body; it is already
+// covered by this region. If you add a CONDITIONAL or a decision (anything
+// beyond "call the next already-tested helper") to main(), move that logic
+// into its own tested helper function instead of leaving it here uncovered.
 func main() {
 	handled, err := tryRunCLICommand()
 	if err != nil {
@@ -138,7 +153,6 @@ func main() {
 	config := mustLoadRuntimeConfig(location)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
-	// codecov:ignore:start -- main() composition-root wiring; runs only in the binary (exercised by e2e). The shared bootstrap.BuildDependencies is unit-tested through the internal/api test helper.
 	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(config.SecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode: config.RegistrationMode,
 		OIDCConfig:       config.OIDC,
@@ -147,7 +161,6 @@ func main() {
 		LogoutAttempts:   &bootstrap.AttemptLimit{Max: config.RateLimits.LogoutMax, Window: config.RateLimits.LogoutWindow},
 		AuditLogEnabled:  config.AuditLogEnabled,
 	})
-	// codecov:ignore:end
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	served := make(chan struct{})
@@ -163,7 +176,6 @@ func main() {
 	schedulerDone := startReminderScheduler(sigCtx, config, database, i18nManager)
 
 	logStartup(config)
-	// codecov:ignore:start -- main() run loop; runServer itself is unit-tested.
 	err = runServer(app, ":"+config.Port)
 	close(served)
 	// The server has stopped. If the scheduler is running, wait (bounded) for any
@@ -174,8 +186,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("server exited: %v", err)
 	}
-	// codecov:ignore:end
 }
+
+// codecov:ignore:end
 
 // runServer blocks in app.Listen until the listener fails or a graceful stop
 // completes, then returns the listen error. It no longer closes the database:
@@ -385,15 +398,31 @@ func mustNewHandler(config runtimeConfig, i18nManager *i18n.Manager, dependencie
 	return handler
 }
 
+// codecov:ignore:start -- main() composition-root wiring: this function only
+// assembles the real Fiber app (middleware registration order, static-asset
+// mount, ROUTE REGISTRATION via api.RegisterRoutes, the catch-all NotFound)
+// for the actual binary. Every collaborator it calls is independently unit-
+// tested (fiberConfig, configureFiberMiddleware, newStaticAssetHandler) or
+// exercised through the internal/api test helper that builds its own app and
+// calls api.RegisterRoutes directly (registerPageRoutes/registerV1APIRoutes
+// live in internal/api/routes.go, not here) — but newFiberApp itself, as the
+// exact sequence a new endpoint's route/middleware wiring lands in, is only
+// ever invoked by main() and is exercised by image-smoke/e2e. Any FUTURE route
+// registration or dependency-construction line added inside this function stays
+// covered by this region — do not add a new per-line codecov:ignore for it.
+// If new code here starts making a decision (not just wiring an
+// already-tested collaborator), pull it into its own tested function instead.
 func newFiberApp(config runtimeConfig, handler *api.Handler) *fiber.App {
 	app := fiber.New(fiberConfig(config.Proxy))
 	configureFiberMiddleware(app, config, handler)
 	registerStaticContentTypes()
-	app.Use("/static", newStaticAssetHandler()) // codecov:ignore -- main() composition-root wiring; runs only in the binary (exercised by e2e).
+	app.Use("/static", newStaticAssetHandler())
 	api.RegisterRoutes(app, handler)
 	app.Use(handler.NotFound)
 	return app
 }
+
+// codecov:ignore:end
 
 func registerStaticContentTypes() {
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
