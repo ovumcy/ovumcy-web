@@ -28,6 +28,15 @@ type SettingsViewSymptomProvider interface {
 	FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error)
 }
 
+// SettingsViewWebhookStatusBuilder is the narrow seam the settings view uses to
+// turn a stored webhook_url ciphertext into the render-safe status/host
+// projection. *WebhookSettingsService satisfies it. Kept as an interface so the
+// view service never holds the secret key directly and tests can stub the
+// projection without encryption.
+type SettingsViewWebhookStatusBuilder interface {
+	BuildWebhookURLDisplay(userID uint, encryptedURL string) WebhookURLDisplay
+}
+
 type SettingsViewInput struct {
 	FlashSuccess string
 	FlashError   string
@@ -83,12 +92,21 @@ type SettingsPageViewData struct {
 	Symptoms                SettingsSymptomsViewData
 	HasOwnerExportViewState bool
 	HasOwnerSymptomsView    bool
+	// Webhook notification settings (issue #124). WebhookURLConfigured /
+	// WebhookURLHost are the ONLY endpoint projection rendered — the stored URL
+	// (a secret) is never surfaced. WebhookURLHost is at most the hostname.
+	WebhookEnabled         bool
+	WebhookNotifyPeriod    bool
+	WebhookNotifyOvulation bool
+	WebhookURLConfigured   bool
+	WebhookURLHost         string
 }
 
 type SettingsViewService struct {
-	settings SettingsViewLoader
-	export   SettingsViewExportBuilder
-	symptoms SettingsViewSymptomProvider
+	settings      SettingsViewLoader
+	export        SettingsViewExportBuilder
+	symptoms      SettingsViewSymptomProvider
+	webhookStatus SettingsViewWebhookStatusBuilder
 }
 
 type settingsStatusKeys struct {
@@ -97,11 +115,12 @@ type settingsStatusKeys struct {
 	successKey             string
 }
 
-func NewSettingsViewService(settings SettingsViewLoader, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider) *SettingsViewService {
+func NewSettingsViewService(settings SettingsViewLoader, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider, webhookStatus SettingsViewWebhookStatusBuilder) *SettingsViewService {
 	return &SettingsViewService{
-		settings: settings,
-		export:   export,
-		symptoms: symptoms,
+		settings:      settings,
+		export:        export,
+		symptoms:      symptoms,
+		webhookStatus: webhookStatus,
 	}
 }
 
@@ -167,6 +186,10 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.HideNotesField = persisted.HideNotesField
 	resolvedUser.ShowHistoricalPhases = persisted.ShowHistoricalPhases
 	resolvedUser.ReminderLeadDays = NormalizeReminderLeadDays(persisted.ReminderLeadDays)
+	resolvedUser.WebhookEnabled = persisted.WebhookEnabled
+	resolvedUser.WebhookURL = persisted.WebhookURL
+	resolvedUser.WebhookNotifyPeriod = persisted.WebhookNotifyPeriod
+	resolvedUser.WebhookNotifyOvulation = persisted.WebhookNotifyOvulation
 	resolvedUser.LastPeriodStart = persisted.LastPeriodStart
 
 	lastPeriodStart := ""
@@ -211,6 +234,8 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 }
 
 func (service *SettingsViewService) populateOwnerSettingsViewData(ctx context.Context, viewData *SettingsPageViewData, language string, today time.Time, location *time.Location) error {
+	service.populateOwnerWebhookViewData(viewData)
+
 	if service.symptoms != nil {
 		symptomsViewData, err := service.BuildSettingsSymptomsViewData(ctx, &viewData.CurrentUser)
 		if err != nil {
@@ -231,6 +256,24 @@ func (service *SettingsViewService) populateOwnerSettingsViewData(ctx context.Co
 	viewData.Export = exportViewData
 	viewData.HasOwnerExportViewState = true
 	return nil
+}
+
+// populateOwnerWebhookViewData sets the webhook toggles and the render-safe
+// URL status (configured + host) on the owner's settings view. The stored URL
+// is a secret, so only the projection from BuildWebhookURLDisplay is copied —
+// never the ciphertext or plaintext URL. Without a webhook status builder the
+// toggles still populate but the URL status stays "not configured".
+func (service *SettingsViewService) populateOwnerWebhookViewData(viewData *SettingsPageViewData) {
+	viewData.WebhookEnabled = viewData.CurrentUser.WebhookEnabled
+	viewData.WebhookNotifyPeriod = viewData.CurrentUser.WebhookNotifyPeriod
+	viewData.WebhookNotifyOvulation = viewData.CurrentUser.WebhookNotifyOvulation
+
+	if service.webhookStatus == nil {
+		return
+	}
+	display := service.webhookStatus.BuildWebhookURLDisplay(viewData.CurrentUser.ID, viewData.CurrentUser.WebhookURL)
+	viewData.WebhookURLConfigured = display.Configured
+	viewData.WebhookURLHost = display.Host
 }
 
 func (service *SettingsViewService) buildOwnerExportViewData(ctx context.Context, userID uint, language string, today time.Time, location *time.Location) (SettingsExportViewData, error) {

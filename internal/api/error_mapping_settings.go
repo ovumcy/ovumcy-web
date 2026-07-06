@@ -51,6 +51,29 @@ func settingsTrackingUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update tracking settings")
 }
 
+// settingsWebhookInvalidURLErrorSpec is the form-level 400 for a webhook save
+// whose URL is missing/unparseable/non-http(s) (services.ErrWebhookURLInvalid).
+// The key never carries the offending URL, so the secret cannot leak into the
+// response or a log line.
+func settingsWebhookInvalidURLErrorSpec() APIErrorSpec {
+	return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid webhook url")
+}
+
+func settingsWebhookUpdateErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update webhook settings")
+}
+
+// mapSettingsWebhookSaveError maps the webhook-settings save outcome to a spec by
+// matching the service sentinel directly (per the api rule: errors.Is on service
+// sentinels, no classifier indirection). ErrWebhookURLInvalid is the owner's
+// fault (bad/empty/non-http(s) URL) → 400; anything else is an internal failure.
+func mapSettingsWebhookSaveError(err error) APIErrorSpec {
+	if errors.Is(err, services.ErrWebhookURLInvalid) {
+		return settingsWebhookInvalidURLErrorSpec()
+	}
+	return settingsWebhookUpdateErrorSpec()
+}
+
 func settingsTimezoneUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update timezone")
 }

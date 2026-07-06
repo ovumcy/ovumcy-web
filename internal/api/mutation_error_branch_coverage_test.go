@@ -48,6 +48,7 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 	app.Post("/api/v1/users/current/timezone", handler.UpdateTimezone)
 	app.Patch("/api/v1/users/current/cycle", handler.UpdateCycleSettings)
 	app.Patch("/api/v1/users/current/reminders", handler.UpdateReminderSettings)
+	app.Post("/api/v1/users/current/webhook", handler.UpdateWebhookSettings)
 	app.Post("/api/v1/onboarding/complete", handler.OnboardingComplete)
 	app.Get("/onboarding", handler.ShowOnboarding)
 	app.Get("/settings/2fa", handler.ShowTOTPSetupPage)
@@ -111,6 +112,7 @@ func TestMutationHandlersRejectMissingUserAtHandlerLevel(t *testing.T) {
 		{http.MethodPost, "/api/v1/users/current/timezone"},
 		{http.MethodPatch, "/api/v1/users/current/cycle"},
 		{http.MethodPatch, "/api/v1/users/current/reminders"},
+		{http.MethodPost, "/api/v1/users/current/webhook"},
 	}
 	for _, testCase := range cases {
 		response := mutationBranchRequest(t, app, testCase.method, testCase.path, "", "")
@@ -146,6 +148,7 @@ func TestMutationHandlersMapInvalidInputThroughFailMutation(t *testing.T) {
 		{"cycle length out of range", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"cycle_length": {"999"}, "period_length": {"5"}}.Encode(), form},
 		{"reminders malformed json", http.MethodPatch, "/api/v1/users/current/reminders", "{", "application/json"},
 		{"reminders non-integer form value", http.MethodPatch, "/api/v1/users/current/reminders", url.Values{"reminder_lead_days": {"soon"}}.Encode(), form},
+		{"webhook malformed json", http.MethodPost, "/api/v1/users/current/webhook", "{", "application/json"},
 		{"onboarding complete steps required", http.MethodPost, "/api/v1/onboarding/complete", "", ""},
 	}
 	for _, testCase := range cases {
@@ -193,6 +196,11 @@ func TestMutationHandlersMapServiceFailuresThroughFailMutation(t *testing.T) {
 		// and reaches SaveReminderLeadDays -> the repo UPDATE, which fails with
 		// the DB closed (settingsRemindersUpdateErrorSpec tail).
 		{"reminder settings save", http.MethodPatch, "/api/v1/users/current/reminders", url.Values{"reminder_lead_days": {"7"}}.Encode(), form},
+		// A webhook save with the DB closed fails inside
+		// SaveWebhookSettingsFromForm's LoadSettingsByID read, mapped through
+		// mapSettingsWebhookSaveError's default branch to the 500 tail
+		// (settingsWebhookUpdateErrorSpec).
+		{"webhook settings save", http.MethodPost, "/api/v1/users/current/webhook", url.Values{"webhook_enabled": {"true"}, "webhook_url": {"https://ntfy.example/down"}}.Encode(), form},
 		{"day list fetch", http.MethodGet, "/api/days?from=2026-01-01&to=2026-02-01", "", ""},
 		{"day fetch", http.MethodGet, "/api/days/2026-02-17", "", ""},
 		{"symptom list fetch", http.MethodGet, "/api/v1/symptoms", "", ""},

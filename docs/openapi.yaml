@@ -683,6 +683,38 @@ components:
         hide_notes_field: { type: boolean }
         show_historical_phases: { type: boolean }
 
+    WebhookSettings:
+      type: object
+      description: |
+        Webhook notification settings save (issue #124). The endpoint URL is a
+        secret and is treated like a password field: `webhook_url` is
+        `writeOnly` — it is accepted here, encrypted at rest, and never returned
+        by any response. Omit or blank `webhook_url` to keep the stored endpoint;
+        set `webhook_remove_url: true` to clear it. `reminder_lead_days` is NOT
+        edited by this endpoint (it is a separate control) and is preserved.
+      properties:
+        webhook_enabled:
+          type: boolean
+          description: Master switch for outbound webhook reminders. Requires a stored or supplied URL to enable delivery.
+        webhook_url:
+          type: string
+          format: uri
+          writeOnly: true
+          description: |
+            Write-only http/https endpoint. May embed a notification token, so
+            it is encrypted at rest and never echoed back. Blank means "leave the
+            stored endpoint unchanged".
+        webhook_notify_period:
+          type: boolean
+          description: Send a reminder when a period is predicted soon.
+        webhook_notify_ovulation:
+          type: boolean
+          description: Send a reminder when ovulation is predicted soon.
+        webhook_remove_url:
+          type: boolean
+          description: When true, clears the stored endpoint and forces delivery off. Takes precedence over webhook_url.
+      additionalProperties: false
+
     ChangePasswordRequest:
       type: object
       required: [current_password, new_password, confirm_password]
@@ -1442,6 +1474,40 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/users/current/webhook:
+    post:
+      tags: [settings]
+      summary: Update webhook notification settings (owner only).
+      description: |
+        Persists the owner's webhook reminder settings: the enable toggle, the
+        two per-kind notify toggles, and the endpoint URL. The URL is a secret
+        (it may embed an ntfy/Gotify token) and is **write-only** — it is
+        encrypted at rest and is NEVER returned by any endpoint (the settings
+        page renders only a "configured"/"not configured" status plus, at most,
+        the hostname). A blank `webhook_url` means "leave the stored endpoint
+        unchanged"; set `webhook_remove_url: true` to clear it. Enabling delivery
+        requires a valid `http`/`https` URL (a `400` with `invalid webhook url`
+        otherwise). Does NOT bump `auth_session_version`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookSettings' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '400':
+          description: Invalid webhook URL (empty when enabling, or non-http(s) scheme).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: "invalid webhook url" }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
