@@ -2,11 +2,34 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
+
+// remindersJSONRequestWithCSRF posts a raw JSON body carrying the auth + csrf
+// cookies and the CSRF token in the X-CSRF-Token header (a JSON body has no
+// csrf_token form field, so the header is the token source the extractor uses).
+func remindersJSONRequestWithCSRF(t *testing.T, ctx settingsSecurityTestContext, body string, headers map[string]string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/reminders", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
+	for key, value := range headers {
+		request.Header.Set(key, value)
+	}
+
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("reminders json request failed: %v", err)
+	}
+	return response
+}
 
 // TestSettingsRemindersUpdatePersistsWithHTMXAndCSRF drives the standalone
 // reminder-lead-days control end to end through the real app (CSRF middleware
@@ -150,5 +173,57 @@ func TestSettingsPageRendersReminderLeadDaysControl(t *testing.T) {
 	}
 	if got := htmlAttr(input, "min"); got != "0" {
 		t.Fatalf("expected reminder lead-days input min=0, got %q", got)
+	}
+}
+
+// TestSettingsRemindersUpdateAcceptsJSONBody covers the JSON body-binding path
+// (Content-Type: application/json) end to end, including the JSON success
+// response block that echoes the clamped value.
+func TestSettingsRemindersUpdateAcceptsJSONBody(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-reminders-json@example.com")
+
+	response := remindersJSONRequestWithCSRF(t, ctx, `{"reminder_lead_days":6}`, map[string]string{
+		"Accept": "application/json",
+	})
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusOK)
+
+	persisted := models.User{}
+	if err := ctx.database.Select("reminder_lead_days").First(&persisted, ctx.user.ID).Error; err != nil {
+		t.Fatalf("load persisted reminder_lead_days: %v", err)
+	}
+	if persisted.ReminderLeadDays != 6 {
+		t.Fatalf("expected JSON-body reminder_lead_days=6 to persist, got %d", persisted.ReminderLeadDays)
+	}
+}
+
+// TestSettingsRemindersUpdateBrowserRedirectsWithFlash covers the non-HTMX,
+// non-JSON browser submit path: it persists, sets the settings-success flash
+// cookie, and redirects (303) to /settings.
+func TestSettingsRemindersUpdateBrowserRedirectsWithFlash(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-reminders-redirect@example.com")
+
+	// No HX-Request and no Accept: application/json -> the default browser
+	// redirect branch (redirectOrJSON => 303 to /settings + flash cookie).
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/reminders", url.Values{
+		"reminder_lead_days": {"5"},
+	}, nil)
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected redirect to /settings, got %q", location)
+	}
+	if flashValue := responseCookieValue(response.Cookies(), flashCookieName); flashValue == "" {
+		t.Fatal("expected settings-success flash cookie on the browser redirect path")
+	}
+
+	persisted := models.User{}
+	if err := ctx.database.Select("reminder_lead_days").First(&persisted, ctx.user.ID).Error; err != nil {
+		t.Fatalf("load persisted reminder_lead_days: %v", err)
+	}
+	if persisted.ReminderLeadDays != 5 {
+		t.Fatalf("expected browser-path reminder_lead_days=5 to persist, got %d", persisted.ReminderLeadDays)
 	}
 }
