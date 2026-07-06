@@ -1,0 +1,57 @@
+# Gitleaks configuration for ovumcy-web.
+#
+# Extends gitleaks' built-in default rule set (do not replace it) and adds
+# only allowlist entries for already-triaged, non-secret fixture/placeholder
+# values. A full-history scan (--log-opts=--all) found zero real secrets;
+# every entry below is a known test fixture or documentation placeholder,
+# never production or non-test source.
+[extend]
+useDefault = true
+
+[allowlist]
+  # Broad, path-based allowlisting is intentional and scoped to file classes
+  # that are legitimately allowed to carry fixture/placeholder secrets:
+  # Go test files, Playwright e2e specs, and .env.example documentation. None
+  # of these paths are production source, and none are reachable at runtime.
+  paths = [
+    # All Go test files repo-wide: unit/integration/mutation tests use
+    # syntactically-valid-but-fake keys, tokens, and cookie values (e.g.
+    # testNotifySecretKey in internal/cli/notify_test.go,
+    # mut2totpserviceCollidingSecret in
+    # internal/services/totp_service_mutation_round2_test.go, and
+    # legacyV1AuthCookieValueForTest in
+    # internal/api/secure_cookie_codec_rotation_test.go) to exercise
+    # validation, rotation, and collision-guard logic without touching real
+    # secrets.
+    '''_test\.go$''',
+
+    # Playwright e2e specs: fixture passwords used only against ephemeral,
+    # locally-booted test instances (e.g. the newPassword literal in
+    # e2e/settings-password-export-danger.spec.ts's password-rotation test).
+    '''e2e/.*\.spec\.ts$''',
+
+    # .env.example documentation: SECRET_KEY=/OIDC_CLIENT_SECRET=-style lines
+    # ship empty or as an explicit "replace_with_a_..." placeholder, never a
+    # real value — covers the root .env.example and every
+    # docs/examples/**/.env.example stack variant.
+    '''(^|/)\.env\.example$''',
+
+    # History-only e2e TLS fixtures: scripts/fixtures/e2e-localhost-key.pem and
+    # scripts/fixtures/e2e-localhost-cert.pem were removed from the working
+    # tree (the e2e TLS cert is now generated at runtime by
+    # scripts/e2e-tls-cert/main.go) but remain reachable in git history, which
+    # --log-opts=--all still walks. Both were locally-generated, short-lived
+    # (24h validity) self-signed localhost dev certs, never a real credential.
+    '''^scripts/fixtures/e2e-localhost-(key|cert)\.pem$''',
+  ]
+
+  # Belt-and-suspenders exact-value allowlisting for the specific fixture
+  # constants named above, in case a future refactor moves them out of an
+  # allowlisted path (e.g. extracted into a shared non-test helper). If that
+  # happens, prefer re-scoping the path allowlist over relying on this list.
+  regexes = [
+    '''0123456789abcdef0123456789abcdef''', # testNotifySecretKey (internal/cli/notify_test.go)
+    '''53QMWFBK3KWC4KFNCMZSP37SHKGEJNEG''', # mut2totpserviceCollidingSecret (internal/services/totp_service_mutation_round2_test.go)
+    '''v1\.AQIDBAUGBwgJCgsMgMCNVdfeoxzg5RdfW2gB0u8QSayB''', # legacyV1AuthCookieValueForTest (internal/api/secure_cookie_codec_rotation_test.go)
+    '''NewStrongPass2''', # e2e fixture password (e2e/settings-password-export-danger.spec.ts)
+  ]
