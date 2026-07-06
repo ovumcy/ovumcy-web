@@ -23,6 +23,7 @@ func TestStateMutatingEndpointsRejectMissingCSRFToken(t *testing.T) {
 		path   string
 	}{
 		{name: "update tracking settings", method: http.MethodPatch, path: "/api/v1/users/current/tracking"},
+		{name: "update reminder settings", method: http.MethodPatch, path: "/api/v1/users/current/reminders"},
 		{name: "update webhook settings", method: http.MethodPost, path: "/api/v1/users/current/webhook"},
 		{name: "enable 2fa", method: http.MethodPut, path: "/api/v1/users/current/2fa"},
 		{name: "disable 2fa", method: http.MethodDelete, path: "/api/v1/users/current/2fa"},

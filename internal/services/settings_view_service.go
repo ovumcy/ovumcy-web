@@ -84,6 +84,7 @@ type SettingsPageViewData struct {
 	HideCycleFactors        bool
 	HideNotesField          bool
 	ShowHistoricalPhases    bool
+	ReminderLeadDays        int
 	LastPeriodStart         string
 	TodayISO                string
 	CycleStartMinISO        string
@@ -184,11 +185,11 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.HideCycleFactors = persisted.HideCycleFactors
 	resolvedUser.HideNotesField = persisted.HideNotesField
 	resolvedUser.ShowHistoricalPhases = persisted.ShowHistoricalPhases
+	resolvedUser.ReminderLeadDays = NormalizeReminderLeadDays(persisted.ReminderLeadDays)
 	resolvedUser.WebhookEnabled = persisted.WebhookEnabled
 	resolvedUser.WebhookURL = persisted.WebhookURL
 	resolvedUser.WebhookNotifyPeriod = persisted.WebhookNotifyPeriod
 	resolvedUser.WebhookNotifyOvulation = persisted.WebhookNotifyOvulation
-	resolvedUser.ReminderLeadDays = persisted.ReminderLeadDays
 	resolvedUser.LastPeriodStart = persisted.LastPeriodStart
 
 	lastPeriodStart := ""
@@ -225,6 +226,7 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 		HideCycleFactors:       user.HideCycleFactors,
 		HideNotesField:         user.HideNotesField,
 		ShowHistoricalPhases:   user.ShowHistoricalPhases,
+		ReminderLeadDays:       user.ReminderLeadDays,
 		LastPeriodStart:        lastPeriodStart,
 		TodayISO:               today.Format("2006-01-02"),
 		CycleStartMinISO:       minCycleStart.Format("2006-01-02"),

@@ -630,6 +630,17 @@ components:
           type: string
           format: date
 
+    ReminderSettings:
+      type: object
+      properties:
+        reminder_lead_days:
+          type: integer
+          minimum: 0
+          maximum: 14
+          description: >-
+            Days ahead the dashboard period/ovulation reminder appears. Values
+            outside 0–14 are clamped, not rejected.
+
     CurrentUser:
       type: object
       required: [id, email, role, onboarding_completed, local_auth_enabled, must_change_password]
@@ -1518,6 +1529,28 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/v1/users/current/reminders:
+    patch:
+      tags: [settings]
+      summary: Update reminder lead days (owner only).
+      description: >-
+        Sets the shared reminder lead window (users.reminder_lead_days) governing
+        how many days ahead the dashboard period/ovulation reminder appears. The
+        value is clamped to 0–14; it does not bump auth_session_version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReminderSettings' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /api/v1/users/current/password:
     put:

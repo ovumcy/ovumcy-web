@@ -19,6 +19,7 @@ var (
 type SettingsUserRepository interface {
 	UpdateDisplayName(ctx context.Context, userID uint, displayName string) error
 	UpdateUserTimezone(ctx context.Context, userID uint, timezone string) error
+	UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
 	UpdateByID(ctx context.Context, userID uint, updates map[string]any) error
@@ -63,6 +64,32 @@ func (service *SettingsService) PersistTimezone(ctx context.Context, userID uint
 		return false, nil
 	}
 	if err := service.users.UpdateUserTimezone(ctx, userID, newTimezone); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// SettingsReminderUpdatedStatus is the flash status emitted after a successful
+// reminder-lead-days save (always the same outcome).
+const SettingsReminderUpdatedStatus = "reminders_updated"
+
+// SaveReminderLeadDays persists the owner's shared reminder lead window
+// (users.reminder_lead_days, issue #123) scoped to userID. The raw value is
+// clamped into [MinReminderLeadDays, MaxReminderLeadDays] via the SAME
+// NormalizeReminderLeadDays helper the webhook-settings save path uses, so both
+// the standalone control and the webhook bundle share one 0–14 bound and an
+// out-of-range value is clamped, never rejected. currentLeadDays is the value
+// already persisted on the authenticated user; when the clamped value matches
+// it, no DB UPDATE is issued so a resubmit of the same value is a read-only
+// no-op (mirroring PersistTimezone). Returns true when a write occurred. It
+// deliberately does not bump auth_session_version — a reminder preference is
+// not a change to the account's security posture.
+func (service *SettingsService) SaveReminderLeadDays(ctx context.Context, userID uint, currentLeadDays int, rawLeadDays int) (bool, error) {
+	clamped := NormalizeReminderLeadDays(rawLeadDays)
+	if clamped == NormalizeReminderLeadDays(currentLeadDays) {
+		return false, nil
+	}
+	if err := service.users.UpdateReminderLeadDays(ctx, userID, clamped); err != nil {
 		return false, err
 	}
 	return true, nil

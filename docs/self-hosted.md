@@ -78,6 +78,7 @@ These settings are valid, but they are not required for a safe first deployment:
 - optional OIDC variables when you want the login page to offer external sign-in: `OIDC_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL`, `OIDC_CA_FILE`, `OIDC_LOGIN_MODE`, `OIDC_AUTO_PROVISION`, `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS`, `OIDC_LOGOUT_MODE`, and `OIDC_POST_LOGOUT_REDIRECT_URL`
 - `PROXY_HEADER` only if your trusted proxy publishes the real client IP under a header other than `X-Real-IP`
 - `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to Postgres, either through the bundled local/private Postgres stack or an operator-managed database service
+- `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` (default `false`) only if you want the scheduled `ovumcy notify` webhook-reminder pass to refuse delivery to private/loopback/link-local IP targets; leave it unset for the common case of a self-hosted ntfy/Gotify instance on the same LAN. See [docs/notifications.md](notifications.md) for enabling and scheduling webhook notifications.
 
 ## Optional OIDC Sign-In
 

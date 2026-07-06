@@ -22,6 +22,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Post("/webhook", handler.OwnerOnly, handler.UpdateWebhookSettings)
 	usersCurrent.Post("/timezone", handler.OwnerOnly, handler.UpdateTimezone)
 	usersCurrent.Patch("/cycle", handler.OwnerOnly, handler.UpdateCycleSettings)
+	usersCurrent.Patch("/reminders", handler.OwnerOnly, handler.UpdateReminderSettings)
 	usersCurrent.Put("/password", handler.OwnerOnly, handler.ChangePassword)
 	usersCurrent.Post("/password/step-up", handler.OwnerOnly, handler.StartLocalPasswordSetupReauth)
 	usersCurrent.Post("/recovery-code", handler.OwnerOnly, handler.RegenerateRecoveryCode)

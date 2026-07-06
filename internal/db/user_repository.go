@@ -121,6 +121,17 @@ func (repo *UserRepository) UpdateUserTimezone(ctx context.Context, userID uint,
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("timezone", timezone).Error
 }
 
+// UpdateReminderLeadDays persists the owner's shared reminder lead window
+// (users.reminder_lead_days, issue #123) scoped strictly to userID. The caller
+// (SettingsService) is responsible for passing an already-clamped value
+// (services.NormalizeReminderLeadDays); this method writes the single column
+// only. Like the webhook-settings save path it deliberately does NOT bump
+// auth_session_version — a reminder preference is not a change to the account's
+// security posture, so no active session should be revoked.
+func (repo *UserRepository) UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("reminder_lead_days", leadDays).Error
+}
+
 // SaveWebhookSettings persists an owner's webhook notification settings
 // (issue #124), scoped strictly to userID. The webhook_url value MUST already
 // be ciphertext — the caller (WebhookSettingsService) encrypts the plaintext
@@ -344,6 +355,7 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"unpredictable_cycle",
 			"long_period_warning_cycle_start",
 			"last_period_start",
+			"reminder_lead_days",
 			// Webhook notification settings (issue #124) load here so the
 			// settings page can render the write-only URL field's status
 			// (configured + host) and the enable/notify toggles. webhook_url is
@@ -352,7 +364,6 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"webhook_url",
 			"webhook_notify_period",
 			"webhook_notify_ovulation",
-			"reminder_lead_days",
 		).
 		First(&user, userID).Error; err != nil {
 		return models.User{}, err

@@ -95,3 +95,7 @@ type passwordProtectedSettingsInput struct {
 type timezoneSettingsInput struct {
 	Timezone string `json:"timezone" form:"timezone"`
 }
+
+type reminderSettingsInput struct {
+	ReminderLeadDays int `json:"reminder_lead_days" form:"reminder_lead_days"`
+}

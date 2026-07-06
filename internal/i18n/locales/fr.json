@@ -199,6 +199,9 @@
   "settings.cycle.unpredictable_cycle": "Mon cycle est imprévisible (SOPK, périménopause, etc.)",
   "settings.cycle.unpredictable_cycle_hint": "Désactive complètement les prédictions de dates et recentre le tableau de bord sur les faits enregistrés uniquement.",
   "settings.cycle.save": "Enregistrer les modifications",
+  "settings.reminders.lead_days": "Délai de rappel (jours)",
+  "settings.reminders.lead_days_hint": "Combien de jours à l'avance le tableau de bord affiche le rappel des prochaines règles ou de l'ovulation (0–14). La valeur 0 ne l'affiche que le jour même.",
+  "settings.reminders.save": "Enregistrer les paramètres de rappel",
 
   "settings.age_group.title": "Groupe d'âge",
   "settings.age_group.hint": "Optionnel. Enregistré avec votre profil ; les prédictions n'utilisent que votre propre historique de cycles.",
@@ -337,6 +340,7 @@
 
   "settings.success.password_changed": "Mot de passe modifié avec succès.",
   "settings.success.cycle_updated": "Paramètres du cycle mis à jour avec succès.",
+  "settings.success.reminders_updated": "Paramètres de rappel mis à jour.",
   "settings.success.interface_updated": "Les paramètres d'interface ont été mis à jour.",
   "settings.success.profile_updated": "Profil mis à jour avec succès.",
   "settings.success.profile_name_cleared": "Nom de profil supprimé.",
