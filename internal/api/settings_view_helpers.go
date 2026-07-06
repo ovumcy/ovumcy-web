@@ -51,6 +51,7 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		"HideCycleFactors":       viewData.HideCycleFactors,
 		"HideNotesField":         viewData.HideNotesField,
 		"ShowHistoricalPhases":   viewData.ShowHistoricalPhases,
+		"ReminderLeadDays":       viewData.ReminderLeadDays,
 		"LastPeriodStart":        viewData.LastPeriodStart,
 		"TodayISO":               viewData.TodayISO,
 		"CycleStartMinISO":       viewData.CycleStartMinISO,
