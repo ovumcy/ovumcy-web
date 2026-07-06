@@ -77,6 +77,7 @@ var authErrorTranslationKeys = map[string]string{
 var settingsStatusTranslationKeys = map[string]string{
 	"password_changed":     "settings.success.password_changed",
 	"cycle_updated":        "settings.success.cycle_updated",
+	"reminders_updated":    "settings.success.reminders_updated",
 	"interface_updated":    "settings.success.interface_updated",
 	"tracking_updated":     "settings.success.tracking_updated",
 	"profile_updated":      "settings.success.profile_updated",
