@@ -23,6 +23,7 @@ func TestOpenSQLiteAppliesEmbeddedMigrationsOnCleanDatabase(t *testing.T) {
 	assertSymptomTypesSchemaReconciled(t, database)
 	assertDailyLogsSchemaReconciled(t, database)
 	assertOIDCLogoutStateSchemaReconciled(t, database)
+	assertAppStateSchema(t, database)
 	assertNormalizedEmailIndexExists(t, database)
 	assertAllEmbeddedMigrationsApplied(t, database)
 }
@@ -337,6 +338,22 @@ func assertOIDCLogoutStateSchemaReconciled(t *testing.T, database *gorm.DB) {
 	}
 	if !database.Migrator().HasColumn("oidc_logout_states", "expires_at") {
 		t.Fatal("expected oidc_logout_states.expires_at column to exist after migrations")
+	}
+}
+
+// assertAppStateSchema pins the app_state key/value table created by migration
+// 028 (issue #125): the table and its key/value/updated_at columns must exist
+// after migrations on this engine.
+func assertAppStateSchema(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
+	if !database.Migrator().HasTable("app_state") {
+		t.Fatal("expected app_state table to exist after migrations")
+	}
+	for _, column := range []string{"key", "value", "updated_at"} {
+		if !database.Migrator().HasColumn("app_state", column) {
+			t.Fatalf("expected app_state.%s column to exist after migrations", column)
+		}
 	}
 }
 
