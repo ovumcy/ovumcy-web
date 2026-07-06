@@ -806,7 +806,8 @@ func tryRunCLICommand() (bool, error) {
 		runResetPassword: cli.RunResetPasswordCommand,
 		runUsers:         cli.RunUsersCommand,
 		runHealthcheck:   cli.RunHealthcheckCommand,
-		runNotify:        cli.RunNotifyCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
+		runNotify:        cli.RunNotifyCommand,  // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
+		runWebhook:       cli.RunWebhookCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 	})
 }
 
@@ -815,6 +816,7 @@ type cliCommandHandlers struct {
 	runUsers         func(databaseConfig db.Config, args []string) error
 	runHealthcheck   func(port string, timeout time.Duration) error
 	runNotify        func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
+	runWebhook       func(databaseConfig db.Config, secretKey string, args []string) error
 }
 
 func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (bool, error) {
@@ -877,6 +879,22 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 		defaultLanguage := getEnv("DEFAULT_LANGUAGE", "en")
 		blockPrivateAddresses := resolveBoolEnv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
 		return true, handlers.runNotify(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args[1:])
+	case "webhook":
+		if len(args) < 2 {
+			return true, fmt.Errorf("usage: ovumcy webhook <show|set> <email> [flags]")
+		}
+		if handlers.runWebhook == nil {
+			return true, fmt.Errorf("webhook handler is required")
+		}
+		databaseConfig, err := resolveDatabaseConfig()
+		if err != nil {
+			return true, fmt.Errorf("invalid database config: %w", err)
+		}
+		secretKey, err := resolveSecretKey()
+		if err != nil {
+			return true, fmt.Errorf("invalid SECRET_KEY: %w", err)
+		}
+		return true, handlers.runWebhook(databaseConfig, secretKey, args[1:])
 	default:
 		return false, nil
 	}

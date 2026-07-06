@@ -1471,6 +1471,96 @@ func TestTryRunCLICommandWithHandlersNotifyReportsInvalidDatabaseConfig(t *testi
 	}
 }
 
+func TestTryRunCLICommandWithHandlersDispatchesWebhook(t *testing.T) {
+	// SECRET_KEY is required by the webhook dispatch (it resolves the encrypt/
+	// decrypt key before invoking the handler); provide a valid one.
+	t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+
+	var (
+		receivedArgs         []string
+		receivedSecretNonNil bool
+	)
+	handled, err := tryRunCLICommandWithHandlers([]string{"webhook", "show", "owner@example.com"}, cliCommandHandlers{
+		runWebhook: func(_ db.Config, secretKey string, args []string) error {
+			receivedArgs = args
+			receivedSecretNonNil = secretKey != ""
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !handled {
+		t.Fatal("expected webhook command to be handled")
+	}
+	if len(receivedArgs) != 2 || receivedArgs[0] != "show" || receivedArgs[1] != "owner@example.com" {
+		t.Fatalf("expected show+email forwarded as args, got %v", receivedArgs)
+	}
+	if !receivedSecretNonNil {
+		t.Fatal("expected the resolved SECRET_KEY forwarded to the webhook handler")
+	}
+}
+
+func TestTryRunCLICommandWithHandlersRejectsMissingWebhookSubcommand(t *testing.T) {
+	handled, err := tryRunCLICommandWithHandlers([]string{"webhook"}, cliCommandHandlers{})
+	if !handled {
+		t.Fatal("expected webhook command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "usage: ovumcy webhook") {
+		t.Fatalf("expected webhook usage error, got %v", err)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersWebhookRequiresHandler(t *testing.T) {
+	handled, err := tryRunCLICommandWithHandlers([]string{"webhook", "show", "owner@example.com"}, cliCommandHandlers{})
+	if !handled {
+		t.Fatal("expected webhook command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "webhook handler is required") {
+		t.Fatalf("expected webhook-handler-required error, got %v", err)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersWebhookReportsInvalidDatabaseConfig(t *testing.T) {
+	// The webhook dispatch resolves the database config first; an unsupported
+	// DB_DRIVER fails validation before the handler runs.
+	t.Setenv("DB_DRIVER", "mysql")
+
+	handled, err := tryRunCLICommandWithHandlers([]string{"webhook", "show", "owner@example.com"}, cliCommandHandlers{
+		runWebhook: func(db.Config, string, []string) error {
+			t.Fatal("did not expect the webhook handler to be called with an invalid DB config")
+			return nil
+		},
+	})
+	if !handled {
+		t.Fatal("expected webhook command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid database config") {
+		t.Fatalf("expected an invalid-database-config error, got %v", err)
+	}
+}
+
+func TestTryRunCLICommandWithHandlersWebhookReportsInvalidSecretKey(t *testing.T) {
+	// A valid DB driver but no SECRET_KEY -> the webhook dispatch fails at key
+	// resolution before the handler runs.
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("SECRET_KEY", "")
+	t.Setenv("SECRET_KEY_FILE", "")
+
+	handled, err := tryRunCLICommandWithHandlers([]string{"webhook", "show", "owner@example.com"}, cliCommandHandlers{
+		runWebhook: func(db.Config, string, []string) error {
+			t.Fatal("did not expect the webhook handler to be called without a SECRET_KEY")
+			return nil
+		},
+	})
+	if !handled {
+		t.Fatal("expected webhook command to be handled")
+	}
+	if err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
+		t.Fatalf("expected an invalid-SECRET_KEY error, got %v", err)
+	}
+}
+
 func TestResolveBoolEnv(t *testing.T) {
 	cases := []struct {
 		name     string
