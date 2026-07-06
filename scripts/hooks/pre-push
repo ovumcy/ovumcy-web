@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+#
+# pre-push hook: blocks a push that would fail CI's patch-coverage gate.
+#
+# Why this exists: the patch-coverage gate (scripts/patchcov, invoked fresh via
+# scripts/patch-coverage-local.sh) only fails a PR in CI today. Locally it is
+# easy to get a false PASS by running patchcov against a stale coverage.out
+# (see the cache-defeat comment at the top of scripts/patch-coverage-local.sh),
+# so a contributor pushes believing they are covered and only finds out from a
+# red CI check several minutes later. This hook runs the same *fresh* gate
+# before the push leaves the machine, so the failure (and the exact uncovered
+# lines patchcov already prints) shows up immediately, locally.
+#
+# Not installed automatically: git only runs hooks committed under this path
+# when core.hooksPath points at scripts/hooks. Run `bash scripts/setup-hooks.sh`
+# once per clone to wire it up (see CONTRIBUTING.md / TESTING.md).
+#
+# git feeds this hook one line per updated ref on stdin, in the form:
+#   <local ref> SP <local sha1> SP <remote ref> SP <remote sha1>
+# A deleting push has an all-zero <local sha1> (nothing to diff, let it
+# through). A brand-new remote branch has an all-zero <remote sha1> (no
+# meaningful remote tip to diff against), so we fall back to comparing against
+# origin/main — the same BASE_REF default patchcov and patch-coverage-local.sh
+# already use.
+#
+# Scope: this hook only decides whether to RUN the check (any *.go file changed
+# in the push range) — it never re-implements the gate itself. The actual
+# pass/fail logic stays solely in scripts/patchcov via
+# scripts/patch-coverage-local.sh, so there is exactly one place that defines
+# "covered".
+#
+# Escape hatch: `git push --no-verify` skips this hook entirely (git's own
+# built-in bypass, not something this script implements) for the rare case
+# where you must push before the gate can be satisfied (e.g. a fast revert).
+
+set -euo pipefail
+
+zero_sha="0000000000000000000000000000000000000000"
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+any_go_changes=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -z "${local_ref:-}" ]] && continue
+
+  # Deleting a ref pushes no new commits — nothing to gate.
+  if [[ "$local_sha" == "$zero_sha" ]]; then
+    continue
+  fi
+
+  # New remote ref: there is no remote tip to diff against, so compare the
+  # range being pushed against origin/main instead (same fallback BASE_REF
+  # already uses elsewhere).
+  if [[ "$remote_sha" == "$zero_sha" ]]; then
+    diff_range="origin/main...${local_sha}"
+  else
+    diff_range="${remote_sha}...${local_sha}"
+  fi
+
+  if ! git diff --name-only "$diff_range" -- '*.go' 2>/dev/null | grep -q .; then
+    continue
+  fi
+
+  any_go_changes=1
+  break
+done
+
+if [[ "$any_go_changes" -eq 0 ]]; then
+  echo "pre-push: no Go files in this push — skipping patch-coverage check."
+  exit 0
+fi
+
+echo "pre-push: Go files changed — running patch-coverage (a few min)..."
+echo "pre-push: this reruns the full test suite fresh (go clean -testcache + -count=1) to avoid a stale coverage.out false pass; see scripts/patch-coverage-local.sh."
+
+if bash "$repo_root/scripts/patch-coverage-local.sh"; then
+  echo "pre-push: patch-coverage gate OK — proceeding with push."
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+
+pre-push: BLOCKED — patch-coverage gate failed (see the uncovered lines
+patchcov printed above). CI would reject this push for the same reason.
+
+Fix by either:
+  - adding a test that exercises the uncovered line(s), or
+  - for a genuinely unreachable line, annotating it with a trailing
+    // codecov:ignore (or a // codecov:ignore:start ... :end block) stating
+    why (see scripts/patchcov/main.go).
+
+Emergency bypass (use sparingly): git push --no-verify
+EOF
+exit 1

@@ -25,6 +25,30 @@ PR: `scripts/patch-coverage-local.sh` (see "Checking patch coverage locally" in
 [TESTING.md](TESTING.md) — a stale `coverage.out` gives a false pass, so don't
 run `scripts/patchcov` by hand without a fresh profile).
 
+**Recommended: enable the pre-push patch-coverage hook** so this runs
+automatically instead of relying on remembering to run it by hand:
+
+```bash
+bash scripts/setup-hooks.sh
+# equivalent one-liner, if you'd rather not run the script:
+#   git config core.hooksPath scripts/hooks
+```
+
+This wires `scripts/hooks/pre-push` in via git's `core.hooksPath` (git does not
+run a hook committed under a repo path unless something points it there first
+— this is a one-time, per-clone setup step). Once enabled, `git push` first
+checks whether the push includes any `*.go` changes:
+
+- **No Go files changed** (e.g. a docs-only push): the hook exits immediately,
+  no coverage run.
+- **Go files changed**: the hook runs the same fresh patch-coverage gate as
+  `scripts/patch-coverage-local.sh` (a few minutes — it reruns the real test
+  suite on purpose, to avoid the stale-`coverage.out` false pass described
+  above) and blocks the push if any modified line isn't covered, printing
+  which lines and how to fix it.
+
+Emergency bypass: `git push --no-verify` skips the hook entirely.
+
 4. Start app locally:
 
 ```bash

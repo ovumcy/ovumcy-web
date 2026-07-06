@@ -149,6 +149,49 @@ go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... \
 COVERAGE_FILE=coverage.out BASE_REF=origin/main go run ./scripts/patchcov
 ```
 
+## Enforcing patch coverage before you push (pre-push hook)
+
+Running `patch-coverage-local.sh` by hand only helps if you remember to do it —
+and the stale-`coverage.out` false-pass trap above has bitten contributors more
+than once even when they *did* remember. `scripts/hooks/pre-push` closes that
+gap by running the check automatically as part of `git push`.
+
+**Enable it once per clone:**
+
+```bash
+bash scripts/setup-hooks.sh
+```
+
+This points git's `core.hooksPath` at `scripts/hooks` (committing a file under
+that path does not make git run it — `core.hooksPath` is what wires a
+version-controlled hook directory up to git's actual hook dispatch) and marks
+`scripts/hooks/pre-push` executable. Equivalent one-liner, if you'd rather
+configure it yourself: `git config core.hooksPath scripts/hooks` (then `chmod
++x scripts/hooks/pre-push` — this repo pins `core.fileMode=false`, so a fresh
+checkout may not carry the executable bit git needs to run the hook directly).
+
+**What it does on every `git push`:**
+
+1. Reads the ref range being pushed (git feeds this to the hook on stdin: `<local
+   ref> <local sha1> <remote ref> <remote sha1>` per updated ref) and diffs it
+   for `*.go` changes.
+2. **No Go files changed** (e.g. a docs-only push): skips immediately, no
+   coverage run.
+3. **Go files changed**: runs `scripts/patch-coverage-local.sh` — the exact
+   same fresh, cache-defeated gate described above — and blocks the push
+   (non-zero exit) if it fails, printing the uncovered `file:line` entries
+   `scripts/patchcov` reports and how to fix them (add a test, or annotate a
+   genuinely unreachable line with `// codecov:ignore`).
+
+It is bounded but not instant: expect it to take as long as the full test
+suite (a few minutes), since that is the only way to get a trustworthy
+answer. The hook prints a notice before it starts so it doesn't look hung.
+
+**Emergency bypass:** `git push --no-verify` skips the hook entirely (git's
+own built-in escape hatch). Use it sparingly — CI's `patch-coverage` job will
+still enforce the same gate on the PR, so a bypassed push only defers the
+failure, it doesn't avoid it.
+
 ## Honest limits
 
 - Mutation efficacy will never be 100%: equivalent mutants are unkillable by
