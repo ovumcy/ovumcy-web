@@ -19,6 +19,7 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Patch("/profile", handler.OwnerOnly, handler.UpdateProfile)
 	usersCurrent.Patch("/interface", handler.OwnerOnly, handler.UpdateInterfaceSettings)
 	usersCurrent.Patch("/tracking", handler.OwnerOnly, handler.UpdateTrackingSettings)
+	usersCurrent.Post("/webhook", handler.OwnerOnly, handler.UpdateWebhookSettings)
 	usersCurrent.Post("/timezone", handler.OwnerOnly, handler.UpdateTimezone)
 	usersCurrent.Patch("/cycle", handler.OwnerOnly, handler.UpdateCycleSettings)
 	usersCurrent.Patch("/reminders", handler.OwnerOnly, handler.UpdateReminderSettings)

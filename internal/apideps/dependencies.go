@@ -11,26 +11,27 @@ import (
 // The composition layer (internal/bootstrap) builds it from the db
 // repositories; internal/api consumes it via a type alias.
 type Dependencies struct {
-	AuthService          *services.AuthService
-	RegistrationService  RegistrationWorkflowService
-	PasswordResetService *services.PasswordResetService
-	LoginService         LoginWorkflowService
-	OIDCService          OIDCWorkflowService
-	OIDCLogoutStateSvc   *services.OIDCLogoutStateService
-	DayService           *services.DayService
-	SymptomService       *services.SymptomService
-	ViewerService        *services.ViewerService
-	StatsService         *services.StatsService
-	CalendarViewService  *services.CalendarViewService
-	DashboardViewService *services.DashboardViewService
-	ExportService        *services.ExportService
-	ImportService        *services.ImportService
-	SettingsService      *services.SettingsService
-	SettingsViewService  *services.SettingsViewService
-	OnboardingService    *services.OnboardingService
-	SetupService         *services.SetupService
-	TOTPService          *services.TOTPService
-	RegisterPickupTokens RegisterPickupTokenStore
+	AuthService            *services.AuthService
+	RegistrationService    RegistrationWorkflowService
+	PasswordResetService   *services.PasswordResetService
+	LoginService           LoginWorkflowService
+	OIDCService            OIDCWorkflowService
+	OIDCLogoutStateSvc     *services.OIDCLogoutStateService
+	DayService             *services.DayService
+	SymptomService         *services.SymptomService
+	ViewerService          *services.ViewerService
+	StatsService           *services.StatsService
+	CalendarViewService    *services.CalendarViewService
+	DashboardViewService   *services.DashboardViewService
+	ExportService          *services.ExportService
+	ImportService          *services.ImportService
+	SettingsService        *services.SettingsService
+	SettingsViewService    *services.SettingsViewService
+	WebhookSettingsService *services.WebhookSettingsService
+	OnboardingService      *services.OnboardingService
+	SetupService           *services.SetupService
+	TOTPService            *services.TOTPService
+	RegisterPickupTokens   RegisterPickupTokenStore
 
 	// AuditLogEnabled gates the per-action security-event audit stream
 	// (AUDIT_LOG_ENABLED). Runtime config, not a service, so Validate
@@ -72,6 +73,7 @@ func (dependencies Dependencies) requirements() []dependencyRequirement {
 		{value: dependencies.ImportService, message: "import service is required"},
 		{value: dependencies.SettingsService, message: "settings service is required"},
 		{value: dependencies.SettingsViewService, message: "settings view service is required"},
+		{value: dependencies.WebhookSettingsService, message: "webhook settings service is required"},
 		{value: dependencies.OnboardingService, message: "onboarding service is required"},
 		{value: dependencies.SetupService, message: "setup service is required"},
 		{value: dependencies.TOTPService, message: "totp service is required"},

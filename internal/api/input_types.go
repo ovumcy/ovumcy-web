@@ -74,6 +74,20 @@ type trackingSettingsInput struct {
 	ShowHistoricalPhases bool   `json:"show_historical_phases" form:"show_historical_phases"`
 }
 
+// webhookSettingsInput is the transport shape of the webhook-settings form
+// (issue #124). URL is WRITE-ONLY: the settings page never renders the stored
+// endpoint, so a blank URL means "leave the stored endpoint unchanged". The
+// handler forwards these fields to WebhookSettingsService, which owns the
+// keep/replace/remove semantics, validation, and encryption — the URL secret is
+// never decrypted, re-encrypted, or logged in the transport layer.
+type webhookSettingsInput struct {
+	Enabled         bool   `json:"webhook_enabled" form:"webhook_enabled"`
+	URL             string `json:"webhook_url" form:"webhook_url"`
+	NotifyPeriod    bool   `json:"webhook_notify_period" form:"webhook_notify_period"`
+	NotifyOvulation bool   `json:"webhook_notify_ovulation" form:"webhook_notify_ovulation"`
+	RemoveURL       bool   `json:"webhook_remove_url" form:"webhook_remove_url"`
+}
+
 type passwordProtectedSettingsInput struct {
 	Password string `json:"password" form:"password"`
 }

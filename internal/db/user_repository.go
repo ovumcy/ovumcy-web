@@ -356,6 +356,14 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"long_period_warning_cycle_start",
 			"last_period_start",
 			"reminder_lead_days",
+			// Webhook notification settings (issue #124) load here so the
+			// settings page can render the write-only URL field's status
+			// (configured + host) and the enable/notify toggles. webhook_url is
+			// CIPHERTEXT — the settings view decrypts only to extract the host.
+			"webhook_enabled",
+			"webhook_url",
+			"webhook_notify_period",
+			"webhook_notify_ovulation",
 		).
 		First(&user, userID).Error; err != nil {
 		return models.User{}, err
