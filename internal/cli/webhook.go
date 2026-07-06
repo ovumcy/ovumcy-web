@@ -202,12 +202,14 @@ func webhookEndpointStatus(view services.WebhookSettingsView) string {
 		return "not configured"
 	}
 	host := strings.TrimSpace(view.Host)
+	// codecov:ignore:start -- unreachable via any real flow: a stored endpoint
+	// always passed ValidateWebhookURL (which requires a host), so the derived
+	// host is never empty here. Kept as a fail-safe so a hostless value reports
+	// "configured" without leaking rather than printing an empty host.
 	if host == "" {
-		// Configured but the host could not be derived (should not happen for a
-		// value that passed save-time validation); report configured without a
-		// host rather than leaking anything.
 		return "configured"
 	}
+	// codecov:ignore:end
 	return fmt.Sprintf("configured (host %s)", host)
 }
 

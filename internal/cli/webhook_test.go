@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -529,6 +530,165 @@ func TestRunWebhookCommandDatabaseInitFailure(t *testing.T) {
 		t.Fatal("expected a database init failure, got nil")
 	}
 }
+
+// TestRunWebhookCommandSetDatabaseInitFailure covers the set-path DB-open error
+// branch (distinct from the show path): a bad DB config surfaces as an error
+// after the patch is built, and never panics.
+func TestRunWebhookCommandSetDatabaseInitFailure(t *testing.T) {
+	t.Parallel()
+
+	err := runWebhookCommand(
+		db.Config{Driver: db.DriverSQLite, SQLitePath: ""},
+		testWebhookSecretKey,
+		[]string{"set", "owner@example.com", "--reminder-lead-days=4"},
+		strings.NewReader(""),
+		&bytes.Buffer{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "database init failed") {
+		t.Fatalf("expected a database init failure from the set path, got %v", err)
+	}
+}
+
+// TestRunWebhookShowNilOutputDefaultsToStdout proves runWebhookShow tolerates a
+// nil writer (falling back to os.Stdout) instead of panicking, mirroring the
+// notify nil-output guard. It builds a real service against a migrated DB.
+func TestRunWebhookShowNilOutputDefaultsToStdout(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIWebhookDatabase(t)
+	createCLIWebhookOwner(t, databasePath, "owner@example.com")
+
+	service, cleanup, err := openWebhookCLIService(sqliteConfig(databasePath), testWebhookSecretKey)
+	if err != nil {
+		t.Fatalf("open service: %v", err)
+	}
+	defer cleanup()
+
+	if err := runWebhookShow(service, "owner@example.com", nil); err != nil {
+		t.Fatalf("nil output should default to stdout, got %v", err)
+	}
+}
+
+// TestRunWebhookSetNilOutputDefaultsToStdout proves runWebhookSet tolerates a nil
+// writer (falling back to os.Stdout) on both the dry-run and the real-write
+// header branches.
+func TestRunWebhookSetNilOutputDefaultsToStdout(t *testing.T) {
+	t.Parallel()
+
+	databasePath := createCLIWebhookDatabase(t)
+	createCLIWebhookOwner(t, databasePath, "owner@example.com")
+
+	service, cleanup, err := openWebhookCLIService(sqliteConfig(databasePath), testWebhookSecretKey)
+	if err != nil {
+		t.Fatalf("open service: %v", err)
+	}
+	defer cleanup()
+
+	lead := 5
+	// Real write, nil output.
+	if err := runWebhookSet(service, webhookSetOptions{email: "owner@example.com", reminderLeadDays: &lead}, services.WebhookSettingsPatch{ReminderLeadDays: &lead}, nil); err != nil {
+		t.Fatalf("nil output (real write) should default to stdout, got %v", err)
+	}
+	// Dry-run, nil output.
+	if err := runWebhookSet(service, webhookSetOptions{email: "owner@example.com", dryRun: true, reminderLeadDays: &lead}, services.WebhookSettingsPatch{ReminderLeadDays: &lead}, nil); err != nil {
+		t.Fatalf("nil output (dry-run) should default to stdout, got %v", err)
+	}
+}
+
+// TestParseWebhookShowArgs covers the show arg-parser branches directly: a blank
+// arg is skipped, a flag before the email is rejected, and a second positional
+// is rejected.
+func TestParseWebhookShowArgs(t *testing.T) {
+	t.Parallel()
+
+	email, err := parseWebhookShowArgs([]string{"", "owner@example.com"})
+	if err != nil || email != "owner@example.com" {
+		t.Fatalf("blank arg should be skipped, got %q err=%v", email, err)
+	}
+	if _, err := parseWebhookShowArgs([]string{"--flag", "owner@example.com"}); err == nil {
+		t.Fatal("expected a flag on show to be rejected")
+	}
+	if _, err := parseWebhookShowArgs([]string{"a@example.com", "b@example.com"}); err == nil {
+		t.Fatal("expected a second positional to be rejected")
+	}
+	if _, err := parseWebhookShowArgs(nil); err == nil {
+		t.Fatal("expected missing email to be rejected")
+	}
+}
+
+// TestParseWebhookSetArgs covers the set arg-parser branches directly: a blank
+// arg is skipped; every boolean flag parses; a malformed value for each boolean
+// flag is rejected; a non-numeric lead-days is rejected; the mutual-exclusion and
+// missing-email guards fire.
+func TestParseWebhookSetArgs(t *testing.T) {
+	t.Parallel()
+
+	opts, err := parseWebhookSetArgs([]string{"", "owner@example.com", "--enabled=true", "--notify-period=false", "--notify-ovulation=true", "--reminder-lead-days=7"})
+	if err != nil {
+		t.Fatalf("well-formed set args should parse, got %v", err)
+	}
+	if opts.email != "owner@example.com" || opts.enabled == nil || !*opts.enabled ||
+		opts.notifyPeriod == nil || *opts.notifyPeriod || opts.notifyOvulation == nil || !*opts.notifyOvulation ||
+		opts.reminderLeadDays == nil || *opts.reminderLeadDays != 7 {
+		t.Fatalf("parsed options mismatch: %+v", opts)
+	}
+
+	badCases := [][]string{
+		{"owner@example.com", "--enabled=maybe"},
+		{"owner@example.com", "--notify-period=maybe"},
+		{"owner@example.com", "--notify-ovulation=maybe"},
+		{"owner@example.com", "--reminder-lead-days=abc"},
+		{"owner@example.com", "--unknown"},
+		{"a@example.com", "b@example.com"},
+		nil,
+	}
+	for _, args := range badCases {
+		if _, err := parseWebhookSetArgs(args); err == nil {
+			t.Fatalf("expected error for set args %v", args)
+		}
+	}
+}
+
+// TestMapWebhookError covers every branch of the error mapper, proving each
+// service error maps to a stable operator message and the default wraps unknown
+// errors (never embedding a URL/token).
+func TestMapWebhookError(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"not found", services.ErrWebhookOwnerNotFound, "not found"},
+		{"email required", services.ErrOperatorUserEmailRequired, "email is required"},
+		{"email invalid", services.ErrOperatorUserEmailInvalid, "invalid email address"},
+		{"url invalid", services.ErrWebhookURLInvalid, "webhook url invalid"},
+		{"default wraps", errors.New("some other failure"), "configure webhook"},
+	}
+	for _, tc := range cases {
+		got := mapWebhookError(tc.err, "owner@example.com")
+		if got == nil || !strings.Contains(got.Error(), tc.want) {
+			t.Fatalf("%s: expected %q in %v", tc.name, tc.want, got)
+		}
+	}
+}
+
+// TestReadWebhookURLLineReadError proves a non-EOF, non-"required" read error is
+// wrapped as a read-url error (not silently swallowed) and never echoes input.
+func TestReadWebhookURLLineReadError(t *testing.T) {
+	t.Parallel()
+
+	_, err := readWebhookURLLine(errReader{err: errors.New("disk gone")})
+	if err == nil || !strings.Contains(err.Error(), "read webhook url") {
+		t.Fatalf("expected a wrapped read error, got %v", err)
+	}
+}
+
+// errReader is an io.Reader that always fails, to drive the read-error branch.
+type errReader struct{ err error }
+
+func (r errReader) Read(_ []byte) (int, error) { return 0, r.err }
 
 // assertNoSecretLeak fails if the rendered output contains any secret-shaped
 // substring: the token, the URL scheme, the path, or the query. Only the host

@@ -318,3 +318,84 @@ func TestApplyWebhookSettingsNotConfiguredView(t *testing.T) {
 		t.Fatalf("expected not-configured empty-host view, got %+v", view)
 	}
 }
+
+// TestApplyWebhookSettingsNotFound proves ApplyWebhookSettings surfaces the
+// resolve-owner not-found error (its own error return, distinct from Resolve).
+func TestApplyWebhookSettingsNotFound(t *testing.T) {
+	reader := &stubWebhookReader{found: false}
+	svc, repo := newWebhookCLIServiceForTest(reader)
+	falseVal := false
+	if _, err := svc.ApplyWebhookSettings(context.Background(), "ghost@example.com", WebhookSettingsPatch{Enabled: &falseVal}, false); !errors.Is(err, ErrWebhookOwnerNotFound) {
+		t.Fatalf("expected ErrWebhookOwnerNotFound, got %v", err)
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("expected no save when owner is missing, got %d", repo.saveCalls)
+	}
+}
+
+// TestApplyWebhookSettingsEmailValidation proves ApplyWebhookSettings rejects a
+// blank email before any lookup or save.
+func TestApplyWebhookSettingsEmailValidation(t *testing.T) {
+	reader := &stubWebhookReader{found: true}
+	svc, repo := newWebhookCLIServiceForTest(reader)
+	falseVal := false
+	if _, err := svc.ApplyWebhookSettings(context.Background(), "  ", WebhookSettingsPatch{Enabled: &falseVal}, false); !errors.Is(err, ErrOperatorUserEmailRequired) {
+		t.Fatalf("expected ErrOperatorUserEmailRequired, got %v", err)
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("expected no save on blank email, got %d", repo.saveCalls)
+	}
+}
+
+// TestResolveWebhookSettingsDecryptFailure proves that a stored ciphertext which
+// fails to open (e.g. after a SECRET_KEY rotation, modeled here by an aad
+// bound to a different user id) surfaces as an error rather than leaking or
+// panicking — the status view fails closed.
+func TestResolveWebhookSettingsDecryptFailure(t *testing.T) {
+	const userID = uint(31)
+	// Encrypt under a DIFFERENT user id so the aad binding mismatches at decrypt.
+	badCiphertext := encryptTestWebhookURL(t, "https://ntfy.example/topic", userID+1)
+	reader := &stubWebhookReader{found: true, user: models.User{ID: userID, WebhookEnabled: true, WebhookURL: badCiphertext, WebhookNotifyPeriod: true, WebhookNotifyOvulation: true, ReminderLeadDays: 3}}
+	svc, _ := newWebhookCLIServiceForTest(reader)
+
+	if _, err := svc.ResolveWebhookSettings(context.Background(), "owner@example.com"); err == nil || !strings.Contains(err.Error(), "decrypt current webhook url") {
+		t.Fatalf("expected a decrypt failure on resolve, got %v", err)
+	}
+}
+
+// TestApplyWebhookSettingsDecryptFailure proves the same fail-closed behavior on
+// the apply path (it decrypts the current URL to support a URL-keeping merge).
+func TestApplyWebhookSettingsDecryptFailure(t *testing.T) {
+	const userID = uint(33)
+	badCiphertext := encryptTestWebhookURL(t, "https://ntfy.example/topic", userID+1)
+	reader := &stubWebhookReader{found: true, user: models.User{ID: userID, WebhookEnabled: true, WebhookURL: badCiphertext, WebhookNotifyPeriod: true, WebhookNotifyOvulation: true, ReminderLeadDays: 3}}
+	svc, repo := newWebhookCLIServiceForTest(reader)
+
+	falseVal := false
+	if _, err := svc.ApplyWebhookSettings(context.Background(), "owner@example.com", WebhookSettingsPatch{NotifyPeriod: &falseVal}, false); err == nil || !strings.Contains(err.Error(), "decrypt current webhook url") {
+		t.Fatalf("expected a decrypt failure on apply, got %v", err)
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("expected no save when the current URL cannot be decrypted, got %d", repo.saveCalls)
+	}
+}
+
+// TestApplyWebhookSettingsDryRunDisabledNoURL covers the dry-run validation
+// branch for a disabled webhook with no endpoint: it is valid (nothing to
+// deliver) and writes nothing.
+func TestApplyWebhookSettingsDryRunDisabledNoURL(t *testing.T) {
+	reader := &stubWebhookReader{found: true, user: models.User{ID: 40, WebhookNotifyPeriod: true, WebhookNotifyOvulation: true, ReminderLeadDays: 3}}
+	svc, repo := newWebhookCLIServiceForTest(reader)
+
+	falseVal := false
+	view, err := svc.ApplyWebhookSettings(context.Background(), "owner@example.com", WebhookSettingsPatch{Enabled: &falseVal}, true)
+	if err != nil {
+		t.Fatalf("dry-run disabled+no-URL should validate, got %v", err)
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("dry-run must not save, got %d", repo.saveCalls)
+	}
+	if view.Configured || view.Enabled {
+		t.Fatalf("expected a disabled, not-configured view, got %+v", view)
+	}
+}

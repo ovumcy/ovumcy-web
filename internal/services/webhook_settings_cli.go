@@ -111,7 +111,7 @@ func NewWebhookSettingsCLIService(reader WebhookOwnerReader, settings *WebhookSe
 // the email is blank/invalid. The stored endpoint ciphertext is decrypted only
 // to derive the host; the plaintext URL never leaves this method.
 func (service *WebhookSettingsCLIService) ResolveWebhookSettings(ctx context.Context, email string) (WebhookSettingsView, error) {
-	_, view, err := service.resolveOwner(ctx, email)
+	_, view, _, err := service.resolveOwner(ctx, email)
 	if err != nil {
 		return WebhookSettingsView{}, err
 	}
@@ -126,18 +126,13 @@ func (service *WebhookSettingsCLIService) ResolveWebhookSettings(ctx context.Con
 // URL still errors) but writes nothing. An invalid/other-scheme URL is rejected
 // with ErrWebhookURLInvalid and nothing is persisted.
 func (service *WebhookSettingsCLIService) ApplyWebhookSettings(ctx context.Context, email string, patch WebhookSettingsPatch, dryRun bool) (WebhookSettingsView, error) {
-	owner, current, err := service.resolveOwner(ctx, email)
+	// resolveOwner already decrypts the stored endpoint once (to derive the host)
+	// and returns the plaintext, so a URL-keeping patch re-persists the existing
+	// endpoint unchanged without a second decrypt. The plaintext is confined to
+	// this method; only the derived host is ever surfaced.
+	owner, current, currentURL, err := service.resolveOwner(ctx, email)
 	if err != nil {
 		return WebhookSettingsView{}, err
-	}
-
-	// Decrypt the stored endpoint once so a URL-keeping patch re-persists the
-	// existing endpoint unchanged (SaveWebhookSettings takes plaintext and
-	// re-encrypts). The plaintext is confined to this method; only the derived
-	// host is ever surfaced.
-	currentURL, err := service.settings.DecryptWebhookURL(owner.ID, owner.WebhookURL)
-	if err != nil {
-		return WebhookSettingsView{}, fmt.Errorf("decrypt current webhook url: %w", err)
 	}
 
 	update := WebhookSettingsUpdate{
@@ -175,31 +170,37 @@ func (service *WebhookSettingsCLIService) ApplyWebhookSettings(ctx context.Conte
 	return viewFromUpdate(update), nil
 }
 
-// resolveOwner looks up the owner by normalized email and returns the record
-// plus a status view of the stored settings. It centralizes the email
-// normalization + not-found mapping shared by resolve and apply.
-func (service *WebhookSettingsCLIService) resolveOwner(ctx context.Context, email string) (models.User, WebhookSettingsView, error) {
+// resolveOwner looks up the owner by normalized email and returns the record, a
+// host-only status view of the stored settings, and the DECRYPTED plaintext
+// endpoint URL (empty when none is configured). It centralizes the email
+// normalization + not-found mapping + the single URL decrypt shared by resolve
+// and apply. The plaintext URL is an internal return: callers surface only the
+// host, never the URL itself.
+func (service *WebhookSettingsCLIService) resolveOwner(ctx context.Context, email string) (models.User, WebhookSettingsView, string, error) {
 	normalizedEmail, err := normalizeOperatorUserEmail(email)
 	if err != nil {
-		return models.User{}, WebhookSettingsView{}, err
+		return models.User{}, WebhookSettingsView{}, "", err
 	}
 
 	owner, found, err := service.reader.FindByNormalizedEmailOptional(ctx, normalizedEmail)
 	if err != nil {
-		return models.User{}, WebhookSettingsView{}, fmt.Errorf("%w: %v", ErrOperatorUserLookupFailed, err)
+		return models.User{}, WebhookSettingsView{}, "", fmt.Errorf("%w: %v", ErrOperatorUserLookupFailed, err)
 	}
 	if !found {
-		return models.User{}, WebhookSettingsView{}, ErrWebhookOwnerNotFound
+		return models.User{}, WebhookSettingsView{}, "", ErrWebhookOwnerNotFound
 	}
 
+	plaintextURL := ""
 	host := ""
 	configured := strings.TrimSpace(owner.WebhookURL) != ""
 	if configured {
-		// Decrypt only to derive the host; the plaintext URL is discarded here.
+		// Decrypt once; the plaintext is returned to the caller for a URL-keeping
+		// merge and used here only to derive the host.
 		plaintext, decryptErr := service.settings.DecryptWebhookURL(owner.ID, owner.WebhookURL)
 		if decryptErr != nil {
-			return models.User{}, WebhookSettingsView{}, fmt.Errorf("decrypt current webhook url: %w", decryptErr)
+			return models.User{}, WebhookSettingsView{}, "", fmt.Errorf("decrypt current webhook url: %w", decryptErr)
 		}
+		plaintextURL = plaintext
 		host = hostOnly(plaintext)
 	}
 
@@ -211,7 +212,7 @@ func (service *WebhookSettingsCLIService) resolveOwner(ctx context.Context, emai
 		NotifyOvulation:  owner.WebhookNotifyOvulation,
 		ReminderLeadDays: owner.ReminderLeadDays,
 	}
-	return owner, view, nil
+	return owner, view, plaintextURL, nil
 }
 
 // validateWebhookUpdateForDryRun applies the same URL scheme/shape guard
