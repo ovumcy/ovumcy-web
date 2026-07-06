@@ -45,6 +45,15 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 		"GET " + oidcLinkConfirmPath:          {},
 		"POST " + oidcLinkConfirmPath:         {},
 		"GET /privacy":                        {},
+		// The calendar (.ics) feed authenticates by the PATH TOKEN alone — a
+		// calendar client sends no cookie — so it is intentionally NOT behind
+		// AuthRequired/OwnerOnly and never inspects the role. An unsupported-role
+		// cookie is simply ignored; every invalid/absent-credential case (here, a
+		// bogus token) returns the same bare 404-no-oracle, not a 403. Its owner
+		// scoping is proven by the token-resolution + cross-user isolation tests in
+		// internal/services (calendar_feed_service_test.go), not by this cookie-role
+		// matrix.
+		"GET " + calendarFeedRoutePath: {},
 	}
 
 	app, database := newOnboardingTestApp(t)

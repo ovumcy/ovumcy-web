@@ -67,6 +67,14 @@ func sanitizeRequestLogSegment(segment string) string {
 		return ":id"
 	case strings.Contains(segment, "@"):
 		return ":email"
+	case isOpaqueTokenDotICSSegment(segment):
+		// The calendar-feed URL carries its bearer token as "<token>.ics" in a
+		// single path segment. The matched-route template already logs this as
+		// ":token.ics" (its segment starts with ':'), but this raw-path fallback
+		// must mask it too: the trailing ".ics" contains a '.', which
+		// isOpaqueRequestLogSegment rejects, so without this case the token VALUE
+		// would leak verbatim on the (route-template-unavailable) fallback path.
+		return ":token.ics"
 	case isOpaqueRequestLogSegment(segment):
 		return ":token"
 	default:
@@ -122,6 +130,19 @@ func isUUIDRequestLogSegment(segment string) bool {
 		}
 	}
 	return true
+}
+
+// isOpaqueTokenDotICSSegment reports whether segment is an opaque bearer token
+// immediately followed by a ".ics" suffix — the shape a calendar-feed URL takes
+// in a single raw-path segment ("<token>.ics"). It strips the suffix and reuses
+// the same opaque-token test applied to a bare token segment, so the redaction
+// threshold is identical whether or not the ".ics" suffix is present.
+func isOpaqueTokenDotICSSegment(segment string) bool {
+	const suffix = ".ics"
+	if !strings.HasSuffix(segment, suffix) {
+		return false
+	}
+	return isOpaqueRequestLogSegment(strings.TrimSuffix(segment, suffix))
 }
 
 func isOpaqueRequestLogSegment(segment string) bool {
