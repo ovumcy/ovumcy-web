@@ -63,6 +63,18 @@ Closing the residual signal entirely is mathematically impossible without an out
 
 A separate vector — replay of a sealed `ovumcy_register_pickup` cookie captured from somebody else's response within the 5-minute TTL — is **not** part of this residual. The pickup cookie carries an opaque nonce that is consumed atomically through `register_pickup_tokens` on the first `GET /register/welcome` call; a captured cookie reaching the welcome endpoint a second time gets the same neutral `/login` redirect as a decoy or expired pickup, and cannot mint a second `ovumcy_auth` session.
 
+### Auth sessions: absolute expiry only, no idle timeout (accepted design decision)
+
+`ovumcy_auth` is bounded by an absolute TTL — 7 days by default, 30 days with remember-me — and carries no separate idle/inactivity timeout: a session that is used once and then left untouched remains valid until the absolute TTL elapses, not until some shorter period of inactivity. This widens the exposure window for a cookie captured early in its lifetime compared to a design with a sliding idle timeout.
+
+The trade-off is deliberate rather than an oversight. Exposure is bounded two ways instead of one: the absolute TTL caps how long any captured cookie stays valid regardless of activity, and every request re-verifies `users.auth_session_version`, so any credential or posture change (password change/reset, recovery-code regeneration, forced operator reset, TOTP enable/disable, clear-data) revokes the cookie instantly rather than waiting for it to expire. For a personal, self-hosted health tracker — not a shared-workstation enterprise product — an idle timeout mainly adds friction (repeated re-logins) without a correspondingly large security gain, since the operator is typically also the sole user. This is not test-enforced; it is reviewed as a design decision, and revisited if the deployment model changes (see *Threat Model* below).
+
+### Rate-limit and attempt-limiter state: process-local, resets on restart (accepted design decision)
+
+Per-IP HTTP rate limits (Fiber's limiter middleware) and the per-account `AttemptLimiter` budgets (`internal/services/attempt_limiter.go`) are held in the process's own memory. They are correct only under the single-instance self-hosted deployment this codebase assumes: state is not shared across replicas, and a process restart silently resets every counter and cooldown.
+
+This is a deliberate scoping choice, not a gap discovered after the fact: sharing limiter state across processes would require an external store (Redis or similar) that Ovumcy does not assume a self-hoster has provisioned, and the baseline deployment path is explicitly single-instance (see *Deployment* in `docs/SECURITY_INVARIANTS.md`). Anyone horizontally scaling Ovumcy behind a load balancer must be aware that each replica enforces its own independent budget — running N replicas multiplies the effective per-IP and per-account attempt budget by N — and should either keep the deployment single-instance or introduce a shared limiter store before scaling out. This is not test-enforced; it is a documented operational constraint of the current architecture.
+
 ## OIDC Account Linking
 
 Ovumcy does not trust an upstream OIDC provider to vouch for *which existing local account* a verified email belongs to. The trust given to a configured IdP is "this user controls subject S at issuer I"; **not** "this user controls every Ovumcy account that ever registered with that email".
@@ -332,6 +344,12 @@ Items marked *Policy-level* are operator obligations that cannot be verified by 
 This section maps each test-enforceable claim above to the Go test that guards it. It is the mechanical check that the privacy and security claims in this document remain true. When a claim changes, the corresponding test must change too; when a test is removed, the claim is no longer enforced and must be retracted from this document.
 
 Policy-level claims (threat model in/out-of-scope, design rationale, marketing-style statements like "privacy-first") are intentionally excluded — they are reviewed by humans, not by `go test`.
+
+### Layering
+
+| Claim | Enforced by |
+| --- | --- |
+| `templateToJSON` returns a plain string (not `template.JS`/`template.HTML`), so owner- or attacker-controlled values embedded in a `data-*` attribute (`data-chart`, `data-supported-languages`) stay subject to `html/template`'s contextual attribute escaping — HTML/JS-breaking characters cannot break out of the attribute or inject markup | `TestTemplateToJSONEscapesAttributeContext` in [internal/api/template_tojson_attr_escaping_test.go](internal/api/template_tojson_attr_escaping_test.go) |
 
 ### Field-Level Encryption
 

@@ -15,14 +15,17 @@ import (
 // security review of every template call site.
 var _ func(any) string = templateToJSON
 
-// TestTemplateToJSONEscapesSafelyInSingleQuotedAttribute is the regression for
-// the retired `#nosec G203` templateToJSON: adversarial JSON content embedded
-// in a single-quoted data-* attribute must not be able to break out of the
+// TestTemplateToJSONEscapesAttributeContext is the regression for the retired
+// `#nosec G203` templateToJSON: adversarial JSON content embedded in a
+// single-quoted data-* attribute must not be able to break out of the
 // attribute or introduce markup, and must survive the browser's
 // getAttribute/dataset entity-decoding + JSON.parse round trip unchanged
 // (chart-lite.js consumes data-chart exactly that way; the test mirrors it via
-// extractStatsChartPayload's html.UnescapeString + json.Unmarshal).
-func TestTemplateToJSONEscapesSafelyInSingleQuotedAttribute(t *testing.T) {
+// extractStatsChartPayload's html.UnescapeString + json.Unmarshal). Cited by
+// docs/SECURITY_INVARIANTS.md's Layering section and SECURITY.md's Test
+// Enforcement Matrix for the template.HTML/template.JS typed-string-cast
+// invariant.
+func TestTemplateToJSONEscapesAttributeContext(t *testing.T) {
 	t.Parallel()
 
 	payload := statsChartPayload{
