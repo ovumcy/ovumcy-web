@@ -108,6 +108,47 @@ npm run e2e
 bash scripts/mutation.sh baseline
 ```
 
+## Checking patch coverage locally
+
+`scripts/patchcov` is the same gate CI's `patch-coverage` job runs: every modified,
+coverable Go line in your diff against `origin/main` must be exercised by a test
+(a genuinely unreachable line is excluded with a trailing `// codecov:ignore`, see
+the comment at the top of `scripts/patchcov/main.go`).
+
+**Warning: running `patchcov` against a stale `coverage.out` gives a false pass.**
+`go test -coverprofile` is subject to Go's test result cache — if you edit a file
+and re-run the coverage command without also touching its test, `go test` can
+silently reuse a cached run from *before* your latest edit. `coverage.out` then
+reflects the old code, `patchcov` reports your newest lines as covered, and CI
+(which always starts from a clean checkout with an empty test cache) fails on the
+same diff. This has bitten contributors more than once — always regenerate the
+profile fresh before trusting a local "gate OK".
+
+The one-liner that reproduces CI's coverage condition end to end:
+
+```bash
+bash scripts/patch-coverage-local.sh
+```
+
+It removes any existing `coverage.out`, runs `go clean -testcache`, regenerates
+the profile with the exact package set and flags CI uses
+(`-covermode=atomic -count=1`), then runs `scripts/patchcov` against it. It takes
+a few minutes — that's the point, it is the real test suite run for real.
+
+If you'd rather run it by hand, the two steps that matter are `go clean
+-testcache` and `-count=1`; either alone defeats the cache, but the script uses
+both for good measure:
+
+```bash
+rm -f coverage.out
+go clean -testcache
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... \
+  -coverprofile=coverage.out -covermode=atomic \
+  -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/... \
+  -count=1
+COVERAGE_FILE=coverage.out BASE_REF=origin/main go run ./scripts/patchcov
+```
+
 ## Honest limits
 
 - Mutation efficacy will never be 100%: equivalent mutants are unkillable by

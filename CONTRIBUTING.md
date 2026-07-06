@@ -20,6 +20,11 @@ npm run lint:js
 npm run build
 ```
 
+If your change touches Go code, also gate it on patch coverage before opening a
+PR: `scripts/patch-coverage-local.sh` (see "Checking patch coverage locally" in
+[TESTING.md](TESTING.md) — a stale `coverage.out` gives a false pass, so don't
+run `scripts/patchcov` by hand without a fresh profile).
+
 4. Start app locally:
 
 ```bash
