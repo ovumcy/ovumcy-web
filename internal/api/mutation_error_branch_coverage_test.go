@@ -47,6 +47,7 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 	app.Patch("/api/v1/users/current/tracking", handler.UpdateTrackingSettings)
 	app.Post("/api/v1/users/current/timezone", handler.UpdateTimezone)
 	app.Patch("/api/v1/users/current/cycle", handler.UpdateCycleSettings)
+	app.Patch("/api/v1/users/current/reminders", handler.UpdateReminderSettings)
 	app.Post("/api/v1/onboarding/complete", handler.OnboardingComplete)
 	app.Get("/onboarding", handler.ShowOnboarding)
 	app.Get("/settings/2fa", handler.ShowTOTPSetupPage)
@@ -109,6 +110,7 @@ func TestMutationHandlersRejectMissingUserAtHandlerLevel(t *testing.T) {
 		{http.MethodPatch, "/api/v1/users/current/tracking"},
 		{http.MethodPost, "/api/v1/users/current/timezone"},
 		{http.MethodPatch, "/api/v1/users/current/cycle"},
+		{http.MethodPatch, "/api/v1/users/current/reminders"},
 	}
 	for _, testCase := range cases {
 		response := mutationBranchRequest(t, app, testCase.method, testCase.path, "", "")
@@ -142,6 +144,8 @@ func TestMutationHandlersMapInvalidInputThroughFailMutation(t *testing.T) {
 		{"timezone malformed json", http.MethodPost, "/api/v1/users/current/timezone", "{", "application/json"},
 		{"timezone unsafe value", http.MethodPost, "/api/v1/users/current/timezone", url.Values{"timezone": {"Local"}}.Encode(), form},
 		{"cycle length out of range", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"cycle_length": {"999"}, "period_length": {"5"}}.Encode(), form},
+		{"reminders malformed json", http.MethodPatch, "/api/v1/users/current/reminders", "{", "application/json"},
+		{"reminders non-integer form value", http.MethodPatch, "/api/v1/users/current/reminders", url.Values{"reminder_lead_days": {"soon"}}.Encode(), form},
 		{"onboarding complete steps required", http.MethodPost, "/api/v1/onboarding/complete", "", ""},
 	}
 	for _, testCase := range cases {
@@ -185,6 +189,10 @@ func TestMutationHandlersMapServiceFailuresThroughFailMutation(t *testing.T) {
 		// reaches PersistTimezone -> the repo UPDATE, which fails with the DB
 		// closed (settingsTimezoneUpdateErrorSpec tail).
 		{"timezone settings save", http.MethodPost, "/api/v1/users/current/timezone", url.Values{"timezone": {"Europe/Belgrade"}}.Encode(), form},
+		// The stub user's ReminderLeadDays is 0, so a clamped value of 7 differs
+		// and reaches SaveReminderLeadDays -> the repo UPDATE, which fails with
+		// the DB closed (settingsRemindersUpdateErrorSpec tail).
+		{"reminder settings save", http.MethodPatch, "/api/v1/users/current/reminders", url.Values{"reminder_lead_days": {"7"}}.Encode(), form},
 		{"day list fetch", http.MethodGet, "/api/days?from=2026-01-01&to=2026-02-01", "", ""},
 		{"day fetch", http.MethodGet, "/api/days/2026-02-17", "", ""},
 		{"symptom list fetch", http.MethodGet, "/api/v1/symptoms", "", ""},

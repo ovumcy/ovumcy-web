@@ -177,6 +177,43 @@
         <div id="settings-cycle-status" class="save-status text-sm" aria-live="polite"></div>
       </div>
     </form>
+
+    <form
+      action="/api/v1/users/current/reminders"
+      method="post"
+      hx-patch="/api/v1/users/current/reminders"
+      hx-target="#settings-reminders-status"
+      hx-swap="innerHTML"
+      class="mt-8 space-y-2"
+      data-settings-reminders-form
+      data-save-feedback>
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <label class="field-label" for="settings-reminder-lead-days">{{t .Messages "settings.reminders.lead_days"}}</label>
+      <input
+        id="settings-reminder-lead-days"
+        type="number"
+        min="0"
+        max="14"
+        step="1"
+        inputmode="numeric"
+        name="reminder_lead_days"
+        value="{{.ReminderLeadDays}}"
+        data-settings-reminder-lead-days
+        aria-describedby="settings-reminder-lead-days-hint"
+        class="w-full input-field">
+      <p id="settings-reminder-lead-days-hint" class="journal-muted text-sm">{{t .Messages "settings.reminders.lead_days_hint"}}</p>
+
+      <div class="settings-form-actions">
+        <button
+          type="submit"
+          class="btn-primary"
+          data-settings-reminders-save
+          data-save-button
+          data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.reminders.save"}}</button>
+        <div id="settings-reminders-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
+    </form>
   </section>
   {{end}}
 

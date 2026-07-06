@@ -96,9 +96,13 @@ func TestSaveTrackingSettingsPropagatesUpdateError(t *testing.T) {
 }
 
 type stubSettingsTrackingUserRepo struct {
-	updatedUserID uint
-	updates       map[string]any
-	updateErr     error
+	updatedUserID             uint
+	updates                   map[string]any
+	updateErr                 error
+	reminderCalls             int
+	reminderUpdatedUserID     uint
+	reminderLeadDaysPersisted int
+	reminderErr               error
 }
 
 func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(context.Context, uint, string) error {
@@ -107,6 +111,13 @@ func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(context.Context, uin
 
 func (stub *stubSettingsTrackingUserRepo) UpdateUserTimezone(context.Context, uint, string) error {
 	return nil
+}
+
+func (stub *stubSettingsTrackingUserRepo) UpdateReminderLeadDays(_ context.Context, userID uint, leadDays int) error {
+	stub.reminderCalls++
+	stub.reminderUpdatedUserID = userID
+	stub.reminderLeadDaysPersisted = leadDays
+	return stub.reminderErr
 }
 
 func (stub *stubSettingsTrackingUserRepo) UpdatePasswordAndRevokeSessions(context.Context, uint, string, bool) error {
