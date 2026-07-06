@@ -1,0 +1,59 @@
+name: Gitleaks
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # gitleaks/gitleaks-action requires a paid GITLEAKS_LICENSE for
+  # organization-owned repos (ovumcy is an org, not a personal account); the
+  # underlying gitleaks CLI is MIT-licensed and free, so we run the official
+  # Docker image directly instead of the wrapper action. Digest-pinned like
+  # TRIVY_IMAGE in security.yml.
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: "47 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history so the scheduled/push run also re-checks commits that
+          # were already merged, matching CodeQL/security's full-checkout scope.
+          # gitleaks itself is pointed at full history via --log-opts=--all below.
+          fetch-depth: 0
+
+      - name: Prepare security artifact directory
+        run: mkdir -p .tmp/security
+
+      - name: Run gitleaks (full history)
+        # --log-opts=--all scans every commit reachable from any ref, not just
+        # the current branch tip, so a secret committed and later removed is
+        # still caught. This mirrors the local verification command used to
+        # validate .gitleaks.toml before merge.
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" "${{ env.GITLEAKS_IMAGE }}" \
+            detect --source /repo --config /repo/.gitleaks.toml --log-opts=--all \
+            --report-format sarif --report-path /repo/.tmp/security/gitleaks.sarif \
+            --redact --exit-code 1
+
+      - name: Upload gitleaks artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitleaks-results
+          path: .tmp/security/gitleaks.sarif
+          if-no-files-found: error
