@@ -72,6 +72,51 @@ func TestResolveRequestLocationUsesUTCFallbackWhenNil(t *testing.T) {
 	}
 }
 
+// TestIsSafeTimezoneIdentifierCharacterClasses pins the allow-list guarding
+// which characters may reach time.LoadLocation. Each row isolates one boundary
+// of the switch in isSafeTimezoneIdentifier: a character on a range boundary
+// ('a','z','A','Z','0','9') or one of the four literal separators
+// ('/','_','+','-') is safe, and a character just outside every allowed set is
+// rejected. The mutation report flags every range comparison and separator
+// equality here as not-covered, so a shifted boundary or a negated equality
+// flips at least one expectation. This is a security guard: it keeps control
+// characters and stray separators out of a client-supplied timezone before it
+// reaches the stdlib loader.
+func TestIsSafeTimezoneIdentifierCharacterClasses(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"empty is trivially safe", "", true},
+		{"lowercase boundaries a and z", "az", true},
+		{"uppercase boundaries A and Z", "AZ", true},
+		{"digit boundaries 0 and 9", "09", true},
+		{"slash separator", "Europe/Moscow", true},
+		{"underscore separator", "America/New_York", true},
+		{"plus separator", "Etc/GMT+3", true},
+		{"minus separator", "Etc/GMT-3", true},
+		{"space rejected", "Europe Moscow", false},
+		{"dot rejected", "Europe.Moscow", false},
+		{"colon just above nine rejected", "GMT:0", false},
+		{"at just below uppercase A rejected", "@GMT", false},
+		{"bracket just above uppercase Z rejected", "GMT[", false},
+		{"backtick just below lowercase a rejected", "gmt`", false},
+		{"brace just above lowercase z rejected", "gmt{", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isSafeTimezoneIdentifier(tc.value); got != tc.want {
+				t.Fatalf("isSafeTimezoneIdentifier(%q) = %v, want %v", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseRequestTimezoneRejectsUnsafeInputs(t *testing.T) {
 	if _, _, ok := parseRequestTimezone("Local"); ok {
 		t.Fatal("expected Local token to be rejected")
