@@ -124,6 +124,7 @@ Period and fertile-window predictions in particular are statistical estimates de
 - Owner-managed custom symptoms with create, rename, hide, and restore flows that preserve historical records.
 - Predictions for next period, ovulation, fertile window, and cycle phase.
 - Calendar and statistics views for longer-term pattern spotting.
+- Reminders and notifications: an in-app dashboard banner, webhook reminders to a self-hosted ntfy/Gotify endpoint, and a private, read-only calendar (`.ics`) subscription.
 - Mobile home-screen install support on the current `main` branch.
 - CSV and JSON export for backup, portability, and personal review.
 - Optional OIDC sign-in in hybrid or SSO-only mode, with guarded owner auto-provision and provider logout support.
@@ -153,6 +154,18 @@ The full algorithm, with every constant and edge case, is in
 [docs/cycle-prediction.md](docs/cycle-prediction.md). The worked examples there are
 checked by reference tests, so the doc and the code stay in sync. You can read how
 a prediction is made and check it against the numbers yourself.
+
+## Reminders & Notifications
+
+Ovumcy can surface an upcoming period or ovulation estimate through three self-hosted channels, all driven by the same prediction and the same owner-configurable lead time:
+
+- **In-app dashboard banner** — shown automatically; the owner sets how many days ahead it appears (0–14, default 3) from Settings.
+- **Webhook reminders** — the owner points Settings at their own webhook endpoint (a self-hosted ntfy, Gotify, or similar instance); delivery runs via the `ovumcy notify` CLI on your own schedule (cron, systemd timer, Docker one-shot, Task Scheduler) or an optional built-in daily scheduler, off by default (`REMINDER_SCHEDULER_ENABLED`).
+- **Calendar (.ics) subscription** — the owner generates a private, read-only subscribe URL from Settings, shown once, for any calendar app that supports "subscribe by URL."
+
+Every reminder — banner, webhook payload, and calendar feed alike — carries the same medical-safety framing as the rest of the app: these are estimates, not medical advice or a method of contraception.
+
+Full setup steps, exact environment variables, and the CLI reference are in [docs/notifications.md](docs/notifications.md).
 
 ## Supported Languages
 
@@ -387,7 +400,8 @@ Notes:
 - `users list` prints a minimal account audit table: `id`, `email`, `role`, `display name`, onboarding state, and creation time.
 - `users delete <email>` removes the selected account together with related health data and prompts for an explicit `DELETE` confirmation unless `--yes` is provided.
 - `reset-password <email>` prompts for a new password interactively, validates it against the password policy, writes its bcrypt hash to the account, and atomically bumps `auth_session_version` so every existing session is invalidated. Use this when an owner has lost both their password and their recovery code.
-- `notify` runs one webhook reminder pass — decides due period/ovulation reminders per owner and delivers them to each owner's configured webhook. It is meant to be scheduled (cron, systemd timer, a Docker one-shot, or Task Scheduler), not run continuously. See [docs/notifications.md](docs/notifications.md) for enabling it per owner, scheduling recipes, and its idempotency/security contract.
+- `notify` runs one webhook reminder pass — decides due period/ovulation reminders per owner and delivers them to each owner's configured webhook. It is meant to be scheduled (cron, systemd timer, a Docker one-shot, or Task Scheduler), not run continuously; an optional built-in daily scheduler (`REMINDER_SCHEDULER_ENABLED`) can run the same pass in-process instead. See [docs/notifications.md](docs/notifications.md) for all three reminder channels (in-app banner, webhook, calendar feed), scheduling recipes, and the idempotency/security contract.
+- `webhook show|set <email>` inspects or configures an owner's webhook notification settings (endpoint, enabled state, notify-period/notify-ovulation toggles) from the shell — the same settings the Settings-page form writes. See [docs/notifications.md](docs/notifications.md) for the full flag reference.
 - Treat CLI usage as operator-only access. It is intended for local shell access on the instance, not for browser or remote public administration.
 
 ## Development
