@@ -390,6 +390,22 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | A crafted file cannot persist an inconsistent anchor (`cycle_start` on a non-period day) | `TestImportServiceDropsCycleStartOnNonPeriodDay` in [internal/services/import_service_test.go](internal/services/import_service_test.go) |
 | Custom-symptom creation on import is bounded (`MaxImportCustomSymptoms`), so a crafted file cannot force unbounded catalog growth / DB churn | `TestImportServiceCapsCustomSymptomCreation` in [internal/services/import_service_test.go](internal/services/import_service_test.go) |
 
+### Webhook Notifications (outbound egress)
+
+The request-free notify pass POSTs due period/ovulation reminders to an owner-configured URL. The endpoint is fully owner-controlled (self-hosted ntfy/Gotify commonly on the LAN), so the request envelope is hardened rather than the destination blanket-blocked.
+
+| Claim | Enforced by |
+| --- | --- |
+| In a multi-owner batch, each owner's reminder is delivered only to that owner's URL — one owner's predicted health data never reaches another owner's URL | `TestNotifyCrossOwnerIsolation`, `TestNotifyCrossOwnerHealthDataStaysScoped` in [internal/services/webhook_notify_service_test.go](internal/services/webhook_notify_service_test.go) |
+| Delivery refuses ALL redirects, so a 3xx cannot steer the request (or its body) to a second unvalidated origin | `TestWebhookDeliveryRefusesRedirect` in [internal/services/webhook_delivery_test.go](internal/services/webhook_delivery_test.go) |
+| Only `http`/`https` schemes are delivered; other schemes are rejected at delivery time (defence in depth over save-time validation) | `TestWebhookDeliveryRejectsNonHTTPScheme` in [internal/services/webhook_delivery_test.go](internal/services/webhook_delivery_test.go) |
+| A hostile endpoint cannot stall the pass (context/dialer timeout) or force an unbounded body read (response capped by `io.LimitReader`) | `TestWebhookDeliveryHonorsContextTimeout`, `TestWebhookDeliveryHandlesOversizedBody` in [internal/services/webhook_delivery_test.go](internal/services/webhook_delivery_test.go) |
+| Delivery logs and returns the destination HOST only — never the full URL, path, query, or userinfo (which may carry an ntfy token) | `TestWebhookDeliveryLogsHostOnly` in [internal/services/webhook_delivery_test.go](internal/services/webhook_delivery_test.go) |
+| Every delivered payload carries the mandatory medical-safety disclaimer | `TestNotifyDisclaimerPresentInEveryPayload` in [internal/services/webhook_notify_service_test.go](internal/services/webhook_notify_service_test.go) |
+| The per-kind watermark advances only on a successful (2xx) delivery; a failed delivery leaves it unchanged so the next pass retries, and a second pass over an advanced watermark sends nothing (idempotency both directions) | `TestNotifyWatermarkAdvancesOnlyOnSuccess`, `TestNotifyIdempotentSecondPassSkips`, `TestNotifyRetriesAfterFailure` in [internal/services/webhook_notify_service_test.go](internal/services/webhook_notify_service_test.go); `TestUpdateWebhookWatermarkCanonicalizesToUTCMidnight`, `TestUpdateWebhookWatermarkScopedToUser` in [internal/db/user_repository_webhook_test.go](internal/db/user_repository_webhook_test.go) |
+| A `webhook_url` that fails to decrypt (e.g. after `SECRET_KEY` rotation) fails safe: that owner is skipped, never delivered to a garbage target, and the pass continues | `TestNotifyDecryptFailureSkipsOwner` in [internal/services/webhook_notify_service_test.go](internal/services/webhook_notify_service_test.go) |
+| `--dry-run` computes what would be sent but makes no outbound request and writes no watermark | `TestNotifyDryRunMakesNoRequestOrWatermark` in [internal/services/webhook_notify_service_test.go](internal/services/webhook_notify_service_test.go), `TestRunNotifyCommandDryRunPropagates` in [internal/cli/notify_test.go](internal/cli/notify_test.go) |
+
 ### Session Invalidation on Credential Rotation
 
 | Claim | Enforced by |

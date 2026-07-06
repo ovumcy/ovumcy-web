@@ -154,7 +154,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	showSpottingCycleWarning := dashboardSpottingCycleWarning(logs, todayLog, today, location)
 	reminderBanner := DashboardReminderBanner{}
 	if IsOwnerUser(user) {
-		reminderBanner = BuildDashboardReminderBanner(cycleContext, today)
+		reminderBanner = BuildDashboardReminderBanner(cycleContext, today, user.ReminderLeadDays)
 	}
 
 	return DashboardViewData{

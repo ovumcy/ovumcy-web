@@ -255,3 +255,105 @@ func TestListAllForNotifyReturnsErrorOnQueryFailure(t *testing.T) {
 		t.Fatalf("expected nil records on error, got %v", records)
 	}
 }
+
+// TestUpdateWebhookWatermarkCanonicalizesToUTCMidnight proves the watermark
+// write (issue #124, slice 3) stores the cycle anchor as UTC-midnight even when
+// handed a location-bearing time — the write uses Updates(map), which bypasses
+// the model BeforeSave hook, so the method must canonicalize itself. A drifted
+// (non-midnight, non-UTC) stored value would compare unequal to a UTC-midnight
+// anchor on the next pass and break idempotency.
+func TestUpdateWebhookWatermarkCanonicalizesToUTCMidnight(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-watermark@example.com")
+
+	before := reloadUserForWebhook(t, repo, user.ID)
+
+	// A New York afternoon: 2026-03-14 15:00 -04:00 is still 2026-03-14 locally,
+	// and its UTC instant is 2026-03-14 19:00Z — canonicalization must key on the
+	// wall-clock calendar day of the supplied value (14 March), stored at UTC
+	// midnight.
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	anchor := time.Date(2026, time.March, 14, 15, 0, 0, 0, loc)
+
+	if err := repo.UpdateWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor); err != nil {
+		t.Fatalf("UpdateWebhookWatermark: %v", err)
+	}
+
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart == nil {
+		t.Fatal("expected the period watermark to be set")
+	}
+	got := after.WebhookPeriodLastSentCycleStart.UTC()
+	want := time.Date(2026, time.March, 14, 0, 0, 0, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Fatalf("expected watermark stored as %s, got %s", want, got)
+	}
+	// The ovulation watermark must be untouched.
+	if after.WebhookOvulationLastSentCycleStart != nil {
+		t.Fatalf("period write must not touch the ovulation watermark, got %v", after.WebhookOvulationLastSentCycleStart)
+	}
+	// Advancing a send watermark is not a security-posture change.
+	if after.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("UpdateWebhookWatermark must not bump auth_session_version: before=%d after=%d", before.AuthSessionVersion, after.AuthSessionVersion)
+	}
+}
+
+// TestUpdateWebhookWatermarkOvulationColumn proves the ovulation kind writes the
+// ovulation column (and not the period one), so the two kinds dedupe
+// independently.
+func TestUpdateWebhookWatermarkOvulationColumn(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-ovulation@example.com")
+
+	anchor := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	if err := repo.UpdateWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypeOvulation, anchor); err != nil {
+		t.Fatalf("UpdateWebhookWatermark: %v", err)
+	}
+
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookOvulationLastSentCycleStart == nil || !after.WebhookOvulationLastSentCycleStart.UTC().Equal(anchor) {
+		t.Fatalf("expected ovulation watermark %s, got %v", anchor, after.WebhookOvulationLastSentCycleStart)
+	}
+	if after.WebhookPeriodLastSentCycleStart != nil {
+		t.Fatalf("ovulation write must not touch the period watermark, got %v", after.WebhookPeriodLastSentCycleStart)
+	}
+}
+
+// TestUpdateWebhookWatermarkRejectsUnknownType proves an unrecognized reminder
+// type is rejected (no column write), so a typo can never scribble an unexpected
+// column.
+func TestUpdateWebhookWatermarkRejectsUnknownType(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-badtype@example.com")
+
+	err := repo.UpdateWebhookWatermark(context.Background(), user.ID, "not-a-real-kind", time.Now())
+	if err == nil {
+		t.Fatal("expected an error for an unknown reminder type")
+	}
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart != nil || after.WebhookOvulationLastSentCycleStart != nil {
+		t.Fatal("a rejected type must not write any watermark column")
+	}
+}
+
+// TestUpdateWebhookWatermarkScopedToUser proves the watermark write is strictly
+// scoped to the target user id: advancing owner A's watermark never touches owner
+// B's row (the household-multi-owner isolation boundary).
+func TestUpdateWebhookWatermarkScopedToUser(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	owner := createUserForTimezoneTest(t, repo, "wh-wm-owner@example.com")
+	other := createUserForTimezoneTest(t, repo, "wh-wm-other@example.com")
+
+	anchor := time.Date(2026, time.May, 20, 0, 0, 0, 0, time.UTC)
+	if err := repo.UpdateWebhookWatermark(context.Background(), owner.ID, models.WebhookReminderTypePeriod, anchor); err != nil {
+		t.Fatalf("UpdateWebhookWatermark: %v", err)
+	}
+
+	otherAfter := reloadUserForWebhook(t, repo, other.ID)
+	if otherAfter.WebhookPeriodLastSentCycleStart != nil {
+		t.Fatalf("owner B's watermark must be untouched, got %v", otherAfter.WebhookPeriodLastSentCycleStart)
+	}
+}

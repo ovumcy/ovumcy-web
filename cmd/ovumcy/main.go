@@ -806,6 +806,7 @@ func tryRunCLICommand() (bool, error) {
 		runResetPassword: cli.RunResetPasswordCommand,
 		runUsers:         cli.RunUsersCommand,
 		runHealthcheck:   cli.RunHealthcheckCommand,
+		runNotify:        cli.RunNotifyCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 	})
 }
 
@@ -813,6 +814,7 @@ type cliCommandHandlers struct {
 	runResetPassword func(databaseConfig db.Config, email string) error
 	runUsers         func(databaseConfig db.Config, args []string) error
 	runHealthcheck   func(port string, timeout time.Duration) error
+	runNotify        func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
 }
 
 func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (bool, error) {
@@ -859,9 +861,40 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 			return true, fmt.Errorf("invalid PORT: %w", err)
 		}
 		return true, handlers.runHealthcheck(port, 0)
+	case "notify":
+		if handlers.runNotify == nil {
+			return true, fmt.Errorf("notify handler is required")
+		}
+		databaseConfig, err := resolveDatabaseConfig()
+		if err != nil {
+			return true, fmt.Errorf("invalid database config: %w", err)
+		}
+		secretKey, err := resolveSecretKey()
+		if err != nil {
+			return true, fmt.Errorf("invalid SECRET_KEY: %w", err)
+		}
+		location := mustLoadLocation(getEnv("TZ", "Local"))
+		defaultLanguage := getEnv("DEFAULT_LANGUAGE", "en")
+		blockPrivateAddresses := resolveBoolEnv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
+		return true, handlers.runNotify(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args[1:])
 	default:
 		return false, nil
 	}
+}
+
+// resolveBoolEnv reads a boolean environment flag, returning fallback when the
+// variable is unset or unparseable. Used for the off-by-default
+// WEBHOOK_BLOCK_PRIVATE_ADDRESSES egress gate.
+func resolveBoolEnv(key string, fallback bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return value
 }
 
 func resolveDatabaseConfig() (db.Config, error) {
