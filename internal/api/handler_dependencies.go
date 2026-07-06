@@ -21,6 +21,7 @@ func (handler *Handler) withDependencies(dependencies Dependencies) *Handler {
 	handler.viewerService = dependencies.ViewerService
 	handler.statsService = dependencies.StatsService
 	handler.calendarViewService = dependencies.CalendarViewService
+	handler.calendarFeedService = dependencies.CalendarFeedService
 	handler.dashboardViewService = dependencies.DashboardViewService
 	handler.exportService = dependencies.ExportService
 	handler.importService = dependencies.ImportService

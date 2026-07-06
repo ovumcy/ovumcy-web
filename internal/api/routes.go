@@ -97,6 +97,11 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/dashboard", handler.AuthRequired, handler.ShowDashboard)
 	app.Get("/calendar", handler.AuthRequired, handler.ShowCalendar)
 	app.Get("/calendar/day/:date", handler.AuthRequired, handler.CalendarDayPanel)
+	// Calendar (.ics) feed: authenticated by the path token ALONE (no cookie),
+	// so it is deliberately NOT behind AuthRequired/OwnerOnly. Shaped as
+	// ":token.ics" so the token binds as a clean :token param that
+	// SafeRequestLogPath masks. Per-IP rate-limited in cmd/ovumcy/main.go.
+	app.Get(calendarFeedRoutePath, handler.ServeCalendarFeed)
 	app.Get("/stats", handler.AuthRequired, handler.ShowStats)
 	app.Get("/settings", handler.AuthRequired, handler.ShowSettings)
 	app.Get("/settings/2fa", handler.AuthRequired, handler.ShowTOTPSetupPage)

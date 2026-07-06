@@ -623,6 +623,16 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 		KeyGenerator: keyGen,
 		LimitReached: newAPIRateLimitHandler(handler),
 	}))
+	// Per-IP limiter for the cookieless calendar-feed endpoint. It is not under
+	// /api, so the /api limiter does not cover it; a public, tokened polling
+	// surface must be independently capped so a leaked/guessed URL cannot be
+	// hammered. Reuses the same spoof-proof key generator and the API budget.
+	app.Use(api.CalendarFeedRateLimitPrefix, limiter.New(limiter.Config{
+		Max:          config.RateLimits.APIMax,
+		Expiration:   config.RateLimits.APIWindow,
+		KeyGenerator: keyGen,
+		LimitReached: newCalendarFeedRateLimitHandler(handler),
+	}))
 	app.Use(handler.LanguageMiddleware)
 	app.Use(csrf.New(csrfMiddlewareConfig(config.CookieSecure, handler)))
 }
@@ -1194,6 +1204,23 @@ func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
 			api.SecurityEventField{Key: "reason", Value: "too many requests"},
 		)
 		return handler.RespondAPIRateLimited(c)
+	}
+}
+
+// newCalendarFeedRateLimitHandler is the LimitReached handler for the per-IP
+// calendar-feed limiter. The feed has no UI, so a 429 needs no HTML/JSON body:
+// it returns a bare 429 (preserving the limiter-set Retry-After header) after
+// logging the hit and a security event. logRateLimitHit masks the token in the
+// path via SafeRequestLogPath, so the rate-limit log line never carries the
+// token value.
+func newCalendarFeedRateLimitHandler(handler *api.Handler) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		logRateLimitHit(c)
+		handler.LogSecurityEvent(c, "rate_limit", "blocked",
+			api.SecurityEventField{Key: "scope", Value: "calendar_feed"},
+			api.SecurityEventField{Key: "reason", Value: "too many requests"},
+		)
+		return c.SendStatus(fiber.StatusTooManyRequests)
 	}
 }
 
