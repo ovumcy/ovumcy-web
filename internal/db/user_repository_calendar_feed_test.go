@@ -264,3 +264,29 @@ func TestCalendarFeedTokenHashAtRestInDBRow(t *testing.T) {
 		t.Fatal("expected the full token to verify against the persisted storables")
 	}
 }
+
+// TestFindByCalendarFeedSelectorReturnsErrorOnQueryFailure exercises the
+// non-not-found error branch of FindByCalendarFeedSelector: when the underlying
+// SELECT fails for a reason other than gorm.ErrRecordNotFound (here because the
+// users table has been dropped), the method must propagate the error and report
+// ok=false with a zero user — distinct from the clean "not found" path, which
+// returns a nil error. Mirrors the drop-table technique in
+// TestListAllForNotifyReturnsErrorOnQueryFailure.
+func TestFindByCalendarFeedSelectorReturnsErrorOnQueryFailure(t *testing.T) {
+	repo := openCalendarFeedRepoForTest(t)
+
+	if err := repo.database.Exec("DROP TABLE users").Error; err != nil {
+		t.Fatalf("drop users table: %v", err)
+	}
+
+	user, ok, err := repo.FindByCalendarFeedSelector(context.Background(), "ANYSELECTOR16XXX")
+	if err == nil {
+		t.Fatal("expected FindByCalendarFeedSelector to error when the users table is missing")
+	}
+	if ok {
+		t.Fatal("expected ok=false on a query failure")
+	}
+	if user.ID != 0 {
+		t.Fatalf("expected zero user on a query failure, got id %d", user.ID)
+	}
+}

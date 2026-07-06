@@ -64,15 +64,15 @@ const (
 func GenerateCalendarFeedToken() (fullToken string, selector string, verifierHash string, err error) {
 	selector, err = security.RandomString(calendarFeedSelectorLength, calendarFeedAlphabet)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
 	}
 	verifier, err := security.RandomString(calendarFeedVerifierLength, calendarFeedAlphabet)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", err // codecov:ignore -- crypto/rand failure, not reachable in tests
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(verifier), passwordHashCost)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", err // codecov:ignore -- bcrypt only errors on an out-of-range cost
 	}
 	return selector + verifier, selector, string(hash), nil
 }
