@@ -29,9 +29,9 @@ func runDayStatusHelperCtx(t *testing.T, messages map[string]string, fn func(han
 		result = fn(handler, c)
 		// Snapshot response headers set by the helper before the handler returns.
 		header = http.Header{}
-		c.Response().Header.VisitAll(func(key, value []byte) {
+		for key, value := range c.Response().Header.All() {
 			header.Add(string(key), string(value))
-		})
+		}
 		return c.SendStatus(http.StatusOK)
 	})
 	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
