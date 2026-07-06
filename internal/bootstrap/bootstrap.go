@@ -116,6 +116,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	exportService := services.NewExportService(dayService, symptomService)
 	importService := services.NewImportService(dailyLogs, repositories.Users, symptomService, dayLogTxRunner)
 	settingsService := services.NewSettingsService(repositories.Users)
+	webhookSettingsService := services.NewWebhookSettingsService(repositories.Users, secretKey)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)
 
@@ -130,26 +131,27 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	}
 
 	return apideps.Dependencies{
-		AuditLogEnabled:      opts.AuditLogEnabled,
-		AuthService:          authService,
-		RegistrationService:  registrationService,
-		PasswordResetService: passwordResetService,
-		LoginService:         loginService,
-		OIDCService:          oidcService,
-		OIDCLogoutStateSvc:   oidcLogoutStateService,
-		DayService:           dayService,
-		SymptomService:       symptomService,
-		ViewerService:        viewerService,
-		StatsService:         statsService,
-		CalendarViewService:  calendarViewService,
-		DashboardViewService: dashboardViewService,
-		ExportService:        exportService,
-		ImportService:        importService,
-		SettingsService:      settingsService,
-		SettingsViewService:  services.NewSettingsViewService(settingsService, exportService, symptomService),
-		OnboardingService:    services.NewOnboardingService(repositories.Users),
-		SetupService:         services.NewSetupService(repositories.Users),
-		TOTPService:          totpService,
-		RegisterPickupTokens: repositories.RegisterPickupTokens,
+		AuditLogEnabled:        opts.AuditLogEnabled,
+		AuthService:            authService,
+		RegistrationService:    registrationService,
+		PasswordResetService:   passwordResetService,
+		LoginService:           loginService,
+		OIDCService:            oidcService,
+		OIDCLogoutStateSvc:     oidcLogoutStateService,
+		DayService:             dayService,
+		SymptomService:         symptomService,
+		ViewerService:          viewerService,
+		StatsService:           statsService,
+		CalendarViewService:    calendarViewService,
+		DashboardViewService:   dashboardViewService,
+		ExportService:          exportService,
+		ImportService:          importService,
+		SettingsService:        settingsService,
+		SettingsViewService:    services.NewSettingsViewService(settingsService, exportService, symptomService, webhookSettingsService),
+		WebhookSettingsService: webhookSettingsService,
+		OnboardingService:      services.NewOnboardingService(repositories.Users),
+		SetupService:           services.NewSetupService(repositories.Users),
+		TOTPService:            totpService,
+		RegisterPickupTokens:   repositories.RegisterPickupTokens,
 	}
 }

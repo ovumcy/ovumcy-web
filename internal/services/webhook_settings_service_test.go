@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -10,12 +11,17 @@ import (
 )
 
 // stubWebhookRepo captures the last SaveWebhookSettings call so tests can assert
-// the ciphertext the service produced and persisted.
+// the ciphertext the service produced and persisted. loadUser / loadErr back the
+// LoadSettingsByID read the write-only form-save path uses to resolve the
+// "blank URL = keep existing" semantics.
 type stubWebhookRepo struct {
 	savedUserID  uint
 	savedColumns models.WebhookSettingsColumns
 	saveErr      error
 	saveCalls    int
+	loadUser     models.User
+	loadErr      error
+	loadCalls    int
 }
 
 func (s *stubWebhookRepo) SaveWebhookSettings(_ context.Context, userID uint, settings models.WebhookSettingsColumns) error {
@@ -23,6 +29,11 @@ func (s *stubWebhookRepo) SaveWebhookSettings(_ context.Context, userID uint, se
 	s.savedUserID = userID
 	s.savedColumns = settings
 	return s.saveErr
+}
+
+func (s *stubWebhookRepo) LoadSettingsByID(_ context.Context, _ uint) (models.User, error) {
+	s.loadCalls++
+	return s.loadUser, s.loadErr
 }
 
 const webhookTestSecretKey = "test-secret-key-32-bytes-padding!"
@@ -378,5 +389,180 @@ func TestDecryptWebhookURLFailsAfterKeyRotation(t *testing.T) {
 	// as the cause of the failure above).
 	if _, _, err := security.DecryptField(ciphertext, []byte(webhookTestSecretKey), aadForWebhookURL(3)); err != nil {
 		t.Fatalf("original-key decrypt should succeed: %v", err)
+	}
+}
+
+// storeWebhookURLForForm seals plaintextURL under userID's aad and returns the
+// ciphertext, so the form-save tests can seed a stored endpoint the way the
+// database row would hold it.
+func storeWebhookURLForForm(t *testing.T, userID uint, plaintextURL string) string {
+	t.Helper()
+	ciphertext, err := security.EncryptField(plaintextURL, []byte(webhookTestSecretKey), aadForWebhookURL(userID))
+	if err != nil {
+		t.Fatalf("seed ciphertext: %v", err)
+	}
+	return ciphertext
+}
+
+// TestSaveWebhookSettingsFromFormBlankURLKeepsStoredEndpoint is the write-only
+// contract: submitting no URL (URLProvided=false) while an endpoint is already
+// stored preserves that endpoint — the service decrypts the stored ciphertext
+// and re-supplies it — so the secret never has to round-trip through transport.
+func TestSaveWebhookSettingsFromFormBlankURLKeepsStoredEndpoint(t *testing.T) {
+	const userID = 21
+	const storedURL = "https://ntfy.example/kept-topic"
+	svc, repo := newWebhookServiceForTest()
+	repo.loadUser = models.User{WebhookURL: storeWebhookURLForForm(t, userID, storedURL), ReminderLeadDays: 7}
+
+	if err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
+		Enabled:         true,
+		NotifyPeriod:    true,
+		NotifyOvulation: false,
+		URLProvided:     false,
+	}); err != nil {
+		t.Fatalf("SaveWebhookSettingsFromForm: %v", err)
+	}
+
+	if repo.saveCalls != 1 {
+		t.Fatalf("expected one save, got %d", repo.saveCalls)
+	}
+	if !repo.savedColumns.Enabled {
+		t.Fatal("expected webhook_enabled=true persisted")
+	}
+	if repo.savedColumns.ReminderLeadDays != 7 {
+		t.Fatalf("expected reminder_lead_days preserved at 7, got %d", repo.savedColumns.ReminderLeadDays)
+	}
+	got, err := svc.DecryptWebhookURL(userID, repo.savedColumns.EncryptedURL)
+	if err != nil {
+		t.Fatalf("decrypt persisted url: %v", err)
+	}
+	if got != storedURL {
+		t.Fatalf("expected stored endpoint preserved (%q), got %q", storedURL, got)
+	}
+}
+
+// TestSaveWebhookSettingsFromFormReplacesURLWhenProvided confirms a newly-typed
+// URL replaces the stored one and is re-encrypted (ciphertext, not plaintext).
+func TestSaveWebhookSettingsFromFormReplacesURLWhenProvided(t *testing.T) {
+	const userID = 22
+	const newURL = "https://gotify.example/message?token=abc123"
+	svc, repo := newWebhookServiceForTest()
+	repo.loadUser = models.User{WebhookURL: storeWebhookURLForForm(t, userID, "https://old.example/topic"), ReminderLeadDays: 3}
+
+	if err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
+		Enabled:         true,
+		NotifyPeriod:    true,
+		NotifyOvulation: true,
+		URL:             newURL,
+		URLProvided:     true,
+	}); err != nil {
+		t.Fatalf("SaveWebhookSettingsFromForm: %v", err)
+	}
+	if repo.savedColumns.EncryptedURL == newURL {
+		t.Fatal("stored URL must be ciphertext, not plaintext")
+	}
+	got, err := svc.DecryptWebhookURL(userID, repo.savedColumns.EncryptedURL)
+	if err != nil {
+		t.Fatalf("decrypt persisted url: %v", err)
+	}
+	if got != newURL {
+		t.Fatalf("expected replaced endpoint %q, got %q", newURL, got)
+	}
+}
+
+// TestSaveWebhookSettingsFromFormRemoveClearsAndDisables confirms the remove
+// affordance clears the stored endpoint and forces delivery off, even if the
+// form also carried enabled=true and a URL.
+func TestSaveWebhookSettingsFromFormRemoveClearsAndDisables(t *testing.T) {
+	const userID = 23
+	svc, repo := newWebhookServiceForTest()
+	repo.loadUser = models.User{WebhookURL: storeWebhookURLForForm(t, userID, "https://ntfy.example/gone"), ReminderLeadDays: 5}
+
+	if err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
+		Enabled:         true,
+		NotifyPeriod:    true,
+		NotifyOvulation: true,
+		URL:             "https://ntfy.example/ignored",
+		URLProvided:     true,
+		RemoveURL:       true,
+	}); err != nil {
+		t.Fatalf("SaveWebhookSettingsFromForm: %v", err)
+	}
+	if repo.savedColumns.Enabled {
+		t.Fatal("expected delivery forced off by remove")
+	}
+	if repo.savedColumns.EncryptedURL != "" {
+		t.Fatalf("expected stored endpoint cleared, got %q", repo.savedColumns.EncryptedURL)
+	}
+}
+
+// TestSaveWebhookSettingsFromFormEnableWithoutURLRejected confirms enabling with
+// no stored and no supplied URL is rejected (ErrWebhookURLInvalid) and nothing
+// persists — a webhook can never be armed without a deliverable target.
+func TestSaveWebhookSettingsFromFormEnableWithoutURLRejected(t *testing.T) {
+	const userID = 24
+	svc, repo := newWebhookServiceForTest()
+	repo.loadUser = models.User{WebhookURL: "", ReminderLeadDays: 3}
+
+	err := svc.SaveWebhookSettingsFromForm(context.Background(), userID, WebhookSettingsFormUpdate{
+		Enabled:         true,
+		NotifyPeriod:    true,
+		NotifyOvulation: true,
+		URLProvided:     false,
+	})
+	if !errors.Is(err, ErrWebhookURLInvalid) {
+		t.Fatalf("expected ErrWebhookURLInvalid enabling with no endpoint, got %v", err)
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("expected no persistence, got %d save calls", repo.saveCalls)
+	}
+}
+
+// TestSaveWebhookSettingsFromFormLoadErrorPropagates confirms a settings-load
+// failure surfaces and nothing is persisted.
+func TestSaveWebhookSettingsFromFormLoadErrorPropagates(t *testing.T) {
+	svc, repo := newWebhookServiceForTest()
+	repo.loadErr = errors.New("load boom")
+
+	err := svc.SaveWebhookSettingsFromForm(context.Background(), 25, WebhookSettingsFormUpdate{Enabled: false})
+	if err == nil {
+		t.Fatal("expected the load error to surface")
+	}
+	if repo.saveCalls != 0 {
+		t.Fatalf("expected no persistence on load failure, got %d save calls", repo.saveCalls)
+	}
+}
+
+// TestBuildWebhookURLDisplay covers the render-safe status/host projection: it
+// exposes the hostname only (never the path/query/userinfo secret), reports
+// not-configured for an empty value, and reports configured-but-hostless for a
+// ciphertext that will not open.
+func TestBuildWebhookURLDisplay(t *testing.T) {
+	const userID = 31
+	svc, _ := newWebhookServiceForTest()
+
+	// Not configured.
+	if got := svc.BuildWebhookURLDisplay(userID, ""); got.Configured || got.Host != "" {
+		t.Fatalf("empty stored value should be not-configured, got %+v", got)
+	}
+
+	// Configured: host only, secret path/query/userinfo dropped.
+	ciphertext := storeWebhookURLForForm(t, userID, "https://user:s3cr3t@ntfy.example.com:8443/topic?token=abc123")
+	got := svc.BuildWebhookURLDisplay(userID, ciphertext)
+	if !got.Configured {
+		t.Fatal("expected configured=true for a stored endpoint")
+	}
+	if got.Host != "ntfy.example.com" {
+		t.Fatalf("expected host-only 'ntfy.example.com', got %q", got.Host)
+	}
+	if strings.Contains(got.Host, "s3cr3t") || strings.Contains(got.Host, "token") || strings.Contains(got.Host, "topic") || strings.Contains(got.Host, "8443") {
+		t.Fatalf("host projection leaked non-host components: %q", got.Host)
+	}
+
+	// Configured but un-openable (wrong-aad ciphertext): configured, no host.
+	otherOwnerCiphertext := storeWebhookURLForForm(t, userID+1, "https://ntfy.example.com/topic")
+	unopenable := svc.BuildWebhookURLDisplay(userID, otherOwnerCiphertext)
+	if !unopenable.Configured || unopenable.Host != "" {
+		t.Fatalf("un-openable ciphertext should be configured-but-hostless, got %+v", unopenable)
 	}
 }
