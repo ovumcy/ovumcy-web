@@ -113,6 +113,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	statsService := services.NewStatsService(dayService, symptomService)
 	calendarViewService := services.NewCalendarViewService(dayService, statsService)
 	calendarFeedService := services.NewCalendarFeedService(repositories.Users, dayService, i18nDisclaimerProvider{manager: i18nManager})
+	calendarFeedSettingsService := services.NewCalendarFeedSettingsService(repositories.Users)
 	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
 	exportService := services.NewExportService(dayService, symptomService)
 	importService := services.NewImportService(dailyLogs, repositories.Users, symptomService, dayLogTxRunner)
@@ -145,11 +146,12 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		StatsService:           statsService,
 		CalendarViewService:    calendarViewService,
 		CalendarFeedService:    calendarFeedService,
+		CalendarFeedSettings:   calendarFeedSettingsService,
 		DashboardViewService:   dashboardViewService,
 		ExportService:          exportService,
 		ImportService:          importService,
 		SettingsService:        settingsService,
-		SettingsViewService:    services.NewSettingsViewService(settingsService, exportService, symptomService, webhookSettingsService),
+		SettingsViewService:    services.NewSettingsViewService(settingsService, exportService, symptomService, webhookSettingsService, calendarFeedSettingsService),
 		WebhookSettingsService: webhookSettingsService,
 		OnboardingService:      services.NewOnboardingService(repositories.Users),
 		SetupService:           services.NewSetupService(repositories.Users),

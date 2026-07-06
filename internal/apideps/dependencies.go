@@ -23,6 +23,7 @@ type Dependencies struct {
 	StatsService           *services.StatsService
 	CalendarViewService    *services.CalendarViewService
 	CalendarFeedService    *services.CalendarFeedService
+	CalendarFeedSettings   *services.CalendarFeedSettingsService
 	DashboardViewService   *services.DashboardViewService
 	ExportService          *services.ExportService
 	ImportService          *services.ImportService
@@ -70,6 +71,7 @@ func (dependencies Dependencies) requirements() []dependencyRequirement {
 		{value: dependencies.StatsService, message: "stats service is required"},
 		{value: dependencies.CalendarViewService, message: "calendar view service is required"},
 		{value: dependencies.CalendarFeedService, message: "calendar feed service is required"},
+		{value: dependencies.CalendarFeedSettings, message: "calendar feed settings service is required"},
 		{value: dependencies.DashboardViewService, message: "dashboard view service is required"},
 		{value: dependencies.ExportService, message: "export service is required"},
 		{value: dependencies.ImportService, message: "import service is required"},

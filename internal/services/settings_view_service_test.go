@@ -90,7 +90,7 @@ func TestBuildSettingsPageViewDataClassifiesChangePasswordError(t *testing.T) {
 			LastPeriodStart: nil,
 		},
 	}
-	service := NewSettingsViewService(settingsLoader, nil, nil, nil)
+	service := NewSettingsViewService(settingsLoader, nil, nil, nil, nil)
 
 	user := &models.User{ID: 1, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{
@@ -129,7 +129,7 @@ func TestBuildSettingsPageViewDataOwnerLoadsExportSummary(t *testing.T) {
 			{ID: 3, Name: "Caffeine crash", ArchivedAt: ptrSettingsViewTime(mustParseSettingsViewDay(t, "2026-02-01"))},
 		},
 	}
-	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil)
+	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil, nil)
 
 	user := &models.User{ID: 2, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
@@ -174,7 +174,7 @@ func TestBuildSettingsPageViewDataOwnerClampsExportDefaultToRequestLocalToday(t 
 		},
 	}
 
-	service := NewSettingsViewService(settingsLoader, exportBuilder, nil, nil)
+	service := NewSettingsViewService(settingsLoader, exportBuilder, nil, nil, nil)
 	user := &models.User{ID: 5, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
 	if err != nil {
@@ -210,7 +210,7 @@ func TestBuildSettingsPageViewDataSanitizesFutureLastPeriodStartForForm(t *testi
 		},
 	}
 
-	service := NewSettingsViewService(settingsLoader, nil, nil, nil)
+	service := NewSettingsViewService(settingsLoader, nil, nil, nil, nil)
 	user := &models.User{ID: 6, Role: models.RoleOwner}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "ru", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-03-12"), time.UTC)
 	if err != nil {
@@ -235,7 +235,7 @@ func TestBuildSettingsPageViewDataPartnerSkipsExportSummary(t *testing.T) {
 	}
 	exportBuilder := &stubSettingsViewExportBuilder{}
 	symptomProvider := &stubSettingsViewSymptomProvider{}
-	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil)
+	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil, nil)
 
 	user := &models.User{ID: 3, Role: "legacy_viewer"}
 	viewData, err := service.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC)
@@ -264,6 +264,7 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	if _, err := settingsErrService.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSettings) {
 		t.Fatalf("expected ErrSettingsViewLoadSettings, got %v", err)
@@ -272,6 +273,7 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 	exportErrService := NewSettingsViewService(
 		&stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5, AutoPeriodFill: true}},
 		&stubSettingsViewExportBuilder{err: errors.New("export fail")},
+		nil,
 		nil,
 		nil,
 	)
@@ -283,6 +285,7 @@ func TestBuildSettingsPageViewDataReturnsTypedErrors(t *testing.T) {
 		&stubSettingsViewLoader{user: models.User{CycleLength: 28, PeriodLength: 5, AutoPeriodFill: true}},
 		nil,
 		&stubSettingsViewSymptomProvider{err: errors.New("symptom fail")},
+		nil,
 		nil,
 	)
 	if _, err := symptomErrService.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); !errors.Is(err, ErrSettingsViewLoadSymptoms) {

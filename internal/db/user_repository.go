@@ -276,10 +276,25 @@ func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, sele
 	return user, true, nil
 }
 
+// UpdateRecoveryCodeHashAndRevokeSessions rotates the recovery-code hash and
+// bumps auth_session_version in one atomic update (recovery-code regeneration).
+//
+// It ALSO force-clears the calendar-feed token in the SAME Updates() — the
+// compromise arm of the approved force-rotate-on-recovery rule. A feed token is
+// a long-lived bearer capability that outlives login sessions, so regenerating
+// the recovery code (a security-posture reset the owner performs when they
+// suspect the account is compromised) must also disarm any feed URL that may
+// have leaked. Clearing (not silently re-minting) is deliberate: the old URL
+// dies immediately and the owner re-generates a fresh one afterward from
+// settings, so a compromise never leaves a working feed behind. It lives in the
+// same Updates() as the version bump so a partial failure can never revoke
+// sessions while leaving the feed armed (or vice versa).
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"recovery_code_hash":   recoveryHash,
-		"auth_session_version": gorm.Expr("auth_session_version + 1"),
+		"recovery_code_hash":          recoveryHash,
+		"calendar_feed_selector":      nil,
+		"calendar_feed_verifier_hash": nil,
+		"auth_session_version":        gorm.Expr("auth_session_version + 1"),
 	}).Error
 }
 
@@ -289,6 +304,30 @@ func (repo *UserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context,
 		"must_change_password": mustChangePassword,
 		"local_auth_enabled":   true,
 		"auth_session_version": gorm.Expr("auth_session_version + 1"),
+	}).Error
+}
+
+// ForceResetPasswordAndRevokeSessions is the operator-driven variant of
+// UpdatePasswordAndRevokeSessions (the CLI `ovumcy reset` path). It rewrites the
+// password hash, forces a change-on-next-login, bumps auth_session_version, AND
+// force-clears the calendar-feed token — all in one atomic Updates().
+//
+// It is deliberately SEPARATE from UpdatePasswordAndRevokeSessions because that
+// method is ALSO the routine authenticated password-change path
+// (SettingsService.ChangePassword), which must NOT disarm the feed: a routine
+// change is not a compromise event, and the owner keeps a manual rotate control.
+// A forced operator reset, by contrast, is used to recover a compromised or
+// locked-out account, so it is the operator-reset arm of the approved
+// force-rotate-on-recovery rule: any feed URL that may have leaked is cleared in
+// the same write that resets the credential and revokes sessions.
+func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"password_hash":               passwordHash,
+		"must_change_password":        true,
+		"local_auth_enabled":          true,
+		"calendar_feed_selector":      nil,
+		"calendar_feed_verifier_hash": nil,
+		"auth_session_version":        gorm.Expr("auth_session_version + 1"),
 	}).Error
 }
 
@@ -326,15 +365,26 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 //
 // Returns ErrResetTokenAlreadyConsumed when RowsAffected == 0 (token was
 // already redeemed or the password state changed since the token was issued).
+//
+// It ALSO force-clears the calendar-feed token in the SAME Updates() — the
+// password-reset arm of the approved force-rotate-on-recovery rule. A reset via
+// recovery code is a compromise-recovery event (the owner lost the password), so
+// any feed URL that may have leaked alongside the password is disarmed in the
+// same atomic write that rotates the credential and revokes sessions; the owner
+// re-generates a fresh feed afterward. Because the clear rides the same CAS
+// UPDATE, a replayed/concurrent redeem that loses the race (RowsAffected == 0)
+// neither rotates the credential nor clears the feed — both stay consistent.
 func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error {
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
 		Updates(map[string]any{
-			"password_hash":        newPasswordHash,
-			"recovery_code_hash":   recoveryHash,
-			"must_change_password": false,
-			"local_auth_enabled":   true,
-			"auth_session_version": gorm.Expr("auth_session_version + 1"),
+			"password_hash":               newPasswordHash,
+			"recovery_code_hash":          recoveryHash,
+			"must_change_password":        false,
+			"local_auth_enabled":          true,
+			"calendar_feed_selector":      nil,
+			"calendar_feed_verifier_hash": nil,
+			"auth_session_version":        gorm.Expr("auth_session_version + 1"),
 		})
 	if result.Error != nil {
 		return result.Error // codecov:ignore -- DB-layer error on the CAS UPDATE; not reachable in unit tests

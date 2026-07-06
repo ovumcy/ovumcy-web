@@ -12,6 +12,7 @@ var pageTemplates = []string{
 	"stats",
 	"settings",
 	"settings_2fa",
+	"calendar_feed_reveal",
 	"auth_2fa",
 	"auth_oidc_link_confirm",
 	"not_found",

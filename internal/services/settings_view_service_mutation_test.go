@@ -32,7 +32,7 @@ func TestSettingsViewServiceExportDateBoundsWhitespacePaddedFromEqualsToday(t *t
 			{TotalEntries: 1, HasData: true, DateFrom: "2026-06-01", DateTo: "2026-06-01"},
 		},
 	}
-	svc := NewSettingsViewService(loader, exportBuilder, nil, nil)
+	svc := NewSettingsViewService(loader, exportBuilder, nil, nil, nil)
 	user := &models.User{ID: 30, Role: models.RoleOwner}
 
 	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)

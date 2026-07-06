@@ -482,6 +482,65 @@
       </div>
     </form>
   </section>
+
+  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-calendar-feed">
+    <div>
+      <h2 class="journal-subtitle">🗓️ {{t .Messages "settings.calendar_feed.title"}}</h2>
+      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.calendar_feed.subtitle"}}</p>
+    </div>
+
+    <div class="space-y-2">
+      <p class="field-label" data-calendar-feed-status="{{if .CalendarFeedConfigured}}configured{{else}}not-configured{{end}}">
+        {{if .CalendarFeedConfigured}}
+          {{t .Messages "settings.calendar_feed.status_configured"}}
+        {{else}}
+          {{t .Messages "settings.calendar_feed.status_not_configured"}}
+        {{end}}
+      </p>
+      <p class="journal-muted text-sm" data-calendar-feed-hint>{{t .Messages "settings.calendar_feed.url_hint"}}</p>
+      <p class="journal-muted text-sm" data-calendar-feed-disclaimer>{{t .Messages "settings.calendar_feed.disclaimer"}}</p>
+    </div>
+
+    {{if .CalendarFeedConfigured}}
+    <div class="settings-form-actions">
+      <form
+        action="/api/v1/users/current/calendar-feed/rotate"
+        method="post"
+        hx-post="/api/v1/users/current/calendar-feed/rotate"
+        data-confirm="{{t .Messages "settings.calendar_feed.confirm_rotate"}}"
+        data-confirm-accept="{{t .Messages "settings.calendar_feed.rotate"}}"
+        data-settings-calendar-feed-rotate>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.rotate"}}</button>
+      </form>
+
+      <form
+        action="/api/v1/users/current/calendar-feed"
+        method="post"
+        hx-delete="/api/v1/users/current/calendar-feed"
+        hx-target="#settings-calendar-feed-status"
+        hx-swap="innerHTML"
+        data-confirm="{{t .Messages "settings.calendar_feed.confirm_revoke"}}"
+        data-confirm-accept="{{t .Messages "settings.calendar_feed.revoke"}}"
+        data-settings-calendar-feed-revoke>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.revoke"}}</button>
+      </form>
+    </div>
+    {{else}}
+    <div class="settings-form-actions">
+      <form
+        action="/api/v1/users/current/calendar-feed"
+        method="post"
+        hx-post="/api/v1/users/current/calendar-feed"
+        data-settings-calendar-feed-generate>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-secondary">{{t .Messages "settings.calendar_feed.generate"}}</button>
+      </form>
+    </div>
+    {{end}}
+    <div id="settings-calendar-feed-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
+  </section>
   {{end}}
 
   <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-interface">

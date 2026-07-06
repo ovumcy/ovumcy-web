@@ -26,6 +26,7 @@ func TestSecureCookieCodecRoundtripsAllKnownPurposes(t *testing.T) {
 		authCookieName,
 		flashCookieName,
 		recoveryCodeCookieName,
+		calendarFeedRevealCookieName,
 		registerPickupCookieName,
 		resetPasswordCookieName,
 		oidcStateCookieName,
@@ -73,6 +74,7 @@ func TestSecureCookieCodecRejectsCrossPurposeOpen(t *testing.T) {
 	otherPurposes := []string{
 		flashCookieName,
 		recoveryCodeCookieName,
+		calendarFeedRevealCookieName,
 		registerPickupCookieName,
 		resetPasswordCookieName,
 		oidcStateCookieName,

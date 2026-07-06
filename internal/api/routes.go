@@ -20,6 +20,9 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Patch("/interface", handler.OwnerOnly, handler.UpdateInterfaceSettings)
 	usersCurrent.Patch("/tracking", handler.OwnerOnly, handler.UpdateTrackingSettings)
 	usersCurrent.Post("/webhook", handler.OwnerOnly, handler.UpdateWebhookSettings)
+	usersCurrent.Post("/calendar-feed", handler.OwnerOnly, handler.GenerateCalendarFeed)
+	usersCurrent.Post("/calendar-feed/rotate", handler.OwnerOnly, handler.RotateCalendarFeed)
+	usersCurrent.Delete("/calendar-feed", handler.OwnerOnly, handler.RevokeCalendarFeed)
 	usersCurrent.Post("/timezone", handler.OwnerOnly, handler.UpdateTimezone)
 	usersCurrent.Patch("/cycle", handler.OwnerOnly, handler.UpdateCycleSettings)
 	usersCurrent.Patch("/reminders", handler.OwnerOnly, handler.UpdateReminderSettings)
@@ -105,6 +108,10 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/stats", handler.AuthRequired, handler.ShowStats)
 	app.Get("/settings", handler.AuthRequired, handler.ShowSettings)
 	app.Get("/settings/2fa", handler.AuthRequired, handler.ShowTOTPSetupPage)
+	// One-time reveal of the freshly generated/rotated .ics subscribe URL. The
+	// URL (a secret) is read from the sealed one-time cookie, shown once, then
+	// the cookie is cleared; a refresh redirects back to /settings.
+	app.Get("/settings/calendar-feed", handler.AuthRequired, handler.ShowCalendarFeedRevealPage)
 }
 
 func sendNoContent(c fiber.Ctx) error {

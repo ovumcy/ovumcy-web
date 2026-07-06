@@ -27,6 +27,8 @@ type stubAuthUserRepo struct {
 	createdUser              models.User
 	updatePasswordErr        error
 	updatePasswordCalled     bool
+	forceResetErr            error
+	forceResetCalled         bool
 	updateRecoveryPassErr    error
 	updateRecoveryCalled     bool
 	bumpSessionErr           error
@@ -115,6 +117,25 @@ func (stub *stubAuthUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Contex
 	stub.user.PasswordHash = passwordHash
 	stub.user.LocalAuthEnabled = true
 	stub.user.MustChangePassword = mustChangePassword
+	stub.user.AuthSessionVersion = NormalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
+	return nil
+}
+
+func (stub *stubAuthUserRepo) ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error {
+	if stub.forceResetErr != nil {
+		return stub.forceResetErr
+	}
+	stub.forceResetCalled = true
+	stub.updatedUserID = userID
+	stub.updatedPasswordHash = passwordHash
+	stub.updatedMustChange = true
+	stub.user.ID = userID
+	stub.user.PasswordHash = passwordHash
+	stub.user.LocalAuthEnabled = true
+	stub.user.MustChangePassword = true
+	// Operator reset force-clears the feed token in the same atomic update.
+	stub.user.CalendarFeedSelector = ""
+	stub.user.CalendarFeedVerifierHash = ""
 	stub.user.AuthSessionVersion = NormalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
 	return nil
 }
@@ -275,14 +296,25 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		}
 		service := NewAuthService(repo)
 
+		repo.findByEmailUser.CalendarFeedSelector = "SELECTOR000000AA"
+		repo.findByEmailUser.CalendarFeedVerifierHash = "$2a$10$forcedresethashplaceholderplaceholderplaceholderpl"
+
 		if err := service.ForceResetPasswordByEmail(context.Background(), " Owner@Example.com ", "EvenStronger2"); err != nil {
 			t.Fatalf("ForceResetPasswordByEmail() unexpected error: %v", err)
 		}
-		if !repo.updatePasswordCalled {
-			t.Fatal("expected UpdatePasswordAndRevokeSessions() to be called")
+		if !repo.forceResetCalled {
+			t.Fatal("expected ForceResetPasswordAndRevokeSessions() to be called")
+		}
+		if repo.updatePasswordCalled {
+			t.Fatal("operator reset must NOT use the routine UpdatePasswordAndRevokeSessions path")
 		}
 		if !repo.user.MustChangePassword {
 			t.Fatal("expected MustChangePassword=true after forced reset")
+		}
+		// Operator reset is a compromise-recovery event: the feed token must be
+		// force-cleared in the same atomic update as the credential rotation.
+		if repo.user.CalendarFeedSelector != "" || repo.user.CalendarFeedVerifierHash != "" {
+			t.Fatal("expected calendar feed token force-cleared on operator reset")
 		}
 		if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
 			t.Fatal("expected saved password hash to match new password")
@@ -312,7 +344,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		if err := service.ForceResetPasswordByEmail(context.Background(), "missing@example.com", "EvenStronger2"); !errors.Is(err, ErrAuthUserNotFound) {
 			t.Fatalf("expected ErrAuthUserNotFound, got %v", err)
 		}
-		if repo.updatePasswordCalled {
+		if repo.forceResetCalled {
 			t.Fatal("did not expect password update when user is missing")
 		}
 	})
@@ -339,7 +371,7 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 				PasswordHash:     string(originalHash),
 				LocalAuthEnabled: true,
 			},
-			updatePasswordErr: errors.New("write failed"),
+			forceResetErr: errors.New("write failed"),
 		}
 		service := NewAuthService(repo)
 

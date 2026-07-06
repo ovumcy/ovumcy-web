@@ -44,6 +44,42 @@ func TestSettingsRegenerateRecoveryCodeMissingCSRFRejectedByMiddleware(t *testin
 	assertStatusCode(t, response, http.StatusForbidden)
 }
 
+func TestSettingsCalendarFeedGenerateMissingCSRFRejectedByMiddleware(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-feed-generate-csrf@example.com")
+
+	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusForbidden)
+
+	// The middleware rejects before the handler, so no feed token is minted.
+	var reloaded models.User
+	if err := ctx.database.First(&reloaded, ctx.user.ID).Error; err != nil {
+		t.Fatalf("reload user after csrf-rejected feed generate: %v", err)
+	}
+	if reloaded.CalendarFeedSelector != "" {
+		t.Fatalf("expected no feed token minted when CSRF rejects the request, got selector %q", reloaded.CalendarFeedSelector)
+	}
+}
+
+func TestSettingsCalendarFeedRotateMissingCSRFRejectedByMiddleware(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-feed-rotate-csrf@example.com")
+
+	response := settingsRequestWithoutCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", url.Values{}, nil)
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusForbidden)
+}
+
+func TestSettingsCalendarFeedRevokeMissingCSRFRejectedByMiddleware(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-feed-revoke-csrf@example.com")
+
+	response := settingsRequestWithoutCSRF(t, ctx, http.MethodDelete, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
+	defer func() { _ = response.Body.Close() }()
+
+	assertStatusCode(t, response, http.StatusForbidden)
+}
+
 func TestSettingsTimezoneMissingCSRFRejectedByMiddleware(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-timezone-csrf@example.com")
 

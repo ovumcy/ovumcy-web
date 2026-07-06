@@ -13,6 +13,7 @@ const (
 	timezoneHeaderName           = "X-Ovumcy-Timezone"
 	flashCookieName              = "ovumcy_flash"
 	recoveryCodeCookieName       = "ovumcy_recovery_code"
+	calendarFeedRevealCookieName = "ovumcy_calendar_feed"
 	registerPickupCookieName     = "ovumcy_register_pickup"
 	resetPasswordCookieName      = "ovumcy_reset_password" // #nosec G101 -- cookie name contains "password" but is not a secret or credential.
 	oidcStateCookieName          = "ovumcy_oidc_auth"

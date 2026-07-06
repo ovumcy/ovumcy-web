@@ -31,7 +31,7 @@ func TestSettingsViewServiceExportDateBoundsEarlierFrom(t *testing.T) {
 			{TotalEntries: 3, HasData: true, DateFrom: "2026-01-15", DateTo: "2026-06-01"},
 		},
 	}
-	svc := NewSettingsViewService(loader, exportBuilder, nil, nil)
+	svc := NewSettingsViewService(loader, exportBuilder, nil, nil, nil)
 	user := &models.User{ID: 10, Role: models.RoleOwner}
 	today := mustParseSettingsViewDay(t, "2026-06-01")
 
@@ -63,7 +63,7 @@ func TestSettingsViewServiceExportDateBoundsFromEqualsToday(t *testing.T) {
 			{TotalEntries: 1, HasData: true, DateFrom: "2026-06-01", DateTo: "2026-06-01"},
 		},
 	}
-	svc := NewSettingsViewService(loader, exportBuilder, nil, nil)
+	svc := NewSettingsViewService(loader, exportBuilder, nil, nil, nil)
 	user := &models.User{ID: 11, Role: models.RoleOwner}
 
 	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)
@@ -90,7 +90,7 @@ func TestSettingsViewServiceExportDateBoundsLaterTo(t *testing.T) {
 			{TotalEntries: 2, HasData: true, DateFrom: "2026-05-01", DateTo: "2026-06-01"},
 		},
 	}
-	svc := NewSettingsViewService(loader, exportBuilder, nil, nil)
+	svc := NewSettingsViewService(loader, exportBuilder, nil, nil, nil)
 	user := &models.User{ID: 12, Role: models.RoleOwner}
 
 	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)
@@ -117,7 +117,7 @@ func TestSettingsViewServiceExportDateBoundsToEqualsToday(t *testing.T) {
 			{TotalEntries: 1, HasData: true, DateFrom: "2026-06-01", DateTo: "2026-06-01"},
 		},
 	}
-	svc := NewSettingsViewService(loader, exportBuilder, nil, nil)
+	svc := NewSettingsViewService(loader, exportBuilder, nil, nil, nil)
 	user := &models.User{ID: 13, Role: models.RoleOwner}
 
 	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, today, time.UTC)
@@ -184,7 +184,7 @@ func TestSettingsViewServiceSymptomsAllBuiltinNoFlags(t *testing.T) {
 			{ID: 1, Name: "Cramps", IsBuiltin: true},
 		},
 	}
-	svc := NewSettingsViewService(loader, nil, symptomProvider, nil)
+	svc := NewSettingsViewService(loader, nil, symptomProvider, nil, nil)
 	user := &models.User{ID: 20, Role: models.RoleOwner}
 
 	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
@@ -209,7 +209,7 @@ func TestSettingsViewServiceSymptomsOnlyActiveCustomFlag(t *testing.T) {
 			{ID: 2, Name: "Custom active"},
 		},
 	}
-	svc := NewSettingsViewService(loader, nil, symptomProvider, nil)
+	svc := NewSettingsViewService(loader, nil, symptomProvider, nil, nil)
 	user := &models.User{ID: 21, Role: models.RoleOwner}
 
 	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-06-01"), time.UTC)
@@ -235,7 +235,7 @@ func TestSettingsViewServiceSymptomsOnlyArchivedCustomFlag(t *testing.T) {
 			{ID: 3, Name: "Custom archived", ArchivedAt: &archived},
 		},
 	}
-	svc := NewSettingsViewService(loader, nil, symptomProvider, nil)
+	svc := NewSettingsViewService(loader, nil, symptomProvider, nil, nil)
 	user := &models.User{ID: 22, Role: models.RoleOwner}
 
 	viewData, err := svc.BuildSettingsPageViewData(context.Background(), user, "en", SettingsViewInput{}, mustParseSettingsViewDay2("2026-06-01"), time.UTC)

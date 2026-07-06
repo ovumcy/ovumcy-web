@@ -37,6 +37,15 @@ type SettingsViewWebhookStatusBuilder interface {
 	BuildWebhookURLDisplay(userID uint, encryptedURL string) WebhookURLDisplay
 }
 
+// SettingsViewCalendarFeedStatusBuilder is the narrow seam the settings view
+// uses to learn whether an owner's .ics feed is currently configured. It
+// returns ONLY a configured/not-configured flag — never the token, selector, or
+// a URL — so a normal settings load never surfaces the feed secret.
+// *CalendarFeedSettingsService satisfies it.
+type SettingsViewCalendarFeedStatusBuilder interface {
+	BuildFeedStatus(ctx context.Context, userID uint) CalendarFeedStatus
+}
+
 type SettingsViewInput struct {
 	FlashSuccess string
 	FlashError   string
@@ -100,13 +109,18 @@ type SettingsPageViewData struct {
 	WebhookNotifyOvulation bool
 	WebhookURLConfigured   bool
 	WebhookURLHost         string
+	// Calendar (.ics) feed subscription (slice 4). Only the configured flag is
+	// rendered — never the token or the subscribe URL, which are shown exactly
+	// once on generation via a sealed one-time reveal, mirroring recovery codes.
+	CalendarFeedConfigured bool
 }
 
 type SettingsViewService struct {
-	settings      SettingsViewLoader
-	export        SettingsViewExportBuilder
-	symptoms      SettingsViewSymptomProvider
-	webhookStatus SettingsViewWebhookStatusBuilder
+	settings           SettingsViewLoader
+	export             SettingsViewExportBuilder
+	symptoms           SettingsViewSymptomProvider
+	webhookStatus      SettingsViewWebhookStatusBuilder
+	calendarFeedStatus SettingsViewCalendarFeedStatusBuilder
 }
 
 type settingsStatusKeys struct {
@@ -115,12 +129,13 @@ type settingsStatusKeys struct {
 	successKey             string
 }
 
-func NewSettingsViewService(settings SettingsViewLoader, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider, webhookStatus SettingsViewWebhookStatusBuilder) *SettingsViewService {
+func NewSettingsViewService(settings SettingsViewLoader, export SettingsViewExportBuilder, symptoms SettingsViewSymptomProvider, webhookStatus SettingsViewWebhookStatusBuilder, calendarFeedStatus SettingsViewCalendarFeedStatusBuilder) *SettingsViewService {
 	return &SettingsViewService{
-		settings:      settings,
-		export:        export,
-		symptoms:      symptoms,
-		webhookStatus: webhookStatus,
+		settings:           settings,
+		export:             export,
+		symptoms:           symptoms,
+		webhookStatus:      webhookStatus,
+		calendarFeedStatus: calendarFeedStatus,
 	}
 }
 
@@ -235,6 +250,7 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 
 func (service *SettingsViewService) populateOwnerSettingsViewData(ctx context.Context, viewData *SettingsPageViewData, language string, today time.Time, location *time.Location) error {
 	service.populateOwnerWebhookViewData(viewData)
+	service.populateOwnerCalendarFeedViewData(ctx, viewData)
 
 	if service.symptoms != nil {
 		symptomsViewData, err := service.BuildSettingsSymptomsViewData(ctx, &viewData.CurrentUser)
@@ -274,6 +290,19 @@ func (service *SettingsViewService) populateOwnerWebhookViewData(viewData *Setti
 	display := service.webhookStatus.BuildWebhookURLDisplay(viewData.CurrentUser.ID, viewData.CurrentUser.WebhookURL)
 	viewData.WebhookURLConfigured = display.Configured
 	viewData.WebhookURLHost = display.Host
+}
+
+// populateOwnerCalendarFeedViewData sets the render-safe .ics feed status
+// (configured vs not) on the owner's settings view. It surfaces ONLY the
+// boolean — never the token or the subscribe URL — so a normal settings load
+// (or any revisit) can never re-render the secret; the URL is shown exactly once
+// on generation via a sealed one-time reveal. Without a status builder the flag
+// stays false (not configured).
+func (service *SettingsViewService) populateOwnerCalendarFeedViewData(ctx context.Context, viewData *SettingsPageViewData) {
+	if service.calendarFeedStatus == nil {
+		return
+	}
+	viewData.CalendarFeedConfigured = service.calendarFeedStatus.BuildFeedStatus(ctx, viewData.CurrentUser.ID).Configured
 }
 
 func (service *SettingsViewService) buildOwnerExportViewData(ctx context.Context, userID uint, language string, today time.Time, location *time.Location) (SettingsExportViewData, error) {

@@ -51,6 +51,12 @@ type AuthUserRepository interface {
 	Save(ctx context.Context, user *models.User) error
 	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
+	// ForceResetPasswordAndRevokeSessions is the operator-reset variant: it
+	// rewrites the password, forces change-on-next-login, bumps the session
+	// version, AND force-clears the calendar-feed token in one atomic update
+	// (feed-clear arm of the force-rotate-on-recovery rule). Distinct from the
+	// routine UpdatePasswordAndRevokeSessions, which must NOT touch the feed.
+	ForceResetPasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error
 	// UpdatePasswordHashOnly rewrites password_hash WITHOUT bumping
@@ -205,7 +211,11 @@ func (service *AuthService) ForceResetPasswordByEmail(ctx context.Context, email
 		return fmt.Errorf("%w: %v", ErrAuthPasswordHash, err)
 	}
 
-	if err := service.users.UpdatePasswordAndRevokeSessions(ctx, user.ID, string(passwordHash), true); err != nil {
+	// Operator reset (compromise/lockout recovery): rewrite the password, force
+	// change-on-next-login, revoke sessions, and force-clear the calendar-feed
+	// token in one atomic update. A ROUTINE authenticated change uses
+	// UpdatePasswordAndRevokeSessions and keeps the feed (manual rotate only).
+	if err := service.users.ForceResetPasswordAndRevokeSessions(ctx, user.ID, string(passwordHash)); err != nil {
 		return fmt.Errorf("%w: %v", ErrAuthPasswordUpdate, err)
 	}
 

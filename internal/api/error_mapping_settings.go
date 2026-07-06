@@ -74,6 +74,16 @@ func mapSettingsWebhookSaveError(err error) APIErrorSpec {
 	return settingsWebhookUpdateErrorSpec()
 }
 
+// settingsCalendarFeedUpdateErrorSpec is the internal-failure spec for the .ics
+// feed lifecycle (generate/rotate/revoke). Token generation and persistence are
+// server-side concerns — there is no owner-fault input on these endpoints, so
+// every failure (ErrCalendarFeedTokenGenerate or ErrCalendarFeedTokenPersist)
+// is a generic 500 with no owner-actionable distinction. The key never carries
+// the token, so no secret can leak into the response or a log line.
+func settingsCalendarFeedUpdateErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update calendar feed")
+}
+
 func settingsTimezoneUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update timezone")
 }

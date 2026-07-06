@@ -46,6 +46,7 @@ var authErrorTranslationKeys = map[string]string{
 	"local password required":                         "settings.error.local_password_required",
 	"invalid webhook url":                             "settings.error.invalid_webhook_url",
 	"failed to update webhook settings":               "settings.error.webhook_update_failed",
+	"failed to update calendar feed":                  "settings.error.calendar_feed_update_failed",
 	"invalid symptom name":                            "settings.symptoms.error.name_required",
 	"symptom name is required":                        "settings.symptoms.error.name_required",
 	"symptom name is too long":                        "settings.symptoms.error.name_too_long",
@@ -77,19 +78,22 @@ var authErrorTranslationKeys = map[string]string{
 }
 
 var settingsStatusTranslationKeys = map[string]string{
-	"password_changed":     "settings.success.password_changed",
-	"cycle_updated":        "settings.success.cycle_updated",
-	"reminders_updated":    "settings.success.reminders_updated",
-	"interface_updated":    "settings.success.interface_updated",
-	"tracking_updated":     "settings.success.tracking_updated",
-	"webhook_updated":      "settings.success.webhook_updated",
-	"profile_updated":      "settings.success.profile_updated",
-	"profile_name_cleared": "settings.success.profile_name_cleared",
-	"data_cleared":         "settings.success.data_cleared",
-	"symptom_created":      "settings.symptoms.success.created",
-	"symptom_updated":      "settings.symptoms.success.updated",
-	"symptom_hidden":       "settings.symptoms.success.hidden",
-	"symptom_restored":     "settings.symptoms.success.restored",
+	"password_changed":        "settings.success.password_changed",
+	"cycle_updated":           "settings.success.cycle_updated",
+	"reminders_updated":       "settings.success.reminders_updated",
+	"interface_updated":       "settings.success.interface_updated",
+	"tracking_updated":        "settings.success.tracking_updated",
+	"webhook_updated":         "settings.success.webhook_updated",
+	"calendar_feed_generated": "settings.success.calendar_feed_generated",
+	"calendar_feed_rotated":   "settings.success.calendar_feed_rotated",
+	"calendar_feed_revoked":   "settings.success.calendar_feed_revoked",
+	"profile_updated":         "settings.success.profile_updated",
+	"profile_name_cleared":    "settings.success.profile_name_cleared",
+	"data_cleared":            "settings.success.data_cleared",
+	"symptom_created":         "settings.symptoms.success.created",
+	"symptom_updated":         "settings.symptoms.success.updated",
+	"symptom_hidden":          "settings.symptoms.success.hidden",
+	"symptom_restored":        "settings.symptoms.success.restored",
 }
 
 func AuthErrorTranslationKey(message string) string {

@@ -49,9 +49,13 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 	app.Patch("/api/v1/users/current/cycle", handler.UpdateCycleSettings)
 	app.Patch("/api/v1/users/current/reminders", handler.UpdateReminderSettings)
 	app.Post("/api/v1/users/current/webhook", handler.UpdateWebhookSettings)
+	app.Post("/api/v1/users/current/calendar-feed", handler.GenerateCalendarFeed)
+	app.Post("/api/v1/users/current/calendar-feed/rotate", handler.RotateCalendarFeed)
+	app.Delete("/api/v1/users/current/calendar-feed", handler.RevokeCalendarFeed)
 	app.Post("/api/v1/onboarding/complete", handler.OnboardingComplete)
 	app.Get("/onboarding", handler.ShowOnboarding)
 	app.Get("/settings/2fa", handler.ShowTOTPSetupPage)
+	app.Get("/settings/calendar-feed", handler.ShowCalendarFeedRevealPage)
 	return app, database
 }
 
@@ -60,7 +64,7 @@ func newMutationBranchTestApp(t *testing.T, injectUser bool) (*fiber.App, *gorm.
 func TestPageHandlersRedirectMissingUserAtHandlerLevel(t *testing.T) {
 	app, _ := newMutationBranchTestApp(t, false)
 
-	for _, path := range []string{"/onboarding", "/settings/2fa"} {
+	for _, path := range []string{"/onboarding", "/settings/2fa", "/settings/calendar-feed"} {
 		response := mutationBranchRequest(t, app, http.MethodGet, path, "", "")
 		if response.StatusCode != http.StatusSeeOther {
 			t.Errorf("GET %s without user: expected 303, got %d", path, response.StatusCode)
@@ -113,6 +117,9 @@ func TestMutationHandlersRejectMissingUserAtHandlerLevel(t *testing.T) {
 		{http.MethodPatch, "/api/v1/users/current/cycle"},
 		{http.MethodPatch, "/api/v1/users/current/reminders"},
 		{http.MethodPost, "/api/v1/users/current/webhook"},
+		{http.MethodPost, "/api/v1/users/current/calendar-feed"},
+		{http.MethodPost, "/api/v1/users/current/calendar-feed/rotate"},
+		{http.MethodDelete, "/api/v1/users/current/calendar-feed"},
 	}
 	for _, testCase := range cases {
 		response := mutationBranchRequest(t, app, testCase.method, testCase.path, "", "")

@@ -57,6 +57,7 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		"WebhookNotifyOvulation": viewData.WebhookNotifyOvulation,
 		"WebhookURLConfigured":   viewData.WebhookURLConfigured,
 		"WebhookURLHost":         viewData.WebhookURLHost,
+		"CalendarFeedConfigured": viewData.CalendarFeedConfigured,
 		"LastPeriodStart":        viewData.LastPeriodStart,
 		"TodayISO":               viewData.TodayISO,
 		"CycleStartMinISO":       viewData.CycleStartMinISO,
