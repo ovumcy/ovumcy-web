@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -321,5 +323,50 @@ func TestAPIRateLimitHandlerReturnsJSONForGenericBrowserRequests(t *testing.T) {
 	}
 	if got, ok := payload["error"].(string); !ok || got != "too many requests" {
 		t.Fatalf("expected generic rate-limit error key, got %#v", payload)
+	}
+}
+
+// TestCalendarFeedRateLimitHandlerReturnsBare429AndRedactsToken drives the
+// calendar-feed LimitReached handler (newCalendarFeedRateLimitHandler). The feed
+// has no UI, so the handler must return a bare 429; and because it logs the hit
+// via logRateLimitHit → SafeRequestLogPath, the log line must carry the masked
+// route template, never the token value.
+func TestCalendarFeedRateLimitHandlerReturnsBare429AndRedactsToken(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	handler := newRateLimitTestHandler(t)
+	app := fiber.New()
+	// Mount the production LimitReached handler directly on the feed route so a
+	// single request exercises its full body (log + security event + status).
+	app.Get(api.CalendarFeedRateLimitPrefix+"/:token.ics", newCalendarFeedRateLimitHandler(handler))
+
+	const feedToken = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP"
+	request := httptest.NewRequest(http.MethodGet, "/calendar/feed/"+feedToken+".ics", nil)
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("calendar-feed rate-limit request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected bare 429 from the feed rate-limit handler, got %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if strings.Contains(string(body), "BEGIN:VCALENDAR") {
+		t.Fatalf("429 must not carry a calendar body, got %q", string(body))
+	}
+
+	logLine := output.String()
+	if strings.Contains(logLine, feedToken) {
+		t.Fatalf("rate-limit log leaked the feed token: %q", logLine)
+	}
+	if !strings.Contains(logLine, ":token.ics") {
+		t.Fatalf("expected masked route template in rate-limit log, got %q", logLine)
 	}
 }

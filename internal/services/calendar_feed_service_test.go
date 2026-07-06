@@ -222,6 +222,55 @@ func TestResolveFeedPropagatesInfrastructureError(t *testing.T) {
 	}
 }
 
+// TestResolveFeedPropagatesDayReadErrorAfterVerification drives the day-read
+// error branch that sits AFTER a successful token verification: the token is
+// valid (so the user lookup + verifier pass), but the owner-scoped log read
+// fails. This is distinct from the user-lookup failure above, which returns
+// before any log read.
+func TestResolveFeedPropagatesDayReadErrorAfterVerification(t *testing.T) {
+	user, token := armedFeedUser(t, 7, "2026-03-02")
+	users := &stubFeedUserReader{selector: user.CalendarFeedSelector, user: user}
+	days := &stubFeedDayReader{err: errors.New("log read failed")}
+	svc := NewCalendarFeedService(users, days, stubFeedDisclaimer{text: "d"})
+
+	body, ok, err := svc.ResolveFeed(context.Background(), token, mustParseDashboardDay(t, "2026-03-20"), time.UTC)
+	if err == nil {
+		t.Fatalf("expected the day-read error to propagate after verification")
+	}
+	if ok {
+		t.Fatalf("expected ok=false when the owner-scoped log read fails")
+	}
+	if body != nil {
+		t.Fatalf("expected no body on a day-read failure, got %d bytes", len(body))
+	}
+	if days.requestedUser != 7 {
+		t.Fatalf("expected the failing log read to be scoped to the resolved owner 7, got %d", days.requestedUser)
+	}
+}
+
+// TestResolveFeedDefaultsToUTCWhenLocationNil drives the nil-location fallback:
+// a cookieless feed request can arrive with no resolved timezone, so ResolveFeed
+// must default to UTC rather than nil-deref. The valid token still resolves and
+// the feed still renders.
+func TestResolveFeedDefaultsToUTCWhenLocationNil(t *testing.T) {
+	user, token := armedFeedUser(t, 7, "2026-03-02")
+	svc, _, days := newFeedServiceForTest(user, predictableFeedLogs(t))
+
+	body, ok, err := svc.ResolveFeed(context.Background(), token, mustParseDashboardDay(t, "2026-03-20"), nil)
+	if err != nil {
+		t.Fatalf("unexpected error with nil location: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected ok for a valid token with nil location")
+	}
+	if days.requestedCount != 1 {
+		t.Fatalf("expected exactly one owner-scoped log read, got %d", days.requestedCount)
+	}
+	if !strings.Contains(string(body), "BEGIN:VCALENDAR") {
+		t.Fatalf("expected a well-formed feed with nil location, got:\n%s", string(body))
+	}
+}
+
 // TestGenerateCalendarFeedTokenVerifierIsRealBcrypt pairs the timing-equalization
 // call-counter test with a real bcrypt compatibility check: a freshly generated
 // token verifies against its stored hash, and a tampered verifier does not. This

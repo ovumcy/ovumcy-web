@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -244,6 +246,59 @@ func mustFeedHandler(t *testing.T, database *gorm.DB) *Handler {
 		t.Fatalf("init handler: %v", err)
 	}
 	return handler
+}
+
+// failingFeedUserReader makes CalendarFeedService.ResolveFeed return an
+// infrastructure error, driving ServeCalendarFeed's err != nil branch.
+type failingFeedUserReader struct{}
+
+func (failingFeedUserReader) FindByCalendarFeedSelector(context.Context, string) (models.User, bool, error) {
+	return models.User{}, false, errors.New("simulated feed lookup failure")
+}
+
+// failingFeedDayReader satisfies the day-reader port; it is never reached
+// because the user lookup fails first, but ResolveFeed needs a non-nil reader.
+type failingFeedDayReader struct{}
+
+func (failingFeedDayReader) FetchLogsForUser(context.Context, uint, time.Time, time.Time, *time.Location) ([]models.DailyLog, error) {
+	return nil, nil
+}
+
+type constFeedDisclaimer struct{}
+
+func (constFeedDisclaimer) Disclaimer(string) string { return "d" }
+
+// TestCalendarFeedReturns500OnInfrastructureError drives the ServeCalendarFeed
+// err != nil branch: when the feed service reports an infrastructure failure
+// (e.g. a DB read error), the handler returns a generic 500 via the top-level
+// error handler — never the raw error, and never a calendar body.
+func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
+	_, database := newOnboardingTestApp(t)
+	i18nManager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("init i18n: %v", err)
+	}
+	deps := newTestHandlerDependencies(database, i18nManager)
+	// Swap in a feed service whose owner lookup always errors.
+	deps.CalendarFeedService = services.NewCalendarFeedService(failingFeedUserReader{}, failingFeedDayReader{}, constFeedDisclaimer{})
+	handler, err := NewHandler("test-secret-key", time.UTC, i18nManager, false, deps)
+	if err != nil {
+		t.Fatalf("init handler: %v", err)
+	}
+
+	app := fiber.New()
+	app.Get(calendarFeedRoutePath, handler.ServeCalendarFeed)
+
+	// A well-formed token so the handler reaches the service (which then errors);
+	// the concrete value is irrelevant because the lookup is stubbed to fail.
+	token := strings.Repeat("A", 48)
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
+	if response.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected 500 on an infrastructure error, got %d", response.StatusCode)
+	}
+	if body := readBodyString(t, response); strings.Contains(body, "BEGIN:VCALENDAR") {
+		t.Fatalf("500 must not leak a calendar body, got:\n%s", body)
+	}
 }
 
 // unfoldICS reverses RFC 5545 §3.1 line folding: a CRLF immediately followed by

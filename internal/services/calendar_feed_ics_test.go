@@ -158,6 +158,24 @@ func TestBuildCalendarFeedICSHandlesNoBaseline(t *testing.T) {
 	}
 }
 
+func TestBuildCalendarFeedICSHandlesNilUser(t *testing.T) {
+	// A nil user (defensive guard) must yield a well-formed, empty VCALENDAR —
+	// never a panic and never a fabricated event.
+	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+		User:       nil,
+		Logs:       predictableFeedLogs(t),
+		Now:        mustParseDashboardDay(t, "2026-03-20"),
+		Location:   time.UTC,
+		Disclaimer: "disclaimer",
+	}))
+	if strings.Contains(body, "BEGIN:VEVENT") {
+		t.Fatalf("expected no events for a nil user, got:\n%s", body)
+	}
+	if !strings.Contains(body, "BEGIN:VCALENDAR") || !strings.Contains(body, "END:VCALENDAR") {
+		t.Fatalf("expected a well-formed empty VCALENDAR, got:\n%s", body)
+	}
+}
+
 func TestBuildCalendarFeedICSProjectsMultipleCyclesAndEscapesDescription(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 	now := mustParseDashboardDay(t, "2026-03-20")
