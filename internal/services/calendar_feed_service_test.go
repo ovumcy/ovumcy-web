@@ -31,16 +31,20 @@ func (s *stubFeedUserReader) FindByCalendarFeedSelector(_ context.Context, selec
 }
 
 // stubFeedDayReader records the userID it was asked for so a test can prove the
-// feed scopes its log read to the resolved owner.
+// feed scopes its log read to the resolved owner, plus the range upper bound
+// (the owner's "today") so a test can prove that today is resolved in the
+// request timezone, not UTC.
 type stubFeedDayReader struct {
 	logs           []models.DailyLog
 	err            error
 	requestedUser  uint
+	requestedTo    time.Time
 	requestedCount int
 }
 
-func (s *stubFeedDayReader) FetchLogsForUser(_ context.Context, userID uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (s *stubFeedDayReader) FetchLogsForUser(_ context.Context, userID uint, _ time.Time, to time.Time, _ *time.Location) ([]models.DailyLog, error) {
 	s.requestedUser = userID
+	s.requestedTo = to
 	s.requestedCount++
 	if s.err != nil {
 		return nil, s.err
@@ -106,6 +110,28 @@ func TestResolveFeedReturnsOwnersFeedForValidToken(t *testing.T) {
 	// guard mutant that would drop the disclaimer (Disclaimer: "") from the feed.
 	if !strings.Contains(text, "estimates disclaimer") {
 		t.Fatalf("expected the medical-safety disclaimer in the .ics feed body, got:\n%s", text)
+	}
+}
+
+// TestResolveFeedResolvesTodayInRequestTimezone proves the log-read window's
+// upper bound (the owner's "today") is computed in the request timezone, not
+// UTC — so the feed reflects the owner's local calendar day. now is 23:00 UTC,
+// already the next calendar day in a UTC+3 zone, so today must be that next day.
+// Kills the calendar_feed_service.go:106 nil-location guard mutant, which would
+// substitute UTC and read the wrong day's window.
+func TestResolveFeedResolvesTodayInRequestTimezone(t *testing.T) {
+	user, token := armedFeedUser(t, 51, "2026-03-02")
+	svc, _, days := newFeedServiceForTest(user, predictableFeedLogs(t))
+
+	// 2026-03-10 23:00 UTC == 2026-03-11 02:00 in UTC+3.
+	loc := time.FixedZone("test+3", 3*60*60)
+	now := time.Date(2026, time.March, 10, 23, 0, 0, 0, time.UTC)
+
+	if _, ok, err := svc.ResolveFeed(context.Background(), token, now, loc); err != nil || !ok {
+		t.Fatalf("expected the feed to resolve: ok=%v err=%v", ok, err)
+	}
+	if y, m, d := days.requestedTo.Date(); y != 2026 || m != time.March || d != 11 {
+		t.Fatalf("today must be resolved in the request timezone (want 2026-03-11), got %04d-%02d-%02d", y, m, d)
 	}
 }
 
