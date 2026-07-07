@@ -229,6 +229,8 @@ SQLite (default) / PostgreSQL (advanced)
 - `Storage`: SQLite is the baseline default; Postgres is an advanced self-hosted option.
 - `Deployment`: one binary or container, typically behind a reverse proxy.
 
+For the internal layering, trust boundaries, and request lifecycle, see [`docs/architecture.md`](docs/architecture.md).
+
 ## Tech Stack
 
 - Backend: Go, Fiber, GORM.
