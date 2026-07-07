@@ -28,10 +28,6 @@ import (
 // (this file and ovumcy-app's cycle-prediction-reference.test.ts) in the same
 // change.
 
-func refDate(year, month, day int) time.Time {
-	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
-}
-
 // goldenVectorsFile is the shared golden-vector fixture, vendored byte-identical
 // from ovumcy-app (see the package comment above).
 const goldenVectorsFile = "cycle-prediction-golden-vectors.json"
