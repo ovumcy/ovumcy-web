@@ -244,6 +244,22 @@ Uses the prebuilt image from GHCR pinned to the latest tagged release by default
 
 Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/ovumcy/ovumcy-web`.
 
+**Verify the image before running (recommended).** Every published image is Cosign-signed (keyless, via GitHub Actions OIDC — no long-lived signing key), carries a SLSA build-provenance attestation, and ships an SBOM attached at build time. To verify a tagged release (needs [`cosign`](https://docs.sigstore.dev/cosign/installation/) and the [`gh`](https://cli.github.com/) CLI):
+
+```bash
+# 1. Cosign signature — pins the signer identity (this workflow) and the OIDC issuer
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/ovumcy/ovumcy-web:v1.7.0
+
+# 2. SLSA build provenance (GitHub attestation)
+gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v1.7.0 --repo ovumcy/ovumcy-web
+
+# 3. SBOM attached at build time
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.7.0 --format '{{ json .SBOM }}'
+```
+
 For public GHCR images, pull does not require GitHub login. `docker compose up -d` is enough because `pull_policy: always` is enabled.
 
 ```bash
