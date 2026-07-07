@@ -79,6 +79,7 @@ These settings are valid, but they are not required for a safe first deployment:
 - `PROXY_HEADER` only if your trusted proxy publishes the real client IP under a header other than `X-Real-IP`
 - `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to Postgres, either through the bundled local/private Postgres stack or an operator-managed database service
 - `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` (default `false`) only if you want the scheduled `ovumcy notify` webhook-reminder pass to refuse delivery to private/loopback/link-local IP targets; leave it unset for the common case of a self-hosted ntfy/Gotify instance on the same LAN. See [docs/notifications.md](notifications.md) for enabling and scheduling webhook notifications.
+- `REMINDER_SCHEDULER_ENABLED` (default `false`) and `REMINDER_SCHEDULER_HOUR` (default `9`, local hour 0-23) only if you want the server process itself to run the daily webhook-reminder pass on a schedule, instead of (or in addition to) scheduling `ovumcy notify` externally. See [docs/notifications.md](notifications.md#the-built-in-daily-scheduler) for the full contract.
 
 ## Optional OIDC Sign-In
 

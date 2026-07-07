@@ -715,6 +715,38 @@ components:
           description: When true, clears the stored endpoint and forces delivery off. Takes precedence over webhook_url.
       additionalProperties: false
 
+    CalendarFeedRevealResponse:
+      type: object
+      description: |
+        JSON response for a calendar-feed generate/rotate. The subscribe URL
+        embeds a bearer capability token, so it is a **write-only secret** and is
+        NEVER carried in this body (nor in any query string, redirect target, or
+        log): it is sealed into a one-time cookie and revealed exactly once on the
+        `next_path` page. A JSON client receives only the outcome status and the
+        path to that one-time reveal — never the URL or token itself. See the
+        *Calendar feed subscription (.ics)* section of
+        [SECURITY.md](../SECURITY.md#calendar-feed-subscription-ics).
+      required: [ok, status, next_step, next_path]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+        status:
+          type: string
+          description: Outcome key — `calendar_feed_generated` on first enable, `calendar_feed_rotated` on a rotate.
+          enum: [calendar_feed_generated, calendar_feed_rotated]
+        next_step:
+          type: string
+          description: Opaque next-step key for the one-time subscribe-URL reveal.
+          enum: [calendar_feed_reveal]
+        next_path:
+          type: string
+          description: |
+            Path to the dedicated one-time reveal page that shows the subscribe
+            URL exactly once. Carries no secret itself.
+          example: "/settings/calendar-feed"
+      additionalProperties: false
+
     ChangePasswordRequest:
       type: object
       required: [current_password, new_password, confirm_password]
@@ -1510,6 +1542,93 @@ paths:
               example: { error: "invalid webhook url" }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/users/current/calendar-feed:
+    post:
+      tags: [settings]
+      summary: Generate (enable) the calendar (.ics) feed (owner only).
+      description: |
+        Mints a fresh read-only `.ics` subscribe token for the owner and enables
+        the feed. If a feed is already configured this rotates it (the previous
+        URL dies immediately). The subscribe URL embeds a bearer capability token
+        and is therefore a **write-only secret**: it is NEVER returned in the
+        response body, a query string, a redirect target, or any log. Instead it
+        is sealed into a one-time cookie (`ovumcy_calendar_feed`) and revealed
+        exactly once on the reveal page. JSON clients receive only the outcome
+        status plus `next_path` to that reveal page (see
+        `CalendarFeedRevealResponse`) — never the URL or token. Does NOT bump
+        `auth_session_version` (a per-surface feed capability is not an account
+        credential). The read-only feed page itself, `GET /calendar/feed/{token}.ics`,
+        is a non-`/api/v1` page route authenticated by the path token alone and is
+        intentionally out of scope for this OpenAPI document.
+      responses:
+        '200':
+          description: Feed enabled. JSON clients follow `next_path` to the one-time reveal of the subscribe URL (shown exactly once).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarFeedRevealResponse' }
+        '303':
+          description: "Browser redirect to the one-time reveal page (`/settings/calendar-feed`) when `Accept: application/json` is not set."
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500':
+          description: Token generation or persistence failed. Carries no token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: "failed to update calendar feed" }
+    delete:
+      tags: [settings]
+      summary: Revoke (disable) the calendar (.ics) feed (owner only).
+      description: |
+        Disables the owner's feed by clearing both token columns. Any
+        previously-issued subscribe URL 404s immediately (its selector resolves
+        no row). Idempotent — revoking an already-disabled feed still succeeds.
+        Carries no secret. Does NOT bump `auth_session_version`.
+      responses:
+        '200':
+          description: Feed disabled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500':
+          description: Persistence failed. Carries no token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: "failed to update calendar feed" }
+
+  /api/v1/users/current/calendar-feed/rotate:
+    post:
+      tags: [settings]
+      summary: Rotate the calendar (.ics) feed token (owner only).
+      description: |
+        Mints a NEW subscribe token, invalidating the previous one — the old URL
+        stops resolving the instant this write commits (its selector no longer
+        resolves and its verifier no longer matches). Used when the owner suspects
+        the current URL leaked but wants to keep the feed enabled. Like generate,
+        the new subscribe URL is a **write-only secret**: it is NEVER returned in
+        the body, a query string, a redirect, or a log — it is sealed into the
+        one-time `ovumcy_calendar_feed` cookie and revealed exactly once on
+        `next_path`. Does NOT bump `auth_session_version`.
+      responses:
+        '200':
+          description: Feed rotated. JSON clients follow `next_path` to the one-time reveal of the new subscribe URL (shown exactly once).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CalendarFeedRevealResponse' }
+        '303':
+          description: "Browser redirect to the one-time reveal page (`/settings/calendar-feed`) when `Accept: application/json` is not set."
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500':
+          description: Token generation or persistence failed. Carries no token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: "failed to update calendar feed" }
 
   /api/v1/users/current/cycle:
     patch:
