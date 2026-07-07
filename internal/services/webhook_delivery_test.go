@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -128,8 +129,12 @@ func TestWebhookDeliveryRejectsNonHTTPScheme(t *testing.T) {
 		"gopher://example.test/1",
 	} {
 		err := deliverer.Deliver(context.Background(), target, samplePayload())
-		if err == nil {
-			t.Fatalf("expected scheme %q to be rejected, got nil", target)
+		// Pin the specific scheme-guard sentinel, not just "some error": under a
+		// negated scheme check the disallowed scheme slips past the guard and the
+		// HTTP client rejects it later with a *different* non-nil error, which a
+		// bare err==nil assertion would accept (that is why the guard survived).
+		if !errors.Is(err, ErrWebhookDeliveryURLScheme) {
+			t.Fatalf("expected scheme %q refused with ErrWebhookDeliveryURLScheme, got %v", target, err)
 		}
 	}
 }
