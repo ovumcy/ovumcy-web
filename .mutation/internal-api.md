@@ -9,8 +9,8 @@ file is the reviewed summary committed alongside the code.
 A single unsharded CI run exceeds the job's 3h timeout before finishing (issue
 #161), so `mutation.yml` runs `internal/api` as 5 file-subset shards
 (`internal_api_1`..`internal_api_5` matrix entries, each excluding every file
-not assigned to it — see `scripts/mutation.sh`'s `api_shard_*` functions) and a
-follow-up job (`mutation-api-merge`) merges the 5 shard JSON reports into one
+not assigned to it — see `scripts/mutation.sh`'s `shard_*` functions) and a
+follow-up job (`mutation-merge`) merges the 5 shard JSON reports into one
 `internal_api.json` via `scripts/mutationmerge`, matching the single-file-per-target
 convention `internal_services.json`/`internal_security.json` already use (PR
 #163). The numbers below are the first complete run since sharding landed —
