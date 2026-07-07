@@ -29,10 +29,14 @@ of the request timezone (`calendar_feed_service.go:106`); the post-restore
 luteal-phase refresh no-op'd on success (`import_service.go:388`). The two
 remaining tz-guards (`day_feedback_policy.go:62`, `day_service.go:366`) are
 equivalent — `CalendarDay` uses `value.Date()` (no `In(location)` shift), so
-`location` cancels through the subsequent UTC-midnight canonicalization. The
-webhook-delivery `CONDITIONALS_NEGATION` survivors remain a lower-value
-follow-up. **Everything below this line is the prior `a6d7e41` measurement,
-pending re-triage against this run.**
+`location` cancels through the subsequent UTC-midnight canonicalization. On the
+webhook side the scheme-guard negation (`webhook_delivery.go:152`, an SSRF /
+scheme-injection defence that refuses `file://`/`ftp://`/…) is killed by pinning
+the `ErrWebhookDeliveryURLScheme` sentinel; `webhook_notify_service.go:247` is
+equivalent (a best-effort watermark write whose mutant only flips which branch
+logs). The remaining survivors are the same `CONDITIONALS_BOUNDARY` clamp/
+threshold class. **Everything below this line is the prior `a6d7e41`
+measurement, pending re-triage against this run.**
 
 ## Score (prior — `a6d7e41`)
 
