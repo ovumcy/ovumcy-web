@@ -1,0 +1,66 @@
+{
+  "$comment": "Shared golden vectors for cycle prediction. Single source of truth consumed by BOTH the TypeScript reference test (src/services/cycle-prediction-reference.test.ts) and, by design, ovumcy-web's Go reference test (internal/services/cycles_reference_test.go). The two prediction implementations — cycle-prediction-policy.ts and cycles.go — are hand-parallel ports; these vectors enforce parity so a change to either that diverges from the other fails CI. Any prediction-math change MUST update this file, docs/cycle-prediction.md, and both reference tests in the same change. Dates are calendar dates (YYYY-MM-DD), timezone-independent. See docs/cycle-prediction.md for the derivation of each case.",
+  "schemaVersion": 1,
+  "vectors": [
+    {
+      "name": "28-day cycle, luteal 14 -> ovulation day 14 (exact)",
+      "input": { "cycleStartDate": "2026-03-10", "cycleLength": 28, "lutealPhase": 14 },
+      "expected": {
+        "calculable": true,
+        "fertilityStart": "2026-03-18",
+        "fertilityEnd": "2026-03-23",
+        "ovulationDate": "2026-03-23",
+        "isExact": true,
+        "nextPeriodStart": "2026-04-07"
+      }
+    },
+    {
+      "name": "30-day cycle, luteal 0 defaults to 14 (exact)",
+      "input": { "cycleStartDate": "2026-06-01", "cycleLength": 30, "lutealPhase": 0 },
+      "expected": {
+        "calculable": true,
+        "fertilityStart": "2026-06-11",
+        "fertilityEnd": "2026-06-16",
+        "ovulationDate": "2026-06-16",
+        "isExact": true,
+        "nextPeriodStart": "2026-07-01"
+      }
+    },
+    {
+      "name": "21-day cycle, luteal 14 (exact)",
+      "input": { "cycleStartDate": "2026-01-01", "cycleLength": 21, "lutealPhase": 14 },
+      "expected": {
+        "calculable": true,
+        "fertilityStart": "2026-01-02",
+        "fertilityEnd": "2026-01-07",
+        "ovulationDate": "2026-01-07",
+        "isExact": true,
+        "nextPeriodStart": "2026-01-22"
+      }
+    },
+    {
+      "name": "15-day cycle, luteal 14 clamped to 10, window clamped to period start (non-exact)",
+      "input": { "cycleStartDate": "2026-02-01", "cycleLength": 15, "lutealPhase": 14 },
+      "expected": {
+        "calculable": true,
+        "fertilityStart": "2026-02-01",
+        "fertilityEnd": "2026-02-05",
+        "ovulationDate": "2026-02-05",
+        "isExact": false,
+        "nextPeriodStart": "2026-02-16"
+      }
+    },
+    {
+      "name": "14-day cycle -> below the 15-day floor, no prediction",
+      "input": { "cycleStartDate": "2026-02-01", "cycleLength": 14, "lutealPhase": 14 },
+      "expected": {
+        "calculable": false,
+        "fertilityStart": null,
+        "fertilityEnd": null,
+        "ovulationDate": null,
+        "isExact": false,
+        "nextPeriodStart": "2026-02-15"
+      }
+    }
+  ]
+}

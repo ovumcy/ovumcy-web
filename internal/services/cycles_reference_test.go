@@ -1,6 +1,9 @@
 package services
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -12,9 +15,81 @@ import (
 // These deterministic example-based tests complement the property tests
 // (cycles_property_test.go, invariants) and the fuzz tests (policy_fuzz_test.go,
 // robustness). Together: transparent and verifiable.
+//
+// The per-vector prediction cases (TestCyclePrediction_GoldenVectors) are driven
+// by a shared golden-vector fixture,
+// testdata/cycle-prediction-golden-vectors.json, that is kept byte-identical
+// with ovumcy-app's src/services/__fixtures__/cycle-prediction-golden-vectors.json
+// (ovumcy-app PR #75). The Go (cycles.go) and TypeScript
+// (cycle-prediction-policy.ts) prediction implementations are hand-parallel
+// ports; consuming one shared file makes any divergence between them fail CI on
+// both sides instead of silently drifting. If the prediction math changes,
+// update the fixture, docs/cycle-prediction.md, and BOTH reference tests
+// (this file and ovumcy-app's cycle-prediction-reference.test.ts) in the same
+// change.
 
 func refDate(year, month, day int) time.Time {
 	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+}
+
+// goldenVectorsFile is the shared golden-vector fixture, vendored byte-identical
+// from ovumcy-app (see the package comment above).
+const goldenVectorsFile = "cycle-prediction-golden-vectors.json"
+
+// goldenVectorFixture is the parsed shape of the shared fixture. Field names
+// mirror the JSON (which uses the TypeScript port's vocabulary); the mapping
+// onto the Go CycleWindowPrediction struct happens in the test body. Nullable
+// dates are pointers so a JSON null (the non-calculable case) decodes to nil
+// rather than the zero date, and can be asserted as "absent".
+type goldenVectorFixture struct {
+	SchemaVersion int            `json:"schemaVersion"`
+	Vectors       []goldenVector `json:"vectors"`
+}
+
+type goldenVector struct {
+	Name  string `json:"name"`
+	Input struct {
+		CycleStartDate string `json:"cycleStartDate"`
+		CycleLength    int    `json:"cycleLength"`
+		LutealPhase    int    `json:"lutealPhase"`
+	} `json:"input"`
+	Expected struct {
+		Calculable      bool    `json:"calculable"`
+		FertilityStart  *string `json:"fertilityStart"`
+		FertilityEnd    *string `json:"fertilityEnd"`
+		OvulationDate   *string `json:"ovulationDate"`
+		IsExact         bool    `json:"isExact"`
+		NextPeriodStart string  `json:"nextPeriodStart"`
+	} `json:"expected"`
+}
+
+// loadGoldenVectors reads and parses the shared fixture, failing the test on any
+// read or decode error.
+func loadGoldenVectors(t *testing.T) goldenVectorFixture {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", goldenVectorsFile))
+	if err != nil {
+		t.Fatalf("read golden vectors: %v", err)
+	}
+	var fixture goldenVectorFixture
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("parse golden vectors: %v", err)
+	}
+	if len(fixture.Vectors) == 0 {
+		t.Fatal("golden vectors fixture has no vectors")
+	}
+	return fixture
+}
+
+// goldenDate parses a fixture "YYYY-MM-DD" calendar date into a UTC-midnight
+// time.Time, matching the UTC-anchored dateOnly arithmetic in cycles.go.
+func goldenDate(t *testing.T, s string) time.Time {
+	t.Helper()
+	d, err := time.ParseInLocation("2006-01-02", s, time.UTC)
+	if err != nil {
+		t.Fatalf("parse golden date %q: %v", s, err)
+	}
+	return d
 }
 
 func TestResolveLutealPhase_ReferenceVectors(t *testing.T) {
@@ -68,87 +143,70 @@ func TestCalcOvulationDay_ReferenceVectors(t *testing.T) {
 	}
 }
 
-func TestCyclePrediction_ReferenceVectors(t *testing.T) {
-	cases := []struct {
-		name         string
-		periodStart  time.Time
-		cycleLen     int
-		luteal       int
-		wantCalc     bool
-		wantExact    bool
-		wantOvul     time.Time
-		wantFertFrom time.Time
-		wantFertTo   time.Time
-		wantNext     time.Time // model: periodStart + cycleLen
-	}{
-		{
-			name:        "standard 28-day cycle",
-			periodStart: refDate(2026, 3, 10), cycleLen: 28, luteal: 14,
-			wantCalc: true, wantExact: true,
-			wantOvul:     refDate(2026, 3, 23),
-			wantFertFrom: refDate(2026, 3, 18), wantFertTo: refDate(2026, 3, 23),
-			wantNext: refDate(2026, 4, 7),
-		},
-		{
-			name:        "30-day cycle, default luteal",
-			periodStart: refDate(2026, 6, 1), cycleLen: 30, luteal: 0,
-			wantCalc: true, wantExact: true,
-			wantOvul:     refDate(2026, 6, 16),
-			wantFertFrom: refDate(2026, 6, 11), wantFertTo: refDate(2026, 6, 16),
-			wantNext: refDate(2026, 7, 1),
-		},
-		{
-			name:        "short 21-day cycle",
-			periodStart: refDate(2026, 1, 1), cycleLen: 21, luteal: 14,
-			wantCalc: true, wantExact: true,
-			wantOvul:     refDate(2026, 1, 7),
-			wantFertFrom: refDate(2026, 1, 2), wantFertTo: refDate(2026, 1, 7),
-			wantNext: refDate(2026, 1, 22),
-		},
-		{
-			name:        "15-day cycle clamps luteal and fertile window",
-			periodStart: refDate(2026, 2, 1), cycleLen: 15, luteal: 14,
-			wantCalc: true, wantExact: false,
-			wantOvul:     refDate(2026, 2, 5),
-			wantFertFrom: refDate(2026, 2, 1), wantFertTo: refDate(2026, 2, 5),
-			wantNext: refDate(2026, 2, 16),
-		},
-		{
-			name:        "cycle too short for any prediction",
-			periodStart: refDate(2026, 5, 1), cycleLen: 14, luteal: 14,
-			wantCalc: false,
-		},
-	}
+// TestCyclePrediction_GoldenVectors asserts every vector in the shared fixture
+// against PredictCycleWindow (and the next-period formula), so the Go source of
+// truth and ovumcy-app's TypeScript port cannot drift apart without failing CI
+// on both sides. The fixture uses the TypeScript port's field vocabulary
+// (calculable / fertilityStart / fertilityEnd / ovulationDate / isExact /
+// nextPeriodStart); the mapping onto CycleWindowPrediction is spelled out below.
+func TestCyclePrediction_GoldenVectors(t *testing.T) {
+	fixture := loadGoldenVectors(t)
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			window := PredictCycleWindow(tc.periodStart, tc.cycleLen, tc.luteal)
-			ovul, fertFrom, fertTo, exact, calc := window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd, window.OvulationExact, window.Calculable
-			if calc != tc.wantCalc {
-				t.Fatalf("calculable = %t, want %t", calc, tc.wantCalc)
+	for _, vector := range fixture.Vectors {
+		t.Run(vector.Name, func(t *testing.T) {
+			periodStart := goldenDate(t, vector.Input.CycleStartDate)
+			window := PredictCycleWindow(periodStart, vector.Input.CycleLength, vector.Input.LutealPhase)
+
+			if window.Calculable != vector.Expected.Calculable {
+				t.Fatalf("calculable = %t, want %t", window.Calculable, vector.Expected.Calculable)
 			}
-			if !calc {
-				return
+
+			if vector.Expected.Calculable {
+				// fertilityStart -> FertilityWindowStart
+				wantFertFrom := goldenDate(t, *vector.Expected.FertilityStart)
+				if !window.FertilityWindowStart.Equal(wantFertFrom) {
+					t.Errorf("fertility start = %s, want %s",
+						window.FertilityWindowStart.Format("2006-01-02"), wantFertFrom.Format("2006-01-02"))
+				}
+				// fertilityEnd -> FertilityWindowEnd
+				wantFertTo := goldenDate(t, *vector.Expected.FertilityEnd)
+				if !window.FertilityWindowEnd.Equal(wantFertTo) {
+					t.Errorf("fertility end = %s, want %s",
+						window.FertilityWindowEnd.Format("2006-01-02"), wantFertTo.Format("2006-01-02"))
+				}
+				// ovulationDate -> OvulationDate
+				wantOvul := goldenDate(t, *vector.Expected.OvulationDate)
+				if !window.OvulationDate.Equal(wantOvul) {
+					t.Errorf("ovulation = %s, want %s",
+						window.OvulationDate.Format("2006-01-02"), wantOvul.Format("2006-01-02"))
+				}
+				// isExact -> OvulationExact
+				if window.OvulationExact != vector.Expected.IsExact {
+					t.Errorf("exact = %t, want %t", window.OvulationExact, vector.Expected.IsExact)
+				}
+			} else {
+				// A non-calculable prediction returns the zero struct: the
+				// fixture pins these to null, so assert the dates are absent
+				// rather than skipping the negative case.
+				if vector.Expected.OvulationDate != nil || vector.Expected.FertilityStart != nil || vector.Expected.FertilityEnd != nil {
+					t.Fatalf("fixture bug: non-calculable vector %q must have null date fields", vector.Name)
+				}
+				if !window.OvulationDate.IsZero() || !window.FertilityWindowStart.IsZero() || !window.FertilityWindowEnd.IsZero() {
+					t.Errorf("non-calculable window should have zero dates, got ovul=%v fertFrom=%v fertTo=%v",
+						window.OvulationDate, window.FertilityWindowStart, window.FertilityWindowEnd)
+				}
 			}
-			if !ovul.Equal(tc.wantOvul) {
-				t.Errorf("ovulation = %s, want %s", ovul.Format("2006-01-02"), tc.wantOvul.Format("2006-01-02"))
-			}
-			if !fertFrom.Equal(tc.wantFertFrom) {
-				t.Errorf("fertility start = %s, want %s", fertFrom.Format("2006-01-02"), tc.wantFertFrom.Format("2006-01-02"))
-			}
-			if !fertTo.Equal(tc.wantFertTo) {
-				t.Errorf("fertility end = %s, want %s", fertTo.Format("2006-01-02"), tc.wantFertTo.Format("2006-01-02"))
-			}
-			if exact != tc.wantExact {
-				t.Errorf("exact = %t, want %t", exact, tc.wantExact)
-			}
-			// Doc-only consistency check: this recomputes periodStart +
-			// cycleLength inline, so it can only catch a drifted "next
-			// period" column in docs/cycle-prediction.md — never a
-			// production bug. The production invariant is pinned by
-			// TestPipeline_NextPeriodMatchesFormula.
-			if next := tc.periodStart.AddDate(0, 0, tc.cycleLen); !next.Equal(tc.wantNext) {
-				t.Errorf("next period = %s, want %s", next.Format("2006-01-02"), tc.wantNext.Format("2006-01-02"))
+
+			// nextPeriodStart = cycleStartDate + cycleLength days. This is not
+			// part of PredictCycleWindow's output, so assert it against the same
+			// UTC-anchored formula the production pipeline uses
+			// (applyPredictedCycleStats / PredictCycleWindow, via dateOnly +
+			// AddDate). This mirrors ovumcy-app's cycle-prediction-reference.test.ts,
+			// which recomputes cycleStartDate + cycleLength the same way to lock
+			// the doc's "next period" column to the code on both sides.
+			wantNext := goldenDate(t, vector.Expected.NextPeriodStart)
+			if gotNext := dateOnly(periodStart.AddDate(0, 0, vector.Input.CycleLength)); !gotNext.Equal(wantNext) {
+				t.Errorf("next period = %s, want %s", gotNext.Format("2006-01-02"), wantNext.Format("2006-01-02"))
 			}
 		})
 	}

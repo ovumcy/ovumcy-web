@@ -136,8 +136,23 @@ estimate, nothing more.
 
 ## Verifying this document
 
-Every numeric claim above is enforced by `TestCyclePrediction_ReferenceVectors`
+Every numeric claim above is enforced by `TestCyclePrediction_GoldenVectors`
 and related tests in `internal/services/cycles_reference_test.go`. Property-based
 tests (`cycles_property_test.go`) additionally assert the invariants for
-thousands of generated inputs. If you change the math, these tests must be
-updated in lockstep with this document.
+thousands of generated inputs.
+
+### Shared golden-vector fixture (lockstep with ovumcy-app)
+
+The worked examples above are pinned to the code by a **shared golden-vector
+fixture**, [`internal/services/testdata/cycle-prediction-golden-vectors.json`](../internal/services/testdata/cycle-prediction-golden-vectors.json),
+consumed by `TestCyclePrediction_GoldenVectors`. That file is kept
+**byte-identical** with ovumcy-app's
+`src/services/__fixtures__/cycle-prediction-golden-vectors.json` (ovumcy-app
+PR #75), where it is consumed by `src/services/cycle-prediction-reference.test.ts`.
+
+The Go source of truth here (`internal/services/cycles.go`) and ovumcy-app's
+TypeScript port (`src/services/cycle-prediction-policy.ts`) are hand-parallel
+implementations; consuming one shared fixture makes any divergence between them
+fail CI on **both** sides instead of drifting silently. If you change the
+prediction math, update the fixture, **both** docs (this file and ovumcy-app's
+`docs/cycle-prediction.md`), and **both** reference tests in the same change.
