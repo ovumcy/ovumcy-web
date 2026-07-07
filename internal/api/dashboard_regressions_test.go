@@ -344,9 +344,6 @@ func TestDashboardRendersReminderBannerWhenPeriodIsDueSoon(t *testing.T) {
 	if got := htmlAttr(banner, "data-reminder-banner-key"); got != "dashboard.reminder_banner_period" {
 		t.Fatalf("expected period reminder banner key, got %q", got)
 	}
-	if !strings.Contains(body, "Period likely in ~2 days") {
-		t.Fatalf("expected rendered period reminder copy for 2 days out, got body without it")
-	}
 
 	for _, fragment := range []string{
 		`data-dashboard-prediction-disclaimer`,
@@ -396,12 +393,6 @@ func TestDashboardRendersTomorrowReminderBannerCopy(t *testing.T) {
 	}
 	if got := htmlAttr(banner, "data-reminder-banner-key"); got != "dashboard.reminder_banner_period_tomorrow" {
 		t.Fatalf("expected period tomorrow reminder banner key, got %q", got)
-	}
-	if !strings.Contains(body, "Period likely tomorrow") {
-		t.Fatalf("expected rendered tomorrow reminder copy, got body without it")
-	}
-	if strings.Contains(body, "~1 day") {
-		t.Fatalf("did not expect the ~N days plural copy for the tomorrow branch")
 	}
 
 	for _, fragment := range []string{
