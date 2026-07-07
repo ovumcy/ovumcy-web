@@ -7,6 +7,8 @@ package security
 // AuthCodeURL) are exercised by the e2e OIDC lanes, not Go units.
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -114,5 +116,41 @@ func TestAllowsAutoProvisionGatesOnDomainNotLocalPart(t *testing.T) {
 				t.Fatalf("AllowsAutoProvision(%q) = %v, want %v", tc.email, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestValidateOIDCCABundleRejectsBundleWithoutCertificate covers
+// validateOIDCCABundle (oidc.go:611–621), which no test reached. The guard on
+// oidc.go:613 must surface the read error, and a readable file that carries no
+// PEM certificate must be rejected — not silently accepted. This kills the
+// `if err != nil` negation mutant (which, on a successful read, would return
+// the nil error early and accept a bundle with zero certificates).
+func TestValidateOIDCCABundleRejectsBundleWithoutCertificate(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Readable file, no PEM certificate -> must be rejected.
+	garbage := filepath.Join(dir, "garbage.pem")
+	if err := os.WriteFile(garbage, []byte("this is not a certificate\n"), 0o600); err != nil {
+		t.Fatalf("write garbage bundle: %v", err)
+	}
+	if err := validateOIDCCABundle(garbage); err == nil {
+		t.Fatal("a CA bundle containing no PEM certificate must be rejected")
+	}
+
+	// A bundle holding a real certificate is accepted.
+	caPEM, _ := newTestCAAndLeaf(t)
+	valid := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(valid, caPEM, 0o600); err != nil {
+		t.Fatalf("write valid bundle: %v", err)
+	}
+	if err := validateOIDCCABundle(valid); err != nil {
+		t.Fatalf("a CA bundle with a real certificate must be accepted, got %v", err)
+	}
+
+	// A missing path surfaces the read error (the err != nil branch).
+	if err := validateOIDCCABundle(filepath.Join(dir, "does-not-exist.pem")); err == nil {
+		t.Fatal("a missing CA bundle path must be rejected")
 	}
 }
