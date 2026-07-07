@@ -1,4 +1,4 @@
-import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const appBundleSources = [
   "./web/src/js/app/00-core.js",
@@ -27,6 +27,17 @@ const settingsImportBundleSources = [
   "./web/src/js/settings-import/00-restore.js"
 ];
 
+// Force LF on every emitted bundle: a source that drifted to CRLF in the working
+// tree must not leak into a committed bundle and trip the "bundles must match a
+// fresh build" CI guard (otherwise only reproducible on Windows checkouts).
+function toLF(text) {
+  return text.replace(/\r\n?/g, "\n");
+}
+
+function writeLF(destination, text) {
+  writeFileSync(destination, toLF(text), "utf8");
+}
+
 function buildBundle(sources) {
   return sources
     .map((source) => readFileSync(source, "utf8").trimEnd())
@@ -34,13 +45,13 @@ function buildBundle(sources) {
 }
 
 const appBundle = buildBundle(appBundleSources);
-writeFileSync("./web/static/js/app.js", appBundle, "utf8");
+writeLF("./web/static/js/app.js", appBundle);
 
 const settingsExportBundle = buildBundle(settingsExportBundleSources);
-writeFileSync("./web/static/js/settings-export.js", settingsExportBundle, "utf8");
+writeLF("./web/static/js/settings-export.js", settingsExportBundle);
 
 const settingsImportBundle = buildBundle(settingsImportBundleSources);
-writeFileSync("./web/static/js/settings-import.js", settingsImportBundle, "utf8");
+writeLF("./web/static/js/settings-import.js", settingsImportBundle);
 
 const htmxLicenseBanner =
   "/*!\n" +
@@ -49,7 +60,7 @@ const htmxLicenseBanner =
   " */\n";
 
 const htmxSource = readFileSync("./node_modules/htmx.org/dist/htmx.min.js", "utf8");
-writeFileSync("./web/static/js/htmx.min.js", htmxLicenseBanner + htmxSource, "utf8");
+writeLF("./web/static/js/htmx.min.js", htmxLicenseBanner + htmxSource);
 
 const buildTargets = [
   ["./web/src/js/theme-bootstrap.js", "./web/static/js/theme-bootstrap.js"],
@@ -57,5 +68,5 @@ const buildTargets = [
 ];
 
 for (const [source, destination] of buildTargets) {
-  copyFileSync(source, destination);
+  writeLF(destination, readFileSync(source, "utf8"));
 }
