@@ -124,7 +124,6 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 
 	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, logs, stats, now, location)
-	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, err := service.buildPickerViewState(
 		user,
 		today,
