@@ -134,3 +134,36 @@ func TestImportServiceEmptySymptomNamesIgnored(t *testing.T) {
 func TestImportServiceRefreshNilGuards(t *testing.T) {
 	(&ImportService{}).refreshDerivedCycleSettings(context.Background(), 1, time.UTC)
 }
+
+// importRecordingUsers records every UpdateByID call so a test can assert the
+// best-effort refresh actually wrote (importStubUsers swallows the call).
+type importRecordingUsers struct {
+	updates []map[string]any
+}
+
+func (importRecordingUsers) LoadSettingsByID(context.Context, uint) (models.User, error) {
+	return models.User{}, nil
+}
+func (r *importRecordingUsers) UpdateByID(_ context.Context, _ uint, updates map[string]any) error {
+	r.updates = append(r.updates, updates)
+	return nil
+}
+
+// TestImportServiceRefreshUpdatesOnSuccess: when the post-restore log read
+// succeeds, the best-effort refresh must persist the derived luteal phase.
+// Existing coverage only drives the error path (listErr), so the success path
+// went unasserted — this kills the import_service.go:388 `err != nil` guard
+// mutant, which returns early on success and never writes the update.
+func TestImportServiceRefreshUpdatesOnSuccess(t *testing.T) {
+	users := &importRecordingUsers{}
+	// listErr nil => ListByUser succeeds; the refresh must proceed to UpdateByID.
+	svc := &ImportService{logs: &importStubLogs{}, users: users}
+	svc.refreshDerivedCycleSettings(context.Background(), 7, time.UTC)
+
+	if len(users.updates) != 1 {
+		t.Fatalf("expected one luteal_phase update on the success path, got %d", len(users.updates))
+	}
+	if _, ok := users.updates[0]["luteal_phase"]; !ok {
+		t.Fatalf("expected the refresh to set luteal_phase, got %v", users.updates[0])
+	}
+}

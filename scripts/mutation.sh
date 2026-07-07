@@ -62,15 +62,38 @@ TARGETS=(
   "./internal/api"
 )
 
-# internal/api is sharded (see header comment). Shard count was picked for
-# comfortable margin under the 3h CI timeout: the unsharded run didn't finish
-# in 3h, so 5 shards gives each one a small (~22-file) slice with room to
-# spare even under a pessimistic multi-hour full-package estimate.
-API_SHARD_PKG="./internal/api"
-API_SHARD_COUNT=5
+# internal/api and internal/services are each sharded (see header comment):
+# both outgrew the 3h CI timeout as a single unsharded job (internal/api first,
+# issue #161; internal/services once its integration/property suites expanded).
+# Shard counts were picked for comfortable margin — 5 shards gives each one a
+# small (~17–22-file) slice with room to spare even under a pessimistic
+# multi-hour full-package estimate. Keep this registry in sync with the matrix
+# in .github/workflows/mutation.yml. Entries are "slug-base:package-dir:count".
+SHARDED_PKGS=(
+  "internal_api:./internal/api:5"
+  "internal_services:./internal/services:5"
+)
+
+# shard_pkg_field <slug-base> <dir|count> looks up a sharded package's directory
+# or shard count from SHARDED_PKGS; non-zero exit if the base is not registered.
+shard_pkg_field() {
+  local want="$1" field="$2" entry base dir count
+  for entry in "${SHARDED_PKGS[@]}"; do
+    IFS=: read -r base dir count <<<"$entry"
+    if [[ "$base" == "$want" ]]; then
+      case "$field" in
+        dir) printf '%s\n' "$dir" ;;
+        count) printf '%s\n' "$count" ;;
+        *) return 2 ;;
+      esac
+      return 0
+    fi
+  done
+  return 1
+}
 
 usage() {
-  echo "usage: $0 {baseline [pkg-slug]|diff [ref]|verify-shards|merge-api-shards [in-dir] [out-file]}" >&2
+  echo "usage: $0 {baseline [pkg-slug]|diff [ref]|verify-shards|merge-shards <base> [in-dir] [out-file]}" >&2
   exit 2
 }
 
@@ -82,36 +105,37 @@ require_gremlins() {
   fi
 }
 
-# api_shard_files lists internal/api's non-test .go basenames, one per line,
+# shard_files <pkg-dir> lists a package's non-test .go basenames, one per line,
 # in a stable sort order. This is the single source of truth every shard
 # computation (selection + exclusion + the completeness proof) reads from, so
 # they can never disagree with each other.
-api_shard_files() {
-  find "$API_SHARD_PKG" -maxdepth 1 -name '*.go' ! -name '*_test.go' -printf '%f\n' | sort
+shard_files() {
+  local pkg_dir="$1"
+  find "$pkg_dir" -maxdepth 1 -name '*.go' ! -name '*_test.go' -printf '%f\n' | sort
 }
 
-# api_shard_select prints the basenames assigned to shard $1 (1-based) out of
-# API_SHARD_COUNT, via round-robin: the file at sorted index i (0-based) goes
-# to shard (i % API_SHARD_COUNT) + 1.
-api_shard_select() {
-  local shard_num="$1"
-  api_shard_files | awk -v shard="$shard_num" -v total="$API_SHARD_COUNT" \
+# shard_select <pkg-dir> <shard-num> <shard-count> prints the basenames assigned
+# to shard <shard-num> (1-based), via round-robin: the file at sorted index i
+# (0-based) goes to shard (i % shard-count) + 1.
+shard_select() {
+  local pkg_dir="$1" shard_num="$2" total="$3"
+  shard_files "$pkg_dir" | awk -v shard="$shard_num" -v total="$total" \
     'NR % total == shard % total'
 }
 
-# api_shard_exclude_args prints one --exclude-files argument pair per line for
-# every file NOT assigned to shard $1 — the complement gremlins needs to scope
-# a single `unleash ./internal/api` invocation down to just that shard's
-# files. Each pattern is anchored (^...$) so a filename that is a substring of
-# another (e.g. input_types.go vs handlers_onboarding_input_types.go) can
-# never over-match. The only regex metacharacter a Go source filename can ever
-# contain is the extension dot (filenames are restricted to
-# [A-Za-z0-9_.]+\.go), so escaping just that dot is sufficient here — no
-# general-purpose regex-escape helper needed.
-api_shard_exclude_args() {
-  local shard_num="$1"
+# shard_exclude_args <pkg-dir> <shard-num> <shard-count> prints one
+# --exclude-files argument pair per line for every file NOT assigned to the
+# shard — the complement gremlins needs to scope a single `unleash <pkg>`
+# invocation down to just that shard's files. Each pattern is anchored (^...$)
+# so a filename that is a substring of another (e.g. input_types.go vs
+# handlers_onboarding_input_types.go) can never over-match. The only regex
+# metacharacter a Go source filename can ever contain is the extension dot
+# (filenames are restricted to [A-Za-z0-9_.]+\.go), so escaping just that dot is
+# sufficient here — no general-purpose regex-escape helper needed.
+shard_exclude_args() {
+  local pkg_dir="$1" shard_num="$2" total="$3"
   local keep_list
-  keep_list="$(api_shard_select "$shard_num")"
+  keep_list="$(shard_select "$pkg_dir" "$shard_num" "$total")"
   while IFS= read -r fname; do
     [[ -z "$fname" ]] && continue
     if ! grep -qxF "$fname" <<<"$keep_list"; then
@@ -121,72 +145,101 @@ api_shard_exclude_args() {
       # dot" — verified against GNU sed 4.9.)
       printf -- '--exclude-files\n^%s$\n' "$(printf '%s' "$fname" | sed 's/\./\\&/g')"
     fi
-  done < <(api_shard_files)
+  done < <(shard_files "$pkg_dir")
 }
 
+# verify_shards proves every sharded package's partition is exact — each
+# non-test .go file lands in exactly one shard, no gaps, no overlaps — for every
+# entry in SHARDED_PKGS. Pure file-listing arithmetic, no gremlins/network
+# dependency, so it is safe to run in any CI job or locally.
 verify_shards() {
+  local entry base dir count rc=0
+  for entry in "${SHARDED_PKGS[@]}"; do
+    IFS=: read -r base dir count <<<"$entry"
+    verify_one_partition "$base" "$dir" "$count" || rc=1
+  done
+  if [[ "$rc" -ne 0 ]]; then
+    exit 1
+  fi
+}
+
+# verify_one_partition <slug-base> <pkg-dir> <shard-count> checks a single
+# package's shard partition and returns (without exiting) non-zero on a gap or
+# overlap, so verify_shards can report every package before failing.
+verify_one_partition() {
+  local base="$1" pkg_dir="$2" total="$3"
   local total_count union_file
-  total_count="$(api_shard_files | wc -l | tr -d ' ')"
+  echo ">> verifying $base partition ($pkg_dir, $total shards)"
+  total_count="$(shard_files "$pkg_dir" | wc -l | tr -d ' ')"
   union_file="$(mktemp)"
 
   local shard_num
-  for ((shard_num = 1; shard_num <= API_SHARD_COUNT; shard_num++)); do
+  for ((shard_num = 1; shard_num <= total; shard_num++)); do
     local count
-    count="$(api_shard_select "$shard_num" | grep -c . || true)"
+    count="$(shard_select "$pkg_dir" "$shard_num" "$total" | grep -c . || true)"
     echo ">> shard $shard_num: $count files"
-    api_shard_select "$shard_num" >>"$union_file"
+    shard_select "$pkg_dir" "$shard_num" "$total" >>"$union_file"
   done
 
   local union_count dup_count overlap_found=0
   union_count="$(sort -u "$union_file" | wc -l | tr -d ' ')"
   dup_count="$(sort "$union_file" | uniq -d | wc -l | tr -d ' ')"
 
-  echo ">> total internal/api non-test files: $total_count"
+  echo ">> total $base non-test files: $total_count"
   echo ">> union across shards (unique):      $union_count"
   echo ">> duplicate assignments:              $dup_count"
 
   if [[ "$dup_count" -ne 0 ]]; then
-    echo "::error::shard partition has $dup_count file(s) assigned to more than one shard" >&2
+    echo "::error::$base shard partition has $dup_count file(s) assigned to more than one shard" >&2
     sort "$union_file" | uniq -d >&2
     overlap_found=1
   fi
   if [[ "$union_count" -ne "$total_count" ]]; then
-    echo "::error::shard union ($union_count) does not cover all internal/api files ($total_count) — gap detected" >&2
-    comm -23 <(api_shard_files) <(sort -u "$union_file") >&2
+    echo "::error::$base shard union ($union_count) does not cover all $base files ($total_count) — gap detected" >&2
+    comm -23 <(shard_files "$pkg_dir") <(sort -u "$union_file") >&2
     overlap_found=1
   fi
 
   rm -f "$union_file"
 
   if [[ "$overlap_found" -ne 0 ]]; then
-    exit 1
+    return 1
   fi
-  echo ">> OK: every internal/api file is covered by exactly one shard, no gaps, no overlaps."
+  echo ">> OK: every $base file is covered by exactly one shard, no gaps, no overlaps."
+  return 0
 }
 
 run_baseline() {
-  # Optional single package slug (e.g. "internal_api", or a shard slug
-  # "internal_api_1".."internal_api_${API_SHARD_COUNT}") to run just one
-  # target — used by CI's per-target matrix jobs so each gets a fresh
-  # runner instead of accumulating disk/cache across all three targets.
+  # Optional single package slug (e.g. "internal_security", or a shard slug
+  # "internal_api_1".."internal_api_5" / "internal_services_1".."internal_services_5")
+  # to run just one target — used by CI's per-target matrix jobs so each gets a
+  # fresh runner instead of accumulating disk/cache across all targets.
   local only="${1:-}"
   mkdir -p "$TMP_DIR" "$BASELINE_DIR"
 
-  # Shard slugs are handled separately from the plain TARGETS loop below:
-  # they mutate a *subset* of internal/api's files rather than a distinct
-  # package path, via repeated --exclude-files on the same target.
-  if [[ "$only" =~ ^internal_api_([0-9]+)$ ]]; then
-    local shard_num="${BASH_REMATCH[1]}"
-    if (( shard_num < 1 || shard_num > API_SHARD_COUNT )); then
-      echo "error: shard '$only' out of range (1..$API_SHARD_COUNT)" >&2
+  # Shard slugs are handled separately from the plain TARGETS loop below: they
+  # mutate a *subset* of a package's files rather than a distinct package path,
+  # via repeated --exclude-files on the same target. The slug base selects the
+  # package directory and shard count from the SHARDED_PKGS registry.
+  if [[ "$only" =~ ^(internal_api|internal_services)_([0-9]+)$ ]]; then
+    local base="${BASH_REMATCH[1]}"
+    local shard_num="${BASH_REMATCH[2]}"
+    local pkg_dir total
+    pkg_dir="$(shard_pkg_field "$base" dir)" || {
+      echo "error: '$base' is not a sharded package" >&2
+      exit 2
+    }
+    total="$(shard_pkg_field "$base" count)"
+    if (( shard_num < 1 || shard_num > total )); then
+      echo "error: shard '$only' out of range (1..$total)" >&2
       exit 2
     fi
     local slug="$only"
-    echo ">> baseline mutation: $API_SHARD_PKG (shard $shard_num/$API_SHARD_COUNT)"
+    echo ">> baseline mutation: $pkg_dir (shard $shard_num/$total)"
     echo ">> shard $shard_num files:"
-    api_shard_select "$shard_num" | sed 's/^/     /'
-    mapfile -t exclude_args < <(api_shard_exclude_args "$shard_num")
-    "$GREMLINS" unleash "$API_SHARD_PKG" \
+    shard_select "$pkg_dir" "$shard_num" "$total" | sed 's/^/     /'
+    mapfile -t exclude_args < <(shard_exclude_args "$pkg_dir" "$shard_num" "$total")
+    "$GREMLINS" unleash "$pkg_dir" \
       --workers "$WORKERS" \
       --output "$TMP_DIR/${slug}.json" \
       "${exclude_args[@]}"
@@ -219,28 +272,30 @@ run_diff() {
     --output "$TMP_DIR/diff.json"
 }
 
-merge_api_shards() {
+merge_shards() {
+  # <base> is the sharded package slug (internal_api | internal_services).
   # in-dir defaults to where CI's download-artifact step lands the shard
-  # artifacts (one subdirectory per mutation-baseline-results-internal_api_N
+  # artifacts (one subdirectory per mutation-baseline-results-<base>_N
   # artifact); out-file defaults to the same $TMP_DIR/<slug>.json convention
   # every other target already uses, so downstream tooling only ever needs to
-  # know about "internal_api.json", never the shard count.
-  local in_dir="${1:-.tmp/mutation-shards}"
-  local out_file="${2:-$TMP_DIR/internal_api.json}"
+  # know about "<base>.json", never the shard count.
+  local base="${1:?merge-shards requires a slug base (internal_api | internal_services)}"
+  local in_dir="${2:-.tmp/mutation-shards}"
+  local out_file="${3:-$TMP_DIR/${base}.json}"
   go run ./scripts/mutationmerge \
     -in "$in_dir" \
-    -glob 'internal_api_*.json' \
+    -glob "${base}_*.json" \
     -out "$out_file"
 }
 
 main() {
   local mode="${1:-diff}"
   case "$mode" in
-    baseline)         require_gremlins; run_baseline "${2:-}" ;;
-    diff)             require_gremlins; run_diff "${2:-}" ;;
-    verify-shards)    verify_shards ;;
-    merge-api-shards) merge_api_shards "${2:-}" "${3:-}" ;;
-    *)                usage ;;
+    baseline)      require_gremlins; run_baseline "${2:-}" ;;
+    diff)          require_gremlins; run_diff "${2:-}" ;;
+    verify-shards) verify_shards ;;
+    merge-shards)  merge_shards "${2:-}" "${3:-}" "${4:-}" ;;
+    *)             usage ;;
   esac
 }
 

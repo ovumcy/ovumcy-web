@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,8 +36,18 @@ func TestNotFoundPageForGuestUsesLoginPrimaryAction(t *testing.T) {
 	if got := htmlAttr(title, "data-title-key"); got != "not_found.title" {
 		t.Fatalf("expected not-found title key %q, got %q", "not_found.title", got)
 	}
-	if !strings.Contains(rendered, `href="/login"`) {
-		t.Fatalf("expected login primary action for guest not-found page")
+	// Assert the primary-action element itself points to /login, addressed by
+	// its stable data hook — not a whole-page substring scan, which nav/footer
+	// links to /login would satisfy regardless (that is why the currentUser
+	// guard mutant survived).
+	guestPrimaryAction := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-not-found-primary-action")
+	})
+	if guestPrimaryAction == nil {
+		t.Fatalf("expected not-found primary action element with stable hook")
+	}
+	if got := htmlAttr(guestPrimaryAction, "href"); got != "/login" {
+		t.Fatalf("expected guest not-found primary action href %q, got %q", "/login", got)
 	}
 	// Privacy navigation belongs in the footer, not as an inline 404 action.
 	// Assert semantically (no /privacy anchor inside the not-found section)
@@ -76,13 +85,16 @@ func TestNotFoundPageForAuthenticatedUserUsesDashboardPrimaryAction(t *testing.T
 		t.Fatalf("expected status 404, got %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read authenticated not-found page body: %v", err)
+	rendered := mustReadBodyString(t, response.Body)
+	document := mustParseHTMLDocument(t, rendered)
+	primaryAction := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-not-found-primary-action")
+	})
+	if primaryAction == nil {
+		t.Fatalf("expected not-found primary action element with stable hook")
 	}
-	rendered := string(body)
-	if !strings.Contains(rendered, `href="/dashboard"`) {
-		t.Fatalf("expected dashboard primary action for authenticated not-found page")
+	if got := htmlAttr(primaryAction, "href"); got != "/dashboard" {
+		t.Fatalf("expected authenticated not-found primary action href %q, got %q", "/dashboard", got)
 	}
 	if strings.Contains(rendered, "not-found-owner") {
 		t.Fatalf("did not expect authenticated identity in not-found page layout")

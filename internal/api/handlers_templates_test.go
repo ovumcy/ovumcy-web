@@ -214,6 +214,34 @@ func TestFormatTemplateFloat(t *testing.T) {
 	}
 }
 
+// TestHasTemplateCycleFactor pins the template `hasCycleFactor` helper that
+// decides whether a cycle-factor checkbox renders `checked`
+// (components/symptom_options.html). A selected factor must report present and
+// an unselected/false one absent — this kills the `len(selected) == 0`
+// negation, which would report every factor absent for any non-empty selection
+// and leave saved factors unchecked on the settings form.
+func TestHasTemplateCycleFactor(t *testing.T) {
+	t.Parallel()
+
+	selected := map[string]bool{"pms": true, "cramps": false}
+
+	if !hasTemplateCycleFactor(selected, "pms") {
+		t.Fatal("a selected cycle factor must report present")
+	}
+	if hasTemplateCycleFactor(selected, "cramps") {
+		t.Fatal("an explicitly false cycle factor must report absent")
+	}
+	if hasTemplateCycleFactor(selected, "missing") {
+		t.Fatal("a factor absent from the selection must report absent")
+	}
+	if hasTemplateCycleFactor(nil, "pms") {
+		t.Fatal("a nil selection must report absent")
+	}
+	if hasTemplateCycleFactor(map[string]bool{}, "pms") {
+		t.Fatal("an empty selection must report absent")
+	}
+}
+
 // TestBaseLayoutVersionsStaticAssets pins the cache-busting contract: every
 // versioned static asset URL in the base layout carries the ?v=<build revision>
 // exposed through the shared page data (Handler.assetVersion → AssetVersion in

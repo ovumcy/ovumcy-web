@@ -4,7 +4,62 @@ Authoritative gremlins run for the core domain package. Reproduce with
 `scripts/mutation.sh baseline` (per-package JSON lands in `.tmp/mutation/`); this
 file is the reviewed summary committed alongside the code.
 
-## Score (measured on `a6d7e41`)
+## Score (measured on the `mutation/shard-services-and-kills` branch)
+
+**Update — run [28837779621](https://github.com/ovumcy/ovumcy-web/actions/runs/28837779621)
+(first sharded services measurement).** The single-job run below timed out at the
+3h cap (run 28827683010, killed at 3h0m17s, no report); `internal/services` is
+now split into 5 file-subset shards that finished in 1h9m–2h27m and uploaded
+green. Summed across the 5 shard JSONs: **killed 1508, lived 124, timed out 5,
+not covered 65 → test efficacy 92.40% (1508/1632), mutator coverage 96.17%
+(1632/1697)**. Survivors rose from 62 to 124 as the package grew (webhooks,
+`.ics` feed, reminders, expanded stats). This is NOT a 7.6%-untested reading:
+`CONDITIONALS_BOUNDARY` dominates and spot-triage shows these are overwhelmingly
+equivalent — e.g. **all 13 `cycles.go` survivors are equivalent** (the
+`CalcOvulationDay` L97 short-cycle threshold is redundant with the L104
+`maxSupportedLutealPhase` guard rejecting the same `cycleLen < 15`; the
+`LutealPhase <= 0` guard's sole caller sets the default the line above;
+`tailInts`/`tailCycles` `len <= n` slices identically; min/max scan boundaries
+keep the same extremum; capacity hints; `CycleLengthSpread` falls through to 0).
+Real-gap kills landed on this branch from the `CONDITIONALS_NEGATION`/folding
+survivors: the `.ics` feed lost its medical disclaimer
+(`calendar_feed_service.go:117`), mis-folded long lines
+(`calendar_feed_ics.go:216,226`), and resolved the owner's "today" in UTC instead
+of the request timezone (`calendar_feed_service.go:106`); the post-restore
+luteal-phase refresh no-op'd on success (`import_service.go:388`). The two
+remaining tz-guards (`day_feedback_policy.go:62`, `day_service.go:366`) are
+equivalent — `CalendarDay` uses `value.Date()` (no `In(location)` shift), so
+`location` cancels through the subsequent UTC-midnight canonicalization. On the
+webhook side the scheme-guard negation (`webhook_delivery.go:152`, an SSRF /
+scheme-injection defence that refuses `file://`/`ftp://`/…) is killed by pinning
+the `ErrWebhookDeliveryURLScheme` sentinel; `webhook_notify_service.go:247` is
+equivalent (a best-effort watermark write whose mutant only flips which branch
+logs). The remaining survivors are all `CONDITIONALS_BOUNDARY`. A sample of 41
+across the highest-risk files (`cycles.go` ×13, `stats_cycle_insights.go` ×14,
+`onboarding_service.go` ×7, `stats_service.go` ×3, `symptom_service.go` ×4) was
+triaged **41/41 equivalent** — every one is a boundary pattern that provably
+preserves the observable result:
+
+- **clamp-to-const** guards that fall through to the same value
+  (`ClampOnboardingCycleLength`/`ClampOnboardingPeriodLength`,
+  `statsInsightProgress`, the `<= 0`/`<= n` reserve guards);
+- **`sort.Slice` `Less` comparators** (`<`/`>` → `<=`/`>=` on strictly-ordered,
+  distinct keys leaves the order unchanged);
+- **min/max scans** (`if v < min`/`if v > max`) — same extremum either way;
+- **top-N truncation** (`if len(items) > N { return items[:N] }`) — at
+  `len == N` both return the same slice;
+- **`make(…, cap)` capacity hints** (ARITHMETIC/INVERT on a preallocation size);
+- **index-bounded unreachable guards** (e.g. `markerDay < 1` where the loop index
+  guarantees `markerDay ≥ 5`; `cycleLength <= 0` on a sorted-distinct-day diff).
+
+Killing these would mean pinning arbitrary clamp constants and sort tie-breaks
+with brittle tests — which the triage policy explicitly forbids (equivalent
+mutant → document, not kill; never weaken coverage to raise efficacy). The
+efficacy figure is therefore left as measured; the boundary class is triaged and
+closed, not chased to 100%. **Everything below this line is the prior `a6d7e41`
+measurement, pending re-triage against this run.**
+
+## Score (prior — `a6d7e41`)
 
 **Source: workflow_dispatch run
 [28758365493](https://github.com/ovumcy/ovumcy-web/actions/runs/28758365493)**

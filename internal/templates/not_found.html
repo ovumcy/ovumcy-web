@@ -6,7 +6,7 @@
     <p class="journal-muted" data-subtitle-key="not_found.subtitle">{{t .Messages "not_found.subtitle"}}</p>
 
     <div class="flex flex-wrap justify-center gap-3">
-      <a href="{{.PrimaryPath}}" class="btn-primary">{{t .Messages .PrimaryLabelKey}}</a>
+      <a href="{{.PrimaryPath}}" class="btn-primary" data-not-found-primary-action>{{t .Messages .PrimaryLabelKey}}</a>
       {{if .CurrentUser}}
       <a href="/calendar" class="btn-secondary">{{t .Messages "nav.calendar"}}</a>
       {{end}}

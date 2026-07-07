@@ -34,6 +34,40 @@ func predictableFeedLogs(t *testing.T) []models.DailyLog {
 	}
 }
 
+// TestFoldICSLine pins RFC 5545 §3.1 line folding: a content line over 75
+// octets is split with CRLF+space and no folded segment exceeds 75 octets, while
+// a line at or under the limit is emitted verbatim. Kills the foldICSLine
+// boundary/negation survivors (the fold on/off guard at len<=75 and the
+// segment-length guard) — a broken fold yields .ics lines strict calendar
+// parsers reject, or a spurious fold in a short line.
+func TestFoldICSLine(t *testing.T) {
+	t.Parallel()
+
+	// At or under the limit: returned verbatim, never folded.
+	for _, n := range []int{3, 75} {
+		line := strings.Repeat("a", n)
+		if got := foldICSLine(line); got != line {
+			t.Fatalf("foldICSLine(%d-octet line) = %q, want it unchanged", n, got)
+		}
+	}
+
+	// Over the limit: folded with CRLF+space, first segment exactly 75 octets,
+	// and no segment over 75.
+	folded := foldICSLine(strings.Repeat("a", 76))
+	if !strings.Contains(folded, "\r\n ") {
+		t.Fatalf("expected a 76-octet line to be folded, got %q", folded)
+	}
+	segments := strings.Split(folded, "\r\n ")
+	if len(segments[0]) != 75 {
+		t.Fatalf("first fold segment = %d octets, want 75", len(segments[0]))
+	}
+	for i, seg := range segments {
+		if len(seg) > 75 {
+			t.Fatalf("fold segment %d exceeds 75 octets (%d)", i, len(seg))
+		}
+	}
+}
+
 func TestBuildCalendarFeedICSEmitsNeutralEventsWithDisclaimer(t *testing.T) {
 	user := predictableFeedUser(t, "2026-03-02")
 	now := mustParseDashboardDay(t, "2026-03-20")
