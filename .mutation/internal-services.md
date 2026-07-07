@@ -21,10 +21,18 @@ equivalent — e.g. **all 13 `cycles.go` survivors are equivalent** (the
 `LutealPhase <= 0` guard's sole caller sets the default the line above;
 `tailInts`/`tailCycles` `len <= n` slices identically; min/max scan boundaries
 keep the same extremum; capacity hints; `CycleLengthSpread` falls through to 0).
-Real-gap triage of the `CONDITIONALS_NEGATION` survivors (`.ics` line folding,
-day/import persistence, webhook delivery) is the active follow-up. **Everything
-below this line is the prior `a6d7e41` measurement, pending re-triage against
-this run.**
+Real-gap kills landed on this branch from the `CONDITIONALS_NEGATION`/folding
+survivors: the `.ics` feed lost its medical disclaimer
+(`calendar_feed_service.go:117`), mis-folded long lines
+(`calendar_feed_ics.go:216,226`), and resolved the owner's "today" in UTC instead
+of the request timezone (`calendar_feed_service.go:106`); the post-restore
+luteal-phase refresh no-op'd on success (`import_service.go:388`). The two
+remaining tz-guards (`day_feedback_policy.go:62`, `day_service.go:366`) are
+equivalent — `CalendarDay` uses `value.Date()` (no `In(location)` shift), so
+`location` cancels through the subsequent UTC-midnight canonicalization. The
+webhook-delivery `CONDITIONALS_NEGATION` survivors remain a lower-value
+follow-up. **Everything below this line is the prior `a6d7e41` measurement,
+pending re-triage against this run.**
 
 ## Score (prior — `a6d7e41`)
 
