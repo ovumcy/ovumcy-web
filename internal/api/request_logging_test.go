@@ -79,7 +79,8 @@ func TestIsDateRequestLogSegment(t *testing.T) {
 		want    bool
 	}{
 		{"2024-06-15", true},
-		{"0000-00-00", true},
+		{"0000-00-00", true},   // all '0': exercises the char < '0' boundary
+		{"2019-09-29", true},   // carries '9's: exercises the char > '9' boundary
 		{"2024-06-1", false},   // one char too short
 		{"2024-06-150", false}, // one char too long
 		{"2024/06-15", false},  // separator position holds a slash
