@@ -34,8 +34,29 @@ webhook side the scheme-guard negation (`webhook_delivery.go:152`, an SSRF /
 scheme-injection defence that refuses `file://`/`ftp://`/…) is killed by pinning
 the `ErrWebhookDeliveryURLScheme` sentinel; `webhook_notify_service.go:247` is
 equivalent (a best-effort watermark write whose mutant only flips which branch
-logs). The remaining survivors are the same `CONDITIONALS_BOUNDARY` clamp/
-threshold class. **Everything below this line is the prior `a6d7e41`
+logs). The remaining survivors are all `CONDITIONALS_BOUNDARY`. A sample of 41
+across the highest-risk files (`cycles.go` ×13, `stats_cycle_insights.go` ×14,
+`onboarding_service.go` ×7, `stats_service.go` ×3, `symptom_service.go` ×4) was
+triaged **41/41 equivalent** — every one is a boundary pattern that provably
+preserves the observable result:
+
+- **clamp-to-const** guards that fall through to the same value
+  (`ClampOnboardingCycleLength`/`ClampOnboardingPeriodLength`,
+  `statsInsightProgress`, the `<= 0`/`<= n` reserve guards);
+- **`sort.Slice` `Less` comparators** (`<`/`>` → `<=`/`>=` on strictly-ordered,
+  distinct keys leaves the order unchanged);
+- **min/max scans** (`if v < min`/`if v > max`) — same extremum either way;
+- **top-N truncation** (`if len(items) > N { return items[:N] }`) — at
+  `len == N` both return the same slice;
+- **`make(…, cap)` capacity hints** (ARITHMETIC/INVERT on a preallocation size);
+- **index-bounded unreachable guards** (e.g. `markerDay < 1` where the loop index
+  guarantees `markerDay ≥ 5`; `cycleLength <= 0` on a sorted-distinct-day diff).
+
+Killing these would mean pinning arbitrary clamp constants and sort tie-breaks
+with brittle tests — which the triage policy explicitly forbids (equivalent
+mutant → document, not kill; never weaken coverage to raise efficacy). The
+efficacy figure is therefore left as measured; the boundary class is triaged and
+closed, not chased to 100%. **Everything below this line is the prior `a6d7e41`
 measurement, pending re-triage against this run.**
 
 ## Score (prior — `a6d7e41`)
