@@ -4,7 +4,29 @@ Authoritative gremlins run for the core domain package. Reproduce with
 `scripts/mutation.sh baseline` (per-package JSON lands in `.tmp/mutation/`); this
 file is the reviewed summary committed alongside the code.
 
-## Score (measured on `a6d7e41`)
+## Score (measured on the `mutation/shard-services-and-kills` branch)
+
+**Update — run [28837779621](https://github.com/ovumcy/ovumcy-web/actions/runs/28837779621)
+(first sharded services measurement).** The single-job run below timed out at the
+3h cap (run 28827683010, killed at 3h0m17s, no report); `internal/services` is
+now split into 5 file-subset shards that finished in 1h9m–2h27m and uploaded
+green. Summed across the 5 shard JSONs: **killed 1508, lived 124, timed out 5,
+not covered 65 → test efficacy 92.40% (1508/1632), mutator coverage 96.17%
+(1632/1697)**. Survivors rose from 62 to 124 as the package grew (webhooks,
+`.ics` feed, reminders, expanded stats). This is NOT a 7.6%-untested reading:
+`CONDITIONALS_BOUNDARY` dominates and spot-triage shows these are overwhelmingly
+equivalent — e.g. **all 13 `cycles.go` survivors are equivalent** (the
+`CalcOvulationDay` L97 short-cycle threshold is redundant with the L104
+`maxSupportedLutealPhase` guard rejecting the same `cycleLen < 15`; the
+`LutealPhase <= 0` guard's sole caller sets the default the line above;
+`tailInts`/`tailCycles` `len <= n` slices identically; min/max scan boundaries
+keep the same extremum; capacity hints; `CycleLengthSpread` falls through to 0).
+Real-gap triage of the `CONDITIONALS_NEGATION` survivors (`.ics` line folding,
+day/import persistence, webhook delivery) is the active follow-up. **Everything
+below this line is the prior `a6d7e41` measurement, pending re-triage against
+this run.**
+
+## Score (prior — `a6d7e41`)
 
 **Source: workflow_dispatch run
 [28758365493](https://github.com/ovumcy/ovumcy-web/actions/runs/28758365493)**
