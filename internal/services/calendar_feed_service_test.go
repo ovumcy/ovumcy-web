@@ -100,6 +100,13 @@ func TestResolveFeedReturnsOwnersFeedForValidToken(t *testing.T) {
 	if !strings.Contains(text, "BEGIN:VCALENDAR") || !strings.Contains(text, "BEGIN:VEVENT") {
 		t.Fatalf("expected a populated .ics for a predictable owner, got:\n%s", text)
 	}
+	// The medical-safety disclaimer must ride along on the .ics feed — a
+	// predictive calendar surface. Pinning the exact stub text is the sanctioned
+	// medical-safety copy assertion, and it kills the calendar_feed_service.go:117
+	// guard mutant that would drop the disclaimer (Disclaimer: "") from the feed.
+	if !strings.Contains(text, "estimates disclaimer") {
+		t.Fatalf("expected the medical-safety disclaimer in the .ics feed body, got:\n%s", text)
+	}
 }
 
 // TestResolveFeedCrossUserIsolation is the headline test: user A's token must
