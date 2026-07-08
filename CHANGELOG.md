@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking (export shape):** the built-in `swelling` symptom (added 2026-03-09) now has its own `swelling` boolean flag in the JSON `symptoms` object and its own `Swelling` CSV column, instead of falling through to `other_symptoms`/`Other` indistinguishably from an owner-created custom symptom. The `Swelling` CSV column is inserted after `Constipation` to stay adjacent to the other symptom columns, so every column from `Cycle factors` onward shifts one position to the right in files generated after this change; consumers reading CSV columns by position (not by header name) must account for the shift. `docs/export.md` and `docs/openapi.yaml` updated; import accepts both the new flag and legacy files that still carry `swelling` only via `other_symptoms`.
 
+### Fixed
+
+- Postgres example stacks (`docs/examples/postgres`, `caddy-postgres`, `nginx-postgres`) mounted the data volume at `/var/lib/postgresql/data`, which the `postgres:18` image no longer uses as its data directory — database contents ended up in an anonymous volume and were lost when the container was recreated. The examples now mount `postgres_data:/var/lib/postgresql`. (#200)
+
+**Migration for existing deployments:** if you deployed from one of these examples, dump your database while the old container is still running, before pulling this change: `docker compose exec postgres pg_dumpall -U $POSTGRES_USER > backup.sql`. Then apply the updated compose file, recreate the stack (`docker compose down && docker compose up -d`), and restore: `docker compose exec -T postgres psql -U $POSTGRES_USER -d postgres < backup.sql`. If the container was already recreated and the database looks empty, your data may still be in an orphaned anonymous volume — list candidates with `docker volume ls` and inspect them before deleting anything.
+
 ## [1.7.0] - 2026-07-03
 
 ### Security
