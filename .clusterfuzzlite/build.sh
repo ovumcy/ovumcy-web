@@ -1,12 +1,11 @@
 #!/bin/bash -eu
-# Compile each native Go fuzz target (go test -fuzz) into a libFuzzer binary for
-# ClusterFuzzLite. Keep this list in sync with .github/workflows/fuzz.yml — same
-# targets in internal/services/policy_fuzz_test.go.
+# Compile each fuzz target into a libFuzzer binary for ClusterFuzzLite.
 #
-# The base image's bundled go-118-fuzz-build can predate native testing.F fuzz
-# support, so it fails to locate targets that live in _test.go files. Install the
-# current tool and its testing shim first (the documented ClusterFuzzLite Go
-# recipe) so the native targets are found and the rewrite compiles.
+# go-118-fuzz-build cannot pick up native testing.F fuzzers that live in _test.go
+# files, so the six targets are mirrored in internal/services/policy_fuzz_libfuzzer.go
+# under the `gofuzz` build tag (see that file). compile_go_fuzzer builds those shim
+# harnesses with -tags gofuzz. Keep this list in sync with .github/workflows/fuzz.yml
+# and policy_fuzz_libfuzzer.go.
 go install github.com/AdamKorcz/go-118-fuzz-build@latest
 go get github.com/AdamKorcz/go-118-fuzz-build/testing
 
@@ -18,5 +17,5 @@ for target in \
   FuzzNormalizeRecoveryCode \
   FuzzSanitizeOnboardingCycleAndPeriod
 do
-  compile_native_go_fuzzer github.com/ovumcy/ovumcy-web/internal/services "$target" "$target"
+  compile_go_fuzzer github.com/ovumcy/ovumcy-web/internal/services "$target" "$target" gofuzz
 done
