@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Go toolchain bumped to 1.26.5.** Clears GO-2026-5856 (Encrypted Client Hello privacy leak in `crypto/tls`, fixed upstream in go1.26.5), reachable via the outbound HTTP client used for webhook delivery and OIDC. The runtime image's builder stage moves to `golang:1.26.5-alpine3.24` (the `alpine3.22` variant of this patch release was not published); the final `alpine:3.24.1` runtime-assets stage is unchanged.
+
+### Internal
+
+- **`go-118-fuzz-build` pinned instead of floating on `@latest`** in `.clusterfuzzlite/build.sh` (OpenSSF Scorecard "Pinned-Dependencies"). The module has no tagged releases, so it's pinned to a pseudo-version (`v0.0.0-20250520111509-a70c2aa677fa`) instead — same effect as a commit-SHA pin. `.clusterfuzzlite/Dockerfile`'s unpinned `base-builder-go` base image is unchanged (documented exception, now cross-referenced correctly in `docs/SECURITY_INVARIANTS.md → CI`).
+
 ### Changed
+
+- **Removed the local pre-push patch-coverage hook.** `scripts/hooks/pre-push`, `scripts/setup-hooks.sh`, and `scripts/patch-coverage-local.sh` are removed — the hook reran the full test suite on every push with a `*.go` change, which made `git push` slow. Patch coverage is still enforced, exclusively by CI's `patch-coverage` job. `scripts/patchcov` (the gate CI calls directly) is unchanged.
 
 - **Breaking (export shape):** the built-in `swelling` symptom (added 2026-03-09) now has its own `swelling` boolean flag in the JSON `symptoms` object and its own `Swelling` CSV column, instead of falling through to `other_symptoms`/`Other` indistinguishably from an owner-created custom symptom. The `Swelling` CSV column is inserted after `Constipation` to stay adjacent to the other symptom columns, so every column from `Cycle factors` onward shifts one position to the right in files generated after this change; consumers reading CSV columns by position (not by header name) must account for the shift. `docs/export.md` and `docs/openapi.yaml` updated; import accepts both the new flag and legacy files that still carry `swelling` only via `other_symptoms`.
 
