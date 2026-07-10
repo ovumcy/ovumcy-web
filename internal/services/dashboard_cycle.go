@@ -52,12 +52,41 @@ func DashboardPredictionDisabled(user *models.User) bool {
 	return user != nil && user.UnpredictableCycle
 }
 
+// DashboardCycleReferenceLength is the AVERAGE-first cycle length used only as a
+// REFERENCE for the cycle-day-long and data-stale warnings (and the hero phase
+// ring), where "how far past the owner's typical run are we" is best captured by
+// the mean. It must NOT feed a displayed next-period/ovulation DATE — use
+// DashboardProjectionCycleLength for that.
 func DashboardCycleReferenceLength(user *models.User, stats CycleStats) int {
 	if stats.AverageCycleLength > 0 {
 		return int(stats.AverageCycleLength + 0.5)
 	}
 	if stats.MedianCycleLength > 0 {
 		return stats.MedianCycleLength
+	}
+	if user != nil && IsValidOnboardingCycleLength(user.CycleLength) {
+		return user.CycleLength
+	}
+	return models.DefaultCycleLength
+}
+
+// DashboardProjectionCycleLength is the MEDIAN-first cycle length used to PROJECT
+// future next-period and ovulation DATES on the dashboard hero, the webhook
+// reminder decision, and the .ics feed. It delegates to predictedCycleLength —
+// the exact statistic stats.NextPeriodStart and the calendar grid already use —
+// so every next-period surface agrees on the date.
+//
+// The median is robust to a single outlier cycle: a missed period log merges two
+// real cycles into one ~60-90 day gap that drags the mean by ~10 days (pushing a
+// mean-based projection late) but leaves the median unmoved. That is why the
+// average-first DashboardCycleReferenceLength is deliberately NOT used here.
+//
+// The user's configured cycle length is the zero-fallback (mirroring
+// applyProjectedBaseline), used only in the degenerate case with no observed
+// statistic.
+func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
+	if stats.MedianCycleLength > 0 || stats.AverageCycleLength > 0 {
+		return predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
 	}
 	if user != nil && IsValidOnboardingCycleLength(user.CycleLength) {
 		return user.CycleLength
@@ -76,7 +105,7 @@ func DashboardCycleDataLooksStale(lastPeriodStart time.Time, today time.Time, re
 	if lastPeriodStart.IsZero() || referenceLength <= 0 || today.Before(lastPeriodStart) {
 		return false
 	}
-	rawCycleDay := int(today.Sub(lastPeriodStart).Hours()/24) + 1
+	rawCycleDay := CalendarDaysBetween(lastPeriodStart, today) + 1
 	return rawCycleDay > referenceLength
 }
 
@@ -221,7 +250,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 	cycleDayWarning := DashboardCycleDayLooksLong(stats.CurrentCycleDay, cycleDayReference)
 	cycleStaleAnchor := DashboardCycleStaleAnchor(user, stats, location)
 	cycleDataStale := DashboardCycleDataLooksStale(cycleStaleAnchor, today, cycleDayReference)
-	display := buildDashboardPredictionDisplay(user, stats, today, location, cycleDayReference)
+	display := buildDashboardPredictionDisplay(user, stats, today, location)
 
 	return DashboardCycleContext{
 		CycleDayReference:           cycleDayReference,
@@ -247,12 +276,12 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 	}
 }
 
-func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today time.Time, location *time.Location, cycleDayReference int) dashboardPredictionDisplay {
+func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today time.Time, location *time.Location) dashboardPredictionDisplay {
 	prediction := DashboardUpcomingPredictions(
 		stats,
 		user,
 		today,
-		cycleDayReference,
+		DashboardProjectionCycleLength(user, stats),
 	)
 
 	display := dashboardPredictionDisplay{
@@ -349,7 +378,7 @@ func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location 
 		if !currentStart.Before(today) {
 			break
 		}
-		lengths = append(lengths, int(currentStart.Sub(previousStart).Hours()/24))
+		lengths = append(lengths, CalendarDaysBetween(previousStart, currentStart))
 	}
 	return lengths
 }

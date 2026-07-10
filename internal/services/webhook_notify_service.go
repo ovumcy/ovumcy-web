@@ -345,12 +345,17 @@ func resolveOwnerLocation(timezone string, fallback *time.Location) *time.Locati
 }
 
 // userFromNotifyRecord builds the minimal *models.User the pure decision layer
-// needs from the notify projection. It copies ONLY the cycle-prediction inputs;
-// no credential, security-posture, or webhook-secret field is set, so the
-// decision can never read one.
+// needs from the notify projection. It copies ONLY the cycle-prediction inputs,
+// plus Role: every account is RoleOwner by invariant (there is no other role),
+// so it is a constant here, never read from the projection. ApplyUserCycleBaseline
+// gates on user.Role, so omitting it would silently skip the owner cycle baseline
+// (last-period anchor, cycle-length bootstrap, inferred luteal phase) that the
+// dashboard and .ics feed both apply. No credential, security-posture, or
+// webhook-secret field is set, so the decision can never read one.
 func userFromNotifyRecord(record models.WebhookNotifyRecord) models.User {
 	return models.User{
 		ID:                 record.ID,
+		Role:               models.RoleOwner,
 		CycleLength:        record.CycleLength,
 		PeriodLength:       record.PeriodLength,
 		LutealPhase:        record.LutealPhase,

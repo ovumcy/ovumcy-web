@@ -116,10 +116,11 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 //     unpredictable-cycle mode — or stats.PregnancyPaused) ⇒ nothing. This is
 //     the medical-safety gate: never emit a date the app itself refuses to show.
 //   - Resolve "today" as the owner-local calendar day (DateAtLocation) and the
-//     reference cycle length the dashboard feeds to its predictions
-//     (DashboardCycleReferenceLength), then take the dashboard's own upcoming
-//     prediction (DashboardUpcomingPredictions) for the authoritative next-period
-//     and ovulation dates + flags.
+//     median-first projection cycle length the dashboard feeds to its predictions
+//     (DashboardProjectionCycleLength — the same statistic as stats.NextPeriodStart,
+//     NOT the average-first staleness reference), then take the dashboard's own
+//     upcoming prediction (DashboardUpcomingPredictions) for the authoritative
+//     next-period and ovulation dates + flags.
 //   - period-soon: emitted when NotifyPeriod is on, the next period start is
 //     known, and it falls within [today, today+leadDays] (inclusive) — i.e. not
 //     in the past and not beyond the window. Its cycle anchor is the next period
@@ -152,7 +153,7 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 
 	today := DateAtLocation(now, location)
 	leadDays := NormalizeReminderLeadDays(settings.ReminderLeadDays)
-	cycleLength := DashboardCycleReferenceLength(user, stats)
+	cycleLength := DashboardProjectionCycleLength(user, stats)
 	prediction := DashboardUpcomingPredictions(stats, user, today, cycleLength)
 
 	reminders := make([]DueReminder, 0, 2)
