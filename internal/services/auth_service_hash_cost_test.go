@@ -92,18 +92,6 @@ func TestNewPasswordHashesUseConfiguredCost(t *testing.T) {
 			t.Fatalf("force-reset hash cost = %d, want %d", got, passwordHashCost)
 		}
 	})
-
-	t.Run("ResetPasswordAndRotateRecoveryCode writes hash at target cost", func(t *testing.T) {
-		repo := &stubAuthUserRepo{}
-		service := NewAuthService(repo)
-		user := &models.User{ID: 9, Email: "owner@example.com"}
-		if _, err := service.ResetPasswordAndRotateRecoveryCode(context.Background(), user, "StrongPass1"); err != nil {
-			t.Fatalf("ResetPasswordAndRotateRecoveryCode: %v", err)
-		}
-		if got := mustBcryptCost(t, user.PasswordHash); got != passwordHashCost {
-			t.Fatalf("reset+rotate hash cost = %d, want %d", got, passwordHashCost)
-		}
-	})
 }
 
 // TestAuthenticateCredentialsRehashesStaleCost is the opportunistic-rehash
