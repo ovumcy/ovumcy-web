@@ -21,8 +21,7 @@
   <strong>A menstrual cycle tracker you run yourself. Your data stays on your server.</strong>
 </p>
 
-Ovumcy is a privacy-first, self-hosted menstrual cycle tracker.
-It is built for people who want fast daily tracking, useful cycle insights, and data that stays under their control.
+Ovumcy is a menstrual cycle tracker you run on your own server. If the thought of your period dates, symptoms, and fertile-window estimates sitting on someone else's cloud makes you uneasy, this is for you: quick daily logging, cycle insights that are actually useful, and health data that stays on a machine you control.
 
 Ovumcy runs as a single Go service with a server-rendered web UI, can be installed on a phone home screen, and supports SQLite by default with Postgres as an advanced self-hosted path.
 
@@ -31,15 +30,13 @@ The public project site is [ovumcy.com](https://ovumcy.com).
 
 ## Why Ovumcy Exists
 
-Most cycle tracking apps depend on cloud accounts, analytics, or third-party infrastructure.
+Most cycle tracking apps start by asking you to sign up for a cloud account, then lean on analytics and third-party services you never really see.
 
-Ovumcy is designed as a self-hosted alternative for people who want simple daily tracking, useful cycle insights, and full control over sensitive health data.
+Ovumcy goes the other way. You host it yourself, so the sensitive parts — your cycle history, your symptoms — stay with you. In return you get simple daily tracking and cycle insights that genuinely help, without handing your health data to anyone.
 
 ## How Ovumcy Is Different
 
-Different cycle trackers optimize for different things. Here is how the product models compare.
-
-This comparison focuses on product models rather than specific brands, because privacy, export, and telemetry policies vary between apps.
+Different trackers optimize for different things. The table below compares broad product models rather than specific brands, since privacy, export, and telemetry policies shift too often between apps to pin to names.
 
 | Capability | Ovumcy | Local-first app | Cloud-first tracker |
 | --- | --- | --- | --- |
@@ -90,19 +87,19 @@ The privacy-safe hero demo asset pack, including the mobile install prompt captu
 
 ### Does Ovumcy require a cloud account?
 
-No. Ovumcy is designed to run as a self-hosted application under your control.
+No — you run it yourself, on your own server, with no vendor account in the middle.
 
 ### Where is the data stored?
 
-On the server where you deploy Ovumcy. SQLite is the default baseline, and PostgreSQL is available for more advanced self-hosted setups.
+On the server you deploy Ovumcy to, and nowhere else. SQLite is the default and works out of the box; PostgreSQL is there when you want it for a more involved setup.
 
 ### Does Ovumcy use analytics or ad trackers?
 
-No. Ovumcy is designed without telemetry or advertising trackers.
+No. No analytics, no ad trackers, no telemetry baked in.
 
 ### Can I export my data?
 
-Yes. Ovumcy supports CSV and JSON export so your records stay portable. See [docs/export.md](docs/export.md) for the exact JSON shape, CSV columns, and stability contract.
+Yes, and easily. Export to CSV or JSON whenever you like, so your records are always yours to take elsewhere. See [docs/export.md](docs/export.md) for the exact JSON shape, CSV columns, and stability contract.
 
 ### Is there an HTTP API specification?
 
@@ -110,7 +107,7 @@ Yes. The canonical JSON surface lives at `/api/v1/*` and is described in [docs/o
 
 ### Do I need technical knowledge to install Ovumcy?
 
-Basic familiarity with Docker is enough for the supported quick start. A `docker-compose.yml` with working defaults is included in the repository.
+Not much. If you're comfortable with the basics of Docker, the quick start will get you there — the repository ships a `docker-compose.yml` with working defaults, so you're not starting from a blank page.
 
 ### Is Ovumcy a medical product?
 
@@ -120,17 +117,17 @@ Period and fertile-window predictions in particular are statistical estimates de
 
 ## Features
 
-- Daily tracking for period days, flow intensity, symptoms, and notes.
-- Owner-managed custom symptoms with create, rename, hide, and restore flows that preserve historical records.
-- Predictions for next period, ovulation, fertile window, and cycle phase.
-- Calendar and statistics views for longer-term pattern spotting.
-- Reminders and notifications: an in-app dashboard banner, webhook reminders to a self-hosted ntfy/Gotify endpoint, and a private, read-only calendar (`.ics`) subscription.
-- Mobile home-screen install support on the current `main` branch.
-- CSV and JSON export for backup, portability, and personal review.
-- Optional OIDC sign-in in hybrid or SSO-only mode, with guarded owner auto-provision and provider logout support.
-- Optional TOTP two-factor authentication for owner sign-in, compatible with any RFC 6238 authenticator app (Google Authenticator, 1Password, Aegis, etc.).
-- English, Russian, Spanish, French, German, and Italian localization.
-- Self-hosted deployment with Docker or a single Go binary.
+- Log the day-to-day: period days, flow intensity, symptoms, and free-form notes.
+- Your own custom symptoms — create, rename, hide, or restore them, and past entries stay intact through all of it.
+- Predictions for your next period, ovulation, fertile window, and cycle phase.
+- Calendar and statistics views for spotting patterns over the longer term.
+- Reminders, three ways: an in-app dashboard banner, webhook reminders to your own self-hosted ntfy/Gotify endpoint, and a private, read-only calendar (`.ics`) subscription.
+- Install it to your phone's home screen (on the current `main` branch).
+- CSV and JSON export — for backups, for moving your data, or just for looking back.
+- Optional OIDC sign-in in hybrid or SSO-only mode, with guarded owner auto-provision and provider logout.
+- Optional TOTP two-factor authentication for owner sign-in, working with any RFC 6238 authenticator app (Google Authenticator, 1Password, Aegis, and the like).
+- Speaks English, Russian, Spanish, French, German, and Italian.
+- Runs self-hosted, either via Docker or as a single Go binary.
 
 ## How Predictions Work
 
