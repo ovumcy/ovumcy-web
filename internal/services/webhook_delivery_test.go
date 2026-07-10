@@ -461,8 +461,8 @@ func TestGuardedDialContext(t *testing.T) {
 
 	t.Run("public literal dials and returns the conn", func(t *testing.T) {
 		client, server := net.Pipe()
-		defer client.Close()
-		defer server.Close()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
 		stub := &stubDial{conn: client}
 		dialFn := guardedDialContext(stub.dial, fakeResolver{})
 
@@ -493,8 +493,8 @@ func TestGuardedDialContext(t *testing.T) {
 
 	t.Run("resolved public host dials the validated IP", func(t *testing.T) {
 		client, server := net.Pipe()
-		defer client.Close()
-		defer server.Close()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
 		stub := &stubDial{conn: client}
 		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "192.0.2.1"))
 
