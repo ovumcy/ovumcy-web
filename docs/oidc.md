@@ -12,7 +12,7 @@ Use this page together with [README.md](../README.md) and [docs/self-hosted.md](
 
 Ovumcy's OIDC support is optional, but the contract is broader than the first hybrid release:
 
-- sign-in uses server-side Authorization Code + PKCE with `response_mode=form_post`;
+- sign-in uses server-side Authorization Code + PKCE; `OIDC_RESPONSE_MODE=form_post` (the default) has the provider auto-POST the code, while `OIDC_RESPONSE_MODE=query` is an opt-in for providers that can only return the code as a URL query redirect (see [Response mode](#response-mode));
 - `OIDC_LOGIN_MODE=hybrid` keeps local username/password available alongside SSO;
 - `OIDC_LOGIN_MODE=oidc_only` removes public local login, register, and forgot-password entry points from the browser UX;
 - the first successful OIDC sign-in uses an existing `(issuer, subject)` link when present, otherwise it falls back to a verified email match;
@@ -36,6 +36,7 @@ OIDC_CLIENT_SECRET=replace_with_a_client_secret
 OIDC_REDIRECT_URL=https://ovumcy.example.com/auth/oidc/callback
 OIDC_CA_FILE=/run/certs/oidc-provider-ca.pem
 OIDC_LOGIN_MODE=hybrid
+OIDC_RESPONSE_MODE=form_post
 OIDC_AUTO_PROVISION=false
 OIDC_AUTO_PROVISION_ALLOWED_DOMAINS=
 OIDC_LOGOUT_MODE=local
@@ -49,6 +50,7 @@ Notes:
 - `OIDC_ISSUER_URL` must be the issuer URL itself, not a browser login page URL and not a URL with query parameters or fragments.
 - `OIDC_CA_FILE` is optional. Use it only when the provider certificate chain is signed by a private or internal CA that the Ovumcy runtime does not already trust.
 - `OIDC_LOGIN_MODE` must be `hybrid` or `oidc_only`.
+- `OIDC_RESPONSE_MODE` must be `form_post` (default) or `query`. Leave it at `form_post` unless your provider cannot form-post the callback (see [Response mode](#response-mode)).
 - `OIDC_LOGOUT_MODE` must be `local`, `provider`, or `auto`.
 - `OIDC_POST_LOGOUT_REDIRECT_URL`, when set, must be on the same origin as `OIDC_REDIRECT_URL`, and it must not contain query parameters or fragments.
 - `OIDC_AUTO_PROVISION=true` requires `REGISTRATION_MODE=open`.
@@ -58,14 +60,29 @@ Notes:
 
 1. The login page shows a `Sign in with SSO` button when `OIDC_ENABLED=true`.
 2. Ovumcy starts a server-side Authorization Code flow with PKCE and writes a sealed one-time state cookie containing the OIDC `state`, `nonce`, PKCE verifier, and expiry timestamp.
-3. The identity provider authenticates the user and returns the browser to `/auth/oidc/callback` with `response_mode=form_post`.
+3. The identity provider authenticates the user and returns the browser to `/auth/oidc/callback` — an auto-POST of the `code` and `state` in the request body (`form_post`, the default) or a `GET` redirect carrying them in the URL query (`query`). Ovumcy reads the callback from exactly one source keyed by the mode; it never reads both.
 4. Ovumcy validates the sealed state, exchanges the authorization code for tokens, and verifies the ID token plus `nonce`.
 5. If the `(issuer, subject)` identity link already exists, the linked local account is used immediately.
 6. Otherwise, Ovumcy checks for a verified email match against an existing local account.
 7. If no account exists and auto-provisioning is enabled, Ovumcy can create a new `owner` account, subject to `REGISTRATION_MODE=open` and any configured domain allowlist.
 8. Ovumcy finishes sign-in by issuing the normal local `ovumcy_auth` session cookie.
 
-Provider and auth errors are intentionally kept out of query strings and fragments. Browser-facing failures return through the existing flash-based login UX instead.
+Provider and auth errors are intentionally kept out of query strings and fragments. Browser-facing failures return through the existing flash-based login UX instead. (In `query` response mode the provider itself puts the successful `code`/`state` in the callback URL — see [Response mode](#response-mode) — but Ovumcy still never emits its own error state into a URL.)
+
+## Response mode
+
+`OIDC_RESPONSE_MODE` selects how the provider returns the authorization code on the callback:
+
+- `form_post` (**default**): the provider auto-POSTs `code`/`state` in the request body to `POST /auth/oidc/callback`. Nothing auth-sensitive lands in a URL. Use this whenever your provider supports it.
+- `query`: the provider returns `code`/`state` as a `GET` redirect to `/auth/oidc/callback?...`. This is an **explicit opt-in** for providers that cannot form-post — for example [better-auth](#better-auth), [Dex](#dex), and Pocket ID older than 2.7.0.
+
+Why `query` is safe despite putting the code in the URL: Ovumcy's sign-in is Authorization Code **+ PKCE**. The authorization code is useless on its own — redeeming it requires the PKCE verifier, which never leaves the sealed, `HttpOnly` state cookie and is never placed in any URL. So a code captured from a URL (browser history, a reverse-proxy access log) cannot be exchanged. The trade-off is purely log hygiene:
+
+- the code appears in any component that logs full request URLs (reverse proxies, the browser's own history);
+- **restrict access to those logs** and prefer short log-retention on the proxy fronting Ovumcy;
+- Ovumcy's own request log masks the callback and never records the code, and the CSRF exemption for the callback is unchanged — the `GET` callback is a safe method the CSRF middleware never validates and is protected by the same sealed one-time `state`/`nonce`/PKCE cookie as the `POST` callback.
+
+Prefer `form_post`; reach for `query` only when the provider gives you no choice.
 
 ## How Auto-Provision Works
 
@@ -133,16 +150,17 @@ Important caveats — read these before relying on any row in the table:
 | authentik | Verified supported | Verified provider-managed logout | v0.8.0 | Sign-in is supported. Provider logout may show an authentik-managed invalidation screen before the provider session fully ends. |
 | Authelia | Verified supported | Local-only fallback | v0.8.0 | Sign-in is supported. Authelia does not currently expose `end_session_endpoint`, so Ovumcy clears its own session and returns to `/login`. |
 | ZITADEL | Supported with the full official deployment | Provider logout depends on the full deployment | v0.8.0 | Discovery metadata and app setup are compatible, but browser sign-in requires the full ZITADEL deployment that includes the separate Login UI application under `/ui/v2/login`. |
-| Dex | Verified unsupported | Not applicable | v0.8.0 | Dex returned `code` and `state` in the callback URL query during live verification, which conflicts with Ovumcy's `form_post`-only HTML callback contract. |
-| Pocket ID (2.7.0+) | Reported supported, re-verification pending | Not re-verified | v0.8.0 (pre-2.7.0) | Pocket ID 2.7.0 added `response_mode=form_post` support upstream. [#62](https://github.com/ovumcy/ovumcy-web/issues/62) reports that sign-in works end-to-end against Ovumcy 0.9.5. Ovumcy has not re-verified Pocket ID 2.7.0 in its local test stack; logout has not been independently checked. Pocket ID versions older than 2.7.0 remain incompatible. |
+| better-auth | Supported with `OIDC_RESPONSE_MODE=query` | Not verified | — | better-auth returns `code`/`state` as a URL query redirect and does not form-post. Set `OIDC_RESPONSE_MODE=query`; the code in the URL is inert without the PKCE verifier. Mind reverse-proxy/browser logs — see [Response mode](#response-mode). |
+| Dex | Supported with `OIDC_RESPONSE_MODE=query` | Not verified | v0.8.0 (form_post unsupported) | Dex returns `code`/`state` in the callback URL query and does not form-post, so it was previously unsupported. Set `OIDC_RESPONSE_MODE=query` to sign in; the code in the URL is inert without the PKCE verifier. Mind reverse-proxy/browser logs — see [Response mode](#response-mode). |
+| Pocket ID (2.7.0+) | Reported supported, re-verification pending | Not re-verified | v0.8.0 (pre-2.7.0) | Pocket ID 2.7.0 added `response_mode=form_post` support upstream. [#62](https://github.com/ovumcy/ovumcy-web/issues/62) reports that sign-in works end-to-end against Ovumcy 0.9.5. Ovumcy has not re-verified Pocket ID 2.7.0 in its local test stack; logout has not been independently checked. Pocket ID versions older than 2.7.0 can instead sign in with `OIDC_RESPONSE_MODE=query`. |
 
-### Why Dex Is Excluded
+### Query-only providers (Dex, better-auth, older Pocket ID)
 
-Ovumcy intentionally requires `response_mode=form_post` for browser sign-in so auth-sensitive transport data such as `code`, `state`, and provider error details do not appear in user-visible URLs.
+Ovumcy prefers `response_mode=form_post` so auth-sensitive transport data such as `code`, `state`, and provider error details stay out of user-visible URLs. Some providers — Dex, better-auth, and Pocket ID older than 2.7.0 — return the callback as a URL query redirect and cannot form-post. These were previously unsupported.
 
-During verification in the local test stack, Dex returned callback data in the URL query instead. That behavior conflicts with Ovumcy's hardened callback transport contract, so Dex is currently treated as unsupported rather than weakening the security model.
+They now work with `OIDC_RESPONSE_MODE=query`. This does not weaken the security model: the callback still exchanges an Authorization Code **+ PKCE**, and the code in the URL is inert without the PKCE verifier, which never leaves the sealed `HttpOnly` state cookie. The only cost is log hygiene — the code appears in components that log full request URLs — so restrict access to reverse-proxy access logs and keep their retention short. See [Response mode](#response-mode) for the full rationale.
 
-Earlier Pocket ID versions had the same problem; see the [Pocket ID](#pocket-id) section below for the 2.7.0+ status.
+Pocket ID 2.7.0+ can use the default `form_post` instead; see the [Pocket ID](#pocket-id) section below.
 
 ### Pocket ID
 
@@ -152,7 +170,7 @@ Treat this row as **community-reported, re-verification pending**:
 
 - Ovumcy has not yet re-verified Pocket ID 2.7.0 in its local test stack, so the matrix does not promote it to `Verified supported`.
 - Logout behavior at 2.7.0 has not been independently exercised; pin `OIDC_LOGOUT_MODE=local` if you need a predictable outcome until that is checked.
-- Pocket ID versions older than 2.7.0 returned auth-sensitive callback parameters in the browser URL instead of using `response_mode=form_post` and remain incompatible with Ovumcy's hardened browser callback contract.
+- Pocket ID versions older than 2.7.0 return auth-sensitive callback parameters in the browser URL instead of form-posting; they can sign in with `OIDC_RESPONSE_MODE=query` (mind reverse-proxy/browser logs — see [Response mode](#response-mode)) or you can upgrade to 2.7.0+ and use the default `form_post`.
 
 Operators choosing Pocket ID 2.7.0+ should treat the integration as community-supported until a future Ovumcy release tag updates the "Last verified in" column for this row.
 
@@ -175,11 +193,27 @@ OIDC_CLIENT_SECRET=replace_with_a_client_secret
 OIDC_REDIRECT_URL=https://ovumcy.example.com/auth/oidc/callback
 ```
 
+### better-auth
+
+better-auth returns the authorization `code`/`state` as a URL query redirect (`GET /auth/oidc/callback?...`) and does not form-post. Set `OIDC_RESPONSE_MODE=query` to sign in.
+
+Recommended setup:
+
+1. Register Ovumcy as a confidential OIDC/OAuth2 client with the authorization code flow.
+2. Set the redirect URI to the exact Ovumcy callback URL `https://ovumcy.example.com/auth/oidc/callback`.
+3. Ensure the provider issues a stable `sub` and a verified email claim.
+4. On the Ovumcy side set `OIDC_RESPONSE_MODE=query` and review the log-hygiene note in [Response mode](#response-mode).
+
 ### Dex
 
-Dex is currently not supported under Ovumcy's hardened callback model.
+Dex returns `code` and `state` in a query-based callback (`GET /auth/oidc/callback?...`) and does not support `response_mode=form_post`. It was previously unsupported; it now works with `OIDC_RESPONSE_MODE=query`.
 
-Verification in the local test stack showed Dex returning `code` and `state` in a query-based callback (`GET /auth/oidc/callback?...`) instead of using `response_mode=form_post`. Ovumcy does not relax its URL-safety contract for that flow, so Dex should be treated as incompatible for now.
+Recommended setup:
+
+1. Register a Dex static client for Ovumcy with the authorization code flow.
+2. Set the redirect URI to the exact Ovumcy callback URL `https://ovumcy.example.com/auth/oidc/callback`.
+3. Ensure the client scopes include `openid` and `email` so first-login email matching works.
+4. On the Ovumcy side set `OIDC_RESPONSE_MODE=query`; the code in the URL is inert without the PKCE verifier, but review the log-hygiene note in [Response mode](#response-mode).
 
 ### Keycloak
 
@@ -327,11 +361,11 @@ This usually means one of these is true:
 
 In that case, Ovumcy still performs a safe local logout and redirects back to `/login`.
 
-### Dex (and Pocket ID older than 2.7.0) are rejected even though upstream login succeeds
+### Sign-in returns to `/login` with a provider that only supports query callbacks (Dex, better-auth, Pocket ID older than 2.7.0)
 
-This is expected under Ovumcy's current browser callback hardening.
+These providers return `code`/`state` in the callback URL query instead of form-posting. With the default `OIDC_RESPONSE_MODE=form_post`, Ovumcy reads the callback from the request body and finds nothing, so sign-in fails closed.
 
-Those providers were observed in the local test stack returning auth-sensitive callback data in the URL query instead of a `form_post` callback. Ovumcy intentionally refuses that transport shape rather than weakening the URL-safety contract for HTML sign-in. Pocket ID 2.7.0+ adds `response_mode=form_post` upstream and is community-reported to work; see the matrix above.
+Set `OIDC_RESPONSE_MODE=query` and restart. Ovumcy then serves the callback over `GET` and reads it from the query. The code in the URL is inert without the PKCE verifier (never in transport), but the code does appear in reverse-proxy/browser logs — see [Response mode](#response-mode). Pocket ID 2.7.0+ can instead use the default `form_post`.
 
 ## Official Provider Documentation
 
@@ -344,5 +378,5 @@ For provider-specific UI details, use the current official docs:
 - Pocket ID OIDC client authentication: https://pocket-id.org/docs/guides/oidc-client-authentication/ (supported on Pocket ID 2.7.0+; older versions are incompatible)
 - Pocket ID client examples and callback/logout fields: https://pocket-id.org/docs/client-examples/outline (supported on Pocket ID 2.7.0+; older versions are incompatible)
 - Pocket ID troubleshooting: https://pocket-id.org/docs/troubleshooting/common-issues
-- Dex static clients and redirect URIs: https://dexidp.io/docs/connectors/local/ (currently incompatible with Ovumcy's hardened browser callback model)
+- Dex static clients and redirect URIs: https://dexidp.io/docs/connectors/local/ (query-only provider; sign in with `OIDC_RESPONSE_MODE=query`)
 - Dex scopes and email claims: https://dexidp.io/docs/configuration/custom-scopes-claims-clients/

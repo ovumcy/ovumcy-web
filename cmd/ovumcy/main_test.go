@@ -1290,6 +1290,40 @@ func TestLogStartupNotesHSTSPinOnlyWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestLogStartupNotesOIDCQueryResponseModeOnlyWhenActive(t *testing.T) {
+	tests := []struct {
+		name        string
+		oidcEnabled bool
+		mode        security.OIDCResponseMode
+		wantNote    bool
+	}{
+		{name: "enabled query mode logs the log-exposure note", oidcEnabled: true, mode: security.OIDCResponseModeQuery, wantNote: true},
+		{name: "enabled form_post stays silent", oidcEnabled: true, mode: security.OIDCResponseModeFormPost, wantNote: false},
+		{name: "disabled query mode stays silent", oidcEnabled: false, mode: security.OIDCResponseModeQuery, wantNote: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalWriter := log.Writer()
+			defer log.SetOutput(originalWriter)
+
+			var output bytes.Buffer
+			log.SetOutput(&output)
+
+			logStartup(runtimeConfig{
+				Location: time.UTC,
+				Port:     "9090",
+				OIDC:     security.OIDCConfig{Enabled: tt.oidcEnabled, ResponseMode: tt.mode},
+			})
+
+			logLine := output.String()
+			if got := strings.Contains(logLine, "NOTE: OIDC_RESPONSE_MODE=query"); got != tt.wantNote {
+				t.Fatalf("OIDC query-mode note present = %t, want %t in startup log: %q", got, tt.wantNote, logLine)
+			}
+		})
+	}
+}
+
 func TestProxyHeaderRateLimitWarning(t *testing.T) {
 	tests := []struct {
 		name     string

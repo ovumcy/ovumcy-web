@@ -369,6 +369,7 @@ AUDIT_LOG_ENABLED=false
 # OIDC_REDIRECT_URL=https://ovumcy.example.com/auth/oidc/callback
 # OIDC_CA_FILE=/run/certs/oidc-provider-ca.pem
 # OIDC_LOGIN_MODE=hybrid
+# OIDC_RESPONSE_MODE=form_post
 # OIDC_AUTO_PROVISION=false
 # OIDC_AUTO_PROVISION_ALLOWED_DOMAINS=
 # OIDC_LOGOUT_MODE=local
@@ -391,7 +392,7 @@ Important notes:
 - `OIDC_AUTO_PROVISION=true` is supported only with `REGISTRATION_MODE=open`; it creates `owner` accounts and can be restricted with `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS`.
 - Auto-provisioned users start without a local password. They can set one later in `Settings` to enable recovery codes and password-confirmed danger-zone actions.
 - `OIDC_LOGOUT_MODE` controls whether logout stays local or redirects to the provider when discovery metadata includes `end_session_endpoint`.
-- [docs/oidc.md](docs/oidc.md) includes a provider compatibility matrix: local-test-stack-verified support for Keycloak, authentik, and Authelia; Pocket ID 2.7.0+ reported-supported pending Ovumcy re-verification; current hardened-model exclusion for Dex; and ZITADEL deployment requirements for browser sign-in. The matrix carries a "Last verified in" Ovumcy release column — see the doc for the test-stack scope and re-verification responsibility.
+- [docs/oidc.md](docs/oidc.md) includes a provider compatibility matrix: local-test-stack-verified support for Keycloak, authentik, and Authelia; Pocket ID 2.7.0+ reported-supported pending Ovumcy re-verification; query-only providers (Dex, better-auth, older Pocket ID) supported via `OIDC_RESPONSE_MODE=query`; and ZITADEL deployment requirements for browser sign-in. The matrix carries a "Last verified in" Ovumcy release column — see the doc for the test-stack scope and re-verification responsibility.
 - Enable `TRUST_PROXY_ENABLED` only when running behind a trusted reverse proxy.
 - SQLite is the supported baseline default; Postgres is an advanced self-hosted path that requires `DATABASE_URL`.
 - Keep database storage persistent, whether that is a SQLite volume/bind mount or operator-managed Postgres storage.
