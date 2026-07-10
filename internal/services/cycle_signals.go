@@ -33,7 +33,7 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 			continue
 		}
 
-		lutealLength := int(nextStart.Sub(ovulationDate).Hours() / 24)
+		lutealLength := CalendarDaysBetween(ovulationDate, nextStart)
 		if lutealLength < minLutealPhaseDays || lutealLength > 20 {
 			continue
 		}
@@ -94,7 +94,7 @@ func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, nextSta
 
 		points = append(points, cycleBBTPoint{
 			Date:     day,
-			CycleDay: int(day.Sub(cycleStart).Hours()/24) + 1,
+			CycleDay: CalendarDaysBetween(cycleStart, day) + 1,
 			Value:    *logEntry.BBT,
 		})
 	}

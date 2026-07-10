@@ -1,7 +1,6 @@
 package services
 
 import (
-	"math"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -145,7 +144,7 @@ func appendFertilityWindow(fertilityEdgeMap map[string]bool, fertilityPeakMap ma
 		return
 	}
 	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
-		offset := int(ovulationDate.Sub(day).Hours() / 24)
+		offset := CalendarDaysBetween(day, ovulationDate)
 		if offset >= 0 && offset <= 2 {
 			fertilityPeakMap[day.Format("2006-01-02")] = true
 			continue
@@ -195,7 +194,7 @@ func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[
 	for index := range len(starts) - 1 {
 		cycleStart := starts[index]
 		nextStart := starts[index+1]
-		cycleLen := int(math.Round(nextStart.Sub(cycleStart).Hours() / 24))
+		cycleLen := CalendarDaysBetween(cycleStart, nextStart)
 		if cycleLen <= 0 {
 			continue
 		}

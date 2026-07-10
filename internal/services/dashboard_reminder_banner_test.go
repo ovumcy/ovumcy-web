@@ -5,6 +5,29 @@ import (
 	"time"
 )
 
+// TestDashboardReminderBannerDaysUntilDSTSpringForward guards the day count
+// against a DST transition between today and the predicted date. In
+// Europe/Berlin the 2026-03-29 spring-forward falls between 2026-03-28 and
+// 2026-03-30; as location-midnight values those are 2*24-1h apart, so the old
+// int(predictedDate.Sub(today).Hours()/24) truncated to 1. CalendarDaysBetween
+// re-anchors both to UTC-midnight and reports the true 2 days.
+func TestDashboardReminderBannerDaysUntilDSTSpringForward(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skipf("tz database unavailable: %v", err)
+	}
+	today := time.Date(2026, time.March, 28, 0, 0, 0, 0, loc)
+	predicted := time.Date(2026, time.March, 30, 0, 0, 0, 0, loc)
+
+	daysUntil, ok := dashboardReminderBannerDaysUntil(predicted, today, DashboardReminderBannerWindowDays)
+	if !ok {
+		t.Fatal("expected the predicted date to fall within the reminder window")
+	}
+	if daysUntil != 2 {
+		t.Fatalf("expected daysUntil=2 across the Berlin DST transition, got %d", daysUntil)
+	}
+}
+
 func TestBuildDashboardReminderBannerPeriodThresholdBoundaries(t *testing.T) {
 	today := mustParseDashboardDay(t, "2026-03-10")
 

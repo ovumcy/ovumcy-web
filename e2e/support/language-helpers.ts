@@ -24,7 +24,21 @@ export async function saveSettingsLanguage(page: Page, code: string): Promise<vo
 
   if ((await option.getAttribute('data-selected')) !== 'true') {
     await option.locator('.radio-tile').click();
-    await form.locator('[data-settings-interface-save]').click();
+    // The radio change flips data-selected optimistically on the client, so the
+    // assertion below can pass before the htmx PATCH persists the preference.
+    // Bind to the save click's own request and await its response so callers
+    // that navigate away next (e.g. straight to /calendar) don't race an
+    // in-flight save that would otherwise drop the just-chosen language.
+    const [saveRequest] = await Promise.all([
+      page.waitForRequest(
+        (request) =>
+          request.method() === 'PATCH' &&
+          request.url().includes('/api/v1/users/current/interface'),
+      ),
+      form.locator('[data-settings-interface-save]').click(),
+    ]);
+    const saveResponse = await saveRequest.response();
+    expect(saveResponse?.ok()).toBeTruthy();
   }
 
   await expect(option).toHaveAttribute('data-selected', 'true');
