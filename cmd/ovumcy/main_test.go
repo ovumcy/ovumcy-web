@@ -314,6 +314,7 @@ func TestResolveOIDCConfig(t *testing.T) {
 	t.Run("disabled by default", testResolveOIDCConfigDisabled)
 	t.Run("enabled requires secure cookies and valid URLs", testResolveOIDCConfigRequiresSecureCookies)
 	t.Run("enabled accepts valid hybrid config", testResolveOIDCConfigAcceptsValidConfig)
+	t.Run("enabled parses query response mode", testResolveOIDCConfigParsesQueryResponseMode)
 	runOIDCConfigValidationCases(t)
 }
 
@@ -366,6 +367,9 @@ func testResolveOIDCConfigAcceptsValidConfig(t *testing.T) {
 	if config.LogoutMode != security.OIDCLogoutModeProvider {
 		t.Fatalf("expected provider logout mode, got %q", config.LogoutMode)
 	}
+	if config.ResponseMode != security.OIDCResponseModeFormPost {
+		t.Fatalf("expected response mode to default to form_post when unset, got %q", config.ResponseMode)
+	}
 	if config.PostLogoutRedirectURL != "https://ovumcy.example.com/login" {
 		t.Fatalf("expected post-logout redirect URL to be preserved, got %q", config.PostLogoutRedirectURL)
 	}
@@ -374,6 +378,19 @@ func testResolveOIDCConfigAcceptsValidConfig(t *testing.T) {
 	}
 	if len(config.AutoProvisionAllowedDomains) != 2 || config.AutoProvisionAllowedDomains[0] != "example.com" || config.AutoProvisionAllowedDomains[1] != "staff.example.com" {
 		t.Fatalf("expected normalized domain allowlist, got %#v", config.AutoProvisionAllowedDomains)
+	}
+}
+
+func testResolveOIDCConfigParsesQueryResponseMode(t *testing.T) {
+	setValidOIDCTestEnv(t)
+	t.Setenv("OIDC_RESPONSE_MODE", "query")
+
+	config, err := resolveOIDCConfig(true, services.RegistrationModeOpen)
+	if err != nil {
+		t.Fatalf("expected valid OIDC config with query response mode, got %v", err)
+	}
+	if config.ResponseMode != security.OIDCResponseModeQuery {
+		t.Fatalf("expected query response mode to be parsed, got %q", config.ResponseMode)
 	}
 }
 
@@ -457,6 +474,15 @@ func runOIDCConfigValidationCases(t *testing.T) {
 			wantContains:     "OIDC_LOGOUT_MODE",
 			setup: func(t *testing.T) {
 				t.Setenv("OIDC_LOGOUT_MODE", "idp")
+			},
+		},
+		{
+			name:             "rejects invalid response mode",
+			cookieSecure:     true,
+			registrationMode: services.RegistrationModeOpen,
+			wantContains:     "OIDC_RESPONSE_MODE",
+			setup: func(t *testing.T) {
+				t.Setenv("OIDC_RESPONSE_MODE", "fragment")
 			},
 		},
 		{
@@ -1259,6 +1285,40 @@ func TestLogStartupNotesHSTSPinOnlyWhenEnabled(t *testing.T) {
 			}
 			if !strings.Contains(logLine, fmt.Sprintf("hsts=%t", tt.hstsEnabled)) {
 				t.Fatalf("expected hsts=%t flag in startup log, got %q", tt.hstsEnabled, logLine)
+			}
+		})
+	}
+}
+
+func TestLogStartupNotesOIDCQueryResponseModeOnlyWhenActive(t *testing.T) {
+	tests := []struct {
+		name        string
+		oidcEnabled bool
+		mode        security.OIDCResponseMode
+		wantNote    bool
+	}{
+		{name: "enabled query mode logs the log-exposure note", oidcEnabled: true, mode: security.OIDCResponseModeQuery, wantNote: true},
+		{name: "enabled form_post stays silent", oidcEnabled: true, mode: security.OIDCResponseModeFormPost, wantNote: false},
+		{name: "disabled query mode stays silent", oidcEnabled: false, mode: security.OIDCResponseModeQuery, wantNote: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalWriter := log.Writer()
+			defer log.SetOutput(originalWriter)
+
+			var output bytes.Buffer
+			log.SetOutput(&output)
+
+			logStartup(runtimeConfig{
+				Location: time.UTC,
+				Port:     "9090",
+				OIDC:     security.OIDCConfig{Enabled: tt.oidcEnabled, ResponseMode: tt.mode},
+			})
+
+			logLine := output.String()
+			if got := strings.Contains(logLine, "NOTE: OIDC_RESPONSE_MODE=query"); got != tt.wantNote {
+				t.Fatalf("OIDC query-mode note present = %t, want %t in startup log: %q", got, tt.wantNote, logLine)
 			}
 		})
 	}

@@ -341,6 +341,7 @@ func resolveOIDCConfig(cookieSecure bool, registrationMode services.Registration
 		AutoProvision:               getEnvBool("OIDC_AUTO_PROVISION", false),
 		LoginMode:                   security.OIDCLoginMode(getEnv("OIDC_LOGIN_MODE", string(security.OIDCLoginModeHybrid))),
 		LogoutMode:                  security.OIDCLogoutMode(getEnv("OIDC_LOGOUT_MODE", string(security.OIDCLogoutModeLocal))),
+		ResponseMode:                security.OIDCResponseMode(getEnv("OIDC_RESPONSE_MODE", string(security.OIDCResponseModeFormPost))),
 		PostLogoutRedirectURL:       getEnv("OIDC_POST_LOGOUT_REDIRECT_URL", ""),
 		AutoProvisionAllowedDomains: parseCSV(getEnv("OIDC_AUTO_PROVISION_ALLOWED_DOMAINS", "")),
 	}
@@ -791,6 +792,9 @@ func logStartup(config runtimeConfig) {
 	)
 	if config.HSTSEnabled {
 		log.Printf("NOTE: HSTS_ENABLED=true — sending Strict-Transport-Security with a 1-year max-age (max-age=31536000; includeSubDomains). Browsers will refuse plain HTTP for this host for a year; only enable when committed to HTTPS. Set HSTS_ENABLED=false to keep secure cookies without the HTTPS pin.")
+	}
+	if config.OIDC.Enabled && config.OIDC.ResponseMode == security.OIDCResponseModeQuery {
+		log.Printf("NOTE: OIDC_RESPONSE_MODE=query — the identity provider returns the authorization code in the callback URL (a GET redirect), so it can appear in reverse-proxy and browser-history logs. This is safe: the code is unusable without the PKCE verifier, which never leaves the sealed HttpOnly state cookie. Still, restrict access to any log that records full request URLs. Set OIDC_RESPONSE_MODE=form_post (the default) if your provider supports it.")
 	}
 	if config.ReminderScheduler.Enabled {
 		log.Printf("NOTE: REMINDER_SCHEDULER_ENABLED=true — the built-in daily reminder scheduler is ON and will make outbound webhook calls once per day at local hour %02d:00 (%s) from this process. This is an always-on component; disable it instantly with REMINDER_SCHEDULER_ENABLED=false (delivery also still requires each owner's webhook to be configured and enabled).", config.ReminderScheduler.Hour, config.Location.String())

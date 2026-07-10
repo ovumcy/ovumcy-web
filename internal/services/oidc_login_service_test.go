@@ -125,6 +125,23 @@ func (stub *stubOIDCUserStore) FindByNormalizedEmailOptional(ctx context.Context
 	return stub.byEmail, true, nil
 }
 
+func TestOIDCLoginServiceResponseMode(t *testing.T) {
+	var nilService *OIDCLoginService
+	if got := nilService.ResponseMode(); got != security.OIDCResponseModeFormPost {
+		t.Fatalf("nil service must default to form_post, got %q", got)
+	}
+
+	query := NewOIDCLoginService(&stubOIDCProviderClient{config: security.OIDCConfig{ResponseMode: security.OIDCResponseModeQuery}}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
+	if got := query.ResponseMode(); got != security.OIDCResponseModeQuery {
+		t.Fatalf("expected query response mode from config, got %q", got)
+	}
+
+	formPost := NewOIDCLoginService(&stubOIDCProviderClient{config: security.OIDCConfig{ResponseMode: security.OIDCResponseModeFormPost}}, &stubOIDCIdentityStore{}, &stubOIDCUserStore{}, nil)
+	if got := formPost.ResponseMode(); got != security.OIDCResponseModeFormPost {
+		t.Fatalf("expected form_post response mode from config, got %q", got)
+	}
+}
+
 func TestOIDCLoginServiceStartAuthRequiresEnabledProvider(t *testing.T) {
 	t.Parallel()
 

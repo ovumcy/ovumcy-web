@@ -19,6 +19,13 @@ import (
 // second exemption to csrfMiddlewareConfig.Next (or unmounting the middleware)
 // must fail here until this expected list is consciously updated together
 // with a security review.
+//
+// OIDC_RESPONSE_MODE=query additionally serves the callback over GET (the
+// provider returns the code as a query redirect). GET is a safe method that the
+// CSRF middleware never validates, so it needs no entry on the exemption list;
+// it is protected by the SAME sealed one-time state cookie as the POST callback
+// (matchesState + validAt reading the state from the query). The mutating-method
+// exemption below therefore stays a single POST route regardless of mode.
 
 // csrfGuardExpectedExemptions is the complete, reviewed exemption list.
 var csrfGuardExpectedExemptions = map[string]struct{}{
@@ -146,6 +153,10 @@ func TestCSRFExemptionListIsExactlyOneRoute(t *testing.T) {
 		}
 	}
 
+	// The exemption predicate is bound to POST: a GET to the same path must not
+	// match it. This is not a weakening of the query-mode GET callback — GET is
+	// a safe method the CSRF middleware never validates, so it needs no
+	// predicate exemption and is protected by the sealed one-time state cookie.
 	if isExempt(http.MethodGet, security.OIDCCallbackPath) {
 		t.Fatalf("CSRF exemption must be bound to POST: GET %s is unexpectedly exempt", security.OIDCCallbackPath)
 	}

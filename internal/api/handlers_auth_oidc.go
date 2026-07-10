@@ -56,15 +56,15 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 	}
 
 	oidcState := handler.popOIDCStateCookie(c)
-	callbackState := c.FormValue("state")
-	code := c.FormValue("code")
+	callbackState := handler.oidcCallbackValue(c, "state")
+	code := handler.oidcCallbackValue(c, "code")
 	if !oidcState.validAt(time.Now()) || !oidcState.matchesState(callbackState) {
 		spec := authOIDCAuthenticationFailedErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
-	if c.FormValue("error") != "" {
+	if handler.oidcCallbackValue(c, "error") != "" {
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, "auth.oidc_callback", spec)
 		handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})

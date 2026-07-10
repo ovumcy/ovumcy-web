@@ -526,6 +526,13 @@ async function main() {
           targetPort: appPort,
         })
       : null;
+  // form_post is the default; set OIDC_RESPONSE_MODE=query to drive the query
+  // opt-in lane (the mock provider then returns the code as a GET redirect).
+  const oidcResponseMode =
+    String(process.env.OIDC_RESPONSE_MODE ?? "form_post").trim().toLowerCase() === "query"
+      ? "query"
+      : "form_post";
+
   const localOIDCProvider =
     localOIDCProviderEnabled
       ? await startLocalOIDCProvider({
@@ -542,6 +549,7 @@ async function main() {
           emailVerified:
             String(process.env.OIDC_TEST_PROVIDER_EMAIL_VERIFIED ?? "true").trim().toLowerCase() !==
             "false",
+          responseMode: oidcResponseMode,
         })
       : null;
 
@@ -575,6 +583,7 @@ async function main() {
     OIDC_REDIRECT_URL:
       process.env.OIDC_REDIRECT_URL ??
       (localOIDCProviderEnabled ? `${baseURL}/auth/oidc/callback` : ""),
+    OIDC_RESPONSE_MODE: oidcResponseMode,
     OIDC_CA_FILE: process.env.OIDC_CA_FILE ?? (localOIDCProviderEnabled ? tlsFixture.certPath : ""),
     OIDC_POST_LOGOUT_REDIRECT_URL:
       process.env.OIDC_POST_LOGOUT_REDIRECT_URL ??
@@ -592,6 +601,7 @@ async function main() {
     OIDC_REDIRECT_URL: appEnv.OIDC_REDIRECT_URL,
     OIDC_CA_FILE: appEnv.OIDC_CA_FILE,
     OIDC_LOGIN_MODE: process.env.OIDC_LOGIN_MODE ?? "hybrid",
+    OIDC_RESPONSE_MODE: oidcResponseMode,
     OIDC_AUTO_PROVISION: process.env.OIDC_AUTO_PROVISION ?? "false",
     OIDC_POST_LOGOUT_REDIRECT_URL: appEnv.OIDC_POST_LOGOUT_REDIRECT_URL,
   };
