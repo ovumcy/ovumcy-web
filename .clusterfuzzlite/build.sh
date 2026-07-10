@@ -5,8 +5,7 @@
 # the `gofuzz` build tag (go-118-fuzz-build cannot read native testing.F fuzzers
 # that live in _test.go). GOFLAGS forces that tag on every `go build` so the shim
 # file is included, and compile_native_go_fuzzer (go-118-fuzz-build, which speaks
-# testing.F) builds the harnesses. Keep the list in sync with fuzz.yml and the
-# shim file.
+# testing.F) builds the harnesses. Keep the list in sync with the shim file.
 # go-118-fuzz-build has no tagged releases; pin the pseudo-version (encodes the
 # commit hash) instead of floating on @latest, same as every other `go install`
 # in this repo's CI pins a version. Bump deliberately, not automatically.
