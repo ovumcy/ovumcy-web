@@ -2,6 +2,7 @@ package i18n
 
 import (
 	"slices"
+	"sort"
 	"testing"
 )
 
@@ -31,6 +32,17 @@ func TestManagerFallsBackToDefaultForUnsupportedLanguage(t *testing.T) {
 	}
 	if got := manager.DetectFromAcceptLanguage("pt-BR,pt;q=0.9"); got != LangEN {
 		t.Fatalf("expected unsupported Accept-Language to fall back to %q, got %q", LangEN, got)
+	}
+}
+
+func TestRequiredLocalesCoversAllSupportedLanguages(t *testing.T) {
+	want := []string{LangDE, LangEN, LangES, LangFR, LangIT, LangRU}
+
+	got := slices.Clone(requiredLocales)
+	sort.Strings(got)
+
+	if !slices.Equal(got, want) {
+		t.Fatalf("expected requiredLocales to cover exactly %#v, got %#v", want, got)
 	}
 }
 

@@ -684,6 +684,150 @@ func TestResolveOwnerLocationPrefersPersistedTimezone(t *testing.T) {
 	}
 }
 
+// TestNotifyDecisionMatchesDashboardWhenLogsAreEmpty is a regression test for the
+// bug where userFromNotifyRecord built a models.User without Role, causing
+// ApplyUserCycleBaseline to bail out early (it gates on user.Role ==
+// models.RoleOwner) for the webhook pass only — the dashboard and .ics feed
+// build a full user and always apply the baseline. With zero day logs (e.g. an
+// owner onboarded with auto_period_fill=false), BuildCycleStats alone has
+// nothing to project from, so without the baseline the webhook decision saw no
+// next-period date at all and DecideDueReminders returned nothing, while the
+// dashboard still showed a next-period date from the user's LastPeriodStart
+// anchor. This asserts the webhook decision's period-due date equals the
+// dashboard path's (BuildCycleStatsFromLogs with a full owner user +
+// DashboardUpcomingPredictions) for the SAME zero-log input.
+func TestNotifyDecisionMatchesDashboardWhenLogsAreEmpty(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+
+	user := userFromNotifyRecord(record)
+	settings := WebhookReminderSettingsFromNotifyRecord(record)
+	decided := DecideDueReminders(&user, settings, nil, now, time.UTC)
+	if len(decided) != 1 || decided[0].Type != DueReminderTypePeriod {
+		t.Fatalf("expected exactly one period reminder from the webhook decision with zero logs, got %+v", decided)
+	}
+
+	fullUser := models.User{
+		ID:              record.ID,
+		Role:            models.RoleOwner,
+		CycleLength:     record.CycleLength,
+		PeriodLength:    record.PeriodLength,
+		LutealPhase:     record.LutealPhase,
+		LastPeriodStart: record.LastPeriodStart,
+	}
+	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(&fullUser, nil, now, time.UTC)
+	today := DateAtLocation(now, time.UTC)
+	cycleLength := DashboardCycleReferenceLength(&fullUser, stats)
+	prediction := DashboardUpcomingPredictions(stats, &fullUser, today, cycleLength)
+
+	if prediction.NextPeriodStart.IsZero() {
+		t.Fatal("test setup: dashboard path should still predict a next period from LastPeriodStart alone")
+	}
+	if got, want := decided[0].EventDate.Format("2006-01-02"), prediction.NextPeriodStart.Format("2006-01-02"); got != want {
+		t.Fatalf("webhook decision period date %q must equal dashboard path date %q", got, want)
+	}
+}
+
+// TestNotifyDecisionMatchesDashboardWithInferredLutealPhase is a regression test
+// for the same userFromNotifyRecord Role gap, this time proving the ovulation
+// date matches too when the owner's logs infer a non-default luteal phase (11
+// days here, vs. the record's stored default of 14). Without Role set, the
+// webhook decision never calls InferUserLutealPhase (ApplyUserCycleBaseline
+// bails out before reaching it) and predicts ovulation off the wrong luteal
+// phase — off by 3 days from what the dashboard/.ics feed show, and anchored to
+// a different cycle start, which could also produce a spurious duplicate
+// reminder against an already-sent watermark.
+func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
+	day := func(s string) time.Time {
+		v, err := time.ParseInLocation("2006-01-02", s, time.UTC)
+		if err != nil {
+			t.Fatalf("parse %q: %v", s, err)
+		}
+		return v
+	}
+
+	// Three period clusters (Jan1, Jan29, Feb26; 28-day cycles) with BBT rises
+	// placed so each completed cycle's observed luteal length is 11 days (rise
+	// starts 11 days before the next cycle's start), inferring luteal=11 overall.
+	// The current (third) cycle has no BBT yet, matching a real in-progress cycle.
+	logs := []models.DailyLog{
+		{Date: day("2025-01-01"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
+		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
+
+		// Cycle 1 (Jan1→Jan29): baseline days 1-5, rise Jan18-20 → ovulation
+		// Jan18, luteal = Jan29-Jan18 = 11.
+		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-18"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-19"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-20"), BBT: models.NewBBT(36.50)},
+
+		// Cycle 2 (Jan29→Feb26): baseline days 1-5, rise Feb15-17 → ovulation
+		// Feb15, luteal = Feb26-Feb15 = 11.
+		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-02-15"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-02-16"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-02-17"), BBT: models.NewBBT(36.50)},
+	}
+
+	// now = Feb26 + 15 days: with a 28-day cycle and the inferred 11-day luteal
+	// phase, ovulation is projected at Feb26+17 = Mar15 — 2 days out, inside a
+	// 3-day lead window. The record's own stored LutealPhase (14) is
+	// deliberately different from the inferred value (11), so the assertion
+	// only passes if the inference actually ran.
+	now := day("2025-02-26").AddDate(0, 0, 15)
+	last := day("2025-02-26")
+	record := models.WebhookNotifyRecord{
+		ID:                     2,
+		CycleLength:            28,
+		PeriodLength:           5,
+		LutealPhase:            14,
+		LastPeriodStart:        &last,
+		WebhookEnabled:         true,
+		WebhookURL:             "https://a.example/hook",
+		WebhookNotifyOvulation: true,
+		ReminderLeadDays:       3,
+	}
+
+	user := userFromNotifyRecord(record)
+	settings := WebhookReminderSettingsFromNotifyRecord(record)
+	decided := DecideDueReminders(&user, settings, logs, now, time.UTC)
+	if len(decided) != 1 || decided[0].Type != DueReminderTypeOvulation {
+		t.Fatalf("expected exactly one ovulation reminder from the webhook decision, got %+v", decided)
+	}
+
+	fullUser := models.User{
+		ID:              record.ID,
+		Role:            models.RoleOwner,
+		CycleLength:     record.CycleLength,
+		PeriodLength:    record.PeriodLength,
+		LutealPhase:     record.LutealPhase,
+		LastPeriodStart: record.LastPeriodStart,
+	}
+	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(&fullUser, logs, now, time.UTC)
+	if stats.LutealPhase != 11 {
+		t.Fatalf("test setup: expected dashboard path to infer luteal phase 11, got %d", stats.LutealPhase)
+	}
+	today := DateAtLocation(now, time.UTC)
+	cycleLength := DashboardCycleReferenceLength(&fullUser, stats)
+	prediction := DashboardUpcomingPredictions(stats, &fullUser, today, cycleLength)
+
+	if prediction.OvulationDate.IsZero() {
+		t.Fatal("test setup: dashboard path should predict an ovulation date")
+	}
+	if got, want := decided[0].EventDate.Format("2006-01-02"), prediction.OvulationDate.Format("2006-01-02"); got != want {
+		t.Fatalf("webhook decision ovulation date %q must equal dashboard path date %q", got, want)
+	}
+}
+
 // TestNotifyUsesOwnerPersistedTimezone drives the persisted-timezone path end to
 // end: an owner with a persisted zone is scanned and its decision runs against
 // that zone (the pass completes without error), covering resolveOwnerLocation's

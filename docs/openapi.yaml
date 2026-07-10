@@ -683,6 +683,13 @@ components:
         hide_notes_field: { type: boolean }
         show_historical_phases: { type: boolean }
 
+    TimezoneSettings:
+      type: object
+      properties:
+        timezone:
+          type: string
+          description: IANA timezone name (e.g. `Europe/Berlin`). Validated server-side; "Local" and non-IANA values are rejected.
+
     WebhookSettings:
       type: object
       description: |
@@ -1506,6 +1513,38 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/users/current/timezone:
+    post:
+      tags: [settings]
+      summary: Update the owner's IANA timezone (owner only).
+      description: |
+        Persists the browser-detected IANA timezone the client posts once per
+        session when it differs from the value the server already holds. The
+        name is validated server-side (non-IANA input and the "Local" token are
+        rejected); the write is scoped to the session `user_id`. Does NOT bump
+        `auth_session_version`. Returns `204 No Content` for HTMX requests,
+        otherwise a JSON ack (the timezone value itself is never echoed back).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TimezoneSettings' }
+      responses:
+        '200':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OkResponse' }
+        '204':
+          description: Saved (HTMX request).
+        '400':
+          description: Invalid or unsupported timezone name.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 

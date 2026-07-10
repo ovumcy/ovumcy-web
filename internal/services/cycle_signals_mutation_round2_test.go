@@ -7,14 +7,16 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestCycleSignals_InferUserLutealPhase_RespectsNonUTCLocationAcrossDST(t *testing.T) {
+func TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle(t *testing.T) {
 	// America/Toronto springs forward on 2025-03-09. The first cycle's
 	// ovulation (Mar 6, BBT rise) and next period start (Mar 20) bracket that
-	// transition, so its luteal length is one day SHORTER when computed in a
-	// DST-observing local zone than in UTC. The function genuinely uses the
-	// passed location; if line 18 were negated to `location != nil` the
-	// caller's Toronto location would be discarded in favour of UTC and the
-	// inferred phase would shift from 13 to 14.
+	// transition. Because CalendarDaysBetween re-anchors both operands to
+	// UTC-midnight, the luteal length is the true calendar-day count (14) and
+	// is immune to the DST transition inside the cycle: a DST-observing local
+	// zone must yield the same value as UTC. Before the fix, the raw
+	// `nextStart.Sub(ovulationDate)/24` truncated the 14*24-1h span down to 13
+	// in Toronto, dragging the inferred phase to 13 in a DST-observing zone
+	// while UTC saw 14 — a location-dependent skew this test now guards against.
 	loc, err := time.LoadLocation("America/Toronto")
 	if err != nil {
 		t.Skipf("tz database unavailable: %v", err)
@@ -50,14 +52,24 @@ func TestCycleSignals_InferUserLutealPhase_RespectsNonUTCLocationAcrossDST(t *te
 		{Date: day("2025-03-28"), BBT: models.NewBBT(36.50)},
 	}
 
-	phase, ok := InferUserLutealPhase(logs, loc)
+	// Cycle A (Mar6->Mar20) = 14 true calendar days, cycle B (Mar26->Apr8) = 13.
+	// lens = [14, 13] -> round(13.5) = 14, regardless of DST, in every zone.
+	phaseLocal, ok := InferUserLutealPhase(logs, loc)
 	if !ok {
 		t.Fatalf("expected ok=true with two BBT-confirmed cycles")
 	}
-	// Toronto: lens = [13, 13] -> round(13) = 13.
-	// If location is forced to UTC (mutation), lens = [14, 13] -> round(13.5) = 14.
-	if phase != 13 {
-		t.Fatalf("expected inferred luteal phase 13 in America/Toronto (DST-spanning cycle); got %d. A phase of 14 means the caller location was discarded for UTC.", phase)
+	if phaseLocal != 14 {
+		t.Fatalf("expected inferred luteal phase 14 in America/Toronto (DST-immune calendar count); got %d. A phase of 13 means a DST transition inside the cycle truncated the luteal span.", phaseLocal)
+	}
+
+	// DST-immunity: the same calendar dates evaluated in UTC (no DST) must
+	// produce the identical phase — the location must not change the result.
+	phaseUTC, ok := InferUserLutealPhase(logs, time.UTC)
+	if !ok {
+		t.Fatalf("expected ok=true in UTC as well")
+	}
+	if phaseUTC != phaseLocal {
+		t.Fatalf("expected DST-observing zone (%d) and UTC (%d) to agree", phaseLocal, phaseUTC)
 	}
 }
 

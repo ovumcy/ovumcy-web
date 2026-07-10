@@ -21,6 +21,10 @@ const (
 	LangIT = "it"
 )
 
+// requiredLocales lists every supported language constant; NewManager fails
+// fast at boot if any of them is missing from the embedded locale files.
+var requiredLocales = []string{LangDE, LangEN, LangES, LangRU, LangFR, LangIT}
+
 type Manager struct {
 	defaultLanguage string
 	locales         map[string]map[string]string
@@ -65,7 +69,7 @@ func NewManager(defaultLanguage string) (*Manager, error) {
 		return nil, fmt.Errorf("no locales found in %s", localesDir)
 	}
 
-	for _, language := range []string{LangDE, LangEN, LangES, LangRU, LangFR} {
+	for _, language := range requiredLocales {
 		if _, ok := manager.locales[language]; !ok {
 			return nil, fmt.Errorf("required locale %q missing", language)
 		}
