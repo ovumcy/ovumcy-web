@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+
+- **`go-118-fuzz-build` pinned instead of floating on `@latest`** in `.clusterfuzzlite/build.sh` (OpenSSF Scorecard "Pinned-Dependencies"). The module has no tagged releases, so it's pinned to a pseudo-version (`v0.0.0-20250520111509-a70c2aa677fa`) instead — same effect as a commit-SHA pin. `.clusterfuzzlite/Dockerfile`'s unpinned `base-builder-go` base image is unchanged (documented exception, now cross-referenced correctly in `docs/SECURITY_INVARIANTS.md → CI`).
+
 ### Changed
 
 - **Breaking (export shape):** the built-in `swelling` symptom (added 2026-03-09) now has its own `swelling` boolean flag in the JSON `symptoms` object and its own `Swelling` CSV column, instead of falling through to `other_symptoms`/`Other` indistinguishably from an owner-created custom symptom. The `Swelling` CSV column is inserted after `Constipation` to stay adjacent to the other symptom columns, so every column from `Cycle factors` onward shifts one position to the right in files generated after this change; consumers reading CSV columns by position (not by header name) must account for the shift. `docs/export.md` and `docs/openapi.yaml` updated; import accepts both the new flag and legacy files that still carry `swelling` only via `other_symptoms`.
