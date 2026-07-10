@@ -72,6 +72,7 @@ type trackingSettingsInput struct {
 	HideCycleFactors     bool   `json:"hide_cycle_factors" form:"hide_cycle_factors"`
 	HideNotesField       bool   `json:"hide_notes_field" form:"hide_notes_field"`
 	ShowHistoricalPhases bool   `json:"show_historical_phases" form:"show_historical_phases"`
+	WeekStartsOn         string `json:"week_starts_on" form:"week_starts_on"`
 }
 
 // webhookSettingsInput is the transport shape of the webhook-settings form

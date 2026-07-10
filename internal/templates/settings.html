@@ -366,6 +366,25 @@
         <p class="journal-muted text-sm">{{t .Messages "settings.tracking.temperature_unit_hint"}}</p>
       </div>
 
+      <div class="space-y-2">
+        <p class="field-label">{{t .Messages "settings.tracking.week_starts_on"}}</p>
+        <div class="settings-unit-switch" role="radiogroup" aria-label="{{t .Messages "settings.tracking.week_starts_on"}}">
+          <label class="choice-option">
+            <input type="radio" name="week_starts_on" value="sunday" class="choice-input" {{if eq .WeekStartsOn "sunday"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>{{t .Messages "settings.tracking.week_starts_on_sunday"}}</span>
+            </span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="week_starts_on" value="monday" class="choice-input" {{if eq .WeekStartsOn "monday"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>{{t .Messages "settings.tracking.week_starts_on_monday"}}</span>
+            </span>
+          </label>
+        </div>
+        <p class="journal-muted text-sm">{{t .Messages "settings.tracking.week_starts_on_hint"}}</p>
+      </div>
+
       <div class="settings-form-actions">
         <button
           type="submit"
@@ -809,6 +828,7 @@
   <section
     class="journal-card p-5 sm:p-6 space-y-4"
     data-export-section
+    data-export-week-start="{{.WeekStartsOn}}"
     data-export-min="{{if .HasExportData}}{{.ExportRangeMin}}{{end}}"
     data-export-max="{{if .HasExportData}}{{.ExportRangeMax}}{{end}}"
     data-export-success="{{t .Messages "settings.export_success"}}"

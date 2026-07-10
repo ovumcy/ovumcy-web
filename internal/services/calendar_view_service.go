@@ -29,6 +29,7 @@ type CalendarPageViewData struct {
 	NextMonth                         string
 	SelectedDate                      string
 	DayStates                         []CalendarDayState
+	WeekdayKeys                       []string
 	TodayISO                          string
 	Stats                             CycleStats
 	PredictionExplanationPrimaryKey   string
@@ -76,6 +77,7 @@ func (service *CalendarViewService) BuildCalendarPageViewData(ctx context.Contex
 		NextMonth:                         nextMonth,
 		SelectedDate:                      selectedDate,
 		DayStates:                         dayStates,
+		WeekdayKeys:                       WeekdayHeaderKeys(NormalizeWeekStart(user.WeekStartsOn)),
 		TodayISO:                          DateAtLocation(now, location).Format("2006-01-02"),
 		Stats:                             stats,
 		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,

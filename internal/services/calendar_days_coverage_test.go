@@ -29,7 +29,7 @@ import (
 //   - monthStart.Weekday() = Thursday(4) → gridStart = 2025-12-28
 func TestCalendarDaysGridBoundsFebruary2026(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
-	gridStart, gridEnd := calendarGridBounds(monthStart)
+	gridStart, gridEnd := calendarGridBounds(monthStart, models.WeekStartSunday)
 
 	// February 2026 starts on Sunday → gridStart == monthStart
 	if got := gridStart.Format("2006-01-02"); got != "2026-02-01" {
@@ -43,7 +43,7 @@ func TestCalendarDaysGridBoundsFebruary2026(t *testing.T) {
 
 func TestCalendarDaysGridBoundsMarch2026(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	gridStart, gridEnd := calendarGridBounds(monthStart)
+	gridStart, gridEnd := calendarGridBounds(monthStart, models.WeekStartSunday)
 
 	// March 2026 starts on Sunday → gridStart == monthStart
 	if got := gridStart.Format("2006-01-02"); got != "2026-03-01" {
@@ -58,7 +58,7 @@ func TestCalendarDaysGridBoundsMarch2026(t *testing.T) {
 func TestCalendarDaysGridBoundsJanuary2026(t *testing.T) {
 	// January 2026: monthStart = Thursday(4) → gridStart must retreat to Sunday.
 	monthStart := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	gridStart, gridEnd := calendarGridBounds(monthStart)
+	gridStart, gridEnd := calendarGridBounds(monthStart, models.WeekStartSunday)
 
 	// 2026-01-01 is a Thursday (weekday=4), subtract 4 days → 2025-12-28.
 	if got := gridStart.Format("2006-01-02"); got != "2025-12-28" {
@@ -93,7 +93,7 @@ func TestCalendarDaysGridBoundsGridAlwaysStartsOnSunday(t *testing.T) {
 	}
 	for _, c := range cases {
 		monthStart := time.Date(c.year, c.month, 1, 0, 0, 0, 0, time.UTC)
-		gridStart, gridEnd := calendarGridBounds(monthStart)
+		gridStart, gridEnd := calendarGridBounds(monthStart, models.WeekStartSunday)
 		if gridStart.Weekday() != time.Sunday {
 			t.Errorf("%s: gridStart %s is not a Sunday (weekday=%d)",
 				c.month, gridStart.Format("2006-01-02"), gridStart.Weekday())
@@ -115,12 +115,44 @@ func TestCalendarDaysGridBoundsMonthEndIsLastDayOfMonth(t *testing.T) {
 	// AddDate(0,1,0) the monthEnd would be 2026-05-01 (Friday), shifting
 	// gridEnd by one week.
 	monthStart := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
-	_, gridEnd := calendarGridBounds(monthStart)
+	_, gridEnd := calendarGridBounds(monthStart, models.WeekStartSunday)
 
 	// April 2026 monthEnd = 2026-04-30 (Thursday, weekday=4)
 	// gridEnd = 2026-04-30 + (6-4) = 2026-05-02
 	if got := gridEnd.Format("2006-01-02"); got != "2026-05-02" {
 		t.Fatalf("April 2026 gridEnd: want 2026-05-02, got %s", got)
+	}
+}
+
+// TestCalendarDaysGridBoundsMondayFirst verifies the Monday-first week-start
+// preference (issue #225): gridStart must retreat to the preceding Monday and
+// gridEnd advance to the following Sunday, for every month of the year.
+func TestCalendarDaysGridBoundsMondayFirst(t *testing.T) {
+	for month := time.January; month <= time.December; month++ {
+		monthStart := time.Date(2026, month, 1, 0, 0, 0, 0, time.UTC)
+		gridStart, gridEnd := calendarGridBounds(monthStart, models.WeekStartMonday)
+		if gridStart.Weekday() != time.Monday {
+			t.Errorf("%s: gridStart %s is not a Monday (weekday=%d)",
+				month, gridStart.Format("2006-01-02"), gridStart.Weekday())
+		}
+		if gridEnd.Weekday() != time.Sunday {
+			t.Errorf("%s: gridEnd %s is not a Sunday (weekday=%d)",
+				month, gridEnd.Format("2006-01-02"), gridEnd.Weekday())
+		}
+	}
+}
+
+// TestCalendarDaysGridBoundsMondayFirstFebruary2026 pins concrete dates:
+// February 2026 starts on a Sunday, so Monday-first must pull gridStart back a
+// full week to 2026-01-26 (Monday) and pad gridEnd to 2026-03-01 (Sunday).
+func TestCalendarDaysGridBoundsMondayFirstFebruary2026(t *testing.T) {
+	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
+	gridStart, gridEnd := calendarGridBounds(monthStart, models.WeekStartMonday)
+	if got := gridStart.Format("2006-01-02"); got != "2026-01-26" {
+		t.Fatalf("gridStart: want 2026-01-26, got %s", got)
+	}
+	if got := gridEnd.Format("2006-01-02"); got != "2026-03-01" {
+		t.Fatalf("gridEnd: want 2026-03-01, got %s", got)
 	}
 }
 

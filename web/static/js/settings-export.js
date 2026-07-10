@@ -372,6 +372,7 @@
       section: section,
       rawMinDate: readTextAttribute(section, "data-export-min", ""),
       rawMaxDate: readTextAttribute(section, "data-export-max", ""),
+      weekStart: readTextAttribute(section, "data-export-week-start", "sunday"),
       successMessage: readTextAttribute(section, "data-export-success", "Data exported successfully"),
       failedMessage: readTextAttribute(section, "data-export-failed", "Failed to export data"),
       invalidRangeMessage: readTextAttribute(section, "data-export-invalid-range", "End date must be on or after start date"),
@@ -726,6 +727,12 @@
       return String(label.textContent || "").trim();
     }
 
+    // weekStartShift is the number of columns the grid is rotated relative to
+    // the Sunday-first layout: 0 for Sunday-first, 1 for Monday-first. It drives
+    // both the weekday header labels and the leading blank count so the export
+    // picker matches the owner's week_starts_on preference.
+    var weekStartShift = context.weekStart === "monday" ? 1 : 0;
+
     function renderWeekdayLabels() {
       if (!context.calendarWeekdays) {
         return;
@@ -733,7 +740,9 @@
 
       context.calendarWeekdays.innerHTML = "";
       for (var weekday = 0; weekday < 7; weekday++) {
-        var sample = new Date(2023, 0, 1 + weekday);
+        // Jan 1 2023 was a Sunday, so 1 + weekday is Sunday-first; adding
+        // weekStartShift rotates the first column to Monday when requested.
+        var sample = new Date(2023, 0, 1 + weekday + weekStartShift);
         var label = context.weekdayFormatter.format(sample).replace(/\./g, "");
         var cell = document.createElement("span");
         cell.textContent = label;
@@ -835,7 +844,9 @@
 
       var year = visibleMonth.getFullYear();
       var month = visibleMonth.getMonth();
-      var firstWeekday = new Date(year, month, 1).getDay();
+      // Leading blank cells before day 1: the day-of-week index within the
+      // owner's week (Monday-first shifts Sunday from column 0 to column 6).
+      var firstWeekday = (new Date(year, month, 1).getDay() + 7 - weekStartShift) % 7;
       var daysInMonth = new Date(year, month + 1, 0).getDate();
       var activeField = activeInput === context.fromInput ? context.fromField : context.toField;
       var selectedDate = parseISODate(dateFieldValue(activeField, activeInput));
