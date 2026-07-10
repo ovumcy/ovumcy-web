@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Go toolchain bumped to 1.26.5.** Clears GO-2026-5856 (Encrypted Client Hello privacy leak in `crypto/tls`, fixed upstream in go1.26.5), reachable via the outbound HTTP client used for webhook delivery and OIDC. The runtime image's builder stage moves to `golang:1.26.5-alpine3.24` (the `alpine3.22` variant of this patch release was not published); the final `alpine:3.24.1` runtime-assets stage is unchanged.
+
 ### Changed
 
 - **Removed the local pre-push patch-coverage hook.** `scripts/hooks/pre-push`, `scripts/setup-hooks.sh`, and `scripts/patch-coverage-local.sh` are removed — the hook reran the full test suite on every push with a `*.go` change, which made `git push` slow. Patch coverage is still enforced, exclusively by CI's `patch-coverage` job. `scripts/patchcov` (the gate CI calls directly) is unchanged.
