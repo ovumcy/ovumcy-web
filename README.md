@@ -180,12 +180,12 @@ These are the currently supported first-party UI languages. Operators can set `D
 ## Privacy and Security
 
 - No analytics, ad trackers, or remote telemetry.
-- No outbound network calls in the default configuration. When OIDC is enabled, the server only talks to the configured identity provider.
+- No telemetry and no outbound network calls in the default configuration. Outbound traffic only happens when an owner opts into it: the server talks to the configured identity provider when OIDC is enabled, and to the owner's own webhook endpoint when webhook reminders are configured. Nothing is sent to Ovumcy or any third party.
 - First-party cookies only; see [SECURITY.md](SECURITY.md#cookies) for the full inventory and attributes.
 - Data stays on infrastructure you control.
 - Automated security checks cover CodeQL, gosec, Trivy filesystem/container scans, and CycloneDX SBOM generation in GitHub Actions.
 - SQLite is the baseline default; Postgres is available for advanced self-hosted deployments through official example stacks.
-- Optional TOTP 2FA: secrets are AES-256-GCM encrypted at rest with per-row aad binding, the login challenge and disable-confirmation endpoints are rate-limited, and replayed codes are rejected within the 30-second verifier window.
+- Optional TOTP 2FA: secrets are AES-256-GCM encrypted at rest with per-row aad binding, the login challenge and disable-confirmation endpoints are rate-limited, and each account carries a persistent monotonic replay floor (`totp_last_used_step`): a code at or below the last successfully consumed RFC 6238 step is rejected permanently, and the floor survives restarts.
 
 Operator-facing GDPR compliance walkthrough lives in [docs/gdpr.md](docs/gdpr.md) (lawful basis, encryption-at-rest guidance, DSAR via export, breach notification runbook). The repo-visible security invariants live in [docs/SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md); the GDPR cross-reference table is in [SECURITY.md → GDPR Cross-Reference](SECURITY.md#gdpr-cross-reference).
 

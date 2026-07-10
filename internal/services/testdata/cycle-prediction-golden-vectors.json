@@ -62,5 +62,44 @@
         "nextPeriodStart": "2026-02-15"
       }
     }
-  ]
+  ],
+  "projection": {
+    "$comment": "ADDITIVE section (lands in ovumcy-app via its twin PR). Pins the projection/anchor layer that production layers ON TOP of the base window math in `vectors`. Given a cycle-length history plus `lastPeriodStart`, `today`, and an IANA `timezone`, it locks: (1) the median-first prediction length (predictedCycleLength in cycles.go / cycle-prediction-policy.ts), (2) the projected current-cycle start and 1-based cycle day (ProjectCycleStart), (3) the displayed next-period date derived from the UN-shifted projected start, and (4) the ovulation date after the single forward roll (ShiftCycleStartToFutureOvulation) that keeps ovulation on/after `today`. All arithmetic is calendar-day based and DST-immune, so the Europe/Berlin 2026-03-29 spring-forward case must project identically to a UTC run. Histories stay within the recent-cycle window (<= 6) so no tail truncation applies. Consumed by ovumcy-web's TestCycleProjection_GoldenVectors; ovumcy-app's existing reference test decodes only `vectors` and ignores this key until its twin consumer lands. See docs/cycle-prediction.md.",
+    "schemaVersion": 1,
+    "vectors": [
+      {
+        "name": "median-vs-mean [28,28,28,28,60]: projects from median 28, not mean 34",
+        "input": { "cycleLengths": [28, 28, 28, 28, 60], "lastPeriodStart": "2026-01-01", "today": "2026-01-19", "timezone": "UTC", "lutealPhase": 14 },
+        "expected": {
+          "predictionLength": 28,
+          "projectedCycleStart": "2026-01-01",
+          "projectedCycleDay": 19,
+          "displayedNextPeriodStart": "2026-01-29",
+          "ovulationDate": "2026-02-11"
+        }
+      },
+      {
+        "name": "DST spring-forward (Europe/Berlin 2026-03-29): boundary rollover stays calendar-correct",
+        "input": { "cycleLengths": [28, 28, 28], "lastPeriodStart": "2026-03-15", "today": "2026-04-12", "timezone": "Europe/Berlin", "lutealPhase": 14 },
+        "expected": {
+          "predictionLength": 28,
+          "projectedCycleStart": "2026-04-12",
+          "projectedCycleDay": 1,
+          "displayedNextPeriodStart": "2026-05-10",
+          "ovulationDate": "2026-04-25"
+        }
+      },
+      {
+        "name": "boundary-day projection: today exactly one cycle out rolls to cycle day 1",
+        "input": { "cycleLengths": [30, 30], "lastPeriodStart": "2026-06-01", "today": "2026-07-01", "timezone": "UTC", "lutealPhase": 14 },
+        "expected": {
+          "predictionLength": 30,
+          "projectedCycleStart": "2026-07-01",
+          "projectedCycleDay": 1,
+          "displayedNextPeriodStart": "2026-07-31",
+          "ovulationDate": "2026-07-16"
+        }
+      }
+    ]
+  }
 }

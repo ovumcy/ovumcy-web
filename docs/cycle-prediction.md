@@ -156,3 +156,35 @@ implementations; consuming one shared fixture makes any divergence between them
 fail CI on **both** sides instead of drifting silently. If you change the
 prediction math, update the fixture, **both** docs (this file and ovumcy-app's
 `docs/cycle-prediction.md`), and **both** reference tests in the same change.
+
+#### Projection / anchor section
+
+The `vectors` section above pins the pure window math (`PredictCycleWindow`:
+period start + cycle length + luteal phase → ovulation and fertile window). It
+does **not** cover the layer production wraps around that math to project a live
+prediction for a given day: choosing the cycle length from history, anchoring the
+current cycle, and rolling ovulation forward. That layer is pinned by a second,
+**additive** top-level key in the same fixture file, `projection`, consumed by
+`TestCycleProjection_GoldenVectors`. Each projection vector takes a cycle-length
+history plus `lastPeriodStart`, `today`, and an IANA `timezone`, and locks four
+stages:
+
+1. **Prediction length** — median-first (`predictedCycleLength`): the median of
+   the recent-cycle window, falling back to the rounded mean only when no median
+   exists. The `[28, 28, 28, 28, 60]` vector nails this down: it must select the
+   median (28), never the mean (~34) that a single merged-log outlier inflates.
+2. **Projected cycle start + cycle day** — `ProjectCycleStart` advances the last
+   period start by whole cycles up to `today` and reports the 1-based day within
+   the current cycle.
+3. **Displayed next-period date** — the projected (un-shifted) start plus the
+   selected length, re-anchored in the request timezone.
+4. **Ovulation date** — the window for the projected cycle, rolled forward once
+   by `ShiftCycleStartToFutureOvulation` when its ovulation already fell before
+   `today`, so a displayed ovulation is never in the past.
+
+All of this is calendar-day arithmetic and therefore **DST-immune**: the
+`Europe/Berlin` 2026-03-29 spring-forward vector must project identically to a
+UTC run — a truncating hour-based day count would mis-roll the cycle across the
+23-hour transition day. The key is additive so an older twin that reads only
+`vectors` keeps passing against a byte-identical file until it grows a
+`projection` consumer of its own.
