@@ -154,6 +154,7 @@ export async function startLocalOIDCProvider({
   testSubject,
   testName,
   emailVerified,
+  responseMode = "form_post",
 }) {
   const [cert, key] = await Promise.all([
     readFile(certPath, "utf8"),
@@ -210,7 +211,12 @@ export async function startLocalOIDCProvider({
         const requestedClientID = url.searchParams.get("client_id") ?? "";
         const codeChallenge = url.searchParams.get("code_challenge") ?? "";
         const codeChallengeMethod = url.searchParams.get("code_challenge_method") ?? "";
-        const responseMode = url.searchParams.get("response_mode") ?? "";
+        const requestedResponseMode = url.searchParams.get("response_mode") ?? "";
+        // In query mode the app omits response_mode so the provider falls back
+        // to its query-redirect default; in form_post mode it pins
+        // response_mode=form_post. Validate against whichever mode this provider
+        // instance was started in.
+        const expectedResponseMode = responseMode === "query" ? "" : "form_post";
 
         if (
           requestedClientID !== clientID ||
@@ -221,7 +227,7 @@ export async function startLocalOIDCProvider({
           !isSafeOIDCTransportValue(nonce) ||
           codeChallenge === "" ||
           codeChallengeMethod !== "S256" ||
-          responseMode !== "form_post"
+          requestedResponseMode !== expectedResponseMode
         ) {
           sendJSON(response, 400, { error: "invalid_request" });
           return;
@@ -237,6 +243,21 @@ export async function startLocalOIDCProvider({
           name: testName,
           emailVerified,
         });
+
+        if (responseMode === "query") {
+          // Query response mode: return the code/state as a GET redirect to the
+          // callback, mirroring providers that cannot form-post (Dex,
+          // better-auth, Pocket ID <2.7).
+          const redirectTarget = new URL(redirectURL);
+          redirectTarget.searchParams.set("code", code);
+          redirectTarget.searchParams.set("state", state);
+          response.writeHead(303, {
+            location: redirectTarget.toString(),
+            "cache-control": "no-store",
+          });
+          response.end();
+          return;
+        }
 
         const callbackPostID = randomBytes(24).toString("hex");
         callbackPosts.set(callbackPostID, { code, state });
