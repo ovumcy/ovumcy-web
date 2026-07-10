@@ -113,6 +113,18 @@ func (service *OIDCLoginService) LocalPublicAuthEnabled() bool {
 	return service.config.LocalPublicAuthEnabled()
 }
 
+// ResponseMode reports the configured OIDC response mode (form_post or query).
+// The transport layer uses it to decide whether the callback is also served
+// over GET and which request source (body vs query) the callback parameters
+// are read from. The config is sanitized at construction, so this is always a
+// concrete mode; a nil service (OIDC disabled) reports the form_post default.
+func (service *OIDCLoginService) ResponseMode() security.OIDCResponseMode {
+	if service == nil {
+		return security.OIDCResponseModeFormPost
+	}
+	return service.config.ResponseMode
+}
+
 func (service *OIDCLoginService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
 	return service.startAuthWithExtra(ctx, state, nonce, codeVerifier, nil)
 }

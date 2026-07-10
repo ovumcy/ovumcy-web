@@ -91,6 +91,14 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/reset-password", handler.ShowResetPasswordPage)
 	app.Get("/auth/2fa", handler.ShowTOTPChallengePage)
 	app.Post("/auth/oidc/callback", handler.CompleteOIDCLogin)
+	// In query response mode the provider returns the code via a GET redirect,
+	// so the callback must also answer GET. GET is a safe method and is not
+	// CSRF-validated by the middleware; like the POST callback it is guarded by
+	// the sealed one-time state cookie (matchesState + validAt), which reads the
+	// state from the query in this mode. form_post deployments keep POST-only.
+	if handler.oidcResponseModeQuery() {
+		app.Get("/auth/oidc/callback", handler.CompleteOIDCLogin)
+	}
 	app.Get(oidcLinkConfirmPath, handler.ShowOIDCLinkConfirmPage)
 	app.Post(oidcLinkConfirmPath, handler.CompleteOIDCLinkConfirmation)
 	app.Post("/logout", handler.AuthRequired, handler.OwnerOnly, handler.Logout)

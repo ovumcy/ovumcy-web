@@ -22,6 +22,7 @@ import (
 type stubOIDCWorkflowService struct {
 	enabled                bool
 	localPublicAuthEnabled bool
+	responseMode           security.OIDCResponseMode
 	authURL                string
 	startErr               error
 	result                 services.OIDCLoginResult
@@ -62,6 +63,13 @@ func (stub *stubOIDCWorkflowService) LocalPublicAuthEnabled() bool {
 		return false
 	}
 	return true
+}
+
+func (stub *stubOIDCWorkflowService) ResponseMode() security.OIDCResponseMode {
+	if stub.responseMode == "" {
+		return security.OIDCResponseModeFormPost
+	}
+	return stub.responseMode
 }
 
 func (stub *stubOIDCWorkflowService) StartAuth(ctx context.Context, state string, nonce string, codeVerifier string) (string, error) {
