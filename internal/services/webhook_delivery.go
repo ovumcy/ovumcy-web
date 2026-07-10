@@ -64,6 +64,19 @@ var ErrWebhookDeliveryURLScheme = errors.New("webhook delivery url scheme not al
 // refuse ALL redirects. It is intentionally generic and carries no location.
 var errWebhookRedirect = errors.New("webhook delivery refuses redirects")
 
+// errWebhookPrivateAddress is returned by the guarded dialer when the
+// WEBHOOK_BLOCK_PRIVATE_ADDRESSES gate is on and a target resolves to (or is) a
+// private/loopback/link-local/unspecified address. It surfaces from
+// http.Client.Do wrapped in *url.Error; Deliver classifies it via errors.Is so
+// the log reason stays stable. It carries no host or IP so it cannot leak one.
+var errWebhookPrivateAddress = errors.New("webhook delivery refuses private address")
+
+// ipResolver is the hostname-resolution seam. net.DefaultResolver satisfies it
+// in production; tests inject a fake so no case depends on live DNS.
+type ipResolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
 // WebhookPayload is the transport-free notification body. It carries only what a
 // reminder needs — a title, a message, and the MANDATORY medical-safety
 // disclaimer — and never any secret (no webhook URL, token, SECRET_KEY, or
@@ -99,11 +112,12 @@ type WebhookDeliverer interface {
 	Deliver(ctx context.Context, decryptedURL string, payload WebhookPayload) error
 }
 
-// blockPrivateAddresses, when true, would deny delivery to private/loopback/
-// link-local targets. It is OFF BY DEFAULT because self-hosted ntfy/Gotify
-// legitimately live on the LAN; the gate exists so an operator can opt in via
-// WEBHOOK_BLOCK_PRIVATE_ADDRESSES. The denylist itself is a documented TODO —
-// only the off-by-default gate ships in this slice.
+// blockPrivateAddresses, when true, denies delivery to private/loopback/
+// link-local targets — both IP literals (fast pre-check in Deliver) and
+// hostnames (resolve-and-check in the guarded dialer, which validates every
+// resolved record and pins the dialed IP to close DNS-rebinding). It is OFF BY
+// DEFAULT because self-hosted ntfy/Gotify legitimately live on the LAN; the gate
+// exists so an operator can opt in via WEBHOOK_BLOCK_PRIVATE_ADDRESSES.
 type webhookDeliveryClient struct {
 	httpClient            *http.Client
 	blockPrivateAddresses bool
@@ -113,26 +127,91 @@ type webhookDeliveryClient struct {
 // wires the off-by-default private-address gate (see WEBHOOK_BLOCK_PRIVATE_ADDRESSES);
 // callers pass false unless the operator opted in.
 func NewWebhookDeliverer(blockPrivateAddresses bool) WebhookDeliverer {
+	return newWebhookDelivererWithResolver(blockPrivateAddresses, net.DefaultResolver)
+}
+
+// newWebhookDelivererWithResolver is the seam-injecting constructor: it lets a
+// test supply a fake ipResolver so the resolve-and-check dialer can be exercised
+// without live DNS. Production goes through NewWebhookDeliverer with
+// net.DefaultResolver.
+func newWebhookDelivererWithResolver(blockPrivateAddresses bool, resolver ipResolver) *webhookDeliveryClient {
 	return &webhookDeliveryClient{
-		httpClient:            newWebhookHTTPClient(),
+		httpClient:            newWebhookHTTPClient(blockPrivateAddresses, resolver),
 		blockPrivateAddresses: blockPrivateAddresses,
 	}
 }
 
 // newWebhookHTTPClient constructs the hardened *http.Client used for every
-// delivery: bounded timeouts, no keep-alives, and zero redirects.
-func newWebhookHTTPClient() *http.Client {
+// delivery: bounded timeouts, no keep-alives, and zero redirects. Only when
+// blockPrivateAddresses is on is the resolve-and-check DialContext installed; the
+// default (gate-off) path keeps the plain stock dialer, byte-for-byte unchanged.
+func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http.Client {
+	baseDialer := &net.Dialer{Timeout: webhookDeliveryTimeout}
+	dialContext := baseDialer.DialContext
+	if blockPrivateAddresses {
+		dialContext = guardedDialContext(baseDialer, resolver)
+	}
 	return &http.Client{
 		Timeout: webhookDeliveryTimeout,
 		Transport: &http.Transport{
 			DisableKeepAlives: true,
-			DialContext: (&net.Dialer{
-				Timeout: webhookDeliveryTimeout,
-			}).DialContext,
+			DialContext:       dialContext,
 		},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return errWebhookRedirect
 		},
+	}
+}
+
+// guardedDialContext is the resolve-and-check DialContext used ONLY when the
+// private-address gate is on. It resolves the target host once (or uses the IP
+// literal directly) and refuses the whole target with errWebhookPrivateAddress if
+// ANY resolved A/AAAA record is private/loopback/link-local/unspecified. It then
+// dials one of the validated IPs directly (never a second, independent
+// resolution), so a rebinding resolver cannot return a public answer to the check
+// and a private one to the dial. The request keeps its original Host header and
+// TLS SNI because DialContext only fixes the TCP endpoint, not the request URL.
+func guardedDialContext(baseDialer *net.Dialer, resolver ipResolver) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+
+		var ips []net.IP
+		if literal := net.ParseIP(host); literal != nil {
+			ips = []net.IP{literal}
+		} else {
+			resolved, err := resolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			for _, addr := range resolved {
+				ips = append(ips, addr.IP)
+			}
+		}
+		if len(ips) == 0 {
+			return nil, &net.DNSError{Err: "no addresses", Name: host, IsNotFound: true}
+		}
+
+		// Reject the whole target if any record is private: a mixed public/private
+		// answer is exactly the rebinding shape we must refuse.
+		for _, ip := range ips {
+			if isPrivateIP(ip) {
+				return nil, errWebhookPrivateAddress
+			}
+		}
+
+		// Dial a validated IP directly, trying each until one connects.
+		var lastErr error
+		for _, ip := range ips {
+			conn, err := baseDialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
 	}
 }
 
@@ -183,11 +262,15 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		// A refused redirect surfaces here wrapped in *url.Error; classify it so the
-		// reason key is stable without logging the (secret-bearing) location.
+		// A refused redirect or a private-address block surfaces here wrapped in
+		// *url.Error; classify it so the reason key is stable without logging the
+		// (secret-bearing) location or the resolved IP.
 		reason := "transport_error"
-		if isRedirectRefusal(err) {
+		switch {
+		case isRedirectRefusal(err):
 			reason = "redirect_refused"
+		case errors.Is(err, errWebhookPrivateAddress):
+			reason = "private_address_blocked"
 		}
 		log.Printf("webhook delivery failed: reason=%s host=%s", reason, parsed.Hostname())
 		// Return a HOST-ONLY error: the transport error (*url.Error) embeds the full
@@ -217,14 +300,23 @@ func isRedirectRefusal(err error) bool {
 }
 
 // isPrivateHost reports whether host is a loopback / private / link-local
-// address literal. It is only consulted when the off-by-default
-// WEBHOOK_BLOCK_PRIVATE_ADDRESSES gate is on. A hostname that is not an IP
-// literal is treated as non-private here (name resolution is not performed);
-// the fuller denylist is a documented TODO.
+// address LITERAL. It is the fast pre-check at Deliver time: an IP-literal
+// target is rejected before any request. A hostname (non-literal) returns false
+// here and is instead resolved-and-checked inside the guarded dialer
+// (guardedDialContext), which validates every resolved record and pins the
+// dialed IP — so the private-address gate is enforced for hostnames too, without
+// a second independent resolution.
 func isPrivateHost(host string) bool {
 	ip := net.ParseIP(strings.TrimSpace(host))
 	if ip == nil {
 		return false
 	}
+	return isPrivateIP(ip)
+}
+
+// isPrivateIP is the core address classifier shared by the literal pre-check and
+// the guarded dialer: loopback, RFC1918/ULA private, link-local (unicast and
+// multicast), and the unspecified address all count as private.
+func isPrivateIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
 }
