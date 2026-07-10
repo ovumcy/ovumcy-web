@@ -57,7 +57,7 @@ func WeekdayHeaderKeys(weekStart string) []string {
 		shift = 1
 	}
 	keys := make([]string, 0, 7)
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		keys = append(keys, weekdayHeaderKeysSundayFirst[(i+shift)%7])
 	}
 	return keys
