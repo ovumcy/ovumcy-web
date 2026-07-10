@@ -63,7 +63,7 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 		return policy
 	}
 
-	gapDays := int(targetDay.Sub(previousStart).Hours() / 24)
+	gapDays := CalendarDaysBetween(previousStart, targetDay)
 	if gapDays > 0 && gapDays < manualCycleStartSuggestionGapDays {
 		policy.PreviousStart = previousStart
 		policy.ShortGapDays = gapDays
@@ -125,7 +125,7 @@ func ShouldSuggestManualCycleStart(user *models.User, logs []models.DailyLog, lo
 	}
 
 	targetDay := DateAtLocation(day.In(location), location)
-	gapDays := int(targetDay.Sub(anchor).Hours() / 24)
+	gapDays := CalendarDaysBetween(anchor, targetDay)
 	return gapDays >= manualCycleStartSuggestionGapDays
 }
 
