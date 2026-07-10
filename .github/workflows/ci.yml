@@ -297,10 +297,6 @@ jobs:
         if: env.RUN_E2E == 'true'
         run: npm ci
 
-      - name: Frontend build
-        if: env.RUN_E2E == 'true'
-        run: npm run build
-
       - name: Install Playwright browser
         if: env.RUN_E2E == 'true'
         run: npx playwright install --with-deps chromium
@@ -363,10 +359,6 @@ jobs:
         if: env.RUN_E2E == 'true'
         run: npm ci
 
-      - name: Frontend build
-        if: env.RUN_E2E == 'true'
-        run: npm run build
-
       - name: Install Playwright browser
         if: env.RUN_E2E == 'true'
         run: npx playwright install --with-deps chromium
@@ -415,9 +407,6 @@ jobs:
 
       - name: Install frontend and e2e dependencies
         run: npm ci
-
-      - name: Frontend build
-        run: npm run build
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
