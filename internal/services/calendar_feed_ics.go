@@ -124,7 +124,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	}
 
 	today := DateAtLocation(input.Now, input.Location)
-	cycleLength := DashboardCycleReferenceLength(user, stats)
+	cycleLength := DashboardProjectionCycleLength(user, stats)
 	if stats.LastPeriodStart.IsZero() || cycleLength <= 0 {
 		return nil
 	}
