@@ -139,20 +139,30 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	}
 
 	events := make([]calendarFeedEvent, 0, calendarFeedProjectionCycles*2)
+	seen := make(map[string]struct{}, calendarFeedProjectionCycles*2)
+	appendEvent := func(kind string, date time.Time) {
+		key := kind + "-" + date.Format(calendarFeedDateLayout)
+		if _, dup := seen[key]; dup {
+			// codecov:ignore -- defensive: projected cycles step strictly forward, so
+			// (kind, date) is unique in practice; dedupe guards the UID invariant if
+			// that ever stops holding rather than falling back to a disambiguating
+			// suffix that would break UID stability across renders.
+			return
+		}
+		seen[key] = struct{}{}
+		events = append(events, calendarFeedEvent{kind: kind, date: date})
+	}
 	for cycle := range calendarFeedProjectionCycles {
 		anchor := CalendarDay(cycleStart.AddDate(0, 0, cycle*cycleLength), input.Location)
 
 		nextPeriodStart := CalendarDay(anchor.AddDate(0, 0, cycleLength), input.Location)
 		if !nextPeriodStart.Before(today) {
-			events = append(events, calendarFeedEvent{kind: "period", date: nextPeriodStart})
+			appendEvent("period", nextPeriodStart)
 		}
 
 		window := PredictCycleWindow(anchor, cycleLength, stats.LutealPhase)
 		if window.Calculable && !window.OvulationDate.Before(today) {
-			events = append(events, calendarFeedEvent{
-				kind: "ovulation",
-				date: CalendarDay(window.OvulationDate, input.Location),
-			})
+			appendEvent("ovulation", CalendarDay(window.OvulationDate, input.Location))
 		}
 	}
 	return events
@@ -172,21 +182,23 @@ func renderCalendarFeedICS(events []calendarFeedEvent, disclaimer string, now ti
 	writeICSLine(&b, "PRODID:"+calendarFeedProductID)
 	writeICSLine(&b, "CALSCALE:GREGORIAN")
 	writeICSLine(&b, "METHOD:PUBLISH")
-	for index, event := range events {
-		writeCalendarFeedEvent(&b, event, index, stamp, disclaimer)
+	for _, event := range events {
+		writeCalendarFeedEvent(&b, event, stamp, disclaimer)
 	}
 	writeICSLine(&b, "END:VCALENDAR")
 	return []byte(b.String())
 }
 
-func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, index int, stamp string, disclaimer string) {
+func writeCalendarFeedEvent(b *strings.Builder, event calendarFeedEvent, stamp string, disclaimer string) {
 	start := event.date.Format(calendarFeedDateLayout)
 	end := event.date.AddDate(0, 0, 1).Format(calendarFeedDateLayout)
 
 	writeICSLine(b, "BEGIN:VEVENT")
-	// UID is deterministic per (stamp, kind, index): stable within a render,
-	// unique across events, and free of any owner identifier or secret.
-	writeICSLine(b, fmt.Sprintf("UID:%s-%d-%s@ovumcy", event.kind, index, stamp))
+	// UID is a pure function of (kind, date) — stable across renders/polls at
+	// different `now` so a calendar client recognizes the same logical event
+	// instead of recreating it (losing alarms/edits). No owner id, no secret,
+	// no render-order index.
+	writeICSLine(b, fmt.Sprintf("UID:%s-%s@ovumcy", event.kind, start))
 	writeICSLine(b, "DTSTAMP:"+stamp)
 	writeICSLine(b, "DTSTART;VALUE=DATE:"+start)
 	writeICSLine(b, "DTEND;VALUE=DATE:"+end)

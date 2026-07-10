@@ -1,6 +1,8 @@
 package services
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -208,6 +210,133 @@ func TestBuildCalendarFeedICSHandlesNilUser(t *testing.T) {
 	if !strings.Contains(body, "BEGIN:VCALENDAR") || !strings.Contains(body, "END:VCALENDAR") {
 		t.Fatalf("expected a well-formed empty VCALENDAR, got:\n%s", body)
 	}
+}
+
+// TestBuildCalendarFeedICSUIDsAreStableAcrossRenderTime pins the RFC 5545 UID
+// stability invariant: two renders over the same logs at different `now`
+// (different subscription polls) must mint the IDENTICAL set of VEVENT UIDs,
+// so a calendar client recognizes the same logical events instead of
+// recreating them (which would lose alarms/edits and fire spurious
+// notifications). Only DTSTAMP may differ between the two renders.
+func TestBuildCalendarFeedICSUIDsAreStableAcrossRenderTime(t *testing.T) {
+	user := predictableFeedUser(t, "2026-03-02")
+	logs := predictableFeedLogs(t)
+
+	firstBody := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+		User:       user,
+		Logs:       logs,
+		Now:        mustParseDashboardDay(t, "2026-03-20"),
+		Location:   time.UTC,
+		Disclaimer: "disclaimer",
+	}))
+	secondBody := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+		User:       user,
+		Logs:       logs,
+		Now:        mustParseDashboardDay(t, "2026-03-21"),
+		Location:   time.UTC,
+		Disclaimer: "disclaimer",
+	}))
+
+	firstUIDs := extractICSUIDs(t, firstBody)
+	secondUIDs := extractICSUIDs(t, secondBody)
+	if len(firstUIDs) == 0 {
+		t.Fatalf("expected at least one VEVENT, got:\n%s", firstBody)
+	}
+	if diff := cmpStringSets(firstUIDs, secondUIDs); diff != "" {
+		t.Fatalf("UID set changed across renders at different `now`: %s", diff)
+	}
+}
+
+// TestBuildCalendarFeedICSUIDsAreUniqueWithinARender pins uniqueness: no two
+// VEVENTs in the same feed share a UID (a calendar client keys events by UID,
+// so a collision would silently drop one event).
+func TestBuildCalendarFeedICSUIDsAreUniqueWithinARender(t *testing.T) {
+	user := predictableFeedUser(t, "2026-03-02")
+
+	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+		User:       user,
+		Logs:       predictableFeedLogs(t),
+		Now:        mustParseDashboardDay(t, "2026-03-20"),
+		Location:   time.UTC,
+		Disclaimer: "disclaimer",
+	}))
+
+	uids := extractICSUIDs(t, body)
+	if len(uids) == 0 {
+		t.Fatalf("expected at least one VEVENT, got:\n%s", body)
+	}
+	seen := make(map[string]struct{}, len(uids))
+	for _, uid := range uids {
+		if _, dup := seen[uid]; dup {
+			t.Fatalf("duplicate UID %q within one render:\n%s", uid, body)
+		}
+		seen[uid] = struct{}{}
+	}
+}
+
+// TestBuildCalendarFeedICSUIDCarriesNoIdentifyingData pins data-minimization
+// on the UID itself: it must be exactly "kind-YYYYMMDD@ovumcy" — no email, no
+// user id, no capability token, no render-order index.
+func TestBuildCalendarFeedICSUIDCarriesNoIdentifyingData(t *testing.T) {
+	user := predictableFeedUser(t, "2026-03-02")
+	user.Email = "owner@example.com"
+
+	body := string(BuildCalendarFeedICS(CalendarFeedICSInput{
+		User:       user,
+		Logs:       predictableFeedLogs(t),
+		Now:        mustParseDashboardDay(t, "2026-03-20"),
+		Location:   time.UTC,
+		Disclaimer: "disclaimer",
+	}))
+
+	uidPattern := regexp.MustCompile(`^(period|ovulation)-\d{8}@ovumcy$`)
+	uids := extractICSUIDs(t, body)
+	if len(uids) == 0 {
+		t.Fatalf("expected at least one VEVENT, got:\n%s", body)
+	}
+	for _, uid := range uids {
+		if !uidPattern.MatchString(uid) {
+			t.Fatalf("UID %q does not match the pure kind-date form, got:\n%s", uid, body)
+		}
+		if strings.Contains(uid, "example.com") || strings.Contains(uid, "owner") {
+			t.Fatalf("UID %q appears to leak owner-identifying data", uid)
+		}
+	}
+}
+
+// extractICSUIDs pulls every UID: content-line value out of a rendered .ics
+// body, in order.
+func extractICSUIDs(t *testing.T, body string) []string {
+	t.Helper()
+	var uids []string
+	for _, line := range strings.Split(body, "\r\n") {
+		if rest, ok := strings.CutPrefix(line, "UID:"); ok {
+			uids = append(uids, rest)
+		}
+	}
+	return uids
+}
+
+// cmpStringSets reports a human-readable difference between two string slices
+// treated as sets, or "" if they contain the same elements.
+func cmpStringSets(a, b []string) string {
+	setA := make(map[string]int)
+	for _, v := range a {
+		setA[v]++
+	}
+	setB := make(map[string]int)
+	for _, v := range b {
+		setB[v]++
+	}
+	if len(setA) != len(setB) {
+		return fmt.Sprintf("different sizes: %v vs %v", a, b)
+	}
+	for k, v := range setA {
+		if setB[k] != v {
+			return fmt.Sprintf("%v vs %v", a, b)
+		}
+	}
+	return ""
 }
 
 func TestBuildCalendarFeedICSProjectsMultipleCyclesAndEscapesDescription(t *testing.T) {
