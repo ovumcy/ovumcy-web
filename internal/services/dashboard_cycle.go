@@ -76,7 +76,7 @@ func DashboardCycleDataLooksStale(lastPeriodStart time.Time, today time.Time, re
 	if lastPeriodStart.IsZero() || referenceLength <= 0 || today.Before(lastPeriodStart) {
 		return false
 	}
-	rawCycleDay := int(today.Sub(lastPeriodStart).Hours()/24) + 1
+	rawCycleDay := CalendarDaysBetween(lastPeriodStart, today) + 1
 	return rawCycleDay > referenceLength
 }
 
@@ -349,7 +349,7 @@ func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location 
 		if !currentStart.Before(today) {
 			break
 		}
-		lengths = append(lengths, int(currentStart.Sub(previousStart).Hours()/24))
+		lengths = append(lengths, CalendarDaysBetween(previousStart, currentStart))
 	}
 	return lengths
 }

@@ -205,14 +205,16 @@ func dashboardReminderBannerCopy(daysUntil int, todayKey string, tomorrowKey str
 // already-resolved per-request threshold from
 // dashboardReminderBannerWindowDays (the owner's clamped reminder_lead_days,
 // or DashboardReminderBannerWindowDays as its fallback). predictedDate and
-// today are both calendar-date-only values (see CalendarDay/DateAtLocation
-// in day_utils.go), so a plain day count avoids any time-of-day/location
-// skew.
+// today are calendar-date-only values (see CalendarDay/DateAtLocation in
+// day_utils.go) that may carry different midnight shapes (location-midnight vs
+// UTC-midnight); CalendarDaysBetween re-anchors both to UTC-midnight so the day
+// count is immune to time-of-day/location skew and to a DST transition between
+// the two dates.
 func dashboardReminderBannerDaysUntil(predictedDate time.Time, today time.Time, windowDays int) (int, bool) {
 	if predictedDate.IsZero() {
 		return 0, false
 	}
-	daysUntil := int(predictedDate.Sub(today).Hours() / 24)
+	daysUntil := CalendarDaysBetween(today, predictedDate)
 	if daysUntil < 0 || daysUntil > windowDays {
 		return 0, false
 	}

@@ -41,6 +41,34 @@ func TestCompletedCycleTrendLengths(t *testing.T) {
 	}
 }
 
+// TestCompletedCycleTrendLengthsDSTSpringForward pins the DST-sensitive
+// calendar-day diff: in Europe/Berlin the 2026-03-29 spring-forward falls
+// between the 2026-03-15 and 2026-04-12 cycle starts. Computed in Berlin those
+// two starts become location-midnight values 28*24-1h apart, so the old
+// int(a.Sub(b).Hours()/24) truncated to 27. CalendarDaysBetween re-anchors both
+// to UTC-midnight and yields the true 28, agreeing with CycleLengths (which
+// operates on UTC-midnight starts and is immune to the location skew).
+func TestCompletedCycleTrendLengthsDSTSpringForward(t *testing.T) {
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skipf("tz database unavailable: %v", err)
+	}
+
+	logs := []models.DailyLog{
+		{Date: mustParseDashboardDay(t, "2026-03-15"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2026-04-12"), IsPeriod: true},
+	}
+	now := mustParseDashboardDay(t, "2026-05-01")
+
+	got := CompletedCycleTrendLengths(logs, now, loc)
+	if len(got) != 1 || got[0] != 28 {
+		t.Fatalf("expected [28] across the Berlin DST transition, got %#v", got)
+	}
+	if want := CycleLengths(logs); len(want) != 1 || want[0] != got[0] {
+		t.Fatalf("expected CompletedCycleTrendLengths to agree with CycleLengths %#v, got %#v", want, got)
+	}
+}
+
 func TestBuildDashboardCycleContext(t *testing.T) {
 	userStart := mustParseDashboardDay(t, "2026-02-10")
 	user := &models.User{
