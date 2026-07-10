@@ -1648,6 +1648,52 @@ func TestTryRunCLICommandWithHandlersNotifyReportsInvalidDatabaseConfig(t *testi
 	}
 }
 
+func TestTryRunCLICommandWithHandlersNotifyParsesWebhookBlockPrivateAddresses(t *testing.T) {
+	// Verify that the notify CLI path accepts yes/on values for
+	// WEBHOOK_BLOCK_PRIVATE_ADDRESSES, fixing the inconsistency with the server path
+	// which uses getEnvBool (accepts 1/true/yes/on).
+	cases := []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{name: "true", value: "true", want: true},
+		{name: "1", value: "1", want: true},
+		{name: "yes", value: "yes", want: true},
+		{name: "on", value: "on", want: true},
+		{name: "false", value: "false", want: false},
+		{name: "0", value: "0", want: false},
+		{name: "no", value: "no", want: false},
+		{name: "off", value: "off", want: false},
+		{name: "unset", value: "", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+			t.Setenv("TZ", "UTC")
+			t.Setenv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", tc.value)
+
+			var receivedBlock bool
+			handled, err := tryRunCLICommandWithHandlers([]string{"notify"}, cliCommandHandlers{
+				runNotify: func(_ db.Config, _ string, _ string, _ *time.Location, blockPrivateAddresses bool, _ []string) error {
+					receivedBlock = blockPrivateAddresses
+					return nil
+				},
+			})
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if !handled {
+				t.Fatal("expected notify command to be handled")
+			}
+			if receivedBlock != tc.want {
+				t.Fatalf("WEBHOOK_BLOCK_PRIVATE_ADDRESSES=%q: got %t, want %t", tc.value, receivedBlock, tc.want)
+			}
+		})
+	}
+}
+
 func TestTryRunCLICommandWithHandlersDispatchesWebhook(t *testing.T) {
 	// SECRET_KEY is required by the webhook dispatch (it resolves the encrypt/
 	// decrypt key before invoking the handler); provide a valid one.
@@ -1735,38 +1781,6 @@ func TestTryRunCLICommandWithHandlersWebhookReportsInvalidSecretKey(t *testing.T
 	}
 	if err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
 		t.Fatalf("expected an invalid-SECRET_KEY error, got %v", err)
-	}
-}
-
-func TestResolveBoolEnv(t *testing.T) {
-	cases := []struct {
-		name     string
-		value    string
-		set      bool
-		fallback bool
-		want     bool
-	}{
-		{name: "unset returns fallback true", set: false, fallback: true, want: true},
-		{name: "unset returns fallback false", set: false, fallback: false, want: false},
-		{name: "true", value: "true", set: true, fallback: false, want: true},
-		{name: "1", value: "1", set: true, fallback: false, want: true},
-		{name: "false", value: "false", set: true, fallback: true, want: false},
-		{name: "0", value: "0", set: true, fallback: true, want: false},
-		{name: "blank returns fallback", value: "   ", set: true, fallback: true, want: true},
-		{name: "unparseable returns fallback", value: "notabool", set: true, fallback: true, want: true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			const key = "OVUMCY_TEST_BOOL_ENV"
-			if tc.set {
-				t.Setenv(key, tc.value)
-			} else {
-				t.Setenv(key, "")
-			}
-			if got := resolveBoolEnv(key, tc.fallback); got != tc.want {
-				t.Fatalf("resolveBoolEnv(%q, %v) = %v, want %v", tc.value, tc.fallback, got, tc.want)
-			}
-		})
 	}
 }
 
