@@ -16,6 +16,14 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded run when new commits land on the same PR, so a rapid
+# string of fixup pushes doesn't queue every intermediate run to completion.
+# Only cancels pull_request runs — push (main), the weekly schedule, and
+# workflow_dispatch always run to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gosec:
     runs-on: ubuntu-latest
