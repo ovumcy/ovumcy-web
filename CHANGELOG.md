@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Removed the local pre-push patch-coverage hook.** `scripts/hooks/pre-push`, `scripts/setup-hooks.sh`, and `scripts/patch-coverage-local.sh` are removed — the hook reran the full test suite on every push with a `*.go` change, which made `git push` slow. Patch coverage is still enforced, exclusively by CI's `patch-coverage` job. `scripts/patchcov` (the gate CI calls directly) is unchanged.
+
 - **Breaking (export shape):** the built-in `swelling` symptom (added 2026-03-09) now has its own `swelling` boolean flag in the JSON `symptoms` object and its own `Swelling` CSV column, instead of falling through to `other_symptoms`/`Other` indistinguishably from an owner-created custom symptom. The `Swelling` CSV column is inserted after `Constipation` to stay adjacent to the other symptom columns, so every column from `Cycle factors` onward shifts one position to the right in files generated after this change; consumers reading CSV columns by position (not by header name) must account for the shift. `docs/export.md` and `docs/openapi.yaml` updated; import accepts both the new flag and legacy files that still carry `swelling` only via `other_symptoms`.
 
 ### Fixed
