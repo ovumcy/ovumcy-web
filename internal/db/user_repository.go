@@ -518,6 +518,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"hide_sex_chip":                   false,
 			"hide_cycle_factors":              false,
 			"hide_notes_field":                false,
+			"show_historical_phases":          false,
 			"shown_period_tip":                false,
 			"age_group":                       models.AgeGroupUnknown,
 			"usage_goal":                      models.UsageGoalHealth,
