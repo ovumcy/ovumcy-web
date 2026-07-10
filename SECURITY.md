@@ -139,7 +139,7 @@ Notes:
 
 - The two OIDC sign-in cookies require `Secure=true` unconditionally because their `SameSite=None` value is only legal over HTTPS; the OIDC handler refuses to issue them when `COOKIE_SECURE=false`.
 - `ovumcy_lang` and `ovumcy_tz` are deliberately non-`HttpOnly` so the browser can write the user's timezone preference and reflect language without a server round trip. They contain no secrets and are validated server-side before use.
-- `ovumcy_csrf` is managed by Fiber's CSRF middleware. The OIDC callback path is exempt because it is form-posted from the identity provider, which cannot supply our token; provider-issued `state`/`nonce` cover replay protection for that endpoint instead.
+- `ovumcy_csrf` is managed by Fiber's CSRF middleware. The OIDC callback path is exempt because the identity provider returns to it directly (a form_post body, or a query redirect under `OIDC_RESPONSE_MODE=query`) and cannot supply our token; provider-issued `state`/`nonce` cover replay protection for that endpoint instead. In query mode the callback is also served over `GET`, a safe method the middleware never validates, protected by the same sealed one-time state cookie.
 
 ## Data Inventory
 
@@ -431,7 +431,7 @@ The request-free notify pass POSTs due period/ovulation reminders to an owner-co
 
 ### Calendar Feed Subscription (.ics)
 
-The read-only `.ics` feed lets a calendar client subscribe to an owner's upcoming predicted period/ovulation reminders. A calendar client sends no cookie, so the subscribe URL carries a bearer capability token in its path — the single sanctioned exception to *no secret in transport*. It is a capability token, not an auth credential (read-only, owner-scoped, revocable, does not bump `auth_session_version`), compensated by hashing-at-rest, 404-no-oracle, log-redaction, per-IP rate-limiting, and a write-only shown-once subscribe URL. Owners manage it from the settings page (`POST /api/v1/users/current/calendar-feed`, `POST …/calendar-feed/rotate`, `DELETE …/calendar-feed`).
+The read-only `.ics` feed lets a calendar client subscribe to an owner's upcoming predicted period/ovulation reminders. A calendar client sends no cookie, so the subscribe URL carries a bearer capability token in its path — the single sanctioned exception to *no usable secret in transport*. It is a capability token, not an auth credential (read-only, owner-scoped, revocable, does not bump `auth_session_version`), compensated by hashing-at-rest, 404-no-oracle, log-redaction, per-IP rate-limiting, and a write-only shown-once subscribe URL. Owners manage it from the settings page (`POST /api/v1/users/current/calendar-feed`, `POST …/calendar-feed/rotate`, `DELETE …/calendar-feed`).
 
 | Claim | Enforced by |
 | --- | --- |
@@ -473,7 +473,8 @@ The read-only `.ics` feed lets a calendar client subscribe to an owner's upcomin
 | Login issues a sealed `ovumcy_auth` cookie (not a legacy JWT) | `TestLoginSetsSealedAuthCookieValue`, `TestAuthMiddlewareRejectsLegacyJWTAuthCookieFallback` in [internal/api/auth_cookie_compat_regression_test.go](internal/api/auth_cookie_compat_regression_test.go) |
 | Remember-me toggles cookie persistence | `TestLoginRememberMeControlsCookiePersistence` in [internal/api/auth_login_remember_me_regressions_test.go](internal/api/auth_login_remember_me_regressions_test.go) |
 | State-changing endpoints require a valid CSRF token | `state_mutation_csrf_regression_test.go`, `auth_logout_csrf_regression_test.go`, `settings_security_csrf_regression_test.go`, `export_csrf_regression_test.go`, `language_switch_csrf_regression_test.go` in `internal/api/` |
-| The CSRF middleware exempts exactly ONE route — `POST /auth/oidc/callback` (POST-bound) — and every other mutating route in the real app refuses a token-less request with 403 | `TestCSRFExemptionListIsExactlyOneRoute`, `TestCSRFDeniesEveryMutatingRouteWithoutToken` in [cmd/ovumcy/csrf_exemption_guard_test.go](cmd/ovumcy/csrf_exemption_guard_test.go) |
+| The CSRF middleware exempts exactly ONE mutating route — `POST /auth/oidc/callback` (POST-bound); the query-mode `GET` callback is a safe method outside CSRF, protected by the same sealed one-time state — and every other mutating route in the real app refuses a token-less request with 403 | `TestCSRFExemptionListIsExactlyOneRoute`, `TestCSRFDeniesEveryMutatingRouteWithoutToken` in [cmd/ovumcy/csrf_exemption_guard_test.go](cmd/ovumcy/csrf_exemption_guard_test.go) |
+| `OIDC_RESPONSE_MODE=form_post` (default) pins `response_mode=form_post` on the authorize URL and reads the callback from the POST body; `query` omits the parameter, serves the callback over `GET`, and reads it from the URL query — a single source per mode, with the PKCE S256 challenge and nonce preserved in both. The PKCE verifier is never in transport (authorize URL nor callback), only in the sealed `HttpOnly` state cookie, so a query-mode code in the URL is inert | `TestAuthCodeURLResponseModeParam`, `TestOIDCVerifierNeverInTransport` in [internal/security/oidc_response_mode_test.go](internal/security/oidc_response_mode_test.go), `TestOIDCCallbackQueryMode*`, `TestOIDCCallbackFormPostMode*` in [internal/api/auth_oidc_response_mode_test.go](internal/api/auth_oidc_response_mode_test.go) |
 
 ### Retention and Deletion
 

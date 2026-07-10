@@ -3,6 +3,7 @@ package security
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -70,6 +71,63 @@ func TestOIDCConfigValidateResponseMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOIDCVerifierNeverInTransport is the machine-checked backing for the
+// reworded "No USABLE secret in transport" invariant: the query opt-in is only
+// safe because the authorization code is inert without the PKCE verifier, and
+// the verifier never appears in transport. In BOTH response modes the authorize
+// URL must carry the S256 code_challenge (the hash) and NEVER the raw verifier;
+// the verifier lives only in the sealed HttpOnly state cookie (asserted at the
+// transport layer in internal/api/auth_oidc_response_mode_test.go).
+func TestOIDCVerifierNeverInTransport(t *testing.T) {
+	const verifier = "test-pkce-verifier-value-1234567890-abcdefghij"
+
+	for _, mode := range []OIDCResponseMode{OIDCResponseModeFormPost, OIDCResponseModeQuery} {
+		t.Run(string(mode), func(t *testing.T) {
+			mock, caPEM := newMockOIDCProvider(t)
+			caFile := writeIssuerCAFile(t, caPEM)
+			client := NewOIDCClient(OIDCConfig{
+				Enabled:      true,
+				IssuerURL:    mock.issuer,
+				ClientID:     "ovumcy",
+				ClientSecret: "test-secret",
+				RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+				CAFile:       caFile,
+				LoginMode:    OIDCLoginModeHybrid,
+				LogoutMode:   OIDCLogoutModeAuto,
+				ResponseMode: mode,
+			})
+
+			raw, err := client.AuthCodeURL(context.Background(), "state-123", "nonce-abc", verifier, nil)
+			if err != nil {
+				t.Fatalf("AuthCodeURL: %v", err)
+			}
+			// The raw verifier must not leak anywhere in the URL (query or path).
+			if strings.Contains(raw, verifier) {
+				t.Fatalf("PKCE verifier leaked into the authorize URL in %s mode: %s", mode, raw)
+			}
+			query, err := url.ParseQuery(mustURLRawQuery(t, raw))
+			if err != nil {
+				t.Fatalf("parse authorize URL query: %v", err)
+			}
+			if query.Get("code_challenge_method") != "S256" || query.Get("code_challenge") == "" {
+				t.Fatalf("expected S256 code_challenge in %s mode, got method=%q challenge=%q", mode, query.Get("code_challenge_method"), query.Get("code_challenge"))
+			}
+			if query.Get("code_challenge") == verifier {
+				t.Fatalf("code_challenge must be the S256 hash, not the raw verifier (%s mode)", mode)
+			}
+		})
+	}
+}
+
+func mustURLRawQuery(t *testing.T, raw string) string {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse authorize URL: %v", err)
+	}
+	return parsed.RawQuery
 }
 
 // TestAuthCodeURLResponseModeParam drives the real AuthCodeURL against the mock

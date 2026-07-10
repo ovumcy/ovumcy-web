@@ -52,6 +52,15 @@ func startQueryModeOIDC(t *testing.T) (app *fiber.App, stub *stubOIDCWorkflowSer
 	if cookie == nil {
 		t.Fatal("expected OIDC state cookie from start flow")
 	}
+	// The PKCE verifier lives ONLY in this sealed state cookie, never in
+	// transport — the cookie must be HttpOnly so scripts cannot read it, which
+	// is what keeps a query-mode code in the URL inert.
+	if !cookie.HttpOnly {
+		t.Fatal("OIDC state cookie carrying the PKCE verifier must be HttpOnly")
+	}
+	if stub.lastStartVerifier != "" && strings.Contains(cookie.Value, stub.lastStartVerifier) {
+		t.Fatal("OIDC state cookie must be sealed; the raw PKCE verifier must not appear in plaintext")
+	}
 	return builtApp, stub, cookie.String(), stub.lastStartState
 }
 
