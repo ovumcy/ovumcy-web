@@ -121,45 +121,7 @@ func DetectCurrentPhase(stats CycleStats, logs []models.DailyLog, today time.Tim
 	if location == nil {
 		location = time.UTC
 	}
-	periodByDate := make(map[string]bool, len(logs))
-	for _, logEntry := range logs {
-		if logEntry.IsPeriod {
-			periodByDate[CalendarDayKey(logEntry.Date)] = true
-		}
-	}
-	if periodByDate[today.Format("2006-01-02")] {
-		return "menstrual"
-	}
-
-	periodLength := int(stats.AveragePeriodLength + 0.5)
-	if periodLength <= 0 {
-		periodLength = models.DefaultPeriodLength
-	}
-	if !stats.LastPeriodStart.IsZero() {
-		periodEnd := CalendarDay(stats.LastPeriodStart.AddDate(0, 0, periodLength-1), location)
-		if betweenCalendarDaysInclusive(today, stats.LastPeriodStart, periodEnd) {
-			return "menstrual"
-		}
-	}
-
-	if stats.OvulationImpossible {
-		return "unknown"
-	}
-
-	if !stats.OvulationDate.IsZero() {
-		switch {
-		case sameCalendarDay(today, stats.OvulationDate):
-			return "ovulation"
-		case betweenCalendarDaysInclusive(today, stats.FertilityWindowStart, stats.FertilityWindowEnd):
-			return "fertile"
-		case today.Before(stats.OvulationDate):
-			return "follicular"
-		default:
-			return "luteal"
-		}
-	}
-
-	return "unknown"
+	return resolveCyclePhase(stats, logs, today, cyclePhaseOptions{location: location, includeProjectedPeriod: true})
 }
 
 func ProjectCycleStart(lastPeriodStart time.Time, cycleLength int, today time.Time) (time.Time, int, bool) {
@@ -188,11 +150,4 @@ func ShiftCycleStartToFutureOvulation(cycleStart time.Time, ovulationDate time.T
 
 func sameCalendarDay(a time.Time, b time.Time) bool {
 	return a.Format("2006-01-02") == b.Format("2006-01-02")
-}
-
-func betweenCalendarDaysInclusive(day time.Time, start time.Time, end time.Time) bool {
-	if start.IsZero() || end.IsZero() {
-		return false
-	}
-	return (day.Equal(start) || day.After(start)) && (day.Equal(end) || day.Before(end))
 }

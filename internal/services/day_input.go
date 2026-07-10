@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -92,5 +93,9 @@ func TrimDayNotes(value string) string {
 	if len(value) <= MaxDayNotesLength {
 		return value
 	}
-	return value[:MaxDayNotesLength]
+	end := MaxDayNotesLength
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end]
 }
