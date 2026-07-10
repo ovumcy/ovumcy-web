@@ -46,7 +46,7 @@ func buildCompletedCycleSpans(logs []models.DailyLog, location *time.Location) [
 	for index := 0; index+1 < len(starts) && index < len(cycles); index++ {
 		start := CalendarDay(starts[index], location)
 		nextStart := CalendarDay(starts[index+1], location)
-		cycleLength := int(nextStart.Sub(start).Hours() / 24)
+		cycleLength := CalendarDaysBetween(start, nextStart)
 		if cycleLength <= 0 {
 			continue
 		}
@@ -219,7 +219,7 @@ func collectCurrentCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, 
 			continue
 		}
 
-		dayNumber := int(localDay.Sub(cycleStart).Hours()/24) + 1
+		dayNumber := CalendarDaysBetween(cycleStart, localDay) + 1
 		if dayNumber <= 0 {
 			continue
 		}
@@ -315,7 +315,7 @@ func completedCycleDayNumber(day time.Time, completedCycles []completedCycleSpan
 		if localDay.Before(cycle.Start) || !localDay.Before(cycle.NextStart) {
 			continue
 		}
-		return int(localDay.Sub(cycle.Start).Hours()/24) + 1, true
+		return CalendarDaysBetween(cycle.Start, localDay) + 1, true
 	}
 	return 0, false
 }

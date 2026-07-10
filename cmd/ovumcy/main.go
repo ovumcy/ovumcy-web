@@ -999,7 +999,7 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 		}
 		location := mustLoadLocation(getEnv("TZ", "Local"))
 		defaultLanguage := getEnv("DEFAULT_LANGUAGE", "en")
-		blockPrivateAddresses := resolveBoolEnv("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
+		blockPrivateAddresses := getEnvBool("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
 		return true, handlers.runNotify(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args[1:])
 	case "webhook":
 		if len(args) < 2 {
@@ -1020,21 +1020,6 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 	default:
 		return false, nil
 	}
-}
-
-// resolveBoolEnv reads a boolean environment flag, returning fallback when the
-// variable is unset or unparseable. Used for the off-by-default
-// WEBHOOK_BLOCK_PRIVATE_ADDRESSES egress gate.
-func resolveBoolEnv(key string, fallback bool) bool {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return fallback
-	}
-	value, err := strconv.ParseBool(raw)
-	if err != nil {
-		return fallback
-	}
-	return value
 }
 
 func resolveDatabaseConfig() (db.Config, error) {
