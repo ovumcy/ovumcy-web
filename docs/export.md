@@ -73,7 +73,7 @@ Field semantics:
 | `flow` | string | One of `none`, `spotting`, `light`, `medium`, `heavy`. |
 | `mood_rating` | integer | User-selected mood scale. Zero means unset. |
 | `sex_activity` | string | One of `none`, `protected`, `unprotected`. |
-| `bbt` | float | Basal body temperature in the unit selected per account (°C or °F). Emitted only when measured; the key is absent on unmeasured days. On import, an absent key, an explicit `null`, or a legacy `0` are all read as "not measured". |
+| `bbt` | float | Basal body temperature in Celsius, always — storage is canonical Celsius regardless of the account's display unit, and export emits the stored value unconverted. Emitted only when measured; the key is absent on unmeasured days. On import, an absent key, an explicit `null`, or a legacy `0` are all read as "not measured". |
 | `cervical_mucus` | string | One of `none`, `dry`, `moist`, `creamy`, `eggwhite`. |
 | `pregnancy_test` | string | One of `none`, `negative`, `positive`. |
 | `cycle_factors` | array of strings | Free-form factor keys recorded that day (e.g. `stress`, `travel`, `illness`). |
@@ -107,14 +107,15 @@ Cycle start, Uncertain
 Cell semantics:
 
 - `Date` is `YYYY-MM-DD` in the user's timezone.
-- `Period`, and the 16 symptom columns, are `true`/`false`.
+- `Period`, and the 16 symptom columns, are `Yes`/`No`.
 - `Swelling` was appended after `Constipation` (the last symptom column at the time) rather than at the very end of the file; every column at or after `Cycle factors` therefore shifted one position to the right for files generated after this change. Downstream consumers reading columns by position (not by header name) must account for the shift.
-- `Flow`, `Sex activity`, `Cervical mucus` carry the same string vocabulary as the JSON export.
-- `BBT (C)` is the float value in the unit selected on the account; the cell is empty on days with no measurement. The header keeps the literal text `BBT (C)` for stability and does not change to `BBT (F)` for Fahrenheit accounts. Operators reading the file should consult the account's `temperature_unit` setting (or the source UI) to interpret the unit.
+- `Flow`, `Sex activity`, `Cervical mucus`, `Pregnancy test` are human-readable, capitalized labels (e.g. `Spotting`, `Protected`, `Egg white`, `Negative`), not the same lowercase enum strings used by the JSON export.
+- `BBT (C)` is always the stored value in Celsius; storage is canonical Celsius regardless of the account's display unit, and export emits it unconverted. The cell is empty on days with no measurement. The header keeps the literal text `BBT (C)` for stability even though it always holds Celsius.
 - `Cycle factors` is a `;`-separated list of factor keys; empty when none were recorded.
 - `Other` is a `;`-separated list of owner-managed custom symptom names; empty when none.
 - `Notes` is the free-text note; the CSV writer quotes the cell as needed.
-- `Pregnancy test` is one of `none`, `negative`, `positive`. It was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.
+- CSV-injection mitigation: `Cycle factors`, `Other`, and `Notes` are the only cells built from user-entered text. If such a cell (after stripping leading spaces) starts with `=`, `+`, `-`, `@`, or a tab/CR/LF, a leading `'` is prepended so spreadsheet apps do not interpret it as a formula.
+- `Pregnancy test` was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.
 - `Cycle start` and `Uncertain` are `Yes`/`No`. They are the last two columns, appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only.
 
 ## Summary Export
