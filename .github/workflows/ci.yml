@@ -13,11 +13,25 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded run when new commits land on the same PR, so a rapid
+# string of fixup pushes doesn't queue every intermediate run to completion.
+# Only cancels pull_request runs — push (main), release, and workflow_dispatch
+# always run to completion, since each may gate a deploy.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  test:
+  # Split from a single `test` job into test-go/test-frontend: the two halves
+  # never depended on each other's output, so running them as parallel jobs
+  # instead of sequential steps shortens wall-clock to roughly max(go, frontend)
+  # instead of their sum. Downstream jobs that only need the Go side (coverage
+  # upload, patch-coverage) depend on test-go alone; jobs that gate on "did
+  # everything basic pass" (e2e, e2e-postgres-smoke) depend on both.
+  test-go:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,6 +45,66 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Install staticcheck
+        # git SHA for v0.6.1 (tag 2025.1.1): b8ec13ce4d00445d75da053c47498e6f9ec5d7d6 (verified via go list -m -json)
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+
+      # The Go wildcards in this job are scoped to our module's package trees
+      # (cmd, internal, migrations, scripts, web) instead of ./... — this job
+      # never runs `npm ci`, so there is no node_modules/ to sweep in, but the
+      # explicit tree list stays for consistency with the other Go jobs (race,
+      # patch-coverage) and to keep matching `-coverpkg` below. Keep the tree
+      # list in sync with `go list ./...`.
+      - name: Staticcheck
+        run: '"$(go env GOPATH)/bin/staticcheck" ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
+
+      - name: Install golangci-lint
+        # git SHA for v2.12.2: c0d3ddc9cf3faa61a4e378e879ece580256d76e5 (verified via go list -m -json)
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+
+      - name: Cache golangci-lint analysis cache
+        # golangci-lint keeps its own per-file analysis cache under
+        # ~/.cache/golangci-lint, separate from the Go build/module caches
+        # setup-go already restores above. Falls back to the newest same-OS
+        # cache on a go.sum/config miss (still faster than empty) instead of
+        # requiring an exact key match.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-${{ hashFiles('go.sum', '.golangci.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-golangci-lint-
+
+      - name: golangci-lint
+        run: '"$(go env GOPATH)/bin/golangci-lint" run ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
+
+      - name: Go vet
+        run: go vet ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
+
+      - name: Go test with coverage
+        # -coverpkg credits a line when ANY test exercises it (including
+        # cross-package integration tests), not only its own package's unit
+        # tests. The patch-coverage gate consumes this profile. Scoped to the
+        # module trees (see the note above the Staticcheck step).
+        run: go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-out
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 1
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -47,36 +121,6 @@ jobs:
       - name: Frontend unit tests
         run: npm run test:unit
 
-      - name: Install staticcheck
-        # git SHA for v0.6.1 (tag 2025.1.1): b8ec13ce4d00445d75da053c47498e6f9ec5d7d6 (verified via go list -m -json)
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
-
-      # The Go wildcards in this job are scoped to our module's package trees
-      # (cmd, internal, migrations, scripts, web) instead of ./... on purpose:
-      # `npm ci` above installs node_modules/, where a vendored JS dep (flatted)
-      # ships a .go file that ./... would otherwise sweep into staticcheck, vet,
-      # and coverage. Keep the tree list in sync with `go list ./...`.
-      - name: Staticcheck
-        run: '"$(go env GOPATH)/bin/staticcheck" ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
-
-      - name: Install golangci-lint
-        # git SHA for v2.12.2: c0d3ddc9cf3faa61a4e378e879ece580256d76e5 (verified via go list -m -json)
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-
-      - name: golangci-lint
-        run: '"$(go env GOPATH)/bin/golangci-lint" run ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
-
-      - name: Go vet
-        run: go vet ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
-
-      - name: Go test with coverage
-        # -coverpkg credits a line when ANY test exercises it (including
-        # cross-package integration tests), not only its own package's unit
-        # tests. The patch-coverage gate consumes this profile. Scoped to the
-        # module trees (see the note above the Staticcheck step) so node_modules/
-        # is excluded from both the test set and coverage instrumentation.
-        run: go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
-
       - name: Frontend build
         run: npm run build
 
@@ -91,13 +135,21 @@ jobs:
           git diff --exit-code -- web/static/
           test -z "$(git status --porcelain -- web/static/)"
 
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-out
-          path: coverage.out
-          if-no-files-found: error
-          retention-days: 1
+  # Thin gate job named exactly `test` — branch protection's required status
+  # check is pinned to that literal context name (verified via `gh api
+  # repos/ovumcy/ovumcy-web/rules/branches/main`). Renaming or removing the
+  # `test` job outright would leave that required check permanently
+  # unsatisfied and block every future PR; this job keeps the name while the
+  # actual work runs in the parallel test-go/test-frontend jobs above.
+  test:
+    runs-on: ubuntu-latest
+    needs:
+      - test-go
+      - test-frontend
+    permissions:
+      contents: read
+    steps:
+      - run: echo "test-go and test-frontend passed."
 
   race:
     runs-on: ubuntu-latest
@@ -130,7 +182,7 @@ jobs:
   coverage-upload:
     runs-on: ubuntu-latest
     needs:
-      - test
+      - test-go
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
@@ -168,7 +220,7 @@ jobs:
   patch-coverage:
     runs-on: ubuntu-latest
     needs:
-      - test
+      - test-go
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -222,8 +274,11 @@ jobs:
         # Fail-safe default is to RUN the browser e2e jobs. The Playwright suite
         # exercises the real Go app end-to-end, so backend, template, asset,
         # locale, dependency, Docker, and CI changes can all affect it. We only
-        # skip when a pull request touches *nothing but* docs/meta files that
-        # cannot change the running app. Any path outside the allowlist runs e2e.
+        # skip when a pull request touches *nothing but* docs/meta files, or
+        # .clusterfuzzlite/ (a separate ClusterFuzzLite build sandbox that is
+        # never compiled into the app binary or go:embed'd — see
+        # .clusterfuzzlite/Dockerfile), that cannot change the running app. Any
+        # path outside the allowlist runs e2e.
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -240,7 +295,7 @@ jobs:
               echo "$files"
               if [ -n "$files" ]; then
                 # Anything NOT matching this docs/meta allowlist forces e2e to run.
-                app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
+                app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
                 if [ -z "$app_changes" ]; then
                   echo "Docs/meta-only change: skipping browser e2e jobs."
                   run_e2e=false
@@ -292,18 +347,31 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
+          cache: npm
 
       - name: Install frontend and e2e dependencies
         if: env.RUN_E2E == 'true'
         run: npm ci
 
-      - name: Frontend build
+      - name: Cache Playwright browsers
         if: env.RUN_E2E == 'true'
-        run: npm run build
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright OS dependencies (cache hit)
+        # The cache above only covers the downloaded browser binaries under
+        # ~/.cache/ms-playwright; system packages (apt) never persist across
+        # a fresh runner, so they still need installing even on a browser
+        # cache hit — this is the fast path (no browser download).
+        if: env.RUN_E2E == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
 
       - name: Run Playwright e2e (smoke on push, full otherwise)
         if: env.RUN_E2E == 'true'
@@ -337,42 +405,54 @@ jobs:
       - changes
     # Required status check with admin enforcement: always run the job and gate
     # the work per step (see the `e2e` job above) so docs-only PRs stay green
-    # without leaving this required check unsatisfied.
+    # without leaving this required check unsatisfied. The Postgres/multi-locale
+    # coverage this job adds over the plain `e2e` job is also only needed on
+    # push/release/dispatch, not on every PR, so RUN_HEAVY gates it further.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
+      RUN_HEAVY: ${{ github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Checkout
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Go
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Setup Node.js
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
+          cache: npm
 
       - name: Install frontend and e2e dependencies
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         run: npm ci
 
-      - name: Frontend build
-        if: env.RUN_E2E == 'true'
-        run: npm run build
+      - name: Cache Playwright browsers
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
+      - name: Install Playwright OS dependencies (cache hit)
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
       - name: Run Playwright Postgres smoke
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         run: npm run e2e:ci:postgres -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
         env:
           E2E_APP_PORT: 18081
@@ -396,7 +476,9 @@ jobs:
     needs:
       - test
       - changes
-    if: needs.changes.outputs.run_e2e == 'true'
+    # Not a required status check, so cross-browser coverage beyond the plain
+    # `e2e` job's Chromium run is deferred to push/release/dispatch.
+    if: needs.changes.outputs.run_e2e == 'true' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout
@@ -412,15 +494,25 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
+          cache: npm
 
       - name: Install frontend and e2e dependencies
         run: npm ci
 
-      - name: Frontend build
-        run: npm run build
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-cross-browser-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Install Playwright OS dependencies (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium firefox webkit
 
       - name: Run Playwright cross-browser smoke
         run: npm run e2e:cross-browser
@@ -443,22 +535,38 @@ jobs:
     # The unit/e2e jobs exercise the app under `go run`; only this job proves the
     # embedded templates/locales/web-static (go:embed) and the static.New asset
     # middleware serve correctly from the shell-less scratch image, and that the
-    # in-container `ovumcy healthcheck` self-probe passes. Runs on code changes so
-    # an asset/embed/packaging regression cannot reach a release tag unnoticed.
+    # in-container `ovumcy healthcheck` self-probe passes. Not a required status
+    # check and the image isn't built on PRs at all, so this runs on
+    # push/release/dispatch, catching an asset/embed/packaging regression
+    # before it reaches a release tag.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
     needs:
       - changes
-    if: needs.changes.outputs.run_e2e == 'true'
+    if: needs.changes.outputs.run_e2e == 'true' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
       - name: Build runtime image
-        run: docker build --tag ovumcy-image-smoke:${{ github.sha }} .
+        # GHA-cached build (shared with the trivy-image build in security.yml
+        # for the same ref) so this doesn't rebuild every layer from scratch
+        # despite `trivy-image` staying a separate required check.
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          push: false
+          tags: ovumcy-image-smoke:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Boot image and smoke public surfaces
         run: |
