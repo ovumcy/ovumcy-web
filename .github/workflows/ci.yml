@@ -297,10 +297,6 @@ jobs:
         if: env.RUN_E2E == 'true'
         run: npm ci
 
-      - name: Frontend build
-        if: env.RUN_E2E == 'true'
-        run: npm run build
-
       - name: Install Playwright browser
         if: env.RUN_E2E == 'true'
         run: npx playwright install --with-deps chromium
@@ -337,42 +333,41 @@ jobs:
       - changes
     # Required status check with admin enforcement: always run the job and gate
     # the work per step (see the `e2e` job above) so docs-only PRs stay green
-    # without leaving this required check unsatisfied.
+    # without leaving this required check unsatisfied. The Postgres/multi-locale
+    # coverage this job adds over the plain `e2e` job is also only needed on
+    # push/release/dispatch, not on every PR, so RUN_HEAVY gates it further.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
+      RUN_HEAVY: ${{ github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Checkout
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Go
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Setup Node.js
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
 
       - name: Install frontend and e2e dependencies
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         run: npm ci
 
-      - name: Frontend build
-        if: env.RUN_E2E == 'true'
-        run: npm run build
-
       - name: Install Playwright browser
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright Postgres smoke
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
         run: npm run e2e:ci:postgres -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
         env:
           E2E_APP_PORT: 18081
@@ -396,7 +391,9 @@ jobs:
     needs:
       - test
       - changes
-    if: needs.changes.outputs.run_e2e == 'true'
+    # Not a required status check, so cross-browser coverage beyond the plain
+    # `e2e` job's Chromium run is deferred to push/release/dispatch.
+    if: needs.changes.outputs.run_e2e == 'true' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout
@@ -415,9 +412,6 @@ jobs:
 
       - name: Install frontend and e2e dependencies
         run: npm ci
-
-      - name: Frontend build
-        run: npm run build
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
@@ -443,22 +437,38 @@ jobs:
     # The unit/e2e jobs exercise the app under `go run`; only this job proves the
     # embedded templates/locales/web-static (go:embed) and the static.New asset
     # middleware serve correctly from the shell-less scratch image, and that the
-    # in-container `ovumcy healthcheck` self-probe passes. Runs on code changes so
-    # an asset/embed/packaging regression cannot reach a release tag unnoticed.
+    # in-container `ovumcy healthcheck` self-probe passes. Not a required status
+    # check and the image isn't built on PRs at all, so this runs on
+    # push/release/dispatch, catching an asset/embed/packaging regression
+    # before it reaches a release tag.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
     needs:
       - changes
-    if: needs.changes.outputs.run_e2e == 'true'
+    if: needs.changes.outputs.run_e2e == 'true' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch')
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
       - name: Build runtime image
-        run: docker build --tag ovumcy-image-smoke:${{ github.sha }} .
+        # GHA-cached build (shared with the trivy-image build in security.yml
+        # for the same ref) so this doesn't rebuild every layer from scratch
+        # despite `trivy-image` staying a separate required check.
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          push: false
+          tags: ovumcy-image-smoke:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Boot image and smoke public surfaces
         run: |
