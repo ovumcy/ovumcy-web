@@ -341,6 +341,7 @@ func resolveOIDCConfig(cookieSecure bool, registrationMode services.Registration
 		AutoProvision:               getEnvBool("OIDC_AUTO_PROVISION", false),
 		LoginMode:                   security.OIDCLoginMode(getEnv("OIDC_LOGIN_MODE", string(security.OIDCLoginModeHybrid))),
 		LogoutMode:                  security.OIDCLogoutMode(getEnv("OIDC_LOGOUT_MODE", string(security.OIDCLogoutModeLocal))),
+		ResponseMode:                security.OIDCResponseMode(getEnv("OIDC_RESPONSE_MODE", string(security.OIDCResponseModeFormPost))),
 		PostLogoutRedirectURL:       getEnv("OIDC_POST_LOGOUT_REDIRECT_URL", ""),
 		AutoProvisionAllowedDomains: parseCSV(getEnv("OIDC_AUTO_PROVISION_ALLOWED_DOMAINS", "")),
 	}

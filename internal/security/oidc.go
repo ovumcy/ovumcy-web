@@ -36,6 +36,20 @@ const (
 	OIDCLogoutModeAuto     OIDCLogoutMode = "auto"
 )
 
+// OIDCResponseMode selects how the provider returns the authorization code on
+// the callback. form_post (the default) has the IdP auto-POST the code in the
+// request body; query has it appended to the redirect URL as a GET. query is an
+// explicit opt-in for providers that cannot form_post (better-auth, Dex,
+// Pocket ID <2.7): the code lands in the URL, but it is unusable without the
+// PKCE verifier, which never leaves the sealed HttpOnly state cookie (it is
+// never in transport). See docs/SECURITY_INVARIANTS.md → OIDC response mode.
+type OIDCResponseMode string
+
+const (
+	OIDCResponseModeFormPost OIDCResponseMode = "form_post"
+	OIDCResponseModeQuery    OIDCResponseMode = "query"
+)
+
 type OIDCConfig struct {
 	Enabled                     bool
 	IssuerURL                   string
@@ -46,6 +60,7 @@ type OIDCConfig struct {
 	AutoProvision               bool
 	LoginMode                   OIDCLoginMode
 	LogoutMode                  OIDCLogoutMode
+	ResponseMode                OIDCResponseMode
 	PostLogoutRedirectURL       string
 	AutoProvisionAllowedDomains []string
 }
@@ -132,6 +147,9 @@ func (config OIDCConfig) validateRuntimeModes(cookieSecure bool, registrationOpe
 	}
 	if config.LogoutMode != OIDCLogoutModeLocal && config.LogoutMode != OIDCLogoutModeProvider && config.LogoutMode != OIDCLogoutModeAuto {
 		return errors.New("OIDC_LOGOUT_MODE must be local, provider, or auto")
+	}
+	if config.ResponseMode != OIDCResponseModeFormPost && config.ResponseMode != OIDCResponseModeQuery {
+		return errors.New("OIDC_RESPONSE_MODE must be form_post or query")
 	}
 	if config.AutoProvision && !registrationOpen {
 		return errors.New("OIDC_AUTO_PROVISION=true requires REGISTRATION_MODE=open")
@@ -298,7 +316,15 @@ func (client *OIDCClient) AuthCodeURL(ctx context.Context, state string, nonce s
 	opts := []oauth2.AuthCodeOption{
 		oidc.Nonce(strings.TrimSpace(nonce)),
 		oauth2.S256ChallengeOption(strings.TrimSpace(codeVerifier)),
-		oauth2.SetAuthURLParam("response_mode", "form_post"),
+	}
+	// Only pin response_mode=form_post when that mode is in effect. In query
+	// mode we intentionally omit the parameter so the provider falls back to its
+	// query-redirect default (the whole point of the query opt-in). form_post
+	// stays the default and is sent explicitly. The code returned in the query
+	// is unusable without the PKCE verifier, which never leaves the sealed state
+	// cookie — see the response-mode note in the security constitution.
+	if client.config.ResponseMode != OIDCResponseModeQuery {
+		opts = append(opts, oauth2.SetAuthURLParam("response_mode", "form_post"))
 	}
 	for key, value := range extra {
 		key = strings.TrimSpace(key)
@@ -471,6 +497,10 @@ func sanitizeOIDCConfig(config OIDCConfig) OIDCConfig {
 	config.LogoutMode = OIDCLogoutMode(strings.ToLower(strings.TrimSpace(string(config.LogoutMode))))
 	if config.LogoutMode == "" {
 		config.LogoutMode = OIDCLogoutModeLocal
+	}
+	config.ResponseMode = OIDCResponseMode(strings.ToLower(strings.TrimSpace(string(config.ResponseMode))))
+	if config.ResponseMode == "" {
+		config.ResponseMode = OIDCResponseModeFormPost
 	}
 	config.PostLogoutRedirectURL = strings.TrimSpace(config.PostLogoutRedirectURL)
 	config.AutoProvisionAllowedDomains = sanitizeProvisioningDomains(config.AutoProvisionAllowedDomains)
