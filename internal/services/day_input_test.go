@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -47,6 +48,37 @@ func TestNormalizeDayEntryInputTrimsNotes(t *testing.T) {
 	}
 	if len(normalized.Notes) != MaxDayNotesLength {
 		t.Fatalf("expected notes length %d, got %d", MaxDayNotesLength, len(normalized.Notes))
+	}
+}
+
+func TestTrimDayNotes(t *testing.T) {
+	asciiAtLimit := strings.Repeat("a", MaxDayNotesLength)
+
+	cyrillicTail := strings.Repeat("a", MaxDayNotesLength-1) + "б" // "б" is 2 bytes; 2nd byte lands at index 2000
+	emojiTail := strings.Repeat("a", MaxDayNotesLength-3) + "😀"    // emoji is 4 bytes; last 3 bytes land inside the limit
+
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"ascii at limit unchanged", asciiAtLimit},
+		{"cyrillic rune split at byte boundary", cyrillicTail},
+		{"emoji rune split at byte boundary", emojiTail},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := TrimDayNotes(tt.value)
+			if len(got) > MaxDayNotesLength {
+				t.Fatalf("expected trimmed length <= %d, got %d", MaxDayNotesLength, len(got))
+			}
+			if !utf8.ValidString(got) {
+				t.Fatalf("expected valid UTF-8, got invalid string of length %d", len(got))
+			}
+			if tt.value == asciiAtLimit && len(got) != MaxDayNotesLength {
+				t.Fatalf("expected ascii-at-limit to remain unchanged at %d bytes, got %d", MaxDayNotesLength, len(got))
+			}
+		})
 	}
 }
 
