@@ -60,7 +60,7 @@ func buildCompletedCyclePhaseContexts(logs []models.DailyLog, location *time.Loc
 	for index := 0; index+1 < len(starts) && index < len(cycles); index++ {
 		start := CalendarDay(starts[index], location)
 		nextStart := CalendarDay(starts[index+1], location)
-		cycleLength := int(nextStart.Sub(start).Hours() / 24)
+		cycleLength := CalendarDaysBetween(start, nextStart)
 		if cycleLength <= 0 {
 			continue
 		}
@@ -93,7 +93,7 @@ func phaseForCompletedCycleDay(day time.Time, cycle completedCyclePhaseContext, 
 		return ""
 	}
 
-	dayNumber := int(localDay.Sub(cycle.Start).Hours()/24) + 1
+	dayNumber := CalendarDaysBetween(cycle.Start, localDay) + 1
 	switch {
 	case dayNumber <= cycle.PeriodLength:
 		return "menstrual"

@@ -305,6 +305,32 @@ func TestCycleBaseline_ProjectCycleStartReturnsCycleDay1AtCycleBoundary(t *testi
 	}
 }
 
+func TestCycleBaseline_ProjectCycleStartRollsToNewCycleAcrossDST(t *testing.T) {
+	// Europe/Berlin springs forward on 2026-03-29. With a 28-day cycle anchored
+	// at 2026-03-15 (Berlin midnight), the boundary day 2026-04-12 is exactly
+	// one full cycle later. The old int(today.Sub(lp).Hours()/24) truncated the
+	// 28*24-1h span to 27 elapsed days, so it reported cycleDay 28 of the SAME
+	// cycle instead of rolling over. CalendarDaysBetween yields the true 28
+	// elapsed days, so the projection advances to the new cycle at day 1.
+	loc, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skipf("tz database unavailable: %v", err)
+	}
+	lp := time.Date(2026, time.March, 15, 0, 0, 0, 0, loc)
+	today := time.Date(2026, time.April, 12, 0, 0, 0, 0, loc)
+
+	start, day, ok := ProjectCycleStart(lp, 28, today)
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if day != 1 {
+		t.Fatalf("expected cycleDay=1 after rolling into the new cycle across DST, got %d", day)
+	}
+	if got := start.Format("2006-01-02"); got != "2026-04-12" {
+		t.Fatalf("expected projectedStart=2026-04-12, got %s", got)
+	}
+}
+
 func TestCycleBaseline_ProjectCycleStartMidCycleDayIsCorrect(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-04-01")
 	// Day 15 of cycle (14 days elapsed) → cycleDay should be 15.
