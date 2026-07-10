@@ -578,46 +578,6 @@ func TestAuthServiceResolveUserByResetTokenRejectsStateMismatch(t *testing.T) {
 	}
 }
 
-func TestAuthServiceResetPasswordAndRotateRecoveryCode(t *testing.T) {
-	originalHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
-	if err != nil {
-		t.Fatalf("hash original password: %v", err)
-	}
-
-	user := models.User{
-		ID:                 7,
-		PasswordHash:       string(originalHash),
-		RecoveryCodeHash:   "old-hash",
-		LocalAuthEnabled:   true,
-		MustChangePassword: true,
-	}
-	repo := &stubAuthUserRepo{user: user}
-	service := NewAuthService(repo)
-
-	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCode(context.Background(), &user, "EvenStronger2")
-	if err != nil {
-		t.Fatalf("ResetPasswordAndRotateRecoveryCode() unexpected error: %v", err)
-	}
-	if recoveryCode == "" {
-		t.Fatalf("expected non-empty recovery code")
-	}
-	if !repo.updateRecoveryCalled {
-		t.Fatalf("expected UpdatePasswordRecoveryCodeAndRevokeSessions() to be called")
-	}
-	if repo.user.MustChangePassword {
-		t.Fatalf("expected MustChangePassword=false after reset")
-	}
-	if repo.user.RecoveryCodeHash == "" || repo.user.RecoveryCodeHash == "old-hash" {
-		t.Fatalf("expected rotated recovery code hash")
-	}
-	if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
-		t.Fatalf("expected password hash updated to new password")
-	}
-	if user.AuthSessionVersion != 2 {
-		t.Fatalf("expected auth session version to increment to 2, got %d", user.AuthSessionVersion)
-	}
-}
-
 func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	service := NewAuthService(repo)

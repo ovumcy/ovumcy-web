@@ -396,9 +396,39 @@ func cycleDayAt(lastPeriodStart time.Time, today time.Time) int {
 	return days + 1
 }
 
+// cyclePhaseOptions parameterizes resolveCyclePhase over the one point where
+// the no-baseline and baseline-applied callers genuinely disagree: whether a
+// day with no logged period entry can still count as menstrual because it
+// falls inside a *projected* period window (LastPeriodStart +
+// AveragePeriodLength). detectCyclePhase (no owner baseline) requires an
+// actual logged entry; DetectCurrentPhase (after ApplyUserCycleBaseline)
+// additionally honors the projection. Both callers rely on their current
+// behavior (day_feedback_policy.go / cycle_start_policy.go read BuildCycleStats
+// without a baseline; every owner-facing surface goes through
+// ApplyUserCycleBaseline), so this stays an explicit option rather than being
+// collapsed to one semantic.
+type cyclePhaseOptions struct {
+	location               *time.Location
+	includeProjectedPeriod bool
+}
+
 func detectCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time) string {
+	return resolveCyclePhase(stats, logs, today, cyclePhaseOptions{location: time.UTC})
+}
+
+func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time, opts cyclePhaseOptions) string {
 	if periodLoggedOnDay(logs, today) {
 		return "menstrual"
+	}
+	if opts.includeProjectedPeriod && !stats.LastPeriodStart.IsZero() {
+		periodLength := int(stats.AveragePeriodLength + 0.5)
+		if periodLength <= 0 {
+			periodLength = models.DefaultPeriodLength
+		}
+		periodEnd := CalendarDay(stats.LastPeriodStart.AddDate(0, 0, periodLength-1), opts.location)
+		if betweenInclusive(today, stats.LastPeriodStart, periodEnd) {
+			return "menstrual"
+		}
 	}
 	if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
 		return "unknown"

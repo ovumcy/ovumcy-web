@@ -453,37 +453,6 @@ var equalizeRegistrationTiming = func(password string) {
 	_ = bcrypt.CompareHashAndPassword([]byte(recoveryCodeTimingEqualizationHash), []byte(password))
 }
 
-// ResetPasswordAndRotateRecoveryCode applies the new password and a fresh
-// recovery code using an unconditional UPDATE. Kept for backward compatibility
-// with callers that do not have the old password hash at hand (e.g. the
-// FinalizeLocalPasswordSetup path). For the password-reset flow use
-// ResetPasswordAndRotateRecoveryCodeCAS which adds a single-use CAS guard.
-func (service *AuthService) ResetPasswordAndRotateRecoveryCode(ctx context.Context, user *models.User, newPassword string) (string, error) {
-	if user == nil {
-		return "", ErrAuthUserRequired
-	}
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)
-	if err != nil {
-		return "", err
-	}
-	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
-	if err != nil {
-		return "", err
-	}
-
-	if err := service.users.UpdatePasswordRecoveryCodeAndRevokeSessions(ctx, user.ID, string(passwordHash), recoveryHash, false); err != nil {
-		return "", err
-	}
-	user.PasswordHash = string(passwordHash)
-	user.RecoveryCodeHash = recoveryHash
-	user.LocalAuthEnabled = true
-	user.AuthSessionVersion = NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
-	user.MustChangePassword = false
-
-	return recoveryCode, nil
-}
-
 // ResetPasswordAndRotateRecoveryCodeCAS is the single-use variant of
 // ResetPasswordAndRotateRecoveryCode used by the password-reset flow.
 // oldPasswordHash must be the hash that was current when the reset token was
