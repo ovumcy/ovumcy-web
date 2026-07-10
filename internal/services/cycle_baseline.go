@@ -170,7 +170,7 @@ func ProjectCycleStart(lastPeriodStart time.Time, cycleLength int, today time.Ti
 		return lastPeriodStart, 0, true
 	}
 
-	elapsedDays := int(today.Sub(lastPeriodStart).Hours() / 24)
+	elapsedDays := CalendarDaysBetween(lastPeriodStart, today)
 	cyclesElapsed := elapsedDays / cycleLength
 	projectedStart := CalendarDay(lastPeriodStart.AddDate(0, 0, cyclesElapsed*cycleLength), today.Location())
 	projectedCycleDay := (elapsedDays % cycleLength) + 1
@@ -181,7 +181,7 @@ func ShiftCycleStartToFutureOvulation(cycleStart time.Time, ovulationDate time.T
 	if cycleLength <= 0 || !ovulationDate.Before(today) {
 		return cycleStart
 	}
-	lagDays := int(today.Sub(ovulationDate).Hours() / 24)
+	lagDays := CalendarDaysBetween(ovulationDate, today)
 	shiftCycles := lagDays/cycleLength + 1
 	return CalendarDay(cycleStart.AddDate(0, 0, shiftCycles*cycleLength), today.Location())
 }
