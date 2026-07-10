@@ -25,6 +25,7 @@ func (handler *Handler) buildCalendarViewData(ctx context.Context, user *models.
 		"NextMonth":                         viewData.NextMonth,
 		"SelectedDate":                      viewData.SelectedDate,
 		"CalendarDays":                      days,
+		"WeekdayKeys":                       viewData.WeekdayKeys,
 		"Today":                             viewData.TodayISO,
 		"Stats":                             viewData.Stats,
 		"PredictionExplanationPrimaryKey":   viewData.PredictionExplanationPrimaryKey,

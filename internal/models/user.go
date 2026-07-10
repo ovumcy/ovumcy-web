@@ -25,6 +25,14 @@ const (
 	UsageGoalHealth = "health"
 	UsageGoalAvoid  = "avoid_pregnancy"
 	UsageGoalTrying = "trying_to_conceive"
+	// Week-start display preference (issue #225): the first day of the week for
+	// the calendar grid/header. Kept in models so the migration default, the
+	// gorm column default, the db clear-data reset, and services normalization
+	// all reference one source of truth without a layering violation. Default is
+	// Sunday to preserve the pre-#225 layout for existing owners.
+	WeekStartSunday  = "sunday"
+	WeekStartMonday  = "monday"
+	DefaultWeekStart = WeekStartSunday
 )
 
 type User struct {
@@ -50,6 +58,7 @@ type User struct {
 	HideCycleFactors     bool       `gorm:"column:hide_cycle_factors;not null;default:false"`
 	HideNotesField       bool       `gorm:"column:hide_notes_field;not null;default:false"`
 	ShowHistoricalPhases bool       `gorm:"column:show_historical_phases;not null;default:false"`
+	WeekStartsOn         string     `gorm:"column:week_starts_on;not null;default:sunday"`
 	ShownPeriodTip       bool       `gorm:"column:shown_period_tip;not null;default:false"`
 	AgeGroup             string     `gorm:"column:age_group;not null;default:''"`
 	UsageGoal            string     `gorm:"column:usage_goal;not null;default:health"`

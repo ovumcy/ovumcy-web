@@ -26,6 +26,7 @@ func (handler *Handler) UpdateTrackingSettings(c fiber.Ctx) error {
 		HideCycleFactors:     input.HideCycleFactors,
 		HideNotesField:       input.HideNotesField,
 		ShowHistoricalPhases: input.ShowHistoricalPhases,
+		WeekStartsOn:         input.WeekStartsOn,
 	}
 	if err := handler.settingsService.SaveTrackingSettings(c.Context(), user.ID, update); err != nil {
 		return handler.failMutation(c, trackingSettingsMutation, settingsTrackingUpdateErrorSpec())
@@ -46,6 +47,7 @@ func (handler *Handler) UpdateTrackingSettings(c fiber.Ctx) error {
 			"hide_cycle_factors":     update.HideCycleFactors,
 			"hide_notes_field":       update.HideNotesField,
 			"show_historical_phases": update.ShowHistoricalPhases,
+			"week_starts_on":         services.NormalizeWeekStart(update.WeekStartsOn),
 		})
 	}
 	if isHTMX(c) {
@@ -73,5 +75,6 @@ func parseTrackingSettingsInput(c fiber.Ctx) (trackingSettingsInput, error) {
 		HideCycleFactors:     services.ParseBoolLike(c.FormValue("hide_cycle_factors")),
 		HideNotesField:       services.ParseBoolLike(c.FormValue("hide_notes_field")),
 		ShowHistoricalPhases: services.ParseBoolLike(c.FormValue("show_historical_phases")),
+		WeekStartsOn:         c.FormValue("week_starts_on"),
 	}, nil
 }
