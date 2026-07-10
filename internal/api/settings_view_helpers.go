@@ -51,6 +51,7 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		"HideCycleFactors":       viewData.HideCycleFactors,
 		"HideNotesField":         viewData.HideNotesField,
 		"ShowHistoricalPhases":   viewData.ShowHistoricalPhases,
+		"WeekStartsOn":           viewData.WeekStartsOn,
 		"ReminderLeadDays":       viewData.ReminderLeadDays,
 		"WebhookEnabled":         viewData.WebhookEnabled,
 		"WebhookNotifyPeriod":    viewData.WebhookNotifyPeriod,

@@ -35,13 +35,7 @@
       id="calendar-grid-panel"
       class="journal-card p-4 sm:p-5">
       <div class="mb-3 grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-wide journal-muted">
-        <span>{{t .Messages "calendar.weekday.sun"}}</span>
-        <span>{{t .Messages "calendar.weekday.mon"}}</span>
-        <span>{{t .Messages "calendar.weekday.tue"}}</span>
-        <span>{{t .Messages "calendar.weekday.wed"}}</span>
-        <span>{{t .Messages "calendar.weekday.thu"}}</span>
-        <span>{{t .Messages "calendar.weekday.fri"}}</span>
-        <span>{{t .Messages "calendar.weekday.sat"}}</span>
+        {{range .WeekdayKeys}}<span>{{t $.Messages .}}</span>{{end}}
       </div>
 
       <div class="grid grid-cols-7 gap-2">

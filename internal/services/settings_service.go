@@ -138,6 +138,7 @@ func (service *SettingsService) SaveTrackingSettings(ctx context.Context, userID
 		"hide_cycle_factors":     settings.HideCycleFactors,
 		"hide_notes_field":       settings.HideNotesField,
 		"show_historical_phases": settings.ShowHistoricalPhases,
+		"week_starts_on":         NormalizeWeekStart(settings.WeekStartsOn),
 	})
 }
 
