@@ -55,6 +55,9 @@ Security issues should not be reported publicly. Use [SECURITY.md](SECURITY.md).
 - Add/adjust tests for behavioral changes.
 - `internal/i18n/locales/en.json` is the canonical source for UI strings. When you add or rename strings, mirror the change in `ru.json`, `es.json`, `fr.json`, `de.json`, and `it.json` (the six locales advertised as supported in the README). If you cannot provide a native translation for a non-`en` locale, copy the English string verbatim and leave a `TODO(<locale>)` next to it so the gap is visible in review and search.
 - Do not introduce legacy compatibility paths unless explicitly required.
+- When cutting a release, bump every release-tag mention in README.md (intro blurb, Docker quick
+  start image tag, cosign/attestation/SBOM verification examples, Releases section) to the new tag.
+  `go test ./scripts/readmeversion/...` fails if any occurrence disagrees with the others.
 
 ## API Stability Contract
 
