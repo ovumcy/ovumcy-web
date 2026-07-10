@@ -274,8 +274,11 @@ jobs:
         # Fail-safe default is to RUN the browser e2e jobs. The Playwright suite
         # exercises the real Go app end-to-end, so backend, template, asset,
         # locale, dependency, Docker, and CI changes can all affect it. We only
-        # skip when a pull request touches *nothing but* docs/meta files that
-        # cannot change the running app. Any path outside the allowlist runs e2e.
+        # skip when a pull request touches *nothing but* docs/meta files, or
+        # .clusterfuzzlite/ (a separate ClusterFuzzLite build sandbox that is
+        # never compiled into the app binary or go:embed'd — see
+        # .clusterfuzzlite/Dockerfile), that cannot change the running app. Any
+        # path outside the allowlist runs e2e.
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -292,7 +295,7 @@ jobs:
               echo "$files"
               if [ -n "$files" ]; then
                 # Anything NOT matching this docs/meta allowlist forces e2e to run.
-                app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
+                app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
                 if [ -z "$app_changes" ]; then
                   echo "Docs/meta-only change: skipping browser e2e jobs."
                   run_e2e=false
