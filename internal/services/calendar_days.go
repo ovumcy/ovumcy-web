@@ -31,7 +31,11 @@ func CalendarLogRange(monthStart time.Time) (time.Time, time.Time) {
 }
 
 func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []models.DailyLog, stats CycleStats, now time.Time, location *time.Location) []CalendarDayState {
-	gridStart, gridEnd := calendarGridBounds(monthStart)
+	weekStart := models.DefaultWeekStart
+	if user != nil {
+		weekStart = NormalizeWeekStart(user.WeekStartsOn)
+	}
+	gridStart, gridEnd := calendarGridBounds(monthStart, weekStart)
 	latestLogByDate, hasDataMap := buildCalendarLogMaps(logs, location)
 	predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, tentativeOvulationMap := buildCalendarPredictionMaps(user, logs, stats, gridEnd, now, location)
 
@@ -45,10 +49,12 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 	return days
 }
 
-func calendarGridBounds(monthStart time.Time) (time.Time, time.Time) {
+func calendarGridBounds(monthStart time.Time, weekStart string) (time.Time, time.Time) {
 	monthEnd := monthStart.AddDate(0, 1, -1)
-	gridStart := monthStart.AddDate(0, 0, -int(monthStart.Weekday()))
-	gridEnd := monthEnd.AddDate(0, 0, 6-int(monthEnd.Weekday()))
+	startOffset := weekStartOffset(monthStart.Weekday(), weekStart)
+	endOffset := weekStartOffset(monthEnd.Weekday(), weekStart)
+	gridStart := monthStart.AddDate(0, 0, -startOffset)
+	gridEnd := monthEnd.AddDate(0, 0, 6-endOffset)
 	return gridStart, gridEnd
 }
 

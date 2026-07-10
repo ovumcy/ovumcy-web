@@ -10,6 +10,7 @@ type TrackingSettingsUpdate struct {
 	HideCycleFactors     bool
 	HideNotesField       bool
 	ShowHistoricalPhases bool
+	WeekStartsOn         string
 }
 
 func (service *SettingsService) ApplyTrackingSettings(user *models.User, update TrackingSettingsUpdate) {
@@ -23,6 +24,7 @@ func (service *SettingsService) ApplyTrackingSettings(user *models.User, update 
 	user.HideCycleFactors = update.HideCycleFactors
 	user.HideNotesField = update.HideNotesField
 	user.ShowHistoricalPhases = update.ShowHistoricalPhases
+	user.WeekStartsOn = NormalizeWeekStart(update.WeekStartsOn)
 }
 
 // SettingsTrackingUpdatedStatus is the flash status emitted after a

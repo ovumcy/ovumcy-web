@@ -9,6 +9,7 @@
       section: section,
       rawMinDate: readTextAttribute(section, "data-export-min", ""),
       rawMaxDate: readTextAttribute(section, "data-export-max", ""),
+      weekStart: readTextAttribute(section, "data-export-week-start", "sunday"),
       successMessage: readTextAttribute(section, "data-export-success", "Data exported successfully"),
       failedMessage: readTextAttribute(section, "data-export-failed", "Failed to export data"),
       invalidRangeMessage: readTextAttribute(section, "data-export-invalid-range", "End date must be on or after start date"),
