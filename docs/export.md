@@ -114,6 +114,7 @@ Cell semantics:
 - `Cycle factors` is a `;`-separated list of factor keys; empty when none were recorded.
 - `Other` is a `;`-separated list of owner-managed custom symptom names; empty when none.
 - `Notes` is the free-text note; the CSV writer quotes the cell as needed.
+- CSV-injection mitigation: `Cycle factors`, `Other`, and `Notes` are the only cells built from user-entered text. If such a cell (after stripping leading spaces) starts with `=`, `+`, `-`, `@`, or a tab/CR/LF, a leading `'` is prepended so spreadsheet apps do not interpret it as a formula.
 - `Pregnancy test` was introduced after the 1.1.1 layout and appended after the original columns so existing column positions stay stable, per the stability rule below.
 - `Cycle start` and `Uncertain` are `Yes`/`No`. They are the last two columns, appended after `Pregnancy test` so existing column positions stay stable, per the stability rule below. `Cycle start` marks the manually flagged start of a cycle; `Uncertain` marks a day the owner flagged as uncertain. Both are owner-only.
 
