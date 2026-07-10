@@ -436,6 +436,123 @@ func TestIsPrivateIP(t *testing.T) {
 	}
 }
 
+// stubDial is an injectable dialFunc: it records the address it was asked to dial
+// and returns a canned conn/error, so guardedDialContext's dial-result branches
+// are exercised without a real socket to a non-loopback host.
+type stubDial struct {
+	lastAddr string
+	calls    int
+	conn     net.Conn
+	err      error
+}
+
+func (s *stubDial) dial(_ context.Context, _, addr string) (net.Conn, error) {
+	s.calls++
+	s.lastAddr = addr
+	return s.conn, s.err
+}
+
+// TestGuardedDialContext exercises every branch of the resolve-and-check dialer
+// directly through injected seams (no live DNS, no routable socket): IP-literal
+// vs resolved host, resolver error, empty answer, private rejection, and the dial
+// success/failure and malformed-address paths.
+func TestGuardedDialContext(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("public literal dials and returns the conn", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer client.Close()
+		defer server.Close()
+		stub := &stubDial{conn: client}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		conn, err := dialFn(ctx, "tcp", "192.0.2.1:443")
+		if err != nil {
+			t.Fatalf("expected a public literal to dial, got %v", err)
+		}
+		if conn != client {
+			t.Fatal("guarded dialer did not return the dialed conn")
+		}
+		if stub.lastAddr != "192.0.2.1:443" {
+			t.Fatalf("dialed the wrong address: %q", stub.lastAddr)
+		}
+	})
+
+	t.Run("private literal is refused before dialing", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		_, err := dialFn(ctx, "tcp", "127.0.0.1:443")
+		if !errors.Is(err, errWebhookPrivateAddress) {
+			t.Fatalf("expected private-address refusal, got %v", err)
+		}
+		if stub.calls != 0 {
+			t.Fatal("a private literal must not reach the dial")
+		}
+	})
+
+	t.Run("resolved public host dials the validated IP", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer client.Close()
+		defer server.Close()
+		stub := &stubDial{conn: client}
+		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "192.0.2.1"))
+
+		if _, err := dialFn(ctx, "tcp", "ntfy.example.io:443"); err != nil {
+			t.Fatalf("expected resolved public host to dial, got %v", err)
+		}
+		if stub.lastAddr != "192.0.2.1:443" {
+			t.Fatalf("expected the resolved IP to be dialed, got %q", stub.lastAddr)
+		}
+	})
+
+	t.Run("resolver error propagates without dialing", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{}) // empty map → unknown host errors
+
+		if _, err := dialFn(ctx, "tcp", "unknown.example:443"); err == nil {
+			t.Fatal("expected the resolver error to surface")
+		}
+		if stub.calls != 0 {
+			t.Fatal("a resolver failure must not reach the dial")
+		}
+	})
+
+	t.Run("empty resolver answer is refused", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, resolverFor("empty.example")) // no IPs
+
+		if _, err := dialFn(ctx, "tcp", "empty.example:443"); err == nil {
+			t.Fatal("expected an empty answer to be refused")
+		}
+		if stub.calls != 0 {
+			t.Fatal("an empty answer must not reach the dial")
+		}
+	})
+
+	t.Run("dial failure surfaces the dial error", func(t *testing.T) {
+		wantErr := errors.New("connection refused")
+		stub := &stubDial{err: wantErr}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		if _, err := dialFn(ctx, "tcp", "192.0.2.1:443"); !errors.Is(err, wantErr) {
+			t.Fatalf("expected the dial error to surface, got %v", err)
+		}
+	})
+
+	t.Run("malformed address surfaces the split error", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		if _, err := dialFn(ctx, "tcp", "no-port-here"); err == nil {
+			t.Fatal("expected SplitHostPort to reject a portless address")
+		}
+		if stub.calls != 0 {
+			t.Fatal("a malformed address must not reach the dial")
+		}
+	})
+}
+
 // TestWebhookDeliveryURLParseFailure covers the unparseable-URL branch: a control
 // character in the URL makes url.Parse fail, and the error must not echo the URL.
 func TestWebhookDeliveryURLParseFailure(t *testing.T) {

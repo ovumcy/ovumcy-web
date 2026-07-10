@@ -149,7 +149,7 @@ func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http
 	baseDialer := &net.Dialer{Timeout: webhookDeliveryTimeout}
 	dialContext := baseDialer.DialContext
 	if blockPrivateAddresses {
-		dialContext = guardedDialContext(baseDialer, resolver)
+		dialContext = guardedDialContext(baseDialer.DialContext, resolver)
 	}
 	return &http.Client{
 		Timeout: webhookDeliveryTimeout,
@@ -163,6 +163,11 @@ func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http
 	}
 }
 
+// dialFunc is the low-level TCP dial seam: net.Dialer.DialContext in production,
+// a stub in tests. Threading it through guardedDialContext keeps the dial-result
+// branches testable without a real socket to a (necessarily non-loopback) host.
+type dialFunc = func(ctx context.Context, network, addr string) (net.Conn, error)
+
 // guardedDialContext is the resolve-and-check DialContext used ONLY when the
 // private-address gate is on. It resolves the target host once (or uses the IP
 // literal directly) and refuses the whole target with errWebhookPrivateAddress if
@@ -171,7 +176,7 @@ func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http
 // resolution), so a rebinding resolver cannot return a public answer to the check
 // and a private one to the dial. The request keeps its original Host header and
 // TLS SNI because DialContext only fixes the TCP endpoint, not the request URL.
-func guardedDialContext(baseDialer *net.Dialer, resolver ipResolver) func(context.Context, string, string) (net.Conn, error) {
+func guardedDialContext(dial dialFunc, resolver ipResolver) dialFunc {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
@@ -205,7 +210,7 @@ func guardedDialContext(baseDialer *net.Dialer, resolver ipResolver) func(contex
 		// Dial a validated IP directly, trying each until one connects.
 		var lastErr error
 		for _, ip := range ips {
-			conn, err := baseDialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			conn, err := dial(ctx, network, net.JoinHostPort(ip.String(), port))
 			if err == nil {
 				return conn, nil
 			}
