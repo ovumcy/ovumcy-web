@@ -63,7 +63,7 @@ Use one of the example stacks under `docs/examples/reverse-proxy/` for public HT
 
 - `COOKIE_SECURE=true`
 - `TRUST_PROXY_ENABLED=true`
-- `PROXY_HEADER=X-Real-IP` — the example proxies set `X-Real-IP` to the real client IP, which a client cannot forge. Do not point this at `X-Forwarded-For`: the proxy appends the client-sent value and the app keys its per-IP rate limiter on the leftmost (attacker-controlled) entry, which would let an attacker bypass login/reset brute-force limits.
+- `PROXY_HEADER=X-Real-IP` — see [Reverse Proxy and HTTPS Contract](#reverse-proxy-and-https-contract) below for why this must not point at `X-Forwarded-For`.
 - `TRUSTED_PROXIES` must match the exact proxy IP or private Docker subnet used by that stack
 - with `COOKIE_SECURE=true`, Ovumcy emits `Strict-Transport-Security: max-age=31536000; includeSubDomains` itself (HSTS defaults to the `COOKIE_SECURE` value and is toggled independently via `HSTS_ENABLED`), so the example proxy configs do not add a second HSTS policy; set `HSTS_ENABLED=false` if you must keep secure cookies without pinning browsers to HTTPS for a year
 
@@ -203,12 +203,7 @@ If you want public self-hosted HTTPS and Postgres together, use one of the dedic
 - Caddy + Postgres: [docs/examples/reverse-proxy/caddy-postgres/docker-compose.yml](examples/reverse-proxy/caddy-postgres/docker-compose.yml)
 - Nginx + Postgres: [docs/examples/reverse-proxy/nginx-postgres/docker-compose.yml](examples/reverse-proxy/nginx-postgres/docker-compose.yml)
 
-These stacks keep the public contract tight:
-
-- only the proxy publishes `80/443`;
-- `ovumcy` and `postgres` stay on the internal Docker network;
-- `DB_DRIVER=postgres` and `DATABASE_URL` are already wired;
-- the proxy subnet is already aligned with `TRUSTED_PROXIES`.
+These stacks follow the same [Reverse Proxy and HTTPS Contract](#reverse-proxy-and-https-contract) as the SQLite examples above, with `DB_DRIVER=postgres` and `DATABASE_URL` already wired and the proxy subnet already aligned with `TRUSTED_PROXIES`.
 
 Use them when you need both:
 
@@ -425,8 +420,7 @@ Use it only after the baseline path is already stable.
 
 Recommended advanced practices:
 
-- Keep at least one recent off-host backup copy of the SQLite archive and store the `.env` / application-secret backup separately from that data copy.
-- Run periodic restore drills into an isolated temporary stack and verify both `/healthz` and a normal page load before trusting the backup chain.
+- Build on the baseline backup contract above with an off-host copy and periodic restore drills into an isolated temporary stack; see [Backup and Restore Contract](#backup-and-restore-contract) for the restore/verification steps.
 - Restrict Docker, shell, and filesystem access so that only a small number of administrators can read `.env`, logs, the SQLite volume, or backup archives.
 - Rotate or ship logs to a private operator-controlled sink, and keep retention short enough that routine diagnostics do not become a second long-term data store.
 - Monitor host disk space, backup-job success, container health, and the last known-good image tag so upgrades and restores remain predictable.

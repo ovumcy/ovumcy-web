@@ -1,0 +1,12 @@
+# OSV-Scanner / OpenSSF Scorecard vulnerability suppressions.
+# Only for findings that are provably not reachable in this project's build graph.
+# Each entry must state why the vulnerability does not apply.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+# golang.org/x/crypto/openpgp is unmaintained/unsafe-by-design, but we do not
+# import it: it is absent from `go list -deps ./...`. Scorecard's OSV check
+# flags golang.org/x/crypto by module version without reachability analysis;
+# govulncheck (which is reachability-aware) reports no exposure. Revisit if any
+# openpgp subpackage ever enters the build graph.
+reason = "golang.org/x/crypto/openpgp not imported; absent from the build graph, flagged by module version only."

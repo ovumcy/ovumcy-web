@@ -50,14 +50,6 @@ for example while cycle length is still unpredictable, or when the dashboard
 is already displaying a date range instead of an exact date — so it never
 contradicts the main prediction surface.
 
-Code references verified for this section: `internal/api/handlers_settings_reminders.go`
-(`PATCH /api/v1/users/current/reminders`, `OwnerOnly` + CSRF-protected, form
-field `reminder_lead_days`), `internal/services/webhook_settings_service.go`
-(`MinReminderLeadDays`/`MaxReminderLeadDays`/`NormalizeReminderLeadDays`),
-`internal/models/user.go` (`DefaultReminderLeadDays = 3`, column
-`reminder_lead_days`), and `internal/services/dashboard_reminder_banner.go`
-(banner threshold policy).
-
 ## 2. Webhook notifications
 
 Ovumcy can POST a small JSON message to a webhook URL the owner controls when
@@ -141,10 +133,13 @@ example, mid-morning, so a period-due reminder for today already reflects
 mid-cycle-check. See [Timezone behavior](#timezone-behavior) below for exactly
 which zone "today" is evaluated in.
 
-##### Cron
+##### Scheduling it
 
-Add a line to the crontab of the user that has access to the Ovumcy binary,
-database path, and `SECRET_KEY` (or `SECRET_KEY_FILE`):
+Wire `ovumcy notify` up to whatever scheduler your host already uses — cron,
+a systemd service+timer pair, a one-off `docker compose run --rm ovumcy /app/ovumcy notify`
+against the bundled compose service, or Windows Task Scheduler all work
+equally well, since the command itself is just a single CLI invocation. For
+example, with cron:
 
 ```cron
 # Run the Ovumcy webhook notify pass daily at 09:00 in the server's local time.
@@ -152,77 +147,8 @@ database path, and `SECRET_KEY` (or `SECRET_KEY_FILE`):
 ```
 
 Adjust `DB_DRIVER`/`DB_PATH` (or `DATABASE_URL` for Postgres) and the secret
-source to match your deployment's actual environment.
-
-##### systemd timer
-
-A service unit plus a timer unit keeps the schedule declarative and gives you
-`systemctl status`/`journalctl` for free:
-
-```ini
-# /etc/systemd/system/ovumcy-notify.service
-[Unit]
-Description=Ovumcy webhook notify pass
-After=network-online.target
-
-[Service]
-Type=oneshot
-EnvironmentFile=/etc/ovumcy/notify.env
-ExecStart=/usr/local/bin/ovumcy notify
-User=ovumcy
-```
-
-```ini
-# /etc/systemd/system/ovumcy-notify.timer
-[Unit]
-Description=Run the Ovumcy webhook notify pass daily
-
-[Timer]
-OnCalendar=*-*-* 09:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-`/etc/ovumcy/notify.env` holds `SECRET_KEY_FILE=...`, `DB_DRIVER=...`,
-`DB_PATH=...` (or `DATABASE_URL=...`), and `TZ=...` if you want to pin the
-fallback timezone explicitly rather than inherit the host's. Enable with
-`systemctl enable --now ovumcy-notify.timer`.
-
-##### Docker (one-shot against the compose service)
-
-The bundled `docker-compose.yml` defines the app service as `ovumcy`. Run the
-notify pass as a one-off container that reuses the same image, environment,
-and data volume as the running service, without restarting it:
-
-```bash
-docker compose run --rm ovumcy /app/ovumcy notify
-```
-
-Schedule that command with the host's cron or systemd timer (per above),
-pointing at your compose project directory. `--rm` cleans up the one-shot
-container after each run so it never accumulates stopped containers. If your
-deployment overrides the service name in your own compose file, substitute
-that name for `ovumcy`.
-
-##### Windows Task Scheduler
-
-For a Windows host running the binary directly (not in a container), create a
-daily task:
-
-```powershell
-$action = New-ScheduledTaskAction -Execute "C:\ovumcy\ovumcy.exe" -Argument "notify" -WorkingDirectory "C:\ovumcy"
-$trigger = New-ScheduledTaskTrigger -Daily -At 9:00am
-Register-ScheduledTask -TaskName "OvumcyNotify" -Action $action -Trigger $trigger -Description "Ovumcy webhook notify pass"
-```
-
-Set `SECRET_KEY`/`SECRET_KEY_FILE`, `DB_DRIVER`, `DB_PATH` (or
-`DATABASE_URL`), and optionally `TZ` as machine or user environment variables
-before registering the task, since `Register-ScheduledTask` does not carry
-your current shell's environment into the task's run context. For a
-containerized Windows deployment, prefer the Docker one-shot above instead of
-a native scheduled task.
+source to match your deployment's actual environment; the same environment
+variables apply regardless of which scheduler invokes the command.
 
 ##### Recommended cadence
 
@@ -270,12 +196,6 @@ Notes:
 - It reuses the exact same delivery path, idempotency watermark, and security
   hardening as the `ovumcy notify` CLI (below) — running both is unnecessary
   but not harmful.
-
-Code reference verified for this subsection: `cmd/ovumcy/main.go`
-(`reminderSchedulerSettings`, `startReminderScheduler`,
-`REMINDER_SCHEDULER_ENABLED`/`REMINDER_SCHEDULER_HOUR` env resolution) and
-`internal/reminders/scheduler.go` (catch-up, panic isolation, drain-on-shutdown
-behavior).
 
 #### Configuring webhook settings from the CLI
 
@@ -436,14 +356,6 @@ off. The full rationale and test-backed invariants live in
 [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md) under **Calendar feed
 subscription** — see that section for the complete, current detail rather than
 this summary.
-
-Code references verified for this section: `internal/api/handlers_calendar_feed.go`
-(`GET /calendar/feed/:token.ics`, no auth cookie, 404-no-oracle),
-`internal/api/handlers_settings_calendar_feed.go` (`POST`/`DELETE
-/api/v1/users/current/calendar-feed`, `POST .../calendar-feed/rotate`, all
-`OwnerOnly` + CSRF-protected; one-time reveal page at `/settings/calendar-feed`),
-and `internal/services/calendar_feed_settings_service.go` (generate/rotate/
-revoke lifecycle).
 
 ## Related documentation
 
