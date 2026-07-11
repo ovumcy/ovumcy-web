@@ -120,7 +120,6 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 	renderedUpdate := string(updateBody)
 	assertBodyContainsAll(t, renderedUpdate,
 		bodyStringMatch{fragment: `data-symptom-row-error`, message: "expected row-local duplicate-name error container"},
-		bodyStringMatch{fragment: "That symptom name already exists in your list.", message: "expected duplicate-name validation message"},
 	)
 	storedArchived := models.SymptomType{}
 	if err := database.First(&storedArchived, archived.ID).Error; err != nil {
@@ -163,7 +162,6 @@ func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	renderedCreate := string(createBody)
 	assertBodyContainsAll(t, renderedCreate,
 		bodyStringMatch{fragment: `data-symptom-create-form`, message: "expected create form rerender after too-long validation"},
-		bodyStringMatch{fragment: "Use 40 characters or fewer. For longer details, use notes.", message: "expected too-long create validation message"},
 	)
 	var count int64
 	if err := database.Model(&models.SymptomType{}).Where("user_id = ? AND is_builtin = ?", user.ID, false).Count(&count).Error; err != nil {
@@ -216,7 +214,6 @@ func TestSettingsSymptomsHTMXUpdateTooLongKeepsStoredSymptomUnchanged(t *testing
 	renderedUpdate := string(updateBody)
 	assertBodyContainsAll(t, renderedUpdate,
 		bodyStringMatch{fragment: `data-symptom-row-error`, message: "expected row-local too-long update error container"},
-		bodyStringMatch{fragment: "Use 40 characters or fewer. For longer details, use notes.", message: "expected too-long update validation message"},
 	)
 	stored := models.SymptomType{}
 	if err := database.First(&stored, symptom.ID).Error; err != nil {

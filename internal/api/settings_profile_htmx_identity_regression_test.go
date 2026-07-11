@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
@@ -42,8 +44,21 @@ func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
 		t.Fatalf("read htmx profile update body: %v", err)
 	}
 	rendered := string(body)
-	if strings.Count(rendered, `data-current-user-identity`) != 2 {
-		t.Fatalf("expected both nav identity chips in htmx response, got %q", rendered)
+	// Both nav chips must render the Cyrillic display name, correctly escaped:
+	// parse the OOB markup and assert each identity span's decoded text is the
+	// name we set. A mangling / double-escaping bug (e.g. rendering it as HTML
+	// entities) would make the decoded text differ and fail here.
+	document := mustParseHTMLDocument(t, rendered)
+	identitySpans := htmlFindElements(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-current-user-identity")
+	})
+	if len(identitySpans) != 2 {
+		t.Fatalf("expected both nav identity chips in htmx response, got %d: %q", len(identitySpans), rendered)
+	}
+	for _, span := range identitySpans {
+		if got := normalizeHTMLText(htmlNodeText(span)); got != "Катя" {
+			t.Fatalf("expected identity chip to render the decoded display name %q, got %q", "Катя", got)
+		}
 	}
 	if strings.Contains(rendered, `nav-user-chip-empty`) {
 		t.Fatalf("did not expect empty-state nav identity styling after setting a display name, got %q", rendered)

@@ -47,6 +47,12 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 		t.Fatalf("seed oidc identity link: %v", err)
 	}
 
+	// Seed a real recovery-code hash: setupClearDataScenario leaves
+	// recovery_code_hash empty, so the preservation check below compared ""=="",
+	// which passed even if clear-data wiped the column. With a hash present the
+	// assertion can actually fail if the wipe ever touches it.
+	mustSetRecoveryCodeForUser(t, scenario.database, scenario.user.ID)
+
 	var before models.User
 	if err := scenario.database.First(&before, scenario.user.ID).Error; err != nil {
 		t.Fatalf("load user baseline: %v", err)

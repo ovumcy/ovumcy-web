@@ -52,6 +52,11 @@ func TestCalendarFeedRevealCookieRoundTripPreservesURL(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	// The round-trip assertions live in a t.Fatalf inside /open; assert the
+	// handler ran to completion so a future early-return can't pass vacuously.
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler round-trip assertions may have been skipped", openResponse.StatusCode)
+	}
 }
 
 // TestCalendarFeedRevealCookieRejectsTamperedByte proves a flipped ciphertext
@@ -84,6 +89,10 @@ func TestCalendarFeedRevealCookieRejectsTamperedByte(t *testing.T) {
 		t.Fatalf("open tampered request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	// The empty-state assertion lives in a t.Fatalf inside /open; prove it ran.
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler tampered-cookie assertion may have been skipped", openResponse.StatusCode)
+	}
 }
 
 // TestCalendarFeedRevealCookieEmptyURLGuardsAndRejects covers two defensive
@@ -124,6 +133,11 @@ func TestCalendarFeedRevealCookieEmptyURLGuardsAndRejects(t *testing.T) {
 		t.Fatalf("seal-blank request: %v", err)
 	}
 	_ = blankResp.Body.Close()
+	// The blank-URL rejection lives in a t.Fatal inside /seal-blank; assert the
+	// handler ran to completion so the rejection can't be skipped vacuously.
+	if blankResp.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /seal-blank to reach 204, got %d; the in-handler blank-URL rejection may have been skipped", blankResp.StatusCode)
+	}
 
 	// Empty-payload seal + open.
 	sealResp, err := app.Test(httptest.NewRequest("GET", "/seal-empty-payload", nil), testConfigNoTimeout)
@@ -142,6 +156,10 @@ func TestCalendarFeedRevealCookieEmptyURLGuardsAndRejects(t *testing.T) {
 		t.Fatalf("open empty-payload request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	// The empty-state assertion lives in a t.Fatalf inside /open; prove it ran.
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler empty-payload assertion may have been skipped", openResponse.StatusCode)
+	}
 }
 
 // TestCalendarFeedRevealCookieRejectsSealedNonJSON covers the unmarshal-failure
@@ -182,6 +200,10 @@ func TestCalendarFeedRevealCookieRejectsSealedNonJSON(t *testing.T) {
 		t.Fatalf("open non-json request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	// The empty-state assertion lives in a t.Fatalf inside /open; prove it ran.
+	if openResponse.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler non-json assertion may have been skipped", openResponse.StatusCode)
+	}
 }
 
 func sealAndExtractCalendarFeedRevealCookie(t *testing.T, app *fiber.App) string {

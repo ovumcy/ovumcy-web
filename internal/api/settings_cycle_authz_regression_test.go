@@ -10,7 +10,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestSettingsCycleUpdateRedirectsUnauthenticatedUsersToLogin(t *testing.T) {
+func TestSettingsCycleUpdateReturns401ForUnauthenticatedUsers(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/cycle", strings.NewReader(url.Values{

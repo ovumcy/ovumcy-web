@@ -156,6 +156,12 @@ func TestRecoveryCodeDisplayStateRejectsForeignUserID(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	// Prove the /open handler ran to completion: its cross-owner rejection lives
+	// in a t.Fatalf inside the handler, so without asserting the response status a
+	// future early-return would let this test pass vacuously.
+	if openResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the in-handler cross-owner assertion may have been skipped", openResponse.StatusCode)
+	}
 }
 
 // TestRenderRecoveryCodeResponseStampsIssuingUser drives renderRecoveryCodeResponse
@@ -240,6 +246,11 @@ func TestRenderRecoveryCodeResponseStampsIssuingUser(t *testing.T) {
 		t.Fatalf("open request: %v", err)
 	}
 	defer func() { _ = openResponse.Body.Close() }()
+	// Prove /open ran past its in-handler issuing-owner recovery + ContinueTarget
+	// assertions (see route above); a vacuous early-return would otherwise pass.
+	if openResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected /open to reach 204, got %d; the issuing-owner assertions may have been skipped", openResponse.StatusCode)
+	}
 
 	foreignRequest := httptest.NewRequest(http.MethodGet, "/open-foreign", nil)
 	foreignRequest.Header.Set("Cookie", recoveryCodeCookieName+"="+cookieValue)
@@ -248,4 +259,8 @@ func TestRenderRecoveryCodeResponseStampsIssuingUser(t *testing.T) {
 		t.Fatalf("open-foreign request: %v", err)
 	}
 	defer func() { _ = foreignResponse.Body.Close() }()
+	// Prove /open-foreign ran past its in-handler foreign-owner rejection assertion.
+	if foreignResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected /open-foreign to reach 204, got %d; the foreign-owner rejection assertion may have been skipped", foreignResponse.StatusCode)
+	}
 }
