@@ -74,9 +74,18 @@ async function waitForDashboardAutosave(
   options?: { expectIndicator?: boolean }
 ): Promise<void> {
   const path = savePath ?? (await todaySavePath(page));
-  await page.waitForResponse((response) => {
-    return response.request().method() === 'PUT' && response.url().includes(path);
+  // Bind to the triggering request itself, not any matching response:
+  // waitForResponse can resolve on a still-in-flight earlier request under
+  // load (see saveDayEditorForm in calendar-autofill-clear.spec.ts). Callers
+  // invoke this helper before performing the save action and await the
+  // returned promise afterward, so the request listener below must be
+  // registered synchronously (no prior await) — matching the original.
+  const request = await page.waitForRequest((candidate) => {
+    return candidate.method() === 'PUT' && candidate.url().includes(path);
   });
+  const response = await request.response();
+  expect(response, `expected a response for PUT ${path}`).not.toBeNull();
+  expect(response!.ok(), `PUT ${path} failed with ${response!.status()}`).toBeTruthy();
   if (options?.expectIndicator === false) {
     return;
   }
@@ -423,19 +432,23 @@ test.describe('Dashboard: today editor', () => {
     await expect(page.locator('#confirm-modal')).toBeHidden();
     await expect(page.locator('#save-status .status-error')).toHaveCount(0);
 
-    await Promise.all([
-      page.waitForResponse((response) => {
-        return (
-          response.request().method() === 'POST' &&
-          response.url().includes('/cycle-start?source=dashboard')
-        );
-      }),
+    const [request] = await Promise.all([
+      page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'POST' && candidate.url().includes('/cycle-start?source=dashboard'),
+      ),
       (async () => {
         await manualStartButton.click();
         await expect(page.locator('#confirm-modal')).toBeVisible();
         await page.locator('#confirm-modal-accept').click();
       })(),
     ]);
+    const response = await request.response();
+    expect(response, 'expected a response for POST /cycle-start?source=dashboard').not.toBeNull();
+    expect(
+      response!.ok(),
+      `POST /cycle-start?source=dashboard failed with ${response!.status()}`
+    ).toBeTruthy();
 
     const periodToggle = page.locator('input[name="is_period"]');
     await expect(periodToggle).toBeChecked();

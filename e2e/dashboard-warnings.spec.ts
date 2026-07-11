@@ -128,13 +128,15 @@ test.describe('Dashboard: period tip once', () => {
     // dispatch change explicitly — that is the exact path the dashboard
     // quick-action button takes, so the same downstream listeners fire.
     const periodInput = page.locator('input[data-period-toggle]').first();
-    const autosavePromise = page.waitForResponse((response) => {
-      return (
-        response.request().method() === 'PUT' &&
-        /\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/.test(response.url()) &&
-        response.status() < 400
-      );
-    });
+    const todayPath = await page.locator('[data-dashboard-save-form]').first().getAttribute('hx-put');
+    expect(todayPath).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
+    // Bind to the autosave's own request, scoped to today's PUT, rather than
+    // any matching response: the previous regex matched a PUT to ANY date,
+    // which could resolve on a still-in-flight unrelated request under load
+    // (see saveDayEditorForm in calendar-autofill-clear.spec.ts).
+    const autosaveRequestPromise = page.waitForRequest(
+      (candidate) => candidate.method() === 'PUT' && candidate.url().includes(String(todayPath)),
+    );
     await periodInput.evaluate((node) => {
       if (node instanceof HTMLInputElement) {
         node.checked = true;
@@ -144,7 +146,13 @@ test.describe('Dashboard: period tip once', () => {
     await expect(periodInput).toBeChecked();
     await expect(tipCopy).toBeVisible();
     await expect(tipCopy).toContainText('Day 1 is the first day of full flow, not spotting.');
-    await autosavePromise;
+    const autosaveRequest = await autosaveRequestPromise;
+    const autosaveResponse = await autosaveRequest.response();
+    expect(autosaveResponse, `expected a response for PUT ${todayPath}`).not.toBeNull();
+    expect(
+      autosaveResponse!.ok(),
+      `PUT ${todayPath} failed with ${autosaveResponse!.status()}`
+    ).toBeTruthy();
 
     await page.reload();
     await expect(page.locator('[data-period-tip-copy]')).toHaveCount(0);

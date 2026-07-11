@@ -36,19 +36,25 @@ async function registerAndSetEggwhiteToday(page: Page, prefix: string): Promise<
   await dayForm
     .locator('label.choice-option:has(input[name="cervical_mucus"][value="eggwhite"])')
     .click();
-  await Promise.all([
-    page.waitForResponse((response) => {
-      return (
-        response.request().method() === 'PUT' &&
-        response.url().includes(`/api/v1/days/${today}`)
-      );
-    }),
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${today}`),
+    ),
     dayForm.evaluate((node) => {
       if (node instanceof HTMLFormElement) {
         node.requestSubmit();
       }
     }),
   ]);
+  const response = await request.response();
+  expect(response, `expected a response for PUT /api/v1/days/${today}`).not.toBeNull();
+  expect(response!.ok(), `PUT /api/v1/days/${today} failed with ${response!.status()}`).toBeTruthy();
+  // The caller navigates straight to /dashboard next; let the
+  // calendar-day-updated grid refresh + editor re-lazy-load cascade settle
+  // first so that navigation doesn't race an in-flight server request
+  // (see saveDayEditorForm in calendar-autofill-clear.spec.ts).
+  await page.waitForLoadState('networkidle');
 }
 
 async function setUsageGoal(

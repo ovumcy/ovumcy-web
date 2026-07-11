@@ -469,6 +469,95 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toBeVisible();
   });
 
+  test('hide-cycle-factors, hide-notes-field, and show-historical-phases toggles persist and change the owner day form', async ({
+    page,
+  }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-tracking-extra');
+
+    const trackingSection = page.locator('#settings-tracking');
+    await expect(trackingSection).toBeVisible();
+
+    const hideCycleFactors = trackingSection.locator('input[name="hide_cycle_factors"]');
+    const hideNotesField = trackingSection.locator('input[name="hide_notes_field"]');
+    const showHistoricalPhases = trackingSection.locator('input[name="show_historical_phases"]');
+    const hideCycleFactorsToggle = trackingSection.locator('[data-tracking-setting="hide-cycle-factors"]');
+    const hideNotesFieldToggle = trackingSection.locator('[data-tracking-setting="hide-notes-field"]');
+    const showHistoricalPhasesToggle = trackingSection.locator('[data-tracking-setting="show-historical-phases"]');
+    const hideCycleFactorsState = hideCycleFactorsToggle.locator('[data-binary-toggle-state]');
+    const hideNotesFieldState = hideNotesFieldToggle.locator('[data-binary-toggle-state]');
+    const showHistoricalPhasesState = showHistoricalPhasesToggle.locator('[data-binary-toggle-state]');
+    const saveTrackingButton = trackingSection.locator('button[data-save-button]');
+
+    await expect(hideCycleFactors).not.toBeChecked();
+    await expect(hideNotesField).not.toBeChecked();
+    await expect(showHistoricalPhases).not.toBeChecked();
+    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'false');
+    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'false');
+    await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
+    await expect(hideCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(hideNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(showHistoricalPhasesState).toHaveText(
+      'Currently hidden; only the next predicted cycles show fertile windows.'
+    );
+
+    await hideCycleFactors.check();
+    await hideNotesField.check();
+    await showHistoricalPhases.check();
+    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'true');
+    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'true');
+    await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'true');
+    await expect(hideCycleFactorsState).toHaveText('Currently hidden in dashboard and calendar day editor.');
+    await expect(hideNotesFieldState).toHaveText('Currently hidden in dashboard and calendar day editor.');
+    await expect(showHistoricalPhasesState).toHaveText('Currently shown on past months in the calendar.');
+    await saveTrackingButton.click();
+    await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
+
+    await page.reload();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(hideCycleFactors).toBeChecked();
+    await expect(hideNotesField).toBeChecked();
+    await expect(showHistoricalPhases).toBeChecked();
+    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'true');
+    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'true');
+    await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'true');
+    await expect(hideCycleFactorsState).toHaveText('Currently hidden in dashboard and calendar day editor.');
+    await expect(hideNotesFieldState).toHaveText('Currently hidden in dashboard and calendar day editor.');
+    await expect(showHistoricalPhasesState).toHaveText('Currently shown on past months in the calendar.');
+
+    // Dashboard effect: hide_cycle_factors removes the cycle-factor fieldset
+    // and hide_notes_field removes the notes disclosure from the owner's day
+    // form, mirroring how the sibling tracking toggles above assert
+    // hide_sex_chip / track_cervical_mucus. show_historical_phases has no
+    // dashboard/day-form surface (it only affects past-month calendar
+    // rendering), so persistence above is its end-to-end coverage here; the
+    // clear-data reset invariant is covered separately.
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.locator('[data-dashboard-save-form] input[name="cycle_factor_keys"]')).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-save-form] [data-note-disclosure]')).toHaveCount(0);
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await hideCycleFactors.uncheck();
+    await hideNotesField.uncheck();
+    await showHistoricalPhases.uncheck();
+    await expect(hideCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(hideNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(showHistoricalPhasesState).toHaveText(
+      'Currently hidden; only the next predicted cycles show fertile windows.'
+    );
+    await saveTrackingButton.click();
+    await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
+    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'false');
+    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'false');
+    await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.locator('[data-dashboard-save-form] input[name="cycle_factor_keys"]').first()).toBeVisible();
+    await expect(page.locator('[data-dashboard-save-form] [data-note-disclosure]')).toBeVisible();
+  });
+
   test('cycle and tracking drafts discard unsaved changes before navigation', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-drafts');
 

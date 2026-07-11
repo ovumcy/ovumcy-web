@@ -36,10 +36,10 @@ test.describe('Dashboard: pregnancy test pause', () => {
     await dayForm
       .locator('label.choice-option:has(input[name="pregnancy_test"][value="positive"])')
       .click();
-    await Promise.all([
-      page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${today}`)
+    const [request] = await Promise.all([
+      page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${today}`)
       ),
       dayForm.evaluate((node) => {
         if (node instanceof HTMLFormElement) {
@@ -47,6 +47,13 @@ test.describe('Dashboard: pregnancy test pause', () => {
         }
       }),
     ]);
+    const response = await request.response();
+    expect(response, `expected a response for PUT /api/v1/days/${today}`).not.toBeNull();
+    expect(response!.ok(), `PUT /api/v1/days/${today} failed with ${response!.status()}`).toBeTruthy();
+    // The next step reopens the day editor via a fresh navigation; let the
+    // calendar-day-updated grid refresh + editor re-lazy-load cascade settle
+    // first (see saveDayEditorForm in calendar-autofill-clear.spec.ts).
+    await page.waitForLoadState('networkidle');
 
     // Persistence: reopening the day editor shows the positive radio selected.
     const savedForm = await openCalendarDayEditor(page, today);
