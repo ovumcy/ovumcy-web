@@ -48,7 +48,6 @@ type AuthUserRepository interface {
 	FindByNormalizedEmailOptional(ctx context.Context, email string) (models.User, bool, error)
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	Create(ctx context.Context, user *models.User) error
-	Save(ctx context.Context, user *models.User) error
 	UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	// ForceResetPasswordAndRevokeSessions is the operator-reset variant: it

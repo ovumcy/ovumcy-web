@@ -281,7 +281,10 @@ Operator-relevant summary (the full, test-backed claim list lives in
   unset/`false` for the common self-hosted-on-LAN case (a webhook URL like
   `http://ntfy.local` or `http://192.168.1.20:8080/...`). Turn it on only if
   your threat model specifically requires blocking private-network egress from
-  the notify pass. When on, the check covers both IP-literal hosts **and**
+  the notify pass. Multi-owner household instances and publicly reachable
+  deployments are the typical such case — enabling it stops one owner from using
+  the shared host's notify pass to probe another service on the private network.
+  When on, the check covers both IP-literal hosts **and**
   hostnames that resolve to a private address: the destination is resolved,
   refused if any resolved record is private, and then the connection is made to
   that exact validated IP (so a hostname cannot rebind to a private address

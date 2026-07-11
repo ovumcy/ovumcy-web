@@ -103,10 +103,6 @@ func (repo *UserRepository) CreateUserWithSymptoms(ctx context.Context, user *mo
 	})
 }
 
-func (repo *UserRepository) Save(ctx context.Context, user *models.User) error {
-	return repo.database.WithContext(ctx).Save(user).Error
-}
-
 func (repo *UserRepository) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("display_name", displayName).Error
 }

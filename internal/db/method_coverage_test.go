@@ -37,24 +37,6 @@ func seedMethodCoverageUser(t *testing.T, repo *UserRepository) *models.User {
 	return user
 }
 
-func TestUserRepositorySavePersistsChanges(t *testing.T) {
-	repo := NewUserRepository(openMethodCoverageDB(t))
-	user := seedMethodCoverageUser(t, repo)
-
-	user.DisplayName = "Renamed"
-	if err := repo.Save(context.Background(), user); err != nil {
-		t.Fatalf("Save() unexpected error: %v", err)
-	}
-
-	stored, err := repo.FindByID(context.Background(), user.ID)
-	if err != nil {
-		t.Fatalf("FindByID() error: %v", err)
-	}
-	if stored.DisplayName != "Renamed" {
-		t.Fatalf("Save did not persist display name, got %q", stored.DisplayName)
-	}
-}
-
 func TestUserRepositoryUpdateTOTPSecretCiphertext(t *testing.T) {
 	repo := NewUserRepository(openMethodCoverageDB(t))
 	user := seedMethodCoverageUser(t, repo)

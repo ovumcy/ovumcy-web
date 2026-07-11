@@ -79,4 +79,23 @@ func TestSymptomRepositoryOwnerScoping(t *testing.T) {
 	if got, _ := repo.FindByIDForUser(context.Background(), aBuiltinID, ownerA); got.Name != "Renamed" {
 		t.Fatalf("expected rename to persist, got %q", got.Name)
 	}
+
+	// Cross-owner write refusal (defense-in-depth): owner B claims A's row ID
+	// under B's user_id. The user_id-scoped Updates matches zero rows, so it must
+	// be a clean no-op that neither reassigns nor mutates A's row — a bare
+	// gorm.Save would clobber it by primary key. Mirrors TestDailyLogWriteScopedToUser.
+	attack := models.SymptomType{ID: aBuiltinID, UserID: ownerB, Name: "Hijacked", Icon: "z", Color: "#000000"}
+	if err := repo.Update(context.Background(), &attack); err != nil {
+		t.Fatalf("cross-owner Update should be a no-op, got %v", err)
+	}
+	var rawR models.SymptomType
+	if err := database.First(&rawR, aBuiltinID).Error; err != nil {
+		t.Fatalf("reload symptom by id: %v", err)
+	}
+	if rawR.UserID != ownerA {
+		t.Fatalf("cross-owner Update reassigned the row: user_id=%d, want owner A=%d", rawR.UserID, ownerA)
+	}
+	if rawR.Name != "Renamed" {
+		t.Fatalf("cross-owner Update mutated the row: name=%q, want %q", rawR.Name, "Renamed")
+	}
 }
