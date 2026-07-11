@@ -14,10 +14,10 @@ import (
 // length and then the default, but only when no observed statistic exists.
 func TestDashboardProjectionCycleLengthIsMedianFirst(t *testing.T) {
 	cases := []struct {
-		name string
-		user *models.User
+		name  string
+		user  *models.User
 		stats CycleStats
-		want int
+		want  int
 	}{
 		{
 			name:  "prefers median over average",
