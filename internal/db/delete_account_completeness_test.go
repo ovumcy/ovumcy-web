@@ -53,8 +53,12 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		&models.SymptomType{UserID: user.ID, Name: "custom", Color: "#AABBCC"},
 		&models.RegisterPickupToken{Nonce: "nonce-1", UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour).UTC(), CreatedAt: time.Now().UTC()},
 		&models.OIDCIdentity{UserID: user.ID, Issuer: "https://idp.example.com", Subject: "subject-1", CreatedAt: time.Now().UTC()},
-		// Logout states are not user-scoped; erasure runs a best-effort
-		// post-commit purge of globally expired rows.
+		// oidc_logout_states: a row minted since migration 031 carries user_id and
+		// is erased explicitly (sess-user). Legacy rows with a NULL user_id are not
+		// user-scoped — the expired one is dropped by the best-effort post-commit
+		// purge (sess-expired) and the unexpired one ages out via its own TTL
+		// (sess-live).
+		&models.OIDCLogoutState{SessionID: "sess-user", UserID: user.ID, EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(time.Hour).UTC()},
 		&models.OIDCLogoutState{SessionID: "sess-expired", EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(-time.Minute).UTC()},
 		&models.OIDCLogoutState{SessionID: "sess-live", EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(time.Hour).UTC()},
 	}
@@ -77,6 +81,7 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		{"symptom_types", &models.SymptomType{}},
 		{"register_pickup_tokens", &models.RegisterPickupToken{}},
 		{"oidc_identities", &models.OIDCIdentity{}},
+		{"oidc_logout_states", &models.OIDCLogoutState{}},
 	} {
 		if remaining := countWhere(t, database, tc.model, "user_id = ?", user.ID); remaining != 0 {
 			t.Fatalf("%s still has %d row(s) for the deleted user — account erasure incomplete", tc.label, remaining)
@@ -93,59 +98,9 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 	}
 }
 
-// TestDeleteAccountAndRelatedDataSucceedsWhenLogoutStatePurgeFails pins the
-// transaction boundary of the best-effort logout-state purge: it runs after
-// the erasure transaction has committed, so a purge failure can neither
-// poison the transaction (Postgres aborts a transaction after any errored
-// statement) nor turn a completed erasure into a reported failure.
-func TestDeleteAccountAndRelatedDataSucceedsWhenLogoutStatePurgeFails(t *testing.T) {
-	dir := t.TempDir()
-	database, err := OpenSQLite(filepath.Join(dir, "erasure-purgefail.db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, err := database.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	repos := NewRepositories(database)
-
-	user := &models.User{
-		Email:            "purgefail@example.com",
-		PasswordHash:     "hash",
-		RecoveryCodeHash: "recovery",
-		Role:             models.RoleOwner,
-		CycleLength:      models.DefaultCycleLength,
-		PeriodLength:     models.DefaultPeriodLength,
-		AutoPeriodFill:   true,
-		CreatedAt:        time.Now().UTC(),
-	}
-	if err := repos.Users.Create(context.Background(), user); err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-
-	// Make the housekeeping purge fail without touching the erasure tables.
-	if err := database.Exec("DROP TABLE oidc_logout_states").Error; err != nil {
-		t.Fatalf("drop oidc_logout_states: %v", err)
-	}
-
-	if err := repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID); err != nil {
-		t.Fatalf("erasure must succeed despite a failing logout-state purge, got: %v", err)
-	}
-
-	var usersLeft int64
-	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Count(&usersLeft).Error; err != nil {
-		t.Fatalf("count users: %v", err)
-	}
-	if usersLeft != 0 {
-		t.Fatalf("user must be erased even when the purge fails; rows = %d", usersLeft)
-	}
-}
-
 // TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError exercises the
-// error-return branches added for the explicit oidc_identities and
-// register_pickup_tokens deletes: when one child delete fails mid-transaction,
+// error-return branches for the explicit oidc_identities, register_pickup_tokens,
+// and oidc_logout_states deletes: when one child delete fails mid-transaction,
 // the whole erasure must roll back so the account is not left half-deleted.
 func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 	for _, tc := range []struct {
@@ -154,6 +109,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 	}{
 		{name: "register_pickup_tokens delete fails", dropTable: "register_pickup_tokens"},
 		{name: "oidc_identities delete fails", dropTable: "oidc_identities"},
+		{name: "oidc_logout_states delete fails", dropTable: "oidc_logout_states"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

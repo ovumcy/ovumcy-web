@@ -63,6 +63,7 @@ type OIDCAutoProvisioner interface {
 }
 
 type OIDCLogoutState struct {
+	UserID                uint
 	EndSessionEndpoint    string
 	IDTokenHint           string
 	PostLogoutRedirectURL string
@@ -247,6 +248,9 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 		return OIDCLoginResult{}, err
 	}
 	result.Logout = service.buildLogoutState(exchange.Session)
+	if result.Logout != nil {
+		result.Logout.UserID = result.User.ID
+	}
 	return result, nil
 }
 

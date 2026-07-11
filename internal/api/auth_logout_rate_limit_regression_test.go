@@ -36,7 +36,6 @@ func (stubLogoutAuthRepo) FindByID(context.Context, uint) (models.User, error) {
 }
 
 func (stubLogoutAuthRepo) Create(context.Context, *models.User) error { return nil }
-func (stubLogoutAuthRepo) Save(context.Context, *models.User) error   { return nil }
 
 func (stubLogoutAuthRepo) UpdateRecoveryCodeHashAndRevokeSessions(context.Context, uint, string) error {
 	return nil

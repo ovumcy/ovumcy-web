@@ -62,6 +62,18 @@ func (repo *SymptomRepository) FindByIDForUser(ctx context.Context, symptomID ui
 	return symptom, nil
 }
 
+// Update persists a full update of an already-owned custom symptom. Like
+// DailyLogRepository.Save it is scoped by user_id and uses
+// Model(...).Select("*").Updates (UPDATE-only, no insert fallback) rather than
+// gorm.Save: a mutated symptom.UserID can never reassign or overwrite another
+// owner's row (defense-in-depth for the household multi-owner boundary), and
+// Select("*") still writes zero-value fields so RestoreSymptomForUser's
+// ArchivedAt=nil clears the column. Every caller sources symptom from
+// FindByIDForUser first, so a legitimate write always matches its row.
 func (repo *SymptomRepository) Update(ctx context.Context, symptom *models.SymptomType) error {
-	return repo.database.WithContext(ctx).Save(symptom).Error
+	return repo.database.WithContext(ctx).
+		Model(symptom).
+		Where("user_id = ?", symptom.UserID).
+		Select("*").
+		Updates(symptom).Error
 }

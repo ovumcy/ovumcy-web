@@ -341,6 +341,9 @@ func assertOIDCLogoutStateSchemaReconciled(t *testing.T, database *gorm.DB) {
 	if !database.Migrator().HasColumn("oidc_logout_states", "expires_at") {
 		t.Fatal("expected oidc_logout_states.expires_at column to exist after migrations")
 	}
+	if !database.Migrator().HasColumn("oidc_logout_states", "user_id") {
+		t.Fatal("expected oidc_logout_states.user_id column to exist after migrations (migration 031)")
+	}
 }
 
 // assertAppStateSchema pins the app_state key/value table created by migration

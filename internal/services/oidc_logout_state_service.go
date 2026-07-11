@@ -44,6 +44,7 @@ func (service *OIDCLogoutStateService) Save(ctx context.Context, sessionID strin
 	}
 	return service.store.Save(ctx, &models.OIDCLogoutState{
 		SessionID:             sessionID,
+		UserID:                state.UserID,
 		EndSessionEndpoint:    strings.TrimSpace(state.EndSessionEndpoint),
 		IDTokenHint:           strings.TrimSpace(state.IDTokenHint),
 		PostLogoutRedirectURL: strings.TrimSpace(state.PostLogoutRedirectURL),

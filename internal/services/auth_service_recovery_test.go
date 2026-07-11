@@ -90,11 +90,6 @@ func (stub *stubAuthUserRepo) Create(ctx context.Context, user *models.User) err
 	return nil
 }
 
-func (stub *stubAuthUserRepo) Save(ctx context.Context, user *models.User) error {
-	stub.user = *user
-	return nil
-}
-
 func (stub *stubAuthUserRepo) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
 	if stub.updateRecoveryCodeErr != nil {
 		return stub.updateRecoveryCodeErr

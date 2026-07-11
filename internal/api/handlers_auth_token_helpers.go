@@ -86,6 +86,7 @@ func (handler *Handler) rotateOIDCLogoutState(c fiber.Ctx, newSessionID string) 
 	if !validOIDCLogoutState(logoutState) {
 		return handler.oidcLogoutStateSvc.Delete(c.Context(), oldSessionID) // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
 	}
+	logoutState.UserID = currentSession.UserID
 	if err := handler.oidcLogoutStateSvc.Save(c.Context(), newSessionID, logoutState, time.Now()); err != nil { // codecov:ignore -- OIDC logout-state rotation; covered by the e2e OIDC lanes
 		return err
 	}
