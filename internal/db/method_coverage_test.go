@@ -87,6 +87,15 @@ func TestDailyLogRepositoryUpdateSymptomIDsAndTransaction(t *testing.T) {
 		t.Fatalf("UpdateSymptomIDs() unexpected error: %v", err)
 	}
 
+	// Reload from the DB and assert the persisted effect — a silent no-op must fail.
+	var reloaded models.DailyLog
+	if err := database.First(&reloaded, entry.ID).Error; err != nil {
+		t.Fatalf("reload daily log: %v", err)
+	}
+	if len(reloaded.SymptomIDs) != 3 || reloaded.SymptomIDs[0] != 1 || reloaded.SymptomIDs[1] != 2 || reloaded.SymptomIDs[2] != 3 {
+		t.Fatalf("UpdateSymptomIDs did not persist symptom_ids, got %v want [1 2 3]", reloaded.SymptomIDs)
+	}
+
 	// WithinTransaction must commit a write made through the tx-scoped repository.
 	err := logRepo.WithinTransaction(context.Background(), func(tx *DailyLogRepository) error {
 		return tx.Create(context.Background(), &models.DailyLog{UserID: user.ID, Date: time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)})
@@ -106,8 +115,21 @@ func TestOIDCIdentityRepositoryTouchLastUsed(t *testing.T) {
 		t.Fatalf("create identity: %v", err)
 	}
 
-	if err := identityRepo.TouchLastUsed(context.Background(), identity.ID, time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)); err != nil {
+	touchedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	if err := identityRepo.TouchLastUsed(context.Background(), identity.ID, touchedAt); err != nil {
 		t.Fatalf("TouchLastUsed() unexpected error: %v", err)
+	}
+
+	// Reload and assert the timestamp persisted — a silent no-op leaves it nil.
+	var reloaded models.OIDCIdentity
+	if err := database.First(&reloaded, identity.ID).Error; err != nil {
+		t.Fatalf("reload identity: %v", err)
+	}
+	if reloaded.LastUsedAt == nil {
+		t.Fatal("TouchLastUsed did not persist last_used_at (still nil)")
+	}
+	if reloaded.LastUsedAt.Before(touchedAt) {
+		t.Fatalf("last_used_at %v is before the touched timestamp %v", reloaded.LastUsedAt.UTC(), touchedAt)
 	}
 
 	// id == 0 is a no-op guard that must not touch the database.
