@@ -25,6 +25,10 @@ type dayserviceCovUserStub struct {
 	settings  models.User
 	loadErr   error
 	updateErr error
+
+	// AcknowledgePeriodTip persistence capture.
+	shownPeriodTipPersisted bool
+	shownPeriodTipValue     bool
 }
 
 func (s *dayserviceCovUserStub) LoadSettingsByID(context.Context, uint) (models.User, error) {
@@ -44,6 +48,12 @@ func (s *dayserviceCovUserStub) UpdateByID(ctx context.Context, _ uint, updates 
 	if v, ok := updates["luteal_phase"]; ok {
 		if lp, ok := v.(int); ok {
 			s.settings.LutealPhase = lp
+		}
+	}
+	if v, ok := updates["shown_period_tip"]; ok {
+		if b, ok := v.(bool); ok {
+			s.shownPeriodTipPersisted = true
+			s.shownPeriodTipValue = b
 		}
 	}
 	return nil
@@ -584,26 +594,26 @@ func TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
 // the format string) does not change any observable state. Classification:
 // PRESENTATION / equivalent.
 //
-// We still exercise the ERROR paths to ensure the functions do not panic or
-// return unexpected errors, which also gives coverage to the surrounding
-// control flow.
+// The list-error branch (lines 671-674) cannot be injected through
+// dayLogRepositoryStub (it has no ListByUser error hook), so it is left to
+// higher-level coverage; the nil-guard early returns are covered by the two
+// NilXNoOp tests above. The happy path is smoke-tested below.
 // ---------------------------------------------------------------------------
 
-// TestDayService_RefreshDerivedCycleSettings_ListLogsErrorNoOp confirms
-// that a log-list error (line 671-674) causes a silent early return (no panic,
-// no state mutation) rather than propagating the error — because
-// refreshDerivedCycleSettings intentionally swallows errors via log.Printf.
-func TestDayService_RefreshDerivedCycleSettings_ListLogsErrorNoOp(t *testing.T) {
+// TestDayService_RefreshDerivedCycleSettings_EmptyLogSetNoPanic is a happy-path
+// smoke test: with a valid users/logs pair and no stored logs,
+// refreshDerivedCycleSettings must run to completion without panicking. The
+// list-error branch is not injectable through dayLogRepositoryStub (no
+// ListByUser error hook), and the nil-guard early returns are covered by the
+// two NilXNoOp tests above.
+func TestDayService_RefreshDerivedCycleSettings_EmptyLogSetNoPanic(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 5}}
 	service := dayserviceCovNewService(logs, users)
 
-	// We cannot inject a ListByUser error through dayLogRepositoryStub
-	// (it has no error injection for ListByUser). Instead we verify the
-	// happy-path runs without panic — full error path is exercised via the
-	// nil-logs guard above.
+	// Empty log set: exercises the normal control flow to completion.
 	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
-	// If we reach here without panic the function handles the empty log set gracefully.
+	// Reaching here without a panic is the assertion.
 }
 
 // ---------------------------------------------------------------------------

@@ -124,12 +124,17 @@ func TestCycleBaseline_ValidPeriodLengthFillsAveragePeriodLengthWhenNoHistory(t 
 }
 
 // ── Lines 75 & 78 ────────────────────────────────────────────────────────────
-// applyProjectedBaseline lines 75–78:
-// predictionCycleLength comes from predictedCycleLength(median, average) which
-// always returns at least models.DefaultCycleLength — so predictionCycleLength
-// is never ≤ 0 in practice. Lines 75 and 78 are unreachable defensive guards
-// (equivalent mutants). We keep a smoke test confirming that projection runs
-// normally and produces a valid NextPeriodStart for a typical no-history user.
+// applyProjectedBaseline lines 75–78 guard predictionCycleLength <= 0.
+// predictedCycleLength(median, average) CAN return 0: when median == 0 and
+// average ∈ (0, 0.5), the `average > 0` branch computes int(average+0.5) == 0.
+// Because ApplyUserCycleBaseline consumes the CALLER-supplied CycleStats (it
+// does not recompute them), a caller can drive median/average into that range,
+// so both guards ARE reachable — they are killed by the boundary tests in
+// cycle_baseline_mutation_round2_test.go
+// (TestCycleBaseline_FractionalAverageTriggersCycleLengthFallback for line 75,
+// TestCycleBaseline_NoProjectionWhenResolvedCycleLengthIsZero for line 78).
+// The test below is only a smoke check that the NORMAL projection path produces
+// a valid NextPeriodStart for a typical no-history user.
 
 func TestCycleBaseline_ProjectionProducesNextPeriodStartForNoHistoryUser(t *testing.T) {
 	lp := mustParseBaselineDay(t, "2026-03-01")

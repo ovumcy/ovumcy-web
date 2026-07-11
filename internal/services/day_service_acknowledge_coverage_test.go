@@ -11,9 +11,18 @@ import (
 )
 
 func TestDayServiceAcknowledgePeriodTipUpdatesUser(t *testing.T) {
-	service := dayserviceCovNewService(&dayLogRepositoryStub{}, &dayserviceCovUserStub{})
+	users := &dayserviceCovUserStub{}
+	service := dayserviceCovNewService(&dayLogRepositoryStub{}, users)
 	if err := service.AcknowledgePeriodTip(context.Background(), 7); err != nil {
 		t.Fatalf("AcknowledgePeriodTip() unexpected error: %v", err)
+	}
+	// The name promises persistence: assert the shown_period_tip flag was
+	// actually written (true), not merely that the call returned nil.
+	if !users.shownPeriodTipPersisted {
+		t.Fatal("expected AcknowledgePeriodTip to persist the shown_period_tip flag")
+	}
+	if !users.shownPeriodTipValue {
+		t.Fatal("expected shown_period_tip to be persisted as true")
 	}
 }
 

@@ -80,14 +80,19 @@ func TestCycleSignals_InferUserLutealPhase_FewerThanThreeStartsReturnsDefault(t 
 }
 
 func TestCycleSignals_InferUserLutealPhase_ExactlyThreeStartsIsAccepted(t *testing.T) {
-	// 3 starts + valid BBT + enough data to produce >= 2 luteal lengths.
+	// Exactly 3 observed starts is the minimum the >=3 guard accepts — the
+	// positive complement of ...FewerThanThreeStartsReturnsDefault. The fixture
+	// builds 3 starts with two BBT-confirmed 14-day luteal phases.
 	// Cycles: Jan1→Jan29 (28 days), Jan29→Feb26 (28 days).
 	logs := cyclesignalsCovBuildLutealLogs(t)
 
-	_, ok := InferUserLutealPhase(logs, time.UTC)
-	// With valid BBT signals we expect ok=true; at minimum must not panic.
-	// We only assert no panic and that ok matches the data.
-	_ = ok
+	phase, ok := InferUserLutealPhase(logs, time.UTC)
+	if !ok {
+		t.Fatal("expected ok=true: exactly 3 observed starts must be accepted")
+	}
+	if phase != 14 {
+		t.Fatalf("expected inferred luteal phase 14, got %d", phase)
+	}
 }
 
 // ---------------------------------------------------------------------------
