@@ -10,6 +10,7 @@ import {
 import { saveSettingsLanguage } from './support/language-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
+import { openCalendarDayEditor } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
 
@@ -37,38 +38,6 @@ async function registerOwnerOnCalendar(page: Page, prefix: string): Promise<void
   await setRequestTimezoneFromBrowser(page);
   await page.goto('/calendar');
   await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
-}
-
-async function openCalendarDayEditor(page: Page, isoDate: string) {
-  const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
-  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
-
-  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
-  await expect(editButton).toBeVisible();
-  // Bind the disclosure click to its own htmx GET /calendar/day/{date}?mode=edit
-  // (waitForRequest -> request.response()) so the network round-trip is awaited
-  // explicitly and the form's default 5s visibility check only covers the client
-  // htmx swap. See calendar-autofill-clear.spec.ts for the full rationale.
-  const [request] = await Promise.all([
-    page.waitForRequest(
-      (candidate) =>
-        candidate.method() === 'GET' &&
-        candidate.url().includes(`/calendar/day/${isoDate}`) &&
-        candidate.url().includes('mode=edit'),
-    ),
-    editButton.click(),
-  ]);
-  const response = await request.response();
-  expect(response, `expected a response for GET /calendar/day/${isoDate}?mode=edit`).not.toBeNull();
-  expect(
-    response!.ok(),
-    `GET /calendar/day/${isoDate}?mode=edit failed with ${response!.status()}`,
-  ).toBeTruthy();
-
-  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
-  await expect(form).toBeVisible();
-  return form;
 }
 
 async function openCalendarNotes(form: Locator): Promise<void> {
