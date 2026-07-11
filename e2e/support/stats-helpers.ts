@@ -97,11 +97,33 @@ export async function openCalendarDayEditor(page: Page, isoDate: string): Promis
 
   const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
   await expect(editButton).toBeVisible();
-  await editButton.evaluate((node) => {
-    if (node instanceof HTMLButtonElement) {
-      node.click();
-    }
-  });
+  // The "Add entry"/"Edit entry" disclosure fires hx-get /calendar/day/{date}?mode=edit
+  // into #day-editor. Bind the click to that request's own response (waitForRequest ->
+  // request.response(), as saveDayEditorForm/markCycleStart do) rather than
+  // waitForResponse on the URL, which could resolve on the still-in-flight
+  // hx-trigger="load" fetch page.goto kicked off. Awaiting the response before the
+  // visibility check leaves the default 5s window covering only the client-side htmx
+  // swap, not the network round-trip — the part that overran under full-suite serial
+  // CPU contention and flaked calendar-autofill-clear.spec.ts.
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'GET' &&
+        candidate.url().includes(`/calendar/day/${isoDate}`) &&
+        candidate.url().includes('mode=edit'),
+    ),
+    editButton.evaluate((node) => {
+      if (node instanceof HTMLButtonElement) {
+        node.click();
+      }
+    }),
+  ]);
+  const response = await request.response();
+  expect(response, `expected a response for GET /calendar/day/${isoDate}?mode=edit`).not.toBeNull();
+  expect(
+    response!.ok(),
+    `GET /calendar/day/${isoDate}?mode=edit failed with ${response!.status()}`,
+  ).toBeTruthy();
 
   const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
   await expect(form).toBeVisible();

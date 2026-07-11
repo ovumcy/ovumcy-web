@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { clearDateField, fillDateField } from './support/date-field-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
+import { openCalendarDayEditor } from './support/stats-helpers';
 import {
   completeOnboardingIfPresent,
   confirmRecoveryCode,
@@ -73,20 +74,6 @@ async function todayISOFromCalendar(page: Page): Promise<string> {
   const todayISO = await todayButton.getAttribute('data-day');
   expect(todayISO).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   return todayISO!;
-}
-
-async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locator> {
-  const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
-  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
-
-  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
-  await expect(editButton).toBeVisible();
-  await editButton.click();
-
-  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
-  await expect(form).toBeVisible();
-  return form;
 }
 
 async function openCalendarNotes(form: Locator): Promise<void> {

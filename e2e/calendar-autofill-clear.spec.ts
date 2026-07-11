@@ -8,6 +8,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
+import { openCalendarDayEditor } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
 function shiftISODate(iso: string, days: number): string {
@@ -41,21 +42,6 @@ async function todayISOFromCalendar(page: Page): Promise<string> {
   const todayISO = await todayButton.getAttribute('data-day');
   expect(todayISO).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   return todayISO!;
-}
-
-async function openCalendarDayEditor(page: Page, isoDate: string) {
-  const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
-  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
-
-  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
-  if (await editButton.count()) {
-    await editButton.click();
-  }
-
-  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
-  await expect(form).toBeVisible();
-  return form;
 }
 
 async function saveDayEditorForm(page: Page, isoDate: string, form: import('@playwright/test').Locator): Promise<void> {

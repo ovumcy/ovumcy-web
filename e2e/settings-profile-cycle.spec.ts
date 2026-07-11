@@ -10,6 +10,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
+import { openCalendarDayEditor } from './support/stats-helpers';
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -155,20 +156,6 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
     .getAttribute('hx-put');
   expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
   return String(todayAction).replace('/api/v1/days/', '');
-}
-
-async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locator> {
-  const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
-  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
-
-  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
-  await expect(editButton).toBeVisible();
-  await editButton.click();
-
-  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
-  await expect(form).toBeVisible();
-  return form;
 }
 
 async function completeOnboardingWithStartDate(page: Page, startDate: string): Promise<void> {

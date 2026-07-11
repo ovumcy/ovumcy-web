@@ -10,6 +10,7 @@ import {
 import { saveSettingsLanguage } from './support/language-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
+import { openCalendarDayEditor } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
 
@@ -37,20 +38,6 @@ async function registerOwnerOnCalendar(page: Page, prefix: string): Promise<void
   await setRequestTimezoneFromBrowser(page);
   await page.goto('/calendar');
   await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
-}
-
-async function openCalendarDayEditor(page: Page, isoDate: string) {
-  const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
-  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
-
-  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
-  await expect(editButton).toBeVisible();
-  await editButton.click();
-
-  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
-  await expect(form).toBeVisible();
-  return form;
 }
 
 async function openCalendarNotes(form: Locator): Promise<void> {
