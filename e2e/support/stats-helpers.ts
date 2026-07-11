@@ -97,11 +97,29 @@ export async function openCalendarDayEditor(page: Page, isoDate: string): Promis
 
   const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
   await expect(editButton).toBeVisible();
-  await editButton.evaluate((node) => {
-    if (node instanceof HTMLButtonElement) {
-      node.click();
-    }
-  });
+  // Bind the disclosure click to its own htmx GET /calendar/day/{date}?mode=edit
+  // (waitForRequest -> request.response()) so the network round-trip is awaited
+  // explicitly and the form's default 5s visibility check only covers the client
+  // htmx swap. See calendar-autofill-clear.spec.ts for the full rationale.
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'GET' &&
+        candidate.url().includes(`/calendar/day/${isoDate}`) &&
+        candidate.url().includes('mode=edit'),
+    ),
+    editButton.evaluate((node) => {
+      if (node instanceof HTMLButtonElement) {
+        node.click();
+      }
+    }),
+  ]);
+  const response = await request.response();
+  expect(response, `expected a response for GET /calendar/day/${isoDate}?mode=edit`).not.toBeNull();
+  expect(
+    response!.ok(),
+    `GET /calendar/day/${isoDate}?mode=edit failed with ${response!.status()}`,
+  ).toBeTruthy();
 
   const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
   await expect(form).toBeVisible();
