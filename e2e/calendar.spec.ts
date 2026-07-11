@@ -307,24 +307,80 @@ test.describe('Calendar page', () => {
     await page.goto(`/calendar?month=${month}&day=${tomorrowISO}`);
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${tomorrowISO}`));
 
-    const manualStartButton = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"] [data-day-cycle-start-button]`);
+    const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`);
+    const manualStartButton = manualStartForm.locator('[data-day-cycle-start-button]');
     await expect(manualStartButton).toBeVisible();
     await expect(page.locator('#day-editor')).toContainText(/recalculated|пересчитается|recalcular/i);
 
-    await Promise.all([
+    // The onboarding seed anchors last_period_start at today-3, so tomorrow is a
+    // 4-day short gap: the backend rejects the start with a 400 unless the owner
+    // explicitly confirms it as uncertain (ShortGapDays > 0). The confirm modal
+    // must open so accepting can flip mark_uncertain=true before the POST fires.
+    await manualStartButton.click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+
+    const [cycleStartResponse] = await Promise.all([
       page.waitForResponse((response) => {
         return (
           response.request().method() === 'POST' &&
           response.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
         );
       }),
-      manualStartButton.click(),
+      page.locator('#confirm-modal-accept').click(),
     ]);
+    expect(cycleStartResponse.status()).toBeLessThan(400);
+    await page.waitForLoadState('networkidle');
 
     await page.locator(`[data-day-editor-open="${tomorrowISO}"]`).first().click();
     const dayEditorForm = page.locator(`[data-day-editor-form][data-day-editor-date="${tomorrowISO}"]`);
     await expect(dayEditorForm).toBeVisible();
     await expect(dayEditorForm.locator('input[name="is_period"]')).toBeChecked();
+  });
+
+  test('summary-view manual cycle start exposes its policy node so the confirm modal opens', async ({
+    page,
+  }) => {
+    // Regression for the calendar summary-view placement bug: the confirm script
+    // resolves the policy node via form.parentElement.querySelector(
+    // '[data-cycle-start-policy]'), so the hidden policy node MUST be a sibling of
+    // the cycle-start form inside the same wrapper. When it was placed outside the
+    // wrapper the lookup returned null, the short-gap confirm modal never opened,
+    // and the POST failed with a silent 400.
+    await registerOwnerOnCalendar(page, 'calendar-cycle-start-policy-scope');
+
+    const todayISO = await todayISOFromCalendar(page);
+    const tomorrowISO = shiftISODate(todayISO, 1);
+    const month = tomorrowISO.slice(0, 7);
+
+    await page.goto(`/calendar?month=${month}&day=${tomorrowISO}`);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${tomorrowISO}`));
+
+    const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`);
+    await expect(manualStartForm).toBeVisible();
+
+    // Structural guard: the policy node must be reachable from the form's parent,
+    // exactly as the confirm script looks it up. This fails immediately if the
+    // template ever moves the policy node back outside the form's wrapper.
+    const policyReachableFromForm = await manualStartForm.evaluate((form) =>
+      Boolean(form.parentElement && form.parentElement.querySelector('[data-cycle-start-policy]')),
+    );
+    expect(policyReachableFromForm).toBe(true);
+
+    // End-to-end: clicking opens the confirm modal, and accepting completes the
+    // short-gap cycle start (HTTP < 400) instead of the silent 400.
+    await manualStartForm.locator('[data-day-cycle-start-button]').click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+
+    const [cycleStartResponse] = await Promise.all([
+      page.waitForResponse((response) => {
+        return (
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
+        );
+      }),
+      page.locator('#confirm-modal-accept').click(),
+    ]);
+    expect(cycleStartResponse.status()).toBeLessThan(400);
   });
 
   test('BBT tracking without a confirmed signal demotes the predicted ovulation day to a tentative dash', async ({
