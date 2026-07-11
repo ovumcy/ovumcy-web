@@ -277,13 +277,20 @@ Operator-relevant summary (the full, test-backed claim list lives in
   hardened: a 10-second hard timeout, no connection keep-alive/pooling, zero
   redirects, a capped response read, and `http`/`https` schemes only.
 - **Optional hardening.** Set `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true` (default:
-  `false`) to refuse delivery to loopback/private/link-local **IP literal**
-  targets. Leave it unset/`false` for the common self-hosted-on-LAN case (a
-  webhook URL like `http://ntfy.local` or `http://192.168.1.20:8080/...`).
-  Turn it on only if your threat model specifically requires blocking
-  private-network egress from the notify pass. Note this check matches IP
-  address literals in the URL host, not resolved hostnames. This same flag
-  applies to both the CLI pass and the built-in scheduler.
+  `false`) to refuse delivery to loopback/private/link-local targets. Leave it
+  unset/`false` for the common self-hosted-on-LAN case (a webhook URL like
+  `http://ntfy.local` or `http://192.168.1.20:8080/...`). Turn it on only if
+  your threat model specifically requires blocking private-network egress from
+  the notify pass. When on, the check covers both IP-literal hosts **and**
+  hostnames that resolve to a private address: the destination is resolved,
+  refused if any resolved record is private, and then the connection is made to
+  that exact validated IP (so a hostname cannot rebind to a private address
+  after the check); a lookup failure fails closed. "Private" here spans RFC 1918,
+  ULA, loopback, link-local, the unspecified address, RFC 6598 CGNAT
+  (`100.64.0.0/10`), and the RFC 6052 NAT64 well-known prefix (`64:ff9b::/96`)
+  when it wraps a private IPv4 — a NAT64 address wrapping a public IPv4 stays
+  allowed. This same flag applies to both the CLI pass and the built-in
+  scheduler.
 - **Host-only logging.** Every log line the delivery path emits — success,
   failure, or skip — includes at most the destination **hostname**, never the
   full URL, path, query string, or userinfo.
