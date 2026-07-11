@@ -7,15 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+## [1.8.0] - 2026-07-11
 
-- **Go toolchain bumped to 1.26.5.** Clears GO-2026-5856 (Encrypted Client Hello privacy leak in `crypto/tls`, fixed upstream in go1.26.5), reachable via the outbound HTTP client used for webhook delivery and OIDC. The runtime image's builder stage moves to `golang:1.26.5-alpine3.24` (the `alpine3.22` variant of this patch release was not published); the final `alpine:3.24.1` runtime-assets stage is unchanged.
+Adds three opt-in notification/subscription surfaces (webhook reminders, an in-process daily reminder scheduler, and a read-only calendar `.ics` feed), per-user timezone and week-start preferences, Italian localization, and an OIDC response-mode switch, alongside auth hardening. Six additive database migrations (026–031, SQLite and Postgres). The only breaking change is the `swelling` export-shape change noted under Changed.
 
-### Internal
+### Added
 
-- **`go-118-fuzz-build` pinned instead of floating on `@latest`** in `.clusterfuzzlite/build.sh` (OpenSSF Scorecard "Pinned-Dependencies"). The module has no tagged releases, so it's pinned to a pseudo-version (`v0.0.0-20250520111509-a70c2aa677fa`) instead — same effect as a commit-SHA pin. `.clusterfuzzlite/Dockerfile`'s unpinned `base-builder-go` base image is unchanged (documented exception, now cross-referenced correctly in `docs/SECURITY_INVARIANTS.md → CI`).
-
-- **CI wall-clock reduced without changing coverage.** The `test` job splits into parallel `test-go` (staticcheck, golangci-lint, vet, `go test` + coverage) and `test-frontend` (lint, unit tests, build, stale-bundle guard) jobs — they never depended on each other's output, so running them in parallel instead of as sequential steps in one job cuts wall-clock roughly in half. A thin `test` job (`needs: [test-go, test-frontend]`) keeps the branch-protection required-check name intact. `e2e`, `e2e-postgres-smoke`, and `e2e-cross-browser` now cache Playwright's downloaded browser binaries (`~/.cache/ms-playwright`, keyed by `package-lock.json`) across runs; on a cache hit only the (fast, apt-based) OS dependencies are reinstalled, skipping the multi-hundred-MB browser download. `golangci-lint`'s own analysis cache (`~/.cache/golangci-lint`, previously uncached) is now restored across runs too, as is `npm`'s package cache in `e2e`/`e2e-postgres-smoke`/`e2e-cross-browser` (`test-frontend` already had it; the three e2e jobs' own `npm ci` calls didn't). `ci.yml`/`security.yml` gained a `concurrency` group so a rapid string of fixup pushes on the same PR cancels superseded runs instead of queuing every one to completion (push to `main`/`release`/`workflow_dispatch` runs are never cancelled). Every check still runs the same commands against the same code — nothing skipped, nothing narrowed.
+- **Webhook reminder notifications (opt-in, off by default).** A new per-owner webhook subsystem delivers period/ovulation reminders to an owner-configured endpoint (migration `027`). The URL is a **write-only secret** — encrypted at rest and never rendered back into the settings page (only a configured/not-configured status and at most the hostname are shown). Delivery is request-free and owner-scoped — one owner's predicted health data never reaches another owner's endpoint — and the outbound envelope is hardened: bounded timeout, no keep-alives, zero redirects, `http`/`https` only, and a size-capped response read. Operators can opt into an off-by-default private-address block (`WEBHOOK_BLOCK_PRIVATE_ADDRESSES`) that resolves the host and refuses private/loopback/link-local targets — including RFC 6598 CGNAT (`100.64.0.0/10`) and the RFC 6052 NAT64 prefix (`64:ff9b::/96`) — and dials the validated IP to defeat DNS rebinding. Configurable from Settings or the `ovumcy webhook <show|set>` operator command. (#124)
+- **Built-in daily reminder scheduler (opt-in, off by default).** An optional in-process pass (`REMINDER_SCHEDULER_ENABLED`, default `false`; `REMINDER_SCHEDULER_HOUR`, default `9`, in the server's `TZ`) evaluates upcoming period/ovulation reminders once a day. When disabled, no scheduler goroutine, timer, or outbound component exists in the running process at all. It is backed by a minimal app-level key/value store (migration `028`) that holds process runtime markers only — never per-owner health data. A per-owner "reminder lead days" control (0–14) and an in-app dashboard reminder banner surface the same window in the UI. (#123, #125)
+- **Read-only calendar `.ics` feed (opt-in).** Each owner can generate an opaque, tokenized `.ics` subscription URL for external calendar clients. The feed token is stored hashed (migration `029`), has an explicit lifecycle in Settings, is one-click-revocable, and is force-cleared when the recovery code is regenerated. `VEVENT` `UID`s are a stable function of `(kind, date)`, and every feed carries the medical-safety disclaimer. (#181, #176, #184)
+- **Per-user timezone.** An account's timezone is persisted from the request (migration `026`) and used for DST-safe cycle-day counting, predictions, reminders, and the `.ics` feed. (#159)
+- **Per-user week-start preference.** The calendar grid and weekday header can start on Sunday or Monday (migration `030`, values `sunday`/`monday`). (#225)
+- **Italian (it) localization.** Italian is added to the supported languages and the required-locale boot guard, with server-rendered dates localized. (#218)
+- **`OIDC_RESPONSE_MODE` setting.** Selects the OIDC authorization response mode; defaults to `form_post`, with `query` available as an explicit opt-in (the query-mode Authorization Code is inert without the PKCE verifier held in the sealed state cookie). (#210)
 
 ### Changed
 
@@ -25,9 +29,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **SQLite writes now open with `BEGIN IMMEDIATE`**, ending intermittent `SQLITE_BUSY` 500s when two writes raced for the write lock. (#155)
+- **Next-period projection uses the median (not mean) cycle length consistently** across the dashboard, webhook reminders, and the `.ics` feed, and calendar-day differences use a DST-safe `CalendarDaysBetween`. (#213, #212)
+- Calendar cycle-start confirmation modal now opens in the summary view. (#238)
+- `show_historical_phases` is reset when an owner clears their data. (#229)
+- Day-note trimming no longer splits multi-byte UTF-8 runes. (#222)
+- The request-free webhook `notify` pass sets the pass user's `Role` so the cycle baseline applies, and parses `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` consistently on that path. (#214, #215)
+- Accessibility: the medical disclaimer renders on the stats and calendar pages; mobile touch targets, tab-bar height, and heading order were tightened; and the language pills stay on a single line down to 390px.
 - Postgres example stacks (`docs/examples/postgres`, `caddy-postgres`, `nginx-postgres`) mounted the data volume at `/var/lib/postgresql/data`, which the `postgres:18` image no longer uses as its data directory — database contents ended up in an anonymous volume and were lost when the container was recreated. The examples now mount `postgres_data:/var/lib/postgresql`. (#200)
 
 **Migration for existing deployments:** if you deployed from one of these examples, dump your database while the old container is still running, before pulling this change: `docker compose exec postgres pg_dumpall -U $POSTGRES_USER > backup.sql`. Then apply the updated compose file, recreate the stack (`docker compose down && docker compose up -d`), and restore: `docker compose exec -T postgres psql -U $POSTGRES_USER -d postgres < backup.sql`. If the container was already recreated and the database looks empty, your data may still be in an orphaned anonymous volume — list candidates with `docker volume ls` and inspect them before deleting anything.
+
+### Security
+
+- **Go toolchain bumped to 1.26.5.** Clears GO-2026-5856 (Encrypted Client Hello privacy leak in `crypto/tls`, fixed upstream in go1.26.5), reachable via the outbound HTTP client used for webhook delivery and OIDC. The runtime image's builder stage moves to `golang:1.26.5-alpine3.24` (the `alpine3.22` variant of this patch release was not published); the final `alpine:3.24.1` runtime-assets stage is unchanged.
+- **Daily-log writes are scoped to `user_id`**, tightening cross-owner isolation on the write path so a write can only land on the session owner's rows. (#239)
+- **Symptom writes are scoped to `user_id`.** `SymptomRepository.Update` moved off a primary-key-only save to the same `user_id`-scoped update path as daily logs, so a mutated `UserID` can never reassign or overwrite another owner's symptom row (defense-in-depth; callers already load via `FindByIDForUser`). (#244)
+- **Account erasure now clears `oidc_logout_states`.** These rows previously carried no `user_id`, so account deletion left them to age out via their ~7-day TTL — a right-to-erasure gap. A nullable `user_id` column (migration `031`) is populated on the OIDC login-callback and session-rotation paths and deleted inside the account-erasure transaction; rows minted before `031` keep a `NULL` `user_id` and still age out via TTL. (#244)
+- **bcrypt work factor raised to cost 12**, with stale lower-cost hashes transparently rehashed on the next successful login; the timing-equalization placeholder hashes are aligned to the same cost so login timing does not distinguish existing from missing accounts.
+
+### Internal
+
+- **`go-118-fuzz-build` pinned instead of floating on `@latest`** in `.clusterfuzzlite/build.sh` (OpenSSF Scorecard "Pinned-Dependencies"). The module has no tagged releases, so it's pinned to a pseudo-version (`v0.0.0-20250520111509-a70c2aa677fa`) instead — same effect as a commit-SHA pin. `.clusterfuzzlite/Dockerfile`'s unpinned `base-builder-go` base image is unchanged (documented exception, now cross-referenced correctly in `docs/SECURITY_INVARIANTS.md → CI`).
+
+- **Continuous fuzzing via ClusterFuzzLite** on GitHub Actions, a `gitleaks` secret-scanning gate with a fixture allowlist, and a `golangci-lint` v2 configuration with curated linters were added; the unreachable GO-2026-5932 (`x/crypto/openpgp`) is suppressed via `osv-scanner.toml`.
+
+- **CI wall-clock reduced without changing coverage.** The `test` job splits into parallel `test-go` (staticcheck, golangci-lint, vet, `go test` + coverage) and `test-frontend` (lint, unit tests, build, stale-bundle guard) jobs — they never depended on each other's output, so running them in parallel instead of as sequential steps in one job cuts wall-clock roughly in half. A thin `test` job (`needs: [test-go, test-frontend]`) keeps the branch-protection required-check name intact. `e2e`, `e2e-postgres-smoke`, and `e2e-cross-browser` now cache Playwright's downloaded browser binaries (`~/.cache/ms-playwright`, keyed by `package-lock.json`) across runs; on a cache hit only the (fast, apt-based) OS dependencies are reinstalled, skipping the multi-hundred-MB browser download. `golangci-lint`'s own analysis cache (`~/.cache/golangci-lint`, previously uncached) is now restored across runs too, as is `npm`'s package cache in `e2e`/`e2e-postgres-smoke`/`e2e-cross-browser` (`test-frontend` already had it; the three e2e jobs' own `npm ci` calls didn't). `ci.yml`/`security.yml` gained a `concurrency` group so a rapid string of fixup pushes on the same PR cancels superseded runs instead of queuing every one to completion (push to `main`/`release`/`workflow_dispatch` runs are never cancelled). Every check still runs the same commands against the same code — nothing skipped, nothing narrowed.
+
+- Redundant dashboard `daily_logs`/`symptom_types` reads were removed on the dashboard render path, and the cycle-prediction multi-bool tuples were replaced with named structs.
+
+### Dependencies
+
+- The Go `go-minor-patch` group, the GitHub Actions group, the `compose-images` group, `eslint`/npm dev-dependency minor-patch bumps, and a Tailwind CSS 4.3.2 bundle rebuild.
 
 ## [1.7.0] - 2026-07-03
 
@@ -587,7 +620,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.4.0...v1.5.0

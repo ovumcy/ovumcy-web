@@ -1,5 +1,5 @@
 // Package readmeversion guards README.md against release-tag drift: the
-// current release tag (currently v1.7.0) is hardcoded in several places
+// current release tag (currently v1.8.0) is hardcoded in several places
 // (intro blurb, Docker quick start image tag, cosign/attestation/SBOM
 // verification examples, and the Releases section) with no single source of
 // truth, so a release bump that updates one occurrence and misses another

@@ -25,7 +25,7 @@ Ovumcy is a menstrual cycle tracker you run on your own server. If the thought o
 
 Ovumcy runs as a single Go service with a server-rendered web UI, can be installed on a phone home screen, and supports SQLite by default with Postgres as an advanced self-hosted path.
 
-This README describes the current `main` branch. The latest tagged release is `v1.7.0`.
+This README describes the current `main` branch. The latest tagged release is `v1.8.0`.
 The public project site is [ovumcy.com](https://ovumcy.com).
 
 ## Why Ovumcy Exists
@@ -239,7 +239,7 @@ For the internal layering, trust boundaries, and request lifecycle, see [`docs/a
 
 ### Docker
 
-Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/ovumcy/ovumcy-web:v1.7.0`).
+Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/ovumcy/ovumcy-web:v1.8.0`).
 
 Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/ovumcy/ovumcy-web`.
 
@@ -250,13 +250,13 @@ Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/o
 cosign verify \
   --certificate-identity-regexp '^https://github.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/ovumcy/ovumcy-web:v1.7.0
+  ghcr.io/ovumcy/ovumcy-web:v1.8.0
 
 # 2. SLSA build provenance (GitHub attestation)
-gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v1.7.0 --repo ovumcy/ovumcy-web
+gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v1.8.0 --repo ovumcy/ovumcy-web
 
 # 3. SBOM attached at build time
-docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.7.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.8.0 --format '{{ json .SBOM }}'
 ```
 
 For public GHCR images, pull does not require GitHub login. `docker compose up -d` is enough because `pull_policy: always` is enabled.
@@ -272,7 +272,7 @@ docker compose up -d
 Override the pinned default image tag if needed:
 
 ```bash
-OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.7.0 docker compose up -d
+OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.8.0 docker compose up -d
 ```
 
 Then open `http://127.0.0.1:8080`.
@@ -456,7 +456,7 @@ For bugs and feature requests, open a GitHub issue:
 
 ## Releases
 
-- Latest tagged release: `v1.7.0`.
+- Latest tagged release: `v1.8.0`.
 - Publish release notes via GitHub Releases and keep [CHANGELOG.md](CHANGELOG.md) updated.
 
 ## Roadmap
