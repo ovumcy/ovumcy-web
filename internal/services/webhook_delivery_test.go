@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +16,40 @@ import (
 	"testing"
 	"time"
 )
+
+// fakeResolver is the injected ipResolver seam: it maps hostnames to fixed
+// answers so the resolve-and-check dialer can be tested without live DNS.
+type fakeResolver struct {
+	hosts map[string][]net.IPAddr
+}
+
+func (r fakeResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	if addrs, ok := r.hosts[host]; ok {
+		return addrs, nil
+	}
+	return nil, &net.DNSError{Err: "not found", Name: host, IsNotFound: true}
+}
+
+// resolverFor builds a fakeResolver mapping a single hostname to the given IPs.
+func resolverFor(host string, ips ...string) fakeResolver {
+	addrs := make([]net.IPAddr, 0, len(ips))
+	for _, ip := range ips {
+		addrs = append(addrs, net.IPAddr{IP: net.ParseIP(ip)})
+	}
+	return fakeResolver{hosts: map[string][]net.IPAddr{host: addrs}}
+}
+
+// hostnameTargetFor rewrites a server URL to use hostname (keeping its port and
+// adding a path), so a test can drive delivery through the injected resolver
+// instead of the server's literal IP.
+func hostnameTargetFor(t *testing.T, serverURL, hostname string) string {
+	t.Helper()
+	parsed, err := url.Parse(serverURL)
+	if err != nil {
+		t.Fatalf("parse server url: %v", err)
+	}
+	return (&url.URL{Scheme: parsed.Scheme, Host: net.JoinHostPort(hostname, parsed.Port()), Path: "/hook"}).String()
+}
 
 // samplePayload is a representative reminder payload for the delivery tests.
 func samplePayload() WebhookPayload {
@@ -282,6 +317,240 @@ func TestIsPrivateHost(t *testing.T) {
 			t.Errorf("isPrivateHost(%q) = %v, want %v", host, got, want)
 		}
 	}
+}
+
+// TestWebhookDeliveryBlocksHostnameResolvingToPrivate proves the resolve-and-check
+// denylist: with the gate ON, a HOSTNAME (not an IP literal) that resolves to a
+// private/loopback address is refused before any request reaches the server, and
+// the log records the reason + host only — never the resolved IP.
+func TestWebhookDeliveryBlocksHostnameResolvingToPrivate(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	const hostname = "attacker.example"
+	target := hostnameTargetFor(t, server.URL, hostname)
+	// The hostname resolves to the loopback server IP — the trivial bypass the gate
+	// must now catch even though the target is expressed as a name.
+	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, "127.0.0.1"))
+
+	output := captureLogOutput(t, func() {
+		if err := deliverer.Deliver(context.Background(), target, samplePayload()); err == nil {
+			t.Fatal("expected hostname resolving to a private address to be refused when gated on")
+		}
+	})
+	if hits.Load() != 0 {
+		t.Fatalf("gated delivery reached the server %d time(s); the dial was not blocked", hits.Load())
+	}
+	if !strings.Contains(output, "reason=private_address_blocked") {
+		t.Fatalf("expected private_address_blocked reason, got: %q", output)
+	}
+	if !strings.Contains(output, "host="+hostname) {
+		t.Fatalf("expected host=%s in log, got: %q", hostname, output)
+	}
+	if strings.Contains(output, "127.0.0.1") {
+		t.Fatalf("log leaked the resolved IP: %q", output)
+	}
+}
+
+// TestWebhookDeliveryAllowsHostnameResolvingToPublic proves the gate does not
+// over-block: with the gate ON, a hostname resolving to a PUBLIC address passes
+// the private-address guard (it fails later only because the documentation-range
+// IP is unroutable). The failure must NOT be the private-address sentinel.
+func TestWebhookDeliveryAllowsHostnameResolvingToPublic(t *testing.T) {
+	const hostname = "ntfy.example.io"
+	// 192.0.2.1 is TEST-NET-1 (RFC 5737): classified public, guaranteed unroutable.
+	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, "192.0.2.1"))
+	target := "http://" + hostname + "/hook"
+
+	// A short deadline so the unroutable dial aborts quickly instead of waiting the
+	// full 10s envelope.
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	err := deliverer.Deliver(ctx, target, samplePayload())
+	if err == nil {
+		t.Fatal("expected the unroutable public target to fail the dial")
+	}
+	if errors.Is(err, errWebhookPrivateAddress) {
+		t.Fatalf("public-resolving hostname was wrongly blocked as private: %v", err)
+	}
+}
+
+// TestWebhookDeliveryBlocksMixedPublicPrivateAnswer proves the any-record rule /
+// DNS-rebinding defense: if a resolver returns a public AND a private address for
+// the same hostname, the whole target is refused before any dial.
+func TestWebhookDeliveryBlocksMixedPublicPrivateAnswer(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	const hostname = "rebind.example"
+	target := hostnameTargetFor(t, server.URL, hostname)
+	// Public first, then the loopback server IP: the guard must reject on the private
+	// record regardless of order and never reach the server.
+	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, "192.0.2.1", "127.0.0.1"))
+
+	err := deliverer.Deliver(context.Background(), target, samplePayload())
+	if err == nil {
+		t.Fatal("expected a mixed public/private answer to be refused when gated on")
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("mixed-answer delivery reached the server %d time(s)", hits.Load())
+	}
+}
+
+// TestIsPrivateIP pins the core address classifier shared by the literal
+// pre-check and the guarded dialer.
+func TestIsPrivateIP(t *testing.T) {
+	cases := map[string]bool{
+		"127.0.0.1":    true,
+		"10.0.0.5":     true,
+		"192.168.1.10": true,
+		"172.16.0.1":   true,
+		"169.254.0.1":  true, // link-local unicast
+		"224.0.0.1":    true, // link-local multicast
+		"::1":          true,
+		"fe80::1":      true, // IPv6 link-local
+		"fc00::1":      true, // IPv6 ULA (private)
+		"0.0.0.0":      true, // unspecified
+		"::":           true, // IPv6 unspecified
+		"8.8.8.8":      false,
+		"192.0.2.1":    false, // TEST-NET-1, public-classified
+		"2606:4700::1": false, // public IPv6
+	}
+	for literal, want := range cases {
+		ip := net.ParseIP(literal)
+		if ip == nil {
+			t.Fatalf("test setup: %q did not parse as an IP", literal)
+		}
+		if got := isPrivateIP(ip); got != want {
+			t.Errorf("isPrivateIP(%q) = %v, want %v", literal, got, want)
+		}
+	}
+}
+
+// stubDial is an injectable dialFunc: it records the address it was asked to dial
+// and returns a canned conn/error, so guardedDialContext's dial-result branches
+// are exercised without a real socket to a non-loopback host.
+type stubDial struct {
+	lastAddr string
+	calls    int
+	conn     net.Conn
+	err      error
+}
+
+func (s *stubDial) dial(_ context.Context, _, addr string) (net.Conn, error) {
+	s.calls++
+	s.lastAddr = addr
+	return s.conn, s.err
+}
+
+// TestGuardedDialContext exercises every branch of the resolve-and-check dialer
+// directly through injected seams (no live DNS, no routable socket): IP-literal
+// vs resolved host, resolver error, empty answer, private rejection, and the dial
+// success/failure and malformed-address paths.
+func TestGuardedDialContext(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("public literal dials and returns the conn", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+		stub := &stubDial{conn: client}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		conn, err := dialFn(ctx, "tcp", "192.0.2.1:443")
+		if err != nil {
+			t.Fatalf("expected a public literal to dial, got %v", err)
+		}
+		if conn != client {
+			t.Fatal("guarded dialer did not return the dialed conn")
+		}
+		if stub.lastAddr != "192.0.2.1:443" {
+			t.Fatalf("dialed the wrong address: %q", stub.lastAddr)
+		}
+	})
+
+	t.Run("private literal is refused before dialing", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		_, err := dialFn(ctx, "tcp", "127.0.0.1:443")
+		if !errors.Is(err, errWebhookPrivateAddress) {
+			t.Fatalf("expected private-address refusal, got %v", err)
+		}
+		if stub.calls != 0 {
+			t.Fatal("a private literal must not reach the dial")
+		}
+	})
+
+	t.Run("resolved public host dials the validated IP", func(t *testing.T) {
+		client, server := net.Pipe()
+		defer func() { _ = client.Close() }()
+		defer func() { _ = server.Close() }()
+		stub := &stubDial{conn: client}
+		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "192.0.2.1"))
+
+		if _, err := dialFn(ctx, "tcp", "ntfy.example.io:443"); err != nil {
+			t.Fatalf("expected resolved public host to dial, got %v", err)
+		}
+		if stub.lastAddr != "192.0.2.1:443" {
+			t.Fatalf("expected the resolved IP to be dialed, got %q", stub.lastAddr)
+		}
+	})
+
+	t.Run("resolver error propagates without dialing", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{}) // empty map → unknown host errors
+
+		if _, err := dialFn(ctx, "tcp", "unknown.example:443"); err == nil {
+			t.Fatal("expected the resolver error to surface")
+		}
+		if stub.calls != 0 {
+			t.Fatal("a resolver failure must not reach the dial")
+		}
+	})
+
+	t.Run("empty resolver answer is refused", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, resolverFor("empty.example")) // no IPs
+
+		if _, err := dialFn(ctx, "tcp", "empty.example:443"); err == nil {
+			t.Fatal("expected an empty answer to be refused")
+		}
+		if stub.calls != 0 {
+			t.Fatal("an empty answer must not reach the dial")
+		}
+	})
+
+	t.Run("dial failure surfaces the dial error", func(t *testing.T) {
+		wantErr := errors.New("connection refused")
+		stub := &stubDial{err: wantErr}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		if _, err := dialFn(ctx, "tcp", "192.0.2.1:443"); !errors.Is(err, wantErr) {
+			t.Fatalf("expected the dial error to surface, got %v", err)
+		}
+	})
+
+	t.Run("malformed address surfaces the split error", func(t *testing.T) {
+		stub := &stubDial{}
+		dialFn := guardedDialContext(stub.dial, fakeResolver{})
+
+		if _, err := dialFn(ctx, "tcp", "no-port-here"); err == nil {
+			t.Fatal("expected SplitHostPort to reject a portless address")
+		}
+		if stub.calls != 0 {
+			t.Fatal("a malformed address must not reach the dial")
+		}
+	})
 }
 
 // TestWebhookDeliveryURLParseFailure covers the unparseable-URL branch: a control
