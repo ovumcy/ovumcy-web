@@ -4,6 +4,7 @@ import "time"
 
 type OIDCLogoutState struct {
 	SessionID             string    `gorm:"column:session_id;primaryKey"`
+	UserID                uint      `gorm:"column:user_id"`
 	EndSessionEndpoint    string    `gorm:"column:end_session_endpoint;not null"`
 	IDTokenHint           string    `gorm:"column:id_token_hint;not null"`
 	PostLogoutRedirectURL string    `gorm:"column:post_logout_redirect_url;not null"`

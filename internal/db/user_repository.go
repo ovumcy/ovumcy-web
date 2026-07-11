@@ -574,17 +574,16 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
 			return err
 		}
-		// oidc_logout_states has NO user_id column — rows are keyed only by
-		// session_id (a random nonce) and carry an id_token_hint JWT that
-		// contains the user's OIDC sub/email. We cannot identify which rows
-		// belong to the deleted user from inside this transaction.
-		//
-		// Residual limitation: any unexpired oidc_logout_state rows minted
-		// for the deleted user's sessions survive until their own TTL
-		// expires — up to the full logout-state TTL (currently 7 days, see
-		// services.defaultOIDCLogoutStateTTL). This is accepted: the rows
-		// are inaccessible without the original session cookie and carry no
-		// PII beyond what the OIDC provider already holds.
+		// oidc_logout_states rows minted since migration 031 carry the owner's
+		// user_id, so erase them explicitly here alongside the other user-scoped
+		// tables. Rows created before 031 have a NULL user_id and are not matched:
+		// they carry no PII beyond what the OIDC provider already holds, are
+		// inaccessible without the original session cookie, and age out via their
+		// own TTL (services.defaultOIDCLogoutStateTTL, ~7 days) plus the
+		// best-effort expired-row purge below.
+		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCLogoutState{}).Error; err != nil {
+			return err
+		}
 		return tx.Delete(&models.User{}, userID).Error
 	})
 	if err != nil {
