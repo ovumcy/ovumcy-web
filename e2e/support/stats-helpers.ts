@@ -97,10 +97,14 @@ export async function openCalendarDayEditor(page: Page, isoDate: string): Promis
 
   const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
   await expect(editButton).toBeVisible();
-  // Bind the disclosure click to its own htmx GET /calendar/day/{date}?mode=edit
-  // (waitForRequest -> request.response()) so the network round-trip is awaited
-  // explicitly and the form's default 5s visibility check only covers the client
-  // htmx swap. See calendar-autofill-clear.spec.ts for the full rationale.
+  // The "Add entry"/"Edit entry" disclosure fires hx-get /calendar/day/{date}?mode=edit
+  // into #day-editor. Bind the click to that request's own response (waitForRequest ->
+  // request.response(), as saveDayEditorForm/markCycleStart do) rather than
+  // waitForResponse on the URL, which could resolve on the still-in-flight
+  // hx-trigger="load" fetch page.goto kicked off. Awaiting the response before the
+  // visibility check leaves the default 5s window covering only the client-side htmx
+  // swap, not the network round-trip — the part that overran under full-suite serial
+  // CPU contention and flaked calendar-autofill-clear.spec.ts.
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
