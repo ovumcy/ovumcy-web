@@ -8,6 +8,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
+import { openCalendarDayEditor } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
 function shiftISODate(iso: string, days: number): string {
@@ -41,44 +42,6 @@ async function todayISOFromCalendar(page: Page): Promise<string> {
   const todayISO = await todayButton.getAttribute('data-day');
   expect(todayISO).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   return todayISO!;
-}
-
-async function openCalendarDayEditor(page: Page, isoDate: string) {
-  const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
-  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
-
-  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
-  if (await editButton.count()) {
-    await expect(editButton).toBeVisible();
-    // The disclosure fires hx-get /calendar/day/{date}?mode=edit into #day-editor.
-    // Bind to this click's own request (waitForRequest fires only for requests
-    // issued after registration, so it captures exactly this GET) rather than
-    // waitForResponse on the URL, which could resolve on the still-in-flight
-    // hx-trigger="load" fetch page.goto already kicked off. Awaiting the response
-    // before the visibility check leaves the 5s window covering only the
-    // client-side htmx swap, not the network round-trip — the part that overran
-    // under full-suite serial CPU contention and flaked this helper.
-    const [request] = await Promise.all([
-      page.waitForRequest(
-        (candidate) =>
-          candidate.method() === 'GET' &&
-          candidate.url().includes(`/calendar/day/${isoDate}`) &&
-          candidate.url().includes('mode=edit'),
-      ),
-      editButton.click(),
-    ]);
-    const response = await request.response();
-    expect(response, `expected a response for GET /calendar/day/${isoDate}?mode=edit`).not.toBeNull();
-    expect(
-      response!.ok(),
-      `GET /calendar/day/${isoDate}?mode=edit failed with ${response!.status()}`,
-    ).toBeTruthy();
-  }
-
-  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
-  await expect(form).toBeVisible();
-  return form;
 }
 
 async function saveDayEditorForm(page: Page, isoDate: string, form: import('@playwright/test').Locator): Promise<void> {

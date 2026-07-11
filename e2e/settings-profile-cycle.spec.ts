@@ -10,6 +10,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
+import { openCalendarDayEditor } from './support/stats-helpers';
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -155,38 +156,6 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
     .getAttribute('hx-put');
   expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
   return String(todayAction).replace('/api/v1/days/', '');
-}
-
-async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locator> {
-  const month = isoDate.slice(0, 7);
-  await page.goto(`/calendar?month=${month}&day=${isoDate}`);
-  await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${isoDate}`));
-
-  const editButton = page.locator(`[data-day-editor-open="${isoDate}"]`).first();
-  await expect(editButton).toBeVisible();
-  // Bind the disclosure click to its own htmx GET /calendar/day/{date}?mode=edit
-  // (waitForRequest -> request.response()) so the network round-trip is awaited
-  // explicitly and the form's default 5s visibility check only covers the client
-  // htmx swap. See calendar-autofill-clear.spec.ts for the full rationale.
-  const [request] = await Promise.all([
-    page.waitForRequest(
-      (candidate) =>
-        candidate.method() === 'GET' &&
-        candidate.url().includes(`/calendar/day/${isoDate}`) &&
-        candidate.url().includes('mode=edit'),
-    ),
-    editButton.click(),
-  ]);
-  const response = await request.response();
-  expect(response, `expected a response for GET /calendar/day/${isoDate}?mode=edit`).not.toBeNull();
-  expect(
-    response!.ok(),
-    `GET /calendar/day/${isoDate}?mode=edit failed with ${response!.status()}`,
-  ).toBeTruthy();
-
-  const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
-  await expect(form).toBeVisible();
-  return form;
 }
 
 async function completeOnboardingWithStartDate(page: Page, startDate: string): Promise<void> {
