@@ -168,7 +168,6 @@ func TestWebhookSaveBlankURLKeepsStoredEndpoint(t *testing.T) {
 	if first.StatusCode != http.StatusSeeOther {
 		t.Fatalf("expected 303 on first webhook save, got %d", first.StatusCode)
 	}
-	before := reloadUserForWebhook(t, ctx, ctx.user.ID)
 
 	// Second save: no URL field, still enabled. The stored endpoint must survive.
 	second := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/webhook", url.Values{
@@ -195,7 +194,6 @@ func TestWebhookSaveBlankURLKeepsStoredEndpoint(t *testing.T) {
 	if after.WebhookNotifyPeriod {
 		t.Fatal("expected the notify_period toggle to update on the second save")
 	}
-	_ = before
 }
 
 // TestWebhookSaveRemoveClearsStoredEndpoint confirms the remove affordance

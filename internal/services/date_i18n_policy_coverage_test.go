@@ -5,12 +5,17 @@ package services
 // Targets surviving mutants at lines 55, 69, 77, 102, 136, 144, 152, 161,
 // 179, 187, 195, 204 of internal/services/date_i18n_policy.go.
 //
-// Lines 136, 144, 152, 161, 179, 187, 195, 204 are equivalent mutants:
-// the monthIndex bounds guards in LocalizedDateDisplay and LocalizedDateShort
-// are unreachable dead-code (time.Month is always 1-12, all locale slices
-// have 12 entries), and the existing tests already exercise January for those
-// functions. Any surviving mutation on those lines (e.g. || → &&) produces
-// identical observable behaviour. No additional tests are needed there.
+// The monthIndex bounds guards in LocalizedDateDisplay and LocalizedDateShort
+// (the shared localizedDayMonth) have a fallback BODY that is unreachable dead
+// code: time.Month is always 1-12 and every locale slice has 12 entries, so the
+// UPPER-bound term (monthIndex >= len(...)) never trips and its boundary/`||→&&`
+// mutations are equivalent. The LOWER-bound term (monthIndex < 0) is NOT
+// equivalent: a `< 0 → <= 0` (or its negation) redirects January onto the
+// stdlib fallback, and at a 3-digit year that fallback's 4-digit zero-padded
+// year differs from the locale path's %d year — observable, and already killed
+// by date_i18n_policy_mutation_test.go
+// (TestLocalizedDateDisplayEnglishJanuaryThreeDigitYear /
+// ...AlwaysLocalePathThreeDigitYear).
 //
 // Lines 55, 69, 77, 102 guard LocalizedMonthYear, LocalizedDateLabel, and
 // LocalizedDashboardDate. The existing tests only use February (monthIndex=1).

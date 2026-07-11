@@ -57,7 +57,7 @@ test.describe('Navigation and language switch', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
   });
 
-  test('public language switch on login page toggles EN/ES/RU/FR/DE and persists after reload', async ({ page }) => {
+  test('public language switch on login page toggles EN/ES/RU/FR/DE/IT and persists after reload', async ({ page }) => {
     await page.goto('/login');
     await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
 
@@ -111,6 +111,17 @@ test.describe('Navigation and language switch', () => {
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
     await expect(page.locator('h1.journal-title')).toContainText('Melden Sie sich bei Ihrem Konto an');
     await expect(page.locator('label[for="login-email"]')).toHaveText('E-Mail');
+
+    await switchPublicLanguage(page, 'it');
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+    await expect(page.locator('h1.journal-title')).toContainText('Accedi al tuo account');
+    await expect(page.locator('label[for="login-email"]')).toHaveText('Email');
+
+    await page.reload();
+    await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+    await expect(page.locator('h1.journal-title')).toContainText('Accedi al tuo account');
+    await expect(page.locator('label[for="login-email"]')).toHaveText('Email');
   });
 
   test('language switch while logged in keeps current page and translates navigation/settings', async ({
@@ -163,6 +174,12 @@ test.describe('Navigation and language switch', () => {
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('lang', 'de');
     await expect(page.locator('h1.journal-title')).toContainText('Einstellungen');
+
+    await saveSettingsLanguage(page, 'it');
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'it');
+    await expect(page.locator('h1.journal-title')).toContainText('Impostazioni');
+    await expect(page.getByRole('link', { name: 'Oggi' }).first()).toBeVisible();
   });
 
   test('direct /recovery-code access without valid recovery context is blocked', async ({ page }) => {

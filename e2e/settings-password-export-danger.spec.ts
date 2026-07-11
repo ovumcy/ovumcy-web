@@ -412,6 +412,17 @@ test.describe('Settings: password, export, clear data, delete account', () => {
       .click();
     await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
 
+    // Enable show_historical_phases so clear-data's reset of it below is a
+    // real before/after check, not a no-op on an already-false default (the
+    // #229 regression: it was missing from the clear-data reset map).
+    const trackingSection = page.locator('#settings-tracking');
+    await expect(trackingSection).toBeVisible();
+    const showHistoricalPhasesToggle = trackingSection.locator('[data-tracking-setting="show-historical-phases"]');
+    await trackingSection.locator('input[name="show_historical_phases"]').check();
+    await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'true');
+    await trackingSection.locator('button[data-save-button]').click();
+    await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
+
     const clearNote = `clear-note-${Date.now()}`;
     await saveTodayEntry(page, clearNote);
 
@@ -443,6 +454,13 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await expect(page.locator('#settings-period-length')).toHaveValue('5');
     await expect(page.locator('section#settings-cycle input[name="auto_period_fill"]')).toBeChecked();
     await expect(page.locator('#settings-last-period-start')).toHaveValue('');
+
+    // #229 regression: show_historical_phases was loaded by LoadSettingsByID
+    // but missing from the clear-data reset map, so it stayed stuck on
+    // instead of visibly returning to its default (false/off) like every
+    // sibling preference.
+    await expect(page.locator('section#settings-tracking input[name="show_historical_phases"]')).not.toBeChecked();
+    await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);

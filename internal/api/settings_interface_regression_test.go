@@ -43,10 +43,16 @@ func TestSettingsInterfaceUpdateSetsLanguageCookieAndLocalizedFlash(t *testing.T
 	assertStatusCode(t, followResponse, http.StatusOK)
 	rendered := mustReadBodyString(t, followResponse.Body)
 
-	assertBodyContainsAll(t, rendered,
-		bodyStringMatch{fragment: "Einstellungen", message: "expected settings page in German after interface update"},
-		bodyStringMatch{fragment: "Oberflächeneinstellungen aktualisiert.", message: "expected localized interface success flash"},
-	)
+	// Assert the stable hooks, not localized copy: the ovumcy_lang=de cookie must
+	// drive a German-rendered page (<html lang="de">, the first lang attribute in
+	// the document), and the success flash surfaces via its data-flash-key.
+	document := mustParseHTMLDocument(t, rendered)
+	if htmlElementByAttr(document, "lang", "de") == nil {
+		t.Fatalf("expected the settings page to render in German (lang=de) after the interface update, got %q", rendered)
+	}
+	if htmlFlashByKey(document, "settings.success.interface_updated") == nil {
+		t.Fatalf("expected the interface-updated success flash key on the settings page, got %q", rendered)
+	}
 }
 
 func TestSettingsInterfaceUpdateJSONReturnsNormalizedSelection(t *testing.T) {

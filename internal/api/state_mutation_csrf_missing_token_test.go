@@ -22,6 +22,7 @@ func TestStateMutatingEndpointsRejectMissingCSRFToken(t *testing.T) {
 		method string
 		path   string
 	}{
+		{name: "register", method: http.MethodPost, path: "/api/v1/users"},
 		{name: "update tracking settings", method: http.MethodPatch, path: "/api/v1/users/current/tracking"},
 		{name: "update reminder settings", method: http.MethodPatch, path: "/api/v1/users/current/reminders"},
 		{name: "update webhook settings", method: http.MethodPost, path: "/api/v1/users/current/webhook"},

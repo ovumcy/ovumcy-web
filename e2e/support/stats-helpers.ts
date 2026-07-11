@@ -59,19 +59,35 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
     `[data-day-cycle-start-form][data-day-cycle-start-date="${isoDate}"] [data-day-cycle-start-button]`
   );
   await expect(manualStartButton).toBeVisible();
-  await Promise.all([
+  // Bind to the click's own request, not any matching response: waitForResponse
+  // can resolve on a still-in-flight earlier request under load (see
+  // saveDayEditorForm in calendar-autofill-clear.spec.ts).
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'POST' &&
+        candidate.url().includes(`/api/v1/days/${isoDate}/cycle-start?source=calendar`),
+    ),
     page.waitForNavigation({
       url: new RegExp(`/calendar\\?month=${month}&day=${isoDate}`),
       waitUntil: 'load',
     }),
-    page.waitForResponse((response) => {
-      return (
-        response.request().method() === 'POST' &&
-        response.url().includes(`/api/v1/days/${isoDate}/cycle-start?source=calendar`)
-      );
-    }),
     manualStartButton.click(),
   ]);
+  const response = await request.response();
+  expect(
+    response,
+    `expected a response for POST /api/v1/days/${isoDate}/cycle-start?source=calendar`
+  ).not.toBeNull();
+  expect(
+    response!.ok(),
+    `POST /api/v1/days/${isoDate}/cycle-start?source=calendar failed with ${response!.status()}`
+  ).toBeTruthy();
+  // HX-Refresh reloads the current page, which lazy-loads the day editor via
+  // hx-trigger="load" (calendar.html). Callers immediately chain into another
+  // markCycleStart/openCalendarDayEditor navigation, so let that fetch settle
+  // before returning or it competes with the next page.goto.
+  await page.waitForLoadState('networkidle');
 }
 
 export async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locator> {
@@ -102,16 +118,23 @@ export async function saveCycleFactorOnDay(
     `label.choice-option:has(input[name="cycle_factor_keys"][value="${factorKey}"]) .check-chip`
   );
   await factorChip.click();
-  await Promise.all([
-    page.waitForResponse((response) => {
-      return response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${isoDate}`);
-    }),
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+    ),
     form.evaluate((node) => {
       if (node instanceof HTMLFormElement) {
         node.requestSubmit();
       }
     }),
   ]);
+  const response = await request.response();
+  expect(response, `expected a response for PUT /api/v1/days/${isoDate}`).not.toBeNull();
+  expect(response!.ok(), `PUT /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
+  // Let the calendar-day-updated grid refresh + editor re-lazy-load cascade
+  // settle before the reopen below re-navigates (see saveDayEditorForm).
+  await page.waitForLoadState('networkidle');
   const savedForm = await openCalendarDayEditor(page, isoDate);
   await expect(savedForm.locator(`input[name="cycle_factor_keys"][value="${factorKey}"]`)).toBeChecked();
 }
@@ -145,16 +168,23 @@ export async function saveBBTOnDay(page: Page, isoDate: string, value: string): 
   const bbtInput = form.locator('#calendar-bbt');
   await expect(bbtInput).toBeVisible();
   await bbtInput.fill(value);
-  await Promise.all([
-    page.waitForResponse((response) => {
-      return response.request().method() === 'PUT' && response.url().includes(`/api/v1/days/${isoDate}`);
-    }),
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+    ),
     form.evaluate((node) => {
       if (node instanceof HTMLFormElement) {
         node.requestSubmit();
       }
     }),
   ]);
+  const response = await request.response();
+  expect(response, `expected a response for PUT /api/v1/days/${isoDate}`).not.toBeNull();
+  expect(response!.ok(), `PUT /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
+  // Let the calendar-day-updated grid refresh + editor re-lazy-load cascade
+  // settle before the reopen below re-navigates (see saveDayEditorForm).
+  await page.waitForLoadState('networkidle');
 
   const savedForm = await openCalendarDayEditor(page, isoDate);
   await expect(savedForm.locator('#calendar-bbt')).not.toHaveValue('');

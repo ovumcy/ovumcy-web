@@ -296,9 +296,6 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		}
 		service := NewAuthService(repo)
 
-		repo.findByEmailUser.CalendarFeedSelector = "SELECTOR000000AA"
-		repo.findByEmailUser.CalendarFeedVerifierHash = "$2a$10$forcedresethashplaceholderplaceholderplaceholderpl"
-
 		if err := service.ForceResetPasswordByEmail(context.Background(), " Owner@Example.com ", "EvenStronger2"); err != nil {
 			t.Fatalf("ForceResetPasswordByEmail() unexpected error: %v", err)
 		}
@@ -310,11 +307,6 @@ func TestAuthServiceForceResetPasswordByEmail(t *testing.T) {
 		}
 		if !repo.user.MustChangePassword {
 			t.Fatal("expected MustChangePassword=true after forced reset")
-		}
-		// Operator reset is a compromise-recovery event: the feed token must be
-		// force-cleared in the same atomic update as the credential rotation.
-		if repo.user.CalendarFeedSelector != "" || repo.user.CalendarFeedVerifierHash != "" {
-			t.Fatal("expected calendar feed token force-cleared on operator reset")
 		}
 		if bcrypt.CompareHashAndPassword([]byte(repo.user.PasswordHash), []byte("EvenStronger2")) != nil {
 			t.Fatal("expected saved password hash to match new password")

@@ -38,19 +38,39 @@ func TestIsCanonicalRecoveryCodeBody_AlphabetBoundaries(t *testing.T) {
 }
 
 func TestAuthAttemptPolicyConfigure_AttemptsLowerBound(t *testing.T) {
-	// Start with a known non-default attempts value, then reconfigure to 1.
+	// Assert the attempts floor purely through the public TooManyRecent surface,
+	// never by reading the unexported policy.attempts. A wide window keeps only
+	// the attempts threshold in play.
+	secretKey := []byte("attempts-lower-bound-secret")
+	clientKey := "198.51.100.7"
+	identity := "floor@example.com"
+	now := time.Now().UTC()
+
+	// Start above the floor (threshold 8), then lower it to 1.
 	policy := NewAuthAttemptPolicy("login", nil, 8, time.Minute)
 
 	// attempts == 1 is valid (lock after a single failure) and must be applied.
-	// This kills the `attempts >= 1` -> `attempts > 1` boundary mutation.
+	// Kills the `attempts >= 1` -> `attempts > 1` boundary mutant, under which
+	// the threshold would stay at 8 and one failure would NOT trip the lock.
 	policy.Configure(1, time.Minute)
-	if policy.attempts != 1 {
-		t.Fatalf("expected Configure(1) to set attempts to 1, got %d", policy.attempts)
+	if policy.TooManyRecent(secretKey, clientKey, identity, now) {
+		t.Fatal("expected the throttle to be open before any failure")
+	}
+	policy.AddFailure(secretKey, clientKey, identity, now)
+	if !policy.TooManyRecent(secretKey, clientKey, identity, now) {
+		t.Fatal("Configure(1) must lower the threshold to 1: a single failure should trip the lock (kills >=→>)")
 	}
 
-	// Zero and negative attempts are rejected; the previous value is kept.
+	// Zero attempts are rejected; the previous floor of 1 is kept. Were 0 wrongly
+	// applied, TooManyRecent would report throttled with zero failures (limit 0 is
+	// always exceeded), so a clean state must still read as OPEN after Configure(0).
+	policy.Reset(secretKey, clientKey, identity)
 	policy.Configure(0, time.Minute)
-	if policy.attempts != 1 {
-		t.Fatalf("expected Configure(0) to be ignored, attempts still 1, got %d", policy.attempts)
+	if policy.TooManyRecent(secretKey, clientKey, identity, now) {
+		t.Fatal("Configure(0) must be ignored: a clean state must stay open, not throttle at limit 0")
+	}
+	policy.AddFailure(secretKey, clientKey, identity, now)
+	if !policy.TooManyRecent(secretKey, clientKey, identity, now) {
+		t.Fatal("threshold should remain 1 after Configure(0): a single failure should still trip the lock")
 	}
 }

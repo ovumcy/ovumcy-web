@@ -20,10 +20,6 @@ func TestSettingsSymptomsSectionExplainsEmptyAndArchivedStates(t *testing.T) {
 			t.Fatal("expected settings symptoms section")
 		}
 
-		sectionText := normalizeHTMLText(htmlNodeText(section))
-		assertTextContains(t, sectionText, "Create short private labels for patterns you want to log.")
-		assertTextContains(t, sectionText, "No custom symptoms yet. Add one above to make it available in new entries.")
-
 		if htmlFindElement(section, func(node *html.Node) bool {
 			return node.Type == html.ElementNode && htmlAttr(node, "data-symptom-group") == "active"
 		}) != nil {
@@ -62,10 +58,6 @@ func TestSettingsSymptomsSectionExplainsEmptyAndArchivedStates(t *testing.T) {
 			t.Fatal("expected settings symptoms section")
 		}
 
-		sectionText := normalizeHTMLText(htmlNodeText(section))
-		assertTextContains(t, sectionText, "No visible custom symptoms right now. Restore one below or add a new one above.")
-		assertTextContains(t, sectionText, "Past logs keep them. Restore one when you want it back in the picker.")
-
 		if htmlFindElement(section, func(node *html.Node) bool {
 			return node.Type == html.ElementNode && htmlAttr(node, "data-symptom-empty-state") == "active"
 		}) == nil {
@@ -78,7 +70,6 @@ func TestSettingsSymptomsSectionExplainsEmptyAndArchivedStates(t *testing.T) {
 			t.Fatal("expected archived custom symptom group")
 		}
 		assertTextContains(t, normalizeHTMLText(htmlNodeText(archivedGroup)), "Joint relief")
-		assertTextContains(t, normalizeHTMLText(htmlNodeText(archivedGroup)), "Hidden")
 	})
 }
 

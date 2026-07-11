@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
@@ -87,14 +86,22 @@ func TestBaseLayoutRendersSkipLink(t *testing.T) {
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	for _, path := range []string{"/dashboard", "/settings"} {
-		body := fetchPageBody(t, app, path, authCookie)
-		// Structural hook only — the visible copy is i18n (a11y.skip_to_content)
-		// and the actual skip behavior is owned by visual-a11y.spec.ts; do not
-		// pin the English phrase here.
-		if !strings.Contains(body, `<a href="#main-content" class="skip-link">`) {
+		document := mustParseHTMLDocument(t, fetchPageBody(t, app, path, authCookie))
+		// Structural hooks via semantic DOM — the visible copy is i18n
+		// (a11y.skip_to_content) and the actual skip behavior is owned by
+		// visual-a11y.spec.ts; do not pin the English phrase here.
+		skipLink := htmlFindElement(document, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "a" &&
+				htmlAttr(node, "href") == "#main-content" && htmlHasClass(node, "skip-link")
+		})
+		if skipLink == nil {
 			t.Fatalf("expected %s to render the skip-to-content link", path)
 		}
-		if !strings.Contains(body, `<main id="main-content" tabindex="-1"`) {
+		mainTarget := htmlFindElement(document, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "main" &&
+				htmlAttr(node, "id") == "main-content" && htmlAttr(node, "tabindex") == "-1"
+		})
+		if mainTarget == nil {
 			t.Fatalf("expected %s to render a focusable #main-content target", path)
 		}
 	}

@@ -360,9 +360,12 @@ func dashboardcycleheroCovFormatFloat(v float64) string {
 	return strconv.FormatFloat(v, 'f', 1, 64)
 }
 
-// TestDashboardCycleHeroSegmentDashOffsetAccumulates asserts that the DashOffset
-// for each segment accumulates from the previous segments' dashes.
-// A mutant that skips offset accumulation (offset += dash) would make all offsets 0.
+// TestDashboardCycleHeroSegmentDashOffsetAccumulates asserts that each segment's
+// DashOffset accumulates further in the negative direction than the previous one
+// (the ring is drawn by progressively offsetting each phase arc). This kills the
+// "offset += dash skipped" mutant, which leaves every offset at 0. Structural on
+// purpose: it does NOT mirror the production geometry formula or pin exact float
+// strings (incl. the -0.0/0.0 first-segment quirk).
 func TestDashboardCycleHeroSegmentDashOffsetAccumulates(t *testing.T) {
 	user := dashboardcycleheroCovUser28()
 	stats := CycleStats{
@@ -375,26 +378,26 @@ func TestDashboardCycleHeroSegmentDashOffsetAccumulates(t *testing.T) {
 	if !hero.Visible {
 		t.Fatal("expected visible hero")
 	}
-
-	circ := dashboardCycleHeroCircumference
-	dayFrac := func(days int) float64 { return circ * float64(days) / 28.0 }
-
-	// Offsets: menstrual starts at 0, follicular at -menstrual_dash, etc.
-	// Note: dashboardCycleHeroFloat(-0.0) produces "-0.0" for the first segment.
-	expectedOffsets := []float64{
-		0,                                       // segment[0]: -0.0 (formatted as "-0.0" by FormatFloat)
-		-dayFrac(5),                             // segment[1]
-		-(dayFrac(5) + dayFrac(8)),              // segment[2]
-		-(dayFrac(5) + dayFrac(8) + dayFrac(1)), // segment[3]
+	if len(hero.Segments) != 4 {
+		t.Fatalf("expected 4 segments, got %d", len(hero.Segments))
 	}
-	// Segments 1-3 must strictly match. For segment 0, just verify absolute value is 0.
-	if hero.Segments[0].DashOffset != "0.0" && hero.Segments[0].DashOffset != "-0.0" {
-		t.Fatalf("segment[0] DashOffset: expected '0.0' or '-0.0', got %q", hero.Segments[0].DashOffset)
+
+	offsets := make([]float64, len(hero.Segments))
+	for i, seg := range hero.Segments {
+		v, err := strconv.ParseFloat(seg.DashOffset, 64)
+		if err != nil {
+			t.Fatalf("segment[%d] DashOffset %q not parseable as float: %v", i, seg.DashOffset, err)
+		}
+		offsets[i] = v
 	}
-	for i := 1; i < len(hero.Segments); i++ {
-		want := dashboardcycleheroCovFormatFloat(expectedOffsets[i])
-		if hero.Segments[i].DashOffset != want {
-			t.Fatalf("segment[%d] DashOffset: expected %q, got %q", i, want, hero.Segments[i].DashOffset)
+	// First segment starts the ring at offset 0 (ParseFloat maps "-0.0" -> 0).
+	if math.Abs(offsets[0]) > 1e-9 {
+		t.Fatalf("segment[0] offset must be ~0 at the ring start, got %v", offsets[0])
+	}
+	// Each later segment must accumulate strictly more negative than the last.
+	for i := 1; i < len(offsets); i++ {
+		if offsets[i] >= offsets[i-1] {
+			t.Fatalf("segment[%d] offset %v must accumulate more negative than previous %v (kills the no-accumulation mutant)", i, offsets[i], offsets[i-1])
 		}
 	}
 }

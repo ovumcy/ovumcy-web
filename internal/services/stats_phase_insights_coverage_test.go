@@ -63,95 +63,26 @@ func TestStatsPhaseInsightsBuildContextsBuildsContextsForTwoStarts(t *testing.T)
 
 // ---------------------------------------------------------------------------
 // Line 63: cycleLength <= 0 — skip zero-length cycles
+//
+// DOCUMENTED UNREACHABLE (equivalent mutant): DetectCycleStarts normalizes each
+// start to its calendar day (dateOnly) and only records a new start when the gap
+// exceeds 5 days, so two consecutive starts are always several calendar days
+// apart and CalendarDaysBetween yields a strictly positive cycleLength. The
+// `cycleLength <= 0` guard can therefore never fire, and the `<= 0 -> < 0`
+// boundary mutant is equivalent. The earlier test here only re-exercised the
+// len(starts) < 2 guard (already covered by ...ReturnNilForSingleStart), so it
+// was removed rather than left asserting an unreachable path.
 // ---------------------------------------------------------------------------
-
-// TestStatsPhaseInsightsBuildContextsSkipsZeroLengthCycle verifies that a
-// cycle whose two consecutive start dates map to the same calendar day (cycleLength==0)
-// is skipped and produces no context. A mutant changing <= 0 to < 0 would
-// include the zero-length cycle, corrupting phase assignments.
-func TestStatsPhaseInsightsBuildContextsSkipsZeroLengthCycle(t *testing.T) {
-	// Two starts at the same wall-clock date but different times produce
-	// a zero-length calendar cycle.
-	sameDay := statsphaseinsightsCovDay(t, "2026-01-01")
-	logs := []models.DailyLog{
-		{Date: sameDay, IsPeriod: true},
-		{Date: sameDay, IsPeriod: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true},
-	}
-	// DetectCycleStarts deduplicates by calendar day, so we need to construct
-	// contexts directly. Build the contexts from non-deduplicated starts to
-	// hit the guard. We call through the public-facing mood insights to exercise
-	// the full path; a zero-length first cycle should be skipped, leaving only
-	// the second cycle.
-	// Since DetectCycleStarts may deduplicate, let us craft via a realistic
-	// scenario: starts are on the same day due to timezone shift. Instead, we
-	// directly test buildCompletedCyclePhaseContexts with a single log that
-	// implies only one unique cycle start after deduplication.
-	_ = logs
-	// Direct unit test: hand the function only one distinct start in the log
-	// and confirm no output (falls back to the line-52 guard).
-	singleLogs := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true},
-	}
-	got := buildCompletedCyclePhaseContexts(singleLogs, statsphaseinsightsCovLocation)
-	if got != nil {
-		t.Fatalf("expected nil for no completed cycle, got %v", got)
-	}
-}
 
 // ---------------------------------------------------------------------------
 // Line 68: periodLength <= 0 — fall back to DefaultPeriodLength
+//
+// The periodLength==0 fallback is covered by the observable-consequence test
+// ...MenstrualPhaseUsesDefaultPeriodLength below and by the boundary kill-test
+// TestBuildPhaseMoodInsightsDefaultsZeroPeriodLengthToMenstrual in
+// stats_phase_insights_mutation_round2_test.go. The earlier direct test here was
+// a t.Skip-gated exploration of an un-forceable input and was removed.
 // ---------------------------------------------------------------------------
-
-// TestStatsPhaseInsightsBuildContextsAppliesDefaultPeriodLengthWhenZero
-// verifies that a cycle whose detected period length is 0 (no IsPeriod=true
-// days at the start of the cycle) falls back to models.DefaultPeriodLength (5).
-// A mutant changing <= 0 to < 0 would allow periodLength==0 through, causing
-// the menstrual phase to span zero days.
-func TestStatsPhaseInsightsBuildContextsAppliesDefaultPeriodLengthWhenZero(t *testing.T) {
-	// The first log has IsPeriod=false, so buildCycles infers periodLength=0
-	// for that cycle. We use two starts to produce one context.
-	logs := []models.DailyLog{
-		// Start of cycle 1 but NOT IsPeriod=true → periodLength will be 0.
-		// DetectCycleStarts looks for IsPeriod=true, so we need at least one
-		// IsPeriod=true per cycle. Use cycle-start marker via IsPeriod on a
-		// later day in the same cycle (impossible), so let's use a full
-		// IsPeriod start but with no consecutive period days → period length 1.
-		// To get length 0 we need IsPeriod=true on the first day but
-		// buildCycles looks at isPeriodByDate for the start day.
-		//
-		// buildCycles sets periodLength by counting consecutive IsPeriod=true
-		// days starting from cycle start. We want the cycle start to have
-		// IsPeriod=true (so DetectCycleStarts picks it up) but the log's
-		// IsPeriod must be true on that day in the map.
-		//
-		// The only way to get periodLength=0 is: DetectCycleStarts returns
-		// a start date that has no IsPeriod=true log. This can happen for
-		// CycleStart-marked logs. Check DetectCycleStarts.
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
-	}
-	got := buildCompletedCyclePhaseContexts(logs, statsphaseinsightsCovLocation)
-	if len(got) != 1 {
-		t.Fatalf("expected one context, got %d", len(got))
-	}
-	// When IsPeriod is true on the start day, periodLength>=1. The guard
-	// (periodLength <= 0 → DefaultPeriodLength) will not fire here.
-	// We need a CycleStart-only scenario. Let's check DetectCycleStarts.
-	// If CycleStart is sufficient but IsPeriod=false, periodLength=0.
-	logsNoPeriod := []models.DailyLog{
-		{Date: statsphaseinsightsCovDay(t, "2026-01-01"), CycleStart: true},
-		{Date: statsphaseinsightsCovDay(t, "2026-01-29"), CycleStart: true},
-	}
-	got2 := buildCompletedCyclePhaseContexts(logsNoPeriod, statsphaseinsightsCovLocation)
-	if len(got2) == 0 {
-		// DetectCycleStarts doesn't pick up CycleStart-only, skip this path.
-		t.Skip("DetectCycleStarts requires IsPeriod=true; skip zero-period-length subcase")
-	}
-	if got2[0].PeriodLength <= 0 {
-		t.Fatalf("expected PeriodLength > 0 after fallback to default, got %d", got2[0].PeriodLength)
-	}
-}
 
 // TestStatsPhaseInsightsMenstrualPhaseUsesDefaultPeriodLength verifies
 // the observable consequence of the periodLength fallback: when no IsPeriod
@@ -423,19 +354,6 @@ func TestStatsPhaseInsightsSymptomInsightHasDataFalseForPhaseWithNoItems(t *test
 		if len(insight.Items) != 0 {
 			t.Fatalf("expected no items for phase %q, got %d", insight.Phase, len(insight.Items))
 		}
-	}
-}
-
-// statsphaseinsightsCovDay with nil t for use in table initializers.
-// Falls back to panicking (acceptable in test helpers that can't receive *testing.T).
-func init() {
-	// validate statsphaseinsightsCovDay can be called with a nil T guard below
-	_ = func(s string) time.Time {
-		d, err := time.ParseInLocation("2006-01-02", s, time.UTC)
-		if err != nil {
-			panic(err)
-		}
-		return d
 	}
 }
 

@@ -92,6 +92,9 @@ func TestValidateClearDataPasswordAcceptsCorrectPassword(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected validate clear data status 200, got %d", response.StatusCode)
 	}
+	// Validate must confirm the password WITHOUT wiping anything: the seeded logs,
+	// custom symptoms, and cycle settings must all survive an accepted validation.
+	assertClearDataPreconditionsRemain(t, scenario.database, scenario.user)
 }
 
 func TestValidateClearDataPasswordRejectsInvalidPassword(t *testing.T) {

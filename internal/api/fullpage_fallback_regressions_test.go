@@ -502,6 +502,7 @@ func TestDaySaveSpottingWarningSetsEncodedNotice(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+today, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "en")
 	request.Header.Set("Cookie", authCookie)
 
 	response, err := app.Test(request, testConfigNoTimeout)
@@ -511,6 +512,23 @@ func TestDaySaveSpottingWarningSetsEncodedNotice(t *testing.T) {
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	// The spotting-warning claim is the point of this test: assert the encoded
+	// notice header actually carries the spotting-cycle warning. The expected
+	// value is derived from the same i18n source the handler translates from, so
+	// this pins the specific warning without hardcoding a localized phrase (and
+	// would fail if the handler stopped setting it, or set a different warning).
+	notice := response.Header.Get("X-Ovumcy-Notice")
+	if notice == "" {
+		t.Fatal("expected X-Ovumcy-Notice header carrying the spotting-cycle warning, got none")
+	}
+	i18nManager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("init i18n: %v", err)
+	}
+	if want := url.QueryEscape(i18nManager.Messages("en")["dashboard.spotting_cycle_warning"]); notice != want {
+		t.Fatalf("expected spotting-cycle warning notice %q, got %q", want, notice)
 	}
 }
 

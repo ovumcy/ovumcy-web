@@ -28,8 +28,12 @@ func TestLoginInvalidCredentialsRedirectDoesNotPersistEmail(t *testing.T) {
 	rendered := followLoginPageWithFlash(t, app, redirectURL.String(), flashValue)
 	assertBodyContainsAll(t, rendered,
 		bodyStringMatch{fragment: `id="login-email"`, message: "expected login email input in page"},
-		bodyStringMatch{fragment: "Invalid email or password.", message: "expected localized login error message from flash"},
 	)
+	// Assert the error via its stable data-error-key hook, not the localized copy
+	// (testing.md: never strings.Contains on a localized phrase).
+	if htmlAuthErrorByKey(mustParseHTMLDocument(t, rendered), "auth.error.invalid_credentials") == nil {
+		t.Fatalf("expected invalid-credentials auth error surfaced via data-error-key, got %q", rendered)
+	}
 	// Email PII must not round-trip through the flash cookie (H-2): the address
 	// is no longer echoed back into the form after a failed login.
 	assertBodyNotContainsAll(t, rendered,
@@ -37,9 +41,11 @@ func TestLoginInvalidCredentialsRedirectDoesNotPersistEmail(t *testing.T) {
 	)
 
 	cleanPage := loadCleanLoginPage(t, app)
+	if htmlAuthErrorByKey(mustParseHTMLDocument(t, cleanPage), "auth.error.invalid_credentials") != nil {
+		t.Fatalf("did not expect auth error to persist after flash is consumed, got %q", cleanPage)
+	}
 	assertBodyNotContainsAll(t, cleanPage,
 		bodyStringMatch{fragment: `value="login-email@example.com"`, message: "did not expect login email to persist after flash is consumed"},
-		bodyStringMatch{fragment: "Invalid email or password.", message: "did not expect auth error to persist after flash is consumed"},
 	)
 }
 
