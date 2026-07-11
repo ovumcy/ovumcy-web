@@ -128,3 +128,90 @@ func TestDailyLogRepositoryRangeQueriesAndWhitelist(t *testing.T) {
 		t.Fatalf("expected 2 logs after deleting d1, got %d", len(remaining))
 	}
 }
+
+// TestDailyLogWriteScopedToUser proves the daily-log write path is scoped to the
+// row's owner: owner B cannot overwrite or mutate owner A's row by presenting an
+// entry that carries A's row ID but B's user_id. It locks the user_id guard on
+// Save() and UpdateSymptomIDs() — defense-in-depth for the household multi-owner
+// isolation boundary. Without the guard, both methods write by GORM primary key
+// alone (Save via an unscoped upsert, UpdateSymptomIDs via an unscoped update)
+// and silently reassign/mutate A's row across owners.
+func TestDailyLogWriteScopedToUser(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "daily-write-scope.db"))
+	ownerA := createDailyLogTestUser(t, database, "daily-write-owner-a@example.com")
+	ownerB := createDailyLogTestUser(t, database, "daily-write-owner-b@example.com")
+	repo := NewDailyLogRepository(database)
+
+	// Owner A persists row R with distinctive, non-default field values.
+	rowR := &models.DailyLog{
+		UserID:          ownerA,
+		Date:            time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC),
+		IsPeriod:        true,
+		Flow:            models.FlowHeavy,
+		Mood:            3,
+		SexActivity:     models.SexActivityNone,
+		CervicalMucus:   models.CervicalMucusNone,
+		PregnancyTest:   models.PregnancyTestNone,
+		BBT:             models.NewBBT(36.6),
+		CycleFactorKeys: []string{},
+		SymptomIDs:      []uint{11, 22},
+		Notes:           "owner A private note",
+	}
+	requireNoErr(t, repo.Create(context.Background(), rowR), "create row R for owner A")
+	if rowR.ID == 0 {
+		t.Fatal("expected persisted row R to have a non-zero id")
+	}
+
+	// reloadR reads R straight back by primary key (owner-agnostic) so we observe
+	// the raw persisted state regardless of which owner the row was reassigned to.
+	reloadR := func() models.DailyLog {
+		var got models.DailyLog
+		if err := database.First(&got, rowR.ID).Error; err != nil {
+			t.Fatalf("reload row R by id %d: %v", rowR.ID, err)
+		}
+		return got
+	}
+
+	// Owner B attempts to overwrite R via Save, claiming R's ID under B's user_id.
+	attackSave := models.DailyLog{
+		ID:              rowR.ID,
+		UserID:          ownerB,
+		Date:            rowR.Date,
+		IsPeriod:        false,
+		Flow:            models.FlowNone,
+		Mood:            0,
+		SexActivity:     models.SexActivityNone,
+		CervicalMucus:   models.CervicalMucusNone,
+		PregnancyTest:   models.PregnancyTestNone,
+		CycleFactorKeys: []string{},
+		SymptomIDs:      []uint{},
+		Notes:           "overwritten by owner B",
+	}
+	// With the guard this matches zero rows (user_id=B AND id=R) and is a clean
+	// no-op; it must not error and must not touch A's row.
+	requireNoErr(t, repo.Save(context.Background(), &attackSave), "cross-owner Save attempt")
+
+	afterSave := reloadR()
+	if afterSave.UserID != ownerA {
+		t.Fatalf("cross-owner Save reassigned row R: user_id=%d, want owner A=%d", afterSave.UserID, ownerA)
+	}
+	if afterSave.Notes != "owner A private note" || !afterSave.IsPeriod || afterSave.Flow != models.FlowHeavy || afterSave.Mood != 3 {
+		t.Fatalf("cross-owner Save mutated row R fields: got %+v", afterSave)
+	}
+
+	// Owner B attempts to overwrite R's symptom_ids via UpdateSymptomIDs.
+	attackSym := models.DailyLog{
+		ID:         rowR.ID,
+		UserID:     ownerB,
+		SymptomIDs: []uint{99, 99, 99},
+	}
+	requireNoErr(t, repo.UpdateSymptomIDs(context.Background(), &attackSym), "cross-owner UpdateSymptomIDs attempt")
+
+	afterSym := reloadR()
+	if afterSym.UserID != ownerA {
+		t.Fatalf("cross-owner UpdateSymptomIDs reassigned row R: user_id=%d, want owner A=%d", afterSym.UserID, ownerA)
+	}
+	if len(afterSym.SymptomIDs) != 2 || afterSym.SymptomIDs[0] != 11 || afterSym.SymptomIDs[1] != 22 {
+		t.Fatalf("cross-owner UpdateSymptomIDs mutated row R symptom_ids: got %v, want [11 22]", afterSym.SymptomIDs)
+	}
+}

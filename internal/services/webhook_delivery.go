@@ -319,9 +319,47 @@ func isPrivateHost(host string) bool {
 	return isPrivateIP(ip)
 }
 
+// cgnatNet is RFC 6598 carrier-grade-NAT space (100.64.0.0/10). Go's
+// net.IP.IsPrivate() deliberately excludes it, but internal / carrier
+// infrastructure legitimately lives there, so the gate classifies it as private.
+var cgnatNet = mustParseWebhookCIDR("100.64.0.0/10")
+
+// nat64WellKnownNet is the RFC 6052 NAT64 well-known prefix (64:ff9b::/96). An
+// address inside it embeds an IPv4 destination in its last four bytes; on a
+// network with a NAT64 gateway it routes to that embedded IPv4, so the embedded
+// address — not the IPv6 wrapper — decides internal reachability. isPrivateIP
+// unwraps it and re-classifies the embedded v4.
+var nat64WellKnownNet = mustParseWebhookCIDR("64:ff9b::/96")
+
+// mustParseWebhookCIDR parses a CIDR literal once, at package-init time. Its only
+// callers pass compile-time constants, so a parse failure is a build-time
+// programming error that can never arise at runtime; panicking is the correct
+// fail-fast (and cannot leave a nil *net.IPNet whose Contains would panic later).
+func mustParseWebhookCIDR(cidr string) *net.IPNet {
+	_, network, err := net.ParseCIDR(cidr)
+	if err != nil {
+		panic("services: invalid webhook CIDR literal " + cidr + ": " + err.Error()) // codecov:ignore -- unreachable: constant, valid CIDR literals always parse; fail-fast on a future typo
+	}
+	return network
+}
+
 // isPrivateIP is the core address classifier shared by the literal pre-check and
 // the guarded dialer: loopback, RFC1918/ULA private, link-local (unicast and
-// multicast), and the unspecified address all count as private.
+// multicast), the unspecified address, RFC 6598 CGNAT space (100.64.0.0/10,
+// which net.IP.IsPrivate() omits), and the RFC 6052 NAT64 well-known prefix
+// (64:ff9b::/96) wrapping a private IPv4 all count as private.
 func isPrivateIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+	// NAT64 well-known prefix (64:ff9b::/96) embeds an IPv4 destination in its
+	// last four bytes; on a NAT64-gatewayed network the address routes to that
+	// embedded IPv4, so a wrapper around a PRIVATE v4 (64:ff9b::a00:1 → 10.0.0.1)
+	// must be blocked, while a wrapper around a PUBLIC v4 (64:ff9b::808:808 →
+	// 8.8.8.8) stays allowed. Re-classify the embedded v4 — it is never itself in
+	// the prefix, so this recurses at most once. Contains is true only for a
+	// 16-byte v6 ip, so the ip[12:16] index is always in range.
+	if nat64WellKnownNet.Contains(ip) {
+		return isPrivateIP(net.IPv4(ip[12], ip[13], ip[14], ip[15]))
+	}
+	return ip.IsLoopback() || ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsUnspecified() || cgnatNet.Contains(ip)
 }

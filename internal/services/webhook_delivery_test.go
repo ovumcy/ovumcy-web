@@ -311,6 +311,9 @@ func TestIsPrivateHost(t *testing.T) {
 		"93.184.216.34":   false,
 		"example.test":    false, // a hostname, not an IP literal
 		"ntfy.example.io": false,
+		"100.64.0.1":      true,  // RFC 6598 CGNAT literal (net.IP.IsPrivate omits it)
+		"64:ff9b::a00:1":  true,  // RFC 6052 NAT64 literal wrapping 10.0.0.1
+		"203.0.113.10":    false, // TEST-NET-3 stays external (over-block guard)
 	}
 	for host, want := range cases {
 		if got := isPrivateHost(host); got != want {
@@ -406,6 +409,75 @@ func TestWebhookDeliveryBlocksMixedPublicPrivateAnswer(t *testing.T) {
 	}
 }
 
+// TestWebhookDeliveryBlocksHostnameResolvingToCarrierRanges proves the
+// resolve-and-check denylist also covers the two ranges Go's stdlib classifiers
+// miss: RFC 6598 CGNAT (100.64.0.0/10, which net.IP.IsPrivate omits) and the RFC
+// 6052 NAT64 well-known prefix (64:ff9b::/96) wrapping a private IPv4. With the
+// gate ON, a HOSTNAME resolving to either is refused before any destination is
+// contacted — reason=private_address_blocked is logged ONLY when the guarded
+// dialer returns errWebhookPrivateAddress from its pre-dial check, so that reason
+// proves no dial happened — and the log records the reason + host only, never the
+// resolved IP. Non-vacuous: against a classifier omitting these ranges the guard
+// would pass them and the logged reason would be transport_error.
+func TestWebhookDeliveryBlocksHostnameResolvingToCarrierRanges(t *testing.T) {
+	cases := map[string]string{
+		"cgnat_rfc6598": "100.64.0.1",     // carrier-grade NAT space
+		"nat64_rfc6052": "64:ff9b::a00:1", // NAT64 wrapping 10.0.0.1
+	}
+	for name, resolvedIP := range cases {
+		t.Run(name, func(t *testing.T) {
+			const hostname = "carrier.example"
+			target := "http://" + hostname + "/hook"
+			deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, resolvedIP))
+
+			// A short deadline bounds the regression path only: a classifier that
+			// missed the range would fall through to a real dial of the unroutable
+			// IP. The fixed classifier refuses before any dial, so this never waits.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+
+			output := captureLogOutput(t, func() {
+				if err := deliverer.Deliver(ctx, target, samplePayload()); err == nil {
+					t.Fatalf("expected hostname resolving to %s to be refused when gated on", resolvedIP)
+				}
+			})
+			if !strings.Contains(output, "reason=private_address_blocked") {
+				t.Fatalf("expected private_address_blocked (guard fired before any dial), got: %q", output)
+			}
+			if !strings.Contains(output, "host="+hostname) {
+				t.Fatalf("expected host=%s in log, got: %q", hostname, output)
+			}
+			if strings.Contains(output, resolvedIP) {
+				t.Fatalf("log leaked the resolved IP %q: %q", resolvedIP, output)
+			}
+		})
+	}
+}
+
+// TestWebhookDeliveryAllowsHostnameResolvingToTestNet3 is the over-block guard
+// for the exact sentinel the suite treats as external: 203.0.113.10 (TEST-NET-3)
+// must stay allowed even with the gate ON. It passes the private-address guard
+// and fails later only because the documentation-range IP is unroutable — so the
+// logged reason must NOT be private_address_blocked (which is what a wrongful
+// over-block would record).
+func TestWebhookDeliveryAllowsHostnameResolvingToTestNet3(t *testing.T) {
+	const hostname = "public.example"
+	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, "203.0.113.10"))
+	target := "http://" + hostname + "/hook"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	output := captureLogOutput(t, func() {
+		if err := deliverer.Deliver(ctx, target, samplePayload()); err == nil {
+			t.Fatal("expected the unroutable TEST-NET-3 target to fail the dial")
+		}
+	})
+	if strings.Contains(output, "reason=private_address_blocked") {
+		t.Fatalf("TEST-NET-3 (203.0.113.10) was wrongly blocked as private: %q", output)
+	}
+}
+
 // TestIsPrivateIP pins the core address classifier shared by the literal
 // pre-check and the guarded dialer.
 func TestIsPrivateIP(t *testing.T) {
@@ -424,6 +496,21 @@ func TestIsPrivateIP(t *testing.T) {
 		"8.8.8.8":      false,
 		"192.0.2.1":    false, // TEST-NET-1, public-classified
 		"2606:4700::1": false, // public IPv6
+		// RFC 6598 CGNAT (100.64.0.0/10): internal/carrier space that Go's
+		// net.IP.IsPrivate() omits, so the gate must still block it — with the /10
+		// boundaries staying public to guard against over-block.
+		"100.64.0.1":      true,
+		"100.127.255.255": true,
+		"100.63.255.255":  false, // just below the /10
+		"100.128.0.0":     false, // just above the /10
+		// RFC 6052 NAT64 well-known prefix (64:ff9b::/96): classified by the
+		// embedded IPv4 (last 4 bytes). A wrapped private / CGNAT v4 is blocked; a
+		// wrapped PUBLIC v4 stays allowed (it routes to the public internet).
+		"64:ff9b::a00:1":   true,  // wraps 10.0.0.1
+		"64:ff9b::6440:1":  true,  // wraps 100.64.0.1 (CGNAT)
+		"64:ff9b::808:808": false, // wraps 8.8.8.8 (public)
+		// TEST-NET-3 must stay external — the positive delivery path relies on it.
+		"203.0.113.10": false,
 	}
 	for literal, want := range cases {
 		ip := net.ParseIP(literal)
