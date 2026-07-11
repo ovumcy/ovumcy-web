@@ -125,16 +125,35 @@ func (repo *DailyLogRepository) Create(ctx context.Context, entry *models.DailyL
 	return repo.database.WithContext(ctx).Create(entry).Error
 }
 
+// Save persists a full update of an already-owned row. Like the read/delete
+// methods it is scoped by user_id: the update can only touch a row whose
+// user_id matches the entry's own UserID, so a mutated entry.UserID can never
+// silently reassign or overwrite another owner's row (defense-in-depth for the
+// household multi-owner boundary). Every caller sources entry from a
+// user-scoped read first, so a legitimate write always matches its row.
+//
+// Model(...).Select("*").Updates mirrors gorm.Save's "update all fields
+// including zero values" semantics while deliberately omitting Save's
+// upsert-on-zero-rows-affected fallback: under the guard a cross-owner attempt
+// matches zero rows, and that fallback would otherwise re-create/overwrite the
+// row by primary key and defeat the scope.
 func (repo *DailyLogRepository) Save(ctx context.Context, entry *models.DailyLog) error {
-	return repo.database.WithContext(ctx).Save(entry).Error
+	return repo.database.WithContext(ctx).
+		Model(entry).
+		Where("user_id = ?", entry.UserID).
+		Select("*").
+		Updates(entry).Error
 }
 
 func (repo *DailyLogRepository) DeleteByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) error {
 	return repo.database.WithContext(ctx).Where("user_id = ? AND date >= ? AND date < ?", userID, dayStart, dayEnd).Delete(&models.DailyLog{}).Error
 }
 
+// UpdateSymptomIDs updates only the symptom_ids column, scoped by user_id so the
+// write can only touch a row whose user_id matches the entry's own UserID
+// (defense-in-depth, mirroring Save and the read/delete methods).
 func (repo *DailyLogRepository) UpdateSymptomIDs(ctx context.Context, entry *models.DailyLog) error {
-	return repo.database.WithContext(ctx).Model(entry).Select("symptom_ids").Updates(entry).Error
+	return repo.database.WithContext(ctx).Model(entry).Where("user_id = ?", entry.UserID).Select("symptom_ids").Updates(entry).Error
 }
 
 // WithinTransaction runs fn against a transaction-scoped repository bound to a
