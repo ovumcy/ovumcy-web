@@ -278,15 +278,16 @@ test.describe('Calendar page', () => {
 
     const manualStartButton = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${pastISO}"] [data-day-cycle-start-button]`);
     await expect(manualStartButton).toBeVisible();
-    await Promise.all([
-      page.waitForResponse((response) => {
+    const [req] = await Promise.all([
+      page.waitForRequest((candidate) => {
         return (
-          response.request().method() === 'POST' &&
-          response.url().includes(`/api/v1/days/${pastISO}/cycle-start?source=calendar`)
+          candidate.method() === 'POST' &&
+          candidate.url().includes(`/api/v1/days/${pastISO}/cycle-start?source=calendar`)
         );
       }),
       manualStartButton.click(),
     ]);
+    await req.response();
 
     const editButton = page.locator(`[data-day-editor-open="${pastISO}"]`).first();
     await expect(editButton).toBeVisible();
@@ -319,15 +320,16 @@ test.describe('Calendar page', () => {
     await manualStartButton.click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
 
-    const [cycleStartResponse] = await Promise.all([
-      page.waitForResponse((response) => {
+    const [cycleStartRequest] = await Promise.all([
+      page.waitForRequest((candidate) => {
         return (
-          response.request().method() === 'POST' &&
-          response.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
+          candidate.method() === 'POST' &&
+          candidate.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
         );
       }),
       page.locator('#confirm-modal-accept').click(),
     ]);
+    const cycleStartResponse = await cycleStartRequest.response();
     expect(cycleStartResponse.status()).toBeLessThan(400);
     await page.waitForLoadState('networkidle');
 
@@ -371,15 +373,16 @@ test.describe('Calendar page', () => {
     await manualStartForm.locator('[data-day-cycle-start-button]').click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
 
-    const [cycleStartResponse] = await Promise.all([
-      page.waitForResponse((response) => {
+    const [cycleStartRequest] = await Promise.all([
+      page.waitForRequest((candidate) => {
         return (
-          response.request().method() === 'POST' &&
-          response.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
+          candidate.method() === 'POST' &&
+          candidate.url().includes(`/api/v1/days/${tomorrowISO}/cycle-start?source=calendar`)
         );
       }),
       page.locator('#confirm-modal-accept').click(),
     ]);
+    const cycleStartResponse = await cycleStartRequest.response();
     expect(cycleStartResponse.status()).toBeLessThan(400);
   });
 
