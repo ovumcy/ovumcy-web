@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
@@ -73,5 +74,48 @@ func TestSafeRequestLogPathMasksRawValueOnRawPath(t *testing.T) {
 	got := mustReadBodyString(t, resp.Body)
 	if got != "/days/:date" {
 		t.Fatalf("SafeRequestLogPath must mask the date value, got %q", got)
+	}
+}
+
+// TestSanitizeRequestLogSegmentRedactsBoundaryLetterTokens pins the UPPER bounds
+// of the two letter ranges in isOpaqueRequestLogSegment: L155 `char <= 'z'` and
+// L156 `char <= 'Z'`. The table in TestIsOpaqueRequestLogSegment covers the lower
+// bounds ('a'/'A') and every out-of-range witness, but NO accepted-token row
+// contains a literal 'z' or 'Z' — so a CONDITIONALS_BOUNDARY shift of either upper
+// bound to `< 'z'` / `< 'Z'` survives that table (empirically confirmed: the whole
+// request_logging suite still passes with both shifts applied).
+//
+// The shift is a redaction LOOSENING, not a formatting nit. Opaque bearer tokens
+// (e.g. the calendar-feed capability token) use a base64url-style alphabet, so
+// 'z' and 'Z' are in-range token characters. Under the shifted bound a token that
+// happens to contain the boundary letter fails isOpaqueRequestLogSegment, so
+// sanitizeRequestLogSegment falls through to its `default` arm and writes the
+// token VALUE verbatim into the always-on request log — the exact leak the log
+// redaction path exists to prevent.
+//
+// Each row is a 24-char (the minimum opaque length) token whose only
+// boundary-letter is 'z' (isolates L155) or 'Z' (isolates L156); both must stay
+// classified as ":token".
+func TestSanitizeRequestLogSegmentRedactsBoundaryLetterTokens(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		segment string
+	}{
+		{"upper lowercase boundary z stays redacted", strings.Repeat("a", 23) + "z"},
+		{"upper uppercase boundary Z stays redacted", strings.Repeat("A", 23) + "Z"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if !isOpaqueRequestLogSegment(tc.segment) {
+				t.Fatalf("isOpaqueRequestLogSegment(%q) = false, want true: the boundary letter must stay in the accepted range", tc.segment)
+			}
+			if got := sanitizeRequestLogSegment(tc.segment); got != ":token" {
+				t.Fatalf("sanitizeRequestLogSegment(%q) = %q, want %q: a boundary-letter token must be redacted, not logged verbatim", tc.segment, got, ":token")
+			}
+		})
 	}
 }

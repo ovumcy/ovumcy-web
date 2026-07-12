@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/security"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -464,6 +465,85 @@ func assertOIDCDeadline(t *testing.T, deadline time.Time) {
 	remaining := time.Until(deadline)
 	if remaining < 5*time.Second || remaining > 15*time.Second {
 		t.Fatalf("expected OIDC deadline near %s, got remaining %s", oidcExternalRequestTimeout, remaining)
+	}
+}
+
+// TestOIDCCallbackPersistsProviderLogoutStateOnSuccessfulLogin drives a full
+// form_post OIDC login whose Authenticate result carries a provider logout state
+// (result.Logout != nil), so CompleteOIDCLogin takes the L122 Save arm:
+//
+//	if err := handler.oidcLogoutStateSvc.Save(...); err != nil { redirect /login }
+//
+// The Save runs against the real test store and SUCCEEDS (err == nil), so on the
+// original code the handler proceeds to issue the session and redirect to the
+// owner's post-login path. The CONDITIONALS_NEGATION mutant flips the guard to
+// `err == nil`, which treats a SUCCESSFUL save as a failure: it logs an error,
+// clears the auth cookies, and redirects to /login — breaking every OIDC login
+// that also sets up a provider-logout bridge. That branch is otherwise only
+// exercised by the e2e OIDC lanes (skipped in default CI), so absent this test
+// the mutant survives the unit suite.
+//
+// Asserting the authenticated redirect + a live auth cookie + the persisted
+// logout state pins the success semantics and fails red under the mutation.
+func TestOIDCCallbackPersistsProviderLogoutStateOnSuccessfulLogin(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	stub.authURL = "https://id.example.com/authorize"
+	result := newOwnerOIDCLoginResult()
+	result.Logout = &services.OIDCLogoutState{
+		UserID:                result.User.ID,
+		EndSessionEndpoint:    "https://id.example.com/logout",
+		IDTokenHint:           "eyJhbGciOiJSUzI1NiJ9.header.signature",
+		PostLogoutRedirectURL: "https://app.example.com/login",
+	}
+	stub.result = result
+
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+
+	startResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+	stateCookie := responseCookie(startResponse.Cookies(), oidcStateCookieName)
+	if stateCookie == nil {
+		t.Fatal("expected OIDC state cookie from start flow")
+	}
+
+	callbackRequest := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+		"state": {stub.lastStartState},
+		"code":  {"provider-code"},
+	}.Encode()))
+	callbackRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	callbackRequest.Header.Set("Cookie", stateCookie.String())
+
+	callbackResponse := mustAppResponse(t, app, callbackRequest)
+	assertStatusCode(t, callbackResponse, http.StatusSeeOther)
+
+	wantLocation := services.PostLoginRedirectPath(&result.User)
+	if location := callbackResponse.Header.Get("Location"); location != wantLocation {
+		t.Fatalf("successful OIDC login with a provider logout state must land authenticated at %q, got %q", wantLocation, location)
+	}
+
+	authCookie := responseCookie(callbackResponse.Cookies(), authCookieName)
+	if authCookie == nil || strings.TrimSpace(authCookie.Value) == "" {
+		t.Fatal("expected a live auth cookie after a successful OIDC login; the logout-state save must not clear the session")
+	}
+
+	// The Save arm ran and succeeded: the provider logout state is now keyed on
+	// the freshly issued session id. Loading it back proves we were on the
+	// err == nil path the mutant inverts.
+	newSessionID := mustExtractAuthSessionIDFromCookieHeader(t, authCookie.Name+"="+authCookie.Value)
+	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
+	saved, found, err := stateService.Load(context.Background(), newSessionID, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("load persisted logout state: %v", err)
+	}
+	if !found {
+		t.Fatal("expected the provider logout state to be persisted on the new session id after a successful login")
+	}
+	if saved.EndSessionEndpoint != result.Logout.EndSessionEndpoint {
+		t.Fatalf("persisted end_session_endpoint = %q, want %q", saved.EndSessionEndpoint, result.Logout.EndSessionEndpoint)
 	}
 }
 
