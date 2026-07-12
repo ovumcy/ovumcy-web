@@ -367,6 +367,12 @@ func TestRetryAfterSecondsParsesHeader(t *testing.T) {
 		{name: "missing header", header: "", want: 0},
 		{name: "valid integer", header: "30", want: 30},
 		{name: "whitespace padded", header: "  45  ", want: 45},
+		// A Retry-After of exactly 1 second is the smallest valid back-off hint and
+		// must be preserved: the `seconds < 1` guard (error_mapping_rate_limit.go
+		// L58) rejects only 0/negative. A CONDITIONALS_BOUNDARY mutation to
+		// `seconds <= 1` drops this legitimate 1s hint (returns 0), so the JSON
+		// retry_after_seconds would silently disappear for the 1-second case.
+		{name: "one accepted", header: "1", want: 1},
 		{name: "zero rejected", header: "0", want: 0},
 		{name: "negative rejected", header: "-5", want: 0},
 		{name: "non-integer rejected", header: "Wed, 21 Oct 2026 07:28:00 GMT", want: 0},

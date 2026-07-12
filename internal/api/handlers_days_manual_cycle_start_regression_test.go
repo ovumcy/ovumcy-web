@@ -118,6 +118,43 @@ func TestMarkCycleStartHTMXWithCSRFRefreshesAndPersists(t *testing.T) {
 	}
 }
 
+// TestMarkCycleStartPlainRedirectHonorsCalendarSource pins the redirect target of
+// the plain (non-HTMX, non-JSON) MarkCycleStart branch (handlers_days_write.go
+// L185): `c.Query("source") == "calendar"` sends the user back to the calendar
+// month view they marked from; every other source falls through to /dashboard. A
+// CONDITIONALS_NEGATION mutant (`==` -> `!=`) swaps the two destinations, so a
+// calendar-originated mark would bounce to /dashboard and lose the user's place.
+func TestMarkCycleStartPlainRedirectHonorsCalendarSource(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "manual-cycle-start-redirect@example.com", "StrongPass1", true)
+	authCookie := issueAuthCookieForUser(t, user)
+
+	// source=calendar -> back to the calendar month + day of the marked cycle start.
+	calendarRequest := httptest.NewRequest(http.MethodPost, "/api/v1/days/2026-02-19/cycle-start?source=calendar", strings.NewReader(""))
+	calendarRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	calendarRequest.Header.Set("Cookie", authCookie)
+	calendarResponse := mustAppResponse(t, app, calendarRequest)
+	if calendarResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected plain cycle-start redirect status 303, got %d", calendarResponse.StatusCode)
+	}
+	if got := calendarResponse.Header.Get("Location"); got != "/calendar?month=2026-02&day=2026-02-19" {
+		t.Fatalf("expected calendar-source cycle start to redirect back to the calendar, got %q", got)
+	}
+
+	// No calendar source -> the default dashboard destination (pins the else arm so
+	// the negation is caught from both directions).
+	dashboardRequest := httptest.NewRequest(http.MethodPost, "/api/v1/days/2026-03-19/cycle-start", strings.NewReader(""))
+	dashboardRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	dashboardRequest.Header.Set("Cookie", authCookie)
+	dashboardResponse := mustAppResponse(t, app, dashboardRequest)
+	if dashboardResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected plain cycle-start redirect status 303, got %d", dashboardResponse.StatusCode)
+	}
+	if got := dashboardResponse.Header.Get("Location"); got != "/dashboard" {
+		t.Fatalf("expected non-calendar cycle start to redirect to /dashboard, got %q", got)
+	}
+}
+
 func TestMarkCycleStartMissingCSRFRejectedByMiddleware(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "manual-cycle-start-csrf@example.com", "StrongPass1", true)
