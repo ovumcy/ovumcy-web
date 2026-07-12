@@ -4,6 +4,42 @@ Authoritative gremlins run for the core domain package. Reproduce with
 `scripts/mutation.sh baseline` (per-package JSON lands in `.tmp/mutation/`); this
 file is the reviewed summary committed alongside the code.
 
+## v1.8.x exhaustive verification (2026-07-12)
+
+Every survivor in the v1.8.0 baseline (`workflow_dispatch` run
+[29168889008](https://github.com/ovumcy/ovumcy-web/actions/runs/29168889008) on
+tag `v1.8.0`, `internal_services`: 1753 mutants, 1523 killed, 115 lived, 110 not
+covered, 5 timed out) was verified per-mutant on branch `test/mutation-hardening`
+— the exact gremlins mutation applied, a **deliberately broad** covering test set
+run (not gremlins' coverage-guided subset), then reverted. This closes out the
+"newly surfaced survivors — not yet triaged" backlog recorded below. Production
+`.go` is unchanged (tests only). The raw survivor list over-reports (Go emits no
+coverage counter on `const`/`case` lines; gremlins' coverage-guided selection can
+miss the killing test), so the cycle-math and stats-insights survivors triaged as
+"equivalent" below were re-confirmed **already-killed or equivalent — zero
+genuine gaps** in those clusters. The genuine gaps were concentrated in the new
+v1.8.0 subsystems and a few security defaults, now pinned:
+
+- **New v1.8.0 code:** `.ics` line-fold over multibyte runes
+  (`calendar_feed_ics.go` L235), the feed history-window lower bound
+  (`calendar_feed_service.go` L110), the feed-token length contract
+  (`calendar_feed_token.go` L52), and webhook `>= 300` treated-as-failure
+  (`webhook_delivery.go` L294).
+- **Rate-limit defaults (security):** `DefaultLoginAttemptsWindow`
+  (`auth_attempt_policy.go` L14) and the default logout-attempt window
+  (`auth_service.go` L71) — a `* → /` mutation collapses each to `0`, silently
+  disabling brute-force throttling on the default-configured path; neither
+  default was exercised (existing tests override the window).
+- **Robustness on untrusted input:** `TrimDayNotes` (`day_input.go` L97) — the
+  rune-rewind lower-bound guard, if loosened, **panics** (`value[:-1]`) on an
+  over-limit notes value made entirely of UTF-8 continuation bytes (reachable via
+  the day-notes field).
+- **Import cap:** the JSON-restore entry cap (`import_service.go` L145) rejected
+  exactly `MaxImportEntries` under an off-by-one, contradicting the documented
+  "more than" contract.
+
+No suspected bugs (every mutated line broke correct behavior).
+
 ## Score (measured on the `mutation/shard-services-and-kills` branch)
 
 **Update — run [28837779621](https://github.com/ovumcy/ovumcy-web/actions/runs/28837779621)

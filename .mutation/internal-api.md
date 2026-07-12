@@ -4,6 +4,48 @@ Authoritative gremlins run for the transport/HTTP package. Reproduce with
 `scripts/mutation.sh baseline` (per-package JSON lands in `.tmp/mutation/`); this
 file is the reviewed summary committed alongside the code.
 
+## v1.8.x exhaustive verification (2026-07-12)
+
+Every survivor in the v1.8.0 baseline (`workflow_dispatch` run
+[29168889008](https://github.com/ovumcy/ovumcy-web/actions/runs/29168889008) on
+tag `v1.8.0`, `internal_api`: 743 mutants, 617 killed, 44 lived, 82 not covered)
+was verified per-mutant on branch `test/mutation-hardening` — the exact gremlins
+mutation applied, a **deliberately broad** covering test set run (not gremlins'
+coverage-guided subset), then reverted. Production `.go` is unchanged (tests
+only). The raw survivor list over-reports because Go emits no coverage counter on
+`const`/`case` lines and gremlins' coverage-guided selection can miss the killing
+test; most survivors were already-killed or equivalent, but several genuine gaps
+surfaced and are now pinned:
+
+- **Log-redaction of capability secrets (security):** the opaque-token
+  character-class upper boundaries `char <= 'z'` / `<= 'Z'`
+  (`request_logging.go` L155/L156) were unpinned — a base64url bearer token
+  containing a boundary letter (including the `.ics` calendar-feed capability
+  token) would fail `isOpaqueRequestLogSegment` and be logged **verbatim**.
+- **Sealed-cookie TTLs:** the `flash` cookie (L12) and the one-time `.ics`
+  feed-URL **secret** reveal cookie (`calendar_feed_reveal_cookie.go` L26) had no
+  test pinning their expiry; a `* → /` mutation collapsed each to immediate
+  expiry.
+- OIDC logout-state persistence on a *successful* login (`handlers_auth_oidc.go`
+  L122; only e2e-covered before); localized error/HTMX substitution and the
+  not-found raw-i18n-key leak (`error_mapping_{transport,pages}.go`); the
+  `Retry-After` back-off hint (`error_mapping_rate_limit.go` L58); authenticated
+  `/privacy` nav (`privacy_page_helpers.go` L18); calendar-sourced cycle-start
+  redirect (`handlers_days_write.go` L185); over-long symptom-draft echo
+  (`handlers_days_symptoms.go` L90); and `currentUserOrUnauthorized`'s
+  `handled` flag / latent nil-user deref (`page_request_helpers.go` L35).
+- Wave 3 additionally pinned the stats-page chart summaries, export form-value
+  preservation, timezone-cookie rewrite, and route-template log path.
+
+**Two items left for a maintainer (not defects):** `handlers_days_write.go` L113
+(a best-effort long-period-warning ack, cross-request, `codecov:ignore`) is a
+low-priority genuine survivor; `handlers_settings_danger.go` L75's in-code
+"equivalent" note describes a different operand than the actual `err != nil`→`==`
+mutant, which is observable only for a JSON-`Content-Type` erasure body and is
+**fail-closed** (denies a valid erasure, never weakens auth) — left
+equivalent-in-practice pending a decision on whether JSON-body erasure is
+supported. No suspected bugs.
+
 ## Score (measured on `a6d7e41`)
 
 A single unsharded CI run exceeds the job's 3h timeout before finishing (issue

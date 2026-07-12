@@ -3,6 +3,34 @@
 Authoritative gremlins run for the auth/crypto/OIDC package (reproduce with
 `scripts/mutation.sh baseline`); this file is the reviewed summary.
 
+## v1.8.x exhaustive verification (2026-07-12)
+
+Every survivor in the v1.8.0 baseline (`workflow_dispatch` run
+[29168889008](https://github.com/ovumcy/ovumcy-web/actions/runs/29168889008) on
+tag `v1.8.0`, `internal_security`: 142 mutants, 118 killed, 8 lived, 16 not
+covered) was verified per-mutant on branch `test/mutation-hardening` — the exact
+gremlins mutation applied to the source, a **deliberately broad** covering test
+set run (not gremlins' coverage-guided subset), then reverted. Production `.go`
+is unchanged (tests only).
+
+**Why the raw survivor list over-reports:** Go emits no coverage counter on
+`const`/`case` lines (they show NOT_COVERED regardless of tests), and gremlins'
+coverage-guided selection can run an incomplete test subset for such lines, so a
+mutant an existing test *does* kill still shows LIVED. Most `oidc.go` survivors
+were already-killed by existing tests; the genuine gaps below are now pinned
+(`oidc_mutkill_test.go`, plus a `serveToken` mock-IdP path in
+`oidc_runtime_poc_test.go`):
+
+- provider memoization guard (L416), `DefaultTransport` clone (L659), custom-CA
+  add to system roots (L668), `AuthCodeURL` blank-extra-key skip (L331);
+- the full `ExchangeCode` verify/guard chain (L345–L373), the **nonce-mismatch
+  reject** (L363), and the `iat`/`auth_time` zero-vs-present boundaries (L378/L382).
+
+Residual survivors are documented equivalents (e.g. the L278 trailing-`@`
+index-bounded guard) or `const`-line attribution artifacts (the 10s outbound
+timeout, pinned behaviorally by `TestOIDCHTTPClientTimeoutIsBounded`). No
+suspected bugs.
+
 ## Score (measured on the `mutation/shard-services-and-kills` branch)
 
 **Source: workflow_dispatch run
