@@ -50,6 +50,8 @@ re-auth-for-erasure invariant is upheld, not bypassed).
 (`feedbackErr == nil` guard) is pinned by
 `TestUpsertDayPersistsLongPeriodWarningAcknowledgement`. No suspected bugs.
 
+**Post-hardening re-measure.** A fresh clean-Linux run on the `test/mutation-hardening` branch ([29192052605](https://github.com/ovumcy/ovumcy-web/actions/runs/29192052605)) confirms the closed gaps: `internal_api` **97.3%** (649 killed / 18 lived, 76 not covered), up from 93.3% at the v1.8.0 baseline. Current canonical figure (mirrored in `TESTING.md`); the dated `## Score` sections below are prior runs, kept as history.
+
 ## Score (measured on `a6d7e41`)
 
 A single unsharded CI run exceeds the job's 3h timeout before finishing (issue

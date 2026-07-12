@@ -31,6 +31,8 @@ index-bounded guard) or `const`-line attribution artifacts (the 10s outbound
 timeout, pinned behaviorally by `TestOIDCHTTPClientTimeoutIsBounded`). No
 suspected bugs.
 
+**Post-hardening re-measure.** A fresh clean-Linux run on the `test/mutation-hardening` branch ([29192052605](https://github.com/ovumcy/ovumcy-web/actions/runs/29192052605)) confirms the closed gaps: `internal_security` **97.8%** (134 killed / 3 lived, 5 not covered), up from 93.7% at the v1.8.0 baseline. Current canonical figure (mirrored in `TESTING.md`); the dated `## Score` sections below are prior runs, kept as history.
+
 ## Score (measured on the `mutation/shard-services-and-kills` branch)
 
 **Source: workflow_dispatch run

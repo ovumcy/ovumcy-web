@@ -40,6 +40,8 @@ v1.8.0 subsystems and a few security defaults, now pinned:
 
 No suspected bugs (every mutated line broke correct behavior).
 
+**Post-hardening re-measure.** A fresh clean-Linux run on the `test/mutation-hardening` branch ([29192052605](https://github.com/ovumcy/ovumcy-web/actions/runs/29192052605)) → `internal_services` **93.3%** (1529 killed / 109 lived, 110 not covered), up from 93.0% at the v1.8.0 baseline; the modest gain reflects that the services survivors were overwhelmingly documented equivalents, not gaps. Current canonical figure (mirrored in `TESTING.md`); the dated `## Score` sections below are prior runs, kept as history.
+
 ## Score (measured on the `mutation/shard-services-and-kills` branch)
 
 **Update — run [28837779621](https://github.com/ovumcy/ovumcy-web/actions/runs/28837779621)
