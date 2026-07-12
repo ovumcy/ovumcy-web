@@ -37,14 +37,18 @@ surfaced and are now pinned:
 - Wave 3 additionally pinned the stats-page chart summaries, export form-value
   preservation, timezone-cookie rewrite, and route-template log path.
 
-**Two items left for a maintainer (not defects):** `handlers_days_write.go` L113
-(a best-effort long-period-warning ack, cross-request, `codecov:ignore`) is a
-low-priority genuine survivor; `handlers_settings_danger.go` L75's in-code
-"equivalent" note describes a different operand than the actual `err != nil`→`==`
-mutant, which is observable only for a JSON-`Content-Type` erasure body and is
-**fail-closed** (denies a valid erasure, never weakens auth) — left
-equivalent-in-practice pending a decision on whether JSON-body erasure is
-supported. No suspected bugs.
+**Two initially-flagged items, now resolved and pinned:**
+`handlers_settings_danger.go` L75 — the `err != nil` operand negation (distinct
+from the genuinely-equivalent `hasJSONBody` operand documented in
+`settings_mutation_handlers_test.go`) breaks a valid **JSON-body erasure**, which
+is a supported flow: `DELETE /api/v1/users/current` and
+`POST /api/v1/users/current/data-wipe/validate` both accept `application/json`.
+Pinned by `TestValidateClearDataPassword_JSONBodyWithCorrectPasswordSucceeds`
+(valid password + CSRF + owner session must still succeed — the
+re-auth-for-erasure invariant is upheld, not bypassed).
+`handlers_days_write.go` L113 — the long-period-warning acknowledgement
+(`feedbackErr == nil` guard) is pinned by
+`TestUpsertDayPersistsLongPeriodWarningAcknowledgement`. No suspected bugs.
 
 ## Score (measured on `a6d7e41`)
 

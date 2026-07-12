@@ -37,6 +37,55 @@ import (
 // There is therefore no request where the guard's value changes the observable
 // spec/status — verified by running the full clear-data/delete/missing-password
 // suite green with the operand negated.
+//
+// GENUINE GAP (now pinned): only the `hasJSONBody(c)` operand negation above is
+// equivalent. The CONDITIONALS_NEGATION mutant on the OTHER operand of the same
+// line — `err != nil` -> `err == nil` — is a real survivor. With a valid JSON body
+// bind succeeds (err == nil), so the mutant enters the block and rejects a
+// correct-password erasure as "missing password". The form/HTMX clear-data suites
+// never send a real JSON body, so this branch went unexercised; it is now pinned by
+// TestValidateClearDataPassword_JSONBodyWithCorrectPasswordSucceeds below.
+
+// --- handlers_settings_danger.go ---
+
+// TestValidateClearDataPassword_JSONBodyWithCorrectPasswordSucceeds pins the
+// GENUINE CONDITIONALS_NEGATION survivor on the `err != nil` operand of
+// handlers_settings_danger.go:75
+// (`if err := c.Bind().Body(&input); err != nil && hasJSONBody(c)`). The JSON REST
+// endpoints (POST /data-wipe/validate, DELETE /users/current) are the only callers
+// that send a real application/json body; the form/HTMX suites never do, so this
+// branch was uncovered. With a valid JSON body carrying the CORRECT current
+// password (+ owner session + CSRF header), bind succeeds (err == nil), so the
+// mutant (`err == nil`) enters the block and rejects the request as "missing
+// password". Driving the non-destructive validate endpoint and asserting SUCCESS
+// makes the mutant fail while still requiring a valid password + CSRF + owner
+// session — the re-auth-for-erasure invariant is upheld, not bypassed.
+func TestValidateClearDataPassword_JSONBodyWithCorrectPasswordSucceeds(t *testing.T) {
+	scenario := setupClearDataScenario(t)
+
+	// A JSON body has no csrf_token form field, so the CSRF token rides the
+	// X-CSRF-Token header (the source the form-then-header extractor falls back to).
+	body := `{"password":"StrongPass1"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/data-wipe/validate", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("X-CSRF-Token", scenario.csrfToken)
+	request.Header.Set("Cookie", settingsCookieHeader(scenario.authCookie, scenario.csrfCookie))
+
+	response, err := scenario.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("json validate request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected JSON-body validate with correct password to succeed (200), got %d (body %q)", response.StatusCode, mustReadBodyString(t, response.Body))
+	}
+	// Validate is non-destructive: an accepted validation must not wipe the seeded
+	// logs, custom symptoms, or cycle settings.
+	assertClearDataPreconditionsRemain(t, scenario.database, scenario.user)
+}
 
 // --- handlers_settings_2fa.go ---
 
