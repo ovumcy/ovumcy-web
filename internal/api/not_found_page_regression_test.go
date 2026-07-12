@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gofiber/fiber/v3"
 	"golang.org/x/net/html"
 )
 
@@ -157,5 +158,47 @@ func TestNotFoundHTMXPathReturnsLocalizedStatusErrorMarkup(t *testing.T) {
 	}
 	if strings.Contains(rendered, "<html") {
 		t.Fatalf("expected htmx branch to avoid full page markup, got %q", rendered)
+	}
+}
+
+// TestNotFoundHTMXNeverLeaksRawTitleKeyWhenTranslationMissing pins the fallback
+// branch in respondNotFoundMappedError (error_mapping_pages.go L61): when the
+// "not_found.title" translation is MISSING, translateMessage echoes the raw i18n
+// key, and the `message == "not_found.title"` guard must replace it with a human
+// fallback so the user never sees the bare key. A CONDITIONALS_NEGATION mutant
+// (`==` -> `!=`) inverts the guard, letting the raw key render as the visible
+// HTMX message. Drive the responder directly with an empty message catalog so
+// the fallback branch is the one under test, and assert the visible flash text
+// is never the raw key (a no-raw-key-leak invariant, not a copy assertion).
+func TestNotFoundHTMXNeverLeaksRawTitleKeyWhenTranslationMissing(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New()
+	app.Get("/probe", func(c fiber.Ctx) error {
+		// Empty catalog => translateMessage returns the key verbatim, forcing the
+		// human-fallback branch.
+		c.Locals(contextMessagesKey, map[string]string{})
+		return respondNotFoundMappedError(c)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/probe", nil)
+	request.Header.Set("HX-Request", "true")
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("not-found htmx probe failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", response.StatusCode)
+	}
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	flash := htmlFlashByKey(document, "not_found.title")
+	if flash == nil {
+		t.Fatal("expected htmx not-found response to carry the not_found.title flash key")
+	}
+	if got := normalizeHTMLText(htmlNodeText(flash)); got == "not_found.title" {
+		t.Fatalf("htmx not-found message leaked the raw i18n key as visible text: %q", got)
 	}
 }

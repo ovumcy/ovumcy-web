@@ -130,6 +130,66 @@ func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
 	}
 }
 
+// TestSettingsSymptomsHTMXUpdateTooLongDoesNotEchoDraftName pins the
+// error-branch draft-echo decision in UpdateSymptom (handlers_days_symptoms.go
+// L90). On a too-long name the handler deliberately sets useDraftValues=false so
+// the rejected 40+ char draft is NOT re-rendered into the edit input (echoing it
+// would splatter the oversized value back into the form); every other update
+// error keeps the draft so the user can fix it. A CONDITIONALS_NEGATION mutant
+// (`==` -> `!=`) inverts that, echoing the over-long draft on the too-long path.
+func TestSettingsSymptomsHTMXUpdateTooLongDoesNotEchoDraftName(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "settings-symptoms-htmx-update-too-long@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
+
+	existing := models.SymptomType{UserID: user.ID, Name: "Cramps", Icon: "✨", Color: "#334455"}
+	if err := database.Create(&existing).Error; err != nil {
+		t.Fatalf("create symptom: %v", err)
+	}
+
+	// maxSymptomNameLength is 40; this distinctive 55-char draft is over the cap and
+	// cannot collide with the persisted name or any icon, so a plain absence check
+	// unambiguously proves the draft was not echoed back.
+	const tooLongDraft = "OVERLONG-DRAFT-ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+	updateForm := url.Values{
+		"csrf_token": {csrfToken},
+		"name":       {tooLongDraft},
+		"icon":       {"✨"},
+	}
+	updateRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/symptoms/"+strconv.FormatUint(uint64(existing.ID), 10), strings.NewReader(updateForm.Encode()))
+	updateRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	updateRequest.Header.Set("HX-Request", "true")
+	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+
+	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("update too-long symptom htmx request failed: %v", err)
+	}
+	defer func() { _ = updateResponse.Body.Close() }()
+	if updateResponse.StatusCode != http.StatusOK {
+		t.Fatalf("expected htmx update status 200, got %d", updateResponse.StatusCode)
+	}
+	renderedUpdate := mustReadBodyString(t, updateResponse.Body)
+
+	// The row-local error must render (confirms we exercised the too-long path).
+	assertBodyContainsAll(t, renderedUpdate,
+		bodyStringMatch{fragment: `data-symptom-row-error`, message: "expected row-local error container after too-long update"},
+	)
+	// The over-long draft must NOT be echoed back into the form.
+	assertBodyNotContainsAll(t, renderedUpdate,
+		bodyStringMatch{fragment: tooLongDraft, message: "over-long update draft must not be echoed back into the edit form"},
+	)
+
+	stored := models.SymptomType{}
+	if err := database.First(&stored, existing.ID).Error; err != nil {
+		t.Fatalf("reload symptom after too-long update: %v", err)
+	}
+	if stored.Name != "Cramps" {
+		t.Fatalf("expected persisted symptom name unchanged, got %q", stored.Name)
+	}
+}
+
 func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "settings-symptoms-htmx-too-long@example.com", "StrongPass1", true)

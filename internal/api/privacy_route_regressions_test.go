@@ -75,6 +75,18 @@ func TestPrivacyRouteBackLinkForAuthenticatedUser(t *testing.T) {
 	if !privacyHasBreadcrumbLink(document, "/dashboard") {
 		t.Fatal("expected privacy breadcrumb to link back to /dashboard for authenticated users")
 	}
+	// The authenticated nav chrome is gated on .CurrentUser in base.html. Pin its
+	// presence: buildPrivacyPageData only sets data["CurrentUser"] when a user is
+	// present (privacy_page_helpers.go L18); a CONDITIONALS_NEGATION mutant there
+	// drops CurrentUser for an authenticated viewer, collapsing the page to guest
+	// chrome. The back link alone can't catch that — it is driven by BackPath,
+	// which stays /dashboard regardless of whether CurrentUser is threaded through.
+	navAccountActions := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-nav-account-actions")
+	})
+	if navAccountActions == nil {
+		t.Fatal("expected authenticated nav account actions on the privacy page for a signed-in user")
+	}
 }
 
 func privacySectionIDs(root *html.Node) []string {

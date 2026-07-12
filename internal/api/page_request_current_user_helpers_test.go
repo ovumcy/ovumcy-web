@@ -68,9 +68,11 @@ func TestCurrentUserOrRedirectToLoginReturnsUserWhenPresent(t *testing.T) {
 func TestCurrentUserOrUnauthorizedWhenMissing(t *testing.T) {
 	t.Parallel()
 
+	var observedHandled bool
 	app := fiber.New()
 	app.Get("/", func(c fiber.Ctx) error {
-		_, _, err := currentUserOrUnauthorized(c)
+		_, handled, err := currentUserOrUnauthorized(c)
+		observedHandled = handled
 		return err
 	})
 
@@ -81,5 +83,14 @@ func TestCurrentUserOrUnauthorizedWhenMissing(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected status 401, got %d", response.StatusCode)
+	}
+	// When the caller is missing, the helper writes the 401 itself and MUST report
+	// handled=true so callers (CalendarDayPanel) return immediately instead of
+	// proceeding with a nil user. page_request_helpers.go L35 gates this on the
+	// respond call's error; a CONDITIONALS_NEGATION mutant (`!= nil` -> `== nil`)
+	// returns handled=false on the success path, dropping that defense-in-depth
+	// stop and inviting a nil-user deref downstream.
+	if !observedHandled {
+		t.Fatal("expected currentUserOrUnauthorized to report handled=true after writing the 401")
 	}
 }

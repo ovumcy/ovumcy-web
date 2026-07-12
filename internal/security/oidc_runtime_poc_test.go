@@ -132,6 +132,12 @@ type mockOIDCProvider struct {
 	// same-origin target must be followed, a cross-origin one refused).
 	discoveryRedirectTo string
 
+	// idToken, when set, makes the /token endpoint answer a successful OAuth2
+	// token response carrying this signed id_token so the real ExchangeCode
+	// path can be driven end-to-end. Left empty it keeps the historical 501
+	// stub, so pre-existing tests that never exchange a code are unaffected.
+	idToken string
+
 	// issuer is the URL returned in discovery and in JWT iss claims.
 	// httptest.NewTLSServer assigns it at startup.
 	issuer string
@@ -153,9 +159,7 @@ func newMockOIDCProvider(t *testing.T) (*mockOIDCProvider, []byte) {
 	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "authorize stub: PoC tests do not drive the browser flow", http.StatusNotImplemented)
 	})
-	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "token stub: PoC tests do not exchange the code", http.StatusNotImplemented)
-	})
+	mux.HandleFunc("/token", mock.serveToken)
 
 	caPEM, serverCert := newTestCAAndLeaf(t)
 	server := httptest.NewUnstartedServer(mux)
@@ -199,6 +203,24 @@ func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+// serveToken answers the OAuth2 code-exchange POST. With no idToken configured
+// it preserves the historical 501 stub (PoC tests that never exchange a code);
+// once a test sets mock.idToken it returns a well-formed token response so the
+// production ExchangeCode path can run against a real signed id_token.
+func (m *mockOIDCProvider) serveToken(w http.ResponseWriter, r *http.Request) {
+	if m.idToken == "" {
+		http.Error(w, "token stub: PoC tests do not exchange the code", http.StatusNotImplemented)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"access_token": "test-access-token",
+		"token_type":   "Bearer",
+		"expires_in":   3600,
+		"id_token":     m.idToken,
+	})
 }
 
 func (m *mockOIDCProvider) serveJWKS(w http.ResponseWriter, r *http.Request) {

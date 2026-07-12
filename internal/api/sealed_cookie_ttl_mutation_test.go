@@ -373,3 +373,90 @@ func TestReadRecoveryCodeDisplayStateEmptyTargetDerivesFromPath(t *testing.T) {
 		t.Fatalf("expected status 204, got %d", response.StatusCode)
 	}
 }
+
+// --- flashCookieTTL: 5 * time.Minute (cookie Expires attribute) --------------
+//
+// flash.go L12 was an ARITHMETIC_BASE "NOT COVERED": `5 * time.Minute` mutates
+// to `5 / time.Minute` == 0s, which stamps the flash Set-Cookie with a now-ish
+// (immediately expiring) Expires so a flash message never survives the redirect
+// to the page that renders it. popFlashCookie carries no ExpiresAt of its own
+// and never validates expiry, so only the Set-Cookie Expires attribute pins the
+// window — assert it against a literal 5m, not the production constant.
+
+func TestFlashCookieExpiresHonorsFiveMinuteTTL(t *testing.T) {
+	t.Parallel()
+
+	handler := ttlMutationTestHandler()
+	app := fiber.New()
+	app.Get("/set", func(c fiber.Ctx) error {
+		handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "password_changed"})
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	before := time.Now()
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/set", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	after := time.Now()
+
+	cookie := responseCookie(response.Cookies(), flashCookieName)
+	if cookie == nil {
+		t.Fatal("expected a flash Set-Cookie")
+	}
+	if cookie.Expires.IsZero() {
+		t.Fatal("flash cookie must carry an explicit expiry, not be session-scoped")
+	}
+
+	minExpiry := before.Add(5*time.Minute - ttlSlack)
+	maxExpiry := after.Add(5*time.Minute + ttlSlack)
+	if cookie.Expires.Before(minExpiry) || cookie.Expires.After(maxExpiry) {
+		t.Fatalf("expected flash cookie expiry in [%s, %s], got %s", minExpiry, maxExpiry, cookie.Expires)
+	}
+}
+
+// --- calendarFeedRevealCookieTTL: 20 * time.Minute (cookie Expires attribute) -
+//
+// calendar_feed_reveal_cookie.go L26 was an ARITHMETIC_BASE "NOT COVERED":
+// `20 * time.Minute` mutates to `20 / time.Minute` == 0s. This cookie seals the
+// one-time calendar-feed subscribe URL (a SECRET) for a shown-once reveal; a 0s
+// Expires makes it session-immediately-expiring so the reveal page can never
+// read it back. The payload carries no expiry and readCalendarFeedRevealState
+// does not validate one, so the Set-Cookie Expires attribute is the only TTL
+// surface — pin it against a literal 20m.
+
+func TestCalendarFeedRevealCookieExpiresHonorsTwentyMinuteTTL(t *testing.T) {
+	t.Parallel()
+
+	handler := ttlMutationTestHandler()
+	app := fiber.New()
+	app.Get("/set", func(c fiber.Ctx) error {
+		if err := handler.setCalendarFeedRevealCookie(c, 7, "https://ovumcy.example/calendar/feed/ABCDEFGHJKLMNPQR1234567890ABCDEFGH.ics", false); err != nil {
+			t.Fatalf("setCalendarFeedRevealCookie: %v", err)
+		}
+		return c.SendStatus(http.StatusNoContent)
+	})
+
+	before := time.Now()
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/set", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	after := time.Now()
+
+	cookie := responseCookie(response.Cookies(), calendarFeedRevealCookieName)
+	if cookie == nil {
+		t.Fatal("expected a calendar-feed-reveal Set-Cookie")
+	}
+	if cookie.Expires.IsZero() {
+		t.Fatal("calendar-feed-reveal cookie must carry an explicit expiry, not be session-scoped")
+	}
+
+	minExpiry := before.Add(20*time.Minute - ttlSlack)
+	maxExpiry := after.Add(20*time.Minute + ttlSlack)
+	if cookie.Expires.Before(minExpiry) || cookie.Expires.After(maxExpiry) {
+		t.Fatalf("expected calendar-feed-reveal cookie expiry in [%s, %s], got %s", minExpiry, maxExpiry, cookie.Expires)
+	}
+}
