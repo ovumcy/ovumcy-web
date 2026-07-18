@@ -12,6 +12,7 @@ import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers'
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
+import { checkStyledControl } from './support/form-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
 
 function shiftISODate(iso: string, days: number): string {
@@ -142,7 +143,7 @@ test.describe('Calendar page', () => {
     const dayEditorForm = await openCalendarDayEditor(page, pastISO);
 
     await dayEditorForm.locator('input[name="is_period"]').check();
-    await dayEditorForm.locator('input[name="flow"][value="medium"]').check({ force: true });
+    await checkStyledControl(dayEditorForm.locator('input[name="flow"][value="medium"]'));
 
     const noteText = `calendar-note-${Date.now()}`;
     await openCalendarNotes(dayEditorForm);

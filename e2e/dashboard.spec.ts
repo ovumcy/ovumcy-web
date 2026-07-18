@@ -10,6 +10,7 @@ import {
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
+import { checkStyledControl } from './support/form-helpers';
 
 async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<void> {
   const creds = createCredentials(prefix);
@@ -219,10 +220,10 @@ test.describe('Dashboard: today editor', () => {
     await periodToggle.check();
     await expect(flowMedium).toBeEnabled();
 
-    await flowMedium.check({ force: true });
+    await checkStyledControl(flowMedium);
     await expect(flowMedium).toBeChecked();
 
-    await flowHeavy.check({ force: true });
+    await checkStyledControl(flowHeavy);
     await expect(flowHeavy).toBeChecked();
     await expect(flowMedium).not.toBeChecked();
 
@@ -301,7 +302,7 @@ test.describe('Dashboard: today editor', () => {
     const firstSymptom = todaySymptomOptions(page).nth(0);
 
     await periodToggle.check();
-    await flowLight.check({ force: true });
+    await checkStyledControl(flowLight);
     await symptomChipForOption(firstSymptom).click();
     await expect(symptomInputForOption(firstSymptom)).toBeChecked();
 
@@ -331,7 +332,7 @@ test.describe('Dashboard: today editor', () => {
     const notes = page.locator('#today-notes');
 
     await periodToggle.check();
-    await flowMedium.check({ force: true });
+    await checkStyledControl(flowMedium);
     await symptomChipForOption(firstSymptom).click();
     await openTodayNotes(page);
     await notes.fill(`to-clear-${Date.now()}`);
@@ -371,7 +372,7 @@ test.describe('Dashboard: today editor', () => {
     const noteText = `dashboard-calendar-sync-${Date.now()}`;
 
     await periodToggle.check();
-    await flowMedium.check({ force: true });
+    await checkStyledControl(flowMedium);
     await openTodayNotes(page);
     await notes.fill(noteText);
     await saveToday(page);
@@ -399,7 +400,7 @@ test.describe('Dashboard: today editor', () => {
     expect(firstSymptomValue).toBeTruthy();
     expect(firstSymptomLabel).toBeTruthy();
 
-    await moodFour.check({ force: true });
+    await checkStyledControl(moodFour);
     await symptomChipForOption(firstSymptom).click();
     await saveToday(page);
 
