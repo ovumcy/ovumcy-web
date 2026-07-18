@@ -28,7 +28,7 @@ The `/privacy` page renders a public-facing privacy notice that states what is s
 
 ## Data Inventory
 
-The full data inventory lives in [`SECURITY.md`](../SECURITY.md#data-inventory) under "Data Inventory". The short version:
+The full data inventory lives in [`docs/security/data-handling.md`](security/data-handling.md#data-inventory) under "Data Inventory". The short version:
 
 - `users`: identity, password/recovery hashes, cycle preferences, tracking flags, optional encrypted TOTP secret.
 - `daily_logs`: per-day cycle entries, owner-controlled symptoms, free-text notes.
@@ -44,7 +44,7 @@ The full data inventory lives in [`SECURITY.md`](../SECURITY.md#data-inventory) 
 | --- | --- | --- |
 | **Access (Art. 15)** | The data subject can view all their records in the dashboard, calendar, and stats pages, and their account profile and cycle/tracking settings in `Settings`. The machine-readable exports (`GET /api/v1/exports/csv`, `GET /api/v1/exports/json`) cover the **day-level health record**: per-day entries, notes, and custom symptoms as logged on an exported day. They do **not** include the account profile (email, display name), cycle/tracking settings, reminder/webhook configuration, or symptoms that were only ever archived and never logged — those remain viewable in the UI. | None required when the subject controls their own login and can read both the export and their `Settings`. For a third-party subject, fulfil within one month by exporting the health record on their behalf **and** separately supplying the profile and settings fields (`Settings`, or `ovumcy users list`). |
 | **Rectification (Art. 16)** | Every cycle, day, symptom, and profile field is editable from the UI. Note that hiding a custom symptom in `Settings → Symptoms` (the UI "delete", `DELETE /api/v1/symptoms/{id}`) is an **archive**, not an erasure: the symptom stays restorable and its name persists in the database until `Clear data` or account deletion removes it. | None required. |
-| **Erasure (Art. 17)** | `Settings → Clear data` (`POST /api/v1/users/current/data-wipe`) wipes per-account health records while keeping the account active. `Settings → Delete account` (`DELETE /api/v1/users/current`) removes the account entirely, including built-in and custom symptoms, with `ON DELETE CASCADE` propagating to `oidc_identities`. Both flows bump `auth_session_version` and require the current password. See [`SECURITY.md → Retention and Deletion`](../SECURITY.md#retention-and-deletion). | Document the contact channel for subjects who cannot self-serve. Schedule a backup purge that respects the deletion (see *Backups*, below). |
+| **Erasure (Art. 17)** | `Settings → Clear data` (`POST /api/v1/users/current/data-wipe`) wipes per-account health records while keeping the account active. `Settings → Delete account` (`DELETE /api/v1/users/current`) removes the account entirely, including built-in and custom symptoms, with `ON DELETE CASCADE` propagating to `oidc_identities`. Both flows bump `auth_session_version` and require the current password. See [`Retention and Deletion`](security/data-handling.md#retention-and-deletion). | Document the contact channel for subjects who cannot self-serve. Schedule a backup purge that respects the deletion (see *Backups*, below). |
 | **Restriction (Art. 18)** | Built-in tracking toggles let owners hide sex activity, cycle factors, and notes from new entries. Stored history stays in the database; if a subject demands full processing pause, use `clear-data` or revoke their account credentials. | Manual operator action if a subject requests full restriction beyond UI hiding. |
 | **Portability (Art. 20)** | CSV and JSON exports provide the day-level health record (per-day entries, notes, and symptoms logged on those days) in machine-readable form. Account profile and cycle/tracking settings are not part of the export; they are viewable and rectifiable in `Settings`. | None required for the health record. If a portability request also covers profile/settings, supply those separately (`Settings`, or `ovumcy users list`). |
 | **Objection (Art. 21)** | Ovumcy does not process data for direct marketing or automated profiling. There are no objection cases that apply technically. | None required. |
@@ -65,7 +65,7 @@ The full mapping from `SECURITY.md` claims to enforcing tests lives in [`SECURIT
 
 ## Encryption at Rest (Art. 32)
 
-Ovumcy encrypts **a specific subset** of database fields at the application layer (TOTP secrets via AES-256-GCM with HKDF-derived keys and per-row AAD binding). **It does not encrypt the database file itself.** This is a deliberate scope choice for a single-tenant self-hosted application; for the operator-as-adversary threat model see [`SECURITY.md → Threat Model`](../SECURITY.md#threat-model).
+Ovumcy encrypts **a specific subset** of database fields at the application layer (TOTP secrets via AES-256-GCM with HKDF-derived keys and per-row AAD binding). **It does not encrypt the database file itself.** This is a deliberate scope choice for a single-tenant self-hosted application; for the operator-as-adversary threat model see [`Threat Model`](security/threat-model.md#threat-model).
 
 For GDPR Art. 32 (security of processing), operators must add filesystem- or volume-level encryption appropriate to their environment:
 
@@ -80,17 +80,17 @@ For GDPR Art. 32 (security of processing), operators must add filesystem- or vol
 
 ## `SECRET_KEY` Management
 
-`SECRET_KEY` (or the file behind `SECRET_KEY_FILE`) is the single application-wide secret. See [`SECURITY.md → SECRET_KEY Usage Map`](../SECURITY.md#secret_key-usage-map) for the full derivation table.
+`SECRET_KEY` (or the file behind `SECRET_KEY_FILE`) is the single application-wide secret. See [`SECRET_KEY Usage Map`](security/cryptography.md#secret_key-usage-map) for the full derivation table.
 
 Operational rules:
 
 1. Generate `SECRET_KEY` with at least 32 bytes of cryptographically secure randomness — `openssl rand -hex 32` or equivalent. Ovumcy refuses placeholder values like `change_me_in_production` at startup.
 2. Store the secret separately from the data backup. Restoring data with a different key invalidates auth cookies and breaks 2FA. The backup/restore split is documented in [`docs/self-hosted.md`](self-hosted.md).
-3. Rotation impact on TOTP-enabled accounts is documented in [`SECURITY.md → SECRET_KEY Usage Map`](../SECURITY.md#secret_key-usage-map). Plan rotation as planned maintenance and communicate it in advance.
+3. Rotation impact on TOTP-enabled accounts is documented in [`SECRET_KEY Usage Map`](security/cryptography.md#secret_key-usage-map). Plan rotation as planned maintenance and communicate it in advance.
 
 ## Records of Processing (Art. 30)
 
-Per-action audit logs are **off by default** (`AUDIT_LOG_ENABLED=false`). When you enable them via `AUDIT_LOG_ENABLED=true`, the runtime emits per-action lines to stderr containing the action name, outcome, sanitized request path, response format, and (for authenticated requests) `user_id` and role. The full schema is documented in [`SECURITY.md → Logging Policy`](../SECURITY.md#logging-policy).
+Per-action audit logs are **off by default** (`AUDIT_LOG_ENABLED=false`). When you enable them via `AUDIT_LOG_ENABLED=true`, the runtime emits per-action lines to stderr containing the action name, outcome, sanitized request path, response format, and (for authenticated requests) `user_id` and role. The full schema is documented in [`Logging Policy`](security/logging.md#logging-policy).
 
 If you have a multi-subject deployment and need an Art. 30 record, enable audit logs and route them to a tamper-resistant store (journald with `Storage=persistent`, an external syslog server, or an immutable object store). Treat the resulting log stream as the same sensitivity class as the database itself; rotate and access-control it accordingly.
 
@@ -121,7 +121,7 @@ Auxiliary short-lived tables (`register_pickup_tokens` ≤ 5 min, `oidc_logout_s
 
 ## Cookie Consent (ePrivacy)
 
-Ovumcy uses only first-party functional cookies (auth, CSRF, language, timezone, flash, OIDC state, recovery, reset). All are strictly necessary for the requested service and therefore do not require an ePrivacy consent banner. The full inventory is in [`SECURITY.md → Cookies`](../SECURITY.md#cookies).
+Ovumcy uses only first-party functional cookies (auth, CSRF, language, timezone, flash, OIDC state, recovery, reset). All are strictly necessary for the requested service and therefore do not require an ePrivacy consent banner. The full inventory is in [`Cookies`](security/cryptography.md#cookies).
 
 There are no analytics, advertising, or third-party tracking cookies — this is enforced by the strict Content Security Policy (`default-src 'self'; script-src 'self'; ...`). If you ever add an integration that introduces non-essential cookies, ePrivacy obligations attach and you must add a consent banner; the existing CSP makes accidental introduction unlikely.
 
