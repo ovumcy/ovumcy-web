@@ -28,6 +28,22 @@ Ovumcy runs as a single Go service with a server-rendered web UI, can be install
 This README describes the current `main` branch. The latest tagged release is `v1.8.0`.
 The public project site is [ovumcy.com](https://ovumcy.com).
 
+> **Just want to run it? Jump to [Quick Start](#quick-start).**
+
+## Contents
+
+- [Why Ovumcy Exists](#why-ovumcy-exists)
+- [How Ovumcy Is Different](#how-ovumcy-is-different)
+- [Demo](#demo) · [Screenshots](#screenshots) · [Short FAQ](#short-faq)
+- [Features](#features)
+- [How Predictions Work](#how-predictions-work)
+- [Reminders & Notifications](#reminders--notifications)
+- [Supported Languages](#supported-languages)
+- [Privacy and Security](#privacy-and-security)
+- [Clients And Deployment Models](#clients-and-deployment-models)
+- [Architecture](#architecture) · [Tech Stack](#tech-stack)
+- [Quick Start](#quick-start) · [Configuration](#configuration)
+
 ## Why Ovumcy Exists
 
 Most cycle tracking apps start by asking you to sign up for a cloud account, then lean on analytics and third-party services you never really see.
@@ -273,6 +289,14 @@ Override the pinned default image tag if needed:
 
 ```bash
 OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.8.0 docker compose up -d
+```
+
+The `v1.8.0` tag is mutable and `pull_policy: always` re-pulls it on every restart, so a one-time Cosign/SLSA check does not by itself guarantee later restarts run the same bytes. To pin the exact image you verified above, set `OVUMCY_IMAGE` to its digest instead of the tag:
+
+```bash
+# Resolve the digest of the tag you just verified, then pin it in .env:
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.8.0 --format '{{ .Manifest.Digest }}'
+# .env → OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web@sha256:<digest>
 ```
 
 Then open `http://127.0.0.1:8080`.

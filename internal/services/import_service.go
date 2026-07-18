@@ -292,23 +292,37 @@ func (service *ImportService) reconcileSymptoms(ctx context.Context, userID uint
 
 // writeDays creates the missing days atomically. Existing days are counted as
 // skipped and left exactly as they are.
+//
+// Existing days are found with a single range read spanning the planned dates
+// rather than one lookup per day, and the new rows are inserted with one batched
+// Create instead of one INSERT per day — turning the previous O(n) round trips
+// (up to ~40k for a full MaxImportEntries restore) into a bounded handful. The
+// planner has already de-duplicated calendar days within the file, so the
+// existing-day set alone decides skip-vs-insert. Counting is derived from slice
+// lengths (not incremented in place) so a SQLITE_BUSY retry of the enclosing
+// transaction recomputes clean totals instead of doubling them.
 func (service *ImportService) writeDays(ctx context.Context, userID uint, planned []plannedImportDay, builtins []models.SymptomType, catalogByKey map[string]uint) (int, int, error) {
-	added, skipped := 0, 0
+	if len(planned) == 0 {
+		return 0, 0, nil
+	}
 
+	added, skipped := 0, 0
 	err := service.withinTransaction(ctx, func(txLogs DayLogRepository) error {
+		existing, err := existingDayKeys(ctx, txLogs, userID, planned)
+		if err != nil {
+			return ErrImportWriteFailed
+		}
+
+		newEntries := make([]models.DailyLog, 0, len(planned))
+		localSkipped := 0
 		for _, day := range planned {
-			dayEnd := day.dayStart.AddDate(0, 0, 1)
-			_, found, err := txLogs.FindByUserAndDayRange(ctx, userID, day.dayStart, dayEnd)
-			if err != nil {
-				return ErrImportWriteFailed
-			}
-			if found {
-				skipped++
+			if _, found := existing[CalendarDayKey(day.dayStart)]; found {
+				localSkipped++
 				continue
 			}
 
 			symptomIDs := resolveImportSymptomIDs(day.flags, day.otherNames, builtins, catalogByKey)
-			entry := models.DailyLog{
+			newEntries = append(newEntries, models.DailyLog{
 				UserID:          userID,
 				Date:            day.dayStart,
 				IsPeriod:        day.input.IsPeriod,
@@ -323,12 +337,15 @@ func (service *ImportService) writeDays(ctx context.Context, userID uint, planne
 				CycleFactorKeys: day.input.CycleFactorKeys,
 				SymptomIDs:      symptomIDs,
 				Notes:           day.input.Notes,
-			}
-			if err := txLogs.Create(ctx, &entry); err != nil {
-				return ErrImportWriteFailed
-			}
-			added++
+			})
 		}
+
+		if err := txLogs.CreateBatch(ctx, newEntries); err != nil {
+			return ErrImportWriteFailed
+		}
+
+		added = len(newEntries)
+		skipped = localSkipped
 		return nil
 	})
 	if err != nil {
@@ -336,6 +353,38 @@ func (service *ImportService) writeDays(ctx context.Context, userID uint, planne
 	}
 
 	return added, skipped, nil
+}
+
+// existingDayKeys returns the set of calendar-day keys the owner already has
+// among the planned dates. It issues one range read covering the min..max
+// planned day and keeps only the days actually planned, so a sparse import that
+// spans a wide range never mistakes an unrelated in-between day for a conflict.
+func existingDayKeys(ctx context.Context, txLogs DayLogRepository, userID uint, planned []plannedImportDay) (map[string]struct{}, error) {
+	minDay, maxDay := planned[0].dayStart, planned[0].dayStart
+	wanted := make(map[string]struct{}, len(planned))
+	for _, day := range planned {
+		wanted[CalendarDayKey(day.dayStart)] = struct{}{}
+		if day.dayStart.Before(minDay) {
+			minDay = day.dayStart
+		}
+		if day.dayStart.After(maxDay) {
+			maxDay = day.dayStart
+		}
+	}
+
+	rows, err := txLogs.ListByUserDayRange(ctx, userID, minDay, maxDay.AddDate(0, 0, 1))
+	if err != nil {
+		return nil, err
+	}
+
+	existing := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		key := CalendarDayKey(CalendarDay(row.Date, time.UTC))
+		if _, ok := wanted[key]; ok {
+			existing[key] = struct{}{}
+		}
+	}
+	return existing, nil
 }
 
 // resolveImportSymptomIDs turns the exported symptom representation back into

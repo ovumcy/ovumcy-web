@@ -5,6 +5,17 @@
     <p class="journal-muted mt-2">{{t .Messages "settings.subtitle"}}</p>
   </div>
 
+  {{if eq .CurrentUser.Role "owner"}}
+  <nav class="settings-section-nav" aria-label="{{t .Messages "settings.title"}}">
+    <a href="#settings-cycle" class="settings-section-nav-link">🗓️ {{t .Messages "settings.cycle.title"}}</a>
+    <a href="#settings-tracking" class="settings-section-nav-link">🧪 {{t .Messages "settings.tracking.title"}}</a>
+    <a href="#settings-webhook" class="settings-section-nav-link">🔔 {{t .Messages "settings.webhook.title"}}</a>
+    <a href="#settings-calendar-feed" class="settings-section-nav-link">🗓️ {{t .Messages "settings.calendar_feed.title"}}</a>
+    <a href="#settings-interface" class="settings-section-nav-link">🎛️ {{t .Messages "settings.interface.title"}}</a>
+    <a href="#settings-account" class="settings-section-nav-link">👤 {{t .Messages "settings.account.title"}}</a>
+  </nav>
+  {{end}}
+
   {{if .SuccessKey}}
   <div class="status-ok" data-flash-key="{{.SuccessKey}}" data-flash-status="success">
     <span class="toast-message-wrap">

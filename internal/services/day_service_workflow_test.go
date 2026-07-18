@@ -125,6 +125,15 @@ func (stub *dayLogRepositoryStub) Create(ctx context.Context, entry *models.Dail
 	return nil
 }
 
+func (stub *dayLogRepositoryStub) CreateBatch(ctx context.Context, entries []models.DailyLog) error {
+	for index := range entries {
+		if err := stub.Create(ctx, &entries[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (stub *dayLogRepositoryStub) Save(ctx context.Context, entry *models.DailyLog) error {
 	key := stub.dayKey(entry.Date)
 	stub.saveCalls[key]++

@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clearDateField, fillDateField } from './support/date-field-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
+import { checkStyledControl } from './support/form-helpers';
 import {
   dashboardCurrentCycleDay,
   dashboardCurrentPhaseText,
@@ -559,7 +560,7 @@ test.describe('Bug regressions', () => {
       const dayEditorForm = await openCalendarDayEditor(page, todayISO);
 
       await dayEditorForm.locator('input[name="is_period"]').check();
-      await dayEditorForm.locator('input[name="flow"][value="spotting"]').check({ force: true });
+      await checkStyledControl(dayEditorForm.locator('input[name="flow"][value="spotting"]'));
       await dayEditorForm.locator('button[data-save-button]').click();
 
       await expect(page.locator('.toast-stack .toast-message').last()).toHaveText(

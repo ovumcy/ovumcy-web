@@ -8,6 +8,45 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+func TestBuildCalendarDaysMarksFuturePeriodAsProjected(t *testing.T) {
+	handler := &Handler{}
+	days := handler.buildCalendarDays([]services.CalendarDayState{
+		{
+			Date:       time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC),
+			DateString: "2026-02-17",
+			Day:        17,
+			InMonth:    true,
+			IsPeriod:   true,
+			IsFuture:   false,
+		},
+		{
+			Date:       time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC),
+			DateString: "2026-03-20",
+			Day:        20,
+			InMonth:    true,
+			IsPeriod:   true,
+			IsFuture:   true,
+		},
+	})
+
+	// Past/logged period stays a plain recorded period.
+	if strings.Contains(days[0].CellClass, "calendar-cell-period-projected") {
+		t.Fatalf("past period day must not be projected, got %q", days[0].CellClass)
+	}
+	if days[0].StateKey != "period" {
+		t.Fatalf("past period stateKey = %q, want period", days[0].StateKey)
+	}
+
+	// Future period is a projection/auto-fill: still a period cell, but marked.
+	if !strings.Contains(days[1].CellClass, "calendar-cell-period") ||
+		!strings.Contains(days[1].CellClass, "calendar-cell-period-projected") {
+		t.Fatalf("future period day must carry both period and projected classes, got %q", days[1].CellClass)
+	}
+	if days[1].StateKey != "period-projected" {
+		t.Fatalf("future period stateKey = %q, want period-projected", days[1].StateKey)
+	}
+}
+
 func TestBuildCalendarDaysMapsStateToTemplateClasses(t *testing.T) {
 	handler := &Handler{}
 	states := []services.CalendarDayState{

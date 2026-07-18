@@ -228,6 +228,93 @@ func TestImportServiceRejectsTooLargePayload(t *testing.T) {
 	}
 }
 
+// TestImportServiceBatchInsertsManyUniqueDays exercises the batched write path at
+// the payload cap with DISTINCT calendar days (the cap test above uses duplicate
+// dates, which never reach the writer). All MaxImportEntries days must import in
+// one transaction, the persisted count must match exactly, and a second import of
+// the identical file must skip every day via the single range read — proving the
+// batch path scales without per-day round trips or duplicate inserts.
+func TestImportServiceBatchInsertsManyUniqueDays(t *testing.T) {
+	_, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+	user := createDayServiceTestUser(t, database, "import-bulk@example.com")
+
+	base := time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
+	entries := make([]ExportJSONEntry, MaxImportEntries)
+	for i := range entries {
+		entries[i] = ExportJSONEntry{
+			Date:         base.AddDate(0, 0, i).Format("2006-01-02"),
+			CycleFactors: []string{},
+		}
+	}
+	raw, err := json.Marshal(importPayload{Entries: entries})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	importService := newImportServiceIntegration(t, database, symptomService)
+
+	result, err := importService.ImportJSON(context.Background(), user.ID, raw, time.UTC)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if result.Added != MaxImportEntries || result.Skipped != 0 || result.Rejected != 0 {
+		t.Fatalf("first import: expected added=%d skipped=0 rejected=0, got %+v", MaxImportEntries, result)
+	}
+
+	var stored int64
+	if err := database.Model(&models.DailyLog{}).Where("user_id = ?", user.ID).Count(&stored).Error; err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if stored != int64(MaxImportEntries) {
+		t.Fatalf("expected %d persisted rows, got %d", MaxImportEntries, stored)
+	}
+
+	reResult, err := importService.ImportJSON(context.Background(), user.ID, raw, time.UTC)
+	if err != nil {
+		t.Fatalf("re-import: %v", err)
+	}
+	if reResult.Added != 0 || reResult.Skipped != MaxImportEntries || reResult.Rejected != 0 {
+		t.Fatalf("second import: expected added=0 skipped=%d rejected=0, got %+v", MaxImportEntries, reResult)
+	}
+}
+
+// TestImportServiceHandlesUnorderedDates covers the min-day branch of the
+// existing-day range read: when a later entry in the file predates the first
+// one, the computed range must still span every planned day so all import.
+func TestImportServiceHandlesUnorderedDates(t *testing.T) {
+	_, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+	user := createDayServiceTestUser(t, database, "import-unordered@example.com")
+
+	// The second entry predates the first, exercising the minDay update.
+	payload := importPayload{Entries: []ExportJSONEntry{
+		{Date: "2026-06-15", Period: false, CycleFactors: []string{}},
+		{Date: "2026-06-10", Period: false, CycleFactors: []string{}},
+		{Date: "2026-06-20", Period: false, CycleFactors: []string{}},
+	}}
+	raw, _ := json.Marshal(payload)
+
+	importService := newImportServiceIntegration(t, database, symptomService)
+	result, err := importService.ImportJSON(context.Background(), user.ID, raw, time.UTC)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if result.Added != 3 || result.Skipped != 0 || result.Rejected != 0 {
+		t.Fatalf("expected all three unordered days imported, got %+v", result)
+	}
+
+	var stored int64
+	if err := database.Model(&models.DailyLog{}).Where("user_id = ?", user.ID).Count(&stored).Error; err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if stored != 3 {
+		t.Fatalf("expected 3 persisted rows, got %d", stored)
+	}
+}
+
 // TestImportServiceCapsCustomSymptomCreation pins the DoS bound: a file naming
 // far more distinct custom symptoms than MaxImportCustomSymptoms creates at most
 // that many rows (the rest are dropped), while the day itself still imports — so

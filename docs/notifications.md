@@ -293,7 +293,9 @@ Operator-relevant summary (the full, test-backed claim list lives in
   (`100.64.0.0/10`), and the RFC 6052 NAT64 well-known prefix (`64:ff9b::/96`)
   when it wraps a private IPv4 — a NAT64 address wrapping a public IPv4 stays
   allowed. This same flag applies to both the CLI pass and the built-in
-  scheduler.
+  scheduler. The server also logs a startup warning when `REGISTRATION_MODE=open`
+  is combined with `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false`, surfacing exactly this
+  multi-owner / publicly-reachable exposure at boot.
 - **Host-only logging.** Every log line the delivery path emits — success,
   failure, or skip — includes at most the destination **hostname**, never the
   full URL, path, query string, or userinfo.

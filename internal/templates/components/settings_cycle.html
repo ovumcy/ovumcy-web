@@ -105,9 +105,13 @@
           <p class="field-label">{{t .Messages "settings.age_group.title"}}</p>
           <p class="journal-muted text-sm">{{t .Messages "settings.age_group.hint"}}</p>
         </div>
-        <div class="grid gap-2 sm:grid-cols-3">
+        <div class="grid gap-2 sm:grid-cols-2">
           <label class="choice-option">
-            <input type="radio" name="age_group" value="under_40" class="choice-input" {{if or (eq .AgeGroup "under_40") (eq .AgeGroup "")}}checked{{end}}>
+            <input type="radio" name="age_group" value="" class="choice-input" {{if eq .AgeGroup ""}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.unspecified"}}</span></span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="age_group" value="under_40" class="choice-input" {{if eq .AgeGroup "under_40"}}checked{{end}}>
             <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.under_40"}}</span></span>
           </label>
           <label class="choice-option">

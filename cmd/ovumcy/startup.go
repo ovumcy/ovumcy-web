@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/ovumcy/ovumcy-web/internal/security"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func logStartup(config runtimeConfig) {
@@ -42,5 +43,8 @@ func logStartup(config runtimeConfig) {
 	}
 	if !config.Proxy.Enabled {
 		log.Printf("WARNING: TRUST_PROXY_ENABLED=false — edge rate limiters key on the direct socket peer; behind a reverse proxy every client shares one bucket. Set TRUST_PROXY_ENABLED=true, TRUSTED_PROXIES, and a proxy-overwritten PROXY_HEADER (for example X-Real-IP) when deployed behind a proxy.")
+	}
+	if config.RegistrationMode == services.RegistrationModeOpen && !config.WebhookBlockPrivate {
+		log.Printf("WARNING: REGISTRATION_MODE=open with WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false — anyone who signs up (registration is open) can point their reminder webhook at a private/loopback/link-local address, letting this host's notify pass make blind requests to services on your internal network (SSRF). LAN egress is allowed by default for the common self-hosted-on-LAN case; set WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true for multi-owner or publicly reachable deployments, or set REGISTRATION_MODE=closed to stop untrusted sign-ups.")
 	}
 }

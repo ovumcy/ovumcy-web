@@ -14,9 +14,10 @@ import (
 // DB never exercises (repository failures, best-effort refresh, defaults). ---
 
 type importStubLogs struct {
-	findErr   error
-	createErr error
-	listErr   error
+	findErr     error
+	createErr   error
+	listErr     error
+	dayRangeErr error
 }
 
 func (s *importStubLogs) FindByUserAndDayRange(context.Context, uint, time.Time, time.Time) (models.DailyLog, bool, error) {
@@ -26,6 +27,9 @@ func (s *importStubLogs) FindByUserAndDayRange(context.Context, uint, time.Time,
 	return models.DailyLog{}, false, nil
 }
 func (s *importStubLogs) Create(context.Context, *models.DailyLog) error { return s.createErr }
+func (s *importStubLogs) CreateBatch(context.Context, []models.DailyLog) error {
+	return s.createErr
+}
 func (s *importStubLogs) ListByUser(context.Context, uint) ([]models.DailyLog, error) {
 	return nil, s.listErr
 }
@@ -33,7 +37,7 @@ func (s *importStubLogs) ListByUserRange(context.Context, uint, *time.Time, *tim
 	return nil, nil
 }
 func (s *importStubLogs) ListByUserDayRange(context.Context, uint, time.Time, time.Time) ([]models.DailyLog, error) {
-	return nil, nil
+	return nil, s.dayRangeErr
 }
 func (s *importStubLogs) Save(context.Context, *models.DailyLog) error { return nil }
 func (s *importStubLogs) DeleteByUserAndDayRange(context.Context, uint, time.Time, time.Time) error {
@@ -84,17 +88,18 @@ func TestImportServiceReconcileSymptomsErrorPropagates(t *testing.T) {
 	}
 }
 
-// TestImportServiceWriteFailurePropagates: both a lookup failure and an insert
-// failure roll the write up as ErrImportWriteFailed.
+// TestImportServiceWriteFailurePropagates: both an existing-day lookup failure
+// (the single range read) and an insert failure (the batch create) roll the
+// write up as ErrImportWriteFailed.
 func TestImportServiceWriteFailurePropagates(t *testing.T) {
-	svcFind := NewImportService(&importStubLogs{findErr: errors.New("db")}, importStubUsers{}, &importStubReconciler{}, nil)
-	if _, err := svcFind.ImportJSON(context.Background(), 1, importOneDayPayload(t), time.UTC); err != ErrImportWriteFailed {
-		t.Fatalf("expected ErrImportWriteFailed on find error, got %v", err)
+	svcRead := NewImportService(&importStubLogs{dayRangeErr: errors.New("db")}, importStubUsers{}, &importStubReconciler{}, nil)
+	if _, err := svcRead.ImportJSON(context.Background(), 1, importOneDayPayload(t), time.UTC); err != ErrImportWriteFailed {
+		t.Fatalf("expected ErrImportWriteFailed on range-read error, got %v", err)
 	}
 
 	svcCreate := NewImportService(&importStubLogs{createErr: errors.New("db")}, importStubUsers{}, &importStubReconciler{}, nil)
 	if _, err := svcCreate.ImportJSON(context.Background(), 1, importOneDayPayload(t), time.UTC); err != ErrImportWriteFailed {
-		t.Fatalf("expected ErrImportWriteFailed on create error, got %v", err)
+		t.Fatalf("expected ErrImportWriteFailed on batch-create error, got %v", err)
 	}
 }
 

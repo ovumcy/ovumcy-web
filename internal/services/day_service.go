@@ -50,6 +50,7 @@ type DayLogRepository interface {
 	ListByUserDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) ([]models.DailyLog, error)
 	FindByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) (models.DailyLog, bool, error)
 	Create(ctx context.Context, entry *models.DailyLog) error
+	CreateBatch(ctx context.Context, entries []models.DailyLog) error
 	Save(ctx context.Context, entry *models.DailyLog) error
 	DeleteByUserAndDayRange(ctx context.Context, userID uint, dayStart time.Time, dayEnd time.Time) error
 }
