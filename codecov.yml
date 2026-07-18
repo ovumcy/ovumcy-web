@@ -29,3 +29,9 @@ ignore:
 
 github_checks:
   annotations: true
+
+# The authoritative patch gate is the in-CI scripts/patchcov job (required
+# status "patch-coverage"), which understands this repo's inline codecov:ignore
+# convention. The Codecov service cannot parse those annotations, so suppress
+# its PR comment to avoid a misleading second opinion.
+comment: false
