@@ -1414,6 +1414,43 @@ func TestLogStartupAdvisesWhenTrustProxyDisabled(t *testing.T) {
 	}
 }
 
+func TestLogStartupWarnsOnOpenRegistrationWithPrivateWebhookEgress(t *testing.T) {
+	cases := []struct {
+		name         string
+		mode         services.RegistrationMode
+		blockPrivate bool
+		wantWarning  bool
+	}{
+		{"open registration, private egress allowed", services.RegistrationModeOpen, false, true},
+		{"open registration, private egress blocked", services.RegistrationModeOpen, true, false},
+		{"closed registration, private egress allowed", services.RegistrationModeClosed, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			originalWriter := log.Writer()
+			defer log.SetOutput(originalWriter)
+
+			var output bytes.Buffer
+			log.SetOutput(&output)
+
+			logStartup(runtimeConfig{
+				Location:            time.UTC,
+				Port:                "8080",
+				RegistrationMode:    tc.mode,
+				WebhookBlockPrivate: tc.blockPrivate,
+				// Proxy enabled so the unrelated trust-proxy advisory stays out of the log.
+				Proxy: proxySettings{Enabled: true, Header: "X-Real-IP", TrustedProxies: []string{"127.0.0.1"}},
+			})
+
+			logged := output.String()
+			got := strings.Contains(logged, "WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false")
+			if got != tc.wantWarning {
+				t.Fatalf("webhook SSRF warning present=%t, want %t; log=%q", got, tc.wantWarning, logged)
+			}
+		})
+	}
+}
+
 func TestLogStartupDoesNotAdviseTrustProxyWhenEnabled(t *testing.T) {
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
