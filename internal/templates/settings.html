@@ -5,6 +5,17 @@
     <p class="journal-muted mt-2">{{t .Messages "settings.subtitle"}}</p>
   </div>
 
+  {{if eq .CurrentUser.Role "owner"}}
+  <nav class="settings-section-nav" aria-label="{{t .Messages "settings.title"}}">
+    <a href="#settings-cycle" class="settings-section-nav-link">🗓️ {{t .Messages "settings.cycle.title"}}</a>
+    <a href="#settings-tracking" class="settings-section-nav-link">🧪 {{t .Messages "settings.tracking.title"}}</a>
+    <a href="#settings-webhook" class="settings-section-nav-link">🔔 {{t .Messages "settings.webhook.title"}}</a>
+    <a href="#settings-calendar-feed" class="settings-section-nav-link">🗓️ {{t .Messages "settings.calendar_feed.title"}}</a>
+    <a href="#settings-interface" class="settings-section-nav-link">🎛️ {{t .Messages "settings.interface.title"}}</a>
+    <a href="#settings-account" class="settings-section-nav-link">👤 {{t .Messages "settings.account.title"}}</a>
+  </nav>
+  {{end}}
+
   {{if .SuccessKey}}
   <div class="status-ok" data-flash-key="{{.SuccessKey}}" data-flash-status="success">
     <span class="toast-message-wrap">
@@ -128,9 +139,13 @@
           <p class="field-label">{{t .Messages "settings.age_group.title"}}</p>
           <p class="journal-muted text-sm">{{t .Messages "settings.age_group.hint"}}</p>
         </div>
-        <div class="grid gap-2 sm:grid-cols-3">
+        <div class="grid gap-2 sm:grid-cols-2">
           <label class="choice-option">
-            <input type="radio" name="age_group" value="under_40" class="choice-input" {{if or (eq .AgeGroup "under_40") (eq .AgeGroup "")}}checked{{end}}>
+            <input type="radio" name="age_group" value="" class="choice-input" {{if eq .AgeGroup ""}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.unspecified"}}</span></span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="age_group" value="under_40" class="choice-input" {{if eq .AgeGroup "under_40"}}checked{{end}}>
             <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.under_40"}}</span></span>
           </label>
           <label class="choice-option">

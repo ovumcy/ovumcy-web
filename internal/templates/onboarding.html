@@ -58,7 +58,7 @@
             "Required" true)}}
         </div>
 
-        <div class="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6 onboarding-day-grid" data-onboarding-day-options></div>
+        <div class="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6 onboarding-day-grid" data-onboarding-day-options role="group" aria-label="{{t .Messages "onboarding.step1.field"}}"></div>
 
         <button type="submit" class="btn-primary">{{t .Messages "onboarding.button.next"}}</button>
         <div id="onboarding-step1-status" class="save-status text-sm" aria-live="polite"></div>
@@ -145,9 +145,13 @@
             <p class="field-label">{{t .Messages "onboarding.step2.age_group"}}</p>
             <p class="journal-muted text-sm">{{t .Messages "onboarding.step2.age_group_hint"}}</p>
           </div>
-          <div class="grid gap-2 sm:grid-cols-3">
+          <div class="grid gap-2 sm:grid-cols-2">
             <label class="choice-option">
-              <input type="radio" name="age_group" value="under_40" class="choice-input" {{if or (eq .AgeGroup "under_40") (eq .AgeGroup "")}}checked{{end}}>
+              <input type="radio" name="age_group" value="" class="choice-input" {{if eq .AgeGroup ""}}checked{{end}}>
+              <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.unspecified"}}</span></span>
+            </label>
+            <label class="choice-option">
+              <input type="radio" name="age_group" value="under_40" class="choice-input" {{if eq .AgeGroup "under_40"}}checked{{end}}>
               <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.under_40"}}</span></span>
             </label>
             <label class="choice-option">
