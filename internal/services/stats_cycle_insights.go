@@ -282,31 +282,25 @@ func newCurrentCycleBBTChartViewData(labels []string, values []*float64, baselin
 	}
 }
 
+// detectProbableOvulationMarker returns the zero-based chart index of the
+// probable-ovulation marker: the day before the sustained BBT shift detected by
+// the shared detectBBTShiftFirstHighDay. Inference and this chart marker use the
+// same detector, so the marker and the inferred ovulation day always agree.
 func detectProbableOvulationMarker(recordedDays []int, dayValues map[int]float64, baseline float64) (int, bool) {
-	if len(recordedDays) < 8 {
+	firstHighDay, ok := detectBBTShiftFirstHighDay(recordedDays, dayValues, baseline)
+	if !ok {
 		return 0, false
 	}
 
-	threshold := baseline + 0.2
-	for index := 5; index+2 < len(recordedDays); index++ {
-		dayOne := recordedDays[index]
-		dayTwo := recordedDays[index+1]
-		dayThree := recordedDays[index+2]
-		if dayTwo != dayOne+1 || dayThree != dayTwo+1 {
-			continue
-		}
-		if dayValues[dayOne] < threshold || dayValues[dayTwo] < threshold || dayValues[dayThree] < threshold {
-			continue
-		}
-
-		markerDay := dayOne - 1
-		if markerDay < 1 {
-			markerDay = dayOne
-		}
-		return markerDay - 1, true
+	markerDay := firstHighDay - 1
+	// codecov:ignore:start -- defensive floor: firstHighDay is the >=6th recorded
+	// cycle day (the detector skips the leading baseline window), so markerDay is
+	// always >= 5 and this clamp never fires in practice.
+	if markerDay < 1 {
+		markerDay = firstHighDay
 	}
-
-	return 0, false
+	// codecov:ignore:end
+	return markerDay - 1, true
 }
 
 func completedCycleDayNumber(day time.Time, completedCycles []completedCycleSpan, location *time.Location) (int, bool) {

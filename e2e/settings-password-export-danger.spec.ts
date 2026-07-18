@@ -3,6 +3,7 @@ import { clearDateField, fillDateField } from './support/date-field-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
+import { checkStyledControl } from './support/form-helpers';
 import {
   completeOnboardingIfPresent,
   confirmRecoveryCode,
@@ -85,7 +86,7 @@ async function saveTodayEntry(page: Page, note: string): Promise<void> {
   await expect(page).toHaveURL(/\/dashboard$/);
 
   await page.locator('input[name="is_period"]').check();
-  await page.locator('input[name="flow"][value="medium"]').check({ force: true });
+  await checkStyledControl(page.locator('input[name="flow"][value="medium"]'));
   await ensureNotesFieldVisible(page, '#today-notes');
   await page.locator('#today-notes').fill(note);
 

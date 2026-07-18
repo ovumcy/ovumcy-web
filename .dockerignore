@@ -8,6 +8,7 @@
 
 data/
 node_modules/
+.bin/
 e2e/
 docs/
 test-results/

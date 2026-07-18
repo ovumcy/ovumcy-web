@@ -128,8 +128,9 @@ func TestCycleSignals_InferUserLutealPhase_LastStartPairIsIncluded(t *testing.T)
 
 func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *testing.T) {
 	// Three starts: Jan1, Jan29, Feb26 (28-day cycles).
-	// Cycle 1 (Jan1→Jan29): ovulation Jan15 → luteal = 14 days (valid).
-	// Cycle 2 (Jan29→Feb26): ovulation Feb25 → luteal = 1 day (< minLutealPhaseDays → skipped).
+	// Cycle 1 (Jan1→Jan29): rise Jan16-18 → ovulation Jan15 → luteal = 14 days (valid).
+	// Cycle 2 (Jan29→Feb26): rise Feb23-25 → ovulation Feb22 → luteal = 4 days
+	//   (< minLutealPhaseDays → skipped by the range filter).
 	//
 	// With only 1 valid luteal length (< 2), must return default, false.
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
@@ -140,26 +141,26 @@ func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *te
 		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
 
-		// Cycle 1 BBT — 5 baseline days then rise on Jan15.
+		// Cycle 1 BBT — 5 baseline days then rise on Jan16 → ovulation Jan15.
 		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-15"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-16"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-17"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-18"), BBT: models.NewBBT(36.50)},
 
-		// Cycle 2 BBT — 5 baseline days then rise on Feb25 (1 day before Feb26 start).
-		// luteal = Feb26 − Feb25 = 1 day → below minLutealPhaseDays → skipped.
+		// Cycle 2 BBT — 5 baseline days then rise on Feb23 → ovulation Feb22.
+		// luteal = Feb26 − Feb22 = 4 days → below minLutealPhaseDays → skipped.
 		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-02-23"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-24"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-25"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-26"), BBT: models.NewBBT(36.50)},
 	}
 
 	phase, ok := InferUserLutealPhase(logs, time.UTC)
@@ -173,10 +174,10 @@ func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *te
 }
 
 func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *testing.T) {
-	// Cycle where ovulation is very early (day 2) → luteal > 20 → skipped.
+	// Cycle where ovulation is very early → luteal > 20 → skipped.
 	// Three starts: Jan1, Jan29, Feb26.
-	// Cycle 1: ovulation Jan7 → luteal = Jan29−Jan7 = 22 days (> 20 → skipped).
-	// Cycle 2: ovulation Feb12 → luteal = 14 days (valid).
+	// Cycle 1: rise Jan8-10 → ovulation Jan7 → luteal = Jan29−Jan7 = 22 days (> 20 → skipped).
+	// Cycle 2: rise Feb13-15 → ovulation Feb12 → luteal = 14 days (valid).
 	// Only 1 valid → default, false.
 	day := func(s string) time.Time { return cyclesignalsCovDay(t, s) }
 
@@ -185,25 +186,25 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *te
 		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
 
-		// Cycle 1 BBT — baseline on Jan1-5 then rise on Jan7 (luteal = Jan29−Jan7 = 22 > 20).
+		// Cycle 1 BBT — baseline Jan1-5 then rise Jan8-10 → ovulation Jan7 (luteal = Jan29−Jan7 = 22 > 20).
 		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-07"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-08"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-09"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-10"), BBT: models.NewBBT(36.50)},
 
-		// Cycle 2 BBT — valid: rise on Feb12 → luteal = Feb26−Feb12 = 14 (valid).
+		// Cycle 2 BBT — valid: rise Feb13-15 → ovulation Feb12 → luteal = Feb26−Feb12 = 14 (valid).
 		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-12"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-13"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-14"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-02-15"), BBT: models.NewBBT(36.50)},
 	}
 
 	phase, ok := InferUserLutealPhase(logs, time.UTC)
@@ -299,8 +300,8 @@ func TestCycleSignals_InferBBTOvulationDate_ExactlyAtThresholdCountsAsStreak(t *
 	// without float64 rounding artefacts.
 	//
 	// Baseline: 5 days at 36.00 → avg=36.00, threshold=36.20.
-	// Rise streak of 3 at exactly 36.20 starting Jan06 → ovulation on Jan06.
-	// A strict > would require >36.20, missing the equality case.
+	// Rise streak of 3 at exactly 36.20 starting Jan07 → ovulation Jan06 (the day
+	// before the shift). A strict > would require >36.20, missing the equality case.
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
@@ -312,16 +313,16 @@ func TestCycleSignals_InferBBTOvulationDate_ExactlyAtThresholdCountsAsStreak(t *
 		cyclesignalsCovBBTLog(t, "2025-01-04", baseline),
 		cyclesignalsCovBBTLog(t, "2025-01-05", baseline),
 		// threshold = 36.00 + 0.2 = 36.20; these are exactly at threshold.
-		cyclesignalsCovBBTLog(t, "2025-01-06", 36.20),
 		cyclesignalsCovBBTLog(t, "2025-01-07", 36.20),
 		cyclesignalsCovBBTLog(t, "2025-01-08", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-09", 36.20),
 	}
 
 	result := inferBBTOvulationDate(logs, cycleStart, nextStart, time.UTC)
 	if result.IsZero() {
 		t.Fatalf("expected non-zero ovulation date when streak values are exactly at threshold (>= must include equality)")
 	}
-	// streak==3 at index=7 (Jan08) → ovulation = points[7-2] = points[5] = Jan06.
+	// Shift begins Jan07 (first high day) → ovulation is the day before = Jan06.
 	if got := result.Format("2006-01-02"); got != "2025-01-06" {
 		t.Fatalf("expected ovulation on 2025-01-06, got %s", got)
 	}
@@ -406,8 +407,9 @@ func TestCycleSignals_InferEggWhiteOvulationDate_OnlyEggWhiteIsAccepted(t *testi
 	if result.IsZero() {
 		t.Fatalf("expected non-zero ovulation date from egg-white observation")
 	}
-	if got := result.Format("2006-01-02"); got != "2025-01-15" {
-		t.Fatalf("expected ovulation on 2025-01-15 (last egg-white), got %s", got)
+	// Peak-day rule: last egg-white Jan15 → ovulation estimated the day after = Jan16.
+	if got := result.Format("2006-01-02"); got != "2025-01-16" {
+		t.Fatalf("expected ovulation on 2025-01-16 (day after last egg-white), got %s", got)
 	}
 }
 
@@ -426,12 +428,12 @@ func TestCycleSignals_InferEggWhiteOvulationDate_NoEggWhiteReturnsZero(t *testin
 	}
 }
 
-func TestCycleSignals_InferEggWhiteOvulationDate_ReturnsLastEggWhiteInCycleWindow(t *testing.T) {
+func TestCycleSignals_InferEggWhiteOvulationDate_ReturnsDayAfterLastEggWhiteInCycleWindow(t *testing.T) {
 	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
 	logs := []models.DailyLog{
-		// Both are egg-white; the LAST one in the window should win.
+		// Both are egg-white; the LAST one in the window is the peak day.
 		cyclesignalsCovMucusLog(t, "2025-01-12", models.CervicalMucusEggWhite),
 		cyclesignalsCovMucusLog(t, "2025-01-14", models.CervicalMucusEggWhite),
 		// Outside window — must be excluded.
@@ -439,8 +441,27 @@ func TestCycleSignals_InferEggWhiteOvulationDate_ReturnsLastEggWhiteInCycleWindo
 	}
 
 	result := inferEggWhiteOvulationDate(logs, cycleStart, nextStart, time.UTC)
-	if got := result.Format("2006-01-02"); got != "2025-01-14" {
-		t.Fatalf("expected last in-window egg-white on 2025-01-14, got %s", got)
+	// Peak day = last in-window egg-white Jan14 → ovulation the day after = Jan15.
+	if got := result.Format("2006-01-02"); got != "2025-01-15" {
+		t.Fatalf("expected ovulation on 2025-01-15 (day after last in-window egg-white), got %s", got)
+	}
+}
+
+func TestCycleSignals_InferEggWhiteOvulationDate_PeakOnLastCycleDayClampsToPeak(t *testing.T) {
+	// When the peak (last egg-white) falls on the final cycle day, peak+1 would
+	// reach the next cycle start; the clamp keeps the peak day itself so the
+	// ovulation estimate never lands on or past the next cycle.
+	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
+	nextStart := cyclesignalsCovDay(t, "2025-01-29")
+
+	logs := []models.DailyLog{
+		// Jan28 is the last day before nextStart (Jan29); peak+1 = Jan29 = nextStart.
+		cyclesignalsCovMucusLog(t, "2025-01-28", models.CervicalMucusEggWhite),
+	}
+
+	result := inferEggWhiteOvulationDate(logs, cycleStart, nextStart, time.UTC)
+	if got := result.Format("2006-01-02"); got != "2025-01-28" {
+		t.Fatalf("expected ovulation clamped to peak day 2025-01-28, got %s", got)
 	}
 }
 
@@ -456,9 +477,109 @@ func TestCycleSignals_InferUserLutealPhase_CorrectValueFromBBT(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected ok=true")
 	}
-	// Both cycles have BBT rise on day 15 of a 28-day cycle → luteal = 14.
+	// Both cycles have their BBT rise on day 16, so ovulation is day 15 of a
+	// 28-day cycle (the day before the shift) → luteal = 14.
 	if phase != 14 {
 		t.Fatalf("expected inferred luteal phase 14, got %d", phase)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Unified detector regressions — the two defects the shared detector fixes:
+// (1) a shift requires three CONSECUTIVE calendar days, and (2) ovulation is the
+// day BEFORE the shift, so luteal inference and the chart marker agree.
+// ---------------------------------------------------------------------------
+
+func TestCycleSignals_InferBBTOvulationDate_NonConsecutiveElevatedDaysAreNotAShift(t *testing.T) {
+	// Sparse elevated readings on non-consecutive calendar days (cycle days 12,
+	// 16, 20) are noise, not a sustained thermal shift. The detector requires
+	// three consecutive calendar days, so no ovulation is inferred. The previous
+	// implementation counted any three elevated readings and wrongly reported a
+	// shift here.
+	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
+	nextStart := cyclesignalsCovDay(t, "2025-01-29")
+	logs := []models.DailyLog{
+		cyclesignalsCovBBTLog(t, "2025-01-01", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-02", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-03", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-04", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-05", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-12", 36.60),
+		cyclesignalsCovBBTLog(t, "2025-01-16", 36.60),
+		cyclesignalsCovBBTLog(t, "2025-01-20", 36.60),
+	}
+	result := inferBBTOvulationDate(logs, cycleStart, nextStart, time.UTC)
+	if !result.IsZero() {
+		t.Fatalf("expected no ovulation from non-consecutive elevated days, got %s", result.Format("2006-01-02"))
+	}
+}
+
+func TestCycleSignals_InferBBTOvulationDate_OvulationIsDayBeforeSustainedShift(t *testing.T) {
+	// Basal temperature rises after ovulation, so the estimate is the day before
+	// the first of three consecutive elevated days (Jan16 shift → Jan15 ovulation).
+	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
+	nextStart := cyclesignalsCovDay(t, "2025-01-29")
+	logs := []models.DailyLog{
+		cyclesignalsCovBBTLog(t, "2025-01-01", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-02", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-03", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-04", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-05", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-16", 36.50),
+		cyclesignalsCovBBTLog(t, "2025-01-17", 36.50),
+		cyclesignalsCovBBTLog(t, "2025-01-18", 36.50),
+	}
+	result := inferBBTOvulationDate(logs, cycleStart, nextStart, time.UTC)
+	if got := result.Format("2006-01-02"); got != "2025-01-15" {
+		t.Fatalf("expected ovulation Jan15 (day before the Jan16 shift), got %s", got)
+	}
+}
+
+func TestCycleSignals_BBTChartMarkerAndInferenceAgreeOnOvulationDay(t *testing.T) {
+	// The luteal-phase inference and the BBT chart marker share one detector, so
+	// for identical readings the inferred ovulation day and the chart marker day
+	// must reference the same cycle day.
+	cycleStart := cyclesignalsCovDay(t, "2025-01-01")
+	nextStart := cyclesignalsCovDay(t, "2025-01-29")
+	logs := []models.DailyLog{
+		cyclesignalsCovBBTLog(t, "2025-01-01", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-02", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-03", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-04", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-05", 36.20),
+		cyclesignalsCovBBTLog(t, "2025-01-16", 36.50),
+		cyclesignalsCovBBTLog(t, "2025-01-17", 36.50),
+		cyclesignalsCovBBTLog(t, "2025-01-18", 36.50),
+	}
+
+	ovDate := inferBBTOvulationDate(logs, cycleStart, nextStart, time.UTC)
+	if ovDate.IsZero() {
+		t.Fatal("expected inference to detect ovulation")
+	}
+	inferenceCycleDay := CalendarDaysBetween(cycleStart, ovDate) + 1
+
+	points := collectCycleBBTPoints(logs, cycleStart, nextStart, time.UTC)
+	recordedDays := make([]int, len(points))
+	dayValues := make(map[int]float64, len(points))
+	var baselineTotal float64
+	for index, point := range points {
+		recordedDays[index] = point.CycleDay
+		dayValues[point.CycleDay] = point.Value
+		if index < bbtBaselineWindow {
+			baselineTotal += point.Value
+		}
+	}
+	baseline := baselineTotal / float64(bbtBaselineWindow)
+
+	markerIndex, ok := detectProbableOvulationMarker(recordedDays, dayValues, baseline)
+	if !ok {
+		t.Fatal("expected chart marker to detect ovulation")
+	}
+	// The marker index is zero-based for markerDay, so markerDay = markerIndex + 1.
+	chartMarkerCycleDay := markerIndex + 1
+
+	if inferenceCycleDay != chartMarkerCycleDay {
+		t.Fatalf("inference ovulation cycle-day %d must equal chart marker cycle-day %d", inferenceCycleDay, chartMarkerCycleDay)
 	}
 }
 
@@ -468,8 +589,10 @@ func TestCycleSignals_InferUserLutealPhase_CorrectValueFromBBT(t *testing.T) {
 
 // cyclesignalsCovBuildLutealLogs builds a realistic log slice with:
 //   - three period clusters (Jan1, Jan29, Feb26) → 3 observed cycle starts
-//   - BBT baseline + 3-day rise starting Jan15 in cycle 1 (→ ovulation Jan15, luteal=14)
-//   - BBT baseline + 3-day rise starting Feb12 in cycle 2 (→ ovulation Feb12, luteal=14)
+//   - BBT baseline + 3-day rise starting Jan16 in cycle 1 (→ ovulation Jan15, the
+//     day before the shift, luteal=14)
+//   - BBT baseline + 3-day rise starting Feb13 in cycle 2 (→ ovulation Feb12, the
+//     day before the shift, luteal=14)
 //
 // Resulting inferred luteal phase = round((14+14)/2) = 14.
 func cyclesignalsCovBuildLutealLogs(t *testing.T) []models.DailyLog {
@@ -491,11 +614,11 @@ func cyclesignalsCovBuildLutealLogs(t *testing.T) []models.DailyLog {
 		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
-		// Rise streak of 3 starting Jan15 (threshold=36.40; values=36.5):
-		{Date: day("2025-01-15"), BBT: models.NewBBT(36.50)},
+		// Rise streak of 3 starting Jan16 (threshold=36.40; values=36.5):
 		{Date: day("2025-01-16"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-17"), BBT: models.NewBBT(36.50)},
-		// nextStart Jan29 − ovulationDate Jan15 = 14 days → luteal=14 ✓
+		{Date: day("2025-01-18"), BBT: models.NewBBT(36.50)},
+		// ovulationDate = day before the shift = Jan15; nextStart Jan29 − Jan15 = 14 → luteal=14 ✓
 
 		// === Cycle 2 BBT: Jan29→Feb26 ===
 		// 5-day baseline (days 1-5): 36.20
@@ -504,11 +627,11 @@ func cyclesignalsCovBuildLutealLogs(t *testing.T) []models.DailyLog {
 		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
-		// Rise streak of 3 starting Feb12 (threshold=36.40; values=36.5):
-		{Date: day("2025-02-12"), BBT: models.NewBBT(36.50)},
+		// Rise streak of 3 starting Feb13 (threshold=36.40; values=36.5):
 		{Date: day("2025-02-13"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-14"), BBT: models.NewBBT(36.50)},
-		// nextStart Feb26 − ovulationDate Feb12 = 14 days → luteal=14 ✓
+		{Date: day("2025-02-15"), BBT: models.NewBBT(36.50)},
+		// ovulationDate = day before the shift = Feb12; nextStart Feb26 − Feb12 = 14 → luteal=14 ✓
 	}
 	return logs
 }

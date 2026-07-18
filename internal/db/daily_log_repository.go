@@ -125,6 +125,24 @@ func (repo *DailyLogRepository) Create(ctx context.Context, entry *models.DailyL
 	return repo.database.WithContext(ctx).Create(entry).Error
 }
 
+// importDayInsertBatchSize bounds how many day rows go into a single INSERT.
+// CreateInBatches chunks the slice so a large import (up to MaxImportEntries)
+// never exceeds the driver's per-statement bound-parameter limit (SQLite's
+// SQLITE_MAX_VARIABLE_NUMBER, Postgres' 65535): ~18 columns × 500 rows stays
+// well under both.
+const importDayInsertBatchSize = 500
+
+// CreateBatch inserts multiple day rows, chunked into statements of
+// importDayInsertBatchSize. The JSON import path uses it to write all new days
+// at once instead of one INSERT per day. Per-row hooks (BeforeSave) still run,
+// so stored dates are normalized to UTC-midnight exactly as with single Create.
+func (repo *DailyLogRepository) CreateBatch(ctx context.Context, entries []models.DailyLog) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	return repo.database.WithContext(ctx).CreateInBatches(&entries, importDayInsertBatchSize).Error
+}
+
 // Save persists a full update of an already-owned row. Like the read/delete
 // methods it is scoped by user_id: the update can only touch a row whose
 // user_id matches the entry's own UserID, so a mutated entry.UserID can never

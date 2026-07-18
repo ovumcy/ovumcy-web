@@ -2,7 +2,7 @@
 <div class="journal-panel space-y-3 text-sm">
   <p><span class="journal-muted">{{t .Messages "dashboard.period_day"}}:</span> {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p>
   {{if .Log.IsPeriod}}
-  <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}:</span> {{flowLabel .Messages .Log.Flow}}</p>
+  <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}:</span> {{if eq .Log.Flow "none"}}{{t .Messages "dashboard.flow.unspecified"}}{{else}}{{flowLabel .Messages .Log.Flow}}{{end}}</p>
   {{end}}
   <p><span class="journal-muted">{{t .Messages "dashboard.mood"}}:</span> {{if gt .Log.Mood 0}}{{moodEmoji .Log.Mood}} {{.Log.Mood}}/5{{else}}{{.NoDataLabel}}{{end}}</p>
   <div>
@@ -21,7 +21,7 @@
     <p><span class="journal-muted">{{t .Messages "dashboard.period_day"}}:</span> {{if .Log.IsPeriod}}{{t .Messages "common.yes"}}{{else}}{{t .Messages "common.no"}}{{end}}</p>
     <p><span class="journal-muted">{{t .Messages "dashboard.mood"}}:</span> {{if gt .Log.Mood 0}}{{moodEmoji .Log.Mood}} {{.Log.Mood}}/5{{else}}{{.NoDataLabel}}{{end}}</p>
     {{if .Log.IsPeriod}}
-    <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}:</span> {{if .Log.IsPeriod}}{{flowLabel .Messages .Log.Flow}}{{else}}{{.NoDataLabel}}{{end}}</p>
+    <p><span class="journal-muted">{{t .Messages "dashboard.flow"}}:</span> {{if eq .Log.Flow "none"}}{{t .Messages "dashboard.flow.unspecified"}}{{else}}{{flowLabel .Messages .Log.Flow}}{{end}}</p>
     {{end}}
   </div>
 

@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
+import { checkStyledControl } from './support/form-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -146,7 +147,7 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
     dashboardSaveForm(page),
     symptomName
   );
-  await customSymptom.check({ force: true });
+  await checkStyledControl(customSymptom);
   await page.locator('button[data-save-button]').first().click();
   await expect(page.locator('#save-status .status-ok')).toBeVisible();
 
@@ -379,7 +380,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(hideSexChipState).toHaveText(
       'Currently hidden in dashboard and calendar day editor.'
     );
-    await temperatureUnitFahrenheit.check({ force: true });
+    await checkStyledControl(temperatureUnitFahrenheit);
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
 
@@ -801,7 +802,7 @@ test.describe('Settings: profile and cycle', () => {
       dashboardSaveForm(page),
       longButAllowedName
     );
-    await longSymptomInput.check({ force: true });
+    await checkStyledControl(longSymptomInput);
     await assertSelectedSymptomChipHasNoTrailingMarker(
       page.locator(
         `label.choice-option:has(input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]:checked) .check-chip`
