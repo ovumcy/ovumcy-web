@@ -556,9 +556,11 @@
 }
 
 @utility settings-section-nav {
-  /* A top-of-page section index (jump links). Not sticky: the shared app-shell
-     layout clips overflow on an ancestor, which disables position:sticky here,
-     so pinning is left out rather than shipped broken. */
+  /* Section index (jump links). On >=640px it sticks just below the two-row
+     sticky paper-header (~117px tall, z-index:30) — `top` clears the header and
+     the z-index stays under it. On mobile it stays a static top-of-page index:
+     the bottom tabbar already covers navigation, vertical space is tight, and
+     the mobile header height varies. */
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -566,6 +568,12 @@
   border-radius: 0.9rem;
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.92);
+
+  @media (min-width: 640px) {
+    position: sticky;
+    top: 7.75rem;
+    z-index: 20;
+  }
 
   :root[data-theme='dark'] & {
     background: rgba(47, 38, 63, 0.92);
