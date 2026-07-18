@@ -91,9 +91,13 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 	// day after ovulation, so the estimate is the day before the first elevated
 	// day (clamped to stay within the cycle).
 	ovulationCycleDay := firstHighDay - 1
+	// codecov:ignore:start -- defensive floor: firstHighDay is the >=6th recorded
+	// cycle day (the detector skips the leading baseline window), so
+	// ovulationCycleDay is always >= 5 and this clamp never fires in practice.
 	if ovulationCycleDay < 1 {
 		ovulationCycleDay = firstHighDay
 	}
+	// codecov:ignore:end
 	return cycleStart.AddDate(0, 0, ovulationCycleDay-1)
 }
 

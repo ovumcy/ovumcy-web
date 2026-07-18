@@ -280,6 +280,41 @@ func TestImportServiceBatchInsertsManyUniqueDays(t *testing.T) {
 	}
 }
 
+// TestImportServiceHandlesUnorderedDates covers the min-day branch of the
+// existing-day range read: when a later entry in the file predates the first
+// one, the computed range must still span every planned day so all import.
+func TestImportServiceHandlesUnorderedDates(t *testing.T) {
+	_, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+	user := createDayServiceTestUser(t, database, "import-unordered@example.com")
+
+	// The second entry predates the first, exercising the minDay update.
+	payload := importPayload{Entries: []ExportJSONEntry{
+		{Date: "2026-06-15", Period: false, CycleFactors: []string{}},
+		{Date: "2026-06-10", Period: false, CycleFactors: []string{}},
+		{Date: "2026-06-20", Period: false, CycleFactors: []string{}},
+	}}
+	raw, _ := json.Marshal(payload)
+
+	importService := newImportServiceIntegration(t, database, symptomService)
+	result, err := importService.ImportJSON(context.Background(), user.ID, raw, time.UTC)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if result.Added != 3 || result.Skipped != 0 || result.Rejected != 0 {
+		t.Fatalf("expected all three unordered days imported, got %+v", result)
+	}
+
+	var stored int64
+	if err := database.Model(&models.DailyLog{}).Where("user_id = ?", user.ID).Count(&stored).Error; err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if stored != 3 {
+		t.Fatalf("expected 3 persisted rows, got %d", stored)
+	}
+}
+
 // TestImportServiceCapsCustomSymptomCreation pins the DoS bound: a file naming
 // far more distinct custom symptoms than MaxImportCustomSymptoms creates at most
 // that many rows (the rest are dropped), while the day itself still imports — so

@@ -556,9 +556,9 @@
 }
 
 @utility settings-section-nav {
-  position: sticky;
-  top: 0.5rem;
-  z-index: 5;
+  /* A top-of-page section index (jump links). Not sticky: the shared app-shell
+     layout clips overflow on an ancestor, which disables position:sticky here,
+     so pinning is left out rather than shipped broken. */
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;

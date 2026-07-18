@@ -293,9 +293,13 @@ func detectProbableOvulationMarker(recordedDays []int, dayValues map[int]float64
 	}
 
 	markerDay := firstHighDay - 1
+	// codecov:ignore:start -- defensive floor: firstHighDay is the >=6th recorded
+	// cycle day (the detector skips the leading baseline window), so markerDay is
+	// always >= 5 and this clamp never fires in practice.
 	if markerDay < 1 {
 		markerDay = firstHighDay
 	}
+	// codecov:ignore:end
 	return markerDay - 1, true
 }
 
