@@ -121,8 +121,11 @@ These are the exact cases asserted by the reference tests.
 - Luteal phase defaults to a constant 14 days and is only refined when enough
   logged BBT / cervical-mucus signal exists; in reality it varies between people
   and cycles.
-- Predictions are **calendar-based** and cannot observe the body. They do not
-  use temperature, LH tests, or symptoms to confirm ovulation.
+- Predictions are **calendar-based**: the forward prediction for the current
+  cycle is projected from the cycle-length and luteal-phase parameters, not from
+  observing the current cycle. Past BBT / cervical-mucus logs refine the
+  luteal-phase parameter retrospectively (see above), but no temperature, LH
+  test, or symptom is used to confirm ovulation in the current cycle in real time.
 - Accuracy degrades sharply for irregular or very short/long cycles.
 - The model is **not** a fertility-awareness contraceptive method (which require
   trained tracking of multiple biomarkers).
