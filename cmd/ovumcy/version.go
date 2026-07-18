@@ -16,6 +16,11 @@ import (
 // cache-bust token then falls back to VCS or process-start identity.
 var buildVersion string
 
+// codecov:ignore:start -- startup-banner revision string. The VCS branches
+// (vcs.revision/vcs.modified present, dirty suffix, missing BuildInfo) are only
+// reachable in a real `go build` with VCS stamping; `go test` binaries carry no
+// vcs.* settings, so they cannot be exercised without a fault-injection seam.
+// The seamed, per-input logic is covered by vcsRevisionFromBuildInfo's tests.
 func buildRevision() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok || info == nil {
@@ -40,6 +45,8 @@ func buildRevision() string {
 	}
 	return revision
 }
+
+// codecov:ignore:end
 
 // vcsRevisionFromBuildInfo extracts the raw vcs.revision stamped into info
 // and whether the working tree was modified. revision is "" when info is nil

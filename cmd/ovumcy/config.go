@@ -68,6 +68,9 @@ type proxySettings struct {
 // maxSecretKeyFileBytes caps the SECRET_KEY_FILE read (see resolveSecretKey).
 const maxSecretKeyFileBytes int64 = 8 << 10
 
+// codecov:ignore:start -- main() composition-root wiring: fatal-exits on an
+// invalid runtime config at boot. loadRuntimeConfig (the resolution logic) is
+// unit-tested directly; the log.Fatal path cannot run under `go test`.
 func mustLoadRuntimeConfig(location *time.Location) runtimeConfig {
 	config, err := loadRuntimeConfig(location)
 	if err != nil {
@@ -75,6 +78,8 @@ func mustLoadRuntimeConfig(location *time.Location) runtimeConfig {
 	}
 	return config
 }
+
+// codecov:ignore:end
 
 func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 	secretKey, err := resolveSecretKey()

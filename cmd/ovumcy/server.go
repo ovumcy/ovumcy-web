@@ -84,7 +84,7 @@ func newFiberApp(config runtimeConfig, handler *api.Handler) *fiber.App {
 
 func registerStaticContentTypes() {
 	if err := mime.AddExtensionType(".webmanifest", "application/manifest+json"); err != nil {
-		log.Printf("register .webmanifest MIME type: %v", err)
+		log.Printf("register .webmanifest MIME type: %v", err) // codecov:ignore -- defensive: a valid extension/type pair never errors.
 	}
 }
 
