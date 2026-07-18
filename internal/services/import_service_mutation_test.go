@@ -121,6 +121,9 @@ func (importmutDataLogs) FindByUserAndDayRange(context.Context, uint, time.Time,
 	return models.DailyLog{}, false, nil
 }
 func (importmutDataLogs) Create(context.Context, *models.DailyLog) error { return nil }
+func (importmutDataLogs) CreateBatch(context.Context, []models.DailyLog) error {
+	return nil
+}
 func (importmutDataLogs) ListByUser(context.Context, uint) ([]models.DailyLog, error) {
 	return []models.DailyLog{{Date: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true}}, nil
 }

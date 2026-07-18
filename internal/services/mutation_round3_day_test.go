@@ -119,6 +119,15 @@ func (s *mr3dayLogStub) Create(ctx context.Context, entry *models.DailyLog) erro
 	return nil
 }
 
+func (s *mr3dayLogStub) CreateBatch(ctx context.Context, entries []models.DailyLog) error {
+	for index := range entries {
+		if err := s.Create(ctx, &entries[index]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *mr3dayLogStub) Save(ctx context.Context, entry *models.DailyLog) error {
 	if s.failSaveWhenCycleStart != nil && entry.CycleStart {
 		return s.failSaveWhenCycleStart
