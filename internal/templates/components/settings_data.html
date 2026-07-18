@@ -1,0 +1,105 @@
+{{define "settings_data_section_content"}}
+  <section
+    class="journal-card p-5 sm:p-6 space-y-4"
+    data-export-section
+    data-export-week-start="{{.WeekStartsOn}}"
+    data-export-min="{{if .HasExportData}}{{.ExportRangeMin}}{{end}}"
+    data-export-max="{{if .HasExportData}}{{.ExportRangeMax}}{{end}}"
+    data-export-success="{{t .Messages "settings.export_success"}}"
+    data-export-failed="{{t .Messages "settings.export_failed"}}"
+    data-export-invalid-range="{{t .Messages "settings.export_invalid_range"}}"
+    data-export-invalid-date="{{t .Messages "settings.export_invalid_date"}}"
+    data-export-jump-title="{{t .Messages "settings.export_jump_title"}}"
+    data-export-summary-total-template="{{t .Messages "settings.export_summary_total"}}"
+    data-export-summary-range-template="{{t .Messages "settings.export_summary_range"}}"
+    data-export-summary-range-empty="{{t .Messages "settings.export_summary_range_empty"}}"
+    id="settings-data">
+    <div>
+      <h2 class="journal-subtitle">🗂️ {{t .Messages "settings.data.title"}}</h2>
+      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.data.storage_copy"}}</p>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div class="space-y-1">
+        <label class="field-label" id="export-from-label" for="export-from">{{t .Messages "settings.export_from"}}</label>
+        <div data-export-from-field>
+          {{template "localized_date_field" (dict
+            "Messages" .Messages
+            "FieldID" "export-from"
+            "FieldName" "from"
+            "Value" .ExportDateFrom
+            "Lang" .Lang
+            "LabelID" "export-from-label"
+            "Min" .ExportRangeMin
+            "Max" .ExportRangeMax
+            "ShowPickerButton" true
+            "OpenPickerLabel" (t .Messages "settings.export_open_calendar"))}}
+        </div>
+      </div>
+      <div class="space-y-1">
+        <label class="field-label" id="export-to-label" for="export-to">{{t .Messages "settings.export_to"}}</label>
+        <div data-export-to-field>
+          {{template "localized_date_field" (dict
+            "Messages" .Messages
+            "FieldID" "export-to"
+            "FieldName" "to"
+            "Value" .ExportDateTo
+            "Lang" .Lang
+            "LabelID" "export-to-label"
+            "Min" .ExportRangeMin
+            "Max" .ExportRangeMax
+            "ShowPickerButton" true
+            "OpenPickerLabel" (t .Messages "settings.export_open_calendar"))}}
+        </div>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2" data-export-presets>
+      <span class="journal-muted text-sm">{{t .Messages "settings.export_presets"}}:</span>
+      <button type="button" class="btn-soft text-sm" data-export-preset="all">{{t .Messages "settings.export_preset_all"}}</button>
+      <button type="button" class="btn-soft text-sm" data-export-preset="30">{{t .Messages "settings.export_preset_30"}}</button>
+      <button type="button" class="btn-soft text-sm" data-export-preset="90">{{t .Messages "settings.export_preset_90"}}</button>
+      <button type="button" class="btn-soft text-sm" data-export-preset="365">{{t .Messages "settings.export_preset_365"}}</button>
+    </div>
+    <div class="hidden journal-card p-4 space-y-3" data-export-calendar-panel>
+      <div class="flex items-center justify-between gap-2">
+        <button type="button" class="btn-secondary" data-export-calendar-prev aria-label="{{t .Messages "settings.export_prev_month"}}">←</button>
+        <button
+          type="button"
+          class="btn-soft text-sm flex-1"
+          data-export-calendar-title-toggle
+          aria-label="{{t .Messages "settings.export_jump_title"}}">
+          <span class="field-label text-center" data-export-calendar-title></span>
+        </button>
+        <button type="button" class="btn-secondary" data-export-calendar-next aria-label="{{t .Messages "settings.export_next_month"}}">→</button>
+      </div>
+      <div class="hidden flex items-center gap-2" data-export-calendar-jump>
+        <select class="input-field w-full" data-export-calendar-month aria-label="{{t .Messages "settings.export_month"}}"></select>
+        <input
+          type="number"
+          class="input-field w-full"
+          data-export-calendar-year
+          min="1900"
+          max="2200"
+          step="1"
+          aria-label="{{t .Messages "settings.export_year"}}">
+        <button type="button" class="btn-secondary" data-export-calendar-apply>{{t .Messages "settings.export_apply"}}</button>
+      </div>
+      <p class="journal-muted text-sm" data-export-calendar-active></p>
+      <div class="grid grid-cols-7 gap-1 text-center text-xs journal-muted" data-export-calendar-weekdays></div>
+      <div class="grid grid-cols-7 gap-1" data-export-calendar-days></div>
+      <div class="flex justify-end">
+        <button type="button" class="btn-secondary" data-export-calendar-close>{{t .Messages "settings.export_close_calendar"}}</button>
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button type="button" data-export-action data-export-endpoint="/api/v1/exports/csv" data-export-type="csv" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">📊</span><span>{{t .Messages "settings.export_csv"}}</span></button>
+      <button type="button" data-export-action data-export-endpoint="/api/v1/exports/json" data-export-type="json" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">🧾</span><span>{{t .Messages "settings.export_json"}}</span></button>
+    </div>
+    <p class="journal-muted text-sm" data-export-summary-total>{{printf (t .Messages "settings.export_summary_total") .ExportTotalEntries}}</p>
+    <p class="journal-muted text-sm" data-export-summary-range>
+      {{if .HasExportSummaryData}}{{printf (t .Messages "settings.export_summary_range") .ExportDateFromDisplay .ExportDateToDisplay}}{{else}}{{t .Messages "settings.export_summary_range_empty"}}{{end}}
+    </p>
+    <p class="journal-muted mt-3 text-xs">{{t .Messages "settings.export_data_hint"}}</p>
+    <p class="journal-muted text-xs">{{t .Messages "settings.local_data_hint"}}</p>
+
+  </section>
+{{end}}

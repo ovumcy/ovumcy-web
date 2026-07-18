@@ -1,0 +1,66 @@
+{{define "settings_interface_section_content"}}
+  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-interface">
+    <div>
+      <h2 class="journal-subtitle">🎛️ {{t .Messages "settings.interface.title"}}</h2>
+      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.interface.subtitle"}}</p>
+    </div>
+
+    <form
+      action="/api/v1/users/current/interface"
+      method="post"
+      hx-patch="/api/v1/users/current/interface"
+      class="space-y-5"
+      data-settings-draft-form="interface"
+      data-settings-interface-form
+      data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
+      data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="settings-interface-grid">
+        <section class="journal-panel settings-interface-panel space-y-3">
+          <div class="space-y-1">
+            <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
+            <p class="journal-muted text-sm">{{t .Messages "settings.interface.language_hint"}}</p>
+          </div>
+          <div class="settings-interface-options settings-interface-language-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.language"}}">
+            {{range .LanguageOptions}}
+            <label class="choice-option settings-interface-option" data-settings-interface-language-option="{{.Code}}" data-selected="{{if .Active}}true{{else}}false{{end}}">
+              <input type="radio" name="language" value="{{.Code}}" class="choice-input" {{if .Active}}checked{{end}}>
+              <span class="radio-tile radio-tile-inline"><span>{{.Label}}</span></span>
+            </label>
+            {{end}}
+          </div>
+        </section>
+
+        <section class="journal-panel settings-interface-panel space-y-3">
+          <div class="space-y-1">
+            <p class="field-label">{{t .Messages "settings.interface.theme"}}</p>
+            <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
+            <p class="journal-muted text-xs">{{t .Messages "settings.interface.preview_hint"}}</p>
+          </div>
+          <div class="settings-interface-options settings-interface-theme-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.theme"}}">
+            <label class="choice-option settings-interface-option" data-settings-interface-theme-option="light" data-selected="false">
+              <input type="radio" name="theme" value="light" class="choice-input" checked>
+              <span class="radio-tile radio-tile-inline">
+                <span>☀️</span>
+                <span>{{t .Messages "theme.name.light"}}</span>
+              </span>
+            </label>
+            <label class="choice-option settings-interface-option" data-settings-interface-theme-option="dark" data-selected="false">
+              <input type="radio" name="theme" value="dark" class="choice-input">
+              <span class="radio-tile radio-tile-inline">
+                <span>🌙</span>
+                <span>{{t .Messages "theme.name.dark"}}</span>
+              </span>
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <div class="settings-form-actions">
+        <button type="submit" class="btn-primary" data-settings-interface-save>{{t .Messages "settings.interface.save"}}</button>
+        <button type="button" class="btn-secondary" data-settings-interface-discard>{{t .Messages "settings.interface.discard"}}</button>
+      </div>
+    </form>
+  </section>
+{{end}}

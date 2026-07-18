@@ -1,0 +1,40 @@
+{{define "settings_import_section_content"}}
+  <section
+    class="journal-card p-5 sm:p-6 space-y-4"
+    data-import-section
+    data-import-csrf="{{.CSRFToken}}"
+    data-import-success-template="{{t .Messages "settings.import_success"}}"
+    data-import-empty="{{t .Messages "settings.import_empty"}}"
+    data-import-failed="{{t .Messages "settings.import_failed"}}"
+    data-import-invalid-file="{{t .Messages "settings.import_invalid_file"}}"
+    data-import-too-large="{{t .Messages "settings.import_too_large"}}"
+    id="settings-import">
+    <div>
+      <h2 class="journal-subtitle">🗃️ {{t .Messages "settings.import_title"}}</h2>
+      <p id="settings-import-desc" class="journal-muted mt-2 text-sm">{{t .Messages "settings.import_description"}}</p>
+    </div>
+
+    <form data-import-form novalidate>
+      <div class="space-y-2">
+        <label class="field-label" for="settings-import-file">{{t .Messages "settings.import_choose_file"}}</label>
+        <input
+          id="settings-import-file"
+          type="file"
+          accept=".json,application/json"
+          class="input-field"
+          aria-describedby="settings-import-desc"
+          data-import-file>
+      </div>
+
+      <div class="settings-form-actions">
+        <button
+          type="submit"
+          class="btn-secondary"
+          data-import-submit
+          data-save-button
+          data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.import_submit"}}</button>
+        <div id="settings-import-status" class="save-status text-sm" data-import-status aria-live="polite"></div>
+      </div>
+    </form>
+  </section>
+{{end}}

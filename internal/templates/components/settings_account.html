@@ -1,0 +1,198 @@
+{{define "settings_account_section_content"}}
+  <section class="journal-card p-5 sm:p-6 space-y-6" id="settings-account">
+    <div>
+      <h2 class="journal-subtitle">👤 {{t .Messages "settings.account.title"}}</h2>
+      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.account.subtitle"}}</p>
+    </div>
+
+    <div class="settings-account-stack">
+      <section class="journal-panel settings-account-block space-y-4">
+        <div>
+          <h3 class="field-label">{{t .Messages "settings.profile.title"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.profile.subtitle"}}</p>
+        </div>
+
+        <form
+          action="/api/v1/users/current/profile"
+          method="post"
+          hx-patch="/api/v1/users/current/profile"
+          hx-target="#settings-profile-status"
+          hx-swap="innerHTML"
+          class="space-y-4"
+          data-save-feedback>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+          <label class="field-label" for="settings-display-name">{{t .Messages "settings.profile.display_name"}}</label>
+          <input
+            id="settings-display-name"
+            type="text"
+            name="display_name"
+            value="{{.CurrentUser.DisplayName}}"
+            placeholder="{{t .Messages "settings.profile.display_name_placeholder"}}"
+            maxlength="64"
+            autocomplete="nickname"
+            class="input-field">
+          <p class="journal-muted text-xs">{{t .Messages "settings.profile.display_name_hint"}}</p>
+
+          <div class="journal-panel space-y-1" data-profile-email-panel>
+            <p class="field-label">{{t .Messages "settings.profile.email"}}</p>
+            <p class="text-sm break-all">{{.CurrentUser.Email}}</p>
+          </div>
+
+          <div class="settings-form-actions">
+            <button type="submit" class="btn-secondary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.profile.submit"}}</button>
+            <div id="settings-profile-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
+          </div>
+        </form>
+      </section>
+
+      <section id="settings-change-password" class="journal-panel settings-account-block space-y-4">
+        {{if .CurrentUser.LocalAuthEnabled}}
+        <div>
+          <h3 class="field-label">{{t .Messages "settings.change_password.title"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.change_password.subtitle"}}</p>
+        </div>
+
+        <form
+          id="settings-change-password-form"
+          action="/api/v1/users/current/password"
+          method="post"
+          hx-put="/api/v1/users/current/password"
+          hx-target="#settings-change-password-status"
+          hx-swap="innerHTML"
+          class="space-y-4"
+          novalidate
+          data-required-message="{{t .Messages "validation.required"}}"
+          data-password-mismatch-message="{{t .Messages "auth.error.password_mismatch"}}"
+          data-weak-password-message="{{t .Messages "auth.password_requirements"}}"
+          data-save-feedback>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "settings.current_password"
+            "FieldID" "settings-current-password"
+            "FieldName" "current_password"
+            "Autocomplete" "current-password"
+            "Required" true)}}
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "auth.new_password"
+            "FieldID" "settings-new-password"
+            "FieldName" "new_password"
+            "Autocomplete" "new-password"
+            "Required" true)}}
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "auth.confirm_password"
+            "FieldID" "settings-confirm-password"
+            "FieldName" "confirm_password"
+            "Autocomplete" "new-password"
+            "Required" true)}}
+          {{template "password_requirements_checklist" (dict "Messages" .Messages)}}
+
+          <div class="settings-form-actions">
+            <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.change_password.submit"}}</button>
+            <div id="settings-change-password-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
+          </div>
+        </form>
+        {{else}}
+        <div>
+          <h3 class="field-label">{{t .Messages "settings.local_password.title"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.local_password.subtitle"}}</p>
+        </div>
+
+        <form
+          id="settings-change-password-form"
+          action="/api/v1/users/current/password/step-up"
+          method="post"
+          class="space-y-4"
+          data-settings-local-password-form
+          novalidate
+          data-required-message="{{t .Messages "validation.required"}}"
+          data-password-mismatch-message="{{t .Messages "auth.error.password_mismatch"}}"
+          data-weak-password-message="{{t .Messages "auth.password_requirements"}}">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "auth.new_password"
+            "FieldID" "settings-new-password"
+            "FieldName" "new_password"
+            "Autocomplete" "new-password"
+            "Required" true)}}
+
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "auth.confirm_password"
+            "FieldID" "settings-confirm-password"
+            "FieldName" "confirm_password"
+            "Autocomplete" "new-password"
+            "Required" true)}}
+          {{template "password_requirements_checklist" (dict "Messages" .Messages)}}
+
+          <div class="settings-form-actions">
+            <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.local_password.submit"}}</button>
+            <div id="settings-change-password-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
+          </div>
+        </form>
+        {{end}}
+      </section>
+
+      <section class="journal-panel settings-account-block space-y-4">
+        <div>
+          <h3 class="field-label">{{t .Messages "settings.2fa.title"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.description"}}</p>
+        </div>
+
+        {{if .CurrentUser.TOTPEnabled}}
+        <p class="text-sm font-medium text-green-600 dark:text-green-400">{{t .Messages "settings.2fa.status_enabled_label"}}</p>
+        {{else}}
+        <p class="journal-muted text-sm">{{t .Messages "settings.2fa.status_disabled_label"}}</p>
+        {{end}}
+
+        <div>
+          <a href="/settings/2fa" class="btn-secondary">{{t .Messages "settings.2fa.manage_button"}}</a>
+        </div>
+      </section>
+
+      <section class="journal-panel settings-account-block space-y-4">
+        <div>
+          <h3 class="field-label">{{t .Messages "settings.security.advanced"}}</h3>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.security.advanced_hint"}}</p>
+        </div>
+
+        <div>
+          <h4 class="field-label">{{t .Messages "settings.recovery_code.title"}}</h4>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.recovery_code.subtitle"}}</p>
+        </div>
+
+        {{if .CurrentUser.LocalAuthEnabled}}
+        <form
+          action="/api/v1/users/current/recovery-code"
+          method="post"
+          class="space-y-4"
+          data-confirm="{{t .Messages "settings.confirm_regenerate_recovery_code"}}"
+          data-confirm-accept="{{t .Messages "settings.recovery_code.submit"}}">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+          {{template "password_toggle_field" (dict
+            "Messages" .Messages
+            "LabelKey" "settings.delete_account.password"
+            "FieldID" "settings-recovery-code-password"
+            "FieldName" "password"
+            "Autocomplete" "current-password"
+            "Required" true)}}
+          <button type="submit" class="btn-secondary">{{t .Messages "settings.recovery_code.submit"}}</button>
+        </form>
+        {{else}}
+        <p class="journal-muted text-sm" data-settings-recovery-code-unavailable>{{t .Messages "settings.local_password.recovery_unavailable"}}</p>
+        {{end}}
+      </section>
+    </div>
+  </section>
+{{end}}
