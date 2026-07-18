@@ -1,0 +1,80 @@
+{{define "settings_danger_zone_section_content"}}
+  <section id="settings-danger-zone" class="journal-card danger-card-strong p-5 sm:p-6 settings-danger-zone">
+    <h2 class="journal-subtitle danger-title">⚠️ {{t .Messages "settings.danger_zone.title"}}</h2>
+    <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
+
+    {{if eq .CurrentUser.Role "owner"}}
+    {{if .CurrentUser.LocalAuthEnabled}}
+    <div class="journal-panel danger-card-soft mt-5 space-y-4">
+      <div>
+        <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
+        <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.subtitle"}}</p>
+      </div>
+
+      <form
+        action="/api/v1/users/current/data-wipe"
+        method="post"
+        class="space-y-4"
+        data-clear-data-verify-form
+        data-clear-data-status-target="#settings-clear-data-status"
+        data-clear-data-validate-action="/api/v1/users/current/data-wipe/validate"
+        data-clear-data-confirm-message="{{t .Messages "settings.confirm_clear_data"}}"
+        data-clear-data-confirm-accept="{{t .Messages "settings.clear_data.confirm_accept"}}"
+        data-clear-data-invalid-password="{{t .Messages "settings.error.invalid_password"}}"
+        data-clear-data-request-failed="{{t .Messages "common.error.request_failed"}}">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+        {{template "password_toggle_field" (dict
+          "Messages" .Messages
+          "LabelKey" "settings.delete_account.password"
+          "FieldID" "settings-clear-data-password"
+          "FieldName" "password"
+          "Autocomplete" "current-password"
+          "Required" true)}}
+        <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.submit"}}</button>
+        <div id="settings-clear-data-status" class="save-status text-sm" aria-live="polite"></div>
+      </form>
+    </div>
+    {{else}}
+    <div class="journal-panel danger-card-soft mt-5 space-y-3">
+      <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
+      <p class="journal-muted text-sm">{{t .Messages "settings.local_password.danger_hint"}}</p>
+    </div>
+    {{end}}
+    {{end}}
+
+    {{if .CurrentUser.LocalAuthEnabled}}
+    <div class="journal-panel danger-card-soft mt-5 space-y-4">
+      <div>
+        <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
+      </div>
+      <form
+        hx-delete="/api/v1/users/current"
+        hx-target="#delete-account-feedback"
+        hx-swap="innerHTML"
+        hx-confirm="{{t .Messages "settings.confirm_delete_account"}}"
+        data-confirm-accept="{{t .Messages "settings.delete_account.submit"}}"
+        class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
+
+        {{template "password_toggle_field" (dict
+          "Messages" .Messages
+          "LabelKey" "settings.delete_account.password"
+          "FieldID" "settings-delete-password"
+          "FieldName" "password"
+          "Autocomplete" "current-password"
+          "Required" true)}}
+
+        <button type="submit" class="btn-danger">{{t .Messages "settings.delete_account.submit"}}</button>
+        <div id="delete-account-feedback" class="save-status text-sm" aria-live="polite"></div>
+      </form>
+    </div>
+    {{else}}
+    <div class="journal-panel danger-card-soft mt-5 space-y-3">
+      <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
+      <p class="journal-muted text-sm">{{t .Messages "settings.local_password.required_before_sensitive_actions"}}</p>
+    </div>
+    {{end}}
+  </section>
+{{end}}

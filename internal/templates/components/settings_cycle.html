@@ -1,0 +1,199 @@
+{{define "settings_cycle_section_content"}}
+  <section id="settings-cycle" class="journal-card p-5 sm:p-6" data-settings-cycle-form>
+    <h2 class="journal-subtitle">🗓️ {{t .Messages "settings.cycle.title"}}</h2>
+
+    <form
+      action="/api/v1/users/current/cycle"
+      method="post"
+      hx-patch="/api/v1/users/current/cycle"
+      hx-target="#settings-cycle-status"
+      hx-swap="innerHTML"
+      class="mt-5 space-y-6"
+      data-settings-draft-form="cycle"
+      data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
+      data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}"
+      data-save-feedback>
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <label class="field-label" for="settings-cycle-length">{{t .Messages "settings.cycle.cycle_length"}}</label>
+          <span class="journal-muted text-sm"><span data-settings-cycle-length-value>{{.CycleLength}}</span> {{t .Messages "common.days_short"}}</span>
+        </div>
+        <input
+          id="settings-cycle-length"
+          type="range"
+          min="15"
+          max="90"
+          name="cycle_length"
+          value="{{.CycleLength}}"
+          data-settings-cycle-length
+          class="w-full range-field">
+      </div>
+
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-2">
+          <label class="field-label" for="settings-period-length">{{t .Messages "settings.cycle.period_length"}}</label>
+          <span class="journal-muted text-sm"><span data-settings-period-length-value>{{.PeriodLength}}</span> {{t .Messages "common.days_short"}}</span>
+        </div>
+        <input
+          id="settings-period-length"
+          type="range"
+          min="1"
+          max="14"
+          name="period_length"
+          value="{{.PeriodLength}}"
+          data-settings-period-length
+          class="w-full range-field">
+      </div>
+
+      <div class="space-y-2">
+        <label class="field-label" id="settings-last-period-start-label" for="settings-last-period-start">{{t .Messages "settings.cycle.last_period_start"}}</label>
+        {{template "localized_date_field" (dict
+          "Messages" .Messages
+          "FieldID" "settings-last-period-start"
+          "FieldName" "last_period_start"
+          "Value" .LastPeriodStart
+          "Lang" .Lang
+          "LabelID" "settings-last-period-start-label"
+          "DescribedBy" "settings-last-period-start-hint"
+          "Min" .CycleStartMinISO
+          "Max" .TodayISO)}}
+        <p id="settings-last-period-start-hint" class="journal-muted text-xs">{{t .Messages "settings.cycle.last_period_start_hint"}}</p>
+      </div>
+
+      <div class="space-y-1">
+        <p class="status-error text-sm" data-settings-cycle-message="error" hidden>{{t .Messages "settings.cycle.error_incompatible"}}</p>
+        <p class="warning-amber text-sm" data-settings-cycle-message="warning" hidden>{{t .Messages "settings.cycle.warning_approximate"}}</p>
+        <p class="journal-muted text-sm" data-settings-cycle-message="adjusted" hidden>{{t .Messages "settings.cycle.info_adjusted"}}</p>
+        <p class="journal-muted text-sm" data-settings-cycle-message="period-long" hidden>{{t .Messages "settings.cycle.info_period_long"}}</p>
+        <p class="journal-muted text-sm" data-settings-cycle-message="cycle-short" hidden>{{t .Messages "settings.cycle.info_cycle_short"}}</p>
+      </div>
+
+      <div class="space-y-2">
+        <label class="period-toggle" data-binary-toggle data-active="{{if .AutoPeriodFill}}true{{else}}false{{end}}">
+          <input type="checkbox" name="auto_period_fill" value="true" data-binary-toggle-input {{if .AutoPeriodFill}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">🩸 {{t .Messages "settings.cycle.auto_period_fill"}}</span>
+          </span>
+        </label>
+        <p class="journal-muted text-sm">{{t .Messages "settings.cycle.auto_period_fill_hint"}}</p>
+      </div>
+
+      <div class="space-y-2">
+        <label class="period-toggle" data-binary-toggle data-active="{{if .IrregularCycle}}true{{else}}false{{end}}">
+          <input type="checkbox" name="irregular_cycle" value="true" data-binary-toggle-input {{if .IrregularCycle}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">〰️ {{t .Messages "settings.cycle.irregular_cycle"}}</span>
+          </span>
+        </label>
+        <p class="journal-muted text-sm" data-settings-irregular-cycle-hint>{{t .Messages "settings.cycle.irregular_cycle_hint"}}</p>
+      </div>
+
+      <div class="space-y-2">
+        <label class="period-toggle" data-binary-toggle data-active="{{if .UnpredictableCycle}}true{{else}}false{{end}}">
+          <input type="checkbox" name="unpredictable_cycle" value="true" data-binary-toggle-input {{if .UnpredictableCycle}}checked{{end}}>
+          <span class="period-toggle-copy">
+            <span class="period-toggle-main">∞ {{t .Messages "settings.cycle.unpredictable_cycle"}}</span>
+          </span>
+        </label>
+        <p class="journal-muted text-sm">{{t .Messages "settings.cycle.unpredictable_cycle_hint"}}</p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <p class="field-label">{{t .Messages "settings.age_group.title"}}</p>
+          <p class="journal-muted text-sm">{{t .Messages "settings.age_group.hint"}}</p>
+        </div>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label class="choice-option">
+            <input type="radio" name="age_group" value="" class="choice-input" {{if eq .AgeGroup ""}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.unspecified"}}</span></span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="age_group" value="under_40" class="choice-input" {{if eq .AgeGroup "under_40"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.under_40"}}</span></span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="age_group" value="age_40_45" class="choice-input" {{if eq .AgeGroup "age_40_45"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.40_to_45"}}</span></span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="age_group" value="age_45_plus" class="choice-input" {{if eq .AgeGroup "age_45_plus"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.45_plus"}}</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <p class="field-label">{{t .Messages "settings.goal.title"}}</p>
+          <p class="journal-muted text-sm">{{t .Messages "settings.goal.hint"}}</p>
+        </div>
+        <div class="grid gap-2">
+          <label class="choice-option">
+            <input type="radio" name="usage_goal" value="avoid_pregnancy" class="choice-input" {{if eq .UsageGoal "avoid_pregnancy"}}checked{{end}}>
+            <span class="radio-tile"><span>{{t .Messages "settings.goal.avoid"}}</span></span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="usage_goal" value="trying_to_conceive" class="choice-input" {{if eq .UsageGoal "trying_to_conceive"}}checked{{end}}>
+            <span class="radio-tile"><span>{{t .Messages "settings.goal.trying"}}</span></span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="usage_goal" value="health" class="choice-input" {{if or (eq .UsageGoal "health") (eq .UsageGoal "")}}checked{{end}}>
+            <span class="radio-tile"><span>{{t .Messages "settings.goal.health"}}</span></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-form-actions">
+        <button
+          type="submit"
+          class="btn-primary"
+          data-settings-cycle-save
+          data-settings-cycle-submit
+          data-save-button
+          data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.cycle.save"}}</button>
+        <button type="button" class="btn-secondary" data-settings-cycle-discard>{{t .Messages "settings.draft.discard"}}</button>
+        <div id="settings-cycle-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
+    </form>
+
+    <form
+      action="/api/v1/users/current/reminders"
+      method="post"
+      hx-patch="/api/v1/users/current/reminders"
+      hx-target="#settings-reminders-status"
+      hx-swap="innerHTML"
+      class="mt-8 space-y-2"
+      data-settings-reminders-form
+      data-save-feedback>
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <label class="field-label" for="settings-reminder-lead-days">{{t .Messages "settings.reminders.lead_days"}}</label>
+      <input
+        id="settings-reminder-lead-days"
+        type="number"
+        min="0"
+        max="14"
+        step="1"
+        inputmode="numeric"
+        name="reminder_lead_days"
+        value="{{.ReminderLeadDays}}"
+        data-settings-reminder-lead-days
+        aria-describedby="settings-reminder-lead-days-hint"
+        class="w-full input-field">
+      <p id="settings-reminder-lead-days-hint" class="journal-muted text-sm">{{t .Messages "settings.reminders.lead_days_hint"}}</p>
+
+      <div class="settings-form-actions">
+        <button
+          type="submit"
+          class="btn-primary"
+          data-settings-reminders-save
+          data-save-button
+          data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.reminders.save"}}</button>
+        <div id="settings-reminders-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
+    </form>
+  </section>
+{{end}}

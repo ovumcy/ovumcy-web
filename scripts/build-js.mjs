@@ -12,7 +12,16 @@ const appBundleSources = [
   "./web/src/js/app/25-timezone-sync.js",
   "./web/src/js/app/30-feedback-htmx.js",
   "./web/src/js/app/40-shared-utils.js",
-  "./web/src/js/app/50-window-factories.js",
+  "./web/src/js/app/50-chrome.js",
+  "./web/src/js/app/51-day-inputs.js",
+  "./web/src/js/app/52-dashboard.js",
+  "./web/src/js/app/53-dashboard-autosave.js",
+  "./web/src/js/app/54-settings-forms.js",
+  "./web/src/js/app/55-settings-interface.js",
+  "./web/src/js/app/56-calendar.js",
+  "./web/src/js/app/57-onboarding.js",
+  "./web/src/js/app/58-recovery.js",
+  "./web/src/js/app/59-init.js",
   "./web/src/js/app/90-bootstrap.js"
 ];
 

@@ -1,0 +1,177 @@
+{{define "settings_tracking_section_content"}}
+  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-tracking">
+    <div>
+      <h2 class="journal-subtitle">🧪 {{t .Messages "settings.tracking.title"}}</h2>
+      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.tracking.subtitle"}}</p>
+    </div>
+
+    <form
+      action="/api/v1/users/current/tracking"
+      method="post"
+      hx-patch="/api/v1/users/current/tracking"
+      hx-target="#settings-tracking-status"
+      hx-swap="innerHTML"
+      class="space-y-4"
+      data-settings-draft-form="tracking"
+      data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
+      data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}"
+      data-save-feedback>
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+      <div class="settings-toggle-list">
+        <label
+          class="period-toggle settings-tracking-toggle"
+          data-binary-toggle
+          data-active="{{if .TrackBBT}}true{{else}}false{{end}}"
+          data-tracking-setting="track-bbt">
+          <input type="checkbox" name="track_bbt" value="true" data-binary-toggle-input {{if .TrackBBT}}checked{{end}}>
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
+            <span class="period-toggle-main">🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_bbt_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.track_bbt_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.track_bbt_state_off"}}">{{if .TrackBBT}}{{t .Messages "settings.tracking.track_bbt_state_on"}}{{else}}{{t .Messages "settings.tracking.track_bbt_state_off"}}{{end}}</span>
+          </span>
+        </label>
+
+        <label
+          class="period-toggle settings-tracking-toggle"
+          data-binary-toggle
+          data-active="{{if .TrackCervicalMucus}}true{{else}}false{{end}}"
+          data-tracking-setting="track-cervical-mucus">
+          <input type="checkbox" name="track_cervical_mucus" value="true" data-binary-toggle-input {{if .TrackCervicalMucus}}checked{{end}}>
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
+            <span class="period-toggle-main">💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_cervical_mucus_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.track_cervical_mucus_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.track_cervical_mucus_state_off"}}">{{if .TrackCervicalMucus}}{{t .Messages "settings.tracking.track_cervical_mucus_state_on"}}{{else}}{{t .Messages "settings.tracking.track_cervical_mucus_state_off"}}{{end}}</span>
+          </span>
+        </label>
+
+        <label
+          class="period-toggle settings-tracking-toggle"
+          data-binary-toggle
+          data-active="{{if .HideSexChip}}true{{else}}false{{end}}"
+          data-tracking-setting="hide-sex-chip">
+          <input type="checkbox" name="hide_sex_chip" value="true" data-binary-toggle-input {{if .HideSexChip}}checked{{end}}>
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
+            <span class="period-toggle-main">◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_sex_chip_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.hide_sex_chip_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}">{{if .HideSexChip}}{{t .Messages "settings.tracking.hide_sex_chip_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}{{end}}</span>
+          </span>
+        </label>
+
+        <label
+          class="period-toggle settings-tracking-toggle"
+          data-binary-toggle
+          data-active="{{if .HideCycleFactors}}true{{else}}false{{end}}"
+          data-tracking-setting="hide-cycle-factors">
+          <input type="checkbox" name="hide_cycle_factors" value="true" data-binary-toggle-input {{if .HideCycleFactors}}checked{{end}}>
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
+            <span class="period-toggle-main">🏷️ {{t .Messages "settings.tracking.hide_cycle_factors"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_cycle_factors_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.hide_cycle_factors_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.hide_cycle_factors_state_off"}}">{{if .HideCycleFactors}}{{t .Messages "settings.tracking.hide_cycle_factors_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_cycle_factors_state_off"}}{{end}}</span>
+          </span>
+        </label>
+
+        <label
+          class="period-toggle settings-tracking-toggle"
+          data-binary-toggle
+          data-active="{{if .HideNotesField}}true{{else}}false{{end}}"
+          data-tracking-setting="hide-notes-field">
+          <input type="checkbox" name="hide_notes_field" value="true" data-binary-toggle-input {{if .HideNotesField}}checked{{end}}>
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
+            <span class="period-toggle-main">📝 {{t .Messages "settings.tracking.hide_notes_field"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_notes_field_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.hide_notes_field_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.hide_notes_field_state_off"}}">{{if .HideNotesField}}{{t .Messages "settings.tracking.hide_notes_field_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_notes_field_state_off"}}{{end}}</span>
+          </span>
+        </label>
+
+        <label
+          class="period-toggle settings-tracking-toggle"
+          data-binary-toggle
+          data-active="{{if .ShowHistoricalPhases}}true{{else}}false{{end}}"
+          data-tracking-setting="show-historical-phases">
+          <input type="checkbox" name="show_historical_phases" value="true" data-binary-toggle-input {{if .ShowHistoricalPhases}}checked{{end}}>
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
+            <span class="period-toggle-main">📅 {{t .Messages "settings.tracking.show_historical_phases"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_historical_phases_hint"}}</span>
+            <span
+              class="journal-muted text-xs"
+              data-binary-toggle-state
+              data-state-on="{{t .Messages "settings.tracking.show_historical_phases_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.show_historical_phases_state_off"}}">{{if .ShowHistoricalPhases}}{{t .Messages "settings.tracking.show_historical_phases_state_on"}}{{else}}{{t .Messages "settings.tracking.show_historical_phases_state_off"}}{{end}}</span>
+          </span>
+        </label>
+      </div>
+
+      <div class="space-y-2">
+        <p class="field-label">{{t .Messages "settings.tracking.temperature_unit"}}</p>
+        <div class="settings-unit-switch" role="radiogroup" aria-label="{{t .Messages "settings.tracking.temperature_unit"}}">
+          <label class="choice-option">
+            <input type="radio" name="temperature_unit" value="c" class="choice-input" {{if eq .TemperatureUnit "c"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>°C</span>
+              <span>{{t .Messages "settings.tracking.temperature_unit_celsius"}}</span>
+            </span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="temperature_unit" value="f" class="choice-input" {{if eq .TemperatureUnit "f"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>°F</span>
+              <span>{{t .Messages "settings.tracking.temperature_unit_fahrenheit"}}</span>
+            </span>
+          </label>
+        </div>
+        <p class="journal-muted text-sm">{{t .Messages "settings.tracking.temperature_unit_hint"}}</p>
+      </div>
+
+      <div class="space-y-2">
+        <p class="field-label">{{t .Messages "settings.tracking.week_starts_on"}}</p>
+        <div class="settings-unit-switch" role="radiogroup" aria-label="{{t .Messages "settings.tracking.week_starts_on"}}">
+          <label class="choice-option">
+            <input type="radio" name="week_starts_on" value="sunday" class="choice-input" {{if eq .WeekStartsOn "sunday"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>{{t .Messages "settings.tracking.week_starts_on_sunday"}}</span>
+            </span>
+          </label>
+          <label class="choice-option">
+            <input type="radio" name="week_starts_on" value="monday" class="choice-input" {{if eq .WeekStartsOn "monday"}}checked{{end}}>
+            <span class="radio-tile radio-tile-inline">
+              <span>{{t .Messages "settings.tracking.week_starts_on_monday"}}</span>
+            </span>
+          </label>
+        </div>
+        <p class="journal-muted text-sm">{{t .Messages "settings.tracking.week_starts_on_hint"}}</p>
+      </div>
+
+      <div class="settings-form-actions">
+        <button
+          type="submit"
+          class="btn-secondary"
+          data-settings-tracking-save
+          data-save-button
+          data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.tracking.save"}}</button>
+        <button type="button" class="btn-secondary" data-settings-tracking-discard>{{t .Messages "settings.draft.discard"}}</button>
+        <div id="settings-tracking-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
+    </form>
+  </section>
+{{end}}
