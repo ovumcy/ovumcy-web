@@ -254,10 +254,11 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 	t.Run("counts only non-nil readings without marker", func(t *testing.T) {
 		t.Parallel()
 		got := buildStatsBBTChartSummary(messages, services.StatsBBTChartViewData{
-			Values:   []*float64{f(36.4), nil, f(36.6), f(36.8)},
-			Baseline: 36.5,
+			Values:      []*float64{f(36.4), nil, f(36.6), f(36.8)},
+			Baseline:    36.5,
+			HasBaseline: true,
 		})
-		// Default: "%d readings this cycle. Baseline %.2f %s." -> 3 readings.
+		// Default: "%d readings this cycle. Coverline %.2f %s." -> 3 readings.
 		if !strings.Contains(got, "3 readings") {
 			t.Fatalf("expected 3 non-nil readings counted, got %q", got)
 		}
@@ -271,6 +272,7 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 		got := buildStatsBBTChartSummary(messages, services.StatsBBTChartViewData{
 			Values:         []*float64{f(36.4), f(36.6)},
 			Baseline:       36.5,
+			HasBaseline:    true,
 			MarkerLabelKey: "stats.ovulation_marker",
 			HasMarker:      true,
 		})
@@ -279,6 +281,20 @@ func TestBuildStatsBBTChartSummary(t *testing.T) {
 		}
 		if !strings.Contains(got, "Ovulation") {
 			t.Fatalf("expected translated marker label in summary, got %q", got)
+		}
+	})
+
+	t.Run("no detected shift announces readings without a coverline value", func(t *testing.T) {
+		t.Parallel()
+		got := buildStatsBBTChartSummary(messages, services.StatsBBTChartViewData{
+			Values: []*float64{f(36.4), f(36.6)},
+		})
+		// Default: "%d readings this cycle. No temperature shift detected yet."
+		if !strings.Contains(got, "2 readings") {
+			t.Fatalf("expected 2 readings counted, got %q", got)
+		}
+		if strings.Contains(got, "0.00") {
+			t.Fatalf("a zero coverline must never be announced, got %q", got)
 		}
 	})
 }

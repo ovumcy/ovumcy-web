@@ -29,26 +29,27 @@ func TestCycleSignals_InferUserLutealPhase_UnchangedByDSTTransitionInCycle(t *te
 		{Date: day("2025-03-20"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-04-08"), IsPeriod: true, Flow: models.FlowMedium},
 
-		// Cycle A (Mar1->Mar20): baseline Mar1-5, rise Mar7-9 -> ovulation Mar6
-		// (the day before the shift). Cycle A spans the Mar 9 DST boundary:
-		// luteal = 14 (UTC) / 13 (Toronto).
+		// Cycle A (Mar1->Mar20): coverline window Mar1-6, rise Mar7-9 ->
+		// ovulation Mar6 (day before the first high day).
+		// Cycle A spans the Mar 9 DST boundary: luteal = 14 (UTC) / 13 (Toronto).
 		{Date: day("2025-03-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-02"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-04"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-05"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-03-06"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-07"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-03-08"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-03-09"), BBT: models.NewBBT(36.50)},
 
-		// Cycle B (Mar20->Apr8): baseline Mar20-24, rise Mar27-29 -> ovulation Mar26
-		// (the day before the shift). No DST boundary in this window:
-		// luteal = 13 in both UTC and Toronto.
+		// Cycle B (Mar20->Apr8): coverline window Mar20-25, rise Mar27-29 ->
+		// ovulation Mar26. No DST boundary in the luteal span: luteal = 13.
 		{Date: day("2025-03-20"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-21"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-22"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-23"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-24"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-03-25"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-03-27"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-03-28"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-03-29"), BBT: models.NewBBT(36.50)},
@@ -89,24 +90,26 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyMinIsKept(t *testi
 		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
 
-		// Cycle 1 (Jan1->Jan29): baseline Jan1-5, rise Jan20-22 -> ovulation Jan19
-		// (the day before the shift). luteal = Jan29 - Jan19 = 10 (exactly minLutealPhaseDays).
+		// Cycle 1 (Jan1->Jan29): coverline window Jan1-6, rise Jan20-22 ->
+		// ovulation Jan19. luteal = Jan29 - Jan19 = 10 (exactly minLutealPhaseDays).
 		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-06"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-20"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-21"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-22"), BBT: models.NewBBT(36.50)},
 
-		// Cycle 2 (Jan29->Feb26): baseline Jan29-Feb2, rise Feb13-15 -> ovulation Feb12
-		// (the day before the shift). luteal = Feb26 - Feb12 = 14 (valid).
+		// Cycle 2 (Jan29->Feb26): coverline window Jan29-Feb3, rise Feb13-15 ->
+		// ovulation Feb12. luteal = Feb26 - Feb12 = 14 (valid).
 		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-02-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-13"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-14"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-15"), BBT: models.NewBBT(36.50)},
@@ -136,24 +139,26 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthExactlyTwentyIsKept(t *te
 		{Date: day("2025-01-29"), IsPeriod: true, Flow: models.FlowMedium},
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
 
-		// Cycle 1 (Jan1->Jan29): baseline Jan1-5, rise Jan10-12 -> ovulation Jan9
-		// (the day before the shift). luteal = Jan29 - Jan9 = 20 (exactly the upper boundary).
+		// Cycle 1 (Jan1->Jan29): coverline window Jan1-6, rise Jan10-12 ->
+		// ovulation Jan9. luteal = Jan29 - Jan9 = 20 (exactly the upper boundary).
 		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-06"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-10"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-11"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-01-12"), BBT: models.NewBBT(36.50)},
 
-		// Cycle 2 (Jan29->Feb26): baseline Jan29-Feb2, rise Feb13-15 -> ovulation Feb12
-		// (the day before the shift). luteal = Feb26 - Feb12 = 14 (valid).
+		// Cycle 2 (Jan29->Feb26): coverline window Jan29-Feb3, rise Feb13-15 ->
+		// ovulation Feb12. luteal = Feb26 - Feb12 = 14 (valid).
 		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-02-03"), BBT: models.NewBBT(36.20)},
 		{Date: day("2025-02-13"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-14"), BBT: models.NewBBT(36.50)},
 		{Date: day("2025-02-15"), BBT: models.NewBBT(36.50)},

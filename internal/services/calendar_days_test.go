@@ -320,17 +320,19 @@ func TestBuildCalendarDayStatesSeparatesFertilityEdgeAndPeak(t *testing.T) {
 
 func TestBuildCalendarDayStatesKeepsConfirmedOvulationWhenBBTHasShift(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	now := time.Date(2026, time.March, 17, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 18, 0, 0, 0, 0, time.UTC)
 
 	logs := []models.DailyLog{
+		// 6-day coverline window (max 36.43), then a 3-day rise Mar16-18.
 		{Date: time.Date(2026, time.March, 10, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.40)},
 		{Date: time.Date(2026, time.March, 11, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.42)},
 		{Date: time.Date(2026, time.March, 12, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.41)},
 		{Date: time.Date(2026, time.March, 13, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.39)},
 		{Date: time.Date(2026, time.March, 14, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.43)},
-		{Date: time.Date(2026, time.March, 15, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.66)},
-		{Date: time.Date(2026, time.March, 16, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.67)},
-		{Date: time.Date(2026, time.March, 17, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.69)},
+		{Date: time.Date(2026, time.March, 15, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.42)},
+		{Date: time.Date(2026, time.March, 16, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.66)},
+		{Date: time.Date(2026, time.March, 17, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.67)},
+		{Date: time.Date(2026, time.March, 18, 7, 0, 0, 0, time.UTC), BBT: models.NewBBT(36.69)},
 	}
 
 	stats := CycleStats{
