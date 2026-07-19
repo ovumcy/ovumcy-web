@@ -296,6 +296,18 @@ Operator-relevant summary (the full, test-backed claim list lives in
   scheduler. The server also logs a startup warning when `REGISTRATION_MODE=open`
   is combined with `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false`, surfacing exactly this
   multi-owner / publicly-reachable exposure at boot.
+- **Cloud deployments: turn hardening on.** The default above (LAN allowed) is
+  meant for self-hosting on a home/office network. On a cloud VM
+  (AWS/GCP/Azure/etc.) the link-local range also reaches the instance **metadata
+  service** (`169.254.169.254`), which — like any other private target — an
+  owner-controlled webhook URL would let the notify pass POST to. Delivery only
+  sends a fixed JSON body and discards the (size-capped) response, so there is no
+  response-body exfiltration path; the residual risk is a semi-trusted owner using
+  status/timing differences to probe the instance's own internal network (a
+  *blind* SSRF). If you deploy Ovumcy to any cloud or otherwise non-LAN host, set
+  `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true` — the resolve-and-pin check above then
+  refuses loopback/private/link-local targets, including the metadata endpoint,
+  with DNS-rebinding protection.
 - **Host-only logging.** Every log line the delivery path emits — success,
   failure, or skip — includes at most the destination **hostname**, never the
   full URL, path, query string, or userinfo.

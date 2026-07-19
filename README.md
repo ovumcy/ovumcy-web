@@ -25,7 +25,7 @@ Ovumcy is a menstrual cycle tracker you run on your own server. If the thought o
 
 Ovumcy runs as a single Go service with a server-rendered web UI, can be installed on a phone home screen, and supports SQLite by default with Postgres as an advanced self-hosted path.
 
-This README describes the current `main` branch. The latest tagged release is `v1.8.0`.
+This README describes the current `main` branch. The latest tagged release is `v1.9.0`.
 The public project site is [ovumcy.com](https://ovumcy.com).
 
 > **Just want to run it? Jump to [Quick Start](#quick-start).**
@@ -255,7 +255,7 @@ For the internal layering, trust boundaries, and request lifecycle, see [`docs/a
 
 ### Docker
 
-Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/ovumcy/ovumcy-web:v1.8.0`).
+Uses the prebuilt image from GHCR pinned to the latest tagged release by default (`ghcr.io/ovumcy/ovumcy-web:v1.9.0`).
 
 Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/ovumcy/ovumcy-web`.
 
@@ -266,13 +266,13 @@ Tagged releases from `v0.7.1` onward publish under the GHCR namespace `ghcr.io/o
 cosign verify \
   --certificate-identity-regexp '^https://github.com/ovumcy/ovumcy-web/\.github/workflows/docker-image\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/ovumcy/ovumcy-web:v1.8.0
+  ghcr.io/ovumcy/ovumcy-web:v1.9.0
 
 # 2. SLSA build provenance (GitHub attestation)
-gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v1.8.0 --repo ovumcy/ovumcy-web
+gh attestation verify oci://ghcr.io/ovumcy/ovumcy-web:v1.9.0 --repo ovumcy/ovumcy-web
 
 # 3. SBOM attached at build time
-docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.8.0 --format '{{ json .SBOM }}'
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.9.0 --format '{{ json .SBOM }}'
 ```
 
 For public GHCR images, pull does not require GitHub login. `docker compose up -d` is enough because `pull_policy: always` is enabled.
@@ -288,14 +288,14 @@ docker compose up -d
 Override the pinned default image tag if needed:
 
 ```bash
-OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.8.0 docker compose up -d
+OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web:v1.9.0 docker compose up -d
 ```
 
-The `v1.8.0` tag is mutable and `pull_policy: always` re-pulls it on every restart, so a one-time Cosign/SLSA check does not by itself guarantee later restarts run the same bytes. To pin the exact image you verified above, set `OVUMCY_IMAGE` to its digest instead of the tag:
+The `v1.9.0` tag is mutable and `pull_policy: always` re-pulls it on every restart, so a one-time Cosign/SLSA check does not by itself guarantee later restarts run the same bytes. To pin the exact image you verified above, set `OVUMCY_IMAGE` to its digest instead of the tag:
 
 ```bash
 # Resolve the digest of the tag you just verified, then pin it in .env:
-docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.8.0 --format '{{ .Manifest.Digest }}'
+docker buildx imagetools inspect ghcr.io/ovumcy/ovumcy-web:v1.9.0 --format '{{ .Manifest.Digest }}'
 # .env → OVUMCY_IMAGE=ghcr.io/ovumcy/ovumcy-web@sha256:<digest>
 ```
 
@@ -480,7 +480,7 @@ For bugs and feature requests, open a GitHub issue:
 
 ## Releases
 
-- Latest tagged release: `v1.8.0`.
+- Latest tagged release: `v1.9.0`.
 - Publish release notes via GitHub Releases and keep [CHANGELOG.md](CHANGELOG.md) updated.
 
 ## Roadmap

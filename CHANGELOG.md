@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-20
+
+Reworks BBT ovulation detection into a single shared "3-over-6" coverline
+detector with disturbance rejection, and lands a batch of external-audit
+remediations across cycle logic, onboarding privacy copy, import performance,
+and accessibility. No database migrations; no breaking changes.
+
+### Changed
+
+- **BBT ovulation detection unified on a "3-over-6" coverline with disturbance
+  rejection.** One detector (`detectBBTShiftFirstHighDay`) now drives all three
+  surfaces — luteal-phase inference, the calendar tentative-ovulation signal, and
+  the stats BBT chart coverline + marker — which previously disagreed. The
+  coverline is the max of the six immediately preceding *undisturbed* recorded
+  temperatures; a shift is three calendar-consecutive days strictly above it with
+  the third day ≥ coverline + 0.2 °C; ovulation is dated to the day before the
+  first elevated day. Readings on days tagged `illness` / `sleep_disruption` are
+  excluded from the detection series so a fever can neither inflate the coverline
+  nor confirm a streak (display series unchanged). The chart draws the coverline
+  only once a shift is confirmed; the accessibility summary gains a no-shift
+  sentence; all six locales adopt coverline terminology. (#255, #250)
+- **Age group is genuinely optional.** A "not specified" option replaces the
+  silent `under_40` onboarding default. (#250)
+- **Import writes days in one batch** — a single range read plus one chunked
+  `CreateBatch` instead of lookup-and-insert per day (with a 20k-unique-date load
+  test), speeding up large restores. (#250)
+
+### Fixed
+
+- **Settings section navigation stays pinned below the header while scrolling on
+  desktop** (`>=640px`); on mobile it remains a static top-of-page index. (#252)
+- **A period day with unset flow now reads "not specified" instead of "none"**,
+  which had wrongly implied "no bleeding". (#250)
+- **The calendar distinguishes projected (future / auto-filled) period days from
+  logged facts**, which were previously indistinguishable. (#250)
+- **Removed the false "we do not store identity data" onboarding claim** in all
+  six locales — email and display name are stored. (#250)
+- Accessibility: password-reveal and mobile-menu tap targets raised to 44px; the
+  prediction disclaimer given a visible accent; the onboarding quick-pick group
+  labelled. (#250)
+
+### Security
+
+- **Cloud/IMDS webhook guidance.** `docs/notifications.md` now documents that on a
+  cloud host an owner-configured webhook URL can reach the instance metadata
+  endpoint (`169.254.169.254`) when the private-address gate is off, and
+  recommends `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true` for any cloud (non-LAN)
+  deployment. The delivery envelope already discards the response body (no
+  exfiltration path); the residual risk is blind internal-network probing by a
+  co-tenant owner. Runtime behavior and defaults are unchanged.
+- **Startup warning for the exposed webhook combination** — the server logs a boot
+  warning when `REGISTRATION_MODE=open` is combined with
+  `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false`, surfacing the multi-owner /
+  publicly-reachable SSRF exposure. Defaults unchanged. (#250)
+
+### Internal
+
+- Oversized files split to cut merge/regression risk (#251, #253); the CLI command
+  dispatcher and the `webhook set` argument parser decomposed below the gocyclo-15
+  gate (#256).
+- Test hygiene: onboarding i18n date-field tests collapsed into one table-driven
+  test with Italian coverage (#257); round-3 mutation sweeps split from six theme
+  aggregates into per-source files, dropping one duplicate (#258); v1.8.x
+  mutation-hardening baseline (#246).
+- A dependency-free route↔OpenAPI contract test and a `checkStyledControl` e2e
+  helper centralizing 12 `force:true` clicks (#250); README contents / Quick-Start
+  / digest-pin guidance and `.bin/` excluded from the Docker build context (#250);
+  codecov PR-comment noise suppressed (#254); GitHub Actions and npm dev-dependency
+  bumps (#247, #248).
+
 ## [1.8.0] - 2026-07-11
 
 Adds three opt-in notification/subscription surfaces (webhook reminders, an in-process daily reminder scheduler, and a read-only calendar `.ics` feed), per-user timezone and week-start preferences, Italian localization, and an OIDC response-mode switch, alongside auth hardening. Six additive database migrations (026–031, SQLite and Postgres). The only breaking change is the `swelling` export-shape change noted under Changed.
@@ -620,7 +690,8 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.5.0...v1.6.0
