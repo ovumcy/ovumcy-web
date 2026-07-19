@@ -147,7 +147,10 @@ test.describe('Stats: BBT chart', () => {
 
     // The chart's data-chart attribute carries the JSON payload produced by
     // mapStatsBBTChartData (lowercase keys; baseline is present only when
-    // chart.HasBaseline is true, no separate boolean).
+    // chart.HasBaseline is true, no separate boolean). Under the "3-over-6"
+    // coverline rule a detected shift needs 6 preceding readings plus a
+    // 3-day rise — this 6-sample drift cannot qualify, so the chart renders
+    // WITHOUT a coverline: the section itself is gated only on >= 5 values.
     const chartData = await bbtChart.getAttribute('data-chart');
     expect(chartData).toBeTruthy();
     const parsed = JSON.parse(chartData ?? '');
@@ -156,44 +159,42 @@ test.describe('Stats: BBT chart', () => {
     expect(Array.isArray(parsed.values)).toBe(true);
     const numericValues = parsed.values.filter((v: number | null) => v !== null);
     expect(numericValues.length).toBeGreaterThanOrEqual(5);
-    expect(typeof parsed.baseline).toBe('number');
-    expect(parsed.baseline).toBeGreaterThan(35);
-    expect(parsed.baseline).toBeLessThan(38);
+    expect(parsed.baseline).toBeUndefined();
+    expect(parsed.markerIndex).toBeUndefined();
   });
 
   test('a sustained BBT rise after the baseline window flags the probable ovulation marker', async ({
     page,
   }) => {
     // Same HasInsights gate as the chart test, but the current cycle starts
-    // at today-12 so it can host eight consecutive BBT samples (cycle days
-    // 6..13). markCycleStartViaAPI also sets CycleStart=true (not just
+    // at today-14 so it can host nine consecutive BBT samples (cycle days
+    // 6..14). markCycleStartViaAPI also sets CycleStart=true (not just
     // is_period) so latestExplicitCycleStartBeforeOrOn picks the day up and
-    // stats.LastPeriodStart actually anchors to today-12 instead of remaining
+    // stats.LastPeriodStart actually anchors to today-14 instead of remaining
     // on the onboarding date. Default period_length=5 means the auto-period
-    // -fill range for the current cycle is cycle days 1..5 = today-12..
-    // today-8, which sits entirely outside the today-7..today BBT window —
+    // -fill range for the current cycle is cycle days 1..5 = today-14..
+    // today-10, which sits entirely outside the today-9..today-1 BBT window —
     // so the bare { bbt: ... } JSON payloads never wipe an is_period flag we
     // care about.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-bbt-marker', 60);
     const today = isoDateDaysAgo(0);
 
     await markCycleStartViaAPI(page, shiftISODate(today, -30));
-    await markCycleStartViaAPI(page, shiftISODate(today, -12));
+    await markCycleStartViaAPI(page, shiftISODate(today, -14));
 
-    // BBT layout, offsets today-8..today-1 (8 entries, all strictly before
+    // BBT layout, offsets today-9..today-1 (9 entries, all strictly before
     // "today" so a TZ-induced today+1 shift on the server can't drop the
-    // last sample via the `localDay.After(today)` filter):
-    //   baseline window = first 5 recorded ≈ 36.26
-    //   threshold = baseline + 0.2 = 36.46
-    //   final 3 days = 36.55 / 36.60 / 36.65 -> three consecutive above threshold
-    // detectProbableOvulationMarker iterates from recordedDays[5], so the
-    // lower baseline window cannot trigger a false marker.
+    // last sample via the `localDay.After(today)` filter). "3-over-6" rule:
+    //   coverline = max of the 6 readings preceding the rise = 36.30
+    //   final 3 calendar-consecutive days = 36.55 / 36.60 / 36.65 -> all
+    //   strictly above the coverline, third >= coverline + 0.2 (36.50)
     const bbtSeries: Array<[number, number]> = [
-      [-8, 36.2],
-      [-7, 36.25],
+      [-9, 36.2],
+      [-8, 36.25],
+      [-7, 36.3],
       [-6, 36.3],
-      [-5, 36.3],
-      [-4, 36.25],
+      [-5, 36.25],
+      [-4, 36.28],
       [-3, 36.55],
       [-2, 36.6],
       [-1, 36.65],
@@ -212,21 +213,24 @@ test.describe('Stats: BBT chart', () => {
     // The exact maxDay (and therefore markerIndex) shifts by ±1 with TZ
     // boundary effects between the JS local date and the server's calendar
     // day for stats.LastPeriodStart. Instead of pinning the index, assert
-    // the contract: marker is set, labelled correctly, and the three values
-    // starting from markerIndex+1 are all above baseline + 0.2 (the
-    // detectProbableOvulationMarker threshold).
+    // the contract: marker is set, labelled correctly, the drawn baseline is
+    // the detected coverline, and the three values starting from
+    // markerIndex+1 (the day after the marker = first elevated day) are all
+    // strictly above it, the third by at least 0.2 °C.
     expect(parsed.markerLabel).toBe('Probable ovulation');
     expect(typeof parsed.markerIndex).toBe('number');
     expect(parsed.markerIndex).toBeGreaterThanOrEqual(0);
+    expect(typeof parsed.baseline).toBe('number');
 
-    const threshold = parsed.baseline + 0.2;
+    const coverline = parsed.baseline as number;
     const values = parsed.values as Array<number | null>;
     const riseValues = values.slice(parsed.markerIndex + 1, parsed.markerIndex + 4);
     expect(riseValues).toHaveLength(3);
     for (const v of riseValues) {
       expect(v).not.toBeNull();
-      expect(v as number).toBeGreaterThanOrEqual(threshold);
+      expect(v as number).toBeGreaterThan(coverline);
     }
+    expect(riseValues[2] as number).toBeGreaterThanOrEqual(coverline + 0.2);
   });
 });
 
