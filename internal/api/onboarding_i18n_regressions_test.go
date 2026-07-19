@@ -4,45 +4,76 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
-func TestOnboardingDateInputUsesCurrentLanguage(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "onboarding-lang@example.com", "StrongPass1", false)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-
-	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=en")
-	response, err := app.Test(request, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("onboarding request failed: %v", err)
+// TestOnboardingDateFieldLocalizesAccessibilityLabels pins the server-rendered
+// i18n + a11y contract for the onboarding segmented date field across every
+// supported locale: the hidden field carries the request language, each segment
+// input exposes the localized aria-label, and the onboarding flow container
+// exposes the localized quick-pick labels. Assertions locate nodes by stable id
+// / data attribute (not markup order), so a legitimate reorder of the segments
+// does not false-fail. The actual quick-pick click behavior (clicking
+// "Yesterday" fills the date) is browser-side and covered by the Playwright
+// onboarding spec, not here.
+func TestOnboardingDateFieldLocalizesAccessibilityLabels(t *testing.T) {
+	cases := []struct {
+		lang       string
+		day        string
+		month      string
+		year       string
+		today      string
+		yesterday  string
+		twoDaysAgo string
+	}{
+		{"en", "Day", "Month", "Year", "Today", "Yesterday", "2 days ago"},
+		{"ru", "День", "Месяц", "Год", "Сегодня", "Вчера", "2 дня назад"},
+		{"es", "Día", "Mes", "Año", "Hoy", "Ayer", "Hace 2 días"},
+		{"fr", "Jour", "Mois", "Année", "Aujourd'hui", "Hier", "Il y a 2 jours"},
+		{"de", "Tag", "Monat", "Jahr", "Heute", "Gestern", "Vor 2 Tagen"},
+		{"it", "Giorno", "Mese", "Anno", "Oggi", "Ieri", "2 giorni fa"},
 	}
-	defer func() { _ = response.Body.Close() }()
 
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
-	}
+	for _, tc := range cases {
+		t.Run(tc.lang, func(t *testing.T) {
+			document := renderOnboardingForLanguage(t, tc.lang)
 
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read onboarding body: %v", err)
-	}
+			hidden := htmlElementByID(document, "last-period-start")
+			if hidden == nil {
+				t.Fatalf("onboarding hidden date input #last-period-start not found")
+			}
+			if got := htmlAttr(hidden, "lang"); got != tc.lang {
+				t.Fatalf("hidden date input lang = %q, want %q", got, tc.lang)
+			}
 
-	pattern := regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?<input[^>]*id="last-period-start"[^>]*lang="en".*?aria-label="Day".*?aria-label="Month".*?aria-label="Year"`)
-	if !pattern.Match(body) {
-		t.Fatalf("expected onboarding date field #last-period-start to render english segmented accessibility labels")
+			assertDateSegmentAriaLabel(t, document, "last-period-start-day", tc.day)
+			assertDateSegmentAriaLabel(t, document, "last-period-start-month", tc.month)
+			assertDateSegmentAriaLabel(t, document, "last-period-start-year", tc.year)
+
+			flow := htmlFindElement(document, func(node *html.Node) bool {
+				return node.Type == html.ElementNode && htmlHasAttr(node, "data-onboarding-flow")
+			})
+			if flow == nil {
+				t.Fatalf("onboarding flow container [data-onboarding-flow] not found")
+			}
+			assertQuickPickLabel(t, flow, "data-today-label", tc.today)
+			assertQuickPickLabel(t, flow, "data-yesterday-label", tc.yesterday)
+			assertQuickPickLabel(t, flow, "data-two-days-ago-label", tc.twoDaysAgo)
+		})
 	}
 }
 
-func TestOnboardingDateFieldUsesRussianLabels(t *testing.T) {
+func renderOnboardingForLanguage(t *testing.T, lang string) *html.Node {
+	t.Helper()
+
 	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "onboarding-lang-ru@example.com", "StrongPass1", false)
+	user := createOnboardingTestUser(t, database, "onboarding-lang-"+lang+"@example.com", "StrongPass1", false)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=ru")
+	request.Header.Set("Cookie", authCookie+"; ovumcy_lang="+lang)
 	response, err := app.Test(request, testConfigNoTimeout)
 	if err != nil {
 		t.Fatalf("onboarding request failed: %v", err)
@@ -50,114 +81,32 @@ func TestOnboardingDateFieldUsesRussianLabels(t *testing.T) {
 	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
+		t.Fatalf("expected onboarding status 200 for %s, got %d", lang, response.StatusCode)
 	}
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read onboarding body: %v", err)
 	}
+	return mustParseHTMLDocument(t, string(body))
+}
 
-	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="День".*?aria-label="Месяц".*?aria-label="Год"`).Match(body) {
-		t.Fatalf("expected russian onboarding segmented date labels")
+func assertDateSegmentAriaLabel(t *testing.T, document *html.Node, segmentID string, want string) {
+	t.Helper()
+
+	segment := htmlElementByID(document, segmentID)
+	if segment == nil {
+		t.Fatalf("onboarding date segment #%s not found", segmentID)
 	}
-	if !regexp.MustCompile(`data-yesterday-label="Вчера"`).Match(body) {
-		t.Fatalf("expected russian onboarding quick-pick yesterday label")
-	}
-	if !regexp.MustCompile(`data-two-days-ago-label="2 дня назад"`).Match(body) {
-		t.Fatalf("expected russian onboarding quick-pick two-days-ago label")
+	if got := htmlAttr(segment, "aria-label"); got != want {
+		t.Fatalf("segment #%s aria-label = %q, want %q", segmentID, got, want)
 	}
 }
 
-func TestOnboardingDateFieldUsesSpanishLabels(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "onboarding-lang-es@example.com", "StrongPass1", false)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+func assertQuickPickLabel(t *testing.T, flow *html.Node, attr string, want string) {
+	t.Helper()
 
-	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=es")
-	response, err := app.Test(request, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("onboarding request failed: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read onboarding body: %v", err)
-	}
-
-	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="Día".*?aria-label="Mes".*?aria-label="Año"`).Match(body) {
-		t.Fatalf("expected spanish onboarding segmented date labels")
-	}
-}
-
-func TestOnboardingDateFieldUsesFrenchLabels(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "onboarding-lang-fr@example.com", "StrongPass1", false)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-
-	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=fr")
-	response, err := app.Test(request, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("onboarding request failed: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read onboarding body: %v", err)
-	}
-
-	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="Jour".*?aria-label="Mois".*?aria-label="Année"`).Match(body) {
-		t.Fatalf("expected french onboarding segmented date labels")
-	}
-	if !regexp.MustCompile(`data-yesterday-label="Hier"`).Match(body) {
-		t.Fatalf("expected french onboarding quick-pick yesterday label")
-	}
-	if !regexp.MustCompile(`data-two-days-ago-label="Il y a 2 jours"`).Match(body) {
-		t.Fatalf("expected french onboarding quick-pick two-days-ago label")
-	}
-}
-
-func TestOnboardingDateFieldUsesGermanLabels(t *testing.T) {
-	app, database := newOnboardingTestApp(t)
-	user := createOnboardingTestUser(t, database, "onboarding-lang-de@example.com", "StrongPass1", false)
-	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
-
-	request := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	request.Header.Set("Cookie", authCookie+"; ovumcy_lang=de")
-	response, err := app.Test(request, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("onboarding request failed: %v", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("expected onboarding status 200, got %d", response.StatusCode)
-	}
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatalf("read onboarding body: %v", err)
-	}
-
-	if !regexp.MustCompile(`(?s)data-date-field-id="last-period-start".*?aria-label="Tag".*?aria-label="Monat".*?aria-label="Jahr"`).Match(body) {
-		t.Fatalf("expected german onboarding segmented date labels")
-	}
-	if !regexp.MustCompile(`data-yesterday-label="Gestern"`).Match(body) {
-		t.Fatalf("expected german onboarding quick-pick yesterday label")
-	}
-	if !regexp.MustCompile(`data-two-days-ago-label="Vor 2 Tagen"`).Match(body) {
-		t.Fatalf("expected german onboarding quick-pick two-days-ago label")
+	if got := htmlAttr(flow, attr); got != want {
+		t.Fatalf("onboarding %s = %q, want %q", attr, got, want)
 	}
 }
