@@ -318,47 +318,8 @@ func parseWebhookShowArgs(args []string) (string, error) {
 func parseWebhookSetArgs(args []string) (webhookSetOptions, error) {
 	opts := webhookSetOptions{}
 	for _, arg := range args {
-		value := strings.TrimSpace(arg)
-		switch {
-		case value == "":
-			continue
-		case value == "--url-stdin":
-			opts.readURLFromStdin = true
-		case value == "--clear-url":
-			opts.clearURL = true
-		case value == "--dry-run":
-			opts.dryRun = true
-		case strings.HasPrefix(value, "--enabled="):
-			parsed, err := parseWebhookBoolFlag(value)
-			if err != nil {
-				return webhookSetOptions{}, err
-			}
-			opts.enabled = parsed
-		case strings.HasPrefix(value, "--notify-period="):
-			parsed, err := parseWebhookBoolFlag(value)
-			if err != nil {
-				return webhookSetOptions{}, err
-			}
-			opts.notifyPeriod = parsed
-		case strings.HasPrefix(value, "--notify-ovulation="):
-			parsed, err := parseWebhookBoolFlag(value)
-			if err != nil {
-				return webhookSetOptions{}, err
-			}
-			opts.notifyOvulation = parsed
-		case strings.HasPrefix(value, "--reminder-lead-days="):
-			parsed, err := parseWebhookIntFlag(value)
-			if err != nil {
-				return webhookSetOptions{}, err
-			}
-			opts.reminderLeadDays = parsed
-		case strings.HasPrefix(value, "--"):
-			return webhookSetOptions{}, errors.New(webhookUsage)
-		default:
-			if opts.email != "" {
-				return webhookSetOptions{}, errors.New(webhookUsage)
-			}
-			opts.email = value
+		if err := applyWebhookSetArg(&opts, strings.TrimSpace(arg)); err != nil {
+			return webhookSetOptions{}, err
 		}
 	}
 
@@ -369,6 +330,54 @@ func parseWebhookSetArgs(args []string) (webhookSetOptions, error) {
 		return webhookSetOptions{}, errors.New("--clear-url and --url-stdin are mutually exclusive")
 	}
 	return opts, nil
+}
+
+// applyWebhookSetArg mutates opts for a single trimmed `webhook set` argument.
+// An empty argument is a no-op; an unknown flag, a malformed value, or a second
+// positional returns webhookUsage (or the flag parser's error).
+func applyWebhookSetArg(opts *webhookSetOptions, value string) error {
+	switch {
+	case value == "":
+		return nil
+	case value == "--url-stdin":
+		opts.readURLFromStdin = true
+	case value == "--clear-url":
+		opts.clearURL = true
+	case value == "--dry-run":
+		opts.dryRun = true
+	case strings.HasPrefix(value, "--enabled="):
+		parsed, err := parseWebhookBoolFlag(value)
+		if err != nil {
+			return err
+		}
+		opts.enabled = parsed
+	case strings.HasPrefix(value, "--notify-period="):
+		parsed, err := parseWebhookBoolFlag(value)
+		if err != nil {
+			return err
+		}
+		opts.notifyPeriod = parsed
+	case strings.HasPrefix(value, "--notify-ovulation="):
+		parsed, err := parseWebhookBoolFlag(value)
+		if err != nil {
+			return err
+		}
+		opts.notifyOvulation = parsed
+	case strings.HasPrefix(value, "--reminder-lead-days="):
+		parsed, err := parseWebhookIntFlag(value)
+		if err != nil {
+			return err
+		}
+		opts.reminderLeadDays = parsed
+	case strings.HasPrefix(value, "--"):
+		return errors.New(webhookUsage)
+	default:
+		if opts.email != "" {
+			return errors.New(webhookUsage)
+		}
+		opts.email = value
+	}
+	return nil
 }
 
 // parseWebhookBoolFlag parses a --key=<true|false> flag value into a *bool. It
