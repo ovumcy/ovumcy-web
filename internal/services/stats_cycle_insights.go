@@ -185,13 +185,15 @@ func buildCurrentCycleBBTChart(stats CycleStats, logs []models.DailyLog, now tim
 	}
 
 	recordedDays, dayValues := collectCurrentCycleBBTPoints(logs, cycleStart, today, location)
-	labels, values, baseline, ok := buildCurrentCycleBBTSeries(recordedDays, dayValues)
+	labels, values, ok := buildCurrentCycleBBTSeries(recordedDays, dayValues)
 	if !ok {
 		return StatsBBTChartViewData{}
 	}
 
-	markerIndex, hasMarker := detectProbableOvulationMarker(recordedDays, dayValues, baseline)
-	return newCurrentCycleBBTChartViewData(labels, values, baseline, markerIndex, hasMarker)
+	detectionDays, detectionValues := bbtSeriesFromPoints(collectCycleBBTPoints(logs, cycleStart, today.AddDate(0, 0, 1), location))
+	firstHighDay, coverline, hasShift := detectBBTShiftFirstHighDay(detectionDays, detectionValues)
+	markerIndex, hasMarker := probableOvulationMarkerIndex(firstHighDay, hasShift, len(labels))
+	return newCurrentCycleBBTChartViewData(labels, values, coverline, hasShift, markerIndex, hasMarker)
 }
 
 func resolveCurrentCycleBBTBounds(stats CycleStats, now time.Time, location *time.Location) (time.Time, time.Time, bool) {
@@ -233,15 +235,14 @@ func collectCurrentCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, 
 	return recordedDays, dayValues
 }
 
-func buildCurrentCycleBBTSeries(recordedDays []int, dayValues map[int]float64) ([]string, []*float64, float64, bool) {
+func buildCurrentCycleBBTSeries(recordedDays []int, dayValues map[int]float64) ([]string, []*float64, bool) {
 	if len(recordedDays) < 5 {
-		return nil, nil, 0, false
+		return nil, nil, false
 	}
 
 	maxDay := recordedDays[len(recordedDays)-1]
 	labels := make([]string, maxDay)
 	values := make([]*float64, maxDay)
-	baselineWindow := make([]float64, 0, 5)
 	for dayNumber := 1; dayNumber <= maxDay; dayNumber++ {
 		labels[dayNumber-1] = strconv.Itoa(dayNumber)
 		value, exists := dayValues[dayNumber]
@@ -251,30 +252,16 @@ func buildCurrentCycleBBTSeries(recordedDays []int, dayValues map[int]float64) (
 
 		pointValue := value
 		values[dayNumber-1] = &pointValue
-		if len(baselineWindow) < 5 {
-			baselineWindow = append(baselineWindow, value)
-		}
 	}
-	if len(baselineWindow) < 5 {
-		return nil, nil, 0, false
-	}
-	return labels, values, averageFloat64(baselineWindow), true
+	return labels, values, true
 }
 
-func averageFloat64(values []float64) float64 {
-	var total float64
-	for _, value := range values {
-		total += value
-	}
-	return total / float64(len(values))
-}
-
-func newCurrentCycleBBTChartViewData(labels []string, values []*float64, baseline float64, markerIndex int, hasMarker bool) StatsBBTChartViewData {
+func newCurrentCycleBBTChartViewData(labels []string, values []*float64, coverline float64, hasCoverline bool, markerIndex int, hasMarker bool) StatsBBTChartViewData {
 	return StatsBBTChartViewData{
 		Labels:         labels,
 		Values:         values,
-		Baseline:       baseline,
-		HasBaseline:    true,
+		Baseline:       coverline,
+		HasBaseline:    hasCoverline,
 		Kind:           "line",
 		MarkerIndex:    markerIndex,
 		MarkerLabelKey: "stats.bbt_probable_ovulation",
@@ -282,25 +269,23 @@ func newCurrentCycleBBTChartViewData(labels []string, values []*float64, baselin
 	}
 }
 
-// detectProbableOvulationMarker returns the zero-based chart index of the
-// probable-ovulation marker: the day before the sustained BBT shift detected by
-// the shared detectBBTShiftFirstHighDay. Inference and this chart marker use the
-// same detector, so the marker and the inferred ovulation day always agree.
-func detectProbableOvulationMarker(recordedDays []int, dayValues map[int]float64, baseline float64) (int, bool) {
-	firstHighDay, ok := detectBBTShiftFirstHighDay(recordedDays, dayValues, baseline)
-	if !ok {
+// probableOvulationMarkerIndex maps the shared detector's first elevated day
+// to a 0-based chart index on the day before it — the same ovulation-day
+// convention inferBBTOvulationDate uses, so marker and inference agree.
+func probableOvulationMarkerIndex(firstHighDay int, hasShift bool, labelCount int) (int, bool) {
+	if !hasShift {
 		return 0, false
 	}
 
 	markerDay := firstHighDay - 1
-	// codecov:ignore:start -- defensive floor: firstHighDay is the >=6th recorded
-	// cycle day (the detector skips the leading baseline window), so markerDay is
-	// always >= 5 and this clamp never fires in practice.
 	if markerDay < 1 {
 		markerDay = firstHighDay
 	}
-	// codecov:ignore:end
-	return markerDay - 1, true
+	markerIndex := markerDay - 1
+	if markerIndex < 0 || markerIndex >= labelCount {
+		return 0, false
+	}
+	return markerIndex, true
 }
 
 func completedCycleDayNumber(day time.Time, completedCycles []completedCycleSpan, location *time.Location) (int, bool) {

@@ -502,8 +502,8 @@ func TestStatsCycleInsightsResolveCurrentCycleBBTBoundsNilLocationFallsBackToUTC
 func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesRequiresFivePoints(t *testing.T) {
 	recorded := []int{1, 2, 3, 4}
 	dayValues := map[int]float64{1: 36.5, 2: 36.5, 3: 36.5, 4: 36.5}
-	labels, values, baseline, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
-	if ok || labels != nil || values != nil || baseline != 0 {
+	labels, values, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
+	if ok || labels != nil || values != nil {
 		t.Fatalf("expected empty result with fewer than 5 recorded days, got ok=%v labels=%v", ok, labels)
 	}
 }
@@ -513,14 +513,9 @@ func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesRequiresFivePoints(t *testi
 func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesExactlyFiveSucceeds(t *testing.T) {
 	recorded := []int{1, 2, 3, 4, 5}
 	dayValues := map[int]float64{1: 36.4, 2: 36.5, 3: 36.45, 4: 36.42, 5: 36.48}
-	_, _, baseline, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
+	_, _, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
 	if !ok {
 		t.Fatalf("expected ok=true for exactly 5 recorded days")
-	}
-	// Baseline is average of first 5 values.
-	expected := (36.4 + 36.5 + 36.45 + 36.42 + 36.48) / 5
-	if diff := baseline - expected; diff < -0.0001 || diff > 0.0001 {
-		t.Fatalf("expected baseline %.4f, got %.4f", expected, baseline)
 	}
 }
 
@@ -535,7 +530,7 @@ func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesLabelsMatchMaxDay(t *testin
 	// Recorded days 1,3,5,7,9 — maxDay=9, so we expect 9 labels.
 	recorded := []int{1, 3, 5, 7, 9}
 	dayValues := map[int]float64{1: 36.4, 3: 36.45, 5: 36.5, 7: 36.52, 9: 36.55}
-	labels, values, _, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
+	labels, values, ok := buildCurrentCycleBBTSeries(recorded, dayValues)
 	if !ok {
 		t.Fatalf("expected ok=true")
 	}
@@ -559,152 +554,125 @@ func TestStatsCycleInsightsBuildCurrentCycleBBTSeriesLabelsMatchMaxDay(t *testin
 }
 
 // ---------------------------------------------------------------------------
-// detectProbableOvulationMarker – line 290: threshold = baseline + 0.2
+// probableOvulationMarkerIndex – mapping the shared detector onto chart indices
 // ---------------------------------------------------------------------------
 
-// TestStatsCycleInsightsDetectProbableOvulationMarkerThresholdExact verifies that
-// three consecutive days where all values equal exactly baseline+0.2 are accepted
-// (>= threshold, not > threshold) — and days just below are rejected.
-func TestStatsCycleInsightsDetectProbableOvulationMarkerThresholdExact(t *testing.T) {
-	baseline := 36.40
-	threshold := baseline + 0.2 // 36.60
-
-	// Days 1..8 recorded; ovulation window at days 6,7,8 (index 5,6,7).
-	recorded := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	dayValues := map[int]float64{
-		1: 36.40, 2: 36.42, 3: 36.41, 4: 36.43, 5: 36.39,
-		6: threshold, 7: threshold, 8: threshold,
+// TestStatsCycleInsightsProbableOvulationMarkerIndexNoShiftReturnsFalse verifies
+// that without a detected shift no marker is emitted regardless of the index.
+func TestStatsCycleInsightsProbableOvulationMarkerIndexNoShiftReturnsFalse(t *testing.T) {
+	if _, ok := probableOvulationMarkerIndex(0, false, 10); ok {
+		t.Fatalf("expected no marker when the detector found no shift")
 	}
-	_, ok := detectProbableOvulationMarker(recorded, dayValues, baseline)
+}
+
+// TestStatsCycleInsightsProbableOvulationMarkerIndexDayBeforeFirstHigh verifies
+// the marker lands on the day BEFORE the first elevated day (ovulation-day
+// convention shared with inferBBTOvulationDate), in zero-based chart index form.
+func TestStatsCycleInsightsProbableOvulationMarkerIndexDayBeforeFirstHigh(t *testing.T) {
+	// First elevated day = cycle day 10 → marker day 9 → zero-based index 8.
+	idx, ok := probableOvulationMarkerIndex(10, true, 12)
 	if !ok {
-		t.Fatalf("expected ovulation marker detected when all three days meet threshold %.2f", threshold)
+		t.Fatalf("expected marker emitted for a detected shift")
 	}
+	if idx != 8 {
+		t.Fatalf("expected zero-based marker index 8 (day 9), got %d", idx)
+	}
+}
 
-	// One day just below threshold must suppress the marker.
-	dayValues[7] = threshold - 0.001
-	_, ok = detectProbableOvulationMarker(recorded, dayValues, baseline)
-	if ok {
-		t.Fatalf("expected no ovulation marker when day 7 is below threshold")
+// TestStatsCycleInsightsProbableOvulationMarkerIndexOutOfRangeIsDropped verifies
+// that a marker index beyond the chart's label range is suppressed rather than
+// emitted out of bounds.
+func TestStatsCycleInsightsProbableOvulationMarkerIndexOutOfRangeIsDropped(t *testing.T) {
+	// First elevated day 10 → marker index 8; labelCount 5 → dropped.
+	if _, ok := probableOvulationMarkerIndex(10, true, 5); ok {
+		t.Fatalf("expected marker suppressed when its index exceeds the label range")
+	}
+}
+
+// TestStatsCycleInsightsProbableOvulationMarkerIndexFirstDayClampsToItself covers
+// the markerDay < 1 floor: a (synthetic) first elevated day of 1 has no day
+// before it, so the marker clamps to the first high day itself (index 0).
+func TestStatsCycleInsightsProbableOvulationMarkerIndexFirstDayClampsToItself(t *testing.T) {
+	idx, ok := probableOvulationMarkerIndex(1, true, 5)
+	if !ok {
+		t.Fatalf("expected marker emitted for a detected shift on day 1")
+	}
+	if idx != 0 {
+		t.Fatalf("expected clamped zero-based marker index 0, got %d", idx)
 	}
 }
 
 // ---------------------------------------------------------------------------
-// detectProbableOvulationMarker – line 291: loop starts at index 5
+// buildCurrentCycleBBTChart – end-to-end: coverline + marker from the shared
+// "3-over-6" detector
 // ---------------------------------------------------------------------------
 
-// TestStatsCycleInsightsDetectProbableOvulationMarkerSkipsFirstFiveBaseline checks
-// that a rising triple at days 3,4,5 (indices 2,3,4) — before the index=5 threshold
-// — is not recognised as a marker. Only triples starting at or after index 5 count.
-func TestStatsCycleInsightsDetectProbableOvulationMarkerSkipsFirstFiveBaseline(t *testing.T) {
-	baseline := 36.40
-	threshold := baseline + 0.2
+// TestStatsCycleInsightsBBTChartCoverlineAndMarkerFromSharedDetector runs the
+// full chart build: the drawn line equals the max of the 6 undisturbed
+// temperatures preceding the shift, and the marker sits the day before the
+// first elevated day.
+func TestStatsCycleInsightsBBTChartCoverlineAndMarkerFromSharedDetector(t *testing.T) {
+	cycleStart := statscycleinsightsCovDay(t, "2026-01-01")
+	stats := CycleStats{LastPeriodStart: cycleStart}
+	now := statscycleinsightsCovDay(t, "2026-01-14")
 
-	// Eight days, rising triple at positions 3,4,5 (indices 2,3,4 — inside baseline window).
-	recorded := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	dayValues := map[int]float64{
-		1: 36.40, 2: 36.42,
-		3: threshold, 4: threshold, 5: threshold,
-		6: 36.40, 7: 36.40, 8: 36.40,
+	logs := []models.DailyLog{
+		statscycleinsightsCovBBTLog(t, "2026-01-01", 36.20),
+		statscycleinsightsCovBBTLog(t, "2026-01-02", 36.25),
+		statscycleinsightsCovBBTLog(t, "2026-01-03", 36.30), // window max → coverline
+		statscycleinsightsCovBBTLog(t, "2026-01-04", 36.22),
+		statscycleinsightsCovBBTLog(t, "2026-01-05", 36.24),
+		statscycleinsightsCovBBTLog(t, "2026-01-06", 36.21),
+		// Elevated streak: days 10, 11, 12 (calendar-consecutive).
+		statscycleinsightsCovBBTLog(t, "2026-01-10", 36.45),
+		statscycleinsightsCovBBTLog(t, "2026-01-11", 36.50),
+		statscycleinsightsCovBBTLog(t, "2026-01-12", 36.55), // ≥ 36.30+0.2
 	}
-	_, ok := detectProbableOvulationMarker(recorded, dayValues, baseline)
-	if ok {
-		t.Fatalf("expected no ovulation marker when triple is within the first-five baseline window")
+
+	chart := buildCurrentCycleBBTChart(stats, logs, now, time.UTC)
+	if !chart.HasBaseline {
+		t.Fatalf("expected coverline present after a detected shift")
+	}
+	if diff := chart.Baseline - 36.30; diff < -0.0001 || diff > 0.0001 {
+		t.Fatalf("expected coverline 36.30 (max of preceding 6), got %.4f", chart.Baseline)
+	}
+	if !chart.HasMarker {
+		t.Fatalf("expected ovulation marker for a detected shift")
+	}
+	// First elevated day = 10 → marker day 9 → zero-based index 8.
+	if chart.MarkerIndex != 8 {
+		t.Fatalf("expected marker index 8 (day 9), got %d", chart.MarkerIndex)
 	}
 }
 
-// ---------------------------------------------------------------------------
-// detectProbableOvulationMarker – line 298: all three days must exceed threshold
-// ---------------------------------------------------------------------------
+// TestStatsCycleInsightsBBTChartNoShiftHidesCoverlineAndMarker verifies that a
+// flat cycle renders the series (≥5 recorded values) but draws neither a
+// coverline nor a marker — the coverline only exists once a shift is confirmed.
+func TestStatsCycleInsightsBBTChartNoShiftHidesCoverlineAndMarker(t *testing.T) {
+	cycleStart := statscycleinsightsCovDay(t, "2026-01-01")
+	stats := CycleStats{LastPeriodStart: cycleStart}
+	now := statscycleinsightsCovDay(t, "2026-01-14")
 
-// TestStatsCycleInsightsDetectProbableOvulationMarkerAllThreeDaysMustExceedThreshold
-// verifies that the marker is only emitted when dayOne, dayTwo, AND dayThree all
-// meet the threshold (line 298 compound condition).
-func TestStatsCycleInsightsDetectProbableOvulationMarkerAllThreeDaysMustExceedThreshold(t *testing.T) {
-	baseline := 36.40
-	threshold := baseline + 0.2
-
-	recorded := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	base := map[int]float64{
-		1: 36.40, 2: 36.42, 3: 36.41, 4: 36.43, 5: 36.39,
-		6: threshold, 7: threshold, 8: threshold,
+	logs := []models.DailyLog{
+		statscycleinsightsCovBBTLog(t, "2026-01-01", 36.30),
+		statscycleinsightsCovBBTLog(t, "2026-01-02", 36.32),
+		statscycleinsightsCovBBTLog(t, "2026-01-03", 36.31),
+		statscycleinsightsCovBBTLog(t, "2026-01-04", 36.29),
+		statscycleinsightsCovBBTLog(t, "2026-01-05", 36.33),
+		statscycleinsightsCovBBTLog(t, "2026-01-06", 36.30),
+		statscycleinsightsCovBBTLog(t, "2026-01-07", 36.31),
 	}
 
-	// All three above: marker expected.
-	_, ok := detectProbableOvulationMarker(recorded, copyDayValues(base), baseline)
-	if !ok {
-		t.Fatalf("expected marker when all three days are at threshold")
+	chart := buildCurrentCycleBBTChart(stats, logs, now, time.UTC)
+	if len(chart.Labels) == 0 {
+		t.Fatalf("expected chart series rendered with ≥5 recorded values")
 	}
-
-	// Drop dayOne (day 6) below threshold.
-	v6Low := copyDayValues(base)
-	v6Low[6] = threshold - 0.01
-	_, ok = detectProbableOvulationMarker(recorded, v6Low, baseline)
-	if ok {
-		t.Fatalf("expected no marker when first of the three days is below threshold")
+	if chart.HasBaseline {
+		t.Fatalf("expected no coverline before a shift is confirmed, got %.2f", chart.Baseline)
 	}
-
-	// Drop dayThree (day 8) below threshold.
-	v8Low := copyDayValues(base)
-	v8Low[8] = threshold - 0.01
-	_, ok = detectProbableOvulationMarker(recorded, v8Low, baseline)
-	if ok {
-		t.Fatalf("expected no marker when third of the three days is below threshold")
+	if chart.HasMarker {
+		t.Fatalf("expected no marker before a shift is confirmed")
 	}
-}
-
-// ---------------------------------------------------------------------------
-// detectProbableOvulationMarker – line 303: markerDay < 1 guard
-// ---------------------------------------------------------------------------
-
-// TestStatsCycleInsightsDetectProbableOvulationMarkerDayOneAtBoundary checks the
-// edge case where the detected triple starts at the earliest possible position (day
-// recorded[5] = 6) so that markerDay = dayOne-1 = 5, which is >= 1 and therefore
-// the fallback (markerDay = dayOne) on line 304 is NOT taken.  We also verify the
-// index returned is markerDay-1 (zero-based).
-func TestStatsCycleInsightsDetectProbableOvulationMarkerDayOneAtBoundary(t *testing.T) {
-	baseline := 36.40
-	threshold := baseline + 0.2
-
-	recorded := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	dayValues := map[int]float64{
-		1: 36.40, 2: 36.42, 3: 36.41, 4: 36.43, 5: 36.39,
-		6: threshold, 7: threshold, 8: threshold,
-	}
-	// dayOne=6, markerDay = 6-1 = 5 (>= 1, no fallback).  Return index = 5-1 = 4.
-	idx, ok := detectProbableOvulationMarker(recorded, dayValues, baseline)
-	if !ok {
-		t.Fatalf("expected marker detected")
-	}
-	if idx != 4 {
-		t.Fatalf("expected marker index 4 (markerDay 5, zero-based), got %d", idx)
-	}
-}
-
-// TestStatsCycleInsightsDetectProbableOvulationMarkerMarkerDayFallbackDocumented
-// documents that the markerDay < 1 branch (line 303-304) is unreachable in
-// practice.  When recordedDays is sorted ascending and has >= 8 elements,
-// recorded[5] (the 6th smallest day) is always >= 6, so dayOne-1 >= 5 >= 1 and
-// the fallback never fires.  This test just exercises the normal marker detection
-// path to ensure the index returned equals markerDay-1 in zero-based form.
-func TestStatsCycleInsightsDetectProbableOvulationMarkerMarkerDayFallbackDocumented(t *testing.T) {
-	baseline := 36.40
-	threshold := baseline + 0.2
-
-	// dayOne = recorded[5] = 6, markerDay = 5, zero-based index = 4.
-	recorded := []int{1, 2, 3, 4, 5, 6, 7, 8}
-	dayValues := map[int]float64{
-		1: 36.40, 2: 36.42, 3: 36.41, 4: 36.43, 5: 36.39,
-		6: threshold, 7: threshold, 8: threshold,
-	}
-	idx, ok := detectProbableOvulationMarker(recorded, dayValues, baseline)
-	if !ok {
-		t.Fatalf("expected marker detected")
-	}
-	if idx != 4 {
-		t.Fatalf("expected zero-based marker index 4, got %d", idx)
-	}
-	// The markerDay<1 branch is a defensive unreachable guard — it cannot be
-	// triggered through the public API as documented in the classification notes.
 }
 
 // ---------------------------------------------------------------------------
@@ -782,16 +750,4 @@ func TestStatsCycleInsightsCompletedCycleDayNumberReturnsDayInFirstMatchingCycle
 	if ok {
 		t.Fatalf("expected ok=false for date before all spans")
 	}
-}
-
-// ---------------------------------------------------------------------------
-// internal helper
-// ---------------------------------------------------------------------------
-
-func copyDayValues(src map[int]float64) map[int]float64 {
-	dst := make(map[int]float64, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
 }

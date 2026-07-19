@@ -311,14 +311,17 @@ func newStatsPatternAndBBTTestFixture(t *testing.T) (*StatsService, *models.User
 		{Date: mustParseStatsServiceDay(t, "2026-02-28"), SymptomIDs: []uint{1}},
 		{Date: mustParseStatsServiceDay(t, "2026-03-02"), SymptomIDs: []uint{2}},
 		{Date: mustParseStatsServiceDay(t, "2026-03-04"), SymptomIDs: []uint{3}},
+		// Current cycle: 6-day coverline window Mar26-31 (max 36.50), then a
+		// 3-day rise Apr1-3 → first high day 7, marker on day 6.
 		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, BBT: models.NewBBT(36.40)},
 		{Date: mustParseStatsServiceDay(t, "2026-03-27"), BBT: models.NewBBT(36.45)},
 		{Date: mustParseStatsServiceDay(t, "2026-03-28"), BBT: models.NewBBT(36.50)},
 		{Date: mustParseStatsServiceDay(t, "2026-03-29"), BBT: models.NewBBT(36.42)},
 		{Date: mustParseStatsServiceDay(t, "2026-03-30"), BBT: models.NewBBT(36.43)},
-		{Date: mustParseStatsServiceDay(t, "2026-03-31"), BBT: models.NewBBT(36.70)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-31"), BBT: models.NewBBT(36.44)},
 		{Date: mustParseStatsServiceDay(t, "2026-04-01"), BBT: models.NewBBT(36.72)},
 		{Date: mustParseStatsServiceDay(t, "2026-04-02"), BBT: models.NewBBT(36.74)},
+		{Date: mustParseStatsServiceDay(t, "2026-04-03"), BBT: models.NewBBT(36.76)},
 	}
 
 	service := NewStatsService(
@@ -334,7 +337,7 @@ func newStatsPatternAndBBTTestFixture(t *testing.T) (*StatsService, *models.User
 
 	currentCycleStart := mustParseStatsServiceDay(t, "2026-03-26")
 	user := &models.User{ID: 7, Role: models.RoleOwner, CycleLength: 28, TrackBBT: true, LastPeriodStart: &currentCycleStart}
-	now := mustParseStatsServiceDay(t, "2026-04-02")
+	now := mustParseStatsServiceDay(t, "2026-04-03")
 	return service, user, now
 }
 
@@ -356,14 +359,18 @@ func assertStatsPatternAndBBTViewData(t *testing.T, viewData StatsPageViewData) 
 	if !viewData.HasCurrentCycleBBTChart {
 		t.Fatalf("expected current-cycle BBT chart to be available")
 	}
-	if len(viewData.CurrentCycleBBTChart.Labels) != 8 {
-		t.Fatalf("expected eight BBT chart labels, got %#v", viewData.CurrentCycleBBTChart.Labels)
+	if len(viewData.CurrentCycleBBTChart.Labels) != 9 {
+		t.Fatalf("expected nine BBT chart labels, got %#v", viewData.CurrentCycleBBTChart.Labels)
 	}
-	if !viewData.CurrentCycleBBTChart.HasMarker || viewData.CurrentCycleBBTChart.MarkerIndex != 4 {
-		t.Fatalf("expected probable ovulation marker on day 5, got %#v", viewData.CurrentCycleBBTChart)
+	if !viewData.CurrentCycleBBTChart.HasMarker || viewData.CurrentCycleBBTChart.MarkerIndex != 5 {
+		t.Fatalf("expected probable ovulation marker on day 6, got %#v", viewData.CurrentCycleBBTChart)
 	}
-	if diff := viewData.CurrentCycleBBTChart.Baseline - 36.44; diff < -0.001 || diff > 0.001 {
-		t.Fatalf("expected BBT baseline 36.44, got %.2f", viewData.CurrentCycleBBTChart.Baseline)
+	// Coverline = max of the 6 readings preceding the shift (36.50 on Mar 28).
+	if !viewData.CurrentCycleBBTChart.HasBaseline {
+		t.Fatalf("expected coverline present after a detected shift")
+	}
+	if diff := viewData.CurrentCycleBBTChart.Baseline - 36.50; diff < -0.001 || diff > 0.001 {
+		t.Fatalf("expected BBT coverline 36.50, got %.2f", viewData.CurrentCycleBBTChart.Baseline)
 	}
 }
 

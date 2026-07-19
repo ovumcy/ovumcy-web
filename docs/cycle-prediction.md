@@ -116,16 +116,47 @@ These are the exact cases asserted by the reference tests.
   as the median, so an old outlier cycle stops affecting them once it ages out
   of the window.
 
+### How a BBT temperature shift is detected (the "3-over-6" coverline rule)
+
+Basal body temperature rises ~0.2–0.5 °C after ovulation (progesterone from the
+corpus luteum is thermogenic), so a sustained rise *confirms ovulation
+retrospectively*. One shared detector drives the luteal-phase inference, the
+calendar's tentative-ovulation signal, and the coverline + probable-ovulation
+marker on the stats BBT chart, so those surfaces can never disagree. It applies
+the classical symptothermal ("3-over-6") rule:
+
+- **Coverline** — the maximum of the **6 immediately preceding** recorded,
+  undisturbed temperatures. The maximum (not the mean) is used so ordinary
+  follicular-phase noise cannot slip past the threshold.
+- **Shift** — **3 calendar-consecutive** recorded days all strictly above the
+  coverline, with the **third day at least 0.2 °C above** it.
+- **Ovulation estimate** — the calendar day **before** the first elevated day
+  (the rise follows ovulation by about a day).
+- **Disturbance exclusion** — readings on days tagged with the `illness` or
+  `sleep_disruption` cycle factors are excluded from the detection series
+  entirely: a fever or short-sleep reading must neither inflate the coverline
+  (masking a real shift) nor count as an elevated day (faking one). This is the
+  single sanctioned case where daily cycle factors influence a computation —
+  they still never alter the calendar prediction formulas above.
+- With fewer than 6 undisturbed readings before a candidate day, or without a
+  qualifying 3-day run, no shift is reported: the chart draws no coverline and
+  no marker, and the luteal inference falls back to the cervical-mucus signal
+  or the 14-day default.
+
+The stats chart draws the coverline only once a shift is confirmed — until
+then there is nothing physiologically meaningful to draw. Even a confirmed
+shift remains an estimate (±1–2 days), never a fact.
+
 ## Assumptions and limitations
 
 - Luteal phase defaults to a constant 14 days and is only refined when enough
   logged BBT / cervical-mucus signal exists; in reality it varies between people
   and cycles.
-- Predictions are **calendar-based**: the forward prediction for the current
-  cycle is projected from the cycle-length and luteal-phase parameters, not from
-  observing the current cycle. Past BBT / cervical-mucus logs refine the
-  luteal-phase parameter retrospectively (see above), but no temperature, LH
-  test, or symptom is used to confirm ovulation in the current cycle in real time.
+- Forward-looking predictions are **calendar-based** and cannot observe the
+  body: the dates projected into the future do not use temperature, LH tests,
+  or symptoms. Logged BBT / cervical-mucus signals only refine the luteal
+  phase and confirm past ovulation retrospectively (see the "3-over-6" rule
+  above), never predict a future one.
 - Accuracy degrades sharply for irregular or very short/long cycles.
 - The model is **not** a fertility-awareness contraceptive method (which require
   trained tracking of multiple biomarkers).

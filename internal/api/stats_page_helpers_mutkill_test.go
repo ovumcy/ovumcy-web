@@ -102,8 +102,9 @@ func TestBuildStatsBBTChartSummaryMutKill(t *testing.T) {
 			"stats.bbt_chart_summary": "CNT[%d] base=%.2f %s",
 			"stats.bbt_unit":          "u",
 		}, services.StatsBBTChartViewData{
-			Values:   []*float64{f(36.4), nil, f(36.6), f(36.8)},
-			Baseline: 36.5,
+			Values:      []*float64{f(36.4), nil, f(36.6), f(36.8)},
+			Baseline:    36.5,
+			HasBaseline: true,
 		})
 		if !strings.Contains(got, "CNT[3]") {
 			t.Fatalf("expected 3 non-nil readings via the injected translation, got %q", got)
@@ -123,6 +124,7 @@ func TestBuildStatsBBTChartSummaryMutKill(t *testing.T) {
 		}, services.StatsBBTChartViewData{
 			Values:         []*float64{f(36.4), f(36.6)},
 			Baseline:       36.5,
+			HasBaseline:    true,
 			MarkerLabelKey: "stats.ovulation_marker",
 			HasMarker:      true,
 		})

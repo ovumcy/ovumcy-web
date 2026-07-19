@@ -104,18 +104,26 @@ func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsB
 		return translateMessage(messages, "stats.no_cycle_data")
 	}
 
+	if !chart.HasBaseline {
+		pattern := translateMessage(messages, "stats.bbt_chart_summary_no_shift")
+		if pattern == "" || pattern == "stats.bbt_chart_summary_no_shift" {
+			pattern = "%d readings this cycle. No temperature shift detected yet."
+		}
+		return fmt.Sprintf(pattern, readingsCount)
+	}
+
 	unit := translateMessage(messages, "stats.bbt_unit")
 	if chart.HasMarker && chart.MarkerLabelKey != "" {
 		pattern := translateMessage(messages, "stats.bbt_chart_summary_with_marker")
 		if pattern == "" || pattern == "stats.bbt_chart_summary_with_marker" {
-			pattern = "%d readings this cycle. Baseline %.2f %s. Marker: %s."
+			pattern = "%d readings this cycle. Coverline %.2f %s. Marker: %s."
 		}
 		return fmt.Sprintf(pattern, readingsCount, chart.Baseline, unit, translateMessage(messages, chart.MarkerLabelKey))
 	}
 
 	pattern := translateMessage(messages, "stats.bbt_chart_summary")
 	if pattern == "" || pattern == "stats.bbt_chart_summary" {
-		pattern = "%d readings this cycle. Baseline %.2f %s."
+		pattern = "%d readings this cycle. Coverline %.2f %s."
 	}
 	return fmt.Sprintf(pattern, readingsCount, chart.Baseline, unit)
 }

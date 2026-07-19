@@ -14,13 +14,15 @@ type cycleBBTPoint struct {
 	Value    float64
 }
 
+// "3-over-6" coverline rule (#249): the sliding coverline is the maximum of the
+// bbtCoverlineWindow immediately preceding undisturbed recorded temperatures;
+// a shift is bbtElevatedStreakDays calendar-consecutive days strictly above the
+// coverline, with the third day at least bbtThirdDayMarginCelsius above it.
+// Ovulation is estimated as the calendar day before the first elevated day.
 const (
-	// bbtShiftThresholdDelta is the sustained rise over baseline (°C) that marks
-	// the post-ovulatory thermal shift.
-	bbtShiftThresholdDelta = 0.2
-	// bbtBaselineWindow is the number of leading recorded BBT values averaged into
-	// the pre-shift baseline; the shift is only sought after this window.
-	bbtBaselineWindow = 5
+	bbtCoverlineWindow       = 6
+	bbtElevatedStreakDays    = 3
+	bbtThirdDayMarginCelsius = 0.2
 )
 
 func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int, bool) {
@@ -64,25 +66,8 @@ func inferObservedOvulationDate(logs []models.DailyLog, cycleStart time.Time, ne
 }
 
 func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) time.Time {
-	points := collectCycleBBTPoints(logs, cycleStart, nextStart, location)
-	if len(points) < bbtBaselineWindow {
-		return time.Time{}
-	}
-
-	var baselineTotal float64
-	for index := range bbtBaselineWindow {
-		baselineTotal += points[index].Value
-	}
-	baseline := baselineTotal / float64(bbtBaselineWindow)
-
-	recordedDays := make([]int, len(points))
-	dayValues := make(map[int]float64, len(points))
-	for index, point := range points {
-		recordedDays[index] = point.CycleDay
-		dayValues[point.CycleDay] = point.Value
-	}
-
-	firstHighDay, ok := detectBBTShiftFirstHighDay(recordedDays, dayValues, baseline)
+	recordedDays, dayValues := bbtSeriesFromPoints(collectCycleBBTPoints(logs, cycleStart, nextStart, location))
+	firstHighDay, _, ok := detectBBTShiftFirstHighDay(recordedDays, dayValues)
 	if !ok {
 		return time.Time{}
 	}
@@ -91,9 +76,10 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 	// day after ovulation, so the estimate is the day before the first elevated
 	// day (clamped to stay within the cycle).
 	ovulationCycleDay := firstHighDay - 1
-	// codecov:ignore:start -- defensive floor: firstHighDay is the >=6th recorded
-	// cycle day (the detector skips the leading baseline window), so
-	// ovulationCycleDay is always >= 5 and this clamp never fires in practice.
+	// codecov:ignore:start -- defensive floor: firstHighDay is at least the 7th
+	// recorded cycle day (the detector requires a full 6-value coverline window
+	// before it), so ovulationCycleDay is always >= 6 and this clamp never fires
+	// in practice.
 	if ovulationCycleDay < 1 {
 		ovulationCycleDay = firstHighDay
 	}
@@ -101,38 +87,65 @@ func inferBBTOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextSta
 	return cycleStart.AddDate(0, 0, ovulationCycleDay-1)
 }
 
-// detectBBTShiftFirstHighDay finds the earliest sustained post-ovulatory thermal
-// shift and returns the cycle-day number of its first elevated day.
+// detectBBTShiftFirstHighDay is the one shared "3-over-6" detector: luteal
+// inference, the calendar tentative-ovulation signal, and the stats chart
+// marker/coverline must all route through it so they never disagree.
 //
-// A shift is three consecutive calendar days (cycle days n, n+1, n+2) — all
-// recorded and all at or above baseline+bbtShiftThresholdDelta — sought only
-// after the leading baseline window. recordedDays must be sorted ascending;
-// dayValues maps each recorded cycle day to its temperature.
-//
-// Callers derive ovulation from the returned day (conventionally the day before
-// the shift begins). Both the luteal-phase inference and the BBT chart marker
-// share this detector so they never disagree on where the shift is.
-func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64, baseline float64) (int, bool) {
-	threshold := baseline + bbtShiftThresholdDelta
-	for index := bbtBaselineWindow; index+2 < len(recordedDays); index++ {
+// The sliding coverline for a candidate first elevated day is the MAX of the 6
+// immediately preceding recorded temperatures (max, not mean, so ordinary
+// follicular noise cannot slip past). A shift is three consecutive calendar
+// days (cycle days n, n+1, n+2), all recorded, the first two strictly above
+// the coverline and the third at least bbtThirdDayMarginCelsius above it.
+// recordedDays must be sorted ascending; dayValues maps each recorded cycle
+// day to its temperature. Returns the first elevated cycle day and the
+// coverline in effect.
+func detectBBTShiftFirstHighDay(recordedDays []int, dayValues map[int]float64) (int, float64, bool) {
+	for index := bbtCoverlineWindow; index+bbtElevatedStreakDays-1 < len(recordedDays); index++ {
 		dayOne := recordedDays[index]
 		dayTwo := recordedDays[index+1]
 		dayThree := recordedDays[index+2]
 		if dayTwo != dayOne+1 || dayThree != dayTwo+1 {
 			continue
 		}
-		if dayValues[dayOne] < threshold || dayValues[dayTwo] < threshold || dayValues[dayThree] < threshold {
+
+		coverline := dayValues[recordedDays[index-bbtCoverlineWindow]]
+		for windowIndex := index - bbtCoverlineWindow + 1; windowIndex < index; windowIndex++ {
+			if value := dayValues[recordedDays[windowIndex]]; value > coverline {
+				coverline = value
+			}
+		}
+
+		if dayValues[dayOne] <= coverline || dayValues[dayTwo] <= coverline {
 			continue
 		}
-		return dayOne, true
+		if dayValues[dayThree] < coverline+bbtThirdDayMarginCelsius {
+			continue
+		}
+		return dayOne, coverline, true
 	}
-	return 0, false
+	return 0, 0, false
 }
 
+// bbtSeriesFromPoints converts ordered points into the recordedDays/dayValues
+// pair the shared detector consumes.
+func bbtSeriesFromPoints(points []cycleBBTPoint) ([]int, map[int]float64) {
+	recordedDays := make([]int, len(points))
+	dayValues := make(map[int]float64, len(points))
+	for index, point := range points {
+		recordedDays[index] = point.CycleDay
+		dayValues[point.CycleDay] = point.Value
+	}
+	return recordedDays, dayValues
+}
+
+// collectCycleBBTPoints builds the detection series: one undisturbed reading
+// per calendar day (the latest same-day reading wins, matching the chart
+// series). Days tagged illness or sleep_disruption are excluded entirely — a
+// fever must neither inflate the coverline nor confirm an elevated streak.
 func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) []cycleBBTPoint {
-	points := make([]cycleBBTPoint, 0)
-	for _, logEntry := range logs {
-		if logEntry.BBT == nil || !IsValidDayBBT(logEntry.BBT) {
+	pointByDay := make(map[int]cycleBBTPoint)
+	for _, logEntry := range sortDailyLogs(logs) {
+		if logEntry.BBT == nil || !IsValidDayBBT(logEntry.BBT) || isBBTDisturbedLog(logEntry) {
 			continue
 		}
 
@@ -141,17 +154,33 @@ func collectCycleBBTPoints(logs []models.DailyLog, cycleStart time.Time, nextSta
 			continue
 		}
 
-		points = append(points, cycleBBTPoint{
+		cycleDay := CalendarDaysBetween(cycleStart, day) + 1
+		pointByDay[cycleDay] = cycleBBTPoint{
 			Date:     day,
-			CycleDay: CalendarDaysBetween(cycleStart, day) + 1,
+			CycleDay: cycleDay,
 			Value:    *logEntry.BBT,
-		})
+		}
 	}
 
+	points := make([]cycleBBTPoint, 0, len(pointByDay))
+	for _, point := range pointByDay {
+		points = append(points, point)
+	}
 	sort.Slice(points, func(i, j int) bool {
-		return points[i].Date.Before(points[j].Date)
+		return points[i].CycleDay < points[j].CycleDay
 	})
 	return points
+}
+
+// isBBTDisturbedLog reports whether the day carries a factor that distorts
+// basal temperature independently of ovulation (#249 disturbance rejection).
+func isBBTDisturbedLog(logEntry models.DailyLog) bool {
+	for _, factorKey := range logEntry.CycleFactorKeys {
+		if factorKey == models.CycleFactorIllness || factorKey == models.CycleFactorSleepDisruption {
+			return true
+		}
+	}
+	return false
 }
 
 func inferEggWhiteOvulationDate(logs []models.DailyLog, cycleStart time.Time, nextStart time.Time, location *time.Location) time.Time {
