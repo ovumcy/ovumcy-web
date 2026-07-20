@@ -8,9 +8,10 @@ import (
 )
 
 const (
-	daySaveMessageSelfCare = "dashboard.save_message_self_care"
-	daySaveMessageFertile  = "dashboard.save_message_fertile"
-	daySaveMessageNeutral  = "dashboard.save_message_neutral"
+	daySaveMessageSelfCare        = "dashboard.save_message_self_care"
+	daySaveMessageFertile         = "dashboard.save_message_fertile"
+	daySaveMessageNeutral         = "dashboard.save_message_neutral"
+	daySaveMessagePregnancyPaused = "dashboard.save_message_pregnancy_paused"
 )
 
 type DayFeedbackState struct {
@@ -33,6 +34,12 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 	day = DateAtLocation(day, location)
 	today := DateAtLocation(now, location)
 	stats := BuildCycleStats(logs, today)
+	// BuildCycleStats does not resolve the pregnancy pause itself (mirrors
+	// StatsService.BuildCycleStatsFromLogs); resolve it here so the save
+	// message can explain the paused predictions.
+	if _, paused := ResolvePregnancyPause(logs); paused {
+		stats.PregnancyPaused = true
+	}
 	entry, err := service.FetchLogByDate(ctx, user.ID, day, location)
 	if err != nil {
 		return DayFeedbackState{}, err
@@ -73,6 +80,12 @@ func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, use
 }
 
 func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats) string {
+	// A positive pregnancy test pauses predictions (ResolvePregnancyPause);
+	// explain the pause right at save time instead of a routine
+	// self-care/fertile message, and carry the red-flag guidance.
+	if stats.PregnancyPaused {
+		return daySaveMessagePregnancyPaused
+	}
 	if user != nil && user.UnpredictableCycle {
 		return daySaveMessageNeutral
 	}

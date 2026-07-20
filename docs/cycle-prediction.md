@@ -107,7 +107,11 @@ These are the exact cases asserted by the reference tests.
   the owner when their logs carry enough signal: when basal body temperature or
   cervical-mucus entries let the app infer the ovulation-to-next-period length
   across several cycles, that observed luteal length (clamped to a physiological
-  10–20 day range) replaces the default. With little or no such data the fixed
+  10–20 day range) replaces the default. The cervical-mucus signal estimates
+  ovulation as the day after the last egg-white (peak-quality) mucus day of the
+  cycle; self-observed peak days can differ from reference ovulation by a day
+  or more, which is another reason the inferred luteal length stays an
+  estimate. With little or no such data the fixed
   14-day default stands. Individual luteal phases vary (commonly 11–17 days),
   which is one reason predictions remain estimates.
 - For irregular cycles the app widens the prediction into a range rather than a
@@ -145,7 +149,9 @@ the classical symptothermal ("3-over-6") rule:
 
 The stats chart draws the coverline only once a shift is confirmed — until
 then there is nothing physiologically meaningful to draw. Even a confirmed
-shift remains an estimate (±1–2 days), never a fact.
+shift remains an estimate (±1–2 days), never a fact: prospective studies find
+BBT alone identifies the ovulation day imperfectly, so treat the marker as
+indicative, not diagnostic.
 
 ## Assumptions and limitations
 

@@ -60,6 +60,24 @@ func TestResolveDayFeedbackReturnsNeutralMessageForUnpredictableCycle(t *testing
 	}
 }
 
+func TestResolveDayFeedbackUsesPregnancyPausedMessageAfterPositiveTest(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	logs.entries["2026-02-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-02-01"), IsPeriod: true}
+	logs.entries["2026-03-01"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-01"), IsPeriod: true}
+	logs.entries["2026-03-20"] = models.DailyLog{UserID: 10, Date: mustParseDayFeedbackDate(t, "2026-03-20"), PregnancyTest: models.PregnancyTestPositive}
+
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, mustParseDayFeedbackDate(t, "2026-03-20"), mustParseDayFeedbackDate(t, "2026-03-20"), time.UTC)
+	if err != nil {
+		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
+	}
+	if state.MessageKey != daySaveMessagePregnancyPaused {
+		t.Fatalf("expected pregnancy-paused message, got %q", state.MessageKey)
+	}
+}
+
 func TestResolveDayFeedbackShowsSpottingWarningOnCycleStart(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{}

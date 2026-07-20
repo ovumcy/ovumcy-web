@@ -601,7 +601,7 @@
   "dashboard.quick_action_symptom": "Enregistrer rapidement un symptôme",
   "dashboard.spotting_cycle_warning": "Les légères pertes ne correspondent peut-être pas au jour 1. Vérifiez à nouveau demain.",
   "dashboard.long_period_warning": "Des règles de plus de 8 jours méritent d'être discutées avec un médecin.",
-  "dashboard.implantation_warning": "Il peut s'agir d'un saignement d'implantation, et non d'un nouveau cycle. Si vous essayez de concevoir, pensez à faire un test.",
+  "dashboard.implantation_warning": "Ce saignement précoce n'est peut-être pas le début d'un nouveau cycle — le calendrier seul ne permet pas de le savoir. Si vous essayez de concevoir, pensez à faire un test. S'il s'accompagne de douleurs, de vertiges ou d'un flux abondant, consultez rapidement un médecin.",
   "dashboard.intimacy": "Intimité",
   "dashboard.intimacy_hidden_hint": "Cette section est masquée dans les paramètres.",
   "dashboard.sex_settings_hint": "Vous pouvez masquer cette section dans les paramètres.",
@@ -615,6 +615,7 @@
   "dashboard.save_message_self_care": "Enregistré. Prenez soin de vous aujourd'hui 🌸",
   "dashboard.save_message_fertile": "Enregistré. Vous êtes actuellement dans votre fenêtre fertile.",
   "dashboard.save_message_neutral": "Enregistré.",
+  "dashboard.save_message_pregnancy_paused": "Enregistré. Après un test de grossesse positif, les prédictions de cycle sont en pause. En cas de saignement, de douleur ou de vertiges, consultez rapidement un médecin.",
 
   "daylog.title": "Journal quotidien",
 
