@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-07-20
+
+Follow-up remediations from the external audit: privacy and medical copy now
+match actual behavior (opt-in egress, no diagnostic certainty), day-save
+feedback explains the pregnancy-test pause, and a logged future period entry
+renders as a recorded fact instead of a projection. No database migrations;
+no breaking changes.
+
+### Changed
+
+- **Privacy copy matches actual egress behavior.** Onboarding and privacy-policy
+  strings in all six locales no longer claim data "never" leaves the server:
+  data leaves only through integrations the owner enables (webhook reminders,
+  OIDC sign-in). The rights section states the real export scope (day-level
+  health records; account profile and settings stay viewable in Settings)
+  instead of promising a "full copy". `docs/security/data-handling.md` is now
+  the canonical egress statement; README and `docs/gdpr.md` defer to it.
+  `docs/gdpr.md` also states the positioning explicitly: built for personal and
+  household self-hosting, not a turnkey GDPR solution for a public multi-user
+  service. (#260)
+- **Implantation-bleeding hint softened with red-flag guidance.** The dashboard
+  hint no longer asserts a cause from timing alone and directs to medical care
+  on pain, dizziness, or heavy flow. All six locales. (#260)
+- **Saving a day under a pregnancy-test pause explains the pause.** With a
+  positive pregnancy test as the latest fertility signal, the day-save feedback
+  says predictions are paused and carries red-flag guidance, instead of a
+  routine self-care/fertile message. (#260)
+- **Prediction docs disclose the full heuristics.** `docs/cycle-prediction.md`
+  documents the cervical-mucus "+1 day" ovulation rule and adds a BBT
+  sensitivity caveat (indicative, not diagnostic). (#260)
+
+### Fixed
+
+- **A logged period entry dated in the future renders as a recorded fact, not a
+  projection.** Auto-fill never writes rows past today, so every future period
+  row is a manual log; the "projected period (auto-filled)" calendar style,
+  legend entry, and locale key described a state no real data could produce and
+  are removed. (#260)
+
 ## [1.9.0] - 2026-07-20
 
 Reworks BBT ovulation detection into a single shared "3-over-6" coverline
