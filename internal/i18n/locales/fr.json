@@ -643,7 +643,6 @@
   "calendar.select_day": "Sélectionnez un jour de ce mois pour le modifier.",
   "calendar.autosave_hint": "Les modifications ne sont sauvegardées qu'après avoir appuyé sur « Enregistrer ».",
   "calendar.legend.actual_period": "Règles réelles",
-  "calendar.legend.projected_period": "Règles prévues (préremplies)",
   "calendar.legend.predicted_period": "Règles prédites",
   "calendar.legend.low_probability": "Faible probabilité",
   "calendar.legend.fertility_edge": "Bord de la fenêtre fertile",

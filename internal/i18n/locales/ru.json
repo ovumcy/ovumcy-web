@@ -527,7 +527,6 @@
   "calendar.select_day": "Выберите день в этом месяце для редактирования.",
   "calendar.autosave_hint": "Все изменения сохраняются только после нажатия «Сохранить».",
   "calendar.legend.actual_period": "Фактические месячные",
-  "calendar.legend.projected_period": "Прогноз месячных (автозаполнение)",
   "calendar.legend.predicted_period": "Прогноз месячных",
   "calendar.legend.low_probability": "Низкая вероятность",
   "calendar.legend.fertility_edge": "Край фертильного окна",

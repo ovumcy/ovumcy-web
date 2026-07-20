@@ -3752,13 +3752,6 @@
   }
 }
 
-@utility calendar-cell-period-projected {
-  /* Future/auto-filled period days are projections, not recorded facts: soften
-     the actual-period fill and switch to a dashed edge to read as tentative. */
-  border-style: dashed;
-  opacity: 0.72;
-}
-
 @utility calendar-cell-predicted {
   border-color: rgba(212, 165, 116, 0.8);
   border-style: dashed;
@@ -4035,11 +4028,6 @@
 
 @utility legend-dot-period {
   background: var(--period-color);
-}
-
-@utility legend-dot-period-projected {
-  background: var(--period-color);
-  opacity: 0.55;
 }
 
 @utility dashboard-prediction-disclaimer {

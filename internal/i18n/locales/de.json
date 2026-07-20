@@ -525,7 +525,6 @@
   "calendar.select_day": "Wählen Sie einen Tag in diesem Monat aus, um ihn zu bearbeiten.",
   "calendar.autosave_hint": "Änderungen werden erst nach dem Klick auf „Speichern“ übernommen.",
   "calendar.legend.actual_period": "Tatsächliche Periode",
-  "calendar.legend.projected_period": "Voraussichtliche Periode (automatisch)",
   "calendar.legend.predicted_period": "Vorhergesagte Periode",
   "calendar.legend.low_probability": "Niedrige Wahrscheinlichkeit",
   "calendar.legend.fertility_edge": "Rand des fruchtbaren Fensters",

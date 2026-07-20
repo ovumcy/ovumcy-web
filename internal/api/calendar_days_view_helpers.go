@@ -12,15 +12,13 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 		badgeClass := "calendar-tag"
 		stateKey := "default"
 		if state.IsPeriod {
+			// A period entry is always a recorded fact, even when dated in the
+			// future: auto-fill never writes rows past today, so a future entry
+			// is a manual log (the day editor already warns about future dates).
+			// Rendering it as a projection would misstate the record.
 			cellClass += " calendar-cell-period"
 			badgeClass += " calendar-tag-period"
 			stateKey = "period"
-			// A period entry dated in the future is a projection/auto-fill, not a
-			// recorded fact — mark it distinctly so it does not read as logged.
-			if state.IsFuture {
-				cellClass += " calendar-cell-period-projected"
-				stateKey = "period-projected"
-			}
 		} else if state.IsPredicted {
 			cellClass += " calendar-cell-predicted"
 			badgeClass += " calendar-tag-predicted"

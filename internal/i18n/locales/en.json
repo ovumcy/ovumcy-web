@@ -525,7 +525,6 @@
   "calendar.select_day": "Select a day in this month to edit.",
   "calendar.autosave_hint": "Changes are saved only after pressing \"Save\".",
   "calendar.legend.actual_period": "Actual period",
-  "calendar.legend.projected_period": "Projected period (auto-filled)",
   "calendar.legend.predicted_period": "Predicted period",
   "calendar.legend.low_probability": "Low probability",
   "calendar.legend.fertility_edge": "Fertile window edge",

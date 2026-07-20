@@ -8,7 +8,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-func TestBuildCalendarDaysMarksFuturePeriodAsProjected(t *testing.T) {
+func TestBuildCalendarDaysRendersFuturePeriodEntryAsRecordedPeriod(t *testing.T) {
 	handler := &Handler{}
 	days := handler.buildCalendarDays([]services.CalendarDayState{
 		{
@@ -29,21 +29,19 @@ func TestBuildCalendarDaysMarksFuturePeriodAsProjected(t *testing.T) {
 		},
 	})
 
-	// Past/logged period stays a plain recorded period.
-	if strings.Contains(days[0].CellClass, "calendar-cell-period-projected") {
-		t.Fatalf("past period day must not be projected, got %q", days[0].CellClass)
-	}
-	if days[0].StateKey != "period" {
-		t.Fatalf("past period stateKey = %q, want period", days[0].StateKey)
-	}
-
-	// Future period is a projection/auto-fill: still a period cell, but marked.
-	if !strings.Contains(days[1].CellClass, "calendar-cell-period") ||
-		!strings.Contains(days[1].CellClass, "calendar-cell-period-projected") {
-		t.Fatalf("future period day must carry both period and projected classes, got %q", days[1].CellClass)
-	}
-	if days[1].StateKey != "period-projected" {
-		t.Fatalf("future period stateKey = %q, want period-projected", days[1].StateKey)
+	// A period entry is a recorded fact regardless of its date: auto-fill never
+	// writes rows past today, so a future entry is a manual log and must not be
+	// styled as a projection (regression: real records rendered as predictions).
+	for i, day := range days {
+		if strings.Contains(day.CellClass, "calendar-cell-period-projected") {
+			t.Fatalf("day %d: period entry must not carry projected class, got %q", i, day.CellClass)
+		}
+		if !strings.Contains(day.CellClass, "calendar-cell-period") {
+			t.Fatalf("day %d: expected period class, got %q", i, day.CellClass)
+		}
+		if day.StateKey != "period" {
+			t.Fatalf("day %d: stateKey = %q, want period", i, day.StateKey)
+		}
 	}
 }
 
