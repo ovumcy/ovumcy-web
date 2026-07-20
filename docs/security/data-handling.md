@@ -4,7 +4,7 @@ _Part of the [Ovumcy security policy](../../SECURITY.md)._
 
 ## Data Inventory
 
-What Ovumcy persists per account and per record. All storage is in the operator's configured SQLite file or Postgres database; nothing is sent to any external service.
+What Ovumcy persists per account and per record. All storage is in the operator's configured SQLite file or Postgres database; nothing is sent to any external service unless the owner explicitly enables an integration (OIDC sign-in, or webhook reminders — see [docs/notifications.md](../notifications.md)). This sentence is the canonical egress statement; README and the GDPR guide defer to it.
 
 **`users`** — one row per account:
 

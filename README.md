@@ -196,7 +196,7 @@ These are the currently supported first-party UI languages. Operators can set `D
 ## Privacy and Security
 
 - No analytics, ad trackers, or remote telemetry.
-- No telemetry and no outbound network calls in the default configuration. Outbound traffic only happens when an owner opts into it: the server talks to the configured identity provider when OIDC is enabled, and to the owner's own webhook endpoint when webhook reminders are configured. Nothing is sent to Ovumcy or any third party.
+- No telemetry and no outbound network calls in the default configuration. Outbound traffic only happens when an owner opts into it: the server talks to the configured identity provider when OIDC is enabled, and to the owner's own webhook endpoint when webhook reminders are configured. Nothing is ever sent to the Ovumcy project, and no egress happens that the owner did not configure; see [docs/security/data-handling.md](docs/security/data-handling.md) for the canonical egress statement.
 - First-party cookies only; see [docs/security/cryptography.md](docs/security/cryptography.md#cookies) for the full inventory and attributes.
 - Data stays on infrastructure you control.
 - Automated security checks cover CodeQL, gosec, Trivy filesystem/container scans, and CycloneDX SBOM generation in GitHub Actions.

@@ -89,6 +89,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 - The runtime container is `FROM scratch`, runs as `USER 10001:10001`, mounts a read-only filesystem with `tmpfs` for `/tmp`, drops all capabilities, and disables new privileges. Health checks use the in-process `ovumcy healthcheck` subcommand. Do not add shell, package manager, or Node.js / Playwright into the runtime image.
 - `SECRET_KEY` (or the file behind `SECRET_KEY_FILE`) is the single application-wide secret. It must be at least 32 bytes of cryptographically secure randomness; placeholder values are refused at startup. Store it separately from data backups (`docs/gdpr.md → SECRET_KEY Management`).
 - Default `HOST_BIND_ADDRESS` is `127.0.0.1`; public deployments must use the reverse-proxy compose stacks where only the proxy publishes host ports.
+- Release and CI images are built from a clean Git checkout (or `git archive` tarball), never from a developer working tree: the Docker build context must contain only tracked files. The runtime image additionally copies an explicit allowlist (`cmd`, `internal`, `migrations`, `web`), so local-only tooling and untracked working files can never reach a build performed by a remote builder or CI.
 
 ## CI
 

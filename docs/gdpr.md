@@ -14,6 +14,8 @@ This document is operator guidance, not legal advice. If you self-host Ovumcy fo
 
 Ovumcy is single-tenant, single-instance software. Multi-tenant SaaS, organisational identity management, and shared-controller arrangements are explicitly out of scope.
 
+Ovumcy is built for personal and household self-hosting. It is not, by itself, a turnkey GDPR compliance solution for a public multi-user service: consent records (policy version, timestamp, withdrawal), a DPIA, and controller documentation are the operator's responsibility and are not implemented in-app.
+
 ## Lawful Basis (Art. 6 + Art. 9)
 
 Ovumcy processes menstrual and reproductive health information. Under Art. 9(1) GDPR this is a **special category** of personal data and requires a specific Art. 9(2) lawful basis on top of Art. 6.
@@ -24,7 +26,7 @@ Ovumcy processes menstrual and reproductive health information. Under Art. 9(1) 
 | Household / partner | Art. 6(1)(a) consent | Art. 9(2)(a) explicit consent — captured in writing |
 | Small group | Art. 6(1)(a) or (b) | Art. 9(2)(a) — explicit, granular, revocable, capturable |
 
-The `/privacy` page renders a public-facing privacy notice that states what is stored and that nothing leaves the server. Operators running Ovumcy for anyone other than themselves should layer a deployment-specific privacy notice on top — naming the controller, lawful basis, and Data Subject contact route.
+The `/privacy` page renders a public-facing privacy notice that states what is stored and that data leaves the server only through integrations the owner enables (OIDC sign-in, webhook reminders). Operators running Ovumcy for anyone other than themselves should layer a deployment-specific privacy notice on top — naming the controller, lawful basis, and Data Subject contact route.
 
 ## Data Inventory
 
@@ -96,7 +98,7 @@ If you have a multi-subject deployment and need an Art. 30 record, enable audit 
 
 ## Breach Notification (Art. 33)
 
-Ovumcy does not call any external service, so a breach in the strict GDPR sense requires the database, `SECRET_KEY`, or the host system to be compromised.
+In the default configuration Ovumcy calls no external service. When the owner enables OIDC or webhook reminders, the configured identity provider or webhook endpoint becomes a recipient the operator must account for. A breach in the strict GDPR sense therefore requires the database, `SECRET_KEY`, the host system, or an owner-configured integration endpoint to be compromised.
 
 The disclosure channel for vulnerabilities is [`SECURITY.md → Reporting a Vulnerability`](../SECURITY.md#reporting-a-vulnerability). For a confirmed breach affecting personal data of EU/UK subjects, the controller (you, the operator) must notify the relevant supervisory authority within **72 hours**, unless the breach is unlikely to result in risk to the rights and freedoms of natural persons.
 
