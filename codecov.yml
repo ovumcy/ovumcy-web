@@ -2,7 +2,24 @@
 # curl -X POST --data-binary @codecov.yml https://codecov.io/validate
 
 codecov:
-  require_ci_to_pass: true
+  # Deliberately false. When true, Codecov withholds every status until it has
+  # independently concluded that CI passed — and on 2026-07-21 it stopped
+  # deriving that signal, leaving `ci_passed` null on pull-request heads while
+  # coverage itself ingested normally.
+  #
+  # The authoritative patch gate here is the in-CI `patch-coverage` job, so a
+  # withheld Codecov status cannot freeze merges in this repository the way it
+  # did where a `codecov/*` check was required. What it does instead is worse
+  # than useless: the advisory second opinion disappears silently rather than
+  # reporting, so a coverage regression Codecov would have flagged looks the
+  # same as a clean run.
+  #
+  # Nothing is lost by dropping it: the ruleset on `main` already requires test,
+  # e2e, e2e-postgres-smoke, gosec, trivy-fs, trivy-image, patch-coverage, and
+  # all three CodeQL analyses to pass on their own. Codecov's opinion about
+  # whether CI passed duplicated a gate GitHub enforces directly, while standing
+  # in front of it as a single point of failure.
+  require_ci_to_pass: false
 
 coverage:
   status:
