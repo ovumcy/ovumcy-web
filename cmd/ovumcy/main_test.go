@@ -879,6 +879,58 @@ func TestLoadRuntimeConfigResolvesHSTSSwitch(t *testing.T) {
 	}
 }
 
+// TestLoadRuntimeConfigGivesCalendarFeedItsOwnBudget pins the split between the
+// calendar-feed budget and the /api catch-all. The feed is the one
+// unauthenticated endpoint that pays a bcrypt compare per well-formed request
+// (the selector-miss equalization in ResolveFeed), so reusing the API budget —
+// sized for cheap JSON reads — turns it into a CPU-amplification primitive: one
+// IP could spend APIMax bcrypts per window. The assertion is deliberately
+// "strictly below APIMax" rather than an exact number, so retuning either budget
+// stays free while a silent revert to the shared budget fails.
+func TestLoadRuntimeConfigGivesCalendarFeedItsOwnBudget(t *testing.T) {
+	t.Run("defaults are independent and the feed is the tighter one", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+		t.Setenv("DB_DRIVER", "sqlite")
+		t.Setenv("DB_PATH", "data/ovumcy.db")
+
+		config, err := loadRuntimeConfig(time.UTC)
+		if err != nil {
+			t.Fatalf("load runtime config: %v", err)
+		}
+		if config.RateLimits.CalendarFeedMax >= config.RateLimits.APIMax {
+			t.Fatalf("calendar feed budget (%d) must stay strictly below the API budget (%d); a bcrypt-per-request endpoint cannot inherit the cheap-read budget",
+				config.RateLimits.CalendarFeedMax, config.RateLimits.APIMax)
+		}
+		if config.RateLimits.CalendarFeedMax <= 0 || config.RateLimits.CalendarFeedWindow <= 0 {
+			t.Fatalf("calendar feed budget must be positive, got %d / %s",
+				config.RateLimits.CalendarFeedMax, config.RateLimits.CalendarFeedWindow)
+		}
+	})
+
+	t.Run("operator overrides are honored independently of the API budget", func(t *testing.T) {
+		t.Setenv("SECRET_KEY", "0123456789abcdef0123456789abcdef")
+		t.Setenv("DB_DRIVER", "sqlite")
+		t.Setenv("DB_PATH", "data/ovumcy.db")
+		t.Setenv("RATE_LIMIT_API_MAX", "250")
+		t.Setenv("RATE_LIMIT_CALENDAR_FEED_MAX", "7")
+		t.Setenv("RATE_LIMIT_CALENDAR_FEED_WINDOW", "30s")
+
+		config, err := loadRuntimeConfig(time.UTC)
+		if err != nil {
+			t.Fatalf("load runtime config: %v", err)
+		}
+		if config.RateLimits.CalendarFeedMax != 7 {
+			t.Fatalf("CalendarFeedMax = %d, want 7", config.RateLimits.CalendarFeedMax)
+		}
+		if config.RateLimits.CalendarFeedWindow != 30*time.Second {
+			t.Fatalf("CalendarFeedWindow = %s, want 30s", config.RateLimits.CalendarFeedWindow)
+		}
+		if config.RateLimits.APIMax != 250 {
+			t.Fatalf("APIMax = %d, want 250 (the feed override must not bleed into the API budget)", config.RateLimits.APIMax)
+		}
+	})
+}
+
 func TestFiberConfigAppliesTrustedProxySettings(t *testing.T) {
 	config := fiberConfig(proxySettings{
 		Enabled:        true,

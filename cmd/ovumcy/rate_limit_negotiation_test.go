@@ -227,6 +227,57 @@ func TestAPIRateLimitHandlerReturnsStatusErrorMarkupForHTMX(t *testing.T) {
 	}
 }
 
+// TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget pins the WIRING, not the
+// config: it drives the real configureFiberMiddleware and proves the feed prefix
+// is capped by CalendarFeedMax while /api still gets APIMax. The config-level
+// test cannot catch a revert that leaves the new field in place but passes
+// APIMax to the feed limiter — this one can, because the two budgets are set far
+// apart and the feed must trip first.
+func TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget(t *testing.T) {
+	handler := newRateLimitTestHandler(t)
+	app := fiber.New()
+	configureFiberMiddleware(app, runtimeConfig{
+		RateLimits: rateLimitSettings{
+			APIMax:             100,
+			APIWindow:          time.Minute,
+			CalendarFeedMax:    2,
+			CalendarFeedWindow: time.Minute,
+		},
+	}, handler)
+	app.Get("/calendar/feed/:token.ics", func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	app.Get("/api/v1/ping", func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	get := func(t *testing.T, target string) int {
+		t.Helper()
+		response, err := app.Test(httptest.NewRequest(http.MethodGet, target, nil), testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("request %s failed: %v", target, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		return response.StatusCode
+	}
+
+	const feedTarget = "/calendar/feed/ABCDEFGHJKLMNPQRSTUVWXYZ23456789ABCDEFGHJKLMNP12.ics"
+	for i := 1; i <= 2; i++ {
+		if status := get(t, feedTarget); status != http.StatusNoContent {
+			t.Fatalf("feed request %d within budget: got %d, want 204", i, status)
+		}
+	}
+	if status := get(t, feedTarget); status != http.StatusTooManyRequests {
+		t.Fatalf("feed request past its budget of 2: got %d, want 429 — the feed limiter is not using CalendarFeedMax", status)
+	}
+
+	// Control: the API budget is untouched by the feed's exhaustion, proving the
+	// two limiters keep separate buckets rather than one shared budget.
+	if status := get(t, "/api/v1/ping"); status != http.StatusNoContent {
+		t.Fatalf("api request after the feed budget was spent: got %d, want 204", status)
+	}
+}
+
 func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 	// Privacy invariant:
 	// "Retry-After header on rate-limit responses MUST NOT expose precise

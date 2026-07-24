@@ -57,6 +57,14 @@ type rateLimitSettings struct {
 	LogoutWindow         time.Duration
 	APIMax               int
 	APIWindow            time.Duration
+	// CalendarFeed is deliberately NOT the API budget. The feed is the only
+	// unauthenticated endpoint that pays a bcrypt compare per request (the
+	// selector-miss equalization in ResolveFeed), so the API budget — sized for
+	// cheap JSON reads — would let one IP burn ~79 CPU-seconds per minute. A
+	// calendar client polls once per refresh interval, so a small budget is
+	// generous. See docs/security/auth-policy-and-rate-limits.md.
+	CalendarFeedMax    int
+	CalendarFeedWindow time.Duration
 }
 
 type proxySettings struct {
@@ -139,6 +147,8 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			LogoutWindow:         getEnvDuration("RATE_LIMIT_LOGOUT_WINDOW", 15*time.Minute),
 			APIMax:               getEnvInt("RATE_LIMIT_API_MAX", 300),
 			APIWindow:            getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
+			CalendarFeedMax:      getEnvInt("RATE_LIMIT_CALENDAR_FEED_MAX", 20),
+			CalendarFeedWindow:   getEnvDuration("RATE_LIMIT_CALENDAR_FEED_WINDOW", time.Minute),
 		},
 		Proxy:               proxy,
 		AuditLogEnabled:     getEnvBool("AUDIT_LOG_ENABLED", false),
