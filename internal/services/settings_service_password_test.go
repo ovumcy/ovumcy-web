@@ -102,7 +102,7 @@ func TestChangePasswordUpdatesHashedPassword(t *testing.T) {
 		AuthSessionVersion: 3,
 	}
 
-	err = service.ChangePassword(context.Background(), user, "StrongPass1", "EvenStronger2", "EvenStronger2")
+	err = service.ChangePassword(context.Background(), ReauthAttempt{ClientKey: "test-client"}, user, "StrongPass1", "EvenStronger2", "EvenStronger2")
 	if err != nil {
 		t.Fatalf("expected successful ChangePassword, got %v", err)
 	}
@@ -138,7 +138,7 @@ func TestChangePasswordPropagatesValidationErrorWithoutUpdate(t *testing.T) {
 		AuthSessionVersion: 1,
 	}
 
-	err = service.ChangePassword(context.Background(), user, "WrongPass1", "EvenStronger2", "EvenStronger2")
+	err = service.ChangePassword(context.Background(), ReauthAttempt{ClientKey: "test-client"}, user, "WrongPass1", "EvenStronger2", "EvenStronger2")
 	if !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
 		t.Fatalf("expected ErrSettingsInvalidCurrentPassword, got %v", err)
 	}
@@ -163,7 +163,7 @@ func TestChangePasswordWrapsUpdateError(t *testing.T) {
 		PasswordHash: string(currentHash),
 	}
 
-	err = service.ChangePassword(context.Background(), user, "StrongPass1", "EvenStronger2", "EvenStronger2")
+	err = service.ChangePassword(context.Background(), ReauthAttempt{ClientKey: "test-client"}, user, "StrongPass1", "EvenStronger2", "EvenStronger2")
 	if !errors.Is(err, ErrSettingsPasswordUpdateFailed) {
 		t.Fatalf("expected ErrSettingsPasswordUpdateFailed, got %v", err)
 	}

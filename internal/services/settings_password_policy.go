@@ -47,13 +47,26 @@ func (service *SettingsService) ValidatePasswordChange(passwordHash string, curr
 	return nil
 }
 
-func (service *SettingsService) ChangePassword(ctx context.Context, user *models.User, currentPassword string, newPassword string, confirmPassword string) error {
+func (service *SettingsService) ChangePassword(ctx context.Context, attempt ReauthAttempt, user *models.User, currentPassword string, newPassword string, confirmPassword string) error {
 	if user == nil {
 		return ErrSettingsPasswordChangeInvalidInput
 	}
+	// The current-password check inside ValidatePasswordChange is a re-auth
+	// factor, so it draws on the same budget as the erasure flows. Without this
+	// the change-password form would be a faster password oracle than the login
+	// form it protects.
+	now := attempt.at()
+	identity := attempt.identity()
+	if service.reauthPolicy.TooManyRecent(service.reauthSecretKey, attempt.clientBucket(), identity, now) {
+		return ErrSettingsReauthRateLimited
+	}
 	if err := service.ValidatePasswordChange(user.PasswordHash, currentPassword, newPassword, confirmPassword); err != nil {
+		if errors.Is(err, ErrSettingsInvalidCurrentPassword) {
+			service.reauthPolicy.AddFailure(service.reauthSecretKey, attempt.clientBucket(), identity, now)
+		}
 		return err
 	}
+	service.reauthPolicy.Reset(service.reauthSecretKey, attempt.clientBucket(), identity)
 
 	newPassword = strings.TrimSpace(newPassword)
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)

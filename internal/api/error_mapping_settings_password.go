@@ -9,6 +9,12 @@ import (
 
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 	switch {
+	// Checked first: an exhausted re-auth budget is refused before the current
+	// password is compared, so it must map to 429 rather than "invalid current
+	// password" — otherwise the response itself would leak that the budget, not
+	// the credential, was the blocker.
+	case errors.Is(err, services.ErrSettingsReauthRateLimited):
+		return settingsRateLimitErrorSpec()
 	case errors.Is(err, services.ErrSettingsPasswordChangeInvalidInput):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyInvalidInput)
 	case errors.Is(err, services.ErrSettingsPasswordMismatch):

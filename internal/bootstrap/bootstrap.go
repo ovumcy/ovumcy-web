@@ -41,6 +41,11 @@ type Options struct {
 	// LogoutAttempts, when non-nil, configures the logout attempt limiter.
 	// Production sets it; tests leave it nil to keep the service default.
 	LogoutAttempts *AttemptLimit
+	// SettingsReauthAttempts, when non-nil, overrides the budget for the
+	// password re-authentication that gates erasure and password change.
+	// Leaving it nil keeps the service default (5 / 15 min); the shared limiter
+	// and the per-account key are attached either way.
+	SettingsReauthAttempts *AttemptLimit
 	// AuditLogEnabled gates the per-action security-event audit stream.
 	AuditLogEnabled bool
 }
@@ -118,6 +123,17 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	exportService := services.NewExportService(dayService, symptomService)
 	importService := services.NewImportService(dailyLogs, repositories.Users, symptomService, dayLogTxRunner)
 	settingsService := services.NewSettingsService(repositories.Users)
+	// Attach the shared limiter and the secret key so the re-auth budget keys on
+	// (client, account) like the other auth policies rather than on the client
+	// alone. Without an explicit override the service default budget stands.
+	settingsReauthAttempts := AttemptLimit{
+		Max:    services.DefaultSettingsReauthAttemptsLimit,
+		Window: services.DefaultSettingsReauthAttemptsWindow,
+	}
+	if opts.SettingsReauthAttempts != nil {
+		settingsReauthAttempts = *opts.SettingsReauthAttempts
+	}
+	settingsService.ConfigureReauthAttempts(secretKey, attemptLimiter, settingsReauthAttempts.Max, settingsReauthAttempts.Window)
 	webhookSettingsService := services.NewWebhookSettingsService(repositories.Users, secretKey)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)

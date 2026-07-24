@@ -43,7 +43,8 @@ func (handler *Handler) ChangePassword(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	if err := handler.settingsService.ChangePassword(c.Context(), user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
+	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	if err := handler.settingsService.ChangePassword(c.Context(), attempt, user, input.CurrentPassword, input.NewPassword, input.ConfirmPassword); err != nil {
 		return handler.respondPasswordChangeError(c, err)
 	}
 
