@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-07-24
+
+Italian localization polish and a CI unblock. No database migrations; no
+breaking changes.
+
+### Changed
+
+- **Italian translations de-anglicized for consistency.** The Italian locale now
+  uses native terms across the whole catalog: "spotting" → "perdite" in the flow
+  and symptom labels and the onboarding/dashboard tips that reference them, and
+  "export" (noun) → "esportazione" in the import, privacy, and data copy — with a
+  gender-agreement fix in the invalid-import message ("un'esportazione … valida").
+  (#263, #264)
+
+### Fixed
+
+- **Merges unblocked in CI.** Dropped the `brace-expansion` override that had
+  itself become the advisory finding scanned by `trivy-fs`, and the Codecov gate
+  that was failing required checks. (#262)
+
 ## [1.9.1] - 2026-07-20
 
 Follow-up remediations from the external audit: privacy and medical copy now
