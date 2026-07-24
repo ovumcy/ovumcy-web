@@ -40,6 +40,9 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `/auth/oidc/*` (OIDC sign-in) | 8 requests / 15 minutes | shares `RATE_LIMIT_LOGIN_MAX`, `RATE_LIMIT_LOGIN_WINDOW` |
 | `DELETE /api/v1/sessions/current` | 60 requests / 15 minutes | `RATE_LIMIT_LOGOUT_MAX`, `RATE_LIMIT_LOGOUT_WINDOW` |
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
+| `GET /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
+
+The calendar feed deliberately does **not** share the `/api/*` budget. It is the only unauthenticated endpoint that pays a bcrypt compare on every well-formed request — the verifier check on a selector hit, or the timing-equalization dummy on a selector miss — so its budget bounds CPU, not just request count. At the `/api` budget a single IP could spend 300 bcrypts per minute without any credential. Keep this budget small: a calendar client polls once per refresh interval (typically 15–60 minutes), so 20/minute is already generous for several devices behind one address.
 
 Behind a trusted proxy (`TRUST_PROXY_ENABLED=true`), the per-IP key is the **rightmost untrusted `X-Forwarded-For` hop** relative to `TRUSTED_PROXIES` (`cmd/ovumcy/main.go` `rateLimitKeyGenerator`), not fiber's default leftmost `c.IP()`, so a client-spoofed XFF prefix cannot rotate the key and defeat the limit.
 
