@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"golang.org/x/crypto/bcrypt"
@@ -144,6 +145,46 @@ func TestChangePasswordPropagatesValidationErrorWithoutUpdate(t *testing.T) {
 	}
 	if repo.updatePasswordCalled {
 		t.Fatal("expected no UpdatePassword call on validation error")
+	}
+}
+
+// TestChangePasswordRefusesOnceReauthBudgetSpent covers the fourth password-gated
+// path. The three erasure flows share validateSettingsActionPassword, but the
+// change-password form reaches the credential check through its own service
+// method — so without this the budget could be dropped here alone and the form
+// would quietly remain a faster password oracle than the login form.
+func TestChangePasswordRefusesOnceReauthBudgetSpent(t *testing.T) {
+	repo := &stubSettingsUserRepo{}
+	service := NewSettingsService(repo)
+	service.ConfigureReauthAttempts([]byte("test-secret"), NewAttemptLimiter(), 2, time.Minute)
+
+	currentHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	user := &models.User{ID: 42, PasswordHash: string(currentHash), AuthSessionVersion: 1}
+	attempt := ReauthAttempt{
+		ClientKey: "203.0.113.10",
+		UserID:    user.ID,
+		Now:       time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC),
+	}
+
+	for i := 1; i <= 2; i++ {
+		err := service.ChangePassword(context.Background(), attempt, user, "WrongPass1", "EvenStronger2", "EvenStronger2")
+		if !errors.Is(err, ErrSettingsInvalidCurrentPassword) {
+			t.Fatalf("wrong current password attempt %d: got %v", i, err)
+		}
+	}
+
+	err = service.ChangePassword(context.Background(), attempt, user, "StrongPass1", "EvenStronger2", "EvenStronger2")
+	if !errors.Is(err, ErrSettingsReauthRateLimited) {
+		t.Fatalf("correct password past the budget: got %v, want ErrSettingsReauthRateLimited", err)
+	}
+	if repo.updatePasswordCalled {
+		t.Fatal("a rate-limited change must not reach the repository")
+	}
+	if user.AuthSessionVersion != 1 {
+		t.Fatalf("a rate-limited change must not bump auth_session_version, got %d", user.AuthSessionVersion)
 	}
 }
 

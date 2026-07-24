@@ -127,11 +127,9 @@ func NewSettingsService(users SettingsUserRepository) *SettingsService {
 // against the client key.
 func (service *SettingsService) ConfigureReauthAttempts(secretKey []byte, limiter *AttemptLimiter, attempts int, window time.Duration) {
 	service.reauthSecretKey = secretKey
-	if limiter != nil {
-		service.reauthPolicy = NewAuthAttemptPolicy("settings.reauth", limiter, attempts, window)
-		return
-	}
-	service.reauthPolicy.Configure(attempts, window)
+	// NewAuthAttemptPolicy substitutes a private limiter when limiter is nil, so
+	// a single unconditional rebuild covers both the wired and unwired cases.
+	service.reauthPolicy = NewAuthAttemptPolicy("settings.reauth", limiter, attempts, window)
 }
 
 // VerifyReauthPassword is the budgeted form of ValidateCurrentPassword: the one

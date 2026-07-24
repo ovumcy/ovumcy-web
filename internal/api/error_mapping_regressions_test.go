@@ -280,6 +280,14 @@ func TestMapSettingsPasswordChangeError(t *testing.T) {
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update password"),
 		},
 		{
+			// An exhausted re-auth budget must surface as 429, never as "invalid
+			// current password": reporting it as a credential failure would leak
+			// that the budget, not the password, was the blocker.
+			name: "reauth rate limited",
+			err:  services.ErrSettingsReauthRateLimited,
+			want: settingsRateLimitErrorSpec(),
+		},
+		{
 			name: "unknown",
 			err:  errors.New("unknown"),
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update password"),
