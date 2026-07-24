@@ -1,5 +1,10 @@
 # Security Policy
 
+**Found a vulnerability? Go straight to [Reporting a Vulnerability](#reporting-a-vulnerability).**
+
+Everything else here documents what the project already enforces:
+[Supported Versions](#supported-versions) · [Verifying Release Authenticity](#verifying-release-authenticity) · [Security Documentation](#security-documentation) · [GDPR Cross-Reference](#gdpr-cross-reference) · [Test Enforcement Matrix](#test-enforcement-matrix)
+
 ## Supported Versions
 
 Security fixes are provided for the `main` branch only.
@@ -187,7 +192,7 @@ The read-only `.ics` feed lets a calendar client subscribe to an owner's upcomin
 | Claim | Enforced by |
 | --- | --- |
 | The verifier half of the token is stored only as a bcrypt hash — the DB row never holds the plaintext token | `TestGenerateCalendarFeedTokenHashAtRest` in [internal/services/calendar_feed_token_test.go](internal/services/calendar_feed_token_test.go), `TestCalendarFeedTokenHashAtRestInDBRow` in [internal/db/user_repository_calendar_feed_test.go](internal/db/user_repository_calendar_feed_test.go), `TestGenerateCalendarFeedTokenVerifierIsRealBcrypt` in [internal/services/calendar_feed_service_test.go](internal/services/calendar_feed_service_test.go) |
-| A malformed token, unknown selector, wrong verifier, and disabled feed all return an identical bare 404 (no body, no oracle), timing-equalized by an unconditional bcrypt on the selector-miss path | `TestCalendarFeedReturnsBare404WithoutOracleForBadTokens` in [internal/api/calendar_feed_regressions_test.go](internal/api/calendar_feed_regressions_test.go), `TestResolveFeedIdenticalNotFoundForEveryBadToken`, `TestResolveFeedEqualizesTimingOnSelectorMiss` in [internal/services/calendar_feed_service_test.go](internal/services/calendar_feed_service_test.go) |
+| A malformed token, unknown selector, wrong verifier, and disabled feed all return an identical bare 404 (no body, no oracle). The selector-miss path spends an unconditional dummy bcrypt so it cannot be timed apart from a real verifier check; a malformed token is rejected before the lookup and deliberately spends none — its shape is already known to whoever sent it, so it reveals nothing about selector existence | `TestCalendarFeedReturnsBare404WithoutOracleForBadTokens` in [internal/api/calendar_feed_regressions_test.go](internal/api/calendar_feed_regressions_test.go), `TestResolveFeedIdenticalNotFoundForEveryBadToken`, `TestResolveFeedEqualizesTimingOnSelectorMiss` in [internal/services/calendar_feed_service_test.go](internal/services/calendar_feed_service_test.go) |
 | The feed token value never reaches a request log — the matched-route template masks it, and the raw-path fallback masks an `<opaque-token>.ics` segment | `TestCalendarFeedTokenIsRedactedFromRequestLog`, `TestSanitizeRequestLogPathMasksRawTokenDotICSFallback` in [internal/api/calendar_feed_regressions_test.go](internal/api/calendar_feed_regressions_test.go) |
 | The cookieless feed endpoint is per-IP rate-limited (429 once the budget is spent) | `TestCalendarFeedIsRateLimitedPerIP` in [internal/api/calendar_feed_regressions_test.go](internal/api/calendar_feed_regressions_test.go) |
 | The subscribe URL is a write-only secret: generate/rotate reveal it exactly once via a sealed one-time cookie and it is never rendered into a later page; a JSON client receives only the reveal `next_path`, never the URL | `TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain`, `TestCalendarFeedGenerateJSONReturnsRevealPathNotURL` in [internal/api/settings_calendar_feed_regressions_test.go](internal/api/settings_calendar_feed_regressions_test.go); the sealed reveal cookie is tamper/round-trip pinned in [internal/api/calendar_feed_reveal_cookie_test.go](internal/api/calendar_feed_reveal_cookie_test.go) |
@@ -202,7 +207,7 @@ The read-only `.ics` feed lets a calendar client subscribe to an owner's upcomin
 | Claim | Enforced by |
 | --- | --- |
 | Password change bumps `auth_session_version`; other devices sign out | `auth_password_change_session_regression_test.go` in `internal/api/` |
-| Password reset via recovery code bumps `auth_session_version` | `TestAuthServiceResetPasswordAndRotateRecoveryCode` in [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go) |
+| Password reset via recovery code bumps `auth_session_version` | `TestResetPasswordAndRotateRecoveryCodeCASRejectsReplay` in [internal/services/password_reset_cas_regression_test.go](internal/services/password_reset_cas_regression_test.go) |
 | Recovery-code regeneration bumps `auth_session_version`; originating session refreshed inline | `TestAuthServiceRegenerateRecoveryCode` in [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go) |
 | Forced `ovumcy reset-password` CLI bumps `auth_session_version` | `TestAuthServiceForceResetPasswordByEmail` in [internal/services/auth_service_recovery_test.go](internal/services/auth_service_recovery_test.go), `internal/cli/reset_test.go` |
 | TOTP enable bumps `auth_session_version` and refreshes originating session | `handlers_settings_2fa_session_revocation_test.go` in `internal/api/` |

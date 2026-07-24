@@ -8,6 +8,13 @@ Use this page together with [README.md](../README.md) and [docs/self-hosted.md](
 - `docs/self-hosted.md` defines the supported deployment contract.
 - this page explains the OIDC-specific operator setup, provider recipes, rollout guidance, and troubleshooting.
 
+## Contents
+
+- **Understand it first:** [Current Contract](#current-contract) · [How Sign-In Works](#how-sign-in-works) · [Response mode](#response-mode) · [How Auto-Provision Works](#how-auto-provision-works) · [How Logout Works](#how-logout-works) · [Accepted Signing Algorithms](#accepted-signing-algorithms)
+- **Configure it:** [Required Environment](#required-environment) · [Provider Recipes](#provider-recipes) · [Rollout Checklist](#rollout-checklist)
+- **Pick your provider:** [Compatibility Matrix](#provider-compatibility-matrix) — [Keycloak](#keycloak), [Authentik](#authentik), [Authelia](#authelia), [Pocket ID](#pocket-id), [ZITADEL](#zitadel), [query-only providers](#query-only-providers-dex-better-auth-older-pocket-id) ([Dex](#dex), [better-auth](#better-auth))
+- **Fix it:** [Troubleshooting](#troubleshooting)
+
 ## Current Contract
 
 Ovumcy's OIDC support is optional, but the contract is broader than the first hybrid release:

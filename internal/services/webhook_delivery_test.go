@@ -640,6 +640,39 @@ func TestGuardedDialContext(t *testing.T) {
 	})
 }
 
+// TestWebhookDeliveryGateOffLeavesStockPathForHostname pins the default path: with
+// WEBHOOK_BLOCK_PRIVATE_ADDRESSES off, the resolve-and-check dialer is never
+// installed, so a hostname target dials straight through the stock dialer and the
+// private-address guard never runs. Non-vacuous: the deliverer is handed a resolver
+// that knows no hosts at all, so if the gate-off path ever started consulting it,
+// the lookup would fail and the delivery would never reach the server.
+func TestWebhookDeliveryGateOffLeavesStockPathForHostname(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// "localhost" resolves through the real stack to the loopback address the test
+	// server listens on, which is exactly the private target the gate would refuse
+	// when on — that contrast is the point of this regression.
+	target := hostnameTargetFor(t, server.URL, "localhost")
+	deliverer := newWebhookDelivererWithResolver(false, fakeResolver{})
+
+	output := captureLogOutput(t, func() {
+		if err := deliverer.Deliver(context.Background(), target, samplePayload()); err != nil {
+			t.Fatalf("gate-off delivery to a hostname must succeed through the stock dialer, got %v", err)
+		}
+	})
+	if hits.Load() != 1 {
+		t.Fatalf("expected exactly one delivery through the stock dialer, got %d", hits.Load())
+	}
+	if strings.Contains(output, "private_address_blocked") {
+		t.Fatalf("gate-off path must not run the private-address guard: %q", output)
+	}
+}
+
 // TestWebhookDeliveryURLParseFailure covers the unparseable-URL branch: a control
 // character in the URL makes url.Parse fail, and the error must not echo the URL.
 func TestWebhookDeliveryURLParseFailure(t *testing.T) {
