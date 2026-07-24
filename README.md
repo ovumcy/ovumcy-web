@@ -1,24 +1,26 @@
-[![CI](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml/badge.svg)](https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/ovumcy/ovumcy-web/badge)](https://securityscorecards.dev/viewer/?uri=github.com/ovumcy/ovumcy-web)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13130/badge)](https://www.bestpractices.dev/projects/13130)
-[![Coverage](https://codecov.io/gh/ovumcy/ovumcy-web/graph/badge.svg)](https://app.codecov.io/gh/ovumcy/ovumcy-web)
-[![Tested](https://img.shields.io/badge/tested-mutation%20%C2%B7%20fuzz%20%C2%B7%20property-2ea44f)](https://github.com/ovumcy/ovumcy-web/blob/main/TESTING.md)
-[![Release](https://img.shields.io/github/v/release/ovumcy/ovumcy-web?display_name=tag)](https://github.com/ovumcy/ovumcy-web/releases)
-[![Last Commit](https://img.shields.io/github/last-commit/ovumcy/ovumcy-web)](https://github.com/ovumcy/ovumcy-web/commits/main)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Go Reference](https://pkg.go.dev/badge/github.com/ovumcy/ovumcy-web.svg)](https://pkg.go.dev/github.com/ovumcy/ovumcy-web)
-[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go)](https://go.dev/)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](https://github.com/ovumcy/ovumcy-web/actions/workflows/docker-image.yml)
-[![Self-hosted](https://img.shields.io/badge/Self--hosted-yes-2ea44f)](https://github.com/ovumcy/ovumcy-web/blob/main/docs/self-hosted.md)
-[![No telemetry](https://img.shields.io/badge/Telemetry-none-2ea44f)](https://github.com/ovumcy/ovumcy-web#privacy-and-security)
-
 <p align="center">
   <img src="docs/screenshots/ovumcy-logo-horizontal.svg" alt="Ovumcy" width="640">
 </p>
 
 <p align="center">
   <strong>A menstrual cycle tracker you run yourself. Your data stays on your server.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml"><img src="https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml"><img src="https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://securityscorecards.dev/viewer/?uri=github.com/ovumcy/ovumcy-web"><img src="https://api.securityscorecards.dev/projects/github.com/ovumcy/ovumcy-web/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://www.bestpractices.dev/projects/13130"><img src="https://www.bestpractices.dev/projects/13130/badge" alt="OpenSSF Best Practices"></a>
+  <a href="https://app.codecov.io/gh/ovumcy/ovumcy-web"><img src="https://codecov.io/gh/ovumcy/ovumcy-web/graph/badge.svg" alt="Coverage"></a>
+  <a href="https://github.com/ovumcy/ovumcy-web/blob/main/TESTING.md"><img src="https://img.shields.io/badge/tested-mutation%20%C2%B7%20fuzz%20%C2%B7%20property-2ea44f" alt="Tested"></a>
+  <a href="https://github.com/ovumcy/ovumcy-web/releases"><img src="https://img.shields.io/github/v/release/ovumcy/ovumcy-web?display_name=tag" alt="Release"></a>
+  <a href="https://github.com/ovumcy/ovumcy-web/commits/main"><img src="https://img.shields.io/github/last-commit/ovumcy/ovumcy-web" alt="Last Commit"></a>
+  <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" alt="License: AGPL v3"></a>
+  <a href="https://pkg.go.dev/github.com/ovumcy/ovumcy-web"><img src="https://pkg.go.dev/badge/github.com/ovumcy/ovumcy-web.svg" alt="Go Reference"></a>
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?logo=go" alt="Go Version"></a>
+  <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/docker-image.yml"><img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker" alt="Docker"></a>
+  <a href="https://github.com/ovumcy/ovumcy-web/blob/main/docs/self-hosted.md"><img src="https://img.shields.io/badge/Self--hosted-yes-2ea44f" alt="Self-hosted"></a>
+  <a href="https://github.com/ovumcy/ovumcy-web#privacy-and-security"><img src="https://img.shields.io/badge/Telemetry-none-2ea44f" alt="No telemetry"></a>
 </p>
 
 Ovumcy is a menstrual cycle tracker you run on your own server. If the thought of your period dates, symptoms, and fertile-window estimates sitting on someone else's cloud makes you uneasy, this is for you: quick daily logging, cycle insights that are actually useful, and health data that stays on a machine you control.
@@ -43,6 +45,8 @@ The public project site is [ovumcy.com](https://ovumcy.com).
 - [Clients And Deployment Models](#clients-and-deployment-models)
 - [Architecture](#architecture) · [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start) · [Configuration](#configuration)
+- [Operator CLI](#operator-cli) · [Development](#development)
+- [Contributing](#contributing) · [Releases](#releases) · [Roadmap](#roadmap) · [License](#license)
 
 ## Why Ovumcy Exists
 
@@ -138,7 +142,7 @@ Period and fertile-window predictions in particular are statistical estimates de
 - Predictions for your next period, ovulation, fertile window, and cycle phase.
 - Calendar and statistics views for spotting patterns over the longer term.
 - Reminders, three ways: an in-app dashboard banner, webhook reminders to your own self-hosted ntfy/Gotify endpoint, and a private, read-only calendar (`.ics`) subscription.
-- Install it to your phone's home screen (on the current `main` branch).
+- Install it to your phone's home screen — a web app manifest and install prompt, no service worker or offline cache.
 - CSV and JSON export — for backups, for moving your data, or just for looking back.
 - Optional OIDC sign-in in hybrid or SSO-only mode, with guarded owner auto-provision and provider logout.
 - Optional TOTP two-factor authentication for owner sign-in, working with any RFC 6238 authenticator app (Google Authenticator, 1Password, Aegis, and the like).
@@ -436,7 +440,11 @@ go run ./cmd/ovumcy reset-password owner@example.com
 
 Notes:
 
-- `users create <email>` provisions an owner account so an instance can be set up declaratively (for example a YunoHost install script), instead of opening registration, signing up, then closing it again. An instance can host several independent owners (household self-hosting) — run it once per person; each owner's data stays isolated by `user_id`, and only a duplicate email is rejected — pass `--skip-if-exists` to make re-runs idempotent (an existing email is skipped with a success exit code, never overwritten; use `reset-password` to change a password). On an interactive terminal it prompts for the password twice with echo disabled; when stdin is piped or redirected it reads the password from the first line of stdin, so the secret never appears in the command line or the environment. Each owner completes onboarding (last period start, cycle defaults) on first sign-in — that health data is intentionally never passed through provisioning. No recovery code is printed by default (so it cannot leak into install logs); pass `--show-recovery-code` to print it for an interactive operator, or sign in and regenerate one from Settings.
+- `users create <email>` provisions an owner account so an instance can be set up declaratively — an install script, for example — instead of opening registration, signing up, then closing it again. Specifics worth knowing:
+  - *Several owners per instance.* Run it once per person (household self-hosting); each owner's data stays isolated by `user_id`, and only a duplicate email is rejected. `--skip-if-exists` makes re-runs idempotent: an existing email is skipped with a success exit code, never overwritten. To change a password, use `reset-password`.
+  - *The password never touches argv or the environment.* On an interactive terminal it prompts twice with echo disabled; when stdin is piped or redirected it reads the password from the first line of stdin.
+  - *No recovery code is printed by default*, so it cannot leak into install logs. Pass `--show-recovery-code` to print it for an interactive operator, or sign in and regenerate one from Settings.
+  - *No health data passes through provisioning.* Each owner completes onboarding — last period start, cycle defaults — on first sign-in.
 - `users list` prints a minimal account audit table: `id`, `email`, `role`, `display name`, onboarding state, and creation time.
 - `users delete <email>` removes the selected account together with related health data and prompts for an explicit `DELETE` confirmation unless `--yes` is provided.
 - `reset-password <email>` prompts for a new password interactively, validates it against the password policy, writes its bcrypt hash to the account, and atomically bumps `auth_session_version` so every existing session is invalidated. Use this when an owner has lost both their password and their recovery code.

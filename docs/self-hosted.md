@@ -2,6 +2,25 @@
 
 Ovumcy's supported self-hosted baseline is a single application instance with a persistent SQLite volume, HTTPS at the edge, and a strong application secret. The goal of this guide is not to describe every possible deployment, but to define a production-safe path that ordinary self-hosters can follow without inventing their own operational rules.
 
+## Contents
+
+**Setting up**
+- [Baseline Contract](#baseline-contract) · [Production Checklist](#production-checklist)
+- [Configuration Profiles](#configuration-profiles) — [required](#required-in-all-deployments), [local/private](#localprivate-base-compose-path), [public reverse-proxy](#public-reverse-proxy-stack), [advanced knobs](#advanced-knobs)
+- [Optional OIDC Sign-In](#optional-oidc-sign-in) · [Privacy Responsibility Split](#privacy-responsibility-split)
+
+**Putting it behind a proxy**
+- [Reverse Proxy and HTTPS Contract](#reverse-proxy-and-https-contract) · [Reverse Proxy Examples](#reverse-proxy-examples)
+- [Local/Private Postgres Stack](#official-localprivate-postgres-stack) · [Public Postgres Reverse-Proxy Stacks](#official-public-postgres-reverse-proxy-stacks)
+
+**Running it**
+- [Health Checks by Deployment Mode](#health-checks-by-deployment-mode) · [Secret Handling and Rotation](#secret-handling-and-rotation)
+- [Backup and Restore Contract](#backup-and-restore-contract) — [volume backup](#docker-named-volume-backup), [volume restore](#docker-named-volume-restore), [post-restore verification](#post-restore-verification)
+- [Safe Upgrade Procedure](#safe-upgrade-procedure) · [Downgrade Caveats](#downgrade-caveats)
+
+**When something breaks**
+- [Troubleshooting Baseline](#troubleshooting-baseline) · [Common Operator Scenarios](#common-operator-scenarios) · [Advanced Deployment Path](#advanced-deployment-path)
+
 ## Baseline Contract
 
 Supported baseline assumptions:
