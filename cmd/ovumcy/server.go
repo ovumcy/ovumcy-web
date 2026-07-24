@@ -216,10 +216,13 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	// Per-IP limiter for the cookieless calendar-feed endpoint. It is not under
 	// /api, so the /api limiter does not cover it; a public, tokened polling
 	// surface must be independently capped so a leaked/guessed URL cannot be
-	// hammered. Reuses the same spoof-proof key generator and the API budget.
+	// hammered. Reuses the same spoof-proof key generator, but NOT the API
+	// budget: every well-formed token costs one bcrypt compare, so the budget
+	// bounds CPU, not just request count. Keep it small — a calendar client
+	// polls once per refresh interval, not hundreds of times a minute.
 	app.Use(api.CalendarFeedRateLimitPrefix, limiter.New(limiter.Config{
-		Max:          config.RateLimits.APIMax,
-		Expiration:   config.RateLimits.APIWindow,
+		Max:          config.RateLimits.CalendarFeedMax,
+		Expiration:   config.RateLimits.CalendarFeedWindow,
 		KeyGenerator: keyGen,
 		LimitReached: newCalendarFeedRateLimitHandler(handler),
 	}))
