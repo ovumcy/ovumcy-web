@@ -121,6 +121,10 @@ func mapSettingsProfileNormalizeError(err error) APIErrorSpec {
 
 func mapSettingsDeleteAccountPasswordError(err error) APIErrorSpec {
 	switch {
+	// Checked first: an exhausted re-auth budget refuses the request before the
+	// password is compared, so it must not be reported as an invalid password.
+	case errors.Is(err, services.ErrSettingsReauthRateLimited):
+		return settingsRateLimitErrorSpec()
 	case errors.Is(err, services.ErrSettingsPasswordMissing):
 		return settingsMissingPasswordErrorSpec()
 	case errors.Is(err, services.ErrSettingsPasswordInvalid):
