@@ -118,6 +118,16 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	exportService := services.NewExportService(dayService, symptomService)
 	importService := services.NewImportService(dailyLogs, repositories.Users, symptomService, dayLogTxRunner)
 	settingsService := services.NewSettingsService(repositories.Users)
+	// Attach the shared limiter and the secret key so the re-auth budget keys on
+	// (client, account) like the other auth policies rather than on the client
+	// alone. The budget itself is not operator-tunable: unlike the edge limiters
+	// it guards a credential check, and the default matches totp.disable.
+	settingsService.ConfigureReauthAttempts(
+		secretKey,
+		attemptLimiter,
+		services.DefaultSettingsReauthAttemptsLimit,
+		services.DefaultSettingsReauthAttemptsWindow,
+	)
 	webhookSettingsService := services.NewWebhookSettingsService(repositories.Users, secretKey)
 	totpService := services.NewTOTPService(repositories.Users, secretKey, attemptLimiter)
 	oidcLogoutStateService := services.NewOIDCLogoutStateService(repositories.OIDCLogout)

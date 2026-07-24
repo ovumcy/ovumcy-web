@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -93,7 +95,12 @@ func (handler *Handler) validateSettingsActionPassword(c fiber.Ctx) (*models.Use
 	if !valid {
 		return nil, spec, false
 	}
-	if err := handler.settingsService.ValidateCurrentPassword(user.PasswordHash, password); err != nil {
+	// Budgeted re-auth: the erasure gate is a password check reachable with a
+	// session already in hand, so it must not be a faster oracle than the login
+	// form. VerifyReauthPassword refuses even a correct password once the budget
+	// is spent.
+	attempt := services.ReauthAttempt{ClientKey: c.IP(), UserID: user.ID, Now: time.Now()}
+	if err := handler.settingsService.VerifyReauthPassword(attempt, user.PasswordHash, password); err != nil {
 		return nil, mapSettingsDeleteAccountPasswordError(err), false
 	}
 

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,7 +15,63 @@ var (
 	ErrSettingsPasswordMissing     = errors.New("settings password missing")
 	ErrSettingsPasswordInvalid     = errors.New("settings password invalid")
 	ErrSettingsLocalPasswordNotSet = errors.New("settings local password not set")
+	// ErrSettingsReauthRateLimited is returned once the per-account re-auth
+	// budget is spent. It is deliberately returned BEFORE the password is
+	// compared, so an exhausted budget refuses even the correct password.
+	ErrSettingsReauthRateLimited = errors.New("settings reauth rate limited")
 )
+
+const (
+	// The re-auth budget mirrors totp.disable rather than login: both guard a
+	// password check that an attacker can only reach with a session already in
+	// hand, so the budget is tighter than the 8/15min login budget.
+	DefaultSettingsReauthAttemptsLimit  = 5
+	DefaultSettingsReauthAttemptsWindow = 15 * time.Minute
+)
+
+// ReauthAttempt carries the identity a re-auth password check is budgeted
+// against. ClientKey is the resolved client IP (the same spoof-proof value the
+// edge limiters key on) and UserID scopes the second, HMAC-derived bucket, so
+// rotating source addresses cannot buy a fresh budget for the same account.
+type ReauthAttempt struct {
+	ClientKey string
+	UserID    uint
+	Now       time.Time
+}
+
+func (attempt ReauthAttempt) identity() string {
+	if attempt.UserID == 0 {
+		return ""
+	}
+	return fmt.Sprintf("user:%d", attempt.UserID)
+}
+
+// clientBucket scopes the client-keyed bucket to the account as well, so the two
+// buckets differ only in whether the source address is part of the key.
+//
+// The plain client key would be wrong here. Unlike login, re-auth is reachable
+// only with a session for one specific account already in hand, so an attacker
+// cannot spread guesses across accounts and an address-wide bucket buys no extra
+// protection. It does cause harm: on a household instance several independent
+// owners share one NAT address, and one owner mistyping their password would
+// lock the others out of their own erasure and password-change flows.
+//
+// Keying (address, account) keeps a per-address budget against one account while
+// the account-wide identity bucket still caps an attacker who rotates addresses.
+func (attempt ReauthAttempt) clientBucket() string {
+	identity := attempt.identity()
+	if identity == "" {
+		return attempt.ClientKey
+	}
+	return attempt.ClientKey + "|" + identity
+}
+
+func (attempt ReauthAttempt) at() time.Time {
+	if attempt.Now.IsZero() {
+		return time.Now()
+	}
+	return attempt.Now
+}
 
 type SettingsUserRepository interface {
 	UpdateDisplayName(ctx context.Context, userID uint, displayName string) error
@@ -42,10 +99,59 @@ type CycleSettingsUpdate struct {
 
 type SettingsService struct {
 	users SettingsUserRepository
+	// reauthPolicy budgets the password re-authentication that gates erasure
+	// and password change. It is created here rather than injected so the
+	// budget is in force for every SettingsService, wired or not — a missing
+	// bootstrap call degrades to a private limiter and IP-only keying instead
+	// of silently removing the control.
+	reauthPolicy    *AuthAttemptPolicy
+	reauthSecretKey []byte
 }
 
 func NewSettingsService(users SettingsUserRepository) *SettingsService {
-	return &SettingsService{users: users}
+	return &SettingsService{
+		users: users,
+		reauthPolicy: NewAuthAttemptPolicy(
+			"settings.reauth",
+			nil,
+			DefaultSettingsReauthAttemptsLimit,
+			DefaultSettingsReauthAttemptsWindow,
+		),
+	}
+}
+
+// ConfigureReauthAttempts attaches the shared attempt limiter and the secret key
+// used to derive the per-account bucket, and applies operator-configured limits.
+// Call it from bootstrap so the re-auth budget shares state with the other auth
+// policies; without it the service still enforces the default budget, but only
+// against the client key.
+func (service *SettingsService) ConfigureReauthAttempts(secretKey []byte, limiter *AttemptLimiter, attempts int, window time.Duration) {
+	service.reauthSecretKey = secretKey
+	// NewAuthAttemptPolicy substitutes a private limiter when limiter is nil, so
+	// a single unconditional rebuild covers both the wired and unwired cases.
+	service.reauthPolicy = NewAuthAttemptPolicy("settings.reauth", limiter, attempts, window)
+}
+
+// VerifyReauthPassword is the budgeted form of ValidateCurrentPassword: the one
+// entry point every password-gated settings action must use. The budget is
+// checked before the compare, so an exhausted budget refuses the correct
+// password too; only a genuinely wrong password counts as a failure, since a
+// blank submission or an account without local auth is a client error rather
+// than a guess.
+func (service *SettingsService) VerifyReauthPassword(attempt ReauthAttempt, passwordHash string, rawPassword string) error {
+	now := attempt.at()
+	identity := attempt.identity()
+	if service.reauthPolicy.TooManyRecent(service.reauthSecretKey, attempt.clientBucket(), identity, now) {
+		return ErrSettingsReauthRateLimited
+	}
+	if err := service.ValidateCurrentPassword(passwordHash, rawPassword); err != nil {
+		if errors.Is(err, ErrSettingsPasswordInvalid) {
+			service.reauthPolicy.AddFailure(service.reauthSecretKey, attempt.clientBucket(), identity, now)
+		}
+		return err
+	}
+	service.reauthPolicy.Reset(service.reauthSecretKey, attempt.clientBucket(), identity)
+	return nil
 }
 
 func (service *SettingsService) UpdateDisplayName(ctx context.Context, userID uint, displayName string) error {
