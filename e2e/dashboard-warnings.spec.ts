@@ -6,6 +6,7 @@ import {
   expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -80,6 +81,7 @@ test.describe('Dashboard: spotting cycle warning', () => {
 
     const response = await page.request.put(`/api/v1/days/${today}`, {
       headers: {
+        ...apiOriginHeader(page),
         'X-CSRF-Token': await csrfToken(page),
         'Content-Type': 'application/json',
       },
