@@ -1,0 +1,42 @@
+name: Docker pull with retry
+description: >
+  Pull a container image with a bounded retry so one registry blip does not fail the
+  job. Docker Hub is reached over the public internet from the runner, and a single
+  "i/o timeout" there has failed gitleaks, trivy-image and e2e-postgres-smoke —
+  the last one on main, on a tree that had been green on its pull request minutes
+  earlier. Only the PULL is retried: it is idempotent, unlike the steps that then
+  use the image.
+
+  Factored into an action rather than copied per job because the pattern is needed
+  in three places already, and a fourth Docker-Hub-pulling job that forgets it is
+  exactly how this gap was found.
+
+inputs:
+  image:
+    description: >
+      Fully qualified image reference. Pass the caller's digest-pinned value so the
+      pin stays in one place.
+    required: true
+  attempts:
+    description: Total attempts before the step fails.
+    required: false
+    default: "3"
+
+runs:
+  using: composite
+  steps:
+    - name: Pull image with retry
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        ATTEMPTS: ${{ inputs.attempts }}
+      run: |
+        for attempt in $(seq 1 "$ATTEMPTS"); do
+          if docker pull "$IMAGE"; then exit 0; fi
+          if [ "$attempt" -lt "$ATTEMPTS" ]; then
+            echo "docker pull attempt $attempt/$ATTEMPTS failed, retrying"
+            sleep $((attempt * 10))
+          fi
+        done
+        echo "docker pull \"$IMAGE\" failed after $ATTEMPTS attempts" >&2
+        exit 1
