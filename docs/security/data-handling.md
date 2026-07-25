@@ -12,8 +12,11 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 - Credentials: `password_hash` (bcrypt cost 12), `recovery_code_hash` (bcrypt cost 12), `local_auth_enabled`, `auth_session_version`, `must_change_password`.
 - Onboarding: `onboarding_completed`.
 - Cycle preferences: `cycle_length`, `period_length`, `luteal_phase`, `auto_period_fill`, `irregular_cycle`, `unpredictable_cycle`, `age_group`, `usage_goal`, `last_period_start`, `long_period_warning_cycle_start`.
-- Tracking preferences: `track_bbt`, `temperature_unit`, `track_cervical_mucus`, `hide_sex_chip`, `hide_cycle_factors`, `hide_notes_field`, `show_historical_phases`, `shown_period_tip`.
+- Tracking preferences: `track_bbt`, `temperature_unit`, `track_cervical_mucus`, `hide_sex_chip`, `hide_cycle_factors`, `hide_notes_field`, `show_historical_phases`, `shown_period_tip`, `week_starts_on`.
+- Interface: `timezone` — the last known IANA zone name observed on a request, used to resolve "today" for date-only writes. Not a secret.
 - 2FA: `totp_enabled`, `totp_secret` (AES-256-GCM aad-bound under an HKDF-derived key, see *Field-Level Encryption*), `totp_last_used_step` (RFC 6238 replay floor).
+- Webhook reminders (only meaningful once the owner enables them): `webhook_enabled`, `webhook_url` (**AES-256-GCM aad-bound under an HKDF-derived key, the same field-encryption path as `totp_secret`** — it is an owner-chosen egress destination, not a display value), `webhook_notify_period`, `webhook_notify_ovulation`, `reminder_lead_days`, and the per-kind send watermarks `webhook_period_last_sent_cycle_start` / `webhook_ovulation_last_sent_cycle_start` that stop a reminder firing twice for one cycle.
+- Calendar (`.ics`) feed subscription (only populated once the owner generates a feed): `calendar_feed_selector` — the non-secret lookup half of the capability token — plus `calendar_feed_verifier_mac` (keyed HMAC-SHA256 under a `SECRET_KEY`-derived label, the value the endpoint actually compares) and the legacy `calendar_feed_verifier_hash` (bcrypt, still written for rollback and still accepted for rows created before migration 032). This is the one sanctioned bearer-token surface; see *Calendar feed subscription* in `SECURITY.md`.
 
 **`daily_logs`** — one row per (user, calendar day). Dates are stored as UTC midnight and rendered in the user's timezone at read time.
 
@@ -39,6 +42,8 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 - Deletes every `daily_logs` row for the user.
 - Deletes every user-defined row in `symptom_types` (built-in symptoms remain).
 - Resets cycle and tracking preferences to documented defaults.
+- **Disarms webhook reminders**: clears `webhook_enabled`, blanks the encrypted `webhook_url`, resets `reminder_lead_days` and the per-kind opt-ins to their defaults, and clears both send watermarks so no reminder fires against the freshly emptied account.
+- **Revokes the calendar feed**: NULLs `calendar_feed_selector` and both verifier columns, so a subscribe URL issued earlier stops resolving and answers `404`. Calendar clients holding it need a fresh URL from Settings.
 - Atomically bumps `auth_session_version`, invalidating every other auth cookie for the account. The originating device is re-issued a fresh cookie inline so the user stays signed in there.
 
 `clear-data` does **not** touch email, password hash, recovery code hash, role, display name, OIDC identity links, TOTP state, or onboarding status.
