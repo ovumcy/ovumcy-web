@@ -60,6 +60,25 @@ func RespondRequestEntityTooLarge(c fiber.Ctx) error {
 	return apiError(c, requestTooLargeErrorSpec())
 }
 
+// requestHeadersTooLargeErrorSpec maps a transport-level 431 (the request head —
+// start line plus every header, cookies included — not fitting fasthttp's read
+// buffer) to the shared error-spec shape, for the same reason as the 413 above:
+// the client should get a stable key rather than fiber's bare
+// "Request Header Fields Too Large" string.
+func requestHeadersTooLargeErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusRequestHeaderFieldsTooLarge, APIErrorCategoryTooLarge, "request_headers_too_large")
+}
+
+// RespondRequestHeadersTooLarge renders the mapped 431 through the shared
+// negotiation, and is exported for the same reason as its 413 sibling: fiber
+// raises this from its core server error path on a context whose request head
+// never parsed, so the top-level ErrorHandler in cmd/ovumcy must reach it
+// directly. Nothing about the rejected request is echoed — with an unparseable
+// head there is no method, path, or cookie value to leak even by accident.
+func RespondRequestHeadersTooLarge(c fiber.Ctx) error {
+	return apiError(c, requestHeadersTooLargeErrorSpec())
+}
+
 func (handler *Handler) respondAuthError(c fiber.Ctx, spec APIErrorSpec) error {
 	if (isV1AuthFormPath(c.Path()) || strings.HasPrefix(c.Path(), "/auth/oidc")) && !acceptsJSON(c) && !isHTMX(c) {
 		flash := FlashPayload{AuthError: spec.Key}

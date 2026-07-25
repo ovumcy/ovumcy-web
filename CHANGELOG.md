@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     verifying through bcrypt; its MAC is written in during the first request that
     presents the correct token, after which it takes the fast path.
 
+- **A request whose headers overflow the read buffer now answers with a stable error
+  key.** The transport-level `431` previously returned Fiber's bare English string;
+  it now travels the same mapped-error path as the `413`, answering
+  `request_headers_too_large`. A client that parsed the old response text sees a
+  JSON envelope instead. The rejection is also logged explicitly, because the
+  request logger records these as `404` with an empty path — the head never parsed,
+  so nothing tied the user's `431` to the server side. Reachable only when another
+  service on the same domain contributes cookies or headers; Ovumcy's own cookies
+  are ~450 B on a normal signed-in request. See *Troubleshooting* in
+  [docs/self-hosted.md](docs/self-hosted.md).
+
 ### Fixed
 
 - **Two-factor and SSO-link errors are localized again.** A wrong 2FA code showed

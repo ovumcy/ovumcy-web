@@ -425,6 +425,53 @@ Typical failure split:
 - Config issue: container runs but startup logs show invalid env values or trusted-proxy configuration errors.
 - Proxy issue: `ovumcy` is healthy, but public requests fail, loop, or lose the real client IP.
 
+### `431 Request Header Fields Too Large`
+
+This is per-browser, not per-deployment: the same page loads normally in one browser and is rejected
+in another, because the limit is reached by the cookies that browser has accumulated for the domain.
+Clearing them fixes it immediately, which is also how you confirm the diagnosis.
+
+The whole **head** of a request — start line plus every header, cookies included — must fit in a
+4 KB read buffer.
+
+A normal signed-in request carries about **450 B** of Ovumcy cookies (measured from the running app:
+`ovumcy_auth` 350 B, `ovumcy_csrf` 55 B, plus the language and timezone cookies). The largest single
+cookies are `ovumcy_oidc_stepup` at 514 B, `ovumcy_reset_password` at 460 B and `ovumcy_auth` — the
+three that carry a signed token or a password hash.
+
+Summing **every** cookie the app can define reaches roughly 2.9 KB, which with a browser's own
+0.6–1.2 KB of headers would sit close to the limit. That total is arithmetic rather than a reachable
+state: the transient cookies in it are mutually exclusive by lifecycle — a password-reset cookie and a
+2FA-setup cookie never coexist, and the two OIDC cookies only apply on the callback path. Ovumcy on
+its own therefore stays far below the buffer in every state a real flow produces, but the margin comes
+from those exclusions, not from a large absolute gap.
+
+It becomes reachable when **something else on the same domain** contributes cookies or headers:
+analytics, a CDN or bot-management cookie such as Cloudflare's `__cf_bm`, another application sharing
+the registrable domain, or a proxy that injects a large header block. Those ride along on every
+request to Ovumcy and consume the same budget.
+
+**What you will see.** The client receives `431` carrying the standard error envelope with the stable
+key `request_headers_too_large` — so a browser shows the JSON body rather than a styled page, since
+the request never reached the point where a page could be rendered. The server logs one explicit line:
+
+```
+request rejected: 431 request header fields too large — the request head did not fit the server read buffer
+```
+
+Note the accompanying request-log entry reads `404 | GET | /`, not `431`. That is not a second
+problem: the head never parsed, so the request carries no method or path by the time the request
+logger runs. The explicit line above is what ties the user's `431` to the server side — without it the
+rejection is invisible among ordinary not-found noise.
+
+Confirm the cause by having an affected user clear cookies for the domain, or open a private window:
+if the request then succeeds, the head was over budget. Serving Ovumcy on its own hostname, rather
+than sharing one with other cookie-setting services, keeps it clear of the limit.
+
+Raising the header buffer on your reverse proxy will not help: the example stacks leave the proxy at
+its own defaults, which are more generous than the app's, so a request that the proxy accepts can
+still be refused behind it. The fix is on the cookie side, not the proxy side.
+
 ## Common Operator Scenarios
 
 - Moving from local/private to public HTTPS:
