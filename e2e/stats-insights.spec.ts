@@ -6,6 +6,7 @@ import {
   expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { shiftISODate } from './support/stats-helpers';
@@ -60,6 +61,7 @@ async function saveDayBBT(page: Page, isoDate: string, bbt: number): Promise<voi
   // are treated as programmatic clients and the payload is taken as-is.
   const response = await page.request.put(`/api/v1/days/${isoDate}`, {
     headers: {
+      ...apiOriginHeader(page),
       'X-CSRF-Token': await csrfToken(page),
       'Content-Type': 'application/json',
     },
@@ -71,6 +73,7 @@ async function saveDayBBT(page: Page, isoDate: string, bbt: number): Promise<voi
 async function savePeriodDay(page: Page, isoDate: string): Promise<void> {
   const response = await page.request.put(`/api/v1/days/${isoDate}`, {
     headers: {
+      ...apiOriginHeader(page),
       'X-CSRF-Token': await csrfToken(page),
       'Content-Type': 'application/json',
     },
@@ -87,6 +90,7 @@ async function markCycleStartViaAPI(page: Page, isoDate: string): Promise<void> 
   // anchored to user.LastPeriodStart from onboarding.
   const response = await page.request.post(`/api/v1/days/${isoDate}/cycle-start`, {
     headers: {
+      ...apiOriginHeader(page),
       'X-CSRF-Token': await csrfToken(page),
       'Content-Type': 'application/x-www-form-urlencoded',
     },
@@ -277,6 +281,7 @@ test.describe('Stats: symptom patterns', () => {
     for (const offset of [-51, -33, -15]) {
       const response = await page.request.put(`/api/v1/days/${shiftISODate(today, offset)}`, {
         headers: {
+          ...apiOriginHeader(page),
           'X-CSRF-Token': csrf,
           'Content-Type': 'application/json',
         },

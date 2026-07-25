@@ -5,6 +5,7 @@ import {
   expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
@@ -52,6 +53,7 @@ async function markCycleStartViaAPI(page: Page, isoDate: string): Promise<void> 
   const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
   const response = await page.request.post(`/api/v1/days/${isoDate}/cycle-start`, {
     headers: {
+      ...apiOriginHeader(page),
       'X-CSRF-Token': csrf,
       'Content-Type': 'application/x-www-form-urlencoded',
     },

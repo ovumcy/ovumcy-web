@@ -6,6 +6,7 @@ import {
   expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
@@ -427,7 +428,7 @@ test.describe('Calendar page', () => {
     // as no-op, so a single-field patch would wipe the other tracking flags.
     const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
     const trackingResponse = await page.request.patch('/api/v1/users/current/tracking', {
-      headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
+      headers: { ...apiOriginHeader(page), 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
       data: {
         track_bbt: true,
         temperature_unit: 'celsius',
@@ -475,7 +476,7 @@ test.describe('Calendar page', () => {
       // on a partial JSON patch — resend the full default snapshot with the
       // UsageGoal override.
       const response = await page.request.patch('/api/v1/users/current/cycle', {
-        headers: { 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
+        headers: { ...apiOriginHeader(page), 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
         data: {
           cycle_length: 28,
           period_length: 5,
