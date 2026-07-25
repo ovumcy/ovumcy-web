@@ -17,6 +17,11 @@ coverage
 coverage.*
 *.coverprofile
 profile.cov
+# rapid writes a reproduction failfile per failing property test under the
+# package's testdata/rapid/<TestName>/. Only that subdirectory — the rest of
+# testdata/ is tracked fixtures (the shared cycle-prediction golden vectors).
+# Needs the leading **/ to match below the repo root.
+**/testdata/rapid/
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
