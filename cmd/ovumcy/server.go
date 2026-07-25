@@ -149,6 +149,17 @@ func ovumcyErrorHandler(c fiber.Ctx, err error) error {
 		if fiberErr.Code == fiber.StatusRequestEntityTooLarge {
 			return api.RespondRequestEntityTooLarge(c)
 		}
+		// A request head that overflows the read buffer is rejected the same way,
+		// plus an explicit log line. Without it the rejection is effectively
+		// invisible to the operator: the head never parsed, so by the time the
+		// request logger runs the context carries no method or path and the entry
+		// reads "404 | GET | /" — indistinguishable from ordinary not-found noise,
+		// while the user is looking at a 431. Nothing about the request is logged;
+		// there is nothing parsed to log.
+		if fiberErr.Code == fiber.StatusRequestHeaderFieldsTooLarge {
+			log.Printf("request rejected: 431 request header fields too large — the request head did not fit the server read buffer")
+			return api.RespondRequestHeadersTooLarge(c)
+		}
 		return c.Status(fiberErr.Code).SendString(fiberErr.Message)
 	}
 	return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")

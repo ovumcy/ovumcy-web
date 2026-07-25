@@ -191,6 +191,13 @@ components:
         should branch on the HTTP status code plus `error_detail.category`
         rather than the key string, and treat unknown keys/categories as their
         generic status-class failure.
+
+        Two rejections carry this envelope without belonging to any operation
+        below, because the server refuses them before routing: `413`
+        (`request_too_large`, body past the 16 MiB limit) and `431`
+        (`request_headers_too_large`, request head past the read buffer). They
+        are listed here rather than per-path — the request never reached an
+        operation, so attaching them to one would misdescribe what happened.
       required: [error, error_detail]
       properties:
         error:
@@ -1418,7 +1425,15 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '413':
-          description: Payload exceeds the size or entry-count limit.
+          description: |
+            Payload exceeds the size or entry-count limit. Two independent caps
+            produce two different keys: `import file too large` from the entry
+            cap (20 000), and `request_too_large` from the 16 MiB body limit,
+            which the server enforces before the handler runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: "import file too large" }
 
   # =========================================================================
   # users/current — whoami, settings, and account management
