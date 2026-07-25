@@ -51,6 +51,7 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 ## CSRF and CORS
 
 - CSRF middleware is global on every state-changing request. The single exemption is the OIDC callback `/auth/oidc/callback` — `POST` in form_post mode and, under `OIDC_RESPONSE_MODE=query`, additionally `GET` (a safe method the middleware never validates) — where the OIDC provider cannot present our token and the sealed `state`/`nonce` cover replay protection.
+- A valid token is not the only requirement: the middleware also matches the request's `Origin` (falling back to `Referer` when the app is served over HTTPS) against the scheme and host the app itself observes. A mismatched `Origin` is refused in any posture; a *missing* one is refused only over HTTPS. **Operator consequence:** behind an HTTPS terminator the app must be told to trust it (`TRUST_PROXY_ENABLED=true` with the proxy listed in `TRUSTED_PROXIES`), otherwise the app observes plain `http`, disagrees with the browser's `https://…` `Origin`, and answers `403` to every form submission. See the matrix rows under *Session and Cookie Security*.
 - Global CORS is **disabled**. Do not enable `Access-Control-Allow-Origin: *`.
 
 ## Cryptographic baseline
