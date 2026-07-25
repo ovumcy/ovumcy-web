@@ -563,6 +563,32 @@ func TestImportServiceScopesResolvedSymptomsToImportingOwner(t *testing.T) {
 	if len(logsB) != 0 {
 		t.Fatalf("owner B gained %d unexpected day logs from owner A's import", len(logsB))
 	}
+
+	// And B's CATALOG is untouched: the name collision must not rename, archive, or
+	// duplicate B's row. Asserting only B's logs left that half of the invariant
+	// unproven — a resolver that "reused" B's row by renaming it, or archived it to
+	// free the name, would have passed everything above.
+	catalogB, err := symptomService.FetchSymptoms(context.Background(), ownerB.ID)
+	if err != nil {
+		t.Fatalf("fetch owner B catalog: %v", err)
+	}
+	sharedRowsForB := 0
+	for _, symptom := range catalogB {
+		if normalizeSymptomNameKey(symptom.Name) != "shared name" {
+			continue
+		}
+		sharedRowsForB++
+		if symptom.ID != bSymptom.ID {
+			t.Fatalf("owner A's import added a second %q row (id %d) to owner B's catalog", symptom.Name, symptom.ID)
+		}
+		if symptom.Name != bSymptom.Name {
+			t.Fatalf("owner B's symptom was renamed to %q, want %q", symptom.Name, bSymptom.Name)
+		}
+	}
+	// Exactly one, still live: zero would mean B's row was archived or deleted.
+	if sharedRowsForB != 1 {
+		t.Fatalf("expected owner B to still own exactly one live %q row, found %d", bSymptom.Name, sharedRowsForB)
+	}
 }
 
 // TestImportServiceBBTCompatibilityAcrossLegacyAndCurrentPayloads pins the
