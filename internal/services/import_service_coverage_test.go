@@ -135,9 +135,22 @@ func TestImportServiceEmptySymptomNamesIgnored(t *testing.T) {
 }
 
 // TestImportServiceRefreshNilGuards: the defensive nil guards make the
-// best-effort refresh a no-op on a zero-value service (no panic).
+// best-effort refresh a no-op on a zero-value service.
+//
+// Surviving the zero-value call is a real assertion, not a vacuous one — dropping
+// the users/logs checks from the guard nil-derefs here (verified). The second case
+// adds what the zero-value one cannot observe: with a live users repository and
+// nil logs, the guard must also write NOTHING, so a fall-through cannot hide
+// behind "it did not panic".
 func TestImportServiceRefreshNilGuards(t *testing.T) {
 	(&ImportService{}).refreshDerivedCycleSettings(context.Background(), 1, time.UTC)
+
+	users := &importRecordingUsers{}
+	NewImportService(nil, users, &importStubReconciler{}, nil).
+		refreshDerivedCycleSettings(context.Background(), 1, time.UTC)
+	if len(users.updates) != 0 {
+		t.Fatalf("expected the nil-logs guard to write nothing, got %d update(s)", len(users.updates))
+	}
 }
 
 // importRecordingUsers records every UpdateByID call so a test can assert the
