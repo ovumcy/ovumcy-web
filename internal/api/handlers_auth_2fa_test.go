@@ -246,6 +246,38 @@ func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 	if authCookie != nil && authCookie.Value != "" {
 		t.Error("invalid code should not issue an auth cookie")
 	}
+
+	// "No auth cookie" alone is satisfied by ANY refusal, so on its own this test
+	// stayed green when the request never reached TOTP verification: a corrupted CSRF
+	// token and a dropped pending cookie both look identical through that assertion.
+	//
+	// The browser path answers a rejected code with a redirect back to the challenge
+	// (the HTMX path is the one that surfaces the raw status — see the rate-limit test
+	// below). The status alone rules out a CSRF refusal, which is a 403.
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303 back to the challenge, got %d — the request may have been refused before TOTP verification", resp.StatusCode)
+	}
+	if location := resp.Header.Get("Location"); location != "/auth/2fa" {
+		t.Fatalf("expected a redirect back to /auth/2fa after a rejected code, got %q", location)
+	}
+
+	// It does NOT rule out a refusal that never reached the code check: dropping the
+	// pending cookie produces the same 303 to the same place (verified by injection).
+	// The rejection reason travels in the flash, so following the redirect is the only
+	// way to prove the code check is what refused.
+	flashValue := responseCookieValue(resp.Cookies(), flashCookieName)
+	if flashValue == "" {
+		t.Fatal("expected a flash cookie carrying the rejection reason")
+	}
+	follow := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
+	follow.Header.Set("Accept-Language", "en")
+	follow.Header.Set("Cookie", joinCookieHeader(pendingCookie, flashCookieName+"="+flashValue))
+	followResp := mustAppResponse(t, app, follow)
+	defer func() { _ = followResp.Body.Close() }()
+	rendered := mustReadBodyString(t, followResp.Body)
+	if htmlAuthErrorByKey(mustParseHTMLDocument(t, rendered), "totp invalid code") == nil {
+		t.Fatalf("expected the invalid-code error on the challenge page; a request that never reached verification carries a session-expired flash instead, with an identical status and destination")
+	}
 }
 
 // TestVerifyTOTPLogin_RateLimited_HTMXReturns429 drives more failures than the

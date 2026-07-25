@@ -206,6 +206,14 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 	if reloaded.TOTPEnabled {
 		t.Error("TOTPEnabled should be false after invalid code (unless 000000 was coincidentally valid)")
 	}
+
+	// TOTPEnabled==false is satisfied by any refusal, including ones that never reach
+	// the code check: with a corrupted csrf_token this assertion held while the
+	// request died in middleware. Pin the status so the test proves enrollment
+	// verification ran and rejected the code.
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 from the enrollment code check, got %d — the request may have been refused before verification", resp.StatusCode)
+	}
 }
 
 func TestVerifyTOTP2FAEnrollment_MissingSetupCookie_ReturnsError(t *testing.T) {
