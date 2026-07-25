@@ -22,6 +22,9 @@ type dayLogRepositoryStub struct {
 	// a later flag write on the same calendar day.
 	saveErrFromCall map[string]int
 	saveCalls       map[string]int
+	// listCalls counts ListByUser calls so a test can assert a guard returned
+	// before reading anything, rather than only that it did not panic.
+	listCalls int
 }
 
 func newDayLogRepositoryStub() *dayLogRepositoryStub {
@@ -41,6 +44,7 @@ func (stub *dayLogRepositoryStub) dayKey(value time.Time) string {
 }
 
 func (stub *dayLogRepositoryStub) ListByUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
+	stub.listCalls++
 	logs := make([]models.DailyLog, 0)
 	for _, entry := range stub.entries {
 		if entry.UserID == userID {

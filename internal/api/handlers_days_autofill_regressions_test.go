@@ -83,6 +83,18 @@ func TestUpsertDayAutoFillCanBeDisabled(t *testing.T) {
 	}
 }
 
+// TestUpsertDayAutoFillDoesNotCreateFutureDays pins that auto-fill stops at
+// today: a period logged with room left in the period length fills the days up to
+// today and creates nothing beyond it.
+//
+// The anchor day is YESTERDAY on purpose. Anchoring on today leaves every
+// candidate day in the future, so the only assertion left is "tomorrow was not
+// created" — which is equally satisfied by an auto-fill that does nothing at all.
+// Verified: with `AutoFillFollowingPeriodDays` short-circuited to return
+// immediately, the today-anchored version of this test stayed green while three
+// sibling auto-fill tests failed. Anchoring a day earlier puts one candidate at or
+// before today and one after it, so the test now proves the guard is a DATE
+// boundary rather than a global off switch.
 func TestUpsertDayAutoFillDoesNotCreateFutureDays(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "upsert-day-autofill-future-guard@example.com", "StrongPass1", true)
@@ -95,13 +107,13 @@ func TestUpsertDayAutoFillDoesNotCreateFutureDays(t *testing.T) {
 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
-	todayRaw := today.Format("2006-01-02")
+	anchor := today.AddDate(0, 0, -1)
 
 	form := url.Values{
 		"is_period": {"true"},
 		"flow":      {models.FlowLight},
 	}
-	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+todayRaw, strings.NewReader(form.Encode()))
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+anchor.Format("2006-01-02"), strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("HX-Request", "true")
 	request.Header.Set("Accept-Language", "en")
@@ -110,13 +122,26 @@ func TestUpsertDayAutoFillDoesNotCreateFutureDays(t *testing.T) {
 	response := mustAppResponse(t, app, request)
 	assertStatusCode(t, response, http.StatusOK)
 
-	tomorrow := today.AddDate(0, 0, 1)
-	entry, err := fetchLogByDateForTest(database, user.ID, tomorrow, time.UTC)
+	// Positive anchor: with period_length 4 the anchor's run covers anchor+1
+	// (today), which is not in the future and must be filled.
+	todayEntry, err := fetchLogByDateForTest(database, user.ID, today, time.UTC)
 	if err != nil {
-		t.Fatalf("load tomorrow entry after autofill attempt: %v", err)
+		t.Fatalf("load today entry after autofill: %v", err)
 	}
-	if entry.ID != 0 {
-		t.Fatalf("did not expect autofill to create future entry for %s", tomorrow.Format("2006-01-02"))
+	if todayEntry.ID == 0 || !todayEntry.IsPeriod {
+		t.Fatalf("anchor failed: expected autofill to mark today (%s) as a period day, so the future-day assertion below proves the date boundary rather than a dead autofill", today.Format("2006-01-02"))
+	}
+
+	// Subject: anchor+2 and anchor+3 are still in the future and must not exist.
+	for offset := 2; offset < 4; offset++ {
+		futureDay := anchor.AddDate(0, 0, offset)
+		entry, err := fetchLogByDateForTest(database, user.ID, futureDay, time.UTC)
+		if err != nil {
+			t.Fatalf("load %s after autofill attempt: %v", futureDay.Format("2006-01-02"), err)
+		}
+		if entry.ID != 0 {
+			t.Fatalf("did not expect autofill to create future entry for %s", futureDay.Format("2006-01-02"))
+		}
 	}
 }
 
