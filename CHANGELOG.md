@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     verifying through bcrypt; its MAC is written in during the first request that
     presents the correct token, after which it takes the fast path.
 
+### Fixed
+
+- **Two-factor and SSO-link errors are localized again.** A wrong 2FA code showed
+  every user the untranslated English string `totp invalid code`, regardless of
+  the interface language, and the OIDC link-confirmation page did the same with
+  its own error strings. The translations existed in all six locales the whole
+  time; nothing connected them to the errors the pages were reporting. Affects
+  displayed text only — no flow, status code, or rate limit changes.
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no

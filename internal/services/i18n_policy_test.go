@@ -1,6 +1,59 @@
 package services
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
+)
+
+// TestAuthErrorTranslationKeyCoversTOTPChallenge pins the four 2FA error specs
+// onto their locale entries. They were absent from the map while the entries had
+// existed in all six locales from the start, and translateMessage answers an
+// unknown key with the key itself — so a wrong 2FA code showed every user, in
+// every language, the literal English spec key "totp invalid code".
+func TestAuthErrorTranslationKeyCoversTOTPChallenge(t *testing.T) {
+	expected := map[string]string{
+		"totp invalid code":      "error.totp_invalid_code",
+		"totp session expired":   "error.totp_session_expired",
+		"totp internal error":    "error.totp_internal_error",
+		"totp too many attempts": "error.totp_too_many_attempts",
+	}
+	for source, want := range expected {
+		if got := AuthErrorTranslationKey(source); got != want {
+			t.Fatalf("AuthErrorTranslationKey(%q) = %q, want %q", source, got, want)
+		}
+	}
+}
+
+// TestAuthErrorTranslationKeysResolveInEveryLocale is the guard for the defect
+// CLASS, not just the four entries above: a mapping is only worth anything if the
+// key it points at actually exists in the locale files. A typo, a renamed locale
+// entry, or a new mapping invented without its translations all degrade silently
+// to the raw key on screen, which is precisely how the TOTP gap survived.
+//
+// internal/i18n is imported by this TEST only — the services layer itself keeps
+// no dependency on it, and i18n depends on nothing inside the repo, so there is
+// no cycle and no production coupling.
+func TestAuthErrorTranslationKeysResolveInEveryLocale(t *testing.T) {
+	manager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+
+	languages := manager.SupportedLanguages()
+	if len(languages) == 0 {
+		t.Fatal("expected the i18n manager to report supported languages")
+	}
+
+	for _, language := range languages {
+		messages := manager.Messages(language)
+		for source, key := range authErrorTranslationKeys {
+			if value, ok := messages[key]; !ok || value == "" {
+				t.Errorf("locale %q has no entry for %q (mapped from error spec %q): the message would render as the raw key", language, key, source)
+			}
+		}
+	}
+}
 
 func TestAuthErrorTranslationKey(t *testing.T) {
 	if got := AuthErrorTranslationKey("  TOO MANY LOGIN ATTEMPTS "); got != "auth.error.too_many_login_attempts" {
