@@ -136,7 +136,7 @@ Response is JSON (not a file download), used by the Settings UI before showing t
 }
 ```
 
-`date_from`/`date_to` are absent or empty strings when the range is unbounded.
+All four keys are always present. `date_from`/`date_to` report the **extent of the data found**, not the requested range: they are the earliest and latest logged day inside it, so an unbounded query with logs still returns concrete dates. They are empty strings exactly when the range holds no entries at all (alongside `has_data: false` and `total_entries: 0`).
 
 ## Import (restore)
 
@@ -158,7 +158,18 @@ Response `200`:
 - `skipped` — days that already existed and were left untouched.
 - `rejected` — malformed or duplicate day records dropped without writing.
 
-Error responses use stable, PII-free keys: `400 invalid import file` (not valid JSON), `413 import file too large`, `500 failed to import data`.
+### Size limits
+
+Two independent caps bound a restore, and they surface as **two different 413 keys** — a client keying on the error string needs both:
+
+| Cap | Value | Error |
+| --- | --- | --- |
+| Request body | **16 MiB** | `413 request_too_large`. Enforced at the transport layer before the handler runs, so a body over the limit never reaches the import service. |
+| Entries per file | **20 000** | `413 import file too large`. Enforced by the import service on the parsed payload. |
+
+The body limit is sized to the entry cap (20 000 day records serialize to roughly 8–12 MiB), so a file at the documented entry ceiling stays comfortably under it. A file that trips the body limit is therefore either far past the entry cap or carrying unusually large `notes`.
+
+Error responses use stable, PII-free keys: `400 invalid import file` (not valid JSON), the two 413s above, and `500 failed to import data`.
 
 Importing from other trackers (e.g. Drip) is out of scope for this endpoint — see [issue #116](https://github.com/ovumcy/ovumcy-web/issues/116).
 
