@@ -108,7 +108,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 
 | Claim | Enforced by |
 | --- | --- |
-| `users.totp_secret` is AES-256-GCM encrypted under a key derived from `SECRET_KEY` via HKDF-SHA256 | `TestEncryptDecryptField_RoundTrip` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
+| `users.totp_secret` is AES-256-GCM encrypted under a key derived from `SECRET_KEY` via HKDF-SHA256 | `TestEncryptDecryptField_RoundTrip` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) proves the round trip; the construction itself — HKDF salt/info labels, derived key, `nonce‖ciphertext` layout, base64url framing — is pinned by the fixed-key golden ciphertexts in `TestDecryptFieldOpensPreConsolidationGoldenCiphertexts` ([internal/security/field_crypto_golden_test.go](internal/security/field_crypto_golden_test.go)), which a round trip alone cannot do (it would pass under any AEAD) |
 | AAD-bound to row id; cross-row substitution under a different AAD fails to open | `TestDecryptField_RejectsWrongAAD` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
 | Ciphertext is non-deterministic (distinct outputs for the same plaintext) | `TestEncryptField_ProducesDistinctCiphertexts` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
 | Wrong key fails to decrypt | `TestDecryptField_WrongKey` in [internal/security/field_crypto_test.go](internal/security/field_crypto_test.go) |
