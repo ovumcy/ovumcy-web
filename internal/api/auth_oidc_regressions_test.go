@@ -1243,6 +1243,90 @@ func TestCompleteOIDCLinkConfirmationWithTOTPEnabledRefusesWrongCode(t *testing.
 	}
 }
 
+// alignToFreshTOTPStep sleeps into the next RFC 6238 step when the current one is
+// nearly over. The replay test below must land BOTH submissions in the same
+// 30-second step: each pays a bcrypt password check, so a run starting near a
+// boundary would cross it and the "replayed" code would legitimately belong to the
+// next step — a flake, not a finding. The margin only ever costs the tail of an
+// expiring step, and this is step arithmetic, not a wall-clock assertion.
+func alignToFreshTOTPStep() {
+	const stepSeconds = int64(30)
+	const marginSeconds = int64(3)
+
+	if remaining := stepSeconds - time.Now().Unix()%stepSeconds; remaining <= marginSeconds {
+		time.Sleep(time.Duration(remaining) * time.Second)
+	}
+}
+
+// TestCompleteOIDCLinkConfirmationWithTOTPEnabledRefusesReplayedCode closes the
+// last unproven clause of this flow's matrix row, which claimed that "missing /
+// wrong / replayed codes refuse the link" while only missing and wrong had tests.
+//
+// Replay held by construction rather than by coverage: the handler calls
+// TOTPService.ValidateCode, which claims the step through an atomic
+// `UPDATE … WHERE totp_last_used_step < ?`. Nothing pinned that choice, so a
+// refactor to a validate-only helper would keep every other test in this file
+// green while turning one captured code into a reusable one for the rest of its
+// 30-second window — on the surface that hands out a session for a linked account.
+//
+// The second attempt carries a FRESH pending cookie deliberately: the step floor
+// lives on the user row, not in the link state, so the refusal must hold even when
+// everything around it is new.
+func TestCompleteOIDCLinkConfirmationWithTOTPEnabledRefusesReplayedCode(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+	user := createOnboardingTestUser(t, database, "link-totp-replay@example.com", "StrongPass1", true)
+	rawSecret := setupTOTPForUser(t, database, user.ID, []byte(testHandlerSecretKey))
+
+	alignToFreshTOTPStep()
+	code, err := totp.GenerateCode(rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	confirmWithCode := func(subject string) *http.Response {
+		t.Helper()
+
+		pendingPayload, err := newOIDCLinkPendingPayload(time.Now().UTC(), user.ID, "https://idp.example", subject, user.Email)
+		if err != nil {
+			t.Fatalf("newOIDCLinkPendingPayload: %v", err)
+		}
+		postRequest := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
+			"password":  {"StrongPass1"},
+			"totp_code": {code},
+		}.Encode()))
+		postRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		postRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+sealLinkPendingCookieForTest(t, pendingPayload))
+		return mustAppResponse(t, app, postRequest)
+	}
+
+	first := confirmWithCode("subject-totp-replay-first")
+	assertStatusCode(t, first, http.StatusSeeOther)
+	if location := first.Header.Get("Location"); location != "/dashboard" {
+		t.Fatalf("test setup: the first use of a valid code must link, got %q", location)
+	}
+
+	// Forget the first link so the assertion below cannot pass on a stale value.
+	stub.lastConfirmLinkUserID = 0
+
+	second := confirmWithCode("subject-totp-replay-second")
+	assertStatusCode(t, second, http.StatusSeeOther)
+	if location := second.Header.Get("Location"); location != oidcLinkConfirmPath {
+		t.Fatalf("expected a replayed TOTP code to bounce back to link-confirm, got %q", location)
+	}
+	if stub.lastConfirmLinkUserID != 0 {
+		t.Fatalf("ConfirmAndLinkIdentity fired on a replayed TOTP code (user id %d)", stub.lastConfirmLinkUserID)
+	}
+	if authCookie := responseCookie(second.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatal("AUDIT-CRITICAL: link-confirm issued an auth cookie for a replayed TOTP code")
+	}
+}
+
 // TestShowOIDCLinkConfirmPageRendersTOTPFieldForTOTPEnabledTarget locks the
 // page-render contract: the TOTP input must appear only when the target
 // account actually has TOTP enabled. Otherwise the handler-level enforcement
