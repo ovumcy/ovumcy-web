@@ -7,6 +7,7 @@ import {
   expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 
@@ -100,13 +101,19 @@ test.describe('Security and role-based access', () => {
   test('csrf basics: missing token is rejected for state-changing endpoints', async ({ page }) => {
     const creds = await registerOwnerAndReachDashboard(page, 'security-csrf');
 
+    // Both calls carry a valid Origin and NO csrf_token, so the 403 below can only
+    // come from the missing token — the point of this test. Without the header the
+    // middleware refuses these over HTTPS for the missing Origin instead, and the
+    // assertion passes while proving nothing about CSRF.
     const logoutNoCsrf = await page.request.delete('/api/v1/sessions/current', {
+      headers: apiOriginHeader(page),
       form: {},
       maxRedirects: 0,
     });
     expect(logoutNoCsrf.status()).toBe(403);
 
     const clearNoCsrf = await page.request.post('/api/v1/users/current/data-wipe', {
+      headers: apiOriginHeader(page),
       form: {},
       maxRedirects: 0,
     });
@@ -118,6 +125,7 @@ test.describe('Security and role-based access', () => {
     const csrfToken = await readCSRFToken(page);
 
     const clearWithCsrf = await page.request.post('/api/v1/users/current/data-wipe', {
+      headers: apiOriginHeader(page),
       form: {
         csrf_token: csrfToken,
         password: creds.password,
