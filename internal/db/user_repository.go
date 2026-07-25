@@ -579,7 +579,9 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"webhook_ovulation_last_sent_cycle_start": nil,
 			"reminder_lead_days":                      models.DefaultReminderLeadDays,
 			// Calendar (.ics) feed token: a clear-data wipe revokes the feed by
-			// NULLing both columns, so any previously-issued feed URL 404s against
+			// NULLing all three columns (selector plus both verifier columns —
+			// the MAC arrived with migration 032, after this comment was
+			// written), so any previously-issued feed URL 404s against
 			// the freshly emptied account (its selector no longer resolves). This
 			// is the data-reset arm of the approved force-rotate-on-recovery rule;
 			// the password-reset / operator-reset / recovery-regen force-rotate

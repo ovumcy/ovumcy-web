@@ -19,6 +19,6 @@ When enabled, these lines are visible to the operator through their container ru
 
 If you enable `AUDIT_LOG_ENABLED=true`, plan retention and access control around the persistent-identifier content (`user_id`, role). Treat the resulting log stream as the same sensitivity class as the database itself.
 
-The Fiber request log (`time | status | latency | method | path`) is independent of `AUDIT_LOG_ENABLED` and remains enabled in all configurations. It does not include `user_id` or authenticated-session metadata.
+The Fiber request log (`time | status | latency | method | path | error`) is independent of `AUDIT_LOG_ENABLED` and remains enabled in all configurations. It does not include `user_id` or authenticated-session metadata. Both of its potentially sensitive columns are sanitized before they are written: the path through `SafeRequestLogPath` (route template, opaque tokens masked) and the trailing error through `SafeLogError`, which masks emails and opaque tokens so a handler error string cannot carry an account identifier into the log.
 
 The startup banner reflects the current setting (`audit_log=true|false`) so operators can confirm the effective configuration on each boot.

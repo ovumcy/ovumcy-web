@@ -26,5 +26,6 @@ Operations that rotate a long-lived credential bump `users.auth_session_version`
 - Recovery-code regeneration (`POST /api/v1/users/current/recovery-code`) — the current request receives a freshly issued cookie so the originating session stays alive, but every other device is signed out.
 - Forced password reset via the `ovumcy reset-password` operator command.
 - TOTP 2FA enable (`PUT /api/v1/users/current/2fa`) and disable (`DELETE /api/v1/users/current/2fa`) — toggling the second factor is also a change to the account's auth posture, so any cookie issued before the toggle is invalidated. The originating device receives a freshly issued cookie inline; every other device is signed out.
+- Clear data (`POST /api/v1/users/current/data-wipe`) — the bump happens inside the same transaction as the wipe, so a stolen session that triggered the wipe cannot retain access to the emptied account, and a "panic clear" really does sign other devices out. The originating device is re-issued a cookie inline. See *Retention and Deletion*.
 
 If you suspect a session compromise, regenerating the recovery code is the fastest way to force every other device to re-authenticate without changing your password.
