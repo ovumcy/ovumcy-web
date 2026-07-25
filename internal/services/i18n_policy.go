@@ -6,18 +6,28 @@ import (
 )
 
 var authErrorTranslationKeys = map[string]string{
-	"invalid input":                                   "auth.error.invalid_input",
-	"consent required":                                "auth.error.consent_required",
-	"registration disabled":                           "auth.error.registration_disabled",
-	"invalid credentials":                             "auth.error.invalid_credentials",
-	"too many requests":                               "common.error.too_many_requests",
-	"common.error.too_many_requests":                  "common.error.too_many_requests",
-	"email already exists":                            "auth.error.email_exists",
-	"register pickup unavailable":                     "auth.error.post_register_signin",
-	"weak password":                                   "auth.error.weak_password",
-	"password mismatch":                               "auth.error.password_mismatch",
-	"invalid recovery code":                           "auth.error.invalid_recovery_code",
-	"too many recovery attempts":                      "auth.error.too_many_recovery_attempts",
+	"invalid input":                  "auth.error.invalid_input",
+	"consent required":               "auth.error.consent_required",
+	"registration disabled":          "auth.error.registration_disabled",
+	"invalid credentials":            "auth.error.invalid_credentials",
+	"too many requests":              "common.error.too_many_requests",
+	"common.error.too_many_requests": "common.error.too_many_requests",
+	"email already exists":           "auth.error.email_exists",
+	"register pickup unavailable":    "auth.error.post_register_signin",
+	"weak password":                  "auth.error.weak_password",
+	"password mismatch":              "auth.error.password_mismatch",
+	"invalid recovery code":          "auth.error.invalid_recovery_code",
+	"too many recovery attempts":     "auth.error.too_many_recovery_attempts",
+	// The 2FA challenge's locale entries live under the flat error.totp_* namespace
+	// (present in all six locales), unlike the auth.error.* keys around them. Kept
+	// under their own names rather than renamed: the translations are correct and
+	// the defect was that nothing mapped the spec keys onto them, so a wrong 2FA
+	// code rendered the raw English "totp invalid code" in every language.
+	"totp invalid code":      "error.totp_invalid_code",
+	"totp session expired":   "error.totp_session_expired",
+	"totp internal error":    "error.totp_internal_error",
+	"totp too many attempts": "error.totp_too_many_attempts",
+
 	"sso temporarily unavailable":                     "auth.error.sso_temporarily_unavailable",
 	"sso authentication failed":                       "auth.error.sso_authentication_failed",
 	"sso sign-in unavailable":                         "auth.error.sso_sign_in_unavailable",

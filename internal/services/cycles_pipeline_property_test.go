@@ -21,9 +21,17 @@ import (
 //
 // Every invariant is stated as the documented/intended contract from
 // docs/cycle-prediction.md and asserts only on RETURNED values, never on
-// rendered markup, logs, or error text. Invariants that fail are NOT weakened or
-// deleted: they are marked t.Skip with the minimal counterexample rapid found,
-// so the package stays green while the finding stays visible.
+// rendered markup, logs, or error text.
+//
+// A counterexample rapid finds is triaged, not parked. Earlier revisions of this
+// file kept failing invariants as t.Skip carrying the counterexample in their skip
+// message, which keeps the package green at the cost of a test that can no longer
+// fail — indistinguishable from coverage while asserting nothing. The two
+// dispositions are: if the invariant was merely mis-scoped, scope it correctly and
+// keep it running (invariant 14 states its scope and why); if the invariant was
+// simply false against the model, delete it and move the counterexample to
+// docs/cycle-prediction.md, where it documents behaviour instead of contradicting
+// it (see the note where invariant 8 used to be).
 
 // ----------------------------------------------------------------------------
 // Step 2 — reusable realistic cycle-history generator
@@ -325,70 +333,17 @@ func TestPipeline_NextPeriodMatchesFormula(t *testing.T) {
 	})
 }
 
-// Invariant 8: monotonicity — appending a new period start strictly LATER than
-// every existing one must not move the predicted next-period date EARLIER than
-// it was before the append.
-func TestPipeline_AppendingLaterStartDoesNotRegressPrediction(t *testing.T) {
-	t.Skip(`SKIPPED-BAD-INVARIANT: the invariant is too strong; it contradicts the
-documented averaging model and is NOT a product bug.
-
-Minimal counterexample (rapid, seed=15938856112565251252):
-  Two detected starts at 1990-01-01 and 1990-02-17 (gap 47 days).
-    before: predicted cycle length = avg([47]) = 47 -> next period
-            = 1990-02-17 + 47 = 1990-04-05.
-  Append a later start at 1990-03-04 (gap 15 from the prior start).
-    after: gaps = [47, 15], predicted cycle length = round(avg) = 31
-           -> next period = 1990-03-04 + 31 = 1990-04-04  (one day EARLIER).
-
-Why this is correct, not a bug: the next-period date is
-  lastPeriodStart + predictedCycleLength, where predictedCycleLength is the
-mean of recent observed cycle lengths (docs/cycle-prediction.md "Cycle length
-is the median of the user's observed completed cycles ... average"). Appending
-a much shorter recent cycle pulls that mean down. The forward shift of
-lastPeriodStart (+15) and the shrink of the estimate (47 -> 31) oppose; when
-the new gap is far below the running average, the estimate shrink wins and the
-absolute predicted date moves slightly earlier. That is the intended behaviour
-of an averaging predictor revising on fresh evidence. The invariant wrongly
-assumed monotonicity in the appended start while the cycle-length estimate is
-held fixed — but the model deliberately re-estimates it. Mis-stated invariant,
-left in place (skipped) per the brief rather than weakened.`)
-
-	rapid.Check(t, func(t *rapid.T) {
-		hist := drawCycleHistory(t)
-		before := BuildCycleStats(hist.logs, hist.now)
-		if before.NextPeriodStart.IsZero() || len(hist.startDates) == 0 {
-			return
-		}
-
-		// Append a fresh single-day period run strictly after the last logged
-		// period day, with a gap large enough to count as a new detected start.
-		lastDay := hist.logs[len(hist.logs)-1].Date
-		extraGap := rapid.IntRange(15, 60).Draw(t, "extraGap")
-		newStart := lastDay.AddDate(0, 0, extraGap)
-		extended := append([]models.DailyLog{}, hist.logs...)
-		extended = append(extended, models.DailyLog{
-			UserID: 1, Date: newStart, IsPeriod: true, CycleStart: true, Flow: models.FlowMedium,
-		})
-
-		// Evaluate both at a `now` on/after the appended day so neither is
-		// filtered. Use the same `now` for both so the only difference is the
-		// extra start.
-		now := newStart.AddDate(0, 0, 1)
-		beforeAtNow := BuildCycleStats(hist.logs, now)
-		afterAtNow := BuildCycleStats(extended, now)
-		if beforeAtNow.NextPeriodStart.IsZero() || afterAtNow.NextPeriodStart.IsZero() {
-			return
-		}
-		if afterAtNow.NextPeriodStart.Before(beforeAtNow.NextPeriodStart) {
-			t.Fatalf("appending later start %s moved prediction earlier: before=%s after=%s\nbeforeMedian=%d beforeAvg=%.3f afterMedian=%d afterAvg=%.3f",
-				newStart.Format("2006-01-02"),
-				beforeAtNow.NextPeriodStart.Format("2006-01-02"),
-				afterAtNow.NextPeriodStart.Format("2006-01-02"),
-				beforeAtNow.MedianCycleLength, beforeAtNow.AverageCycleLength,
-				afterAtNow.MedianCycleLength, afterAtNow.AverageCycleLength)
-		}
-	})
-}
+// Invariant 8 used to live here: "appending a period start later than every
+// existing one never moves the predicted next-period date earlier". It was FALSE
+// against the documented model and was removed rather than left as a permanent
+// skip. Logging a new start advances the anchor and simultaneously re-estimates
+// the cycle length from the new observation; when the fresh cycle is much shorter
+// than the running estimate, the shrinking estimate outweighs the advancing
+// anchor and the absolute date moves slightly earlier. The counterexample and the
+// reasoning now live in docs/cycle-prediction.md ("Assumptions and limitations"),
+// where they describe product behaviour instead of asserting its opposite. The
+// contract that IS true — the projection equals anchor + predicted length — is
+// pinned by TestPipeline_NextPeriodMatchesFormula above.
 
 // Invariant 9: ovulation falls strictly between lastPeriodStart and the
 // predicted next-period start.
@@ -563,43 +518,25 @@ func TestPipeline_DateAtLocationIdempotentMidnight(t *testing.T) {
 	})
 }
 
-// Invariant 14: predictions over the same midnight-UTC history yield the same
-// CALENDAR dates regardless of a non-UTC display location. ApplyUserCycleBaseline
-// is the location-aware path; its derived calendar dates (next period, ovulation,
-// fertility window) must read the same YYYY-MM-DD under any display location
-// because the stored history is calendar-only (CalendarDay must not shift it).
+// Invariant 14: for an instant that is unambiguously past the history in every
+// display location, ApplyUserCycleBaseline derives the same CALENDAR dates (last
+// period start, next period, ovulation, fertility window) regardless of that
+// location, because the stored history is calendar-only and CalendarDay must not
+// shift it.
+//
+// The margin below is what makes the invariant true rather than a way to dodge a
+// bug. Only ONE of the compared fields is "today"-dependent: LastPeriodStart is
+// gated on `anchor <= local today`, and local today for a fixed instant legitimately
+// differs by a day across zones. At the UTC-midnight edge that gate is the whole
+// behaviour of DateAtLocation, not a defect — with a single period day on
+// 1990-01-01 and now = 1990-01-01T00:00Z, UTC reads today as 1990-01-01 and
+// anchors on it, while UTC-8 reads 1989-12-31 and correctly treats the period as
+// still in that user's future. Two calendar days of margin puts the anchor behind
+// local today in every zone (the widest zone here shifts by 13h), so what remains
+// under test is the calendar stability of the derived dates. The projected half
+// (applyProjectedBaseline) never reads today at all, so it is fully covered.
+// Invariant 13 covers the midnight-boundary semantics themselves.
 func TestPipeline_BaselinePredictionCalendarStableAcrossLocations(t *testing.T) {
-	t.Skip(`SKIPPED-BAD-INVARIANT: the invariant is too strong for the location-aware
-baseline; the discrepancy it finds is intended "today" semantics, NOT a
-stored-history calendar shift, so it is not a product bug.
-
-Minimal counterexample (rapid, seed=11639276684342759464):
-  History: a single period day at 1990-01-01 (CycleStart=true).
-  now = 1990-01-01 00:00:00 UTC (exactly UTC-midnight of that day).
-    ApplyUserCycleBaseline(..., time.UTC):  LastPeriodStart = 1990-01-01.
-    ApplyUserCycleBaseline(..., UTC-8):     LastPeriodStart = <zero>.
-
-Why this is correct, not a bug. ApplyUserCycleBaseline derives local "today"
-from the instant now via DateAtLocation (correct for an instant-typed value).
-now.In(UTC-8) of 1990-01-01T00:00Z is 1989-12-31T16:00-08:00, so local today is
-1989-12-31. latestExplicitCycleStartBeforeOrOn gates the anchor on <= today, and
-a period dated 1990-01-01 is genuinely in that user's FUTURE at that instant, so
-it is correctly excluded. Under UTC the same instant is still 1990-01-01, so the
-period counts. The two calls model two different local "today"s for the same
-instant — that divergence is the entire purpose of DateAtLocation and is exactly
-the behaviour the dateOnly/CalendarDay doc comments describe.
-
-Verified the trigger is ONLY this same-day UTC-midnight boundary: with now given
-a >=1 day margin past the last period, UTC and UTC-8 produce identical calendar
-dates (LastPeriodStart and NextPeriodStart both match at margins 1/2/5/10 days).
-The stored-history calendar values themselves do NOT shift across timezones —
-that contract holds and is independently asserted by invariant 13
-(TestPipeline_DateAtLocationIdempotentMidnight) and by BuildCycleStats being
-location-independent. The invariant conflated "stored dates are tz-stable"
-(true) with "the today-gated baseline is tz-invariant for a fixed instant"
-(intentionally false at the day boundary). Mis-stated invariant, left in place
-(skipped) per the brief rather than re-scoped to pass.`)
-
 	locations := []*time.Location{
 		time.FixedZone("UTC+9", 9*3600),
 		time.FixedZone("UTC-8", -8*3600),
@@ -615,9 +552,14 @@ location-independent. The invariant conflated "stored dates are tz-stable"
 			LutealPhase:  defaultLutealPhaseDays,
 		}
 
+		// drawCycleHistory may put `now` exactly on the last logged day at
+		// UTC-midnight; push it past the zone spread so "today" is the same
+		// calendar day or later everywhere.
+		now := hist.now.AddDate(0, 0, 2)
+
 		// Baseline computed in UTC is the reference.
-		baseStats := BuildCycleStats(hist.logs, hist.now)
-		utc := ApplyUserCycleBaseline(user, hist.logs, baseStats, hist.now, time.UTC)
+		baseStats := BuildCycleStats(hist.logs, now)
+		utc := ApplyUserCycleBaseline(user, hist.logs, baseStats, now, time.UTC)
 
 		key := func(d time.Time) string {
 			if d.IsZero() {
@@ -627,7 +569,7 @@ location-independent. The invariant conflated "stored dates are tz-stable"
 		}
 
 		for _, loc := range locations {
-			locStats := ApplyUserCycleBaseline(user, hist.logs, BuildCycleStats(hist.logs, hist.now), hist.now, loc)
+			locStats := ApplyUserCycleBaseline(user, hist.logs, BuildCycleStats(hist.logs, now), now, loc)
 			for _, pair := range []struct {
 				name string
 				a, b time.Time
