@@ -200,7 +200,13 @@ jobs:
 
       - name: Upload coverage to Codecov
         id: codecov
-        continue-on-error: ${{ github.event_name == 'push' }}
+        # Tolerate a Codecov ingest failure on push AND on workflow_dispatch. The
+        # gate that actually protects coverage is the local patch-coverage job
+        # below; Codecov's own statuses are informational and no `codecov/*` check
+        # is required on main. Without workflow_dispatch here, re-running a green
+        # run by hand can fail on the very external flake the push path already
+        # forgives — the same failure mode, judged differently for no reason.
+        continue-on-error: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage.out
@@ -214,8 +220,8 @@ jobs:
           use_pypi: true
 
       - name: Warn on non-blocking Codecov failure
-        if: ${{ github.event_name == 'push' && steps.codecov.outcome == 'failure' }}
-        run: echo "::warning::Codecov upload failed on push. Coverage artifact was generated successfully, but Codecov ingest returned an external error."
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.codecov.outcome == 'failure' }}
+        run: echo "::warning::Codecov upload failed on ${{ github.event_name }}. Coverage artifact was generated successfully, but Codecov ingest returned an external error."
 
   patch-coverage:
     runs-on: ubuntu-latest
