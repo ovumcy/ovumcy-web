@@ -22,7 +22,7 @@ Ovumcy's OIDC support is optional, but the contract is broader than the first hy
 - sign-in uses server-side Authorization Code + PKCE; `OIDC_RESPONSE_MODE=form_post` (the default) has the provider auto-POST the code, while `OIDC_RESPONSE_MODE=query` is an opt-in for providers that can only return the code as a URL query redirect (see [Response mode](#response-mode));
 - `OIDC_LOGIN_MODE=hybrid` keeps local username/password available alongside SSO;
 - `OIDC_LOGIN_MODE=oidc_only` removes public local login, register, and forgot-password entry points from the browser UX;
-- the first successful OIDC sign-in uses an existing `(issuer, subject)` link when present, otherwise it falls back to a verified email match;
+- the first successful OIDC sign-in uses an existing `(issuer, subject)` link when present; a verified email claim that matches an existing local account does **not** link automatically — Ovumcy asks for that account's own password (plus its TOTP code when 2FA is on) before storing the link, because otherwise any provider able to assert someone's email address could take over their account;
 - `OIDC_AUTO_PROVISION=true` may create a new `owner` account only when `REGISTRATION_MODE=open`;
 - `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` can restrict auto-provisioning to a comma-separated domain allowlist;
 - auto-provisioned accounts start without a local password or recovery code;
@@ -70,9 +70,9 @@ Notes:
 3. The identity provider authenticates the user and returns the browser to `/auth/oidc/callback` — an auto-POST of the `code` and `state` in the request body (`form_post`, the default) or a `GET` redirect carrying them in the URL query (`query`). Ovumcy reads the callback from exactly one source keyed by the mode; it never reads both.
 4. Ovumcy validates the sealed state, exchanges the authorization code for tokens, and verifies the ID token plus `nonce`.
 5. If the `(issuer, subject)` identity link already exists, the linked local account is used immediately.
-6. Otherwise, Ovumcy checks for a verified email match against an existing local account.
-7. If no account exists and auto-provisioning is enabled, Ovumcy can create a new `owner` account, subject to `REGISTRATION_MODE=open` and any configured domain allowlist.
-8. Ovumcy finishes sign-in by issuing the normal local `ovumcy_auth` session cookie.
+6. Otherwise, if a verified email claim matches an existing local account, Ovumcy **neither links the two nor signs the user in**. It redirects to `/auth/oidc/link-confirm` and requires that account's own password — plus a valid TOTP code when the account has 2FA enabled — before the `(issuer, subject)` link is stored. The pending link is held in a sealed `HttpOnly` cookie with a five-minute TTL; a wrong password leaves it intact so the user can retry inside that window, and the link is refused outright if another account claimed the same `(issuer, subject)` in the meantime. Without this gate, any provider able to assert an existing user's email address could take over their account.
+7. If no account exists and auto-provisioning is enabled, Ovumcy can create a new `owner` account, subject to `REGISTRATION_MODE=open` and any configured domain allowlist. A brand-new account has nothing to take over, so no confirmation applies.
+8. Ovumcy finishes sign-in by issuing the normal local `ovumcy_auth` session cookie — after the step-6 confirmation, where that applied.
 
 Provider and auth errors are intentionally kept out of query strings and fragments. Browser-facing failures return through the existing flash-based login UX instead. (In `query` response mode the provider itself puts the successful `code`/`state` in the callback URL — see [Response mode](#response-mode) — but Ovumcy still never emits its own error state into a URL.)
 
@@ -347,6 +347,29 @@ Check:
 - `REGISTRATION_MODE=open`;
 - the provider marks the email as verified;
 - `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` is empty, or the email domain is listed there exactly.
+
+### After signing in with SSO, the user is asked for their Ovumcy password
+
+This is the account-link confirmation, not a failure. It appears once for each new
+provider identity being attached to an existing account: the provider asserted an
+email that matches an existing local account, and
+Ovumcy refuses to link a fresh `(issuer, subject)` to an existing account on the
+strength of an email claim alone. The user enters that account's own password (plus
+its TOTP code when 2FA is on), the link is stored, and every later SSO sign-in goes
+straight through.
+
+Things worth knowing before treating it as a bug:
+
+- The pending link expires after **five minutes**. Past that the user starts the SSO
+  flow again.
+- A wrong password does **not** cancel the flow — the pending link survives for a
+  retry inside the same window, and the attempt draws on the ordinary login failure
+  budget, so repeated wrong guesses are rate-limited.
+- An OIDC-only account (`local_auth_enabled=false`) has no password to confirm with,
+  so this path refuses it rather than prompting. Such an account is linked by its
+  own `(issuer, subject)` from the start and never reaches this page.
+- There is no configuration switch that skips the confirmation. Auto-linking by
+  asserted email is the account-takeover vector the gate exists to close.
 
 ### The user can sign in but cannot regenerate a recovery code or use password-confirmed danger-zone actions
 
