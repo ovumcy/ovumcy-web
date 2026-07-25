@@ -158,25 +158,35 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   ]);
 }
 
+/**
+ * The one header a direct API call needs before the CSRF middleware will accept
+ * it. Spread it into whatever headers the call already sends — the caller keeps
+ * its own `X-CSRF-Token`, `Content-Type`, `HX-Request` and so on.
+ *
+ * Why it is needed at every `page.request.*` site: the middleware validates
+ * `Origin` against the app-observed scheme+host on every mutating request, and an
+ * API call sends none of its own — it is not a browser navigation. Plain HTTP has
+ * nothing to compare and lets it through; HTTPS answers **403**. The harness
+ * serves over TLS whenever `COOKIE_SECURE=true`, `E2E_USE_HTTPS_PROXY=true`, or
+ * `E2E_OIDC_PROVIDER=local`, so a missing Origin turns into a pile of failures in
+ * specs whose subject is something else entirely.
+ */
+export function apiOriginHeader(page: Page): Record<string, string> {
+  return { Origin: new URL(page.url()).origin };
+}
+
 export async function logoutViaAPI(page: Page): Promise<void> {
   const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute('content');
   expect(csrfToken).toBeTruthy();
 
-  // The CSRF middleware validates the request Origin against the app-observed
-  // scheme+host on every mutating request, and page.request.delete() sends no
-  // Origin of its own — it is an API call, not a browser navigation. Over plain
-  // HTTP the middleware had nothing to compare and let it through; over HTTPS the
-  // missing Origin is a 403.
-  //
-  // That mattered more than it looks: the harness switches to its TLS terminator
-  // on COOKIE_SECURE=true, E2E_USE_HTTPS_PROXY=true, OR E2E_OIDC_PROVIDER=local,
-  // so every spec that logs out this way failed the moment any of those was set —
-  // which is why the suite had never run against the HTTPS posture the public
-  // deployment profile recommends, and why enabling the OIDC lane appeared to
-  // break thirty-odd unrelated tests.
+  // Origin is required over HTTPS — see apiOriginHeader above. This helper is the
+  // one that made the gap visible: every spec that logs out through it failed the
+  // moment the harness switched to TLS, which is why the suite had never run
+  // against the HTTPS posture the public deployment profile recommends, and why
+  // enabling the OIDC lane appeared to break thirty-odd unrelated tests.
   const response = await page.request.delete('/api/v1/sessions/current', {
+    headers: apiOriginHeader(page),
     form: { csrf_token: csrfToken ?? '' },
-    headers: { Origin: new URL(page.url()).origin },
     maxRedirects: 0,
   });
 
