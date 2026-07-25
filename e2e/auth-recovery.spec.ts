@@ -15,6 +15,7 @@ import {
   requestSubmitForm,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 
 test.describe('Auth: recovery and reset password', () => {
@@ -246,7 +247,11 @@ test.describe('Auth: recovery and reset password', () => {
     await registerOwnerViaUI(page, creds);
     const recoveryCode = await readRecoveryCode(page);
 
+    // Valid Origin, no csrf_token: the 403 has to be the missing token. Drop the
+    // header and HTTPS refuses it for the missing Origin instead, which would keep
+    // this assertion green while it stopped testing CSRF.
     const csrfFailure = await page.request.delete('/api/v1/sessions/current', {
+      headers: apiOriginHeader(page),
       form: {},
       maxRedirects: 0,
     });

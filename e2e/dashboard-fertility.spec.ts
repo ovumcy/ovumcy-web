@@ -6,6 +6,7 @@ import {
   expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { openCalendarDayEditor, todayISOFromDashboard } from './support/stats-helpers';
@@ -121,6 +122,7 @@ test.describe('Dashboard: fertility badge', () => {
     async function savePeriodDay(isoDate: string) {
       return page.request.put(`/api/v1/days/${isoDate}`, {
         headers: {
+          ...apiOriginHeader(page),
           'X-CSRF-Token': await csrfToken(),
           'HX-Request': 'true',
           'Accept-Language': 'en',
