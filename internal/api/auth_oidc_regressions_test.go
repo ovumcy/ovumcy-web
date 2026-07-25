@@ -824,6 +824,62 @@ func TestCompleteOIDCLinkConfirmationKeepsCookieOnWrongPassword(t *testing.T) {
 	}
 }
 
+// TestShowOIDCLinkConfirmPageRendersLocalizedFlashError closes the render half of
+// the wrong-password path above: the existing tests stop at the flash payload,
+// which carries the error SPEC key, and the page used to hand that key straight
+// to the template. Since the template translates ErrorKey and an unknown key
+// comes back unchanged, the page displayed the raw English "sso link confirmation
+// invalid password" to every language while the localized entries sat unused.
+func TestShowOIDCLinkConfirmPageRendersLocalizedFlashError(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  newStubOIDCWorkflowService(true),
+	})
+	user := createOnboardingTestUser(t, database, "link-flash-render@example.com", "StrongPass1", true)
+
+	pendingPayload, err := newOIDCLinkPendingPayload(time.Now().UTC(), user.ID, "https://idp.example", "subject-flash-render", user.Email)
+	if err != nil {
+		t.Fatalf("newOIDCLinkPendingPayload: %v", err)
+	}
+	pendingCookie := oidcLinkPendingCookieName + "=" + sealLinkPendingCookieForTest(t, pendingPayload)
+
+	postRequest := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
+		"password": {"WrongPass2"},
+	}.Encode()))
+	postRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postRequest.Header.Set("Cookie", pendingCookie)
+
+	postResponse := mustAppResponse(t, app, postRequest)
+	assertStatusCode(t, postResponse, http.StatusSeeOther)
+	flashCookie := responseCookie(postResponse.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected flash cookie with invalid-password error")
+	}
+
+	getRequest := httptest.NewRequest(http.MethodGet, oidcLinkConfirmPath, nil)
+	getRequest.Header.Set("Accept-Language", "en")
+	getRequest.Header.Set("Cookie", joinCookieHeader(pendingCookie, cookiePair(flashCookie)))
+
+	getResponse := mustAppResponse(t, app, getRequest)
+	assertStatusCode(t, getResponse, http.StatusOK)
+	body := mustReadBodyString(t, getResponse.Body)
+
+	specKey := authOIDCLinkConfirmInvalidPasswordErrorSpec().Key
+	localeKey := services.AuthErrorTranslationKey(specKey)
+	if localeKey == "" {
+		t.Fatalf("error spec %q has no locale mapping — the page cannot localize it", specKey)
+	}
+	errorBlock := htmlAuthErrorByKey(mustParseHTMLDocument(t, body), localeKey)
+	if errorBlock == nil {
+		t.Fatalf("expected the link-confirm page to report the error under the locale key %s after a wrong password", localeKey)
+	}
+	if message := normalizeHTMLText(htmlNodeText(errorBlock)); strings.Contains(message, specKey) {
+		t.Fatalf("link-confirm page rendered the raw error spec key as its message: %q", message)
+	}
+}
+
 func TestCompleteOIDCLinkConfirmationWithEmptyPasswordFlashesInvalidPassword(t *testing.T) {
 	t.Parallel()
 
