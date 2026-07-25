@@ -166,6 +166,17 @@ indicative, not diagnostic.
 - Accuracy degrades sharply for irregular or very short/long cycles.
 - The model is **not** a fertility-awareness contraceptive method (which require
   trained tracking of multiple biomarkers).
+- **A newly logged period can move the predicted next-period date slightly
+  earlier.** The projection is `last period start + predicted cycle length`, and
+  logging a new start advances *both* terms: the anchor moves forward, and the new
+  observed cycle re-estimates the length. When the fresh cycle is much shorter
+  than the running estimate, the shrinking estimate outweighs the advancing
+  anchor. Two starts on 1990-01-01 and 1990-02-17 give a single observed cycle of
+  47 days, so the prediction is 1990-04-05. Logging a third start on 1990-03-04
+  adds a 15-day cycle; the median of `[15, 47]` is 31, so the prediction becomes
+  1990-03-04 + 31 = 1990-04-04 — one day earlier than before. This is the
+  intended behaviour of an estimator revising on new evidence, not a regression:
+  the model deliberately re-estimates cycle length instead of holding it fixed.
 
 ## Physiological basis
 
