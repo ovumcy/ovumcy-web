@@ -84,8 +84,11 @@ func (handler *Handler) ShowOIDCLinkConfirmPage(c fiber.Ctx) error {
 	flash := handler.popFlashCookie(c)
 	messages := currentMessages(c)
 	data := fiber.Map{
-		"Title":        localizedPageTitle(messages, "auth.oidc.link_confirm.title", "Ovumcy | Confirm OIDC link"),
-		"ErrorKey":     flash.AuthError,
+		"Title": localizedPageTitle(messages, "auth.oidc.link_confirm.title", "Ovumcy | Confirm OIDC link"),
+		// Same resolution the other auth pages perform: the flash holds the error
+		// spec key, the template translates ErrorKey, so the spec key has to become
+		// a locale key here or the page renders it verbatim.
+		"ErrorKey":     services.AuthErrorTranslationKey(services.ResolveAuthErrorSource(flash.AuthError)),
 		"TargetEmail":  payload.Email,
 		"TOTPRequired": totpRequired,
 	}

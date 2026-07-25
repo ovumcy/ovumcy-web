@@ -275,8 +275,13 @@ func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 	followResp := mustAppResponse(t, app, follow)
 	defer func() { _ = followResp.Body.Close() }()
 	rendered := mustReadBodyString(t, followResp.Body)
-	if htmlAuthErrorByKey(mustParseHTMLDocument(t, rendered), "totp invalid code") == nil {
-		t.Fatalf("expected the invalid-code error on the challenge page; a request that never reached verification carries a session-expired flash instead, with an identical status and destination")
+	// The page reports the error by its LOCALE key: the flash carries the error
+	// spec key ("totp invalid code") and the page resolves it through
+	// AuthErrorTranslationKey before rendering, so the observable hook is
+	// error.totp_invalid_code. Keyed off the spec so the two cannot drift.
+	invalidCodeKey := services.AuthErrorTranslationKey(totpInvalidCodeErrorSpec().Key)
+	if htmlAuthErrorByKey(mustParseHTMLDocument(t, rendered), invalidCodeKey) == nil {
+		t.Fatalf("expected the invalid-code error (%s) on the challenge page; a request that never reached verification carries a session-expired flash instead, with an identical status and destination", invalidCodeKey)
 	}
 }
 
@@ -367,6 +372,72 @@ func TestVerifyTOTPLogin_ReplayCode_Rejected(t *testing.T) {
 
 	if c := responseCookie(resp2.Cookies(), authCookieName); c != nil && c.Value != "" {
 		t.Error("replayed code must not issue a new auth cookie — replay protection failed")
+	}
+}
+
+// TestVerifyTOTPLogin_InvalidCodeRendersLocalizedErrorNotTheSpecKey walks the
+// real browser path of a wrong 2FA code — form POST, flash cookie, redirect back
+// to the challenge page — and pins that the page renders a LOCALIZED message.
+//
+// The challenge page used to pass the flash value (the error spec key) straight
+// into ErrorKey, and the template translates whatever ErrorKey holds; an unknown
+// key comes back unchanged from translateMessage, so every user in every language
+// was shown the literal string "totp invalid code". Nothing failed: the four
+// error.totp_* locale entries existed all along, unreferenced.
+func TestVerifyTOTPLogin_InvalidCodeRendersLocalizedErrorNotTheSpecKey(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-i18n@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+
+	pending := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+	challengeResponse := doTOTPChallengeRequest(t, app, joinCookieHeader(pending, csrfCookieHeader), "000000", csrfToken)
+	flashCookie := responseCookie(challengeResponse.Cookies(), flashCookieName)
+	status := challengeResponse.StatusCode
+	_ = challengeResponse.Body.Close()
+
+	if status != http.StatusSeeOther {
+		t.Fatalf("wrong code status = %d, want 303 (flash redirect back to the challenge page)", status)
+	}
+	if flashCookie == nil || flashCookie.Value == "" {
+		t.Fatal("expected the wrong code to set a flash cookie — the rest of this test has no premise without it")
+	}
+
+	specKey := totpInvalidCodeErrorSpec().Key
+	localeKey := services.AuthErrorTranslationKey(specKey)
+	if localeKey == "" {
+		t.Fatalf("error spec %q has no locale mapping — the page cannot localize it", specKey)
+	}
+
+	rendered := map[string]string{}
+	for _, language := range []string{"en", "ru"} {
+		request := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
+		request.Header.Set("Accept-Language", language)
+		request.Header.Set("Cookie", joinCookieHeader(pending, cookiePair(flashCookie)))
+
+		response := mustAppResponse(t, app, request)
+		body := mustReadBodyString(t, response.Body)
+		_ = response.Body.Close()
+
+		errorBlock := htmlAuthErrorByKey(mustParseHTMLDocument(t, body), localeKey)
+		if errorBlock == nil {
+			t.Fatalf("expected the challenge page (%s) to report the error under the locale key %s after a wrong code", language, localeKey)
+		}
+		message := normalizeHTMLText(htmlNodeText(errorBlock))
+		if strings.Contains(message, specKey) {
+			t.Fatalf("challenge page (%s) rendered the raw error spec key as its message: %q", language, message)
+		}
+		if message == "" {
+			t.Fatalf("challenge page (%s) rendered an empty error message", language)
+		}
+		rendered[language] = message
+	}
+
+	// Two languages resolving to the same string would mean the lookup is not
+	// reaching the locale files at all — the failure mode this test exists for.
+	if rendered["en"] == rendered["ru"] {
+		t.Fatalf("expected per-language messages, got the same string for en and ru: %q", rendered["en"])
 	}
 }
 
