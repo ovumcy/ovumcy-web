@@ -26,6 +26,10 @@ type dayserviceCovUserStub struct {
 	loadErr   error
 	updateErr error
 
+	// updateCalls counts UpdateByID calls so a test can assert a guard wrote
+	// nothing, rather than only that it did not panic.
+	updateCalls int
+
 	// AcknowledgePeriodTip persistence capture.
 	shownPeriodTipPersisted bool
 	shownPeriodTipValue     bool
@@ -39,6 +43,7 @@ func (s *dayserviceCovUserStub) LoadSettingsByID(context.Context, uint) (models.
 }
 
 func (s *dayserviceCovUserStub) UpdateByID(ctx context.Context, _ uint, updates map[string]any) error {
+	s.updateCalls++
 	if s.updateErr != nil {
 		return s.updateErr
 	}
@@ -550,40 +555,53 @@ func TestDayService_ClearCompetingCycleStarts_ClearsIsUncertain(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Line 667 — refreshDerivedCycleSettings: nil guard (side-effect function)
+// refreshDerivedCycleSettings: nil guard (side-effect function)
 //
 // The nil guard (service == nil || service.users == nil || service.logs == nil)
-// protects against panics. A mutant removing it would cause a nil-dereference.
-// We can test the observable behavior: calling the function on a service with
-// nil users must not panic and must not attempt any DB write.
+// protects against a nil dereference, so surviving the call at all already kills
+// the mutant that removes it. That is not the whole claim: the two tests below
+// assert the guard is also a NO-OP — no log read, no settings write — because
+// "did not panic" is equally true of a guard that fell through and did the work
+// against a live dependency.
 //
-// We cannot easily create service == nil (method on nil pointer would require
-// a pointer receiver trick that's implementation-dependent). Instead test the
-// users==nil and logs==nil branches by constructing a service with those fields.
+// service == nil is not constructed here: reaching it needs a typed-nil receiver
+// call, which is an implementation detail of the call sites rather than a state a
+// caller can produce. The users==nil and logs==nil branches are built directly.
 // ---------------------------------------------------------------------------
 
-// TestDayService_RefreshDerivedCycleSettings_NilUsersNoOp verifies that
-// refreshDerivedCycleSettings is a no-op when service.users is nil, and does
-// not panic.
+// TestDayService_RefreshDerivedCycleSettings_NilUsersNoOp verifies the nil-users
+// guard returns BEFORE touching the log repository — the "no-op" its name claims,
+// not merely the absence of a panic. Surviving the call proves the guard exists
+// (removing it nil-derefs); the listCalls assertion proves the guard is the reason
+// nothing happened.
 func TestDayService_RefreshDerivedCycleSettings_NilUsersNoOp(t *testing.T) {
-	// Build a service with nil users to trigger the nil-guard early return.
+	logs := newDayLogRepositoryStub()
 	service := &DayService{
-		logs:  newDayLogRepositoryStub(),
+		logs:  logs,
 		users: nil,
 	}
-	// Must not panic.
+
 	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
+
+	if logs.listCalls != 0 {
+		t.Fatalf("expected the nil-users guard to return before reading logs, got %d ListByUser call(s)", logs.listCalls)
+	}
 }
 
-// TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp verifies that
-// refreshDerivedCycleSettings is a no-op when service.logs is nil, and does
-// not panic.
+// TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp is the same for the
+// nil-logs guard: no settings write may be attempted.
 func TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
+	users := &dayserviceCovUserStub{}
 	service := &DayService{
 		logs:  nil,
-		users: &dayserviceCovUserStub{},
+		users: users,
 	}
+
 	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
+
+	if users.updateCalls != 0 {
+		t.Fatalf("expected the nil-logs guard to write nothing, got %d UpdateByID call(s)", users.updateCalls)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -600,20 +618,30 @@ func TestDayService_RefreshDerivedCycleSettings_NilLogsNoOp(t *testing.T) {
 // NilXNoOp tests above. The happy path is smoke-tested below.
 // ---------------------------------------------------------------------------
 
-// TestDayService_RefreshDerivedCycleSettings_EmptyLogSetNoPanic is a happy-path
-// smoke test: with a valid users/logs pair and no stored logs,
-// refreshDerivedCycleSettings must run to completion without panicking. The
-// list-error branch is not injectable through dayLogRepositoryStub (no
-// ListByUser error hook), and the nil-guard early returns are covered by the
-// two NilXNoOp tests above.
-func TestDayService_RefreshDerivedCycleSettings_EmptyLogSetNoPanic(t *testing.T) {
+// TestDayService_RefreshDerivedCycleSettings_EmptyLogSetPersistsDefaultLutealPhase
+// drives the happy path with no stored logs, where the luteal inference cannot
+// conclude anything: the refresh must still persist the DEFAULT luteal phase.
+//
+// This replaces a version whose only assertion was "did not panic" — which held
+// equally for a refresh that read the logs and then wrote nothing at all. The
+// list-error branch remains uninjectable through dayLogRepositoryStub (no
+// ListByUser error hook); the nil-guard early returns are covered above.
+func TestDayService_RefreshDerivedCycleSettings_EmptyLogSetPersistsDefaultLutealPhase(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayserviceCovUserStub{settings: models.User{PeriodLength: 5}}
 	service := dayserviceCovNewService(logs, users)
 
-	// Empty log set: exercises the normal control flow to completion.
 	service.refreshDerivedCycleSettings(context.Background(), 10, time.UTC)
-	// Reaching here without a panic is the assertion.
+
+	if logs.listCalls != 1 {
+		t.Fatalf("expected the refresh to read the log set exactly once, got %d call(s)", logs.listCalls)
+	}
+	if users.updateCalls != 1 {
+		t.Fatalf("expected the refresh to persist exactly one settings update, got %d", users.updateCalls)
+	}
+	if users.settings.LutealPhase != defaultLutealPhaseDays {
+		t.Fatalf("expected the default luteal phase %d to be persisted when inference has no data, got %d", defaultLutealPhaseDays, users.settings.LutealPhase)
+	}
 }
 
 // ---------------------------------------------------------------------------
