@@ -134,33 +134,19 @@ func TestDashboardCycleHeroOvulationDayOneMoreThanPeriodPlusOneRendersOK(t *test
 	}
 }
 
-// TestDashboardCycleHeroOvulationDayEqualsCycleLengthReturnsInvisible pins
-// the right-side boundary of the OR at line 60.
-// Mutant: change > to >= would also kill this.
-func TestDashboardCycleHeroOvulationDayEqualsCycleLengthReturnsInvisible(t *testing.T) {
-	// cycle=28, luteal=0 → CalcOvulationDay resolves luteal to default (14) → ovDay=14
-	// We need ovDay == cycleLength: cycle=10, luteal=0 → resolved luteal min → ovDay depends.
-	// Use cycle=10, luteal=9 → resolvedLuteal = min(9, 10-1=9)=9 → ovDay=10-9=1 which is <minOvulationCycleDay
-	// Let's directly compute: need ovDay == cycleLength.
-	// For cycle=16, luteal=1 (resolvedLuteal=max(minLuteal,1)) – need to check ResolveLutealPhase.
-	// Safest: use a cycle where ovDay would equal cycleLength by working through CalcOvulationDay.
-	// CalcOvulationDay(28, luteal): ovDay = 28 - resolvedLuteal; for ovDay=28 need luteal=0.
-	// ResolveLutealPhase(0) might return a default. Let's check differently.
-	// We'll use a direct-check: AverageCycleLength=28, AveragePeriodLength=2,
-	// and LutealPhase=0 (to force default resolution by CalcOvulationDay).
-	// The unit test for CalcOvulationDay will tell us what happens.
-	// Actually, we can just observe: if ovDay > cycleLength, hero is invisible.
-	// We can manufacture this by making cycle short and period short:
-	// cycle=14, period=2, luteal=14 → maxSupportedLuteal = 14-1=13 → resolvedLuteal=13 → ovDay=14-13=1
-	// That's ≤ periodLength+1=3 → hits left side. Not useful for right side.
-	//
-	// For the right-side test (ovDay > cycleLength): CalcOvulationDay caps ovDay at cycleLen-resolvedLuteal.
-	// ovDay > cycleLength requires luteal < 0, which can't happen in valid inputs.
-	// So ovDay > cycleLength is a purely defensive guard that cannot be triggered by
-	// CalcOvulationDay's contract — this path is equivalent/unreachable.
-	// We skip this specific boundary and test the left boundary carefully above.
-	t.Skip("ovulationDay > cycleLength cannot be triggered by CalcOvulationDay contract; equivalent guard")
-}
+// The right-hand side of the same OR — `ovulationDay > cycleLength` in
+// dashboardCycleHero's visibility guard — is deliberately left without a test.
+// It is unreachable: CalcOvulationDay returns `cycleLen - resolvedLutealPhase`,
+// and ResolveLutealPhase never yields less than minLutealPhaseDays, so the
+// ovulation day is at most `cycleLength - minLutealPhaseDays` — always well below
+// cycleLength. (The failure returns of CalcOvulationDay give 0, which the
+// left-hand side of the OR catches.) Manufacturing the state the guard defends
+// against would take a negative luteal phase, which no input path produces, so a
+// test for it would assert an impossible world. A test named for this boundary
+// used to stand here and check nothing — a bare skip under a name claiming an
+// asserted invariant, which is worse than its absence because it read as
+// coverage. The guard stays as defence in depth; its boundary mutant is an
+// equivalent mutant and is documented here instead of killed.
 
 // ---------------------------------------------------------------------------
 // SURVIVING — line 77: float64(currentDay)-0.5
