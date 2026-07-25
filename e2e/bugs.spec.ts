@@ -15,6 +15,7 @@ import {
   expectInlineRegisterRecoveryStep,
   readRecoveryCode,
   registerOwnerViaUI,
+  apiOriginHeader,
 } from './support/auth-helpers';
 
 function shiftISODate(iso: string, days: number): string {
@@ -180,6 +181,7 @@ test.describe('Bug regressions', () => {
       // we set in cycle settings below.
       const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
       const clearResponse = await page.request.post('/api/v1/users/current/data-wipe', {
+        headers: apiOriginHeader(page),
         form: {
           csrf_token: csrfToken,
           password: creds.password,
@@ -246,6 +248,7 @@ test.describe('Bug regressions', () => {
 
       const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
       const clearResponse = await page.request.post('/api/v1/users/current/data-wipe', {
+        headers: apiOriginHeader(page),
         form: {
           csrf_token: csrfToken,
           password: creds.password,
@@ -327,6 +330,7 @@ test.describe('Bug regressions', () => {
 
       const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
       const clearResponse = await page.request.post('/api/v1/users/current/data-wipe', {
+        headers: apiOriginHeader(page),
         form: {
           csrf_token: csrfToken,
           password: creds.password,
@@ -375,6 +379,7 @@ test.describe('Bug regressions', () => {
       const creds = await registerOwnerAndReachDashboard(page, 'bug02-duplicate');
 
       await page.request.delete('/api/v1/sessions/current', {
+        headers: apiOriginHeader(page),
         form: {
           csrf_token:
             (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '',
@@ -427,6 +432,7 @@ test.describe('Bug regressions', () => {
 
       const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
       await page.request.delete('/api/v1/sessions/current', {
+        headers: apiOriginHeader(page),
         form: { csrf_token: csrf },
         maxRedirects: 0,
       });
@@ -548,6 +554,7 @@ test.describe('Bug regressions', () => {
 
       const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
       const clearResponse = await page.request.post('/api/v1/users/current/data-wipe', {
+        headers: apiOriginHeader(page),
         form: {
           csrf_token: csrfToken,
           password: creds.password,
