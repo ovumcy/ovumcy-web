@@ -39,6 +39,11 @@ jobs:
       - name: Prepare security artifact directory
         run: mkdir -p .tmp/security
 
+      - name: Pull gitleaks image
+        uses: ./.github/actions/docker-pull-retry
+        with:
+          image: ${{ env.GITLEAKS_IMAGE }}
+
       - name: Run gitleaks (full history)
         # --log-opts=--all scans every commit reachable from any ref, not just
         # the current branch tip, so a secret committed and later removed is

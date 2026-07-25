@@ -119,6 +119,11 @@ jobs:
       - name: Prepare security artifact directory
         run: mkdir -p .tmp/security
 
+      - name: Pull Trivy image
+        uses: ./.github/actions/docker-pull-retry
+        with:
+          image: ${{ env.TRIVY_IMAGE }}
+
       - name: Run Trivy filesystem scan
         run: docker run --rm -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" fs --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --include-dev-deps --skip-dirs .tmp --skip-dirs .tmp_docker_ctx --skip-dirs web/static --format sarif --output .tmp/security/trivy-fs.sarif --exit-code 1 .
 
@@ -179,6 +184,12 @@ jobs:
 
       - name: Prepare security artifact directory
         run: mkdir -p .tmp/security
+
+      - name: Pull Trivy image
+        # One pull covers both scan steps below — they reuse the cached image.
+        uses: ./.github/actions/docker-pull-retry
+        with:
+          image: ${{ env.TRIVY_IMAGE }}
 
       - name: Run Trivy image scan
         run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output .tmp/security/trivy-image.sarif --exit-code 1 ovumcy-security:${{ github.sha }}

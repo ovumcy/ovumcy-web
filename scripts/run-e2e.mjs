@@ -414,11 +414,42 @@ async function waitForHostPort(host, port) {
   throw new Error(`Postgres host port ${host}:${port} did not become reachable in time`);
 }
 
+// pullDockerImage fetches an image with a bounded retry, so a single registry
+// blip does not fail the run. Docker Hub is reached over the public internet from
+// CI runners, and one `i/o timeout` pulling postgres has already turned main red
+// while the same tree was green on the pull request minutes earlier.
+//
+// Only the PULL is retried. `docker run -d` is not idempotent — an attempt that
+// died after the daemon started a container would leave it orphaned, and `--rm`
+// does not cover a container we never learned the id of.
+async function pullDockerImage(image) {
+  const attempts = 3;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await runDockerCapture(["pull", image]);
+      return;
+    } catch (error) {
+      if (attempt === attempts) {
+        throw new Error(`docker pull ${image} failed after ${attempts} attempts: ${error.message}`, {
+          cause: error,
+        });
+      }
+      const backoffMs = attempt * 10000;
+      console.log(
+        `[e2e] docker pull ${image} attempt ${attempt}/${attempts} failed, retrying in ${backoffMs}ms`,
+      );
+      await delay(backoffMs);
+    }
+  }
+}
+
 async function startPostgresRuntime(runID) {
   const databaseName = createPostgresDatabaseName(runID);
   const user = process.env.E2E_POSTGRES_USER ?? "ovumcy";
   const password = process.env.E2E_POSTGRES_PASSWORD ?? "ovumcy";
   const image = process.env.E2E_POSTGRES_IMAGE ?? "postgres:17-alpine";
+
+  await pullDockerImage(image);
 
   const result = await runDockerCapture([
     "run",
