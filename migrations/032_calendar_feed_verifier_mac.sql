@@ -1,0 +1,44 @@
+-- Calendar (.ics) feed subscription token: keyed MAC beside the bcrypt hash.
+--
+-- Adds one column, calendar_feed_verifier_mac, holding a keyed authenticator for
+-- the SECRET verifier half of a feed token. It replaces bcrypt as the value the
+-- feed endpoint compares on every request. The existing
+-- calendar_feed_verifier_hash column is deliberately LEFT IN PLACE and still
+-- written, so a rollback to the previous binary keeps verifying every token.
+--
+-- Why: the verifier is 32 characters over a 32-symbol alphabet -- 160 bits from
+-- crypto/rand -- so brute force is infeasible with or without a work factor.
+-- bcrypt's work factor exists to slow offline guessing of LOW-ENTROPY human
+-- secrets and buys nothing here, while costing ~265 ms of CPU on every request
+-- to an UNAUTHENTICATED endpoint. HMAC-SHA256 under its own HKDF label keeps the
+-- offline-guessing resistance a bare digest would lose (without SECRET_KEY the
+-- stored value is useless) and turns verification into a microsecond compare.
+--
+--   calendar_feed_verifier_mac  -- hex HMAC-SHA256 over (selector, verifier)
+--                                 under a key derived from SECRET_KEY by HKDF
+--                                 with the calendar-feed label pair. The
+--                                 verifier plaintext is still NEVER stored.
+--                                 Rotating SECRET_KEY invalidates every stored
+--                                 MAC, and verification does NOT fall back to
+--                                 bcrypt on a mismatch, so a rotation disarms
+--                                 armed feeds and the owner re-generates the
+--                                 subscribe URL from settings -- the same class
+--                                 of consequence already documented for
+--                                 users.totp_secret and users.webhook_url.
+--
+-- No backfill is possible here: deriving the MAC needs the verifier plaintext,
+-- which is not stored by design. Rows written before this migration therefore
+-- carry a hash but no MAC, and the feed keeps a bcrypt path for exactly those:
+-- on the first request that presents their correct token the MAC is written in
+-- and the row joins the fast path. Existing subscriptions keep working.
+--
+-- The migration runner skips any ADD COLUMN whose column already exists, so this
+-- file is idempotent across clean installs and rolling deploys.
+-- Rollback: DROP COLUMN users.calendar_feed_verifier_mac -- the previous binary
+-- reads calendar_feed_verifier_hash, which is still current for every row.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments,
+-- so a semicolon inside a comment is mis-parsed as a statement boundary.
+
+ALTER TABLE users ADD COLUMN calendar_feed_verifier_mac TEXT;

@@ -1,0 +1,33 @@
+-- Postgres mirror of migrations/032_calendar_feed_verifier_mac.sql (calendar
+-- .ics feed verifier: keyed MAC beside the bcrypt hash). Same version number so
+-- schema history stays aligned across engines.
+--
+-- calendar_feed_verifier_mac holds a hex HMAC-SHA256 over (selector, verifier)
+-- under a key derived from SECRET_KEY by HKDF with the calendar-feed label pair.
+-- It replaces bcrypt as the value the unauthenticated feed endpoint compares per
+-- request: the verifier carries 160 bits from crypto/rand, so a work factor buys
+-- no guessing resistance while costing ~265 ms of CPU per request. The verifier
+-- plaintext is still NEVER stored.
+--
+-- calendar_feed_verifier_hash is deliberately LEFT IN PLACE and still written so
+-- a rollback to the previous binary keeps verifying every token. Rows written
+-- before this migration carry a hash but no MAC -- the MAC cannot be backfilled
+-- (deriving it needs the verifier plaintext), so the feed keeps a bcrypt path
+-- for exactly those rows and writes the MAC in on the first request that
+-- presents their correct token.
+--
+-- Rotating SECRET_KEY invalidates every stored MAC and verification does NOT
+-- fall back to bcrypt on a mismatch, so a rotation disarms armed feeds and the
+-- owner re-generates the subscribe URL from settings -- the same class of
+-- consequence already documented for users.totp_secret and users.webhook_url.
+--
+-- ALTER TABLE ADD COLUMN IF NOT EXISTS keeps the migration idempotent across the
+-- postgres test bootstrap and rolling deploys (in addition to the runner's own
+-- already-exists skip).
+-- Rollback: DROP COLUMN users.calendar_feed_verifier_mac -- the previous binary
+-- reads calendar_feed_verifier_hash, which is still current for every row.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_feed_verifier_mac TEXT;

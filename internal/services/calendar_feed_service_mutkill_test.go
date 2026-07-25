@@ -39,9 +39,10 @@ func TestResolveFeedLoadsHistoryWindowBeforeToday(t *testing.T) {
 	user, token := armedFeedUser(t, 77, "2026-03-02")
 	days := &mutkillFeedDayReader{logs: predictableFeedLogs(t)}
 	svc := NewCalendarFeedService(
-		&stubFeedUserReader{selector: user.CalendarFeedSelector, user: user},
+		&stubFeedUserStore{selector: user.CalendarFeedSelector, user: user},
 		days,
 		stubFeedDisclaimer{text: "d"},
+		[]byte(calendarFeedTestSecretKey),
 	)
 
 	now := mustParseDashboardDay(t, "2026-03-20")

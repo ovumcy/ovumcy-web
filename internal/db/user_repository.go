@@ -214,27 +214,64 @@ func (repo *UserRepository) UpdateWebhookWatermark(ctx context.Context, userID u
 }
 
 // SaveCalendarFeedToken sets (creates or rotates) the calendar-feed token
-// columns for one owner, scoped strictly to userID. The VerifierHash MUST
-// already be a bcrypt hash — the caller (a later slice) hashes the secret
-// verifier via services.GenerateCalendarFeedToken before this method runs, so
-// persistence never writes the verifier plaintext. Selector is the non-secret,
+// columns for one owner, scoped strictly to userID. VerifierHash MUST already be
+// a bcrypt hash and VerifierMAC an already-computed keyed authenticator — the
+// caller derives both from the secret verifier via
+// services.GenerateCalendarFeedToken before this method runs, so persistence
+// never writes the verifier plaintext. Selector is the non-secret,
 // UNIQUE-indexed lookup id.
 //
-// Rotation reuses this method: writing a fresh (selector, verifierHash) pair
-// overwrites the previous one, so the old token stops verifying (its verifier no
-// longer matches the new hash, and its selector no longer resolves). It touches
-// only the two feed-token columns and deliberately does NOT bump
-// auth_session_version: a feed token is a per-surface capability, not an account
-// credential, so rotating it must not revoke the owner's login sessions.
+// Both verifier columns are written on every mint: the MAC is what the feed
+// endpoint compares, and the bcrypt hash stays current so a rollback to a binary
+// that predates migration 032 keeps verifying freshly minted tokens.
+//
+// Rotation reuses this method: writing a fresh triple overwrites the previous
+// one, so the old token stops verifying (its verifier matches neither the new MAC
+// nor the new hash, and its selector no longer resolves). It touches only the
+// feed-token columns and deliberately does NOT bump auth_session_version: a feed
+// token is a per-surface capability, not an account credential, so rotating it
+// must not revoke the owner's login sessions.
 func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"calendar_feed_selector":      columns.Selector,
 		"calendar_feed_verifier_hash": columns.VerifierHash,
+		"calendar_feed_verifier_mac":  columns.VerifierMAC,
 	}).Error
 }
 
-// ClearCalendarFeedToken revokes an owner's calendar feed by NULLing both feed
-// token columns, scoped strictly to userID. After this the feed URL 404s (its
+// BackfillCalendarFeedVerifierMAC writes the keyed verifier authenticator into a
+// row minted before migration 032, which carries a bcrypt hash but no MAC. The
+// MAC cannot be derived from the hash (that is the point of a hash), so the only
+// moment it can be computed is a request that presents the correct verifier
+// plaintext — the feed's own verification path calls this after a successful
+// bcrypt fallback, and the row then joins the microsecond fast path.
+//
+// The UPDATE is a compare-and-set, not a blind write, and every predicate earns
+// its place:
+//
+//   - id = ? scopes the write to the resolved owner (never another row).
+//   - calendar_feed_selector = ? pins it to the token that was just verified. If
+//     the owner rotated or revoked the feed between the read and this write, the
+//     selector no longer matches, zero rows are affected, and the stale MAC is
+//     NOT written — without this, a backfill racing a rotation could pair the old
+//     token's MAC with the new token's hash and break the fresh subscribe URL
+//     until the next rotation.
+//   - the NULL-or-empty guard keeps it idempotent and one-way: a row that already
+//     carries a MAC is never overwritten, so this path can never replace a live
+//     authenticator (in particular it can never "repair" a MAC that mismatches
+//     because SECRET_KEY was rotated — that case is a deliberate hard refusal).
+//
+// A zero-row outcome is a normal, expected result, so it is not an error: the
+// caller treats a failed backfill as a missed optimization and still serves the
+// feed.
+func (repo *UserRepository) BackfillCalendarFeedVerifierMAC(ctx context.Context, userID uint, selector string, verifierMAC string) error {
+	return repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND calendar_feed_selector = ? AND (calendar_feed_verifier_mac IS NULL OR calendar_feed_verifier_mac = '')", userID, selector).
+		Update("calendar_feed_verifier_mac", verifierMAC).Error
+}
+
+// ClearCalendarFeedToken revokes an owner's calendar feed by NULLing every feed
+// token column, scoped strictly to userID. After this the feed URL 404s (its
 // selector resolves no row). Like SaveCalendarFeedToken it does not bump
 // auth_session_version — revoking a per-surface capability is not a change to the
 // account's login security posture. Uses a typed nil so the columns become SQL
@@ -243,6 +280,7 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
+		"calendar_feed_verifier_mac":  nil,
 	}).Error
 }
 
@@ -255,9 +293,10 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 // An empty selector is treated as an immediate miss and never hits the database:
 // a feed-off row stores NULL (not the empty string), and an equality match on the
 // empty string would never match a NULL column anyway, but the guard makes the
-// intent explicit and avoids a pointless query. The returned user carries
-// CalendarFeedVerifierHash so the caller can constant-time-verify the verifier
-// half without a second read.
+// intent explicit and avoids a pointless query. The returned user carries both
+// CalendarFeedVerifierMAC and CalendarFeedVerifierHash so the caller can
+// constant-time-verify the verifier half — via the MAC, or via bcrypt for a row
+// minted before migration 032 — without a second read.
 func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, selector string) (models.User, bool, error) {
 	if selector == "" {
 		return models.User{}, false, nil
@@ -290,6 +329,7 @@ func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.
 		"recovery_code_hash":          recoveryHash,
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
+		"calendar_feed_verifier_mac":  nil,
 		"auth_session_version":        gorm.Expr("auth_session_version + 1"),
 	}).Error
 }
@@ -323,6 +363,7 @@ func (repo *UserRepository) ForceResetPasswordAndRevokeSessions(ctx context.Cont
 		"local_auth_enabled":          true,
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
+		"calendar_feed_verifier_mac":  nil,
 		"auth_session_version":        gorm.Expr("auth_session_version + 1"),
 	}).Error
 }
@@ -380,6 +421,7 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx c
 			"local_auth_enabled":          true,
 			"calendar_feed_selector":      nil,
 			"calendar_feed_verifier_hash": nil,
+			"calendar_feed_verifier_mac":  nil,
 			"auth_session_version":        gorm.Expr("auth_session_version + 1"),
 		})
 	if result.Error != nil {
@@ -544,6 +586,7 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// hooks are a later slice.
 			"calendar_feed_selector":      nil,
 			"calendar_feed_verifier_hash": nil,
+			"calendar_feed_verifier_mac":  nil,
 			// Bump auth_session_version inside the same transaction so a
 			// successful clear-data wipe also revokes every auth cookie that
 			// existed before the wipe. Without this bump a stolen session that

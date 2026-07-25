@@ -84,6 +84,12 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 	return app, database
 }
 
+// testAppSecretKey is the application secret the shared test app is wired with.
+// A test that mints something keyed by SECRET_KEY outside the app (a calendar-feed
+// verifier MAC, say) must use this same value, or the app will refuse what the
+// test just stored.
+const testAppSecretKey = "test-secret-key"
+
 func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, options ...onboardingTestAppOptions) Dependencies {
 	var appOptions onboardingTestAppOptions
 	if len(options) > 0 {
@@ -99,7 +105,7 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	// same recipe the production binary uses, so the two cannot drift. Tests pass
 	// the default attempt limits, an empty (disabled) OIDC config, and—unlike
 	// production—leave LogoutAttempts unset to keep the auth-service default.
-	return bootstrap.BuildDependencies(db.NewRepositories(database), []byte("test-secret-key"), i18nManager, bootstrap.Options{
+	return bootstrap.BuildDependencies(db.NewRepositories(database), []byte(testAppSecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode:    registrationMode,
 		OIDCConfig:          security.OIDCConfig{},
 		OIDCServiceOverride: appOptions.oidcService,

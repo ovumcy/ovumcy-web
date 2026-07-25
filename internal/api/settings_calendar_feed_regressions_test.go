@@ -70,14 +70,19 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 		t.Fatal("generate response body must not contain the subscribe URL")
 	}
 
-	// A HASHED token is persisted (selector + bcrypt verifier hash), and the
-	// stored columns are not the plaintext token.
+	// A HASHED token is persisted (selector + keyed verifier MAC + bcrypt verifier
+	// hash), and the stored columns are not the plaintext token.
 	stored := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID)
 	if stored.CalendarFeedSelector == "" || stored.CalendarFeedVerifierHash == "" {
 		t.Fatal("expected a feed token persisted after generate")
 	}
 	if !strings.HasPrefix(stored.CalendarFeedVerifierHash, "$2") {
 		t.Fatalf("expected a bcrypt verifier hash at rest, got %q", stored.CalendarFeedVerifierHash)
+	}
+	// The keyed MAC is what the feed endpoint compares; without it a freshly minted
+	// subscription would be pinned to the ~265 ms bcrypt path forever.
+	if stored.CalendarFeedVerifierMAC == "" {
+		t.Fatal("expected a keyed verifier MAC at rest after generate")
 	}
 
 	// Reveal exactly once: the reveal page shows the full subscribe URL and the
@@ -237,8 +242,9 @@ func TestCalendarFeedRevokeClearsColumns(t *testing.T) {
 	assertStatusCode(t, revoke, http.StatusOK)
 
 	got := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID)
-	if got.CalendarFeedSelector != "" || got.CalendarFeedVerifierHash != "" {
-		t.Fatalf("expected feed columns cleared after revoke, got selector=%q hash=%q", got.CalendarFeedSelector, got.CalendarFeedVerifierHash)
+	if got.CalendarFeedSelector != "" || got.CalendarFeedVerifierHash != "" || got.CalendarFeedVerifierMAC != "" {
+		t.Fatalf("expected feed columns cleared after revoke, got selector=%q hash=%q mac=%q",
+			got.CalendarFeedSelector, got.CalendarFeedVerifierHash, got.CalendarFeedVerifierMAC)
 	}
 	feedResp := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
 	defer func() { _ = feedResp.Body.Close() }()
@@ -410,10 +416,11 @@ func (failingCalendarFeedRepo) FindByID(context.Context, uint) (models.User, err
 // endpoints WITHOUT middleware to isolate the handler failure tails.
 func newFailingCalendarFeedHandlerApp(t *testing.T) *fiber.App {
 	t.Helper()
+	const sealedCookieSecret = "0123456789abcdef0123456789abcdef"
 	handler := &Handler{
-		secretKey:            []byte("0123456789abcdef0123456789abcdef"),
+		secretKey:            []byte(sealedCookieSecret),
 		cookieSecure:         false,
-		calendarFeedSettings: services.NewCalendarFeedSettingsService(failingCalendarFeedRepo{}),
+		calendarFeedSettings: services.NewCalendarFeedSettingsService(failingCalendarFeedRepo{}, []byte(sealedCookieSecret)),
 	}
 	app := fiber.New()
 	app.Use(func(c fiber.Ctx) error {
@@ -445,9 +452,13 @@ func (savingCalendarFeedRepo) FindByID(context.Context, uint) (models.User, erro
 // and no URL leaks.
 func TestCalendarFeedGenerateRevealCookieSealFailureMapsTo500(t *testing.T) {
 	handler := &Handler{
-		secretKey:            []byte(""), // empty key → cookie codec unavailable → seal fails
-		cookieSecure:         false,
-		calendarFeedSettings: services.NewCalendarFeedSettingsService(savingCalendarFeedRepo{}),
+		secretKey:    []byte(""), // empty key → cookie codec unavailable → seal fails
+		cookieSecure: false,
+		// The settings service keeps a WORKING key on purpose: minting must succeed so
+		// the request reaches the cookie-seal step this test covers. With an empty key
+		// here the mint itself would fail (no verifier MAC), and the 500 would come
+		// from the wrong branch.
+		calendarFeedSettings: services.NewCalendarFeedSettingsService(savingCalendarFeedRepo{}, []byte("0123456789abcdef0123456789abcdef")),
 	}
 	app := fiber.New()
 	app.Use(func(c fiber.Ctx) error {

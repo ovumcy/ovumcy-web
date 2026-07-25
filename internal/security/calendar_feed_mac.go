@@ -13,9 +13,14 @@ import (
 
 // HKDF label pair for the calendar-feed verifier MAC. It is its own purpose, so
 // the derived key is unrelated to the sealed-cookie and field-encryption keys:
-// a leak or rotation of one never affects another. Bumping the version suffix
-// invalidates every previously stored MAC, which is why the verify path keeps a
-// fallback rather than treating a mismatch as proof of a bad token.
+// a leak or rotation of one never affects another.
+//
+// Bumping the version suffix invalidates every previously stored MAC, and the
+// verify path treats a mismatch as a hard refusal rather than healing the row
+// from its bcrypt hash — so a label bump, exactly like a SECRET_KEY rotation,
+// disarms every armed calendar feed and each owner re-generates the subscribe URL
+// from settings. Ship a label bump as a deliberate, release-noted change, not a
+// silent cleanup.
 const (
 	calendarFeedMACSaltLabel = "ovumcy.calendar-feed-token.salt.v1"
 	calendarFeedMACInfoLabel = "ovumcy.calendar-feed-token.key.v1"

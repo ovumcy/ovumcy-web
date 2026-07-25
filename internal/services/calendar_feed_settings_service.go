@@ -26,12 +26,12 @@ import (
 // (WebhookSettingsService writes; WebhookNotifyService delivers).
 //
 // SECRET HANDLING. GenerateCalendarFeedToken returns the shown-once full token
-// plus the two storables (plaintext selector + bcrypt verifier hash); this
-// service persists only the storables and hands the full token straight back to
-// the caller for a ONE-TIME reveal (the same shown-once model as recovery
-// codes). The full token is never re-derivable afterward — it is not persisted,
-// and the settings view only ever renders configured/not-configured status,
-// never the token or the URL. Nothing here logs the token.
+// plus the storables (plaintext selector + keyed verifier MAC + bcrypt verifier
+// hash); this service persists only the storables and hands the full token
+// straight back to the caller for a ONE-TIME reveal (the same shown-once model as
+// recovery codes). The full token is never re-derivable afterward — it is not
+// persisted, and the settings view only ever renders configured/not-configured
+// status, never the token or the URL. Nothing here logs the token.
 
 // ErrCalendarFeedTokenGenerate wraps a token-generation failure (crypto/rand or
 // bcrypt), kept distinct from the persistence error so the handler can map each.
@@ -54,13 +54,17 @@ type CalendarFeedSettingsRepository interface {
 
 // CalendarFeedSettingsService is the write-side seam for the feed lifecycle.
 type CalendarFeedSettingsService struct {
-	users CalendarFeedSettingsRepository
+	users     CalendarFeedSettingsRepository
+	secretKey []byte
 }
 
 // NewCalendarFeedSettingsService wires the lifecycle service from the user
-// repository. The repository is required in production; tests may pass a stub.
-func NewCalendarFeedSettingsService(users CalendarFeedSettingsRepository) *CalendarFeedSettingsService {
-	return &CalendarFeedSettingsService{users: users}
+// repository and the application secret. secretKey derives the keyed verifier MAC
+// stored with every minted token (same injection shape as
+// NewWebhookSettingsService / NewTOTPService). The repository is required in
+// production; tests may pass a stub.
+func NewCalendarFeedSettingsService(users CalendarFeedSettingsRepository, secretKey []byte) *CalendarFeedSettingsService {
+	return &CalendarFeedSettingsService{users: users, secretKey: secretKey}
 }
 
 // GenerateFeedToken mints a fresh feed token for the owner, persists the
@@ -75,14 +79,11 @@ func NewCalendarFeedSettingsService(users CalendarFeedSettingsRepository) *Calen
 // (sealed one-time cookie) and never render it into an HTML value on a later
 // settings load. This method never logs the token.
 func (service *CalendarFeedSettingsService) GenerateFeedToken(ctx context.Context, userID uint) (string, error) {
-	fullToken, selector, verifierHash, err := GenerateCalendarFeedToken()
+	fullToken, columns, err := GenerateCalendarFeedToken(service.secretKey)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenGenerate, err) // codecov:ignore -- crypto/rand or bcrypt failure, not reachable in tests
+		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenGenerate, err)
 	}
-	if err := service.users.SaveCalendarFeedToken(ctx, userID, models.CalendarFeedTokenColumns{
-		Selector:     selector,
-		VerifierHash: verifierHash,
-	}); err != nil {
+	if err := service.users.SaveCalendarFeedToken(ctx, userID, columns); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrCalendarFeedTokenPersist, err)
 	}
 	return fullToken, nil
