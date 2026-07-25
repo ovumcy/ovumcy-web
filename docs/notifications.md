@@ -376,7 +376,12 @@ session cookie — so it is treated as a bearer capability token, not a normal
 authenticated resource: it is generated with cryptographic randomness, stored
 only as a hashed verifier (never recoverable from the database), shown to the
 owner exactly once, and revocable at any time by rotating or turning the feed
-off. The full rationale and test-backed invariants live in
+off. The stored verifier is keyed by `SECRET_KEY`, so **rotating that secret
+disarms every armed feed**: subscribed calendar clients start receiving `404`
+until each owner generates a fresh subscribe URL from Settings. Plan a secret
+rotation accordingly — it is the same class of consequence rotation already has
+for 2FA secrets and stored webhook URLs. The full rationale and test-backed
+invariants live in
 [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md) under **Calendar feed
 subscription** — see that section for the complete, current detail rather than
 this summary.

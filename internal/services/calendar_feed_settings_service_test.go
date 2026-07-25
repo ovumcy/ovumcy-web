@@ -61,7 +61,7 @@ func (s *stubCalendarFeedSettingsRepo) FindByID(_ context.Context, userID uint) 
 // token via the real constant-time verifier.
 func TestGenerateFeedTokenPersistsHashedTokenAndReturnsFullTokenOnce(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
-	service := NewCalendarFeedSettingsService(repo)
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
 	token, err := service.GenerateFeedToken(context.Background(), 42)
 	if err != nil {
@@ -77,25 +77,29 @@ func TestGenerateFeedTokenPersistsHashedTokenAndReturnsFullTokenOnce(t *testing.
 		t.Fatalf("expected persistence scoped to user 42, got %d", repo.findUserID)
 	}
 
-	// The verifier plaintext must NOT be stored: the full token contains the
-	// verifier, and the stored hash must not equal any plaintext slice of it.
+	// The verifier plaintext must NOT be stored in either verifier column: the full
+	// token contains the verifier, and neither stored value may be a plaintext
+	// slice of it.
 	if repo.saved.VerifierHash == "" {
 		t.Fatal("expected a stored verifier hash")
+	}
+	if repo.saved.VerifierMAC == "" {
+		t.Fatal("expected a stored keyed verifier MAC — it is what the feed endpoint compares")
 	}
 	if strings.Contains(token, repo.saved.VerifierHash) {
 		t.Fatal("stored verifier hash must not be a plaintext slice of the token")
 	}
-	// The stored columns must verify the returned token (proves the hash is a
-	// real bcrypt hash of this token's verifier, not garbage).
-	if !VerifyCalendarFeedToken(token, repo.saved.Selector, repo.saved.VerifierHash) {
-		t.Fatal("expected stored selector+hash to verify the returned token")
+	if strings.Contains(token, repo.saved.VerifierMAC) {
+		t.Fatal("stored verifier MAC must not be a plaintext slice of the token")
+	}
+	// The stored columns must verify the returned token (proves the stored values
+	// are real derivations of this token's verifier, not garbage).
+	if !VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), token, *repo.saved) {
+		t.Fatal("expected the stored columns to verify the returned token")
 	}
 	// A different token must NOT verify against the stored columns.
-	other, _, _, err := GenerateCalendarFeedToken()
-	if err != nil {
-		t.Fatalf("mint other token: %v", err)
-	}
-	if VerifyCalendarFeedToken(other, repo.saved.Selector, repo.saved.VerifierHash) {
+	other, _ := mustGenerateFeedToken(t)
+	if VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), other, *repo.saved) {
 		t.Fatal("an unrelated token must not verify against the stored columns")
 	}
 }
@@ -105,14 +109,13 @@ func TestGenerateFeedTokenPersistsHashedTokenAndReturnsFullTokenOnce(t *testing.
 // verify the FIRST token — the old subscribe URL is dead immediately.
 func TestGenerateFeedTokenRotationInvalidatesOldToken(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
-	service := NewCalendarFeedSettingsService(repo)
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
 	firstToken, err := service.GenerateFeedToken(context.Background(), 7)
 	if err != nil {
 		t.Fatalf("first GenerateFeedToken: %v", err)
 	}
-	firstSelector := repo.saved.Selector
-	firstHash := repo.saved.VerifierHash
+	firstColumns := *repo.saved
 
 	secondToken, err := service.GenerateFeedToken(context.Background(), 7)
 	if err != nil {
@@ -121,20 +124,23 @@ func TestGenerateFeedTokenRotationInvalidatesOldToken(t *testing.T) {
 	if secondToken == firstToken {
 		t.Fatal("expected a fresh token on rotation")
 	}
-	if repo.saved.Selector == firstSelector {
+	if repo.saved.Selector == firstColumns.Selector {
 		t.Fatal("expected a fresh selector on rotation")
 	}
+	if repo.saved.VerifierMAC == firstColumns.VerifierMAC {
+		t.Fatal("expected a fresh verifier MAC on rotation")
+	}
 	// The OLD token must not verify against the NEW stored columns.
-	if VerifyCalendarFeedToken(firstToken, repo.saved.Selector, repo.saved.VerifierHash) {
+	if VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), firstToken, *repo.saved) {
 		t.Fatal("old token must not verify against rotated columns")
 	}
 	// The NEW token must verify against the NEW stored columns.
-	if !VerifyCalendarFeedToken(secondToken, repo.saved.Selector, repo.saved.VerifierHash) {
+	if !VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), secondToken, *repo.saved) {
 		t.Fatal("new token must verify against rotated columns")
 	}
 	// And the old columns (had they survived) still verify only the old token —
-	// sanity that the two token pairs are genuinely distinct.
-	if !VerifyCalendarFeedToken(firstToken, firstSelector, firstHash) {
+	// sanity that the two token triples are genuinely distinct.
+	if !VerifyCalendarFeedToken([]byte(calendarFeedTestSecretKey), firstToken, firstColumns) {
 		t.Fatal("first token must verify against the first columns")
 	}
 }
@@ -143,7 +149,7 @@ func TestGenerateFeedTokenRotationInvalidatesOldToken(t *testing.T) {
 // surfaced as ErrCalendarFeedTokenPersist and no token leaks back.
 func TestGenerateFeedTokenPropagatesPersistError(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{saveErr: errors.New("write failed")}
-	service := NewCalendarFeedSettingsService(repo)
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
 	token, err := service.GenerateFeedToken(context.Background(), 1)
 	if !errors.Is(err, ErrCalendarFeedTokenPersist) {
@@ -154,10 +160,31 @@ func TestGenerateFeedTokenPropagatesPersistError(t *testing.T) {
 	}
 }
 
+// TestGenerateFeedTokenFailsClosedWithoutSecretKey proves the mint refuses rather
+// than persisting a token with no keyed MAC. An empty MAC column is not a neutral
+// value — it is the marker for "minted before migration 032, verify via bcrypt" —
+// so writing one would pin a fresh subscription to the ~265 ms path forever.
+// Nothing may reach the repository, and no token may leak back.
+func TestGenerateFeedTokenFailsClosedWithoutSecretKey(t *testing.T) {
+	repo := &stubCalendarFeedSettingsRepo{}
+	service := NewCalendarFeedSettingsService(repo, nil)
+
+	token, err := service.GenerateFeedToken(context.Background(), 1)
+	if !errors.Is(err, ErrCalendarFeedTokenGenerate) {
+		t.Fatalf("expected ErrCalendarFeedTokenGenerate, got %v", err)
+	}
+	if token != "" {
+		t.Fatalf("expected no token when the MAC cannot be derived, got %q", token)
+	}
+	if repo.saved != nil {
+		t.Fatalf("expected nothing persisted when the mint fails, got %+v", repo.saved)
+	}
+}
+
 // TestRevokeFeedTokenClearsColumns proves revoke delegates to the clear path.
 func TestRevokeFeedTokenClearsColumns(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
-	service := NewCalendarFeedSettingsService(repo)
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
 	if err := service.RevokeFeedToken(context.Background(), 9); err != nil {
 		t.Fatalf("RevokeFeedToken: %v", err)
@@ -171,7 +198,7 @@ func TestRevokeFeedTokenClearsColumns(t *testing.T) {
 // ErrCalendarFeedTokenPersist.
 func TestRevokeFeedTokenPropagatesError(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{clearErr: errors.New("clear failed")}
-	service := NewCalendarFeedSettingsService(repo)
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
 	if err := service.RevokeFeedToken(context.Background(), 9); !errors.Is(err, ErrCalendarFeedTokenPersist) {
 		t.Fatalf("expected ErrCalendarFeedTokenPersist, got %v", err)
@@ -184,19 +211,19 @@ func TestRevokeFeedTokenPropagatesError(t *testing.T) {
 func TestBuildFeedStatusReportsConfiguredOnlyFromSelector(t *testing.T) {
 	// Not configured: empty selector.
 	repoOff := &stubCalendarFeedSettingsRepo{findUser: models.User{ID: 3}}
-	if got := NewCalendarFeedSettingsService(repoOff).BuildFeedStatus(context.Background(), 3); got.Configured {
+	if got := NewCalendarFeedSettingsService(repoOff, []byte(calendarFeedTestSecretKey)).BuildFeedStatus(context.Background(), 3); got.Configured {
 		t.Fatal("expected not-configured for an empty selector")
 	}
 
 	// Configured: non-empty selector.
 	repoOn := &stubCalendarFeedSettingsRepo{findUser: models.User{ID: 3, CalendarFeedSelector: "SOMESELECTOR16XX"}}
-	if got := NewCalendarFeedSettingsService(repoOn).BuildFeedStatus(context.Background(), 3); !got.Configured {
+	if got := NewCalendarFeedSettingsService(repoOn, []byte(calendarFeedTestSecretKey)).BuildFeedStatus(context.Background(), 3); !got.Configured {
 		t.Fatal("expected configured for a non-empty selector")
 	}
 
 	// Load error: reports not-configured so the settings page still renders.
 	repoErr := &stubCalendarFeedSettingsRepo{findErr: errors.New("db down")}
-	if got := NewCalendarFeedSettingsService(repoErr).BuildFeedStatus(context.Background(), 3); got.Configured {
+	if got := NewCalendarFeedSettingsService(repoErr, []byte(calendarFeedTestSecretKey)).BuildFeedStatus(context.Background(), 3); got.Configured {
 		t.Fatal("expected not-configured on load error")
 	}
 }

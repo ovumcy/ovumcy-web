@@ -105,8 +105,8 @@ type User struct {
 	ReminderLeadDays int `gorm:"column:reminder_lead_days;not null;default:3"`
 	// Calendar (.ics) feed subscription token (slice 1: storage only). Backs a
 	// pull-based feed URL whose path carries a bearer capability token; a
-	// calendar client polls it for the owner's own cycle events. Both columns are
-	// empty when the feed is off (the default zero value). This block is storage
+	// calendar client polls it for the owner's own cycle events. Every column in
+	// the block is empty when the feed is off (the default zero value). This block is storage
 	// only — no endpoint, .ics builder, rate-limit, or settings UI lives here
 	// (later slices).
 	//
@@ -123,19 +123,43 @@ type User struct {
 	// CalendarFeedVerifierHash holds the BCRYPT hash of the secret verifier half,
 	// never the verifier plaintext. The full token (selector+verifier) is shown
 	// to the owner exactly once at generation and is not retrievable afterward,
-	// mirroring the recovery-code shown-once model. Verification looks the row up
-	// by selector, then constant-time bcrypt-compares the verifier; a missing
-	// selector and a wrong verifier both resolve to the same "not found".
+	// mirroring the recovery-code shown-once model.
+	//
+	// It is no longer the value the feed endpoint compares — CalendarFeedVerifierMAC
+	// is (migration 032). It stays written on every mint so a rollback to a binary
+	// that predates the MAC keeps verifying every token, and it remains the
+	// verification path for rows minted before that migration.
 	CalendarFeedVerifierHash string `gorm:"column:calendar_feed_verifier_hash"`
+	// CalendarFeedVerifierMAC holds the KEYED authenticator of the secret verifier
+	// half (migration 032) and is what the feed endpoint compares per request:
+	// hex HMAC-SHA256 over (selector, verifier) under a key derived from
+	// SECRET_KEY. The verifier plaintext is still never stored, and a DB leak
+	// alone does not allow offline verifier guessing — without SECRET_KEY the
+	// stored value is useless.
+	//
+	// Empty means "minted before migration 032": verification falls back to
+	// CalendarFeedVerifierHash for those rows and writes the MAC in on the first
+	// request that presents the correct token. Empty NEVER means "any MAC is
+	// acceptable", and a present-but-mismatched MAC is a hard refusal — it is not
+	// re-checked against bcrypt, so rotating SECRET_KEY disarms armed feeds
+	// instead of silently keeping a stale authenticator alive.
+	CalendarFeedVerifierMAC string `gorm:"column:calendar_feed_verifier_mac"`
 }
 
-// CalendarFeedTokenColumns is the transport-free narrow payload written by the
-// calendar-feed token write path (slice 1). Selector is the NON-secret,
-// UNIQUE-indexed lookup id; VerifierHash is already a BCRYPT hash — the service
-// hashes the secret verifier before building this struct, so persistence never
-// sees the verifier plaintext. It carries only the two feed-token columns and
-// no security-posture field: writing it must not bump auth_session_version.
+// CalendarFeedTokenColumns is the transport-free narrow view of the three stored
+// calendar-feed token columns. It is what the write path persists AND what the
+// verify path compares against, so both sides name the same triple and cannot
+// drift apart.
+//
+// Selector is the NON-secret, UNIQUE-indexed lookup id; VerifierHash is already a
+// BCRYPT hash and VerifierMAC an already-computed keyed authenticator — the
+// service derives both from the secret verifier before building this struct, so
+// persistence never sees the verifier plaintext. Both are written on every mint:
+// the MAC is what verification compares, the hash keeps a rollback to a pre-032
+// binary working. It carries only the feed-token columns and no security-posture
+// field: writing it must not bump auth_session_version.
 type CalendarFeedTokenColumns struct {
 	Selector     string
 	VerifierHash string
+	VerifierMAC  string
 }

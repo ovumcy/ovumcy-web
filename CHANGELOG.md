@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The calendar feed verifies its subscribe token with a keyed MAC instead of
+  bcrypt.** The verifier half of a feed token is 160 bits from `crypto/rand`, so
+  a work factor bought no guessing resistance while costing roughly 265 ms of CPU
+  on every request to an endpoint that needs no credential to reach. Verification
+  now compares an `HMAC-SHA256` derived from `SECRET_KEY` (still keyed, so a
+  database leak alone does not permit offline verifier guessing) and the
+  selector-miss timing equalization moved with it, so an unknown selector still
+  cannot be timed apart from a wrong verifier. Migration `032` adds
+  `users.calendar_feed_verifier_mac`; the bcrypt column stays and is still
+  written, so a rollback keeps working.
+
+  Two operator-visible consequences:
+
+  - **Rotating `SECRET_KEY` now disarms armed calendar feeds.** A stored MAC that
+    no longer matches is refused outright and is deliberately not re-checked
+    against the bcrypt hash. Subscribed calendar clients receive `404` until each
+    owner generates a fresh subscribe URL from Settings — the same class of
+    consequence rotation already had for 2FA secrets and stored webhook URLs.
+  - **Existing subscriptions keep working across the upgrade.** A feed armed
+    before this release has no MAC (it cannot be derived from a hash) and keeps
+    verifying through bcrypt; its MAC is written in during the first request that
+    presents the correct token, after which it takes the fast path.
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no

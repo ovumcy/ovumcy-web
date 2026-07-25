@@ -20,21 +20,27 @@ import (
 	"gorm.io/gorm"
 )
 
-// armCalendarFeedForUser mints a real feed token for the user, persists the
-// selector + verifier hash, and seeds a stable ~28d period cadence so the feed
-// emits prediction events. It returns the full shown-once token to present in
-// the URL.
+// armCalendarFeedForUser mints a real feed token for the user, persists the whole
+// stored triple, and seeds a stable ~28d period cadence so the feed emits
+// prediction events. It returns the full shown-once token to present in the URL.
 func armCalendarFeedForUser(t *testing.T, database *gorm.DB, userID uint) string {
 	t.Helper()
-	token, selector, verifierHash, err := services.GenerateCalendarFeedToken()
+	return armCalendarFeedForUserWithColumns(t, database, userID, func(columns models.CalendarFeedTokenColumns) models.CalendarFeedTokenColumns {
+		return columns
+	})
+}
+
+// armCalendarFeedForUserWithColumns is armCalendarFeedForUser with a hook to alter
+// the stored triple before it is written — used to seed a row in the pre-migration-032
+// shape (bcrypt hash, no MAC).
+func armCalendarFeedForUserWithColumns(t *testing.T, database *gorm.DB, userID uint, adjust func(models.CalendarFeedTokenColumns) models.CalendarFeedTokenColumns) string {
+	t.Helper()
+	token, columns, err := services.GenerateCalendarFeedToken([]byte(testAppSecretKey))
 	if err != nil {
 		t.Fatalf("GenerateCalendarFeedToken: %v", err)
 	}
 	repo := db.NewRepositories(database).Users
-	if err := repo.SaveCalendarFeedToken(t.Context(), userID, models.CalendarFeedTokenColumns{
-		Selector:     selector,
-		VerifierHash: verifierHash,
-	}); err != nil {
+	if err := repo.SaveCalendarFeedToken(t.Context(), userID, adjust(columns)); err != nil {
 		t.Fatalf("SaveCalendarFeedToken: %v", err)
 	}
 	for _, day := range []string{"2026-01-05", "2026-02-02", "2026-03-02"} {
@@ -248,12 +254,61 @@ func mustFeedHandler(t *testing.T, database *gorm.DB) *Handler {
 	return handler
 }
 
-// failingFeedUserReader makes CalendarFeedService.ResolveFeed return an
-// infrastructure error, driving ServeCalendarFeed's err != nil branch.
-type failingFeedUserReader struct{}
+// TestCalendarFeedMigratesPre032RowOnFirstSuccessfulPoll is the only place the
+// real repository, the real service, and the real HTTP route meet on the lazy
+// migration: a row stored the way migration 029 stored it (bcrypt hash, no MAC)
+// still serves 200, and that same request writes the keyed MAC into the row so
+// every later poll takes the microsecond path instead of ~265 ms of bcrypt.
+func TestCalendarFeedMigratesPre032RowOnFirstSuccessfulPoll(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "feed-pre032@example.com", "StrongPass1", true)
+	token := armCalendarFeedForUserWithColumns(t, database, user.ID, func(columns models.CalendarFeedTokenColumns) models.CalendarFeedTokenColumns {
+		columns.VerifierMAC = "" // the pre-032 shape: no MAC existed yet
+		return columns
+	})
 
-func (failingFeedUserReader) FindByCalendarFeedSelector(context.Context, string) (models.User, bool, error) {
+	var before models.User
+	if err := database.First(&before, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if before.CalendarFeedVerifierMAC != "" {
+		t.Fatalf("test setup: expected a pre-032 row with no MAC, got %q", before.CalendarFeedVerifierMAC)
+	}
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("a pre-032 feed row must keep working after the upgrade, got %d", response.StatusCode)
+	}
+
+	var after models.User
+	if err := database.First(&after, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if after.CalendarFeedVerifierMAC == "" {
+		t.Fatal("expected the first successful poll to write the keyed MAC into the row")
+	}
+	if after.CalendarFeedSelector != before.CalendarFeedSelector || after.CalendarFeedVerifierHash != before.CalendarFeedVerifierHash {
+		t.Fatalf("the migration must touch only the MAC column, got selector=%q hash=%q",
+			after.CalendarFeedSelector, after.CalendarFeedVerifierHash)
+	}
+
+	// The migrated row keeps serving, now through its MAC.
+	again := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
+	if again.StatusCode != http.StatusOK {
+		t.Fatalf("expected the migrated row to keep serving, got %d", again.StatusCode)
+	}
+}
+
+// failingFeedUserStore makes CalendarFeedService.ResolveFeed return an
+// infrastructure error, driving ServeCalendarFeed's err != nil branch.
+type failingFeedUserStore struct{}
+
+func (failingFeedUserStore) FindByCalendarFeedSelector(context.Context, string) (models.User, bool, error) {
 	return models.User{}, false, errors.New("simulated feed lookup failure")
+}
+
+func (failingFeedUserStore) BackfillCalendarFeedVerifierMAC(context.Context, uint, string, string) error {
+	return nil
 }
 
 // failingFeedDayReader satisfies the day-reader port; it is never reached
@@ -280,8 +335,8 @@ func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 	}
 	deps := newTestHandlerDependencies(database, i18nManager)
 	// Swap in a feed service whose owner lookup always errors.
-	deps.CalendarFeedService = services.NewCalendarFeedService(failingFeedUserReader{}, failingFeedDayReader{}, constFeedDisclaimer{})
-	handler, err := NewHandler("test-secret-key", time.UTC, i18nManager, false, deps)
+	deps.CalendarFeedService = services.NewCalendarFeedService(failingFeedUserStore{}, failingFeedDayReader{}, constFeedDisclaimer{}, []byte(testAppSecretKey))
+	handler, err := NewHandler(testAppSecretKey, time.UTC, i18nManager, false, deps)
 	if err != nil {
 		t.Fatalf("init handler: %v", err)
 	}

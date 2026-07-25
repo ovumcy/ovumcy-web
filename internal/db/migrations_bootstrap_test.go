@@ -500,9 +500,12 @@ func assertUsersSchemaReconciled(t *testing.T, database *gorm.DB) {
 		"webhook_period_last_sent_cycle_start",
 		"webhook_ovulation_last_sent_cycle_start",
 		"reminder_lead_days",
-		// Calendar (.ics) feed subscription token (migration 029).
+		// Calendar (.ics) feed subscription token (migration 029) plus the keyed
+		// verifier authenticator that superseded bcrypt on the verify path
+		// (migration 032; the bcrypt column stays for pre-032 rows and rollback).
 		"calendar_feed_selector",
 		"calendar_feed_verifier_hash",
+		"calendar_feed_verifier_mac",
 	}
 
 	for _, column := range expectedColumns {
