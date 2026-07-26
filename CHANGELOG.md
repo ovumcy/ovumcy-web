@@ -172,6 +172,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stored timezone as well, falling back to the request/server zone only for an
   owner whose timezone has never been captured. See
   [docs/notifications.md](docs/notifications.md).
+- **A failed database migration no longer leaves the database open behind it.**
+  Opening the database connects first and applies the pending migrations second;
+  when that second step failed, the error came back without the connection ever
+  being closed. The caller receives no handle in that case and so has nothing it
+  could close, which left the connection pool — and, on SQLite, the open database
+  file — held for as long as the process lived. The web binary exits moments
+  later, so a failed start was barely affected; an operator subcommand
+  (`ovumcy users`, `reset-password`, `notify`, `webhook`) keeps running, so it
+  held the database open for the rest of its run — which on Windows also blocks
+  the file from being moved or deleted. The connection is now released on any
+  failure that happens after it is open, and the error reported to the operator
+  is still the migration failure that caused it.
 
 ### Security
 
@@ -191,6 +203,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   presents it. Both surfaces share one predicate, so the two cannot drift apart
   again. Behavior for owners is unchanged: a reveal minted for an account still
   reveals to that account, exactly once.
+
+- **A compressed request body is no longer decompressed on routes that never
+  read one.** The transport guard that answers the mapped `413` for a body
+  crossing the cap only once decompressed ran on every route, because its only
+  skip condition was the absence of a `Content-Encoding` header. Probing *is*
+  decompressing, so a small, highly compressible upload — 16 KB on the wire
+  expanding a thousandfold, sized to stay just inside the cap and therefore
+  answered `200` — was inflated in full on `/healthz`, `/readyz`, `/login`,
+  `/register`, `/privacy` and `/favicon.ico`: unauthenticated `GET` routes whose
+  handlers read no body and which no rate limiter covers. Twenty such requests
+  cost 421 ms and 643 MiB of allocation against 0.5 ms and 2.2 MiB once the
+  probe is skipped. The probe is now owed by request method, so it still runs on
+  every method that can reach a body reader — including `DELETE`, whose body
+  carries the confirmation password for account deletion and 2FA disable — and a
+  route added later inherits it from its method rather than from a list. The
+  `413` contract for body-reading endpoints is unchanged.
+
+  Also in the guard: an over-limit body is now recognized by testing for the
+  `413` itself rather than for a change of status, so a `413` already standing on
+  the response can no longer short-circuit the check and pass the framework's
+  substituted error string to the handler. Nothing upstream stamps one today;
+  the guard no longer depends on that.
 
 - **`ovumcy notify --dry-run` no longer prints predicted period and ovulation
   dates by default.** The preview printed one line per due reminder carrying the

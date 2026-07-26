@@ -5,9 +5,12 @@ import "github.com/gofiber/fiber/v3"
 func RegisterRoutes(app *fiber.App, handler *Handler) {
 	// Registered here, alongside the routes it protects, rather than in the
 	// composition root's middleware chain: it must cover every route this
-	// function registers — page and /api/v1 alike — and an app assembled without
-	// it would answer an over-limit compressed body with a domain error or
-	// fiber's bare text. See requestBodyLimitGuard.
+	// function registers that can carry a body a handler reads — page and
+	// /api/v1 alike — and an app assembled without it would answer an over-limit
+	// compressed body with a domain error or fiber's bare text. Mounted app-wide
+	// rather than on the body-reading groups so a route added outside them still
+	// inherits it; the guard itself decides, from the request method, whether the
+	// decode probe is owed. See requestBodyLimitGuard.
 	app.Use(requestBodyLimitGuard)
 	registerPageRoutes(app, handler)
 	registerV1APIRoutes(app, handler)

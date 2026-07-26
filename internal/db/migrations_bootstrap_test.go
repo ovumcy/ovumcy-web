@@ -1,8 +1,10 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -741,6 +743,118 @@ func TestOpenSQLiteMigrationBootstrapIsIdempotent(t *testing.T) {
 
 	if !reflect.DeepEqual(firstRecords, secondRecords) {
 		t.Fatalf("expected migration records to remain unchanged between boots, before=%v after=%v", firstRecords, secondRecords)
+	}
+}
+
+// TestOpenSQLiteReleasesTheConnectionWhenMigrationsFail locks the ownership
+// contract of the open path: the caller owns the connection pool only when a
+// handle comes back. The web binary and every operator subcommand close the
+// handle they were given and have nothing to close when the open reports an
+// error, so a failure that happens AFTER the connection is up has to release the
+// pool where it was opened — otherwise the sql.DB, and the SQLite file it holds
+// open, survive for the rest of the process. That lifetime is the whole run of a
+// subcommand that keeps working after a failed open.
+//
+// Two observables, because the platforms disagree about what a live handle
+// prevents:
+//   - removing the database file: on Windows an open handle makes this fail with
+//     a sharing violation — which is how the leak first surfaced, as a failed
+//     boot test failing a second time while its temp directory was cleaned up —
+//     while on Linux an open file unlinks without complaint, so this half proves
+//     nothing there;
+//   - the WAL sidecars: SQLite deletes `<db>-wal` and `<db>-shm` when the LAST
+//     connection to a database closes, so a surviving sidecar is a surviving
+//     pool on every platform, and this half carries the test on the Linux CI
+//     runner.
+//
+// The successful open at the end is the positive anchor: it runs both assertions
+// against a database that certainly existed and was certainly opened, and passes
+// only because the test closed it — so neither observable can report success
+// merely for want of a file.
+func TestOpenSQLiteReleasesTheConnectionWhenMigrationsFail(t *testing.T) {
+	failedPath := filepath.Join(t.TempDir(), "ovumcy-migration-failure.db")
+	seedShadowedSchemaMigrationsTable(t, failedPath)
+
+	database, err := OpenSQLite(failedPath)
+	if err == nil {
+		if sqlDB, handleErr := database.DB(); handleErr == nil {
+			_ = sqlDB.Close()
+		}
+		t.Fatal("expected a shadowed schema_migrations table to fail the migration runner")
+	}
+	if !strings.Contains(err.Error(), "apply embedded migrations") {
+		t.Fatalf("expected the open to fail while applying migrations, got %v", err)
+	}
+	if database != nil {
+		t.Fatal("expected no handle back from a failed open")
+	}
+
+	assertSQLiteConnectionReleased(t, failedPath)
+
+	// Positive anchor: the same two assertions against a successful open, closed
+	// by the test itself.
+	succeededPath := filepath.Join(t.TempDir(), "ovumcy-migration-success.db")
+	succeeded, err := OpenSQLite(succeededPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := succeeded.DB()
+	if err != nil {
+		t.Fatalf("get sql db handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	assertSQLiteConnectionReleased(t, succeededPath)
+}
+
+// seedShadowedSchemaMigrationsTable creates the database file with a
+// schema_migrations table that shadows the runner's own: the name is already
+// taken, so the runner's CREATE TABLE IF NOT EXISTS is a no-op and the very next
+// statement — the SELECT over the applied versions — fails on the missing
+// column. The migration runner therefore fails deterministically on a database
+// that opens perfectly, with no seam in production code and without depending on
+// the content of any particular migration. The seeding connection is closed
+// before returning, so the only handle the file can still be holding is the one
+// under test.
+func seedShadowedSchemaMigrationsTable(t *testing.T, databasePath string) {
+	t.Helper()
+
+	database, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite for seeding: %v", err)
+	}
+	if err := database.Exec(`CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY)`).Error; err != nil {
+		t.Fatalf("seed shadowed schema_migrations table: %v", err)
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open seeding sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close seeding sql db: %v", err)
+	}
+}
+
+// assertSQLiteConnectionReleased proves nothing still holds the database at
+// databasePath open, and consumes the file in the process (it removes it).
+func assertSQLiteConnectionReleased(t *testing.T, databasePath string) {
+	t.Helper()
+
+	if err := os.Remove(databasePath); err != nil {
+		t.Fatalf("expected the database file to be removable once the connection is closed, got %v", err)
+	}
+
+	for _, sidecar := range []string{databasePath + "-wal", databasePath + "-shm"} {
+		_, err := os.Stat(sidecar)
+		if err == nil {
+			t.Fatalf("expected %s to be gone: SQLite removes it when the last connection closes, so a surviving sidecar means the pool is still open", filepath.Base(sidecar))
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("stat %s: %v", filepath.Base(sidecar), err)
+		}
 	}
 }
 
