@@ -147,6 +147,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A compressed request body is no longer decompressed on routes that never
+  read one.** The transport guard that answers the mapped `413` for a body
+  crossing the cap only once decompressed ran on every route, because its only
+  skip condition was the absence of a `Content-Encoding` header. Probing *is*
+  decompressing, so a small, highly compressible upload — 16 KB on the wire
+  expanding a thousandfold, sized to stay just inside the cap and therefore
+  answered `200` — was inflated in full on `/healthz`, `/readyz`, `/login`,
+  `/register`, `/privacy` and `/favicon.ico`: unauthenticated `GET` routes whose
+  handlers read no body and which no rate limiter covers. Twenty such requests
+  cost 421 ms and 643 MiB of allocation against 0.5 ms and 2.2 MiB once the
+  probe is skipped. The probe is now owed by request method, so it still runs on
+  every method that can reach a body reader — including `DELETE`, whose body
+  carries the confirmation password for account deletion and 2FA disable — and a
+  route added later inherits it from its method rather than from a list. The
+  `413` contract for body-reading endpoints is unchanged.
+
+  Also in the guard: an over-limit body is now recognized by testing for the
+  `413` itself rather than for a change of status, so a `413` already standing on
+  the response can no longer short-circuit the check and pass the framework's
+  substituted error string to the handler. Nothing upstream stamps one today;
+  the guard no longer depends on that.
+
 - **A compressed request body that only passes the 16 MiB cap once decompressed
   now answers with the standard `413 request_too_large` envelope.** The cap is
   applied to the decompressed stream inside the framework's body accessor, which
