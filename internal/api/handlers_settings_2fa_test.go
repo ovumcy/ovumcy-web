@@ -19,9 +19,13 @@ import (
 
 // --- helpers ---
 
-func sealTOTPSetupCookieForTest(t *testing.T, secretKey []byte, rawSecret string) string {
+// sealTOTPSetupCookieForTest seals a pending-enrollment payload attributed to
+// userID. Passing 0 produces the unattributed payload the writer now refuses to
+// mint, which is how the read-side guard is exercised on its own.
+func sealTOTPSetupCookieForTest(t *testing.T, secretKey []byte, userID uint, rawSecret string) string {
 	t.Helper()
 	payload := totpSetupCookiePayload{
+		UserID:    userID,
 		RawSecret: rawSecret,
 		ExpiresAt: time.Now().Add(5 * time.Minute),
 	}
@@ -140,7 +144,7 @@ func TestVerifyTOTP2FAEnrollment_ValidCode_EnablesTOTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), key.Secret())
+	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ctx.user.ID, key.Secret())
 
 	code, err := totp.GenerateCode(key.Secret(), time.Now())
 	if err != nil {
@@ -183,7 +187,7 @@ func TestVerifyTOTP2FAEnrollment_InvalidCode_DoesNotEnable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), key.Secret())
+	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ctx.user.ID, key.Secret())
 
 	form := url.Values{"code": {"000000"}, "password": {"StrongPass1"}}
 	cloned := cloneFormValues(form)
@@ -247,6 +251,142 @@ func TestVerifyTOTP2FAEnrollment_MissingSetupCookie_ReturnsError(t *testing.T) {
 	}
 	if reloaded.TOTPEnabled {
 		t.Error("missing setup cookie must not enable TOTP")
+	}
+}
+
+// totpEnrollmentRequest submits the enrollment confirmation for the session in
+// ctx, carrying an explicitly supplied setup cookie so a test can present a
+// payload the session did not mint.
+func totpEnrollmentRequest(t *testing.T, ctx settingsSecurityTestContext, code string, setupCookie string) *http.Response {
+	t.Helper()
+
+	form := url.Values{"code": {code}, "password": {"StrongPass1"}}
+	cloned := cloneFormValues(form)
+	cloned.Set("csrf_token", ctx.csrfToken)
+
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/users/current/2fa", strings.NewReader(cloned.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(ctx.csrfCookie), setupCookie))
+
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("enrollment request failed: %v", err)
+	}
+	return response
+}
+
+// signInSecondOwner opens a second independent owner's authenticated session on
+// the same instance — the household self-hosting shape, where two owners share
+// one deployment and nothing else.
+func signInSecondOwner(t *testing.T, host settingsSecurityTestContext, email string) settingsSecurityTestContext {
+	t.Helper()
+
+	user := createOnboardingTestUser(t, host.database, email, "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, host.app, user.Email, "StrongPass1")
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, host.app, authCookie)
+
+	return settingsSecurityTestContext{
+		app:        host.app,
+		database:   host.database,
+		user:       user,
+		authCookie: authCookie,
+		csrfCookie: csrfCookie,
+		csrfToken:  csrfToken,
+	}
+}
+
+func totpStateForUser(t *testing.T, ctx settingsSecurityTestContext, userID uint) models.User {
+	t.Helper()
+
+	var reloaded models.User
+	if err := ctx.database.First(&reloaded, userID).Error; err != nil {
+		t.Fatalf("reload user %d: %v", userID, err)
+	}
+	return reloaded
+}
+
+// TestVerifyTOTP2FAEnrollmentRefusesSetupCookieNotMintedForThisOwner pins the
+// owner binding on the sealed enrollment cookie at the handler boundary.
+//
+// The cookie carries the RAW TOTP secret across the enrollment form submission.
+// Without an owner id sealed into it, a setup payload minted for one owner and
+// presented on another owner's session would enrol the first owner's pending
+// secret as the second owner's own credential — credential confusion on a
+// household instance, where two owners share one deployment. So the confirm step
+// refuses a payload that names a different account, and refuses one that names
+// no account at all rather than treating the missing id as a comparison that
+// does not apply.
+//
+// Both payloads below are sealed under the app's own secret and carry a code
+// that genuinely validates, and the presenting session supplies its own correct
+// password, so the owner check is the only thing left between the request and
+// enrollment. The positive anchor at the end proves enrollment still completes
+// for the owner the payload was minted for, so the refusals above cannot be
+// satisfied by an endpoint that enrols nobody.
+func TestVerifyTOTP2FAEnrollmentRefusesSetupCookieNotMintedForThisOwner(t *testing.T) {
+	ownerA := newTOTPSettingsContext(t, "totp-enroll-scope-a@example.com")
+	ownerB := signInSecondOwner(t, ownerA, "totp-enroll-scope-b@example.com")
+
+	key, err := getTOTPServiceForTest(ownerA.database).GenerateSetupKey("Ovumcy", ownerA.user.Email)
+	if err != nil {
+		t.Fatalf("GenerateSetupKey: %v", err)
+	}
+	freshCode := func() string {
+		t.Helper()
+		code, codeErr := totp.GenerateCode(key.Secret(), time.Now())
+		if codeErr != nil {
+			t.Fatalf("GenerateCode: %v", codeErr)
+		}
+		return code
+	}
+
+	// Owner A's pending secret, presented on owner B's session.
+	crossOwner := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ownerA.user.ID, key.Secret())
+	crossResponse := totpEnrollmentRequest(t, ownerB, freshCode(), crossOwner)
+	defer func() { _ = crossResponse.Body.Close() }()
+
+	if crossResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected a setup cookie minted for another owner to be refused with 401, got %d", crossResponse.StatusCode)
+	}
+	if cleared := responseCookie(crossResponse.Cookies(), totpSetupCookieName); cleared == nil || cleared.Value != "" {
+		t.Fatal("expected the refused setup cookie to be cleared, not left presentable on a retry")
+	}
+	if state := totpStateForUser(t, ownerB, ownerB.user.ID); state.TOTPEnabled || state.TOTPSecret != "" {
+		t.Fatal("another owner's pending secret must not be enrolled as this owner's credential")
+	}
+	if state := totpStateForUser(t, ownerA, ownerA.user.ID); state.TOTPEnabled || state.TOTPSecret != "" {
+		t.Fatal("a refused cross-owner enrollment must not enable TOTP on the account the secret belongs to either")
+	}
+
+	// The same secret in a payload that names no owner at all.
+	unattributed := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), 0, key.Secret())
+	unattributedResponse := totpEnrollmentRequest(t, ownerB, freshCode(), unattributed)
+	defer func() { _ = unattributedResponse.Body.Close() }()
+
+	if unattributedResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected an unattributed setup cookie to be refused with 401, got %d", unattributedResponse.StatusCode)
+	}
+	if cleared := responseCookie(unattributedResponse.Cookies(), totpSetupCookieName); cleared == nil || cleared.Value != "" {
+		t.Fatal("expected the refused unattributed setup cookie to be cleared")
+	}
+	if state := totpStateForUser(t, ownerB, ownerB.user.ID); state.TOTPEnabled || state.TOTPSecret != "" {
+		t.Fatal("an unattributed pending secret must not be enrolled against whichever session presented it")
+	}
+
+	// Positive anchor: the owner the payload was minted for enrols normally.
+	ownedResponse := totpEnrollmentRequest(t, ownerA, freshCode(), crossOwner)
+	defer func() { _ = ownedResponse.Body.Close() }()
+
+	if ownedResponse.StatusCode != http.StatusOK && ownedResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("owner A must still complete its own enrollment, got %d", ownedResponse.StatusCode)
+	}
+	enrolled := totpStateForUser(t, ownerA, ownerA.user.ID)
+	if !enrolled.TOTPEnabled || enrolled.TOTPSecret == "" {
+		t.Fatal("owner A's own enrollment must persist the encrypted secret and enable TOTP")
+	}
+	if state := totpStateForUser(t, ownerB, ownerB.user.ID); state.TOTPEnabled || state.TOTPSecret != "" {
+		t.Fatal("owner A completing its own enrollment must leave owner B untouched")
 	}
 }
 

@@ -159,6 +159,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The pending two-factor enrollment cookie is now bound to the account that
+  started the enrollment.** The sealed `ovumcy_totp_setup` cookie carries the raw
+  TOTP secret across the enrollment form submission, and it was the only sealed
+  cookie in the transport layer holding a secret with no owner id at all: the
+  confirm step validated its shape and expiry, then enrolled whatever secret it
+  carried against the signed-in account. On an instance hosting several
+  independent owners, a setup cookie minted for one account and presented on
+  another account's session would have enrolled the first account's pending
+  secret as the second account's own credential. This is credential confusion,
+  not disclosure — the cookie is `HttpOnly` and sealed, the confirm step already
+  required a fresh password, and no ordinary flow reaches the state — but the
+  binding was the only structural control missing.
+
+  An owner id is now mandatory when the payload is sealed, so an unattributed one
+  is never minted, and on read the id must match the session presenting it: a
+  payload naming a different account, or none at all, is refused and the cookie
+  is cleared rather than left presentable on a retry. The check reuses the same
+  predicate as the one-time reveal surfaces, so the three cannot drift apart.
+
+  **Upgrade consequence.** A setup cookie minted by the previous version carries
+  no owner id and now fails closed. An enrollment that is in flight across the
+  upgrade — the QR code on screen, the confirmation code not yet submitted — is
+  refused with the usual "enrollment session expired" response; reload the
+  two-factor settings page and start the enrollment again. Accounts with 2FA
+  already enabled are unaffected, and nothing about sign-in changes.
+
 - **A one-time reveal now refuses a sealed payload that names no owner, instead
   of skipping the owner check.** Both shown-once surfaces — the recovery code and
   the calendar-feed subscribe URL — compared the owner id sealed into the cookie

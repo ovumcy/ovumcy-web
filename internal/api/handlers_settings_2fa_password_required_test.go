@@ -20,7 +20,7 @@ func TestVerifyTOTP2FAEnrollment_MissingPassword_DoesNotEnable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), key.Secret())
+	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ctx.user.ID, key.Secret())
 
 	code, err := totp.GenerateCode(key.Secret(), time.Now())
 	if err != nil {
@@ -64,7 +64,7 @@ func TestVerifyTOTP2FAEnrollment_WrongPassword_DoesNotEnable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateSetupKey: %v", err)
 	}
-	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), key.Secret())
+	setupCookie := sealTOTPSetupCookieForTest(t, []byte("test-secret-key"), ctx.user.ID, key.Secret())
 
 	code, err := totp.GenerateCode(key.Secret(), time.Now())
 	if err != nil {
