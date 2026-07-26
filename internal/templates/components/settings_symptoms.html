@@ -91,7 +91,7 @@
       hx-delete="/api/v1/symptoms/{{.Symptom.ID}}"
       hx-target="#settings-symptoms-section"
       hx-swap="outerHTML"
-      data-confirm="{{t $.Messages "settings.symptoms.confirm_hide"}}"
+      hx-confirm="{{t $.Messages "settings.symptoms.confirm_hide"}}"
       data-confirm-accept="{{t $.Messages "settings.symptoms.hide"}}">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
       <button type="submit" class="btn-secondary">{{t $.Messages "settings.symptoms.hide"}}</button>

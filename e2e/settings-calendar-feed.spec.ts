@@ -119,6 +119,43 @@ async function generateFeed(page: Page): Promise<RevealedFeed> {
   return readRevealedFeed(page);
 }
 
+/**
+ * Rotate and revoke are htmx-driven and gated by `hx-confirm`, so htmx itself
+ * withholds the request until the dialog resolves. Accepting is therefore what
+ * issues it — binding the wait to the submit click would hang.
+ */
+async function acceptConfirmDialog(page: Page): Promise<void> {
+  await expect(page.locator('#confirm-modal')).toBeVisible();
+  await page.locator('#confirm-modal-accept').click();
+}
+
+async function cancelConfirmDialog(page: Page): Promise<void> {
+  await expect(page.locator('#confirm-modal')).toBeVisible();
+  await page.locator('#confirm-modal-cancel').click();
+  await expect(page.locator('#confirm-modal')).toBeHidden();
+}
+
+/** Records every request the page issues to pathSuffix while `action` runs. */
+async function requestsIssuedDuring(
+  page: Page,
+  pathSuffix: string,
+  action: () => Promise<void>
+): Promise<string[]> {
+  const seen: string[] = [];
+  const listener = (request: { url: () => string; method: () => string }) => {
+    if (new URL(request.url()).pathname.endsWith(pathSuffix)) {
+      seen.push(`${request.method()} ${request.url()}`);
+    }
+  };
+  page.on('request', listener);
+  try {
+    await action();
+  } finally {
+    page.off('request', listener);
+  }
+  return seen;
+}
+
 async function leaveRevealPage(page: Page): Promise<void> {
   await page.locator('[data-calendar-feed-reveal-continue]').click();
   await page.waitForURL(/\/settings(?:\?.*)?$/);
@@ -192,13 +229,12 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     const first = await generateFeed(page);
     await leaveRevealPage(page);
 
-    // Rotate and revoke carry `data-confirm`, but the dialog it opens does not
-    // gate an htmx-driven form: the request is issued by the submit event
-    // itself, so the click below is the action to bind the wait to. Once these
-    // forms gate the request behind the dialog, this spec accepts it here.
+    // Rotate is gated by the confirm dialog, so accepting it — not the submit
+    // click — is what issues the request.
     const rotateForm = feedSection(page).locator('[data-settings-calendar-feed-rotate]');
+    await rotateForm.locator('button[type="submit"]').click();
     await submitAndAwait(page, 'POST', '/api/v1/users/current/calendar-feed/rotate', () =>
-      rotateForm.locator('button[type="submit"]').click()
+      acceptConfirmDialog(page)
     );
     await page.waitForURL(/\/settings\/calendar-feed$/);
 
@@ -216,8 +252,9 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await expectNoSubscribeURLRendered(page, [first.token, rotated.token]);
 
     const revokeForm = feedSection(page).locator('[data-settings-calendar-feed-revoke]');
+    await revokeForm.locator('button[type="submit"]').click();
     await submitAndAwait(page, 'DELETE', '/api/v1/users/current/calendar-feed', () =>
-      revokeForm.locator('button[type="submit"]').click()
+      acceptConfirmDialog(page)
     );
     await expect(page.locator('#settings-calendar-feed-status .status-ok')).toBeVisible();
 
@@ -236,5 +273,74 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     await page.goto('/settings/calendar-feed');
     await expect(page).toHaveURL(/\/settings$/);
     await expectNoSubscribeURLRendered(page, [first.token, rotated.token]);
+  });
+
+  // Cancelling a confirmation must be inert. This is a real regression, not a
+  // hypothetical: rotate and revoke used to carry `data-confirm`, which is
+  // honored by a document-level submit listener, while htmx listens on the form
+  // itself and issues the request first — so the dialog was decorative and
+  // Cancel rotated the feed anyway, invalidating a subscribe URL the owner had
+  // just decided to keep. Both controls now use `hx-confirm`, which htmx gates
+  // on. The template-level guard against the whole class is
+  // TestNoTemplateElementMixesHTMXRequestWithDataConfirm.
+  test('cancelling rotate or revoke leaves the armed feed working', async ({ page }) => {
+    await registerOwnerAndOpenSettings(page, 'calendar-feed-confirm-cancel');
+
+    const armed = await generateFeed(page);
+    await leaveRevealPage(page);
+
+    // The subscribe URL works before any of this — the anchor every assertion
+    // below is measured against.
+    const beforeCancel = await page.request.get(armed.url);
+    expect(beforeCancel.status(), 'the freshly generated feed must serve').toBe(200);
+
+    const rotateForm = feedSection(page).locator('[data-settings-calendar-feed-rotate]');
+    const rotateRequests = await requestsIssuedDuring(
+      page,
+      '/api/v1/users/current/calendar-feed/rotate',
+      async () => {
+        await rotateForm.locator('button[type="submit"]').click();
+        await cancelConfirmDialog(page);
+        // A reload is the concrete signal that any request the click was going
+        // to issue has had its chance — no arbitrary timeout involved.
+        await page.reload();
+        await expect(page).toHaveURL(/\/settings$/);
+      }
+    );
+    expect(rotateRequests, 'cancelling rotate must issue no request').toEqual([]);
+
+    const revokeForm = feedSection(page).locator('[data-settings-calendar-feed-revoke]');
+    const revokeRequests = await requestsIssuedDuring(
+      page,
+      '/api/v1/users/current/calendar-feed',
+      async () => {
+        await revokeForm.locator('button[type="submit"]').click();
+        await cancelConfirmDialog(page);
+        await page.reload();
+        await expect(page).toHaveURL(/\/settings$/);
+      }
+    );
+    expect(revokeRequests, 'cancelling revoke must issue no request').toEqual([]);
+
+    // Still armed, and — the assertion that would have caught the original
+    // defect — the ORIGINAL subscribe URL still serves, so neither cancelled
+    // action rotated or revoked it behind the owner's back.
+    await expect(feedSection(page).locator('[data-calendar-feed-status]')).toHaveAttribute(
+      'data-calendar-feed-status',
+      'configured'
+    );
+    const afterCancel = await page.request.get(armed.url);
+    expect(afterCancel.status(), 'a cancelled rotate/revoke must leave the URL working').toBe(200);
+
+    // Positive anchor: the same control, accepted, really does revoke — so the
+    // assertions above prove Cancel is inert, not that the control is dead.
+    await revokeForm.locator('button[type="submit"]').click();
+    await submitAndAwait(page, 'DELETE', '/api/v1/users/current/calendar-feed', () =>
+      acceptConfirmDialog(page)
+    );
+    await expect(page.locator('#settings-calendar-feed-status .status-ok')).toBeVisible();
+
+    const afterAccept = await page.request.get(armed.url);
+    expect(afterAccept.status(), 'an accepted revoke must kill the URL').toBe(404);
   });
 });

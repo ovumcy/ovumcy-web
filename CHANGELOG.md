@@ -88,6 +88,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **"Cancel" now actually cancels on four confirmation dialogs.** Rotating or
+  revoking the calendar feed, hiding a custom symptom, and deleting a calendar
+  day entry each asked for confirmation — but the request was already on its way
+  before the dialog appeared, so cancelling still performed the action (and
+  confirming performed it twice). Rotating a feed the owner had decided to keep
+  invalidated a subscribe URL every subscribed calendar client was using. The
+  dialog on these surfaces was decorative; it now gates the request, and a
+  template-level guard fails the build if any future htmx-driven control is
+  wired the same way.
+
 - **Two-factor and SSO-link errors are localized again.** A wrong 2FA code showed
   every user the untranslated English string `totp invalid code`, regardless of
   the interface language, and the OIDC link-confirmation page did the same with
