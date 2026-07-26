@@ -26,6 +26,7 @@ Ovumcy uses only first-party cookies. Cookies marked **Sealed** are encrypted wi
 | `ovumcy_tz` | Client IANA timezone for server-side calendar math | 1 year | `/` | no (JS-writable, server-validated) | Lax | `COOKIE_SECURE` | no |
 | `ovumcy_flash` | One-shot UI message between redirects | 5 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_recovery_code` | Carries the freshly issued recovery code to `/recovery-code` | 20 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
+| `ovumcy_calendar_feed` | Carries the freshly generated or rotated `.ics` calendar-feed subscribe URL (embeds the bearer capability token) to the one-time reveal page (`GET /settings/calendar-feed`) — the same shown-once transport as `ovumcy_recovery_code` above | 20 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_register_pickup` | Single-use opaque nonce + decoy recovery code for post-register pickup; consumed atomically through `register_pickup_tokens` | 5 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_reset_password` | Carries a password-reset token between the recovery-code page and `/reset-password` | 30 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_oidc_auth` | OIDC `state`, `nonce`, PKCE verifier during sign-in | 10 minutes | `/auth/oidc/callback` | yes | None | forced `true` | yes |

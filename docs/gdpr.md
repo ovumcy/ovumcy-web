@@ -36,9 +36,10 @@ The full data inventory lives in [`docs/security/data-handling.md`](security/dat
 - `daily_logs`: per-day cycle entries, owner-controlled symptoms, free-text notes.
 - `symptom_types`: owner-managed symptom catalogue.
 - `oidc_identities`: federated-login link (only when OIDC is enabled).
-- Auxiliary short-lived tables (`register_pickup_tokens`, `oidc_logout_states`): TTL-bounded, not joined to `users`.
+- Auxiliary short-lived tables: `register_pickup_tokens` carries a required `user_id`; `oidc_logout_states` carries a `user_id` since migration 031 (NULL on rows written before it, which age out by TTL alone). Neither foreign-keys to `users`; rows with a resolvable `user_id` are explicitly deleted for that user on account erasure, and every row is TTL-bounded regardless.
+- `app_state`: non-personal operational key-value bookkeeping (for example, the built-in reminder scheduler's last-run marker) — not scoped to any user.
 
-**Nothing else is stored.** No analytics, telemetry, third-party identifiers, advertising attribution, error reports, or persistent per-action audit log. Per-action security-event logging is **off by default** and can be enabled per deployment through `AUDIT_LOG_ENABLED=true`.
+**No personal data beyond the above is stored.** No analytics, telemetry, third-party identifiers, advertising attribution, error reports, or persistent per-action audit log. Per-action security-event logging is **off by default** and can be enabled per deployment through `AUDIT_LOG_ENABLED=true`.
 
 ## Data Subject Rights (Art. 15-22)
 
@@ -119,7 +120,11 @@ Ovumcy does not auto-delete user records. Health data is retained until the data
 
 If your deployment commits to a specific retention period (for example, "delete logs older than 5 years"), implement it through an operator cron job that calls the same internal repository methods used by `clear-data`. There is no built-in scheduler today.
 
-Auxiliary short-lived tables (`register_pickup_tokens` ≤ 5 min, `oidc_logout_states` ≤ provider-defined) are TTL-bounded and pruned in the normal sweep.
+Auxiliary short-lived tables (`register_pickup_tokens` ≤ 5 min, `oidc_logout_states` ≤ 7 days — a fixed value Ovumcy sets itself, not supplied by the OIDC provider) are TTL-bounded and pruned in the normal sweep.
+
+## Backup Restore and the Calendar Feed
+
+Restoring the data volume from a backup returns the database to its state at backup time, including `calendar_feed_selector` and the verifier columns. If an owner revoked or rotated their calendar-feed subscription after that backup was taken, restoring from it resurrects the old subscribe URL — confirmed in a live restore drill, not theoretical. After any restore, re-check `Settings → Calendar feed` for every owner and revoke or regenerate the feed again if it should no longer be armed.
 
 ## Cookie Consent (ePrivacy)
 
