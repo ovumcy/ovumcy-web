@@ -52,6 +52,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time; nothing connected them to the errors the pages were reporting. Affects
   displayed text only — no flow, status code, or rate limit changes.
 
+- **A subscribed calendar could show predicted days shifted by a day.** The
+  `.ics` feed decided which day was "today" from the timezone of the request
+  that fetched it, but a calendar client sends neither the timezone header nor
+  the cookie that chain reads, so every poll fell back to the server's timezone.
+  An owner whose timezone differed from the server's could therefore see a
+  predicted period or ovulation day appear or drop off a day early or late — and
+  disagree with the webhook reminder for the very same prediction, which already
+  used the owner's stored timezone. The feed now resolves "today" in the owner's
+  stored timezone as well, falling back to the request/server zone only for an
+  owner whose timezone has never been captured. See
+  [docs/notifications.md](docs/notifications.md).
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no
