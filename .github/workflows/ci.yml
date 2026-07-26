@@ -541,7 +541,7 @@ jobs:
     # The unit/e2e jobs exercise the app under `go run`; only this job proves the
     # embedded templates/locales/web-static (go:embed) and the static.New asset
     # middleware serve correctly from the shell-less scratch image, and that the
-    # in-container `ovumcy healthcheck` self-probe passes. Not a required status
+    # in-container `ovumcy healthcheck`/`readycheck` self-probes pass. Not a required status
     # check and the image isn't built on PRs at all, so this runs on
     # push/release/dispatch, catching an asset/embed/packaging regression
     # before it reaches a release tag.
@@ -591,6 +591,11 @@ jobs:
 
           curl -fsS http://localhost:18080/healthz | grep -q '"status":"ok"'
 
+          # /readyz additionally proves the storage layer answers inside the
+          # image: it runs a real query against the container's own database,
+          # which no other assertion here reaches.
+          curl -fsS http://localhost:18080/readyz | grep -q '"status":"ok"'
+
           # /login renders from embedded templates.
           login="$(curl -fsS http://localhost:18080/login)"
           printf '%s' "$login" | grep -q 'id="login-form"'
@@ -602,10 +607,14 @@ jobs:
           curl -fsS -D - -o /dev/null "http://localhost:18080$asset" \
             | tr -d '\r' | grep -iq '^cache-control: public, max-age=3600'
 
-          # The container's own HEALTHCHECK command (the binary self-probe).
+          # The container's own HEALTHCHECK command (the binary self-probe) and
+          # its readiness sibling, which an operator runs by hand on a shell-free
+          # image. The HEALTHCHECK directive deliberately stays on the liveness
+          # probe so a storage blip cannot restart the container.
           docker exec "$cid" /app/ovumcy healthcheck
+          docker exec "$cid" /app/ovumcy readycheck
 
-          echo "image smoke OK: healthz + login + static ($asset) + in-container healthcheck"
+          echo "image smoke OK: healthz + readyz + login + static ($asset) + in-container healthcheck/readycheck"
 
   publish-image:
     # Publishes `ghcr.io/<repo>:latest` (plus `main` and `sha-<short>`) for the

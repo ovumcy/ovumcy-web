@@ -76,7 +76,13 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 }
 
 func registerPageRoutes(app *fiber.App, handler *Handler) {
+	// Liveness and readiness are separate probes with the same public,
+	// unauthenticated posture: neither sits under /api (so neither inherits the
+	// API rate-limit budget), both are GET (so the CSRF middleware never
+	// validates them), and both cost one cheap answer. /healthz never touches
+	// storage; /readyz does exactly one trivial storage probe.
 	app.Get("/healthz", handler.Health)
+	app.Get("/readyz", handler.Ready)
 	app.Get("/favicon.ico", sendNoContent)
 	app.Post("/lang", handler.SetLanguage)
 

@@ -862,11 +862,31 @@ paths:
     get:
       tags: [meta]
       summary: Liveness probe.
-      description: Returns 200 OK when the application is running. Public, no session required.
+      description: >-
+        Returns 200 OK when the application is running. It never touches the database,
+        so it stays green while storage is unreachable — use `/readyz` for that.
+        Public, no session required.
       security: []
       responses:
         '200':
           description: Service is alive.
+
+  /readyz:
+    get:
+      tags: [meta]
+      summary: Readiness probe.
+      description: >-
+        Returns 200 OK when the application can serve traffic, and 503 when the storage
+        layer does not answer a trivial probe. Both responses carry a fixed, non-revealing
+        body; no driver, path, or error detail is exposed. Public, no session required.
+        The container health check deliberately stays on `/healthz` so a transient storage
+        failure cannot restart the container.
+      security: []
+      responses:
+        '200':
+          description: Service is ready.
+        '503':
+          description: Service is not ready.
 
   /lang:
     post:

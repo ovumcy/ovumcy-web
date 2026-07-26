@@ -33,6 +33,7 @@ type Dependencies struct {
 	OnboardingService      *services.OnboardingService
 	SetupService           *services.SetupService
 	TOTPService            *services.TOTPService
+	ReadinessService       *services.ReadinessService
 	RegisterPickupTokens   RegisterPickupTokenStore
 
 	// AuditLogEnabled gates the per-action security-event audit stream
@@ -81,6 +82,7 @@ func (dependencies Dependencies) requirements() []dependencyRequirement {
 		{value: dependencies.OnboardingService, message: "onboarding service is required"},
 		{value: dependencies.SetupService, message: "setup service is required"},
 		{value: dependencies.TOTPService, message: "totp service is required"},
+		{value: dependencies.ReadinessService, message: "readiness service is required"},
 		{value: dependencies.RegisterPickupTokens, message: "register pickup token store is required"},
 	}
 }

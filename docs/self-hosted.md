@@ -233,18 +233,32 @@ Use them when you need both:
 
 ## Health Checks by Deployment Mode
 
-The runtime image ships with a built-in `ovumcy healthcheck` subcommand. It makes an in-process `GET /healthz` against `127.0.0.1:$PORT` and exits non-zero on failure, so the scratch-based container image needs no external HTTP client (no `curl`, no `wget`). Docker invokes it automatically per the `HEALTHCHECK` directive baked into the image.
+The app exposes two probes, and they answer different questions:
+
+| Probe | Answers | Touches the database | Fails when |
+| --- | --- | --- | --- |
+| `GET /healthz` | Is the process alive? | No | The process is gone or wedged |
+| `GET /readyz` | Can it actually serve requests? | Yes — one trivial query | Storage is unreachable |
+
+`/healthz` deliberately never queries the database. That is what makes it safe as the container health check: a database that is slow for ten seconds, or a Postgres container restarting under the app, must not turn into a killed and restarted app container. It also means `/healthz` alone cannot tell you the app is *working* — it stays green with storage completely gone, which is exactly the case `/readyz` exists to catch.
+
+`/readyz` runs one trivial query against the configured engine and answers `200` when it succeeds, `503` when it does not. Both responses are a fixed one-word body; neither reveals the engine, the database path, or the error. Reach for it when the container is healthy but the app is misbehaving, and use it as the drain signal in front of a load balancer.
+
+The runtime image ships both as built-in subcommands, `ovumcy healthcheck` and `ovumcy readycheck`. Each makes an in-process request against `127.0.0.1:$PORT` and exits non-zero on failure, so the scratch-based container image needs no external HTTP client (no `curl`, no `wget`). Docker invokes `ovumcy healthcheck` automatically per the `HEALTHCHECK` directive baked into the image; `ovumcy readycheck` is yours to run on demand. The `HEALTHCHECK` directive is intentionally left on the liveness probe — do not repoint it at `/readyz` unless you actively want a database outage to restart the container.
 
 Use the health check that matches your deployment path:
 
 - Public reverse-proxy stack:
   - `docker compose ps` should show `ovumcy` as healthy;
-  - `curl -fsS https://your-domain.example/healthz` should succeed through the proxy.
+  - `curl -fsS https://your-domain.example/healthz` should succeed through the proxy;
+  - `curl -fsS https://your-domain.example/readyz` should succeed too — a `503` here with a healthy container means the app is up but its storage is not.
 - Local/private base compose path:
   - `docker compose ps` should show the container healthy;
-  - `curl -fsS http://127.0.0.1:8080/healthz` should succeed on the host.
+  - `curl -fsS http://127.0.0.1:8080/healthz` should succeed on the host;
+  - `curl -fsS http://127.0.0.1:8080/readyz` should succeed on the host.
 - Direct container probe (no host port published):
-  - `docker exec ovumcy /app/ovumcy healthcheck` should exit `0`.
+  - `docker exec ovumcy /app/ovumcy healthcheck` should exit `0`;
+  - `docker exec ovumcy /app/ovumcy readycheck` should exit `0`.
 
 For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.1:8080` listener as a problem. In the preferred deployment model, that port is intentionally not published to the host at all.
 
@@ -295,7 +309,7 @@ Recommended baseline:
 
 - Use the default Docker named volume when possible.
 - Keep at least one recent rollback backup before replacing production data.
-- Verify a restore with `/healthz` and a normal page load before trusting it.
+- Verify a restore with `/readyz` and a normal page load before trusting it. A restore changes the storage layer, which is the half `/healthz` deliberately does not check.
 
 Bind mounts are still valid, but they are an advanced operator path. For bind mounts, stop the app and back up the mounted directory with normal filesystem tools while preserving file contents and access permissions.
 

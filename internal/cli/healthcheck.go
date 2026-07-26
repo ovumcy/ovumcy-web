@@ -13,6 +13,7 @@ const (
 	defaultHealthcheckPort    = "8080"
 	defaultHealthcheckTimeout = 5 * time.Second
 	healthcheckPath           = "/healthz"
+	readycheckPath            = "/readyz"
 )
 
 // RunHealthcheckCommand probes the local server's /healthz endpoint and returns
@@ -20,16 +21,33 @@ const (
 // healthcheck in scratch-based runtime images where no external HTTP client
 // (curl/wget) is available.
 func RunHealthcheckCommand(port string, timeout time.Duration) error {
+	return probeHealthEndpoint(localProbeURL(healthcheckPath, port), probeTimeoutOrDefault(timeout))
+}
+
+// RunReadycheckCommand probes the local server's /readyz endpoint the same way,
+// so an operator on a shell-free scratch image can ask whether the process can
+// actually serve traffic rather than only whether it is alive. It is
+// deliberately NOT the container healthcheck: that stays on /healthz so a
+// transient storage failure cannot turn into a restart loop.
+func RunReadycheckCommand(port string, timeout time.Duration) error {
+	return probeHealthEndpoint(localProbeURL(readycheckPath, port), probeTimeoutOrDefault(timeout))
+}
+
+// localProbeURL addresses the probe at the loopback listener, falling back to
+// the image's default port when PORT is unset.
+func localProbeURL(path string, port string) string {
 	port = strings.TrimSpace(port)
 	if port == "" {
 		port = defaultHealthcheckPort
 	}
-	if timeout <= 0 {
-		timeout = defaultHealthcheckTimeout
-	}
+	return "http://127.0.0.1:" + port + path
+}
 
-	url := "http://127.0.0.1:" + port + healthcheckPath
-	return probeHealthEndpoint(url, timeout)
+func probeTimeoutOrDefault(timeout time.Duration) time.Duration {
+	if timeout <= 0 {
+		return defaultHealthcheckTimeout
+	}
+	return timeout
 }
 
 func probeHealthEndpoint(url string, timeout time.Duration) error {
@@ -52,14 +70,17 @@ func probeHealthEndpoint(url string, timeout time.Duration) error {
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("healthcheck request failed: %w", err)
+		// The message names the probed path, not the command: this function
+		// now serves both healthcheck and readycheck, and an operator reading
+		// a failure mid-incident needs to know which probe answered.
+		return fmt.Errorf("probe %s failed: %w", url, err)
 	}
 	defer func() {
 		_ = response.Body.Close()
 	}()
 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("healthcheck returned status %d", response.StatusCode)
+		return fmt.Errorf("probe %s returned status %d", url, response.StatusCode)
 	}
 	return nil
 }

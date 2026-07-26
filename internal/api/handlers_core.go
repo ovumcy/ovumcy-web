@@ -9,10 +9,32 @@ import (
 
 // Health reports process liveness only. It does NOT query the database or
 // check any downstream dependency, so a 200 here means the process is alive,
-// not that it is ready to serve traffic. This is a deliberate trade-off:
-// adding an unauthenticated DB ping would expose a recon/load surface. Wire
-// a separate readiness probe if you need DB-health visibility.
+// not that it is ready to serve traffic. That split is deliberate and load
+// bearing: the container healthcheck probes this endpoint, so a storage blip
+// must not be able to restart the process. Ready (/readyz) is the probe that
+// answers the storage question.
 func (handler *Handler) Health(c fiber.Ctx) error {
+	return c.JSON(fiber.Map{"status": "ok"})
+}
+
+// Ready reports whether the process can serve traffic, not merely that it is
+// running: it answers 200 only when the storage layer responds to a trivial
+// probe, and 503 when it does not. It is the readiness half of the probe pair
+// — an operator or load balancer drains on 503, while the container
+// healthcheck stays on Health so a transient failure does not become a restart
+// loop.
+//
+// Both bodies are fixed constants that mirror Health's shape. The endpoint is
+// unauthenticated by nature, so nothing about the failure — driver, database
+// path, error text — may travel in the response: the caller learns exactly the
+// one bit a readiness probe exists to carry. Nothing is logged from here
+// either; the request logger already records the 503 with its method and path,
+// and an anonymous caller must not be able to drive log volume or emit driver
+// detail into the operator's logs on demand.
+func (handler *Handler) Ready(c fiber.Ctx) error {
+	if err := handler.readinessService.CheckStorage(c.Context()); err != nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"status": "unavailable"})
+	}
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 

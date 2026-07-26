@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"gorm.io/gorm"
 )
 
 // Basic identity / catalog handler smoke regressions. These cover the
@@ -32,6 +33,83 @@ func TestHealthEndpointReturnsOKJSON(t *testing.T) {
 	}
 	if payload["status"] != "ok" {
 		t.Fatalf("expected status=ok, got %v", payload["status"])
+	}
+}
+
+// TestHealthEndpointStaysGreenWithStorageGone pins the liveness/readiness
+// split from the liveness side: /healthz must keep answering 200 after the
+// storage handle is gone, because the container healthcheck probes it and a
+// transient database failure must not restart the process. Without this the
+// split is one accidental repository call away from becoming a restart loop.
+func TestHealthEndpointStaysGreenWithStorageGone(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	closeTestDatabase(t, database)
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	assertStatusCode(t, response, http.StatusOK)
+	if body := mustReadBodyString(t, response.Body); body != readinessProbeOKBody {
+		t.Fatalf("expected liveness body %q with storage gone, got %q", readinessProbeOKBody, body)
+	}
+}
+
+// readinessProbeOKBody and readinessProbeUnavailableBody are the exact bytes
+// /readyz is allowed to emit. They are spelled out here rather than imported
+// from the handler so a change to either response has to be made twice, on
+// purpose: this endpoint is unauthenticated, so its body is a contract with
+// anyone on the network and must never grow driver, path, or error detail.
+const (
+	readinessProbeOKBody          = `{"status":"ok"}`
+	readinessProbeUnavailableBody = `{"status":"unavailable"}`
+)
+
+// TestReadyEndpointReturns200WithLiveStorage is the readiness happy path and
+// the positive anchor for the 503 test below: it proves the probe really
+// reaches a working database rather than always answering the same way.
+func TestReadyEndpointReturns200WithLiveStorage(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	assertStatusCode(t, response, http.StatusOK)
+	if body := mustReadBodyString(t, response.Body); body != readinessProbeOKBody {
+		t.Fatalf("expected readiness body %q, got %q", readinessProbeOKBody, body)
+	}
+}
+
+// TestReadyEndpointReturns503OnceStorageIsGone drives the real failure: the
+// app's own *sql.DB is closed underneath it, so the probe hits a genuinely
+// dead handle rather than a stub that agrees to fail. It also pins the body
+// bytes, because a 503 that leaks the driver name or the database path would
+// hand an unauthenticated caller a free reconnaissance surface.
+func TestReadyEndpointReturns503OnceStorageIsGone(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	closeTestDatabase(t, database)
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	assertStatusCode(t, response, http.StatusServiceUnavailable)
+
+	body := mustReadBodyString(t, response.Body)
+	if body != readinessProbeUnavailableBody {
+		t.Fatalf("expected readiness body %q, got %q", readinessProbeUnavailableBody, body)
+	}
+	for _, leaked := range []string{"sql", "sqlite", "driver", "database", ".db", "SELECT"} {
+		if strings.Contains(strings.ToLower(body), strings.ToLower(leaked)) {
+			t.Fatalf("readiness failure body leaked %q: %q", leaked, body)
+		}
+	}
+}
+
+// closeTestDatabase closes the handle the test app was built with, simulating
+// the storage layer disappearing under a running process. The app's own
+// t.Cleanup closes it again; database/sql tolerates the second close.
+func closeTestDatabase(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("resolve sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
 	}
 }
 
