@@ -15,6 +15,12 @@ import { openCalendarDayEditor } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import {
+  acceptConfirmDialog,
+  cancelConfirmDialog,
+  expectConfirmDialogCaptions,
+  mutatingRequestsDuring,
+} from './support/confirm-dialog-helpers';
 
 function shiftISODate(iso: string, days: number): string {
   const [y, m, d] = iso.split('-').map((part) => Number(part));
@@ -210,6 +216,85 @@ test.describe('Calendar page', () => {
 
     await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${pastISO}"]`)).toHaveCount(0);
     await expect(page.locator(`[data-day-editor-open="${pastISO}"]`).first()).toBeVisible();
+    await expect(page.locator('#day-editor')).not.toContainText(noteText);
+  });
+
+  // Cancelling the confirmation must be inert. This is a real regression, not a
+  // hypothetical: while the delete control carried `data-confirm`, htmx issued
+  // the DELETE from its own listener on the form before the document-level
+  // interceptor ever ran, so the dialog was decorative and Cancel erased the
+  // day anyway — irrecoverable, since health data has no undo. The control now
+  // uses `hx-confirm`, which htmx gates on. The template-level guard against the
+  // whole class is TestNoTemplateElementMixesHTMXRequestWithDataConfirm; the
+  // sibling cancel-is-inert tests cover the other gated surfaces in
+  // settings-profile-cycle.spec.ts and settings-calendar-feed.spec.ts.
+  test('cancelling the delete confirmation leaves the day entry intact', async ({ page }) => {
+    await registerOwnerOnCalendar(page, 'calendar-delete-cancel');
+
+    const todayISO = await todayISOFromCalendar(page);
+    const pastISO = shiftISODate(todayISO, -2);
+    const pastMonth = pastISO.slice(0, 7);
+    const noteText = `calendar-delete-cancel-${Date.now()}`;
+
+    const dayEditorForm = await openCalendarDayEditor(page, pastISO);
+    await dayEditorForm.locator('input[name="is_period"]').check();
+    await openCalendarNotes(dayEditorForm);
+    await dayEditorForm.locator('#calendar-notes').fill(noteText);
+    // Bind the wait to this click's own PUT and let the htmx cascade it triggers
+    // settle, so the entry is committed — not merely submitted — before the
+    // delete flow starts (same reasoning as saveDayEditorForm in
+    // calendar-autofill-clear.spec.ts).
+    const [saveRequest] = await Promise.all([
+      page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${pastISO}`)
+      ),
+      dayEditorForm.locator('button[data-save-button]').click(),
+    ]);
+    const saveResponse = await saveRequest.response();
+    expect(saveResponse, `expected a response for PUT /api/v1/days/${pastISO}`).not.toBeNull();
+    expect(
+      saveResponse!.ok(),
+      `PUT /api/v1/days/${pastISO} failed with ${saveResponse!.status()}`
+    ).toBeTruthy();
+    await page.waitForLoadState('networkidle');
+
+    const deleteForm = page.locator(`[data-day-delete-form][data-day-delete-date="${pastISO}"]`);
+    const isDayMutation = (pathname: string) => pathname.endsWith(`/api/v1/days/${pastISO}`);
+
+    const cancelledRequests = await mutatingRequestsDuring(page, isDayMutation, async () => {
+      await openCalendarDayEditor(page, pastISO);
+      const deleteButton = deleteForm.locator('[data-day-delete-button]');
+      await expect(deleteButton).toBeVisible();
+      await deleteButton.click();
+
+      // The dialog must show the captions this surface declared, not a
+      // hardcoded fallback: backend coverage only pins that they are declared.
+      await expectConfirmDialogCaptions(page, deleteForm);
+      await cancelConfirmDialog(page);
+
+      // A reload is the concrete signal that any request the click was going to
+      // issue has had its chance — no arbitrary timeout involved.
+      await page.reload();
+      await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${pastMonth}&day=${pastISO}`));
+    });
+    expect(cancelledRequests, 'cancelling the delete must issue no request').toEqual([]);
+
+    // The entry survived the dialog and the reload — asserted on the server-rendered
+    // grid marker as well as the panel, so this cannot pass on stale client state.
+    await expect(page.locator('#day-editor')).toContainText(noteText);
+    await expect(page.locator(`button[data-day="${pastISO}"]`)).toHaveAttribute(
+      'data-calendar-has-data',
+      'true'
+    );
+
+    // Positive anchor: the same control, accepted, really does delete — so the
+    // assertions above prove Cancel is inert, not that the control is dead.
+    await openCalendarDayEditor(page, pastISO);
+    await deleteForm.locator('[data-day-delete-button]').click();
+    await acceptConfirmDialog(page);
+
+    await expect(deleteForm).toHaveCount(0);
     await expect(page.locator('#day-editor')).not.toContainText(noteText);
   });
 
