@@ -48,6 +48,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are ~450 B on a normal signed-in request. See *Troubleshooting* in
   [docs/self-hosted.md](docs/self-hosted.md).
 
+- **The container image is published only after the commit's own CI passes.** A
+  push to `main` used to start the publish workflow alongside the test, e2e and
+  scan workflows for the same commit, and the publish normally finished first:
+  `ghcr.io/ovumcy/ovumcy-web:latest` was anonymously pullable before anything had
+  judged that commit — including the image scan that could still fail it. Branch
+  protection guards the merge, not the commit the merge produces, so nothing else
+  covered this. Publication is now the last job of the CI run, behind `test`,
+  `race`, `e2e`, `e2e-postgres-smoke` and `image-smoke`, and it scans the exact
+  image it is about to push before the first byte reaches the registry.
+
+  Operator-visible effect: `:latest` now trails a push to `main` by a full CI run
+  instead of a couple of minutes, and stays on the previous commit whenever a
+  check fails. Release tags publish from their own tag push as before, now with
+  the same pre-publish scan, and the signer identity to verify with `cosign` is
+  unchanged for both — the commands in
+  [SECURITY.md](SECURITY.md#verifying-release-authenticity) still apply as
+  written.
+
 ### Fixed
 
 - **Two-factor and SSO-link errors are localized again.** A wrong 2FA code showed
