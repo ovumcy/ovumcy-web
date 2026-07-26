@@ -390,6 +390,82 @@ func TestVerifyTOTP2FAEnrollmentRefusesSetupCookieNotMintedForThisOwner(t *testi
 	}
 }
 
+// TestVerifyTOTP2FAEnrollmentClearsASetupCookieItCannotUse extends the owner
+// binding above to the rest of the refusals. The owner mismatch was cleared;
+// an expired or unopenable payload was not, and this cookie carries the RAW
+// TOTP secret of an enrollment nobody completed. Session-scoped at path "/", it
+// then rode on every request for the rest of the browser session while being
+// good for nothing — the payload's own ExpiresAt refuses it server-side, so the
+// cost is blast radius rather than a usable enrollment.
+//
+// Every branch answers the same session-expired spec, so the assertions here
+// are about what the response DOES, not what it says: the refusal must not be
+// distinguishable from an owner mismatch.
+//
+// Anchored twice, because a clear-everything reader would satisfy the refusals
+// on its own: the enrollment page still mints a usable cookie, and a wrong
+// six-digit code — a refusal about the code, not the cookie — leaves the
+// enrollment in place so the owner can retype it.
+func TestVerifyTOTP2FAEnrollmentClearsASetupCookieItCannotUse(t *testing.T) {
+	ctx := newTOTPSettingsContext(t, "totp-enroll-clear@example.com")
+	secretKey := []byte("test-secret-key")
+
+	key, err := getTOTPServiceForTest(ctx.database).GenerateSetupKey("Ovumcy", ctx.user.Email)
+	if err != nil {
+		t.Fatalf("GenerateSetupKey: %v", err)
+	}
+
+	// Anchor 1: the enrollment page mints a usable cookie in the first place.
+	pageRequest := httptest.NewRequest(http.MethodGet, "/settings/2fa", nil)
+	pageRequest.Header.Set("Accept-Language", "en")
+	pageRequest.Header.Set("Cookie", ctx.authCookie)
+	setupPage := mustAppResponse(t, ctx.app, pageRequest)
+	if setupPage.StatusCode != http.StatusOK {
+		t.Fatalf("expected the enrollment page to render, got %d", setupPage.StatusCode)
+	}
+	if minted := responseCookie(setupPage.Cookies(), totpSetupCookieName); minted == nil || minted.Value == "" {
+		t.Fatal("expected the enrollment page to mint a setup cookie — the rest of this test has no premise without it")
+	}
+
+	// Anchor 2: a wrong code refuses the code, not the enrollment.
+	usable := sealTOTPSetupCookieForTest(t, secretKey, ctx.user.ID, key.Secret())
+	wrongCode := totpEnrollmentRequest(t, ctx, "000000", usable)
+	defer func() { _ = wrongCode.Body.Close() }()
+	if wrongCode.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected a wrong enrollment code to be refused with 401, got %d", wrongCode.StatusCode)
+	}
+	assertTOTPCookieLeftInPlace(t, wrongCode, totpSetupCookieName)
+
+	sealedUsable := strings.TrimPrefix(usable, totpSetupCookieName+"=")
+	expired := sealTOTPCookiePayloadForTest(t, secretKey, totpSetupCookieName, totpSetupCookiePayload{
+		UserID:    ctx.user.ID,
+		RawSecret: key.Secret(),
+		ExpiresAt: time.Now().Add(-1 * time.Minute),
+	})
+
+	unusable := map[string]string{
+		"expired":  totpSetupCookieName + "=" + expired,
+		"tampered": totpSetupCookieName + "=" + flipLastBaseEncodedByte(t, sealedUsable),
+	}
+	for name, setupCookie := range unusable {
+		t.Run(name, func(t *testing.T) {
+			response := totpEnrollmentRequest(t, ctx, "123456", setupCookie)
+			defer func() { _ = response.Body.Close() }()
+
+			if response.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("expected the %s setup cookie to be refused with 401, got %d", name, response.StatusCode)
+			}
+			assertTOTPCookieCleared(t, response, totpSetupCookieName)
+			if state := totpStateForUser(t, ctx, ctx.user.ID); state.TOTPEnabled || state.TOTPSecret != "" {
+				t.Fatalf("a %s setup cookie must not enrol anything", name)
+			}
+			if body := mustReadBodyString(t, response.Body); strings.Contains(body, key.Secret()) {
+				t.Fatal("a refused setup cookie must not surface the pending secret")
+			}
+		})
+	}
+}
+
 // --- DisableTOTP2FA ---
 
 func TestDisableTOTP2FA_CorrectPassword_DisablesTOTP(t *testing.T) {

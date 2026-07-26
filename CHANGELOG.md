@@ -187,6 +187,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A two-factor cookie the server refuses is now cleared instead of left in the
+  browser.** `ovumcy_totp_pending` and `ovumcy_totp_setup` are both
+  session-scoped: they carry no expiry attribute of their own, only a
+  payload-bound five-minute validity the server checks on every read. That check
+  never stopped working, so a stale value could not be used — but nothing
+  retracted it either, and the browser kept sending it on every request until it
+  closed. The enrollment cookie is the one that matters: its payload is the raw
+  TOTP secret of an enrollment that was abandoned, and it stayed in transport
+  long after the five minutes were up.
+
+  Both readers now clear the cookie on every refusal — an envelope that will not
+  open, a tampered value, a payload that is not the expected shape, one naming no
+  account, one carrying no secret, one minted for another account, and an expired
+  one — matching what the reset-password, recovery-code and OIDC-logout cookies
+  already did. Nothing changes about what the response says: every one of these
+  still answers the same "session expired" result, so the response cannot be used
+  to tell an expiry apart from a payload minted elsewhere. A refusal about the
+  submitted code is deliberately not a clear — a mistyped six-digit code leaves
+  the challenge and the pending enrollment exactly where they were, and can be
+  retried.
+
 - **Signing out now retracts the pending two-factor enrollment cookie and the
   one-time calendar-feed reveal cookie.** Logout cleared the auth cookie, the
   provider-logout bridge, the recovery-code and reset-password handoffs and the
