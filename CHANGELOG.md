@@ -92,6 +92,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes: the next request re-detects the zone and stores it again, so reminder
   scheduling is unaffected, and account identity (email, password, display name,
   2FA, SSO links) is preserved exactly as before.
+- **A subscribed calendar could show predicted days shifted by a day.** The
+  `.ics` feed decided which day was "today" from the timezone of the request
+  that fetched it, but a calendar client sends neither the timezone header nor
+  the cookie that chain reads, so every poll fell back to the server's timezone.
+  An owner whose timezone differed from the server's could therefore see a
+  predicted period or ovulation day appear or drop off a day early or late — and
+  disagree with the webhook reminder for the very same prediction, which already
+  used the owner's stored timezone. The feed now resolves "today" in the owner's
+  stored timezone as well, falling back to the request/server zone only for an
+  owner whose timezone has never been captured. See
+  [docs/notifications.md](docs/notifications.md).
+
 ### Security
 
 - **A `SECRET_KEY` rotation now revokes calendar-feed subscriptions of every
