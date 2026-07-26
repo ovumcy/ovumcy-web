@@ -330,6 +330,62 @@ func TestCalendarFeedRevealCrossOwnerCookieIgnored(t *testing.T) {
 	}
 }
 
+// TestCalendarFeedRevealRefusesUnattributedCookie is the reveal page's answer to
+// a sealed payload that names NO owner. The scoping comparison has two operands;
+// a payload carrying `uid` 0 supplies neither an owner to match nor a reason to
+// skip the match. Refusing it is what stops a well-sealed but unattributed
+// payload from handing one owner's subscribe URL — a bearer capability token —
+// to a different signed-in owner.
+//
+// The payload here is sealed under the app's own secret, so it opens cleanly:
+// only the owner-scoping guard stands between it and the reveal. The positive
+// anchor at the top proves the page still reveals to the owner it was minted
+// for, so the refusal below cannot be satisfied by a page that reveals nothing.
+func TestCalendarFeedRevealRefusesUnattributedCookie(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "feed-reveal-unattributed-a@example.com")
+
+	// Positive anchor: owner A generates and sees the URL on the reveal page.
+	gen := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
+	_ = gen.Body.Close()
+	revealResponse, revealBody := followCalendarFeedReveal(t, ctx, responseCookie(gen.Cookies(), calendarFeedRevealCookieName))
+	defer func() { _ = revealResponse.Body.Close() }()
+	if !strings.Contains(revealBody, "/calendar/feed/") {
+		t.Fatal("owner A must see the subscribe URL on the reveal page it was minted for")
+	}
+
+	// A second independent owner arms a feed of their own; its token is the
+	// secret an unattributed payload would carry across the owner boundary.
+	ownerB := createOnboardingTestUser(t, ctx.database, "feed-reveal-unattributed-b@example.com", "StrongPass1", true)
+	tokenB := armCalendarFeedForUser(t, ctx.database, ownerB.ID)
+
+	unattributed := sealCookieForTestApp(t, calendarFeedRevealCookieName,
+		[]byte(`{"uid":0,"feed_url":"https://ovumcy.example`+calendarFeedURL(tokenB)+`"}`))
+
+	request := httptest.NewRequest(http.MethodGet, "/settings/calendar-feed", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, calendarFeedRevealCookieName+"="+unattributed))
+	response, err := ctx.app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("unattributed reveal request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected an unattributed reveal payload to be refused with a redirect, got %d", response.StatusCode)
+	}
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected redirect to /settings, got %q", location)
+	}
+	body := mustReadBodyString(t, response.Body)
+	if strings.Contains(body, tokenB) {
+		t.Fatal("an unattributed reveal payload must not surface another owner's feed token")
+	}
+	cleared := responseCookie(response.Cookies(), calendarFeedRevealCookieName)
+	if cleared == nil || cleared.Value != "" {
+		t.Fatal("expected the refused reveal cookie to be cleared, not left presentable on a retry")
+	}
+}
+
 // TestCalendarFeedRevealWithoutCookieRedirects proves a direct visit to the
 // reveal page with no sealed cookie redirects to /settings and shows nothing.
 func TestCalendarFeedRevealWithoutCookieRedirects(t *testing.T) {
