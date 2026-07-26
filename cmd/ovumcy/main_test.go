@@ -1643,6 +1643,78 @@ func TestTryRunCLICommandWithHandlersPropagatesHealthcheckError(t *testing.T) {
 	}
 }
 
+// TestTryRunCLICommandWithHandlersReadycheckBranches covers the readycheck
+// dispatch the same way healthcheck is covered above: the port travels from
+// PORT, extra arguments are refused, a missing handler and an unusable PORT are
+// reported, and the probe's own error propagates so the process exits non-zero.
+func TestTryRunCLICommandWithHandlersReadycheckBranches(t *testing.T) {
+	t.Run("forwards the configured port", func(t *testing.T) {
+		t.Setenv("PORT", "9877")
+
+		var receivedPort string
+		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{
+			runReadycheck: func(port string, _ time.Duration) error {
+				receivedPort = port
+				return nil
+			},
+		})
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !handled {
+			t.Fatal("expected readycheck command to be handled")
+		}
+		if receivedPort != "9877" {
+			t.Fatalf("expected port forwarded from PORT env, got %q", receivedPort)
+		}
+	})
+
+	t.Run("rejects extra args", func(t *testing.T) {
+		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck", "extra"}, cliCommandHandlers{
+			runReadycheck: func(string, time.Duration) error {
+				t.Fatal("did not expect readycheck handler to be called")
+				return nil
+			},
+		})
+		if !handled {
+			t.Fatal("expected readycheck command to be handled")
+		}
+		if err == nil || !strings.Contains(err.Error(), "usage: ovumcy readycheck") {
+			t.Fatalf("expected readycheck usage error, got %v", err)
+		}
+	})
+
+	t.Run("requires a handler", func(t *testing.T) {
+		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{})
+		if !handled || err == nil {
+			t.Fatalf("expected handled error, got (%t, %v)", handled, err)
+		}
+	})
+
+	t.Run("reports an invalid port", func(t *testing.T) {
+		t.Setenv("PORT", "70000")
+		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{
+			runReadycheck: func(string, time.Duration) error { return nil },
+		})
+		if !handled || err == nil {
+			t.Fatalf("expected handled port error, got (%t, %v)", handled, err)
+		}
+	})
+
+	t.Run("propagates the probe error", func(t *testing.T) {
+		expectedErr := errors.New("not ready")
+		handled, err := tryRunCLICommandWithHandlers([]string{"readycheck"}, cliCommandHandlers{
+			runReadycheck: func(string, time.Duration) error { return expectedErr },
+		})
+		if !handled {
+			t.Fatal("expected readycheck command to be handled")
+		}
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("expected propagated readycheck error, got %v", err)
+		}
+	})
+}
+
 func TestTryRunCLICommandWithHandlersDispatchesNotify(t *testing.T) {
 	// SECRET_KEY is required by the notify dispatch (it resolves the decrypt key
 	// before invoking the handler); provide a valid one and the flags to forward.

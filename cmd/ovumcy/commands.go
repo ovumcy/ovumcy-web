@@ -15,6 +15,7 @@ func tryRunCLICommand() (bool, error) {
 		runResetPassword: cli.RunResetPasswordCommand,
 		runUsers:         cli.RunUsersCommand,
 		runHealthcheck:   cli.RunHealthcheckCommand,
+		runReadycheck:    cli.RunReadycheckCommand,
 		runNotify:        cli.RunNotifyCommand,  // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 		runWebhook:       cli.RunWebhookCommand, // codecov:ignore -- main() composition-root wiring; this os.Args dispatch wrapper runs only in the binary (the handler is unit-tested via tryRunCLICommandWithHandlers with a stub)
 	})
@@ -24,6 +25,7 @@ type cliCommandHandlers struct {
 	runResetPassword func(databaseConfig db.Config, email string) error
 	runUsers         func(databaseConfig db.Config, args []string) error
 	runHealthcheck   func(port string, timeout time.Duration) error
+	runReadycheck    func(port string, timeout time.Duration) error
 	runNotify        func(databaseConfig db.Config, secretKey string, defaultLanguage string, location *time.Location, blockPrivateAddresses bool, args []string) error
 	runWebhook       func(databaseConfig db.Config, secretKey string, args []string) error
 }
@@ -40,6 +42,8 @@ func tryRunCLICommandWithHandlers(args []string, handlers cliCommandHandlers) (b
 		return handleUsersCommand(args, handlers)
 	case "healthcheck":
 		return handleHealthcheckCommand(args, handlers)
+	case "readycheck":
+		return handleReadycheckCommand(args, handlers)
 	case "notify":
 		return handleNotifyCommand(args, handlers)
 	case "webhook":
@@ -90,6 +94,20 @@ func handleHealthcheckCommand(args []string, handlers cliCommandHandlers) (bool,
 		return true, fmt.Errorf("invalid PORT: %w", err)
 	}
 	return true, handlers.runHealthcheck(port, 0)
+}
+
+func handleReadycheckCommand(args []string, handlers cliCommandHandlers) (bool, error) {
+	if len(args) != 1 {
+		return true, fmt.Errorf("usage: ovumcy readycheck")
+	}
+	if handlers.runReadycheck == nil {
+		return true, fmt.Errorf("readycheck handler is required")
+	}
+	port, err := resolvePort()
+	if err != nil {
+		return true, fmt.Errorf("invalid PORT: %w", err)
+	}
+	return true, handlers.runReadycheck(port, 0)
 }
 
 func handleNotifyCommand(args []string, handlers cliCommandHandlers) (bool, error) {
