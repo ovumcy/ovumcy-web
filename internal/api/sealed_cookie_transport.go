@@ -18,9 +18,10 @@ type sealedCookieSpec struct {
 	// sameSite defaults to "Lax" when empty.
 	sameSite string
 	// forceSecure marks cross-site cookies (SameSite=None) that must be
-	// written Secure regardless of COOKIE_SECURE — browsers reject
-	// SameSite=None without Secure. Clears still follow handler.cookieSecure,
-	// matching the long-standing behavior of the OIDC transport cookies.
+	// Secure regardless of COOKIE_SECURE — browsers reject SameSite=None
+	// without Secure. Applies to both write and clear: a clear without
+	// Secure is itself a SameSite=None cookie the browser drops instead of
+	// honoring, leaving the stale cookie in place.
 	forceSecure bool
 }
 
@@ -64,7 +65,7 @@ func (handler *Handler) clearSealedCookie(c fiber.Ctx, spec sealedCookieSpec) {
 		Value:    "",
 		Path:     spec.path,
 		HTTPOnly: true,
-		Secure:   handler.cookieSecure,
+		Secure:   handler.cookieSecure || spec.forceSecure,
 		SameSite: spec.sameSiteOrLax(),
 		Expires:  time.Now().Add(-1 * time.Hour),
 	})
