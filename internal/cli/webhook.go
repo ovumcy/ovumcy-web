@@ -17,8 +17,9 @@ import (
 // webhook endpoint out-of-band. The endpoint is a SECRET (it can embed an
 // ntfy/Gotify token), so it must never be passed as an argv argument — argv
 // leaks into shell history, `ps`, and process listings. It is read either from
-// this env var or interactively from stdin (--url-stdin); it is never printed
-// back, only its host.
+// this env var or interactively from stdin (--url-stdin) — never both at once
+// (buildWebhookPatch refuses the pair) — and it is never printed back, only its
+// host.
 const webhookURLEnv = "OVUMCY_WEBHOOK_URL"
 
 // webhookUsage is the single usage string returned for every argument error so
@@ -70,7 +71,9 @@ type webhookSetOptions struct {
 // is NEVER accepted as an argv argument (argv leaks into shell history, `ps`, and
 // process listings). Supply it out-of-band via the OVUMCY_WEBHOOK_URL environment
 // variable or interactively via --url-stdin (a no-echo prompt on a TTY, or the
-// first line of a piped stdin). The URL is never echoed back — only its host.
+// first line of a piped stdin) — exactly one of the two, never both, so an
+// ambient environment variable can never quietly decide which endpoint an owner's
+// reminders are armed against. The URL is never echoed back — only its host.
 func RunWebhookCommand(databaseConfig db.Config, secretKey string, args []string) error {
 	return runWebhookCommand(databaseConfig, secretKey, args, os.Stdin, os.Stdout)
 }
@@ -216,7 +219,17 @@ func webhookEndpointStatus(view services.WebhookSettingsView) string {
 // buildWebhookPatch turns the parsed set options into a service patch, reading
 // the endpoint URL securely when the operator is setting one. The URL is read
 // from the OVUMCY_WEBHOOK_URL env var or from stdin (--url-stdin) — NEVER argv.
-// --clear-url takes precedence and needs no URL input.
+//
+// The two URL sources are mutually exclusive, like --clear-url and --url-stdin:
+// an ambient OVUMCY_WEBHOOK_URL (an operator profile, a prior invocation, a
+// compose env_file inherited by `docker compose run`) must never quietly win over
+// a URL the operator piped in on purpose, because the difference is which
+// endpoint an owner's reminders are armed against. Supplying both is refused
+// before the database is opened, so nothing is written either way.
+//
+// --clear-url still takes precedence and needs no URL input: it removes any
+// stored endpoint, so it cannot arm the wrong one, and a stale environment
+// variable must not stand between an operator and disarming a webhook.
 func buildWebhookPatch(opts webhookSetOptions, input io.Reader) (services.WebhookSettingsPatch, error) {
 	patch := services.WebhookSettingsPatch{
 		Enabled:          opts.enabled,
@@ -230,7 +243,12 @@ func buildWebhookPatch(opts webhookSetOptions, input io.Reader) (services.Webhoo
 		return patch, nil
 	}
 
-	if envURL := strings.TrimSpace(os.Getenv(webhookURLEnv)); envURL != "" {
+	envURL := strings.TrimSpace(os.Getenv(webhookURLEnv))
+	if envURL != "" && opts.readURLFromStdin {
+		return services.WebhookSettingsPatch{}, fmt.Errorf("%s and --url-stdin are mutually exclusive: unset %s or drop --url-stdin", webhookURLEnv, webhookURLEnv)
+	}
+
+	if envURL != "" {
 		patch.SetURL(envURL)
 		return patch, nil
 	}
