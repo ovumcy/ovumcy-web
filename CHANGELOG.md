@@ -88,6 +88,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The request log now redacts short credentials, not just long ones.** The
+  always-on Fiber request log sanitizes its error column so a handler error
+  string cannot carry a secret into the log, but it recognized a secret only by
+  length: a run of 24 or more token characters. The 48-character calendar-feed
+  token and the 32-character TOTP secret cleared that floor; a recovery code
+  (`OVUM-XXXX-XXXX-XXXX`, 19 characters) and a submitted six-digit code did not,
+  and would have been written out verbatim. Both are now matched by shape and
+  masked as `:code`. The length floor is deliberately unchanged — lowering it far
+  enough to catch a six-digit code would also redact dates, status codes, route
+  templates and ordinary identifiers, and this column is the only diagnostic
+  signal an operator has for a failed request.
+
+- **Re-running a migration whose `ADD COLUMN` sits behind its file's prose no
+  longer aborts the boot.** SQLite has no `ADD COLUMN IF NOT EXISTS`, so a
+  migration is safe to replay only because the runner skips an `ADD COLUMN` whose
+  column already exists. That check ran against the raw statement chunk, and the
+  chunk splitter keeps a file's leading comment block attached to the first
+  statement, so the check never recognized an `ADD COLUMN` introduced by prose —
+  and stopped protecting the first column of migrations `021`, `027`, `029`,
+  `030` and `032`. On a database that carries the column while its
+  `schema_migrations` row does not — a restore from a backup taken before that
+  row was written, or a pruned migration table — the replay failed with
+  `duplicate column name` and the application did not start. Detection now looks
+  past leading comment lines. Which statements execute is unchanged, on both
+  engines; only the already-exists skip sees more of them. A permanent guard
+  walks the embedded migration set and fails if any `ADD COLUMN` is left
+  unrecognized.
+
 - **"Cancel" now actually cancels on four confirmation dialogs.** Rotating or
   revoking the calendar feed, hiding a custom symptom, and deleting a calendar
   day entry each asked for confirmation — but the request was already on its way
@@ -146,6 +174,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [docs/notifications.md](docs/notifications.md).
 
 ### Security
+
+- **A one-time reveal now refuses a sealed payload that names no owner, instead
+  of skipping the owner check.** Both shown-once surfaces — the recovery code and
+  the calendar-feed subscribe URL — compared the owner id sealed into the cookie
+  against the signed-in account, but the comparison was written so that a payload
+  carrying owner id `0` disabled it: with no id to match, the check was skipped
+  and the secret rendered for whichever session presented the cookie. No caller
+  could produce such a payload, so nothing was exposed in any released build;
+  the defect was that only the callers stood between an unattributed payload and
+  a reveal.
+
+  An owner id is now mandatory when the payload is sealed, so an unattributed one
+  is never minted, and a payload naming no owner is invalid on read rather than a
+  check that does not apply — refused and cleared, on either surface, whoever
+  presents it. Both surfaces share one predicate, so the two cannot drift apart
+  again. Behavior for owners is unchanged: a reveal minted for an account still
+  reveals to that account, exactly once.
 
 - **`ovumcy notify --dry-run` no longer prints predicted period and ovulation
   dates by default.** The preview printed one line per due reminder carrying the

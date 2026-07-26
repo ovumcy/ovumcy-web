@@ -163,16 +163,47 @@ func isOpaqueRequestLogSegment(segment string) bool {
 }
 
 var (
-	logEmailPattern       = regexp.MustCompile(`[^\s@]+@[^\s@]+`)
+	logEmailPattern = regexp.MustCompile(`[^\s@]+@[^\s@]+`)
+	// logOpaqueTokenPattern masks long random-looking values: the 48-char
+	// calendar-feed token and the 32-char base32 TOTP secret both clear the
+	// 24-char floor. The floor exists to keep ordinary words, ids and route
+	// components readable, which is also why it cannot be lowered to reach the
+	// short secrets below — those get their own shape-specific rules instead.
 	logOpaqueTokenPattern = regexp.MustCompile(`[A-Za-z0-9_-]{24,}`)
+	// logRecoveryCodePattern masks a recovery code: the issued
+	// OVUM-XXXX-XXXX-XXXX form (19 chars, below the opaque floor) plus the
+	// separator-free and mixed-separator forms the input normalizer also
+	// accepts. The "OVUM" literal is what keeps the rule targeted — a bare
+	// 12-symbol alphanumeric body is shape-identical to an ordinary identifier,
+	// so matching it without the prefix would redact routine diagnostic text.
+	// The prefix is deliberately not anchored on a word boundary: matching a
+	// code that is glued to a preceding word over-masks, which is the safe
+	// direction, while an anchor would let that same input through verbatim.
+	logRecoveryCodePattern = regexp.MustCompile(`(?i)OVUM-?[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}`)
+	// logSubmittedCodePattern masks a submitted one-time code: a standalone run
+	// of exactly six digits, the length this app pins TOTP codes to (the
+	// challenge field declares pattern="[0-9]{6}" and validation uses the RFC
+	// 6238 six-digit default). Both the delimiters and the exact length are
+	// load-bearing for diagnostic value: an HTTP status (3 digits), a port (up
+	// to 5), a year or date component (up to 4), and any longer id, byte count
+	// or epoch timestamp (7 or more) all stay readable.
+	logSubmittedCodePattern = regexp.MustCompile(`\b[0-9]{6}\b`)
 )
 
 // SafeLogError renders a chain error for the request log with PII/secret-shaped
 // substrings masked, mirroring SafeRequestLogPath for the ${request_path} tag.
 // Handlers currently return only nil or generic *fiber.Error values (verified:
 // no handler returns a raw fmt.Errorf carrying user input), so this is
-// defense-in-depth: a future handler that does cannot leak an email or opaque
-// token into the always-on Fiber request log.
+// defense-in-depth: a future handler that does cannot leak an email, an opaque
+// token, a recovery code or a submitted code into the always-on Fiber request
+// log.
+//
+// Rule order is load-bearing. The two long-value rules run before the two
+// short-value ones, because a short rule firing inside a long match would split
+// that match into fragments which no longer meet the long rule's own length
+// floor — and those fragments would then be written out verbatim. Masking the
+// long shapes first makes them unconditional, and every placeholder written by
+// an earlier rule is inert for the rules that follow.
 func SafeLogError(err error) string {
 	if err == nil {
 		return ""
@@ -180,5 +211,7 @@ func SafeLogError(err error) string {
 	msg := strings.TrimSpace(err.Error())
 	msg = logEmailPattern.ReplaceAllString(msg, ":email")
 	msg = logOpaqueTokenPattern.ReplaceAllString(msg, ":token")
+	msg = logRecoveryCodePattern.ReplaceAllString(msg, ":code")
+	msg = logSubmittedCodePattern.ReplaceAllString(msg, ":code")
 	return msg
 }
