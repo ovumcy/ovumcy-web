@@ -263,6 +263,11 @@ scheduler) once daily at a server-local hour and most or all of your owners
 have not yet had their timezone captured, that hour is effectively "09:00
 server time" for everyone until each owner's browser records its timezone.
 
+The [calendar feed](#3-calendar-ics-subscription) resolves "today" by the same
+two rules, so a prediction never lands on different days in the two channels;
+its fallback is the timezone of the request that fetched it, which for a
+calendar client (it sends no browser timezone) is the server's local timezone.
+
 ### Security notes
 
 Operator-relevant summary (the full, test-backed claim list lives in
