@@ -147,6 +147,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A compressed request body that only passes the 16 MiB cap once decompressed
+  now answers with the standard `413 request_too_large` envelope.** The cap is
+  applied to the decompressed stream inside the framework's body accessor, which
+  reports the overflow by stamping `413` on the response and handing the handler
+  a short internal error string in place of the payload — after the request has
+  already been routed. Two things followed from that substitution: the JSON
+  restore parsed the substituted string, failed, and answered `400 invalid import
+  file`, blaming the owner's export for what was a size rejection; and any route
+  that read the body without writing a response of its own leaked the framework's
+  bare-text `413`, which the app-wide error-envelope contract forbids. The
+  overflow is now detected once at the transport layer, before any handler runs,
+  and answered through the same mapped, content-negotiated envelope as the
+  wire-level `413`. No service ever receives the substituted bytes, so an
+  oversized upload can no longer be reported as a malformed file. An uncompressed
+  body is unaffected — its wire size and parsed size are the same number — and a
+  compressed body inside the cap still restores normally. See
+  [docs/export.md](docs/export.md) → Size limits.
+
 - **A `SECRET_KEY` rotation now revokes calendar-feed subscriptions of every
   generation.** Rows armed before migration 032 carry only a bcrypt verifier
   hash, which does not depend on `SECRET_KEY` — a rotated key left those

@@ -160,6 +160,7 @@ Policy-level claims (threat model in/out-of-scope, design rationale, marketing-s
 | Imported records are re-validated and owner-scoped; round-tripping an export reproduces the same entries | `TestImportServiceRoundTripPreservesEntries` in [internal/services/import_service_test.go](internal/services/import_service_test.go) |
 | A crafted file cannot persist an inconsistent anchor (`cycle_start` on a non-period day) | `TestImportServiceDropsCycleStartOnNonPeriodDay` in [internal/services/import_service_test.go](internal/services/import_service_test.go) |
 | Custom-symptom creation on import is bounded (`MaxImportCustomSymptoms`), so a crafted file cannot force unbounded catalog growth / DB churn | `TestImportServiceCapsCustomSymptomCreation` in [internal/services/import_service_test.go](internal/services/import_service_test.go) |
+| A compressed upload that only crosses the transport body cap once decompressed is refused at the transport layer with the mapped `413 request_too_large`: the import pipeline is never entered, nothing is persisted, and the rejection is never reported as a malformed file — while a body at the cap still restores normally | `TestImportJSONRejectsGzipBodyExceedingDecompressedCap`, `TestImportJSONAcceptsGzipBodyAtTheDecompressedCap` in [internal/api/imports_regressions_test.go](internal/api/imports_regressions_test.go) |
 
 ### Webhook Notifications (outbound egress)
 

@@ -42,6 +42,11 @@ type onboardingTestAppOptions struct {
 	oidcService      OIDCWorkflowService
 	auditLogEnabled  bool
 	assetVersion     string
+	// bodyLimit overrides fiber's DefaultBodyLimit for this app. Zero keeps the
+	// default. Body-cap regressions set a small value so the compressed payload
+	// under test stays a few hundred bytes on the wire while its decoded size
+	// crosses the cap.
+	bodyLimit int
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -74,7 +79,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 		handler.SetAssetVersion(options.assetVersion)
 	}
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{BodyLimit: options.bodyLimit})
 	app.Use(handler.LanguageMiddleware)
 	if options.enableCSRF {
 		app.Use(csrf.New(testCSRFMiddlewareConfig(options.cookieSecure, handler)))

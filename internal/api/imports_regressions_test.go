@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -122,6 +125,162 @@ func TestMapImportErrorCoversAllBranches(t *testing.T) {
 		if spec.Status != tc.status || spec.Key != tc.key {
 			t.Fatalf("mapImportError(%v) = {status:%d key:%q}, want {status:%d key:%q}", tc.err, spec.Status, spec.Key, tc.status, tc.key)
 		}
+	}
+}
+
+// importBodyCapTestLimit is the BodyLimit the compressed-restore regressions
+// run their app with. Small enough that a payload crossing it stays a few
+// hundred bytes on the wire once gzipped, so the transport cap under test is
+// the DECODED size and never the wire size.
+const importBodyCapTestLimit = 4096
+
+// gzipImportPayload builds a restore payload of exactly decodedSize bytes and
+// returns it gzipped. The payload is one valid day entry padded with trailing
+// spaces, which encoding/json accepts after a top-level value — so the only
+// thing that varies between the over-cap and at-cap cases is the decoded length.
+func gzipImportPayload(t *testing.T, decodedSize int) []byte {
+	t.Helper()
+
+	entry := `{"entries":[{"date":"2026-07-01","period":true,"flow":"medium","cycle_factors":[]}]}`
+	if decodedSize < len(entry) {
+		t.Fatalf("decodedSize %d is below the minimum valid payload of %d bytes", decodedSize, len(entry))
+	}
+	payload := entry + strings.Repeat(" ", decodedSize-len(entry))
+
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write([]byte(payload)); err != nil {
+		t.Fatalf("gzip payload: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close gzip writer: %v", err)
+	}
+	if compressed.Len() >= importBodyCapTestLimit {
+		t.Fatalf("gzipped payload is %d bytes, at or above the %d wire cap; the test would exercise the wire limit instead of the decoded one", compressed.Len(), importBodyCapTestLimit)
+	}
+	return compressed.Bytes()
+}
+
+func newGzipImportRequest(ctx settingsSecurityTestContext, compressed []byte) *http.Request {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/imports/json", bytes.NewReader(compressed))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Encoding", "gzip")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
+	request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+	return request
+}
+
+func countImportedDays(t *testing.T, ctx settingsSecurityTestContext) int64 {
+	t.Helper()
+
+	var rows int64
+	if err := ctx.database.Model(&models.DailyLog{}).Where("user_id = ?", ctx.user.ID).Count(&rows).Error; err != nil {
+		t.Fatalf("count imported days: %v", err)
+	}
+	return rows
+}
+
+// TestImportJSONRejectsGzipBodyExceedingDecompressedCap pins the compressed
+// half of the transport body cap. A gzipped body is small on the wire, so the
+// pre-routing rejection never fires; the cap is applied to the DECODED stream
+// inside fiber's body accessor, while the request is already routed. Left
+// unguarded, the accessor substitutes an internal error string for the payload,
+// which the import service reports as a malformed file — so an oversized upload
+// answered "400 invalid import file", blaming the owner's export for a size
+// rejection, and the import pipeline ran on bytes that were never the payload.
+//
+// The second half of the test is the positive anchor for the row assertion: the
+// same entry, gzipped under the cap, must still restore normally — proving the
+// day-row observable is live and that the guard does not reject valid
+// compressed restores.
+func TestImportJSONRejectsGzipBodyExceedingDecompressedCap(t *testing.T) {
+	t.Parallel()
+
+	ctx := newSettingsSecurityTestContextWithOptions(t, "import-gzip-overflow@example.com", onboardingTestAppOptions{
+		enableCSRF: true,
+		bodyLimit:  importBodyCapTestLimit,
+	})
+
+	oversized := gzipImportPayload(t, importBodyCapTestLimit+1)
+	response, err := ctx.app.Test(newGzipImportRequest(ctx, oversized), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("oversized gzip import failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 for a body whose decompressed size passes the cap, got %d", response.StatusCode)
+	}
+	var payload struct {
+		Error       string `json:"error"`
+		ErrorDetail struct {
+			Key      string `json:"key"`
+			Category string `json:"category"`
+			Target   string `json:"target"`
+		} `json:"error_detail"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode 413 envelope: %v", err)
+	}
+	if payload.Error != "request_too_large" {
+		t.Fatalf("expected the stable transport key request_too_large, got %q", payload.Error)
+	}
+	if payload.ErrorDetail.Key != "request_too_large" || payload.ErrorDetail.Category != "too_large" || payload.ErrorDetail.Target != "global" {
+		t.Fatalf("expected the shared global too_large error_detail, got %+v", payload.ErrorDetail)
+	}
+	if rows := countImportedDays(t, ctx); rows != 0 {
+		t.Fatalf("expected the rejected upload to reach no import pipeline, got %d persisted days", rows)
+	}
+
+	accepted := gzipImportPayload(t, importBodyCapTestLimit)
+	anchor, err := ctx.app.Test(newGzipImportRequest(ctx, accepted), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("under-cap gzip import failed: %v", err)
+	}
+	defer func() { _ = anchor.Body.Close() }()
+
+	if anchor.StatusCode != http.StatusOK {
+		t.Fatalf("expected a gzipped body at the cap to restore normally, got %d", anchor.StatusCode)
+	}
+	if rows := countImportedDays(t, ctx); rows != 1 {
+		t.Fatalf("expected the accepted upload to persist 1 day, got %d", rows)
+	}
+}
+
+// TestImportJSONAcceptsGzipBodyAtTheDecompressedCap pins the other side of the
+// boundary: a decoded body of exactly BodyLimit bytes is domain input, not a
+// transport rejection, and flows through the normal restore result. Together
+// with the overflow case above this fixes the cap at "limit passes, limit+1
+// rejects" rather than somewhere nearby.
+func TestImportJSONAcceptsGzipBodyAtTheDecompressedCap(t *testing.T) {
+	t.Parallel()
+
+	ctx := newSettingsSecurityTestContextWithOptions(t, "import-gzip-boundary@example.com", onboardingTestAppOptions{
+		enableCSRF: true,
+		bodyLimit:  importBodyCapTestLimit,
+	})
+
+	response, err := ctx.app.Test(newGzipImportRequest(ctx, gzipImportPayload(t, importBodyCapTestLimit)), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("at-cap gzip import failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 at the cap, got %d", response.StatusCode)
+	}
+	var result struct {
+		OK       bool `json:"ok"`
+		Added    int  `json:"added"`
+		Skipped  int  `json:"skipped"`
+		Rejected int  `json:"rejected"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatalf("decode import result: %v", err)
+	}
+	if !result.OK || result.Added != 1 || result.Skipped != 0 || result.Rejected != 0 {
+		t.Fatalf("expected {ok:true added:1 skipped:0 rejected:0}, got %+v", result)
 	}
 }
 

@@ -3,6 +3,12 @@ package api
 import "github.com/gofiber/fiber/v3"
 
 func RegisterRoutes(app *fiber.App, handler *Handler) {
+	// Registered here, alongside the routes it protects, rather than in the
+	// composition root's middleware chain: it must cover every route this
+	// function registers — page and /api/v1 alike — and an app assembled without
+	// it would answer an over-limit compressed body with a domain error or
+	// fiber's bare text. See requestBodyLimitGuard.
+	app.Use(requestBodyLimitGuard)
 	registerPageRoutes(app, handler)
 	registerV1APIRoutes(app, handler)
 }
