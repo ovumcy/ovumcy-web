@@ -14,6 +14,12 @@ func TestNormalizeAuthEmail(t *testing.T) {
 		{name: "normalizes case and spaces", raw: " USER@EXAMPLE.COM ", want: "user@example.com"},
 		{name: "invalid email returns empty", raw: "not-email", want: ""},
 		{name: "empty returns empty", raw: "   ", want: ""},
+		{name: "display-name form is rejected, not rewritten", raw: "John Doe <a@b.com>", want: ""},
+		{name: "angle-bracket-only form is rejected", raw: "<a@b.com>", want: ""},
+		{name: "trailing comment is rejected", raw: "a@b.com (work)", want: ""},
+		{name: "quoted local part is rejected", raw: `"<script>alert(1)</script>"@x.com`, want: ""},
+		{name: "address list is rejected", raw: "a@b.com, c@d.com", want: ""},
+		{name: "ip-literal domain stays accepted", raw: "user@[192.168.0.1]", want: "user@[192.168.0.1]"},
 	}
 
 	for _, testCase := range tests {

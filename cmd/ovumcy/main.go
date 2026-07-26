@@ -49,9 +49,11 @@ func main() {
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
 	repositories := db.NewRepositories(database)
-	// Must run after mustOpenDatabase (migrations applied) and before any
-	// listener exists, so a feed poll can never race the revocation.
+	// Both boot passes must run after mustOpenDatabase (migrations applied) and
+	// before any listener exists: no feed poll can race the revocation, and no
+	// request can observe a half-repaired identity.
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
+	mustRenormalizeAuthEmails(repositories)
 	dependencies := bootstrap.BuildDependencies(repositories, []byte(config.SecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode: config.RegistrationMode,
 		OIDCConfig:       config.OIDC,
@@ -168,6 +170,23 @@ func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey
 	}
 }
 
+// mustRenormalizeAuthEmails runs the one-shot boot pass that rewrites auth
+// emails stored by the pre-strict normalizer (whole display-name-decorated
+// inputs) down to their bare parsed address, so those accounts keep signing in
+// under the strict addr-spec rule. The decision logic lives (tested) in
+// services.AuthEmailRenormalizer; this wrapper wires repositories, fails the
+// boot hard on a storage error, and prints the operator-facing line.
+func mustRenormalizeAuthEmails(repositories *db.Repositories) {
+	renormalizer := services.NewAuthEmailRenormalizer(repositories.AppState, repositories.Users)
+	outcome, err := renormalizer.Run(context.Background())
+	if err != nil {
+		log.Fatalf("auth email renormalization failed: %v", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
+	}
+	if message := authEmailRenormalizeStartupMessage(outcome); message != "" {
+		log.Print(message)
+	}
+}
+
 // calendarFeedRotationStartupMessage renders the operator-facing startup line
 // for a detected rotation, and stays quiet ("") for the routine cases — first
 // boot and an unchanged key — so the startup banner is stable run to run.
@@ -179,6 +198,24 @@ func calendarFeedRotationStartupMessage(outcome services.CalendarFeedRotationOut
 		return "SECRET_KEY rotation detected: no legacy calendar feeds to disarm (armed feeds with a keyed MAC stop verifying on their own)"
 	}
 	return fmt.Sprintf("SECRET_KEY rotation detected: %d legacy calendar feed(s) disarmed; owners re-generate subscribe URLs from settings", outcome.DisarmedFeeds)
+}
+
+// authEmailRenormalizeStartupMessage renders the operator-facing startup line
+// for the one-shot email repair, and stays quiet ("") when there was nothing
+// to do — the startup banner must be stable run to run. Counts only, never
+// addresses: emails must not reach logs.
+func authEmailRenormalizeStartupMessage(outcome services.AuthEmailRenormalizeOutcome) string {
+	if outcome.AlreadyDone {
+		return ""
+	}
+	skipped := outcome.SkippedConflicts + outcome.SkippedUnrenormalizable
+	if outcome.Renormalized == 0 && skipped == 0 {
+		return ""
+	}
+	if skipped == 0 {
+		return fmt.Sprintf("auth email repair: %d stored email(s) rewritten to their bare address", outcome.Renormalized)
+	}
+	return fmt.Sprintf("auth email repair: %d stored email(s) rewritten to their bare address, %d left for operator review (duplicate mailbox or unparseable) — see docs/self-hosted.md, Troubleshooting", outcome.Renormalized, skipped)
 }
 
 func mustNewI18nManager(defaultLanguage string) *i18n.Manager {

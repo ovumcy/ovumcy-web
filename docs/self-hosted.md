@@ -472,6 +472,15 @@ Raising the header buffer on your reverse proxy will not help: the example stack
 its own defaults, which are more generous than the app's, so a request that the proxy accepts can
 still be refused behind it. The fix is on the cookie side, not the proxy side.
 
+### An account cannot sign in after upgrading: email stored in a legacy form
+
+Registration and sign-in used to accept a full RFC 5322 form (`jane doe <jane@example.com>`) and store it verbatim; sign-in input is now normalized to the bare address only, so such stored rows would never match again. The first boot after upgrading repairs them automatically: each is rewritten to its bare parsed address, and the startup log reports `auth email repair: N stored email(s) rewritten to their bare address`.
+
+Two cases are left untouched, counted in the same log line, and cannot sign in until resolved:
+
+- another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): the oldest account keeps the address; review the leftover with `ovumcy users list` (it shows the stored legacy form) and remove or re-home it deliberately — the repair never deletes anything;
+- the stored value cannot be reduced to a plain address at all (for example a quoted local part).
+
 ## Common Operator Scenarios
 
 - Moving from local/private to public HTTPS:

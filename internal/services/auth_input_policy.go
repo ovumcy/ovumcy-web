@@ -15,12 +15,25 @@ var (
 
 var recoveryCodeFormatRegex = regexp.MustCompile(`^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$`)
 
+// NormalizeAuthEmail canonicalizes an auth email input: lowercased, trimmed,
+// and STRICTLY a bare RFC 5322 addr-spec. Anything the parser accepts but that
+// is not byte-identical to the bare address — a display name
+// ("john doe <a@b.com>"), a comment, a quoted-string local part the parser
+// would decode — is rejected rather than silently rewritten: the stored
+// identity must be exactly the string a later login types. (Returning the
+// parsed .Address instead would silently rewrite input AND break idempotency:
+// the decoded form of a quoted local part no longer re-parses.) Before this
+// rule, the whole decorated input was stored verbatim, so "a@b.com" and
+// "john doe <a@b.com>" could coexist as two accounts on one mailbox and the
+// registration duplicate check missed them; rows written back then are
+// repaired once at boot by AuthEmailRenormalizer.
 func NormalizeAuthEmail(raw string) string {
 	email := strings.ToLower(strings.TrimSpace(raw))
 	if email == "" {
 		return ""
 	}
-	if _, err := mail.ParseAddress(email); err != nil {
+	addr, err := mail.ParseAddress(email)
+	if err != nil || addr.Name != "" || addr.Address != email {
 		return ""
 	}
 	return email
