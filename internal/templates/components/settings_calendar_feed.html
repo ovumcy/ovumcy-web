@@ -23,7 +23,7 @@
         action="/api/v1/users/current/calendar-feed/rotate"
         method="post"
         hx-post="/api/v1/users/current/calendar-feed/rotate"
-        data-confirm="{{t .Messages "settings.calendar_feed.confirm_rotate"}}"
+        hx-confirm="{{t .Messages "settings.calendar_feed.confirm_rotate"}}"
         data-confirm-accept="{{t .Messages "settings.calendar_feed.rotate"}}"
         data-settings-calendar-feed-rotate>
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -36,7 +36,7 @@
         hx-delete="/api/v1/users/current/calendar-feed"
         hx-target="#settings-calendar-feed-status"
         hx-swap="innerHTML"
-        data-confirm="{{t .Messages "settings.calendar_feed.confirm_revoke"}}"
+        hx-confirm="{{t .Messages "settings.calendar_feed.confirm_revoke"}}"
         data-confirm-accept="{{t .Messages "settings.calendar_feed.revoke"}}"
         data-settings-calendar-feed-revoke>
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
