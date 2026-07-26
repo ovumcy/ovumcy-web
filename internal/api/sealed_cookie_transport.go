@@ -86,3 +86,20 @@ func (handler *Handler) openCookieValue(cookieName string, raw string) ([]byte, 
 	}
 	return codec.open(cookieName, raw)
 }
+
+// sealedPayloadBelongsToSession reports whether a sealed payload minted for one
+// account may be acted on by the session that presented it. It is the
+// cookie-side form of the privacy boundary: an owner id carried by the request
+// is never trusted alone, always combined with the session's own.
+//
+// A zero id on EITHER side is unattributed and never matches. An unattributed
+// payload names no account, so there is nothing to scope its contents to — it
+// must be refused outright rather than treated as a comparison that does not
+// apply. Skipping the comparison in that case would hand whatever the payload
+// carries to whichever session happens to hold the cookie.
+func sealedPayloadBelongsToSession(payloadUserID uint, sessionUserID uint) bool {
+	if payloadUserID == 0 || sessionUserID == 0 {
+		return false
+	}
+	return payloadUserID == sessionUserID
+}

@@ -42,9 +42,16 @@ var calendarFeedRevealCookieSpec = sealedCookieSpec{name: calendarFeedRevealCook
 
 // setCalendarFeedRevealCookie seals the full subscribe URL for a one-time
 // reveal, scoped to userID so a stale cookie cannot leak one owner's URL onto
-// another owner's reveal page. An empty URL is a programming error (the caller
-// just minted a token) and clears any prior cookie instead of sealing a blank.
+// another owner's reveal page. A zero userID or an empty URL is a programming
+// error (the caller just minted a token for a resolved owner) and clears any
+// prior cookie instead of sealing an unattributed or blank payload. Refusing
+// the zero id here is what keeps the reveal scoped structurally: the read path
+// has no owner to compare against once such a payload exists.
 func (handler *Handler) setCalendarFeedRevealCookie(c fiber.Ctx, userID uint, feedURL string, rotated bool) error {
+	if userID == 0 {
+		handler.clearCalendarFeedRevealCookie(c)
+		return errors.New("calendar feed reveal requires an owner id")
+	}
 	url := strings.TrimSpace(feedURL)
 	if url == "" {
 		handler.clearCalendarFeedRevealCookie(c)
@@ -59,10 +66,11 @@ func (handler *Handler) setCalendarFeedRevealCookie(c fiber.Ctx, userID uint, fe
 }
 
 // readCalendarFeedRevealState opens the sealed one-time cookie and returns the
-// revealed URL, or an empty state when the cookie is absent, malformed, or
-// scoped to a different user. It does NOT clear the cookie — the caller clears
-// it right after a successful read so the URL is shown exactly once. Every
-// failure path clears the cookie defensively so a corrupt value cannot linger.
+// revealed URL, or an empty state when the cookie is absent, malformed,
+// unattributed, or scoped to a different user. It does NOT clear the cookie —
+// the caller clears it right after a successful read so the URL is shown
+// exactly once. Every failure path clears the cookie defensively so a corrupt
+// value cannot linger.
 func (handler *Handler) readCalendarFeedRevealState(c fiber.Ctx, userID uint) calendarFeedRevealState {
 	raw := strings.TrimSpace(c.Cookies(calendarFeedRevealCookieName))
 	if raw == "" {
@@ -86,7 +94,7 @@ func (handler *Handler) readCalendarFeedRevealState(c fiber.Ctx, userID uint) ca
 		handler.clearCalendarFeedRevealCookie(c)
 		return calendarFeedRevealState{}
 	}
-	if payload.UserID != 0 && userID != 0 && payload.UserID != userID {
+	if !sealedPayloadBelongsToSession(payload.UserID, userID) {
 		handler.clearCalendarFeedRevealCookie(c)
 		return calendarFeedRevealState{}
 	}
