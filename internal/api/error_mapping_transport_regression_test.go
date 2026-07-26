@@ -243,6 +243,188 @@ func TestRequestBodyLimitGuardRejectsOnlyTheOverflowStamp(t *testing.T) {
 	})
 }
 
+// TestRequestBodyLimitGuardSkipsMethodsThatReachNoBodyReader pins the scope of
+// the decode probe, which is the whole cost of the guard: probing IS
+// decompressing, so running it on a route that reads nothing converts a small
+// compressed body into a BodyLimit-sized allocation for free. A highly
+// compressible payload sized to stay just inside the cap made every
+// unauthenticated bodyless route — /healthz, /readyz, /login, /favicon.ico —
+// pay it, none of which sits behind a rate limiter.
+//
+// The over-cap payload is what makes "the guard did not run" observable without
+// a clock: for a decoded size past the cap the probe cannot both run and stay
+// silent — it answers the mapped 413 and the route never runs. So a bodyless
+// method reaching its route at all proves nothing decompressed, and the same
+// payload on a body-carrying method is the positive anchor that it really is
+// over the cap and the guard really is live.
+func TestRequestBodyLimitGuardSkipsMethodsThatReachNoBodyReader(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New(fiber.Config{BodyLimit: bodyLimitGuardTestLimit})
+	app.Use(requestBodyLimitGuard)
+
+	var observedRawBody []byte
+	app.Get("/bodyless", func(c fiber.Ctx) error {
+		observedRawBody = append([]byte(nil), c.Request().Body()...)
+		return c.SendString("route ran")
+	})
+	app.Post("/reads-body", func(c fiber.Ctx) error {
+		return c.SendString("route ran")
+	})
+
+	overCap := gzipTestBody(t, bytes.Repeat([]byte("a"), bodyLimitGuardTestLimit+1))
+
+	anchor := httptest.NewRequest(http.MethodPost, "/reads-body", bytes.NewReader(overCap))
+	anchor.Header.Set("Content-Encoding", "gzip")
+	anchor.Header.Set("Accept", "application/json")
+
+	anchorResponse := mustAppResponse(t, app, anchor)
+	assertStatusCode(t, anchorResponse, fiber.StatusRequestEntityTooLarge)
+	if body := mustReadBodyString(t, anchorResponse.Body); !strings.Contains(body, `"error":"request_too_large"`) {
+		t.Fatalf("expected the same payload to be rejected on a body-carrying method, got %q", body)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/bodyless", bytes.NewReader(overCap))
+	request.Header.Set("Content-Encoding", "gzip")
+	request.Header.Set("Accept", "application/json")
+
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode == fiber.StatusRequestEntityTooLarge {
+		t.Fatalf("expected no decode probe on %s, which reaches no body reader; the 413 only the probe can produce means the compressed body was inflated anyway", http.MethodGet)
+	}
+	assertStatusCode(t, response, fiber.StatusOK)
+	if body := mustReadBodyString(t, response.Body); body != "route ran" {
+		t.Fatalf("expected the bodyless route to answer for itself, got %q", body)
+	}
+	// Without this the case would be vacuous: a request that carried no body at
+	// all would also reach the route. The route sees the compressed bytes exactly
+	// as they arrived, still gzip-framed.
+	if len(observedRawBody) != len(overCap) {
+		t.Fatalf("expected the route to receive all %d compressed bytes, got %d", len(overCap), len(observedRawBody))
+	}
+	if !bytes.HasPrefix(observedRawBody, []byte{0x1f, 0x8b}) {
+		t.Fatalf("expected the request body to still carry the gzip header, got %x", observedRawBody[:2])
+	}
+}
+
+// TestRequestBodyLimitGuardCoversEveryRegisteredRouteThatCanCarryAReadBody is
+// the forward-looking half of the scope contract, and the reason narrowing the
+// guard cannot quietly drop a route: it walks the real route table and requires
+// the mapped 413 on every registered method that can reach a body reader, with
+// no allowlist to keep in sync. A route added later inherits the assertion the
+// moment it is registered. Routes on the excluded methods are required not to
+// answer 413 at all — the same "the probe did not run" observable as above,
+// swept across the whole table rather than one hand-built route.
+//
+// The guard runs ahead of authentication, so no session is needed: an
+// over-limit compressed body is rejected identically whether or not the caller
+// could have used the endpoint.
+func TestRequestBodyLimitGuardCoversEveryRegisteredRouteThatCanCarryAReadBody(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{bodyLimit: bodyLimitGuardTestLimit})
+	overCap := gzipTestBody(t, bytes.Repeat([]byte("a"), bodyLimitGuardTestLimit+1))
+
+	guarded, skipped := 0, 0
+	// filterUseOption=true drops middleware/Use entries (the guard itself, the
+	// group-level AuthRequired/OwnerOnly, the NotFound catch-all), which are not
+	// endpoints and register under every method at their prefix.
+	for _, route := range app.GetRoutes(true) {
+		path := concreteRoutePathForBodyLimitProbe(route.Path)
+		expectRejection := requestMethodCanCarryAReadBody(route.Method)
+		if expectRejection {
+			guarded++
+		} else {
+			skipped++
+		}
+
+		t.Run(route.Method+" "+route.Path, func(t *testing.T) {
+			request := httptest.NewRequest(route.Method, path, bytes.NewReader(overCap))
+			request.Header.Set("Content-Encoding", "gzip")
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept", "application/json")
+
+			response := mustAppResponse(t, app, request)
+			if !expectRejection {
+				if response.StatusCode == fiber.StatusRequestEntityTooLarge {
+					t.Fatalf("expected no decode probe on %s, which reaches no body reader, got the 413 only the probe can produce", route.Method)
+				}
+				return
+			}
+			assertStatusCode(t, response, fiber.StatusRequestEntityTooLarge)
+			if body := mustReadBodyString(t, response.Body); !strings.Contains(body, `"error":"request_too_large"`) {
+				t.Fatalf("expected the mapped request_too_large envelope, got %q", body)
+			}
+		})
+	}
+
+	if guarded == 0 || skipped == 0 {
+		t.Fatalf("expected the route table to hold both guarded and skipped methods, got %d guarded and %d skipped; recheck route discovery", guarded, skipped)
+	}
+}
+
+// concreteRoutePathForBodyLimitProbe turns a registered route pattern into a
+// requestable path. Any ":param" segment becomes a placeholder — keeping a
+// trailing literal suffix such as the calendar feed's ".ics", which is part of
+// the pattern rather than of the parameter — so a route added later with a
+// parameter this file has never seen still resolves.
+func concreteRoutePathForBodyLimitProbe(routePath string) string {
+	segments := strings.Split(routePath, "/")
+	for index, segment := range segments {
+		if !strings.HasPrefix(segment, ":") {
+			continue
+		}
+		_, suffix, hasSuffix := strings.Cut(segment, ".")
+		if hasSuffix {
+			segments[index] = "probe." + suffix
+			continue
+		}
+		segments[index] = "probe"
+	}
+	return strings.Join(segments, "/")
+}
+
+// TestRequestBodyLimitGuardAnswersTheMappedEnvelopeOverAnUpstream413Stamp pins
+// the order of the guard's two status checks. The probe's only signal is the
+// status fiber stamps while decoding, and the guard used to read that signal as
+// "the status changed", which is a different question: with a 413 already on the
+// response the status does not change, the equality short-circuits, and the
+// over-limit body — fiber's substituted error string, not the payload — is
+// handed to the handler, exactly the failure the guard exists to prevent. It now
+// tests for the 413 itself first and so fails closed regardless of what a future
+// middleware upstream of it leaves on the response.
+func TestRequestBodyLimitGuardAnswersTheMappedEnvelopeOverAnUpstream413Stamp(t *testing.T) {
+	t.Parallel()
+
+	app := fiber.New(fiber.Config{BodyLimit: bodyLimitGuardTestLimit})
+	app.Use(func(c fiber.Ctx) error {
+		c.Status(fiber.StatusRequestEntityTooLarge)
+		return c.Next()
+	})
+	app.Use(requestBodyLimitGuard)
+
+	routeReached := false
+	var observedBody string
+	app.Post("/probe", func(c fiber.Ctx) error {
+		routeReached = true
+		observedBody = string(c.Body())
+		return nil
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/probe", bytes.NewReader(gzipTestBody(t, bytes.Repeat([]byte("a"), bodyLimitGuardTestLimit+1))))
+	request.Header.Set("Content-Encoding", "gzip")
+	request.Header.Set("Accept", "application/json")
+
+	response := mustAppResponse(t, app, request)
+	if routeReached {
+		t.Fatalf("expected the over-limit request to be rejected before the route ran; it ran and read %q, the framework's substituted string standing in for the payload", observedBody)
+	}
+	assertStatusCode(t, response, fiber.StatusRequestEntityTooLarge)
+	if body := mustReadBodyString(t, response.Body); !strings.Contains(body, `"error":"request_too_large"`) {
+		t.Fatalf("expected the mapped envelope to win over an upstream 413 stamp, got %q", body)
+	}
+}
+
 func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 	t.Helper()
 
