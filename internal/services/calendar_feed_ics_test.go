@@ -36,6 +36,21 @@ func predictableFeedLogs(t *testing.T) []models.DailyLog {
 	}
 }
 
+// dayBoundaryFeedLogs is predictableFeedLogs shifted so the projected ovulation
+// of the current cycle lands exactly on 2026-03-10: three cycle starts 28 days
+// apart ending 2026-02-25, and ovulation = cycle start + (28 - 14) - 1. A feed
+// rendered with "today" = 2026-03-10 keeps that event; one rendered with "today"
+// = 2026-03-11 drops it as past. That single-day difference is what makes the
+// owner-vs-request timezone choice observable in the .ics body itself.
+func dayBoundaryFeedLogs(t *testing.T) []models.DailyLog {
+	t.Helper()
+	return []models.DailyLog{
+		{Date: mustParseDashboardDay(t, "2025-12-31"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2026-01-28"), IsPeriod: true},
+		{Date: mustParseDashboardDay(t, "2026-02-25"), IsPeriod: true},
+	}
+}
+
 // TestFoldICSLine pins RFC 5545 §3.1 line folding: a content line over 75
 // octets is split with CRLF+space and no folded segment exceeds 75 octets, while
 // a line at or under the limit is emitted verbatim. Kills the foldICSLine

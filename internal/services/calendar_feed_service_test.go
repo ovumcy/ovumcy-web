@@ -61,19 +61,26 @@ func (s *stubFeedUserStore) BackfillCalendarFeedVerifierMAC(_ context.Context, u
 
 // stubFeedDayReader records the userID it was asked for so a test can prove the
 // feed scopes its log read to the resolved owner, plus the range upper bound
-// (the owner's "today") so a test can prove that today is resolved in the
-// request timezone, not UTC.
+// (the owner's "today") and the zone it was resolved in, so a test can prove
+// which timezone won — the owner's stored one or the transport's fallback.
+//
+// requestedLocation is compared by POINTER identity in the fallback cases: the
+// "Local" token resolves to time.Local, which stringifies to the host's real zone
+// name whenever TZ is set, so a name comparison would pass on some hosts and fail
+// on others. Identity with the injected fallback is host-independent.
 type stubFeedDayReader struct {
-	logs           []models.DailyLog
-	err            error
-	requestedUser  uint
-	requestedTo    time.Time
-	requestedCount int
+	logs              []models.DailyLog
+	err               error
+	requestedUser     uint
+	requestedTo       time.Time
+	requestedLocation *time.Location
+	requestedCount    int
 }
 
-func (s *stubFeedDayReader) FetchLogsForUser(_ context.Context, userID uint, _ time.Time, to time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (s *stubFeedDayReader) FetchLogsForUser(_ context.Context, userID uint, _ time.Time, to time.Time, location *time.Location) ([]models.DailyLog, error) {
 	s.requestedUser = userID
 	s.requestedTo = to
+	s.requestedLocation = location
 	s.requestedCount++
 	if s.err != nil {
 		return nil, s.err
@@ -155,14 +162,28 @@ func TestResolveFeedReturnsOwnersFeedForValidToken(t *testing.T) {
 	}
 }
 
-// TestResolveFeedResolvesTodayInRequestTimezone proves the log-read window's
-// upper bound (the owner's "today") is computed in the request timezone, not
-// UTC — so the feed reflects the owner's local calendar day. now is 23:00 UTC,
-// already the next calendar day in a UTC+3 zone, so today must be that next day.
-// Kills the calendar_feed_service.go:106 nil-location guard mutant, which would
-// substitute UTC and read the wrong day's window.
-func TestResolveFeedResolvesTodayInRequestTimezone(t *testing.T) {
+// TestResolveFeedFallsBackToRequestTimezoneWithoutStoredOwnerTimezone pins the
+// FALLBACK half of the feed's timezone contract: an owner whose timezone was
+// never captured has no stored zone to prefer, so "today" (the log-read window's
+// upper bound) falls back to the location the transport passed in. now is 23:00
+// UTC, already the next calendar day in a UTC+3 zone, so today must be that next
+// day rather than the UTC one.
+//
+// It formerly asserted this as the ONLY rule — the feed resolved "today" purely
+// from the request chain. That chain (X-Ovumcy-Timezone header -> ovumcy_tz
+// cookie -> server zone) is empty for a calendar client, so it always collapsed
+// to the server zone; the stored owner timezone now decides first
+// (TestResolveFeedPrefersOwnerStoredTimezoneOverRequestChain). The assertion is
+// unchanged because this owner stores no timezone — the precondition is now
+// explicit below.
+//
+// Also kills the nil-location guard mutant in ResolveFeed, which would substitute
+// UTC and read the wrong day's window.
+func TestResolveFeedFallsBackToRequestTimezoneWithoutStoredOwnerTimezone(t *testing.T) {
 	user, token := armedFeedUser(t, 51, "2026-03-02")
+	if user.Timezone != "" {
+		t.Fatalf("test setup: this case needs an owner with no stored timezone, got %q", user.Timezone)
+	}
 	svc, _, days := newFeedServiceForTest(user, predictableFeedLogs(t))
 
 	// 2026-03-10 23:00 UTC == 2026-03-11 02:00 in UTC+3.
@@ -173,7 +194,120 @@ func TestResolveFeedResolvesTodayInRequestTimezone(t *testing.T) {
 		t.Fatalf("expected the feed to resolve: ok=%v err=%v", ok, err)
 	}
 	if y, m, d := days.requestedTo.Date(); y != 2026 || m != time.March || d != 11 {
-		t.Fatalf("today must be resolved in the request timezone (want 2026-03-11), got %04d-%02d-%02d", y, m, d)
+		t.Fatalf("today must fall back to the request timezone (want 2026-03-11), got %04d-%02d-%02d", y, m, d)
+	}
+	if days.requestedLocation != loc {
+		t.Fatalf("the injected request location must be used verbatim, got %v", days.requestedLocation)
+	}
+}
+
+// TestResolveFeedPrefersOwnerStoredTimezoneOverRequestChain is the UTC-boundary
+// regression for the day-shifted feed. A calendar client sends neither
+// X-Ovumcy-Timezone nor the ovumcy_tz cookie, so the request chain the api layer
+// resolves collapses to the SERVER zone; an owner in Pacific/Kiritimati (UTC+14)
+// on a UTC server therefore saw a feed built around the server's calendar day.
+// The sibling egress pass (webhook reminders) already resolved that owner's day
+// from users.timezone, so the same prediction rendered a day apart depending on
+// which channel delivered it.
+//
+// At 2026-03-10 23:00 UTC the owner is already on 2026-03-11, and the fixture
+// puts a projected ovulation event on 2026-03-10 — a day that is "today" (kept)
+// in the request zone and "yesterday" (dropped) in the owner's. So the two
+// renders differ in their VEVENT set, which is the positive anchor: this test
+// cannot pass while the preference is dead.
+func TestResolveFeedPrefersOwnerStoredTimezoneOverRequestChain(t *testing.T) {
+	kiritimati, err := time.LoadLocation("Pacific/Kiritimati")
+	if err != nil {
+		t.Fatalf("load Pacific/Kiritimati: %v", err)
+	}
+
+	// 2026-03-10 23:00 UTC == 2026-03-11 13:00 in Pacific/Kiritimati (UTC+14).
+	now := time.Date(2026, time.March, 10, 23, 0, 0, 0, time.UTC)
+	logs := dayBoundaryFeedLogs(t)
+
+	owner, token := armedFeedUser(t, 61, "2026-02-25")
+	owner.Timezone = "Pacific/Kiritimati"
+	svc, _, days := newFeedServiceForTest(owner, logs)
+
+	ownerBody, ok, err := svc.ResolveFeed(context.Background(), token, now, time.UTC)
+	if err != nil || !ok {
+		t.Fatalf("expected the feed to resolve: ok=%v err=%v", ok, err)
+	}
+	if y, m, d := days.requestedTo.Date(); y != 2026 || m != time.March || d != 11 {
+		t.Fatalf("today must be resolved in the owner's stored timezone (want 2026-03-11), got %04d-%02d-%02d", y, m, d)
+	}
+	if days.requestedLocation.String() != kiritimati.String() {
+		t.Fatalf("the owner-scoped log read must run in the owner's zone, got %v", days.requestedLocation)
+	}
+
+	// Same owner, same instant, same logs — but no stored timezone, so the render
+	// falls back to the server/request zone (UTC), where 2026-03-10 is still today.
+	fallbackOwner := owner
+	fallbackOwner.Timezone = ""
+	fallbackSvc, _, fallbackDays := newFeedServiceForTest(fallbackOwner, logs)
+	requestBody, ok, err := fallbackSvc.ResolveFeed(context.Background(), token, now, time.UTC)
+	if err != nil || !ok {
+		t.Fatalf("expected the request-zone feed to resolve: ok=%v err=%v", ok, err)
+	}
+	if y, m, d := fallbackDays.requestedTo.Date(); y != 2026 || m != time.March || d != 10 {
+		t.Fatalf("test setup: the request-zone render must sit on 2026-03-10, got %04d-%02d-%02d", y, m, d)
+	}
+
+	// Positive anchor: the two zones produce literally different calendar bodies.
+	if string(ownerBody) == string(requestBody) {
+		t.Fatal("test setup: the two zones must render different feeds, otherwise this test cannot observe the preference")
+	}
+	const boundaryEvent = "DTSTART;VALUE=DATE:20260310"
+	if !strings.Contains(string(requestBody), boundaryEvent) {
+		t.Fatalf("test setup: the request-zone render must keep the %s event, got:\n%s", boundaryEvent, requestBody)
+	}
+	if strings.Contains(string(ownerBody), boundaryEvent) {
+		t.Fatalf("the owner-zone render must drop the %s event (already yesterday at UTC+14), got:\n%s", boundaryEvent, ownerBody)
+	}
+	if !strings.Contains(string(ownerBody), "BEGIN:VEVENT") {
+		t.Fatalf("the owner-zone render must still emit its remaining events, got:\n%s", ownerBody)
+	}
+}
+
+// TestResolveFeedIgnoresUnusableStoredOwnerTimezone covers the other fallback
+// arm: a stored value that is not a usable IANA zone must be ignored in favour of
+// the location the transport passed in, without panicking.
+//
+// "Local" is called out explicitly because it does NOT fail to load —
+// time.LoadLocation("Local") returns the server's own zone — so a name-based
+// check would silently pin the owner to the server timezone, the exact bug this
+// change removes. Only validated names are ever written to the column; this is
+// the defense-in-depth pin for a hand-edited or restored row.
+func TestResolveFeedIgnoresUnusableStoredOwnerTimezone(t *testing.T) {
+	// 2026-03-10 23:00 UTC == 2026-03-11 02:00 in the injected UTC+3 fallback.
+	requestZone := time.FixedZone("test+3", 3*60*60)
+	now := time.Date(2026, time.March, 10, 23, 0, 0, 0, time.UTC)
+
+	for name, stored := range map[string]string{
+		"garbage":    "Not/AZone",
+		"localToken": "Local",
+		"lowercased": "local",
+		"whitespace": "   ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			owner, token := armedFeedUser(t, 62, "2026-03-02")
+			owner.Timezone = stored
+			svc, _, days := newFeedServiceForTest(owner, predictableFeedLogs(t))
+
+			body, ok, err := svc.ResolveFeed(context.Background(), token, now, requestZone)
+			if err != nil || !ok {
+				t.Fatalf("an unusable stored timezone must not break the feed: ok=%v err=%v", ok, err)
+			}
+			if !strings.Contains(string(body), "BEGIN:VCALENDAR") {
+				t.Fatalf("expected a well-formed feed, got:\n%s", body)
+			}
+			if days.requestedLocation != requestZone {
+				t.Fatalf("expected the injected request location to be used verbatim, got %v", days.requestedLocation)
+			}
+			if y, m, d := days.requestedTo.Date(); y != 2026 || m != time.March || d != 11 {
+				t.Fatalf("today must come from the request zone (want 2026-03-11), got %04d-%02d-%02d", y, m, d)
+			}
+		})
 	}
 }
 
