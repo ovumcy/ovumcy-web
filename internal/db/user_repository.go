@@ -76,6 +76,34 @@ func (repo *UserRepository) ExistsByNormalizedEmail(ctx context.Context, email s
 	return matched > 0, nil
 }
 
+// ExistsByNormalizedEmailExcludingUser reports whether any user OTHER than
+// excludeUserID already answers to the normalized email. The boot-time email
+// renormalizer needs the self-exclusion: rewriting a row whose stored value
+// differs from the canonical form only by case or whitespace would otherwise
+// see the row itself as the "conflict" and skip the repair.
+func (repo *UserRepository) ExistsByNormalizedEmailExcludingUser(ctx context.Context, email string, excludeUserID uint) (bool, error) {
+	var count int64
+	if err := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("lower(trim(email)) = ? AND id != ?", email, excludeUserID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// RenormalizeUserEmail rewrites one user's stored email to its canonical form
+// under a compare-and-set on the previous value: if the row changed between
+// the read and this write, zero rows match and the caller sees changed=false
+// instead of clobbering a concurrent update. It deliberately does not bump
+// auth_session_version — the mailbox identity is unchanged, only its stored
+// spelling; this is a repair, not a credential rotation.
+func (repo *UserRepository) RenormalizeUserEmail(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND email = ?", userID, fromEmail).
+		Update("email", toEmail)
+	return result.RowsAffected == 1, result.Error
+}
+
 func (repo *UserRepository) Create(ctx context.Context, user *models.User) error {
 	err := repo.database.WithContext(ctx).Create(user).Error
 	return classifyUserCreateError(err)

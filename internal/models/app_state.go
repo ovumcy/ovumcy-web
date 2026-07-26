@@ -18,13 +18,21 @@ const AppStateKeyLastReminderRunDate = "last_reminder_run_date"
 // through its key-independent bcrypt hash.
 const AppStateKeyCalendarFeedKeyEpoch = "calendar_feed_key_epoch"
 
+// AppStateKeyAuthEmailRenormalizeV1 marks the one-shot boot pass that rewrote
+// auth emails stored by the pre-strict normalizer (which kept a whole
+// display-name-decorated input verbatim) down to the bare parsed address, so
+// those accounts keep signing in under the strict addr-spec rule. Written once
+// after the pass completes; its presence makes every later boot skip the scan.
+const AppStateKeyAuthEmailRenormalizeV1 = "auth_email_renormalize.v1"
+
 // AppState is one row of the process-level key/value store (migration 028).
 // It holds runtime bookkeeping, NEVER special-category health data, and is not
 // scoped by user_id — it is deliberately outside the users table. Value is
 // opaque TEXT with a single writer per key: the scheduler goroutine owns
-// last_reminder_run_date, and the boot-time key-rotation sentinel writes
-// calendar_feed_key_epoch before the server starts serving (never concurrently
-// with it).
+// last_reminder_run_date, while the boot-time key-rotation sentinel
+// (calendar_feed_key_epoch) and the one-shot email renormalizer
+// (auth_email_renormalize.v1) write their markers before the server starts
+// serving (never concurrently with it).
 type AppState struct {
 	Key       string    `gorm:"column:key;primaryKey"`
 	Value     string    `gorm:"column:value;not null"`

@@ -75,6 +75,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time; nothing connected them to the errors the pages were reporting. Affects
   displayed text only — no flow, status code, or rate limit changes.
 
+- **Email sign-up and sign-in accept only a plain address, and legacy rows are
+  repaired at boot.** The old input rule validated a full RFC 5322 form
+  (`jane doe <jane@example.com>`) but stored the whole string verbatim, so such
+  an account could never sign in with its plain address and a second account on
+  the same mailbox could slip past the duplicate check. Input is now strictly
+  the bare address (display names, comments, and quoted local parts are
+  rejected as invalid). On the first start after upgrading, previously stored
+  decorated rows are rewritten to their bare parsed address — the startup log
+  reports the count; a row whose bare address is already another account's, or
+  that cannot be reduced to a plain address, is left untouched for operator
+  review. See *Troubleshooting* in [docs/self-hosted.md](docs/self-hosted.md).
+
 ### Security
 
 - **A `SECRET_KEY` rotation now revokes calendar-feed subscriptions of every
