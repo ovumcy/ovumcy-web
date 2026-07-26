@@ -81,11 +81,13 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 	}
 
 	// The pending secret is only enrollable by the account it was generated for.
-	// A cookie that names a different account, or none, is refused here and
-	// cleared, so it cannot be replayed onto this session on a retry.
+	// A cookie that names a different account, or none, is refused — as is one
+	// that cannot be opened, parsed, or has expired — and the reader clears it on
+	// every one of those branches, so it cannot be replayed onto this session on
+	// a retry. All of them map to the same answer: the response must not tell an
+	// attacker whether the enrollment expired or was minted for someone else.
 	rawSecret, err := handler.parseTOTPSetupCookie(c, user.ID)
 	if err != nil {
-		handler.clearTOTPSetupCookie(c)
 		return handler.respondMappedError(c, totpSessionExpiredErrorSpec())
 	}
 
