@@ -18,6 +18,7 @@ type totpPendingCookiePayload struct {
 }
 
 type totpSetupCookiePayload struct {
+	UserID    uint      `json:"user_id"`
 	RawSecret string    `json:"raw_secret"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
@@ -81,9 +82,21 @@ func (handler *Handler) clearTOTPPendingCookie(c fiber.Ctx) {
 }
 
 // setTOTPSetupCookie writes a short-lived sealed cookie that carries the raw
-// TOTP secret during the enrollment flow (before the user has confirmed their code).
-func (handler *Handler) setTOTPSetupCookie(c fiber.Ctx, rawSecret string) error {
+// TOTP secret during the enrollment flow (before the user has confirmed their
+// code), scoped to the account the secret was generated for. A zero userID is a
+// programming error (the caller enrolls an account it just resolved) and clears
+// any prior cookie instead of sealing an unattributed payload. Refusing the zero
+// id here is what keeps enrollment scoped structurally: once such a payload
+// exists the confirm step has no account to compare against, and would enrol
+// whatever secret the cookie carries against whichever session presented it.
+func (handler *Handler) setTOTPSetupCookie(c fiber.Ctx, userID uint, rawSecret string) error {
+	if userID == 0 {
+		handler.clearTOTPSetupCookie(c)
+		return errors.New("totp setup requires an owner id")
+	}
+
 	payload := totpSetupCookiePayload{
+		UserID:    userID,
 		RawSecret: rawSecret,
 		ExpiresAt: time.Now().Add(totpPendingCookieTTL),
 	}
@@ -96,9 +109,11 @@ func (handler *Handler) setTOTPSetupCookie(c fiber.Ctx, rawSecret string) error 
 	return handler.writeSealedCookie(c, totpSetupCookieSpec, serialized, time.Time{})
 }
 
-// parseTOTPSetupCookie decodes and validates the TOTP setup cookie.
-// Returns the raw TOTP secret and any error (including expiry).
-func (handler *Handler) parseTOTPSetupCookie(c fiber.Ctx) (string, error) {
+// parseTOTPSetupCookie decodes and validates the TOTP setup cookie against the
+// account presenting it. Returns the raw TOTP secret and any error (including a
+// payload minted for a different account, one naming no account at all, and
+// expiry).
+func (handler *Handler) parseTOTPSetupCookie(c fiber.Ctx, sessionUserID uint) (string, error) {
 	raw := strings.TrimSpace(c.Cookies(totpSetupCookieName))
 	if raw == "" {
 		return "", errors.New("totp setup cookie missing")
@@ -116,6 +131,15 @@ func (handler *Handler) parseTOTPSetupCookie(c fiber.Ctx) (string, error) {
 	var payload totpSetupCookiePayload
 	if err := json.Unmarshal(decoded, &payload); err != nil {
 		return "", errors.New("totp setup cookie malformed")
+	}
+	// The owner id sealed into the payload is never trusted alone: it only
+	// counts when it matches the account presenting it, and a zero id on either
+	// side names no account at all, so there is nothing to scope the pending
+	// secret to. Both cases are invalid rather than a comparison that does not
+	// apply. A cookie minted by a binary that predates this field lands here and
+	// fails closed — the enrollment is restarted, not silently re-attributed.
+	if !sealedPayloadBelongsToSession(payload.UserID, sessionUserID) {
+		return "", errors.New("totp setup cookie does not belong to this session")
 	}
 	if strings.TrimSpace(payload.RawSecret) == "" {
 		return "", errors.New("totp setup cookie missing secret")

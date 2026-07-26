@@ -56,7 +56,7 @@ func (handler *Handler) ShowTOTPSetupPage(c fiber.Ctx) error {
 
 	// Persist the raw secret in a short-lived sealed cookie so it survives the
 	// form submission without touching the database before the user confirms.
-	if err := handler.setTOTPSetupCookie(c, key.Secret()); err != nil {
+	if err := handler.setTOTPSetupCookie(c, user.ID, key.Secret()); err != nil {
 		handler.logSecurityEvent(c, "settings.2fa.setup", "cookie_failed")
 		return handler.respondMappedError(c, settingsLoadErrorSpec())
 	}
@@ -80,8 +80,12 @@ func (handler *Handler) VerifyTOTP2FAEnrollment(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	rawSecret, err := handler.parseTOTPSetupCookie(c)
+	// The pending secret is only enrollable by the account it was generated for.
+	// A cookie that names a different account, or none, is refused here and
+	// cleared, so it cannot be replayed onto this session on a retry.
+	rawSecret, err := handler.parseTOTPSetupCookie(c, user.ID)
 	if err != nil {
+		handler.clearTOTPSetupCookie(c)
 		return handler.respondMappedError(c, totpSessionExpiredErrorSpec())
 	}
 
