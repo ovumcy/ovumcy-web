@@ -66,11 +66,16 @@ type DisclaimerProvider interface {
 	Disclaimer(language string) string
 }
 
-// NotifyReport is the transport-free result of one notify pass. It carries only
-// aggregate counts — never a URL, token, health specific, or payload — so it is
-// safe to print from the CLI. OwnerIDsFailed lets an operator see WHICH owners
-// failed (an id is not a secret) without exposing why in a way that leaks the
-// endpoint.
+// NotifyReport is the transport-free result of one notify pass. It never carries
+// a URL, token, or payload — a destination appears as a HOST at most.
+// OwnerIDsFailed lets an operator see WHICH owners failed (an id is not a secret)
+// without exposing why in a way that leaks the endpoint.
+//
+// On a dry run DryRunPreview additionally carries each reminder's type and
+// estimated date. Those ARE health specifics about an identified owner, so a
+// caller that renders the report keeps them behind an explicit opt-in (the CLI's
+// --show-health-details) instead of printing them by default; everything else in
+// the report is safe to print unconditionally.
 type NotifyReport struct {
 	// OwnersScanned is the number of owner records the pass examined.
 	OwnersScanned int
@@ -245,7 +250,9 @@ func (service *WebhookNotifyService) processOwner(
 		// the reminder WAS delivered; a stuck watermark would at worst re-send next
 		// pass, never lose data.
 		if err := service.users.UpdateWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor); err != nil {
-			log.Printf("webhook notify: watermark write failed after send, owner id=%d type=%s", record.ID, reminder.Type)
+			// Owner id only: the reminder type is a health specific, and this line
+			// lands in whatever log the pass was started from.
+			log.Printf("webhook notify: watermark write failed after send, owner id=%d", record.ID)
 		}
 		report.Sent++
 	}
