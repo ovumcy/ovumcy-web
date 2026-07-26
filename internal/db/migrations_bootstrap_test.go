@@ -1,10 +1,13 @@
 package db
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +17,12 @@ import (
 	embeddedmigrations "github.com/ovumcy/ovumcy-web/migrations"
 	"gorm.io/gorm"
 )
+
+// addColumnTokenPattern finds the ADD COLUMN token pair anywhere in a chunk. It
+// is deliberately independent of the runner's own anchored detection: the
+// structural guard below decides for itself that a statement is an ADD COLUMN
+// and then requires the runner to agree.
+var addColumnTokenPattern = regexp.MustCompile(`(?i)\bADD\s+COLUMN\b`)
 
 func TestOpenSQLiteAppliesEmbeddedMigrationsOnCleanDatabase(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-clean.db")
@@ -227,6 +236,242 @@ func TestMigration033PurgesUnattributedOIDCLogoutStates(t *testing.T) {
 	if attributed := countOIDCLogoutStatesBySessionID(t, reopened, "attributed-session"); attributed != 1 {
 		t.Fatalf("expected the attributed logout state to survive migration 033, found %d", attributed)
 	}
+}
+
+// TestEmbeddedSQLiteMigrationAddColumnStatementsAreRecognizedByTheRunner is the
+// structural guard behind SQLite migration idempotency. SQLite has no
+// `ADD COLUMN IF NOT EXISTS`, so re-running a migration is safe only because the
+// runner skips an ADD COLUMN whose column already exists. That skip is driven by
+// one anchored pattern over the statement chunks splitSQLStatements produces,
+// and those chunks carry the file's prose header, so a detection that cannot see
+// past a leading comment silently stops protecting the first ADD COLUMN of every
+// migration that opens with one.
+//
+// Walking the whole embedded set turns that into a structural regression rather
+// than a per-file fix: a future migration whose ADD COLUMN sits behind prose is
+// caught here instead of at an operator's boot.
+func TestEmbeddedSQLiteMigrationAddColumnStatementsAreRecognizedByTheRunner(t *testing.T) {
+	migrations, err := loadEmbeddedMigrations(DriverSQLite)
+	if err != nil {
+		t.Fatalf("load embedded migrations: %v", err)
+	}
+
+	inspected := 0
+	for _, migration := range migrations {
+		for index, statement := range splitSQLStatements(migration.SQL) {
+			if !statementCarriesAddColumnCode(statement) {
+				continue
+			}
+			inspected++
+
+			tableName, columnName, recognized := parseAddColumnStatement(statement)
+			if !recognized {
+				t.Errorf(
+					"%s statement %d carries an ADD COLUMN the runner does not recognize, so the already-exists skip never applies to it and a re-run fails on a duplicate column: %q",
+					migration.Name, index, firstStatementLineForTest(statement),
+				)
+				continue
+			}
+			if tableName == "" || columnName == "" {
+				t.Errorf(
+					"%s statement %d resolved to an empty table/column pair (table=%q column=%q), so the skip would probe the wrong schema object: %q",
+					migration.Name, index, tableName, columnName, firstStatementLineForTest(statement),
+				)
+			}
+		}
+	}
+
+	// Positive anchor: a walk that matches nothing passes just as well when the
+	// detection is dead, so require the set to actually contain ADD COLUMNs.
+	if inspected == 0 {
+		t.Fatal("expected the SQLite migration set to contain ADD COLUMN statements, found none — this guard would have passed vacuously")
+	}
+}
+
+// statementCarriesAddColumnCode reports whether a statement chunk contains real
+// ADD COLUMN code rather than prose about one. Whole `--` comment lines are
+// dropped first, so a header sentence describing the runner's skip does not
+// count as a statement.
+func statementCarriesAddColumnCode(statement string) bool {
+	codeLines := make([]string, 0)
+	for _, line := range strings.Split(statement, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		codeLines = append(codeLines, line)
+	}
+	return addColumnTokenPattern.MatchString(strings.Join(codeLines, "\n"))
+}
+
+// firstStatementLineForTest returns the first line of a chunk that is neither
+// blank nor a comment, so a failure names the offending SQL instead of dumping a
+// forty-line prose header.
+func firstStatementLineForTest(statement string) string {
+	for _, line := range strings.Split(statement, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		return trimmed
+	}
+	return strings.TrimSpace(statement)
+}
+
+// TestMigrationReappliesWhenItsSchemaMigrationsRecordIsMissing covers the boot
+// consequence of the guard above. The trigger is narrow but real: a database
+// that carries the column while its schema_migrations row is absent — a restore
+// from a backup taken before the row was written, or an operator pruning the
+// table — makes the runner replay the migration. It must complete instead of
+// failing the whole boot on `duplicate column name`.
+//
+// 032 opens with a prose header, so its ADD COLUMN reaches the detection behind
+// a comment. 031's ALTER is bare and is the positive anchor: it exercises the
+// same delete-record-and-reopen harness through the path that always matched, so
+// a green 032 cannot be credited to a harness that never re-applies anything.
+func TestMigrationReappliesWhenItsSchemaMigrationsRecordIsMissing(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		version string
+		table   string
+		column  string
+	}{
+		{name: "comment-prefixed ALTER (032)", version: "032", table: "users", column: "calendar_feed_verifier_mac"},
+		{name: "bare ALTER (031)", version: "031", table: "oidc_logout_states", column: "user_id"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			databasePath := filepath.Join(t.TempDir(), "ovumcy-reapply-"+testCase.version+".db")
+			database := openSQLiteForMigrationBootstrapTest(t, databasePath)
+
+			if !database.Migrator().HasColumn(testCase.table, testCase.column) {
+				t.Fatalf("expected %s.%s to exist after a clean boot", testCase.table, testCase.column)
+			}
+
+			if err := database.Exec(
+				`DELETE FROM schema_migrations WHERE version = ?`, testCase.version,
+			).Error; err != nil {
+				t.Fatalf("delete migration %s record: %v", testCase.version, err)
+			}
+
+			sqlDB, err := database.DB()
+			if err != nil {
+				t.Fatalf("get sql db handle: %v", err)
+			}
+			if err := sqlDB.Close(); err != nil {
+				t.Fatalf("close sql db: %v", err)
+			}
+
+			reopened, err := OpenSQLite(databasePath)
+			if err != nil {
+				t.Fatalf(
+					"expected migration %s to re-apply cleanly with %s.%s already present, but boot failed — the runner did not recognize its ADD COLUMN as skippable: %v",
+					testCase.version, testCase.table, testCase.column, err,
+				)
+			}
+			reopenedSQLDB, err := reopened.DB()
+			if err != nil {
+				t.Fatalf("get reopened sql db handle: %v", err)
+			}
+			t.Cleanup(func() { _ = reopenedSQLDB.Close() })
+
+			if !reopened.Migrator().HasColumn(testCase.table, testCase.column) {
+				t.Fatalf("expected %s.%s to survive the re-applied migration %s", testCase.table, testCase.column, testCase.version)
+			}
+			assertAllEmbeddedMigrationsApplied(t, reopened)
+		})
+	}
+}
+
+// TestParseAddColumnStatementSeesPastLeadingComments pins the detection
+// semantics directly: leading prose is skipped, comment text is never parsed as
+// SQL, and anything that is not an ADD COLUMN stays unrecognized (and therefore
+// executes untouched).
+func TestParseAddColumnStatementSeesPastLeadingComments(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		statement  string
+		wantTable  string
+		wantColumn string
+		wantOK     bool
+	}{
+		{
+			name:       "bare ALTER",
+			statement:  "ALTER TABLE users ADD COLUMN week_starts_on TEXT NOT NULL DEFAULT 'sunday'",
+			wantTable:  "users",
+			wantColumn: "week_starts_on",
+			wantOK:     true,
+		},
+		{
+			name:       "ALTER behind a prose header",
+			statement:  "-- Week-start display preference.\n--\n-- Mentions ADD COLUMN in prose.\n\nALTER TABLE users ADD COLUMN week_starts_on TEXT",
+			wantTable:  "users",
+			wantColumn: "week_starts_on",
+			wantOK:     true,
+		},
+		{
+			name:       "quoted identifiers normalize",
+			statement:  "-- header\n\nALTER TABLE \"users\" ADD COLUMN \"week_starts_on\" TEXT",
+			wantTable:  "users",
+			wantColumn: "week_starts_on",
+			wantOK:     true,
+		},
+		{
+			name:      "comment naming a statement is not one",
+			statement: "-- ALTER TABLE users ADD COLUMN never_created TEXT\n-- second line of prose\n",
+			wantOK:    false,
+		},
+		{
+			name:      "comment-only chunk without a trailing newline",
+			statement: "-- a split inside prose leaves a comment fragment behind",
+			wantOK:    false,
+		},
+		{
+			name:      "non-ALTER statement stays unrecognized",
+			statement: "-- header\n\nCREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_feed_selector ON users (calendar_feed_selector)",
+			wantOK:    false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			tableName, columnName, ok := parseAddColumnStatement(testCase.statement)
+			if ok != testCase.wantOK {
+				t.Fatalf("parseAddColumnStatement() recognized=%t, want %t", ok, testCase.wantOK)
+			}
+			if tableName != testCase.wantTable || columnName != testCase.wantColumn {
+				t.Fatalf("parseAddColumnStatement() = (%q, %q), want (%q, %q)", tableName, columnName, testCase.wantTable, testCase.wantColumn)
+			}
+		})
+	}
+}
+
+// TestEmbeddedMigrationSetsMatchAcrossDialects keeps the two dialect trees
+// aligned. A migration added to one engine and forgotten in the other is
+// otherwise invisible on a machine without the Postgres container: the SQLite
+// bootstrap stays green, and the divergence only surfaces where the missing
+// version is needed.
+func TestEmbeddedMigrationSetsMatchAcrossDialects(t *testing.T) {
+	sqliteSet := embeddedMigrationIdentitiesForTest(t, DriverSQLite)
+	postgresSet := embeddedMigrationIdentitiesForTest(t, DriverPostgres)
+
+	if len(sqliteSet) == 0 {
+		t.Fatal("expected the SQLite migration set to be non-empty")
+	}
+	if !reflect.DeepEqual(sqliteSet, postgresSet) {
+		t.Fatalf("migration sets diverge across engines: sqlite=%v postgres=%v", sqliteSet, postgresSet)
+	}
+}
+
+func embeddedMigrationIdentitiesForTest(t *testing.T, driver Driver) []string {
+	t.Helper()
+
+	migrations, err := loadEmbeddedMigrations(driver)
+	if err != nil {
+		t.Fatalf("load embedded %s migrations: %v", driver, err)
+	}
+
+	identities := make([]string, 0, len(migrations))
+	for _, migration := range migrations {
+		identities = append(identities, migration.Version+"/"+migration.Name)
+	}
+	return identities
 }
 
 func countOIDCLogoutStatesWithNullUser(t *testing.T, database *gorm.DB) int64 {
@@ -498,6 +743,118 @@ func TestOpenSQLiteMigrationBootstrapIsIdempotent(t *testing.T) {
 
 	if !reflect.DeepEqual(firstRecords, secondRecords) {
 		t.Fatalf("expected migration records to remain unchanged between boots, before=%v after=%v", firstRecords, secondRecords)
+	}
+}
+
+// TestOpenSQLiteReleasesTheConnectionWhenMigrationsFail locks the ownership
+// contract of the open path: the caller owns the connection pool only when a
+// handle comes back. The web binary and every operator subcommand close the
+// handle they were given and have nothing to close when the open reports an
+// error, so a failure that happens AFTER the connection is up has to release the
+// pool where it was opened — otherwise the sql.DB, and the SQLite file it holds
+// open, survive for the rest of the process. That lifetime is the whole run of a
+// subcommand that keeps working after a failed open.
+//
+// Two observables, because the platforms disagree about what a live handle
+// prevents:
+//   - removing the database file: on Windows an open handle makes this fail with
+//     a sharing violation — which is how the leak first surfaced, as a failed
+//     boot test failing a second time while its temp directory was cleaned up —
+//     while on Linux an open file unlinks without complaint, so this half proves
+//     nothing there;
+//   - the WAL sidecars: SQLite deletes `<db>-wal` and `<db>-shm` when the LAST
+//     connection to a database closes, so a surviving sidecar is a surviving
+//     pool on every platform, and this half carries the test on the Linux CI
+//     runner.
+//
+// The successful open at the end is the positive anchor: it runs both assertions
+// against a database that certainly existed and was certainly opened, and passes
+// only because the test closed it — so neither observable can report success
+// merely for want of a file.
+func TestOpenSQLiteReleasesTheConnectionWhenMigrationsFail(t *testing.T) {
+	failedPath := filepath.Join(t.TempDir(), "ovumcy-migration-failure.db")
+	seedShadowedSchemaMigrationsTable(t, failedPath)
+
+	database, err := OpenSQLite(failedPath)
+	if err == nil {
+		if sqlDB, handleErr := database.DB(); handleErr == nil {
+			_ = sqlDB.Close()
+		}
+		t.Fatal("expected a shadowed schema_migrations table to fail the migration runner")
+	}
+	if !strings.Contains(err.Error(), "apply embedded migrations") {
+		t.Fatalf("expected the open to fail while applying migrations, got %v", err)
+	}
+	if database != nil {
+		t.Fatal("expected no handle back from a failed open")
+	}
+
+	assertSQLiteConnectionReleased(t, failedPath)
+
+	// Positive anchor: the same two assertions against a successful open, closed
+	// by the test itself.
+	succeededPath := filepath.Join(t.TempDir(), "ovumcy-migration-success.db")
+	succeeded, err := OpenSQLite(succeededPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := succeeded.DB()
+	if err != nil {
+		t.Fatalf("get sql db handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	assertSQLiteConnectionReleased(t, succeededPath)
+}
+
+// seedShadowedSchemaMigrationsTable creates the database file with a
+// schema_migrations table that shadows the runner's own: the name is already
+// taken, so the runner's CREATE TABLE IF NOT EXISTS is a no-op and the very next
+// statement — the SELECT over the applied versions — fails on the missing
+// column. The migration runner therefore fails deterministically on a database
+// that opens perfectly, with no seam in production code and without depending on
+// the content of any particular migration. The seeding connection is closed
+// before returning, so the only handle the file can still be holding is the one
+// under test.
+func seedShadowedSchemaMigrationsTable(t *testing.T, databasePath string) {
+	t.Helper()
+
+	database, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite for seeding: %v", err)
+	}
+	if err := database.Exec(`CREATE TABLE schema_migrations (id INTEGER PRIMARY KEY)`).Error; err != nil {
+		t.Fatalf("seed shadowed schema_migrations table: %v", err)
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("open seeding sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close seeding sql db: %v", err)
+	}
+}
+
+// assertSQLiteConnectionReleased proves nothing still holds the database at
+// databasePath open, and consumes the file in the process (it removes it).
+func assertSQLiteConnectionReleased(t *testing.T, databasePath string) {
+	t.Helper()
+
+	if err := os.Remove(databasePath); err != nil {
+		t.Fatalf("expected the database file to be removable once the connection is closed, got %v", err)
+	}
+
+	for _, sidecar := range []string{databasePath + "-wal", databasePath + "-shm"} {
+		_, err := os.Stat(sidecar)
+		if err == nil {
+			t.Fatalf("expected %s to be gone: SQLite removes it when the last connection closes, so a surviving sidecar means the pool is still open", filepath.Base(sidecar))
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("stat %s: %v", filepath.Base(sidecar), err)
+		}
 	}
 }
 

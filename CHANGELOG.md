@@ -100,6 +100,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   templates and ordinary identifiers, and this column is the only diagnostic
   signal an operator has for a failed request.
 
+- **Re-running a migration whose `ADD COLUMN` sits behind its file's prose no
+  longer aborts the boot.** SQLite has no `ADD COLUMN IF NOT EXISTS`, so a
+  migration is safe to replay only because the runner skips an `ADD COLUMN` whose
+  column already exists. That check ran against the raw statement chunk, and the
+  chunk splitter keeps a file's leading comment block attached to the first
+  statement, so the check never recognized an `ADD COLUMN` introduced by prose —
+  and stopped protecting the first column of migrations `021`, `027`, `029`,
+  `030` and `032`. On a database that carries the column while its
+  `schema_migrations` row does not — a restore from a backup taken before that
+  row was written, or a pruned migration table — the replay failed with
+  `duplicate column name` and the application did not start. Detection now looks
+  past leading comment lines. Which statements execute is unchanged, on both
+  engines; only the already-exists skip sees more of them. A permanent guard
+  walks the embedded migration set and fails if any `ADD COLUMN` is left
+  unrecognized.
+
 - **"Cancel" now actually cancels on four confirmation dialogs.** Rotating or
   revoking the calendar feed, hiding a custom symptom, and deleting a calendar
   day entry each asked for confirmation — but the request was already on its way
@@ -156,6 +172,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stored timezone as well, falling back to the request/server zone only for an
   owner whose timezone has never been captured. See
   [docs/notifications.md](docs/notifications.md).
+- **A failed database migration no longer leaves the database open behind it.**
+  Opening the database connects first and applies the pending migrations second;
+  when that second step failed, the error came back without the connection ever
+  being closed. The caller receives no handle in that case and so has nothing it
+  could close, which left the connection pool — and, on SQLite, the open database
+  file — held for as long as the process lived. The web binary exits moments
+  later, so a failed start was barely affected; an operator subcommand
+  (`ovumcy users`, `reset-password`, `notify`, `webhook`) keeps running, so it
+  held the database open for the rest of its run — which on Windows also blocks
+  the file from being moved or deleted. The connection is now released on any
+  failure that happens after it is open, and the error reported to the operator
+  is still the migration failure that caused it.
 
 ### Security
 
