@@ -159,6 +159,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **A one-time reveal now refuses a sealed payload that names no owner, instead
+  of skipping the owner check.** Both shown-once surfaces — the recovery code and
+  the calendar-feed subscribe URL — compared the owner id sealed into the cookie
+  against the signed-in account, but the comparison was written so that a payload
+  carrying owner id `0` disabled it: with no id to match, the check was skipped
+  and the secret rendered for whichever session presented the cookie. No caller
+  could produce such a payload, so nothing was exposed in any released build;
+  the defect was that only the callers stood between an unattributed payload and
+  a reveal.
+
+  An owner id is now mandatory when the payload is sealed, so an unattributed one
+  is never minted, and a payload naming no owner is invalid on read rather than a
+  check that does not apply — refused and cleared, on either surface, whoever
+  presents it. Both surfaces share one predicate, so the two cannot drift apart
+  again. Behavior for owners is unchanged: a reveal minted for an account still
+  reveals to that account, exactly once.
+
 - **A compressed request body that only passes the 16 MiB cap once decompressed
   now answers with the standard `413 request_too_large` envelope.** The cap is
   applied to the decompressed stream inside the framework's body accessor, which

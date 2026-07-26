@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -69,6 +70,72 @@ func TestRecoveryCodePageRejectsCookieFromDifferentUser(t *testing.T) {
 	}
 	if cleared.Value != "" {
 		t.Fatalf("expected cleared recovery cookie value, got %q", cleared.Value)
+	}
+}
+
+// TestRecoveryCodePageRefusesUnattributedRecoveryCookie is the recovery-code arm
+// of the reveal contract that TestCalendarFeedRevealRefusesUnattributedCookie
+// pins for the calendar feed: a sealed payload carrying `uid` 0 names no
+// account, so the page must refuse it outright instead of skipping the owner
+// comparison for want of an operand — otherwise the code renders for whichever
+// session presents the cookie.
+//
+// Both payloads here are sealed under the app's own secret and open cleanly, so
+// only the owner-scoping guard separates them. The attributed one is the
+// positive anchor: it proves the page still reveals to the account it was minted
+// for, so the refusal below is not just a page that shows nothing.
+func TestRecoveryCodePageRefusesUnattributedRecoveryCookie(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	owner := createOnboardingTestUser(t, database, "recovery-unattributed-owner@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
+
+	const ownedCode = "OVUM-OWNED-CODE00"
+	const unattributedCode = "OVUM-NOOWNER-CODE"
+
+	// Positive anchor: a payload minted for this account reveals its code.
+	attributed := sealCookieForTestApp(t, recoveryCodeCookieName,
+		[]byte(`{"uid":`+strconv.FormatUint(uint64(owner.ID), 10)+`,"recovery_code":"`+ownedCode+`","continue_path":"/dashboard","continue_target":"dashboard","surface":"dedicated"}`))
+
+	attributedRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	attributedRequest.Header.Set("Accept-Language", "en")
+	attributedRequest.Header.Set("Cookie", authCookie+"; "+recoveryCodeCookieName+"="+attributed)
+	attributedResponse, err := app.Test(attributedRequest, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("attributed recovery-code request failed: %v", err)
+	}
+	defer func() { _ = attributedResponse.Body.Close() }()
+	if attributedResponse.StatusCode != http.StatusOK {
+		t.Fatalf("expected the owner's own recovery code to render, got %d", attributedResponse.StatusCode)
+	}
+	if !strings.Contains(mustReadBodyString(t, attributedResponse.Body), ownedCode) {
+		t.Fatal("the recovery-code page must still reveal the code minted for this account")
+	}
+
+	// An unattributed payload carrying a different code must reveal nothing.
+	unattributed := sealCookieForTestApp(t, recoveryCodeCookieName,
+		[]byte(`{"uid":0,"recovery_code":"`+unattributedCode+`","continue_path":"/dashboard","continue_target":"dashboard","surface":"dedicated"}`))
+
+	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie+"; "+recoveryCodeCookieName+"="+unattributed)
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("unattributed recovery-code request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected an unattributed recovery payload to be refused with a redirect, got %d", response.StatusCode)
+	}
+	if location := response.Header.Get("Location"); location != "/dashboard" {
+		t.Fatalf("expected redirect to /dashboard, got %q", location)
+	}
+	if strings.Contains(mustReadBodyString(t, response.Body), unattributedCode) {
+		t.Fatal("an unattributed recovery payload must not surface its code")
+	}
+	cleared := responseCookie(response.Cookies(), recoveryCodeCookieName)
+	if cleared == nil || cleared.Value != "" {
+		t.Fatal("expected the refused recovery cookie to be cleared, not left presentable on a retry")
 	}
 }
 

@@ -40,7 +40,18 @@ type recoveryCodePagePayload struct {
 
 var recoveryCodeCookieSpec = sealedCookieSpec{name: recoveryCodeCookieName, path: "/"}
 
+// setRecoveryCodeIssuanceCookie seals a freshly minted recovery code for a
+// one-time reveal, scoped to userID so the code is only ever shown back to the
+// account it was minted for. A zero userID or an empty code is a programming
+// error and clears any prior cookie instead of sealing an unattributed or blank
+// payload. Refusing the zero id here is what keeps the reveal scoped
+// structurally: the read path has no owner to compare against once such a
+// payload exists.
 func (handler *Handler) setRecoveryCodeIssuanceCookie(c fiber.Ctx, userID uint, recoveryCode string, continuePath string, surface string) error {
+	if userID == 0 {
+		handler.clearRecoveryCodePageCookie(c)
+		return errors.New("recovery code reveal requires an owner id")
+	}
 	code := strings.TrimSpace(recoveryCode)
 	if code == "" {
 		handler.clearRecoveryCodePageCookie(c)
@@ -105,6 +116,10 @@ func sanitizeRecoveryCodeSurface(surface string) string {
 	}
 }
 
+// readRecoveryCodeDisplayState opens the sealed one-time cookie and returns the
+// code to display, or the code-less fallback state when the cookie is absent,
+// malformed, unattributed, or scoped to a different account. Every rejection
+// path clears the cookie so an unusable value cannot linger.
 func (handler *Handler) readRecoveryCodeDisplayState(c fiber.Ctx, userID uint, fallbackContinuePath string) recoveryCodeDisplayState {
 	fallback := services.SanitizeRedirectPath(strings.TrimSpace(fallbackContinuePath), "/dashboard")
 	fallbackTarget := recoveryCodeContinueTargetFromPath(fallback)
@@ -142,7 +157,7 @@ func (handler *Handler) readRecoveryCodeDisplayState(c fiber.Ctx, userID uint, f
 		handler.clearRecoveryCodePageCookie(c)
 		return state
 	}
-	if payload.UserID != 0 && userID != 0 && payload.UserID != userID {
+	if !sealedPayloadBelongsToSession(payload.UserID, userID) {
 		handler.clearRecoveryCodePageCookie(c)
 		return state
 	}

@@ -98,19 +98,20 @@ func TestRecoveryCodeIssuanceCookieCarriesFutureExpiry(t *testing.T) {
 }
 
 // TestRecoveryCodeDisplayStateRejectsForeignUserID pins the ownership-scoping
-// guard in readRecoveryCodeDisplayState (recovery_code_page_cookie.go L145,
-// `payload.UserID != 0 && userID != 0 && payload.UserID != userID`). The
-// CONDITIONALS_NEGATION mutant on the first operand (`payload.UserID == 0`)
-// short-circuits the whole conjunction to false for any real (non-zero) cookie
-// owner, so the guard never clears the cookie and one owner's recovery code
-// leaks to a different authenticated owner. Sealing for owner A and reading as
-// owner B must yield the empty fallback.
+// guard in readRecoveryCodeDisplayState, which delegates to
+// sealedPayloadBelongsToSession (sealed_cookie_transport.go). A
+// CONDITIONALS_NEGATION mutant on the final `payload.UserID == sessionUserID`
+// comparison inverts the match, so the guard never clears the cookie and one
+// owner's recovery code renders for a different authenticated owner. Sealing for
+// owner A and reading as owner B must yield the empty fallback. The zero-id
+// operands of that predicate are pinned separately by
+// TestRecoveryCodeCookieRefusesUnattributedOwner.
 //
-// This also pins handlers_auth_session_helpers.go L73 (`if user != nil { userID
-// = user.ID }`): the render helper stamps the issuing owner's id into the
-// cookie via that branch. If it is skipped (userID left 0), the scoping check
-// above cannot bind the cookie to an owner, and the same cross-owner read
-// succeeds. The render-driven variant below exercises that path end to end.
+// This also pins handlers_auth_session_helpers.go (`if user != nil { userID =
+// user.ID }`): the render helper stamps the issuing owner's id into the cookie
+// via that branch. If it is skipped, the id stays 0 and the sealer refuses the
+// payload outright — so no cookie is issued at all rather than an unattributed
+// one. The render-driven variant below exercises that path end to end.
 func TestRecoveryCodeDisplayStateRejectsForeignUserID(t *testing.T) {
 	t.Parallel()
 

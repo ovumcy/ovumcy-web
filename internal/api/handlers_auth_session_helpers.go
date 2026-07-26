@@ -69,6 +69,11 @@ func (handler *Handler) renderRecoveryCodeResponseWithContinuePath(c fiber.Ctx, 
 }
 
 func (handler *Handler) renderRecoveryCodeResponseWithSurface(c fiber.Ctx, user *models.User, recoveryCode string, status int, continuePath string, surface string) error {
+	// A recovery code is only ever revealed back to the account it was minted
+	// for, so the reveal cookie must carry that account's id. A caller with no
+	// resolved user leaves the id zero, which the sealer refuses outright — such
+	// a call answers with the mapped persist error rather than sealing a payload
+	// that names no owner.
 	userID := uint(0)
 	if user != nil {
 		userID = user.ID
