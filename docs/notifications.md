@@ -104,14 +104,23 @@ but harmless (delivery is idempotent — see
 #### The `ovumcy notify` CLI
 
 ```
-usage: ovumcy notify [--dry-run] [--fail-on-delivery-error]
+usage: ovumcy notify [--dry-run] [--show-health-details] [--fail-on-delivery-error]
 ```
 
 - `--dry-run` computes what **would** be sent — owners scanned, reminders due,
-  and a preview line per due reminder (type, estimated date, destination
-  **host only**) — but makes no outbound HTTP request and writes no watermark.
-  Use it to verify a schedule or a fresh deployment before it starts actually
-  delivering.
+  and a preview line per owner endpoint (owner id, how many reminders are
+  pending, destination **host only**) — but makes no outbound HTTP request and
+  writes no watermark. Use it to verify a schedule or a fresh deployment before
+  it starts actually delivering. The preview deliberately leaves out each
+  reminder's type and estimated date; see `--show-health-details` below.
+- `--show-health-details` adds the per-reminder specifics back to the
+  `--dry-run` preview: one line per reminder with its type (`period-soon` /
+  `ovulation-soon`) and estimated date. **That output is health data about an
+  identified owner** — a predicted period or ovulation date — so it is off by
+  default and must be treated like the database itself: read it on the terminal,
+  do not redirect it into a shared log, a cron mailer, or an install-script
+  transcript. The flag has no effect without `--dry-run` (a delivery pass
+  produces no preview at all).
 - `--fail-on-delivery-error` makes the process exit non-zero if **any**
   individual delivery failed during the pass. Without it (the default), a
   single unreachable owner endpoint is treated as an expected transient — the
@@ -123,9 +132,11 @@ usage: ovumcy notify [--dry-run] [--fail-on-delivery-error]
   `OnFailure=`, etc.) to surface delivery failures.
 - A pass-level failure (cannot open the database, invalid `SECRET_KEY`, bad
   arguments) always exits non-zero, regardless of the flag.
-- The command prints only aggregate counts and owner ids to stdout — never a
-  URL, token, or health specific — so its output is safe to capture in an
-  operator log or cron mailer.
+- By default the command prints only aggregate counts, owner ids, and
+  destination hosts to stdout — never a URL, token, reminder type, or estimated
+  date — so its output is safe to capture in an operator log or cron mailer.
+  `--show-health-details` is the single exception, and it is opt-in for exactly
+  that reason.
 
 Run it once daily at a fixed local hour that suits your household — for
 example, mid-morning, so a period-due reminder for today already reflects
@@ -149,6 +160,14 @@ example, with cron:
 Adjust `DB_DRIVER`/`DB_PATH` (or `DATABASE_URL` for Postgres) and the secret
 source to match your deployment's actual environment; the same environment
 variables apply regardless of which scheduler invokes the command.
+
+Redirecting the output into a log file, as above, is safe for the scheduled
+pass and for a plain `--dry-run`: neither prints a reminder type or an
+estimated date. Do **not** add `--show-health-details` to a scheduled or
+redirected invocation — that flag exists to put predictions on an operator's
+terminal on request, not into a log file that is likely to be world-readable,
+shipped to a log collector, or swept into a backup with weaker protection than
+the database.
 
 ##### Recommended cadence
 
@@ -218,6 +237,14 @@ usage: ovumcy webhook <show|set> <email> [--enabled=<bool>] [--notify-period=<bo
   instead via the `OVUMCY_WEBHOOK_URL` environment variable for the single
   invocation, or interactively with `--url-stdin` (a no-echo terminal prompt,
   or the first line of piped stdin). It is never echoed back.
+- Those two sources are **mutually exclusive**: supplying both is refused with
+  an error naming each of them, and nothing is written. A left-over export — an
+  operator profile, an earlier invocation, a compose `env_file` inherited by
+  `docker compose run` — would otherwise silently outrank the URL you just
+  piped in and arm that owner's reminders at the wrong endpoint. Unset the
+  variable, or drop the flag. (`--clear-url` is unaffected: it removes any
+  stored endpoint, so it cannot arm the wrong one, and it still works with the
+  variable exported.)
 - `--clear-url` removes any stored endpoint; `--dry-run` validates and prints
   the result without writing anything.
 
@@ -329,7 +356,10 @@ Operator-relevant summary (the full, test-backed claim list lives in
 - **No secrets in the payload or CLI output.** The JSON payload carries only a
   title, message, the disclaimer, the reminder type, the estimated event date,
   and the lead-day count — never the webhook URL, never `SECRET_KEY`, never a
-  health specific beyond the single estimated date.
+  health specific beyond the single estimated date. The CLI never prints the URL
+  or the token at all, and by default prints no reminder type or estimated date
+  either; `ovumcy notify --dry-run --show-health-details` is the one way to ask
+  for those, and it is opt-in precisely because the answer is health data.
 
 #### Payload shape
 

@@ -226,6 +226,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   substituted error string to the handler. Nothing upstream stamps one today;
   the guard no longer depends on that.
 
+- **`ovumcy notify --dry-run` no longer prints predicted period and ovulation
+  dates by default.** The preview printed one line per due reminder carrying the
+  owner id, the reminder type, and the estimated date — a prediction about an
+  identified owner — while the command, the report type, and
+  [docs/notifications.md](docs/notifications.md) all stated that the output
+  carried no health specific, and the same document showed a cron recipe
+  redirecting that output into a log file. A scheduled dry run therefore wrote
+  special-category health data into storage chosen on the strength of a promise
+  the command did not keep. The default preview now names the owner, how many
+  reminders are pending, and the destination host, and stops there. The new
+  `--show-health-details` flag puts the type and estimated date back for an
+  operator who asks for them on purpose; it applies only to `--dry-run`, and the
+  documentation is explicit that its output does not belong in a log file. The
+  scheduled delivery pass is unchanged and never had a preview. One related log
+  line dropped its reminder type for the same reason: a failed watermark write
+  after a successful send now records the owner id alone.
+
+- **`ovumcy webhook set` refuses an endpoint URL supplied from two sources at
+  once.** `OVUMCY_WEBHOOK_URL` was read before `--url-stdin` and returned
+  immediately, so with the variable exported the piped URL was never read and
+  nothing said so. A value left over from an operator profile, an earlier
+  invocation, or a compose `env_file` inherited by `docker compose run` would
+  arm that owner's reminders at an endpoint nobody typed — on a household
+  instance plausibly another owner's topic, and the URL is a secret that can
+  embed an ntfy or Gotify token. Supplying both is now an error naming each
+  source, raised before the database is opened, so nothing is written either
+  way. Either source on its own behaves exactly as before, and `--clear-url`
+  still wins over an exported variable: removing an endpoint cannot arm the
+  wrong one.
+
 - **A compressed request body that only passes the 16 MiB cap once decompressed
   now answers with the standard `413 request_too_large` envelope.** The cap is
   applied to the decompressed stream inside the framework's body accessor, which

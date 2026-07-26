@@ -17,13 +17,20 @@ import (
 
 // notifyUsage is the single usage string for the notify command, returned for
 // every argument error so the contract is stable and testable.
-const notifyUsage = "usage: ovumcy notify [--dry-run] [--fail-on-delivery-error]"
+const notifyUsage = "usage: ovumcy notify [--dry-run] [--show-health-details] [--fail-on-delivery-error]"
 
 // notifyOptions holds the parsed notify flags.
 type notifyOptions struct {
 	// dryRun computes and prints what WOULD be sent, making no outbound request
 	// and writing no watermark.
 	dryRun bool
+	// showHealthDetails opts the dry-run preview into the per-reminder health
+	// specifics (reminder type + estimated date). Off by default: those specifics
+	// describe an identified owner's predicted cycle, so an operator has to ask
+	// for them consciously rather than capture them by accident in a log or a
+	// cron mailer. It has no effect outside --dry-run — a delivery pass produces
+	// no preview at all.
+	showHealthDetails bool
 	// failOnDeliveryError makes the command exit non-zero when any individual
 	// delivery failed, even though the pass itself completed. Off by default: a
 	// single unreachable owner endpoint is an expected transient, not a pass
@@ -114,7 +121,7 @@ func runNotifyCommand(
 		return fmt.Errorf("notify pass failed: %w", err)
 	}
 
-	printNotifyReport(output, report)
+	printNotifyReport(output, report, opts.showHealthDetails)
 
 	if opts.failOnDeliveryError && report.Failed > 0 {
 		return fmt.Errorf("%d webhook deliveries failed", report.Failed)
@@ -122,10 +129,16 @@ func runNotifyCommand(
 	return nil
 }
 
-// printNotifyReport writes the aggregate counts. It prints ONLY counts and owner
-// ids — never a URL, token, health specific, or payload — so the notify output
-// is safe in an operator log or install script.
-func printNotifyReport(output io.Writer, report services.NotifyReport) {
+// printNotifyReport writes the aggregate counts. By default it prints ONLY
+// counts, owner ids, and destination hosts — never a URL, token, reminder type,
+// estimated date, or payload — so the default notify output is safe in an
+// operator log or install script.
+//
+// showHealthDetails opts the dry-run preview into the per-reminder specifics
+// (type + estimated date). Those ARE health data about an identified owner, so
+// that output belongs in the same protection class as the database, never a
+// shared log or a cron mailer.
+func printNotifyReport(output io.Writer, report services.NotifyReport, showHealthDetails bool) {
 	mode := "delivery"
 	if report.DryRun {
 		mode = "dry-run (no request sent, no watermark written)"
@@ -140,14 +153,68 @@ func printNotifyReport(output io.Writer, report services.NotifyReport) {
 		_, _ = fmt.Fprintf(output, "  owners with failures: %s\n", formatOwnerIDs(report.OwnerIDsFailed))
 	}
 
-	// On a dry run, print what WOULD be sent: type + estimated date + destination
-	// HOST only (never the URL or token).
+	// On a dry run, print what WOULD be sent. The destination is a HOST at most
+	// (never the URL or token) in either form.
 	if report.DryRun && len(report.DryRunPreview) > 0 {
-		_, _ = fmt.Fprintln(output, "  would send:")
-		for _, line := range report.DryRunPreview {
+		printNotifyDryRunPreview(output, report.DryRunPreview, showHealthDetails)
+	}
+}
+
+// printNotifyDryRunPreview renders the "would send" block of a dry run.
+//
+// By default it prints one line per owner endpoint: how many reminders would go
+// out and to which HOST — enough to verify a schedule or a fresh deployment
+// (which owners are armed, how many reminders are pending, where they point)
+// without recording what any owner's cycle is predicted to do. With
+// showHealthDetails the operator has explicitly asked for the specifics and gets
+// one line per reminder, carrying its type and estimated date. Neither form ever
+// prints the URL, its path or query, or a token.
+func printNotifyDryRunPreview(output io.Writer, preview []services.NotifyPreviewLine, showHealthDetails bool) {
+	if showHealthDetails {
+		_, _ = fmt.Fprintln(output, "  would send (health details shown on request):")
+		for _, line := range preview {
 			_, _ = fmt.Fprintf(output, "    owner %d: %s on %s -> host %s\n", line.OwnerID, line.Type, line.EventDate, line.Host)
 		}
+		return
 	}
+
+	_, _ = fmt.Fprintln(output, "  would send:")
+	for _, entry := range summarizeNotifyPreview(preview) {
+		_, _ = fmt.Fprintf(output, "    owner %d: %d due -> host %s\n", entry.ownerID, entry.count, entry.host)
+	}
+	_, _ = fmt.Fprintln(output, "  (reminder types and estimated dates omitted; pass --show-health-details to include them)")
+}
+
+// notifyPreviewSummary is one aggregated dry-run preview row: how many reminders
+// would reach one owner's destination host, carrying no per-reminder specific.
+type notifyPreviewSummary struct {
+	ownerID uint
+	host    string
+	count   int
+}
+
+// summarizeNotifyPreview collapses the per-reminder preview into one row per
+// owner endpoint, preserving first-seen order so the output is deterministic. It
+// deliberately drops the reminder type and the estimated date — the two health
+// specifics — keeping only what the default preview is allowed to state.
+func summarizeNotifyPreview(preview []services.NotifyPreviewLine) []notifyPreviewSummary {
+	type endpoint struct {
+		ownerID uint
+		host    string
+	}
+
+	summaries := make([]notifyPreviewSummary, 0, len(preview))
+	positions := make(map[endpoint]int, len(preview))
+	for _, line := range preview {
+		key := endpoint{ownerID: line.OwnerID, host: line.Host}
+		if position, seen := positions[key]; seen {
+			summaries[position].count++
+			continue
+		}
+		positions[key] = len(summaries)
+		summaries = append(summaries, notifyPreviewSummary{ownerID: line.OwnerID, host: line.Host, count: 1})
+	}
+	return summaries
 }
 
 // formatOwnerIDs renders a list of owner ids for the report (ids are not
@@ -171,6 +238,8 @@ func parseNotifyArgs(args []string) (notifyOptions, error) {
 			continue
 		case "--dry-run":
 			opts.dryRun = true
+		case "--show-health-details":
+			opts.showHealthDetails = true
 		case "--fail-on-delivery-error":
 			opts.failOnDeliveryError = true
 		default:
