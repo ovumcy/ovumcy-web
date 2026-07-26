@@ -105,7 +105,7 @@ The disclosure channel for vulnerabilities is [`SECURITY.md → Reporting a Vuln
 Operator workflow:
 
 1. Detect — `AUDIT_LOG_ENABLED=true` plus reverse-proxy access logs are the minimum useful signal source.
-2. Contain — rotate `SECRET_KEY` (planned maintenance window). All active auth cookies become invalid, all 2FA-enrolled accounts need to recover via recovery code.
+2. Contain — rotate `SECRET_KEY` (planned maintenance window). All active auth cookies become invalid, all 2FA-enrolled accounts need to recover via recovery code, and every calendar-feed subscribe URL — of any generation, including pre-migration-032 ones (disarmed at the first boot under the new key) — stops serving. Verify containment: a leaked feed URL must return `404` after the restart.
 3. Notify — file with your supervisory authority within 72 hours.
 4. Notify affected subjects when the breach is "likely to result in a high risk".
 

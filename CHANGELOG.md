@@ -27,10 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     against the bcrypt hash. Subscribed calendar clients receive `404` until each
     owner generates a fresh subscribe URL from Settings — the same class of
     consequence rotation already had for 2FA secrets and stored webhook URLs.
+    Feeds armed before this release, which a MAC mismatch cannot reach (their
+    bcrypt hash never depended on the key), are disarmed by the boot-time check
+    described under *Security* below.
   - **Existing subscriptions keep working across the upgrade.** A feed armed
     before this release has no MAC (it cannot be derived from a hash) and keeps
     verifying through bcrypt; its MAC is written in during the first request that
-    presents the correct token, after which it takes the fast path.
+    presents the correct token, after which it takes the fast path. Only a
+    `SECRET_KEY` rotation (or a mistyped key at boot) disarms them — see
+    *Security* below.
 
 - **A request whose headers overflow the read buffer now answers with a stable error
   key.** The transport-level `431` previously returned Fiber's bare English string;
@@ -51,6 +56,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own error strings. The translations existed in all six locales the whole
   time; nothing connected them to the errors the pages were reporting. Affects
   displayed text only — no flow, status code, or rate limit changes.
+
+### Security
+
+- **A `SECRET_KEY` rotation now revokes calendar-feed subscriptions of every
+  generation.** Rows armed before migration 032 carry only a bcrypt verifier
+  hash, which does not depend on `SECRET_KEY` — a rotated key left those
+  subscribe URLs verifying, and the first successful poll would even write a
+  fresh keyed MAC under the new key, fully re-arming a leaked URL the rotation
+  was meant to kill. The server now keeps an irreversible key-epoch marker in
+  `app_state` and, on the first boot under a changed key (or a bumped feed-MAC
+  label set), disarms every armed feed row that has no MAC before accepting
+  requests, logging the count. The first boot after upgrading records the
+  baseline without disarming anything; rotating in that same maintenance window
+  is therefore not detectable — boot the upgrade once before rotating, or have
+  owners revoke feeds manually (see [docs/self-hosted.md](docs/self-hosted.md)
+  → Secret Handling and Rotation).
 
 ## [1.9.2] - 2026-07-24
 
