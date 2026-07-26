@@ -322,6 +322,7 @@ The read-only `.ics` feed lets a calendar client subscribe to an owner's upcomin
 | CSRF middleware error path does not leak PII into the audit log | `TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | Rate-limit handler does not leak PII into the audit log | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | The Fiber request log's error field is sanitized (emails → `:email`, opaque tokens → `:token`) | `TestSafeLogError` in [internal/api/request_logging_test.go](internal/api/request_logging_test.go) |
+| The same sanitization also covers the short secrets that fall below the opaque-token length floor — a recovery code (`OVUM-XXXX-XXXX-XXXX`) and a submitted six-digit code both become `:code` — while an ISO date, an HTTP status, a route template and a longer numeric id stay readable | `TestSafeLogErrorMasksSecretShapesAndKeepsDiagnostics` in [internal/api/request_logging_test.go](internal/api/request_logging_test.go) |
 
 ### Medical Safety Disclaimer
 

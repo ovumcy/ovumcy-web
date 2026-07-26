@@ -88,6 +88,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The request log now redacts short credentials, not just long ones.** The
+  always-on Fiber request log sanitizes its error column so a handler error
+  string cannot carry a secret into the log, but it recognized a secret only by
+  length: a run of 24 or more token characters. The 48-character calendar-feed
+  token and the 32-character TOTP secret cleared that floor; a recovery code
+  (`OVUM-XXXX-XXXX-XXXX`, 19 characters) and a submitted six-digit code did not,
+  and would have been written out verbatim. Both are now matched by shape and
+  masked as `:code`. The length floor is deliberately unchanged — lowering it far
+  enough to catch a six-digit code would also redact dates, status codes, route
+  templates and ordinary identifiers, and this column is the only diagnostic
+  signal an operator has for a failed request.
+
 - **"Cancel" now actually cancels on four confirmation dialogs.** Rotating or
   revoking the calendar feed, hiding a custom symptom, and deleting a calendar
   day entry each asked for confirmation — but the request was already on its way
