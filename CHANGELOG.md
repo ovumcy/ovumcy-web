@@ -172,6 +172,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stored timezone as well, falling back to the request/server zone only for an
   owner whose timezone has never been captured. See
   [docs/notifications.md](docs/notifications.md).
+- **A failed database migration no longer leaves the database open behind it.**
+  Opening the database connects first and applies the pending migrations second;
+  when that second step failed, the error came back without the connection ever
+  being closed. The caller receives no handle in that case and so has nothing it
+  could close, which left the connection pool — and, on SQLite, the open database
+  file — held for as long as the process lived. The web binary exits moments
+  later, so a failed start was barely affected; an operator subcommand
+  (`ovumcy users`, `reset-password`, `notify`, `webhook`) keeps running, so it
+  held the database open for the rest of its run — which on Windows also blocks
+  the file from being moved or deleted. The connection is now released on any
+  failure that happens after it is open, and the error reported to the operator
+  is still the migration failure that caused it.
 
 ### Security
 

@@ -73,11 +73,40 @@ func OpenDatabase(config Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// The caller owns the handle only when OpenDatabase returns one: every caller
+	// (cmd/ovumcy, internal/cli) closes the pool it received and has nothing to
+	// close when it gets an error back. So a failure AFTER the connection is open
+	// has to release the pool here, or the sql.DB — and on SQLite the open
+	// database file — leaks for the process lifetime, which matters most in the
+	// CLI subcommands, whose process keeps running after a failed open. Deferring
+	// the close and clearing it only on the success return keeps that true for
+	// every post-open error path, including ones added later.
+	handedToCaller := false
+	defer func() {
+		if !handedToCaller {
+			closeOpenedPool(database)
+		}
+	}()
+
 	if err := applyEmbeddedMigrations(database, normalized.Driver); err != nil {
 		return nil, fmt.Errorf("apply embedded migrations: %w", err)
 	}
 
+	handedToCaller = true
 	return database, nil
+}
+
+// closeOpenedPool releases the connection pool behind a handle OpenDatabase
+// opened but is not going to return. Both failures it can meet are ignored on
+// purpose: the error the caller receives must stay the one that explains why the
+// open failed, and neither "the pool was already unavailable" nor "closing a pool
+// we are discarding failed" tells an operator anything actionable about that.
+func closeOpenedPool(database *gorm.DB) {
+	sqlDB, err := database.DB()
+	if err != nil {
+		return // codecov:ignore -- defensive: (*gorm.DB).DB() only errors when the connection pool is unavailable, which cannot happen on the handle gorm.Open just returned. Mirrors the same guard in internal/cli.
+	}
+	_ = sqlDB.Close()
 }
 
 func OpenSQLite(dbPath string) (*gorm.DB, error) {
