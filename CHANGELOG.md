@@ -52,6 +52,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time; nothing connected them to the errors the pages were reporting. Affects
   displayed text only — no flow, status code, or rate limit changes.
 
+- **Deleting an account no longer leaves an SSO logout reference behind for a
+  week.** `oidc_logout_states` gained its `user_id` column in migration `031`, so
+  rows written before that upgrade carry no owner and the account-deletion path
+  could never match them. On an instance that ran OIDC before `031`, an
+  `id_token_hint` minted for an account outlived that account's erasure and sat
+  in the table until its own 7-day TTL expired. Migration `033` deletes every
+  unattributed row on both engines, so erasure is complete when it is requested
+  rather than up to a week later. Attributed rows are untouched, and a logout
+  that finds no stored state still completes locally.
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no

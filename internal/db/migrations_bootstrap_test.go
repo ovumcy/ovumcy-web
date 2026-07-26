@@ -139,6 +139,120 @@ func TestMigration019CanonicalizesNonUTCDateFields(t *testing.T) {
 	)
 }
 
+// TestMigration033PurgesUnattributedOIDCLogoutStates locks the data contract of
+// migration 033. An oidc_logout_states row written before migration 031 carries
+// a NULL user_id, so no "WHERE user_id = ?" delete can ever match it: its
+// id_token_hint outlived the erasure of the account it was minted for, until its
+// own TTL expired up to 7 days later. The migration removes exactly those rows
+// and leaves every attributed row untouched.
+//
+// The surviving attributed row is the positive anchor — a migration that emptied
+// the whole table would satisfy the "NULL rows are gone" half on its own. The
+// re-run also proves runner idempotency: the DELETE lands on a database where it
+// has already been applied once.
+func TestMigration033PurgesUnattributedOIDCLogoutStates(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "ovumcy-033.db")
+	database := openSQLiteForMigrationBootstrapTest(t, databasePath)
+
+	if err := database.Exec(
+		`INSERT INTO users (email, password_hash, role, created_at)
+		 VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		"logout-state-owner@example.com",
+		"test-hash",
+		"owner",
+	).Error; err != nil {
+		t.Fatalf("insert logout-state owner: %v", err)
+	}
+
+	var owner struct {
+		ID uint `gorm:"column:id"`
+	}
+	if err := database.Raw(
+		`SELECT id FROM users WHERE email = ?`, "logout-state-owner@example.com",
+	).Scan(&owner).Error; err != nil {
+		t.Fatalf("load logout-state owner id: %v", err)
+	}
+	if owner.ID == 0 {
+		t.Fatal("expected non-zero logout-state owner id")
+	}
+
+	// Raw SQL on purpose: models.OIDCLogoutState.UserID is a plain uint, so a
+	// GORM insert writes 0 where a genuine pre-031 row carries NULL.
+	expiresAt := time.Now().Add(time.Hour).UTC()
+	for _, row := range []struct {
+		sessionID string
+		userID    any
+	}{
+		{sessionID: "pre-031-session", userID: nil},
+		{sessionID: "attributed-session", userID: owner.ID},
+	} {
+		if err := database.Exec(
+			`INSERT INTO oidc_logout_states
+			   (session_id, user_id, end_session_endpoint, id_token_hint, post_logout_redirect_url, expires_at, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			row.sessionID,
+			row.userID,
+			"https://idp.example.com/logout",
+			"id-token-hint",
+			"https://app.example.com/",
+			expiresAt,
+		).Error; err != nil {
+			t.Fatalf("insert %s logout state: %v", row.sessionID, err)
+		}
+	}
+
+	if seeded := countOIDCLogoutStatesWithNullUser(t, database); seeded != 1 {
+		t.Fatalf("expected exactly one seeded NULL-user_id logout state, got %d", seeded)
+	}
+
+	if err := database.Exec(
+		`DELETE FROM schema_migrations WHERE version = ?`, "033",
+	).Error; err != nil {
+		t.Fatalf("delete migration 033 record: %v", err)
+	}
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("get sql db handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	reopened := openSQLiteForMigrationBootstrapTest(t, databasePath)
+
+	if remaining := countOIDCLogoutStatesWithNullUser(t, reopened); remaining != 0 {
+		t.Fatalf("expected migration 033 to purge every NULL-user_id logout state, %d left", remaining)
+	}
+	if attributed := countOIDCLogoutStatesBySessionID(t, reopened, "attributed-session"); attributed != 1 {
+		t.Fatalf("expected the attributed logout state to survive migration 033, found %d", attributed)
+	}
+}
+
+func countOIDCLogoutStatesWithNullUser(t *testing.T, database *gorm.DB) int64 {
+	t.Helper()
+
+	var count int64
+	if err := database.Raw(
+		`SELECT COUNT(*) FROM oidc_logout_states WHERE user_id IS NULL`,
+	).Row().Scan(&count); err != nil {
+		t.Fatalf("count NULL-user_id logout states: %v", err)
+	}
+	return count
+}
+
+func countOIDCLogoutStatesBySessionID(t *testing.T, database *gorm.DB, sessionID string) int64 {
+	t.Helper()
+
+	var count int64
+	if err := database.Raw(
+		`SELECT COUNT(*) FROM oidc_logout_states WHERE session_id = ?`, sessionID,
+	).Row().Scan(&count); err != nil {
+		t.Fatalf("count logout states for session %s: %v", sessionID, err)
+	}
+	return count
+}
+
 // assertStoredDateEqualsUTCMidnight reads the column the query selects
 // and asserts the value, parsed by the glebarez driver into time.Time,
 // equals the expected UTC-midnight instant. This is format-agnostic

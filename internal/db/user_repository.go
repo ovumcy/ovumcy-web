@@ -619,13 +619,12 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
 			return err
 		}
-		// oidc_logout_states rows minted since migration 031 carry the owner's
-		// user_id, so erase them explicitly here alongside the other user-scoped
-		// tables. Rows created before 031 have a NULL user_id and are not matched:
-		// they carry no PII beyond what the OIDC provider already holds, are
-		// inaccessible without the original session cookie, and age out via their
-		// own TTL (services.defaultOIDCLogoutStateTTL, ~7 days) plus the
-		// best-effort expired-row purge below.
+		// oidc_logout_states rows carry the owner's user_id (migration 031), so
+		// erase them explicitly here alongside the other user-scoped tables. The
+		// rows written before 031 had a NULL user_id that this predicate could
+		// never match, leaving an id_token_hint behind for up to the state TTL
+		// after erasure — migration 033 deleted them, so every row in the table is
+		// now attributable and this delete covers all of them.
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCLogoutState{}).Error; err != nil {
 			return err
 		}
