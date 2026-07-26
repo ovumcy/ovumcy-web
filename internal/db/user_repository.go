@@ -284,6 +284,33 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 	}).Error
 }
 
+// DisarmCalendarFeedTokensWithoutMAC clears the feed-token columns of every row
+// that is armed (non-empty selector) but carries NO verifier MAC — the rows
+// minted before migration 032, whose bcrypt hash verifies independently of
+// SECRET_KEY. The boot-time rotation sentinel calls it when the calendar-feed
+// key epoch changes: for every other armed row the rotated key already turns
+// MAC verification into a hard refusal, so this narrow predicate is exactly the
+// set that would otherwise SURVIVE the rotation — and be silently re-armed
+// under the new key by the first successful bcrypt poll's MAC backfill.
+//
+// Rows that do carry a MAC are deliberately left in place: they fail closed on
+// their own, and the narrow predicate keeps the blast radius of a boot with a
+// mistyped SECRET_KEY as small as the revocation rule allows (only legacy rows
+// are irreversibly disarmed; the operator runbook calls this out).
+//
+// Like every feed-token write it does not bump auth_session_version: a feed
+// capability is not a login credential. The row count feeds the startup log.
+func (repo *UserRepository) DisarmCalendarFeedTokensWithoutMAC(ctx context.Context) (int64, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("calendar_feed_selector IS NOT NULL AND calendar_feed_selector != '' AND (calendar_feed_verifier_mac IS NULL OR calendar_feed_verifier_mac = '')").
+		Updates(map[string]any{
+			"calendar_feed_selector":      nil,
+			"calendar_feed_verifier_hash": nil,
+			"calendar_feed_verifier_mac":  nil,
+		})
+	return result.RowsAffected, result.Error
+}
+
 // FindByCalendarFeedSelector resolves the single owner whose calendar_feed_selector
 // equals selector, for the by-selector feed lookup (a later slice). It returns
 // (user, true, nil) on a hit and (zero, false, nil) when no row matches — the
