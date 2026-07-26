@@ -187,6 +187,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Signing out now retracts the pending two-factor enrollment cookie and the
+  one-time calendar-feed reveal cookie.** Logout cleared the auth cookie, the
+  provider-logout bridge, the recovery-code and reset-password handoffs and the
+  2FA challenge cookie, but not `ovumcy_totp_setup` or `ovumcy_calendar_feed`.
+  Both are scoped to `path: "/"`, so an owner who opened the two-factor setup
+  page, abandoned the enrollment and signed out kept sending the sealed raw TOTP
+  secret on every subsequent request for the rest of the browser session — that
+  cookie has no browser-side expiry, only a TTL inside the sealed payload, so
+  nothing dropped it until some later request happened to read and refuse it. The
+  feed cookie carries the subscribe URL with its bearer token, which signing out
+  does not revoke.
+
+  Neither is a disclosure on its own: both are `HttpOnly` and AEAD-sealed, and
+  both are already refused unless the session presenting them is the account they
+  were minted for. What was missing is that ending a session should retract them
+  outright rather than leave a live secret riding every request. The same helper
+  covers logout, account deletion and the paths that reject a session, so all
+  three retract the full set. Nothing consumes either cookie without an
+  authenticated session, so no flow changes: reopening the two-factor page after
+  signing back in issues a fresh secret exactly as before.
+
 - **The pending two-factor enrollment cookie is now bound to the account that
   started the enrollment.** The sealed `ovumcy_totp_setup` cookie carries the raw
   TOTP secret across the enrollment form submission, and it was the only sealed

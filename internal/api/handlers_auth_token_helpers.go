@@ -38,12 +38,31 @@ func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
 	handler.clearSealedCookie(c, authCookieSpec)
 }
 
+// clearAuthRelatedCookies retracts every sealed cookie whose contents belong to
+// the session being ended: the session itself, the provider-logout bridge, and
+// each in-flight handoff carrying account-scoped state or a secret — recovery
+// code, reset token, pending 2FA challenge, the pending TOTP enrollment secret,
+// and the one-time calendar-feed subscribe URL.
+//
+// None of those is consumable without an authenticated session, so anything left
+// behind is exposure with no remaining purpose. Both TOTP cookies are
+// session-scoped (zero expires), so an abandoned enrollment would otherwise keep
+// shipping its sealed raw secret at `path: "/"` for the rest of the browser
+// session, and the feed URL stays a live capability the sign-out does not revoke.
+// Retracting them here is what bounds that window, rather than waiting for some
+// later request to happen to read and refuse the value.
+//
+// Cookies whose flow completes outside a session are deliberately absent: the
+// OIDC one-time state and step-up cookies and the register-pickup handle are
+// consumed by their own flow, and `ovumcy_flash` carries no secret.
 func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 	handler.clearAuthCookie(c)
 	handler.clearOIDCLogoutBridgeCookie(c)
 	handler.clearRecoveryCodePageCookie(c)
 	handler.clearResetPasswordCookie(c)
 	handler.clearTOTPPendingCookie(c)
+	handler.clearTOTPSetupCookie(c)
+	handler.clearCalendarFeedRevealCookie(c)
 }
 
 func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {

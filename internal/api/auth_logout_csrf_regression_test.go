@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -27,6 +28,9 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 			cookiePair(csrfCookie),
 			recoveryCodeCookieName+"=temporary-recovery",
 			resetPasswordCookieName+"=temporary-reset",
+			totpPendingCookieName+"=temporary-totp-pending",
+			totpSetupCookieName+"=temporary-totp-setup",
+			calendarFeedRevealCookieName+"=temporary-feed-reveal",
 		),
 	)
 
@@ -43,28 +47,31 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 		t.Fatalf("expected redirect to /login, got %q", location)
 	}
 
-	authCookieAfterLogout := responseCookie(response.Cookies(), authCookieName)
-	if authCookieAfterLogout == nil {
-		t.Fatalf("expected logout response to clear auth cookie")
-	}
-	if authCookieAfterLogout.Value != "" {
-		t.Fatalf("expected cleared auth cookie value, got %q", authCookieAfterLogout.Value)
-	}
-
-	recoveryCookieAfterLogout := responseCookie(response.Cookies(), recoveryCodeCookieName)
-	if recoveryCookieAfterLogout == nil {
-		t.Fatalf("expected logout response to clear recovery code cookie")
-	}
-	if recoveryCookieAfterLogout.Value != "" {
-		t.Fatalf("expected cleared recovery code cookie value, got %q", recoveryCookieAfterLogout.Value)
-	}
-
-	resetCookieAfterLogout := responseCookie(response.Cookies(), resetPasswordCookieName)
-	if resetCookieAfterLogout == nil {
-		t.Fatalf("expected logout response to clear reset password cookie")
-	}
-	if resetCookieAfterLogout.Value != "" {
-		t.Fatalf("expected cleared reset password cookie value, got %q", resetCookieAfterLogout.Value)
+	// Every sealed cookie scoped to the ended session comes back retracted, the
+	// pending TOTP enrollment secret and the one-time calendar-feed subscribe URL
+	// included: both outlive the session otherwise, the first for the whole
+	// browser session and the second as a capability sign-out does not revoke.
+	// The cookies logout has always cleared stay in the same list as the anchor —
+	// a logout that stopped emitting Set-Cookie at all fails here rather than
+	// passing for want of anything left to check.
+	for _, cookieName := range []string{
+		authCookieName,
+		recoveryCodeCookieName,
+		resetPasswordCookieName,
+		totpPendingCookieName,
+		totpSetupCookieName,
+		calendarFeedRevealCookieName,
+	} {
+		cleared := responseCookie(response.Cookies(), cookieName)
+		if cleared == nil {
+			t.Fatalf("expected logout response to clear %s", cookieName)
+		}
+		if cleared.Value != "" {
+			t.Fatalf("expected cleared %s value, got %q", cookieName, cleared.Value)
+		}
+		if !cleared.Expires.Before(time.Now()) {
+			t.Fatalf("expected %s to be retracted with a past expiry, got %s", cookieName, cleared.Expires)
+		}
 	}
 }
 
