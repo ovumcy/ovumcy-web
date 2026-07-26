@@ -32,6 +32,7 @@ func (handler *Handler) withDependencies(dependencies Dependencies) *Handler {
 	handler.onboardingSvc = dependencies.OnboardingService
 	handler.setupService = dependencies.SetupService
 	handler.totpService = dependencies.TOTPService
+	handler.readinessService = dependencies.ReadinessService
 	handler.registerPickupTokens = dependencies.RegisterPickupTokens
 	handler.auditLogEnabled = dependencies.AuditLogEnabled
 	return handler

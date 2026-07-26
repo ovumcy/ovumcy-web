@@ -166,6 +166,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		OnboardingService:      services.NewOnboardingService(repositories.Users),
 		SetupService:           services.NewSetupService(repositories.Users),
 		TOTPService:            totpService,
+		ReadinessService:       services.NewReadinessService(repositories.Health),
 		RegisterPickupTokens:   repositories.RegisterPickupTokens,
 	}
 }

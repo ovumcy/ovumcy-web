@@ -29,6 +29,7 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 		"POST /api/v1/password-resets":        {},
 		"POST /api/v1/password-resets/redeem": {},
 		"GET /healthz":                        {},
+		"GET /readyz":                         {},
 		"GET /favicon.ico":                    {},
 		"POST /lang":                          {},
 		"GET /login":                          {},

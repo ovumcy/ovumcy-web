@@ -51,6 +51,7 @@ type Handler struct {
 	onboardingSvc        *services.OnboardingService
 	setupService         *services.SetupService
 	totpService          *services.TOTPService
+	readinessService     *services.ReadinessService
 	registerPickupTokens RegisterPickupTokenStore
 	auditLogEnabled      bool
 	assetVersion         string
