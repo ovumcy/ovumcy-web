@@ -1,0 +1,27 @@
+-- Postgres mirror of migrations/033_purge_unattributed_oidc_logout_states.sql
+-- (purge the pre-031 oidc_logout_states rows that account deletion cannot
+-- reach). Same version number so schema history stays aligned across engines.
+--
+-- Migration 031 added oidc_logout_states.user_id, so every row written since is
+-- attributable to an owner and is erased explicitly by the account-deletion path
+-- (UserRepository.DeleteAccountAndRelatedData). Rows written BEFORE 031 have a
+-- NULL user_id, which no "WHERE user_id = ?" predicate can ever match: an
+-- id_token_hint minted for an account outlived that account's erasure and sat in
+-- the table until its own TTL expired, up to 7 days after the owner asked for
+-- the data to be gone. After this migration every row carries a user_id, so the
+-- explicit per-user delete covers the whole table.
+--
+-- Nothing reads a row this deletes. The logout bridge resolves state by
+-- session_id for a LIVE session only (services.OIDCLogoutStateService.Load), and
+-- when no state is found logout simply completes locally without the
+-- RP-initiated end-session redirect -- a graceful fallback, not an error. A
+-- plain DELETE is naturally idempotent, so the file is safe to re-run through
+-- the runner.
+--
+-- Rollback: none needed. The deleted rows are unattributed, TTL-bounded provider
+-- logout references that no flow can reach by owner.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments.
+
+DELETE FROM oidc_logout_states WHERE user_id IS NULL;

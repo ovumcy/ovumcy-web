@@ -91,3 +91,54 @@ func TestClearAllDataResetsDisplayPreferences(t *testing.T) {
 		t.Fatal("expected show_historical_phases reset to false after clear-data")
 	}
 }
+
+// TestClearAllDataResetsTimezoneAndKeepsIdentity pins users.timezone into the
+// clear-data reset map. The column is written from the request (the owner's
+// browser-detected IANA zone) and read by the request-free reminder pass, so it
+// is a coarse location signal — and it was the one preference a wipe left
+// standing while every other preference returned to its default.
+//
+// The identity half is the positive anchor: asserting only "timezone is empty"
+// would pass just as well if clear-data blanked the whole row, so the same test
+// checks that email, password hash, and display name survive the wipe.
+func TestClearAllDataResetsTimezoneAndKeepsIdentity(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "clear-timezone@example.com")
+
+	const displayName = "Owner Persona"
+	if err := repo.database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"display_name": displayName,
+	}).Error; err != nil {
+		t.Fatalf("seed display name: %v", err)
+	}
+	if err := repo.UpdateUserTimezone(context.Background(), user.ID, "Europe/Belgrade"); err != nil {
+		t.Fatalf("seed timezone: %v", err)
+	}
+
+	before := reloadUserForWebhook(t, repo, user.ID)
+	if before.Timezone != "Europe/Belgrade" {
+		t.Fatalf("expected seeded timezone Europe/Belgrade, got %q", before.Timezone)
+	}
+
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
+	}
+
+	got := reloadUserForWebhook(t, repo, user.ID)
+	if got.Timezone != "" {
+		t.Fatalf("expected timezone reset to its column default (empty) after clear-data, got %q", got.Timezone)
+	}
+	for _, check := range []struct {
+		name          string
+		before, after string
+	}{
+		{"email", before.Email, got.Email},
+		{"password_hash", before.PasswordHash, got.PasswordHash},
+		{"recovery_code_hash", before.RecoveryCodeHash, got.RecoveryCodeHash},
+		{"display_name", displayName, got.DisplayName},
+	} {
+		if check.before != check.after {
+			t.Fatalf("expected %s preserved through clear-data, before=%q after=%q", check.name, check.before, check.after)
+		}
+	}
+}

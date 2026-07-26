@@ -618,6 +618,17 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"unpredictable_cycle":             false,
 			"long_period_warning_cycle_start": nil,
 			"last_period_start":               nil,
+			// users.timezone is the owner's last observed IANA zone, written from
+			// the request (api.UpdateTimezone) and read by the request-free
+			// reminder pass. It is a coarse location signal inferred from the
+			// owner's browser, so a clear-data wipe must not leave it standing
+			// when every other preference resets. Empty string is the value a
+			// fresh account carries: migration 026 adds the column with no
+			// DEFAULT and models.User.Timezone is a plain string with no gorm
+			// default, so the zero value is what both the schema and a new row
+			// agree on. The next request re-detects the zone and persists it
+			// again, so the reset costs nothing but the stale value.
+			"timezone": "",
 			// Webhook notification settings (issue #124) are owner data: a
 			// clear-data wipe disarms delivery, clears the encrypted endpoint,
 			// resets the shared lead window to its default, and clears the
@@ -672,13 +683,12 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
 			return err
 		}
-		// oidc_logout_states rows minted since migration 031 carry the owner's
-		// user_id, so erase them explicitly here alongside the other user-scoped
-		// tables. Rows created before 031 have a NULL user_id and are not matched:
-		// they carry no PII beyond what the OIDC provider already holds, are
-		// inaccessible without the original session cookie, and age out via their
-		// own TTL (services.defaultOIDCLogoutStateTTL, ~7 days) plus the
-		// best-effort expired-row purge below.
+		// oidc_logout_states rows carry the owner's user_id (migration 031), so
+		// erase them explicitly here alongside the other user-scoped tables. The
+		// rows written before 031 had a NULL user_id that this predicate could
+		// never match, leaving an id_token_hint behind for up to the state TTL
+		// after erasure — migration 033 deleted them, so every row in the table is
+		// now attributable and this delete covers all of them.
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCLogoutState{}).Error; err != nil {
 			return err
 		}
