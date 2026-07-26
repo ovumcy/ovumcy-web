@@ -199,6 +199,87 @@ func TestVerifyTOTPLogin_ExpiredPendingCookie_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestTOTPChallengeClearsAPendingCookieItCannotUse pins the clear at the two
+// handler boundaries that read `ovumcy_totp_pending`, because they answer
+// differently and a clear owed by only one of them would be easy to miss: the
+// challenge POST maps to the session-expired spec, the challenge page redirects
+// to /login.
+//
+// The cookie is session-scoped at path "/", so a value the server has just
+// refused kept being sent on every later request until the browser closed. The
+// payload's own ExpiresAt fails closed, so this is blast radius, not a bypass —
+// but a refused value has no business surviving the response that refused it.
+//
+// Anchored on the retry case: a wrong six-digit code is a refusal ABOUT the
+// code, and it must leave the pending cookie alone, otherwise the challenge the
+// response redirects back to could never be answered.
+func TestTOTPChallengeClearsAPendingCookieItCannotUse(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-pending-clear@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+
+	validPending := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+
+	// Anchor: the cookie survives a refusal that is not about the cookie.
+	wrongCode := doTOTPChallengeRequest(t, app, joinCookieHeader(validPending, csrfCookieHeader), "000000", csrfToken)
+	defer func() { _ = wrongCode.Body.Close() }()
+	if wrongCode.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected a wrong code to redirect back to the challenge, got %d", wrongCode.StatusCode)
+	}
+	assertTOTPCookieLeftInPlace(t, wrongCode, totpPendingCookieName)
+
+	tamperedPending := totpPendingCookieName + "=" + flipLastBaseEncodedByte(t, strings.TrimPrefix(validPending, totpPendingCookieName+"="))
+	unusable := map[string]string{
+		"expired":  sealExpiredTOTPPendingCookieForTest(t, secretKey, user.ID),
+		"tampered": tamperedPending,
+	}
+	for name, pendingCookie := range unusable {
+		t.Run(name, func(t *testing.T) {
+			response := doTOTPChallengeRequest(t, app, joinCookieHeader(pendingCookie, csrfCookieHeader), "123456", csrfToken)
+			defer func() { _ = response.Body.Close() }()
+
+			if response.StatusCode != http.StatusSeeOther {
+				t.Fatalf("expected the challenge to refuse the %s pending cookie, got status %d", name, response.StatusCode)
+			}
+			if issued := responseCookie(response.Cookies(), authCookieName); issued != nil && issued.Value != "" {
+				t.Fatalf("a %s pending cookie must not issue an auth session", name)
+			}
+			assertTOTPCookieCleared(t, response, totpPendingCookieName)
+		})
+	}
+
+	// The challenge PAGE reads the same cookie and answers with a redirect
+	// instead of a mapped error, so it owes the clear separately.
+	t.Run("challenge_page", func(t *testing.T) {
+		expiredRequest := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
+		expiredRequest.Header.Set("Accept-Language", "en")
+		expiredRequest.Header.Set("Cookie", sealExpiredTOTPPendingCookieForTest(t, secretKey, user.ID))
+		expiredPage := mustAppResponse(t, app, expiredRequest)
+
+		if expiredPage.StatusCode != http.StatusSeeOther {
+			t.Fatalf("expected an expired pending cookie to send the challenge page back to login, got %d", expiredPage.StatusCode)
+		}
+		if location := expiredPage.Header.Get("Location"); location != "/login" {
+			t.Fatalf("expected a redirect to /login, got %q", location)
+		}
+		assertTOTPCookieCleared(t, expiredPage, totpPendingCookieName)
+
+		// Anchor: the page still renders for a valid pending cookie, and does not
+		// retract it on the way — otherwise a reload would drop the challenge.
+		validRequest := httptest.NewRequest(http.MethodGet, "/auth/2fa", nil)
+		validRequest.Header.Set("Accept-Language", "en")
+		validRequest.Header.Set("Cookie", validPending)
+		validPage := mustAppResponse(t, app, validRequest)
+
+		if validPage.StatusCode != http.StatusOK {
+			t.Fatalf("expected the challenge page to render for a valid pending cookie, got %d", validPage.StatusCode)
+		}
+		assertTOTPCookieLeftInPlace(t, validPage, totpPendingCookieName)
+	})
+}
+
 func TestVerifyTOTPLogin_ValidCode_IssuesSessionAndRedirects(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "totp-valid@example.com", "StrongPass1", true)

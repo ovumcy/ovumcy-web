@@ -47,6 +47,17 @@ func (handler *Handler) setTOTPPendingCookie(c fiber.Ctx, userID uint, rememberM
 
 // parseTOTPPendingCookie decodes and validates the TOTP pending cookie.
 // Returns the userID, rememberMe flag, and any error (including expiry).
+//
+// Every rejection clears the cookie on the way out, the way the other sealed
+// readers in this package do. Both TOTP cookies are session-scoped at path "/",
+// so a value that cannot be opened, parsed, or honored is not merely useless —
+// left in place it rides on every subsequent request for the rest of the
+// browser session. The clear belongs on the read path rather than at the call
+// sites because the reader is the only place that knows a value was presented
+// and found unusable; a caller sees one error and would have to repeat the
+// clear, and a later caller added without it silently reintroduces the leak.
+// A missing value is the one branch that clears nothing: there is no value to
+// retract, and an empty cookie is already the cleared state.
 func (handler *Handler) parseTOTPPendingCookie(c fiber.Ctx) (uint, bool, error) {
 	raw := strings.TrimSpace(c.Cookies(totpPendingCookieName))
 	if raw == "" {
@@ -55,21 +66,26 @@ func (handler *Handler) parseTOTPPendingCookie(c fiber.Ctx) (uint, bool, error) 
 
 	codec, err := handler.cookieCodec()
 	if err != nil {
+		handler.clearTOTPPendingCookie(c)
 		return 0, false, err
 	}
 	decoded, err := codec.open(totpPendingCookieName, raw)
 	if err != nil {
+		handler.clearTOTPPendingCookie(c)
 		return 0, false, errors.New("totp pending cookie invalid")
 	}
 
 	var payload totpPendingCookiePayload
 	if err := json.Unmarshal(decoded, &payload); err != nil {
+		handler.clearTOTPPendingCookie(c)
 		return 0, false, errors.New("totp pending cookie malformed")
 	}
 	if payload.UserID == 0 {
+		handler.clearTOTPPendingCookie(c)
 		return 0, false, errors.New("totp pending cookie missing user id")
 	}
 	if time.Now().After(payload.ExpiresAt) {
+		handler.clearTOTPPendingCookie(c)
 		return 0, false, errors.New("totp pending cookie expired")
 	}
 
@@ -113,6 +129,12 @@ func (handler *Handler) setTOTPSetupCookie(c fiber.Ctx, userID uint, rawSecret s
 // account presenting it. Returns the raw TOTP secret and any error (including a
 // payload minted for a different account, one naming no account at all, and
 // expiry).
+//
+// As on the pending cookie above, every rejection clears the cookie before
+// returning; see that comment for why the clear lives on the read path. It
+// matters more here: this payload carries the RAW TOTP secret of an enrollment
+// nobody completed, so an abandoned or expired one left in place keeps that
+// secret in transport on every later request of the session.
 func (handler *Handler) parseTOTPSetupCookie(c fiber.Ctx, sessionUserID uint) (string, error) {
 	raw := strings.TrimSpace(c.Cookies(totpSetupCookieName))
 	if raw == "" {
@@ -121,15 +143,18 @@ func (handler *Handler) parseTOTPSetupCookie(c fiber.Ctx, sessionUserID uint) (s
 
 	codec, err := handler.cookieCodec()
 	if err != nil {
+		handler.clearTOTPSetupCookie(c)
 		return "", err
 	}
 	decoded, err := codec.open(totpSetupCookieName, raw)
 	if err != nil {
+		handler.clearTOTPSetupCookie(c)
 		return "", errors.New("totp setup cookie invalid")
 	}
 
 	var payload totpSetupCookiePayload
 	if err := json.Unmarshal(decoded, &payload); err != nil {
+		handler.clearTOTPSetupCookie(c)
 		return "", errors.New("totp setup cookie malformed")
 	}
 	// The owner id sealed into the payload is never trusted alone: it only
@@ -139,12 +164,15 @@ func (handler *Handler) parseTOTPSetupCookie(c fiber.Ctx, sessionUserID uint) (s
 	// apply. A cookie minted by a binary that predates this field lands here and
 	// fails closed — the enrollment is restarted, not silently re-attributed.
 	if !sealedPayloadBelongsToSession(payload.UserID, sessionUserID) {
+		handler.clearTOTPSetupCookie(c)
 		return "", errors.New("totp setup cookie does not belong to this session")
 	}
 	if strings.TrimSpace(payload.RawSecret) == "" {
+		handler.clearTOTPSetupCookie(c)
 		return "", errors.New("totp setup cookie missing secret")
 	}
 	if time.Now().After(payload.ExpiresAt) {
+		handler.clearTOTPSetupCookie(c)
 		return "", errors.New("totp setup cookie expired")
 	}
 
