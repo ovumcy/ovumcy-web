@@ -1,6 +1,47 @@
 package services
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
+)
+
+// TestLocalizedSymptomFrequencySummaryCoversEveryRequiredLocale is the sweep
+// mechanism for LocalizedSymptomFrequencySummary's per-language branches.
+// Unlike authErrorTranslationKeys/settingsStatusTranslationKeys (checked in
+// i18n_policy_test.go) this function's per-language text is hardcoded
+// directly in Go source rather than resolved through a locale JSON key, so
+// TestLocaleKeysParity cannot see it either. A locale silently missing its
+// own branch — a rebase conflict, a copy-paste slip — falls through to the
+// generic English default at the bottom of the function instead of failing
+// anything, which is the #287 failure class one function over. This walks
+// every locale the i18n manager reports and requires its output to diverge
+// from the English default; it deliberately does not pin exact translated
+// wording (the per-language tests below already do that) so it only fails
+// when a branch is lost, not when copy changes.
+func TestLocalizedSymptomFrequencySummaryCoversEveryRequiredLocale(t *testing.T) {
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+
+	languages := manager.SupportedLanguages()
+	if len(languages) == 0 {
+		t.Fatal("expected the i18n manager to report supported languages")
+	}
+
+	const count, days = 2, 4 // plural forms in every currently supported language
+	english := LocalizedSymptomFrequencySummary(i18n.LangEN, count, days)
+
+	for _, language := range languages {
+		if language == i18n.LangEN {
+			continue
+		}
+		if got := LocalizedSymptomFrequencySummary(language, count, days); got == english {
+			t.Errorf("LocalizedSymptomFrequencySummary: locale %q has no dedicated branch and silently renders the English default %q", language, english)
+		}
+	}
+}
 
 func TestLocalizedSymptomFrequencySummary_EnglishPluralization(t *testing.T) {
 	tests := []struct {
