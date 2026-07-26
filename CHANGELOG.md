@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A readiness probe, `GET /readyz`, that actually checks storage.** The whole
+  health-check chain — container `HEALTHCHECK`, `docker compose ps`, an operator
+  `curl` — hung off `/healthz`, which never touches the database. Every one of
+  them stayed green with the storage layer completely gone, so an app that could
+  not serve a single request reported healthy. `/readyz` runs one trivial query
+  against the configured engine and answers `200` when it succeeds, `503` when it
+  does not. Both responses carry a fixed one-word body: the endpoint is
+  unauthenticated, so it never reveals the engine, the database path, or the
+  error. On the shell-free runtime image the matching `ovumcy readycheck`
+  subcommand probes it in process, next to the existing `ovumcy healthcheck`.
+
+  `/healthz` is unchanged and stays a pure liveness probe, and the container
+  `HEALTHCHECK` deliberately stays pointed at it: a database that is slow for ten
+  seconds, or a Postgres container restarting underneath the app, must not
+  restart the app container. Point your load balancer's drain check at `/readyz`;
+  leave the container health check where it is. See *Health Checks by Deployment
+  Mode* in [docs/self-hosted.md](docs/self-hosted.md).
+
 ### Changed
 
 - **The calendar feed verifies its subscribe token with a keyed MAC instead of
