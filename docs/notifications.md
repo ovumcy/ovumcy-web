@@ -382,8 +382,10 @@ authenticated resource: it is generated with cryptographic randomness, stored
 only as a hashed verifier (never recoverable from the database), shown to the
 owner exactly once, and revocable at any time by rotating or turning the feed
 off. The stored verifier is keyed by `SECRET_KEY`, so **rotating that secret
-disarms every armed feed**: subscribed calendar clients start receiving `404`
-until each owner generates a fresh subscribe URL from Settings. Plan a secret
+disarms every armed feed**: current rows refuse outright (their keyed MAC no
+longer matches), rows armed before migration 032 are disarmed by a boot-time
+rotation check, and subscribed calendar clients start receiving `404` until
+each owner generates a fresh subscribe URL from Settings. Plan a secret
 rotation accordingly — it is the same class of consequence rotation already has
 for 2FA secrets and stored webhook URLs. The full rationale and test-backed
 invariants live in

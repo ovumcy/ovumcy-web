@@ -164,12 +164,14 @@ Two independent caps bound a restore, and they surface as **two different 413 ke
 
 | Cap | Value | Error |
 | --- | --- | --- |
-| Request body | **16 MiB** | `413 request_too_large`. Enforced at the transport layer before the handler runs, so a body over the limit never reaches the import service. |
+| Request body | **16 MiB** | `413 request_too_large` for an uncompressed body, enforced at the transport layer before the handler runs — the import service never sees the bytes. A compressed body behaves differently; see below. |
 | Entries per file | **20 000** | `413 import file too large`. Enforced by the import service on the parsed payload. |
 
 The body limit is sized to the entry cap (20 000 day records serialize to roughly 8–12 MiB), so a file at the documented entry ceiling stays comfortably under it. A file that trips the body limit is therefore either far past the entry cap or carrying unusually large `notes`.
 
-Error responses use stable, PII-free keys: `400 invalid import file` (not valid JSON), the two 413s above, and `500 failed to import data`.
+**Compressed requests (`Content-Encoding: gzip`/`deflate`/`br`/`zstd`) are bounded by the same 16 MiB, but at two different points, with two different outcomes.** The raw bytes on the wire are still capped at the transport layer regardless of encoding, so a compressed body that is itself over 16 MiB gets the clean `413 request_too_large` above without ever reaching the handler — same as the uncompressed case. But a well-compressed body can carry a decompressed payload far larger than 16 MiB while its wire size stays under the cap. In that case the handler **does** run: decompression (inside the framework's body accessor) applies the same 16 MiB cap to the **decompressed** size, and once that trips, the import service receives a short internal error string in place of the real payload rather than a clean 413. That string is not valid JSON, so it fails parsing exactly like a genuinely malformed file and the client receives the already-documented `400 invalid import file` below — not a 413. Uncompressed requests aren't affected by this distinction: their wire size and parsed size are the same number, so the transport-layer 413 is the only path.
+
+Error responses use stable, PII-free keys: `400 invalid import file` (not valid JSON — including an over-cap compressed body per above), the two 413s above, and `500 failed to import data`.
 
 Importing from other trackers (e.g. Drip) is out of scope for this endpoint — see [issue #116](https://github.com/ovumcy/ovumcy-web/issues/116).
 
