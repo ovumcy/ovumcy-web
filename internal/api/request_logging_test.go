@@ -27,6 +27,132 @@ func TestSafeLogError(t *testing.T) {
 	}
 }
 
+// TestSafeLogErrorMasksSecretShapesAndKeepsDiagnostics pins the full redaction
+// contract of the Fiber request log's error field, which is the always-on net
+// that keeps a secret out of the log when a handler returns an error carrying
+// user input.
+//
+// The masked rows cover every secret shape this app can put in front of it. Two
+// of them — the calendar-feed token and the base32 TOTP secret — are long enough
+// for the length-based opaque rule to see. The other two are not: a recovery
+// code is 19 characters and a submitted TOTP code is 6, so both sit below the
+// 24-character opaque floor and reached the log verbatim until the shape-specific
+// rules landed. Length alone therefore cannot be the whole defense, and lowering
+// the floor is not the fix.
+//
+// That is what the preserved rows exist to prove. This field is the operator's
+// only diagnostic signal for a failed request, and `SafeRequestLogPath` writes
+// route templates into the neighbouring column, so a rule broad enough to swallow
+// an ISO date, an HTTP status, a route template, ordinary prose or a long numeric
+// id would trade one defect for another. Each preserved row names a value that a
+// generic short-run rule would have destroyed.
+func TestSafeLogErrorMasksSecretShapesAndKeepsDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	// Shape-accurate synthetic values drawn from the alphabets the real
+	// generators use: the feed token is selector(16)+verifier(32) over the
+	// unambiguous 32-symbol alphabet, and the TOTP secret is 32 base32
+	// characters. Neither authenticates anything.
+	const feedToken = "ABCDEFGHJKLMNPQR234567892345678923456789ABCDEFGH"
+	const totpSecret = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
+
+	cases := []struct {
+		name string
+		// message is the error text handed to SafeLogError.
+		message string
+		// secret, when set, must not survive anywhere in the output.
+		secret string
+		want   string
+	}{
+		{
+			name:    "issued recovery code is masked",
+			message: "rejected value OVUM-A1B2-C3D4-E5F6",
+			secret:  "OVUM-A1B2-C3D4-E5F6",
+			want:    "rejected value :code",
+		},
+		{
+			name:    "separator-free recovery code is masked",
+			message: "rejected value OVUMA1B2C3D4E5F6",
+			secret:  "OVUMA1B2C3D4E5F6",
+			want:    "rejected value :code",
+		},
+		{
+			name:    "lowercase recovery code is masked",
+			message: "rejected value ovum-a1b2-c3d4-e5f6",
+			secret:  "ovum-a1b2-c3d4-e5f6",
+			want:    "rejected value :code",
+		},
+		{
+			name:    "submitted six-digit code is masked",
+			message: "totp challenge 481920 refused",
+			secret:  "481920",
+			want:    "totp challenge :code refused",
+		},
+		{
+			name:    "calendar feed token is masked",
+			message: "feed " + feedToken + " unknown",
+			secret:  feedToken,
+			want:    "feed :token unknown",
+		},
+		{
+			name:    "base32 totp secret is masked",
+			message: "secret " + totpSecret + " undecryptable",
+			secret:  totpSecret,
+			want:    "secret :token undecryptable",
+		},
+		{
+			name:    "email is masked",
+			message: "lookup failed for owner@example.com",
+			secret:  "owner@example.com",
+			want:    "lookup failed for :email",
+		},
+		{
+			name:    "iso date survives",
+			message: "no entry for 2026-07-26",
+			want:    "no entry for 2026-07-26",
+		},
+		{
+			name:    "http status survives",
+			message: "upstream answered 503",
+			want:    "upstream answered 503",
+		},
+		{
+			name:    "ordinary sentence survives",
+			message: "internal server error",
+			want:    "internal server error",
+		},
+		{
+			name:    "route template survives",
+			message: "no handler for /api/v1/days/:date",
+			want:    "no handler for /api/v1/days/:date",
+		},
+		{
+			name:    "long numeric identifier survives",
+			message: "body limit 16777216 exceeded at 1753574400",
+			want:    "body limit 16777216 exceeded at 1753574400",
+		},
+		{
+			name:    "ovum as a domain word survives",
+			message: "ovum release estimate unavailable",
+			want:    "ovum release estimate unavailable",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := SafeLogError(errors.New(tc.message))
+			if tc.secret != "" && strings.Contains(got, tc.secret) {
+				t.Fatalf("SafeLogError leaked %q verbatim into the request log: %q", tc.secret, got)
+			}
+			if got != tc.want {
+				t.Fatalf("SafeLogError(%q) = %q, want %q", tc.message, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestSanitizeRequestLogSegmentClassifies pins every branch of the per-segment
 // classifier that decides how a raw path component is masked for the request
 // log. Each row asserts the resulting placeholder for exactly one branch, so a

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -203,6 +204,138 @@ func TestCalendarFeedRevealCookieRejectsSealedNonJSON(t *testing.T) {
 	// The empty-state assertion lives in a t.Fatalf inside /open; prove it ran.
 	if openResponse.StatusCode != fiber.StatusNoContent {
 		t.Fatalf("expected /open to reach 204, got %d; the in-handler non-json assertion may have been skipped", openResponse.StatusCode)
+	}
+}
+
+// TestCalendarFeedRevealCookieRefusesUnattributedOwner pins both halves of the
+// owner scoping on the reveal cookie, at the seal boundary and at the read
+// boundary.
+//
+// A payload whose `uid` is zero names no account. Treating that as "no owner to
+// compare against, so let it through" would reveal the subscribe URL — a bearer
+// capability token — to whichever session presented the cookie. So:
+//   - the writer refuses to seal a zero owner id at all, and
+//   - the reader refuses a zero owner id in the payload, and refuses any payload
+//     when the session itself has no id, clearing the cookie either way.
+//
+// The positive anchor in the same test proves the reveal still works for the
+// owner it was minted for; without it every assertion here would also pass
+// against a reader that returns nothing to anybody.
+func TestCalendarFeedRevealCookieRefusesUnattributedOwner(t *testing.T) {
+	t.Parallel()
+	handler := newCalendarFeedRevealCookieTestHandler()
+
+	const ownerA = uint(77)
+	const ownedURL = "https://ovumcy.example/calendar/feed/OWNEDBYAAAAAAAAAAAAAAAAAAAAAAAAA.ics"
+	const unattributedURL = "https://ovumcy.example/calendar/feed/UNATTRIBUTED000000000000000000000.ics"
+
+	app := fiber.New()
+	// Seal-time guard: an owner id is mandatory, and the refusal writes no cookie.
+	app.Get("/seal-unattributed", func(c fiber.Ctx) error {
+		if err := handler.setCalendarFeedRevealCookie(c, 0, unattributedURL, false); err == nil {
+			t.Fatal("expected setCalendarFeedRevealCookie to refuse a zero owner id")
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	// Positive anchor: a payload sealed for owner A reveals to owner A.
+	app.Get("/seal", func(c fiber.Ctx) error {
+		if err := handler.setCalendarFeedRevealCookie(c, ownerA, ownedURL, false); err != nil {
+			t.Fatalf("seal reveal cookie for owner A: %v", err)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	app.Get("/open", func(c fiber.Ctx) error {
+		state := handler.readCalendarFeedRevealState(c, ownerA)
+		if state.FeedURL != ownedURL {
+			t.Fatalf("owner A must still see the URL sealed for owner A, got %q", state.FeedURL)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	// A session with no id of its own must never satisfy the comparison, even
+	// against a properly attributed payload.
+	app.Get("/open-sessionless", func(c fiber.Ctx) error {
+		state := handler.readCalendarFeedRevealState(c, 0)
+		if state.FeedURL != "" {
+			t.Fatalf("a session with no owner id must reveal nothing, got %q", state.FeedURL)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	// Read-time guard, driven from a hand-sealed payload the writer would now
+	// refuse to mint: uid 0 must be rejected, not skipped.
+	app.Get("/seal-unattributed-payload", func(c fiber.Ctx) error {
+		serialized := []byte(`{"uid":0,"feed_url":"` + unattributedURL + `"}`)
+		if err := handler.writeSealedCookie(c, calendarFeedRevealCookieSpec, serialized, time.Now().Add(time.Minute)); err != nil {
+			t.Fatalf("write sealed unattributed payload: %v", err)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	app.Get("/open-unattributed", func(c fiber.Ctx) error {
+		state := handler.readCalendarFeedRevealState(c, ownerA)
+		if state.FeedURL != "" {
+			t.Fatalf("an unattributed payload must reveal nothing, got %q", state.FeedURL)
+		}
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	// The writer refuses a zero owner id and leaves no cookie behind.
+	unattributedSeal := mustReachNoContent(t, app, "/seal-unattributed", "", "the in-handler zero-owner-id rejection")
+	defer func() { _ = unattributedSeal.Body.Close() }()
+	if written := responseCookieValue(unattributedSeal.Cookies(), calendarFeedRevealCookieName); written != "" {
+		t.Fatalf("a refused seal must not leave a usable reveal cookie, got %q", written)
+	}
+
+	// Positive anchor: owner A's own reveal still works.
+	ownedCookie := sealAndExtractCalendarFeedRevealCookie(t, app)
+	ownedResponse := mustReachNoContent(t, app, "/open", calendarFeedRevealCookieName+"="+ownedCookie, "the in-handler owner-A reveal assertion")
+	defer func() { _ = ownedResponse.Body.Close() }()
+
+	// The same well-formed payload reveals nothing to a session with no id.
+	sessionlessResponse := mustReachNoContent(t, app, "/open-sessionless", calendarFeedRevealCookieName+"="+ownedCookie, "the in-handler sessionless assertion")
+	defer func() { _ = sessionlessResponse.Body.Close() }()
+
+	// An unattributed payload reveals nothing and is cleared on the way out.
+	craftedSeal := mustReachNoContent(t, app, "/seal-unattributed-payload", "", "the unattributed-payload seal")
+	defer func() { _ = craftedSeal.Body.Close() }()
+	craftedCookie := responseCookieValue(craftedSeal.Cookies(), calendarFeedRevealCookieName)
+	if craftedCookie == "" {
+		t.Fatal("expected a sealed unattributed payload to drive the read path")
+	}
+	craftedResponse := mustReachNoContent(t, app, "/open-unattributed", calendarFeedRevealCookieName+"="+craftedCookie, "the in-handler unattributed-payload assertion")
+	defer func() { _ = craftedResponse.Body.Close() }()
+	assertRevealCookieCleared(t, craftedResponse, calendarFeedRevealCookieName)
+}
+
+// mustReachNoContent drives one GET (optionally carrying a Cookie header) and
+// fails unless it reached 204. The reveal-cookie assertions live in t.Fatalf
+// calls inside the routes, so a route that returned early would otherwise let
+// the test pass having checked nothing.
+func mustReachNoContent(t *testing.T, app *fiber.App, path string, cookieHeader string, what string) *http.Response {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	if cookieHeader != "" {
+		request.Header.Set("Cookie", cookieHeader)
+	}
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("%s request: %v", path, err)
+	}
+	if response.StatusCode != fiber.StatusNoContent {
+		t.Fatalf("expected %s to reach 204, got %d; %s may have been skipped", path, response.StatusCode, what)
+	}
+	return response
+}
+
+// assertRevealCookieCleared pins the reject path's second obligation: a refused
+// reveal payload is not merely ignored, it is expired off the client so a
+// retry cannot present it again.
+func assertRevealCookieCleared(t *testing.T, response *http.Response, cookieName string) {
+	t.Helper()
+	cleared := responseCookie(response.Cookies(), cookieName)
+	if cleared == nil {
+		t.Fatalf("expected the refused %s cookie to be cleared", cookieName)
+	}
+	if cleared.Value != "" {
+		t.Fatalf("expected an empty cleared %s cookie value, got %q", cookieName, cleared.Value)
 	}
 }
 

@@ -95,6 +95,23 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 // test just stored.
 const testAppSecretKey = "test-secret-key"
 
+// sealCookieForTestApp seals an arbitrary payload under the shared test app's
+// secret, producing a cookie value the app will genuinely open. Use it to hand
+// the app a well-sealed but adversarially SHAPED payload — one no production
+// producer would mint — so a read-path guard can be exercised on its own.
+func sealCookieForTestApp(t *testing.T, cookieName string, payload []byte) string {
+	t.Helper()
+	codec, err := newSecureCookieCodec([]byte(testAppSecretKey))
+	if err != nil {
+		t.Fatalf("init secure cookie codec: %v", err)
+	}
+	sealed, err := codec.seal(cookieName, payload)
+	if err != nil {
+		t.Fatalf("seal %s payload: %v", cookieName, err)
+	}
+	return sealed
+}
+
 func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, options ...onboardingTestAppOptions) Dependencies {
 	var appOptions onboardingTestAppOptions
 	if len(options) > 0 {
