@@ -8,7 +8,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
-import { openCalendarDayEditor } from './support/stats-helpers';
+import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
 function shiftISODate(iso: string, days: number): string {
@@ -42,36 +42,6 @@ async function todayISOFromCalendar(page: Page): Promise<string> {
   const todayISO = await todayButton.getAttribute('data-day');
   expect(todayISO).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   return todayISO!;
-}
-
-async function saveDayEditorForm(page: Page, isoDate: string, form: import('@playwright/test').Locator): Promise<void> {
-  // Bind the wait to the request this click issues, not to any PUT response for
-  // the date. waitForResponse would resolve on the first matching response to
-  // arrive after registration — under CPU contention a still-in-flight earlier
-  // PUT's response can land inside this window and satisfy the predicate before
-  // the actual save lands. The `request` event only fires for requests issued
-  // after registration, so this captures exactly the click's PUT; awaiting that
-  // request's own response then blocks until this save has truly committed.
-  const [request] = await Promise.all([
-    page.waitForRequest(
-      (candidate) =>
-        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
-    ),
-    form.locator('button[data-save-button]').click(),
-  ]);
-  const response = await request.response();
-  expect(response, `expected a response for PUT /api/v1/days/${isoDate}`).not.toBeNull();
-  expect(response!.ok(), `PUT /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
-
-  // The PUT response only means the write committed. Its htmx afterSwap then
-  // fires `calendar-day-updated`, which reloads the whole calendar grid
-  // (GET /calendar) and re-lazy-loads the day editor — a cascade that outlives
-  // this click. If the caller navigates (openCalendarDayEditor → page.goto)
-  // while that cascade is still hitting the server, the next page's own
-  // hx-trigger="load" editor fetch competes with it and, under CPU contention,
-  // can miss the 5s visibility window. Let the app go quiescent first so the
-  // save is fully settled — not just committed — before returning.
-  await page.waitForLoadState('networkidle');
 }
 
 test.describe('calendar auto-fill clear-on-toggle-off', () => {

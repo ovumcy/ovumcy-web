@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
+  apiOriginHeader,
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
@@ -291,7 +292,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
 
     // The subscribe URL works before any of this — the anchor every assertion
     // below is measured against.
-    const beforeCancel = await page.request.get(armed.url);
+    const beforeCancel = await page.request.get(armed.url, { headers: apiOriginHeader(page) });
     expect(beforeCancel.status(), 'the freshly generated feed must serve').toBe(200);
 
     const rotateForm = feedSection(page).locator('[data-settings-calendar-feed-rotate]');
@@ -329,7 +330,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
       'data-calendar-feed-status',
       'configured'
     );
-    const afterCancel = await page.request.get(armed.url);
+    const afterCancel = await page.request.get(armed.url, { headers: apiOriginHeader(page) });
     expect(afterCancel.status(), 'a cancelled rotate/revoke must leave the URL working').toBe(200);
 
     // Positive anchor: the same control, accepted, really does revoke — so the
@@ -340,7 +341,7 @@ test.describe('Settings: calendar feed one-time reveal', () => {
     );
     await expect(page.locator('#settings-calendar-feed-status .status-ok')).toBeVisible();
 
-    const afterAccept = await page.request.get(armed.url);
+    const afterAccept = await page.request.get(armed.url, { headers: apiOriginHeader(page) });
     expect(afterAccept.status(), 'an accepted revoke must kill the URL').toBe(404);
   });
 });

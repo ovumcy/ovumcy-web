@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { clearDateField, fillDateField } from './support/date-field-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
 import { checkStyledControl } from './support/form-helpers';
+import { saveSettingsLanguage } from './support/language-helpers';
 import {
   dashboardCurrentCycleDay,
   dashboardCurrentPhaseText,
@@ -421,10 +422,38 @@ test.describe('Bug regressions', () => {
       await page.locator('#register-confirm-password').fill('weak');
       await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
 
+      // Positive anchor: the weak password really was rejected. The client-side
+      // validator blocks this submit before it reaches the network, so without
+      // the visible-error assertion the URL checks below pass even when nothing
+      // validated anything.
+      await expect(page.locator('#register-client-status .status-error')).toBeVisible();
       await expect(page).toHaveURL(/\/register$/);
       const currentURL = page.url().toLowerCase();
       expect(currentURL).not.toContain('email=');
       expect(currentURL).not.toContain('error=');
+
+      // The client validator swallows the UI submit above, so the server-side
+      // error path — the surface this test is about — must be driven directly:
+      // a weak password POSTed to /api/v1/users comes back as a redirect whose
+      // Location must carry no email or error parameters.
+      const csrfToken =
+        (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
+      const response = await page.request.post('/api/v1/users', {
+        headers: apiOriginHeader(page),
+        form: {
+          csrf_token: csrfToken,
+          email: 'anyuser@ovumcy.lan',
+          password: 'weak',
+          confirm_password: 'weak',
+          consent: 'true',
+        },
+        maxRedirects: 0,
+      });
+      expect(response.status()).toBe(303);
+      const location = String(response.headers()['location'] ?? '').toLowerCase();
+      expect(location).not.toBe('');
+      expect(location).not.toContain('email=');
+      expect(location).not.toContain('error=');
     });
 
     test('login unknown email and wrong password produce identical message', async ({ page }) => {
@@ -546,10 +575,10 @@ test.describe('Bug regressions', () => {
 
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
-      const interfaceForm = page.locator('[data-settings-interface-form]');
-      await interfaceForm.locator('[data-settings-interface-language-option="ru"] .radio-tile').click();
-      await interfaceForm.locator('[data-settings-interface-save]').click();
-      await expect(page).toHaveURL(/\/settings$/);
+      // Bind the language save to its own PATCH before the data-wipe API call
+      // below — a bare save click races the in-flight request and can drop the
+      // just-chosen language (saveSettingsLanguage documents the mechanism).
+      await saveSettingsLanguage(page, 'ru');
       await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
 
       const csrfToken = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';

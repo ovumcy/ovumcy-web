@@ -132,7 +132,7 @@ test.describe('Stats: BBT chart', () => {
     for (let offset = -5; offset <= 0; offset += 1) {
       const isoDate = shiftISODate(today, offset);
       const response = await page.request.get(`/api/v1/days/${isoDate}`, {
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json', ...apiOriginHeader(page) },
       });
       expect(response.status(), `GET ${isoDate}`).toBe(200);
       const body = await response.json();

@@ -61,7 +61,7 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
   await expect(manualStartButton).toBeVisible();
   // Bind to the click's own request, not any matching response: waitForResponse
   // can resolve on a still-in-flight earlier request under load (see
-  // saveDayEditorForm in calendar-autofill-clear.spec.ts).
+  // saveDayEditorForm below).
   const [request] = await Promise.all([
     page.waitForRequest(
       (candidate) =>
@@ -128,6 +128,38 @@ export async function openCalendarDayEditor(page: Page, isoDate: string): Promis
   const form = page.locator(`[data-day-editor-form][data-day-editor-date="${isoDate}"]`);
   await expect(form).toBeVisible();
   return form;
+}
+
+export async function saveDayEditorForm(page: Page, isoDate: string, form: Locator): Promise<void> {
+  // Bind the wait to the request this click issues, not to any PUT response for
+  // the date. waitForResponse would resolve on the first matching response to
+  // arrive after registration — under CPU contention a still-in-flight earlier
+  // PUT's response can land inside this window and satisfy the predicate before
+  // the actual save lands. The `request` event only fires for requests issued
+  // after registration, so this captures exactly the click's PUT; awaiting that
+  // request's own response then blocks until this save has truly committed.
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+    ),
+    form.locator('button[data-save-button]').click(),
+  ]);
+  const response = await request.response();
+  expect(response, `expected a response for PUT /api/v1/days/${isoDate}`).not.toBeNull();
+  expect(response!.ok(), `PUT /api/v1/days/${isoDate} failed with ${response!.status()}`).toBeTruthy();
+
+  // The PUT response only means the write committed. Its htmx afterSwap then
+  // fires `calendar-day-updated`, which reloads the whole calendar grid
+  // (GET /calendar) and re-lazy-loads the day editor — a cascade that outlives
+  // this click. If the caller navigates (openCalendarDayEditor → page.goto)
+  // while that cascade is still hitting the server, the next page's own
+  // hx-trigger="load" editor fetch competes with it and, under CPU contention,
+  // can miss the 5s visibility window. A bare click followed by page.goto is
+  // worse still: the navigation aborts a PUT that has not committed yet and the
+  // save is silently lost. Let the app go quiescent first so the save is fully
+  // settled — not just committed — before returning.
+  await page.waitForLoadState('networkidle');
 }
 
 export async function saveCycleFactorOnDay(

@@ -154,8 +154,11 @@ test.describe('Security and role-based access', () => {
     await expect(page.locator('[data-export-section]')).toBeVisible();
     await expect(page.locator('form[action="/api/v1/users/current/data-wipe"]')).toBeVisible();
 
+    // GET-only route: CSRF gates state-changing methods (see the comment in the
+    // csrf-basics test above), so no token is sent; the explicit Origin keeps
+    // the call valid under the HTTPS posture.
     const exportResponse = await page.request.get('/api/v1/exports/csv', {
-      form: { csrf_token: await readCSRFToken(page) },
+      headers: apiOriginHeader(page),
     });
     expect(exportResponse.status()).toBe(200);
     expect(exportResponse.headers()['content-type'] || '').toContain('text/csv');

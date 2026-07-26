@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
+  apiOriginHeader,
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
@@ -51,7 +52,9 @@ function lastToast(page: Page) {
 }
 
 async function exportedDates(page: Page): Promise<string[]> {
-  const response = await page.request.get('/api/v1/exports/json');
+  const response = await page.request.get('/api/v1/exports/json', {
+    headers: apiOriginHeader(page),
+  });
   expect(response.ok()).toBeTruthy();
   const payload = (await response.json()) as ExportPayload;
   return (payload.entries ?? []).map((entry) => String(entry.date ?? ''));
