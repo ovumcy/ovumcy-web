@@ -12,6 +12,11 @@ import {
 } from './support/auth-helpers';
 import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
+import {
+  cancelConfirmDialog,
+  expectConfirmDialogCaptions,
+  mutatingRequestsDuring,
+} from './support/confirm-dialog-helpers';
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -697,6 +702,75 @@ test.describe('Settings: profile and cycle', () => {
     await expect(
       page.locator(`[data-day-editor-form][data-day-editor-date="${otherISO}"] input[name="symptom_ids"][data-symptom-name="Joint stiffness"]`)
     ).toHaveCount(0);
+  });
+
+  // Cancelling the confirmation must be inert. This is a real regression, not a
+  // hypothetical: while the hide control carried `data-confirm`, htmx issued the
+  // DELETE from its own listener on the form before the document-level
+  // interceptor ever ran, so the dialog was decorative and Cancel archived the
+  // symptom anyway. The control now uses `hx-confirm`, which htmx gates on. The
+  // template-level guard against the whole class is
+  // TestNoTemplateElementMixesHTMXRequestWithDataConfirm; the sibling
+  // cancel-is-inert tests cover the other gated surfaces in calendar.spec.ts and
+  // settings-calendar-feed.spec.ts.
+  test('cancelling the hide confirmation keeps the custom symptom active', async ({ page }) => {
+    await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-hide-cancel');
+
+    const symptomSection = page.locator('#settings-symptoms-section');
+    await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
+
+    const activeRow = customSymptomRow(symptomSection, 'Joint stiffness', 'active');
+    await expect(activeRow).toBeVisible();
+    const symptomID = await activeRow.getAttribute('data-symptom-id');
+    expect(symptomID).toMatch(/^\d+$/);
+
+    const hideForm = activeRow.locator('form[hx-delete^="/api/v1/symptoms/"]');
+    const isSymptomMutation = (pathname: string) =>
+      pathname.endsWith(`/api/v1/symptoms/${symptomID}`);
+
+    const cancelledRequests = await mutatingRequestsDuring(page, isSymptomMutation, async () => {
+      await hideForm.locator('button[type="submit"]').click();
+
+      // The dialog must show the captions this surface declared, not a
+      // hardcoded fallback: backend coverage only pins that they are declared.
+      const captions = await expectConfirmDialogCaptions(page, hideForm);
+      // This surface names its own action instead of reusing the layout-wide
+      // delete wording, so the rendered caption also proves the per-control
+      // attribute — not the `data-confirm-delete` fallback — drove the button.
+      const layoutFallback = (
+        (await page.locator('body').getAttribute('data-confirm-delete')) ?? ''
+      ).trim();
+      expect(layoutFallback).not.toBe('');
+      expect(captions.accept).not.toBe(layoutFallback);
+
+      await cancelConfirmDialog(page);
+
+      // A reload is the concrete signal that any request the click was going to
+      // issue has had its chance — no arbitrary timeout involved.
+      await page.reload();
+      await expect(page).toHaveURL(/\/settings$/);
+    });
+    expect(cancelledRequests, 'cancelling the hide must issue no request').toEqual([]);
+
+    // Still active after the dialog and the reload: no archived group appeared,
+    // so nothing was hidden behind the owner's back.
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'active')).toBeVisible();
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'archived')).toHaveCount(0);
+    await expect(symptomSection.locator('[data-symptom-group="archived"]')).toHaveCount(0);
+
+    // And still offered for new entries — the behaviour hiding would have taken
+    // away, measured where the owner would notice it.
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await ensureSymptomInputVisible(dashboardSaveForm(page), 'Joint stiffness');
+
+    // Positive anchor: the same control, accepted, really does hide it — so the
+    // assertions above prove Cancel is inert, not that the control is dead.
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await archiveCustomSymptom(page, customSymptomRow(symptomSection, 'Joint stiffness', 'active'));
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'archived')).toBeVisible();
+    await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'active')).toHaveCount(0);
   });
 
   test('archived custom symptoms can be renamed, reject duplicates, and restore cleanly', async ({
