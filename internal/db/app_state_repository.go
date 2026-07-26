@@ -13,9 +13,11 @@ import (
 
 // AppStateRepository persists the process-level key/value markers in app_state
 // (migration 028). It holds runtime bookkeeping only — never per-owner health
-// data — so its operations are unscoped by user_id. Its sole consumer today is
-// the built-in reminder scheduler (issue #125), which reads and writes
-// last_reminder_run_date for restart safety and current-day catch-up.
+// data — so its operations are unscoped by user_id. Its consumers are the
+// built-in reminder scheduler (issue #125), which reads and writes
+// last_reminder_run_date for restart safety and current-day catch-up, and the
+// boot-time key-rotation sentinel, which keeps the calendar-feed key epoch
+// under calendar_feed_key_epoch.
 type AppStateRepository struct {
 	database *gorm.DB
 }
@@ -44,9 +46,9 @@ func (repo *AppStateRepository) Get(ctx context.Context, key string) (string, bo
 }
 
 // Set upserts value for key, stamping updated_at. The ON CONFLICT (key) update
-// makes a repeated write for the same key overwrite in place, so the scheduler's
-// "ran today" marker is a single evolving row rather than an append. It is the
-// only writer of these rows.
+// makes a repeated write for the same key overwrite in place, so each marker is
+// a single evolving row rather than an append. Every key has exactly one
+// writer (scheduler goroutine or boot sentinel), never two concurrently.
 func (repo *AppStateRepository) Set(ctx context.Context, key string, value string) error {
 	trimmed := strings.TrimSpace(key)
 	if trimmed == "" {
