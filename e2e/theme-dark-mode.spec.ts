@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Frame, type Page } from '@playwright/test';
 import { dashboardPrimarySummaryMode } from './support/dashboard-helpers';
+import { cancelConfirmDialog } from './support/confirm-dialog-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -64,14 +65,36 @@ test.describe('Theme mode', () => {
       .poll(async () => page.evaluate(() => window.localStorage.getItem('ovumcy_theme')))
       .toBe(storedBefore);
 
-    await page.locator('a.brand-mark').click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-modal-cancel').click();
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(html).toHaveAttribute('data-theme', nextTheme);
+    // Cancelling the unsaved-changes prompt must leave the page where it is. A
+    // URL assertion is already true the moment it runs, so it would pass just as
+    // well with the guarded navigation still pending: record what the main frame
+    // actually navigates to across the whole window instead.
+    const brandLink = page.locator('a.brand-mark');
+    const leaveTarget = new URL((await brandLink.getAttribute('href')) ?? '', page.url()).pathname;
+    expect(leaveTarget).toBe('/dashboard');
 
-    await discardButton.click();
-    await expect(html).toHaveAttribute('data-theme', String(initialTheme));
+    const navigatedTo: string[] = [];
+    const recordNavigation = (frame: Frame) => {
+      if (frame === page.mainFrame()) {
+        navigatedTo.push(frame.url());
+      }
+    };
+    page.on('framenavigated', recordNavigation);
+    try {
+      await brandLink.click();
+      await cancelConfirmDialog(page);
+      await expect(html).toHaveAttribute('data-theme', nextTheme);
+
+      // Concrete signal that the guarded link has had its chance: discarding the
+      // draft is a real interaction with — and a state transition on — the very
+      // document the accept branch would have navigated away from.
+      await discardButton.click();
+      await expect(html).toHaveAttribute('data-theme', String(initialTheme));
+    } finally {
+      page.off('framenavigated', recordNavigation);
+    }
+    expect(navigatedTo, `cancelling the prompt must not navigate to ${leaveTarget}`).toEqual([]);
+
     await expect(nextOption).toHaveAttribute('data-selected', 'false');
     await expect(previousOption).toHaveAttribute('data-selected', 'true');
     await expect(saveButton).toBeDisabled();

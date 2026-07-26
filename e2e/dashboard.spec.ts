@@ -7,6 +7,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -427,11 +428,23 @@ test.describe('Dashboard: today editor', () => {
 
     const manualStartButton = manualCycleStartButton(page);
     await expect(manualStartButton).toBeVisible();
-    await manualStartButton.click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-modal-cancel').click();
-    await expect(page.locator('#confirm-modal')).toBeHidden();
-    await expect(page.locator('#save-status .status-error')).toHaveCount(0);
+
+    // Cancel must issue nothing at all. An empty #save-status .status-error is a
+    // weaker claim than it looks — it also holds when the POST fired and
+    // succeeded — so record the wire instead, and reload inside the window so any
+    // request the cancelled click was going to issue has had its chance.
+    const cancelledRequests = await mutatingRequestsDuring(
+      page,
+      (pathname) => pathname.endsWith('/cycle-start'),
+      async () => {
+        await manualStartButton.click();
+        await cancelConfirmDialog(page);
+
+        await page.reload();
+        await expect(manualStartButton).toBeVisible();
+      }
+    );
+    expect(cancelledRequests, 'cancelling the manual cycle start must issue no request').toEqual([]);
 
     const [request] = await Promise.all([
       page.waitForRequest(

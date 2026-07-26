@@ -66,8 +66,11 @@ test.describe('Security and role-based access', () => {
     await expect(page.locator('#settings-display-name')).toHaveValue(payload);
     await expect(page.locator('#settings-account img')).toHaveCount(0);
 
-    await page.waitForTimeout(250);
-    expect(dialogTriggered).toBe(false);
+    // The listener has been installed since before the save, and the assertions
+    // above are the concrete signal that the payload has had its chance: the
+    // server rejected it, and the surfaces that would have carried it hold no
+    // `<img>` to fire a deferred `onerror`. No sleep is needed to make that safe.
+    expect(dialogTriggered, 'the rejected display name must not execute').toBe(false);
   });
 
   test('xss payload in notes is stored as plain text and does not execute', async ({ page }) => {
@@ -94,8 +97,12 @@ test.describe('Security and role-based access', () => {
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}&day=${savedDay}`));
     await expect(page.locator('#day-editor')).toContainText(payload);
 
-    await page.waitForTimeout(250);
-    expect(dialogTriggered).toBe(false);
+    // The listener has been installed since before the save, and the assertion
+    // above is the concrete signal: the payload is present as *text*, so neither
+    // the `<script>` (which would have run during parsing) nor the `<img>` (which
+    // would be an element, not text, and would fire `onerror` on its failed load)
+    // was ever parsed as markup. No sleep is needed to make that safe.
+    expect(dialogTriggered, 'the stored payload must not execute').toBe(false);
   });
 
   test('csrf basics: missing token is rejected for state-changing endpoints', async ({ page }) => {
