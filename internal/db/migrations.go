@@ -9,10 +9,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	embeddedmigrations "github.com/ovumcy/ovumcy-web/migrations"
 	"gorm.io/gorm"
 )
+
+// sqlLineCommentPrefix is the only comment form the migration set uses. Block
+// comments (/* ... */) appear in no migration file and are deliberately not
+// recognized: an unrecognized prefix simply leaves the statement unmatched, and
+// an unmatched statement is executed exactly as before.
+const sqlLineCommentPrefix = "--"
 
 var migrationFilePattern = regexp.MustCompile(`^(\d+)_.*\.sql$`)
 var addColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+ADD\s+COLUMN\s+([^\s]+)\b`)
@@ -193,18 +200,58 @@ func splitSQLStatements(sqlText string) []string {
 }
 
 func shouldSkipStatement(database *gorm.DB, statement string) (bool, error) {
-	matches := addColumnStatementPattern.FindStringSubmatch(strings.TrimSpace(statement))
-	if len(matches) != 3 {
+	tableName, columnName, isAddColumn := parseAddColumnStatement(statement)
+	if !isAddColumn {
 		return false, nil
 	}
 
-	tableName := normalizeSQLIdentifier(matches[1])
-	columnName := normalizeSQLIdentifier(matches[2])
 	exists, err := tableColumnExists(database, tableName, columnName)
 	if err != nil {
 		return false, err
 	}
 	return exists, nil
+}
+
+// parseAddColumnStatement reports whether a statement chunk is an
+// `ALTER TABLE ... ADD COLUMN ...`, returning the table and column it targets.
+// It is the single detection used by the already-exists skip that gives SQLite
+// (which has no ADD COLUMN IF NOT EXISTS) its migration idempotency, so it has
+// to see past the prose header that splitSQLStatements leaves attached to the
+// first statement of a file.
+func parseAddColumnStatement(statement string) (tableName string, columnName string, isAddColumn bool) {
+	matches := addColumnStatementPattern.FindStringSubmatch(stripLeadingSQLComments(statement))
+	if len(matches) != 3 {
+		return "", "", false
+	}
+	return normalizeSQLIdentifier(matches[1]), normalizeSQLIdentifier(matches[2]), true
+}
+
+// stripLeadingSQLComments drops the leading blank and `--` comment lines of a
+// statement chunk and returns the rest verbatim.
+//
+// splitSQLStatements splits on `;` without stripping comments, so the first
+// chunk of a migration that opens with a prose header is the header plus the
+// statement. The detection regex is anchored at ^, so that chunk never matched
+// and the skip silently did not apply to the file's first ADD COLUMN.
+//
+// Only whole leading lines are removed. Comment text can therefore never be
+// parsed as part of a statement: a header line that mentions ALTER or ADD
+// COLUMN is discarded with its line rather than matched, and a trailing comment
+// on a code line is left where it is for the executor. Nothing after the first
+// line of SQL is touched.
+func stripLeadingSQLComments(statement string) string {
+	remainder := statement
+	for {
+		remainder = strings.TrimLeftFunc(remainder, unicode.IsSpace)
+		if !strings.HasPrefix(remainder, sqlLineCommentPrefix) {
+			return remainder
+		}
+		lineEnd := strings.IndexByte(remainder, '\n')
+		if lineEnd < 0 {
+			return ""
+		}
+		remainder = remainder[lineEnd+1:]
+	}
 }
 
 func tableColumnExists(database *gorm.DB, tableName string, columnName string) (bool, error) {

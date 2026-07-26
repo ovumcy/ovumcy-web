@@ -100,6 +100,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   templates and ordinary identifiers, and this column is the only diagnostic
   signal an operator has for a failed request.
 
+- **Re-running a migration whose `ADD COLUMN` sits behind its file's prose no
+  longer aborts the boot.** SQLite has no `ADD COLUMN IF NOT EXISTS`, so a
+  migration is safe to replay only because the runner skips an `ADD COLUMN` whose
+  column already exists. That check ran against the raw statement chunk, and the
+  chunk splitter keeps a file's leading comment block attached to the first
+  statement, so the check never recognized an `ADD COLUMN` introduced by prose —
+  and stopped protecting the first column of migrations `021`, `027`, `029`,
+  `030` and `032`. On a database that carries the column while its
+  `schema_migrations` row does not — a restore from a backup taken before that
+  row was written, or a pruned migration table — the replay failed with
+  `duplicate column name` and the application did not start. Detection now looks
+  past leading comment lines. Which statements execute is unchanged, on both
+  engines; only the already-exists skip sees more of them. A permanent guard
+  walks the embedded migration set and fails if any `ADD COLUMN` is left
+  unrecognized.
+
 - **"Cancel" now actually cancels on four confirmation dialogs.** Rotating or
   revoking the calendar feed, hiding a custom symptom, and deleting a calendar
   day entry each asked for confirmation — but the request was already on its way
