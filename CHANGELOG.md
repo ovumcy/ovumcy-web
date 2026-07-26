@@ -370,6 +370,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Three latent e2e-suite defects, each proven by an executed probe before the
+  fix and re-proven closed after it.** The day-editor save helper
+  (`saveDayEditorForm`) moved from a single spec into `e2e/support/stats-helpers.ts`
+  and now backs the five save-then-navigate call sites that raced their own PUT
+  — with 1.5 s of injected server latency the old form silently lost the save
+  and the test failed on its own persistence check; the helper version survives
+  the same probe. The two hand-rolled settings-language saves ride
+  `saveSettingsLanguage` for the same reason. The 2FA invalid-code test now
+  anchors on the rendered `error.totp_invalid_code` server error — a handler
+  replaced by an unconditional bounce back to `/auth/2fa` used to pass both of
+  its negative assertions, and now fails naming the missing control. The
+  registration URL-leak test drives the server path directly with a weak-password
+  `POST /api/v1/users` and pins the clean `303` redirect: the client-side
+  validator swallows the UI submit before it reaches the network (an intercept
+  counted zero requests), so the previous version never exercised the surface it
+  was written for. Separately, every direct `page.request` call now sends an
+  explicit `Origin` — the suite convention that keeps direct API calls valid
+  under the HTTPS posture — and the GET-only export calls drop their dead
+  `csrf_token` form bodies (CSRF gates state-changing methods only, and a GET
+  should not carry a request body at all).
+
 - Browser coverage that cancelling a confirmation is inert now reaches deleting
   a calendar day entry — where the action has no undo — and hiding a custom
   symptom, instead of the calendar-feed settings flow alone. Each new test

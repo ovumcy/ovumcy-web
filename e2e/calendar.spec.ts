@@ -11,7 +11,7 @@ import {
 import { saveSettingsLanguage } from './support/language-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
-import { openCalendarDayEditor } from './support/stats-helpers';
+import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
@@ -155,7 +155,7 @@ test.describe('Calendar page', () => {
     const noteText = `calendar-note-${Date.now()}`;
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(noteText);
-    await dayEditorForm.locator('button[data-save-button]').click();
+    await saveDayEditorForm(page, pastISO, dayEditorForm);
 
     await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
     await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${pastMonth}&day=${pastISO}`));
@@ -180,7 +180,7 @@ test.describe('Calendar page', () => {
     await dayEditorForm.locator('[data-sex-activity-option="protected"]').click();
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(`calendar-marker-${Date.now()}`);
-    await dayEditorForm.locator('button[data-save-button]').click();
+    await saveDayEditorForm(page, pastISO, dayEditorForm);
 
     await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
     const dayButton = page.locator(`button[data-day="${pastISO}"]`);
@@ -201,7 +201,7 @@ test.describe('Calendar page', () => {
     await dayEditorForm.locator('input[name="is_period"]').check();
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(noteText);
-    await dayEditorForm.locator('button[data-save-button]').click();
+    await saveDayEditorForm(page, pastISO, dayEditorForm);
 
     await page.goto(`/calendar?month=${pastMonth}&day=${pastISO}`);
     await expect(page.locator('#day-editor')).toContainText(noteText);

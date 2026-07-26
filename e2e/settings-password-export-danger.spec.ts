@@ -2,9 +2,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { clearDateField, fillDateField } from './support/date-field-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
-import { openCalendarDayEditor } from './support/stats-helpers';
+import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import {
+  apiOriginHeader,
   completeOnboardingIfPresent,
   confirmRecoveryCode,
   continueFromRecoveryCode,
@@ -264,10 +265,12 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
-    const csrfToken = await readCSRFToken(page);
 
+    // GET-only route: CSRF gates state-changing methods, so no token is sent.
+    // The explicit Origin keeps the call valid under the HTTPS posture, where
+    // the CSRF middleware rejects mutating requests without one (testing.md).
     const csvResponse = await page.request.get('/api/v1/exports/csv', {
-      form: { csrf_token: csrfToken },
+      headers: apiOriginHeader(page),
     });
 
     expect(csvResponse.status()).toBe(200);
@@ -276,7 +279,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     expect(await csvResponse.text()).toContain(exportNote);
 
     const jsonResponse = await page.request.get('/api/v1/exports/json', {
-      form: { csrf_token: csrfToken },
+      headers: apiOriginHeader(page),
     });
 
     expect(jsonResponse.status()).toBe(200);
@@ -305,7 +308,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await dayEditorForm.locator('input[name="is_period"]').check();
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(`future-export-${Date.now()}`);
-    await dayEditorForm.locator('button[data-save-button]').click();
+    await saveDayEditorForm(page, futureISO, dayEditorForm);
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
@@ -368,7 +371,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await dayEditorForm.locator('input[name="is_period"]').check();
     await openCalendarNotes(dayEditorForm);
     await dayEditorForm.locator('#calendar-notes').fill(`future-preset-${Date.now()}`);
-    await dayEditorForm.locator('button[data-save-button]').click();
+    await saveDayEditorForm(page, futureISO, dayEditorForm);
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);

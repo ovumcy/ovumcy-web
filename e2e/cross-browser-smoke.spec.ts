@@ -7,6 +7,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { saveSettingsLanguage } from './support/language-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 
@@ -83,9 +84,10 @@ test.describe('Cross-browser smoke', () => {
     const interfaceForm = page.locator('[data-settings-interface-form]');
     await interfaceForm.locator('[data-settings-interface-theme-option="dark"] .radio-tile').click();
     await expect(html).toHaveAttribute('data-theme', 'dark');
-    await interfaceForm.locator('[data-settings-interface-language-option="es"] .radio-tile').click();
-    await interfaceForm.locator('[data-settings-interface-save]').click();
-    await expect(page).toHaveURL(/\/settings$/);
+    // Bind the language save to its own PATCH before navigating away — a bare
+    // save click followed by page.goto races the in-flight request and can drop
+    // the just-chosen language (saveSettingsLanguage documents the mechanism).
+    await saveSettingsLanguage(page, 'es');
     await expect(html).toHaveAttribute('lang', 'es');
     await expect(page.locator('h1.journal-title')).toContainText('Configuración');
 

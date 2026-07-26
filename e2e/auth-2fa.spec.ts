@@ -196,6 +196,12 @@ test.describe('Auth: TOTP two-factor authentication', () => {
 
     // Should stay on challenge page
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
+    // Positive anchor: the challenge endpoint ran and rejected this exact code.
+    // Without it, a handler that unconditionally bounces back to /auth/2fa
+    // passes both negative assertions around it.
+    await expect(
+      page.locator('[data-auth-server-error][data-error-key="error.totp_invalid_code"]')
+    ).toBeVisible();
     const authCookie = await cookieByName(context, 'ovumcy_auth');
     expect(authCookie).toBeFalsy();
   });
