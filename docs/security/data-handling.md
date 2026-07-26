@@ -29,7 +29,7 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 
 **`oidc_identities`** — populated only when OIDC is enabled. `(issuer, subject) → user_id` link plus `created_at`, `last_used_at`. Rows carry `FOREIGN KEY ... ON DELETE CASCADE` on `users.id`.
 
-**`oidc_logout_states`** — short-lived per-session OIDC end-session metadata (`end_session_endpoint`, `id_token_hint`, `post_logout_redirect_url`). Keyed by `session_id` with `expires_at`, set to a hard 7-day TTL (`defaultOIDCLogoutStateTTL`, `internal/services/oidc_logout_state_service.go`) regardless of what the provider requests. Gained a `user_id` column in migration 031 (not foreign-keyed) so rows written since can be resolved to their owner, while rows written before it have a NULL `user_id`; every row, regardless of `user_id`, still ages out on that TTL.
+**`oidc_logout_states`** — short-lived per-session OIDC end-session metadata (`end_session_endpoint`, `id_token_hint`, `post_logout_redirect_url`). Keyed by `session_id` with `expires_at`, set to a hard 7-day TTL (`defaultOIDCLogoutStateTTL`, `internal/services/oidc_logout_state_service.go`) regardless of what the provider requests. Gained a `user_id` column in migration 031 (not foreign-keyed) so every row can be resolved to its owner; migration 033 deleted the unattributed rows written before 031, so no NULL-`user_id` row exists. Every row still ages out on that TTL.
 
 **`register_pickup_tokens`** — opaque single-use nonces for the post-register pickup flow, carrying a required `user_id` (not foreign-keyed) since creation. 5-minute TTL; rows also expire and become unreachable on their own.
 
@@ -54,8 +54,8 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 
 - Deletes every `daily_logs` row for the user.
 - Deletes every `symptom_types` row for the user (including built-ins).
-- Deletes every `oidc_identities`, `register_pickup_tokens`, and `oidc_logout_states` row for the user explicitly, then deletes the `users` row itself. `oidc_identities` also carries `ON DELETE CASCADE`, but the deletion is performed explicitly so erasure stays complete even if foreign-key enforcement is ever disabled, and so `register_pickup_tokens` (which has no foreign key) is removed rather than left to expire. `oidc_logout_states` gained a `user_id` column in migration 031; rows written before it have a NULL `user_id` and age out via their TTL instead of the explicit delete.
+- Deletes every `oidc_identities`, `register_pickup_tokens`, and `oidc_logout_states` row for the user explicitly, then deletes the `users` row itself. `oidc_identities` also carries `ON DELETE CASCADE`, but the deletion is performed explicitly so erasure stays complete even if foreign-key enforcement is ever disabled, and so `register_pickup_tokens` (which has no foreign key) is removed rather than left to expire. `oidc_logout_states` gained a `user_id` column in migration 031, and migration 033 deleted the unattributed rows written before it — every row is attributable, so this explicit per-user delete covers the whole table.
 
-A pre-031 `oidc_logout_states` row (`user_id` NULL) cannot be resolved to any `users.id` and is not covered by the explicit per-user delete above; it carries only a short-lived provider-driven logout reference and is pruned by its own TTL regardless.
+Rows written before migration 031 carried a NULL `user_id` the per-user delete could never match; migration 033 removed them, so no unattributed row remains. Live rows are additionally bounded by their own 7-day TTL.
 
 Both operations require the current password through `validateSettingsActionPassword`. OIDC-only accounts must enrol a local password through the step-up re-auth flow before either danger-zone action becomes available.
