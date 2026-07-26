@@ -53,11 +53,14 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		&models.SymptomType{UserID: user.ID, Name: "custom", Color: "#AABBCC"},
 		&models.RegisterPickupToken{Nonce: "nonce-1", UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour).UTC(), CreatedAt: time.Now().UTC()},
 		&models.OIDCIdentity{UserID: user.ID, Issuer: "https://idp.example.com", Subject: "subject-1", CreatedAt: time.Now().UTC()},
-		// oidc_logout_states: a row minted since migration 031 carries user_id and
-		// is erased explicitly (sess-user). Legacy rows with a NULL user_id are not
-		// user-scoped — the expired one is dropped by the best-effort post-commit
-		// purge (sess-expired) and the unexpired one ages out via its own TTL
-		// (sess-live).
+		// oidc_logout_states: a row minted for this owner carries user_id and is
+		// erased explicitly (sess-user). sess-expired and sess-live are seeded
+		// through GORM with UserID unset — a plain uint, so they persist user_id=0,
+		// NOT NULL (genuine pre-031 NULL rows no longer exist; migration 033
+		// purged them). They stand in for rows belonging to no/another owner: the
+		// expired one is dropped by the best-effort post-commit purge
+		// (sess-expired), the unexpired one survives this owner's erasure and is
+		// bounded by its own TTL (sess-live).
 		&models.OIDCLogoutState{SessionID: "sess-user", UserID: user.ID, EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(time.Hour).UTC()},
 		&models.OIDCLogoutState{SessionID: "sess-expired", EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(-time.Minute).UTC()},
 		&models.OIDCLogoutState{SessionID: "sess-live", EndSessionEndpoint: "https://idp.example.com/logout", IDTokenHint: "hint", ExpiresAt: time.Now().Add(time.Hour).UTC()},
