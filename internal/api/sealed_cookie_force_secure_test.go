@@ -106,3 +106,104 @@ func TestWriteSealedCookieForcesSecureForCrossSiteSpecs(t *testing.T) {
 		})
 	}
 }
+
+// cookieCaptureCtx wraps a fiber.Ctx and intercepts Cookie() calls, recording
+// the *fiber.Cookie exactly as the caller constructed it, before delegating
+// to the real Ctx. This is required to pin clearSealedCookie's own Secure
+// computation: Fiber's Res.Cookie() (res.go) forces Secure=true on any
+// SameSite=None cookie unconditionally, before the Set-Cookie header is ever
+// built, so the wire-level response cannot tell "our code computed
+// Secure=true" apart from "Fiber overrode it on our behalf" — confirmed by
+// running this suite's naive response-only version against the unfixed
+// clearSealedCookie: it stayed green. Capturing pre-delegation observes the
+// value the production code itself set.
+type cookieCaptureCtx struct {
+	fiber.Ctx
+	captured *fiber.Cookie
+}
+
+func (c *cookieCaptureCtx) Cookie(cookie *fiber.Cookie) {
+	// Snapshot a copy before delegating: Fiber's real Res.Cookie() mutates
+	// this same *fiber.Cookie in place (cookie.Secure = true for
+	// SameSite=None), so storing the pointer and reading it after
+	// delegation would observe Fiber's post-mutation value instead of the
+	// one clearSealedCookie computed.
+	snapshot := *cookie
+	c.captured = &snapshot
+	c.Ctx.Cookie(cookie)
+}
+
+// TestClearSealedCookieForcesSecureForCrossSiteSpecs mirrors
+// TestWriteSealedCookieForcesSecureForCrossSiteSpecs above, for
+// clearSealedCookie. The write path sets
+// `Secure: handler.cookieSecure || spec.forceSecure`; clearSealedCookie set
+// only `Secure: handler.cookieSecure`, so under COOKIE_SECURE=false clearing
+// a forced (SameSite=None) cookie would compute Secure=false — a clear
+// instruction a browser drops instead of honoring, leaving the stale
+// cross-site cookie in place. See the cookieCaptureCtx doc above for why
+// this must assert on the captured pre-Fiber value, not just the emitted
+// response.
+func TestClearSealedCookieForcesSecureForCrossSiteSpecs(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		spec       sealedCookieSpec
+		wantSecure bool
+	}{
+		"oidc state (cross-site, forced)":  {spec: oidcStateCookieSpec, wantSecure: true},
+		"oidc stepup (cross-site, forced)": {spec: oidcStepupCookieSpec, wantSecure: true},
+		"auth (same-site, not forced)":     {spec: authCookieSpec, wantSecure: false},
+	}
+
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			// cookieSecure=false is the whole point: on a deployment without
+			// COOKIE_SECURE, clearing a forced spec must still compute
+			// Secure, or the browser drops the SameSite=None clear cookie
+			// outright, leaving the stale cookie in place instead of expiring it.
+			handler := &Handler{
+				secretKey:    []byte("0123456789abcdef0123456789abcdef"),
+				cookieSecure: false,
+			}
+
+			var captured *fiber.Cookie
+			app := fiber.New()
+			app.Get("/clear", func(c fiber.Ctx) error {
+				capture := &cookieCaptureCtx{Ctx: c}
+				handler.clearSealedCookie(capture, testCase.spec)
+				captured = capture.captured
+				return c.SendStatus(fiber.StatusNoContent)
+			})
+
+			response, err := app.Test(httptest.NewRequest(http.MethodGet, "/clear", nil), testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("clear request: %v", err)
+			}
+			defer func() { _ = response.Body.Close() }()
+
+			if captured == nil {
+				t.Fatalf("expected clearSealedCookie to call c.Cookie for %s", testCase.spec.name)
+			}
+			// The load-bearing assertion: the Secure value clearSealedCookie
+			// itself computed, observed before Fiber's SameSite=None
+			// enforcement can mask a missing `|| spec.forceSecure`.
+			if captured.Secure != testCase.wantSecure {
+				t.Fatalf("%s: clearSealedCookie set Secure=%v, want %v (cookieSecure=false, forceSecure=%v)",
+					testCase.spec.name, captured.Secure, testCase.wantSecure, testCase.spec.forceSecure)
+			}
+
+			// The browser-facing outcome, pinned alongside the mechanism:
+			// a cleared cross-site sealed cookie is never emitted without
+			// Secure.
+			cookie := responseCookie(response.Cookies(), testCase.spec.name)
+			if cookie == nil {
+				t.Fatalf("expected a %s cookie to be written", testCase.spec.name)
+			}
+			if cookie.Secure != testCase.wantSecure {
+				t.Fatalf("%s: emitted Secure=%v, want %v", testCase.spec.name, cookie.Secure, testCase.wantSecure)
+			}
+		})
+	}
+}

@@ -606,3 +606,48 @@ jobs:
           docker exec "$cid" /app/ovumcy healthcheck
 
           echo "image smoke OK: healthz + login + static ($asset) + in-container healthcheck"
+
+  publish-image:
+    # Publishes `ghcr.io/<repo>:latest` (plus `main` and `sha-<short>`) for the
+    # commit now on `main`. The publish used to be its own push-triggered
+    # workflow, which put it in a race with the very checks meant to judge that
+    # commit — and it won: `:latest` was anonymously pullable before `test`,
+    # `e2e`, `image-smoke` or the Trivy scans had reported. Branch protection
+    # guards the merge, not the commit the merge produces, so nothing else
+    # covered this.
+    #
+    # `needs:` cannot cross workflow boundaries, so the gate has to live here,
+    # in the workflow that owns those jobs, and the publish is reached by
+    # calling the workflow that already publishes release tags. The scans in
+    # security.yml still cannot be depended on from here; the called workflow
+    # scans the exact image it is about to push instead, with the same gate as
+    # the required `trivy-image` check.
+    #
+    # `:latest` therefore now trails a push to `main` by a full CI run instead
+    # of appearing within a couple of minutes, and stays on the previous commit
+    # when any of these jobs fails. That is the intended trade.
+    needs:
+      - test
+      - race
+      - e2e
+      - e2e-postgres-smoke
+      - image-smoke
+    # Never on a pull request, and never for the `release: published` event —
+    # release tags publish from their own tag push, through the same workflow.
+    # `workflow_dispatch` on `main` is kept as the manual re-publish path, gated
+    # the same way, since the Docker Image workflow no longer accepts one.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # A caller cannot grant a called workflow more than it holds, so this must
+    # match the permissions the publish job declares.
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/docker-image.yml
+    # Passed explicitly rather than with `secrets: inherit`: the publish job
+    # needs exactly these two, for authenticated base-image pulls.
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

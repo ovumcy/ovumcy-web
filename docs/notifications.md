@@ -263,6 +263,11 @@ scheduler) once daily at a server-local hour and most or all of your owners
 have not yet had their timezone captured, that hour is effectively "09:00
 server time" for everyone until each owner's browser records its timezone.
 
+The [calendar feed](#3-calendar-ics-subscription) resolves "today" by the same
+two rules, so a prediction never lands on different days in the two channels;
+its fallback is the timezone of the request that fetched it, which for a
+calendar client (it sends no browser timezone) is the server's local timezone.
+
 ### Security notes
 
 Operator-relevant summary (the full, test-backed claim list lives in
@@ -377,8 +382,10 @@ authenticated resource: it is generated with cryptographic randomness, stored
 only as a hashed verifier (never recoverable from the database), shown to the
 owner exactly once, and revocable at any time by rotating or turning the feed
 off. The stored verifier is keyed by `SECRET_KEY`, so **rotating that secret
-disarms every armed feed**: subscribed calendar clients start receiving `404`
-until each owner generates a fresh subscribe URL from Settings. Plan a secret
+disarms every armed feed**: current rows refuse outright (their keyed MAC no
+longer matches), rows armed before migration 032 are disarmed by a boot-time
+rotation check, and subscribed calendar clients start receiving `404` until
+each owner generates a fresh subscribe URL from Settings. Plan a secret
 rotation accordingly — it is the same class of consequence rotation already has
 for 2FA secrets and stored webhook URLs. The full rationale and test-backed
 invariants live in

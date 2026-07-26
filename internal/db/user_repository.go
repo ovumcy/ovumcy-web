@@ -76,6 +76,32 @@ func (repo *UserRepository) ExistsByNormalizedEmail(ctx context.Context, email s
 	return matched > 0, nil
 }
 
+// ExistsByNormalizedEmailExcludingUser reports whether any user OTHER than
+// excludeUserID already answers to the normalized email. The boot-time email
+// renormalizer needs the self-exclusion: rewriting a row whose stored value
+// differs from the canonical form only by case or whitespace would otherwise
+// see the row itself as the "conflict" and skip the repair.
+func (repo *UserRepository) ExistsByNormalizedEmailExcludingUser(ctx context.Context, email string, excludeUserID uint) (bool, error) {
+	var count int64
+	err := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("lower(trim(email)) = ? AND id != ?", email, excludeUserID).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// RenormalizeUserEmail rewrites one user's stored email to its canonical form
+// under a compare-and-set on the previous value: if the row changed between
+// the read and this write, zero rows match and the caller sees changed=false
+// instead of clobbering a concurrent update. It deliberately does not bump
+// auth_session_version — the mailbox identity is unchanged, only its stored
+// spelling; this is a repair, not a credential rotation.
+func (repo *UserRepository) RenormalizeUserEmail(ctx context.Context, userID uint, fromEmail string, toEmail string) (bool, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND email = ?", userID, fromEmail).
+		Update("email", toEmail)
+	return result.RowsAffected == 1, result.Error
+}
+
 func (repo *UserRepository) Create(ctx context.Context, user *models.User) error {
 	err := repo.database.WithContext(ctx).Create(user).Error
 	return classifyUserCreateError(err)
@@ -282,6 +308,33 @@ func (repo *UserRepository) ClearCalendarFeedToken(ctx context.Context, userID u
 		"calendar_feed_verifier_hash": nil,
 		"calendar_feed_verifier_mac":  nil,
 	}).Error
+}
+
+// DisarmCalendarFeedTokensWithoutMAC clears the feed-token columns of every row
+// that is armed (non-empty selector) but carries NO verifier MAC — the rows
+// minted before migration 032, whose bcrypt hash verifies independently of
+// SECRET_KEY. The boot-time rotation sentinel calls it when the calendar-feed
+// key epoch changes: for every other armed row the rotated key already turns
+// MAC verification into a hard refusal, so this narrow predicate is exactly the
+// set that would otherwise SURVIVE the rotation — and be silently re-armed
+// under the new key by the first successful bcrypt poll's MAC backfill.
+//
+// Rows that do carry a MAC are deliberately left in place: they fail closed on
+// their own, and the narrow predicate keeps the blast radius of a boot with a
+// mistyped SECRET_KEY as small as the revocation rule allows (only legacy rows
+// are irreversibly disarmed; the operator runbook calls this out).
+//
+// Like every feed-token write it does not bump auth_session_version: a feed
+// capability is not a login credential. The row count feeds the startup log.
+func (repo *UserRepository) DisarmCalendarFeedTokensWithoutMAC(ctx context.Context) (int64, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("calendar_feed_selector IS NOT NULL AND calendar_feed_selector != '' AND (calendar_feed_verifier_mac IS NULL OR calendar_feed_verifier_mac = '')").
+		Updates(map[string]any{
+			"calendar_feed_selector":      nil,
+			"calendar_feed_verifier_hash": nil,
+			"calendar_feed_verifier_mac":  nil,
+		})
+	return result.RowsAffected, result.Error
 }
 
 // FindByCalendarFeedSelector resolves the single owner whose calendar_feed_selector
@@ -565,6 +618,17 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"unpredictable_cycle":             false,
 			"long_period_warning_cycle_start": nil,
 			"last_period_start":               nil,
+			// users.timezone is the owner's last observed IANA zone, written from
+			// the request (api.UpdateTimezone) and read by the request-free
+			// reminder pass. It is a coarse location signal inferred from the
+			// owner's browser, so a clear-data wipe must not leave it standing
+			// when every other preference resets. Empty string is the value a
+			// fresh account carries: migration 026 adds the column with no
+			// DEFAULT and models.User.Timezone is a plain string with no gorm
+			// default, so the zero value is what both the schema and a new row
+			// agree on. The next request re-detects the zone and persists it
+			// again, so the reset costs nothing but the stale value.
+			"timezone": "",
 			// Webhook notification settings (issue #124) are owner data: a
 			// clear-data wipe disarms delivery, clears the encrypted endpoint,
 			// resets the shared lead window to its default, and clears the
@@ -619,13 +683,12 @@ func (repo *UserRepository) DeleteAccountAndRelatedData(ctx context.Context, use
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCIdentity{}).Error; err != nil {
 			return err
 		}
-		// oidc_logout_states rows minted since migration 031 carry the owner's
-		// user_id, so erase them explicitly here alongside the other user-scoped
-		// tables. Rows created before 031 have a NULL user_id and are not matched:
-		// they carry no PII beyond what the OIDC provider already holds, are
-		// inaccessible without the original session cookie, and age out via their
-		// own TTL (services.defaultOIDCLogoutStateTTL, ~7 days) plus the
-		// best-effort expired-row purge below.
+		// oidc_logout_states rows carry the owner's user_id (migration 031), so
+		// erase them explicitly here alongside the other user-scoped tables. The
+		// rows written before 031 had a NULL user_id that this predicate could
+		// never match, leaving an id_token_hint behind for up to the state TTL
+		// after erasure — migration 033 deleted them, so every row in the table is
+		// now attributable and this delete covers all of them.
 		if err := tx.Where("user_id = ?", userID).Delete(&models.OIDCLogoutState{}).Error; err != nil {
 			return err
 		}

@@ -259,7 +259,7 @@ Treat the application secret as part of the deployment identity, whether you pas
 - Restoring SQLite data with a different application secret is valid, but users should expect a fresh sign-in and new sealed-cookie state.
 - Rotating the secret on a database with TOTP-enabled accounts will leave their `users.totp_secret` ciphertexts undecryptable; affected users must sign in with their recovery code (or have the operator run `ovumcy reset-password <email>`) and re-enrol TOTP under the new secret.
 - Rotation also breaks the **other** field-encrypted column, `users.webhook_url`. The daily reminder pass fails safe rather than delivering to a garbage target: it skips that owner (logging only the owner id) and keeps going for everyone else. Nothing surfaces in the UI, so reminders simply stop for those accounts until each owner re-saves their endpoint in Settings.
-- Rotation **disarms armed calendar (`.ics`) feeds**. The feed verifier is a keyed MAC derived from the application secret, and a MAC that no longer matches is refused outright — deliberately never re-checked against the row's older bcrypt hash. Subscribed calendar clients get `404` until each owner generates a fresh subscribe URL from Settings. Plan a rotation as a "re-issue the feed URLs" event, the same way you plan it as a "re-enrol TOTP" event.
+- Rotation **disarms armed calendar (`.ics`) feeds**. The feed verifier is a keyed MAC derived from the application secret, and a MAC that no longer matches is refused outright — deliberately never re-checked against the row's older bcrypt hash. Subscribed calendar clients get `404` until each owner generates a fresh subscribe URL from Settings. Plan a rotation as a "re-issue the feed URLs" event, the same way you plan it as a "re-enrol TOTP" event. Feeds armed on versions before the MAC landed (pre-migration-032 rows) are disarmed by the first start under the new secret — the startup log prints `SECRET_KEY rotation detected: N legacy calendar feed(s) disarmed`. Two sharp edges: the detection baseline is recorded on the first boot after upgrading to the release that introduced it, so a rotation performed **in that same maintenance window** is not detectable — boot the upgrade once first, or have owners revoke/rotate feeds manually; and starting the app with a mistyped `SECRET_KEY` counts as a rotation, permanently disarming those legacy rows.
 - See the *SECRET_KEY Usage Map* section in [SECURITY.md](../SECURITY.md) for the per-subsystem impact table these three bullets summarize.
 - **If the secret is lost entirely** (no backup, no way to recover the old value), this is worse than a planned rotation: there is no key to roll forward from, so every `users.totp_secret` ciphertext is permanently unrecoverable — not just temporarily undecryptable — because the encryption key is derived from `SECRET_KEY` via HKDF with no escrow copy stored anywhere. All existing sealed cookies and sessions invalidate the same as with a rotation. Any 2FA-enabled account can still recover via its recovery code and TOTP re-enrolment. But an account with `local_auth_enabled=false` (OIDC-only) that also has no retained recovery code has no self-service path back in at all; it needs an operator to run `ovumcy reset-password <email>` to regain access. Treat total secret loss as a data-loss event, not a rotation, in your incident runbook.
 - Do not paste the application secret, backup archives, or certificate material into issue trackers, chat logs, or shared shell history.
@@ -472,6 +472,15 @@ Raising the header buffer on your reverse proxy will not help: the example stack
 its own defaults, which are more generous than the app's, so a request that the proxy accepts can
 still be refused behind it. The fix is on the cookie side, not the proxy side.
 
+### An account cannot sign in after upgrading: email stored in a legacy form
+
+Registration and sign-in used to accept a full RFC 5322 form (`jane doe <jane@example.com>`) and store it verbatim; sign-in input is now normalized to the bare address only, so such stored rows would never match again. The first boot after upgrading repairs them automatically: each is rewritten to its bare parsed address, and the startup log reports `auth email repair: N stored email(s) rewritten to their bare address`.
+
+Two cases are left untouched, counted in the same log line, and cannot sign in until resolved:
+
+- another account already answers to the same bare address (two accounts on one mailbox — previously possible because the duplicate check compared stored forms): the oldest account keeps the address; review the leftover with `ovumcy users list` (it shows the stored legacy form) and remove or re-home it deliberately — the repair never deletes anything;
+- the stored value cannot be reduced to a plain address at all (for example a quoted local part).
+
 ## Common Operator Scenarios
 
 - Moving from local/private to public HTTPS:
@@ -479,7 +488,7 @@ still be refused behind it. The fix is on the cookie side, not the proxy side.
 - Changing the proxy subnet or host:
   update the Docker subnet or proxy IP and `TRUSTED_PROXIES` together; treating only one side as changed is a common source of broken real-client IP handling.
 - Rotating the application secret:
-  treat it as planned maintenance; active sessions and sealed cookies will stop working, which is expected.
+  treat it as planned maintenance; active sessions and sealed cookies will stop working, which is expected — and that is only the visible tip. The full per-domain impact (2FA secrets, stored webhook URLs, calendar feeds of every generation) with recovery steps lives in [Secret Handling and Rotation](#secret-handling-and-rotation).
 - Seeing healthy containers but a failing public URL:
   check DNS, certificate mounts, and proxy config before changing application data or restoring backups.
 

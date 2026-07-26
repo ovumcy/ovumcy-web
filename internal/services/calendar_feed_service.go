@@ -79,6 +79,10 @@ func NewCalendarFeedService(users CalendarFeedUserStore, days CalendarFeedDayRea
 // generic 500 — never a body that distinguishes it from the 404 path in a way
 // that leaks token state.
 //
+// location is the FALLBACK zone only: the resolved owner's persisted timezone
+// decides which calendar day the feed renders, and the caller's location is used
+// only when that column is empty or unusable (see the resolution comment below).
+//
 // Timing-equalization (mirrors equalizeAuthCredentialsTiming): the verify path
 // pays exactly one keyed-MAC compare inside VerifyCalendarFeedToken. The
 // selector-miss path would otherwise short-circuit before any verifier work and
@@ -144,10 +148,22 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 	// Verified. Every read below is scoped strictly to the resolved user.ID —
 	// the request carried no user id, only the token, so the owner boundary is
 	// exactly the row the token resolved to.
-	feedLocation := location
-	if feedLocation == nil {
-		feedLocation = time.UTC
+	//
+	// "Today" resolves in the OWNER's persisted timezone, not the transport's.
+	// The location the api layer passes in is the ordinary request chain
+	// (X-Ovumcy-Timezone header -> ovumcy_tz cookie -> server zone), and a
+	// calendar client sends neither the header nor the cookie — so that chain
+	// always collapses to the server zone and would render an owner in a distant
+	// timezone a day off. users.timezone exists for exactly these request-free
+	// passes, and the sibling egress subsystem (the webhook notify pass) already
+	// resolves the owner's day through the same helper; sharing it keeps the two
+	// from disagreeing about which calendar day the owner is on. The passed-in
+	// location stays the fallback for an owner whose timezone was never captured.
+	requestLocation := location
+	if requestLocation == nil {
+		requestLocation = time.UTC
 	}
+	feedLocation := resolveOwnerLocation(user.Timezone, requestLocation)
 	today := DateAtLocation(now, feedLocation)
 	from := today.AddDate(-calendarFeedStatsWindowYears, 0, 0)
 	logs, err := service.days.FetchLogsForUser(ctx, user.ID, from, today, feedLocation)

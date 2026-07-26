@@ -27,10 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     against the bcrypt hash. Subscribed calendar clients receive `404` until each
     owner generates a fresh subscribe URL from Settings — the same class of
     consequence rotation already had for 2FA secrets and stored webhook URLs.
+    Feeds armed before this release, which a MAC mismatch cannot reach (their
+    bcrypt hash never depended on the key), are disarmed by the boot-time check
+    described under *Security* below.
   - **Existing subscriptions keep working across the upgrade.** A feed armed
     before this release has no MAC (it cannot be derived from a hash) and keeps
     verifying through bcrypt; its MAC is written in during the first request that
-    presents the correct token, after which it takes the fast path.
+    presents the correct token, after which it takes the fast path. Only a
+    `SECRET_KEY` rotation (or a mistyped key at boot) disarms them — see
+    *Security* below.
 
 - **A request whose headers overflow the read buffer now answers with a stable error
   key.** The transport-level `431` previously returned Fiber's bare English string;
@@ -43,6 +48,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are ~450 B on a normal signed-in request. See *Troubleshooting* in
   [docs/self-hosted.md](docs/self-hosted.md).
 
+- **The container image is published only after the commit's own CI passes.** A
+  push to `main` used to start the publish workflow alongside the test, e2e and
+  scan workflows for the same commit, and the publish normally finished first:
+  `ghcr.io/ovumcy/ovumcy-web:latest` was anonymously pullable before anything had
+  judged that commit — including the image scan that could still fail it. Branch
+  protection guards the merge, not the commit the merge produces, so nothing else
+  covered this. Publication is now the last job of the CI run, behind `test`,
+  `race`, `e2e`, `e2e-postgres-smoke` and `image-smoke`, and it scans the exact
+  image it is about to push before the first byte reaches the registry.
+
+  Operator-visible effect: `:latest` now trails a push to `main` by a full CI run
+  instead of a couple of minutes, and stays on the previous commit whenever a
+  check fails. Release tags publish from their own tag push as before, now with
+  the same pre-publish scan, and the signer identity to verify with `cosign` is
+  unchanged for both — the commands in
+  [SECURITY.md](SECURITY.md#verifying-release-authenticity) still apply as
+  written.
+
 ### Fixed
 
 - **Two-factor and SSO-link errors are localized again.** A wrong 2FA code showed
@@ -51,6 +74,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its own error strings. The translations existed in all six locales the whole
   time; nothing connected them to the errors the pages were reporting. Affects
   displayed text only — no flow, status code, or rate limit changes.
+
+- **Email sign-up and sign-in accept only a plain address, and legacy rows are
+  repaired at boot.** The old input rule validated a full RFC 5322 form
+  (`jane doe <jane@example.com>`) but stored the whole string verbatim, so such
+  an account could never sign in with its plain address and a second account on
+  the same mailbox could slip past the duplicate check. Input is now strictly
+  the bare address (display names, comments, and quoted local parts are
+  rejected as invalid). On the first start after upgrading, previously stored
+  decorated rows are rewritten to their bare parsed address — the startup log
+  reports the count; a row whose bare address is already another account's, or
+  that cannot be reduced to a plain address, is left untouched for operator
+  review. See *Troubleshooting* in [docs/self-hosted.md](docs/self-hosted.md).
+- **Deleting an account no longer leaves an SSO logout reference behind for a
+  week.** `oidc_logout_states` gained its `user_id` column in migration `031`, so
+  rows written before that upgrade carry no owner and the account-deletion path
+  could never match them. On an instance that ran OIDC before `031`, an
+  `id_token_hint` minted for an account outlived that account's erasure and sat
+  in the table until its own 7-day TTL expired. Migration `033` deletes every
+  unattributed row on both engines, so erasure is complete when it is requested
+  rather than up to a week later. Attributed rows are untouched, and a logout
+  that finds no stored state still completes locally.
+
+- **"Clear data" now also resets the stored timezone.** Every other preference
+  returned to its default while `users.timezone` kept the last zone the owner's
+  browser reported — a coarse location signal left standing by the one gesture
+  meant to wipe the account clean. It now resets with the rest. Nothing else
+  changes: the next request re-detects the zone and stores it again, so reminder
+  scheduling is unaffected, and account identity (email, password, display name,
+  2FA, SSO links) is preserved exactly as before.
+- **A subscribed calendar could show predicted days shifted by a day.** The
+  `.ics` feed decided which day was "today" from the timezone of the request
+  that fetched it, but a calendar client sends neither the timezone header nor
+  the cookie that chain reads, so every poll fell back to the server's timezone.
+  An owner whose timezone differed from the server's could therefore see a
+  predicted period or ovulation day appear or drop off a day early or late — and
+  disagree with the webhook reminder for the very same prediction, which already
+  used the owner's stored timezone. The feed now resolves "today" in the owner's
+  stored timezone as well, falling back to the request/server zone only for an
+  owner whose timezone has never been captured. See
+  [docs/notifications.md](docs/notifications.md).
+
+### Security
+
+- **A `SECRET_KEY` rotation now revokes calendar-feed subscriptions of every
+  generation.** Rows armed before migration 032 carry only a bcrypt verifier
+  hash, which does not depend on `SECRET_KEY` — a rotated key left those
+  subscribe URLs verifying, and the first successful poll would even write a
+  fresh keyed MAC under the new key, fully re-arming a leaked URL the rotation
+  was meant to kill. The server now keeps an irreversible key-epoch marker in
+  `app_state` and, on the first boot under a changed key (or a bumped feed-MAC
+  label set), disarms every armed feed row that has no MAC before accepting
+  requests, logging the count. The first boot after upgrading records the
+  baseline without disarming anything; rotating in that same maintenance window
+  is therefore not detectable — boot the upgrade once before rotating, or have
+  owners revoke feeds manually (see [docs/self-hosted.md](docs/self-hosted.md)
+  → Secret Handling and Rotation).
+
+- **Clearing a cross-site OIDC cookie now forces `Secure`, matching the write
+  path.** `ovumcy_oidc_auth` and `ovumcy_oidc_stepup` are `SameSite=None`, and
+  the write path has always forced `Secure` regardless of `COOKIE_SECURE`
+  (browsers drop a `SameSite=None` cookie without it); the clear path computed
+  `Secure` from `COOKIE_SECURE` alone, so under `COOKIE_SECURE=false` it would
+  have cleared them without `Secure` — a cookie the browser drops instead of
+  expiring. Unreachable today for two reasons outside this code: the boot
+  guard refuses `OIDC_ENABLED=true` with `COOKIE_SECURE=false`, and Fiber
+  itself forces `Secure` on any `SameSite=None` cookie regardless of the input
+  value. Closes a defense-in-depth gap where the invariant rested entirely on
+  those two external guarantees instead of its own.
 
 ## [1.9.2] - 2026-07-24
 
