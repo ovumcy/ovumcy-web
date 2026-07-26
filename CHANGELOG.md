@@ -173,6 +173,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   value. Closes a defense-in-depth gap where the invariant rested entirely on
   those two external guarantees instead of its own.
 
+### Internal
+
+- Browser coverage that cancelling a confirmation is inert now reaches deleting
+  a calendar day entry — where the action has no undo — and hiding a custom
+  symptom, instead of the calendar-feed settings flow alone. Each new test
+  records what the page put on the wire while the dialog was dismissed, asserts
+  nothing mutating was sent and the data survived a reload, and anchors that
+  against the same control accepted, which must still perform the action. The
+  dialog's own captions are asserted as rendered button text rather than only as
+  declared attributes.
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no
