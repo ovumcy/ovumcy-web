@@ -62,6 +62,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than up to a week later. Attributed rows are untouched, and a logout
   that finds no stored state still completes locally.
 
+- **"Clear data" now also resets the stored timezone.** Every other preference
+  returned to its default while `users.timezone` kept the last zone the owner's
+  browser reported — a coarse location signal left standing by the one gesture
+  meant to wipe the account clean. It now resets with the rest. Nothing else
+  changes: the next request re-detects the zone and stores it again, so reminder
+  scheduling is unaffected, and account identity (email, password, display name,
+  2FA, SSO links) is preserved exactly as before.
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no

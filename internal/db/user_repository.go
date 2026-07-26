@@ -565,6 +565,17 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"unpredictable_cycle":             false,
 			"long_period_warning_cycle_start": nil,
 			"last_period_start":               nil,
+			// users.timezone is the owner's last observed IANA zone, written from
+			// the request (api.UpdateTimezone) and read by the request-free
+			// reminder pass. It is a coarse location signal inferred from the
+			// owner's browser, so a clear-data wipe must not leave it standing
+			// when every other preference resets. Empty string is the value a
+			// fresh account carries: migration 026 adds the column with no
+			// DEFAULT and models.User.Timezone is a plain string with no gorm
+			// default, so the zero value is what both the schema and a new row
+			// agree on. The next request re-detects the zone and persists it
+			// again, so the reset costs nothing but the stale value.
+			"timezone": "",
 			// Webhook notification settings (issue #124) are owner data: a
 			// clear-data wipe disarms delivery, clears the encrypted endpoint,
 			// resets the shared lead window to its default, and clears the
