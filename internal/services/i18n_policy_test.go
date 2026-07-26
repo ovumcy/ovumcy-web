@@ -25,17 +25,21 @@ func TestAuthErrorTranslationKeyCoversTOTPChallenge(t *testing.T) {
 	}
 }
 
-// TestAuthErrorTranslationKeysResolveInEveryLocale is the guard for the defect
-// CLASS, not just the four entries above: a mapping is only worth anything if the
+// assertMappedTranslationKeysResolveInEveryLocale is the guard for the defect
+// CLASS, not just individual entries: a mapping is only worth anything if the
 // key it points at actually exists in the locale files. A typo, a renamed locale
 // entry, or a new mapping invented without its translations all degrade silently
-// to the raw key on screen, which is precisely how the TOTP gap survived.
+// to the raw key on screen, which is precisely how the TOTP gap in
+// authErrorTranslationKeys survived until #287. mapName is included in every
+// failure so a red build names the map, the locale, and the missing key together.
 //
 // internal/i18n is imported by this TEST only — the services layer itself keeps
 // no dependency on it, and i18n depends on nothing inside the repo, so there is
 // no cycle and no production coupling.
-func TestAuthErrorTranslationKeysResolveInEveryLocale(t *testing.T) {
-	manager, err := i18n.NewManager("en")
+func assertMappedTranslationKeysResolveInEveryLocale(t *testing.T, mapName string, translationKeys map[string]string) {
+	t.Helper()
+
+	manager, err := i18n.NewManager(i18n.LangEN)
 	if err != nil {
 		t.Fatalf("init i18n manager: %v", err)
 	}
@@ -47,12 +51,29 @@ func TestAuthErrorTranslationKeysResolveInEveryLocale(t *testing.T) {
 
 	for _, language := range languages {
 		messages := manager.Messages(language)
-		for source, key := range authErrorTranslationKeys {
+		for source, key := range translationKeys {
 			if value, ok := messages[key]; !ok || value == "" {
-				t.Errorf("locale %q has no entry for %q (mapped from error spec %q): the message would render as the raw key", language, key, source)
+				t.Errorf("%s: locale %q has no entry for %q (mapped from spec %q): the message would render as the raw key", mapName, language, key, source)
 			}
 		}
 	}
+}
+
+// TestAuthErrorTranslationKeysResolveInEveryLocale is the #287 regression:
+// every authErrorTranslationKeys value must resolve in every locale, or the
+// mapped spec renders as a raw key instead of translated text.
+func TestAuthErrorTranslationKeysResolveInEveryLocale(t *testing.T) {
+	assertMappedTranslationKeysResolveInEveryLocale(t, "authErrorTranslationKeys", authErrorTranslationKeys)
+}
+
+// TestSettingsStatusTranslationKeysResolveInEveryLocale is the
+// settingsStatusTranslationKeys sibling of the auth sweep above:
+// authErrorTranslationKeys got a locale-resolution guard when #287 was fixed,
+// but settingsStatusTranslationKeys is the identically-shaped table a few
+// lines below it in i18n_policy.go and never got the same guard — a stale or
+// typo'd entry here could reach every locale without any test noticing.
+func TestSettingsStatusTranslationKeysResolveInEveryLocale(t *testing.T) {
+	assertMappedTranslationKeysResolveInEveryLocale(t, "settingsStatusTranslationKeys", settingsStatusTranslationKeys)
 }
 
 func TestAuthErrorTranslationKey(t *testing.T) {
