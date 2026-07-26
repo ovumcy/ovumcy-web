@@ -186,13 +186,29 @@ jobs:
         run: mkdir -p .tmp/security
 
       - name: Pull Trivy image
-        # One pull covers both scan steps below — they reuse the cached image.
+        # Covers the scan step immediately below (same cached image). The SBOM
+        # step further down pulls again — see its own comment — because it must
+        # still run even if this pull's retries are exhausted.
         uses: ./.github/actions/docker-pull-retry
         with:
           image: ${{ env.TRIVY_IMAGE }}
 
       - name: Run Trivy image scan
         run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "${{ github.workspace }}:/work" -w /work "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output .tmp/security/trivy-image.sarif --exit-code 1 ovumcy-security:${{ github.sha }}
+
+      - name: Pull Trivy image for SBOM
+        # Generate CycloneDX SBOM below runs `if: always()` so it still executes
+        # when the scan step above fails on findings (--exit-code 1) or when the
+        # pull step above never completed (retries exhausted). The latter used to
+        # fall straight through to `docker run`'s own single, un-retried implicit
+        # pull, which is what let a Docker Hub timeout cascade into the SARIF and
+        # artifact upload steps (run 30202113726). Repeating the retrying pull
+        # here is a cache-hit no-op on the common path and a real retry on the
+        # failure path.
+        if: always()
+        uses: ./.github/actions/docker-pull-retry
+        with:
+          image: ${{ env.TRIVY_IMAGE }}
 
       - name: Generate CycloneDX SBOM
         if: always()
