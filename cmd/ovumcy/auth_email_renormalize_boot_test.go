@@ -11,9 +11,11 @@ import (
 )
 
 // TestMustRenormalizeAuthEmailsAcrossBoots drives the real boot wrapper
-// against a migrated SQLite database: the first boot writes the done-marker,
-// a second boot leaves it byte-identical. (Row-level repair semantics are
-// proven in internal/db; the pass logic in internal/services.)
+// against a migrated SQLite database seeded with one legacy decorated row: the
+// first boot repairs it (and prints the startup line — the log branch is part
+// of the wrapper's contract), writes the done-marker, and a second boot leaves
+// the marker byte-identical. (Full row-level repair semantics are proven in
+// internal/db; the pass logic in internal/services.)
 func TestMustRenormalizeAuthEmailsAcrossBoots(t *testing.T) {
 	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "email-renormalize-boot.db"))
 	if err != nil {
@@ -22,7 +24,26 @@ func TestMustRenormalizeAuthEmailsAcrossBoots(t *testing.T) {
 	t.Cleanup(func() { closeDatabase(database) })
 	repositories := db.NewRepositories(database)
 
+	legacy := models.User{
+		Email:               "boot drill <boot-legacy@example.com>",
+		PasswordHash:        "hash",
+		RecoveryCodeHash:    "recovery",
+		Role:                models.RoleOwner,
+		LocalAuthEnabled:    true,
+		OnboardingCompleted: true,
+		CycleLength:         28,
+		PeriodLength:        5,
+	}
+	if err := repositories.Users.Create(context.Background(), &legacy); err != nil {
+		t.Fatalf("seed legacy user: %v", err)
+	}
+
 	mustRenormalizeAuthEmails(repositories)
+
+	repaired, err := repositories.Users.FindByNormalizedEmail(context.Background(), "boot-legacy@example.com")
+	if err != nil || repaired.ID != legacy.ID {
+		t.Fatalf("first boot must repair the legacy row (err=%v, id=%d, want %d)", err, repaired.ID, legacy.ID)
+	}
 	first, found, err := repositories.AppState.Get(context.Background(), models.AppStateKeyAuthEmailRenormalizeV1)
 	if err != nil || !found || first == "" {
 		t.Fatalf("first boot must record the done-marker (found=%v, err=%v, value=%q)", found, err, first)

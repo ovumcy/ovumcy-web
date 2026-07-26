@@ -81,8 +81,9 @@ func (s *stubRenormalizerUserStore) RenormalizeUserEmail(_ context.Context, user
 // semantics: a decorated row is reduced to its bare parsed address, a
 // case-only row is lowered (the self-exclusion keeps it from colliding with
 // itself), the second account on the same mailbox is skipped as a conflict
-// (oldest wins — list order), a quoted-local row is counted unrenormalizable,
-// and the done-marker is written after the pass.
+// (oldest wins — list order), a quoted-local row and an outright unparseable
+// value are both counted unrenormalizable, and the done-marker is written
+// after the pass.
 func TestAuthEmailRenormalizerRewritesDecoratedRowsOldestFirst(t *testing.T) {
 	appState := &stubRenormalizerAppState{}
 	users := &stubRenormalizerUserStore{
@@ -92,6 +93,7 @@ func TestAuthEmailRenormalizerRewritesDecoratedRowsOldestFirst(t *testing.T) {
 			{ID: 3, Email: "SHARED2@EXAMPLE.COM"},
 			{ID: 4, Email: "<shared@example.com>"},
 			{ID: 5, Email: `"a b"@example.com`},
+			{ID: 6, Email: "NOT AN EMAIL"},
 		},
 	}
 	renormalizer := NewAuthEmailRenormalizer(appState, users)
@@ -103,7 +105,7 @@ func TestAuthEmailRenormalizerRewritesDecoratedRowsOldestFirst(t *testing.T) {
 	if outcome.AlreadyDone {
 		t.Fatal("first run must not report AlreadyDone")
 	}
-	if outcome.Renormalized != 2 || outcome.SkippedConflicts != 1 || outcome.SkippedUnrenormalizable != 1 {
+	if outcome.Renormalized != 2 || outcome.SkippedConflicts != 1 || outcome.SkippedUnrenormalizable != 2 {
 		t.Fatalf("unexpected outcome %+v", outcome)
 	}
 	if len(users.calls) != 2 {

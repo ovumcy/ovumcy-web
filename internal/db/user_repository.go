@@ -83,12 +83,10 @@ func (repo *UserRepository) ExistsByNormalizedEmail(ctx context.Context, email s
 // see the row itself as the "conflict" and skip the repair.
 func (repo *UserRepository) ExistsByNormalizedEmailExcludingUser(ctx context.Context, email string, excludeUserID uint) (bool, error) {
 	var count int64
-	if err := repo.database.WithContext(ctx).Model(&models.User{}).
+	err := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("lower(trim(email)) = ? AND id != ?", email, excludeUserID).
-		Count(&count).Error; err != nil {
-		return false, err
-	}
-	return count > 0, nil
+		Count(&count).Error
+	return count > 0, err
 }
 
 // RenormalizeUserEmail rewrites one user's stored email to its canonical form
