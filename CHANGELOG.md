@@ -114,6 +114,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   owners revoke feeds manually (see [docs/self-hosted.md](docs/self-hosted.md)
   → Secret Handling and Rotation).
 
+- **Clearing a cross-site OIDC cookie now forces `Secure`, matching the write
+  path.** `ovumcy_oidc_auth` and `ovumcy_oidc_stepup` are `SameSite=None`, and
+  the write path has always forced `Secure` regardless of `COOKIE_SECURE`
+  (browsers drop a `SameSite=None` cookie without it); the clear path computed
+  `Secure` from `COOKIE_SECURE` alone, so under `COOKIE_SECURE=false` it would
+  have cleared them without `Secure` — a cookie the browser drops instead of
+  expiring. Unreachable today for two reasons outside this code: the boot
+  guard refuses `OIDC_ENABLED=true` with `COOKIE_SECURE=false`, and Fiber
+  itself forces `Secure` on any `SameSite=None` cookie regardless of the input
+  value. Closes a defense-in-depth gap where the invariant rested entirely on
+  those two external guarantees instead of its own.
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no
