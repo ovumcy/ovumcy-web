@@ -178,4 +178,6 @@ reverse-proxy stack, backups, and secrets) are documented in the
 [README](../README.md#architecture) and [`docs/self-hosted.md`](self-hosted.md).
 The pushed image is a shell-free `FROM scratch` runtime built from the repo-root
 `Dockerfile`; every published image is Cosign-signed and carries a SLSA
-build-provenance attestation and an SBOM.
+build-provenance attestation and an SBOM. Publication waits for the commit's own
+CI run and scans the exact image before pushing it, so a tag or `:latest` never
+reaches the registry ahead of the checks for the commit it was built from.

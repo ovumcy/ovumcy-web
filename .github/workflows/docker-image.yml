@@ -2,14 +2,35 @@ name: Docker Image
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Must stay identical to security.yml's TRIVY_IMAGE. The pre-publish scan
+  # below applies the same gate as the required `trivy-image` check to the exact
+  # image this job is about to push, so the two must not drift apart.
+  TRIVY_IMAGE: aquasec/trivy:0.68.2@sha256:05d0126976bdedcd0782a0336f77832dbea1c81b9cc5e4b3a5ea5d2ec863aca7
 
+# A push to `main` no longer starts this workflow directly. It used to, which
+# meant the publish job raced the test, e2e and scan jobs triggered by the same
+# push and normally beat them: `:latest` was publicly pullable before anything
+# had judged that commit, and a CRITICAL found by `trivy-image` minutes later
+# was already live. `:latest` now follows `main` through ci.yml's
+# `publish-image` job, which calls this workflow only once that commit's own
+# checks have passed — `needs:` cannot cross workflow boundaries, so the gate
+# has to live in the workflow that owns those jobs.
+#
+# Publishing stays in one workflow rather than being copied into ci.yml so that
+# release tags and `:latest` are built, scanned, signed and attested by the same
+# job, and so both keep the `docker-image.yml` keyless-signing identity that
+# SECURITY.md tells operators to verify (a reusable workflow signs under its own
+# ref, not the caller's).
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
-  workflow_dispatch:
+  workflow_call:
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -63,6 +84,44 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=sha
+
+      - name: Build runtime image for the pre-publish scan
+        # Single-arch load of the image the next step pushes: same Dockerfile,
+        # same BUILD_REVISION, so the scan below judges the published bytes
+        # rather than an approximation. The multi-arch build then reuses these
+        # layers from the GHA cache, so this costs a scan, not a second build.
+        # Only linux/amd64 is scanned — the same platform coverage the
+        # `trivy-image` check has today; `load: true` cannot hold a multi-arch
+        # index, and the runtime image is a static binary over a `scratch` base,
+        # so its package inventory does not vary by architecture.
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ovumcy-publish-scan:${{ github.sha }}
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Pull Trivy image
+        uses: ./.github/actions/docker-pull-retry
+        with:
+          image: ${{ env.TRIVY_IMAGE }}
+
+      - name: Scan the image before publishing it
+        # Same gate as security.yml's required `trivy-image` check — same
+        # scanner, severity threshold, `--ignore-unfixed` and `--exit-code 1`.
+        # That check lives in another workflow and so cannot be a `needs:` of
+        # this job; repeating the scan here against the exact artifact is what
+        # keeps an unscanned image from reaching the registry. Output is a table
+        # rather than SARIF because the Security tab entry for this commit
+        # already comes from `trivy-image`; a second upload under the same
+        # category would only overwrite it.
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "${{ env.TRIVY_IMAGE }}" image --scanners vuln --skip-version-check --severity HIGH,CRITICAL --ignore-unfixed --format table --exit-code 1 ovumcy-publish-scan:${{ github.sha }}
 
       - name: Build and push Docker image
         id: build

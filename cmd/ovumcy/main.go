@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os/signal"
 	"syscall"
@@ -13,6 +14,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/reminders"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"gorm.io/gorm"
 )
 
@@ -46,7 +48,11 @@ func main() {
 	config := mustLoadRuntimeConfig(location)
 	database := mustOpenDatabase(config.DatabaseConfig)
 	i18nManager := mustNewI18nManager(config.DefaultLanguage)
-	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(config.SecretKey), i18nManager, bootstrap.Options{
+	repositories := db.NewRepositories(database)
+	// Must run after mustOpenDatabase (migrations applied) and before any
+	// listener exists, so a feed poll can never race the revocation.
+	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
+	dependencies := bootstrap.BuildDependencies(repositories, []byte(config.SecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode: config.RegistrationMode,
 		OIDCConfig:       config.OIDC,
 		LoginAttempts:    bootstrap.AttemptLimit{Max: config.RateLimits.LoginMax, Window: config.RateLimits.LoginWindow},
@@ -142,6 +148,37 @@ func mustOpenDatabase(databaseConfig db.Config) *gorm.DB {
 		log.Fatalf("database init failed: %v", err)
 	}
 	return database
+}
+
+// mustEnforceCalendarFeedKeyRotation runs the boot-time calendar-feed
+// key-rotation sentinel: when SECRET_KEY (or the feed-MAC label set) changed
+// since the previous boot, it disarms the legacy pre-032 feed rows whose
+// key-independent bcrypt hashes would otherwise keep a leaked subscribe URL
+// alive across the rotation. The decision logic lives (tested) in
+// services.CalendarFeedRotationSentinel; this wrapper only wires repositories,
+// fails the boot hard on an error, and prints the operator-facing line.
+func mustEnforceCalendarFeedKeyRotation(repositories *db.Repositories, secretKey []byte) {
+	sentinel := services.NewCalendarFeedRotationSentinel(repositories.AppState, repositories.Users, secretKey)
+	outcome, err := sentinel.Enforce(context.Background())
+	if err != nil {
+		log.Fatalf("calendar-feed key-rotation check failed: %v", err) // codecov:ignore -- reachable only when the DB fails between migration and this first read
+	}
+	if message := calendarFeedRotationStartupMessage(outcome); message != "" {
+		log.Print(message)
+	}
+}
+
+// calendarFeedRotationStartupMessage renders the operator-facing startup line
+// for a detected rotation, and stays quiet ("") for the routine cases — first
+// boot and an unchanged key — so the startup banner is stable run to run.
+func calendarFeedRotationStartupMessage(outcome services.CalendarFeedRotationOutcome) string {
+	if !outcome.RotationDetected {
+		return ""
+	}
+	if outcome.DisarmedFeeds == 0 {
+		return "SECRET_KEY rotation detected: no legacy calendar feeds to disarm (armed feeds with a keyed MAC stop verifying on their own)"
+	}
+	return fmt.Sprintf("SECRET_KEY rotation detected: %d legacy calendar feed(s) disarmed; owners re-generate subscribe URLs from settings", outcome.DisarmedFeeds)
 }
 
 func mustNewI18nManager(defaultLanguage string) *i18n.Manager {
