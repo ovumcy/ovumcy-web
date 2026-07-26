@@ -330,11 +330,29 @@ func hostOnly(rawURL string) string {
 }
 
 // resolveOwnerLocation prefers the owner's persisted IANA timezone and falls
-// back to the injected server location when it is empty or invalid. It never
-// calls time.Now(); it only resolves a zone.
+// back to the injected location when it is empty or unusable. It never calls
+// time.Now(); it only resolves a zone.
+//
+// It is the single owner-timezone resolver for BOTH request-free egress passes —
+// the webhook notify pass and the .ics calendar feed — so the two can never
+// disagree about which calendar day an owner is on. Neither carries a request
+// timezone worth trusting (a cron pass has no request at all, and a calendar
+// client sends neither the timezone header nor the cookie), which is exactly the
+// case users.timezone is persisted for.
+//
+// The "Local" token is rejected by INPUT, mirroring api.parseRequestTimezone:
+// time.LoadLocation("Local") returns the server's own zone (time.Local) with no
+// error, so a stored "Local" would silently pin an owner to the server's
+// timezone instead of falling back. Only validated IANA names are ever written to
+// the column, so this is defense in depth against a hand-edited or restored row —
+// and it is checked on the input, not on the loaded zone's String(), because
+// time.Local stringifies to its real name (e.g. "UTC") whenever TZ is set.
 func resolveOwnerLocation(timezone string, fallback *time.Location) *time.Location {
 	name := strings.TrimSpace(timezone)
 	if name == "" {
+		return fallback
+	}
+	if strings.EqualFold(name, "Local") {
 		return fallback
 	}
 	loaded, err := time.LoadLocation(name)

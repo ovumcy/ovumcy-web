@@ -663,8 +663,15 @@ func TestAppendUniqueID(t *testing.T) {
 }
 
 // TestResolveOwnerLocationPrefersPersistedTimezone proves the per-owner timezone
-// resolution: a valid persisted IANA zone is used; an invalid one falls back to
-// the server location; an empty one falls back too.
+// resolution shared by both request-free egress passes (the webhook notify pass
+// and the .ics calendar feed): a valid persisted IANA zone is used; an invalid
+// one falls back to the injected location; an empty one falls back too.
+//
+// "Local" is a separate arm because it is the one bad value that does NOT fail to
+// load: time.LoadLocation("Local") returns time.Local with no error, so without an
+// input-side rejection a stored "Local" would pin the owner to the server's zone
+// instead of falling back. Identity with the fallback is asserted rather than a
+// name, since time.Local stringifies to the host's real zone name when TZ is set.
 func TestResolveOwnerLocationPrefersPersistedTimezone(t *testing.T) {
 	fallback := time.UTC
 
@@ -681,6 +688,11 @@ func TestResolveOwnerLocationPrefersPersistedTimezone(t *testing.T) {
 	}
 	if got := resolveOwnerLocation("   ", fallback); got != fallback {
 		t.Fatalf("empty persisted zone should fall back to server location, got %q", got.String())
+	}
+	for _, localToken := range []string{"Local", "local", " LOCAL "} {
+		if got := resolveOwnerLocation(localToken, fallback); got != fallback {
+			t.Fatalf("the %q token must fall back to the injected location, got %q", localToken, got.String())
+		}
 	}
 }
 
