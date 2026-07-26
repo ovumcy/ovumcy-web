@@ -193,8 +193,9 @@ components:
         generic status-class failure.
 
         Two rejections carry this envelope without belonging to any operation
-        below, because the server refuses them before routing: `413`
-        (`request_too_large`, body past the 16 MiB limit) and `431`
+        below, because the server refuses them before any operation runs: `413`
+        (`request_too_large`, body past the 16 MiB limit — wire size, and for a
+        compressed body its decompressed size too) and `431`
         (`request_headers_too_large`, request head past the read buffer). They
         are listed here rather than per-path — the request never reached an
         operation, so attaching them to one would misdescribe what happened.
@@ -1449,7 +1450,8 @@ paths:
             Payload exceeds the size or entry-count limit. Two independent caps
             produce two different keys: `import file too large` from the entry
             cap (20 000), and `request_too_large` from the 16 MiB body limit,
-            which the server enforces before the handler runs.
+            which the server enforces before the handler runs — on the wire body
+            and, when the request is compressed, on its decompressed size.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
