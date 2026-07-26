@@ -33,7 +33,7 @@ What Ovumcy persists per account and per record. All storage is in the operator'
 
 **`register_pickup_tokens`** — opaque single-use nonces for the post-register pickup flow, carrying a required `user_id` (not foreign-keyed) since creation. 5-minute TTL; rows also expire and become unreachable on their own.
 
-**`app_state`** — process-level key/value operational bookkeeping (migration 028), not scoped to any `user_id` and holding no personal or health data. Today's sole key records the built-in reminder scheduler's last-completed-run date, used for restart safety and current-day catch-up; the table is a general-purpose store, so future operational keys would land here too.
+**`app_state`** — process-level key/value operational bookkeeping (migration 028), not scoped to any `user_id` and holding no personal or health data. Its keys record things like the built-in reminder scheduler's last-completed-run date (restart safety and current-day catch-up); the table is a general-purpose store, so further operational keys land here as they appear.
 
 **Not stored**: analytics, telemetry, third-party identifiers, advertising attribution, error reports, or per-action audit history. Per-action security-event logging is **off by default** and can be toggled per deployment via `AUDIT_LOG_ENABLED` — see *Logging Policy* below.
 
