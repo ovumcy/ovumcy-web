@@ -27,6 +27,10 @@ type symptomPayload struct {
 	Color string `json:"color" form:"color"`
 }
 
+type totpChallengeInput struct {
+	Code string `json:"code" form:"code"`
+}
+
 type forgotPasswordInput struct {
 	Email        string `json:"email" form:"email"`
 	RecoveryCode string `json:"recovery_code" form:"recovery_code"`
