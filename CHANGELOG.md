@@ -88,6 +88,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Requests now carry a deadline, so work the caller abandoned stops.** Nothing
+  in the request path was bounded: fiber v3 hands a handler `context.Background()`
+  until something calls `SetContext`, so the ctx threaded handler → service →
+  repository had neither a deadline nor a cancellation, and `database/sql` waited
+  for a free connection indefinitely. fasthttp does not cancel a handler when the
+  client disconnects either, so abandoned work kept running — a burst of 120
+  concurrent day writes held an instance unready for **16.6 minutes** after the
+  last client had given up, answering `500` with latencies past 14 minutes, while
+  `/healthz` stayed green at 1 ms and the container kept reporting healthy. Every
+  request is now bounded at 60 seconds (matching the server's write timeout, and
+  far outside any legitimate request including a full-size import), and one that
+  outlives its budget answers `503` with the stable key `request_timeout` instead
+  of whatever internal `500` the domain that caught the expiry happened to map.
+
 - **`ovumcy reset-password` can be run without an interactive terminal.** It is
   the operator's documented way back in for an owner locked out by a
   `SECRET_KEY` rotation, or for an OIDC-only account with no retained recovery
