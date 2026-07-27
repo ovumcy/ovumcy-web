@@ -6,7 +6,7 @@ _Part of the [Ovumcy security policy](../../SECURITY.md)._
 
 Ovumcy does **not** emit per-action audit logs by default. The `AUDIT_LOG_ENABLED` environment variable controls the audit-event stream:
 
-- `AUDIT_LOG_ENABLED=false` (default) — the runtime emits no `security event:` lines. Go panics, startup configuration errors, and the Fiber request log remain enabled.
+- `AUDIT_LOG_ENABLED=false` (default) — the runtime emits no `security event:` lines. Everything else keeps writing: Go panics, startup configuration errors and warnings, the Fiber request log, and a small set of operational diagnostics described below.
 - `AUDIT_LOG_ENABLED=true` — the runtime emits per-action security-event lines to stderr via the Go standard `log` package. Each line includes the action name, outcome, request method, **sanitized** request path (concrete date parameters are replaced with `:date` and other identifiers are similarly masked), response format, and — for authenticated requests — `user_id` and role. Example:
 
   ```
@@ -22,3 +22,14 @@ If you enable `AUDIT_LOG_ENABLED=true`, plan retention and access control around
 The Fiber request log (`time | status | latency | method | path | error`) is independent of `AUDIT_LOG_ENABLED` and remains enabled in all configurations. It does not include `user_id` or authenticated-session metadata. Both of its potentially sensitive columns are sanitized before they are written: the path through `SafeRequestLogPath` (route template, opaque tokens masked) and the trailing error through `SafeLogError`, which masks emails, opaque tokens, recovery codes and submitted one-time codes so a handler error string cannot carry an account identifier or a credential into the log. Short secrets are matched by shape rather than by length — a recovery code and a six-digit code are both too short for the opaque-token rule — so that dates, status codes, route templates and ordinary identifiers stay readable for diagnosis.
 
 The startup banner reflects the current setting (`audit_log=true|false`) so operators can confirm the effective configuration on each boot.
+
+## Operational diagnostics (always on)
+
+A handful of lines outside both streams above report that an internal operation could not complete. They are always enabled, and **five of them name an owner by `user_id`**, so `AUDIT_LOG_ENABLED=false` does not mean "no account identifier ever reaches the log":
+
+- the derived-cycle refresh that follows a day write, when it cannot load that owner's logs or store the recomputed luteal phase (`refreshDerivedCycleSettings: … for user N failed: …`) — the only two lines here that also carry the raw driver error, which does not pass through `SafeLogError`;
+- the webhook reminder pass, when an owner's stored endpoint cannot be decrypted, their logs cannot be loaded, or the sent-watermark write fails after delivery (`webhook notify: … owner id=N`).
+
+None of them carries health data, an email, a URL, or a token — the identifier and the reason only. The first pair is a symptom of write contention (see *Concurrency on the SQLite baseline* in [docs/self-hosted.md](../self-hosted.md#concurrency-on-the-sqlite-baseline)); the second is how a `SECRET_KEY` rotation surfaces for webhook owners, and is the signal the reminder pass's own summary does not carry.
+
+If your deployment treats any `user_id` in a log as sensitive, plan retention and access control for the default stream too, not only for the audit stream.

@@ -14,7 +14,7 @@ Ovumcy's supported self-hosted baseline is a single application instance with a 
 - [Local/Private Postgres Stack](#official-localprivate-postgres-stack) · [Public Postgres Reverse-Proxy Stacks](#official-public-postgres-reverse-proxy-stacks)
 
 **Running it**
-- [Health Checks by Deployment Mode](#health-checks-by-deployment-mode) — [operator CLI](#running-the-operator-cli-against-the-container) · [Secret Handling and Rotation](#secret-handling-and-rotation)
+- [Health Checks by Deployment Mode](#health-checks-by-deployment-mode) — [operator CLI](#running-the-operator-cli-against-the-container) · [Concurrency on the SQLite Baseline](#concurrency-on-the-sqlite-baseline) · [Secret Handling and Rotation](#secret-handling-and-rotation)
 - [Backup and Restore Contract](#backup-and-restore-contract) — [volume backup](#docker-named-volume-backup), [volume restore](#docker-named-volume-restore), [post-restore verification](#post-restore-verification)
 - [Safe Upgrade Procedure](#safe-upgrade-procedure) · [Downgrade Caveats](#downgrade-caveats)
 
@@ -238,11 +238,13 @@ The app exposes two probes, and they answer different questions:
 | Probe | Answers | Touches the database | Fails when |
 | --- | --- | --- | --- |
 | `GET /healthz` | Is the process alive? | No | The process is gone or wedged |
-| `GET /readyz` | Can it actually serve requests? | Yes — one trivial query | Storage is unreachable |
+| `GET /readyz` | Can it actually serve requests? | Yes — one trivial query | Storage does not answer within one second |
 
 `/healthz` deliberately never queries the database. That is what makes it safe as the container health check: a database that is slow for ten seconds, or a Postgres container restarting under the app, must not turn into a killed and restarted app container. It also means `/healthz` alone cannot tell you the app is *working* — it stays green with storage completely gone, which is exactly the case `/readyz` exists to catch.
 
 `/readyz` runs one trivial query against the configured engine and answers `200` when it succeeds, `503` when it does not. Both responses are a fixed one-word body; neither reveals the engine, the database path, or the error. Reach for it when the container is healthy but the app is misbehaving, and use it as the drain signal in front of a load balancer.
+
+The probe is bounded at **one second**, and it reports the same `503` whether storage is gone or merely too busy to answer in time — it deliberately cannot tell you which. Read a `503` on a container that is otherwise healthy as *"the app cannot serve right now"*, and check load before you go looking at the volume. On the SQLite baseline a handful of clients saving days at the same moment is enough to make the probe flap while ordinary requests still succeed, slowly (see [Concurrency on the SQLite baseline](#concurrency-on-the-sqlite-baseline)). The distinguishing signal is elsewhere: if requests are still completing — check the request log for `200`s with multi-second latencies — the storage layer is present and the answer is contention, not an outage.
 
 The runtime image ships both as built-in subcommands, `ovumcy healthcheck` and `ovumcy readycheck`. Each makes an in-process request against `127.0.0.1:$PORT` and exits non-zero on failure, so the scratch-based container image needs no external HTTP client (no `curl`, no `wget`). Docker invokes `ovumcy healthcheck` automatically per the `HEALTHCHECK` directive baked into the image; `ovumcy readycheck` is yours to run on demand. The `HEALTHCHECK` directive is intentionally left on the liveness probe — do not repoint it at `/readyz` unless you actively want a database outage to restart the container.
 
@@ -278,6 +280,25 @@ Use the scripted form when you need to recover several accounts at once — for 
 
 For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.1:8080` listener as a problem. In the preferred deployment model, that port is intentionally not published to the host at all.
 
+## Concurrency on the SQLite Baseline
+
+The SQLite baseline is sized for a household, and it has a ceiling worth knowing before you meet it. SQLite allows one writer at a time. Reads scale fine — eight clients browsing the dashboard, calendar, stats and exports at once stay in the tens of milliseconds — but **concurrent writers serialize**, and a writer that cannot take the lock waits out the five-second busy timeout before the app retries.
+
+Measured on a release image, mixed traffic with 40% day saves, per-request latency for `PUT /api/v1/days/{date}`:
+
+| Clients writing at once | Median save | 95th percentile |
+| --- | --- | --- |
+| 1 | 8 ms | 11 ms |
+| 2 | 10 ms | 20 ms |
+| 4 | 13 ms | 4.9 s |
+| 8 | 5.0 s | 25 s |
+
+Nothing breaks — there is no crash, no memory growth, no corruption, and the container keeps reporting healthy. Requests queue. What an operator sees is saves that take seconds, and `/readyz` flapping to `503` while ordinary pages still load.
+
+So: one or two people saving entries at the same moment is comfortable. Four is the knee. If your instance regularly has more writers than that — several household members each on a phone and a laptop, or a scripted importer running alongside normal use — move to the Postgres path below. The same traffic at 24 concurrent clients stays at a 57 ms median save with no readiness flapping, because Postgres does not serialize writers.
+
+This is a property of the storage engine, not a tuning knob: raising the connection pool does not help, since the constraint is the single write lock rather than the number of connections.
+
 ## Secret Handling and Rotation
 
 Treat the application secret as part of the deployment identity, whether you pass it via `SECRET_KEY` or `SECRET_KEY_FILE`.
@@ -288,7 +309,7 @@ Treat the application secret as part of the deployment identity, whether you pas
 - Rotating the application secret invalidates existing sealed cookies and active sign-ins.
 - Restoring SQLite data with a different application secret is valid, but users should expect a fresh sign-in and new sealed-cookie state.
 - Rotating the secret on a database with TOTP-enabled accounts will leave their `users.totp_secret` ciphertexts undecryptable; affected users must sign in with their recovery code (or have the operator run `ovumcy reset-password <email>` — see [Running the operator CLI against the container](#running-the-operator-cli-against-the-container)) and re-enrol TOTP under the new secret.
-- Rotation also breaks the **other** field-encrypted column, `users.webhook_url`. The daily reminder pass fails safe rather than delivering to a garbage target: it skips that owner (logging only the owner id) and keeps going for everyone else. Nothing surfaces in the UI, so reminders simply stop for those accounts until each owner re-saves their endpoint in Settings.
+- Rotation also breaks the **other** field-encrypted column, `users.webhook_url`. The daily reminder pass fails safe rather than delivering to a garbage target: it skips that owner (logging only the owner id) and keeps going for everyone else. Nothing surfaces in the UI, so reminders simply stop for those accounts until each owner re-saves their endpoint in Settings. It does not surface in the pass's own summary either — a skipped owner is not counted as a failure, so `ovumcy notify --dry-run` reports `failed: 0` and simply stops listing that owner under *would send*. When you verify a rotation this way, read the log lines above the summary (`webhook notify: decrypt failed, skipping owner id=N`) rather than the counters, and compare the *would send* block against one captured before the rotation.
 - Rotation **disarms armed calendar (`.ics`) feeds**. The feed verifier is a keyed MAC derived from the application secret, and a MAC that no longer matches is refused outright — deliberately never re-checked against the row's older bcrypt hash. Subscribed calendar clients get `404` until each owner generates a fresh subscribe URL from Settings. Plan a rotation as a "re-issue the feed URLs" event, the same way you plan it as a "re-enrol TOTP" event. Feeds armed on versions before the MAC landed (pre-migration-032 rows) are disarmed by the first start under the new secret — the startup log prints `SECRET_KEY rotation detected: N legacy calendar feed(s) disarmed`. Two sharp edges: the detection baseline is recorded on the first boot after upgrading to the release that introduced it, so a rotation performed **in that same maintenance window** is not detectable — boot the upgrade once first, or have owners revoke/rotate feeds manually; and starting the app with a mistyped `SECRET_KEY` counts as a rotation, permanently disarming those legacy rows.
 - See the *SECRET_KEY Usage Map* section in [SECURITY.md](../SECURITY.md) for the per-subsystem impact table these three bullets summarize.
 - **If the secret is lost entirely** (no backup, no way to recover the old value), this is worse than a planned rotation: there is no key to roll forward from, so every `users.totp_secret` ciphertext is permanently unrecoverable — not just temporarily undecryptable — because the encryption key is derived from `SECRET_KEY` via HKDF with no escrow copy stored anywhere. All existing sealed cookies and sessions invalidate the same as with a rotation. Any 2FA-enabled account can still recover via its recovery code and TOTP re-enrolment. But an account with `local_auth_enabled=false` (OIDC-only) that also has no retained recovery code has no self-service path back in at all; it needs an operator to run `ovumcy reset-password <email>` to regain access. Treat total secret loss as a data-loss event, not a rotation, in your incident runbook.
