@@ -358,12 +358,15 @@ After startup, verify the restored app using the health check appropriate for yo
 
 ## Post-Restore Verification
 
+Steps 1-3 below check that the app is **up**. Step 4 is the only one that checks that your **data came back**, and it is the step that catches the failure this procedure would otherwise hide: an archive that missed the database restores into an instance that boots cleanly, reports healthy, answers `/readyz` with `200`, and renders a perfectly ordinary login page. The usual way to end up with one is a per-file copy of `ovumcy.db` taken while the app was running — on an instance that has not yet checkpointed, nearly the whole database still lives in `ovumcy.db-wal` and the main file is close to empty. Do not stop at step 3.
+
 After restore:
 
 1. Confirm the container becomes healthy.
-2. Confirm `/healthz` responds successfully using the health check appropriate for your deployment mode.
+2. Confirm `/healthz` **and** `/readyz` respond successfully using the health check appropriate for your deployment mode.
 3. Open the main UI once and verify the app renders normally.
-4. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in.
+4. Sign in and confirm the records are there: open the calendar on a month you know had entries before the backup, or download `Settings → Export` and compare it against an export taken before the restore. Do this even when the app looks perfectly healthy — every signal above stays green on an empty database.
+5. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in. Read that expectation carefully against step 4, because the two failures look similar for one screen and mean opposite things: with a changed key your **password still works** (password hashes do not depend on `SECRET_KEY`) and you are merely signed out — 2FA is the part that breaks, and the recovery path for it is in [Secret Handling and Rotation](#secret-handling-and-rotation). A sign-in that is rejected as *wrong credentials* is not a key symptom at all; it means the account is not in the restored database, which is step 4 failing.
 
 ## Safe Upgrade Procedure
 
