@@ -41,6 +41,12 @@ func mapStatsBBTChartData(chart services.StatsBBTChartViewData, messages map[str
 		payload["markerIndex"] = chart.MarkerIndex
 		if chart.MarkerLabelKey != "" {
 			payload["markerLabel"] = translateMessage(messages, chart.MarkerLabelKey)
+			// The rendered label rides along for the chart script, but a test
+			// asserting the marker is the ovulation marker must not have to
+			// re-type English copy that the catalogue owns and translation can
+			// change. The key is the stable half of that pair, exactly as the
+			// data-explainer-key attributes do for rendered notices.
+			payload["markerLabelKey"] = chart.MarkerLabelKey
 		}
 	}
 	return payload

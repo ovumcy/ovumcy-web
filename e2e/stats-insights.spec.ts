@@ -10,6 +10,7 @@ import {
 } from './support/auth-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { shiftISODate } from './support/stats-helpers';
+import { localeText } from './support/locale-helpers';
 
 function isoDateDaysAgo(days: number): string {
   const date = new Date();
@@ -221,7 +222,11 @@ test.describe('Stats: BBT chart', () => {
     // the detected coverline, and the three values starting from
     // markerIndex+1 (the day after the marker = first elevated day) are all
     // strictly above it, the third by at least 0.2 °C.
-    expect(parsed.markerLabel).toBe('Probable ovulation');
+    // Assert the marker's identity through its catalogue key, not the rendered
+    // sentence: the copy is owned by the locale files and changes with them,
+    // while the key is the stable half of the pair the payload now carries.
+    expect(parsed.markerLabelKey).toBe('stats.bbt_probable_ovulation');
+    expect(parsed.markerLabel).toBe(localeText('en', 'stats.bbt_probable_ovulation'));
     expect(typeof parsed.markerIndex).toBe('number');
     expect(parsed.markerIndex).toBeGreaterThanOrEqual(0);
     expect(typeof parsed.baseline).toBe('number');

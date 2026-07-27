@@ -152,11 +152,17 @@ test.describe('Dashboard: fertility badge', () => {
     const ninthDay = shiftISO(today, 5);
     const ninthResponse = await savePeriodDay(ninthDay);
     expect(ninthResponse.status()).toBeLessThan(400);
-    // Go's url.QueryEscape encodes space as '+', so decode the header in two
-    // passes (decode-uri-component handles %XX but leaves '+' alone).
+    // Which warning fired is asserted through the companion key header, so the
+    // check does not rest on a fragment of English copy the catalogue owns.
+    expect(ninthResponse.headers()['x-ovumcy-notice-key']).toBe('dashboard.long_period_warning');
+    // The rendered sentence still has to survive the transport intact, and that
+    // is a property of the encoding rather than of the wording: Go's
+    // url.QueryEscape turns a space into '+', so decode in two passes
+    // (decode-uri-component handles %XX but leaves '+' alone) and compare
+    // against the catalogue entry the key just named.
     const rawNotice = ninthResponse.headers()['x-ovumcy-notice'] ?? '';
     const notice = decodeURIComponent(rawNotice.replace(/\+/g, '%20'));
-    expect(notice).toContain('longer than 8 days');
+    expect(notice).toBe(localeText('en', 'dashboard.long_period_warning'));
 
     // The acknowledgement persists user.LongPeriodWarnedAt; a follow-up save
     // in the same cycle does NOT re-emit the warning. This is the "shown

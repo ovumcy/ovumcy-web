@@ -95,19 +95,29 @@ func TestSetEncodedResponseNoticeSkipsBlank(t *testing.T) {
 	t.Parallel()
 
 	_, header := runDayStatusHelperCtx(t, nil, func(handler *Handler, c fiber.Ctx) string {
-		setEncodedResponseNotice(c, "cycle saved")
+		setEncodedResponseNotice(c, "dashboard.spotting_cycle_warning", "cycle saved")
 		return ""
 	})
 	if got := header.Get("X-Ovumcy-Notice"); got != "cycle+saved" && got != "cycle%20saved" {
 		t.Fatalf("expected url-encoded notice header, got %q", got)
 	}
+	// The key rides alongside the rendered sentence so a caller can identify
+	// which notice fired without re-typing localized copy.
+	if got := header.Get("X-Ovumcy-Notice-Key"); got != "dashboard.spotting_cycle_warning" {
+		t.Fatalf("expected the notice key header, got %q", got)
+	}
 
 	_, blankHeader := runDayStatusHelperCtx(t, nil, func(handler *Handler, c fiber.Ctx) string {
-		setEncodedResponseNotice(c, "   ")
+		setEncodedResponseNotice(c, "dashboard.spotting_cycle_warning", "   ")
 		return ""
 	})
 	if got := blankHeader.Get("X-Ovumcy-Notice"); got != "" {
 		t.Fatalf("expected no notice header for a blank message, got %q", got)
+	}
+	// Both halves are skipped together: "no notice" must stay observable as
+	// the absence of both headers, never as a key with no sentence.
+	if got := blankHeader.Get("X-Ovumcy-Notice-Key"); got != "" {
+		t.Fatalf("expected no notice key header for a blank message, got %q", got)
 	}
 }
 
