@@ -2740,6 +2740,72 @@ func TestVCSRevisionFromBuildInfo(t *testing.T) {
 	}
 }
 
+// TestResolveBuildRevisionFallbackChain pins the banner's identity resolution,
+// including the case the shipped image is always in: a container build carries
+// no vcs.* setting (.dockerignore excludes .git), so without the ldflags
+// fallback every published image reported "unknown". The order is deliberately
+// the opposite of assetCacheBustToken's — only the VCS stamp can report a dirty
+// tree, so a release stamp must not outrank it.
+func TestResolveBuildRevisionFallbackChain(t *testing.T) {
+	fullRevision := "0123456789abcdef0123456789abcdef01234567"
+	infoWithRevision := buildInfoWithSettings(debug.BuildSetting{Key: "vcs.revision", Value: fullRevision})
+
+	tests := []struct {
+		name           string
+		ldflagsVersion string
+		info           *debug.BuildInfo
+		want           string
+	}{
+		{
+			name:           "container build: no VCS stamp, ldflags names the revision",
+			ldflagsVersion: fullRevision,
+			info:           buildInfoWithSettings(debug.BuildSetting{Key: "-ldflags", Value: "-s -w"}),
+			want:           fullRevision,
+		},
+		{
+			name:           "nil build info still reports the ldflags stamp",
+			ldflagsVersion: "v1.9.2",
+			info:           nil,
+			want:           "v1.9.2",
+		},
+		{
+			name:           "VCS stamp outranks the ldflags stamp",
+			ldflagsVersion: "v1.7.0",
+			info:           infoWithRevision,
+			want:           fullRevision,
+		},
+		{
+			name:           "a dirty tree is reported even when a release stamp is present",
+			ldflagsVersion: "v1.7.0",
+			info: buildInfoWithSettings(
+				debug.BuildSetting{Key: "vcs.revision", Value: fullRevision},
+				debug.BuildSetting{Key: "vcs.modified", Value: "true"},
+			),
+			want: fullRevision + "-dirty",
+		},
+		{
+			name:           "whitespace-only ldflags stamp is not an identity",
+			ldflagsVersion: "   ",
+			info:           nil,
+			want:           "unknown",
+		},
+		{
+			name: "neither stamp: unknown",
+			info: nil,
+			want: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveBuildRevision(tt.ldflagsVersion, tt.info)
+			if got != tt.want {
+				t.Fatalf("resolveBuildRevision(%q, ...) = %q, want %q", tt.ldflagsVersion, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAssetCacheBustTokenFallbackChain(t *testing.T) {
 	fullRevision := "0123456789abcdef0123456789abcdef01234567"
 	processStart := time.Date(2026, time.July, 5, 12, 0, 0, 0, time.UTC)
