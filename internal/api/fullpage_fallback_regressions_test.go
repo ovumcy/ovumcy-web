@@ -532,6 +532,92 @@ func TestDaySaveSpottingWarningSetsEncodedNotice(t *testing.T) {
 	}
 }
 
+// TestDaySaveLongPeriodWarningSetsEncodedNoticeWithKey and its implantation
+// sibling below cover the two notice branches the spotting test above did not
+// reach. Both assert the key header rather than the sentence: which warning
+// fired is the claim, and the copy that expresses it belongs to the catalogue.
+func TestDaySaveLongPeriodWarningSetsEncodedNoticeWithKey(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "fullpage-long-period@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	// A streak longer than 8 days ending on the saved day is the documented
+	// ShowLongPeriodWarning recipe: seed the first eight, then save the ninth.
+	todayUTC := services.CalendarDay(time.Now().UTC(), time.UTC)
+	streak := make([]models.DailyLog, 0, 8)
+	for offset := 8; offset >= 1; offset-- {
+		streak = append(streak, models.DailyLog{
+			UserID:   user.ID,
+			Date:     todayUTC.AddDate(0, 0, -offset),
+			IsPeriod: true,
+			Flow:     models.FlowMedium,
+		})
+	}
+	if err := database.Create(&streak).Error; err != nil {
+		t.Fatalf("seed period streak: %v", err)
+	}
+
+	form := url.Values{"is_period": {"true"}, "flow": {string(models.FlowMedium)}}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+todayUTC.Format("2006-01-02"), strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	defer func() { _ = response.Body.Close() }()
+	assertStatusCode(t, response, http.StatusOK)
+
+	if got := response.Header.Get("X-Ovumcy-Notice-Key"); got != "dashboard.long_period_warning" {
+		t.Fatalf("expected the long-period warning key, got %q", got)
+	}
+	if response.Header.Get("X-Ovumcy-Notice") == "" {
+		t.Fatal("expected the rendered sentence alongside the key")
+	}
+}
+
+func TestMarkCycleStartImplantationWarningSetsEncodedNoticeWithKey(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "fullpage-implantation@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	// With the default 28-day cycle the predicted ovulation lands 14 days after
+	// the previous start, and the warning covers a new start 6-12 days past
+	// ovulation. A previous start 22 days back puts today 8 days past it.
+	todayUTC := services.CalendarDay(time.Now().UTC(), time.UTC)
+	previousStart := models.DailyLog{
+		UserID:     user.ID,
+		Date:       todayUTC.AddDate(0, 0, -22),
+		IsPeriod:   true,
+		CycleStart: true,
+		Flow:       models.FlowMedium,
+	}
+	if err := database.Create(&previousStart).Error; err != nil {
+		t.Fatalf("seed previous cycle start: %v", err)
+	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/days/"+todayUTC.Format("2006-01-02")+"/cycle-start",
+		strings.NewReader(url.Values{"replace_existing": {"true"}}.Encode()),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	defer func() { _ = response.Body.Close() }()
+	assertStatusCode(t, response, http.StatusNoContent)
+
+	if got := response.Header.Get("X-Ovumcy-Notice-Key"); got != "dashboard.implantation_warning" {
+		t.Fatalf("expected the implantation warning key, got %q", got)
+	}
+	if response.Header.Get("X-Ovumcy-Notice") == "" {
+		t.Fatal("expected the rendered sentence alongside the key")
+	}
+}
+
 func utoa(value uint) string {
 	return strconv.FormatUint(uint64(value), 10)
 }

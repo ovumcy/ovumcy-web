@@ -38,12 +38,24 @@ func localizedStatusDismissLabel(messages map[string]string) string {
 	return closeLabel
 }
 
-func setEncodedResponseNotice(c fiber.Ctx, message string) {
+// setEncodedResponseNotice carries a day-save toast to the client out of band,
+// in a header, because the response body is the saved entry rather than a page.
+//
+// It emits the rendered sentence AND its catalogue key. The sentence is what
+// the toast shows; the key is what anything asserting on the notice keys off,
+// so a test does not have to re-type localized copy the catalogue owns — the
+// same split the rendered surfaces express as data-explainer-key next to their
+// text. A blank message emits neither header, so "no notice" stays observable
+// as the absence of both.
+func setEncodedResponseNotice(c fiber.Ctx, noticeKey string, message string) {
 	trimmed := strings.TrimSpace(message)
 	if trimmed == "" {
 		return
 	}
 	c.Set("X-Ovumcy-Notice", url.QueryEscape(trimmed))
+	if key := strings.TrimSpace(noticeKey); key != "" {
+		c.Set("X-Ovumcy-Notice-Key", key)
+	}
 }
 
 func (handler *Handler) sendDaySaveStatus(c fiber.Ctx, messageKey string) error {
