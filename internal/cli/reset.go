@@ -15,7 +15,37 @@ import (
 )
 
 func RunResetPasswordCommand(databaseConfig db.Config, email string) error {
-	return runResetPasswordCommand(databaseConfig, email, promptNewPassword, os.Stdout)
+	return runResetPasswordCommand(databaseConfig, email, resetPasswordReader(os.Stdin), os.Stdout)
+}
+
+// resetPasswordReader picks how the new password is obtained, matching what
+// `users create` already does: an interactive terminal gets the twice-typed,
+// echo-disabled prompt, and piped or redirected stdin is read as the password's
+// first line.
+//
+// The non-interactive path is what makes the documented recovery step runnable
+// without a terminal. `ovumcy reset-password` is the operator's way back in for
+// an owner locked out by a SECRET_KEY rotation or an OIDC-only account with no
+// recovery code, and the runtime image is shell-free, so the only way to reach
+// it is `docker exec`. Prompting unconditionally meant the plain `docker exec`
+// form the runbook shows for the other subcommands failed with "secure password
+// prompt requires an interactive terminal", and recovering several accounts
+// could not be scripted at all. The password still never travels in argv or the
+// environment.
+func resetPasswordReader(input *os.File) passwordPromptFunc {
+	return func() ([]byte, error) {
+		if input == nil {
+			// A typed nil *os.File would satisfy the io.Reader interface and
+			// reach bufio, so refuse it here rather than one frame later.
+			return nil, errors.New("password input is required")
+		}
+		// codecov:ignore:start -- interactive TTY prompt; the terminal branch needs a real terminal and is exercised only interactively
+		if stdinIsTerminal(input) {
+			return promptNewPassword()
+		}
+		// codecov:ignore:end
+		return readPasswordLine(input)
+	}
 }
 
 type passwordPromptFunc func() ([]byte, error)

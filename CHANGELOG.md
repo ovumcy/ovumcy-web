@@ -88,6 +88,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ovumcy reset-password` can be run without an interactive terminal.** It is
+  the operator's documented way back in for an owner locked out by a
+  `SECRET_KEY` rotation, or for an OIDC-only account with no retained recovery
+  code — but it prompted unconditionally, so the plain `docker exec` form the
+  runbook shows for the other subcommands failed with `secure password prompt
+  requires an interactive terminal`, and recovering several accounts at once
+  could not be scripted. It now reads the password from piped stdin exactly as
+  `users create` already did, keeping the interactive prompt when stdin is a
+  terminal. The password still never travels in argv or the environment. The
+  runbook gained a section showing both invocations against the shell-free
+  image.
+
 - **The 2FA challenge now accepts the JSON body its published contract
   advertises.** `POST /api/v1/sessions/2fa-challenge` is documented in
   `docs/openapi.yaml` with a single request media type, `application/json`, but

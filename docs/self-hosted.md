@@ -14,7 +14,7 @@ Ovumcy's supported self-hosted baseline is a single application instance with a 
 - [Local/Private Postgres Stack](#official-localprivate-postgres-stack) · [Public Postgres Reverse-Proxy Stacks](#official-public-postgres-reverse-proxy-stacks)
 
 **Running it**
-- [Health Checks by Deployment Mode](#health-checks-by-deployment-mode) · [Secret Handling and Rotation](#secret-handling-and-rotation)
+- [Health Checks by Deployment Mode](#health-checks-by-deployment-mode) — [operator CLI](#running-the-operator-cli-against-the-container) · [Secret Handling and Rotation](#secret-handling-and-rotation)
 - [Backup and Restore Contract](#backup-and-restore-contract) — [volume backup](#docker-named-volume-backup), [volume restore](#docker-named-volume-restore), [post-restore verification](#post-restore-verification)
 - [Safe Upgrade Procedure](#safe-upgrade-procedure) · [Downgrade Caveats](#downgrade-caveats)
 
@@ -260,6 +260,22 @@ Use the health check that matches your deployment path:
   - `docker exec ovumcy /app/ovumcy healthcheck` should exit `0`;
   - `docker exec ovumcy /app/ovumcy readycheck` should exit `0`.
 
+### Running the operator CLI against the container
+
+The runtime image is shell-free, so the operator subcommands are reached through `docker exec` on the binary itself. The probes above take no input and run as shown. The account subcommands (`users create`, `reset-password`) ask for a password, and how you invoke them decides how they read it:
+
+```bash
+# Interactive: prompts twice with echo disabled.
+docker exec -it ovumcy /app/ovumcy reset-password owner@example.com
+
+# Scripted: the password is the first line of stdin. Never pass it in the
+# command line or an environment variable — both are visible to other
+# processes and land in shell history.
+printf '%s\n' "$NEW_PASSWORD" | docker exec -i ovumcy /app/ovumcy reset-password owner@example.com
+```
+
+Use the scripted form when you need to recover several accounts at once — for example after a `SECRET_KEY` rotation, where every 2FA-enabled owner needs a way back in.
+
 For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.1:8080` listener as a problem. In the preferred deployment model, that port is intentionally not published to the host at all.
 
 ## Secret Handling and Rotation
@@ -271,7 +287,7 @@ Treat the application secret as part of the deployment identity, whether you pas
 - Store the underlying secret privately and back it up separately from the SQLite archive.
 - Rotating the application secret invalidates existing sealed cookies and active sign-ins.
 - Restoring SQLite data with a different application secret is valid, but users should expect a fresh sign-in and new sealed-cookie state.
-- Rotating the secret on a database with TOTP-enabled accounts will leave their `users.totp_secret` ciphertexts undecryptable; affected users must sign in with their recovery code (or have the operator run `ovumcy reset-password <email>`) and re-enrol TOTP under the new secret.
+- Rotating the secret on a database with TOTP-enabled accounts will leave their `users.totp_secret` ciphertexts undecryptable; affected users must sign in with their recovery code (or have the operator run `ovumcy reset-password <email>` — see [Running the operator CLI against the container](#running-the-operator-cli-against-the-container)) and re-enrol TOTP under the new secret.
 - Rotation also breaks the **other** field-encrypted column, `users.webhook_url`. The daily reminder pass fails safe rather than delivering to a garbage target: it skips that owner (logging only the owner id) and keeps going for everyone else. Nothing surfaces in the UI, so reminders simply stop for those accounts until each owner re-saves their endpoint in Settings.
 - Rotation **disarms armed calendar (`.ics`) feeds**. The feed verifier is a keyed MAC derived from the application secret, and a MAC that no longer matches is refused outright — deliberately never re-checked against the row's older bcrypt hash. Subscribed calendar clients get `404` until each owner generates a fresh subscribe URL from Settings. Plan a rotation as a "re-issue the feed URLs" event, the same way you plan it as a "re-enrol TOTP" event. Feeds armed on versions before the MAC landed (pre-migration-032 rows) are disarmed by the first start under the new secret — the startup log prints `SECRET_KEY rotation detected: N legacy calendar feed(s) disarmed`. Two sharp edges: the detection baseline is recorded on the first boot after upgrading to the release that introduced it, so a rotation performed **in that same maintenance window** is not detectable — boot the upgrade once first, or have owners revoke/rotate feeds manually; and starting the app with a mistyped `SECRET_KEY` counts as a rotation, permanently disarming those legacy rows.
 - See the *SECRET_KEY Usage Map* section in [SECURITY.md](../SECURITY.md) for the per-subsystem impact table these three bullets summarize.

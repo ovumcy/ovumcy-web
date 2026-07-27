@@ -3,11 +3,63 @@ package cli
 import (
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
 )
+
+// TestRunResetPasswordCommandValidatesBeforeReadingStdin covers the exported
+// entry point, which is otherwise reached only from main. It also pins the
+// ordering that makes the piped form usable in a script: the email is rejected
+// before anything reads stdin, so a typo does not leave the command blocked on
+// input that will never be used.
+func TestRunResetPasswordCommandValidatesBeforeReadingStdin(t *testing.T) {
+	if err := RunResetPasswordCommand(db.Config{}, "   "); err == nil || err.Error() != "email is required" {
+		t.Fatalf("expected blank email error, got %v", err)
+	}
+}
+
+// TestResetPasswordReaderReadsPipedStdin pins the non-interactive path that
+// makes the documented recovery step runnable against the shell-free runtime
+// image: `docker exec -i ... reset-password <email>` with the password on
+// stdin. Before it existed the command answered "secure password prompt
+// requires an interactive terminal" and recovering several accounts after a
+// SECRET_KEY rotation could not be scripted at all.
+func TestResetPasswordReaderReadsPipedStdin(t *testing.T) {
+	t.Parallel()
+
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	t.Cleanup(func() { _ = read.Close() })
+
+	go func() {
+		defer func() { _ = write.Close() }()
+		_, _ = io.WriteString(write, "  StrongPass1  \n")
+	}()
+
+	password, err := resetPasswordReader(read)()
+	if err != nil {
+		t.Fatalf("resetPasswordReader on piped stdin: %v", err)
+	}
+	if string(password) != "StrongPass1" {
+		t.Fatalf("password = %q, want %q (surrounding whitespace trimmed to match web auth)", password, "StrongPass1")
+	}
+}
+
+// TestResetPasswordReaderRejectsMissingStdin covers the typed-nil guard: a nil
+// *os.File satisfies io.Reader, so without the explicit check it would reach
+// bufio instead of returning an error.
+func TestResetPasswordReaderRejectsMissingStdin(t *testing.T) {
+	t.Parallel()
+
+	if _, err := resetPasswordReader(nil)(); err == nil {
+		t.Fatal("expected an error when stdin is missing")
+	}
+}
 
 func TestRunResetPasswordCommandRejectsBlankEmail(t *testing.T) {
 	t.Parallel()
