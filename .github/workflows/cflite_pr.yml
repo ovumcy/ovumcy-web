@@ -7,6 +7,18 @@ on:
   pull_request:
     branches:
       - main
+    # PR fuzzing can only catch regressions introduced through fuzzable
+    # inputs, and the Go+libFuzzer toolchain occasionally SEGVs at process
+    # startup (TracePC::ClearInlineCounters) independent of the change under
+    # test — so docs/CI-only PRs skip it instead of rolling that dice. The
+    # "PR" context is not a required check, so a workflow-level paths filter
+    # is safe here (nothing waits on a report that never comes). The daily
+    # batch workflow still fuzzes every target regardless.
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".clusterfuzzlite/**"
 
 permissions:
   contents: read
