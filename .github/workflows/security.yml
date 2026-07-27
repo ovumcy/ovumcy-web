@@ -9,6 +9,9 @@ on:
     branches:
       - main
   pull_request:
+  # Merge-queue validation runs: every workflow that owns a required status
+  # check must also report on merge_group, or a queued merge waits forever.
+  merge_group:
   schedule:
     - cron: "41 3 * * 1"
   workflow_dispatch:
