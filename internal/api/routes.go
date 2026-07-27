@@ -11,6 +11,11 @@ func RegisterRoutes(app *fiber.App, handler *Handler) {
 	// rather than on the body-reading groups so a route added outside them still
 	// inherits it; the guard itself decides, from the request method, whether the
 	// decode probe is owed. See requestBodyLimitGuard.
+	// Registered before the body-limit guard so the decode probe below runs
+	// under the deadline too — the probe is the decompression, and an inflate
+	// of a BodyLimit-sized stream is exactly the kind of work that must not
+	// outlive the caller. See RequestDeadlineGuard.
+	app.Use(RequestDeadlineGuard(RequestBudget))
 	app.Use(requestBodyLimitGuard)
 	registerPageRoutes(app, handler)
 	registerV1APIRoutes(app, handler)
