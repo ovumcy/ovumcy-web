@@ -88,6 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The 2FA challenge now accepts the JSON body its published contract
+  advertises.** `POST /api/v1/sessions/2fa-challenge` is documented in
+  `docs/openapi.yaml` with a single request media type, `application/json`, but
+  the handler read the code through `c.FormValue`, which never sees a JSON body.
+  A client written against the published spec therefore got
+  `401 totp invalid code` for every code it submitted — the same answer a wrong
+  code gets, so the failure read as "the user is typing it wrong" rather than as
+  an unimplemented contract. The browser flow posts a form and was unaffected,
+  which is why nothing caught it: the only callers in the tree, the Playwright
+  spec and the Go regression, both submit forms. The endpoint now reads the code
+  from either transport, and one regression drives a valid code through both and
+  asserts each documented outcome (`200` for JSON, `303` for the form). A sweep
+  of all 28 request bodies in the spec against their handlers found this to be
+  the only endpoint whose declared media type the implementation did not accept.
+
 - **The request log now redacts short credentials, not just long ones.** The
   always-on Fiber request log sanitizes its error column so a handler error
   string cannot carry a secret into the log, but it recognized a secret only by
