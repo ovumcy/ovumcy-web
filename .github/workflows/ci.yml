@@ -5,6 +5,9 @@ on:
     branches:
       - main
   pull_request:
+  # Merge-queue validation runs: every workflow that owns a required status
+  # check must also report on merge_group, or a queued merge waits forever.
+  merge_group:
   release:
     types:
       - published
