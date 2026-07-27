@@ -120,15 +120,23 @@ export async function continueFromRecoveryCode(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/(onboarding|dashboard)(?:\?.*)?$/);
 }
 
+const POST_REGISTRATION_PATHS = ['/onboarding', '/dashboard', '/login'];
+
 export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   const currentPath = pathOf(page.url());
-  if (currentPath !== '/onboarding' && currentPath !== '/dashboard') {
+  if (!POST_REGISTRATION_PATHS.includes(currentPath)) {
+    // Tolerant of the redirect having already landed, never of it never landing:
+    // the bare `.catch` used to swallow a hung redirect and let it resurface as
+    // an unrelated failure further down whichever spec called this helper, so the
+    // settled path is asserted here instead.
     await page
-      .waitForURL((url) => {
-        const path = new URL(url).pathname;
-        return path === '/onboarding' || path === '/dashboard' || path === '/login';
-      })
+      .waitForURL((url) => POST_REGISTRATION_PATHS.includes(new URL(url).pathname), { timeout: 15000 })
       .catch(() => {});
+
+    expect(
+      POST_REGISTRATION_PATHS,
+      `post-registration redirect never landed, still at ${page.url()}`
+    ).toContain(pathOf(page.url()));
   }
 
   if (pathOf(page.url()) !== '/onboarding') {

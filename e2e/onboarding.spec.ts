@@ -11,6 +11,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { switchPublicLanguage } from './support/language-helpers';
+import { localeText } from './support/locale-helpers';
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -186,10 +187,17 @@ test.describe('Onboarding flow', () => {
     await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
     await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
 
+    // Russian copy IS this test's subject, so the strings are asserted — but
+    // read from ru.json rather than re-typed here, so a translation edit syncs
+    // itself instead of failing a test that only looks like a UI regression.
     const quickPickButtons = onboardingQuickPickButtons(page);
-    await expect(quickPickButtons.first()).toContainText('Сегодня');
-    await expect(quickPickButtons.nth(1)).toContainText('Вчера');
-    await expect(quickPickButtons.nth(2)).toContainText('2 дня назад');
+    await expect(quickPickButtons.first()).toContainText(localeText('ru', 'onboarding.step1.today'));
+    await expect(quickPickButtons.nth(1)).toContainText(
+      localeText('ru', 'onboarding.step1.yesterday')
+    );
+    await expect(quickPickButtons.nth(2)).toContainText(
+      localeText('ru', 'onboarding.step1.two_days_ago')
+    );
   });
 
   test('step 1 rejects out-of-range manual dates instead of clamping them', async ({ page }) => {
@@ -331,10 +339,16 @@ test.describe('Onboarding flow', () => {
     await irregularCheckbox.check();
     await submitStepTwo(page);
 
+    // Sparse irregular mode: an "around <date>" estimate plus the
+    // needs-more-cycles note, both sourced from the catalogue rather than
+    // re-typed here (the same strings are asserted in three specs).
     const nextPeriodText = await dashboardNextPeriodText(page);
-    expect(nextPeriodText).toContain('around');
-    expect(nextPeriodText).toContain('3 cycles are needed');
-    expect(nextPeriodText).not.toContain(' - ');
+    expect(nextPeriodText).toContain(localeText('en', 'dashboard.next_period_estimate').replace('%s', '').trim());
+    expect(nextPeriodText).toContain(localeText('en', 'dashboard.next_period_need_cycles'));
+    await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
+      'data-explainer-key',
+      'prediction.explainer.irregular_sparse'
+    );
   });
 
   test('step 1 surfaces the day-1 spotting clarification tip above the date field', async ({
@@ -348,6 +362,6 @@ test.describe('Onboarding flow', () => {
 
     const stepOnePanel = page.locator('[data-onboarding-panel="1"]');
     await expect(stepOnePanel).toBeVisible();
-    await expect(stepOnePanel).toContainText('Day 1 is the first day of full flow, not spotting.');
+    await expect(stepOnePanel).toContainText(localeText('en', 'onboarding.step1.day1_tip'));
   });
 });

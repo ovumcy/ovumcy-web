@@ -8,8 +8,20 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
+import { localeText, type Locale } from './support/locale-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
+
+// Address the page title by the key it declares and take the expected copy from
+// the catalogue. The literals this replaces ('Configuración', 'Calendario') and
+// the /Insights|Аналитика|Análisis/ alternation both re-typed shipped strings
+// into the spec, and the alternation matched any of three languages regardless
+// of which one the page was rendering.
+async function expectPageTitle(page: Page, key: string, locale: Locale = 'en'): Promise<void> {
+  const title = page.locator(`h1[data-title-key="${key}"]`);
+  await expect(title).toBeVisible();
+  await expect(title).toContainText(localeText(locale, key));
+}
 
 async function registerOwnerAndReachDashboard(page: Page, prefix: string): Promise<void> {
   const credentials = createCredentials(prefix);
@@ -71,7 +83,7 @@ test.describe('Cross-browser smoke', () => {
 
     await page.goto('/stats');
     await expect(page).toHaveURL(/\/stats$/);
-    await expect(page.locator('h1.journal-title')).toContainText(/Insights|Аналитика|Análisis/);
+    await expectPageTitle(page, 'stats.title');
   });
 
   test('theme and language switches persist across core routes', async ({ page }) => {
@@ -89,13 +101,13 @@ test.describe('Cross-browser smoke', () => {
     // the just-chosen language (saveSettingsLanguage documents the mechanism).
     await saveSettingsLanguage(page, 'es');
     await expect(html).toHaveAttribute('lang', 'es');
-    await expect(page.locator('h1.journal-title')).toContainText('Configuración');
+    await expectPageTitle(page, 'settings.title', 'es');
 
     await page.goto('/calendar');
     await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
     await expect(html).toHaveAttribute('lang', 'es');
     await expect(html).toHaveAttribute('data-theme', 'dark');
     await expect(page.locator('#calendar-grid-panel')).toBeVisible();
-    await expect(page.locator('h1')).toContainText('Calendario');
+    await expectPageTitle(page, 'calendar.title', 'es');
   });
 });

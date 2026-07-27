@@ -17,6 +17,12 @@ import {
   expectConfirmDialogCaptions,
   mutatingRequestsDuring,
 } from './support/confirm-dialog-helpers';
+import { localeText } from './support/locale-helpers';
+
+// The duplicate-name rejection is asserted on three surfaces in this file (the
+// create form twice, an archived row once). Source it once from the catalogue
+// so a copy edit lands in all three without a search-and-replace.
+const DUPLICATE_SYMPTOM_NAME_ERROR = localeText('en', 'settings.symptoms.error.duplicate_name');
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -190,10 +196,14 @@ test.describe('Settings: profile and cycle', () => {
   }) => {
     const creds = await registerOwnerAndOpenSettings(page, 'settings-profile');
 
+    // The email is displayed, never editable. Assert that structurally: the
+    // panel renders the address as static text and carries no editable control
+    // at all. The previous negated-copy checks ("Cannot be changed." and its ru
+    // variant) passed just as well when the copy was reworded or dropped —
+    // which is exactly what happened, the string no longer renders anywhere.
     const profileAccountPanel = page.locator('[data-profile-email-panel]');
     await expect(profileAccountPanel).toContainText(creds.email);
-    await expect(profileAccountPanel).not.toContainText('Cannot be changed.');
-    await expect(profileAccountPanel).not.toContainText('Эл. почту нельзя изменить.');
+    await expect(profileAccountPanel.locator('input, textarea, select, [contenteditable]')).toHaveCount(0);
     await expect(page.locator('#settings-account input#settings-profile-email')).toHaveCount(0);
 
     const displayNameInput = page.locator('#settings-display-name');
@@ -248,7 +258,13 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.reload();
     await expect(displayNameInput).toHaveValue('');
-    await expect(navIdentityChip(page)).toHaveAttribute('title', 'Profile settings');
+    // With no display name the chip falls back to the profile-name hint. Pin
+    // the key's rendered value from the catalogue rather than an English
+    // literal — the chip is localized like everything else.
+    await expect(navIdentityChip(page)).toHaveAttribute(
+      'title',
+      localeText('en', 'nav.profile_name_hint')
+    );
     await expect(navIdentityChip(page)).not.toContainText(creds.email);
     await expect(navIdentityChip(page)).not.toContainText(creds.email.split('@')[0]);
   });
@@ -330,13 +346,17 @@ test.describe('Settings: profile and cycle', () => {
     // A freshly onboarded owner has fewer than 3 completed cycles, so irregular
     // mode renders the "around <date>" estimate, not a range:
     // dashboardNeedsNextPeriodData short-circuits before the range is applied.
-    // The negative pins the em dash the range branch really uses
-    // (dashboard.next_period_range = "%s — %s"); the ASCII " - " it used to look
-    // for appears in no branch at all, so it could never fail.
     const nextPeriodText = await dashboardNextPeriodText(page);
-    expect(nextPeriodText).toContain('around');
-    expect(nextPeriodText).toContain('3 cycles are needed');
-    expect(nextPeriodText).not.toContain(' — ');
+    expect(nextPeriodText).toContain(
+      localeText('en', 'dashboard.next_period_estimate').replace('%s', '').trim()
+    );
+    expect(nextPeriodText).toContain(localeText('en', 'dashboard.next_period_need_cycles'));
+    // Sparse irregular mode, asserted on the explainer key rather than by
+    // forbidding the exact-date separator this state must not render.
+    await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
+      'data-explainer-key',
+      'prediction.explainer.irregular_sparse'
+    );
   });
 
   test('tracking toggles and BBT unit persist and change the owner day form', async ({ page }) => {
@@ -415,7 +435,9 @@ test.describe('Settings: profile and cycle', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     const dashboardForm = page.locator('[data-dashboard-save-form]').first();
-    const bbtInput = dashboardForm.getByLabel('BBT');
+    // Address the field by its stable id, not its localized label ("BBT" is
+    // «БТТ» in ru), the way every other field in this spec is addressed.
+    const bbtInput = dashboardForm.locator('#dashboard-bbt');
     await expect(bbtInput).toBeVisible();
     await expect(dashboardForm.locator('.measurement-field-unit')).toContainText('°F');
     await expect(dashboardForm).toContainText('93.20-109.40 °F');
@@ -442,7 +464,7 @@ test.describe('Settings: profile and cycle', () => {
     expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
     const todayISO = String(todayAction).replace('/api/v1/days/', '');
     const dayEditorForm = await openCalendarDayEditor(page, todayISO);
-    await expect(dayEditorForm.getByLabel('BBT')).toHaveValue('98.60');
+    await expect(dayEditorForm.locator('#calendar-bbt')).toHaveValue('98.60');
     await expect(dayEditorForm.locator('.measurement-field-unit')).toContainText('°F');
 
     await page.goto('/settings');
@@ -585,9 +607,18 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.locator('a[href="/calendar"]').first().click();
     await expect(page.locator('#confirm-modal')).toBeVisible();
-    await expect(page.locator('#confirm-modal-message')).toContainText(
-      'You have unsaved settings changes. Leave without saving?'
-    );
+    // Compare the dialog against the prompt the form itself declared — the same
+    // pattern expectConfirmDialogCaptions uses for the accept/cancel captions.
+    // Asserting the declaration is non-empty first stops an empty attribute
+    // from making the comparison pass against an empty dialog.
+    const declaredUnsavedPrompt = (
+      (await cycleForm.getAttribute('data-settings-unsaved-prompt')) ?? ''
+    ).trim();
+    expect(
+      declaredUnsavedPrompt,
+      'the draft form must declare data-settings-unsaved-prompt'
+    ).not.toBe('');
+    await expect(page.locator('#confirm-modal-message')).toContainText(declaredUnsavedPrompt);
     await page.locator('#confirm-modal-cancel').click();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(cycleLength).toHaveValue(String(initialCycleLength + 4));
@@ -801,7 +832,7 @@ test.describe('Settings: profile and cycle', () => {
     await selectSymptomIcon(archivedRow.locator('[data-symptom-edit-form]'), '⚡');
     await archivedRow.locator('[data-symptom-edit-form] button[type="submit"]').click();
     await expect(archivedRow.locator('[data-symptom-row-error]')).toContainText(
-      'That symptom name already exists in your list.'
+      DUPLICATE_SYMPTOM_NAME_ERROR
     );
     await expect(archivedRow.locator('input[name="name"]')).toHaveValue('Joint support');
 
@@ -835,10 +866,17 @@ test.describe('Settings: profile and cycle', () => {
     await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
     await expect(customSymptomRow(symptomSection, 'Joint stiffness', 'active')).toBeVisible();
 
+    // The create form has its own error container ([data-symptom-create-error]),
+    // a sibling of the per-row [data-symptom-row-error]. Addressing it directly
+    // — rather than the bare `.status-error` class shared with every row and
+    // section on the page — is what makes "the CREATE form rejected this"
+    // distinguishable from "something on this page errored".
+    const createError = createForm.locator('[data-symptom-create-error]');
+
     await createForm.locator('#settings-new-symptom-name').fill(' joint STIFFNESS ');
     await selectSymptomIcon(createForm, '🔥');
     await createForm.locator('button[type="submit"]').click();
-    await expect(symptomSection.locator('.status-error')).toContainText('That symptom name already exists in your list.');
+    await expect(createError).toContainText(DUPLICATE_SYMPTOM_NAME_ERROR);
     await expect(symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint stiffness"]')).toHaveCount(1);
 
     // The first rejection left its error node on the page, and this attempt
@@ -856,11 +894,11 @@ test.describe('Settings: profile and cycle', () => {
     ]);
     const builtInDuplicateResponse = await builtInDuplicateRequest.response();
     expect(builtInDuplicateResponse, 'expected a response for POST /api/v1/symptoms').not.toBeNull();
-    await expect(symptomSection.locator('.status-error')).toContainText('That symptom name already exists in your list.');
+    await expect(createError).toContainText(DUPLICATE_SYMPTOM_NAME_ERROR);
 
     await createForm.locator('#settings-new-symptom-name').fill('<script>alert(1)</script>');
     await createForm.locator('button[type="submit"]').click();
-    await expect(symptomSection.locator('.status-error')).toContainText(
+    await expect(createError).toContainText(
       'Use plain text only. Tags and angle brackets are not allowed.'
     );
 
@@ -922,23 +960,27 @@ test.describe('Settings: profile and cycle', () => {
   test('custom symptom empty states explain what happens next until rows exist', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-empty-groups');
 
+    // Group presence is addressed through [data-symptom-group], not through the
+    // localized heading: a getByText('Active custom symptoms').toHaveCount(0)
+    // is satisfied by any rewording or by switching language, so it could not
+    // tell an absent group from a renamed heading.
     const symptomSection = page.locator('#settings-symptoms-section');
     await expect(symptomSection.locator('[data-symptom-empty-state="empty"]')).toContainText(
       'No custom symptoms yet. Add one above to make it available in new entries.'
     );
-    await expect(symptomSection.getByText('Active custom symptoms')).toHaveCount(0);
-    await expect(symptomSection.getByText('Hidden custom symptoms')).toHaveCount(0);
+    await expect(symptomSection.locator('[data-symptom-group="active"]')).toHaveCount(0);
+    await expect(symptomSection.locator('[data-symptom-group="archived"]')).toHaveCount(0);
 
     const createForm = symptomSection.locator('[data-symptom-create-form]');
     await createForm.locator('#settings-new-symptom-name').fill('Joint stiffness');
     await selectSymptomIcon(createForm, '✨');
     await createForm.locator('button[type="submit"]').click();
 
-    await expect(symptomSection.getByText('Active custom symptoms')).toBeVisible();
+    await expect(symptomSection.locator('[data-symptom-group="active"]')).toBeVisible();
     await expect(symptomSection.locator('[data-symptom-group="active"]')).toContainText(
       'These appear in dashboard and calendar day editing.'
     );
-    await expect(symptomSection.getByText('Hidden custom symptoms')).toHaveCount(0);
+    await expect(symptomSection.locator('[data-symptom-group="archived"]')).toHaveCount(0);
     await expect(symptomSection.locator('[data-symptom-empty-state="empty"]')).toHaveCount(0);
   });
 });

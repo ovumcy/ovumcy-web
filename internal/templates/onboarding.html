@@ -29,7 +29,7 @@
     </div>
 
     <div data-onboarding-panel="1" class="mt-6 space-y-4" {{if ne .OnboardingStep 1}}hidden{{end}}>
-      <h1 class="journal-title">{{t .Messages "onboarding.step1.title"}}</h1>
+      <h1 class="journal-title" data-title-key="onboarding.step1.title">{{t .Messages "onboarding.step1.title"}}</h1>
       <p class="journal-muted">{{t .Messages "onboarding.step1.subtitle"}}</p>
       <p class="journal-muted text-sm">{{t .Messages "onboarding.step1.day1_tip"}}</p>
       <p class="journal-muted text-sm">{{t .Messages "onboarding.step1.privacy"}}</p>
@@ -66,7 +66,7 @@
     </div>
 
     <div data-onboarding-panel="2" class="mt-6 space-y-4" {{if ne .OnboardingStep 2}}hidden{{end}}>
-      <h1 class="journal-title">{{t .Messages "onboarding.step2.title"}}</h1>
+      <h1 class="journal-title" data-title-key="onboarding.step2.title">{{t .Messages "onboarding.step2.title"}}</h1>
 
       <form
         hx-post="/api/v1/onboarding/steps/2"

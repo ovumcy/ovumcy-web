@@ -47,12 +47,19 @@ export async function dashboardCurrentCycleDay(page: Page): Promise<number> {
   return Number(match![0]);
 }
 
-export async function dashboardCurrentPhaseText(page: Page): Promise<string> {
+/**
+ * The phase the dashboard reports, as the locale-independent enum value.
+ *
+ * Both primary summaries declare it on `data-dashboard-phase`, so a spec can
+ * assert `'menstrual'` instead of branching over «Менструальная» / "Menstrual"
+ * per language — a regex alternation that quietly reduces to "any of these
+ * words" and passes on the wrong phase whenever two languages share a spelling.
+ */
+export async function dashboardCurrentPhase(page: Page): Promise<string> {
   const mode = await dashboardPrimarySummaryMode(page);
-  const text =
-    mode === 'hero'
-      ? await dashboardCycleHero(page).locator('.dashboard-cycle-hero-center-phase').textContent()
-      : await dashboardFallbackStatusLine(page).locator('.dashboard-status-item').first().textContent();
+  const root = mode === 'hero' ? dashboardCycleHero(page) : dashboardFallbackStatusLine(page);
 
-  return String(text || '').trim();
+  const phase = (await root.getAttribute('data-dashboard-phase')) ?? '';
+  expect(phase, 'the dashboard summary must declare data-dashboard-phase').not.toBe('');
+  return phase;
 }

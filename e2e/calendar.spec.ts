@@ -15,6 +15,7 @@ import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helper
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { localeText } from './support/locale-helpers';
 import {
   acceptConfirmDialog,
   cancelConfirmDialog,
@@ -84,13 +85,21 @@ test.describe('Calendar page', () => {
     const initialLabel = ((await monthLabel.textContent()) ?? '').trim();
     expect(initialLabel.length).toBeGreaterThan(0);
 
+    // Each wait names the month the control points at. The generic
+    // /calendar?month=\d{4}-\d{2} shape is satisfied by the URL the click starts
+    // from once a month is selected, so it would pass without the transition.
+    const prevMonth = new URL((await prevLink.getAttribute('href')) ?? '', page.url()).searchParams.get('month');
+    expect(prevMonth).toMatch(/^\d{4}-\d{2}$/);
     await prevLink.click();
-    await expect(page).toHaveURL(/\/calendar\?month=\d{4}-\d{2}/);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${prevMonth}$`));
     const prevLabel = ((await monthLabel.textContent()) ?? '').trim();
     expect(prevLabel).not.toBe(initialLabel);
 
+    const nextMonth = new URL((await nextLink.getAttribute('href')) ?? '', page.url()).searchParams.get('month');
+    expect(nextMonth).toMatch(/^\d{4}-\d{2}$/);
+    expect(nextMonth).not.toBe(prevMonth);
     await nextLink.click();
-    await expect(page).toHaveURL(/\/calendar\?month=\d{4}-\d{2}/);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${nextMonth}$`));
 
     await todayLink.click();
     await expect(page).toHaveURL(/\/calendar$/);
@@ -102,7 +111,12 @@ test.describe('Calendar page', () => {
 
     await page.goto('/calendar?month=9999-99');
     await expect(page).toHaveURL(/\/calendar$/);
-    await expect(page.locator('h1')).toContainText(/Calendar|Календарь|Calendario/);
+    // Address the page title by the key it declares. The regex this replaces
+    // listed three of six languages and, being an alternation, matched any of
+    // them regardless of which language the page was actually rendering.
+    const title = page.locator('h1[data-title-key="calendar.title"]');
+    await expect(title).toBeVisible();
+    await expect(title).toHaveText(localeText('en', 'calendar.title'));
   });
 
   test('legend includes period/predicted/fertility/ovulation markers', async ({ page }) => {
@@ -361,7 +375,12 @@ test.describe('Calendar page', () => {
       }),
       manualStartButton.click(),
     ]);
-    await req.response();
+    const cycleStartResponse = await req.response();
+    expect(cycleStartResponse, `expected a response for POST /api/v1/days/${pastISO}/cycle-start`).not.toBeNull();
+    expect(
+      cycleStartResponse!.ok(),
+      `POST /api/v1/days/${pastISO}/cycle-start failed with ${cycleStartResponse!.status()}`
+    ).toBeTruthy();
 
     const editButton = page.locator(`[data-day-editor-open="${pastISO}"]`).first();
     await expect(editButton).toBeVisible();
@@ -385,7 +404,15 @@ test.describe('Calendar page', () => {
     const manualStartForm = page.locator(`[data-day-cycle-start-form][data-day-cycle-start-date="${tomorrowISO}"]`);
     const manualStartButton = manualStartForm.locator('[data-day-cycle-start-button]');
     await expect(manualStartButton).toBeVisible();
-    await expect(page.locator('#day-editor')).toContainText(/recalculated|пересчитается|recalcular/i);
+    // The notice has its own hook and declares the key it renders — the same
+    // element dashboard-warnings.spec.ts pins, so the two specs can no longer
+    // describe it two different ways.
+    const futureNotice = page.locator('#day-editor [data-future-cycle-start-notice]');
+    await expect(futureNotice.first()).toBeVisible();
+    await expect(futureNotice.first()).toHaveAttribute(
+      'data-notice-key',
+      'warning.future_cycle_start'
+    );
 
     // The onboarding seed anchors last_period_start at today-3, so tomorrow is a
     // 4-day short gap: the backend rejects the start with a 400 unless the owner
@@ -618,7 +645,12 @@ test.describe('Calendar page', () => {
       ),
       dayEditorForm.locator('button[data-save-button]').click(),
     ]);
-    await saveRequest.response();
+    const saveResponse = await saveRequest.response();
+    expect(saveResponse, `expected a response for PUT /api/v1/days/${tomorrowISO}`).not.toBeNull();
+    expect(
+      saveResponse!.ok(),
+      `PUT /api/v1/days/${tomorrowISO} failed with ${saveResponse!.status()}`
+    ).toBeTruthy();
 
     // Reload the summary (non-edit) view for tomorrow. It now renders the
     // with-data branch: the logged note is shown by owner_log_summary, which the

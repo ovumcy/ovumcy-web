@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import { fillDateField } from './support/date-field-helpers';
 import {
   completeOnboardingIfPresent,
@@ -176,11 +177,24 @@ test.describe('Visual and accessibility regressions', () => {
     await page.keyboard.press('Shift+Tab');
     await expect(page.locator('#confirm-modal-accept')).toBeFocused();
 
-    // Escape closes the dialog and returns focus to the invoking button.
-    await page.keyboard.press('Escape');
-    await expect(modal).toBeHidden();
-    await expect(logoutButton).toBeFocused();
-    await expect(page).toHaveURL(/\/dashboard$/);
+    // Escape closes the dialog, returns focus to the invoking button, and must
+    // not release the logout it gated. A URL assertion is already true the moment
+    // it runs, so record what the page puts on the wire across the whole window
+    // and close it on a reload: a surviving session still serves /dashboard,
+    // whereas an escaped logout would redirect to /login.
+    const escapedLogouts = await mutatingRequestsDuring(
+      page,
+      (pathname) => pathname === '/logout',
+      async () => {
+        await page.keyboard.press('Escape');
+        await expect(modal).toBeHidden();
+        await expect(logoutButton).toBeFocused();
+
+        await page.reload();
+        await expect(page).toHaveURL(/\/dashboard$/);
+      }
+    );
+    expect(escapedLogouts, 'dismissing the logout dialog must issue no logout').toEqual([]);
   });
 
   test('stats insight state stays readable on mobile and exposes accessible summaries', async ({

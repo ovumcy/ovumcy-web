@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { localeText } from './support/locale-helpers';
 
 test.describe('PWA install prompt', () => {
   test('shows the custom mobile install CTA and triggers the native prompt', async ({ page }) => {
@@ -28,11 +29,17 @@ test.describe('PWA install prompt', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/login');
 
-    const banner = page.locator('.mobile-install-banner');
+    // Address the banner and its action by their hooks, not by a styling class
+    // and an accessible name: `.mobile-install-banner` is a layout class and
+    // getByRole({ name: 'Install app' }) only resolves in English. The rendered
+    // title is still asserted once, against the key the template declares.
+    const banner = page.locator('[data-pwa-install-banner]');
+    const installTitle = banner.locator('[data-pwa-install-title]');
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText('Install Ovumcy');
+    await expect(installTitle).toHaveAttribute('data-pwa-install-title-key', 'pwa.install.title');
+    await expect(installTitle).toHaveText(localeText('en', 'pwa.install.title'));
 
-    await page.getByRole('button', { name: 'Install app' }).click();
+    await banner.locator('[data-pwa-install-action="install"]').click();
 
     await expect
       .poll(async () => {

@@ -7,6 +7,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -152,14 +153,24 @@ test.describe('Dashboard: today editor', () => {
     const noteSummary = noteDisclosure.locator('summary');
     const notes = page.locator('#today-notes');
     const notesCounter = page.locator('[data-dashboard-notes-field-group] [data-dashboard-notes-count]').first();
+    // The `open` attribute IS the state, and the disclosure declares both label
+    // variants as data attributes for the client script. Assert the rendered
+    // label against the declaration instead of a three-language regex whose
+    // alternation matched any of the three regardless of the page language.
+    const closedLabel = ((await noteDisclosure.getAttribute('data-note-empty-text')) ?? '').trim();
+    const openLabel = ((await noteDisclosure.getAttribute('data-note-open-text')) ?? '').trim();
+    expect(closedLabel, 'the note disclosure must declare data-note-empty-text').not.toBe('');
+    expect(openLabel, 'the note disclosure must declare data-note-open-text').not.toBe('');
+    expect(openLabel).not.toBe(closedLabel);
+
     await expect(noteDisclosure).toHaveCount(1);
     await expect(noteDisclosure).not.toHaveAttribute('open', '');
-    await expect(noteSummary).toContainText(/Add note|Добавить заметку|Agregar nota/);
+    await expect(noteSummary).toContainText(closedLabel);
     await expect(notes).toBeHidden();
 
     await noteSummary.click();
     await expect(noteDisclosure).toHaveAttribute('open', '');
-    await expect(noteSummary).toContainText(/Hide note|Скрыть заметку|Ocultar nota/);
+    await expect(noteSummary).toContainText(openLabel);
     await expect(notes).toBeVisible();
     await expect(notes).toHaveAttribute('rows', '2');
     await expect(notes).toHaveAttribute('maxlength', '2000');
@@ -176,7 +187,7 @@ test.describe('Dashboard: today editor', () => {
 
     await page.reload();
     await expect(noteDisclosure).toHaveAttribute('open', '');
-    await expect(noteSummary).toContainText(/Hide note|Скрыть заметку|Ocultar nota/);
+    await expect(noteSummary).toContainText(openLabel);
     await expect(page.locator('#today-notes')).toHaveValue(filledNoteText);
   });
 
@@ -435,11 +446,23 @@ test.describe('Dashboard: today editor', () => {
 
     const manualStartButton = manualCycleStartButton(page);
     await expect(manualStartButton).toBeVisible();
-    await manualStartButton.click();
-    await expect(page.locator('#confirm-modal')).toBeVisible();
-    await page.locator('#confirm-modal-cancel').click();
-    await expect(page.locator('#confirm-modal')).toBeHidden();
-    await expect(page.locator('#save-status .status-error')).toHaveCount(0);
+
+    // Cancel must issue nothing at all. An empty #save-status .status-error is a
+    // weaker claim than it looks — it also holds when the POST fired and
+    // succeeded — so record the wire instead, and reload inside the window so any
+    // request the cancelled click was going to issue has had its chance.
+    const cancelledRequests = await mutatingRequestsDuring(
+      page,
+      (pathname) => pathname.endsWith('/cycle-start'),
+      async () => {
+        await manualStartButton.click();
+        await cancelConfirmDialog(page);
+
+        await page.reload();
+        await expect(manualStartButton).toBeVisible();
+      }
+    );
+    expect(cancelledRequests, 'cancelling the manual cycle start must issue no request').toEqual([]);
 
     const [request] = await Promise.all([
       page.waitForRequest(
