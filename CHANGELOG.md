@@ -401,6 +401,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verify each fragment is a real calendar date in the app's display format —
   `/\w{3} \d{1,2}, \d{4}/` matched `Foo 99, 0000`.
 
+- **Every remaining e2e wait now binds to a concrete signal instead of to a
+  sleep or to page state that is already true.** The suite's last two fixed
+  250 ms sleeps, which guarded the two XSS "no dialog fired" claims, are gone:
+  the assertions they followed already prove the payload had its chance — the
+  server rejected it and nothing rendered in one test, it is present as *text*
+  rather than markup in the other, so no element exists to fire a deferred
+  `onerror`. `completeOnboardingIfPresent`, which nearly every spec calls, no
+  longer swallows a hung post-registration redirect: the wait stays tolerant of
+  the redirect having already landed, but the settled path is now asserted, so
+  "the redirect never happened" fails at the helper rather than resurfacing as
+  an unrelated failure further down the caller. Calendar and BUG-06 month
+  navigation assert the specific month each control points at, instead of a
+  `?month=` shape the URL already matches before the click. The two
+  "Cancel/Escape did not navigate" claims — the settings leave guard and the
+  logout confirmation — now record what the page put on the wire, or where the
+  main frame went, across the whole window and close it on a reload or on a
+  state transition; the dashboard manual-cycle-start cancel joins them, having
+  asserted only an empty error status, which also holds when the POST fired and
+  succeeded. Two calendar `await request.response()` calls that discarded the
+  status now assert it. Every replacement assertion was proven live by breaking
+  what it guards — accepting the dialog it cancels, aiming the onboarding helper
+  at a path that never arrives, naming the wrong month — and watching it fail
+  while naming the escaped request, the navigation, or the stuck URL.
+
 - **Three latent e2e-suite defects, each proven by an executed probe before the
   fix and re-proven closed after it.** The day-editor save helper
   (`saveDayEditorForm`) moved from a single spec into `e2e/support/stats-helpers.ts`
