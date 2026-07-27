@@ -310,6 +310,75 @@ func TestVerifyTOTPLogin_ValidCode_IssuesSessionAndRedirects(t *testing.T) {
 	}
 }
 
+// TestVerifyTOTPLogin_AcceptsBothPublishedAndFormBodies pins the endpoint's two
+// transports against each other in one test: the JSON body docs/openapi.yaml
+// publishes as the request shape, and the urlencoded form the challenge page
+// posts. Reading the code with c.FormValue alone answered every JSON request
+// with "totp invalid code" — the same answer a wrong code gets — so an API
+// client written against the published contract could never complete 2FA while
+// the browser flow, and every test driving it, stayed green.
+func TestVerifyTOTPLogin_AcceptsBothPublishedAndFormBodies(t *testing.T) {
+	for _, transport := range []struct {
+		name        string
+		contentType string
+		wantStatus  int
+		body        func(code, csrfToken string) string
+	}{
+		{
+			// The spec documents both outcomes for this endpoint: 200 with
+			// {"ok":true} for a JSON caller, 303 for the browser form.
+			name:        "json body (published contract)",
+			contentType: "application/json",
+			wantStatus:  http.StatusOK,
+			body: func(code, _ string) string {
+				return `{"code":"` + code + `"}`
+			},
+		},
+		{
+			name:        "urlencoded form (challenge page)",
+			contentType: "application/x-www-form-urlencoded",
+			wantStatus:  http.StatusSeeOther,
+			body: func(code, csrfToken string) string {
+				return url.Values{"code": {code}, "csrf_token": {csrfToken}}.Encode()
+			},
+		},
+	} {
+		t.Run(transport.name, func(t *testing.T) {
+			app, database := newOnboardingTestAppWithCSRF(t)
+			user := createOnboardingTestUser(t, database, "totp-transport@example.com", "StrongPass1", true)
+			secretKey := []byte("test-secret-key")
+			rawSecret := setupTOTPForUser(t, database, user.ID, secretKey)
+			pendingCookie := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+
+			code, err := totp.GenerateCode(rawSecret, time.Now())
+			if err != nil {
+				t.Fatalf("GenerateCode: %v", err)
+			}
+
+			csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge",
+				strings.NewReader(transport.body(code, csrfToken)))
+			req.Header.Set("Content-Type", transport.contentType)
+			req.Header.Set("X-CSRF-Token", csrfToken)
+			req.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
+			req.Header.Set("Accept-Language", "en")
+			resp, err := app.Test(req, testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != transport.wantStatus {
+				t.Fatalf("status = %d, want %d — the valid code was not accepted over %s",
+					resp.StatusCode, transport.wantStatus, transport.contentType)
+			}
+			if authCookie := responseCookie(resp.Cookies(), authCookieName); authCookie == nil || authCookie.Value == "" {
+				t.Errorf("expected an auth cookie after a valid code over %s", transport.contentType)
+			}
+		})
+	}
+}
+
 func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "totp-invalid@example.com", "StrongPass1", true)

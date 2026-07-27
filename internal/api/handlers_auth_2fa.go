@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -30,6 +31,22 @@ func (handler *Handler) ShowTOTPChallengePage(c fiber.Ctx) error {
 	return handler.render(c, "auth_2fa", data)
 }
 
+// parseTOTPChallengeCode reads the submitted code from either transport the
+// endpoint serves: the JSON body `docs/openapi.yaml` publishes for API clients,
+// and the urlencoded form the challenge page posts. `c.FormValue` alone never
+// sees a JSON body, so a spec-conforming client got `totp invalid code` for
+// every code it sent — indistinguishable from a wrong one.
+func parseTOTPChallengeCode(c fiber.Ctx) string {
+	if hasJSONBody(c) {
+		input := totpChallengeInput{}
+		if err := c.Bind().Body(&input); err != nil {
+			return ""
+		}
+		return strings.TrimSpace(input.Code)
+	}
+	return strings.TrimSpace(c.FormValue("code"))
+}
+
 // VerifyTOTPLogin validates the 6-digit TOTP code submitted on the challenge page.
 // On success it issues the auth session cookie and redirects to the dashboard.
 func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
@@ -50,7 +67,7 @@ func (handler *Handler) VerifyTOTPLogin(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 
-	code := c.FormValue("code")
+	code := parseTOTPChallengeCode(c)
 	if len(code) != 6 {
 		spec := totpInvalidCodeErrorSpec()
 		handler.logSecurityError(c, "auth.2fa", spec)
