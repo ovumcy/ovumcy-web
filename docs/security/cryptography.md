@@ -60,7 +60,7 @@ The sealed-cookie and field-crypto HKDF label pairs live next to the shared AEAD
 
 **Operational caveat — rotating `SECRET_KEY` with 2FA accounts:**
 
-`users.totp_secret` is encrypted under a key derived from the current `SECRET_KEY`. Rotating the secret without a coordinated re-encryption step leaves TOTP-enabled accounts unable to complete the 2FA challenge — they will see a failed verification even when their authenticator app produces the correct code. Recovery options for each affected user are:
+`users.totp_secret` is encrypted under a key derived from the current `SECRET_KEY`. Rotating the secret without a coordinated re-encryption step leaves TOTP-enabled accounts unable to complete the 2FA challenge. Be precise about what those users see, because it is not a rejected code: the stored ciphertext no longer opens, so the challenge answers **HTTP 500 with the stable key `totp internal error`** even when the authenticator app produces the correct code. Nothing in that response points at the recovery path, and on the operator's side every affected sign-in is a 5xx event, so a planned rotation with 2FA accounts on the instance will look like an application fault until you connect it to the maintenance window. Recovery options for each affected user are:
 
 1. Sign in with the recovery code, then re-enrol TOTP under the new key.
 2. Ask the operator to run `ovumcy reset-password <email>` and disable 2FA via Settings once signed back in.
