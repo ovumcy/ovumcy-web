@@ -33,6 +33,12 @@ jobs:
   # everything basic pass" (e2e, e2e-postgres-smoke) depend on both.
   test-go:
     runs-on: ubuntu-latest
+    # Whole-job docs-only skip (see the `changes` job): coverage-upload and
+    # patch-coverage cascade off this job's skip through their needs edge, and
+    # the thin `test` gate job follows both unit jobs the same way.
+    needs:
+      - changes
+    if: needs.changes.outputs.run_battery == 'true'
     permissions:
       contents: read
 
@@ -99,6 +105,9 @@ jobs:
 
   test-frontend:
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.run_battery == 'true'
     permissions:
       contents: read
 
@@ -153,6 +162,9 @@ jobs:
 
   race:
     runs-on: ubuntu-latest
+    needs:
+      - changes
+    if: needs.changes.outputs.run_battery == 'true'
     permissions:
       contents: read
 
@@ -268,6 +280,14 @@ jobs:
       contents: read
     outputs:
       run_e2e: ${{ steps.detect.outputs.run_e2e }}
+      # Same docs-only determination, consumed by the unit/race battery
+      # (test-go, test-frontend, race) as a whole-job gate. Kept as a separate
+      # output so the two allowlists can diverge later without re-wiring
+      # consumers. Unlike e2e's historical step-level gating below, the
+      # battery jobs skip at the job level: GitHub reports a skipped job as a
+      # satisfied required check (proven in practice on the sibling
+      # sync-community/managed repos, whose whole Go battery merges this way).
+      run_battery: ${{ steps.detect.outputs.run_battery }}
 
     steps:
       - name: Checkout
@@ -318,6 +338,9 @@ jobs:
             echo "Non-PR event ($EVENT_NAME): running e2e."
           fi
           echo "run_e2e=$run_e2e" >> "$GITHUB_OUTPUT"
+          # The battery shares the e2e allowlist verbatim today; diverge here
+          # (not in consumers) if that ever changes.
+          echo "run_battery=$run_e2e" >> "$GITHUB_OUTPUT"
 
   e2e:
     runs-on: ubuntu-latest
@@ -327,12 +350,15 @@ jobs:
     needs:
       - test
       - changes
-    # `e2e` is a required status check (branch protection) AND admins are
-    # enforced, so this job must always run and report a result. Skipping the
-    # whole job via a job-level `if` would leave the required check unsatisfied
-    # and could permanently block docs-only PRs. Instead the job always starts
-    # and each work step is gated: on a docs-only change every step is skipped
-    # and the job goes green in seconds, satisfying the required check.
+    # `e2e` is a required status check (branch protection). Historical note:
+    # this job gates each work STEP instead of using a job-level `if` because
+    # job-level skips were believed to leave the required check unsatisfied —
+    # that is not how GitHub behaves today (a skipped job reports as a
+    # satisfied required check; the unit/race battery above and the sibling
+    # repos rely on it). The step-gated shape is kept as-is; note that on a
+    # docs-only pull request this job now cascades to skipped anyway, because
+    # its `test` dependency skips first, so the RUN_E2E step guards matter
+    # only if the two allowlists in `changes` ever diverge.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
 
