@@ -15,6 +15,7 @@ import {
   continueFromRecoveryCode,
   createCredentials,
   expectInlineRegisterRecoveryStep,
+  logoutViaAPI,
   readRecoveryCode,
   registerOwnerViaUI,
   apiOriginHeader,
@@ -42,6 +43,49 @@ async function registerOwnerAndReachDashboard(page: Page, prefix: string) {
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
 
   return credentials;
+}
+
+async function onboardOwnerWithAutoPeriodFill(
+  page: Page,
+  prefix: string,
+  onboardingDate: string,
+  autoPeriodFill: boolean
+): Promise<void> {
+  await registerOwnerViaUI(page, createCredentials(prefix));
+  await expectInlineRegisterRecoveryStep(page);
+  await readRecoveryCode(page);
+  await continueFromRecoveryCode(page);
+  await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+
+  await fillDateField(page.locator('#last-period-start'), onboardingDate);
+  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+  await expect(page.locator('form[hx-post="/api/v1/onboarding/steps/2"]')).toBeVisible();
+
+  const autoFillToggle = page.locator('label[data-binary-toggle]:has(input[name="auto_period_fill"])');
+  const autoFillCheckbox = page.locator('input[name="auto_period_fill"]');
+  await expect(autoFillCheckbox).toBeChecked();
+  if (!autoPeriodFill) {
+    await autoFillToggle.click();
+  }
+  await expect(autoFillCheckbox).toBeChecked({ checked: autoPeriodFill });
+
+  await page.locator('form[hx-post="/api/v1/onboarding/steps/2"] button[type="submit"]').click();
+  await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+}
+
+async function expectAutoFillWindowMarkers(
+  page: Page,
+  onboardingDate: string,
+  hasData: boolean
+): Promise<void> {
+  await page.goto(`/calendar?month=${onboardingDate.slice(0, 7)}&day=${onboardingDate}`);
+  for (let offset = 0; offset < 5; offset += 1) {
+    const iso = shiftISODate(onboardingDate, offset);
+    await expect(page.locator(`button[data-day="${iso}"]`)).toHaveAttribute(
+      'data-calendar-has-data',
+      hasData ? 'true' : 'false'
+    );
+  }
 }
 
 async function setRangeValue(selector: string, page: Page, value: number): Promise<void> {
@@ -277,13 +321,7 @@ test.describe('Bug regressions', () => {
     test('onboarding with auto period fill disabled does not create logged-entry markers', async ({
       page,
     }) => {
-      const credentials = createCredentials('bug01-onboarding-no-autofill');
-
-      await registerOwnerViaUI(page, credentials);
-      await expectInlineRegisterRecoveryStep(page);
-      await readRecoveryCode(page);
-      await continueFromRecoveryCode(page);
-      await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
+      await page.goto('/login');
 
       // Pin onboardingDate to the 5th of a stable month so the +0..+4 window walked
       // below stays inside one calendar month — otherwise the loop crosses a month
@@ -297,24 +335,18 @@ test.describe('Bug regressions', () => {
         todayDay >= 5 ? new Date(todayYear, todayMonth - 1, 5) : new Date(todayYear, todayMonth - 2, 5);
       const onboardingDate = `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, '0')}-05`;
 
-      await fillDateField(page.locator('#last-period-start'), onboardingDate);
-      await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-      await expect(page.locator('form[hx-post="/api/v1/onboarding/steps/2"]')).toBeVisible();
+      await onboardOwnerWithAutoPeriodFill(page, 'bug01-onboarding-no-autofill', onboardingDate, false);
+      await expectAutoFillWindowMarkers(page, onboardingDate, false);
 
-      const autoFillToggle = page.locator('label[data-binary-toggle]:has(input[name="auto_period_fill"])');
-      const autoFillCheckbox = page.locator('input[name="auto_period_fill"]');
-      await expect(autoFillCheckbox).toBeChecked();
-      await autoFillToggle.click();
-      await expect(autoFillCheckbox).not.toBeChecked();
-
-      await page.locator('form[hx-post="/api/v1/onboarding/steps/2"] button[type="submit"]').click();
-      await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
-
-      await page.goto(`/calendar?month=${onboardingDate.slice(0, 7)}&day=${onboardingDate}`);
-      for (let offset = 0; offset < 5; offset += 1) {
-        const iso = shiftISODate(onboardingDate, offset);
-        await expect(page.locator(`button[data-day="${iso}"]`)).toHaveAttribute('data-calendar-has-data', 'false');
-      }
+      // Positive anchor in the same test: a second owner onboarded with the
+      // toggle left ON must mark the very same five cells. Without it the
+      // "false" assertions above pass just as well when the marker attribute is
+      // dead — an instance where nothing ever renders data-calendar-has-data
+      // looks identical to auto-fill being correctly disabled. Owners are
+      // isolated by user_id, so the second account observes only its own grid.
+      await logoutViaAPI(page);
+      await onboardOwnerWithAutoPeriodFill(page, 'bug01-onboarding-autofill', onboardingDate, true);
+      await expectAutoFillWindowMarkers(page, onboardingDate, true);
     });
 
     test('dashboard cycle hero next period stays aligned with calendar predicted start', async ({
@@ -394,12 +426,19 @@ test.describe('Bug regressions', () => {
       // Duplicate registration dispatches through the pickup-cookie flow:
       // POST /api/v1/users issues a decoy pickup cookie + 303 to
       // /register/welcome, the welcome handler fails to consume the decoy
-      // nonce, and the browser ends at /login with a neutral flash. The
-      // privacy invariant guarded here is that no URL params leak the
-      // attempted email/error and no page text reveals "already exists".
-      // The residual two-step landing-page oracle is documented in
-      // SECURITY.md "Register enumeration".
-      await expect(page).toHaveURL(/\/(register|login)$/);
+      // nonce, and the browser ends at /login with a neutral flash. That
+      // landing is the positive anchor — without it the URL and body checks
+      // below stay green even if the decoy branch never ran at all. The flash
+      // key is the one EVERY unusable pickup produces (decoy, expired,
+      // tampered, replayed), so pinning it reveals nothing about whether the
+      // address exists. The privacy invariant guarded here is that no URL
+      // params leak the attempted email/error and no page text reveals
+      // "already exists". The residual two-step landing-page oracle is
+      // documented in SECURITY.md "Register enumeration".
+      await expect(page).toHaveURL(/\/login$/);
+      await expect(
+        page.locator('[data-auth-server-error][data-error-key="auth.error.post_register_signin"]')
+      ).toBeVisible();
       const currentURL = page.url().toLowerCase();
       expect(currentURL).not.toContain('email=');
       expect(currentURL).not.toContain('error=');

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { logoutViaAPI } from './support/auth-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
-import { displayDatesIn } from './support/date-field-helpers';
+import { displayDatesIn, fillDateField } from './support/date-field-helpers';
 import { localeText } from './support/locale-helpers';
 import {
   markCycleStart,
@@ -16,6 +17,11 @@ const FACTOR_CONTEXT_EXPLAINER_KEY = 'prediction.explainer.factor_context';
 
 test.describe('Stats factor context', () => {
   test('owner sees sparse irregular explanations before range mode unlocks', async ({ page }) => {
+    // Seeding walks the calendar per cycle start and per saved factor, and the
+    // in-test positive anchor adds one more day-editor round trip. Same budget
+    // as the comparably seeded stats test in visual-a11y.spec.ts.
+    test.slow();
+
     await registerOwnerAndEnableIrregularMode(page, 'stats-factor-sparse');
 
     const today = await todayISOFromDashboard(page);
@@ -53,9 +59,24 @@ test.describe('Stats factor context', () => {
       'data-explainer-primary-key',
       SPARSE_EXPLAINER_KEY
     );
+
+    // Positive anchor for the count-0 assertion above: the hint hook is alive
+    // for this very owner once a cycle factor exists inside the 90-day context
+    // window. Without it the absent hint proves nothing — a hook that never
+    // renders reads exactly the same way.
+    await saveCycleFactorOnDay(page, shiftISODate(cycleStarts[1], 2), 'stress');
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.locator('[data-dashboard-factor-hint]')).toBeVisible();
   });
 
   test('owner sees conservative factor explanations in dashboard and stats', async ({ page }) => {
+    // Four seeded cycle starts, three factor saves, three page surfaces, and a
+    // second owner for the paired warning phase: the default 30s budget left no
+    // headroom on a loaded runner even before the phase was added.
+    test.slow();
+
     await registerOwnerAndEnableIrregularMode(page, 'stats-factor-context');
 
     const today = await todayISOFromDashboard(page);
@@ -71,8 +92,11 @@ test.describe('Stats factor context', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
+    // Address the suppressed warnings through their own hook rather than the
+    // bare styling class: every amber warning on this page lives inside
+    // [data-dashboard-cycle-warnings], together with the update-cycle-data link.
+    await expect(page.locator('[data-dashboard-cycle-warnings]')).toHaveCount(0);
     await expect(page.locator('a[href="/settings#settings-cycle"]')).toHaveCount(0);
-    await expect(page.locator('.warning-amber')).toHaveCount(0);
 
     // Two real calendar dates in order, derived through Intl from the app's own
     // display format — the EN-US shape regex this replaces matched any
@@ -123,5 +147,39 @@ test.describe('Stats factor context', () => {
       'data-explainer-secondary-key',
       FACTOR_CONTEXT_EXPLAINER_KEY
     );
+
+    // Paired positive phase for the two count-0 assertions above. A conservative
+    // baseline must SUPPRESS the cycle-warning block; that only means something
+    // if the same block renders when the data warrants it. Second owner, same
+    // irregular mode, but a cycle baseline older than the reference cycle length
+    // — the single input DashboardCycleDataLooksStale keys on. Owners are
+    // isolated by user_id, so this account observes only its own dashboard.
+    await logoutViaAPI(page);
+    await registerOwnerAndEnableIrregularMode(page, 'stats-factor-stale-baseline');
+
+    const staleCycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+    await expect(staleCycleForm).toBeVisible();
+    await fillDateField(staleCycleForm.locator('#settings-last-period-start'), shiftISODate(today, -30));
+    // Bind to this save's own PATCH: the irregular-mode save inside
+    // registerOwnerAndEnableIrregularMode already left a .status-ok in
+    // #settings-cycle-status, so waiting on that alone resolves instantly and
+    // the /dashboard navigation below aborts a still-in-flight baseline write.
+    const [staleCycleSave] = await Promise.all([
+      page.waitForRequest(
+        (request) =>
+          request.method() === 'PATCH' && request.url().includes('/api/v1/users/current/cycle'),
+      ),
+      staleCycleForm.locator('button[data-save-button]').click(),
+    ]);
+    const staleCycleResponse = await staleCycleSave.response();
+    expect(staleCycleResponse, 'expected a response for PATCH /api/v1/users/current/cycle').not.toBeNull();
+    expect(staleCycleResponse!.ok()).toBeTruthy();
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    const cycleWarnings = page.locator('[data-dashboard-cycle-warnings]');
+    await expect(cycleWarnings).toBeVisible();
+    await expect(cycleWarnings.locator('[data-dashboard-stale-warning]')).toBeVisible();
+    await expect(cycleWarnings.locator('a[href="/settings#settings-cycle"]')).toBeVisible();
   });
 });

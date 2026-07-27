@@ -214,10 +214,11 @@ test.describe('Visual and accessibility regressions', () => {
     await expect(page.locator('#cycle-chart')).toHaveAttribute('role', 'img');
     await expect(page.locator('#stats-cycle-trend-summary')).toBeVisible();
 
-    const bbtSummary = page.locator('#stats-bbt-summary');
-    if ((await bbtSummary.count()) > 0) {
-      await expect(bbtSummary).toBeVisible();
-    }
+    // Unconditional: the seed saves five BBT readings inside the current cycle,
+    // so HasCurrentCycleBBTChart is true and the summary the chart's
+    // aria-describedby points at must be there. Guarding it on count > 0 made a
+    // missing panel indistinguishable from a rendered one.
+    await expect(page.locator('#stats-bbt-summary')).toBeVisible();
 
     const cycleSummary = page.locator('#stats-cycle-trend-summary');
     await cycleSummary.scrollIntoViewIfNeeded();

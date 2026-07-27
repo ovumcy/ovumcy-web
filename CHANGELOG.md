@@ -446,6 +446,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `csrf_token` form bodies (CSRF gates state-changing methods only, and a GET
   should not carry a request body at all).
 
+- **Negative-only and self-adapting e2e tests anchored, so a dead mechanism can
+  no longer keep them green.** Six browser tests asserted only that something
+  was absent, unchanged, or not created; each now proves the same surface in the
+  state where it must appear, inside the same test — auto-fill markers rendered
+  for a second owner with the toggle on, the populated day editor before it is
+  cleared, an import that really moves the exported-day set, the cycle-warning
+  block for a stale baseline, the factor hint once a tag exists, and the neutral
+  `/login` landing the duplicate-registration decoy pickup produces. Three of the
+  anchors were proven by executed probe: with onboarding auto-fill disabled, the
+  day write silently dropped, and the import writer short-circuited, each test
+  fails naming its control, while the negative half stays green — which is what
+  the previous versions checked. Four adaptive branches lost the escape hatch
+  that made them unfalsifiable: the onboarding reload now pins both halves of the
+  behaviour it observed (submitted step-1 progress kept, unsaved step-2 slider
+  reset to the persisted value), the stats BBT summary is asserted
+  unconditionally, the OIDC hybrid-link fallback must prove the account it claims
+  already existed, and the second rejected symptom-create binds to its own POST
+  instead of re-reading the first attempt's error. Two weak assertions were
+  corrected along the way: an irregular-cycle test named for a date range looked
+  for an ASCII `" - "` that no branch emits (the range separator is an em dash,
+  and the state under test renders no range at all — the name was wrong), and the
+  suppressed cycle warnings are now addressed through the block's own `data-*`
+  hook instead of a bare styling class.
+
 - Browser coverage that cancelling a confirmation is inert now reaches deleting
   a calendar day entry — where the action has no undo — and hiding a custom
   symptom, instead of the calendar-feed settings flow alone. Each new test

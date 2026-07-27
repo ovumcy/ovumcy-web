@@ -302,7 +302,7 @@ test.describe('Onboarding flow', () => {
     await expect(onboardingStepTwoForm(page)).toBeVisible();
   });
 
-  test('reload during onboarding keeps progress or resets gracefully without blocking completion', async ({
+  test('reload during onboarding keeps submitted progress and resets the unsaved step 2 draft', async ({
     page,
   }) => {
     await registerAndOpenOnboarding(page, 'onboarding-reload');
@@ -317,15 +317,15 @@ test.describe('Onboarding flow', () => {
     await page.reload();
     await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
 
-    const stepTwoVisible = await onboardingStepTwoForm(page).isVisible().catch(() => false);
-    if (stepTwoVisible) {
-      await submitStepTwo(page);
-      return;
-    }
+    // Both halves of the reload behaviour are server-decided, so neither is
+    // adaptive. Step 1 posted its date, so BuildOnboardingViewState reopens the
+    // flow on step 2 with that date still filled. Step 2 has no draft store of
+    // any kind — the slider re-renders from the persisted user record, so the
+    // unsubmitted 32 is deliberately discarded back to the default 28.
+    await expect(onboardingStepTwoForm(page)).toBeVisible();
+    await expect(page.locator('#last-period-start')).toHaveValue(startDate);
+    await expect(cycleSlider).toHaveValue('28');
 
-    await ensureOnboardingStepOneVisible(page);
-    await fillDateField(page.locator('#last-period-start'), startDate);
-    await submitStepOne(page, startDate);
     await submitStepTwo(page);
   });
 

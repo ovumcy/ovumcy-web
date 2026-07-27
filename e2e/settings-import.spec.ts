@@ -91,7 +91,27 @@ test.describe('Settings: restore from JSON backup', () => {
 
   test('submitting with no file selected shows a prompt and imports nothing', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-import-empty');
+
+    // Positive anchor: prove the probe can move at all before asking it to stay
+    // still. A restore path that imports nothing, or an export that never lists
+    // the day, satisfies "unchanged" for entirely the wrong reason.
+    await chooseImportFile(
+      page,
+      'ovumcy-export.json',
+      exportFileBuffer([{ date: '2026-10-01', period: true, flow: 'light', cycle_factors: [] }]),
+    );
+    await submitImport(page);
+    await expect(lastToast(page)).toBeVisible();
     const before = await exportedDates(page);
+    expect(before).toContain('2026-10-01');
+
+    // Reload so the file input is empty again — the precondition this test is
+    // named for — and so the toast asserted below can only be the one the
+    // no-file submit produced.
+    await page.reload();
+    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page.locator(`${IMPORT_SECTION} [data-import-file]`)).toHaveJSProperty('value', '');
+    await expect(page.locator('.toast-stack .toast-message')).toHaveCount(0);
 
     await submitImport(page);
 
