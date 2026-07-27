@@ -331,16 +331,24 @@ test.describe('Dashboard: today editor', () => {
     const firstSymptom = todaySymptomOptions(page).nth(0);
     const notes = page.locator('#today-notes');
 
+    const noteText = `to-clear-${Date.now()}`;
+
     await periodToggle.check();
     await checkStyledControl(flowMedium);
     await symptomChipForOption(firstSymptom).click();
     await openTodayNotes(page);
-    await notes.fill(`to-clear-${Date.now()}`);
+    await notes.fill(noteText);
     await saveToday(page);
 
     await page.reload();
 
-    await expect(manualCycleStartButton(page)).toContainText('cycle');
+    // Positive anchor: the entry really is populated after the save and the
+    // reload. Without it the post-clear assertions below pass on an editor that
+    // was never filled — an unsaved form and a cleared one look identical.
+    await expect(periodToggle).toBeChecked();
+    await expect(flowMedium).toBeChecked();
+    await expect(symptomInputForOption(firstSymptom)).toBeChecked();
+    await expect(notes).toHaveValue(noteText);
 
     const clearButton = clearTodayButton(page);
     await expect(clearButton).toBeVisible();

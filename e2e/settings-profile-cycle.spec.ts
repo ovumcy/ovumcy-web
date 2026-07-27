@@ -313,7 +313,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('#settings-cycle-status .status-error')).toBeVisible();
   });
 
-  test('irregular cycle toggle switches dashboard prediction to a date range', async ({ page }) => {
+  test('irregular cycle toggle switches dashboard prediction to a pending-cycles estimate', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-irregular-cycle');
 
     const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
@@ -327,10 +327,16 @@ test.describe('Settings: profile and cycle', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
+    // A freshly onboarded owner has fewer than 3 completed cycles, so irregular
+    // mode renders the "around <date>" estimate, not a range:
+    // dashboardNeedsNextPeriodData short-circuits before the range is applied.
+    // The negative pins the em dash the range branch really uses
+    // (dashboard.next_period_range = "%s — %s"); the ASCII " - " it used to look
+    // for appears in no branch at all, so it could never fail.
     const nextPeriodText = await dashboardNextPeriodText(page);
     expect(nextPeriodText).toContain('around');
     expect(nextPeriodText).toContain('3 cycles are needed');
-    expect(nextPeriodText).not.toContain(' - ');
+    expect(nextPeriodText).not.toContain(' — ');
   });
 
   test('tracking toggles and BBT unit persist and change the owner day form', async ({ page }) => {
@@ -835,8 +841,21 @@ test.describe('Settings: profile and cycle', () => {
     await expect(symptomSection.locator('.status-error')).toContainText('That symptom name already exists in your list.');
     await expect(symptomSection.locator('[data-custom-symptom-row][data-symptom-name="Joint stiffness"]')).toHaveCount(1);
 
+    // The first rejection left its error node on the page, and this attempt
+    // expects the very same message — so the assertion below is satisfied by the
+    // previous submit's output even if this one never leaves the browser. Bind
+    // it to this click's own POST and its response, the way the save helpers do,
+    // so the rejection has to be re-earned against the server.
     await createForm.locator('#settings-new-symptom-name').fill('Усталость');
-    await createForm.locator('button[type="submit"]').click();
+    const [builtInDuplicateRequest] = await Promise.all([
+      page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/v1/symptoms',
+      ),
+      createForm.locator('button[type="submit"]').click(),
+    ]);
+    const builtInDuplicateResponse = await builtInDuplicateRequest.response();
+    expect(builtInDuplicateResponse, 'expected a response for POST /api/v1/symptoms').not.toBeNull();
     await expect(symptomSection.locator('.status-error')).toContainText('That symptom name already exists in your list.');
 
     await createForm.locator('#settings-new-symptom-name').fill('<script>alert(1)</script>');

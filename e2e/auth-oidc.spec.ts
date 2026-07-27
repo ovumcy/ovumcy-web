@@ -130,10 +130,17 @@ test.describe('Auth: OIDC login entry', () => {
       await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
     } else {
       // providerEmail already exists in the shared e2e DB (for example a prior
-      // browser project registered it). Registration is enumeration-safe, so a
-      // duplicate email lands on the neutral /login, not /register — sign in
-      // with the existing account instead.
-      await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
+      // browser project registered it). The branch stays adaptive because this
+      // lane is re-run against a database it does not own, but it may not be
+      // entered on a timeout alone: a registration broken for any other reason
+      // would silently skip the first half of the flow. Duplicate registration
+      // runs the decoy pickup and lands on the neutral /login flash, so pinning
+      // that landing proves the precondition this branch claims. The key is the
+      // one every unusable pickup produces, so it stays enumeration-safe.
+      await expect(page).toHaveURL(/\/login$/);
+      await expect(
+        page.locator('[data-auth-server-error][data-error-key="auth.error.post_register_signin"]')
+      ).toBeVisible();
       await loginViaUI(page, credentials);
       await completeOnboardingIfPresent(page);
       await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
