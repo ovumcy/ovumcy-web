@@ -1000,6 +1000,8 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/TOTPLoginRequest' }
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/TOTPLoginRequest' }
       responses:
         '200':
           description: 2FA verified; `ovumcy_auth` issued.
