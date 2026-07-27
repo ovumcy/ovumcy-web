@@ -379,6 +379,39 @@ func TestVerifyTOTPLogin_AcceptsBothPublishedAndFormBodies(t *testing.T) {
 	}
 }
 
+// TestVerifyTOTPLogin_MalformedJSONBody_AnswersInvalidCode covers the other
+// branch of the JSON transport: a body that announces itself as JSON and does
+// not parse. It must land on the same neutral "invalid code" answer as a wrong
+// code — never a 500, and never a message that tells a caller how its payload
+// was misread.
+func TestVerifyTOTPLogin_MalformedJSONBody_AnswersInvalidCode(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "totp-malformed@example.com", "StrongPass1", true)
+	secretKey := []byte("test-secret-key")
+	setupTOTPForUser(t, database, user.ID, secretKey)
+	pendingCookie := sealTOTPPendingCookieForTest(t, secretKey, user.ID, false)
+
+	csrfToken, csrfCookieHeader := extractCSRFCookieAndToken(t, app)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sessions/2fa-challenge",
+		strings.NewReader(`{"code":`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", csrfToken)
+	req.Header.Set("Cookie", joinCookieHeader(pendingCookie, csrfCookieHeader))
+	req.Header.Set("Accept-Language", "en")
+	resp, err := app.Test(req, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("POST /api/v1/sessions/2fa-challenge: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 for a malformed JSON body", resp.StatusCode)
+	}
+	if authCookie := responseCookie(resp.Cookies(), authCookieName); authCookie != nil && authCookie.Value != "" {
+		t.Error("a malformed body must not issue an auth cookie")
+	}
+}
+
 func TestVerifyTOTPLogin_InvalidCode_DoesNotIssueSession(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "totp-invalid@example.com", "StrongPass1", true)
