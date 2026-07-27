@@ -60,6 +60,24 @@ func RespondRequestEntityTooLarge(c fiber.Ctx) error {
 	return apiError(c, requestTooLargeErrorSpec())
 }
 
+// requestTimeoutErrorSpec maps a request that outlived its budget
+// (RequestBudget, enforced by RequestDeadlineGuard) to the shared error-spec
+// shape. 503 rather than 500: nothing about the request was wrong and the
+// condition is transient, so the stable key "request_timeout" tells a client to
+// retry rather than to report a fault. Global for the same reason as its 413
+// sibling — the deadline expires somewhere below the handler, so there is no
+// form field to scope it to.
+func requestTimeoutErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusServiceUnavailable, APIErrorCategoryInternal, "request_timeout")
+}
+
+// RespondRequestTimeout renders that 503 through the same content-negotiated
+// formatting as every other mapped error. Exported because the guard that
+// detects the condition is middleware, registered in the composition root.
+func RespondRequestTimeout(c fiber.Ctx) error {
+	return apiError(c, requestTimeoutErrorSpec())
+}
+
 // requestHeadersTooLargeErrorSpec maps a transport-level 431 (the request head —
 // start line plus every header, cookies included — not fitting fasthttp's read
 // buffer) to the shared error-spec shape, for the same reason as the 413 above:
