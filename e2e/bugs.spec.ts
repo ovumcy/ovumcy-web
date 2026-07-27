@@ -1,14 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clearDateField, fillDateField } from './support/date-field-helpers';
+import { clearDateField, fillDateField, formatDisplayDate } from './support/date-field-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import {
   dashboardCurrentCycleDay,
-  dashboardCurrentPhaseText,
+  dashboardCurrentPhase,
   dashboardCycleHero,
   dashboardPrimarySummaryMode,
 } from './support/dashboard-helpers';
+import { everyLocaleText, localeKeysMatchingEnglish, localeText } from './support/locale-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -108,8 +109,7 @@ async function setTimezoneCookie(page: Page, timezone: string): Promise<void> {
 async function timezoneToday(page: Page, timezone: string): Promise<{
   iso: string;
   day: string;
-  weekdayEN: string;
-  weekdayRU: string;
+  weekday: string;
 }> {
   return page.evaluate((tz) => {
     const now = new Date();
@@ -122,11 +122,15 @@ async function timezoneToday(page: Page, timezone: string): Promise<{
 
     const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
     const iso = `${byType.year}-${byType.month}-${byType.day}`;
+    // Derive the weekday in the language the page is actually rendering in,
+    // rather than testing an EN-or-RU disjunction: that branch passed whenever
+    // either language matched, so it could not notice a third language
+    // rendering the wrong day.
+    const lang = document.documentElement.lang || 'en';
     return {
       iso,
       day: String(Number(byType.day)),
-      weekdayEN: new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' }).format(now),
-      weekdayRU: new Intl.DateTimeFormat('ru-RU', { timeZone: tz, weekday: 'long' }).format(now),
+      weekday: new Intl.DateTimeFormat(lang, { timeZone: tz, weekday: 'long' }).format(now),
     };
   }, timezone);
 }
@@ -151,16 +155,7 @@ async function browserMonthYearsAgo(page: Page, years: number): Promise<string> 
   }, years);
 }
 
-async function formatEnglishDisplayDate(page: Page, iso: string): Promise<string> {
-  return page.evaluate((value) => {
-    const date = new Date(`${value}T00:00:00`);
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    }).format(date);
-  }, iso);
-}
+const UNPREDICTABLE_EXPLAINER_KEY = 'prediction.explainer.unpredictable';
 
 test.describe('Bug regressions', () => {
   test.describe('BUG-01: request-local date consistency', () => {
@@ -211,15 +206,16 @@ test.describe('Bug regressions', () => {
       expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
       const actualTodayISO = String(todayAction || '').replace('/api/v1/days/', '');
 
-      const todayCard = page
-        .locator('form[hx-put^="/api/v1/days/"]')
-        .first()
-        .locator('xpath=ancestor::section[contains(@class,"journal-card")][1]');
-      const subtitleText = String((await todayCard.locator('p.journal-muted').first().textContent()) || '');
+      // The date subtitle has its own hook now: `p.journal-muted` + `.first()`
+      // picked whichever muted paragraph the card happened to render first.
+      const subtitleText = String(
+        (await page.locator('[data-dashboard-date-subtitle]').first().textContent()) || ''
+      );
       expect(subtitleText).toContain(expectedToday.day);
       expect(
-        subtitleText.includes(expectedToday.weekdayEN) || subtitleText.toLowerCase().includes(expectedToday.weekdayRU)
-      ).toBeTruthy();
+        subtitleText.toLowerCase(),
+        `date subtitle "${subtitleText}" should name ${expectedToday.weekday}`
+      ).toContain(expectedToday.weekday.toLowerCase());
 
       const expectedCycleDay = page.evaluate(({ todayISO, startISO }) => {
         const today = new Date(`${todayISO}T00:00:00`);
@@ -363,8 +359,8 @@ test.describe('Bug regressions', () => {
       await expect(hero).toBeVisible();
       await expect(page.locator('[data-dashboard-status-line]')).toHaveCount(0);
 
-      const expectedStartLabel = await formatEnglishDisplayDate(page, nextPeriodStart);
-      const expectedEndLabel = await formatEnglishDisplayDate(page, nextPeriodEnd);
+      const expectedStartLabel = await formatDisplayDate(page, nextPeriodStart);
+      const expectedEndLabel = await formatDisplayDate(page, nextPeriodEnd);
       await expect(heroFooter).toContainText(`${expectedStartLabel} — ${expectedEndLabel}`);
 
       await page.goto(`/calendar?month=${nextPeriodStart.slice(0, 7)}&day=${nextPeriodStart}`);
@@ -408,11 +404,33 @@ test.describe('Bug regressions', () => {
       expect(currentURL).not.toContain('email=');
       expect(currentURL).not.toContain('error=');
 
+      // A privacy scan legitimately reads the whole body — the leak could be
+      // anywhere on the page. What it must not do is enumerate phrases by hand
+      // in two of six languages, which is what this checked before: a Spanish,
+      // French, German or Italian leak walked straight past it.
+      //
+      // Derive instead. English is the catalogue's source language, so one
+      // English phrase rule finds the KEYS that assert an account already
+      // exists; `everyLocaleText` then expands those keys into every shipped
+      // language, so a new locale is covered the day it lands.
+      const existenceKeys = localeKeysMatchingEnglish(
+        /already (exists|registered|in use|uses this email)/i
+      );
+      expect(
+        existenceKeys.length,
+        'the account-existence phrase rule must still match catalogue copy'
+      ).toBeGreaterThan(0);
+      const forbiddenPhrases = existenceKeys.flatMap((key) => everyLocaleText(key));
+
       const bodyText = String((await page.locator('body').textContent()) || '').toLowerCase();
-      expect(bodyText).not.toContain('already exists');
-      expect(bodyText).not.toContain('already registered');
-      expect(bodyText).not.toContain('already in use');
-      expect(bodyText).not.toContain('уже существует');
+      for (const phrase of forbiddenPhrases) {
+        expect(bodyText, `body must not reveal account existence: "${phrase}"`).not.toContain(
+          phrase.toLowerCase()
+        );
+      }
+      // Same rule applied to the raw body, so an English string hardcoded
+      // outside the catalogue cannot slip through either.
+      expect(bodyText).not.toMatch(/already (exists|registered|in use|uses this email)/i);
     });
 
     test('registration validation errors do not leak email or error in URL', async ({ page }) => {
@@ -494,7 +512,13 @@ test.describe('Bug regressions', () => {
 
       const identityChip = page.locator('#nav-user-chip-desktop');
       await expect(identityChip).toBeVisible();
-      await expect(identityChip).toHaveAttribute('title', 'Profile settings');
+      // Before a display name is saved the chip falls back to the profile-name
+      // hint; take the expected string from the catalogue instead of pinning
+      // the English wording here.
+      await expect(identityChip).toHaveAttribute(
+        'title',
+        localeText('en', 'nav.profile_name_hint')
+      );
 
       const newName = `TestUser_${Date.now()}`;
       const nameInput = page.locator('#settings-display-name');
@@ -549,21 +573,39 @@ test.describe('Bug regressions', () => {
       await page.goto('/dashboard');
       await expect(page).toHaveURL(/\/dashboard$/);
 
-      const statusLine = page.locator('.dashboard-status-line');
-      await expect(statusLine).toContainText('Next period: unknown');
-      await expect(statusLine).toContainText('Predictions off');
-      await expect(statusLine).not.toContainText('Ovulation:');
-      await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveText(
-        'Predictions are off in unpredictable cycle mode. Ovumcy shows recorded facts only.'
+      // Unpredictable mode is a state the status line declares; assert it on
+      // the hook and the phase attribute rather than on three copy fragments,
+      // one of which ("Ovulation:") was a negated literal that any rewording
+      // or language switch satisfies.
+      const statusLine = page.locator('[data-dashboard-status-line]');
+      await expect(statusLine).toBeVisible();
+      await expect(statusLine).toHaveAttribute('data-dashboard-phase', /.+/);
+      // [data-dashboard-next-period] exists only in the predictions-on branch
+      // of the status line, and so does the ovulation item — its absence is the
+      // structural proof that predictions are off, which the old
+      // `not.toContainText('Ovulation:')` only approximated in English.
+      await expect(page.locator('[data-dashboard-next-period]')).toHaveCount(0);
+      await expect(statusLine).not.toContainText(localeText('en', 'dashboard.ovulation'));
+      await expect(statusLine).toContainText(localeText('en', 'dashboard.next_period_unknown'));
+      await expect(statusLine).toContainText(
+        localeText('en', 'prediction.explainer.unpredictable_compact')
+      );
+
+      await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
+        'data-explainer-key',
+        UNPREDICTABLE_EXPLAINER_KEY
       );
 
       await page.goto('/calendar');
       await expect(page).toHaveURL(/\/calendar(?:\?.*)?$/);
       const calendarExplainer = page.locator('[data-calendar-prediction-explainer]');
       await expect(calendarExplainer).toBeVisible();
-      await expect(calendarExplainer).toHaveText(
-        'Predictions are off in unpredictable cycle mode. Ovumcy shows recorded facts only.'
+      await expect(calendarExplainer).toHaveAttribute(
+        'data-explainer-primary-key',
+        UNPREDICTABLE_EXPLAINER_KEY
       );
+      // One rendered-copy assertion for this state, from the catalogue.
+      await expect(calendarExplainer).toContainText(localeText('en', UNPREDICTABLE_EXPLAINER_KEY));
     });
   });
 
@@ -599,8 +641,14 @@ test.describe('Bug regressions', () => {
       await checkStyledControl(dayEditorForm.locator('input[name="flow"][value="spotting"]'));
       await dayEditorForm.locator('button[data-save-button]').click();
 
+      // The toast copy travels in the X-Ovumcy-Notice response header, which
+      // carries no key — the client only ever sees the rendered sentence, so a
+      // data-toast-key would mean widening that API surface. Source the
+      // expected string from ru.json instead: this test is about the Russian
+      // text surviving the URL-encoded round trip intact, so the exact
+      // characters are the subject, and the catalogue owns them.
       await expect(page.locator('.toast-stack .toast-message').last()).toHaveText(
-        'Мажущие выделения могут быть не днём 1. Уточните завтра.'
+        localeText('ru', 'dashboard.spotting_cycle_warning')
       );
     });
   });
@@ -664,10 +712,22 @@ test.describe('Bug regressions', () => {
       await registerOwnerAndReachDashboard(page, 'improvement-menstrual-icon');
 
       const mode = await dashboardPrimarySummaryMode(page);
-      expect(await dashboardCurrentPhaseText(page)).toMatch(/Menstrual|Менструальная|Menstrual/i);
+      // The phase is state, so assert the state attribute. The regex it
+      // replaces listed the EN and ES spellings as separate alternatives of the
+      // same word, which is what a per-language branch degenerates into.
+      expect(await dashboardCurrentPhase(page)).toBe('menstrual');
 
       if (mode === 'hero') {
-        await expect(dashboardCycleHero(page)).toContainText(/Days 1-5|Tag 1-5|Дни 1-5/);
+        // The menstrual phase card reports its own cycle-day window; reading it
+        // off the card beats matching "Days 1-5" / "Tag 1-5" / "Дни 1-5".
+        const menstrualCard = dashboardCycleHero(page).locator('[data-cycle-hero-phase="menstrual"]');
+        await expect(menstrualCard).toBeVisible();
+        await expect(menstrualCard).toHaveAttribute('data-cycle-hero-phase-start', '1');
+        await expect(menstrualCard).toHaveAttribute('data-cycle-hero-phase-current', 'true');
+        const menstrualEnd = Number(await menstrualCard.getAttribute('data-cycle-hero-phase-end'));
+        expect(menstrualEnd).toBeGreaterThanOrEqual(1);
+        // One rendered-copy assertion: the card prints the window it declares.
+        await expect(menstrualCard).toContainText(String(menstrualEnd));
       } else {
         const phaseChip = page.locator('[data-dashboard-status-line] .dashboard-status-item').first();
         await expect(phaseChip).toContainText('🩸');

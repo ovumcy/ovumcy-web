@@ -370,6 +370,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Rendered copy in the browser suite is addressed through `data-*` hooks, and
+  the per-language literal branches are gone.** Sixteen specs pinned localized
+  sentences as their only address — `getByRole('link', { name: 'Today' })` ×6
+  languages, `getByText('Stress')` for chips the test itself had seeded by key,
+  `/Menstrual|Менструальная|Menstrual/i` (an alternation whose EN and ES arms are
+  the same word, so it matched any phase in either language), and negated phrases
+  such as `not.toContainText('Cannot be changed.')` that had been tautologies
+  since the copy was removed from the templates. Each now addresses a hook and
+  asserts state: `data-dashboard-phase` on the cycle hero, `data-fertility-badge`
+  + variant/key, `data-cycle-factor` on every static factor chip,
+  `data-symptom-pattern-day-start`/`-end` and `data-stat-card="cycle-range"` on
+  the stats cards, `data-future-cycle-start-notice` shared by the two specs that
+  used to pin the same notice two different ways, `data-symptom-create-error`
+  next to the existing row-level error, `data-title-key` on every page `h1`, and
+  `data-nav-link` on the three nav renderings. Nine explainer sites converged on
+  `toHaveAttribute('data-explainer-key', …)`, and the `/disable/i` caption that
+  was the sole discriminator in six 2FA tests became the form's own
+  `hx-delete` endpoint. Template edits add attributes only — no markup, class, or
+  copy changed.
+
+  Where rendered copy is genuinely the subject (the language-switch spec, the
+  registration enumeration scan), the expected strings now come from
+  `internal/i18n/locales/*.json` through one helper (`e2e/support/locale-helpers.ts`)
+  instead of being re-typed per language. That is what makes the enumeration scan
+  cover all six locales rather than the two it happened to list: it derives the
+  account-existence keys from the English catalogue and expands them across every
+  shipped language, so a seventh locale is covered the day it lands. The two
+  EN-US date-shape regexes are replaced by `Intl`-derived expectations that
+  verify each fragment is a real calendar date in the app's display format —
+  `/\w{3} \d{1,2}, \d{4}/` matched `Foo 99, 0000`.
+
 - **Every remaining e2e wait now binds to a concrete signal instead of to a
   sleep or to page state that is already true.** The suite's last two fixed
   250 ms sleeps, which guarded the two XSS "no dialog fired" claims, are gone:

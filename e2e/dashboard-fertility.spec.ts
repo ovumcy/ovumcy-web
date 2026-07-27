@@ -8,6 +8,7 @@ import {
   registerOwnerViaUI,
   apiOriginHeader,
 } from './support/auth-helpers';
+import { localeText } from './support/locale-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { openCalendarDayEditor, todayISOFromDashboard } from './support/stats-helpers';
 
@@ -81,11 +82,17 @@ test.describe('Dashboard: fertility badge', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    const heroBadge = page.locator('.dashboard-cycle-hero-badge');
+    const heroBadge = page.locator('[data-dashboard-cycle-hero] [data-fertility-badge]');
     await expect(heroBadge).toBeVisible();
-    await expect(heroBadge).toContainText('High fertility');
-    await expect(heroBadge).not.toHaveClass(/dashboard-cycle-hero-badge-warning/);
-    await expect(heroBadge).not.toHaveClass(/dashboard-cycle-hero-badge-positive/);
+    await expect(heroBadge).toHaveAttribute('data-fertility-badge-variant', 'neutral');
+    await expect(heroBadge).toHaveAttribute(
+      'data-fertility-badge-key',
+      'dashboard.high_fertility_badge'
+    );
+    // One rendered-copy assertion for this surface, taken from the catalogue;
+    // the variant is proved by the attribute above rather than by two negated
+    // class checks.
+    await expect(heroBadge).toContainText(localeText('en', 'dashboard.high_fertility_badge'));
     // The fallback `.dashboard-status-item` copy of the badge only renders
     // when the cycle hero is hidden (`{{if not .CycleHero.Visible}}` in
     // dashboard.html) — exercised separately by tests that suppress the hero.
@@ -163,32 +170,25 @@ test.describe('Dashboard: fertility badge', () => {
     page,
   }) => {
     await registerAndSetEggwhiteToday(page, 'fertility-goals');
-    const heroBadge = page.locator('.dashboard-cycle-hero-badge');
+    const heroBadge = page.locator('[data-dashboard-cycle-hero] [data-fertility-badge]');
 
-    // usage_goal=avoid_pregnancy -> warning copy + warning class.
-    await setUsageGoal(page, 'avoid_pregnancy');
-    await page.goto('/dashboard');
-    await expect(heroBadge).toBeVisible();
-    await expect(heroBadge).toContainText('Fertile period');
-    await expect(heroBadge).not.toContainText('best timing');
-    await expect(heroBadge).not.toContainText('High fertility');
-    await expect(heroBadge).toHaveClass(/dashboard-cycle-hero-badge-warning/);
+    // Each goal selects a distinct badge variant + copy key. Asserting the two
+    // single-valued attributes replaces the mix of positive copy, negated copy
+    // and negated class checks: a key cannot be two values at once, so pinning
+    // it proves the other two variants did not render.
+    const expectedByGoal = [
+      ['avoid_pregnancy', 'warning', 'dashboard.fertility_badge_warning'],
+      ['trying_to_conceive', 'positive', 'dashboard.fertility_badge_positive'],
+      ['health', 'neutral', 'dashboard.high_fertility_badge'],
+    ] as const;
 
-    // usage_goal=trying_to_conceive -> positive copy + positive class.
-    await setUsageGoal(page, 'trying_to_conceive');
-    await page.goto('/dashboard');
-    await expect(heroBadge).toBeVisible();
-    await expect(heroBadge).toContainText('Fertile period, best timing');
-    await expect(heroBadge).toHaveClass(/dashboard-cycle-hero-badge-positive/);
-    await expect(heroBadge).not.toHaveClass(/dashboard-cycle-hero-badge-warning/);
-
-    // usage_goal=health -> generic copy + no variant class. Mirrors the
-    // default state covered by the first test in this describe block.
-    await setUsageGoal(page, 'health');
-    await page.goto('/dashboard');
-    await expect(heroBadge).toBeVisible();
-    await expect(heroBadge).toContainText('High fertility');
-    await expect(heroBadge).not.toHaveClass(/dashboard-cycle-hero-badge-warning/);
-    await expect(heroBadge).not.toHaveClass(/dashboard-cycle-hero-badge-positive/);
+    for (const [goal, variant, copyKey] of expectedByGoal) {
+      await setUsageGoal(page, goal);
+      await page.goto('/dashboard');
+      await expect(heroBadge).toBeVisible();
+      await expect(heroBadge).toHaveAttribute('data-fertility-badge-variant', variant);
+      await expect(heroBadge).toHaveAttribute('data-fertility-badge-key', copyKey);
+      await expect(heroBadge).toContainText(localeText('en', copyKey));
+    }
   });
 });

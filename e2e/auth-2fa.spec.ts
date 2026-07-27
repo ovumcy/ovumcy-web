@@ -10,6 +10,13 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 
+// The management view's own control, addressed by the endpoint its form posts
+// to. `{ hasText: /disable/i }` used the localized caption as the sole
+// discriminator between the enroll and disable submits, so the whole 2FA suite
+// hinged on the English word "disable" surviving translation.
+const DISABLE_2FA_SUBMIT =
+  'form[hx-delete="/api/v1/users/current/2fa"] button[type="submit"]';
+
 // Reads the raw TOTP secret from the visible manual-entry element on the
 // enrollment page (the same string the user copies into their authenticator).
 async function readTOTPSecret(page: import('@playwright/test').Page): Promise<string> {
@@ -58,9 +65,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     await page.goto('/settings/2fa');
 
     // After successful enrollment the management view shows the disable button.
-    await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
     // The ovumcy_totp_setup cookie should be cleared.
     const setupCookie = await cookieByName(context, 'ovumcy_totp_setup');
@@ -89,9 +94,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Form submit is HTMX-intercepted; wait for inline success then reload.
     await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
-    await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
     // Log out (must be DELETE+CSRF; GET to /api/v1/sessions/current is rejected).
     await logoutViaAPI(page);
@@ -131,9 +134,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // reload to render the management view (DB now has TOTPEnabled=true).
     await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
-    await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
     // Log out (must be DELETE+CSRF; GET to /api/v1/sessions/current is rejected).
     await logoutViaAPI(page);
@@ -176,9 +177,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // reload to render the management view (DB now has TOTPEnabled=true).
     await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
-    await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
     // Log out (must be DELETE+CSRF; GET to /api/v1/sessions/current is rejected).
     await logoutViaAPI(page);
@@ -226,13 +225,11 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // reload to render the management view (DB now has TOTPEnabled=true).
     await expect(page.locator('#settings-2fa-verify-status .status-ok')).toBeVisible({ timeout: 5_000 });
     await page.goto('/settings/2fa');
-    await expect(page.locator('button[type="submit"]', { hasText: /disable/i })).toBeVisible({
-      timeout: 5_000,
-    });
+    await expect(page.locator(DISABLE_2FA_SUBMIT)).toBeVisible({ timeout: 5_000 });
 
     // Disable
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('button[type="submit"]', { hasText: /disable/i }).click();
+    await page.locator(DISABLE_2FA_SUBMIT).click();
     // HTMX-intercepted; wait for inline success status, then reload to render
     // the setup view (DB now has TOTPEnabled=false).
     await expect(page.locator('#settings-2fa-status .status-ok')).toBeVisible({ timeout: 5_000 });

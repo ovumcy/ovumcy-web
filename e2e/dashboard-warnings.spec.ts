@@ -9,6 +9,7 @@ import {
   apiOriginHeader,
 } from './support/auth-helpers';
 import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { localeText } from './support/locale-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { openCalendarDayEditor, shiftISODate, todayISOFromDashboard } from './support/stats-helpers';
 
@@ -97,7 +98,7 @@ test.describe('Dashboard: spotting cycle warning', () => {
     // .journal-muted elsewhere on the page cannot mask a regression.
     const periodFields = page.locator('[data-period-fields]');
     await expect(periodFields).toBeVisible();
-    await expect(periodFields).toContainText('Spotting may not be day 1. Check again tomorrow.');
+    await expect(periodFields).toContainText(localeText('en', 'dashboard.spotting_cycle_warning'));
   });
 });
 
@@ -147,7 +148,7 @@ test.describe('Dashboard: period tip once', () => {
     });
     await expect(periodInput).toBeChecked();
     await expect(tipCopy).toBeVisible();
-    await expect(tipCopy).toContainText('Day 1 is the first day of full flow, not spotting.');
+    await expect(tipCopy).toContainText(localeText('en', 'dashboard.period_tip_once'));
     const autosaveRequest = await autosaveRequestPromise;
     const autosaveResponse = await autosaveRequest.response();
     expect(autosaveResponse, `expected a response for PUT ${todayPath}`).not.toBeNull();
@@ -177,7 +178,15 @@ test.describe('Calendar: future cycle start notice', () => {
     const tomorrow = shiftISODate(today, 1);
 
     await openCalendarDayEditor(page, tomorrow);
-    const dayEditor = page.locator('#day-editor');
-    await expect(dayEditor).toContainText('Predictions will be recalculated when that day arrives.');
+    // Addressed through the notice's own hook + key, the same way
+    // calendar.spec.ts pins it: one element, one contract, two specs.
+    const futureNotice = page.locator('#day-editor [data-future-cycle-start-notice]');
+    await expect(futureNotice.first()).toBeVisible();
+    await expect(futureNotice.first()).toHaveAttribute(
+      'data-notice-key',
+      'warning.future_cycle_start'
+    );
+    // One rendered-copy assertion for this notice, sourced from the catalogue.
+    await expect(futureNotice.first()).toHaveText(localeText('en', 'warning.future_cycle_start'));
   });
 });

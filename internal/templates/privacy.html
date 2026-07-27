@@ -1,12 +1,12 @@
 {{define "content"}}
 <section class="mx-auto max-w-3xl space-y-6">
   <div>
-    <p class="journal-muted text-sm">
-      <a href="{{.BackPath}}" class="inline-link">{{t .Messages .BreadcrumbBackLabelKey}}</a>
+    <p class="journal-muted text-sm" data-privacy-breadcrumb>
+      <a href="{{.BackPath}}" class="inline-link" data-privacy-breadcrumb-back data-breadcrumb-key="{{.BreadcrumbBackLabelKey}}">{{t .Messages .BreadcrumbBackLabelKey}}</a>
       <span aria-hidden="true"> &gt; </span>
       <span>{{t .Messages "privacy.title"}}</span>
     </p>
-    <h1 class="journal-title">{{t .Messages "privacy.title"}}</h1>
+    <h1 class="journal-title" data-title-key="privacy.title">{{t .Messages "privacy.title"}}</h1>
   </div>
 
   <section class="journal-card p-5 sm:p-6 space-y-3" data-privacy-section="zero-collection">

@@ -199,10 +199,20 @@ test.describe('Auth: register, login, logout', () => {
     );
     expect(isValidBeforeSubmit).toBe(false);
 
+    // The client validator copies the message the form declared in
+    // data-email-message; compare against that declaration rather than a
+    // three-of-six-languages regex whose alternation matched whichever branch
+    // happened to be rendered. Asserting the declaration is non-empty first
+    // stops an empty attribute from passing against an empty status.
+    const declaredEmailMessage = (
+      (await page.locator('#register-form').getAttribute('data-email-message')) ?? ''
+    ).trim();
+    expect(declaredEmailMessage, 'the register form must declare data-email-message').not.toBe('');
+
     await page.locator('form[action="/api/v1/users"] button[type="submit"]').click();
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
     await expect(page.locator('#register-client-status .status-error')).toContainText(
-      /valid email address|корректный адрес|correo válido/i
+      declaredEmailMessage
     );
     expect(
       consoleErrors.some((text) => /Pattern attribute value .* is not a valid regular expression/i.test(text))

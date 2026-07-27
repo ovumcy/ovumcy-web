@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { localeText } from './support/locale-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -50,9 +51,15 @@ test.describe('Privacy page: copy and navigation', () => {
 
     await page.goto('/privacy');
 
-    const breadcrumb = page.locator('p.journal-muted.text-sm a[href="/dashboard"]');
+    // Addressed by hook + href, with the label derived from the key the
+    // template declares: `p.journal-muted.text-sm` was a styling-class path
+    // that any layout tweak breaks, and 'Dashboard' is one of six spellings.
+    const breadcrumb = page.locator('[data-privacy-breadcrumb] [data-privacy-breadcrumb-back]');
     await expect(breadcrumb).toBeVisible();
-    await expect(breadcrumb).toContainText('Dashboard');
+    await expect(breadcrumb).toHaveAttribute('href', '/dashboard');
+    const breadcrumbKey = (await breadcrumb.getAttribute('data-breadcrumb-key')) ?? '';
+    expect(breadcrumbKey, 'the breadcrumb must declare the label key it renders').not.toBe('');
+    await expect(breadcrumb).toHaveText(localeText('en', breadcrumbKey));
 
     const bottomBackLink = page.locator('p.mobile-safe-target a[href="/dashboard"]');
     await expect(bottomBackLink).toBeVisible();

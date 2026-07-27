@@ -150,7 +150,7 @@
     data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
     data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
   {{if .ShowFutureCycleStartNotice}}
-  <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
+  <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
   {{end}}
   {{if .ShowCycleStartSuggestion}}
   <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
@@ -209,7 +209,7 @@
       {{end}}
     </div>
     {{if .ShowFutureCycleStartNotice}}
-    <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
+    <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
     {{end}}
     {{if .ShowCycleStartSuggestion}}
     <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
@@ -252,7 +252,7 @@
         {{end}}
       </div>
       {{if .ShowFutureCycleStartNotice}}
-      <p class="journal-muted text-sm">{{t .Messages "warning.future_cycle_start"}}</p>
+      <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
       {{end}}
       {{if .ShowCycleStartSuggestion}}
       <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>

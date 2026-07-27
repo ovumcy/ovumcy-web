@@ -294,14 +294,31 @@ test.describe('Stats: symptom patterns', () => {
     await expect(page).toHaveURL(/\/stats$/);
 
     // HasSymptomPatterns gate -> the section renders, and at least one card
-    // shows the localized "Usually on day N of the cycle" / "Usually on days
-    // N-M of the cycle" copy from stats.symptom_pattern_day(s).
-    await expect(page.getByRole('heading', { name: 'Symptom patterns' })).toBeVisible();
-    const patternCard = page
-      .locator('.phase-symptom-card')
-      .filter({ hasText: /Usually on days? \d+(?:-\d+)? of the cycle/ })
-      .first();
+    // reports the cycle-day window it detected. Read the window off the card's
+    // own attributes instead of parsing "Usually on day N of the cycle" out of
+    // the rendered sentence: the copy is localized (and pluralized), so the old
+    // filter only worked because the run happens to be in English, and a card
+    // whose day numbers were wrong still matched.
+    const patternsSection = page.locator('[data-stats-symptom-patterns]');
+    await expect(patternsSection).toBeVisible();
+    await expect(patternsSection.locator('[data-stats-symptom-patterns-heading]')).toHaveAttribute(
+      'data-heading-key',
+      'stats.symptom_patterns_title'
+    );
+
+    const patternCard = patternsSection.locator('[data-symptom-pattern-card]').first();
     await expect(patternCard).toBeVisible();
+    const dayStart = Number(await patternCard.getAttribute('data-symptom-pattern-day-start'));
+    const dayEnd = Number(await patternCard.getAttribute('data-symptom-pattern-day-end'));
+    expect(dayStart).toBeGreaterThan(0);
+    expect(dayEnd).toBeGreaterThanOrEqual(dayStart);
+    // The symptom was logged on cycle day 10 of each completed cycle; a TZ
+    // boundary can shift the derived day by one either way.
+    expect(dayStart).toBeGreaterThanOrEqual(9);
+    expect(dayEnd).toBeLessThanOrEqual(11);
+    // One rendered-copy assertion for this surface: the card really does print
+    // the day window, not just carry it in an attribute.
+    await expect(patternCard).toContainText(String(dayStart));
   });
 });
 
@@ -322,21 +339,24 @@ test.describe('Stats: cycle range', () => {
     await page.goto('/stats');
     await expect(page).toHaveURL(/\/stats$/);
 
-    // Match the stat card by its label, then read the populated value.
+    // Address the card by its hook and read the observed lengths off its own
+    // attributes. Matching `.stat-label` on the literal "Range" and then
+    // parsing "Your cycles: N to M days" out of the value made this test an
+    // English-only test of a localized, pluralized sentence.
     // Avoid pinning the exact numbers: a TZ-induced ±1 boundary shift on
     // the seeded starts can shift the observed cycle lengths by one, and
     // the card behaviour we want to lock in is "renders with two distinct
     // positive integers", not "renders with literal 20 and 25".
-    const rangeArticle = page
-      .locator('article.journal-panel')
-      .filter({ has: page.locator('.stat-label', { hasText: 'Range' }) });
+    const rangeArticle = page.locator('[data-stat-card="cycle-range"]');
     await expect(rangeArticle).toBeVisible();
-    const valueText = (await rangeArticle.locator('.stat-value').textContent()) ?? '';
-    const match = valueText.match(/Your cycles:\s+(\d+)\s+to\s+(\d+)\s+days/);
-    expect(match, `range card value: ${valueText}`).not.toBeNull();
-    const minLen = Number(match![1]);
-    const maxLen = Number(match![2]);
+    const minLen = Number(await rangeArticle.getAttribute('data-cycle-range-min'));
+    const maxLen = Number(await rangeArticle.getAttribute('data-cycle-range-max'));
     expect(minLen).toBeGreaterThan(0);
     expect(maxLen).toBeGreaterThan(minLen);
+    // One rendered-copy assertion: the populated card prints both bounds rather
+    // than only carrying them in attributes.
+    const valueText = (await rangeArticle.locator('.stat-value').textContent()) ?? '';
+    expect(valueText, `range card value: ${valueText}`).toContain(String(minLen));
+    expect(valueText, `range card value: ${valueText}`).toContain(String(maxLen));
   });
 });
