@@ -152,14 +152,24 @@ test.describe('Dashboard: today editor', () => {
     const noteSummary = noteDisclosure.locator('summary');
     const notes = page.locator('#today-notes');
     const notesCounter = page.locator('[data-dashboard-notes-field-group] [data-dashboard-notes-count]').first();
+    // The `open` attribute IS the state, and the disclosure declares both label
+    // variants as data attributes for the client script. Assert the rendered
+    // label against the declaration instead of a three-language regex whose
+    // alternation matched any of the three regardless of the page language.
+    const closedLabel = ((await noteDisclosure.getAttribute('data-note-empty-text')) ?? '').trim();
+    const openLabel = ((await noteDisclosure.getAttribute('data-note-open-text')) ?? '').trim();
+    expect(closedLabel, 'the note disclosure must declare data-note-empty-text').not.toBe('');
+    expect(openLabel, 'the note disclosure must declare data-note-open-text').not.toBe('');
+    expect(openLabel).not.toBe(closedLabel);
+
     await expect(noteDisclosure).toHaveCount(1);
     await expect(noteDisclosure).not.toHaveAttribute('open', '');
-    await expect(noteSummary).toContainText(/Add note|Добавить заметку|Agregar nota/);
+    await expect(noteSummary).toContainText(closedLabel);
     await expect(notes).toBeHidden();
 
     await noteSummary.click();
     await expect(noteDisclosure).toHaveAttribute('open', '');
-    await expect(noteSummary).toContainText(/Hide note|Скрыть заметку|Ocultar nota/);
+    await expect(noteSummary).toContainText(openLabel);
     await expect(notes).toBeVisible();
     await expect(notes).toHaveAttribute('rows', '2');
     await expect(notes).toHaveAttribute('maxlength', '2000');
@@ -176,7 +186,7 @@ test.describe('Dashboard: today editor', () => {
 
     await page.reload();
     await expect(noteDisclosure).toHaveAttribute('open', '');
-    await expect(noteSummary).toContainText(/Hide note|Скрыть заметку|Ocultar nota/);
+    await expect(noteSummary).toContainText(openLabel);
     await expect(page.locator('#today-notes')).toHaveValue(filledNoteText);
   });
 

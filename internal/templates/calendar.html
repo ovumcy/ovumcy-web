@@ -2,8 +2,8 @@
 <section class="space-y-6">
   <div class="journal-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
     <div>
-      <h1 class="journal-subtitle">{{t .Messages "calendar.title"}}</h1>
-      <p class="journal-muted mt-1">{{.MonthLabel}}</p>
+      <h1 class="journal-subtitle" data-title-key="calendar.title">{{t .Messages "calendar.title"}}</h1>
+      <p class="journal-muted mt-1" data-calendar-month-label>{{.MonthLabel}}</p>
     </div>
 
     <div class="flex flex-wrap items-center gap-2">

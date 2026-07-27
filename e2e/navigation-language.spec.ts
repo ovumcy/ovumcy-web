@@ -10,6 +10,34 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { saveSettingsLanguage, switchPublicLanguage } from './support/language-helpers';
+import { localeText, SUPPORTED_LOCALES, type Locale } from './support/locale-helpers';
+
+// This spec's subject IS the localization, so rendered copy is asserted here on
+// purpose — but every expected string comes from the catalogue the app ships
+// (`internal/i18n/locales/*.json`), never re-typed per language. Elements are
+// still addressed structurally (`[data-title-key]`, `[data-nav-link]`,
+// `label[for=…]`), so a copy change syncs itself and a selector change fails
+// loudly instead of silently matching nothing.
+async function expectPageTitle(page: Page, locale: Locale, key: string): Promise<void> {
+  const title = page.locator(`h1[data-title-key="${key}"]`);
+  await expect(title).toBeVisible();
+  await expect(title).toContainText(localeText(locale, key));
+}
+
+async function expectNavLink(page: Page, locale: Locale, hook: string, key: string): Promise<void> {
+  const link = page.locator(`[data-nav-link="${hook}"]`).first();
+  await expect(link).toHaveAttribute('data-nav-link-key', key);
+  await expect(link).toHaveText(localeText(locale, key));
+}
+
+async function expectFieldLabel(
+  page: Page,
+  locale: Locale,
+  fieldID: string,
+  key: string
+): Promise<void> {
+  await expect(page.locator(`label[for="${fieldID}"]`)).toHaveText(localeText(locale, key));
+}
 
 async function registerAndReachDashboard(page: Page, prefix: string): Promise<{ email: string; password: string }> {
   const creds = createCredentials(prefix);
@@ -61,67 +89,21 @@ test.describe('Navigation and language switch', () => {
     await page.goto('/login');
     await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
 
-    await switchPublicLanguage(page, 'en');
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await expect(page.locator('h1.journal-title')).toContainText('Log in to your account');
+    // Drive every supported locale from one list instead of a copy-pasted block
+    // per language: a seventh locale is covered the day `SUPPORTED_LOCALES`
+    // grows, and no expected string is typed into this file.
+    for (const locale of SUPPORTED_LOCALES) {
+      await switchPublicLanguage(page, locale);
+      await expect(page).toHaveURL(/\/login$/);
+      await expect(page.locator('html')).toHaveAttribute('lang', locale);
+      await expectPageTitle(page, locale, 'auth.login_title');
+      await expectFieldLabel(page, locale, 'login-email', 'auth.email');
 
-    await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await expect(page.locator('h1.journal-title')).toContainText('Log in to your account');
-
-    await switchPublicLanguage(page, 'es');
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-    await expect(page.locator('h1.journal-title')).toContainText('Inicia sesión en tu cuenta');
-
-    await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-    await expect(page.locator('h1.journal-title')).toContainText('Inicia sesión en tu cuenta');
-
-    await switchPublicLanguage(page, 'ru');
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
-    await expect(page.locator('h1.journal-title')).toContainText('Войти в аккаунт');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('Эл. почта');
-
-    await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
-    await expect(page.locator('h1.journal-title')).toContainText('Войти в аккаунт');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('Эл. почта');
-
-    await switchPublicLanguage(page, 'fr');
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
-    await expect(page.locator('h1.journal-title')).toContainText('Connexion à votre compte');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('E-mail');
-
-    await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
-    await expect(page.locator('h1.journal-title')).toContainText('Connexion à votre compte');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('E-mail');
-
-    await switchPublicLanguage(page, 'de');
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
-    await expect(page.locator('h1.journal-title')).toContainText('Melden Sie sich bei Ihrem Konto an');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('E-Mail');
-
-    await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
-    await expect(page.locator('h1.journal-title')).toContainText('Melden Sie sich bei Ihrem Konto an');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('E-Mail');
-
-    await switchPublicLanguage(page, 'it');
-    await expect(page).toHaveURL(/\/login$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'it');
-    await expect(page.locator('h1.journal-title')).toContainText('Accedi al tuo account');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('Email');
-
-    await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'it');
-    await expect(page.locator('h1.journal-title')).toContainText('Accedi al tuo account');
-    await expect(page.locator('label[for="login-email"]')).toHaveText('Email');
+      await page.reload();
+      await expect(page.locator('html')).toHaveAttribute('lang', locale);
+      await expectPageTitle(page, locale, 'auth.login_title');
+      await expectFieldLabel(page, locale, 'login-email', 'auth.email');
+    }
   });
 
   test('language switch while logged in keeps current page and translates navigation/settings', async ({
@@ -134,52 +116,28 @@ test.describe('Navigation and language switch', () => {
 
     await expect(page.locator('[data-settings-interface-form]')).toBeVisible();
 
-    await saveSettingsLanguage(page, 'en');
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await expect(page.locator('h1.journal-title')).toContainText('Settings');
-    await expect(page.getByRole('link', { name: 'Today' }).first()).toBeVisible();
+    for (const locale of SUPPORTED_LOCALES) {
+      await saveSettingsLanguage(page, locale);
+      await expect(page).toHaveURL(/\/settings$/);
+      await expect(page.locator('html')).toHaveAttribute('lang', locale);
+      await expectPageTitle(page, locale, 'settings.title');
+      await expectNavLink(page, locale, 'today', 'nav.today');
 
-    await saveSettingsLanguage(page, 'es');
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'es');
-    await expect(page.locator('h1.journal-title')).toContainText('Configuración');
-    await expect(page.getByRole('link', { name: 'Hoy' }).first()).toBeVisible();
-    await expectDateFieldVisible(page, 'settings-last-period-start');
-    await expectDateFieldVisible(page, 'export-from');
-    await expectDateFieldVisible(page, 'export-to');
-    await expect(page.locator('[data-date-field-id="export-from"] [data-date-field-open]')).toBeVisible();
-    await expect(page.locator('[data-date-field-id="export-to"] [data-date-field-open]')).toBeVisible();
+      // The segmented date fields must survive every locale — the browser-native
+      // date control is deliberately not used, so a locale that broke the
+      // segmented field would silently lose the whole control.
+      await expectDateFieldVisible(page, 'settings-last-period-start');
+      await expectDateFieldVisible(page, 'export-from');
+      await expectDateFieldVisible(page, 'export-to');
+      await expect(page.locator('[data-date-field-id="export-from"] [data-date-field-open]')).toBeVisible();
+      await expect(page.locator('[data-date-field-id="export-to"] [data-date-field-open]')).toBeVisible();
+    }
 
-    await saveSettingsLanguage(page, 'ru');
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
-    await expect(page.locator('h1.journal-title')).toContainText('Настройки');
-    await expect(page.getByRole('link', { name: 'Сегодня' }).first()).toBeVisible();
-
-    await saveSettingsLanguage(page, 'fr');
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'fr');
-    await expect(page.locator('h1.journal-title')).toContainText('Paramètres');
-    await expect(page.getByRole('link', { name: "Aujourd'hui" }).first()).toBeVisible();
-    await expectDateFieldVisible(page, 'settings-last-period-start');
-
-    await saveSettingsLanguage(page, 'de');
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
-    await expect(page.locator('h1.journal-title')).toContainText('Einstellungen');
-    await expect(page.getByRole('link', { name: 'Heute' }).first()).toBeVisible();
-    await expectDateFieldVisible(page, 'settings-last-period-start');
-
+    // The saved preference survives a reload, not just the htmx swap that set it.
+    const lastLocale = SUPPORTED_LOCALES[SUPPORTED_LOCALES.length - 1];
     await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('lang', 'de');
-    await expect(page.locator('h1.journal-title')).toContainText('Einstellungen');
-
-    await saveSettingsLanguage(page, 'it');
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator('html')).toHaveAttribute('lang', 'it');
-    await expect(page.locator('h1.journal-title')).toContainText('Impostazioni');
-    await expect(page.getByRole('link', { name: 'Oggi' }).first()).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('lang', lastLocale);
+    await expectPageTitle(page, lastLocale, 'settings.title');
   });
 
   test('direct /recovery-code access without valid recovery context is blocked', async ({ page }) => {

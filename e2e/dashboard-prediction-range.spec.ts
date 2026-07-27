@@ -7,7 +7,7 @@ import {
   registerOwnerViaUI,
   apiOriginHeader,
 } from './support/auth-helpers';
-import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { dateFieldRoot, displayDatesIn, fillDateField } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { shiftISODate } from './support/stats-helpers';
@@ -89,14 +89,26 @@ test.describe('Dashboard prediction range', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
+    // Two real calendar dates, in order — derived through Intl from the app's
+    // own display format rather than matched against an EN-US shape regex,
+    // which passed just as happily on "Foo 99, 0000". The exact range width is
+    // the prediction service's business (unit-tested there), so this asserts
+    // the surface contract: a range, forward in time, starting after today.
     const nextPeriodText = await dashboardNextPeriodText(page);
-    expect(nextPeriodText, 'regular user with variability should see a range').toMatch(
-      /\w{3} \d{1,2}, \d{4} — \w{3} \d{1,2}, \d{4}/
-    );
-    expect(nextPeriodText).not.toContain('3 cycles are needed');
+    const renderedDates = await displayDatesIn(page, nextPeriodText);
+    expect(renderedDates, `regular user with variability should see a range: ${nextPeriodText}`)
+      .toHaveLength(2);
+    expect(renderedDates[0] > today).toBeTruthy();
+    expect(renderedDates[1] > renderedDates[0]).toBeTruthy();
 
-    await expect(page.locator('[data-dashboard-prediction-explainer]')).toContainText(
-      'Your prediction shows a range that reflects how much your cycle length varies.'
+    // The explainer's chosen key is the state; the negative it replaces
+    // (not.toContain('3 cycles are needed')) was a phrase check that would have
+    // stayed green through any rewording of the sparse-mode copy. A key is
+    // single-valued, so pinning it here also proves the sparse explainer is not
+    // the one that rendered.
+    await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
+      'data-explainer-key',
+      'prediction.explainer.variable_ranges'
     );
   });
 

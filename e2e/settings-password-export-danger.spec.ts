@@ -420,11 +420,14 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
     await createCustomSymptom(page, 'Reset me');
+    // State before the wipe, asserted structurally: one active custom symptom
+    // and no empty-state panel. The four `not.toContainText(...)` phrase checks
+    // this replaces named copy that no longer exists anywhere in the app, so
+    // they held no matter what the section rendered — including nothing.
     const symptomSection = page.locator('#settings-symptoms-section');
-    await expect(symptomSection).not.toContainText('Shown in new entries.');
-    await expect(symptomSection).not.toContainText('No custom symptoms yet.');
-    await expect(symptomSection).not.toContainText('Kept in history and export.');
-    await expect(symptomSection).not.toContainText('Built-in symptoms always stay available.');
+    await expect(symptomSection.locator('[data-custom-symptom-row]')).toHaveCount(1);
+    await expect(symptomSection.locator('[data-symptom-group="active"]')).toBeVisible();
+    await expect(symptomSection.locator('[data-symptom-empty-state]')).toHaveCount(0);
 
     await dangerZone.locator('#settings-clear-data-password').fill('WrongPass1');
     await dangerZone.locator('form[action="/api/v1/users/current/data-wipe"] button[type="submit"]').click();
@@ -460,7 +463,13 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await page.goto('/settings');
     await expect(page.locator('[data-export-summary-total]')).toContainText('0');
+    // After the wipe the section is back to its empty state: no rows, no
+    // groups, and the "empty" panel rather than the "no active ones left" one.
     await expect(page.locator('#settings-symptoms-section [data-custom-symptom-row]')).toHaveCount(0);
+    await expect(page.locator('#settings-symptoms-section [data-symptom-group]')).toHaveCount(0);
+    await expect(
+      page.locator('#settings-symptoms-section [data-symptom-empty-state="empty"]')
+    ).toBeVisible();
   });
 
   test('delete account requires valid password and removes account on success', async ({ page }) => {

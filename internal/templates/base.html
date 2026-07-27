@@ -78,10 +78,10 @@
       {{if and .CurrentUser (not .HideNavigation)}}
       <div class="container-main pb-4">
         <nav class="hidden items-center gap-2 sm:flex">
-          <a href="/dashboard" class="nav-link {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}">{{t .Messages "nav.today"}}</a>
-          <a href="/calendar" class="nav-link {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}">{{t .Messages "nav.calendar"}}</a>
-          <a href="/stats" class="nav-link {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}">{{t .Messages "nav.insights"}}</a>
-          <a href="/settings" class="nav-link nav-link-icon {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}">
+          <a href="/dashboard" class="nav-link {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
+          <a href="/calendar" class="nav-link {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
+          <a href="/stats" class="nav-link {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
+          <a href="/settings" class="nav-link nav-link-icon {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}">
             <span aria-hidden="true">⚙️</span>
           </a>
 
@@ -95,10 +95,10 @@
         </nav>
 
         <nav id="mobile-menu" data-mobile-menu hidden class="mt-2 space-y-2 sm:hidden">
-          <a href="/dashboard" class="nav-link block {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}">{{t .Messages "nav.today"}}</a>
-          <a href="/calendar" class="nav-link block {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}">{{t .Messages "nav.calendar"}}</a>
-          <a href="/stats" class="nav-link block {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}">{{t .Messages "nav.insights"}}</a>
-          <a href="/settings" class="nav-link nav-link-icon block {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span aria-hidden="true">⚙️</span></a>
+          <a href="/dashboard" class="nav-link block {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
+          <a href="/calendar" class="nav-link block {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
+          <a href="/stats" class="nav-link block {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
+          <a href="/settings" class="nav-link nav-link-icon block {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span aria-hidden="true">⚙️</span></a>
           {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-mobile" "Block" true "SwapOOB" false)}}
           <form action="/logout" method="post" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -120,7 +120,7 @@
           <div class="mobile-install-heading">
             <img src="/static/brand/ovumcy-icon.svg" width="40" height="40" alt="" class="mobile-install-icon" aria-hidden="true">
             <div class="space-y-1">
-              <h2 class="mobile-install-title">{{t .Messages "pwa.install.title"}}</h2>
+              <h2 class="mobile-install-title" data-pwa-install-title data-pwa-install-title-key="pwa.install.title">{{t .Messages "pwa.install.title"}}</h2>
               <p class="mobile-install-text" data-pwa-install-copy="prompt" hidden>{{t .Messages "pwa.install.prompt_text"}}</p>
               <p class="mobile-install-text" data-pwa-install-copy="ios" hidden>{{t .Messages "pwa.install.ios_text"}}</p>
               <p class="mobile-install-text" data-pwa-install-copy="menu" hidden>{{t .Messages "pwa.install.menu_text"}}</p>
@@ -141,10 +141,10 @@
 
     {{if and .CurrentUser (not .HideNavigation)}}
     <nav class="mobile-tabbar sm:hidden" aria-label="{{t .Messages "nav.menu"}}">
-      <a href="/dashboard" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/dashboard"}}mobile-tabbar-link-active{{else if isActiveRoute .CurrentPath "/"}}mobile-tabbar-link-active{{end}}">{{t .Messages "nav.today"}}</a>
-      <a href="/calendar" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/calendar"}}mobile-tabbar-link-active{{end}}">{{t .Messages "nav.calendar"}}</a>
-      <a href="/stats" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/stats"}}mobile-tabbar-link-active{{end}}">{{t .Messages "nav.insights"}}</a>
-      <a href="/settings" class="mobile-tabbar-link mobile-tabbar-icon {{if isActiveRoute .CurrentPath "/settings"}}mobile-tabbar-link-active{{end}}" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span class="mobile-tabbar-icon-glyph" aria-hidden="true">⚙️</span></a>
+      <a href="/dashboard" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/dashboard"}}mobile-tabbar-link-active{{else if isActiveRoute .CurrentPath "/"}}mobile-tabbar-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
+      <a href="/calendar" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/calendar"}}mobile-tabbar-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
+      <a href="/stats" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/stats"}}mobile-tabbar-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
+      <a href="/settings" class="mobile-tabbar-link mobile-tabbar-icon {{if isActiveRoute .CurrentPath "/settings"}}mobile-tabbar-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span class="mobile-tabbar-icon-glyph" aria-hidden="true">⚙️</span></a>
     </nav>
     {{end}}
 

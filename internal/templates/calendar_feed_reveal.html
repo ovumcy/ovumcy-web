@@ -9,7 +9,7 @@
     <p class="journal-kicker">🗓️ {{t .Messages "settings.calendar_feed.reveal.kicker"}}</p>
 
     <div>
-      <h1 class="journal-title" data-calendar-feed-reveal-heading>
+      <h1 class="journal-title" data-calendar-feed-reveal-heading data-title-key="{{if .CalendarFeedRotated}}settings.calendar_feed.reveal.title_rotated{{else}}settings.calendar_feed.reveal.title{{end}}">
         {{if .CalendarFeedRotated}}{{t .Messages "settings.calendar_feed.reveal.title_rotated"}}{{else}}{{t .Messages "settings.calendar_feed.reveal.title"}}{{end}}
       </h1>
       <p class="journal-muted mt-2">{{t .Messages "settings.calendar_feed.reveal.subtitle"}}</p>
