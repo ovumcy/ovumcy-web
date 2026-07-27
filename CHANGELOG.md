@@ -100,6 +100,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runbook gained a section showing both invocations against the shell-free
   image.
 
+- **The startup banner can name the revision it is running.** `rev:` read the
+  VCS stamp Go embeds during `go build`, and the Docker build context excludes
+  `.git`, so every container image — including every published release — printed
+  `rev: unknown`. The commit sha the image build already receives went only to
+  the asset cache-bust token. The banner now falls back to that same stamp when
+  no VCS revision is present, so an operator following the upgrade procedure can
+  confirm which build actually booted instead of trusting the image tag alone. A
+  VCS stamp still wins when there is one: it is the only source that can report
+  a dirty tree, and a release stamp must not hide that.
+
 - **The 2FA challenge now accepts the JSON body its published contract
   advertises.** `POST /api/v1/sessions/2fa-challenge` is documented in
   `docs/openapi.yaml` with a single request media type, `application/json`, but

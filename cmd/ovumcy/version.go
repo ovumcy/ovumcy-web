@@ -16,37 +16,39 @@ import (
 // cache-bust token then falls back to VCS or process-start identity.
 var buildVersion string
 
-// codecov:ignore:start -- startup-banner revision string. The VCS branches
-// (vcs.revision/vcs.modified present, dirty suffix, missing BuildInfo) are only
-// reachable in a real `go build` with VCS stamping; `go test` binaries carry no
-// vcs.* settings, so they cannot be exercised without a fault-injection seam.
-// The seamed, per-input logic is covered by vcsRevisionFromBuildInfo's tests.
+// buildRevision is the identity the startup banner prints. It reads the process
+// build info and defers every decision to resolveBuildRevision, which is pure
+// and testable on explicit inputs.
 func buildRevision() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info == nil {
-		return "unknown"
-	}
-
-	revision := "unknown"
-	modified := "false"
-	for _, setting := range info.Settings {
-		switch setting.Key {
-		case "vcs.revision":
-			if strings.TrimSpace(setting.Value) != "" {
-				revision = setting.Value
-			}
-		case "vcs.modified":
-			modified = strings.TrimSpace(setting.Value)
-		}
-	}
-
-	if modified == "true" {
-		return revision + "-dirty"
-	}
-	return revision
+	info, _ := debug.ReadBuildInfo() // codecov:ignore -- process-wide read; the decision it feeds is covered on explicit inputs
+	return resolveBuildRevision(buildVersion, info)
 }
 
-// codecov:ignore:end
+// resolveBuildRevision picks what the banner reports, preferring the VCS stamp
+// over the ldflags one — the opposite order from assetCacheBustToken, and
+// deliberately so. The asset token wants one stable value per release, so a
+// release stamp outranks everything. The banner is a truth claim about the
+// running binary, and only the VCS stamp can say the tree was dirty, so a build
+// carrying both must not let the release stamp hide that.
+//
+// The ldflags fallback is what makes the field usable in the shipped image at
+// all: `.dockerignore` excludes `.git`, so a container build carries no vcs.*
+// setting and this used to report "unknown" for every published image — exactly
+// where an operator rolling back to a previous tag needs to know which revision
+// booted. The Dockerfile already forwards its BUILD_REVISION build-arg into
+// main.buildVersion for the asset token; the banner now reads the same stamp.
+func resolveBuildRevision(ldflagsVersion string, info *debug.BuildInfo) string {
+	if revision, modified := vcsRevisionFromBuildInfo(info); revision != "" {
+		if modified {
+			return revision + "-dirty"
+		}
+		return revision
+	}
+	if version := strings.TrimSpace(ldflagsVersion); version != "" {
+		return version
+	}
+	return "unknown"
+}
 
 // vcsRevisionFromBuildInfo extracts the raw vcs.revision stamped into info
 // and whether the working tree was modified. revision is "" when info is nil
