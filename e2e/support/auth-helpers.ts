@@ -71,9 +71,20 @@ export async function registerOwnerViaUI(
   await requestSubmitForm(page.locator('form[action="/api/v1/users"]'));
 }
 
+// registrationSettleTimeout covers the one step in the suite whose server cost
+// is a deliberate expense rather than a query: POST /api/v1/users hashes a
+// password and a recovery code with bcrypt before it can answer. Measured at
+// 5.8-7.3s under parallel runs, which puts it past Playwright's 5s default and
+// made this the suite's most frequent flake. The wait itself stays bound to a
+// concrete signal — the landed URL and the rendered recovery block — so only
+// the budget is widened, never the condition.
+const registrationSettleTimeout = 20_000;
+
 export async function expectInlineRegisterRecoveryStep(page: Page): Promise<void> {
-  await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
-  await expect(page.locator('[data-auth-inline-recovery]')).toBeVisible();
+  await expect(page).toHaveURL(/\/register(?:\?.*)?$/, { timeout: registrationSettleTimeout });
+  await expect(page.locator('[data-auth-inline-recovery]')).toBeVisible({
+    timeout: registrationSettleTimeout,
+  });
 }
 
 export async function expectDedicatedRecoveryPage(page: Page): Promise<void> {

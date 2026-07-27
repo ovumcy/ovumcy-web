@@ -329,7 +329,16 @@ test.describe('Onboarding flow', () => {
     await submitStepTwo(page);
   });
 
-  test('step 2 irregular checkbox carries through to dashboard range prediction', async ({ page }) => {
+  // The name says "sparse estimate", not "range", because that is what the
+  // assertions below prove. Irregular mode shows a range only once the account
+  // has observed cycles to bound it; a freshly onboarded owner has none, so the
+  // dashboard falls back to the "around <date>" estimate plus the
+  // needs-more-cycles note. A name promising a range over assertions checking
+  // the sparse fallback is the desync that let its twin in
+  // settings-profile-cycle.spec.ts assert an ASCII "-" a locale renders as "—".
+  test('step 2 irregular checkbox carries through to the dashboard sparse estimate', async ({
+    page,
+  }) => {
     await registerAndOpenOnboarding(page, 'onboarding-irregular');
 
     const selectedDate = toISODate(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000));
