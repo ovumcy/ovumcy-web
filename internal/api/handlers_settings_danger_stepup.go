@@ -67,9 +67,14 @@ func (handler *Handler) startErasureStepupReauth(c fiber.Ctx, operation oidcStep
 
 	user, ok := currentUser(c)
 	if !ok {
+		// codecov:ignore:start -- both routes hang off the usersCurrent group,
+		// which carries AuthRequired, so a request reaching this handler always
+		// has a resolved session. Kept because the handler must stay safe if it
+		// is ever mounted elsewhere; same shape as StartLocalPasswordSetupReauth.
 		spec := unauthorizedErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 	// The no-downgrade gate. See the file comment: an account with a local
 	// password confirms an erasure with that password, never with SSO.
@@ -93,9 +98,14 @@ func (handler *Handler) startErasureStepupReauth(c fiber.Ctx, operation oidcStep
 		// codecov:ignore:end
 	}
 	if err := handler.setOIDCStepupCookie(c, state); err != nil {
+		// codecov:ignore:start -- the setter's only failure is a non-secure
+		// cookie posture, and boot refuses OIDC_ENABLED=true without
+		// COOKIE_SECURE=true, so an instance that can reach this line cannot be
+		// configured to fail it.
 		spec := authOIDCUnavailableErrorSpec()
 		handler.logSecurityError(c, flow.stepupAction, spec)
 		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 	// Drop any in-flight ordinary login state, exactly as the local-password
 	// step-up does: two competing flows for one user are confusion at best.
@@ -220,7 +230,10 @@ func (handler *Handler) applyClearData(c fiber.Ctx, user *models.User) (APIError
 	// The session-refresh failures are auth-plumbing events, not the erasure
 	// itself, so they keep the plain path under the same action name.
 	if err := handler.refreshCurrentSession(c, user, clearDataMutation.action); err != nil {
+		// codecov:ignore:start -- re-issuing the cookie fails only on an AEAD
+		// seal error, which no request-shaped input can provoke.
 		return authSessionCreateErrorSpec(), false
+		// codecov:ignore:end
 	}
 
 	handler.logMutationSuccess(c, clearDataMutation)
