@@ -472,7 +472,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `WriteTimeout` and dragged the budget along with it. The two constants are now
   recorded as independent, and the fasthttp behaviour the reasoning rests on is
   pinned by a test that fails on an upgrade moving the deadline.
-
 - **`docs/openapi.yaml` promised input bounds wider than the ones the server
   actually enforces.** `ProfileSettings.display_name` declared `maxLength: 80`
   against a 64-rune cap; `CycleSettings.cycle_length` declared `minimum: 1`
@@ -520,6 +519,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   product left a log line that did not say whose data they touched. The session
   resolver now publishes the actor for the whole request, which covers both
   step-up purposes and any handler that resolves a session the same way later.
+- **The API specification described error responses the server never sends.**
+  Nineteen operations in [docs/openapi.yaml](docs/openapi.yaml) declared `422
+  Unprocessable Entity` for a rejected payload, while every validation refusal
+  the app produces is a `400` — there is no `422` branch anywhere in the server.
+  A client written against the document was therefore branching on a status it
+  could never receive, and met the real refusal in whichever branch it kept for
+  something else. The document now says `400`. Nothing in the server changed:
+  moving the app to `422` would have broken every client already reading `400`,
+  in exchange for a distinction the response envelope already carries in
+  `error_detail.category`, where `validation` is its own stable value.
+
+  The published `error_detail.category` enum had the mirror-image defect, and a
+  worse one — it was **missing** a value the server really sends. The enum is
+  documented as closed and is what the document tells clients to branch on, yet
+  it omitted `too_large`, which every request refused by the 16 MiB body limit
+  and every one refused by the oversized request head carries. A client that
+  trusted the enum did not merely wait for something that could not arrive; it
+  met something it had been told could not exist.
+
+  Decision (2026-07-28): `413` legitimately carries **two** categories, and the
+  document now says so instead of picking one. `category` names the reason, not
+  the status: a body past the byte limit is refused before the request reaches
+  an operation, with nothing about its content examined, and carries
+  `too_large`; a restore payload that parses cleanly but declares more than
+  20 000 entries has failed a content rule after parsing, and carries
+  `validation`. Collapsing them would tell a client "send fewer bytes" and
+  "split this export into several restores" in the same word. The two keys that
+  `413` carries were already documented and deliberate; the two categories are
+  the same distinction one level up.
+
+  Sweeping the remaining statuses the same way closed the opposite gap. The
+  `409` that a duplicate symptom name — or a cycle start that would overwrite an
+  existing one — really answers with was documented nowhere in the file, nor was
+  the `404` for a symptom that does not exist.
+
+  The examples were the same story in miniature: fourteen of them showed a bare
+  `{ "error": ... }` that the `ApiError` schema above them forbids, and three
+  key strings — `too many attempts`, `internal error`, and the
+  `auth.invalid_credentials` that headed the schema itself — belong to no
+  response the server can produce (the real ones are `too many requests`,
+  `internal_error` and `invalid credentials`). Every example in the document now
+  carries a complete envelope whose key, category and target are the ones a
+  client will actually receive.
 
 - **Onboarding and three settings endpoints now appear in the audit stream.**
   With `AUDIT_LOG_ENABLED=true`, both onboarding steps, onboarding completion,

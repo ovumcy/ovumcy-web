@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,6 +49,292 @@ func TestOpenAPIContractMatchesRegisteredRoutes(t *testing.T) {
 	if extra := difference(specRoutes, codeRoutes); len(extra) > 0 {
 		t.Errorf("routes documented in docs/openapi.yaml but not registered in code:\n  %s", strings.Join(extra, "\n  "))
 	}
+}
+
+// TestOpenAPIDeclaresOnlyStatusesTheServerCanEmit is the status half of the
+// route↔spec contract. Route presence is pinned above; this pins the response
+// codes each operation publishes, because a spec can name every route correctly
+// and still describe outcomes the server has no branch for. It did: the document
+// declared '422' on nineteen operations while the app answers every validation
+// refusal with 400 — the distinction clients actually get is
+// error_detail.category, not a second status.
+//
+// The check runs one way on purpose: every status the spec DECLARES must be a
+// status the server can PRODUCE. The opposite direction is not derivable from a
+// source scan — a status appears in the sources without saying which operation
+// answers it, and the document deliberately excludes page routes (the OIDC start
+// redirect's 307) and documents the transport statuses centrally rather than per
+// path. That half is pinned instead by
+// TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers, where a real
+// registry exists to enumerate.
+//
+// "Can produce" is read from the server's own sources: every rejection resolves
+// its status through an APIErrorSpec built with a fiber.Status* constant, and the
+// handful of direct answers use c.Status/SendStatus. Test sources are excluded —
+// what a test can assert is not what the server can send.
+func TestOpenAPIDeclaresOnlyStatusesTheServerCanEmit(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+
+	declared := openAPIDeclaredStatuses(t, filepath.Join(repoRoot, "docs", "openapi.yaml"))
+	if len(declared) == 0 {
+		t.Fatal("no response statuses parsed from openapi.yaml; parser or spec is wrong")
+	}
+	sources := serverSourceText(t, repoRoot)
+
+	statuses := make([]int, 0, len(declared))
+	for status := range declared {
+		statuses = append(statuses, status)
+	}
+	sort.Ints(statuses)
+
+	for _, status := range statuses {
+		identifier := fiberStatusIdentifier(t, status)
+		if regexp.MustCompile(regexp.QuoteMeta(identifier) + `\b`).MatchString(sources) {
+			continue
+		}
+		if regexp.MustCompile(`(?:Status|SendStatus)\(\s*` + fmt.Sprint(status) + `\b`).MatchString(sources) {
+			continue
+		}
+		operations := declared[status]
+		sort.Strings(operations)
+		t.Errorf("docs/openapi.yaml declares %d but no server source emits it (searched for %s and a literal Status(%d)); declared on:\n  %s",
+			status, identifier, status, strings.Join(operations, "\n  "))
+	}
+}
+
+// TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers pins the reverse
+// direction for the one part of the surface that keeps a registry of it. The
+// transport statuses are answered outside any operation — an unroutable request,
+// an undecodable body, an unparseable head — so the spec documents them once in
+// the ApiError schema description instead of per path. That list is prose, which
+// is exactly the kind of text that stops matching the map beside it: a new entry
+// in transportErrorSpecsByStatus, or a renamed key, is invisible until a client
+// meets a status the document never mentions. Both the status and its stable key
+// are asserted, since the key is the whole reason the entry is worth publishing.
+func TestOpenAPIDocumentsEveryTransportStatusTheEnvelopeCovers(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "openapi.yaml"))
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+	spec := string(data)
+
+	statuses := make([]int, 0, len(transportErrorSpecsByStatus))
+	for status := range transportErrorSpecsByStatus {
+		statuses = append(statuses, status)
+	}
+	sort.Ints(statuses)
+
+	for _, status := range statuses {
+		entry := fmt.Sprintf("* `%d` — `%s`", status, transportErrorSpecsByStatus[status].Key)
+		if !strings.Contains(spec, entry) {
+			t.Errorf("transportErrorSpecsByStatus answers %d with key %q, but docs/openapi.yaml never documents it; the ApiError description needs the line %q",
+				status, transportErrorSpecsByStatus[status].Key, entry)
+		}
+	}
+}
+
+// TestOpenAPIPublishesEveryErrorCategoryTheServerCanEmit pins the third half of
+// the envelope contract. The status half is above; this one covers
+// error_detail.category, which the spec publishes as a closed enum and which the
+// spec's own text tells clients to branch on in preference to the key string. A
+// closed enum missing a value the server sends is worse than a status the server
+// never sends: the client is not merely waiting for something that cannot
+// arrive, it is meeting something it was told could not exist. The enum omitted
+// too_large, which every 413 refused by the body limit and every 431 refused by
+// the read buffer carries.
+//
+// The check runs both ways, like the route contract: a constant the enum forgets
+// AND an enum value no constant defines both fail. The constants are read out of
+// their declaration file rather than listed here, so a category added later is
+// swept without editing this test — and the parser is anchored to the compiler
+// below, so a regex that silently stops matching cannot pass as "no categories
+// to check".
+func TestOpenAPIPublishesEveryErrorCategoryTheServerCanEmit(t *testing.T) {
+	declared := declaredErrorCategories(t, filepath.Join("..", "..", "internal", "api", "error_mapping_types.go"))
+	published := openAPIPublishedErrorCategories(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
+
+	// Anchor the source scan against the compiler: these two constants exist by
+	// name here, so a regex that matched nothing (or matched the wrong capture)
+	// fails loudly instead of reporting an empty, trivially satisfied set.
+	for _, anchor := range []APIErrorCategory{APIErrorCategoryValidation, APIErrorCategoryTooLarge} {
+		if _, ok := declared[string(anchor)]; !ok {
+			t.Fatalf("category scan did not find %q in error_mapping_types.go; the scan, not the spec, is broken", anchor)
+		}
+	}
+
+	if missing := difference(declared, published); len(missing) > 0 {
+		t.Errorf("categories the server can emit but docs/openapi.yaml does not publish in ApiErrorDetail.category:\n  %s\n(a client told the enum is closed meets a value it was promised could not exist)",
+			strings.Join(missing, "\n  "))
+	}
+	if extra := difference(published, declared); len(extra) > 0 {
+		t.Errorf("categories published in docs/openapi.yaml but declared by no APIErrorCategory constant:\n  %s",
+			strings.Join(extra, "\n  "))
+	}
+}
+
+// declaredErrorCategories reads the APIErrorCategory constant block and returns
+// the wire values it declares. Go cannot enumerate the members of a constant
+// type at run time, so the declaration file is the only place that holds the
+// whole set; scanning it keeps the sweep allowlist-free, which a hand-written
+// slice here would not be.
+func declaredErrorCategories(t *testing.T, sourcePath string) map[string]struct{} {
+	t.Helper()
+	data, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read %s: %v", sourcePath, err)
+	}
+
+	declaration := regexp.MustCompile(`APIErrorCategory\w+\s+APIErrorCategory\s*=\s*"([^"]+)"`)
+	categories := make(map[string]struct{})
+	for _, match := range declaration.FindAllStringSubmatch(string(data), -1) {
+		categories[match[1]] = struct{}{}
+	}
+	return categories
+}
+
+// openAPIPublishedErrorCategories reads the enum declared for
+// ApiErrorDetail.category. The scan tracks the schema nesting rather than
+// matching the first "enum:" it sees, because the sibling `target` property
+// declares one too and confusing the two would compare the wrong sets.
+func openAPIPublishedErrorCategories(t *testing.T, specPath string) map[string]struct{} {
+	t.Helper()
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	inSchema, inCategory := false, false
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		text := strings.TrimSpace(line)
+		if text == "" || strings.HasPrefix(text, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+
+		switch {
+		case indent == 4 && strings.HasSuffix(text, ":"):
+			inSchema = text == "ApiErrorDetail:"
+			inCategory = false
+		case indent == 8 && inSchema && strings.HasSuffix(text, ":"):
+			inCategory = text == "category:"
+		case indent == 10 && inCategory && strings.HasPrefix(text, "enum:"):
+			values := make(map[string]struct{})
+			for _, value := range strings.Split(strings.Trim(strings.TrimSpace(strings.TrimPrefix(text, "enum:")), "[]"), ",") {
+				if trimmed := strings.Trim(strings.TrimSpace(value), `"'`); trimmed != "" {
+					values[trimmed] = struct{}{}
+				}
+			}
+			return values
+		}
+	}
+	t.Fatal("no enum found for ApiErrorDetail.category in docs/openapi.yaml; parser or spec is wrong")
+	return nil
+}
+
+// openAPIDeclaredStatuses returns every response status declared under paths:,
+// mapped to the "METHOD /path" operations that declare it. Statuses live at a
+// fixed depth — path item (2), operation (4), responses (6), status (8) — so the
+// scan tracks that nesting rather than matching three-digit keys anywhere, which
+// would also swallow enum values and example payloads.
+func openAPIDeclaredStatuses(t *testing.T, specPath string) map[int][]string {
+	t.Helper()
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	statusKey := regexp.MustCompile(`^'?(\d{3})'?:`)
+	declared := make(map[int][]string)
+	inPaths := false
+	currentPath := ""
+	currentOperation := ""
+	inResponses := false
+
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") {
+			inPaths = strings.HasPrefix(line, "paths:")
+			currentPath, currentOperation, inResponses = "", "", false
+			continue
+		}
+		if !inPaths {
+			continue
+		}
+
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		text := strings.TrimSpace(line)
+
+		switch {
+		case indent == 2 && strings.HasPrefix(text, "/") && strings.HasSuffix(text, ":"):
+			currentPath = strings.TrimSuffix(text, ":")
+			currentOperation, inResponses = "", false
+		case indent == 4:
+			currentOperation = strings.ToUpper(strings.TrimSuffix(text, ":"))
+			inResponses = false
+		case indent == 6:
+			inResponses = text == "responses:"
+		case indent == 8 && inResponses && currentPath != "" && currentOperation != "":
+			match := statusKey.FindStringSubmatch(text)
+			if match == nil {
+				continue
+			}
+			status := 0
+			if _, err := fmt.Sscanf(match[1], "%d", &status); err != nil {
+				t.Fatalf("unparseable status key %q under %s %s", text, currentOperation, currentPath)
+			}
+			declared[status] = append(declared[status], currentOperation+" "+currentPath)
+		}
+	}
+	return declared
+}
+
+// serverSourceText concatenates every non-test Go source under internal/ and
+// cmd/ — the code that can actually put a status on the wire.
+func serverSourceText(t *testing.T, repoRoot string) string {
+	t.Helper()
+	var builder strings.Builder
+	for _, tree := range []string{"internal", "cmd"} {
+		root := filepath.Join(repoRoot, tree)
+		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			builder.Write(data)
+			builder.WriteString("\n")
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", root, err)
+		}
+	}
+	if builder.Len() == 0 {
+		t.Fatalf("no server sources read from %s; test setup is wrong", repoRoot)
+	}
+	return builder.String()
+}
+
+// fiberStatusIdentifier derives the fiber constant a status would be written as.
+// fiber's Status* constants mirror net/http's, whose names are StatusText with
+// the separators removed, so the mapping needs no hand-maintained table that
+// could drift from the spec it is meant to check.
+func fiberStatusIdentifier(t *testing.T, status int) string {
+	t.Helper()
+	text := http.StatusText(status)
+	if text == "" {
+		t.Fatalf("docs/openapi.yaml declares %d, which is not a registered HTTP status", status)
+	}
+	return "fiber.Status" + strings.NewReplacer(" ", "", "-", "").Replace(text)
 }
 
 // registeredV1Routes returns the set of "METHOD /api/v1/..." entries the Fiber
