@@ -59,6 +59,23 @@ Security issues should not be reported publicly. Use [SECURITY.md](SECURITY.md).
   start image tag, cosign/attestation/SBOM verification examples, Releases section) to the new tag.
   `go test ./scripts/readmeversion/...` fails if any occurrence disagrees with the others.
 
+## Migrations
+
+Migration files are immutable once released: fix forward with a new migration, never edit an
+applied one. The prose inside a migration is a snapshot of the contract at the time it shipped and
+is not updated afterwards — the current contract always lives in the docs. Two known historical
+spots, kept as shipped:
+
+- `032_calendar_feed_verifier_mac.sql` (both dialects) describes how legacy feed rows behaved
+  before the key-rotation sentinel existed; the current rotation contract is documented in
+  [docs/security/cryptography.md](docs/security/cryptography.md) and
+  [docs/self-hosted.md](docs/self-hosted.md).
+- `003_daily_logs_schema_reconcile.sql` and `024_daily_logs_bbt_nullable.sql` end with
+  `INSERT OR REPLACE INTO sqlite_sequence(…)`. `sqlite_sequence` has no unique index, so the
+  statement appends a duplicate row instead of replacing one. The value it writes matches what
+  SQLite already maintains through the preceding `INSERT … SELECT`, so the extra row is inert —
+  do not copy the pattern into a new migration.
+
 ## API Stability Contract
 
 `internal/api/routes.go` is the source of truth for HTTP endpoints; [docs/openapi.yaml](docs/openapi.yaml) is the authoritative description of the JSON surface.

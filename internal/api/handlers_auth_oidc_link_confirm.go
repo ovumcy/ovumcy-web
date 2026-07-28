@@ -246,16 +246,3 @@ func (handler *Handler) verifyTOTPForLinkConfirm(c fiber.Ctx, targetUser *models
 	handler.totpService.ResetAttempts(handler.secretKey, c.IP(), targetUser.ID)
 	return APIErrorSpec{}, true
 }
-
-func mapOIDCLinkConfirmError(err error) APIErrorSpec {
-	switch {
-	case errors.Is(err, services.ErrOIDCLinkFailed),
-		errors.Is(err, services.ErrOIDCIdentityResolveFailed):
-		return authOIDCUnavailableErrorSpec()
-	case errors.Is(err, services.ErrOIDCDisabled),
-		errors.Is(err, services.ErrOIDCUnavailable):
-		return authOIDCUnavailableErrorSpec()
-	default:
-		return authOIDCAuthenticationFailedErrorSpec()
-	}
-}

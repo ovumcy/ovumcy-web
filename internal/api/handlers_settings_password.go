@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -201,23 +200,6 @@ func (handler *Handler) completeLocalPasswordSetupReauth(c fiber.Ctx, state oidc
 
 func (handler *Handler) validateLocalPasswordSetupReauth(ctx context.Context, code, codeVerifier, nonce string, userID uint, now time.Time) error {
 	return handler.oidcService.ValidateReauthExchange(ctx, code, codeVerifier, nonce, userID, stepupReauthMaxAge, now)
-}
-
-func mapLocalPasswordSetupReauthError(err error) APIErrorSpec {
-	switch {
-	case errors.Is(err, services.ErrOIDCReauthStale):
-		return settingsOIDCReauthStaleErrorSpec()
-	case errors.Is(err, services.ErrOIDCReauthIdentityMismatch):
-		return settingsOIDCReauthMismatchErrorSpec()
-	case errors.Is(err, services.ErrOIDCCallbackInvalid):
-		return authOIDCAuthenticationFailedErrorSpec()
-	case errors.Is(err, services.ErrOIDCAuthenticationFailed):
-		return authOIDCAuthenticationFailedErrorSpec()
-	case errors.Is(err, services.ErrOIDCDisabled), errors.Is(err, services.ErrOIDCUnavailable):
-		return authOIDCUnavailableErrorSpec()
-	default:
-		return authOIDCAuthenticationFailedErrorSpec()
-	}
 }
 
 func parseChangePasswordInput(c fiber.Ctx) (changePasswordInput, error) {

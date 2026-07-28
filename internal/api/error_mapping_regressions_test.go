@@ -3,9 +3,13 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +17,39 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
+
+// TestErrorMappingSwitchesLiveInErrorMappingFiles sweeps every non-test file
+// in the package for a domain-error mapping switch (a function named
+// map…Error) declared outside the error_mapping_*.go files. The mapping layer
+// is centralized so every error path is reviewed in one place; a mapper hiding
+// in a handler file drifts out of that review (the OIDC link-confirm mapper
+// did exactly that). No allowlist: a future offender fails here by name.
+func TestErrorMappingSwitchesLiveInErrorMappingFiles(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	fileSet := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "error_mapping_") {
+			continue
+		}
+		parsed, err := parser.ParseFile(fileSet, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, decl := range parsed.Decls {
+			funcDecl, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if strings.HasPrefix(funcDecl.Name.Name, "map") && strings.HasSuffix(funcDecl.Name.Name, "Error") {
+				t.Errorf("%s declares %s: map…Error switches belong in an error_mapping_*.go file", name, funcDecl.Name.Name)
+			}
+		}
+	}
+}
 
 func TestCommonErrorSpecs(t *testing.T) {
 	testCases := []struct {

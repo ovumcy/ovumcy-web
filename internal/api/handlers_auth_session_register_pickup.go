@@ -7,7 +7,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const registerPickupNextPath = "/register/welcome"
@@ -132,7 +131,7 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 		return handler.redirectToPostRegisterSignin(c, "recovery_hash_missing")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.RecoveryCodeHash), []byte(payload.RC)); err != nil {
+	if !handler.authService.VerifyStoredRecoveryCode(user.RecoveryCodeHash, payload.RC) {
 		return handler.redirectToPostRegisterSignin(c, "decoy_or_mismatch")
 	}
 
