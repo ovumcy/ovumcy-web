@@ -36,15 +36,24 @@ type oidcStepupFixture struct {
 
 func newOIDCStepupFixture(t *testing.T, email string) *oidcStepupFixture {
 	t.Helper()
+	return newOIDCStepupFixtureWithAudit(t, email, false)
+}
+
+// newOIDCStepupFixtureWithAudit builds the same fixture with the audit stream
+// switchable, so an attribution regression can read the security-event lines
+// the step-up callbacks emit.
+func newOIDCStepupFixtureWithAudit(t *testing.T, email string, auditLogEnabled bool) *oidcStepupFixture {
+	t.Helper()
 
 	stub := newStubOIDCWorkflowService(true)
 	stub.localPublicAuthEnabled = true
 	stub.reauthURL = "https://id.example.com/authorize?prompt=login"
 
 	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
-		enableCSRF:   true,
-		cookieSecure: true,
-		oidcService:  stub,
+		enableCSRF:      true,
+		cookieSecure:    true,
+		oidcService:     stub,
+		auditLogEnabled: auditLogEnabled,
 	})
 
 	user := models.User{
