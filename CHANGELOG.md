@@ -88,6 +88,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The audit stream now tags the two erasure actions as health-data
+  mutations.** Clear-data and delete-account logged through the plain
+  security-event path, so their lines carried the action name alone — no
+  `domain="health_data"`, no `target` — while an ordinary day write or symptom
+  edit carried both. An operator filtering an incident by domain to answer
+  "was any tracked data destroyed?" therefore saw every routine edit and missed
+  the two operations that erase everything. Both now declare a typed mutation
+  kind, like every other audited mutation handler, so the tag cannot be dropped
+  by writing the action out by hand at a call site.
+
+  The `action` values are unchanged (`settings.clear_data`,
+  `settings.delete_account`) and existing filters keep matching, but each of
+  those lines gains two fields: `domain="health_data"` and a `target` naming the
+  erased scope — `account_data` for the wipe, `account` for the deletion.
+  Neither carries an identifier or any free text. The password-only pre-check
+  behind the clear-data confirmation dialog (`settings.clear_data_validate`)
+  mutates nothing and stays on the plain path, unchanged. Field reference:
+  [docs/security/logging.md](docs/security/logging.md#logging-policy).
+
 - **The TOTP enrollment cookie refuses to seal without a secret.** The reader
   has always rejected a setup payload whose secret is blank, but the writer
   sealed one without complaint, so a caller that lost the secret produced a
