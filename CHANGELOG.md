@@ -111,6 +111,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A route's rate-limit budget now covers every spelling of its path the router
+  accepts.** The five limiters scoped to a single endpoint — sign-in, sign-out,
+  registration, forgot-password and the language switch — decided whether a
+  request was theirs by comparing the path as raw bytes, while the router matches
+  a normalized copy of it: routing is neither case-sensitive nor strict about a
+  trailing slash, so `POST /LANG` and `POST /lang/` reached the language handler
+  with the limiter's own filter waving them through uncounted.
+
+  What that cost differed per route. The language switch is the one
+  unauthenticated route outside `/api` that reads a request body, so it has no
+  second budget behind it and had no cap at all on those spellings. Its four
+  siblings fell through to the `/api` catch-all — 300 requests per minute against
+  their own 8 per 15 minutes — with the per-account `AuthAttemptPolicy` still
+  capping failed credentials underneath, so those were a loosened budget rather
+  than an absent one.
+
+  The filter now compares the path in the router's own normalization. It stays an
+  exact match rather than a prefix one, so `POST /api/v1/sessions/2fa-challenge`
+  still does not spend the sign-in budget. Canonical paths keep the same budgets,
+  the same response keys and the same log lines.
+
 - **The documented Postgres restore now actually restores.** The runbook's
   restore command — a plain dump piped into `psql` — succeeded loudly and did
   nothing whenever the target database still held its schema. `pg_dump` writes

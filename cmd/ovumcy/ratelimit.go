@@ -192,15 +192,73 @@ func isV1AuthPath(path string) bool {
 	return false
 }
 
+// asciiLowerPath lowercases the ASCII letters of a request path and leaves
+// every other byte untouched, mirroring the byte table fiber applies to the
+// routing path (gofiber/utils/v2/bytes.UnsafeToLower). strings.ToLower is the
+// wrong primitive here: it is Unicode-aware and folds code points such as
+// U+212A KELVIN SIGN onto ASCII letters, which fiber's table leaves alone —
+// that would make the scope predicate claim paths the router will never send
+// to the guarded handler.
+func asciiLowerPath(path string) string {
+	lowered := []byte(path)
+	changed := false
+	for i := range lowered {
+		if lowered[i] >= 'A' && lowered[i] <= 'Z' {
+			lowered[i] += 'a' - 'A'
+			changed = true
+		}
+	}
+	if !changed {
+		return path
+	}
+	return string(lowered)
+}
+
+// routingNormalizedPath returns a request path in the SAME normalization fiber
+// uses to pick a route, so a scope predicate compares what the router compared.
+//
+// c.Path() hands back the untouched path off the wire (DefaultCtx.pathOriginal).
+// Route matching runs against a separate, unexported "detection path"
+// (DefaultCtx.configDependentPaths): ASCII-lowercased while CaseSensitive is
+// off, with trailing slashes stripped while StrictRouting is off — both are off
+// here, fiber's defaults, and fiberConfig sets neither. Nothing else is folded:
+// "%6c", "//" in the middle and "/." stay literal and simply fail to match a
+// route.
+//
+// This normalization is a superset of the router's: with CaseSensitive or
+// StrictRouting turned on it claims a spelling fiber would answer 404, which
+// costs that request a limiter slot in its own per-IP bucket and nothing else.
+// The opposite mistake — comparing the raw path — is the one that matters, and
+// it is what let POST /LANG and POST /lang/ reach the language handler while
+// the limiter's Next predicate waved them through uncounted.
+//
+// The method needs no such treatment: fiber resolves the verb to an int against
+// its canonical constants and answers 501 before any middleware runs when the
+// lookup fails, so c.Method() inside a limiter is always one of those constants.
+func routingNormalizedPath(path string) string {
+	normalized := asciiLowerPath(path)
+	if len(normalized) > 1 && normalized[len(normalized)-1] == '/' {
+		normalized = strings.TrimRight(normalized, "/")
+	}
+	return normalized
+}
+
 // rateLimitOnlyFor returns a Next predicate for fiber's limiter middleware
 // that lets the limiter run only when the request's method and path match
 // exactly. Fiber's Use() is path-prefix-matched and method-agnostic; without
 // this filter a limiter wired to "/api/v1/sessions" would also fire on
 // sibling routes such as POST /api/v1/sessions/2fa-challenge that share the
 // prefix, silently broadening the rate-limit budget.
+//
+// "Exactly" is measured on the routing normalization (routingNormalizedPath),
+// not on the raw bytes: the scope has to be as wide as the set of spellings
+// that reach the guarded handler, and no wider. Normalizing does not turn the
+// comparison into a prefix match — /api/v1/sessions/2fa-challenge normalizes to
+// itself and still misses /api/v1/sessions.
 func rateLimitOnlyFor(method, path string) func(fiber.Ctx) bool {
+	scopedPath := routingNormalizedPath(path)
 	return func(c fiber.Ctx) bool {
-		return c.Method() != method || c.Path() != path
+		return c.Method() != method || routingNormalizedPath(c.Path()) != scopedPath
 	}
 }
 

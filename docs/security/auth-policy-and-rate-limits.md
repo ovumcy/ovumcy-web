@@ -39,8 +39,11 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `POST /api/v1/password-resets` | 8 requests / 1 hour | `RATE_LIMIT_FORGOT_PASSWORD_MAX`, `RATE_LIMIT_FORGOT_PASSWORD_WINDOW` |
 | `/auth/oidc/*` (OIDC sign-in) | 8 requests / 15 minutes | shares `RATE_LIMIT_LOGIN_MAX`, `RATE_LIMIT_LOGIN_WINDOW` |
 | `DELETE /api/v1/sessions/current` | 60 requests / 15 minutes | `RATE_LIMIT_LOGOUT_MAX`, `RATE_LIMIT_LOGOUT_WINDOW` |
+| `POST /lang` (language switch) | 300 requests / 1 minute | shares `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `GET /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
+
+A single-endpoint row above is matched the way the router matches, not by raw path bytes: routing is case-insensitive and ignores trailing slashes, so `POST /LANG` and `POST /lang/` reach the same handler as `POST /lang` and draw on the same budget. The match stays exact rather than prefix-wide — `POST /api/v1/sessions/2fa-challenge` does not spend the sign-in row's budget; it draws on the `/api` catch-all and on its own per-account TOTP budget below.
 
 The calendar feed deliberately does **not** share the `/api/*` budget. When the budget was introduced it was the only unauthenticated endpoint paying a bcrypt compare on every well-formed request — the verifier check on a selector hit, or the timing-equalization dummy on a selector miss — so at the `/api` budget a single IP could spend 300 bcrypts per minute without any credential. Migration 032 moved verification to a keyed MAC (microseconds), which removed that CPU cliff for every row minted since; a row minted before it still pays one bcrypt until its first successful poll writes its MAC in.
 
