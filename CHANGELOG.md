@@ -450,6 +450,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolver now publishes the actor for the whole request, which covers both
   step-up purposes and any handler that resolves a session the same way later.
 
+- **The audit stream can now answer what left the instance, not only what
+  changed inside it.** Tagging the erasure actions gave an operator a filter for
+  "was tracked data changed or destroyed?" — and nothing at all for the question
+  that matters at least as much on a health tracker: did any of it leave? The
+  three export endpoints logged an action name and a format through the plain
+  security-event path, carrying no domain and no target, so they were invisible
+  to a domain filter; the shared prologue lost even the format, which made a
+  refused CSV download indistinguishable from a refused JSON one. The two
+  one-time secret reveals — the `.ics` subscribe URL and a recovery code —
+  emitted no audit event at all, so the moment a standing capability over an
+  owner's data was handed out left no trace.
+
+  Exports and reveals now declare a typed egress kind, the read-side counterpart
+  of the mutation kind, and every branch logs through it. Six surfaces are
+  covered: the CSV, JSON and summary exports (success, refusal and storage
+  failure alike, each attributed to its format), the calendar-feed reveal page,
+  and both surfaces that display a recovery code. Each line records the *fact*
+  of the disclosure — no export payload, subscribe URL, feed token, or recovery
+  code ever enters it.
+
+  Egress lines carry a **separate** `domain="health_egress"` rather than joining
+  `domain="health_data"`. Existing filters are unaffected in both directions: the
+  `data.export` action string is unchanged, and `domain="health_data"` keeps
+  selecting exactly the data-changing actions it selected before, so an erasure
+  review does not start collecting every routine download. A review that wants
+  both classes at once matches the shared prefix in one clause (`domain="health_`).
+  Polling of the calendar feed is deliberately **not** audited — the reasoning is
+  recorded under *Calendar-feed polling is not audited* in
+  [docs/security/known-disclosures.md](docs/security/known-disclosures.md). Field
+  reference: [docs/security/logging.md](docs/security/logging.md#logging-policy).
+
 ### Security
 
 - **A two-factor cookie the server refuses is now cleared instead of left in the

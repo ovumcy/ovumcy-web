@@ -5,6 +5,17 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// recoveryCodeRevealEgress tags the one-time reveal of an account's recovery
+// code. The code is not health data, but it is a standing means of taking over
+// the account and therefore everything in it, so the moment it reaches a person
+// belongs in the same view as an export rather than in no view at all. It is
+// declared once for BOTH surfaces that show a code — the dedicated page and the
+// inline post-registration block — because the answer an operator needs
+// ("was this account's recovery code displayed in that session?") is the same
+// on either, and the sanitized path already distinguishes them. The event
+// records the fact of the reveal; the code itself never enters the line.
+var recoveryCodeRevealEgress = healthEgressKind{action: "auth.recovery_code_reveal", target: "recovery_code"}
+
 func (handler *Handler) ShowLoginPage(c fiber.Ctx) error {
 	redirected, err := handler.redirectAuthenticatedUserIfPresent(c)
 	if err != nil {
@@ -39,6 +50,10 @@ func (handler *Handler) ShowRegisterPage(c fiber.Ctx) error {
 		if recoveryState.RecoveryCode != "" && recoveryState.Surface == recoveryCodeSurfaceInlineRegister {
 			flash := handler.popFlashCookie(c)
 			handler.clearRecoveryCodePageCookie(c)
+			// The actor is already on the request context: the optional-auth lookup
+			// above resolves the session through authenticateRequest, which publishes
+			// it for the whole request.
+			handler.logEgressSuccess(c, recoveryCodeRevealEgress)
 			data := buildRegisterPageData(currentMessages(c), flash, false, handler.registrationService.RegistrationOpen())
 			data["Title"] = localizedPageTitle(currentMessages(c), "meta.title.recovery_code", "Ovumcy | Recovery Code")
 			data["CurrentUser"] = user
@@ -80,6 +95,7 @@ func (handler *Handler) ShowRecoveryCodePage(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
 	}
 	handler.clearRecoveryCodePageCookie(c)
+	handler.logEgressSuccess(c, recoveryCodeRevealEgress)
 
 	return handler.render(c, "recovery_code", fiber.Map{
 		"Title":          localizedPageTitle(currentMessages(c), "meta.title.recovery_code", "Ovumcy | Recovery Code"),
