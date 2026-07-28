@@ -235,7 +235,11 @@ func TestAPIRateLimitHandlerReturnsStatusErrorMarkupForHTMX(t *testing.T) {
 // apart and the feed must trip first.
 func TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
-	app := fiber.New()
+	// fiberConfig, not a bare fiber.New(): the wiring under test is the shipped
+	// app's, and the routing flags the shipped config carries are what decide
+	// which spellings of a path reach a route at all (see
+	// rate_limit_scope_guard_test.go).
+	app := fiber.New(fiberConfig(proxySettings{}))
 	configureFiberMiddleware(app, runtimeConfig{
 		RateLimits: rateLimitSettings{
 			APIMax:             100,
@@ -289,7 +293,10 @@ func TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget(t *testing.T) {
 // the /api limiter had been consumed.
 func TestLanguageSwitchIsRateLimited(t *testing.T) {
 	handler := newRateLimitTestHandler(t)
-	app := fiber.New()
+	// Built on the shipped fiberConfig for the reason above: the spelling
+	// variants of /lang this test does not send are covered by the sweep in
+	// rate_limit_scope_guard_test.go, and both need the shipped routing flags.
+	app := fiber.New(fiberConfig(proxySettings{}))
 	configureFiberMiddleware(app, runtimeConfig{
 		RateLimits: rateLimitSettings{
 			APIMax:    2,

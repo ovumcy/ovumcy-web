@@ -288,6 +288,7 @@ The read-only `.ics` feed lets a calendar client subscribe to an owner's upcomin
 | TOTP disable rate-limited at 5 failures / 15 min | `handlers_settings_2fa_test.go` |
 | Rate-limit error response is sanitized and contains no PII | `TestAuthRateLimitHandlerLogsSecurityEventWithoutPII` in [cmd/ovumcy/main_test.go](cmd/ovumcy/main_test.go) |
 | Edge rate limiters key on the real client IP (rightmost untrusted `X-Forwarded-For` hop); a spoofed prefix shares one bucket, and an untrusted peer / disabled proxy ignores the header | `TestRateLimitKeyGeneratorBucketing`, `TestRightmostUntrustedIP`, `TestTrustedProxyMatcher` in [cmd/ovumcy/rate_limit_keygen_test.go](cmd/ovumcy/rate_limit_keygen_test.go) |
+| An edge limiter scoped to one endpoint covers every spelling of that path the router accepts — case and trailing slashes are folded before the comparison, so a change of case cannot escape the endpoint's own budget — and no more: a path merely sharing its prefix still draws on a different budget | `TestScopedRateLimitersCoverEveryRoutableSpellingOfTheirPath`, `TestFiberRoutesEveryScopedLimiterPathSpellingToItsOwnRoute` in [cmd/ovumcy/rate_limit_scope_guard_test.go](cmd/ovumcy/rate_limit_scope_guard_test.go) |
 
 ### SECRET_KEY Usage Map
 
