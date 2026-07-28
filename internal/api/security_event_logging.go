@@ -106,20 +106,50 @@ func (handler *Handler) logSecurityError(c fiber.Ctx, action string, spec APIErr
 	handler.logSecurityEvent(c, action, securityEventOutcomeForSpec(spec), combined...)
 }
 
-func (handler *Handler) logHealthDataMutation(c fiber.Ctx, action string, outcome string, target string) {
-	fields := []SecurityEventField{securityEventField("domain", "health_data")}
+// The audit stream carries three domains, and they are deliberately distinct
+// values rather than one value with a modifier, because they answer different
+// incident questions. health_data selects the actions that CHANGED or DESTROYED
+// an owner's tracked data; health_egress the ones that carried it OUT of the
+// instance; account the ones that changed the account record without touching
+// the cycle record. Widening health_data to cover egress would make the erasure
+// question return every routine CSV download — the same loss of precision that
+// keeps the display name in its own domain. A review that wants both health
+// classes at once matches the shared `health_` prefix in one clause.
+const (
+	healthDataDomain   = "health_data"
+	healthEgressDomain = "health_egress"
+	accountDomain      = "account"
+)
+
+// auditDomainFields builds the domain (plus optional target) prefix every
+// audited line carries. It is the single place any domain value is written, so
+// a new surface cannot invent a second spelling of a field operators filter on.
+// WHICH domain a call site may pass is not decided here but one level up, by
+// the typed kinds below — the compiler is what keeps a display-name change out
+// of the health-data stream, not this function.
+func auditDomainFields(domain string, target string, extra ...SecurityEventField) []SecurityEventField {
+	fields := make([]SecurityEventField, 0, len(extra)+2)
+	fields = append(fields, securityEventField("domain", domain))
 	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
 		fields = append(fields, securityEventField("target", normalizedTarget))
 	}
-	handler.logSecurityEvent(c, action, outcome, fields...)
+	return append(fields, extra...)
+}
+
+func (handler *Handler) logAuditDomainEvent(c fiber.Ctx, domain string, action string, outcome string, target string, extra ...SecurityEventField) {
+	handler.logSecurityEvent(c, action, outcome, auditDomainFields(domain, target, extra...)...)
+}
+
+func (handler *Handler) logAuditDomainError(c fiber.Ctx, domain string, action string, spec APIErrorSpec, target string, extra ...SecurityEventField) {
+	handler.logSecurityError(c, action, spec, auditDomainFields(domain, target, extra...)...)
+}
+
+func (handler *Handler) logHealthDataMutation(c fiber.Ctx, action string, outcome string, target string) {
+	handler.logAuditDomainEvent(c, healthDataDomain, action, outcome, target)
 }
 
 func (handler *Handler) logHealthDataMutationError(c fiber.Ctx, action string, spec APIErrorSpec, target string) {
-	fields := []SecurityEventField{securityEventField("domain", "health_data")}
-	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
-		fields = append(fields, securityEventField("target", normalizedTarget))
-	}
-	handler.logSecurityError(c, action, spec, fields...)
+	handler.logAuditDomainError(c, healthDataDomain, action, spec, target)
 }
 
 // healthMutationKind names one audited health-data mutation: the security
@@ -146,20 +176,12 @@ type accountMutationKind struct {
 	target string
 }
 
-func accountMutationFields(target string) []SecurityEventField {
-	fields := []SecurityEventField{securityEventField("domain", "account")}
-	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
-		fields = append(fields, securityEventField("target", normalizedTarget))
-	}
-	return fields
-}
-
 func (handler *Handler) logAccountMutationSuccess(c fiber.Ctx, kind accountMutationKind) {
-	handler.logSecurityEvent(c, kind.action, "success", accountMutationFields(kind.target)...)
+	handler.logAuditDomainEvent(c, accountDomain, kind.action, "success", kind.target)
 }
 
 func (handler *Handler) logAccountMutationError(c fiber.Ctx, kind accountMutationKind, spec APIErrorSpec) {
-	handler.logSecurityError(c, kind.action, spec, accountMutationFields(kind.target)...)
+	handler.logAuditDomainError(c, accountDomain, kind.action, spec, kind.target)
 }
 
 // failAccountMutation is the account-domain twin of failMutation: log the
@@ -181,6 +203,44 @@ func (handler *Handler) logMutationError(c fiber.Ctx, kind healthMutationKind, s
 // denied/failed audit event and respond with the mapped error.
 func (handler *Handler) failMutation(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) error {
 	handler.logMutationError(c, kind, spec)
+	return handler.respondMappedError(c, spec)
+}
+
+// healthEgressKind names one audited health-data egress: an action that carries
+// an owner's health data out of the instance, or that hands a person a secret
+// granting standing access to it. It is the read-side counterpart of
+// healthMutationKind and follows the same rule — declared once per handler file
+// so no event-name or target literal is left at a call site.
+//
+// A kind may also carry one constant detail field (the export format). That
+// detail belongs to the kind rather than to each call site: written out by hand
+// it was present on five branches of the CSV handler and absent from the two in
+// the shared prologue, so a rejected export could not be attributed to a format.
+type healthEgressKind struct {
+	action string
+	target string
+	detail SecurityEventField
+}
+
+func (kind healthEgressKind) detailFields() []SecurityEventField {
+	if strings.TrimSpace(kind.detail.Key) == "" {
+		return nil
+	}
+	return []SecurityEventField{kind.detail}
+}
+
+func (handler *Handler) logEgressSuccess(c fiber.Ctx, kind healthEgressKind) {
+	handler.logAuditDomainEvent(c, healthEgressDomain, kind.action, "success", kind.target, kind.detailFields()...)
+}
+
+func (handler *Handler) logEgressError(c fiber.Ctx, kind healthEgressKind, spec APIErrorSpec) {
+	handler.logAuditDomainError(c, healthEgressDomain, kind.action, spec, kind.target, kind.detailFields()...)
+}
+
+// failEgress is the common tail of egress handlers: log the denied/failed audit
+// event and respond with the mapped error.
+func (handler *Handler) failEgress(c fiber.Ctx, kind healthEgressKind, spec APIErrorSpec) error {
+	handler.logEgressError(c, kind, spec)
 	return handler.respondMappedError(c, spec)
 }
 
