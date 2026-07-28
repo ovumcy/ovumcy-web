@@ -61,6 +61,11 @@ var authErrorTranslationKeys = map[string]string{
 	"totp internal error":    "error.totp_internal_error",
 	"totp too many attempts": "error.totp_too_many_attempts",
 
+	// The five edge-limiter keys below (too_many_*) are set by the composition
+	// root's limiter config and reach the mapper with no services sentinel behind
+	// them, which is how the logout and register pair stayed unmapped while their
+	// three siblings were mapped: an unmapped key renders itself as the visible
+	// message in every language.
 	"sso temporarily unavailable":                     "auth.error.sso_temporarily_unavailable",
 	"sso authentication failed":                       "auth.error.sso_authentication_failed",
 	"sso sign-in unavailable":                         "auth.error.sso_sign_in_unavailable",
@@ -76,6 +81,10 @@ var authErrorTranslationKeys = map[string]string{
 	"too many login attempts":                         "auth.error.too_many_login_attempts",
 	"too_many_forgot_password_attempts":               "auth.error.too_many_forgot_password_attempts",
 	"too many forgot password attempts":               "auth.error.too_many_forgot_password_attempts",
+	"too_many_logout_attempts":                        "auth.error.too_many_logout_attempts",
+	"too many logout attempts":                        "auth.error.too_many_logout_attempts",
+	"too_many_register_attempts":                      "auth.error.too_many_register_attempts",
+	"too many register attempts":                      "auth.error.too_many_register_attempts",
 	"invalid reset token":                             "auth.error.invalid_reset_token",
 	"invalid current password":                        "settings.error.invalid_current_password",
 	"new password must differ":                        "settings.error.password_unchanged",

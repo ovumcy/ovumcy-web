@@ -508,6 +508,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   make that filter mean less than it says. No audit line carries the submitted
   value. See [docs/security/logging.md](docs/security/logging.md).
 
+- **Rate-limit refusals answer in the application's own format, like every other
+  rejection.** A `429` from an edge limiter built a body of its own — the stable
+  key and `retry_after_seconds`, with no `error_detail` — so the same refusal
+  reached a client in two different shapes depending on which layer produced it:
+  the limiter's stripped body on `POST /api/v1/sessions`, and the full envelope
+  from the per-account attempt budget behind the very same endpoint. Every
+  limiter now answers the shared envelope, and `retry_after_seconds` rides along
+  inside it as an extension member, so a client that reads it keeps working
+  while one that parses `error_detail` no longer needs a second parse path.
+  Stable keys are unchanged.
+
+  Two browser-facing halves went with it. A refused language switch used to
+  return the JSON body to a full-page navigation — `POST /lang` is the only
+  public form with no HTMX and no JavaScript behind it, so the browser simply
+  displayed the raw JSON; it now renders the localized status fragment. And
+  because the limiters deliberately sit ahead of the language middleware (a cap
+  has to count requests that never reach a handler), a rate-limited HTMX flow
+  had no locale catalogue to translate against and displayed its own machine key
+  — `too_many_login_attempts` — as the message in all six languages. Refusals
+  now resolve the language themselves, and the two limiter keys that had no
+  copy at all, sign-out and registration, have it in every locale. The calendar
+  feed's previously bodyless `429` joins the same envelope.
+
 ### Security
 
 - **A two-factor cookie the server refuses is now cleared instead of left in the

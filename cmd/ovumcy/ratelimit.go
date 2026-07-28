@@ -150,11 +150,15 @@ func newAPIRateLimitHandler(handler *api.Handler) fiber.Handler {
 }
 
 // newCalendarFeedRateLimitHandler is the LimitReached handler for the per-IP
-// calendar-feed limiter. The feed has no UI, so a 429 needs no HTML/JSON body:
-// it returns a bare 429 (preserving the limiter-set Retry-After header) after
-// logging the hit and a security event. logRateLimitHit masks the token in the
-// path via SafeRequestLogPath, so the rate-limit log line never carries the
-// token value.
+// calendar-feed limiter. The feed has no UI, so its 429 is never rendered as a
+// page — but it answers through the shared rate-limit envelope like every other
+// limiter (preserving the limiter-set Retry-After header and echoing it as
+// retry_after_seconds) rather than the bare status it used to return: the
+// envelope is an app-wide contract, and one surface answering a bodyless 429
+// was the same split this change closes elsewhere. Nothing about the request is
+// echoed — the spec is the shared global one, so the subscribe token in the
+// path cannot reach the body. logRateLimitHit masks that token in the path via
+// SafeRequestLogPath, so the rate-limit log line never carries it either.
 func newCalendarFeedRateLimitHandler(handler *api.Handler) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		logRateLimitHit(c)
@@ -162,7 +166,7 @@ func newCalendarFeedRateLimitHandler(handler *api.Handler) fiber.Handler {
 			api.SecurityEventField{Key: "scope", Value: "calendar_feed"},
 			api.SecurityEventField{Key: "reason", Value: "too many requests"},
 		)
-		return c.SendStatus(fiber.StatusTooManyRequests)
+		return handler.RespondCalendarFeedRateLimited(c)
 	}
 }
 

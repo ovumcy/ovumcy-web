@@ -114,6 +114,8 @@
   "auth.error.too_many_recovery_attempts": "Too many recovery attempts. Try again in 15 minutes.",
   "auth.error.too_many_login_attempts": "Too many login attempts. Please wait 15 minutes.",
   "auth.error.too_many_sso_attempts": "Too many SSO attempts. Please wait 15 minutes.",
+  "auth.error.too_many_logout_attempts": "Too many sign-out attempts. Please wait and try again.",
+  "auth.error.too_many_register_attempts": "Too many registration attempts. Please wait and try again.",
   "auth.error.sso_temporarily_unavailable": "SSO sign-in is currently unavailable. Use local login or try again later.",
   "auth.error.sso_authentication_failed": "SSO authentication could not be completed. Please try again.",
   "auth.error.sso_sign_in_unavailable": "This SSO account cannot sign in yet. Use local login or contact the operator.",
