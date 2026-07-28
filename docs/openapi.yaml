@@ -38,8 +38,9 @@ info:
     per-account budgets enforced by `AuthAttemptPolicy`. Specific defaults
     are listed in [SECURITY.md#rate-limits](../SECURITY.md#rate-limits).
 
-    Errors — every error response carries `{ "error": "<key>", "error_detail":
-    { "key", "category", "target" } }`. The top-level `error` string is the
+    Errors — every error response from the endpoints below carries
+    `{ "error": "<key>", "error_detail": { "key", "category", "target" } }`.
+    The top-level `error` string is the
     legacy field kept for backward compatibility; `error_detail` is the
     structured form for programmatic clients (see `ApiError` /
     `ApiErrorDetail` in `components.schemas`). Clients should branch on the
@@ -192,12 +193,13 @@ components:
         rather than the key string, and treat unknown keys/categories as their
         generic status-class failure.
 
-        The envelope is app-wide: **every** rejection the server emits carries
-        it, including the ones raised before or outside any operation below, so
-        a client needs exactly one parse path. Those transport-level rejections
-        are listed here rather than per-path — the request never reached an
-        operation, so attaching them to one would misdescribe what happened —
-        and each carries a stable key derived from the status alone:
+        The envelope covers **every** rejection reachable from the surface this
+        document describes, including the ones raised before or outside any
+        operation below, so a client needs exactly one parse path. Those
+        transport-level rejections are listed here rather than per-path — the
+        request never reached an operation, so attaching them to one would
+        misdescribe what happened — and each carries a stable key derived from
+        the status alone:
 
           * `400` — `bad_request`
           * `401` — `unauthorized`
@@ -222,6 +224,28 @@ components:
         `request_rejected` for a `4xx` and `internal_error` for a `5xx`. The
         message a failing request produced internally is never echoed into the
         body.
+
+        Three routes answer with a **fixed body** instead, and are named here so
+        the rule above reads as exact rather than approximate — the same way the
+        single CSRF exemption is named rather than left implied. `GET /healthz`
+        and `GET /readyz` answer a fixed one-word JSON body in both outcomes,
+        and the read-only calendar feed `GET /calendar/feed/{token}.ics` answers
+        a bare status with no body at all: `404` for every unknown, malformed or
+        revoked token, and `429` past its per-IP budget, carrying only
+        `Retry-After`. None of the three is part of this specification (`/healthz`
+        and `/readyz` are documented below as a courtesy; the feed is a page
+        route), and none is consumed by a client of this API — the probes are
+        parsed by an operator's health check, the feed by a calendar
+        application. The envelope negotiates its shape from the caller's
+        `Accept`/`HX-Request` headers and carries localized copy, so putting it
+        on a public cookieless surface would let an anonymous caller choose the
+        shape of the answer; the feed's `404` is additionally required to stay
+        one identical body-less answer for a malformed token, an unknown
+        selector, a wrong verifier and a disabled feed alike (see
+        [docs/SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) → *Calendar feed
+        subscription*). The exemption is per route, not per status: the feed
+        serves `text/calendar` or a bare status, never two body shapes on one
+        endpoint.
       required: [error, error_detail]
       properties:
         error:

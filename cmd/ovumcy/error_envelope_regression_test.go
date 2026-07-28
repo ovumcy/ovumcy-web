@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -227,11 +228,131 @@ func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 	assertTransportErrorEnvelope(t, body, "bad_request", "validation")
 }
 
-// TestProbeEndpointsKeepFixedOneWordBodies is the guard on the one place the
-// envelope must NOT reach. /healthz and /readyz answer fixed one-word JSON in
+// envelopeExemptRoutes is the closed set of registered routes whose rejections
+// deliberately answer OUTSIDE the app-wide envelope, each with the reason it is
+// exempt. It is a declared set rather than an inference because the exemption is
+// a decision: adding a route here is how a fixed-body answer gets agreed, and
+// the sweep below refuses to let one appear without that step.
+//
+// All three are public, cookieless and consumed by something other than a client
+// of this API — an operator's health check, a calendar application — so the
+// envelope's own justification (a client that learned to parse {error,
+// error_detail} for one rejection must not meet bare English on the next) does
+// not reach them, while its costs do: the envelope negotiates its shape from the
+// caller's Accept/HX-Request headers and carries localized copy, which would let
+// an anonymous caller pick the shape of the answer on a surface that has no UI.
+//
+// The exemption is per ROUTE, not per status: the calendar feed answers
+// text/calendar or a bare status, and never a body a calendar client would have
+// to parse. Splitting it — an enveloped 429 next to a body-less 404 — would put
+// two shapes on one endpoint, which is the mixed format the envelope exists to
+// prevent.
+var envelopeExemptRoutes = map[string]string{
+	"GET /healthz": "liveness probe: a fixed one-word JSON body in both outcomes, parsed by the container health check",
+	"GET /readyz":  "readiness probe: a fixed one-word JSON body in both outcomes, and it must never name the engine, the path, or the error",
+	"GET /calendar/feed/:token.ics": "cookieless .ics feed: one identical body-less 404 for a malformed token, an unknown selector, " +
+		"a wrong verifier and a disabled feed alike (docs/SECURITY_INVARIANTS.md -> Calendar feed subscription), and a bare 429 " +
+		"carrying only Retry-After past its per-IP budget",
+}
+
+// TestEveryRejectionOutsideTheDeclaredExemptionsCarriesTheEnvelope walks the
+// REAL route table and answers the question the status sweep above cannot: that
+// one drives statuses through the top-level ErrorHandler, so it never sees a
+// handler that answers with c.SendStatus and reaches no ErrorHandler at all.
+// docs/openapi.yaml claimed the envelope covered every rejection the server
+// emits; the calendar feed's 404 and its rate-limited 429 were both bare status
+// text, and no status-driven test could have noticed.
+//
+// The sweep is routes, not call sites, so a route added later inherits the
+// assertion by existing. It requires both halves to be observed — at least one
+// enveloped rejection and at least one exempt one — because a sweep that
+// happened to provoke no rejection at all would otherwise pass having checked
+// nothing.
+func TestEveryRejectionOutsideTheDeclaredExemptionsCarriesTheEnvelope(t *testing.T) {
+	app := newCSRFGuardTestApp(t)
+
+	registered := map[string]struct{}{}
+	for _, route := range app.GetRoutes(true) {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for key := range envelopeExemptRoutes {
+		if _, ok := registered[key]; !ok {
+			t.Fatalf("exempt route %q is not registered — an exemption that names nothing hides the next route that needs one", key)
+		}
+	}
+
+	enveloped, exempt := 0, 0
+	for _, route := range app.GetRoutes(true) {
+		if route.Method != fiber.MethodGet {
+			// Safe methods only: a mutating probe is refused by CSRF before it
+			// reaches its handler, which measures the middleware rather than the
+			// route (TestCSRFDenialAnswersThroughTheEnvelope owns that case).
+			continue
+		}
+		key := route.Method + " " + route.Path
+		reason, isExempt := envelopeExemptRoutes[key]
+
+		request := httptest.NewRequest(http.MethodGet, concreteEnvelopeProbePath(route.Path), nil)
+		request.Header.Set("Accept", "application/json")
+		response, err := app.Test(request, testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("%s: %v", key, err)
+		}
+		body := mustReadAll(t, response)
+		_ = response.Body.Close()
+
+		if response.StatusCode < 400 {
+			continue
+		}
+		if isExempt {
+			exempt++
+			if bytes.Contains(body, []byte("error_detail")) {
+				t.Errorf("%s answered %d with the mapped envelope, but it is declared exempt (%s) — remove the exemption or the envelope", key, response.StatusCode, reason)
+			}
+			continue
+		}
+		enveloped++
+		if !bytes.Contains(body, []byte("error_detail")) {
+			t.Errorf("%s answered %d outside the envelope with %q. Either route it through the mapped error path, or declare it in envelopeExemptRoutes and say so in docs/openapi.yaml", key, response.StatusCode, body)
+		}
+	}
+
+	if enveloped == 0 || exempt == 0 {
+		t.Fatalf("the sweep observed %d enveloped and %d exempt rejections; it needs both to be meaningful — recheck route discovery", enveloped, exempt)
+	}
+}
+
+// concreteEnvelopeProbePath turns a registered route pattern into a requestable
+// path. A ":param" carrying a literal suffix keeps it (the calendar feed's
+// ".ics" is part of the pattern, not of the parameter), so a route added later
+// with a parameter this file has never seen still resolves.
+func concreteEnvelopeProbePath(routePath string) string {
+	known := map[string]string{":date": "2026-01-15", ":id": "1"}
+	segments := strings.Split(routePath, "/")
+	for index, segment := range segments {
+		if !strings.HasPrefix(segment, ":") {
+			continue
+		}
+		if value, ok := known[segment]; ok {
+			segments[index] = value
+			continue
+		}
+		if _, suffix, hasSuffix := strings.Cut(segment, "."); hasSuffix {
+			segments[index] = "probe." + suffix
+			continue
+		}
+		segments[index] = "probe"
+	}
+	return strings.Join(segments, "/")
+}
+
+// TestProbeEndpointsKeepFixedOneWordBodies is the positive half of two of the
+// three declared exemptions. /healthz and /readyz answer fixed one-word JSON in
 // both outcomes: they are unauthenticated, so a localized envelope would put
 // translated text — and a shape that varies with the caller's Accept header —
-// on the surface an operator's probe parses.
+// on the surface an operator's probe parses. The feed's half of the same
+// contract is `TestCalendarFeedRateLimitHandlerReturnsBare429AndRedactsToken`
+// and `TestCalendarFeedReturnsBare404WithoutOracleForBadTokens`.
 func TestProbeEndpointsKeepFixedOneWordBodies(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
 

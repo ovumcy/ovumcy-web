@@ -359,6 +359,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so nothing the handler set survives the refusal. The headers the app puts on
   every response — the browser-hardening set and the CSRF cookie — are written
   before that point and are unaffected.
+- **The API specification no longer claims an error format the calendar feed
+  does not use.** `docs/openapi.yaml` stated that every rejection the server
+  emits carries the `{error, error_detail}` envelope. The read-only `.ics` feed
+  does not and should not: it answers a bare `404` for any unknown token and a
+  bare `429` past its per-IP budget, because it is a public cookieless endpoint
+  read by calendar applications, and the envelope negotiates its shape from the
+  caller's headers and carries localized copy. `/healthz` and `/readyz` already
+  held the same carve-out. The spec now names all three exemptions instead of
+  overstating the rule, and a route sweep over the real application fails if a
+  fourth appears — or if a declared one quietly starts using the envelope after
+  all. No response changed.
 
 ### Security
 
