@@ -464,7 +464,7 @@ func TestOpenAPIRecoveryCodePatternAcceptsGeneratedCodes(t *testing.T) {
 	// is not enough: the generator draws independently per character from
 	// its alphabet, so a pattern that rejects only some characters can
 	// still pass on a lucky draw. Enough iterations make that negligible.
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		code, err := services.GenerateRecoveryCode()
 		if err != nil {
 			t.Fatalf("services.GenerateRecoveryCode: %v", err)
