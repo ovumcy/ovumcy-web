@@ -25,24 +25,68 @@ const oidcStepupCookieTTL = 10 * time.Minute
 // completion handler and refuses callbacks aimed at a different purpose.
 type oidcStepupPurpose string
 
-const oidcStepupPurposeLocalPasswordSetup oidcStepupPurpose = "local_password_setup"
+const (
+	oidcStepupPurposeLocalPasswordSetup oidcStepupPurpose = "local_password_setup"
+	// oidcStepupPurposeErasure gates clear-data and account deletion for an
+	// account that has no local password to confirm with. The re-auth
+	// requirement itself is unchanged — an erasure still costs a fresh
+	// authentication — but for an OIDC-only owner the credential that proves
+	// possession lives at the provider, so the same step-up primitive stands in
+	// for the password prompt. An account that HAS a local password never
+	// reaches this purpose: its gate stays the password.
+	oidcStepupPurposeErasure oidcStepupPurpose = "erasure"
+)
 
-type oidcStepupState struct {
-	Purpose      oidcStepupPurpose `json:"purpose"`
-	UserID       uint              `json:"user_id"`
-	State        string            `json:"state"`
-	Nonce        string            `json:"nonce"`
-	CodeVerifier string            `json:"code_verifier"`
-	PasswordHash string            `json:"password_hash"`
-	ExpiresAt    string            `json:"expires_at"`
+// oidcStepupErasureOperation names which erasure the step-up was started for.
+// It is carried in the sealed state rather than re-read from the callback
+// request because the callback arrives from the provider with no body of its
+// own: whatever the owner confirmed before leaving is what must execute on
+// return, and nothing observable in between may redirect it to the other,
+// more destructive operation.
+type oidcStepupErasureOperation string
+
+const (
+	oidcStepupErasureClearData     oidcStepupErasureOperation = "clear_data"
+	oidcStepupErasureDeleteAccount oidcStepupErasureOperation = "delete_account"
+)
+
+func (operation oidcStepupErasureOperation) valid() bool {
+	return operation == oidcStepupErasureClearData || operation == oidcStepupErasureDeleteAccount
 }
 
+type oidcStepupState struct {
+	Purpose      oidcStepupPurpose          `json:"purpose"`
+	UserID       uint                       `json:"user_id"`
+	State        string                     `json:"state"`
+	Nonce        string                     `json:"nonce"`
+	CodeVerifier string                     `json:"code_verifier"`
+	PasswordHash string                     `json:"password_hash"`
+	Operation    oidcStepupErasureOperation `json:"operation,omitempty"`
+	ExpiresAt    string                     `json:"expires_at"`
+}
+
+// newOIDCStepupState builds the local-password-setup state, which carries the
+// prepared password hash the callback commits.
 func newOIDCStepupState(now time.Time, purpose oidcStepupPurpose, userID uint, passwordHash string) (oidcStepupState, error) {
-	if userID == 0 {
-		return oidcStepupState{}, errors.New("oidc stepup state requires user id")
-	}
 	if strings.TrimSpace(passwordHash) == "" {
 		return oidcStepupState{}, errors.New("oidc stepup state requires password hash")
+	}
+	return newOIDCStepupStateForPurpose(now, purpose, userID, passwordHash, "")
+}
+
+// newOIDCErasureStepupState builds the erasure state. It carries no password
+// hash — there is no credential to commit, only an operation to execute once
+// the provider has re-authenticated the owner.
+func newOIDCErasureStepupState(now time.Time, userID uint, operation oidcStepupErasureOperation) (oidcStepupState, error) {
+	if !operation.valid() {
+		return oidcStepupState{}, errors.New("oidc stepup state requires a known erasure operation")
+	}
+	return newOIDCStepupStateForPurpose(now, oidcStepupPurposeErasure, userID, "", operation)
+}
+
+func newOIDCStepupStateForPurpose(now time.Time, purpose oidcStepupPurpose, userID uint, passwordHash string, operation oidcStepupErasureOperation) (oidcStepupState, error) {
+	if userID == 0 {
+		return oidcStepupState{}, errors.New("oidc stepup state requires user id")
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -55,15 +99,49 @@ func newOIDCStepupState(now time.Time, purpose oidcStepupPurpose, userID uint, p
 	if err != nil {
 		return oidcStepupState{}, err
 	}
-	return oidcStepupState{
+	built := oidcStepupState{
 		Purpose:      purpose,
 		UserID:       userID,
 		State:        state,
 		Nonce:        nonce,
 		CodeVerifier: oauth2.GenerateVerifier(),
 		PasswordHash: passwordHash,
+		Operation:    operation,
 		ExpiresAt:    now.UTC().Add(oidcStepupCookieTTL).Format(time.RFC3339Nano),
-	}, nil
+	}
+	if !built.payloadCompleteForPurpose() {
+		// codecov:ignore:start -- both constructors validate their own purpose's
+		// payload above, so this is a guard against a future third purpose being
+		// added without teaching payloadCompleteForPurpose about it.
+		return oidcStepupState{}, errors.New("oidc stepup state payload is incomplete for its purpose")
+		// codecov:ignore:end
+	}
+	return built, nil
+}
+
+// payloadCompleteForPurpose reports whether the state carries exactly the
+// fields its purpose needs. The per-purpose arms are mutually exclusive by
+// construction: a password-setup payload carries a prepared hash and no
+// operation, an erasure payload carries an operation and no hash. Requiring the
+// absence as well as the presence is what keeps the two shapes from being
+// reinterpreted as each other, and an UNKNOWN purpose satisfies neither arm —
+// so a payload minted by a future or foreign binary fails closed here rather
+// than inheriting whichever arm happened to be listed first.
+func (state oidcStepupState) payloadCompleteForPurpose() bool {
+	if state.UserID == 0 ||
+		strings.TrimSpace(state.State) == "" ||
+		strings.TrimSpace(state.Nonce) == "" ||
+		strings.TrimSpace(state.CodeVerifier) == "" {
+		return false
+	}
+	switch state.Purpose {
+	case oidcStepupPurposeLocalPasswordSetup:
+		return strings.TrimSpace(state.PasswordHash) != "" && state.Operation == ""
+	case oidcStepupPurposeErasure:
+		return state.Operation.valid() && strings.TrimSpace(state.PasswordHash) == ""
+	default:
+		return false
+	}
 }
 
 func (state oidcStepupState) validAt(now time.Time) bool {
@@ -74,12 +152,7 @@ func (state oidcStepupState) validAt(now time.Time) bool {
 	if err != nil || !expiresAt.After(now.UTC()) {
 		return false
 	}
-	return state.Purpose != "" &&
-		state.UserID != 0 &&
-		strings.TrimSpace(state.State) != "" &&
-		strings.TrimSpace(state.Nonce) != "" &&
-		strings.TrimSpace(state.CodeVerifier) != "" &&
-		strings.TrimSpace(state.PasswordHash) != ""
+	return state.payloadCompleteForPurpose()
 }
 
 func (state oidcStepupState) matchesState(candidate string) bool {

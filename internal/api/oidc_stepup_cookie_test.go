@@ -87,10 +87,95 @@ func TestOIDCStepupStateValidAt(t *testing.T) {
 		t.Fatal("expected state with empty purpose to be invalid")
 	}
 
+	// Decision (2026-07-28): an unknown purpose is now rejected here, where it
+	// used to pass on the grounds that purpose validation was the caller's
+	// concern. That held while one purpose existed and one completion handler
+	// compared against it. With a second purpose the payload SHAPE became
+	// purpose-dependent — password setup carries a prepared hash, erasure
+	// carries an operation — so "valid" cannot be decided without reading the
+	// purpose, and a payload naming none of the known ones satisfies no arm.
+	// The completion handlers still check the purpose they dispatch on; this is
+	// the earlier of two gates, not a replacement for either.
 	unknownPurpose := noPurpose
 	unknownPurpose.Purpose = "unknown_purpose"
-	if !unknownPurpose.validAt(now) {
-		t.Fatal("expected state with unknown purpose string to pass validAt (purpose validation is caller's concern)")
+	if unknownPurpose.validAt(now) {
+		t.Fatal("expected state with unknown purpose to be invalid: it satisfies no purpose's field requirements")
+	}
+
+	// Each purpose requires its own fields and refuses the other's, so a
+	// payload cannot be reinterpreted as the opposite flow.
+	erasure, err := newOIDCErasureStepupState(now, 1, oidcStepupErasureClearData)
+	if err != nil {
+		t.Fatalf("create erasure state: %v", err)
+	}
+	if !erasure.validAt(now) {
+		t.Fatal("expected fresh erasure state to be valid")
+	}
+	if erasure.validAt(now.Add(oidcStepupCookieTTL + time.Second)) {
+		t.Fatal("expected erasure state past TTL to be invalid")
+	}
+
+	erasureWithHash := erasure
+	erasureWithHash.PasswordHash = "h"
+	if erasureWithHash.validAt(now) {
+		t.Fatal("expected an erasure payload carrying a password hash to be invalid: no constructor mints that shape")
+	}
+
+	erasureWithoutOperation := erasure
+	erasureWithoutOperation.Operation = ""
+	if erasureWithoutOperation.validAt(now) {
+		t.Fatal("expected an erasure payload naming no operation to be invalid")
+	}
+
+	erasureUnknownOperation := erasure
+	erasureUnknownOperation.Operation = "wipe_everything"
+	if erasureUnknownOperation.validAt(now) {
+		t.Fatal("expected an erasure payload naming an unknown operation to be invalid")
+	}
+
+	passwordSetupWithOperation := fresh
+	passwordSetupWithOperation.Operation = oidcStepupErasureDeleteAccount
+	if passwordSetupWithOperation.validAt(now) {
+		t.Fatal("expected a password-setup payload carrying an erasure operation to be invalid")
+	}
+}
+
+// TestNewOIDCErasureStepupStateRefusesIncompletePayloads pins the constructor
+// half: the state that authorizes an erasure must name both the owner it was
+// minted for and which erasure was confirmed, and it never carries a password
+// hash — there is no credential to commit on this path.
+func TestNewOIDCErasureStepupStateRefusesIncompletePayloads(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 5, 13, 10, 0, 0, 0, time.UTC)
+
+	if _, err := newOIDCErasureStepupState(now, 0, oidcStepupErasureClearData); err == nil {
+		t.Fatal("expected an erasure state with no owner id to be refused")
+	}
+	if _, err := newOIDCErasureStepupState(now, 5, ""); err == nil {
+		t.Fatal("expected an erasure state with no operation to be refused")
+	}
+	if _, err := newOIDCErasureStepupState(now, 5, "drop_tables"); err == nil {
+		t.Fatal("expected an erasure state with an unknown operation to be refused")
+	}
+
+	for _, operation := range []oidcStepupErasureOperation{oidcStepupErasureClearData, oidcStepupErasureDeleteAccount} {
+		state, err := newOIDCErasureStepupState(now, 5, operation)
+		if err != nil {
+			t.Fatalf("create erasure state for %q: %v", operation, err)
+		}
+		if state.Purpose != oidcStepupPurposeErasure {
+			t.Fatalf("expected purpose %q, got %q", oidcStepupPurposeErasure, state.Purpose)
+		}
+		if state.Operation != operation {
+			t.Fatalf("expected operation %q, got %q", operation, state.Operation)
+		}
+		if state.PasswordHash != "" {
+			t.Fatal("expected an erasure state to carry no password hash")
+		}
+		if state.State == "" || state.Nonce == "" || state.CodeVerifier == "" {
+			t.Fatal("expected an erasure state to carry state, nonce and PKCE verifier")
+		}
 	}
 }
 
