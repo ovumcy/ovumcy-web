@@ -105,10 +105,17 @@ func (handler *Handler) clearTOTPPendingCookie(c fiber.Ctx) {
 // id here is what keeps enrollment scoped structurally: once such a payload
 // exists the confirm step has no account to compare against, and would enrol
 // whatever secret the cookie carries against whichever session presented it.
+// A blank rawSecret is refused the same way: the reader already rejects a
+// secretless payload, so sealing one only defers the failure to a later
+// request — both ends of the payload apply the same validation.
 func (handler *Handler) setTOTPSetupCookie(c fiber.Ctx, userID uint, rawSecret string) error {
 	if userID == 0 {
 		handler.clearTOTPSetupCookie(c)
 		return errors.New("totp setup requires an owner id")
+	}
+	if strings.TrimSpace(rawSecret) == "" {
+		handler.clearTOTPSetupCookie(c)
+		return errors.New("totp setup requires a secret")
 	}
 
 	payload := totpSetupCookiePayload{

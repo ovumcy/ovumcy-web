@@ -107,6 +107,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mutates nothing and stays on the plain path, unchanged. Field reference:
   [docs/security/logging.md](docs/security/logging.md#logging-policy).
 
+- **The TOTP enrollment cookie refuses to seal without a secret.** The reader
+  has always rejected a setup payload whose secret is blank, but the writer
+  sealed one without complaint, so a caller that lost the secret produced a
+  well-formed, correctly-attributed cookie that could only fail later, at read
+  time, in a different request. The writer now refuses a blank secret exactly
+  as it refuses a missing owner id — the failure surfaces in the request that
+  caused it, and no prior setup cookie is left behind.
+
 - **Requests now carry a deadline, so work the caller abandoned stops.** Nothing
   in the request path was bounded: fiber v3 hands a handler `context.Background()`
   until something calls `SetContext`, so the ctx threaded handler → service →
