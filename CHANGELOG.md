@@ -111,18 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **An erasure confirmed through SSO now names the owner it erased.** The audit
-  stream takes the actor from the request context, and only the authenticated-
-  route middleware published it there. The two step-up completion handlers
-  resolve their session themselves — `/auth/oidc/callback` cannot carry that
-  middleware, because ordinary sign-in has to work for a visitor with no session
-  — so every event they emitted was unattributed, including the health-data
-  mutation recording a cleared diary or a deleted account. On an instance
-  hosting more than one owner, the two most destructive operations in the
-  product left a log line that did not say whose data they touched. The session
-  resolver now publishes the actor for the whole request, which covers both
-  step-up purposes and any handler that resolves a session the same way later.
-
 - **The documented Postgres restore now actually restores.** The runbook's
   restore command — a plain dump piped into `psql` — succeeded loudly and did
   nothing whenever the target database still held its schema. `pg_dump` writes
@@ -359,6 +347,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the file from being moved or deleted. The connection is now released on any
   failure that happens after it is open, and the error reported to the operator
   is still the migration failure that caused it.
+
+- **An erasure confirmed through SSO now names the owner it erased.** The audit
+  stream takes the actor from the request context, and only the authenticated-
+  route middleware published it there. The two step-up completion handlers
+  resolve their session themselves — `/auth/oidc/callback` cannot carry that
+  middleware, because ordinary sign-in has to work for a visitor with no session
+  — so every event they emitted was unattributed, including the health-data
+  mutation recording a cleared diary or a deleted account. On an instance
+  hosting more than one owner, the two most destructive operations in the
+  product left a log line that did not say whose data they touched. The session
+  resolver now publishes the actor for the whole request, which covers both
+  step-up purposes and any handler that resolves a session the same way later.
 
 ### Security
 
