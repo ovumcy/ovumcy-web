@@ -30,7 +30,7 @@ Ovumcy uses only first-party cookies. Cookies marked **Sealed** are encrypted wi
 | `ovumcy_register_pickup` | Single-use opaque nonce + decoy recovery code for post-register pickup; consumed atomically through `register_pickup_tokens` | 5 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_reset_password` | Carries a password-reset token between the recovery-code page and `/reset-password` | 30 minutes | `/` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_oidc_auth` | OIDC `state`, `nonce`, PKCE verifier during sign-in | 10 minutes | `/auth/oidc/callback` | yes | None | forced `true` | yes |
-| `ovumcy_oidc_stepup` | OIDC step-up state (purpose, pending password hash) during local-password setup re-auth | 10 minutes | `/auth/oidc/callback` | yes | None | forced `true` | yes |
+| `ovumcy_oidc_stepup` | OIDC step-up state during a re-auth: the purpose plus the payload that purpose needs — a pending password hash for local-password setup, or the confirmed operation for an erasure | 10 minutes | `/auth/oidc/callback` | yes | None | forced `true` | yes |
 | `ovumcy_oidc_logout_bridge` | Carries the session id from `/logout` to the provider end-session bridge | 1 minute | `/auth/oidc/logout` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_oidc_link_pending` | Holds the (issuer, subject, target user id) of an OIDC identity awaiting password confirmation before being linked to a pre-existing local account; see *OIDC Account Linking* below | 5 minutes (payload-bound) | `/auth/oidc/link-confirm` | yes | Lax | `COOKIE_SECURE` | yes |
 | `ovumcy_totp_pending` | 2FA challenge state (user id, remember-me) between password and TOTP submission | 5 minutes (payload-bound) | `/` | yes | Lax | `COOKIE_SECURE` | yes |

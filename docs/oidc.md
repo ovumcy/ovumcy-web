@@ -105,7 +105,7 @@ That last point is important. An auto-provisioned OIDC-only account can use the 
 
 - local password recovery is not available yet;
 - recovery-code regeneration is not available yet;
-- password-confirmed sensitive actions such as `clear data` or `delete account` stay blocked until the user sets a local password in `Settings`.
+- password-confirmed sensitive actions such as recovery-code regeneration stay blocked until the user sets a local password in `Settings`. **Erasure is the exception**: `clear data` and `delete account` are available without one, confirmed at the provider through the step-up flow described below.
 
 To enable a local password, OIDC-only users go through a **step-up re-authentication flow**:
 
@@ -114,6 +114,16 @@ To enable a local password, OIDC-only users go through a **step-up re-authentica
 3. Only after both checks succeed does Ovumcy persist the prepared password hash, mint a fresh recovery code, and present it on the dedicated `/recovery-code` page. A stale or mismatched re-auth leaves the account untouched.
 
 The `PUT /api/v1/users/current/password` endpoint still works for accounts that already have local auth enabled (ordinary password rotation). For accounts with `LocalAuthEnabled=false` it returns `403 oidc reauth required` so the step-up flow above is the only path to enrol a local password.
+
+### Erasure without a local password
+
+Erasing health data always costs a fresh re-authentication. An account provisioned through OIDC has no password to satisfy that with, so it satisfies it at the provider instead, through the same step-up primitive:
+
+1. The owner confirms the action in `Settings → Danger zone`. The browser submits to `POST /api/v1/users/current/data-wipe/step-up` or `POST /api/v1/users/current/deletion/step-up`, which seals **which** erasure was confirmed into the step-up cookie and redirects to the provider exactly as step 1 above does. Nothing is erased at this point.
+2. The provider posts back to `/auth/oidc/callback`, which runs the same freshness and identity checks as the local-password flow.
+3. Only then does the erasure run — the operation taken from the sealed state, never from the callback request, which arrives from the provider carrying no body of its own.
+
+An account that **has** a local password is refused both endpoints with `400 invalid settings input`: its erasure gate is the password, and the SSO route must never become a way around it.
 
 ## How Logout Works
 
