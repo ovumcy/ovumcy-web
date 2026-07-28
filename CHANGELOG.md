@@ -321,6 +321,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failure that happens after it is open, and the error reported to the operator
   is still the migration failure that caused it.
 
+- **`docs/openapi.yaml` promised input bounds wider than the ones the server
+  actually enforces.** `ProfileSettings.display_name` declared `maxLength: 80`
+  against a 64-rune cap; `CycleSettings.cycle_length` declared `minimum: 1`
+  and no maximum against an accepted range of 15–90;
+  `CycleSettings.period_length` declared no maximum against 1–14; and
+  `SymptomPayload.name` and `.icon` declared no length bound at all against
+  caps of 40 and 16 runes. The settings form has shipped the real limits as
+  `maxlength` attributes all along — only the published document disagreed.
+
+  A spec looser than the server blocks nothing, which is why this went
+  unnoticed, but it is untrue in the direction a client cannot recover from:
+  it cannot tell in advance that a value will be refused, so a 65-character
+  display name or a 41-character symptom label validates cleanly against the
+  published document and is only rejected on send. That is a round trip spent
+  discovering a limit the spec was supposed to state, and for a form that
+  submits a whole settings section at once it is a rejection a client has to
+  explain after the fact rather than prevent.
+
+  Each bound is now declared at the value its endpoint enforces, and the
+  string bounds say what they are measured on: the server counts **runes**,
+  not bytes, and counts them after normalization (trimming for a display name
+  or icon, whitespace collapsing for a symptom name), so a client validating
+  by character count agrees with it. Two constraints no numeric bound can
+  express are stated in prose instead of left invisible — `period_length` must
+  also be at most `cycle_length` minus 10, and the identically-named fields on
+  `OnboardingStep2Request` are clamped into range rather than rejected, so
+  those two schemas stay separate even where their numbers agree.
+  Description-only: no validator and no accepted request changed.
+
+  `TestOpenAPIDeclaredBoundsMatchTheServersOwnLimits` now sweeps every one of
+  these bounds and restates none of them — it reads the number out of the spec
+  and makes the endpoint judge it, requiring the declared bound to be the
+  acceptance boundary itself rather than merely close to it. Each member was
+  proven against its original defect: with the loose values restored the sweep
+  fails naming the field, the keyword, and the direction of the drift.
+
 ### Security
 
 - **A two-factor cookie the server refuses is now cleared instead of left in the

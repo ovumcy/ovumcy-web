@@ -484,10 +484,24 @@ components:
       properties:
         name:
           type: string
-          description: User-visible symptom label.
+          maxLength: 40
+          description: >-
+            User-visible symptom label. The server caps it at 40 **runes**
+            (Unicode code points), not bytes, and measures the value after
+            collapsing internal whitespace runs and trimming
+            (`normalizeSymptomNameInput` in
+            `internal/services/symptom_name_policy.go`), so a name whose
+            normalized form fits is accepted even when the raw string is
+            longer. Markup (`<`, `>`) and control characters are rejected,
+            not stripped.
         icon:
           type: string
-          description: Single emoji or short symbol shown next to the name in the UI.
+          maxLength: 16
+          description: >-
+            Single emoji or short symbol shown next to the name in the UI.
+            Capped at 16 **runes** after trimming
+            (`normalizeSymptomIconInput`) — wide enough for a multi-codepoint
+            emoji sequence. Omitted or blank falls back to the default icon.
         color:
           type: string
           pattern: "^#[0-9A-Fa-f]{6}$"
@@ -644,10 +658,25 @@ components:
       properties:
         cycle_length:
           type: integer
-          minimum: 1
+          minimum: 15
+          maximum: 90
+          description: >-
+            Rejected with a validation error outside 15–90
+            (`ValidateCycleSettings` in
+            `internal/services/settings_cycle_policy.go`) — unlike the
+            identically-named field on `OnboardingStep2Request`, which is
+            clamped into range instead.
         period_length:
           type: integer
           minimum: 1
+          maximum: 14
+          description: >-
+            Rejected with a validation error outside 1–14. A cross-field rule
+            the numeric bounds cannot express applies on top: the server also
+            requires `period_length` to be at most `cycle_length` minus 10
+            (still capped at 14), so a payload valid against both bounds on
+            its own — say `cycle_length: 15`, `period_length: 14` — is still
+            refused.
         auto_period_fill: { type: boolean }
         irregular_cycle: { type: boolean }
         unpredictable_cycle: { type: boolean }
@@ -690,7 +719,15 @@ components:
       properties:
         display_name:
           type: string
-          maxLength: 80
+          maxLength: 64
+          description: >-
+            Capped at 64 **runes** (Unicode code points), not bytes, and
+            measured after trimming surrounding whitespace
+            (`NormalizeDisplayName` in
+            `internal/services/settings_profile_policy.go`), so a padded value
+            whose trimmed form fits is accepted. Markup (`<`, `>`) and control
+            characters are rejected, not stripped. An empty value clears the
+            display name.
 
     InterfaceSettings:
       type: object
