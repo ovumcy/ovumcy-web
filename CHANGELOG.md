@@ -165,6 +165,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (for example `common.error.request_too_large` in place of `request_too_large`),
   matching what every already-mapped rejection has always emitted.
 
+- **The request budget is now pinned to being switched on, not only to
+  working.** Both regressions behind the 60-second budget assembled their own
+  Fiber app and mounted the middleware themselves, so they described how the
+  guard behaves once installed and said nothing about it being installed:
+  deleting the registration line left the entire API and command test suites
+  green, with every request back on an unbounded `context.Background()`. That is
+  the same defect shape the budget work called out one floor down — proving the
+  middleware ran proves nothing if it never runs in the shipped app. The
+  registration is now covered by a regression that drives the real assembled
+  application and reads the deadline **inside the repository call**, closing the
+  second half of the gap as well: the existing tests observed the context at the
+  handler, while the unbounded wait this budget exists to prevent happens at the
+  database. No runtime behaviour changes.
+
 - **The audit stream now tags the two erasure actions as health-data
   mutations.** Clear-data and delete-account logged through the plain
   security-event path, so their lines carried the action name alone — no

@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"gorm.io/gorm"
 )
 
 // TestRequestDeadlineGuardThreadsADeadlineToTheHandler proves the guard does
@@ -47,6 +49,103 @@ func TestRequestDeadlineGuardThreadsADeadlineToTheHandler(t *testing.T) {
 	}
 	if remaining <= 0 || remaining > RequestBudget {
 		t.Fatalf("remaining budget = %s, want a positive value no greater than %s", remaining, RequestBudget)
+	}
+}
+
+// repositoryContextObservation records what one repository-level query saw of
+// the request context it was handed.
+type repositoryContextObservation struct {
+	table       string
+	hasDeadline bool
+	remaining   time.Duration
+}
+
+// observeRepositoryRequestContexts taps the persistence layer of a real test app
+// and records the context every query runs under. It hooks GORM's query callback
+// rather than a stub repository on purpose: the claim under test is about the
+// context that reaches `db.WithContext(ctx)` at the bottom of the chain, and a
+// substituted repository would be observing the test's own wiring instead of the
+// app's.
+func observeRepositoryRequestContexts(t *testing.T, database *gorm.DB) func() []repositoryContextObservation {
+	t.Helper()
+
+	const callbackName = "ovumcy:test:observe_request_deadline"
+
+	var (
+		mutex        sync.Mutex
+		observations []repositoryContextObservation
+	)
+	if err := database.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		observation := repositoryContextObservation{table: tx.Statement.Table}
+		if tx.Statement.Context != nil {
+			if deadline, ok := tx.Statement.Context.Deadline(); ok {
+				observation.hasDeadline = true
+				observation.remaining = time.Until(deadline)
+			}
+		}
+		mutex.Lock()
+		observations = append(observations, observation)
+		mutex.Unlock()
+	}); err != nil {
+		t.Fatalf("register query callback: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = database.Callback().Query().Remove(callbackName)
+	})
+
+	return func() []repositoryContextObservation {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return append([]repositoryContextObservation(nil), observations...)
+	}
+}
+
+// TestRegisterRoutesMountsTheDeadlineGuardDownToTheRepository pins the guard's
+// INSTALLATION, which nothing did. The two tests above build their own
+// fiber.New() and call app.Use themselves, so they pin how the middleware
+// behaves once mounted and pass unchanged against an app that never mounts it —
+// deleting the app.Use line from RegisterRoutes left ./internal/api and
+// ./cmd/ovumcy entirely green. That is the finding's own argument one floor up:
+// asserting the middleware works proves nothing about it being switched on.
+//
+// It also closes the second half of the same gap. The behaviour tests read
+// c.Context() inside a hand-written handler, which proves the deadline reached
+// the top of the chain and nothing about the bottom; here the observation is
+// taken inside the real repository call, where a missing deadline is what lets
+// database/sql wait for a connection forever. The route is an ordinary
+// unauthenticated page whose handler threads c.Context() into a service and on
+// into a repository, so no session or fixture is needed.
+//
+// Modelled on TestRequestBodyLimitGuardCoversEveryRegisteredRouteThatCanCarryAReadBody,
+// the sibling registered one line below the guard: drive the app the composition
+// root actually assembles, not a hand-built stand-in.
+func TestRegisterRoutesMountsTheDeadlineGuardDownToTheRepository(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	readObservations := observeRepositoryRequestContexts(t, database)
+
+	response, err := app.Test(httptest.NewRequest(http.MethodGet, "/register", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("GET /register: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.StatusCode)
+	}
+
+	observations := readObservations()
+	// The positive anchor: without a query having run, "every query carried a
+	// deadline" is vacuously true and would stay green with the guard gone.
+	if len(observations) == 0 {
+		t.Fatal("no repository query ran during the request, so the deadline could not be observed where it matters; pick a route that reads through a repository")
+	}
+	for _, observation := range observations {
+		if !observation.hasDeadline {
+			t.Fatalf("query on %q ran under a context with no deadline: RegisterRoutes did not mount RequestDeadlineGuard, so c.Context() is still fiber's context.Background() and database/sql will wait for a connection forever", observation.table)
+		}
+		if observation.remaining <= 0 || observation.remaining > RequestBudget {
+			t.Fatalf("query on %q had %s of budget left, want a positive window no greater than %s: the deadline it carries is not the request budget", observation.table, observation.remaining, RequestBudget)
+		}
 	}
 }
 

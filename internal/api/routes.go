@@ -15,6 +15,11 @@ func RegisterRoutes(app *fiber.App, handler *Handler) {
 	// under the deadline too — the probe is the decompression, and an inflate
 	// of a BodyLimit-sized stream is exactly the kind of work that must not
 	// outlive the caller. See RequestDeadlineGuard.
+	//
+	// This LINE is what the guard's own behaviour tests cannot see: they mount
+	// it themselves and pass against an app that never does. Deleting it is
+	// pinned by TestRegisterRoutesMountsTheDeadlineGuardDownToTheRepository,
+	// which observes the context at the repository, not at the handler.
 	app.Use(RequestDeadlineGuard(RequestBudget))
 	app.Use(requestBodyLimitGuard)
 	registerPageRoutes(app, handler)
