@@ -376,8 +376,19 @@ components:
           format: email
         recovery_code:
           type: string
-          pattern: "^OVUM-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$"
-          description: Single-use recovery code minted at registration or by `POST /api/v1/users/current/recovery-code`.
+          pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$"
+          description: >-
+            Single-use recovery code minted at registration or by `POST
+            /api/v1/users/current/recovery-code`. The pattern documents the
+            server's accepted request shape (`ValidateRecoveryCodeFormat` in
+            `internal/services/auth_input_policy.go`), which is deliberately
+            wider than the alphabet `GenerateRecoveryCode`
+            (`internal/services/auth_reset_policy.go`) actually emits —
+            Crockford-style base32 excluding `I`/`O`/`0`/`1` to avoid
+            visually-ambiguous characters. Narrowing this pattern to the
+            generator's exact alphabet would reintroduce the same defect this
+            fixes in milder form: a spec-following client would reject some
+            fraction of codes the server would otherwise accept.
       additionalProperties: false
 
     ResetPasswordRequest:
@@ -758,7 +769,7 @@ components:
       properties:
         language:
           type: string
-          enum: [en, ru, es, fr, de]
+          enum: [en, ru, es, fr, de, it]
         theme:
           type: string
 
@@ -924,8 +935,8 @@ components:
       properties:
         cycle_length:
           type: integer
-          minimum: 14
-          maximum: 60
+          minimum: 15
+          maximum: 90
         period_length:
           type: integer
           minimum: 1
@@ -986,11 +997,12 @@ paths:
           application/x-www-form-urlencoded:
             schema:
               type: object
-              required: [language, csrf_token]
+              required: [lang, csrf_token]
               properties:
-                language:
+                lang:
                   type: string
-                  enum: [en, ru, es, fr, de]
+                  enum: [en, ru, es, fr, de, it]
+                  description: Form field name is `lang` (the handler reads `c.FormValue("lang")`) — distinct from the `language` JSON field on `PATCH /api/v1/users/current/interface`.
                 csrf_token: { type: string }
       responses:
         '200':
