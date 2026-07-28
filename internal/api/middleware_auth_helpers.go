@@ -67,5 +67,13 @@ func (handler *Handler) authenticateRequest(c fiber.Ctx) (*models.User, error) {
 	}
 
 	c.Locals(contextAuthSessionKey, claims)
+	// Publish the actor for the whole request, not only on routes that reach
+	// here through AuthRequired. The two step-up completion handlers resolve
+	// their session by calling this directly (the OIDC callback cannot carry
+	// AuthRequired, because ordinary sign-in has to work for a visitor with no
+	// session), and emitSecurityEvent reads the actor from this key — so
+	// without it, erasure performed through the callback logs a health-data
+	// mutation that does not name the owner whose data it erased.
+	c.Locals(contextUserKey, user)
 	return user, nil
 }
