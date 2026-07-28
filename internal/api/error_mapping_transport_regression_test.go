@@ -425,6 +425,123 @@ func TestRequestBodyLimitGuardAnswersTheMappedEnvelopeOverAnUpstream413Stamp(t *
 	}
 }
 
+// TestTransportErrorSpecForStatusIsTotal pins the mapping the top-level
+// ErrorHandler applies to every explicit *fiber.Error. Two properties matter and
+// neither is observable from a single status: each listed status carries its own
+// stable key (so a client can branch on the key rather than re-deriving meaning
+// from the status), and an UNLISTED status still resolves to a spec — the reason
+// nothing can fall through to the framework's bare text the way every status
+// except 413/431 used to.
+//
+// The out-of-range rows are the guard on the fallback's own arithmetic: 399 and
+// 600 are not error statuses at all, and honouring them would ship a body
+// claiming failure under a status that claims otherwise.
+func TestTransportErrorSpecForStatusIsTotal(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		status int
+		want   APIErrorSpec
+	}{
+		{name: "mapped 400", status: fiber.StatusBadRequest, want: globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "bad_request")},
+		{name: "mapped 401 shares the auth guard's key", status: fiber.StatusUnauthorized, want: unauthorizedErrorSpec()},
+		{name: "mapped 403", status: fiber.StatusForbidden, want: globalErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "forbidden")},
+		{name: "mapped 404 shares the route-level key", status: fiber.StatusNotFound, want: notFoundErrorSpec()},
+		{name: "mapped 405", status: fiber.StatusMethodNotAllowed, want: globalErrorSpec(fiber.StatusMethodNotAllowed, APIErrorCategoryValidation, "method_not_allowed")},
+		{name: "mapped 413 keeps the pre-routing key", status: fiber.StatusRequestEntityTooLarge, want: globalErrorSpec(fiber.StatusRequestEntityTooLarge, APIErrorCategoryTooLarge, "request_too_large")},
+		{name: "mapped 415", status: fiber.StatusUnsupportedMediaType, want: globalErrorSpec(fiber.StatusUnsupportedMediaType, APIErrorCategoryValidation, "unsupported_media_type")},
+		{name: "mapped 429 shares the limiter key", status: fiber.StatusTooManyRequests, want: globalRateLimitErrorSpec()},
+		{name: "mapped 431 keeps the pre-routing key", status: fiber.StatusRequestHeaderFieldsTooLarge, want: globalErrorSpec(fiber.StatusRequestHeaderFieldsTooLarge, APIErrorCategoryTooLarge, "request_headers_too_large")},
+		{name: "mapped 500", status: fiber.StatusInternalServerError, want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "internal_error")},
+		{name: "mapped 503 is not the deadline guard's key", status: fiber.StatusServiceUnavailable, want: globalErrorSpec(fiber.StatusServiceUnavailable, APIErrorCategoryInternal, "service_unavailable")},
+		{name: "unlisted 4xx falls back to its class", status: fiber.StatusTeapot, want: globalErrorSpec(fiber.StatusTeapot, APIErrorCategoryValidation, "request_rejected")},
+		{name: "unlisted 4xx upper boundary", status: 499, want: globalErrorSpec(499, APIErrorCategoryValidation, "request_rejected")},
+		{name: "unlisted 5xx falls back to its class", status: fiber.StatusInsufficientStorage, want: globalErrorSpec(fiber.StatusInsufficientStorage, APIErrorCategoryInternal, "internal_error")},
+		{name: "unlisted 5xx upper boundary", status: 599, want: globalErrorSpec(599, APIErrorCategoryInternal, "internal_error")},
+		{name: "below the error range becomes 500", status: 399, want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "internal_error")},
+		{name: "above the error range becomes 500", status: 600, want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "internal_error")},
+	}
+
+	seenKeys := map[string]int{}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := transportErrorSpecForStatus(testCase.status); got != testCase.want {
+				t.Fatalf("transportErrorSpecForStatus(%d) = %#v, want %#v", testCase.status, got, testCase.want)
+			}
+		})
+		seenKeys[transportErrorSpecForStatus(testCase.status).Key]++
+	}
+
+	// A table that answered every status with one generic key would satisfy every
+	// row above while destroying the point of a machine key.
+	if len(seenKeys) < 10 {
+		t.Fatalf("expected the mapped statuses to carry distinct keys, got %d distinct keys across %d statuses: %v", len(seenKeys), len(testCases), seenKeys)
+	}
+}
+
+// TestRespondTransportErrorNegotiatesFormat pins that the app-wide entry point
+// answers through the SAME negotiation as every mapped domain error rather than
+// a second, transport-only format: the JSON envelope with error + error_detail
+// for an API client, the shared status-error fragment carrying the stable key
+// for an HTMX flow. 403 stands in for the whole table — it is the status the
+// CSRF middleware raises on every mutating route, and the one that used to reach
+// the client as fiber's bare "Forbidden".
+func TestRespondTransportErrorNegotiatesFormat(t *testing.T) {
+	t.Parallel()
+
+	newApp := func() *fiber.App {
+		app := fiber.New()
+		app.Get("/probe", func(c fiber.Ctx) error {
+			c.Locals(contextMessagesKey, map[string]string{"common.error.forbidden": "Localized refusal."})
+			return RespondTransportError(c, fiber.StatusForbidden)
+		})
+		return app
+	}
+
+	t.Run("json envelope", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/probe", nil)
+		request.Header.Set("Accept", "application/json")
+
+		response := mustAppResponse(t, newApp(), request)
+		assertStatusCode(t, response, http.StatusForbidden)
+
+		payload := map[string]any{}
+		if err := json.Unmarshal([]byte(mustReadBodyString(t, response.Body)), &payload); err != nil {
+			t.Fatalf("unmarshal JSON envelope: %v", err)
+		}
+		if payload["error"] != "forbidden" {
+			t.Fatalf("error key: got %v want %q", payload["error"], "forbidden")
+		}
+		detail, ok := payload["error_detail"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected error_detail object, got %v", payload["error_detail"])
+		}
+		if detail["key"] != "forbidden" || detail["category"] != "forbidden" || detail["target"] != "global" {
+			t.Fatalf("unexpected error_detail: %v", detail)
+		}
+	})
+
+	t.Run("htmx status fragment", func(t *testing.T) {
+		request := httptest.NewRequest(http.MethodGet, "/probe", nil)
+		request.Header.Set("HX-Request", "true")
+
+		response := mustAppResponse(t, newApp(), request)
+		assertStatusCode(t, response, http.StatusForbidden)
+
+		body := mustReadBodyString(t, response.Body)
+		assertBodyContainsAll(t, body,
+			bodyStringMatch{fragment: `class="status-error"`, message: "expected the shared status-error wrapper for an HTMX transport error"},
+			bodyStringMatch{fragment: `data-flash-key="common.error.forbidden"`, message: "expected the stable flash key next to the localized copy"},
+			bodyStringMatch{fragment: "Localized refusal.", message: "expected the transport key to resolve to localized copy"},
+		)
+		assertBodyNotContainsAll(t, body,
+			bodyStringMatch{fragment: "<html", message: "did not expect full-page markup in an HTMX transport error"},
+			bodyStringMatch{fragment: "Forbidden", message: "did not expect the framework's bare status text in the rendered fragment"},
+		)
+	})
+}
+
 func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 	t.Helper()
 

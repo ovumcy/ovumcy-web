@@ -192,13 +192,36 @@ components:
         rather than the key string, and treat unknown keys/categories as their
         generic status-class failure.
 
-        Two rejections carry this envelope without belonging to any operation
-        below, because the server refuses them before any operation runs: `413`
-        (`request_too_large`, body past the 16 MiB limit — wire size, and for a
-        compressed body its decompressed size too) and `431`
-        (`request_headers_too_large`, request head past the read buffer). They
+        The envelope is app-wide: **every** rejection the server emits carries
+        it, including the ones raised before or outside any operation below, so
+        a client needs exactly one parse path. Those transport-level rejections
         are listed here rather than per-path — the request never reached an
-        operation, so attaching them to one would misdescribe what happened.
+        operation, so attaching them to one would misdescribe what happened —
+        and each carries a stable key derived from the status alone:
+
+          * `400` — `bad_request`
+          * `401` — `unauthorized`
+          * `403` — `forbidden` (this is the key a CSRF failure carries)
+          * `404` — `not found`
+          * `405` — `method_not_allowed`
+          * `413` — `request_too_large` (body past the 16 MiB limit: wire size,
+            and for a compressed body its decompressed size too)
+          * `415` — `unsupported_media_type`
+          * `429` — `too many requests`
+          * `431` — `request_headers_too_large` (request head past the read
+            buffer)
+          * `500` — `internal_error`
+          * `503` — `service_unavailable`
+
+        One further `503` exists and carries its own key: a request that
+        outlives the 60-second request budget is answered `request_timeout`,
+        which says the request was abandoned rather than that the server is
+        unwell, so a client may retry it.
+
+        A status not in that list still answers with the envelope, keyed
+        `request_rejected` for a `4xx` and `internal_error` for a `5xx`. The
+        message a failing request produced internally is never echoed into the
+        body.
       required: [error, error_detail]
       properties:
         error:

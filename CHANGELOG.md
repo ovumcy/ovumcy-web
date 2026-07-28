@@ -88,6 +88,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every rejection now answers in the app's own error format, not the web
+  framework's.** The mapped envelope (`error` plus the structured
+  `error_detail`, negotiated into a localized status fragment for the browser
+  flows) was documented as an app-wide contract but reached only three statuses:
+  the two pre-routing rejections, `413` and `431`, and the request-budget `503`.
+  Every other explicit framework error fell through to a bare English string
+  regardless of what the client asked for — which is what a CSRF refusal
+  returned on **every** state-changing endpoint (`Forbidden`), what the language
+  switcher returned on a blank submission (`Bad Request`), and what the calendar
+  feed returned on an infrastructure failure (`Internal Server Error`). A client
+  that had learned to parse the envelope met an unparseable body on the most
+  common refusal in the app, and none of those strings could be localized or
+  branched on.
+
+  Rejections are now mapped from the HTTP status to a stable key —
+  `bad_request`, `forbidden`, `method_not_allowed`, `unsupported_media_type`,
+  `internal_error`, `service_unavailable`, with `request_rejected` /
+  `internal_error` covering any status not named — and answered through the same
+  negotiation as every other mapped error. `401`, `404`, and `429` deliberately
+  reuse the keys those statuses already carried elsewhere in the app, so one
+  status keeps one key whichever layer produced it, and the `413`/`431` keys are
+  unchanged. The message an error carried internally is never echoed into the
+  response body. Localized copy for the new keys ships in all six locales;
+  `/healthz` and `/readyz` keep their fixed one-word bodies and are deliberately
+  outside the envelope.
+
 - **Requests now carry a deadline, so work the caller abandoned stops.** Nothing
   in the request path was bounded: fiber v3 hands a handler `context.Background()`
   until something calls `SetContext`, so the ctx threaded handler → service →

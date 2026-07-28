@@ -60,7 +60,10 @@ func (handler *Handler) ServeCalendarFeed(c fiber.Ctx) error {
 	if err != nil {
 		// Infrastructure failure (DB / log read). Return a generic 500 via the
 		// top-level error handler — never the raw error, and never a body that
-		// distinguishes this from the 404 path in a token-revealing way.
+		// distinguishes this from the 404 path in a token-revealing way. The
+		// handler answers it through the app-wide mapped envelope (stable key
+		// "internal_error"), which is a constant: it is derived from the status
+		// alone and says nothing about the token, the owner, or the failure.
 		return fiber.ErrInternalServerError
 	}
 	if !ok {

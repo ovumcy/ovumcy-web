@@ -43,6 +43,29 @@ async function readCSRFToken(page: Page): Promise<string> {
   return csrfToken ?? '';
 }
 
+/**
+ * The mapped error envelope is an app-wide contract, so a refusal is pinned by
+ * its stable key rather than by rendered copy. A status-only assertion stayed
+ * green while the server answered these with the framework's bare "Forbidden"
+ * string, which no client can branch on.
+ */
+type MappedErrorEnvelope = { error?: string; error_detail?: { key?: string } };
+
+async function expectMappedErrorEnvelope(
+  response: { text(): Promise<string> },
+  expectedKey: string,
+): Promise<void> {
+  const body = await response.text();
+  let payload: MappedErrorEnvelope;
+  try {
+    payload = JSON.parse(body) as MappedErrorEnvelope;
+  } catch {
+    throw new Error(`expected the mapped error envelope, got a non-JSON body: ${body}`);
+  }
+  expect(payload.error).toBe(expectedKey);
+  expect(payload.error_detail?.key).toBe(expectedKey);
+}
+
 test.describe('Security and role-based access', () => {
   test('xss in profile display name is rejected and never executes', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'security-xss-profile');
@@ -118,6 +141,7 @@ test.describe('Security and role-based access', () => {
       maxRedirects: 0,
     });
     expect(logoutNoCsrf.status()).toBe(403);
+    await expectMappedErrorEnvelope(logoutNoCsrf, 'forbidden');
 
     const clearNoCsrf = await page.request.post('/api/v1/users/current/data-wipe', {
       headers: apiOriginHeader(page),
@@ -125,6 +149,7 @@ test.describe('Security and role-based access', () => {
       maxRedirects: 0,
     });
     expect(clearNoCsrf.status()).toBe(403);
+    await expectMappedErrorEnvelope(clearNoCsrf, 'forbidden');
 
     // /api/v1/exports/* is GET-only on the v1 surface; CSRF only gates
     // state-changing methods, so an export without CSRF returns 200, not 403.

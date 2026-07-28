@@ -169,6 +169,12 @@ func TestCSRFExemptionListIsExactlyOneRoute(t *testing.T) {
 // handler (the OIDC callback is protected by the sealed one-time state cookie
 // and, lacking one, redirects to /login). This also fails if the CSRF
 // middleware is ever unmounted from the composition root.
+//
+// Each refusal is also required to carry the mapped envelope. The refusal is
+// raised once, by the middleware, for every route in the table, so this is the
+// route-wide sweep behind the app-wide envelope contract: a regression that
+// restores the framework's bare "Forbidden" fails here on every mutating route
+// rather than on whichever one a hand-written test happened to name.
 func TestCSRFDeniesEveryMutatingRouteWithoutToken(t *testing.T) {
 	app := newCSRFGuardTestApp(t)
 
@@ -200,6 +206,11 @@ func TestCSRFDeniesEveryMutatingRouteWithoutToken(t *testing.T) {
 			if response.StatusCode != http.StatusForbidden {
 				t.Fatalf("expected CSRF 403 for token-less %s, got %d — if this route was consciously exempted, update csrfGuardExpectedExemptions and SECURITY.md together", key, response.StatusCode)
 			}
+			body := mustReadAll(t, response)
+			if strings.TrimSpace(string(body)) == "Forbidden" {
+				t.Fatalf("%s answered the CSRF refusal with fiber's bare text; the mapped envelope is app-wide", key)
+			}
+			assertTransportErrorEnvelope(t, body, "forbidden", "forbidden")
 		})
 		covered++
 	}

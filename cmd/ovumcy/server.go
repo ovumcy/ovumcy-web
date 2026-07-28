@@ -43,8 +43,8 @@ const (
 	// records serialize to ~8-12 MiB, so 16 MiB keeps the documented import
 	// capacity reachable over HTTP with headroom, while still bounding the body
 	// far below fiber's per-connection buffers. Exceeding it yields a mapped 413
-	// (ovumcyErrorHandler → api.RespondRequestEntityTooLarge) rather than a bare
-	// fasthttp error.
+	// (ovumcyErrorHandler → api.RespondTransportError, stable key
+	// "request_too_large") rather than a bare fasthttp error.
 	maxRequestBodyBytes = 16 << 20
 
 	// staticAssetMaxAgeSeconds is the Cache-Control max-age (1 hour) fiber sets
@@ -134,35 +134,42 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 	return appConfig
 }
 
-// ovumcyErrorHandler is the top-level Fiber error handler. It preserves the
-// status and message of explicit *fiber.Error values (app-controlled and safe,
-// for example the 403 raised by the CSRF middleware) but never forwards a raw
-// error or recovered panic value to the client, since those can carry internal
-// detail such as table names, file paths, or driver messages.
+// ovumcyErrorHandler is the top-level Fiber error handler. It answers EVERY
+// error in the app's own format: an explicit *fiber.Error keeps its status and
+// is rendered through the shared mapped-error negotiation
+// (api.RespondTransportError → JSON envelope for API clients, localized status
+// fragment for HTMX), while anything else — a raw error, a recovered panic —
+// becomes a generic 500 rendered the same way.
+//
+// Only the status crosses the boundary. Neither the *fiber.Error's message nor
+// the raw error's text reaches the body: framework messages are bare English
+// that no client can branch on, and raw errors can carry internal detail such as
+// table names, file paths, or driver messages. The client receives the app's
+// stable key instead.
+//
+// The envelope is app-wide by contract, not a courtesy extended to whichever
+// rejections happened to be noticed — a mixed format costs every client a second
+// parse path, and the pre-routing rejections that used to be the only mapped
+// ones (413, 431) are simply the two the framework raises most visibly. See
+// docs/SECURITY_INVARIANTS.md for the surrounding transport invariants.
 func ovumcyErrorHandler(c fiber.Ctx, err error) error {
 	var fiberErr *fiber.Error
-	if errors.As(err, &fiberErr) {
-		// A body exceeding BodyLimit is raised by fiber's core before any app
-		// middleware/handler runs, so route it through the shared error-spec
-		// negotiation (JSON envelope / localized HTMX fragment with a stable
-		// key) instead of leaking fasthttp's bare "Request Entity Too Large".
-		if fiberErr.Code == fiber.StatusRequestEntityTooLarge {
-			return api.RespondRequestEntityTooLarge(c)
-		}
-		// A request head that overflows the read buffer is rejected the same way,
-		// plus an explicit log line. Without it the rejection is effectively
-		// invisible to the operator: the head never parsed, so by the time the
-		// request logger runs the context carries no method or path and the entry
-		// reads "404 | GET | /" — indistinguishable from ordinary not-found noise,
-		// while the user is looking at a 431. Nothing about the request is logged;
-		// there is nothing parsed to log.
-		if fiberErr.Code == fiber.StatusRequestHeaderFieldsTooLarge {
-			log.Printf("request rejected: 431 request header fields too large — the request head did not fit the server read buffer")
-			return api.RespondRequestHeadersTooLarge(c)
-		}
-		return c.Status(fiberErr.Code).SendString(fiberErr.Message)
+	if !errors.As(err, &fiberErr) {
+		return api.RespondTransportError(c, fiber.StatusInternalServerError)
 	}
-	return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
+	// A request head that overflows the read buffer answers through the same
+	// mapped spec as everything else — RespondRequestHeadersTooLarge resolves the
+	// identical 431 entry — plus an explicit log line. Without that line the
+	// rejection is effectively invisible to the operator: the head never parsed,
+	// so by the time the request logger runs the context carries no method or
+	// path and the entry reads "404 | GET | /" — indistinguishable from ordinary
+	// not-found noise, while the user is looking at a 431. Nothing about the
+	// request is logged; there is nothing parsed to log.
+	if fiberErr.Code == fiber.StatusRequestHeaderFieldsTooLarge {
+		log.Printf("request rejected: 431 request header fields too large — the request head did not fit the server read buffer")
+		return api.RespondRequestHeadersTooLarge(c)
+	}
+	return api.RespondTransportError(c, fiberErr.Code)
 }
 
 func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api.Handler) {
