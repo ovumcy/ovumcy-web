@@ -3,11 +3,13 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 // TestOpenAPIContractMatchesRegisteredRoutes is the route↔spec contract guard:
@@ -144,4 +146,87 @@ func difference(a, b map[string]struct{}) []string {
 	}
 	sort.Strings(only)
 	return only
+}
+
+// openAPIRecoveryCodePatternLine finds the `pattern: "^OVUM-..."` line
+// declared for ForgotPasswordRequest.recovery_code. It is the only `pattern:`
+// line in the spec starting with "^OVUM-", so a plain line scan identifies it
+// unambiguously without needing to track YAML nesting.
+var openAPIRecoveryCodePatternLine = regexp.MustCompile(`(?m)^\s*pattern:\s*"(\^OVUM-[^"]*)"\s*$`)
+
+// openAPIRecoveryCodePattern extracts and compiles the `pattern` declared for
+// ForgotPasswordRequest.recovery_code in the OpenAPI spec. Like
+// openAPIV1Routes above, it scans the raw text rather than pulling in a YAML
+// library, matching this file's dependency-free convention.
+func openAPIRecoveryCodePattern(t *testing.T, specPath string) *regexp.Regexp {
+	t.Helper()
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	match := openAPIRecoveryCodePatternLine.FindSubmatch(data)
+	if match == nil {
+		t.Fatalf(`docs/openapi.yaml: no recovery_code pattern line found (expected pattern: "^OVUM-...")`)
+	}
+
+	compiled, err := regexp.Compile(string(match[1]))
+	if err != nil {
+		t.Fatalf("docs/openapi.yaml recovery_code pattern %q does not compile: %v", match[1], err)
+	}
+	return compiled
+}
+
+// TestOpenAPIRecoveryCodePatternAcceptsGeneratedCodes pins the recovery-code
+// request-contract class: docs/openapi.yaml declares a `pattern` for
+// ForgotPasswordRequest.recovery_code, and that pattern must accept every
+// code services.GenerateRecoveryCode can actually mint, and must classify
+// input exactly as services.ValidateRecoveryCodeFormat does — the server's
+// own request-shape check (internal/services/auth_input_policy.go), which
+// password_reset_service.go runs on every /api/v1/password-resets request. A
+// pattern narrower than either rejects a legitimate password-reset attempt
+// for any client that validates requests against the spec before sending
+// them — the last path back into a locked-out owner's account.
+//
+// The spec previously declared "^OVUM-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$"
+// (hex digits only), which a real generated code — drawn from a 32-symbol
+// Crockford-style alphabet, only 14 of whose symbols are also hex digits —
+// matched with probability (14/32)^12 ~= 4.9e-5, i.e. roughly 1 in 20,000.
+func TestOpenAPIRecoveryCodePatternAcceptsGeneratedCodes(t *testing.T) {
+	specPattern := openAPIRecoveryCodePattern(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
+
+	// Every code the generator can actually mint must pass both the
+	// documented pattern and the server's own validator. A single sample
+	// is not enough: the generator draws independently per character from
+	// its alphabet, so a pattern that rejects only some characters can
+	// still pass on a lucky draw. Enough iterations make that negligible.
+	for i := 0; i < 500; i++ {
+		code, err := services.GenerateRecoveryCode()
+		if err != nil {
+			t.Fatalf("services.GenerateRecoveryCode: %v", err)
+		}
+		if !specPattern.MatchString(code) {
+			t.Fatalf("docs/openapi.yaml recovery_code pattern %q rejects a real generated code %q", specPattern.String(), code)
+		}
+		if err := services.ValidateRecoveryCodeFormat(code); err != nil {
+			t.Fatalf("services.ValidateRecoveryCodeFormat rejected a real generated code %q: %v", code, err)
+		}
+	}
+
+	// The documented pattern must also agree with the server's validator on
+	// the accepted character class itself, not only on generator output:
+	// ValidateRecoveryCodeFormat deliberately accepts a wider class
+	// ([A-Z0-9]) than the generator emits (it excludes ambiguous I/O/0/1),
+	// so the spec must mirror the SERVER's accepted class, not the
+	// generator's narrower alphabet. Check every alphanumeric character in
+	// each of the three 4-character groups.
+	for _, r := range "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" {
+		group := strings.Repeat(string(r), 4)
+		sample := "OVUM-" + group + "-2222-3333"
+		specAccepts := specPattern.MatchString(sample)
+		serverAccepts := services.ValidateRecoveryCodeFormat(sample) == nil
+		if specAccepts != serverAccepts {
+			t.Fatalf("docs/openapi.yaml recovery_code pattern disagrees with services.ValidateRecoveryCodeFormat for character %q: spec accepts=%v, server accepts=%v (sample %q)", r, specAccepts, serverAccepts, sample)
+		}
+	}
 }
