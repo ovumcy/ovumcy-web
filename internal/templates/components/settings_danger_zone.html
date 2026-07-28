@@ -36,9 +36,20 @@
       </form>
     </div>
     {{else}}
-    <div class="journal-panel danger-card-soft mt-5 space-y-3">
-      <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
-      <p class="journal-muted text-sm">{{t .Messages "settings.local_password.danger_hint"}}</p>
+    <div class="journal-panel danger-card-soft mt-5 space-y-4" data-clear-data-stepup>
+      <div>
+        <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
+        <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.stepup_hint"}}</p>
+      </div>
+      <form
+        action="/api/v1/users/current/data-wipe/step-up"
+        method="post"
+        class="space-y-4"
+        data-confirm="{{t .Messages "settings.confirm_clear_data"}}"
+        data-confirm-accept="{{t .Messages "settings.clear_data.confirm_accept"}}">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.stepup_submit"}}</button>
+      </form>
     </div>
     {{end}}
     {{end}}
@@ -71,9 +82,20 @@
       </form>
     </div>
     {{else}}
-    <div class="journal-panel danger-card-soft mt-5 space-y-3">
-      <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
-      <p class="journal-muted text-sm">{{t .Messages "settings.local_password.required_before_sensitive_actions"}}</p>
+    <div class="journal-panel danger-card-soft mt-5 space-y-4" data-delete-account-stepup>
+      <div>
+        <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
+        <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.delete_account.stepup_hint"}}</p>
+      </div>
+      <form
+        action="/api/v1/users/current/deletion/step-up"
+        method="post"
+        class="space-y-4"
+        data-confirm="{{t .Messages "settings.confirm_delete_account"}}"
+        data-confirm-accept="{{t .Messages "settings.delete_account.stepup_submit"}}">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-danger">{{t .Messages "settings.delete_account.stepup_submit"}}</button>
+      </form>
     </div>
     {{end}}
   </section>

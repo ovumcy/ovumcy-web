@@ -326,14 +326,16 @@
   "settings.clear_data.subtitle": "Supprimez toutes les entrées de calendrier suivies, réinitialisez les paramètres du cycle par défaut et supprimez vos symptômes personnalisés. Les symptômes intégrés restent disponibles.",
   "settings.clear_data.submit": "Effacer toutes les données",
   "settings.clear_data.confirm_accept": "Oui, tout supprimer",
+  "settings.clear_data.stepup_hint": "Ce compte se connecte via votre fournisseur d'identité : l'effacement des données de santé s'y confirme, et non par un mot de passe. Vous devrez vous reconnecter avant tout effacement.",
+  "settings.clear_data.stepup_submit": "Confirmer auprès du fournisseur et effacer les données",
+  "settings.delete_account.stepup_hint": "Ce compte se connecte via votre fournisseur d'identité : sa suppression s'y confirme, et non par un mot de passe. Vous devrez vous reconnecter avant la suppression du compte.",
+  "settings.delete_account.stepup_submit": "Confirmer auprès du fournisseur et supprimer le compte",
 
   "settings.danger_zone.title": "Zone de danger",
   "settings.danger_zone.subtitle": "Supprimez définitivement votre compte. Cette action est irréversible.",
-  "settings.local_password.danger_hint": "Définissez d'abord un mot de passe local si vous voulez utiliser des actions sensibles confirmées par mot de passe, comme l'effacement des données de santé.",
   "settings.delete_account.title": "Supprimer le compte",
   "settings.delete_account.password": "Confirmer avec le mot de passe",
   "settings.delete_account.submit": "Supprimer le compte",
-  "settings.local_password.required_before_sensitive_actions": "Définissez un mot de passe local avant de supprimer ce compte ou d'utiliser d'autres actions sensibles confirmées par mot de passe.",
 
   "settings.confirm_regenerate_recovery_code": "Régénérer votre code de récupération ? L'ancien code ne fonctionnera plus.",
   "settings.confirm_clear_data": "Supprimer tous les enregistrements du calendrier, réinitialiser votre cycle et supprimer les symptômes personnalisés ? Cette action est irréversible.",
