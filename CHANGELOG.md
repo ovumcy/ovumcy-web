@@ -86,6 +86,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [SECURITY.md](SECURITY.md#verifying-release-authenticity) still apply as
   written.
 
+### Added
+
+- **An account signed in through an identity provider can now erase its own
+  data.** `Clear data` and `Delete account` require a fresh re-authentication,
+  and that had exactly one accepted form: the current local password. An owner
+  provisioned through OIDC has none, so both flows answered `403 local password
+  required` — while `SECURITY.md` and the GDPR cross-reference described the
+  right to erasure without qualification. The workaround (enrol a local password
+  through the step-up flow, then erase) worked but was documented nowhere near
+  the claim it qualified.
+
+  Such an account now confirms an erasure where it already authenticates. The
+  danger zone offers the action directly; confirming it starts the same
+  purpose-bound step-up that gates local-password enrollment, and the erasure
+  runs when the provider sends the browser back — never before. Which erasure
+  was confirmed travels inside the sealed step-up state, not in the callback
+  request, so nothing observable between the two can turn a data wipe into an
+  account deletion.
+
+  The re-authentication requirement itself is unchanged, and it does not
+  downgrade: an account that **has** a local password is refused this route and
+  keeps confirming with its password.
+
 ### Fixed
 
 - **The language switch is rate-limited.** `POST /lang` is the one

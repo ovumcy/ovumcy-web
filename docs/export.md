@@ -144,7 +144,7 @@ All four keys are always present. `date_from`/`date_to` report the **extent of t
 
 Request: `Content-Type: application/json`, body = the raw export file. Requires the `owner` role, a valid auth session, and a CSRF token (`X-CSRF-Token` header or `csrf_token` form field) — it is state-mutating, unlike the GET exports.
 
-The restore is **additive**: each entry creates its day only if the account does not already have that calendar day. Existing days are never overwritten or deleted, so no password re-authentication is required (contrast clear-data / delete-account), and re-importing the same file is safe and idempotent.
+The restore is **additive**: each entry creates its day only if the account does not already have that calendar day. Existing days are never overwritten or deleted, so no re-authentication is required at all (contrast clear-data / delete-account, which always cost one), and re-importing the same file is safe and idempotent.
 
 Every field is re-validated and sanitized server-side (the file is untrusted input): unknown enum values fall back to their neutral default, `notes` is length-capped, invalid cycle-factor keys are dropped, and `cycle_start`/`is_uncertain` are cleared on non-period days. Built-in symptom flags map back to the owner's own catalog; names in `other_symptoms` are matched to existing symptoms or created as custom symptoms. All writes are scoped to the session owner.
 
