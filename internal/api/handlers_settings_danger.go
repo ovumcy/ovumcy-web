@@ -8,10 +8,27 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// The two erasure endpoints are the most destructive health-data mutations the
+// product exposes, so they are audited through the typed mechanism like every
+// other one. Neither acts on a single record: clear-data wipes the account's
+// tracked data and resets its settings, delete-account removes the account with
+// everything attached to it. The target therefore names that scope — a fixed
+// designator that never carries an email, an id, or any free text.
+var (
+	clearDataMutation     = healthMutationKind{action: "settings.clear_data", target: "account_data"}
+	deleteAccountMutation = healthMutationKind{action: "settings.delete_account", target: "account"}
+)
+
+// clearDataValidateAction names the password pre-check behind the clear-data
+// confirmation dialog. It answers whether the password is right and mutates
+// nothing, so it stays on the plain security-event path rather than claiming a
+// health-data domain — but the name still lives here, not at the call site.
+const clearDataValidateAction = "settings.clear_data_validate"
+
 func (handler *Handler) ValidateClearDataPassword(c fiber.Ctx) error {
 	_, spec, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
-		handler.logSecurityError(c, "settings.clear_data_validate", spec)
+		handler.logSecurityError(c, clearDataValidateAction, spec)
 		return handler.respondMappedError(c, spec)
 	}
 
@@ -24,13 +41,10 @@ func (handler *Handler) ValidateClearDataPassword(c fiber.Ctx) error {
 func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 	user, spec, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
-		handler.logSecurityError(c, "settings.clear_data", spec)
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, clearDataMutation, spec)
 	}
 	if err := handler.settingsService.ClearAllData(c.Context(), user.ID); err != nil {
-		spec := settingsClearDataErrorSpec()
-		handler.logSecurityError(c, "settings.clear_data", spec)
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, clearDataMutation, settingsClearDataErrorSpec())
 	}
 
 	// ClearAllDataAndResetSettings bumps auth_session_version atomically;
@@ -39,11 +53,13 @@ func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 	// wipe is invalidated on its next request. Matches the contract used by
 	// password change, recovery-code regen, and 2FA toggle.
 	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
-	if err := handler.refreshCurrentSession(c, user, "settings.clear_data"); err != nil {
+	// The session-refresh failures below are auth-plumbing events, not the
+	// erasure itself, so they keep the plain path under the same action name.
+	if err := handler.refreshCurrentSession(c, user, clearDataMutation.action); err != nil {
 		return err
 	}
 
-	handler.logSecurityEvent(c, "settings.clear_data", "success")
+	handler.logMutationSuccess(c, clearDataMutation)
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}
@@ -54,18 +70,15 @@ func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 func (handler *Handler) DeleteAccount(c fiber.Ctx) error {
 	user, spec, valid := handler.validateSettingsActionPassword(c)
 	if !valid {
-		handler.logSecurityError(c, "settings.delete_account", spec)
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, deleteAccountMutation, spec)
 	}
 
 	if err := handler.settingsService.DeleteAccount(c.Context(), user.ID); err != nil {
-		spec := settingsDeleteAccountErrorSpec()
-		handler.logSecurityError(c, "settings.delete_account", spec)
-		return handler.respondMappedError(c, spec)
+		return handler.failMutation(c, deleteAccountMutation, settingsDeleteAccountErrorSpec())
 	}
 
 	handler.clearAuthRelatedCookies(c)
-	handler.logSecurityEvent(c, "settings.delete_account", "success")
+	handler.logMutationSuccess(c, deleteAccountMutation)
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}
