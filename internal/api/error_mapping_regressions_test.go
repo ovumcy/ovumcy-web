@@ -182,9 +182,14 @@ func TestRespondRequestEntityTooLargeNegotiatesFormat(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read body: %v", err)
 		}
+		// The flash key is the RESOLVED i18n key, not the spec key: it is what a
+		// surface asserts on and what a localized rendering keys off. This app
+		// carries no request-scoped messages — the early-path case the exported
+		// responder is built for — so the visible text still falls back to the
+		// machine key while the hook already points at real copy.
 		assertBodyContainsAll(t, string(body),
 			bodyStringMatch{fragment: `class="status-error"`, message: "expected shared status-error wrapper for HTMX 413"},
-			bodyStringMatch{fragment: `data-flash-key="request_too_large"`, message: "expected stable flash key on HTMX 413 fragment"},
+			bodyStringMatch{fragment: `data-flash-key="common.error.request_too_large"`, message: "expected the resolved i18n key on the HTMX 413 fragment"},
 		)
 	})
 }

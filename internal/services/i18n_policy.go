@@ -18,13 +18,32 @@ var authErrorTranslationKeys = map[string]string{
 	// handler answering a *fiber.Error that no domain ever saw, so they have no
 	// sentinel to map from and would otherwise render their machine key as the
 	// visible message in every language.
-	"bad_request":            "common.error.bad_request",
-	"forbidden":              "common.error.forbidden",
-	"method_not_allowed":     "common.error.method_not_allowed",
-	"unsupported_media_type": "common.error.unsupported_media_type",
-	"request_rejected":       "common.error.request_rejected",
-	"internal_error":         "common.error.internal_error",
-	"service_unavailable":    "common.error.service_unavailable",
+	//
+	// The list must cover EVERY key internal/api's transport table can produce,
+	// including the two class fallbacks and request_timeout, which is the one
+	// transport spec deliberately kept out of that table (503 already carries
+	// service_unavailable). A key reaching this map is what turns the machine
+	// key into copy; a key missing from it renders raw, which is how
+	// request_timeout shipped as the literal text "request_timeout" in all six
+	// languages. Regression:
+	// api.TestEveryTransportErrorKeyRendersLocalizedCopyInEveryLocale.
+	//
+	// Two of them point at copy that already existed rather than at new strings:
+	// 413 and 404 keep the wording their own surfaces already show —
+	// not_found.title is exactly what respondNotFoundMappedError renders for an
+	// HTMX 404, so one status keeps one phrasing whichever layer produced it.
+	"bad_request":               "common.error.bad_request",
+	"unauthorized":              "common.error.unauthorized",
+	"forbidden":                 "common.error.forbidden",
+	"not found":                 "not_found.title",
+	"method_not_allowed":        "common.error.method_not_allowed",
+	"request_too_large":         "common.error.request_too_large",
+	"unsupported_media_type":    "common.error.unsupported_media_type",
+	"request_headers_too_large": "common.error.request_headers_too_large",
+	"request_rejected":          "common.error.request_rejected",
+	"internal_error":            "common.error.internal_error",
+	"service_unavailable":       "common.error.service_unavailable",
+	"request_timeout":           "common.error.request_timeout",
 
 	"email already exists":        "auth.error.email_exists",
 	"register pickup unavailable": "auth.error.post_register_signin",

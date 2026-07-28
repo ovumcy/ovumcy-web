@@ -10,8 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func TestRespondMappedErrorGlobalJSONReturnsStableErrorPayload(t *testing.T) {
@@ -29,6 +32,12 @@ func TestRespondMappedErrorGlobalJSONReturnsStableErrorPayload(t *testing.T) {
 	}
 }
 
+// TestRespondMappedErrorGlobalHTMXReturnsLocalizedStatusMarkup covers apiError's
+// SECOND localization branch: a spec key that has no entry in
+// authErrorTranslationKeys but is itself a locale entry, which is how the
+// day-cycle-start conflicts are translated. The probe deliberately uses such a
+// key — it used to use "not found", which now has a mapping and so exercises the
+// first branch instead, leaving this one untested.
 func TestRespondMappedErrorGlobalHTMXReturnsLocalizedStatusMarkup(t *testing.T) {
 	t.Parallel()
 
@@ -38,12 +47,12 @@ func TestRespondMappedErrorGlobalHTMXReturnsLocalizedStatusMarkup(t *testing.T) 
 	request.Header.Set("HX-Request", "true")
 
 	response := mustAppResponse(t, app, request)
-	assertStatusCode(t, response, http.StatusNotFound)
+	assertStatusCode(t, response, http.StatusConflict)
 
 	body := mustReadBodyString(t, response.Body)
 	assertBodyContainsAll(t, body,
 		bodyStringMatch{fragment: `class="status-error"`, message: "expected shared status-error wrapper for HTMX errors"},
-		bodyStringMatch{fragment: "Localized not found.", message: "expected HTMX branch to localize mapped error text"},
+		bodyStringMatch{fragment: "Localized cycle start conflict.", message: "expected HTMX branch to localize a spec key that is its own locale entry"},
 	)
 	assertBodyNotContainsAll(t, body,
 		bodyStringMatch{fragment: "<html", message: "did not expect full-page markup in HTMX mapped error response"},
@@ -542,6 +551,132 @@ func TestRespondTransportErrorNegotiatesFormat(t *testing.T) {
 	})
 }
 
+// transportErrorSpecsOnTheUserSurface enumerates every spec the transport layer
+// can hand a caller, DERIVED rather than listed, so the sweeps below have no
+// allowlist to keep in sync and a spec added later is covered the day it lands.
+//
+// The status walk is what makes it total: transportErrorSpecForStatus is the
+// single resolver behind RespondTransportError, RespondRequestEntityTooLarge and
+// RespondRequestHeadersTooLarge, and walking the whole 4xx/5xx range picks up
+// both the table entries and the two class fallbacks (request_rejected,
+// internal_error) without naming either. requestTimeoutErrorSpec is added by
+// hand because it is deliberately NOT in that table — 503 there means
+// service_unavailable, a statement about the server, while an expired request
+// budget is a statement about the caller's request — and that exclusion is
+// exactly what let its key slip past every existing guard.
+func transportErrorSpecsOnTheUserSurface() []APIErrorSpec {
+	seen := map[string]bool{}
+	specs := make([]APIErrorSpec, 0, len(transportErrorSpecsByStatus)+3)
+	add := func(spec APIErrorSpec) {
+		if seen[spec.Key] {
+			return
+		}
+		seen[spec.Key] = true
+		specs = append(specs, spec)
+	}
+
+	for status := 400; status < 600; status++ {
+		add(transportErrorSpecForStatus(status))
+	}
+	add(requestTimeoutErrorSpec())
+
+	return specs
+}
+
+// TestEveryTransportErrorKeyRendersLocalizedCopyInEveryLocale closes the half of
+// the i18n contract nothing checked. services.TestAuthErrorTranslationKeysResolveInEveryLocale
+// walks the MAPPING and proves each entry resolves in every locale; it cannot
+// see a spec key that never reached the map at all, and an unmapped key renders
+// as itself — translateMessage answers an unknown key with the key. That is how
+// request_timeout shipped as the literal text "request_timeout" on an HTMX flow
+// that outlived its budget, in all six languages, next to a CSRF refusal on the
+// same app that answered with a human sentence.
+//
+// The sweep walks the SPECS instead, so both halves are now pinned: every key
+// the transport layer can produce has a mapping, and that mapping resolves to
+// non-empty copy in every supported locale.
+func TestEveryTransportErrorKeyRendersLocalizedCopyInEveryLocale(t *testing.T) {
+	t.Parallel()
+
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	languages := manager.SupportedLanguages()
+	if len(languages) == 0 {
+		t.Fatal("expected the i18n manager to report supported languages")
+	}
+
+	specs := transportErrorSpecsOnTheUserSurface()
+	if len(specs) < len(transportErrorSpecsByStatus) {
+		t.Fatalf("derived %d transport specs for a table of %d entries; recheck spec discovery", len(specs), len(transportErrorSpecsByStatus))
+	}
+
+	for _, spec := range specs {
+		t.Run(spec.Key, func(t *testing.T) {
+			translationKey := services.AuthErrorTranslationKey(spec.Key)
+			if translationKey == "" {
+				t.Fatalf("transport key %q (status %d) has no entry in services.authErrorTranslationKeys: it renders as the raw machine key to every user in every language", spec.Key, spec.Status)
+			}
+			for _, language := range languages {
+				if value := strings.TrimSpace(manager.Messages(language)[translationKey]); value == "" {
+					t.Errorf("transport key %q maps to %q, which locale %q does not define: the message would render as the raw key", spec.Key, translationKey, language)
+				}
+			}
+		})
+	}
+}
+
+// TestRequestTimeoutRendersLocalizedCopyToAnHTMXCaller is the instance the sweep
+// above generalizes, driven through the real guard and the real locale
+// catalogues rather than through the spec table: an HTMX flow that outlives its
+// budget must get a sentence, not the machine key, and the stable key must ride
+// next to it as data-flash-key the way every other transport rejection's does.
+func TestRequestTimeoutRendersLocalizedCopyToAnHTMXCaller(t *testing.T) {
+	t.Parallel()
+
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+
+	for _, language := range []string{i18n.LangEN, i18n.LangRU} {
+		t.Run(language, func(t *testing.T) {
+			messages := manager.Messages(language)
+			expected := strings.TrimSpace(messages["common.error.request_timeout"])
+			if expected == "" {
+				t.Fatalf("locale %q defines no common.error.request_timeout", language)
+			}
+
+			app := fiber.New()
+			app.Use(func(c fiber.Ctx) error {
+				c.Locals(contextMessagesKey, messages)
+				return c.Next()
+			})
+			app.Use(RequestDeadlineGuard(time.Millisecond))
+			app.Get("/slow", func(c fiber.Ctx) error {
+				<-c.Context().Done()
+				return c.SendString("handler finished anyway")
+			})
+
+			request := httptest.NewRequest(http.MethodGet, "/slow", nil)
+			request.Header.Set("HX-Request", "true")
+
+			response := mustAppResponse(t, app, request)
+			assertStatusCode(t, response, fiber.StatusServiceUnavailable)
+
+			body := mustReadBodyString(t, response.Body)
+			assertBodyContainsAll(t, body,
+				bodyStringMatch{fragment: `data-flash-key="common.error.request_timeout"`, message: "expected the resolved i18n key next to the copy"},
+				bodyStringMatch{fragment: expected, message: "expected the localized request-timeout sentence"},
+			)
+			assertBodyNotContainsAll(t, body,
+				bodyStringMatch{fragment: ">request_timeout<", message: "did not expect the raw machine key as the visible message"},
+			)
+		})
+	}
+}
+
 func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 	t.Helper()
 
@@ -552,8 +687,8 @@ func newErrorMappingTransportTestApp(t *testing.T) (*fiber.App, *Handler) {
 		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input"))
 	})
 	app.Get("/api/test/htmx", func(c fiber.Ctx) error {
-		c.Locals(contextMessagesKey, map[string]string{"not found": "Localized not found."})
-		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "not found"))
+		c.Locals(contextMessagesKey, map[string]string{"cycle start replace required": "Localized cycle start conflict."})
+		return respondGlobalMappedError(c, globalErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "cycle start replace required"))
 	})
 	app.Post("/api/v1/users", func(c fiber.Ctx) error {
 		return handler.respondMappedError(c, authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password"))
