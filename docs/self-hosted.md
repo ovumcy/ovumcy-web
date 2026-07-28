@@ -332,21 +332,40 @@ mkdir -p backups
 docker compose exec -T postgres sh -lc 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backups/ovumcy-postgres.sql
 ```
 
-Restore with the app stopped and the target database intentionally selected:
+Restore with the app stopped, the target database intentionally selected, and the existing schema dropped first:
 
 ```bash
-cat backups/ovumcy-postgres.sql | docker compose exec -T postgres sh -lc 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose exec -T postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE" -c "CREATE SCHEMA public"'
+
+cat backups/ovumcy-postgres.sql | docker compose exec -T postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" "$POSTGRES_DB"'
 ```
+
+The first command destroys everything currently in that database. Take a fresh rollback backup before running it if you are not already holding one you trust — the same precaution the [named-volume restore](#docker-named-volume-restore) states before `docker volume rm`.
+
+Both additions are load-bearing:
+
+- **Dropping the schema** is the Postgres equivalent of `docker volume rm ovumcy_data` + `docker volume create` on the SQLite path, and for the same reason: the restore has to start from an empty target. A plain `pg_dump` writes `CREATE TABLE` followed by `COPY` and carries no `DROP` of its own, so against a database that still holds its schema every `CREATE TABLE` fails — and `COPY`, one all-or-nothing statement per table, only lands in a table that is still empty.
+- **`-v ON_ERROR_STOP=1`** makes `psql` treat those failures as failures. Its default is to run past every error and exit `0` regardless, which is what lets a restore that moved nothing report success.
+
+Without both, the restore's outcome depends on the state of the target database, and the three cases are indistinguishable from outside — all of them exit `0` after printing roughly 40 `ERROR:  relation "…" already exists` lines to stderr:
+
+| State of the target database | What the documented command actually did |
+| --- | --- |
+| Tables empty (fresh volume, rehearsal stack) | Restored every row — the case that makes the procedure look correct |
+| Partial loss (some rows survived) | Restored **nothing**; the missing rows stayed missing |
+| Data intact, or drifted since the backup | Changed **nothing**; the operator is looking at the wrong generation of data |
+
+With the drop step and `ON_ERROR_STOP=1`, the same restore prints no `ERROR:` lines, exits `0`, and leaves an export byte-identical to the one taken when the dump was made.
 
 Keep the SQL dump and `.env` / application-secret backup separate, just as you would for the SQLite baseline.
 
-The same rule applies to the public Postgres reverse-proxy stacks. Back up PostgreSQL with `pg_dump` or your platform-native Postgres snapshot tooling; do not try to apply the SQLite file-copy runbook to those stacks.
+The same rule applies to the public Postgres reverse-proxy stacks. Back up PostgreSQL with `pg_dump` or your platform-native Postgres snapshot tooling; do not try to apply the SQLite file-copy runbook to those stacks. The two restore requirements above — empty the target first, and run `psql` under `-v ON_ERROR_STOP=1` — are properties of `pg_dump` and `psql` rather than of the bundled stack, so they hold wherever you replay a plain dump.
 
 Recommended baseline:
 
 - Use the default Docker named volume when possible.
 - Keep at least one recent rollback backup before replacing production data.
-- Verify a restore with `/readyz` and a normal page load before trusting it. A restore changes the storage layer, which is the half `/healthz` deliberately does not check.
+- Verify a restore by working through [Post-Restore Verification](#post-restore-verification), not by checking that the app is up. `/readyz` and a normal page load are worth running — a restore changes the storage layer, which is the half `/healthz` deliberately does not check — but they are steps 2-3 of that checklist, and every signal they cover stays green on an empty database. Reading data back is the step that decides whether to trust the restore.
 
 Bind mounts are still valid, but they are an advanced operator path. For bind mounts, stop the app and back up the mounted directory with normal filesystem tools while preserving file contents and access permissions.
 
@@ -391,11 +410,15 @@ docker compose up -d
 
 Before removing the existing volume, make a fresh rollback backup if you are not already holding one you trust.
 When you restore into a manually recreated named volume, Docker Compose may print a warning that the volume was not created by Compose. In this workflow that warning is expected and does not by itself mean the restore failed.
-After startup, verify the restored app using the health check appropriate for your deployment mode.
+After startup, verify the restored app using the health check appropriate for your deployment mode, then work through [Post-Restore Verification](#post-restore-verification) below. The health check tells you the app is up; it cannot tell you the data came back.
 
 ## Post-Restore Verification
 
-Steps 1-3 below check that the app is **up**. Step 4 is the only one that checks that your **data came back**, and it is the step that catches the failure this procedure would otherwise hide: an archive that missed the database restores into an instance that boots cleanly, reports healthy, answers `/readyz` with `200`, and renders a perfectly ordinary login page. The usual way to end up with one is a per-file copy of `ovumcy.db` taken while the app was running — on an instance that has not yet checkpointed, nearly the whole database still lives in `ovumcy.db-wal` and the main file is close to empty. Do not stop at step 3.
+Steps 1-3 below check that the app is **up**. Steps 4 and 5 are the ones that check your **data came back** — step 4 that there is data at all, step 5 that it is the data from the backup — and between them they catch the two failures this procedure would otherwise hide.
+
+The first is an archive that missed the database: it restores into an instance that boots cleanly, reports healthy, answers `/readyz` with `200`, and renders a perfectly ordinary login page. The usual way to end up with one is a per-file copy of `ovumcy.db` taken while the app was running — on an instance that has not yet checkpointed, nearly the whole database still lives in `ovumcy.db-wal` and the main file is close to empty.
+
+The second is a restore that never ran. It has no empty-looking symptom at all: the instance is healthy and fully populated, because nothing was replaced. This is the Postgres shape — a `psql` restore into a database that still holds its schema can leave every row exactly as it was and still exit `0` (see [Backup and Restore Contract](#backup-and-restore-contract)) — and step 4 passes on it, because the records it asks about are indeed there. Do not stop at step 3, and do not stop at step 4.
 
 After restore:
 
@@ -403,7 +426,8 @@ After restore:
 2. Confirm `/healthz` **and** `/readyz` respond successfully using the health check appropriate for your deployment mode.
 3. Open the main UI once and verify the app renders normally.
 4. Sign in and confirm the records are there: open the calendar on a month you know had entries before the backup, or download `Settings → Export` and compare it against an export taken before the restore. Do this even when the app looks perfectly healthy — every signal above stays green on an empty database.
-5. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in. Read that expectation carefully against step 4, because the two failures look similar for one screen and mean opposite things: with a changed key your **password still works** (password hashes do not depend on `SECRET_KEY`) and you are merely signed out — 2FA is the part that breaks, and the recovery path for it is in [Secret Handling and Rotation](#secret-handling-and-rotation). A sign-in that is rejected as *wrong credentials* is not a key symptom at all; it means the account is not in the restored database, which is step 4 failing.
+5. Confirm the records are the ones **from the backup**, not the ones that were already in place. Before starting the restore, name a signal that is known to differ between the current database and the backup — the entry count for a month you edited since the dump was taken, a specific entry that exists in only one of the two — and check that signal afterwards. Phrase it so it can fail: "the calendar still shows entries" passes on a restore that did nothing, while "July shows 12 entries, not the 3 it showed an hour ago" does not. If you cannot name a differing signal, take a `Settings → Export` immediately before the restore and diff it against one taken after; an export that comes back unchanged after restoring a different generation of data is the failure, not a reassurance.
+6. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in. Read that expectation carefully against step 4, because the two failures look similar for one screen and mean opposite things: with a changed key your **password still works** (password hashes do not depend on `SECRET_KEY`) and you are merely signed out — 2FA is the part that breaks, and the recovery path for it is in [Secret Handling and Rotation](#secret-handling-and-rotation). A sign-in that is rejected as *wrong credentials* is not a key symptom at all; it means the account is not in the restored database, which is step 4 failing.
 
 ## Safe Upgrade Procedure
 
@@ -554,7 +578,7 @@ Use it only after the baseline path is already stable.
 
 Recommended advanced practices:
 
-- Build on the baseline backup contract above with an off-host copy and periodic restore drills into an isolated temporary stack; see [Backup and Restore Contract](#backup-and-restore-contract) for the restore/verification steps.
+- Build on the baseline backup contract above with an off-host copy and periodic restore drills into an isolated temporary stack; see [Backup and Restore Contract](#backup-and-restore-contract) for the restore/verification steps. Drill into a **populated** stack, not a fresh empty one. Restoring into an empty database is the one case where a broken restore procedure still looks correct, so a drill that starts from nothing passes whether or not the procedure works. Most real recoveries are not that case: partial loss, a bad import, a rollback to yesterday's state all restore over a database that still holds data. Restore the backup, use the instance until its contents have visibly drifted from the dump, then restore the same backup over it and finish with [Post-Restore Verification](#post-restore-verification), step 5 included.
 - Restrict Docker, shell, and filesystem access so that only a small number of administrators can read `.env`, logs, the SQLite volume, or backup archives.
 - Rotate or ship logs to a private operator-controlled sink, and keep retention short enough that routine diagnostics do not become a second long-term data store.
 - Monitor host disk space, backup-job success, container health, and the last known-good image tag so upgrades and restores remain predictable.
