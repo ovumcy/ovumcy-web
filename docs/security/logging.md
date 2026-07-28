@@ -15,6 +15,8 @@ Ovumcy does **not** emit per-action audit logs by default. The `AUDIT_LOG_ENABLE
                   role="owner" domain="health_data" target="day_entry"
   ```
 
+  An action that changes health data carries the two further fields shown above: `domain="health_data"`, and a `target` naming the scope it touched (`day_entry`, `symptom`, `cycle_settings`, and — for the two actions that erase everything — `account_data` for a full data wipe, `account` for an account deletion). The target is a fixed designator chosen per action, never an identifier, an email, or submitted text, so an incident review can filter on `domain="health_data"` to select the data-changing actions, erasures included.
+
 When enabled, these lines are visible to the operator through their container runtime (`docker compose logs`, journald, etc.) and never leave the host. They are intended for ad-hoc incident investigation — for example, to confirm whether a suspected compromise produced state-changing requests, and from which `user_id`. The audit stream is not designed as a compliance audit trail; nothing in Ovumcy itself ships, archives, or rotates these lines.
 
 If you enable `AUDIT_LOG_ENABLED=true`, plan retention and access control around the persistent-identifier content (`user_id`, role). Treat the resulting log stream as the same sensitivity class as the database itself.

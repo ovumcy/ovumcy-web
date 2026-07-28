@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -246,5 +247,158 @@ func TestUpsertDayLogsSanitizedPathWithoutConcreteDate(t *testing.T) {
 	}
 	if strings.Contains(logLine, "2026-02-17") {
 		t.Fatalf("did not expect concrete health date in mutation logs: %q", logLine)
+	}
+}
+
+// captureDangerZoneAudit drives one danger-zone request against an app with the
+// audit stream on and returns the response together with the security-event
+// output that request produced. The log writer is swapped around the request
+// only, so the captured text holds the handler's own lines and not the sign-in
+// that built the context.
+func captureDangerZoneAudit(t *testing.T, ctx settingsSecurityTestContext, method string, path string, form url.Values) (*http.Response, string) {
+	t.Helper()
+
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	response := settingsFormRequestWithCSRF(t, ctx, method, path, form, map[string]string{
+		"Accept": "application/json",
+	})
+	return response, output.String()
+}
+
+// assertHealthDataMutationAudited pins the three fields the typed mutation
+// mechanism is responsible for: the wire-visible action name operators filter
+// on, the health-data domain tag, and a non-empty target naming what was
+// touched. A handler that logs through the plain security-event path emits the
+// action alone, so the domain/target assertions are what catch the regression.
+func assertHealthDataMutationAudited(t *testing.T, logOutput string, action string, outcome string, target string) {
+	t.Helper()
+
+	header := fmt.Sprintf("security event: action=%q outcome=%q", action, outcome)
+	if !strings.Contains(logOutput, header) {
+		t.Fatalf("expected %s audit line, got %q", header, logOutput)
+	}
+	if !strings.Contains(logOutput, `domain="health_data"`) {
+		t.Fatalf("expected %s to be tagged domain=\"health_data\", got %q", action, logOutput)
+	}
+	if target == "" {
+		t.Fatalf("expected a non-empty target for %s", action)
+	}
+	if !strings.Contains(logOutput, fmt.Sprintf("target=%q", target)) {
+		t.Fatalf("expected %s to carry target=%q, got %q", action, target, logOutput)
+	}
+}
+
+// TestClearAllDataIsAuditedAsHealthDataMutation covers the two branches that
+// erase an owner's tracked data: the accepted wipe and the denial that stops
+// one. Both are health-data mutations and must be greppable as such.
+func TestClearAllDataIsAuditedAsHealthDataMutation(t *testing.T) {
+	ctx := newSettingsSecurityTestContextWithOptions(t, "settings-clear-data-audit@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
+
+	denied, deniedLog := captureDangerZoneAudit(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
+		"password": {"WrongPass1"},
+	})
+	defer func() { _ = denied.Body.Close() }()
+
+	if denied.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 for a wrong clear-data password, got %d", denied.StatusCode)
+	}
+	assertHealthDataMutationAudited(t, deniedLog, "settings.clear_data", "denied", "account_data")
+	if !strings.Contains(deniedLog, `reason="invalid password"`) {
+		t.Fatalf("expected the denial reason to survive the mutation path, got %q", deniedLog)
+	}
+
+	accepted, acceptedLog := captureDangerZoneAudit(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
+		"password": {"StrongPass1"},
+	})
+	defer func() { _ = accepted.Body.Close() }()
+
+	if accepted.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 for an accepted clear-data request, got %d", accepted.StatusCode)
+	}
+	assertHealthDataMutationAudited(t, acceptedLog, "settings.clear_data", "success", "account_data")
+	if strings.Contains(acceptedLog, ctx.user.Email) {
+		t.Fatalf("did not expect the owner's email in an erasure audit line: %q", acceptedLog)
+	}
+}
+
+// TestDeleteAccountIsAuditedAsHealthDataMutation is the delete-account half of
+// the same contract: the account and everything attached to it is health data,
+// so its audit line carries the domain and a target naming the erased scope.
+func TestDeleteAccountIsAuditedAsHealthDataMutation(t *testing.T) {
+	ctx := newSettingsSecurityTestContextWithOptions(t, "settings-delete-account-audit@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
+
+	denied, deniedLog := captureDangerZoneAudit(t, ctx, http.MethodDelete, "/api/v1/users/current", url.Values{})
+	defer func() { _ = denied.Body.Close() }()
+
+	if denied.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for a missing delete-account password, got %d", denied.StatusCode)
+	}
+	assertHealthDataMutationAudited(t, deniedLog, "settings.delete_account", "denied", "account")
+	if !strings.Contains(deniedLog, `reason="invalid password"`) {
+		t.Fatalf("expected the denial reason to survive the mutation path, got %q", deniedLog)
+	}
+
+	accepted, acceptedLog := captureDangerZoneAudit(t, ctx, http.MethodDelete, "/api/v1/users/current", url.Values{
+		"password": {"StrongPass1"},
+	})
+	defer func() { _ = accepted.Body.Close() }()
+
+	if accepted.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 for an accepted delete-account request, got %d", accepted.StatusCode)
+	}
+	assertHealthDataMutationAudited(t, acceptedLog, "settings.delete_account", "success", "account")
+	if strings.Contains(acceptedLog, ctx.user.Email) {
+		t.Fatalf("did not expect the owner's email in an erasure audit line: %q", acceptedLog)
+	}
+}
+
+// TestErasureStorageFailuresAreAuditedAsHealthDataMutations covers the branch
+// neither handler reaches on a healthy instance: the password was accepted and
+// the erasure itself failed. Both erasure transactions start at daily_logs, so
+// dropping that table fails them without disturbing the users table the auth
+// middleware reads — and leaves the account in place, so one signed-in context
+// exercises both handlers. A 5xx outcome is "failure", not "denied".
+func TestErasureStorageFailuresAreAuditedAsHealthDataMutations(t *testing.T) {
+	ctx := newSettingsSecurityTestContextWithOptions(t, "settings-erasure-failure-audit@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
+	if err := ctx.database.Exec("DROP TABLE daily_logs").Error; err != nil {
+		t.Fatalf("drop daily_logs: %v", err)
+	}
+
+	clearData, clearDataLog := captureDangerZoneAudit(t, ctx, http.MethodPost, "/api/v1/users/current/data-wipe", url.Values{
+		"password": {"StrongPass1"},
+	})
+	defer func() { _ = clearData.Body.Close() }()
+
+	if clearData.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500 once clear-data storage is gone, got %d", clearData.StatusCode)
+	}
+	assertHealthDataMutationAudited(t, clearDataLog, "settings.clear_data", "failure", "account_data")
+	if !strings.Contains(clearDataLog, `reason="failed to clear data"`) {
+		t.Fatalf("expected the mapped clear-data failure reason, got %q", clearDataLog)
+	}
+
+	deleteAccount, deleteAccountLog := captureDangerZoneAudit(t, ctx, http.MethodDelete, "/api/v1/users/current", url.Values{
+		"password": {"StrongPass1"},
+	})
+	defer func() { _ = deleteAccount.Body.Close() }()
+
+	if deleteAccount.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected status 500 once delete-account storage is gone, got %d", deleteAccount.StatusCode)
+	}
+	assertHealthDataMutationAudited(t, deleteAccountLog, "settings.delete_account", "failure", "account")
+	if !strings.Contains(deleteAccountLog, `reason="failed to delete account"`) {
+		t.Fatalf("expected the mapped delete-account failure reason, got %q", deleteAccountLog)
+	}
+
+	var usersCount int64
+	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Count(&usersCount).Error; err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if usersCount != 1 {
+		t.Fatalf("expected a failed erasure to leave the account in place, got count=%d", usersCount)
 	}
 }
