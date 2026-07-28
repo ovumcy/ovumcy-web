@@ -111,6 +111,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The documented Postgres restore now actually restores.** The runbook's
+  restore command — a plain dump piped into `psql` — succeeded loudly and did
+  nothing whenever the target database still held its schema. `pg_dump` writes
+  `CREATE TABLE` then `COPY` and carries no `DROP`, so every `CREATE TABLE` hit
+  an existing relation, and `COPY` (one all-or-nothing statement per table) only
+  ever landed in a table that was still empty; `psql` without
+  `-v ON_ERROR_STOP=1` ran past all of it and exited `0`. The outcome therefore
+  depended on the state of the target and was indistinguishable from outside:
+  into an empty database it restored everything, into a partially lost one it
+  restored nothing and left the gap, and into an intact or drifted one it
+  changed nothing at all — leaving the operator reading the generation of data
+  they were trying to replace, on a stack reporting healthy.
+
+  The procedure now drops and recreates the `public` schema first — the
+  counterpart of `docker volume rm ovumcy_data` + `docker volume create` on the
+  SQLite path — and runs both halves under `-v ON_ERROR_STOP=1`, which turns the
+  silent no-op into a non-zero exit. The drop is destructive, so the runbook
+  states the rollback-backup precaution the SQLite path already carried.
+
+  Three verification claims moved with it, because two of them ended at "the app
+  is up": the backup-contract bullet and the named-volume restore step now route
+  to *Post-Restore Verification* instead of standing on `/readyz` and a page
+  load, and that checklist gained a step for the failure the old step 4 could
+  not see — data present, but the same data as before the restore. Restore
+  drills are now specified against a populated stack: an empty target is the one
+  case where a broken restore procedure still looks correct.
+
 - **A route's rate-limit budget now covers every spelling of its path the router
   accepts.** The five limiters scoped to a single endpoint — sign-in, sign-out,
   registration, forgot-password and the language switch — decided whether a
