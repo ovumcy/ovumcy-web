@@ -1102,13 +1102,28 @@ func TestSecurityHeadersMiddlewareAddsHSTSWhenSecureCookiesEnabled(t *testing.T)
 	assertDefaultSecurityHeaders(t, response, true)
 }
 
-func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
+// TestOvumcyErrorHandlerMasksRawErrorsAndEnvelopesFiberErrors pins the two ends
+// of the top-level handler: an explicit *fiber.Error keeps its status and is
+// answered through the shared mapped-error envelope, and a raw error is
+// answered as a generic 500 through the same envelope with none of its text.
+//
+// It previously asserted the OPPOSITE for the *fiber.Error arm — that the body
+// was fiber's bare "Forbidden" — which is what let every status other than
+// 413/431 answer in the framework's format while the envelope was documented as
+// app-wide. The message a *fiber.Error carries is now never echoed: the client
+// gets the stable key mapped from the status instead.
+func TestOvumcyErrorHandlerMasksRawErrorsAndEnvelopesFiberErrors(t *testing.T) {
 	app := fiber.New(fiber.Config{ErrorHandler: ovumcyErrorHandler})
 	app.Get("/fiber-error", func(c fiber.Ctx) error {
 		return fiber.ErrForbidden
 	})
 	app.Get("/raw-error", func(c fiber.Ctx) error {
 		return errors.New("internal users table secret column leaked")
+	})
+	// A *fiber.Error whose message was supplied by the app rather than by the
+	// framework: whatever a caller puts in it must not reach the response either.
+	app.Get("/annotated-fiber-error", func(c fiber.Ctx) error {
+		return fiber.NewError(fiber.StatusBadRequest, "users.totp_secret column is null")
 	})
 
 	fiberErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/fiber-error", nil), testConfigNoTimeout)
@@ -1121,9 +1136,10 @@ func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
 	}
 	fiberBody := new(bytes.Buffer)
 	_, _ = fiberBody.ReadFrom(fiberErrResp.Body)
-	if fiberBody.String() != "Forbidden" {
-		t.Fatalf("fiber.Error body = %q, want %q (status/message preserved)", fiberBody.String(), "Forbidden")
+	if fiberBody.String() == "Forbidden" {
+		t.Fatalf("fiber.Error body = %q: the framework's bare text must not reach the client; the envelope is app-wide", fiberBody.String())
 	}
+	assertTransportErrorEnvelope(t, fiberBody.Bytes(), "forbidden", "forbidden")
 
 	rawErrResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/raw-error", nil), testConfigNoTimeout)
 	if err != nil {
@@ -1135,11 +1151,47 @@ func TestOvumcyErrorHandlerMasksRawErrorsAndPreservesFiberErrors(t *testing.T) {
 	}
 	rawBody := new(bytes.Buffer)
 	_, _ = rawBody.ReadFrom(rawErrResp.Body)
-	if rawBody.String() != "Internal Server Error" {
-		t.Fatalf("raw error body = %q, want generic message", rawBody.String())
-	}
 	if strings.Contains(rawBody.String(), "secret column leaked") {
 		t.Fatalf("raw error body leaked internal detail: %q", rawBody.String())
+	}
+	assertTransportErrorEnvelope(t, rawBody.Bytes(), "internal_error", "internal")
+
+	annotatedResp, err := app.Test(httptest.NewRequest(http.MethodGet, "/annotated-fiber-error", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("annotated-fiber-error request failed: %v", err)
+	}
+	defer func() { _ = annotatedResp.Body.Close() }()
+	if annotatedResp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("annotated fiber.Error status = %d, want 400", annotatedResp.StatusCode)
+	}
+	annotatedBody := new(bytes.Buffer)
+	_, _ = annotatedBody.ReadFrom(annotatedResp.Body)
+	if strings.Contains(annotatedBody.String(), "totp_secret") {
+		t.Fatalf("fiber.Error message reached the response body: %q", annotatedBody.String())
+	}
+	assertTransportErrorEnvelope(t, annotatedBody.Bytes(), "bad_request", "validation")
+}
+
+// assertTransportErrorEnvelope reads the shared JSON error envelope and pins the
+// stable key plus its category. Both halves matter: the key is what a client
+// branches on, and error_detail proves the response came from the mapped spec
+// rather than from an ad-hoc JSON body that happens to carry an "error" field.
+func assertTransportErrorEnvelope(t *testing.T, body []byte, wantKey string, wantCategory string) {
+	t.Helper()
+
+	payload := map[string]any{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("expected the shared JSON error envelope, got %q: %v", body, err)
+	}
+	if payload["error"] != wantKey {
+		t.Fatalf("error key = %v, want %q (body %q)", payload["error"], wantKey, body)
+	}
+	detail, ok := payload["error_detail"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error_detail object, got %v (body %q)", payload["error_detail"], body)
+	}
+	if detail["key"] != wantKey || detail["category"] != wantCategory || detail["target"] != "global" {
+		t.Fatalf("error_detail = %v, want key=%q category=%q target=global", detail, wantKey, wantCategory)
 	}
 }
 
