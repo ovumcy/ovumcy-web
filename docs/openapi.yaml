@@ -153,31 +153,68 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
-          example: { error: "unauthorized" }
+          example:
+            error: "unauthorized"
+            error_detail: { key: "unauthorized", category: "unauthorized", target: "global" }
     Forbidden:
       description: Session is valid but the caller lacks the required role (typically owner-only) or CSRF validation failed.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
-          example: { error: "forbidden" }
+          example:
+            error: "forbidden"
+            error_detail: { key: "forbidden", category: "forbidden", target: "global" }
     ValidationError:
-      description: Request body or query parameters failed validation.
+      description: |
+        Request body, path, or query parameters failed validation. The server
+        answers `400` — it has no `422` branch, and a client that needs to tell a
+        validation refusal apart from any other `400` reads
+        `error_detail.category`, which is `validation` for every response using
+        this component. `error_detail.target` follows the surface: `global` for
+        programmatic endpoints, `auth_form` or `settings_form` where the
+        rejection belongs inside a rendered form.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
-          example: { error: "invalid input" }
+          example:
+            error: "invalid input"
+            error_detail: { key: "invalid input", category: "validation", target: "global" }
+    NotFound:
+      description: The addressed resource does not exist for the authenticated account.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            error: "symptom not found"
+            error_detail: { key: "symptom not found", category: "not_found", target: "settings_form" }
+    Conflict:
+      description: |
+        The request collides with state the account already holds — a duplicate
+        symptom name, or a cycle start that would overwrite an existing one. The
+        envelope carries `error_detail.category: "conflict"`; the collision is
+        resolvable by the client (rename, or resend with `replace_existing`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+          example:
+            error: "symptom name already exists"
+            error_detail: { key: "symptom name already exists", category: "conflict", target: "settings_form" }
     RateLimited:
       description: Rate limit exceeded.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
-          example: { error: "too many attempts" }
+          example:
+            error: "too many requests"
+            error_detail: { key: "too many requests", category: "rate_limited", target: "global" }
     InternalError:
       description: Unexpected server error.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
-          example: { error: "internal error" }
+          example:
+            error: "internal_error"
+            error_detail: { key: "internal_error", category: "internal", target: "global" }
 
   schemas:
     ApiError:
@@ -959,7 +996,7 @@ paths:
       responses:
         '303':
           description: Redirect to `/register/welcome` with the sealed pickup cookie. Shape is identical for new and duplicate emails.
-        '422':
+        '400':
           $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimited'
@@ -1108,7 +1145,7 @@ paths:
       responses:
         '303':
           description: Redirect to `/login` after success.
-        '422':
+        '400':
           $ref: '#/components/responses/ValidationError'
 
   # =========================================================================
@@ -1130,7 +1167,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/onboarding/steps/2:
     post:
@@ -1148,7 +1185,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/onboarding/complete:
     post:
@@ -1181,7 +1218,7 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/days/{date}:
     parameters:
@@ -1196,7 +1233,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
     head:
       tags: [days]
       summary: Check whether the day has any persisted data (owner only).
@@ -1231,7 +1268,7 @@ paths:
               schema: { $ref: '#/components/schemas/DailyLog' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
     delete:
       tags: [days]
       summary: Delete a single day's entry (owner only).
@@ -1281,8 +1318,19 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: |
+            The day already carries a cycle start (or data that marking one would
+            overwrite). Resend with `replace_existing=true` to take it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                error: "cycle start replace required"
+                error_detail: { key: "cycle start replace required", category: "conflict", target: "global" }
 
   # =========================================================================
   # symptoms
@@ -1316,7 +1364,8 @@ paths:
               schema: { $ref: '#/components/schemas/Symptom' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   /api/v1/symptoms/{id}:
     parameters:
@@ -1337,7 +1386,9 @@ paths:
               schema: { $ref: '#/components/schemas/Symptom' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
     delete:
       tags: [symptoms]
       summary: Archive (soft-delete) a symptom (owner only).
@@ -1352,8 +1403,10 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/v1/symptoms/{id}/restore:
     post:
@@ -1367,8 +1420,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # =========================================================================
   # stats
@@ -1521,7 +1577,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/profile:
     patch:
@@ -1540,7 +1596,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/interface:
     patch:
@@ -1748,7 +1804,7 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/reminders:
     patch:
@@ -1799,7 +1855,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
               example: { error: "oidc reauth required" }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/password/step-up:
     post:
@@ -1826,7 +1882,7 @@ paths:
           description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/data-wipe/step-up:
     post:
@@ -1905,7 +1961,7 @@ paths:
           description: Recovery code surface rendered. JSON clients should follow the redirect to `/recovery-code` to pick up the plaintext code (shown exactly once).
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/2fa:
     put:
@@ -1925,7 +1981,7 @@ paths:
           description: 2FA enabled.
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
     delete:
       tags: [settings]
       summary: Disable TOTP 2FA (owner only).
@@ -1942,7 +1998,7 @@ paths:
           description: 2FA disabled.
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
 
   /api/v1/users/current/data-wipe/validate:
@@ -1963,7 +2019,7 @@ paths:
         '204':
           description: Same as 200 for non-JSON clients.
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }
 
   /api/v1/users/current/data-wipe:
     post:
@@ -1988,4 +2044,4 @@ paths:
               schema: { $ref: '#/components/schemas/OkResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '400': { $ref: '#/components/responses/ValidationError' }

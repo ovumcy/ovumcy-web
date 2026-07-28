@@ -347,6 +347,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the file from being moved or deleted. The connection is now released on any
   failure that happens after it is open, and the error reported to the operator
   is still the migration failure that caused it.
+- **The API specification published a `422` the server never sends.** Nineteen
+  operations in [docs/openapi.yaml](docs/openapi.yaml) declared `422
+  Unprocessable Entity` for a rejected payload, while every validation refusal
+  the app produces is a `400` — there is no `422` branch anywhere in the server.
+  A client written against the document was therefore branching on a status it
+  could never receive, and met the real refusal in whichever branch it kept for
+  something else. The document now says `400`. Nothing in the server changed:
+  moving the app to `422` would have broken every client already reading `400`,
+  in exchange for a distinction the response envelope already carries in
+  `error_detail.category`, where `validation` is its own stable value.
+
+  Sweeping the remaining statuses the same way closed the opposite gap. The
+  `409` that a duplicate symptom name — or a cycle start that would overwrite an
+  existing one — really answers with was documented nowhere in the file, nor was
+  the `404` for a symptom that does not exist. Five shared error examples showed
+  a bare `{ "error": ... }` that the `ApiError` schema above them forbids, two of
+  them naming keys (`too many attempts`, `internal error`) the server has never
+  emitted; each now shows the full envelope with a key the server really sends.
 
 ### Security
 
