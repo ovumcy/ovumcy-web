@@ -8,6 +8,16 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// The reminder lead window is the schedule on which cycle predictions are
+// announced — the dashboard banner and, when a webhook is configured, the
+// notification that leaves the host. It is clamped by the same
+// NormalizeReminderLeadDays the webhook settings path uses, and that neighbour
+// (settings.webhook_update, target webhook_settings) is already in the
+// health-data domain: the destination and the schedule are two halves of one
+// answer, so tagging only the destination would leave the filter answering half
+// the question.
+var reminderSettingsMutation = healthMutationKind{action: "settings.reminders_update", target: "reminder_settings"}
+
 // UpdateReminderSettings persists the authenticated owner's shared reminder
 // lead window (users.reminder_lead_days, issue #123): how many days ahead the
 // dashboard period/ovulation banner (and, when configured, the webhook
@@ -26,21 +36,22 @@ import (
 func (handler *Handler) UpdateReminderSettings(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		return handler.failMutation(c, reminderSettingsMutation, unauthorizedErrorSpec())
 	}
 
 	input, err := parseReminderSettingsInput(c)
 	if err != nil {
-		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
+		return handler.failMutation(c, reminderSettingsMutation, settingsInvalidInputErrorSpec())
 	}
 
 	changed, err := handler.settingsService.SaveReminderLeadDays(c.Context(), user.ID, user.ReminderLeadDays, input.ReminderLeadDays)
 	if err != nil {
-		return handler.respondMappedError(c, settingsRemindersUpdateErrorSpec())
+		return handler.failMutation(c, reminderSettingsMutation, settingsRemindersUpdateErrorSpec())
 	}
 	if changed {
 		user.ReminderLeadDays = services.NormalizeReminderLeadDays(input.ReminderLeadDays)
 	}
+	handler.logMutationSuccess(c, reminderSettingsMutation)
 
 	status := services.SettingsReminderUpdatedStatus
 	if acceptsJSON(c) {

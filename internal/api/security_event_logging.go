@@ -124,12 +124,49 @@ func (handler *Handler) logHealthDataMutationError(c fiber.Ctx, action string, s
 
 // healthMutationKind names one audited health-data mutation: the security
 // event action plus its target field. Handlers declare kinds as file-level
-// constants and pass them to the helpers below, so a re-typed string
+// declarations and pass them to the helpers below, so a re-typed string
 // literal cannot silently mis-tag an audit line (the compiler has no
-// opinion on "health.symptom_craete").
+// opinion on "health.symptom_craete"). A mutation that changes the account
+// record without touching the cycle record declares an accountMutationKind
+// instead; see that type for why the two are not one type with a domain field.
 type healthMutationKind struct {
 	action string
 	target string
+}
+
+// accountMutationKind names an audited mutation of the ACCOUNT record that does
+// not touch the owner's health data. It is a separate type from
+// healthMutationKind rather than a domain field on it, so the compiler — not a
+// reviewer — is what keeps a display-name change out of the health-data stream:
+// `domain="health_data"` is the filter an incident review uses to select the
+// actions that changed the cycle record, and a mechanism that stamps it on
+// whatever it is handed answers that question with a yes it did not earn.
+type accountMutationKind struct {
+	action string
+	target string
+}
+
+func accountMutationFields(target string) []SecurityEventField {
+	fields := []SecurityEventField{securityEventField("domain", "account")}
+	if normalizedTarget := strings.TrimSpace(target); normalizedTarget != "" {
+		fields = append(fields, securityEventField("target", normalizedTarget))
+	}
+	return fields
+}
+
+func (handler *Handler) logAccountMutationSuccess(c fiber.Ctx, kind accountMutationKind) {
+	handler.logSecurityEvent(c, kind.action, "success", accountMutationFields(kind.target)...)
+}
+
+func (handler *Handler) logAccountMutationError(c fiber.Ctx, kind accountMutationKind, spec APIErrorSpec) {
+	handler.logSecurityError(c, kind.action, spec, accountMutationFields(kind.target)...)
+}
+
+// failAccountMutation is the account-domain twin of failMutation: log the
+// denied/failed audit event and respond with the mapped error.
+func (handler *Handler) failAccountMutation(c fiber.Ctx, kind accountMutationKind, spec APIErrorSpec) error {
+	handler.logAccountMutationError(c, kind, spec)
+	return handler.respondMappedError(c, spec)
 }
 
 func (handler *Handler) logMutationSuccess(c fiber.Ctx, kind healthMutationKind) {

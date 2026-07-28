@@ -450,6 +450,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolver now publishes the actor for the whole request, which covers both
   step-up purposes and any handler that resolves a session the same way later.
 
+- **Onboarding and three settings endpoints now appear in the audit stream.**
+  With `AUDIT_LOG_ENABLED=true`, both onboarding steps, onboarding completion,
+  the reminder window, the timezone and the display name wrote to the account
+  and recorded nothing at all. Onboarding was the consequential gap: it writes
+  the same `users` columns the settings cycle form writes, so an operator asking
+  "were the cycle settings changed?" got a correct answer when the owner used
+  Settings and a wrong one when the same result came from onboarding. Those
+  actions now carry `domain="health_data"` with the same `target="cycle_settings"`
+  the settings form carries (completion carries `target="day_entry"` for the
+  period days it seeds), so one filter selects the change whichever surface
+  produced it.
+
+  The reminder window and the timezone join the same domain because a filter on
+  it is a statement about effect, not about the value submitted: the first
+  decides when a prediction is announced, including off-host through the
+  webhook, and the second decides which calendar day a predicted period falls
+  on. The display name is audited separately under `domain="account"` — nothing
+  in the cycle math reads it, and putting it in the health-data domain would
+  make that filter mean less than it says. No audit line carries the submitted
+  value. See [docs/security/logging.md](docs/security/logging.md).
+
 ### Security
 
 - **A two-factor cookie the server refuses is now cleared instead of left in the

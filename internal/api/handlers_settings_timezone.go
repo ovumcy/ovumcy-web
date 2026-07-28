@@ -4,6 +4,16 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
+// The stored zone is not itself health data — an IANA name is not an
+// observation. It is tagged as a health-data mutation because it is the zone
+// the request-free passes resolve "today" in (resolveOwnerLocation, read by the
+// calendar-feed and webhook-notify services), so changing it re-dates which
+// calendar day a predicted period or ovulation falls on and when a reminder
+// fires, without a single daily_logs row changing. That is the same reason the
+// declared cycle baseline carries the tag: the domain marks an action's effect
+// on the cycle record, not the sensitivity of the value submitted.
+var timezoneSettingsMutation = healthMutationKind{action: "settings.timezone_update", target: "timezone"}
+
 // UpdateTimezone persists the authenticated owner's IANA timezone. It is the
 // write path that the request-free reminder pass (issue #124) reads: a small
 // client module POSTs the browser-detected zone here once per session when it
@@ -20,26 +30,29 @@ import (
 func (handler *Handler) UpdateTimezone(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
-		return handler.respondMappedError(c, unauthorizedErrorSpec())
+		return handler.failMutation(c, timezoneSettingsMutation, unauthorizedErrorSpec())
 	}
 
 	input, err := parseTimezoneSettingsInput(c)
 	if err != nil {
-		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
+		return handler.failMutation(c, timezoneSettingsMutation, settingsInvalidInputErrorSpec())
 	}
 
 	_, canonical, valid := parseRequestTimezone(input.Timezone)
 	if !valid {
-		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
+		return handler.failMutation(c, timezoneSettingsMutation, settingsInvalidInputErrorSpec())
 	}
 
 	changed, err := handler.settingsService.PersistTimezone(c.Context(), user.ID, user.Timezone, canonical)
 	if err != nil {
-		return handler.respondMappedError(c, settingsTimezoneUpdateErrorSpec())
+		return handler.failMutation(c, timezoneSettingsMutation, settingsTimezoneUpdateErrorSpec())
 	}
 	if changed {
 		user.Timezone = canonical
 	}
+	// The submitted zone never reaches the audit line: the kind carries a fixed
+	// target, so the event says that the zone changed, not what it changed to.
+	handler.logMutationSuccess(c, timezoneSettingsMutation)
 
 	if isHTMX(c) {
 		return c.SendStatus(fiber.StatusNoContent)
