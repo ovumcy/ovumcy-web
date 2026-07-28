@@ -146,6 +146,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/healthz` and `/readyz` keep their fixed one-word bodies and are deliberately
   outside the envelope.
 
+- **Five transport error keys reached the browser as raw machine text.** The
+  app-wide envelope maps every rejection to a stable key and, for a browser flow,
+  renders localized copy beside it — but the key-to-copy table only ever covered
+  the keys introduced alongside it. Five keys the same table owns had no entry,
+  and an unmapped key is rendered as itself: `request_timeout` (a request that
+  outlived its 60-second budget), `unauthorized`, `not found`,
+  `request_too_large` and `request_headers_too_large`. An HTMX flow that ran out
+  of budget was therefore shown the literal string `request_timeout`, in all six
+  languages, next to refusals on the same page that answered in a sentence.
+
+  All five now resolve. `404` and `413` reuse the copy their own surfaces already
+  show, so one status keeps one phrasing whichever layer produced it; `401`,
+  `431` and the request budget's `503` ship new copy in all six locales. The JSON
+  envelope is untouched — `error` and `error_detail.key` carry the same machine
+  keys as before. What changes for a browser client is the visible text and the
+  `data-flash-key` hook beside it, which now carries the resolved translation key
+  (for example `common.error.request_too_large` in place of `request_too_large`),
+  matching what every already-mapped rejection has always emitted.
+
 - **The audit stream now tags the two erasure actions as health-data
   mutations.** Clear-data and delete-account logged through the plain
   security-event path, so their lines carried the action name alone — no
