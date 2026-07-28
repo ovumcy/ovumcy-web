@@ -115,6 +115,13 @@ func fiberConfig(proxy proxySettings) fiber.Config {
 		ErrorHandler: ovumcyErrorHandler,
 		BodyLimit:    maxRequestBodyBytes,
 		ReadTimeout:  30 * time.Second,
+		// Socket deadlines, not work budgets. fasthttp arms the write deadline
+		// only after the handler has returned, so WriteTimeout caps writing a
+		// finished response and never how long the handler took to build it.
+		// What bounds a request inside the app is api.RequestBudget, an
+		// independent constant sized by the widest legitimate request; the two
+		// share a value today and change for unrelated reasons. Pinned by
+		// TestWriteTimeoutBoundsTheResponseWriteNotTheHandler.
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}

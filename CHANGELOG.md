@@ -370,6 +370,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overstating the rule, and a route sweep over the real application fails if a
   fourth appears — or if a declared one quietly starts using the envelope after
   all. No response changed.
+- **The 60-second request budget no longer justifies itself with a timeout that
+  does not bound it.** The comment on `RequestBudget` derived the value from the
+  server's `WriteTimeout`, on the reasoning that a handler outliving the write
+  timeout could not deliver its response anyway. It can: fasthttp arms the write
+  deadline only after the handler returns, so `WriteTimeout` caps writing a
+  finished response to the socket and never how long the handler took — which is
+  exactly why abandoned requests answered with latencies past fourteen minutes
+  under that same 60-second `WriteTimeout`, and why an in-process budget had to
+  exist at all. The value is unchanged and still defensible: it is sized by the
+  widest legitimate request, a full-size JSON restore. What changed is the
+  reasoning, which would otherwise have survived into the next change to
+  `WriteTimeout` and dragged the budget along with it. The two constants are now
+  recorded as independent, and the fasthttp behaviour the reasoning rests on is
+  pinned by a test that fails on an upgrade moving the deadline.
 
 ### Security
 
