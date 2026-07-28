@@ -1828,6 +1828,62 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/ValidationError' }
 
+  /api/v1/users/current/data-wipe/step-up:
+    post:
+      tags: [settings]
+      summary: Begin the OIDC step-up that authorizes a data wipe (owner only, accounts without a local password).
+      description: |
+        Erasing health data always costs a fresh re-authentication. An account
+        provisioned through OIDC has no local password to confirm with, so this
+        endpoint starts the same step-up flow used for local-password
+        enrollment and returns the provider's authorize URL. The confirmed
+        operation is sealed into the step-up cookie, and the callback at
+        `/auth/oidc/callback` performs the wipe once the provider has
+        re-authenticated the owner.
+
+        An account that **has** a local password is refused here: its erasure
+        gate stays the password, so the SSO path can never be used to bypass it.
+      responses:
+        '200':
+          description: OIDC redirect URL emitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
+        '303':
+          description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: The account has a local password, so this flow does not apply.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /api/v1/users/current/deletion/step-up:
+    post:
+      tags: [settings]
+      summary: Begin the OIDC step-up that authorizes an account deletion (owner only, accounts without a local password).
+      description: |
+        The account-deletion counterpart of
+        `POST /api/v1/users/current/data-wipe/step-up`; the same rules apply,
+        including the refusal for accounts that hold a local password. The
+        callback deletes the account and retracts the session.
+      responses:
+        '200':
+          description: OIDC redirect URL emitted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StartLocalPasswordSetupResponse' }
+        '303':
+          description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: The account has a local password, so this flow does not apply.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
   /api/v1/users/current/recovery-code:
     post:
       tags: [settings]
