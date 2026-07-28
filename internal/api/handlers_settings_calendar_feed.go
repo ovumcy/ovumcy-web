@@ -34,6 +34,15 @@ var (
 	calendarFeedRevokeMutation   = healthMutationKind{action: "settings.calendar_feed_revoke", target: "calendar_feed"}
 )
 
+// calendarFeedRevealEgress tags the one-time reveal of the subscribe URL. The
+// URL is a standing read-only capability over the owner's predicted cycle, so
+// the audited moment is the one where it reaches a person — the later polls by
+// a calendar client are deliberately not audited (a bearer-token route that
+// answers 404 with no oracle would have to log its own refusals to be useful,
+// which is an oracle moved into the log; see docs/security/known-disclosures.md).
+// The event records the fact of the reveal; the URL never enters the line.
+var calendarFeedRevealEgress = healthEgressKind{action: "settings.calendar_feed_reveal", target: "calendar_feed"}
+
 // calendarFeedRevealPath is the dedicated one-time reveal page the generate and
 // rotate handlers redirect to after sealing the subscribe URL.
 const calendarFeedRevealPath = "/settings/calendar-feed"
@@ -135,6 +144,7 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	}
 	// Shown-once: drop the cookie now so a reload cannot re-reveal the URL.
 	handler.clearCalendarFeedRevealCookie(c)
+	handler.logEgressSuccess(c, calendarFeedRevealEgress)
 
 	return handler.render(c, "calendar_feed_reveal", fiber.Map{
 		"Title":               localizedPageTitle(currentMessages(c), "meta.title.calendar_feed", "Ovumcy | Calendar feed"),
