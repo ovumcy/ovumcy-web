@@ -47,6 +47,8 @@ func registerV1APIRoutes(app *fiber.App, handler *Handler) {
 	usersCurrent.Delete("/2fa", handler.OwnerOnly, handler.DisableTOTP2FA)
 	usersCurrent.Post("/data-wipe/validate", handler.OwnerOnly, handler.ValidateClearDataPassword)
 	usersCurrent.Post("/data-wipe", handler.OwnerOnly, handler.ClearAllData)
+	usersCurrent.Post("/data-wipe/step-up", handler.OwnerOnly, handler.StartClearDataStepupReauth)
+	usersCurrent.Post("/deletion/step-up", handler.OwnerOnly, handler.StartDeleteAccountStepupReauth)
 
 	onboarding := v1.Group("/onboarding", handler.AuthRequired)
 	onboarding.Post("/steps/1", handler.OwnerOnly, handler.OnboardingStep1)

@@ -43,23 +43,12 @@ func (handler *Handler) ClearAllData(c fiber.Ctx) error {
 	if !valid {
 		return handler.failMutation(c, clearDataMutation, spec)
 	}
-	if err := handler.settingsService.ClearAllData(c.Context(), user.ID); err != nil {
-		return handler.failMutation(c, clearDataMutation, settingsClearDataErrorSpec())
+	// The wipe itself lives in applyClearData, shared with the OIDC step-up
+	// callback, so the session-version bump has exactly one implementation.
+	if spec, applied := handler.applyClearData(c, user); !applied {
+		return handler.respondMappedError(c, spec)
 	}
 
-	// ClearAllDataAndResetSettings bumps auth_session_version atomically;
-	// mirror the bump in memory and re-issue the auth cookie so this device
-	// stays signed in while every other session that existed before the
-	// wipe is invalidated on its next request. Matches the contract used by
-	// password change, recovery-code regen, and 2FA toggle.
-	user.AuthSessionVersion = services.NormalizeAuthSessionVersion(user.AuthSessionVersion) + 1
-	// The session-refresh failures below are auth-plumbing events, not the
-	// erasure itself, so they keep the plain path under the same action name.
-	if err := handler.refreshCurrentSession(c, user, clearDataMutation.action); err != nil {
-		return err
-	}
-
-	handler.logMutationSuccess(c, clearDataMutation)
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}
@@ -73,12 +62,11 @@ func (handler *Handler) DeleteAccount(c fiber.Ctx) error {
 		return handler.failMutation(c, deleteAccountMutation, spec)
 	}
 
-	if err := handler.settingsService.DeleteAccount(c.Context(), user.ID); err != nil {
-		return handler.failMutation(c, deleteAccountMutation, settingsDeleteAccountErrorSpec())
+	// Shared with the OIDC step-up callback; see applyClearData above.
+	if spec, applied := handler.applyDeleteAccount(c, user); !applied {
+		return handler.respondMappedError(c, spec)
 	}
 
-	handler.clearAuthRelatedCookies(c)
-	handler.logMutationSuccess(c, deleteAccountMutation)
 	if acceptsJSON(c) {
 		return c.JSON(fiber.Map{"ok": true})
 	}
