@@ -1,9 +1,14 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -144,4 +149,263 @@ func difference(a, b map[string]struct{}) []string {
 	}
 	sort.Strings(only)
 	return only
+}
+
+// openAPIBoundKeywords are the numeric validation keywords this file reads out
+// of the spec. Values are plain integers in every declaration, so a failed
+// Atoi means the line is not one of ours and is skipped.
+var openAPIBoundKeywords = map[string]struct{}{
+	"minimum": {}, "maximum": {}, "minLength": {}, "maxLength": {},
+}
+
+// openAPISchemaPropertyBounds extracts the numeric validation keywords declared
+// under components.schemas.<Schema>.properties.<property>, keyed
+// "<Schema>.<property>". It extends openAPIV1Routes' indentation scan from the
+// paths section to the components section rather than pulling in a YAML
+// library, matching this file's dependency-free convention: schema names sit at
+// 4-space indent, "properties:" at 6, property names at 8, and their keywords
+// at 10. A property written as an inline map (`id: { type: integer }`) carries
+// no bounds and is skipped; if one ever needs a bound, the sweep below fails
+// loudly with "declares no <keyword>" rather than passing silently.
+func openAPISchemaPropertyBounds(t *testing.T, specPath string) map[string]map[string]int {
+	t.Helper()
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	bounds := make(map[string]map[string]int)
+	inComponents, inSchemas, inProperties := false, false, false
+	schema, property := "", ""
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		text := strings.TrimSpace(line)
+		if text == "" || strings.HasPrefix(text, "#") {
+			continue
+		}
+
+		if !strings.HasPrefix(line, " ") {
+			inComponents = strings.HasPrefix(line, "components:")
+			inSchemas, inProperties = false, false
+			schema, property = "", ""
+			continue
+		}
+		if !inComponents {
+			continue
+		}
+
+		switch indent := len(line) - len(strings.TrimLeft(line, " ")); {
+		case indent == 2:
+			// components holds parameters/responses/securitySchemes too;
+			// only the schemas subtree carries property bounds.
+			inSchemas = text == "schemas:"
+			inProperties = false
+			schema, property = "", ""
+		case indent == 4 && inSchemas && strings.HasSuffix(text, ":"):
+			schema = strings.TrimSuffix(text, ":")
+			inProperties = false
+			property = ""
+		case indent == 6 && schema != "":
+			inProperties = text == "properties:"
+			property = ""
+		case indent == 8 && inProperties && strings.HasSuffix(text, ":"):
+			property = strings.TrimSuffix(text, ":")
+		case indent == 10 && property != "":
+			keyword, value, found := strings.Cut(text, ":")
+			if !found {
+				continue
+			}
+			if _, ok := openAPIBoundKeywords[keyword]; !ok {
+				continue
+			}
+			parsed, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil {
+				continue
+			}
+			key := schema + "." + property
+			if bounds[key] == nil {
+				bounds[key] = make(map[string]int)
+			}
+			bounds[key][keyword] = parsed
+		}
+	}
+	return bounds
+}
+
+// openAPIDeclaredBound is one (schema, property, keyword) triple whose declared
+// value must sit exactly where the running server draws its line. The bound is
+// never restated here: the spec supplies the number and the endpoint judges it,
+// so neither side can drift without the sweep going red.
+type openAPIDeclaredBound struct {
+	schema   string
+	property string
+	keyword  string
+	method   string
+	path     string
+	okStatus int
+	// body builds a request payload that is valid in every respect except
+	// the field under probe, which carries `value` — an integer field's
+	// value directly, a string field's length in runes.
+	body func(value int) map[string]any
+}
+
+// openAPIBoundProbeRune is deliberately multi-byte: a length bound the server
+// measured in bytes rather than runes would refuse a value the spec's
+// character-counted maxLength permits, and the in-bounds probe would catch it.
+const openAPIBoundProbeRune = "ж"
+
+func openAPIBoundProbeText(runes int) string {
+	return strings.Repeat(openAPIBoundProbeRune, runes)
+}
+
+// openAPIDeclaredBounds enumerates the request-shape bounds the /api/v1 surface
+// enforces per field. Each entry names the endpoint that owns the check, so the
+// oracle is the shipped request contract itself rather than a service-internal
+// constant — several of these limits live in package-private policy functions
+// that no exported symbol reveals.
+//
+// Decision (2026-07-28): OnboardingStep2Request stays out of this sweep even
+// though it declares bounds on identically-named fields. POST
+// /api/v1/onboarding/steps/2 CLAMPS an out-of-range cycle or period length into
+// the accepted window (SanitizeOnboardingCycleAndPeriod) instead of refusing
+// it, the way ReminderSettings.reminder_lead_days does, so the "one past the
+// bound must be refused" probe below does not describe that endpoint at all —
+// it would fail against correct behavior. Sharing one schema between the two is
+// wrong for the same reason: they can carry the same numbers and still disagree
+// on what happens when you exceed them. Any later attempt to cover the clamping
+// endpoints needs its own oracle — assert the stored value came back inside the
+// window — not an entry here.
+var openAPIDeclaredBounds = []openAPIDeclaredBound{
+	{
+		schema: "ProfileSettings", property: "display_name", keyword: "maxLength",
+		method: http.MethodPatch, path: "/api/v1/users/current/profile", okStatus: http.StatusOK,
+		body: func(value int) map[string]any {
+			return map[string]any{"display_name": openAPIBoundProbeText(value)}
+		},
+	},
+	{
+		schema: "CycleSettings", property: "cycle_length", keyword: "minimum",
+		method: http.MethodPatch, path: "/api/v1/users/current/cycle", okStatus: http.StatusOK,
+		body: func(value int) map[string]any {
+			return map[string]any{"cycle_length": value, "period_length": 1}
+		},
+	},
+	{
+		schema: "CycleSettings", property: "cycle_length", keyword: "maximum",
+		method: http.MethodPatch, path: "/api/v1/users/current/cycle", okStatus: http.StatusOK,
+		body: func(value int) map[string]any {
+			return map[string]any{"cycle_length": value, "period_length": 1}
+		},
+	},
+	{
+		schema: "CycleSettings", property: "period_length", keyword: "minimum",
+		method: http.MethodPatch, path: "/api/v1/users/current/cycle", okStatus: http.StatusOK,
+		// The longest cycle keeps the cross-field rule (period_length <=
+		// cycle_length-10, capped at 14) out of the way, so only the bound
+		// under probe decides the outcome.
+		body: func(value int) map[string]any {
+			return map[string]any{"cycle_length": 90, "period_length": value}
+		},
+	},
+	{
+		schema: "CycleSettings", property: "period_length", keyword: "maximum",
+		method: http.MethodPatch, path: "/api/v1/users/current/cycle", okStatus: http.StatusOK,
+		body: func(value int) map[string]any {
+			return map[string]any{"cycle_length": 90, "period_length": value}
+		},
+	},
+	{
+		schema: "SymptomPayload", property: "name", keyword: "maxLength",
+		method: http.MethodPost, path: "/api/v1/symptoms", okStatus: http.StatusCreated,
+		body: func(value int) map[string]any {
+			return map[string]any{"name": openAPIBoundProbeText(value)}
+		},
+	},
+	{
+		schema: "SymptomPayload", property: "icon", keyword: "maxLength",
+		method: http.MethodPost, path: "/api/v1/symptoms", okStatus: http.StatusCreated,
+		// Symptom names are unique per owner, so each icon probe needs its
+		// own name; the name itself is well inside its own bound.
+		body: func(value int) map[string]any {
+			return map[string]any{"name": "icon probe " + strconv.Itoa(value), "icon": openAPIBoundProbeText(value)}
+		},
+	},
+}
+
+// TestOpenAPIDeclaredBoundsMatchTheServersOwnLimits sweeps every request-shape
+// bound the /api/v1 surface enforces and requires docs/openapi.yaml to declare
+// it at exactly the value the server uses. A spec looser than the server — a
+// declared maximum above the real cap, or no bound at all where one is
+// enforced — does not block anything, but it makes the document untrue in the
+// direction a client cannot recover from: it cannot tell in advance that a
+// value will be refused, so the rejection can only be discovered by sending it.
+// It is the mirror image of a spec narrower than the server, which blocks a
+// legitimate request outright and is therefore found quickly; this direction is
+// found only when someone compares the two by hand, which is what this sweep
+// replaces.
+//
+// Each member is checked the same way, and the expected limits appear nowhere
+// in this file: the spec supplies the number, the endpoint judges it. The value
+// the spec calls legal must be accepted, and the first value past it must be
+// refused — so the declared bound has to be the acceptance boundary itself, not
+// merely somewhere near it. Both directions matter: dropping only the negative
+// probe would let a spec that understates the cap pass, and dropping only the
+// positive one would let a spec that overstates it pass.
+//
+// The spec previously declared maxLength 80 for display_name where the server
+// caps at 64, minimum 1 and no maximum for cycle_length where the server
+// accepts 15-90, no maximum for period_length where it accepts 1-14, and no
+// length bound at all for a symptom's name or icon (40 and 16 runes).
+func TestOpenAPIDeclaredBoundsMatchTheServersOwnLimits(t *testing.T) {
+	bounds := openAPISchemaPropertyBounds(t, filepath.Join("..", "..", "docs", "openapi.yaml"))
+	if len(bounds) == 0 {
+		t.Fatal("no schema property bounds parsed from openapi.yaml; parser or spec is wrong")
+	}
+
+	app, database := newOnboardingTestApp(t)
+	const email, password = "openapi-bounds@example.com", "StrongPass1"
+	createOnboardingTestUser(t, database, email, password, true)
+	authCookie := loginAndExtractAuthCookie(t, app, email, password)
+
+	for _, bound := range openAPIDeclaredBounds {
+		field := bound.schema + "." + bound.property
+		t.Run(field+"/"+bound.keyword, func(t *testing.T) {
+			declared, ok := bounds[field][bound.keyword]
+			if !ok {
+				t.Fatalf("docs/openapi.yaml declares no %s for %s, but %s %s enforces one: a client validating against the spec cannot tell the value will be refused",
+					bound.keyword, field, bound.method, bound.path)
+			}
+
+			inBounds, outOfBounds := declared, declared+1
+			if bound.keyword == "minimum" || bound.keyword == "minLength" {
+				outOfBounds = declared - 1
+			}
+
+			if status := openAPIProbeBound(t, app, authCookie, bound, inBounds); status != bound.okStatus {
+				t.Fatalf("%s declares %s: %d, but %s %s answered %d for a value the spec calls legal (want %d): the spec is looser than the server",
+					field, bound.keyword, declared, bound.method, bound.path, status, bound.okStatus)
+			}
+			if status := openAPIProbeBound(t, app, authCookie, bound, outOfBounds); status < 400 || status > 499 {
+				t.Fatalf("%s declares %s: %d, but %s %s answered %d for %d, one past the declared bound (want a 4xx refusal): the spec is tighter than the server",
+					field, bound.keyword, declared, bound.method, bound.path, status, outOfBounds)
+			}
+		})
+	}
+}
+
+// openAPIProbeBound sends one JSON request built from the bound's body builder
+// and returns the status the endpoint answered with.
+func openAPIProbeBound(t *testing.T, app *fiber.App, authCookie string, bound openAPIDeclaredBound, value int) int {
+	t.Helper()
+
+	payload, err := json.Marshal(bound.body(value))
+	if err != nil {
+		t.Fatalf("marshal probe body for %s.%s: %v", bound.schema, bound.property, err)
+	}
+	request := httptest.NewRequest(bound.method, bound.path, bytes.NewReader(payload))
+	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
+	request.Header.Set("Accept", fiber.MIMEApplicationJSON)
+	request.Header.Set("Cookie", authCookie)
+
+	return mustAppResponse(t, app, request).StatusCode
 }
