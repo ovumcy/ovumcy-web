@@ -22,12 +22,29 @@ import (
 // answering 500 with latencies past 14 minutes, while /healthz stayed green at
 // 1 ms and the container kept reporting healthy.
 //
-// The budget is a constant rather than an operator knob for the reason api.md
-// declines a READ_BUFFER_SIZE: it can be set wrong in both directions, and the
-// value that matters is bounded by the transport around it. 60s matches the
-// server's WriteTimeout — a handler that outlives the write timeout cannot
-// deliver its response anyway — and leaves the widest legitimate request, a
-// full-size import, far inside the bound.
+// The budget is a constant rather than an operator knob for the same reason a
+// READ_BUFFER_SIZE knob is declined: it can be set wrong in both directions.
+// 60s is sized by the widest legitimate request and by nothing else — a
+// full-size JSON restore, services.MaxImportEntries records inside the 16 MiB
+// body limit — which it leaves far inside the bound.
+//
+// In particular it is NOT derived from the server's WriteTimeout, which carries
+// the same 60s and bounds something else entirely. fasthttp arms the write
+// deadline AFTER the handler returns (fasthttp v1.72.0 server.go: s.Handler(ctx)
+// at 2618, SetWriteDeadline at 2637), so WriteTimeout caps writing a finished
+// response to the socket, never producing it. A handler that runs for minutes
+// still delivers: the abandoned writes that motivated this guard answered with
+// latencies past 14m40s under exactly that WriteTimeout, which is why an
+// in-process budget had to exist at all.
+//
+// The two constants are therefore independent — lowering WriteTimeout does not
+// shrink this budget, raising it does not license a longer one — and are
+// deliberately not pinned to each other, unlike the BodyLimit ↔
+// services.MaxImportEntries pair, where the second really does size the first.
+// What is pinned instead is the fasthttp behaviour this reasoning rests on:
+// TestWriteTimeoutBoundsTheResponseWriteNotTheHandler (cmd/ovumcy) fails on an
+// upgrade that moves the deadline ahead of the handler, rather than letting
+// WriteTimeout quietly change meaning underneath the comment.
 const RequestBudget = 60 * time.Second
 
 // responseHeaderBaselines pools the response-header snapshot RequestDeadlineGuard

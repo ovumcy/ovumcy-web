@@ -968,6 +968,72 @@ func TestFiberConfigSetsImportSizedBodyLimit(t *testing.T) {
 	}
 }
 
+// TestWriteTimeoutBoundsTheResponseWriteNotTheHandler pins the framework seam
+// the request-budget rationale rests on. fasthttp arms the write deadline only
+// after the handler returns (v1.72.0 server.go: s.Handler(ctx) at 2618,
+// SetWriteDeadline at 2637), so WriteTimeout caps writing a finished response to
+// the socket and never how long the handler spent producing it. The comment on
+// api.RequestBudget once said the opposite — that 60s "matches the server's
+// WriteTimeout" because a handler outliving it could not deliver anyway — and
+// the abandoned writes that motivated the budget answered with latencies past
+// 14m40s under exactly that WriteTimeout.
+//
+// It needs a real listener: the in-memory app.Test connection no-ops every
+// SetDeadline call, so nothing there can observe a write deadline at all. A
+// handler that outlives the write timeout by a wide margin and still delivers
+// its body is the observable; an upgrade that moved the deadline ahead of the
+// handler would truncate this response instead, and fail here rather than
+// silently changing what WriteTimeout means.
+func TestWriteTimeoutBoundsTheResponseWriteNotTheHandler(t *testing.T) {
+	const (
+		writeTimeout   = 200 * time.Millisecond
+		handlerRuntime = 3 * writeTimeout
+		delivered      = "the handler outlived the write timeout and still answered"
+	)
+
+	app := fiber.New(fiber.Config{WriteTimeout: writeTimeout})
+	app.Get("/slow", func(c fiber.Ctx) error {
+		time.Sleep(handlerRuntime)
+		return c.SendString(delivered)
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- app.Listener(listener, fiber.ListenConfig{DisableStartupMessage: true})
+	}()
+	t.Cleanup(func() {
+		if shutdownErr := app.ShutdownWithTimeout(5 * time.Second); shutdownErr != nil {
+			t.Errorf("shutdown: %v", shutdownErr)
+		}
+		if runErr := <-serveErr; runErr != nil {
+			t.Errorf("serve: %v", runErr)
+		}
+	})
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	started := time.Now()
+	response, err := client.Get("http://" + listener.Addr().String() + "/slow")
+	if err != nil {
+		t.Fatalf("the response never arrived (%v) — a write deadline armed before the handler ran would look exactly like this", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("read body: %v — a response cut off mid-write means the deadline covered the handler", err)
+	}
+	if string(body) != delivered {
+		t.Fatalf("body = %q, want %q", body, delivered)
+	}
+	if elapsed := time.Since(started); elapsed < handlerRuntime {
+		t.Fatalf("the request took %s, less than the %s the handler was meant to spend; the handler never outlived the write timeout and the test proved nothing", elapsed, handlerRuntime)
+	}
+}
+
 // TestOvumcyErrorHandlerMapsBodyLimitTo413 pins the mapping the top-level
 // ErrorHandler applies to fiber's body-limit rejection. Production reaches this
 // via App.serverErrorHandler, which maps fasthttp's ErrBodyTooLarge to a
