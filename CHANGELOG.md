@@ -111,40 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **`docs/openapi.yaml` described a recovery code almost no real code could
-  pass.** `ForgotPasswordRequest.recovery_code` declared
-  `pattern: "^OVUM-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$"` — hex digits only —
-  while `GenerateRecoveryCode` draws each of the 12 random characters from a
-  32-symbol Crockford-style alphabet (`A`–`Z` without the visually-ambiguous
-  `I`/`O`, plus `2`–`9`), of which only 14 symbols are also hex digits: a real
-  code matched the documented pattern with probability `(14/32)^12 ≈ 4.9e-5`
-  — roughly 1 in 20,000. Recovery is the last path back into a locked-out
-  owner's account, so a client that validates a request against the published
-  spec before sending it — the same failure class as the `2fa-challenge`
-  content-type gap documented elsewhere in this list — could not complete it
-  for all but a vanishing fraction of real codes.
-
-  The pattern now documents the class the server actually accepts
-  (`ValidateRecoveryCodeFormat`, `[A-Z0-9]`) rather than the hex subset, or
-  the generator's own narrower alphabet — the server deliberately accepts a
-  wider class than it generates, so pinning the pattern to the generator's
-  exact alphabet would have reproduced the same defect in milder form.
-  `TestOpenAPIRecoveryCodePatternAcceptsGeneratedCodes` pins the documented
-  pattern against both real generated codes and the server validator's
-  accepted character class, with a proof-on-defect regression against the
-  original hex-only pattern.
-
-  The same sweep, run across every `pattern`, `enum`, and numeric bound in
-  the spec, found three more entries narrower than what the server accepts:
-  the language enum on `InterfaceSettings.language` and `POST /lang` was
-  missing `it`, a fully supported locale; `POST /lang` additionally
-  documented its form field as `language`, while the handler reads `lang` —
-  so a client sending the documented field name could not set the language
-  to any value, not only `it`; and `OnboardingStep2Request.cycle_length`
-  declared `14`–`60` where the server accepts `15`–`90`, understating
-  onboarding's real cycle-length range. All three are description-only
-  fixes — no application behavior changed.
-
 - **The documented Postgres restore now actually restores.** The runbook's
   restore command — a plain dump piped into `psql` — succeeded loudly and did
   nothing whenever the target database still held its schema. `pg_dump` writes
@@ -247,6 +213,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   far outside any legitimate request including a full-size import), and one that
   outlives its budget answers `503` with the stable key `request_timeout` instead
   of whatever internal `500` the domain that caught the expiry happened to map.
+
+- **`docs/openapi.yaml` described a recovery code almost no real code could
+  pass.** `ForgotPasswordRequest.recovery_code` declared
+  `pattern: "^OVUM-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$"` — hex digits only —
+  while `GenerateRecoveryCode` draws each of the 12 random characters from a
+  32-symbol Crockford-style alphabet (`A`–`Z` without the visually-ambiguous
+  `I`/`O`, plus `2`–`9`), of which only 14 symbols are also hex digits: a real
+  code matched the documented pattern with probability `(14/32)^12 ≈ 4.9e-5`
+  — roughly 1 in 20,000. Recovery is the last path back into a locked-out
+  owner's account, so a client that validates a request against the published
+  spec before sending it — the same failure class as the `2fa-challenge`
+  content-type gap documented elsewhere in this list — could not complete it
+  for all but a vanishing fraction of real codes.
+
+  The pattern now documents the class the server actually accepts
+  (`ValidateRecoveryCodeFormat`, `[A-Z0-9]`) rather than the hex subset, or
+  the generator's own narrower alphabet — the server deliberately accepts a
+  wider class than it generates, so pinning the pattern to the generator's
+  exact alphabet would have reproduced the same defect in milder form.
+  `TestOpenAPIRecoveryCodePatternAcceptsGeneratedCodes` pins the documented
+  pattern against both real generated codes and the server validator's
+  accepted character class, with a proof-on-defect regression against the
+  original hex-only pattern.
+
+  The same sweep, run across every `pattern`, `enum`, and numeric bound in
+  the spec, found three more entries narrower than what the server accepts:
+  the language enum on `InterfaceSettings.language` and `POST /lang` was
+  missing `it`, a fully supported locale; `POST /lang` additionally
+  documented its form field as `language`, while the handler reads `lang` —
+  so a client sending the documented field name could not set the language
+  to any value, not only `it`; and `OnboardingStep2Request.cycle_length`
+  declared `14`–`60` where the server accepts `15`–`90`, understating
+  onboarding's real cycle-length range. All three are description-only
+  fixes — no application behavior changed.
 
 - **`ovumcy reset-password` can be run without an interactive terminal.** It is
   the operator's documented way back in for an owner locked out by a
