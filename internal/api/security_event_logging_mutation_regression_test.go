@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -267,6 +268,103 @@ func captureDangerZoneAudit(t *testing.T, ctx settingsSecurityTestContext, metho
 		"Accept": "application/json",
 	})
 	return response, output.String()
+}
+
+// assertSecurityEventNamesActor asserts that the one audit line carrying the
+// given action/outcome header names the owner it acted for. It matches the
+// line rather than the whole buffer on purpose: a request emits several
+// events, and a buffer-wide search for user_id passes as long as any one of
+// them is attributed.
+func assertSecurityEventNamesActor(t *testing.T, logOutput string, action string, outcome string, userID uint) {
+	t.Helper()
+
+	header := fmt.Sprintf("security event: action=%q outcome=%q", action, outcome)
+	for _, line := range strings.Split(logOutput, "\n") {
+		if !strings.Contains(line, header) {
+			continue
+		}
+		if !strings.Contains(line, fmt.Sprintf("user_id=%q", strconv.FormatUint(uint64(userID), 10))) {
+			t.Fatalf("%s must name the owner it acted for, got %q", header, line)
+		}
+		if !strings.Contains(line, fmt.Sprintf("role=%q", models.RoleOwner)) {
+			t.Fatalf("%s must carry the actor's role, got %q", header, line)
+		}
+		return
+	}
+	t.Fatalf("expected an audit line for %s, got %q", header, logOutput)
+}
+
+// captureStepupCallbackAudit drives an OIDC step-up callback with the audit
+// stream captured, and returns the response together with the emitted lines.
+func captureStepupCallbackAudit(t *testing.T, fixture *oidcStepupFixture, stepupCookie string, state string) (*http.Response, string) {
+	t.Helper()
+
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	response := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	return response, output.String()
+}
+
+// TestStepupCallbacksAuditTheOwnerTheyActFor covers the two completion
+// handlers that resolve their session by calling authenticateRequest directly
+// instead of sitting behind AuthRequired: /auth/oidc/callback cannot carry
+// that middleware, because ordinary sign-in has to work for a visitor with no
+// session. The actor has to be published anyway — an erasure that names no
+// owner is unusable in a review of an instance hosting more than one, which is
+// exactly the household case this product supports. Both purposes are covered
+// because the gap belongs to the shared resolver, not to either flow.
+func TestStepupCallbacksAuditTheOwnerTheyActFor(t *testing.T) {
+	t.Parallel()
+
+	t.Run("erasure", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := newOIDCStepupFixtureWithAudit(t, "stepup-audit-erasure@example.com", true)
+		fixture.oidcStub.reauthErr = nil
+		seedStepupDayEntry(t, fixture)
+
+		startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+		defer func() { _ = startResponse.Body.Close() }()
+		if startResponse.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 from the clear-data step-up start, got %d", startResponse.StatusCode)
+		}
+
+		stepupCookie := readStepupCookie(t, startResponse)
+		state := extractStepupCallbackState(t, fixture, stepupCookie)
+
+		callbackResponse, auditLog := captureStepupCallbackAudit(t, fixture, stepupCookie, state)
+		defer func() { _ = callbackResponse.Body.Close() }()
+
+		if got := countStepupDayEntries(t, fixture); got != 0 {
+			t.Fatalf("expected the callback to erase the diary, day entries = %d", got)
+		}
+		assertHealthDataMutationAudited(t, auditLog, "settings.clear_data", "success", "account_data")
+		assertSecurityEventNamesActor(t, auditLog, "settings.clear_data", "success", fixture.user.ID)
+	})
+
+	t.Run("local password setup", func(t *testing.T) {
+		t.Parallel()
+
+		fixture := newOIDCStepupFixtureWithAudit(t, "stepup-audit-password@example.com", true)
+		fixture.oidcStub.reauthErr = nil
+
+		startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
+		defer func() { _ = startResponse.Body.Close() }()
+		if startResponse.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 from the password step-up start, got %d", startResponse.StatusCode)
+		}
+
+		stepupCookie := readStepupCookie(t, startResponse)
+		state := extractStepupCallbackState(t, fixture, stepupCookie)
+
+		callbackResponse, auditLog := captureStepupCallbackAudit(t, fixture, stepupCookie, state)
+		defer func() { _ = callbackResponse.Body.Close() }()
+
+		assertSecurityEventNamesActor(t, auditLog, "auth.local_password_setup.callback", "success", fixture.user.ID)
+	})
 }
 
 // assertHealthDataMutationAudited pins the three fields the typed mutation
