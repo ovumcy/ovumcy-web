@@ -104,6 +104,41 @@ func TestImportJSONRejectsMalformedFile(t *testing.T) {
 	// here we only assert the request-level status, not a duplicated wire-string.
 }
 
+// TestImportJSONSuccessIsAuditedAsHealthDataMutation pins the restore's success
+// line to the typed mutation path. The restore is the one audited mutation that
+// adds fields of its own — the additive counts — and that is exactly the kind of
+// handler that drifts off the typed helpers and starts assembling `domain` by
+// hand, at which point it stops moving with the tagging every other health line
+// follows. The counts are asserted alongside the tags, so routing this line
+// through the helper cannot quietly cost the information it carries.
+func TestImportJSONSuccessIsAuditedAsHealthDataMutation(t *testing.T) {
+	ctx := newSettingsSecurityTestContextWithOptions(t, "import-audit-tags@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
+	body := `{"entries":[` +
+		`{"date":"2026-07-01","period":true,"flow":"medium","cycle_factors":[]},` +
+		`{"date":"2026-07-02","period":false,"cycle_factors":[]}` +
+		`]}`
+
+	response, logOutput := captureAuditedRequest(t, ctx.app, newImportRequest(ctx, body, true))
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for an accepted restore, got %d", response.StatusCode)
+	}
+
+	line := securityEventLine(t, logOutput, "data.import", "success")
+	if !strings.Contains(line, `domain="health_data"`) {
+		t.Fatalf("expected the restore to be tagged domain=\"health_data\", got %q", line)
+	}
+	if !strings.Contains(line, `target="day_entry"`) {
+		t.Fatalf("expected the restore to carry target=\"day_entry\", got %q", line)
+	}
+	for _, count := range []string{`added="2"`, `skipped="0"`, `rejected="0"`} {
+		if !strings.Contains(line, count) {
+			t.Fatalf("expected the restore audit line to carry %s, got %q", count, line)
+		}
+	}
+}
+
 // TestMapImportErrorCoversAllBranches unit-pins every arm of the import error
 // mapping so the 413/500 paths are guaranteed without forcing those runtime
 // failures end-to-end.
