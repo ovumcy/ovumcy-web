@@ -779,6 +779,13 @@
   "common.error.request_failed": "La requête a échoué. Veuillez réessayer.",
   "common.error.too_many_requests": "Trop de requêtes. Veuillez patienter et réessayer.",
   "common.error.request_too_large": "Ce fichier est trop volumineux pour être importé. Veuillez choisir un fichier plus petit.",
+  "common.error.bad_request": "Le serveur n'a pas pu traiter cette requête. Veuillez vérifier le formulaire et réessayer.",
+  "common.error.forbidden": "Cette action a été refusée. Veuillez recharger la page et réessayer.",
+  "common.error.method_not_allowed": "Cette action n'est pas disponible à cette adresse.",
+  "common.error.unsupported_media_type": "Ce type de contenu n'est pas pris en charge.",
+  "common.error.request_rejected": "Le serveur a refusé cette requête. Veuillez réessayer.",
+  "common.error.internal_error": "Une erreur est survenue sur le serveur. Veuillez réessayer.",
+  "common.error.service_unavailable": "Le service est indisponible pour le moment. Veuillez réessayer dans un instant.",
 
   "warning.future_date": "⚠️ Cette date est dans le futur. Les données peuvent être inexactes.",
   "warning.future_cycle_start": "Les prédictions seront recalculées à l'arrivée de ce jour.",

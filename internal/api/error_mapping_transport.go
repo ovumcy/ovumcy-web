@@ -37,6 +37,77 @@ func apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	})
 }
 
+// transportErrorSpecsByStatus maps every HTTP status the app can answer as an
+// explicit *fiber.Error onto the shared error-spec shape, keyed by status code
+// alone. It exists because the envelope is an APP-WIDE contract: a client that
+// learned to parse {error, error_detail} for one rejection must not meet the
+// framework's bare English string on the next one, and the framework raises
+// *fiber.Error for conditions no handler ever sees (an unroutable request, a
+// body it cannot decode, a head it cannot parse). Mapping by status is what
+// makes the coverage total — a status nothing in this repo raises today still
+// answers in the app's own format the day something starts raising it.
+//
+// Two entries reuse a spec defined elsewhere on purpose, so one status keeps one
+// key no matter which layer produced it: 401 shares unauthorizedErrorSpec with
+// the auth guard, 404 shares notFoundErrorSpec with the route-level not-found,
+// and 429 shares globalRateLimitErrorSpec with the limiters. The rest carry
+// their own stable machine key, following the snake_case shape the pre-routing
+// rejections established.
+//
+// The 503 entry is deliberately NOT the deadline guard's key: an expired request
+// budget answers 503 "request_timeout" through RespondRequestTimeout, which is a
+// statement about the caller's request, while a bare 503 raised as a fiber error
+// is a statement about the server. Same status, different cause, different key —
+// which is exactly what a machine key is for.
+var transportErrorSpecsByStatus = map[int]APIErrorSpec{
+	fiber.StatusBadRequest:                  globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "bad_request"),
+	fiber.StatusUnauthorized:                unauthorizedErrorSpec(),
+	fiber.StatusForbidden:                   globalErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "forbidden"),
+	fiber.StatusNotFound:                    notFoundErrorSpec(),
+	fiber.StatusMethodNotAllowed:            globalErrorSpec(fiber.StatusMethodNotAllowed, APIErrorCategoryValidation, "method_not_allowed"),
+	fiber.StatusRequestEntityTooLarge:       globalErrorSpec(fiber.StatusRequestEntityTooLarge, APIErrorCategoryTooLarge, "request_too_large"),
+	fiber.StatusUnsupportedMediaType:        globalErrorSpec(fiber.StatusUnsupportedMediaType, APIErrorCategoryValidation, "unsupported_media_type"),
+	fiber.StatusTooManyRequests:             globalRateLimitErrorSpec(),
+	fiber.StatusRequestHeaderFieldsTooLarge: globalErrorSpec(fiber.StatusRequestHeaderFieldsTooLarge, APIErrorCategoryTooLarge, "request_headers_too_large"),
+	fiber.StatusInternalServerError:         globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "internal_error"),
+	fiber.StatusServiceUnavailable:          globalErrorSpec(fiber.StatusServiceUnavailable, APIErrorCategoryInternal, "service_unavailable"),
+}
+
+// transportErrorSpecForStatus resolves the spec for one status. It is total by
+// construction: an unlisted status falls back to its class rather than to the
+// framework's text, so no future *fiber.Error can escape the envelope. Anything
+// that is not a 4xx or 5xx is answered as 500 — an error handler reached with a
+// success or redirect code is a defect in the caller, and honouring that status
+// would ship a body claiming failure under a status claiming success.
+func transportErrorSpecForStatus(status int) APIErrorSpec {
+	if spec, ok := transportErrorSpecsByStatus[status]; ok {
+		return spec
+	}
+	switch {
+	case status >= 400 && status < 500:
+		return globalErrorSpec(status, APIErrorCategoryValidation, "request_rejected")
+	case status >= 500 && status < 600:
+		return globalErrorSpec(status, APIErrorCategoryInternal, "internal_error")
+	default:
+		return transportErrorSpecsByStatus[fiber.StatusInternalServerError]
+	}
+}
+
+// RespondTransportError answers one status through the same content-negotiated
+// formatting as every mapped domain error. It is the single entry point the
+// top-level Fiber ErrorHandler in cmd/ovumcy uses for every explicit
+// *fiber.Error and for the generic 500 it substitutes for a raw error or a
+// recovered panic.
+//
+// Only the STATUS crosses this boundary. The *fiber.Error's message never does:
+// it is framework English at best and, for an error wrapped by a handler,
+// arbitrary internal text at worst — table names, file paths, driver messages.
+// The client gets the app's own stable key instead, which is both safer and more
+// useful to parse.
+func RespondTransportError(c fiber.Ctx, status int) error {
+	return apiError(c, transportErrorSpecForStatus(status))
+}
+
 // requestTooLargeErrorSpec maps a transport-level 413 (fiber's BodyLimit
 // rejection) to the shared error-spec shape. The stable key "request_too_large"
 // lets a JSON client (for example the settings restore flow, whose payload is
@@ -44,7 +115,7 @@ func apiError(c fiber.Ctx, spec APIErrorSpec) error {
 // server ever echoing the rejected body. Kept as a global spec: the limit is
 // enforced before any handler runs, so there is no form to scope it to.
 func requestTooLargeErrorSpec() APIErrorSpec {
-	return globalErrorSpec(fiber.StatusRequestEntityTooLarge, APIErrorCategoryTooLarge, "request_too_large")
+	return transportErrorSpecForStatus(fiber.StatusRequestEntityTooLarge)
 }
 
 // RespondRequestEntityTooLarge renders the mapped 413 through the same
@@ -84,7 +155,7 @@ func RespondRequestTimeout(c fiber.Ctx) error {
 // the client should get a stable key rather than fiber's bare
 // "Request Header Fields Too Large" string.
 func requestHeadersTooLargeErrorSpec() APIErrorSpec {
-	return globalErrorSpec(fiber.StatusRequestHeaderFieldsTooLarge, APIErrorCategoryTooLarge, "request_headers_too_large")
+	return transportErrorSpecForStatus(fiber.StatusRequestHeaderFieldsTooLarge)
 }
 
 // RespondRequestHeadersTooLarge renders the mapped 431 through the shared

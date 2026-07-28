@@ -12,12 +12,26 @@ var authErrorTranslationKeys = map[string]string{
 	"invalid credentials":            "auth.error.invalid_credentials",
 	"too many requests":              "common.error.too_many_requests",
 	"common.error.too_many_requests": "common.error.too_many_requests",
-	"email already exists":           "auth.error.email_exists",
-	"register pickup unavailable":    "auth.error.post_register_signin",
-	"weak password":                  "auth.error.weak_password",
-	"password mismatch":              "auth.error.password_mismatch",
-	"invalid recovery code":          "auth.error.invalid_recovery_code",
-	"too many recovery attempts":     "auth.error.too_many_recovery_attempts",
+
+	// Transport-level rejections. These specs are produced from the HTTP status
+	// alone (internal/api/error_mapping_transport.go), by the top-level error
+	// handler answering a *fiber.Error that no domain ever saw, so they have no
+	// sentinel to map from and would otherwise render their machine key as the
+	// visible message in every language.
+	"bad_request":            "common.error.bad_request",
+	"forbidden":              "common.error.forbidden",
+	"method_not_allowed":     "common.error.method_not_allowed",
+	"unsupported_media_type": "common.error.unsupported_media_type",
+	"request_rejected":       "common.error.request_rejected",
+	"internal_error":         "common.error.internal_error",
+	"service_unavailable":    "common.error.service_unavailable",
+
+	"email already exists":        "auth.error.email_exists",
+	"register pickup unavailable": "auth.error.post_register_signin",
+	"weak password":               "auth.error.weak_password",
+	"password mismatch":           "auth.error.password_mismatch",
+	"invalid recovery code":       "auth.error.invalid_recovery_code",
+	"too many recovery attempts":  "auth.error.too_many_recovery_attempts",
 	// The 2FA challenge's locale entries live under the flat error.totp_* namespace
 	// (present in all six locales), unlike the auth.error.* keys around them. Kept
 	// under their own names rather than renamed: the translations are correct and
