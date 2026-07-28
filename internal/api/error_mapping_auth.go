@@ -202,6 +202,23 @@ func mapOIDCLinkConfirmPasswordError(err error) APIErrorSpec {
 	}
 }
 
+// mapOIDCLinkConfirmError maps failures of the link-confirm flow itself
+// (identity resolution, the link write, provider availability) onto the
+// link-confirm error contract; password-verification failures have their own
+// mapper above.
+func mapOIDCLinkConfirmError(err error) APIErrorSpec {
+	switch {
+	case errors.Is(err, services.ErrOIDCLinkFailed),
+		errors.Is(err, services.ErrOIDCIdentityResolveFailed):
+		return authOIDCUnavailableErrorSpec()
+	case errors.Is(err, services.ErrOIDCDisabled),
+		errors.Is(err, services.ErrOIDCUnavailable):
+		return authOIDCUnavailableErrorSpec()
+	default:
+		return authOIDCAuthenticationFailedErrorSpec()
+	}
+}
+
 func authOIDCLinkConfirmUnavailableErrorSpec() APIErrorSpec {
 	return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "sso link confirmation unavailable")
 }

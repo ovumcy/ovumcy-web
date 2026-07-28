@@ -345,6 +345,16 @@ func (service *AuthService) FindUserByEmailAndRecoveryCode(ctx context.Context, 
 	return &user, nil
 }
 
+// VerifyStoredRecoveryCode reports whether a presented recovery code matches a
+// stored bcrypt recovery-code hash. The code is compared exactly as presented:
+// the register-pickup flow feeds the server-minted value carried by its sealed
+// payload, so normalizing here would only widen what a payload can match.
+// User-typed recovery input goes through the normalizing email+code lookup
+// above instead. A malformed or empty hash fails closed.
+func (service *AuthService) VerifyStoredRecoveryCode(hash string, code string) bool {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(code)) == nil
+}
+
 func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uint, passwordHash string, ttl time.Duration, now time.Time) (string, error) {
 	return BuildPasswordResetToken(secretKey, userID, passwordHash, ttl, now)
 }

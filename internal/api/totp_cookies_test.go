@@ -469,6 +469,45 @@ func TestTOTPSetupCookie_ExpiredPayload_ParseError(t *testing.T) {
 	}
 }
 
+// TestTOTPSetupCookieRefusesSecretlessSeal pins the seal-side half of the
+// secret-presence validation. The reader has always refused a payload whose
+// RawSecret is blank; without the matching writer refusal a caller that lost
+// the secret seals a well-formed, correctly-attributed cookie that only fails
+// later, at read time, in a different request. Both ends of one payload apply
+// the same validation. The positive anchor proves a real secret still seals.
+func TestTOTPSetupCookieRefusesSecretlessSeal(t *testing.T) {
+	secretKey := []byte("test-secret-key")
+	app, _ := newTOTPCookieTestApp(t, secretKey)
+
+	for _, testCase := range []struct {
+		name      string
+		rawSecret string
+	}{
+		{name: "empty", rawSecret: ""},
+		{name: "whitespace only", rawSecret: "%20%20"},
+	} {
+		refused, err := app.Test(httptest.NewRequest(http.MethodGet, "/seal-setup?user_id=42&raw_secret="+testCase.rawSecret, nil), testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("GET /seal-setup with a %s secret: %v", testCase.name, err)
+		}
+		defer func() { _ = refused.Body.Close() }()
+		if refused.StatusCode != http.StatusInternalServerError {
+			t.Fatalf("expected setTOTPSetupCookie to refuse a %s secret, got status %d", testCase.name, refused.StatusCode)
+		}
+		if written := responseCookieValue(refused.Cookies(), totpSetupCookieName); written != "" {
+			t.Fatalf("a refused seal must not leave a usable setup cookie, got %q", written)
+		}
+	}
+
+	// Positive anchor: the same route still seals a real secret.
+	sealed, err := app.Test(httptest.NewRequest(http.MethodGet, "/seal-setup?user_id=42&raw_secret=JBSWY3DPEHPK3PXP", nil), testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("GET /seal-setup with a real secret: %v", err)
+	}
+	defer func() { _ = sealed.Body.Close() }()
+	_ = captureCookieValue(t, sealed, totpSetupCookieName)
+}
+
 // TestTOTPSetupCookieRefusesUnattributedOwner pins both halves of the owner
 // scoping on the enrollment setup cookie, at the seal boundary and at the read
 // boundary, so neither depends on the other.

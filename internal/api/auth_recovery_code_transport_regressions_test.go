@@ -2,15 +2,47 @@ package api
 
 import (
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/net/html"
 )
+
+// TestTransportLayerDoesNotImportBcrypt sweeps every non-test file in the
+// package for a golang.org/x/crypto/bcrypt import. Credential and
+// recovery-code verification decisions belong to the services layer; the
+// register-pickup handler carried the one bcrypt comparison living in
+// transport until it moved behind AuthService.VerifyStoredRecoveryCode. No
+// allowlist: a future import fails here by file name.
+func TestTransportLayerDoesNotImportBcrypt(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	fileSet := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(fileSet, name, nil, parser.ImportsOnly)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		for _, imported := range parsed.Imports {
+			if strings.Trim(imported.Path.Value, `"`) == "golang.org/x/crypto/bcrypt" {
+				t.Errorf("%s imports golang.org/x/crypto/bcrypt: credential verification belongs in internal/services", name)
+			}
+		}
+	}
+}
 
 func TestRegisterJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)

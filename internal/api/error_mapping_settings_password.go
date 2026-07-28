@@ -7,6 +7,28 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// mapLocalPasswordSetupReauthError maps failures of the OIDC step-up exchange
+// that gates local-password enrollment. Stale and identity-mismatch outcomes
+// keep their own specs so the owner learns to redo the step-up; everything
+// else collapses into the generic SSO failure so provider state never leaks
+// through error granularity.
+func mapLocalPasswordSetupReauthError(err error) APIErrorSpec {
+	switch {
+	case errors.Is(err, services.ErrOIDCReauthStale):
+		return settingsOIDCReauthStaleErrorSpec()
+	case errors.Is(err, services.ErrOIDCReauthIdentityMismatch):
+		return settingsOIDCReauthMismatchErrorSpec()
+	case errors.Is(err, services.ErrOIDCCallbackInvalid):
+		return authOIDCAuthenticationFailedErrorSpec()
+	case errors.Is(err, services.ErrOIDCAuthenticationFailed):
+		return authOIDCAuthenticationFailedErrorSpec()
+	case errors.Is(err, services.ErrOIDCDisabled), errors.Is(err, services.ErrOIDCUnavailable):
+		return authOIDCUnavailableErrorSpec()
+	default:
+		return authOIDCAuthenticationFailedErrorSpec()
+	}
+}
+
 func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 	switch {
 	// Checked first: an exhausted re-auth budget is refused before the current
