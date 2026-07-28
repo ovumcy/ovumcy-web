@@ -127,8 +127,11 @@ Load-bearing invariants (see [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS
 - **Medical safety.** Every ovulation and next-period surface carries an estimate
   qualifier plus a persistent "not medical advice or a method of contraception"
   disclaimer.
-- **Re-auth for erasure.** Clear-data and delete-account require a fresh
-  current-password confirmation on top of session + role + CSRF.
+- **Re-auth for erasure.** Clear-data and delete-account require fresh
+  re-authentication on top of session + role + CSRF: the current local
+  password, or — only for an account that has no local password — a fresh
+  purpose-bound OIDC step-up. The check never downgrades for an account that
+  has a password.
 
 ## Lifecycle of a state-mutating request
 
