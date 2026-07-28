@@ -401,6 +401,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the file from being moved or deleted. The connection is now released on any
   failure that happens after it is open, and the error reported to the operator
   is still the migration failure that caused it.
+- **A request that runs out of its budget no longer hands back the response it
+  is refusing.** Every request is bounded by a 60-second budget, and one that
+  outlives it answers `503 request_timeout` — a status that says nothing
+  happened and the caller may retry. That answer replaced the status and the
+  body of whatever the handler had built, but not its headers, so a sign-in or
+  an erasure step-up whose work had already committed still delivered its
+  `Set-Cookie` and its `Location` next to the 503. A client acting on the status
+  would retry while already holding the session the status said it never issued.
+  The response is now rolled back to the state it was in before the handler ran,
+  so nothing the handler set survives the refusal. The headers the app puts on
+  every response — the browser-hardening set and the CSRF cookie — are written
+  before that point and are unaffected.
 
 - **`docs/openapi.yaml` promised input bounds wider than the ones the server
   actually enforces.** `ProfileSettings.display_name` declared `maxLength: 80`
