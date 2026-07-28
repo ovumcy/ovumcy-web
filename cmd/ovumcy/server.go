@@ -225,6 +225,19 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 			ErrorCode: "too_many_sso_attempts",
 		}),
 	}))
+	// POST /lang is the one unauthenticated route outside /api that reads a
+	// request body, so the /api budget above does not reach it. CSRF keeps a
+	// browser-origin attacker out, but it is not a volume control, and a body
+	// reader on an unauthenticated path should not be the single surface in the
+	// app with no cap at all. It costs a cookie write, so it takes the ordinary
+	// API budget rather than a knob of its own.
+	app.Use(limiter.New(limiter.Config{
+		Next:         rateLimitOnlyFor(fiber.MethodPost, "/lang"),
+		Max:          config.RateLimits.APIMax,
+		Expiration:   config.RateLimits.APIWindow,
+		KeyGenerator: keyGen,
+		LimitReached: newAPIRateLimitHandler(handler),
+	}))
 	app.Use("/api", limiter.New(limiter.Config{
 		Max:          config.RateLimits.APIMax,
 		Expiration:   config.RateLimits.APIWindow,

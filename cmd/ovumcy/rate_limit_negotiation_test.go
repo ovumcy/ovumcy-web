@@ -278,6 +278,69 @@ func TestCalendarFeedLimiterUsesItsOwnBudgetNotTheAPIBudget(t *testing.T) {
 	}
 }
 
+// TestLanguageSwitchIsRateLimited pins the cap on POST /lang. It is the one
+// unauthenticated route outside /api that reads a request body, so the /api
+// limiter's path prefix does not reach it and it was previously the only
+// body-reading surface in the app with no volume control at all. CSRF keeps a
+// cross-origin attacker out but is not a cap.
+//
+// The control at the end is what proves the two limiters keep separate buckets
+// rather than one shared counter — without it, a passing 429 could equally mean
+// the /api limiter had been consumed.
+func TestLanguageSwitchIsRateLimited(t *testing.T) {
+	handler := newRateLimitTestHandler(t)
+	app := fiber.New()
+	configureFiberMiddleware(app, runtimeConfig{
+		RateLimits: rateLimitSettings{
+			APIMax:    2,
+			APIWindow: time.Minute,
+		},
+	}, handler)
+	app.Post("/lang", func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	app.Get("/lang", func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+	app.Get("/api/v1/ping", func(c fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
+	send := func(t *testing.T, method, target string) int {
+		t.Helper()
+		response, err := app.Test(httptest.NewRequest(method, target, nil), testConfigNoTimeout)
+		if err != nil {
+			t.Fatalf("%s %s failed: %v", method, target, err)
+		}
+		defer func() { _ = response.Body.Close() }()
+		return response.StatusCode
+	}
+
+	// The limiter is registered ahead of the CSRF middleware, so a token-less
+	// POST is counted and then refused by CSRF (403). That ordering is the point:
+	// the cap has to bound requests that never reach the handler, which is
+	// exactly what an unauthenticated flood looks like. Within budget the CSRF
+	// refusal is what comes back; past it, the limiter answers first.
+	for i := 1; i <= 2; i++ {
+		if status := send(t, http.MethodPost, "/lang"); status != http.StatusForbidden {
+			t.Fatalf("POST /lang request %d within budget: got %d, want the CSRF refusal 403", i, status)
+		}
+	}
+	if status := send(t, http.MethodPost, "/lang"); status != http.StatusTooManyRequests {
+		t.Fatalf("POST /lang past its budget of 2: got %d, want 429 — the language switch is uncapped", status)
+	}
+
+	// The limiter is scoped to the mutating method: reading a page must not be
+	// refused because someone spent the switch budget.
+	if status := send(t, http.MethodGet, "/lang"); status != http.StatusNoContent {
+		t.Fatalf("GET /lang after the POST budget was spent: got %d, want 204", status)
+	}
+	// Control: the /api budget is untouched.
+	if status := send(t, http.MethodGet, "/api/v1/ping"); status != http.StatusNoContent {
+		t.Fatalf("api request after the /lang budget was spent: got %d, want 204", status)
+	}
+}
+
 func TestRateLimiterRetryAfterHeaderDoesNotLeakTimerState(t *testing.T) {
 	// Privacy invariant:
 	// "Retry-After header on rate-limit responses MUST NOT expose precise

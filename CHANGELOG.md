@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The language switch is rate-limited.** `POST /lang` is the one
+  unauthenticated route outside `/api` that reads a request body, so the `/api`
+  budget's path prefix never reached it and it was the only body-reading
+  surface in the application with no volume control at all. CSRF keeps a
+  cross-origin attacker out but is not a cap. It now carries the ordinary API
+  budget — the endpoint costs a cookie write, so it needs no knob of its own —
+  and the limiter sits ahead of the CSRF check, because a cap has to bound
+  requests that never reach the handler.
+
 - **Every rejection now answers in the app's own error format, not the web
   framework's.** The mapped envelope (`error` plus the structured
   `error_detail`, negotiated into a localized status fragment for the browser
