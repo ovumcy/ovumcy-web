@@ -39,8 +39,11 @@ Per-IP HTTP rate limits enforced by Fiber's limiter middleware. Defaults are tun
 | `POST /api/v1/password-resets` | 8 requests / 1 hour | `RATE_LIMIT_FORGOT_PASSWORD_MAX`, `RATE_LIMIT_FORGOT_PASSWORD_WINDOW` |
 | `/auth/oidc/*` (OIDC sign-in) | 8 requests / 15 minutes | shares `RATE_LIMIT_LOGIN_MAX`, `RATE_LIMIT_LOGIN_WINDOW` |
 | `DELETE /api/v1/sessions/current` | 60 requests / 15 minutes | `RATE_LIMIT_LOGOUT_MAX`, `RATE_LIMIT_LOGOUT_WINDOW` |
+| `POST /lang` (language switch) | 300 requests / 1 minute | shares `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `/api/*` (catch-all) | 300 requests / 1 minute | `RATE_LIMIT_API_MAX`, `RATE_LIMIT_API_WINDOW` |
 | `GET /calendar/feed/:token.ics` | 20 requests / 1 minute | `RATE_LIMIT_CALENDAR_FEED_MAX`, `RATE_LIMIT_CALENDAR_FEED_WINDOW` |
+
+Every one of them refuses in the application's own error format. A client that asked for JSON receives the shared envelope — `error` with the endpoint's stable key (`too_many_login_attempts` and its siblings), `error_detail` with the category and target — plus `retry_after_seconds`, an extension member echoing the `Retry-After` header, so it inherits that header's bound of whole seconds no larger than the configured window. A browser is answered as the flow needs: the auth and settings forms redirect back to the form with a flash, and the language switch — the only public form with no HTMX behind it — renders the localized status fragment, because a full-page navigation cannot display a JSON body. The `.ics` feed has no page, so it answers the envelope.
 
 The calendar feed deliberately does **not** share the `/api/*` budget. When the budget was introduced it was the only unauthenticated endpoint paying a bcrypt compare on every well-formed request — the verifier check on a selector hit, or the timing-equalization dummy on a selector miss — so at the `/api` budget a single IP could spend 300 bcrypts per minute without any credential. Migration 032 moved verification to a keyed MAC (microseconds), which removed that CPU cliff for every row minted since; a row minted before it still pays one bcrypt until its first successful poll writes its MAC in.
 

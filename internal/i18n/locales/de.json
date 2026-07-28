@@ -114,6 +114,8 @@
   "auth.error.too_many_recovery_attempts": "Zu viele Wiederherstellungsversuche. Versuchen Sie es in 15 Minuten erneut.",
   "auth.error.too_many_login_attempts": "Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.",
   "auth.error.too_many_sso_attempts": "Zu viele SSO-Anmeldeversuche. Bitte warten Sie 15 Minuten.",
+  "auth.error.too_many_logout_attempts": "Zu viele Abmeldeversuche. Bitte warten Sie und versuchen Sie es erneut.",
+  "auth.error.too_many_register_attempts": "Zu viele Registrierungsversuche. Bitte warten Sie und versuchen Sie es erneut.",
   "auth.error.sso_temporarily_unavailable": "Die SSO-Anmeldung ist derzeit nicht verfügbar. Nutzen Sie die lokale Anmeldung oder versuchen Sie es später erneut.",
   "auth.error.sso_authentication_failed": "Die SSO-Anmeldung konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.",
   "auth.error.sso_sign_in_unavailable": "Dieses SSO-Konto kann sich noch nicht anmelden. Nutzen Sie die lokale Anmeldung oder kontaktieren Sie den Betreiber.",

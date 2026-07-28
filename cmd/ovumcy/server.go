@@ -232,7 +232,7 @@ func configureFiberMiddleware(app *fiber.App, config runtimeConfig, handler *api
 	// app with no cap at all. It costs a cookie write, so it takes the ordinary
 	// API budget rather than a knob of its own.
 	app.Use(limiter.New(limiter.Config{
-		Next:         rateLimitOnlyFor(fiber.MethodPost, "/lang"),
+		Next:         rateLimitOnlyFor(fiber.MethodPost, api.LanguageSwitchPath),
 		Max:          config.RateLimits.APIMax,
 		Expiration:   config.RateLimits.APIWindow,
 		KeyGenerator: keyGen,

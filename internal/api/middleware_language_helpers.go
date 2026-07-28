@@ -17,16 +17,49 @@ func (handler *Handler) LanguageMiddleware(c fiber.Ctx) error {
 		handler.setTimezoneCookie(c, timezoneCookieValue)
 	}
 
-	cookieLanguage := c.Cookies(languageCookieName)
-	language := handler.i18n.DetectFromAcceptLanguage(c.Get("Accept-Language"))
-	if cookieLanguage != "" {
-		language = handler.i18n.NormalizeLanguage(cookieLanguage)
-	}
+	language := handler.resolveRequestLanguage(c)
 
 	c.Locals(contextLanguageKey, language)
 	c.Locals(contextMessagesKey, handler.i18n.Messages(language))
 	c.Locals(contextLocationKey, requestLocation)
 	return c.Next()
+}
+
+// resolveRequestLanguage picks the owner's language from the request alone:
+// the explicit language cookie when present, otherwise the negotiated
+// Accept-Language. Split out of LanguageMiddleware so a response rendered
+// BEFORE that middleware runs can resolve the same language without also
+// running the timezone half — see ensureRequestMessages.
+func (handler *Handler) resolveRequestLanguage(c fiber.Ctx) string {
+	if cookieLanguage := c.Cookies(languageCookieName); cookieLanguage != "" {
+		return handler.i18n.NormalizeLanguage(cookieLanguage)
+	}
+	return handler.i18n.DetectFromAcceptLanguage(c.Get("Accept-Language"))
+}
+
+// ensureRequestMessages resolves the locale catalogue for a request that has
+// not passed LanguageMiddleware.
+//
+// The edge rate limiters are registered AHEAD of that middleware on purpose: a
+// cap has to count requests that never reach a handler, which is the shape of
+// an unauthenticated flood. The consequence was that every refusal they
+// rendered had no catalogue in its locals, so the shared status fragment fell
+// back to the machine key and a rate-limited owner read "too_many_login_attempts"
+// in all six languages.
+//
+// This deliberately does NOT run the whole middleware. Its timezone half can
+// load a zoneinfo entry from a client-supplied name, which is precisely the
+// per-request work a cap exists to bound — resolving it ahead of the limiter
+// would hand a flood the cost the limiter was protecting. Language resolution
+// is a cookie read plus a map lookup, and it runs only on a refusal.
+func (handler *Handler) ensureRequestMessages(c fiber.Ctx) {
+	if len(currentMessages(c)) > 0 {
+		return
+	}
+
+	language := handler.resolveRequestLanguage(c)
+	c.Locals(contextLanguageKey, language)
+	c.Locals(contextMessagesKey, handler.i18n.Messages(language))
 }
 
 func (handler *Handler) setLanguageCookie(c fiber.Ctx, language string) {

@@ -124,6 +124,8 @@
   "auth.error.too_many_recovery_attempts": "Trop de tentatives de récupération. Réessayez dans 15 minutes.",
   "auth.error.too_many_login_attempts": "Trop de tentatives de connexion. Veuillez patienter 15 minutes.",
   "auth.error.too_many_sso_attempts": "Trop de tentatives de connexion SSO. Veuillez patienter 15 minutes.",
+  "auth.error.too_many_logout_attempts": "Trop de tentatives de déconnexion. Veuillez patienter et réessayer.",
+  "auth.error.too_many_register_attempts": "Trop de tentatives d'inscription. Veuillez patienter et réessayer.",
   "auth.error.sso_temporarily_unavailable": "La connexion SSO est actuellement indisponible. Utilisez la connexion locale ou réessayez plus tard.",
   "auth.error.sso_authentication_failed": "La connexion SSO n'a pas pu être finalisée. Veuillez réessayer.",
   "auth.error.sso_sign_in_unavailable": "Ce compte SSO ne peut pas encore se connecter. Utilisez la connexion locale ou contactez l'opérateur.",

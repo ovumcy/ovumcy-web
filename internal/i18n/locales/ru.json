@@ -114,6 +114,8 @@
   "auth.error.too_many_recovery_attempts": "Слишком много попыток. Повторите через 15 минут.",
   "auth.error.too_many_login_attempts": "Слишком много попыток входа. Подождите 15 минут.",
   "auth.error.too_many_sso_attempts": "Слишком много попыток входа через SSO. Подождите 15 минут.",
+  "auth.error.too_many_logout_attempts": "Слишком много попыток выхода. Подождите и попробуйте снова.",
+  "auth.error.too_many_register_attempts": "Слишком много попыток регистрации. Подождите и попробуйте снова.",
   "auth.error.sso_temporarily_unavailable": "Вход через SSO сейчас недоступен. Используйте локальный вход или попробуйте позже.",
   "auth.error.sso_authentication_failed": "Не удалось завершить аутентификацию через SSO. Попробуйте ещё раз.",
   "auth.error.sso_sign_in_unavailable": "Для этого SSO-аккаунта вход пока недоступен. Используйте локальный вход или свяжитесь с оператором.",

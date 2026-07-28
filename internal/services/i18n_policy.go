@@ -57,6 +57,15 @@ var authErrorTranslationKeys = map[string]string{
 	"too many login attempts":                         "auth.error.too_many_login_attempts",
 	"too_many_forgot_password_attempts":               "auth.error.too_many_forgot_password_attempts",
 	"too many forgot password attempts":               "auth.error.too_many_forgot_password_attempts",
+	// The other two edge-limiter keys. Both were unmapped, so a refused logout
+	// or registration rendered its machine key as the visible message in every
+	// language — the keys are set by the composition root's limiter config and
+	// have no services sentinel to arrive from, which is why they were missed
+	// when their three siblings were mapped.
+	"too_many_logout_attempts":                        "auth.error.too_many_logout_attempts",
+	"too many logout attempts":                        "auth.error.too_many_logout_attempts",
+	"too_many_register_attempts":                      "auth.error.too_many_register_attempts",
+	"too many register attempts":                      "auth.error.too_many_register_attempts",
 	"invalid reset token":                             "auth.error.invalid_reset_token",
 	"invalid current password":                        "settings.error.invalid_current_password",
 	"new password must differ":                        "settings.error.password_unchanged",

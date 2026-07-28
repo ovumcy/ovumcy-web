@@ -114,6 +114,8 @@
   "auth.error.too_many_recovery_attempts": "Troppi tentativi di recupero. Riprova tra 15 minuti.",
   "auth.error.too_many_login_attempts": "Troppi tentativi di accesso. Attendi 15 minuti.",
   "auth.error.too_many_sso_attempts": "Troppi tentativi SSO. Attendi 15 minuti.",
+  "auth.error.too_many_logout_attempts": "Troppi tentativi di disconnessione. Attendi e riprova.",
+  "auth.error.too_many_register_attempts": "Troppi tentativi di registrazione. Attendi e riprova.",
   "auth.error.sso_temporarily_unavailable": "L'accesso SSO non è al momento disponibile. Usa il login locale o riprova più tardi.",
   "auth.error.sso_authentication_failed": "Autenticazione SSO non completata. Riprova.",
   "auth.error.sso_sign_in_unavailable": "Questo account non può ancora accedere con SSO. Usa il login locale o contatta l'operatore.",

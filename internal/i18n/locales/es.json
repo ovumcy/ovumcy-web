@@ -114,6 +114,8 @@
   "auth.error.too_many_recovery_attempts": "Demasiados intentos de recuperación. Vuelve a intentarlo en 15 minutos.",
   "auth.error.too_many_login_attempts": "Demasiados intentos de inicio de sesión. Espera 15 minutos.",
   "auth.error.too_many_sso_attempts": "Demasiados intentos de acceso con SSO. Espera 15 minutos.",
+  "auth.error.too_many_logout_attempts": "Demasiados intentos de cierre de sesión. Espera y vuelve a intentarlo.",
+  "auth.error.too_many_register_attempts": "Demasiados intentos de registro. Espera y vuelve a intentarlo.",
   "auth.error.sso_temporarily_unavailable": "El acceso con SSO no está disponible ahora mismo. Usa el acceso local o inténtalo más tarde.",
   "auth.error.sso_authentication_failed": "No se pudo completar la autenticación con SSO. Inténtalo de nuevo.",
   "auth.error.sso_sign_in_unavailable": "Esta cuenta SSO todavía no puede iniciar sesión. Usa el acceso local o contacta al operador.",

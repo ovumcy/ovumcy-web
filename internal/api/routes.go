@@ -100,7 +100,7 @@ func registerPageRoutes(app *fiber.App, handler *Handler) {
 	app.Get("/healthz", handler.Health)
 	app.Get("/readyz", handler.Ready)
 	app.Get("/favicon.ico", sendNoContent)
-	app.Post("/lang", handler.SetLanguage)
+	app.Post(LanguageSwitchPath, handler.SetLanguage)
 
 	app.Get("/login", handler.ShowLoginPage)
 	app.Get("/auth/oidc/start", handler.StartOIDCLogin)
