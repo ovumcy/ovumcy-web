@@ -75,6 +75,27 @@ func TestOIDCStepupStateValidAt(t *testing.T) {
 		t.Fatal("expected empty state to be invalid")
 	}
 
+	// Every purpose needs the same core fields, so a payload missing one is
+	// invalid before its purpose is consulted at all. Each case below carries a
+	// LIVE expiry on purpose: the empty state above is rejected by its
+	// unparseable ExpiresAt, which returns before the field check runs and would
+	// leave that check untested while looking covered.
+	for _, missing := range []struct {
+		name   string
+		mutate func(*oidcStepupState)
+	}{
+		{name: "no owner id", mutate: func(s *oidcStepupState) { s.UserID = 0 }},
+		{name: "no state", mutate: func(s *oidcStepupState) { s.State = "" }},
+		{name: "no nonce", mutate: func(s *oidcStepupState) { s.Nonce = "" }},
+		{name: "no pkce verifier", mutate: func(s *oidcStepupState) { s.CodeVerifier = "" }},
+	} {
+		incomplete := fresh
+		missing.mutate(&incomplete)
+		if incomplete.validAt(now) {
+			t.Fatalf("expected a state with %s to be invalid", missing.name)
+		}
+	}
+
 	noPurpose := oidcStepupState{
 		UserID:       1,
 		State:        "s",
