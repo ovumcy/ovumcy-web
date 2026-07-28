@@ -1853,11 +1853,12 @@ paths:
           description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422':
-          description: The account has a local password, so this flow does not apply.
+        '400':
+          description: The account has a local password, so this flow does not apply; the erasure is confirmed with that password instead.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: "invalid settings input" }
 
   /api/v1/users/current/deletion/step-up:
     post:
@@ -1878,11 +1879,12 @@ paths:
           description: "Browser redirect to the provider authorize URL when `Accept: application/json` is not set."
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422':
-          description: The account has a local password, so this flow does not apply.
+        '400':
+          description: The account has a local password, so this flow does not apply; the erasure is confirmed with that password instead.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
+              example: { error: "invalid settings input" }
 
   /api/v1/users/current/recovery-code:
     post:
