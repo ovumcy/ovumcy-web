@@ -183,6 +183,207 @@ func TestErasureStepupKeepsDataWhenTheReauthIsRefused(t *testing.T) {
 	}
 }
 
+// TestErasureStepupFlowForRejectsAnUnknownOperation pins the lookup's closed
+// set directly: every other caller reaches it through a sealed payload that
+// validAt has already screened, so this is the only place the default arm is
+// observable.
+func TestErasureStepupFlowForRejectsAnUnknownOperation(t *testing.T) {
+	t.Parallel()
+
+	if _, known := erasureStepupFlowFor("wipe_everything"); known {
+		t.Fatal("expected an unknown erasure operation to have no flow")
+	}
+	for _, operation := range []oidcStepupErasureOperation{oidcStepupErasureClearData, oidcStepupErasureDeleteAccount} {
+		flow, known := erasureStepupFlowFor(operation)
+		if !known || flow.kind.action == "" || flow.stepupAction == "" {
+			t.Fatalf("expected a complete flow for %q, got %+v", operation, flow)
+		}
+	}
+}
+
+// TestErasureStepupStartSurfacesAProviderFailure covers the branch where the
+// provider cannot be reached at all: the step-up cookie must not be left behind
+// arming a flow the owner can no longer complete.
+func TestErasureStepupStartSurfacesAProviderFailure(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-erasure-start-failure@example.com")
+	fixture.oidcStub.reauthStartErr = services.ErrOIDCUnavailable
+
+	response := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode == http.StatusOK {
+		t.Fatal("expected the start to fail when the provider is unreachable")
+	}
+	for _, cookie := range response.Cookies() {
+		if cookie.Name == oidcStepupCookieName && cookie.Value != "" {
+			t.Fatal("expected no usable step-up cookie after a failed start")
+		}
+	}
+}
+
+// TestErasureStepupStartReturnsAnInterstitialForBrowsers covers the non-JSON
+// arm: a settings form submit cannot redirect straight to the provider, because
+// the page's CSP pins form-action to 'self' across the redirect chain.
+func TestErasureStepupStartReturnsAnInterstitialForBrowsers(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-erasure-start-browser@example.com")
+
+	csrfCookie, csrfToken := fixture.settingsCSRF(t)
+	form := url.Values{"csrf_token": {csrfToken}}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/current/data-wipe/step-up", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Accept", "text/html")
+	request.Header.Set("Cookie", settingsCookieHeader(fixture.authCookie, csrfCookie))
+
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with an interstitial for a browser submit, got %d", response.StatusCode)
+	}
+	body := mustReadBodyString(t, response.Body)
+	if !strings.Contains(body, fixture.oidcStub.reauthURL) {
+		t.Fatalf("expected the interstitial to carry the provider URL, got %q", body)
+	}
+}
+
+// TestErasureStepupCallbackRefusesAForeignSession covers the identity binding:
+// a step-up cookie minted for one owner, presented with another owner's
+// session, must erase nothing.
+func TestErasureStepupCallbackRefusesAForeignSession(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-erasure-foreign-session@example.com")
+	seedStepupDayEntry(t, fixture)
+
+	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture, stepupCookie)
+
+	// A second owner on the same instance — the household case.
+	intruder := models.User{
+		Email:               "settings-erasure-intruder@example.com",
+		LocalAuthEnabled:    false,
+		Role:                models.RoleOwner,
+		OnboardingCompleted: true,
+		AuthSessionVersion:  1,
+		CycleLength:         28,
+		PeriodLength:        5,
+		CreatedAt:           time.Now().UTC(),
+	}
+	if err := fixture.database.Create(&intruder).Error; err != nil {
+		t.Fatalf("create second owner: %v", err)
+	}
+
+	form := url.Values{"state": {state}, "code": {"callback-code"}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", joinCookieHeader(issueAuthCookieForUser(t, intruder), stepupCookie))
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	if got := countStepupDayEntries(t, fixture); got != 1 {
+		t.Fatalf("a step-up presented with another owner's session must erase nothing, day entries = %d", got)
+	}
+}
+
+// TestErasureStepupCallbackRefusesOnceALocalPasswordExists covers the branch
+// where the account enrolled a password between start and callback: the
+// erasure gate moved back to that password, so the step-up no longer authorizes
+// anything.
+func TestErasureStepupCallbackRefusesOnceALocalPasswordExists(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-erasure-password-appeared@example.com")
+	seedStepupDayEntry(t, fixture)
+
+	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture, stepupCookie)
+
+	if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.user.ID).
+		Update("local_auth_enabled", true).Error; err != nil {
+		t.Fatalf("enable local auth mid-flow: %v", err)
+	}
+
+	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+	defer func() { _ = callbackResponse.Body.Close() }()
+
+	if got := countStepupDayEntries(t, fixture); got != 1 {
+		t.Fatalf("the step-up must stop authorizing once a local password exists, day entries = %d", got)
+	}
+}
+
+// TestErasureStepupCallbackRefusesAProviderError covers the arm where the
+// provider reports a failure in the callback itself.
+func TestErasureStepupCallbackRefusesAProviderError(t *testing.T) {
+	t.Parallel()
+
+	fixture := newOIDCStepupFixture(t, "settings-erasure-provider-error@example.com")
+	seedStepupDayEntry(t, fixture)
+
+	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
+	defer func() { _ = startResponse.Body.Close() }()
+	stepupCookie := readStepupCookie(t, startResponse)
+	state := extractStepupCallbackState(t, fixture, stepupCookie)
+
+	form := url.Values{"state": {state}, "code": {""}, "error": {"access_denied"}}
+	request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", joinCookieHeader(fixture.authCookie, stepupCookie))
+	response := mustAppResponse(t, fixture.app, request)
+	defer func() { _ = response.Body.Close() }()
+
+	if got := countStepupDayEntries(t, fixture); got != 1 {
+		t.Fatalf("a provider error must erase nothing, day entries = %d", got)
+	}
+}
+
+// TestErasureStepupCallbackSurvivesAStorageFailure covers the branch where the
+// re-auth succeeded but the erasure itself could not run: the owner must land
+// back on settings with an error rather than a half-finished wipe reported as
+// success.
+func TestErasureStepupCallbackSurvivesAStorageFailure(t *testing.T) {
+	t.Parallel()
+
+	for _, testCase := range []struct {
+		name string
+		path string
+	}{
+		{name: "clear data", path: "/api/v1/users/current/data-wipe/step-up"},
+		{name: "delete account", path: "/api/v1/users/current/deletion/step-up"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newOIDCStepupFixture(t, "settings-erasure-storage-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com")
+
+			startResponse := postErasureStepupStart(t, fixture, testCase.path)
+			defer func() { _ = startResponse.Body.Close() }()
+			stepupCookie := readStepupCookie(t, startResponse)
+			state := extractStepupCallbackState(t, fixture, stepupCookie)
+
+			// Both erasure transactions start at daily_logs, so dropping it fails
+			// them while leaving the users table the auth middleware reads intact.
+			if err := fixture.database.Exec("DROP TABLE daily_logs").Error; err != nil {
+				t.Fatalf("drop daily_logs: %v", err)
+			}
+
+			callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
+			defer func() { _ = callbackResponse.Body.Close() }()
+
+			if got := countStepupAccounts(t, fixture); got != 1 {
+				t.Fatalf("a failed erasure must leave the account in place, accounts = %d", got)
+			}
+		})
+	}
+}
+
 // TestErasureStepupCallbackRefusesAMismatchedState pins the state check on the
 // callback: a step-up cookie presented with someone else's state parameter must
 // not authorize the erasure it names.
