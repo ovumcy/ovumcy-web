@@ -17,6 +17,27 @@ Ovumcy does **not** emit per-action audit logs by default. The `AUDIT_LOG_ENABLE
 
   An action that changes health data carries the two further fields shown above: `domain="health_data"`, and a `target` naming the scope it touched (`day_entry`, `symptom`, `cycle_settings`, and — for the two actions that erase everything — `account_data` for a full data wipe, `account` for an account deletion). The target is a fixed designator chosen per action, never an identifier, an email, or submitted text, so an incident review can filter on `domain="health_data"` to select the data-changing actions, erasures included.
 
+  An action that carries health data **out** of the instance is tagged the same way but under a **separate** domain, `domain="health_egress"`:
+
+  ```
+  security event: action="data.export" outcome="success" method="GET"
+                  path="/api/v1/exports/csv" format="html" user_id="42"
+                  role="owner" domain="health_egress" export_format="csv"
+                  target="account_data"
+  ```
+
+  The two domains are deliberately distinct values rather than one value with a modifier, because they answer different questions. `domain="health_data"` answers *was tracked data changed or destroyed?* and keeps selecting exactly the actions it selected before this split — an erasure review must not start collecting every routine CSV download. `domain="health_egress"` answers *did any tracked data leave, from which account, and in what form?*. A review that wants both at once matches the shared prefix in one clause (`domain="health_`).
+
+  Three actions are tagged as egress today:
+
+  | Action | `target` | Emitted when |
+  | --- | --- | --- |
+  | `data.export` | `account_data` | A CSV, JSON or summary export is served, refused, or fails. `export_format` (`csv` / `json` / `summary`) is on **every** outcome, including a request refused before any data is read, so a rejected download is still attributable to the format that was asked for. |
+  | `settings.calendar_feed_reveal` | `calendar_feed` | The one-time page shows the `.ics` subscribe URL. |
+  | `auth.recovery_code_reveal` | `recovery_code` | A recovery code is displayed — on the dedicated page or in the register page's inline block; the sanitized `path` distinguishes the two. |
+
+  Two properties hold for every egress line. The event records the **fact** of the disclosure, never the value: no subscribe URL, no feed token, and no recovery code ever reaches a log line. And the audited moment is the one where the data or the secret reaches a person — which is why the subscribe URL is audited when it is revealed and **not** on each later poll of `GET /calendar/feed/:token.ics`; the reasoning for that boundary is recorded under *Calendar-feed polling is not audited* in [Known Information Disclosure](known-disclosures.md).
+
 When enabled, these lines are visible to the operator through their container runtime (`docker compose logs`, journald, etc.) and never leave the host. They are intended for ad-hoc incident investigation — for example, to confirm whether a suspected compromise produced state-changing requests, and from which `user_id`. The audit stream is not designed as a compliance audit trail; nothing in Ovumcy itself ships, archives, or rotates these lines.
 
 If you enable `AUDIT_LOG_ENABLED=true`, plan retention and access control around the persistent-identifier content (`user_id`, role). Treat the resulting log stream as the same sensitivity class as the database itself.
