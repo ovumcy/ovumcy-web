@@ -140,12 +140,12 @@ func (handler *Handler) logHealthDomainError(c fiber.Ctx, domain string, action 
 	handler.logSecurityError(c, action, spec, healthDomainFields(domain, target, extra...)...)
 }
 
-func (handler *Handler) logHealthDataMutation(c fiber.Ctx, action string, outcome string, target string) {
-	handler.logHealthDomainEvent(c, healthDataDomain, action, outcome, target)
+func (handler *Handler) logHealthDataMutation(c fiber.Ctx, action string, outcome string, target string, extra ...SecurityEventField) {
+	handler.logHealthDomainEvent(c, healthDataDomain, action, outcome, target, extra...)
 }
 
-func (handler *Handler) logHealthDataMutationError(c fiber.Ctx, action string, spec APIErrorSpec, target string) {
-	handler.logHealthDomainError(c, healthDataDomain, action, spec, target)
+func (handler *Handler) logHealthDataMutationError(c fiber.Ctx, action string, spec APIErrorSpec, target string, extra ...SecurityEventField) {
+	handler.logHealthDomainError(c, healthDataDomain, action, spec, target, extra...)
 }
 
 // healthMutationKind names one audited health-data mutation: the security
@@ -158,12 +158,16 @@ type healthMutationKind struct {
 	target string
 }
 
-func (handler *Handler) logMutationSuccess(c fiber.Ctx, kind healthMutationKind) {
-	handler.logHealthDataMutation(c, kind.action, "success", kind.target)
+// logMutationSuccess and logMutationError take the extra fields a specific
+// handler wants to add (the restore's counts), so a handler that needs one is
+// not pushed off the typed path and into assembling `domain` by hand — which is
+// how the JSON restore came to be the one health-data line outside this file.
+func (handler *Handler) logMutationSuccess(c fiber.Ctx, kind healthMutationKind, extra ...SecurityEventField) {
+	handler.logHealthDataMutation(c, kind.action, "success", kind.target, extra...)
 }
 
-func (handler *Handler) logMutationError(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) {
-	handler.logHealthDataMutationError(c, kind.action, spec, kind.target)
+func (handler *Handler) logMutationError(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec, extra ...SecurityEventField) {
+	handler.logHealthDataMutationError(c, kind.action, spec, kind.target, extra...)
 }
 
 // failMutation is the common tail of mutation handlers: log the

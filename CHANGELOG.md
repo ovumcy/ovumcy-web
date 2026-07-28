@@ -706,6 +706,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialog's own captions are asserted as rendered button text rather than only as
   declared attributes.
 
+- The JSON restore's audit line moved onto the typed mutation helpers. It was
+  the one health-data line assembled by hand — it needed to append the additive
+  counts, and the helpers took no extra fields, so it wrote `domain` and
+  `target` out itself and would have been skipped by any later change to how
+  those tags are produced. The helpers now accept extra fields, exactly as their
+  egress counterparts already did. The emitted line is unchanged: same action,
+  same tags, same counts, and the emitter's alphabetical field order makes the
+  text byte-identical.
+
 ## [1.9.2] - 2026-07-24
 
 Italian localization polish and a CI unblock. No database migrations; no
