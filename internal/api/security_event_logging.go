@@ -144,12 +144,12 @@ func (handler *Handler) logAuditDomainError(c fiber.Ctx, domain string, action s
 	handler.logSecurityError(c, action, spec, auditDomainFields(domain, target, extra...)...)
 }
 
-func (handler *Handler) logHealthDataMutation(c fiber.Ctx, action string, outcome string, target string) {
-	handler.logAuditDomainEvent(c, healthDataDomain, action, outcome, target)
+func (handler *Handler) logHealthDataMutation(c fiber.Ctx, action string, outcome string, target string, extra ...SecurityEventField) {
+	handler.logAuditDomainEvent(c, healthDataDomain, action, outcome, target, extra...)
 }
 
-func (handler *Handler) logHealthDataMutationError(c fiber.Ctx, action string, spec APIErrorSpec, target string) {
-	handler.logAuditDomainError(c, healthDataDomain, action, spec, target)
+func (handler *Handler) logHealthDataMutationError(c fiber.Ctx, action string, spec APIErrorSpec, target string, extra ...SecurityEventField) {
+	handler.logAuditDomainError(c, healthDataDomain, action, spec, target, extra...)
 }
 
 // healthMutationKind names one audited health-data mutation: the security
@@ -176,12 +176,12 @@ type accountMutationKind struct {
 	target string
 }
 
-func (handler *Handler) logAccountMutationSuccess(c fiber.Ctx, kind accountMutationKind) {
-	handler.logAuditDomainEvent(c, accountDomain, kind.action, "success", kind.target)
+func (handler *Handler) logAccountMutationSuccess(c fiber.Ctx, kind accountMutationKind, extra ...SecurityEventField) {
+	handler.logAuditDomainEvent(c, accountDomain, kind.action, "success", kind.target, extra...)
 }
 
-func (handler *Handler) logAccountMutationError(c fiber.Ctx, kind accountMutationKind, spec APIErrorSpec) {
-	handler.logAuditDomainError(c, accountDomain, kind.action, spec, kind.target)
+func (handler *Handler) logAccountMutationError(c fiber.Ctx, kind accountMutationKind, spec APIErrorSpec, extra ...SecurityEventField) {
+	handler.logAuditDomainError(c, accountDomain, kind.action, spec, kind.target, extra...)
 }
 
 // failAccountMutation is the account-domain twin of failMutation: log the
@@ -191,12 +191,18 @@ func (handler *Handler) failAccountMutation(c fiber.Ctx, kind accountMutationKin
 	return handler.respondMappedError(c, spec)
 }
 
-func (handler *Handler) logMutationSuccess(c fiber.Ctx, kind healthMutationKind) {
-	handler.logHealthDataMutation(c, kind.action, "success", kind.target)
+// The success/error helpers of both domains take the extra fields a specific
+// handler wants to add (the restore's counts), so a handler that needs one is
+// not pushed off the typed path and into assembling `domain` by hand — which is
+// how the JSON restore came to be the one health-data line outside this file.
+// The account pair carries the same variadic tail although nothing passes one
+// today: the drift starts with the first handler that has a count to report.
+func (handler *Handler) logMutationSuccess(c fiber.Ctx, kind healthMutationKind, extra ...SecurityEventField) {
+	handler.logHealthDataMutation(c, kind.action, "success", kind.target, extra...)
 }
 
-func (handler *Handler) logMutationError(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec) {
-	handler.logHealthDataMutationError(c, kind.action, spec, kind.target)
+func (handler *Handler) logMutationError(c fiber.Ctx, kind healthMutationKind, spec APIErrorSpec, extra ...SecurityEventField) {
+	handler.logHealthDataMutationError(c, kind.action, spec, kind.target, extra...)
 }
 
 // failMutation is the common tail of mutation handlers: log the
