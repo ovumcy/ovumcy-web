@@ -128,3 +128,89 @@ func TestRequestDeadlineGuardAnswersAnExpiredBudgetAsMappedUnavailable(t *testin
 		t.Fatalf("error_detail.key = %q, want %q", key, "request_timeout")
 	}
 }
+
+// TestRequestDeadlineGuardDiscardsTheHandlerResponseOnAnExpiredBudget covers the
+// half of "answering" that is not the status line. The guard replaced the status
+// and the body of a request that outlived its budget and left the handler's
+// RESPONSE HEADERS in place, so a sign-in whose work had already committed
+// answered 503 request_timeout while still delivering Set-Cookie and Location.
+// request_timeout tells the client to retry, i.e. that nothing happened; a
+// session cookie riding along says the opposite, and the client believes the
+// status.
+//
+// The rollback is defined by when a header was set, not by its name, so the test
+// asserts both directions in one run: the middleware's own headers and cookie —
+// set before the guard, exactly as securityHeadersMiddleware and the CSRF
+// middleware are in the composition root — must survive, while everything the
+// handler set must not. Without the surviving pair the test would pass just as
+// well against a guard that wiped the whole response, which is a different
+// defect.
+func TestRequestDeadlineGuardDiscardsTheHandlerResponseOnAnExpiredBudget(t *testing.T) {
+	const (
+		policyHeader  = "Content-Security-Policy"
+		policyValue   = "default-src 'self'"
+		handlerHeader = "X-Ovumcy-Handler-Marker"
+	)
+
+	app := fiber.New()
+	// Stands in for the middleware the composition root registers ahead of the
+	// routes: what it sets describes the response the guard itself emits.
+	app.Use(func(c fiber.Ctx) error {
+		c.Set(policyHeader, policyValue)
+		c.Cookie(&fiber.Cookie{Name: "ovumcy_csrf", Value: "middleware-issued"})
+		return c.Next()
+	})
+	app.Use(RequestDeadlineGuard(time.Millisecond))
+	app.Get("/slow", func(c fiber.Ctx) error {
+		// A handler whose work has already committed — the session is issued and
+		// the post-sign-in redirect prepared — and only then does the budget run
+		// out underneath it, exactly as it would inside a repository call.
+		c.Cookie(&fiber.Cookie{Name: "ovumcy_auth", Value: "committed-session"})
+		c.Set(fiber.HeaderLocation, "/dashboard")
+		c.Set(handlerHeader, "handler-set")
+		<-c.Context().Done()
+		return c.SendString("handler finished anyway")
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/slow", nil)
+	request.Header.Set("Accept", "application/json")
+	resp, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("GET /slow: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+
+	cookies := map[string]string{}
+	for _, cookie := range resp.Cookies() {
+		cookies[cookie.Name] = cookie.Value
+	}
+	if value, ok := cookies["ovumcy_auth"]; ok {
+		t.Fatalf("the 503 delivered the handler's session cookie ovumcy_auth=%q: a caller told to retry already holds the session the status says it never got", value)
+	}
+	if location := resp.Header.Get(fiber.HeaderLocation); location != "" {
+		t.Fatalf("the 503 carried the handler's Location %q", location)
+	}
+	if marker := resp.Header.Get(handlerHeader); marker != "" {
+		t.Fatalf("the 503 carried the handler's %s: %q — the rollback covers every header the handler set, not a two-name denylist", handlerHeader, marker)
+	}
+
+	if got := resp.Header.Get(policyHeader); got != policyValue {
+		t.Fatalf("%s = %q, want %q — the rollback stops at the guard and must not take the app's own response headers with it", policyHeader, got, policyValue)
+	}
+	if value := cookies["ovumcy_csrf"]; value != "middleware-issued" {
+		t.Fatalf("ovumcy_csrf = %q, want the value the middleware issued before the guard ran; dropping every Set-Cookie is not the invariant", value)
+	}
+
+	body := map[string]any{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error envelope: %v", err)
+	}
+	detail, _ := body["error_detail"].(map[string]any)
+	if key, _ := detail["key"].(string); key != "request_timeout" {
+		t.Fatalf("error_detail.key = %q, want %q", key, "request_timeout")
+	}
+}
