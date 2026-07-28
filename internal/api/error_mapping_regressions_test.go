@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
@@ -519,6 +520,21 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 	}
 }
 
+// newRateLimitResponderTestI18n supplies the locale manager the browser arms of
+// the rate-limit responder now need. The edge limiters answer BEFORE
+// LanguageMiddleware runs, so a refusal resolves its own catalogue rather than
+// rendering the machine key as the visible message — which means these arms can
+// no longer be driven by a zero-value Handler.
+func newRateLimitResponderTestI18n(t *testing.T) *i18n.Manager {
+	t.Helper()
+
+	manager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+	return manager
+}
+
 // TestRespondAPIRateLimitedWithoutJSONAcceptFallsBackToMappedError locks
 // the browser-client path of the rate-limit responder: without an
 // application/json Accept header, the JSON envelope branch is skipped and
@@ -527,7 +543,7 @@ func TestRespondAPIRateLimitedRoutesByRequestShape(t *testing.T) {
 // retry-after payload. Without this lock a regression that silently
 // removed the JSON-accept gate could leak the envelope to browser clients.
 func TestRespondAPIRateLimitedWithoutJSONAcceptFallsBackToMappedError(t *testing.T) {
-	handler := &Handler{}
+	handler := &Handler{i18n: newRateLimitResponderTestI18n(t)}
 	app := fiber.New()
 	app.Get("/api/v1/days", func(c fiber.Ctx) error {
 		return handler.RespondAPIRateLimited(c)
@@ -559,6 +575,7 @@ func TestRespondAuthRateLimitedFallsBackThroughAuthFlash(t *testing.T) {
 	handler := &Handler{
 		secretKey:    []byte(testHandlerSecretKey),
 		cookieSecure: true,
+		i18n:         newRateLimitResponderTestI18n(t),
 	}
 	app := fiber.New()
 	app.Post("/api/v1/sessions", func(c fiber.Ctx) error {

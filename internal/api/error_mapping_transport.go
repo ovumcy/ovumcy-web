@@ -15,26 +15,41 @@ import (
 // key stays for backward compatibility with clients that already parse it.
 func apiError(c fiber.Ctx, spec APIErrorSpec) error {
 	if responseFormat(c) == httpx.ResponseFormatHTMX {
-		rendered := spec.Key
-		flashKey := spec.Key
-		if key := services.AuthErrorTranslationKey(spec.Key); key != "" {
-			flashKey = key
-			if localized := translateMessage(currentMessages(c), key); localized != key {
-				rendered = localized
-			}
-		} else if localized := translateMessage(currentMessages(c), spec.Key); localized != spec.Key {
-			rendered = localized
-		}
-		return c.Status(spec.Status).SendString(httpx.StatusErrorMarkup(rendered, flashKey))
+		return c.Status(spec.Status).SendString(localizedStatusErrorMarkup(c, spec))
 	}
-	return c.Status(spec.Status).JSON(fiber.Map{
+	return c.Status(spec.Status).JSON(apiErrorEnvelope(spec))
+}
+
+// apiErrorEnvelope is the JSON body every mapped rejection answers with. It is
+// factored out so a response that carries an EXTENSION member — today only the
+// rate limiters' retry_after_seconds — adds it to the same envelope rather than
+// replacing it with a shape of its own.
+func apiErrorEnvelope(spec APIErrorSpec) fiber.Map {
+	return fiber.Map{
 		"error": spec.Key,
 		"error_detail": fiber.Map{
 			"key":      spec.Key,
 			"category": string(spec.Category),
 			"target":   string(spec.Target),
 		},
-	})
+	}
+}
+
+// localizedStatusErrorMarkup renders one spec as the shared status-error
+// fragment: the localized message plus the stable key next to it, so a test or
+// a Playwright spec asserts the key and never the copy.
+func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
+	rendered := spec.Key
+	flashKey := spec.Key
+	if key := services.AuthErrorTranslationKey(spec.Key); key != "" {
+		flashKey = key
+		if localized := translateMessage(currentMessages(c), key); localized != key {
+			rendered = localized
+		}
+	} else if localized := translateMessage(currentMessages(c), spec.Key); localized != spec.Key {
+		rendered = localized
+	}
+	return httpx.StatusErrorMarkup(rendered, flashKey)
 }
 
 // transportErrorSpecsByStatus maps every HTTP status the app can answer as an

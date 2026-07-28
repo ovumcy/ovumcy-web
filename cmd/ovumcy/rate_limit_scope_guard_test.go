@@ -78,6 +78,20 @@ func fiberMethodConstants() map[string]string {
 	}
 }
 
+// limiterPathConstants resolves the qualified constants a call site may spell
+// its path as, exactly the way fiberMethodConstants resolves the verbs. A path
+// that the limiter wiring, the route registration and the refusal
+// classification all have to agree on is declared once as a constant on
+// purpose — a second copy is how one of the three silently stops matching the
+// other two — so the guard follows the constant rather than forcing the literal
+// back. An unqualified or unknown constant still fails: this map is a lookup,
+// not an escape hatch.
+func limiterPathConstants() map[string]string {
+	return map[string]string{
+		"api.LanguageSwitchPath": api.LanguageSwitchPath,
+	}
+}
+
 // discoverScopedLimiterSpecs parses every non-test file in the package and
 // returns one spec per rateLimitOnlyFor call site.
 func discoverScopedLimiterSpecs(t *testing.T) []scopedLimiterSpec {
@@ -148,9 +162,22 @@ func limiterMethodArgument(t *testing.T, position string, expr ast.Expr) string 
 func limiterPathArgument(t *testing.T, position string, expr ast.Expr) string {
 	t.Helper()
 
+	if selector, isSelector := expr.(*ast.SelectorExpr); isSelector {
+		pkg, isIdent := selector.X.(*ast.Ident)
+		if !isIdent {
+			t.Fatalf("%s: the path argument is not a string literal or a known package constant; this guard reads it statically, so keep the path inline or teach the guard the constant", position)
+		}
+		qualified := pkg.Name + "." + selector.Sel.Name
+		path, known := limiterPathConstants()[qualified]
+		if !known {
+			t.Fatalf("%s: unknown path constant %s — add it to limiterPathConstants so the limiter stays swept", position, qualified)
+		}
+		return path
+	}
+
 	literal, ok := expr.(*ast.BasicLit)
 	if !ok || literal.Kind != token.STRING {
-		t.Fatalf("%s: the path argument is not a string literal; this guard reads it statically, so keep the path inline or teach the guard the constant", position)
+		t.Fatalf("%s: the path argument is not a string literal or a known package constant; this guard reads it statically, so keep the path inline or teach the guard the constant", position)
 	}
 	path, err := strconv.Unquote(literal.Value)
 	if err != nil {
