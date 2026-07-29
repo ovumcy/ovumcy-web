@@ -357,6 +357,8 @@ Without both, the restore's outcome depends on the state of the target database,
 
 With the drop step and `ON_ERROR_STOP=1`, the same restore prints no `ERROR:` lines, exits `0`, and leaves an export byte-identical to the one taken when the dump was made.
 
+A clean exit now means the two commands ran, not that the data came back: a truncated or empty dump replays into a freshly dropped schema without a single error and exits `0` just the same, leaving the stack healthy and blank. Finish through [Post-Restore Verification](#post-restore-verification) — `/readyz` and a normal page load stay green on an empty database, so neither closes out a Postgres restore either.
+
 Keep the SQL dump and `.env` / application-secret backup separate, just as you would for the SQLite baseline.
 
 The same rule applies to the public Postgres reverse-proxy stacks. Back up PostgreSQL with `pg_dump` or your platform-native Postgres snapshot tooling; do not try to apply the SQLite file-copy runbook to those stacks. The two restore requirements above — empty the target first, and run `psql` under `-v ON_ERROR_STOP=1` — are properties of `pg_dump` and `psql` rather than of the bundled stack, so they hold wherever you replay a plain dump.
@@ -438,7 +440,7 @@ Use this sequence for routine upgrades:
 3. Pull the new image and restart the service.
 4. Wait for the container healthcheck to report healthy.
 5. Confirm `/healthz` through the correct deployment-mode health check and open the main UI once to confirm the app is responding.
-6. If the new version fails to start cleanly, roll back to the previous image tag and restore from backup if needed.
+6. If the new version fails to start cleanly, roll back to the previous image tag and restore from backup if needed. Confirm such a restore through [Post-Restore Verification](#post-restore-verification) rather than by repeating steps 4-5: the container healthcheck and the main UI stay green on an empty database, so they say the rollback booted, not that the data is back.
 
 Migrations apply automatically on every boot: there is no `-migrate` flag or manual step to run (unlike tools such as Miniflux). Starting the new binary or image runs any pending embedded migrations against the database before the server accepts traffic, in order, forward-only, with no down-migration path — this is why step 2 (backup before restart) is mandatory rather than optional.
 
