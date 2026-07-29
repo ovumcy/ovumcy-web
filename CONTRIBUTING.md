@@ -88,6 +88,37 @@ spots, kept as shipped:
 
 If you are scripting against `/api/v1/*` from outside the bundled UI, pin to a specific image tag and re-validate on every upgrade — `v1.x.y` minor bumps are safe; major bumps surface in [CHANGELOG.md](CHANGELOG.md) with the breaking entries called out.
 
+## Changelog Fragments
+
+Every pull request adds one changelog fragment, `changelog.d/<branch-name>.md`, instead of editing
+[CHANGELOG.md](CHANGELOG.md). Several pull requests inserting an entry at the same anchor in the
+`[Unreleased]` section was this repository's only recurring merge conflict, and rebasing replays the
+earlier commit straight back into the contested spot; a file per branch has no shared anchor.
+
+A fragment holds exactly the text that used to go under `[Unreleased]` — a Keep a Changelog section
+header plus the entry:
+
+```markdown
+### Fixed
+
+- **Short summary.** What changed, and what an operator or a user notices.
+```
+
+- Valid headers are the Keep a Changelog sections — `### Added`, `### Changed`, `### Deprecated`,
+  `### Removed`, `### Fixed`, `### Security` — plus the two this changelog has always carried after
+  them, `### Internal` and `### Dependencies`. Several sections may appear in one fragment; assembly
+  puts them in that order.
+- A pull request with no user-visible change adds a fragment whose first line is exactly `none`;
+  anything below that line is ignored, so the reason can be written underneath it.
+- `CHANGELOG.md` itself is edited directly only by release assembly and by corrections to text that
+  has already been released. At release time,
+  `go run ./scripts/changelogd assemble -version X.Y.Z` merges the accumulated fragments (and
+  anything still frozen under `[Unreleased]`) into a new released section in Keep a Changelog order
+  and deletes the consumed fragments.
+- The `changelog-fragment` CI check enforces this: it fails a pull request that adds neither a valid
+  fragment nor a new `## [` heading in `CHANGELOG.md`, and it names the file and the problem when a
+  fragment has an unknown section header or no entry text.
+
 ## Commit Style
 
 Use imperative commit messages, e.g.:
