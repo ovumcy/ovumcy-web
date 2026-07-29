@@ -638,6 +638,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [docs/security/known-disclosures.md](docs/security/known-disclosures.md). Field
   reference: [docs/security/logging.md](docs/security/logging.md#logging-policy).
 
+- **The restore paths that still ended at "it started" now route to the
+  verification that can fail.** *Post-Restore Verification* says in its own text
+  that every up-signal above step 4 stays green on an empty database, and the
+  backup-contract bullet and the named-volume restore step were corrected to
+  defer to it — but two other passages still let a restore be signed off without
+  reading any data back. The Postgres runbook ended on "prints no `ERROR:`
+  lines, exits `0`", which a truncated or empty dump satisfies exactly, because
+  it replays into a freshly dropped schema without an error and leaves the stack
+  healthy and blank. The safe-upgrade procedure's rollback step said to restore
+  from backup with the procedure's own confirmation — the container healthcheck
+  and one page load — sitting above it as steps 4-5.
+
+  Both now point at [docs/self-hosted.md](docs/self-hosted.md) *Post-Restore
+  Verification* and name why the quick signals cannot close a restore out. The
+  checklist itself is unchanged and stays the single home of the procedure.
+
 ### Security
 
 - **A two-factor cookie the server refuses is now cleared instead of left in the
