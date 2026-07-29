@@ -1,0 +1,41 @@
+name: Changelog
+
+on:
+  pull_request:
+  # Merge-queue validation runs: every workflow that owns a required status
+  # check must also report on merge_group, or a queued merge waits forever.
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  # The job id is the status-check context name; keep it stable.
+  changelog-fragment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pass on merge queue runs
+        if: github.event_name == 'merge_group'
+        run: echo "Fragment presence was already enforced on the pull request run."
+
+      - name: Checkout
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The gate diffs the branch against its base, so it needs history.
+          fetch-depth: 0
+
+      - name: Setup Go
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check changelog fragment
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: origin/${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch --no-tags origin ${{ github.event.pull_request.base.ref }}
+          go run ./scripts/changelogd check

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+*New entries accumulate as per-pull-request fragments in [changelog.d/](changelog.d/) and are assembled here at release.*
+
 ### Added
 
 - **A readiness probe, `GET /readyz`, that actually checks storage.** The whole
