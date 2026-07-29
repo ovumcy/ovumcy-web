@@ -184,3 +184,5 @@ The pushed image is a shell-free `FROM scratch` runtime built from the repo-root
 build-provenance attestation and an SBOM. Publication waits for the commit's own
 CI run and scans the exact image before pushing it, so a tag or `:latest` never
 reaches the registry ahead of the checks for the commit it was built from.
+
+<!-- probe: changelog-fragment gate; this pull request is closed without merging -->
