@@ -10,12 +10,12 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/pquerna/otp v1.5.0
-	github.com/valyala/fasthttp v1.72.0
+	github.com/valyala/fasthttp v1.73.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.47.0
-	gorm.io/driver/postgres v1.6.0
+	gorm.io/driver/postgres v1.6.1
 	gorm.io/gorm v1.31.2
 	pgregory.net/rapid v1.3.0
 )
@@ -35,7 +35,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/klauspost/compress v1.19.0 // indirect
+	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
