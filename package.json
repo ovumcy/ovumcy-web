@@ -27,7 +27,7 @@
     "eslint": "10.8.0",
     "globals": "17.7.0",
     "htmx.org": "2.0.10",
-    "jsdom": "29.1.1",
+    "jsdom": "30.0.1",
     "otplib": "13.4.1",
     "tailwindcss": "^4.3.0"
   },
