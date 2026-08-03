@@ -13,27 +13,39 @@ jobs:
   # The job id is the status-check context name; keep it stable.
   changelog-fragment:
     runs-on: ubuntu-latest
+    env:
+      # The gate runs on pull requests only, and not on dependency bumps: the
+      # bot cannot write a fragment, and a bump has never carried one here —
+      # the "### Dependencies" section is written at release assembly from the
+      # bumps that merged. Keyed on the pull request's author rather than
+      # github.actor, so the verdict does not change when a human re-runs the
+      # check or pushes to the branch.
+      RUN_GATE: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]' }}
     steps:
       - name: Pass on merge queue runs
         if: github.event_name == 'merge_group'
         run: echo "Fragment presence was already enforced on the pull request run."
 
+      - name: Pass on dependency updates
+        if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'
+        run: echo "Dependency bumps carry no fragment; the release's Dependencies section is assembled from the bumps that merged."
+
       - name: Checkout
-        if: github.event_name == 'pull_request'
+        if: env.RUN_GATE == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The gate diffs the branch against its base, so it needs history.
           fetch-depth: 0
 
       - name: Setup Go
-        if: github.event_name == 'pull_request'
+        if: env.RUN_GATE == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Check changelog fragment
-        if: github.event_name == 'pull_request'
+        if: env.RUN_GATE == 'true'
         env:
           BASE_REF: origin/${{ github.event.pull_request.base.ref }}
         run: |
