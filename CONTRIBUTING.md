@@ -91,9 +91,10 @@ If you are scripting against `/api/v1/*` from outside the bundled UI, pin to a s
 ## Changelog Fragments
 
 Every pull request adds one changelog fragment, `changelog.d/<branch-name>.md`, instead of editing
-[CHANGELOG.md](CHANGELOG.md). Several pull requests inserting an entry at the same anchor in the
-`[Unreleased]` section was this repository's only recurring merge conflict, and rebasing replays the
-earlier commit straight back into the contested spot; a file per branch has no shared anchor.
+[CHANGELOG.md](CHANGELOG.md); Dependabot's pull requests are the one exception, described below.
+Several pull requests inserting an entry at the same anchor in the `[Unreleased]` section was this
+repository's only recurring merge conflict, and rebasing replays the earlier commit straight back
+into the contested spot; a file per branch has no shared anchor.
 
 A fragment holds exactly the text that used to go under `[Unreleased]` — a Keep a Changelog section
 header plus the entry:
@@ -118,6 +119,10 @@ header plus the entry:
 - The `changelog-fragment` CI check enforces this: it fails a pull request that adds neither a valid
   fragment nor a new `## [` heading in `CHANGELOG.md`, and it names the file and the problem when a
   fragment has an unknown section header or no entry text.
+- Dependency updates opened by Dependabot are exempt: the check stays required for them but returns
+  success without a fragment, since the bot cannot write one. Their entries reach the changelog at
+  release time instead — the `### Dependencies` section is assembled from the dependency bumps that
+  merged, not from fragments.
 
 ## Commit Style
 
