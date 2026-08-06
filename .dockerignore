@@ -35,14 +35,11 @@ profile.cov
 .idea/
 .vscode/
 
-.tmp_*/
 .tmp*/
 
-docker/
 web/src/
 scripts/
 package.json
 package-lock.json
-tailwind.config.js
 eslint.config.mjs
 playwright.config.ts

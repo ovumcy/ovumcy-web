@@ -9,7 +9,6 @@
 /internal/db/ @terraincognita07
 /migrations/ @terraincognita07
 /docker-compose.yml @terraincognita07
-/docker/ @terraincognita07
 /.env.example @terraincognita07
 /docs/self-hosted.md @terraincognita07
 /docs/examples/ @terraincognita07

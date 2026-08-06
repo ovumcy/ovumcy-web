@@ -99,10 +99,12 @@ jobs:
         run: bash scripts/mutation.sh baseline "${{ matrix.slug }}"
 
       - name: Verify mutation output was produced
-        # Silent-failure guard: if the step above died partway (OOM, disk
-        # exhaustion, timeout) without gremlins ever writing its report, fail
-        # the job loudly instead of leaving .mutation/<slug>.md permanently
-        # reading "pending first weekly CI run".
+        # Silent-failure guard. The step above is continue-on-error and the
+        # upload below is if-no-files-found: ignore, so a shard that died
+        # partway (OOM, disk exhaustion, timeout) without gremlins ever writing
+        # its report would pass green having published nothing, and the merge
+        # job — which runs if: always() — would fold that hole into a combined
+        # report indistinguishable from a complete one. Fail the shard instead.
         run: |
           out=".tmp/mutation/${{ matrix.slug }}.json"
           if [ ! -s "$out" ]; then

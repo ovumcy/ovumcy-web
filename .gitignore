@@ -54,7 +54,6 @@ Thumbs.db
 *.swo
 
 # Local and generated artifacts
-.tmp_*/
 .tmp*/
 .local/
 test-results/
