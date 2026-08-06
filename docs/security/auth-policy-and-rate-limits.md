@@ -51,10 +51,11 @@ The calendar feed deliberately does **not** share the `/api/*` budget. When the 
 
 Keep the separate budget and keep it small anyway. It bounds the residual bcrypt of not-yet-migrated rows, and it is the only limit on a cookieless surface that needs no credential to reach: a calendar client polls once per refresh interval (typically 15–60 minutes), so 20/minute is already generous for several devices behind one address. Widening it toward the `/api` budget would buy nothing for real clients.
 
-Behind a trusted proxy (`TRUST_PROXY_ENABLED=true`), the per-IP key is the **rightmost untrusted `X-Forwarded-For` hop** relative to `TRUSTED_PROXIES` (`cmd/ovumcy/main.go` `rateLimitKeyGenerator`), not fiber's default leftmost `c.IP()`, so a client-spoofed XFF prefix cannot rotate the key and defeat the limit.
+Behind a trusted proxy (`TRUST_PROXY_ENABLED=true`), the per-IP key is the **rightmost untrusted `X-Forwarded-For` hop** relative to `TRUSTED_PROXIES` (`cmd/ovumcy/ratelimit.go` `rateLimitKeyGenerator`), not fiber's default leftmost `c.IP()`, so a client-spoofed XFF prefix cannot rotate the key and defeat the limit.
 
 Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`internal/services/auth_attempt_policy.go`):
 
+- Recovery-code redemption (`POST /api/v1/password-resets`): 8 failures / 1 hour, tuned by the same `RATE_LIMIT_FORGOT_PASSWORD_MAX` / `RATE_LIMIT_FORGOT_PASSWORD_WINDOW` pair as that endpoint's per-IP row above, so the two budgets never drift apart. Wired as the `recovery` scope in `internal/services/password_reset_service.go`. A code that is merely malformed spends the budget exactly as a wrong-but-well-formed one does, so failing the format check early is not a free retry; only a submission with no email at all falls back to the client-keyed bucket alone, there being no identity to key on.
 - Login attempts: 8 failures / 15 minutes. The OIDC link-confirmation password challenge (`POST /auth/oidc/link-confirm`) draws from this same budget, so link-confirm cannot be used as a faster password oracle than the login form.
 - Logout attempts: 20 failures / 15 minutes (account-scoped).
 - TOTP login challenge: 5 failures / 15 minutes.

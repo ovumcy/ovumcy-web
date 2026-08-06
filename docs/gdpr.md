@@ -59,7 +59,7 @@ The full data inventory lives in [`docs/security/data-handling.md`](security/dat
 | --- | --- | --- |
 | Owner-only middleware on every state-mutating `/api/*` endpoint | [`internal/api/routes.go`](../internal/api/routes.go) | [`internal/api/owner_only_coverage_regression_test.go`](../internal/api/owner_only_coverage_regression_test.go) |
 | Sealed (AEAD) auth, recovery, reset, OIDC, TOTP, flash and calendar-feed-reveal cookies (12 purposes) | [`internal/api/secure_cookie_codec.go`](../internal/api/secure_cookie_codec.go) | `internal/api/secure_cookie_codec_*_test.go` |
-| CSRF protection on every state-changing request | [`cmd/ovumcy/main.go`](../cmd/ovumcy/main.go) | `internal/api/state_mutation_csrf_regression_test.go` |
+| CSRF protection on every state-changing request | [`cmd/ovumcy/server.go`](../cmd/ovumcy/server.go) | `internal/api/state_mutation_csrf_regression_test.go` |
 | Session revocation on credential rotation | [`internal/services/auth_service.go`](../internal/services/auth_service.go) | `internal/api/auth_password_change_session_regression_test.go` and siblings |
 | PII never logged | [`internal/api/request_logging.go`](../internal/api/request_logging.go) | `cmd/ovumcy/main_test.go` (`TestAuthRateLimitHandlerLogsSecurityEventWithoutPII`, `TestCSRFMiddlewareErrorHandlerLogsSecurityEventWithoutPII`) |
 | TOTP secret encryption at rest | [`internal/security/field_crypto.go`](../internal/security/field_crypto.go) | [`internal/security/field_crypto_test.go`](../internal/security/field_crypto_test.go) |
