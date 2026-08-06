@@ -106,14 +106,18 @@ These are the exact cases asserted by the reference tests.
 - **Luteal phase** defaults to the fixed 14-day model value, but is refined for
   the owner when their logs carry enough signal: when basal body temperature or
   cervical-mucus entries let the app infer the ovulation-to-next-period length
-  across several cycles, that observed luteal length (clamped to a physiological
-  10–20 day range) replaces the default. The cervical-mucus signal estimates
-  ovulation as the day after the last egg-white (peak-quality) mucus day of the
-  cycle; self-observed peak days can differ from reference ovulation by a day
-  or more, which is another reason the inferred luteal length stays an
-  estimate. With little or no such data the fixed
-  14-day default stands. Individual luteal phases vary (commonly 11–17 days),
-  which is one reason predictions remain estimates.
+  across several cycles, the average of those observed luteal lengths replaces
+  the default. A cycle whose inferred luteal length falls outside a
+  physiological 10–20 day window is **discarded**, not pulled to the nearest
+  edge of it — an implausible inference is treated as a bad reading rather than
+  as a 10 or a 20 — and the refinement needs at least two surviving cycles, so
+  a single odd reading cannot move the estimate on its own. The cervical-mucus
+  signal estimates ovulation as the day after the last egg-white (peak-quality)
+  mucus day of the cycle; self-observed peak days can differ from reference
+  ovulation by a day or more, which is another reason the inferred luteal
+  length stays an estimate. With little or no such data the fixed 14-day
+  default stands. Individual luteal phases vary (commonly 11–17 days), which is
+  one reason predictions remain estimates.
 - For irregular cycles the app widens the prediction into a range rather than a
   single date. The range and variability statistics (shortest/longest cycle and
   the sample standard deviation) are computed over the same recent-cycle window
