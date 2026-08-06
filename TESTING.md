@@ -16,7 +16,7 @@ worth anything. Every claim here is backed by code in the repository and by CI.
 | **Fuzz** | Robustness of parsers/validators against arbitrary/invalid input | `internal/services/policy_fuzz_test.go` (native Go fuzzing) |
 | **Reference vectors** | Cycle predictions match the documented algorithm, number for number | `internal/services/cycles_reference_test.go` |
 
-Currently **2,150+ Go test functions** across `internal/` and **27 Playwright
+Currently **2,300+ Go test functions** across `internal/` and **29 Playwright
 specs** (full suite on Chromium; cross-engine smoke on Firefox and WebKit).
 Tests favor behavior and persisted state over markup or implementation details.
 
@@ -30,7 +30,7 @@ fails ("kills" the mutant). Surviving mutants reveal weak assertions.
 - Run it locally: `scripts/mutation.sh baseline` (full) or `scripts/mutation.sh diff <ref>` (changed code only).
 - A weekly CI job tracks the trend; it is advisory and never blocks a merge.
 - Baseline scope now covers business-logic, security, and transport: `internal/services`, `internal/security`, and `internal/api`.
-- **Mutation efficacy** (gremlins, killed / (killed + survived); tracked weekly): `internal/services` **93.3%** (1529/1638), `internal/security` **97.8%** (134/137), and `internal/api` **97.3%** (649/667), measured on a clean-Linux CI run. Efficacy dipped from an earlier ~99% as v1.8.0 landed large new subsystems (webhooks, `.ics` feed, reminders) whose mutants were then triaged. An exhaustive per-mutant pass re-verified **every** survivor against a broad covering suite — the coverage-guided run over-reports survivors (Go leaves `const`/`case` lines uninstrumented, and its test selection can skip the killing test, so a mutant an existing test already kills can still show as survived) — closing the genuine gaps and documenting the residual as equivalents or coverage-attribution artifacts. `internal/api` is the largest package (~8.5k source lines, heavy DB-integration tests) and exceeds CI's 3h job timeout unsharded, so it runs as 5 file-subset shards (`internal_api_1`..`5`, a deterministic partition of the package's own files — see `scripts/mutation.sh`) merged into one `internal_api.json`. Canonical efficacy comes only from the weekly clean-Linux job, never a local Windows run; per-package breakdowns live in [`.mutation/`](.mutation/).
+- **Mutation efficacy** (gremlins, killed / (killed + survived); tracked weekly): `internal/services` **93.3%** (1529/1638), `internal/security` **97.8%** (134/137), and `internal/api` **97.3%** (649/667), measured on a clean-Linux CI run. Efficacy dipped from an earlier ~99% as v1.8.0 landed large new subsystems (webhooks, `.ics` feed, reminders) whose mutants were then triaged. An exhaustive per-mutant pass re-verified **every** survivor against a broad covering suite — the coverage-guided run over-reports survivors (Go leaves `const`/`case` lines uninstrumented, and its test selection can skip the killing test, so a mutant an existing test already kills can still show as survived) — closing the genuine gaps and documenting the residual as equivalents or coverage-attribution artifacts. `internal/api` is the slowest package to mutate — not the largest (`internal/services` is some 40% bigger in source lines) but the one whose tests are heavy DB integration — and it exceeds CI's 3h job timeout unsharded, so it runs as 5 file-subset shards (`internal_api_1`..`5`, a deterministic partition of the package's own files — see `scripts/mutation.sh`) merged into one `internal_api.json`. `internal/services` is sharded 5 ways on the same mechanism. Canonical efficacy comes only from the weekly clean-Linux job, never a local Windows run; per-package breakdowns live in [`.mutation/`](.mutation/).
 - Statement coverage is lower than efficacy by design: mutation testing checks whether a test *fails when the code breaks*, not merely whether a line ran. The "not covered" mutants are dominated by package-level `const`/`var` declarations (which Go coverage never instruments) and the network-facing OIDC client (covered end-to-end).
 
 Surviving mutants are triaged honestly: a *real* gap gets a new behavior test; an
@@ -54,7 +54,7 @@ ships in the image.
 
 ### Sealed-cookie codec coverage
 
-All eleven AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
+All twelve AEAD-sealed cookie purposes are exercised by `internal/api/secure_cookie_codec_security_test.go`.
 Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be opened as another.
 
 | Cookie | Roundtrip | Cross-purpose rejection | Tamper detection |
@@ -62,6 +62,7 @@ Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be o
 | `ovumcy_auth` | ✓ | ✓ | ✓ (auth-tag, body byte, nonce) |
 | `ovumcy_flash` | ✓ | ✓ | †  |
 | `ovumcy_recovery_code` | ✓ | ✓ | †  |
+| `ovumcy_calendar_feed` | ✓ | ✓ | †  |
 | `ovumcy_register_pickup` | ✓ | ✓ | †  |
 | `ovumcy_reset_password` | ✓ | ✓ | †  |
 | `ovumcy_oidc_auth` | ✓ | ✓ | †  |
@@ -76,7 +77,8 @@ Each purpose is bound to its own AAD so a ciphertext from one cookie cannot be o
 `ovumcy_oidc_link_pending` as representative high-value targets.
 
 Backward-compatibility goldens: `internal/api/secure_cookie_codec_golden_test.go` holds sealed
-values produced by the pre-consolidation codec for all eleven purposes, and
+values produced by the pre-consolidation codec for the eleven purposes that predate the
+consolidation — `ovumcy_calendar_feed` was minted later and has no such value to pin — and
 `internal/security/field_crypto_golden_test.go` holds AAD-bound and legacy field ciphertexts.
 They pin the HKDF labels, AAD construction, envelope, and payload layout; never regenerate the
 fixtures to make these tests pass.
