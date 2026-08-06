@@ -13,40 +13,43 @@
 #                   and a committed score summary under .mutation/.
 #   diff [ref]      Mutate only code changed vs <ref> (default origin/main).
 #                   Fast enough for CI. Advisory: never fails the build.
-#   verify-shards   Proves the internal/api shard partition is exact: every
-#                   non-test .go file lands in exactly one shard, no gaps, no
-#                   overlaps. No gremlins/network dependency — pure file-listing
-#                   arithmetic, safe to run in any CI job or locally.
-#   merge-api-shards [in-dir] [out-file]
-#                   Combines the internal_api_1..N shard JSON reports (once
-#                   downloaded from their CI artifacts) into one
-#                   internal_api.json, via scripts/mutationmerge (go run).
+#   verify-shards   Proves every registered shard partition is exact — for each
+#                   entry in SHARDED_PKGS, every non-test .go file lands in
+#                   exactly one shard, no gaps, no overlaps. No gremlins/network
+#                   dependency — pure file-listing arithmetic, safe to run in any
+#                   CI job or locally.
+#   merge-shards <base> [in-dir] [out-file]
+#                   Combines a registered package's <base>_1..N shard JSON
+#                   reports (once downloaded from their CI artifacts) into one
+#                   <base>.json, via scripts/mutationmerge (go run).
 #
 # The test-suite auditor consumes the JSON output
 # to triage survivors into "real test gap" vs "equivalent mutant".
 #
 # Mutation testing is scoped to business-logic + security + transport packages.
-# internal/api is the largest package (~8.5k source lines) and carries heavy
-# integration tests against a real database, so it is by far the slowest target
-# here — budget accordingly (see MUTATION_WORKERS below and the weekly CI job).
+# internal/services is the largest of them (11.5k source lines against
+# internal/api's 8.1k), but internal/api is the slowest: it carries heavy
+# integration tests against a real database, and each mutant re-runs them. Both
+# are sharded for that reason — budget accordingly (see MUTATION_WORKERS below
+# and the weekly CI job).
 #
-# internal/api sharding (issue #161): a single unsharded internal_api run blew
+# Sharding (issue #161): a single unsharded internal_api run blew
 # past the 3h CI timeout (manual run 28741574692: killed at 3h0m16s, having
 # reached only ~85% of the package's files with a steady, non-decelerating
-# mutant rate — internal/services, a comparably-sized target, finished its
+# mutant rate — internal/services, at least as large a target, finished its
 # *whole* run in 1h53m, so internal/api's heavier DB-integration tests are the
 # bottleneck, not raw file count). gremlins has no package-subdivision or
 # --include-files flag, but `unleash` does support repeatable --exclude-files
 # <regexp> (matched against each candidate file's basename within the target
 # package). That is the only file-subset mechanism the installed gremlins
-# v0.6.0 exposes, so sharding partitions internal/api's own non-test .go files
-# into API_SHARD_COUNT groups and, for shard N, excludes every file that is NOT
-# in group N. The partition is computed at run time from a live directory
-# listing (never a hardcoded file list) so it self-heals as files are
-# added/removed — see api_shard_files below. Round-robin assignment (file
-# index modulo shard count over the sorted file list) balances shard weight
-# better than contiguous alphabetical blocks, since large handler_* files
-# cluster together mid-alphabet.
+# v0.6.0 exposes, so sharding partitions a registered package's own non-test .go
+# files into the shard count SHARDED_PKGS declares for it and, for shard N,
+# excludes every file that is NOT in group N. The partition is computed at run
+# time from a live directory listing (never a hardcoded file list) so it
+# self-heals as files are added/removed — see shard_files below. Round-robin
+# assignment (file index modulo shard count over the sorted file list) balances
+# shard weight better than contiguous alphabetical blocks, since large handler_*
+# files cluster together mid-alphabet.
 
 set -euo pipefail
 
