@@ -72,13 +72,7 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     expect(setupCookie).toBeFalsy();
   });
 
-  test('login after enrollment redirects to 2FA challenge page', async ({
-    page,
-    context,
-    browserName,
-  }) => {
-    test.skip(browserName === 'webkit', 'flaky redirect timing on webkit; covered in chromium');
-
+  test('login after enrollment redirects to 2FA challenge page', async ({ page, context }) => {
     const creds = createCredentials('2fa-login-redirect');
     await registerOwnerViaUI(page, creds);
     await continueFromRecoveryCode(page);
@@ -99,11 +93,28 @@ test.describe('Auth: TOTP two-factor authentication', () => {
     // Log out (must be DELETE+CSRF; GET to /api/v1/sessions/current is rejected).
     await logoutViaAPI(page);
 
-    // Log back in — should hit challenge page
+    // Log back in — should hit challenge page. The wait binds to this click's own
+    // POST /api/v1/sessions and reads its answer: the 303 to /auth/2fa is what
+    // "the challenge was demanded" actually means, and it is settled on the server
+    // before any navigation starts. Polling only the landed URL made the assertion
+    // race the redirect, which is what kept this test permanently skipped on webkit.
     await page.goto('/login');
     await page.locator('input[name="email"]').fill(creds.email);
     await page.locator('input[name="password"]').fill(creds.password);
-    await page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click();
+    const [loginRequest] = await Promise.all([
+      page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'POST' && new URL(candidate.url()).pathname === '/api/v1/sessions'
+      ),
+      page.locator('form[action="/api/v1/sessions"] button[type="submit"]').click(),
+    ]);
+    const loginResponse = await loginRequest.response();
+    expect(loginResponse, 'expected a response for POST /api/v1/sessions').not.toBeNull();
+    expect(
+      loginResponse!.status(),
+      `POST /api/v1/sessions answered ${loginResponse!.status()}, want a 303 redirect`
+    ).toBe(303);
+    expect(loginResponse!.headers()['location']).toBe('/auth/2fa');
 
     await expect(page).toHaveURL('/auth/2fa', { timeout: 5_000 });
 
