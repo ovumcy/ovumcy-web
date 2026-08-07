@@ -1,12 +1,21 @@
-# OSV-Scanner / OpenSSF Scorecard vulnerability suppressions.
+# OSV-Scanner vulnerability suppressions.
+#
+# Consumed by `.github/workflows/scorecard.yml`: `ossf/scorecard-action` runs the
+# Vulnerabilities check, which embeds the osv-scanner library and scans the checked-out
+# tree. With no config path passed, osv-scanner resolves its config next to each scanned
+# manifest — for the repo-root `go.mod` that is this file — and drops the listed IDs
+# before Scorecard scores the check. No other workflow reads it: `govulncheck` and Trivy
+# in `.github/workflows/security.yml` carry their own configuration.
+#
 # Only for findings that are provably not reachable in this project's build graph.
 # Each entry must state why the vulnerability does not apply.
 
 [[IgnoredVulns]]
 id = "GO-2026-5932"
 # golang.org/x/crypto/openpgp is unmaintained/unsafe-by-design, but we do not
-# import it: it is absent from `go list -deps ./...`. Scorecard's OSV check
-# flags golang.org/x/crypto by module version without reachability analysis;
-# govulncheck (which is reachability-aware) reports no exposure. Revisit if any
-# openpgp subpackage ever enters the build graph.
+# import it: it is absent from `go list -deps ./...`. The advisory covers every
+# golang.org/x/crypto version with no fixed release, so Scorecard's OSV check flags
+# the module by version without reachability analysis; govulncheck (which is
+# reachability-aware) reports no exposure. Revisit if any openpgp subpackage ever
+# enters the build graph.
 reason = "golang.org/x/crypto/openpgp not imported; absent from the build graph, flagged by module version only."
