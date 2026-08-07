@@ -189,6 +189,17 @@ jobs:
           CGO_ENABLED: "1"
         run: go test -race ./internal/services/... ./internal/db/... ./internal/security/... ./internal/i18n/... ./internal/httpx/...
 
+      - name: Go test with race detector — cross-owner isolation
+        # The exclusion above is by package, not by property, and the property
+        # this test carries — two owners served concurrently through one app —
+        # is the one place where instrumentation is worth the compile. It runs
+        # a SINGLE Fiber app, so the library-internal race that rules the rest
+        # of internal/api out never arms; keep it a named test, never a widening
+        # back to the package.
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -count=1 -run TestOwnerIsolationHoldsUnderConcurrentCrossOwnerRequests ./internal/api/
+
   coverage-upload:
     runs-on: ubuntu-latest
     needs:
