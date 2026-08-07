@@ -36,10 +36,19 @@ services:
       - RATE_LIMIT_LOGOUT_WINDOW=${RATE_LIMIT_LOGOUT_WINDOW:-15m}
       - RATE_LIMIT_API_MAX=${RATE_LIMIT_API_MAX:-300}
       - RATE_LIMIT_API_WINDOW=${RATE_LIMIT_API_WINDOW:-1m}
+      # Calendar feed: deliberately far below the API budget — every request costs a
+      # bcrypt compare, so this bounds CPU rather than request count.
+      - RATE_LIMIT_CALENDAR_FEED_MAX=${RATE_LIMIT_CALENDAR_FEED_MAX:-20}
+      - RATE_LIMIT_CALENDAR_FEED_WINDOW=${RATE_LIMIT_CALENDAR_FEED_WINDOW:-1m}
       - AUDIT_LOG_ENABLED=${AUDIT_LOG_ENABLED:-false}
       - TRUST_PROXY_ENABLED=${TRUST_PROXY_ENABLED:-false}
       - PROXY_HEADER=${PROXY_HEADER:-X-Forwarded-For}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-127.0.0.1,::1}
+      # Webhook reminders: the built-in daily scheduler ships off, and delivery is
+      # not restricted to public targets, so a LAN ntfy/Gotify endpoint works.
+      - WEBHOOK_BLOCK_PRIVATE_ADDRESSES=${WEBHOOK_BLOCK_PRIVATE_ADDRESSES:-false}
+      - REMINDER_SCHEDULER_ENABLED=${REMINDER_SCHEDULER_ENABLED:-false}
+      - REMINDER_SCHEDULER_HOUR=${REMINDER_SCHEDULER_HOUR:-9}
     init: true
     security_opt:
       - no-new-privileges:true
