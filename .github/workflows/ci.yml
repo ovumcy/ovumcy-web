@@ -453,11 +453,14 @@ jobs:
     # job-level skips were believed to leave the required check unsatisfied —
     # that is not how GitHub behaves today (a skipped job reports as a
     # satisfied required check; the unit/race battery above and the sibling
-    # repos rely on it). The step-gated shape is kept as-is; note that on a
-    # docs-only pull request — and now on a docs-only merge-queue run — this
-    # job cascades to skipped anyway, because its `test` dependency skips
-    # first, so the RUN_E2E step guards matter only if the two allowlists in
-    # `changes` ever diverge. Those guards carry the battery's fail-safe form
+    # repos rely on it). The step-gated shape is kept as-is, and it is now the
+    # thing that does the work: this job used to cascade to skipped on a
+    # docs-only change because its `test` dependency skipped first, but `test`
+    # judges its halves rather than disappearing, so on a docs-only pull request
+    # — or merge-queue run — it reports success and this job RUNS with every
+    # step gated off. The RUN_E2E guards are therefore load-bearing on the
+    # ordinary path, not only if the two allowlists in `changes` ever diverge.
+    # Those guards carry the battery's fail-safe form
     # (`!= 'false'`): an absent output must not silently green a job that ran.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
