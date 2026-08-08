@@ -39,9 +39,14 @@ jobs:
     # Whole-job docs-only skip (see the `changes` job): coverage-upload and
     # patch-coverage cascade off this job's skip through their needs edge, and
     # the thin `test` gate job follows both unit jobs the same way.
+    #
+    # The shape the whole battery shares: run unless `changes` positively
+    # determined this diff is irrelevant. A detection job that failed leaves
+    # the output empty, which is not 'false', so the lane still runs — a
+    # skipped required check would otherwise pass the merge on no evidence.
     needs:
       - changes
-    if: needs.changes.outputs.run_battery == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.run_battery != 'false' }}
     permissions:
       contents: read
 
@@ -105,7 +110,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.run_battery == 'true'
+    # Same fail-safe gate as test-go above.
+    if: ${{ !cancelled() && needs.changes.outputs.run_battery != 'false' }}
     permissions:
       contents: read
 
@@ -162,7 +168,11 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.run_battery == 'true'
+    # Same fail-safe gate as test-go above. This is the slowest lane, and the
+    # one the merge queue's 60-minute status-check timeout is measured against,
+    # so a queue entry that touches nothing the Go toolchain can observe must
+    # not spend it.
+    if: ${{ !cancelled() && needs.changes.outputs.run_battery != 'false' }}
     permissions:
       contents: read
 
@@ -309,43 +319,92 @@ jobs:
         # Fail-safe default is to RUN the browser e2e jobs. The Playwright suite
         # exercises the real Go app end-to-end, so backend, template, asset,
         # locale, dependency, Docker, and CI changes can all affect it. We only
-        # skip when a pull request touches *nothing but* docs/meta files, or
+        # skip when a change touches *nothing but* docs/meta files, or
         # .clusterfuzzlite/ (a separate ClusterFuzzLite build sandbox that is
         # never compiled into the app binary or go:embed'd — see
         # .clusterfuzzlite/Dockerfile), that cannot change the running app. Any
         # path outside the allowlist runs e2e.
+        #
+        # Two events carry a base the diff can stand on: a pull request (its
+        # own base branch) and a merge-queue validation run
+        # (merge_group.base_sha — the queue branch is that base plus every pull
+        # request batched into the group, so one diff judges the whole batch).
+        # A merge-queue run is judged by the same allowlist as the pull request
+        # that produced it; until it was, a change already judged irrelevant on
+        # its own run still paid the full battery in the queue, `race` included
+        # — the lane the queue's 60-minute status-check timeout is measured
+        # against. Push (main), release and workflow_dispatch still run in
+        # full, so the post-merge safety net stays complete.
+        #
+        # Undetermined always means RUN — unknown event, missing or unreachable
+        # base, a failed diff, an empty file list. Each fail-safe exit is
+        # written as its own branch rather than left to a default, and the
+        # consumers below repeat it once more (`!= 'false'`, evaluated even
+        # when this job dies), so a crash here cannot skip them.
         env:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
+          QUEUE_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
           # Deliberately no `set -e`: this job must never fail, because the
           # required e2e jobs depend on it and a failed dependency would leave
-          # their required checks unsatisfied. Default to running e2e; only flip
-          # to false on a positive docs-only determination.
+          # their required checks unsatisfied. Every branch falls through to
+          # the single verdict write at the end, and `run_e2e` starts at true
+          # so only a positive docs-only determination clears it.
           run_e2e=true
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            if git fetch --no-tags origin "$BASE_REF"; then
-              files="$(git diff --name-only "origin/${BASE_REF}...HEAD" || true)"
-              echo "Changed files:"
-              echo "$files"
-              if [ -n "$files" ]; then
-                # Anything NOT matching this docs/meta allowlist forces e2e to run.
-                app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
-                if [ -z "$app_changes" ]; then
-                  echo "Docs/meta-only change: skipping browser e2e jobs."
-                  run_e2e=false
-                else
-                  echo "App-affecting change detected: running browser e2e jobs."
-                fi
+          verdict=""
+
+          case "$EVENT_NAME" in
+            pull_request)
+              if git fetch --no-tags origin "$BASE_REF"; then
+                base="origin/$BASE_REF"
               else
-                echo "Empty diff: defaulting to running e2e."
+                base=""
+                verdict="base ref fetch failed: running e2e and the battery."
               fi
+              ;;
+            merge_group)
+              # HEAD is the queue branch carrying the batched commits; the base
+              # is the main commit the queue branched from. Full history is
+              # checked out above, so this is normally already present.
+              base="$QUEUE_BASE_SHA"
+              if [ -z "$base" ]; then
+                verdict="no base commit in the merge_group payload: running e2e and the battery."
+              elif ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+                echo "merge_group base commit $base absent after checkout: fetching it"
+                git fetch --no-tags origin "$base" || true
+                if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+                  base=""
+                  verdict="merge_group base commit unreachable: running e2e and the battery."
+                fi
+              fi
+              ;;
+            *)
+              base=""
+              verdict="$EVENT_NAME carries no base to diff against: running e2e and the battery."
+              ;;
+          esac
+
+          if [ -n "$base" ]; then
+            if ! files="$(git diff --name-only "${base}...HEAD")"; then
+              verdict="git diff ${base}...HEAD failed: running e2e and the battery."
+            elif [ -z "$files" ]; then
+              verdict="empty file list from ${base}...HEAD: running e2e and the battery."
             else
-              echo "Base ref fetch failed: defaulting to running e2e."
+              echo "Changed files against ${base}:"
+              printf '%s\n' "$files"
+              # Anything NOT matching this docs/meta allowlist forces e2e to run.
+              app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
+              if [ -z "$app_changes" ]; then
+                run_e2e=false
+                verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
+              else
+                verdict="app-affecting change detected: running e2e and the battery."
+              fi
             fi
-          else
-            echo "Non-PR event ($EVENT_NAME): running e2e."
           fi
+
+          echo "$verdict"
           echo "run_e2e=$run_e2e" >> "$GITHUB_OUTPUT"
           # The battery shares the e2e allowlist verbatim today; diverge here
           # (not in consumers) if that ever changes.
@@ -365,37 +424,39 @@ jobs:
     # that is not how GitHub behaves today (a skipped job reports as a
     # satisfied required check; the unit/race battery above and the sibling
     # repos rely on it). The step-gated shape is kept as-is; note that on a
-    # docs-only pull request this job now cascades to skipped anyway, because
-    # its `test` dependency skips first, so the RUN_E2E step guards matter
-    # only if the two allowlists in `changes` ever diverge.
+    # docs-only pull request — and now on a docs-only merge-queue run — this
+    # job cascades to skipped anyway, because its `test` dependency skips
+    # first, so the RUN_E2E step guards matter only if the two allowlists in
+    # `changes` ever diverge. Those guards carry the battery's fail-safe form
+    # (`!= 'false'`): an absent output must not silently green a job that ran.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
 
     steps:
       - name: Checkout
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E != 'false'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Setup Node.js
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E != 'false'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
 
       - name: Install frontend and e2e dependencies
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E != 'false'
         run: npm ci
 
       - name: Cache Playwright browsers
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E != 'false'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -403,7 +464,7 @@ jobs:
           key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
-        if: env.RUN_E2E == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+        if: env.RUN_E2E != 'false' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Install Playwright OS dependencies (cache hit)
@@ -411,11 +472,11 @@ jobs:
         # ~/.cache/ms-playwright; system packages (apt) never persist across
         # a fresh runner, so they still need installing even on a browser
         # cache hit — this is the fast path (no browser download).
-        if: env.RUN_E2E == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
+        if: env.RUN_E2E != 'false' && steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
       - name: Run Playwright e2e (smoke on push, full otherwise)
-        if: env.RUN_E2E == 'true'
+        if: env.RUN_E2E != 'false'
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             npm run e2e:ci -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
@@ -455,29 +516,29 @@ jobs:
 
     steps:
       - name: Checkout
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Setup Node.js
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
 
       - name: Install frontend and e2e dependencies
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
         run: npm ci
 
       - name: Cache Playwright browsers
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -485,15 +546,15 @@ jobs:
           key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Install Playwright OS dependencies (cache hit)
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
       - name: Run Playwright Postgres smoke
-        if: env.RUN_E2E == 'true' && env.RUN_HEAVY == 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
         run: npm run e2e:ci:postgres -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
         env:
           E2E_APP_PORT: 18081
@@ -518,8 +579,10 @@ jobs:
       - test
       - changes
     # Not a required status check, so cross-browser coverage beyond the plain
-    # `e2e` job's Chromium run is deferred to push/release/dispatch.
-    if: needs.changes.outputs.run_e2e == 'true' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch')
+    # `e2e` job's Chromium run is deferred to push/release/dispatch. The
+    # relevance half carries the battery's fail-safe form (`!= 'false'`): a
+    # `changes` job that died must not silently drop post-merge coverage.
+    if: ${{ !cancelled() && needs.changes.outputs.run_e2e != 'false' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch') }}
 
     steps:
       - name: Checkout
@@ -586,7 +649,8 @@ jobs:
       contents: read
     needs:
       - changes
-    if: needs.changes.outputs.run_e2e == 'true' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch')
+    # Same fail-safe relevance form as the battery above.
+    if: ${{ !cancelled() && needs.changes.outputs.run_e2e != 'false' && (github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch') }}
 
     steps:
       - name: Checkout
