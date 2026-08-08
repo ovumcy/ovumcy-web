@@ -153,10 +153,40 @@ jobs:
     needs:
       - test-go
       - test-frontend
+    # WITHOUT AN `if`, A FAILED DEPENDENCY SKIPS THIS JOB — and a skipped
+    # required check counts as satisfied, so a failing Go suite left no required
+    # context red at all. Measured 2026-08-08 on a throwaway branch carrying one
+    # deliberately failing test: `test-go` failed, and `test`, `e2e` and
+    # `patch-coverage` — three of the fourteen required contexts — all reported
+    # SKIPPED. `race` gates on `changes` rather than on this job, so it ran and
+    # passed, and nothing else covered the unit suite.
+    #
+    # `!cancelled()` makes this job RUN whatever its dependencies did, and the
+    # step below turns their results into this context's verdict. A cancelled
+    # run is still excluded: a superseded PR run must not report a failure.
+    if: ${{ !cancelled() }}
     permissions:
       contents: read
     steps:
-      - run: echo "test-go and test-frontend passed."
+      - name: Judge the two unit halves
+        env:
+          GO_RESULT: ${{ needs.test-go.result }}
+          FRONTEND_RESULT: ${{ needs.test-frontend.result }}
+        run: |
+          set -euo pipefail
+          echo "test-go=$GO_RESULT test-frontend=$FRONTEND_RESULT"
+          # `skipped` is a PASS here and only here: the `changes` job judged the
+          # diff irrelevant to the battery, which is a decision not to run, not
+          # a failure to run. Anything else — failure, cancelled, or a state
+          # this gate has never seen — is this context's failure, because the
+          # whole point of the job is to have a verdict to report.
+          for result in "$GO_RESULT" "$FRONTEND_RESULT"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::a unit half reported \"$result\""; exit 1 ;;
+            esac
+          done
+          echo "test-go and test-frontend passed."
 
   race:
     runs-on: ubuntu-latest
