@@ -25,7 +25,7 @@
     "@playwright/test": "1.62.1",
     "@tailwindcss/cli": "^4.3.3",
     "eslint": "10.8.0",
-    "globals": "17.8.0",
+    "globals": "17.9.0",
     "htmx.org": "2.0.10",
     "jsdom": "30.0.1",
     "otplib": "13.4.1",
