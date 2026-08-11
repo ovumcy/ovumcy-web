@@ -368,7 +368,7 @@ components:
 
     RegisterRequest:
       type: object
-      required: [email, password, confirm_password]
+      required: [email, password, confirm_password, consent]
       properties:
         email:
           type: string
@@ -382,6 +382,9 @@ components:
         confirm_password:
           type: string
           format: password
+        consent:
+          type: string
+          description: Explicit consent to store health data, required for every registration. Truthy spellings, compared case-insensitively after trimming — `1`, `true`, `on`, `yes`. Any other value, and an absent field, are refused with 400 and `error_detail.key` `consent required`.
       additionalProperties: false
 
     LoginRequest:

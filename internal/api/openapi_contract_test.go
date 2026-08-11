@@ -522,6 +522,123 @@ func openAPISchemaPropertyBounds(t *testing.T, specPath string) map[string]map[s
 	return bounds
 }
 
+// TestOpenAPIRequiredRegistrationFieldsAreEnoughToRegister is the request-BODY
+// half of the route↔spec contract, and it exists because the document described a
+// registration no generated client could perform. `RegisterRequest` declared
+// required [email, password, confirm_password] together with
+// `additionalProperties: false`, while Register refuses every body whose
+// `consent` is not truthy — so a client built from the spec was refused for
+// omitting a field the same document forbade it to send. Measured on the soak
+// stand, where the harness could not register until it added `consent`.
+//
+// Route presence, declared bounds, statuses and error categories were each
+// pinned; required request fields were not, which is the same gap that let the
+// 2FA challenge declare `application/json` for a handler reading form values.
+//
+// The area rule's shape: the constraint is READ from the spec and the endpoint
+// judges it. The body carries exactly the declared required properties and
+// nothing else, so a field the handler starts demanding without documenting it
+// fails here — and so does a required field the spec gains that this test has no
+// sample for, which is precisely when someone has to decide what a client would
+// actually send.
+func TestOpenAPIRequiredRegistrationFieldsAreEnoughToRegister(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	specPath := filepath.Join("..", "..", "docs", "openapi.yaml")
+	required := openAPISchemaRequired(t, specPath, "RegisterRequest")
+	if len(required) == 0 {
+		t.Fatal("RegisterRequest declares no required properties in docs/openapi.yaml; parser or spec is wrong")
+	}
+
+	// What a client generated from the spec would put in each documented field:
+	// values that satisfy every OTHER published constraint, so the only thing
+	// this test can fail on is the completeness of the required set itself.
+	samples := map[string]string{
+		"email":            "spec-required-fields@example.com",
+		"password":         "StrongPass1",
+		"confirm_password": "StrongPass1",
+		"consent":          "true",
+	}
+	body := make(map[string]string, len(required))
+	for _, field := range required {
+		value, ok := samples[field]
+		if !ok {
+			t.Fatalf("docs/openapi.yaml requires %q on RegisterRequest and this test carries no value for it — "+
+				"add one a client could plausibly send, then let the endpoint judge it", field)
+		}
+		body[field] = value
+	}
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal register body: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode == http.StatusBadRequest {
+		envelope := map[string]any{}
+		_ = json.NewDecoder(response.Body).Decode(&envelope)
+		key := ""
+		if detail, ok := envelope["error_detail"].(map[string]any); ok {
+			key, _ = detail["key"].(string)
+		}
+		t.Fatalf("a body carrying exactly the spec's required fields %v was refused with 400 %q — "+
+			"the document describes a registration no client written to it can perform", required, key)
+	}
+}
+
+// openAPISchemaRequired reads one component schema's `required` list, which the
+// spec writes inline (`required: [a, b, c]`). Line-based like every other reader
+// here, for the same reason: the repo's minimal-dependency posture, and a YAML
+// library would be pulled in for four lines of parsing.
+func openAPISchemaRequired(t *testing.T, specPath, schema string) []string {
+	t.Helper()
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		t.Fatalf("read openapi spec: %v", err)
+	}
+
+	inComponents, inSchemas, inSchema := false, false, false
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		text := strings.TrimSpace(line)
+		if text == "" || strings.HasPrefix(text, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") {
+			inComponents = strings.HasPrefix(line, "components:")
+			inSchemas, inSchema = false, false
+			continue
+		}
+		if !inComponents {
+			continue
+		}
+		switch indent := len(line) - len(strings.TrimLeft(line, " ")); {
+		case indent == 2:
+			inSchemas = text == "schemas:"
+			inSchema = false
+		case indent == 4 && inSchemas && strings.HasSuffix(text, ":"):
+			inSchema = strings.TrimSuffix(text, ":") == schema
+		case indent == 6 && inSchema:
+			list, found := strings.CutPrefix(text, "required:")
+			if !found {
+				continue
+			}
+			names := []string{}
+			for _, name := range strings.Split(strings.Trim(strings.TrimSpace(list), "[]"), ",") {
+				if trimmed := strings.TrimSpace(name); trimmed != "" {
+					names = append(names, trimmed)
+				}
+			}
+			return names
+		}
+	}
+	return nil
+}
+
 // openAPIDeclaredBound is one (schema, property, keyword) triple whose declared
 // value must sit exactly where the running server draws its line. The bound is
 // never restated here: the spec supplies the number and the endpoint judges it,
