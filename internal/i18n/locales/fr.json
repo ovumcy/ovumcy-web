@@ -512,6 +512,7 @@
 
   "dashboard.high_fertility_badge": "Fertilité élevée",
   "dashboard.fertility_badge_warning": "Période fertile",
+  "dashboard.fertile_window": "Fenêtre fertile",
   "dashboard.fertility_badge_positive": "Période fertile, meilleur moment",
   "dashboard.ovulation": "Ovulation",
   "dashboard.ovulation_range": "%s — %s",
@@ -816,9 +817,7 @@
   "phases.unknown": "Inconnue",
   "phases.menstrual": "Menstruelle",
   "phases.follicular": "Folliculaire",
-  "phases.ovulation": "Ovulation",
-  "phases.fertile": "Fertile",
-  "phases.luteal": "Lutéale",
+  "phases.ovulation": "Ovulation",  "phases.luteal": "Lutéale",
 
   "symptoms.group.pain": "Douleur et inconfort",
   "symptoms.group.mood": "Humeur et énergie",

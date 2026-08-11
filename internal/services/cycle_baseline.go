@@ -26,6 +26,7 @@ func ApplyUserCycleBaseline(user *models.User, logs []models.DailyLog, stats Cyc
 
 	stats.CurrentCycleDay = baselineCurrentCycleDay(stats.LastPeriodStart, today)
 	stats.CurrentPhase = DetectCurrentPhase(stats, logs, today, location)
+	stats.CurrentFertility = ResolveFertilityStatus(stats, today)
 	return stats
 }
 

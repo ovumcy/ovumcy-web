@@ -14,8 +14,6 @@ func PhaseTranslationKey(phase string) string {
 		return "phases.follicular"
 	case "ovulation":
 		return "phases.ovulation"
-	case "fertile":
-		return "phases.fertile"
 	case "luteal":
 		return "phases.luteal"
 	default:
@@ -92,8 +90,6 @@ func PhaseIcon(phase string) string {
 		return "\U0001F338"
 	case "ovulation":
 		return "\u2600\uFE0F"
-	case "fertile":
-		return "\U0001F33F"
 	case "luteal":
 		return "\U0001F342"
 	default:

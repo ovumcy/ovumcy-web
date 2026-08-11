@@ -7,10 +7,12 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-// These tests pin the current, independently-evolved behavior of the two
-// cycle-phase detectors (detectCyclePhase in cycles.go, DetectCurrentPhase in
-// cycle_baseline.go) before they are unified behind one implementation. They
-// must keep passing, unchanged, after the refactor.
+// These tests pin the shared behavior of the two cycle-phase entry points
+// (detectCyclePhase in cycles.go, DetectCurrentPhase in cycle_baseline.go),
+// both backed by resolveCyclePhase. The phase taxonomy is strictly
+// menstrual/follicular/ovulation/luteal/unknown; whether a day sits in the
+// fertile window is the orthogonal fertility status (ResolveFertilityStatus),
+// covered in cycle_fertility_status_test.go.
 
 // TestPhaseDetectors_AgreeOnLoggedMenstrualDay: both detectors call a day
 // "menstrual" when a period entry is actually logged for it, regardless of
@@ -62,7 +64,8 @@ func TestPhaseDetectors_DivergeOnProjectedPeriodWithoutALoggedDay(t *testing.T) 
 
 // TestPhaseDetectors_AgreeOnFertileOvulationFollicularLutealWindows pins that
 // outside of the logged-vs-projected-menstrual difference, both detectors
-// resolve the ovulation/fertility/follicular/luteal windows identically.
+// resolve the ovulation/follicular/luteal windows identically — and that a
+// fertile-window day before ovulation is follicular, never a "fertile" phase.
 func TestPhaseDetectors_AgreeOnFertileOvulationFollicularLutealWindows(t *testing.T) {
 	stats := CycleStats{
 		LastPeriodStart:      mustParseDay(t, "2026-01-01"),
@@ -79,7 +82,7 @@ func TestPhaseDetectors_AgreeOnFertileOvulationFollicularLutealWindows(t *testin
 		want  string
 	}{
 		{"follicular after projected period", "2026-01-10", "follicular"},
-		{"fertile before ovulation", "2026-01-17", "fertile"},
+		{"fertile-window day before ovulation stays follicular", "2026-01-17", "follicular"},
 		{"ovulation day exact", "2026-01-20", "ovulation"},
 		{"luteal after ovulation", "2026-01-25", "luteal"},
 	}
