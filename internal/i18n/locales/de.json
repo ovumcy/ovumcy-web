@@ -507,6 +507,8 @@
   "dashboard.save_message_neutral": "Gespeichert.",
   "dashboard.save_message_pregnancy_paused": "Gespeichert. Nach einem positiven Schwangerschaftstest sind die Zyklusvorhersagen pausiert. Bei Blutungen, Schmerzen oder Schwindel suchen Sie umgehend ärztliche Hilfe.",
   "daylog.title": "Täglicher Eintrag",
+  "daylog.save_failed": "Speichern nicht möglich — prüfen Sie Ihre Verbindung. Ihr Eintrag ist noch da.",
+  "daylog.save_retry": "Erneut versuchen",
   "calendar.title": "Kalender",
   "calendar.prev": "Zurück",
   "calendar.next": "Weiter",

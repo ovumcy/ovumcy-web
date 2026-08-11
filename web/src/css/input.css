@@ -4200,6 +4200,54 @@
   }
 }
 
+/* A save that did not reach the server is a transport event, not a health
+   finding — a self-hosted instance is routinely unreachable while the owner is
+   off the home network. This surface therefore reuses the neutral panel tokens
+   instead of the red status-error palette, so an offline save cannot read as a
+   medical alarm. Text: --text-primary on --surface-tint measures 8.0:1 (light,
+   #5a4a3a on the near-white composite) and well above that on the dark
+   composite; the retry control uses --accent-strong on --bg-card, 5.3:1 light
+   and 8.9:1 dark. */
+@utility status-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.8rem;
+  padding: 0.55rem 0.72rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+  border: 1px solid var(--line-soft);
+  background: var(--surface-tint);
+  color: var(--text-primary);
+}
+
+@utility status-notice-message {
+  flex: 1 1 12rem;
+}
+
+@utility status-notice-action {
+  flex: 0 0 auto;
+  min-height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-card);
+  padding: 0.25rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent-strong);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--surface-elevated);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(169, 137, 231, 0.58);
+    outline-offset: 2px;
+  }
+}
+
 @utility warning-amber {
   color: #8b5a1c;
   font-weight: 600;

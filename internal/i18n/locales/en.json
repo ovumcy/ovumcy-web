@@ -507,6 +507,8 @@
   "dashboard.save_message_neutral": "Saved.",
   "dashboard.save_message_pregnancy_paused": "Saved. Cycle predictions are paused after a positive pregnancy test. If you experience bleeding, pain, or dizziness, seek medical care promptly.",
   "daylog.title": "Daily log",
+  "daylog.save_failed": "Couldn't save — check your connection. Your entry is still here.",
+  "daylog.save_retry": "Try again",
   "calendar.title": "Calendar",
   "calendar.prev": "Prev",
   "calendar.next": "Next",

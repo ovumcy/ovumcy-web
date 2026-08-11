@@ -507,6 +507,8 @@
   "dashboard.save_message_neutral": "Guardado.",
   "dashboard.save_message_pregnancy_paused": "Guardado. Tras una prueba de embarazo positiva, las predicciones del ciclo quedan en pausa. Si tienes sangrado, dolor o mareo, busca atención médica cuanto antes.",
   "daylog.title": "Registro diario",
+  "daylog.save_failed": "No se pudo guardar: revisa tu conexión. Tu registro sigue aquí.",
+  "daylog.save_retry": "Reintentar",
   "calendar.title": "Calendario",
   "calendar.prev": "Anterior",
   "calendar.next": "Siguiente",

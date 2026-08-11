@@ -624,6 +624,8 @@
   "dashboard.save_message_pregnancy_paused": "Enregistré. Après un test de grossesse positif, les prédictions de cycle sont en pause. En cas de saignement, de douleur ou de vertiges, consultez rapidement un médecin.",
 
   "daylog.title": "Journal quotidien",
+  "daylog.save_failed": "Enregistrement impossible — vérifiez votre connexion. Votre saisie est toujours là.",
+  "daylog.save_retry": "Réessayer",
 
   "calendar.title": "Calendrier",
   "calendar.prev": "Précédent",

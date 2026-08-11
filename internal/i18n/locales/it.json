@@ -507,6 +507,8 @@
   "dashboard.save_message_neutral": "Salvato.",
   "dashboard.save_message_pregnancy_paused": "Salvato. Dopo un test di gravidanza positivo, le previsioni del ciclo sono in pausa. In caso di sanguinamento, dolore o vertigini, rivolgiti subito a un medico.",
   "daylog.title": "Registro giornaliero",
+  "daylog.save_failed": "Non è stato possibile salvare: controlla la connessione. Il tuo inserimento è ancora qui.",
+  "daylog.save_retry": "Riprova",
   "calendar.title": "Calendario",
   "calendar.prev": "Prec",
   "calendar.next": "Succ",
