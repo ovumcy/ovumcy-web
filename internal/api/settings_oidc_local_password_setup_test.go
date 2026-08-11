@@ -145,7 +145,7 @@ func decodeStepupRedirectJSON(t *testing.T, body []byte) string {
 	return target
 }
 
-func extractStepupCallbackState(t *testing.T, fixture *oidcStepupFixture, stepupCookieHeader string) string {
+func extractStepupCallbackState(t *testing.T, fixture *oidcStepupFixture) string {
 	t.Helper()
 	// We only need the State value that the stub recorded — the cookie is
 	// opaque to the test code but the stub captured the same string the
@@ -284,7 +284,7 @@ func TestOIDCCompleteLocalPasswordSetupFinalizesOnFreshReauth(t *testing.T) {
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = callbackResponse.Body.Close() }()
@@ -323,7 +323,7 @@ func TestOIDCCompleteLocalPasswordSetupRejectsStaleReauth(t *testing.T) {
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = callbackResponse.Body.Close() }()
@@ -353,7 +353,7 @@ func TestOIDCCompleteLocalPasswordSetupRejectsIdentityMismatch(t *testing.T) {
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = callbackResponse.Body.Close() }()

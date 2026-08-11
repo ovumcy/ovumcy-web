@@ -86,7 +86,7 @@ func TestErasureStepupClearsDataOnlyAfterAFreshReauth(t *testing.T) {
 	}
 
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = callbackResponse.Body.Close() }()
@@ -124,7 +124,7 @@ func TestErasureStepupDeletesAccountOnlyAfterAFreshReauth(t *testing.T) {
 	}
 
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, state, "callback-code")
 	defer func() { _ = callbackResponse.Body.Close() }()
@@ -164,7 +164,7 @@ func TestErasureStepupKeepsDataWhenTheReauthIsRefused(t *testing.T) {
 			startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
 			defer func() { _ = startResponse.Body.Close() }()
 			stepupCookie := readStepupCookie(t, startResponse)
-			state := extractStepupCallbackState(t, fixture, stepupCookie)
+			state := extractStepupCallbackState(t, fixture)
 
 			// Refuse only at the exchange, so the request reaches the same place
 			// the successful case does and diverges exactly at the verdict.
@@ -262,7 +262,7 @@ func TestErasureStepupCallbackRefusesAForeignSession(t *testing.T) {
 	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	// A second owner on the same instance — the household case.
 	intruder := models.User{
@@ -304,7 +304,7 @@ func TestErasureStepupCallbackRefusesOnceALocalPasswordExists(t *testing.T) {
 	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	if err := fixture.database.Model(&models.User{}).Where("id = ?", fixture.user.ID).
 		Update("local_auth_enabled", true).Error; err != nil {
@@ -330,7 +330,7 @@ func TestErasureStepupCallbackRefusesAProviderError(t *testing.T) {
 	startResponse := postErasureStepupStart(t, fixture, "/api/v1/users/current/data-wipe/step-up")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	form := url.Values{"state": {state}, "code": {""}, "error": {"access_denied"}}
 	request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
@@ -366,7 +366,7 @@ func TestErasureStepupCallbackSurvivesAStorageFailure(t *testing.T) {
 			startResponse := postErasureStepupStart(t, fixture, testCase.path)
 			defer func() { _ = startResponse.Body.Close() }()
 			stepupCookie := readStepupCookie(t, startResponse)
-			state := extractStepupCallbackState(t, fixture, stepupCookie)
+			state := extractStepupCallbackState(t, fixture)
 
 			// Both erasure transactions start at daily_logs, so dropping it fails
 			// them while leaving the users table the auth middleware reads intact.

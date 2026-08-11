@@ -392,10 +392,7 @@ func TestShowResetPasswordPageWithValidForcedTokenShowsForcedNoticeAndForm(t *te
 // error must surface that error key on the GET page via the
 // data-auth-server-error / data-error-key hooks the front-end keys off.
 func TestShowResetPasswordPageSurfacesFlashAuthErrorThroughDataKey(t *testing.T) {
-	handler := &Handler{
-		secretKey:    []byte(testHandlerSecretKey),
-		cookieSecure: true,
-	}
+	handler := &Handler{secretKey: []byte(testHandlerSecretKey)}
 	codec, err := newSecureCookieCodec(handler.secretKey)
 	if err != nil {
 		t.Fatalf("newSecureCookieCodec: %v", err)

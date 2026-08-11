@@ -437,7 +437,7 @@ func newSettingsMutationStepupApp(t *testing.T, stub *stubOIDCWorkflowService) (
 	app := fiber.New()
 	app.Use(handler.LanguageMiddleware)
 	app.Get("/__seed/stepup", func(c fiber.Ctx) error {
-		userID := uint(fiber.Query[int](c, "user_id", 0))
+		userID := uint(fiber.Query(c, "user_id", 0))
 		state, stateErr := newOIDCStepupState(time.Now(), oidcStepupPurposeLocalPasswordSetup, userID, "prepared-hash")
 		if stateErr != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(stateErr.Error())

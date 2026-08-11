@@ -37,7 +37,7 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 		weekStart = NormalizeWeekStart(user.WeekStartsOn)
 	}
 	gridStart, gridEnd := calendarGridBounds(monthStart, weekStart)
-	latestLogByDate, hasDataMap := buildCalendarLogMaps(logs, location)
+	latestLogByDate, hasDataMap := buildCalendarLogMaps(logs)
 	predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, tentativeOvulationMap := buildCalendarPredictionMaps(user, logs, stats, gridEnd, now, location)
 
 	todayKey := DateAtLocation(now, location).Format("2006-01-02")
@@ -59,7 +59,7 @@ func calendarGridBounds(monthStart time.Time, weekStart string) (time.Time, time
 	return gridStart, gridEnd
 }
 
-func buildCalendarLogMaps(logs []models.DailyLog, location *time.Location) (map[string]models.DailyLog, map[string]bool) {
+func buildCalendarLogMaps(logs []models.DailyLog) (map[string]models.DailyLog, map[string]bool) {
 	latestLogByDate := make(map[string]models.DailyLog)
 	hasDataMap := make(map[string]bool)
 	for _, logEntry := range logs {

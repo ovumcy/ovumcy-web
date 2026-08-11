@@ -39,13 +39,12 @@ type detectedCycle struct {
 }
 
 const (
-	cyclePredictionWindow      = 6
-	irregularCycleSpreadDays   = 7
-	irregularCycleFallbackSpan = 7
-	defaultLutealPhaseDays     = 14
-	minLutealPhaseDays         = 10
-	minOvulationCycleDay       = 5
-	minCycleReserveDays        = 10
+	cyclePredictionWindow    = 6
+	irregularCycleSpreadDays = 7
+	defaultLutealPhaseDays   = 14
+	minLutealPhaseDays       = 10
+	minOvulationCycleDay     = 5
+	minCycleReserveDays      = 10
 )
 
 func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {

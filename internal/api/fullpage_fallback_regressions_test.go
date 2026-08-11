@@ -77,7 +77,7 @@ func newFullPageFallbackApp(t *testing.T, options onboardingTestAppOptions) (*fi
 		return c.JSON(fiber.Map{"state": state.State})
 	})
 	app.Get("/__seed/oidc-stepup", func(c fiber.Ctx) error {
-		userID := uint(fiber.Query[int](c, "user_id", 0))
+		userID := uint(fiber.Query(c, "user_id", 0))
 		state, stateErr := newOIDCStepupState(time.Now(), oidcStepupPurposeLocalPasswordSetup, userID, "prepared-hash")
 		if stateErr != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(stateErr.Error())
@@ -88,7 +88,7 @@ func newFullPageFallbackApp(t *testing.T, options onboardingTestAppOptions) (*fi
 		return c.SendStatus(fiber.StatusOK)
 	})
 	app.Get("/__seed/link-pending", func(c fiber.Ctx) error {
-		userID := uint(fiber.Query[int](c, "user_id", 0))
+		userID := uint(fiber.Query(c, "user_id", 0))
 		payload, payloadErr := newOIDCLinkPendingPayload(time.Now(), userID, "https://issuer.example.com", "subject-1", c.Query("email", ""))
 		if payloadErr != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(payloadErr.Error())
