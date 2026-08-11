@@ -17,7 +17,9 @@
     class="space-y-5 calendar-day-editor-form"
     data-save-feedback
     data-day-editor-form
-    data-day-editor-date="{{.DateString}}">
+    data-day-editor-date="{{.DateString}}"
+    data-day-save-failed-text="{{t .Messages "daylog.save_failed"}}"
+    data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 

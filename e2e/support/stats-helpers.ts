@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, type Request } from '@playwright/test';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -160,6 +160,35 @@ export async function saveDayEditorForm(page: Page, isoDate: string, form: Locat
   // save is silently lost. Let the app go quiescent first so the save is fully
   // settled — not just committed — before returning.
   await page.waitForLoadState('networkidle');
+}
+
+/**
+ * Clicks the day-editor save button and returns the PUT it issued, WITHOUT
+ * asserting that the save succeeded.
+ *
+ * `saveDayEditorForm` above is the helper every ordinary save goes through: it
+ * proves the write committed and lets the htmx cascade settle. A save-failure
+ * spec cannot use it, because the failure is the subject. This variant keeps
+ * the one part that must never be hand-rolled — binding the wait to the click's
+ * own request rather than to any matching response — and leaves the verdict to
+ * the caller. It deliberately does not settle the network: an intercepted save
+ * fires no `calendar-day-updated` cascade, and `networkidle` would only add a
+ * timeout. Never follow it with `page.goto`: a navigation would abort the
+ * in-flight PUT, which is the data loss the save helpers exist to prevent.
+ */
+export async function attemptDayEditorSave(
+  page: Page,
+  isoDate: string,
+  form: Locator
+): Promise<Request> {
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${isoDate}`),
+    ),
+    form.locator('button[data-save-button]').click(),
+  ]);
+  return request;
 }
 
 export async function saveCycleFactorOnDay(

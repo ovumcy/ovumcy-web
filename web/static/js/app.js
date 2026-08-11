@@ -1832,6 +1832,110 @@
     }
   }
 
+  // Parses a server error response into the message the client may show. The
+  // fragment is parsed with DOMParser and only its TEXT is adopted: server
+  // templates already escape user-supplied values, so today this is purely
+  // defense-in-depth — any future regression that lets unescaped HTML into an
+  // error response would otherwise become an instant DOM-XSS through
+  // `target.innerHTML = responseText`.
+  function parseServerStatusError(responseText) {
+    if (!responseText || responseText.indexOf("status-error") === -1) {
+      return null;
+    }
+
+    var doc = new DOMParser().parseFromString(responseText, "text/html");
+    var fragment = doc.querySelector(".status-error");
+    return {
+      text: fragment ? fragment.textContent : responseText,
+      key: fragment ? fragment.getAttribute("data-flash-key") || "" : ""
+    };
+  }
+
+  // A day entry lives only in the form the owner typed it into: no draft is
+  // written to storage, no offline cache, no service worker. That live form is
+  // the whole recovery mechanism, so a save that does not land must leave every
+  // field untouched and hand back a control that resubmits the same node.
+  //
+  // A self-hosted instance is regularly unreachable — the owner is off the home
+  // network — so a failed save is a transport event, not a finding about the
+  // owner's body. It is rendered on the neutral status-notice surface rather
+  // than the red status-error one, inside the existing aria-live="polite"
+  // container, and never as a success.
+  function dayEditorFormFromEvent(event) {
+    var form = getSaveFeedbackFormFromEvent(event);
+    if (!form || !form.matches || !form.matches("[data-day-editor-form]")) {
+      return null;
+    }
+    return form;
+  }
+
+  function renderDaySaveFailure(form, message, origin, messageKey) {
+    var target = form && form.querySelector ? form.querySelector(".save-status") : null;
+    if (!target || !message) {
+      return false;
+    }
+
+    var notice = document.createElement("div");
+    notice.className = "status-notice";
+    notice.setAttribute("data-day-save-failed", origin);
+
+    var text = document.createElement("span");
+    text.className = "status-notice-message";
+    text.textContent = message;
+    if (messageKey) {
+      text.setAttribute("data-notice-key", messageKey);
+    }
+    notice.appendChild(text);
+
+    var retry = document.createElement("button");
+    // Explicitly type="button": the status container sits inside the form, and
+    // a default submit button here would fire a second save on every click that
+    // reaches it.
+    retry.type = "button";
+    retry.className = "status-notice-action";
+    retry.setAttribute("data-day-save-retry", "true");
+    retry.textContent = form.getAttribute("data-day-save-retry-label") || "Try again";
+    notice.appendChild(retry);
+
+    target.replaceChildren(notice);
+    return true;
+  }
+
+  function renderDaySaveUnreachable(form) {
+    return renderDaySaveFailure(
+      form,
+      form.getAttribute("data-day-save-failed-text") || "Couldn't save. Your entry is still here.",
+      "unreachable",
+      ""
+    );
+  }
+
+  function handleDaySaveTransportFailure(event) {
+    var form = dayEditorFormFromEvent(event);
+    if (!form) {
+      return;
+    }
+    renderDaySaveUnreachable(form);
+    // htmx fires afterRequest before sendError, so the button is already back;
+    // re-assert it anyway, because a save button left disabled would take the
+    // retry with it.
+    setSaveButtonState(form, false);
+  }
+
+  function retryDaySave(form) {
+    // Resubmit the very same form node. Nothing was copied anywhere, so the
+    // retry carries exactly what is on screen.
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+      return;
+    }
+
+    var saveButton = form.querySelector("[data-save-button]");
+    if (saveButton) {
+      saveButton.click();
+    }
+  }
+
   function initHTMXHooks() {
     document.body.addEventListener("htmx:configRequest", function (event) {
       var tokenMeta = document.querySelector('meta[name="csrf-token"]');
@@ -1921,9 +2025,47 @@
       clearStatusTargetIfEmpty(parent);
     });
 
+    document.body.addEventListener("htmx:sendError", handleDaySaveTransportFailure);
+    document.body.addEventListener("htmx:sendAbort", handleDaySaveTransportFailure);
+    document.body.addEventListener("htmx:timeout", handleDaySaveTransportFailure);
+
+    document.body.addEventListener("click", function (event) {
+      var retryButton = closestFromEvent(event, "[data-day-save-retry]");
+      if (!retryButton) {
+        return;
+      }
+
+      var form = retryButton.closest("form[data-day-editor-form]");
+      if (!form) {
+        return;
+      }
+
+      event.preventDefault();
+      retryDaySave(form);
+    });
+
     document.body.addEventListener("htmx:responseError", function (event) {
       var target = event && event.detail ? event.detail.target : null;
       var form = getSaveFeedbackFormFromEvent(event);
+      var dayForm = dayEditorFormFromEvent(event);
+
+      if (dayForm) {
+        // The server answered, but not with a save. Keep its own message when
+        // it sent one — it is more specific than any generic copy — and fall
+        // back to the neutral "could not save" line otherwise. Either way the
+        // owner gets the retry, and the typed entry is left alone.
+        var dayXHR = event.detail ? event.detail.xhr : null;
+        var serverError = parseServerStatusError(
+          dayXHR && typeof dayXHR.responseText === "string" ? dayXHR.responseText : ""
+        );
+        var serverMessage = serverError ? String(serverError.text || "").trim() : "";
+        var rendered = serverMessage
+          ? renderDaySaveFailure(dayForm, serverMessage, "rejected", serverError.key)
+          : renderDaySaveUnreachable(dayForm);
+        if (rendered) {
+          return;
+        }
+      }
       if (!target || !target.classList || !target.classList.contains("save-status")) {
         if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
           window.__ovumcyFinalizeDashboardManualSave(form, false);
@@ -1933,19 +2075,13 @@
 
       var xhr = event.detail.xhr;
       var responseText = xhr && typeof xhr.responseText === "string" ? xhr.responseText : "";
-      if (responseText && responseText.indexOf("status-error") !== -1) {
-        // Safe-by-construction swap: parse the server's status-error
-        // fragment, but only adopt its text content. Server templates
-        // already escape user-supplied values, so today this is purely
-        // defense-in-depth — any future regression that lets unescaped
-        // HTML into an error response would otherwise become an instant
-        // DOM-XSS through `target.innerHTML = responseText`.
-        var doc = new DOMParser().parseFromString(responseText, "text/html");
-        var fragment = doc.querySelector(".status-error");
-        var messageText = fragment ? fragment.textContent : responseText;
+      var parsedError = parseServerStatusError(responseText);
+      if (parsedError) {
+        // Safe-by-construction swap: only the parsed fragment's text is
+        // adopted (see parseServerStatusError).
         var safeContainer = document.createElement("div");
         safeContainer.className = "status-error";
-        safeContainer.textContent = messageText;
+        safeContainer.textContent = parsedError.text;
         target.replaceChildren(safeContainer);
         return;
       }
