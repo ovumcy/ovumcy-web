@@ -839,6 +839,16 @@ components:
 
     TrackingSettings:
       type: object
+      description: |
+        JSON body of the tracking-preferences save. The three section
+        visibility flags keep their stored, inverted spelling here
+        (`hide_sex_chip`, `hide_cycle_factors`, `hide_notes_field`): renaming a
+        v1 field is a breaking change, so the published contract is unchanged.
+        The bundled settings form posts the positive `show_sex_chip`,
+        `show_cycle_factors` and `show_notes_field` fields instead — the
+        toggles read "show" in the interface — and the server converts the two
+        vocabularies in a single place. Every field is a full snapshot: an
+        omitted flag reads as `false`, it is not a no-op.
       properties:
         track_bbt: { type: boolean }
         temperature_unit:

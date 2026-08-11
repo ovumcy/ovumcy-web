@@ -89,10 +89,12 @@ type SettingsPageViewData struct {
 	TrackBBT                bool
 	TemperatureUnit         string
 	TrackCervicalMucus      bool
-	HideSexChip             bool
-	HideCycleFactors        bool
-	HideNotesField          bool
-	ShowHistoricalPhases    bool
+	// The three section toggles are rendered positively; the stored columns are
+	// inverted and are converted exactly once, in tracking_visibility.go.
+	ShowSexChip          bool
+	ShowCycleFactors     bool
+	ShowNotesField       bool
+	ShowHistoricalPhases bool
 	WeekStartsOn            string
 	ReminderLeadDays        int
 	LastPeriodStart         string
@@ -197,9 +199,7 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 	resolvedUser.TrackBBT = persisted.TrackBBT
 	resolvedUser.TemperatureUnit = NormalizeTemperatureUnit(persisted.TemperatureUnit)
 	resolvedUser.TrackCervicalMucus = persisted.TrackCervicalMucus
-	resolvedUser.HideSexChip = persisted.HideSexChip
-	resolvedUser.HideCycleFactors = persisted.HideCycleFactors
-	resolvedUser.HideNotesField = persisted.HideNotesField
+	TrackingVisibilityForUser(&persisted).ApplyToUser(&resolvedUser)
 	resolvedUser.ShowHistoricalPhases = persisted.ShowHistoricalPhases
 	resolvedUser.WeekStartsOn = NormalizeWeekStart(persisted.WeekStartsOn)
 	resolvedUser.ReminderLeadDays = NormalizeReminderLeadDays(persisted.ReminderLeadDays)
@@ -223,6 +223,7 @@ func buildResolvedSettingsUser(user *models.User, persisted models.User, today t
 }
 
 func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, today time.Time, minCycleStart time.Time, statusKeys settingsStatusKeys) SettingsPageViewData {
+	visibility := TrackingVisibilityForUser(&user)
 	return SettingsPageViewData{
 		CurrentUser:            user,
 		ErrorKey:               statusKeys.errorKey,
@@ -239,9 +240,9 @@ func buildSettingsPageBaseViewData(user models.User, lastPeriodStart string, tod
 		TrackBBT:               user.TrackBBT,
 		TemperatureUnit:        user.TemperatureUnit,
 		TrackCervicalMucus:     user.TrackCervicalMucus,
-		HideSexChip:            user.HideSexChip,
-		HideCycleFactors:       user.HideCycleFactors,
-		HideNotesField:         user.HideNotesField,
+		ShowSexChip:            visibility.ShowSexChip,
+		ShowCycleFactors:       visibility.ShowCycleFactors,
+		ShowNotesField:         visibility.ShowNotesField,
 		ShowHistoricalPhases:   user.ShowHistoricalPhases,
 		WeekStartsOn:           user.WeekStartsOn,
 		ReminderLeadDays:       user.ReminderLeadDays,

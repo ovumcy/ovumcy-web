@@ -358,49 +358,53 @@ test.describe('Settings: profile and cycle', () => {
 
     const trackBBT = trackingSection.locator('input[name="track_bbt"]');
     const trackCervicalMucus = trackingSection.locator('input[name="track_cervical_mucus"]');
-    const hideSexChip = trackingSection.locator('input[name="hide_sex_chip"]');
+    const showSexChip = trackingSection.locator('input[name="show_sex_chip"]');
     const trackBBTToggle = trackingSection.locator('[data-tracking-setting="track-bbt"]');
     const trackCervicalMucusToggle = trackingSection.locator('[data-tracking-setting="track-cervical-mucus"]');
-    const hideSexChipToggle = trackingSection.locator('[data-tracking-setting="hide-sex-chip"]');
+    const showSexChipToggle = trackingSection.locator('[data-tracking-setting="show-sex-chip"]');
     const trackBBTState = trackBBTToggle.locator('[data-binary-toggle-state]');
     const trackCervicalMucusState = trackCervicalMucusToggle.locator('[data-binary-toggle-state]');
-    const hideSexChipState = hideSexChipToggle.locator('[data-binary-toggle-state]');
+    const showSexChipState = showSexChipToggle.locator('[data-binary-toggle-state]');
     const temperatureUnitFahrenheit = trackingSection.locator('input[name="temperature_unit"][value="f"]');
     const saveTrackingButton = trackingSection.locator('button[data-save-button]');
 
+    // Every toggle in this section is phrased positively: checked means the
+    // field is shown. The intimacy section is visible by default, so its box
+    // starts checked while the two opt-in fields start unchecked.
     await expect(trackBBT).not.toBeChecked();
     await expect(trackCervicalMucus).not.toBeChecked();
-    await expect(hideSexChip).not.toBeChecked();
+    await expect(showSexChip).toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
+    await expect(showSexChipToggle).toHaveAttribute('data-active', 'true');
     await expect(trackBBTToggle).toContainText(
       'Adds a basal body temperature field to dashboard and calendar day editing.'
     );
     await expect(trackCervicalMucusToggle).toContainText(
       'Adds cervical mucus choices to dashboard and calendar day editing.'
     );
-    await expect(hideSexChipToggle).toContainText(
-      'Removes the intimacy section from new dashboard and calendar entries.'
+    await expect(showSexChipToggle).toContainText(
+      'Adds the intimacy section to dashboard and calendar day editing.'
     );
     await expect(trackBBTState).toHaveText('Currently hidden from new dashboard and calendar entries.');
     await expect(trackCervicalMucusState).toHaveText(
       'Currently hidden from new dashboard and calendar entries.'
     );
-    await expect(hideSexChipState).toHaveText(
+    await expect(showSexChipState).toHaveText(
       'Currently visible in dashboard and calendar day editor.'
     );
 
     await trackBBT.check();
     await trackCervicalMucus.check();
-    await hideSexChip.check();
+    await showSexChip.uncheck();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
-    await expect(hideSexChipToggle).toHaveAttribute('data-active', 'true');
+    await expect(showSexChipToggle).toHaveAttribute('data-active', 'false');
     await expect(trackBBTState).toHaveText('Currently visible in dashboard and calendar day editor.');
     await expect(trackCervicalMucusState).toHaveText(
       'Currently visible in dashboard and calendar day editor.'
     );
-    await expect(hideSexChipState).toHaveText(
-      'Currently hidden in dashboard and calendar day editor.'
+    await expect(showSexChipState).toHaveText(
+      'Currently hidden from new dashboard and calendar entries.'
     );
     await checkStyledControl(temperatureUnitFahrenheit);
     await saveTrackingButton.click();
@@ -410,16 +414,16 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/settings$/);
     await expect(trackBBT).toBeChecked();
     await expect(trackCervicalMucus).toBeChecked();
-    await expect(hideSexChip).toBeChecked();
+    await expect(showSexChip).not.toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
-    await expect(hideSexChipToggle).toHaveAttribute('data-active', 'true');
+    await expect(showSexChipToggle).toHaveAttribute('data-active', 'false');
     await expect(trackBBTState).toHaveText('Currently visible in dashboard and calendar day editor.');
     await expect(trackCervicalMucusState).toHaveText(
       'Currently visible in dashboard and calendar day editor.'
     );
-    await expect(hideSexChipState).toHaveText(
-      'Currently hidden in dashboard and calendar day editor.'
+    await expect(showSexChipState).toHaveText(
+      'Currently hidden from new dashboard and calendar entries.'
     );
     await expect(temperatureUnitFahrenheit).toBeChecked();
 
@@ -462,12 +466,12 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/settings$/);
     await trackBBT.uncheck();
     await trackCervicalMucus.uncheck();
-    await hideSexChip.uncheck();
+    await showSexChip.check();
     await expect(trackBBTState).toHaveText('Currently hidden from new dashboard and calendar entries.');
     await expect(trackCervicalMucusState).toHaveText(
       'Currently hidden from new dashboard and calendar entries.'
     );
-    await expect(hideSexChipState).toHaveText(
+    await expect(showSexChipState).toHaveText(
       'Currently visible in dashboard and calendar day editor.'
     );
     await saveTrackingButton.click();
@@ -481,7 +485,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toBeVisible();
   });
 
-  test('hide-cycle-factors, hide-notes-field, and show-historical-phases toggles persist and change the owner day form', async ({
+  test('show-cycle-factors, show-notes-field, and show-historical-phases toggles persist and change the owner day form', async ({
     page,
   }) => {
     await registerOwnerAndOpenSettings(page, 'settings-tracking-extra');
@@ -489,57 +493,62 @@ test.describe('Settings: profile and cycle', () => {
     const trackingSection = page.locator('#settings-tracking');
     await expect(trackingSection).toBeVisible();
 
-    const hideCycleFactors = trackingSection.locator('input[name="hide_cycle_factors"]');
-    const hideNotesField = trackingSection.locator('input[name="hide_notes_field"]');
+    const showCycleFactors = trackingSection.locator('input[name="show_cycle_factors"]');
+    const showNotesField = trackingSection.locator('input[name="show_notes_field"]');
     const showHistoricalPhases = trackingSection.locator('input[name="show_historical_phases"]');
-    const hideCycleFactorsToggle = trackingSection.locator('[data-tracking-setting="hide-cycle-factors"]');
-    const hideNotesFieldToggle = trackingSection.locator('[data-tracking-setting="hide-notes-field"]');
+    const showCycleFactorsToggle = trackingSection.locator('[data-tracking-setting="show-cycle-factors"]');
+    const showNotesFieldToggle = trackingSection.locator('[data-tracking-setting="show-notes-field"]');
     const showHistoricalPhasesToggle = trackingSection.locator('[data-tracking-setting="show-historical-phases"]');
-    const hideCycleFactorsState = hideCycleFactorsToggle.locator('[data-binary-toggle-state]');
-    const hideNotesFieldState = hideNotesFieldToggle.locator('[data-binary-toggle-state]');
+    const showCycleFactorsState = showCycleFactorsToggle.locator('[data-binary-toggle-state]');
+    const showNotesFieldState = showNotesFieldToggle.locator('[data-binary-toggle-state]');
     const showHistoricalPhasesState = showHistoricalPhasesToggle.locator('[data-binary-toggle-state]');
     const saveTrackingButton = trackingSection.locator('button[data-save-button]');
 
-    await expect(hideCycleFactors).not.toBeChecked();
-    await expect(hideNotesField).not.toBeChecked();
+    // Cycle factors and notes are visible by default, so their positive
+    // toggles start checked; historical phases are opt-in.
+    await expect(showCycleFactors).toBeChecked();
+    await expect(showNotesField).toBeChecked();
     await expect(showHistoricalPhases).not.toBeChecked();
-    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'false');
-    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'false');
+    await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'true');
+    await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'true');
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
-    await expect(hideCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(hideNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(showCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(showNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
     await expect(showHistoricalPhasesState).toHaveText(
       'Currently hidden; only the next predicted cycles show fertile windows.'
     );
 
-    await hideCycleFactors.check();
-    await hideNotesField.check();
+    await showCycleFactors.uncheck();
+    await showNotesField.uncheck();
     await showHistoricalPhases.check();
-    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'true');
-    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'true');
+    await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'false');
+    await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'false');
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'true');
-    await expect(hideCycleFactorsState).toHaveText('Currently hidden in dashboard and calendar day editor.');
-    await expect(hideNotesFieldState).toHaveText('Currently hidden in dashboard and calendar day editor.');
+    await expect(showCycleFactorsState).toHaveText('Currently hidden from new dashboard and calendar entries.');
+    await expect(showNotesFieldState).toHaveText('Currently hidden from new dashboard and calendar entries.');
     await expect(showHistoricalPhasesState).toHaveText('Currently shown on past months in the calendar.');
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
 
     await page.reload();
     await expect(page).toHaveURL(/\/settings$/);
-    await expect(hideCycleFactors).toBeChecked();
-    await expect(hideNotesField).toBeChecked();
+    await expect(showCycleFactors).not.toBeChecked();
+    await expect(showNotesField).not.toBeChecked();
     await expect(showHistoricalPhases).toBeChecked();
-    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'true');
-    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'true');
+    await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'false');
+    await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'false');
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'true');
-    await expect(hideCycleFactorsState).toHaveText('Currently hidden in dashboard and calendar day editor.');
-    await expect(hideNotesFieldState).toHaveText('Currently hidden in dashboard and calendar day editor.');
+    await expect(showCycleFactorsState).toHaveText('Currently hidden from new dashboard and calendar entries.');
+    await expect(showNotesFieldState).toHaveText('Currently hidden from new dashboard and calendar entries.');
     await expect(showHistoricalPhasesState).toHaveText('Currently shown on past months in the calendar.');
 
-    // Dashboard effect: hide_cycle_factors removes the cycle-factor fieldset
-    // and hide_notes_field removes the notes disclosure from the owner's day
-    // form, mirroring how the sibling tracking toggles above assert
-    // hide_sex_chip / track_cervical_mucus. show_historical_phases has no
+    // Dashboard effect: an unchecked show-cycle-factors removes the
+    // cycle-factor fieldset and an unchecked show-notes-field removes the notes
+    // disclosure from the owner's day form, mirroring how the sibling tracking
+    // toggles above assert show_sex_chip / track_cervical_mucus. The stored
+    // columns stay inverted (hide_cycle_factors / hide_notes_field), so this
+    // reload is also the browser-side proof that the settings render and the
+    // day form agree on one conversion. show_historical_phases has no
     // dashboard/day-form surface (it only affects past-month calendar
     // rendering), so persistence above is its end-to-end coverage here; the
     // clear-data reset invariant is covered separately.
@@ -550,18 +559,18 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
-    await hideCycleFactors.uncheck();
-    await hideNotesField.uncheck();
+    await showCycleFactors.check();
+    await showNotesField.check();
     await showHistoricalPhases.uncheck();
-    await expect(hideCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(hideNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(showCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
+    await expect(showNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
     await expect(showHistoricalPhasesState).toHaveText(
       'Currently hidden; only the next predicted cycles show fertile windows.'
     );
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
-    await expect(hideCycleFactorsToggle).toHaveAttribute('data-active', 'false');
-    await expect(hideNotesFieldToggle).toHaveAttribute('data-active', 'false');
+    await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'true');
+    await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'true');
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
 
     await page.goto('/dashboard');

@@ -77,11 +77,12 @@ func (handler *Handler) resolveUpsertDayRequest(c fiber.Ctx) (upsertDayRequest, 
 }
 
 func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *models.User, preserveHiddenFields bool) services.DayEntryInput {
-	preserveSexActivity := preserveHiddenFields && user != nil && user.HideSexChip
+	visibility := services.TrackingVisibilityForUser(user)
+	preserveSexActivity := preserveHiddenFields && user != nil && visibility.SexChipHidden()
 	preserveBBT := preserveHiddenFields && user != nil && !user.TrackBBT
 	preserveCervicalMucus := preserveHiddenFields && user != nil && !user.TrackCervicalMucus
-	preserveCycleFactors := preserveHiddenFields && user != nil && user.HideCycleFactors
-	preserveNotes := preserveHiddenFields && user != nil && user.HideNotesField
+	preserveCycleFactors := preserveHiddenFields && user != nil && visibility.CycleFactorsHidden()
+	preserveNotes := preserveHiddenFields && user != nil && visibility.NotesFieldHidden()
 
 	return services.DayEntryInput{
 		IsPeriod:              payload.IsPeriod,

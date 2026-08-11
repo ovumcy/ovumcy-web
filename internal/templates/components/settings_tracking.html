@@ -56,51 +56,51 @@
         <label
           class="period-toggle settings-tracking-toggle"
           data-binary-toggle
-          data-active="{{if .HideSexChip}}true{{else}}false{{end}}"
-          data-tracking-setting="hide-sex-chip">
-          <input type="checkbox" name="hide_sex_chip" value="true" data-binary-toggle-input {{if .HideSexChip}}checked{{end}}>
+          data-active="{{if .ShowSexChip}}true{{else}}false{{end}}"
+          data-tracking-setting="show-sex-chip">
+          <input type="checkbox" name="show_sex_chip" value="true" data-binary-toggle-input {{if .ShowSexChip}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main"><span aria-hidden="true">◦</span> {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_sex_chip_hint"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">◦</span> {{t .Messages "settings.tracking.show_sex_chip"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_sex_chip_hint"}}</span>
             <span
               class="journal-muted text-xs"
               data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.hide_sex_chip_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}">{{if .HideSexChip}}{{t .Messages "settings.tracking.hide_sex_chip_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_sex_chip_state_off"}}{{end}}</span>
+              data-state-on="{{t .Messages "settings.tracking.show_sex_chip_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.show_sex_chip_state_off"}}">{{if .ShowSexChip}}{{t .Messages "settings.tracking.show_sex_chip_state_on"}}{{else}}{{t .Messages "settings.tracking.show_sex_chip_state_off"}}{{end}}</span>
           </span>
         </label>
 
         <label
           class="period-toggle settings-tracking-toggle"
           data-binary-toggle
-          data-active="{{if .HideCycleFactors}}true{{else}}false{{end}}"
-          data-tracking-setting="hide-cycle-factors">
-          <input type="checkbox" name="hide_cycle_factors" value="true" data-binary-toggle-input {{if .HideCycleFactors}}checked{{end}}>
+          data-active="{{if .ShowCycleFactors}}true{{else}}false{{end}}"
+          data-tracking-setting="show-cycle-factors">
+          <input type="checkbox" name="show_cycle_factors" value="true" data-binary-toggle-input {{if .ShowCycleFactors}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main"><span aria-hidden="true">🏷️</span> {{t .Messages "settings.tracking.hide_cycle_factors"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_cycle_factors_hint"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">🏷️</span> {{t .Messages "settings.tracking.show_cycle_factors"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_cycle_factors_hint"}}</span>
             <span
               class="journal-muted text-xs"
               data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.hide_cycle_factors_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.hide_cycle_factors_state_off"}}">{{if .HideCycleFactors}}{{t .Messages "settings.tracking.hide_cycle_factors_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_cycle_factors_state_off"}}{{end}}</span>
+              data-state-on="{{t .Messages "settings.tracking.show_cycle_factors_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.show_cycle_factors_state_off"}}">{{if .ShowCycleFactors}}{{t .Messages "settings.tracking.show_cycle_factors_state_on"}}{{else}}{{t .Messages "settings.tracking.show_cycle_factors_state_off"}}{{end}}</span>
           </span>
         </label>
 
         <label
           class="period-toggle settings-tracking-toggle"
           data-binary-toggle
-          data-active="{{if .HideNotesField}}true{{else}}false{{end}}"
-          data-tracking-setting="hide-notes-field">
-          <input type="checkbox" name="hide_notes_field" value="true" data-binary-toggle-input {{if .HideNotesField}}checked{{end}}>
+          data-active="{{if .ShowNotesField}}true{{else}}false{{end}}"
+          data-tracking-setting="show-notes-field">
+          <input type="checkbox" name="show_notes_field" value="true" data-binary-toggle-input {{if .ShowNotesField}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main"><span aria-hidden="true">📝</span> {{t .Messages "settings.tracking.hide_notes_field"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_notes_field_hint"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">📝</span> {{t .Messages "settings.tracking.show_notes_field"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_notes_field_hint"}}</span>
             <span
               class="journal-muted text-xs"
               data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.hide_notes_field_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.hide_notes_field_state_off"}}">{{if .HideNotesField}}{{t .Messages "settings.tracking.hide_notes_field_state_on"}}{{else}}{{t .Messages "settings.tracking.hide_notes_field_state_off"}}{{end}}</span>
+              data-state-on="{{t .Messages "settings.tracking.show_notes_field_state_on"}}"
+              data-state-off="{{t .Messages "settings.tracking.show_notes_field_state_off"}}">{{if .ShowNotesField}}{{t .Messages "settings.tracking.show_notes_field_state_on"}}{{else}}{{t .Messages "settings.tracking.show_notes_field_state_off"}}{{end}}</span>
           </span>
         </label>
 

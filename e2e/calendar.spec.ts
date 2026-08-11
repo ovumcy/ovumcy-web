@@ -539,6 +539,9 @@ test.describe('Calendar page', () => {
     // Enable TrackBBT via the tracking settings endpoint. Send the full
     // default snapshot — the JSON body parser does not treat missing fields
     // as no-op, so a single-field patch would wipe the other tracking flags.
+    // The JSON body keeps the published v1 keys, which spell the three section
+    // flags in their stored, inverted form; only the settings form posts the
+    // positive show_* fields the toggles are labelled with.
     const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
     const trackingResponse = await page.request.patch('/api/v1/users/current/tracking', {
       headers: { ...apiOriginHeader(page), 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' },
