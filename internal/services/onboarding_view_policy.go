@@ -17,7 +17,6 @@ type OnboardingViewState struct {
 	PeriodLength    int
 	AutoPeriodFill  bool
 	IrregularCycle  bool
-	AgeGroup        string
 	UsageGoal       string
 }
 
@@ -42,7 +41,6 @@ func BuildOnboardingViewState(user *models.User, stepRaw string, now time.Time, 
 	periodLength := models.DefaultPeriodLength
 	autoPeriodFill := false
 	irregularCycle := false
-	ageGroup := models.AgeGroupUnknown
 	usageGoal := models.UsageGoalHealth
 	var lastPeriodStart *time.Time
 
@@ -50,7 +48,6 @@ func BuildOnboardingViewState(user *models.User, stepRaw string, now time.Time, 
 		cycleLength, periodLength = ResolveCycleAndPeriodDefaults(user.CycleLength, user.PeriodLength)
 		autoPeriodFill = user.AutoPeriodFill
 		irregularCycle = user.IrregularCycle
-		ageGroup = NormalizeAgeGroup(user.AgeGroup)
 		usageGoal = NormalizeUsageGoal(user.UsageGoal)
 		if user.LastPeriodStart != nil {
 			day := CalendarDay(*user.LastPeriodStart, location)
@@ -72,7 +69,6 @@ func BuildOnboardingViewState(user *models.User, stepRaw string, now time.Time, 
 		PeriodLength:    periodLength,
 		AutoPeriodFill:  autoPeriodFill,
 		IrregularCycle:  irregularCycle,
-		AgeGroup:        ageGroup,
 		UsageGoal:       usageGoal,
 	}
 }

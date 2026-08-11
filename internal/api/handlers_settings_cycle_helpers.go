@@ -10,6 +10,35 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// goalOnlyCycleSettingsRequest reports whether the request body carries the
+// usage goal and no cycle geometry at all. It is a question about the shape of
+// the request, not about the domain: what a goal-only save means is decided by
+// SettingsService.SaveUsageGoal. Presence is read field by field — a zero
+// cycle_length submitted explicitly is still a (rejected) full save, never a
+// silent partial one.
+func goalOnlyCycleSettingsRequest(c fiber.Ctx) (string, bool) {
+	if hasJSONBody(c) {
+		probe := struct {
+			CycleLength  *int    `json:"cycle_length"`
+			PeriodLength *int    `json:"period_length"`
+			UsageGoal    *string `json:"usage_goal"`
+		}{}
+		if err := c.Bind().Body(&probe); err != nil {
+			return "", false
+		}
+		if probe.UsageGoal == nil || probe.CycleLength != nil || probe.PeriodLength != nil {
+			return "", false
+		}
+		return strings.TrimSpace(*probe.UsageGoal), true
+	}
+
+	args := c.Request().PostArgs()
+	if !args.Has("usage_goal") || args.Has("cycle_length") || args.Has("period_length") {
+		return "", false
+	}
+	return strings.TrimSpace(string(args.Peek("usage_goal"))), true
+}
+
 func (handler *Handler) parseCycleSettingsInput(c fiber.Ctx) (services.CycleSettingsUpdate, string) {
 	input := cycleSettingsInput{}
 	location := handler.requestLocation(c)

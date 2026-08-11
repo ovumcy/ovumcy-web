@@ -325,6 +325,21 @@
     return guidance;
   }
 
+  // Skipping the mode question answers nothing: every usage_goal radio is
+  // cleared so the submit carries no value at all and the server applies the
+  // neutral default. The skip control stays a submit button, so a browser
+  // without this script still completes onboarding on the same default.
+  function clearOnboardingUsageGoalChoice(root) {
+    if (!root || !root.querySelectorAll) {
+      return;
+    }
+
+    var choices = root.querySelectorAll("input[name='usage_goal']");
+    for (var index = 0; index < choices.length; index++) {
+      choices[index].checked = false;
+    }
+  }
+
   function goToOnboardingStep(state, nextStep) {
     state.step = normalizeOnboardingStep(nextStep);
     clearAllOnboardingStatuses(state);
@@ -402,6 +417,12 @@
 
         root.addEventListener("click", function (event) {
           var currentState = this.__ovumcyOnboardingState;
+
+          var skipUsageGoalButton = closestFromEvent(event, "[data-onboarding-usage-goal-skip]");
+          if (skipUsageGoalButton && this.contains(skipUsageGoalButton)) {
+            clearOnboardingUsageGoalChoice(this);
+            return;
+          }
 
           var stepButton = closestFromEvent(event, "[data-onboarding-go-step]");
           if (stepButton && this.contains(stepButton)) {

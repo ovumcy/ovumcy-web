@@ -529,7 +529,7 @@ test.describe('Calendar page', () => {
     await expect(stepTwoForm).toBeVisible();
     await Promise.all([
       page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-      stepTwoForm.locator('button[type="submit"]').click(),
+      stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
     ]);
     await setRequestTimezoneFromBrowser(page);
 

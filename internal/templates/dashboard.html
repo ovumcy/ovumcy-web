@@ -163,6 +163,26 @@
       <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
       <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
       <p class="journal-muted text-xs">{{t .Messages "usage_goal.ui_only_hint"}}</p>
+      <div
+        class="flex flex-wrap items-center gap-2 pt-1"
+        role="group"
+        aria-label="{{t .Messages "usage_goal.switch_mode"}}"
+        data-usage-goal-quick-switch>
+        {{range .UsageGoalAlternatives}}
+        <form
+          action="/api/v1/users/current/cycle"
+          method="post"
+          hx-patch="/api/v1/users/current/cycle"
+          hx-target="#dashboard-usage-goal-status"
+          hx-swap="innerHTML"
+          data-usage-goal-quick-switch-form>
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="usage_goal" value="{{.}}">
+          <button type="submit" class="btn-soft text-sm" data-usage-goal-choice="{{.}}">{{usageGoalLabel $.Messages .}}</button>
+        </form>
+        {{end}}
+        <div id="dashboard-usage-goal-status" class="save-status text-sm" aria-live="polite"></div>
+      </div>
     </div>
     {{end}}
 

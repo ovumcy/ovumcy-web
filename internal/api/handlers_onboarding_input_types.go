@@ -15,6 +15,5 @@ type onboardingStep2Input struct {
 	PeriodLength   int    `json:"period_length" form:"period_length"`
 	AutoPeriodFill bool   `json:"auto_period_fill" form:"auto_period_fill"`
 	IrregularCycle bool   `json:"irregular_cycle" form:"irregular_cycle"`
-	AgeGroup       string `json:"age_group" form:"age_group"`
 	UsageGoal      string `json:"usage_goal" form:"usage_goal"`
 }

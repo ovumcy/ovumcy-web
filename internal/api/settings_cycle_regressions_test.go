@@ -161,6 +161,61 @@ func TestSettingsPageRendersPersistedCycleValues(t *testing.T) {
 	}
 }
 
+// TestSettingsCycleGoalOnlyPatchWritesNothingButTheGoal covers the shape the
+// dashboard quick switch sends: a body carrying usage_goal and nothing else.
+// It rides the endpoint the settings form already uses, writes only that one
+// column, and asks the browser to re-render — the goal reframes the whole page.
+func TestSettingsCycleGoalOnlyPatchWritesNothingButTheGoal(t *testing.T) {
+	app, database := newOnboardingTestAppWithCSRF(t)
+	user := createOnboardingTestUser(t, database, "settings-goal-only@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"cycle_length":  31,
+		"period_length": 6,
+		"age_group":     models.AgeGroup40To45,
+		"usage_goal":    models.UsageGoalHealth,
+	}).Error; err != nil {
+		t.Fatalf("seed cycle values: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
+
+	goalOnly := func(token string) *http.Request {
+		form := url.Values{"usage_goal": {models.UsageGoalAvoid}}
+		if strings.TrimSpace(token) != "" {
+			form.Set("csrf_token", token)
+		}
+		request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/cycle", strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("HX-Request", "true")
+		request.Header.Set("Accept-Language", "en")
+		request.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
+		return request
+	}
+
+	assertStatusCode(t, mustAppResponse(t, app, goalOnly("")), http.StatusForbidden)
+
+	response := mustAppResponse(t, app, goalOnly(csrfToken))
+	assertStatusCode(t, response, http.StatusNoContent)
+	if got := response.Header.Get("HX-Refresh"); got != "true" {
+		t.Fatalf("expected the quick switch to re-render the page, got HX-Refresh=%q", got)
+	}
+
+	persisted := models.User{}
+	if err := database.Select("cycle_length", "period_length", "age_group", "usage_goal").First(&persisted, user.ID).Error; err != nil {
+		t.Fatalf("load persisted user: %v", err)
+	}
+	if persisted.UsageGoal != models.UsageGoalAvoid {
+		t.Fatalf("expected persisted usage_goal=%q, got %q", models.UsageGoalAvoid, persisted.UsageGoal)
+	}
+	if persisted.CycleLength != 31 || persisted.PeriodLength != 6 {
+		t.Fatalf("expected cycle length/period untouched (31/6), got %d/%d", persisted.CycleLength, persisted.PeriodLength)
+	}
+	if persisted.AgeGroup != models.AgeGroup40To45 {
+		t.Fatalf("expected age_group untouched (%q), got %q", models.AgeGroup40To45, persisted.AgeGroup)
+	}
+}
+
 func renderSettingsPageForTest(t *testing.T, app *fiber.App, authCookie string) string {
 	t.Helper()
 

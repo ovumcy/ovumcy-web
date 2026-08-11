@@ -177,7 +177,7 @@ async function completeOnboardingWithStartDate(page: Page, startDate: string): P
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
   await expect(stepTwoForm).toBeVisible();
-  await stepTwoForm.locator('button[type="submit"]').click();
+  await stepTwoForm.locator('[data-onboarding-step2-submit]').click();
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
 }
 

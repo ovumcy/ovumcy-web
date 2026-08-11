@@ -171,7 +171,9 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   await expect(stepTwoForm).toBeVisible();
   await Promise.all([
     page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-    stepTwoForm.locator('button[type="submit"]').click(),
+    // Step 2 carries two submit buttons — "Finish" and the skip action for the
+    // mode question — so the finish control is addressed by its own hook.
+    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
   ]);
 }
 

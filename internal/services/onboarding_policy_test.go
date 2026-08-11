@@ -180,14 +180,14 @@ func TestResolveCycleAndPeriodDefaults(t *testing.T) {
 func TestParseAndNormalizeStep2Input(t *testing.T) {
 	service := NewOnboardingService(nil)
 
-	if _, _, _, _, _, _, err := service.ParseAndNormalizeStep2Input("invalid", "5", true, false, "", ""); !errors.Is(err, ErrOnboardingStep2InputInvalid) {
+	if _, _, _, _, _, err := service.ParseAndNormalizeStep2Input("invalid", "5", true, false, ""); !errors.Is(err, ErrOnboardingStep2InputInvalid) {
 		t.Fatalf("expected ErrOnboardingStep2InputInvalid for invalid cycle, got %v", err)
 	}
-	if _, _, _, _, _, _, err := service.ParseAndNormalizeStep2Input("28", "invalid", true, false, "", ""); !errors.Is(err, ErrOnboardingStep2InputInvalid) {
+	if _, _, _, _, _, err := service.ParseAndNormalizeStep2Input("28", "invalid", true, false, ""); !errors.Is(err, ErrOnboardingStep2InputInvalid) {
 		t.Fatalf("expected ErrOnboardingStep2InputInvalid for invalid period, got %v", err)
 	}
 
-	cycleLength, periodLength, autoPeriodFill, irregularCycle, ageGroup, usageGoal, err := service.ParseAndNormalizeStep2Input("14", "20", true, true, models.AgeGroup45Plus, models.UsageGoalTrying)
+	cycleLength, periodLength, autoPeriodFill, irregularCycle, usageGoal, err := service.ParseAndNormalizeStep2Input("14", "20", true, true, models.UsageGoalTrying)
 	if err != nil {
 		t.Fatalf("expected valid step2 input after normalize, got %v", err)
 	}
@@ -200,9 +200,6 @@ func TestParseAndNormalizeStep2Input(t *testing.T) {
 	if !irregularCycle {
 		t.Fatalf("expected irregularCycle=true")
 	}
-	if ageGroup != models.AgeGroup45Plus {
-		t.Fatalf("expected ageGroup=%q, got %q", models.AgeGroup45Plus, ageGroup)
-	}
 	if usageGoal != models.UsageGoalTrying {
 		t.Fatalf("expected usageGoal=%q, got %q", models.UsageGoalTrying, usageGoal)
 	}
@@ -211,7 +208,7 @@ func TestParseAndNormalizeStep2Input(t *testing.T) {
 func TestParseAndNormalizeStep2InputFallsBackForUnknownOwnerPreferences(t *testing.T) {
 	service := NewOnboardingService(nil)
 
-	_, _, autoPeriodFill, irregularCycle, ageGroup, usageGoal, err := service.ParseAndNormalizeStep2Input("28", "5", false, false, "unexpected-age", "unexpected-goal")
+	_, _, autoPeriodFill, irregularCycle, usageGoal, err := service.ParseAndNormalizeStep2Input("28", "5", false, false, "unexpected-goal")
 	if err != nil {
 		t.Fatalf("expected valid step2 input with unknown preferences, got %v", err)
 	}
@@ -220,9 +217,6 @@ func TestParseAndNormalizeStep2InputFallsBackForUnknownOwnerPreferences(t *testi
 	}
 	if irregularCycle {
 		t.Fatalf("expected irregularCycle=false")
-	}
-	if ageGroup != models.AgeGroupUnknown {
-		t.Fatalf("expected ageGroup fallback %q, got %q", models.AgeGroupUnknown, ageGroup)
 	}
 	if usageGoal != models.UsageGoalHealth {
 		t.Fatalf("expected usageGoal fallback %q, got %q", models.UsageGoalHealth, usageGoal)

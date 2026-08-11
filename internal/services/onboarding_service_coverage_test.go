@@ -16,7 +16,7 @@ type onboardingserviceCovStep2Repo struct {
 	savedPeriod     int
 }
 
-func (s *onboardingserviceCovStep2Repo) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error {
+func (s *onboardingserviceCovStep2Repo) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error {
 	s.saveStep2Called = true
 	s.savedCycle = cycleLength
 	s.savedPeriod = periodLength
@@ -32,7 +32,7 @@ func TestOnboardingServiceSaveStep2PropagatesRepoError(t *testing.T) {
 	repo := &onboardingserviceCovStep2Repo{saveStep2Err: sentinel}
 	svc := NewOnboardingService(repo)
 
-	_, _, err := svc.SaveStep2(context.Background(), 1, 28, 5, false, false, "", "")
+	_, _, err := svc.SaveStep2(context.Background(), 1, 28, 5, false, false, "")
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("SaveStep2 should propagate repo error, got %v", err)
 	}
@@ -43,7 +43,7 @@ func TestOnboardingServiceSaveStep2ReturnsSanitizedValues(t *testing.T) {
 	svc := NewOnboardingService(repo)
 
 	// cycle=100 → clamped to 90, period=20 → clamped to 14, then capped to MaxPeriodLengthForCycle(90)=14
-	gotCycle, gotPeriod, err := svc.SaveStep2(context.Background(), 1, 100, 20, false, false, "", "")
+	gotCycle, gotPeriod, err := svc.SaveStep2(context.Background(), 1, 100, 20, false, false, "")
 	if err != nil {
 		t.Fatalf("SaveStep2 unexpected error: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestOnboardingServiceSaveStep2SanitizesBeforePersist(t *testing.T) {
 
 	// cycle=10 (below min) → 15; period=20 (above max) → clamped to 14, then
 	// MaxPeriodLengthForCycle(15)=5 → further capped to 5.
-	gotCycle, gotPeriod, err := svc.SaveStep2(context.Background(), 7, 10, 20, true, false, "", "")
+	gotCycle, gotPeriod, err := svc.SaveStep2(context.Background(), 7, 10, 20, true, false, "")
 	if err != nil {
 		t.Fatalf("SaveStep2 unexpected error: %v", err)
 	}

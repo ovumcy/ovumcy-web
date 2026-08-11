@@ -105,6 +105,30 @@ func (service *SettingsService) ApplyCycleSettings(user *models.User, update Cyc
 	user.LastPeriodStart = &day
 }
 
+// ApplyUsageGoal mirrors a goal-only save onto the in-request user so the rest
+// of the response is framed by the mode just chosen, without touching any other
+// cycle field (the partial counterpart of ApplyCycleSettings).
+func (service *SettingsService) ApplyUsageGoal(user *models.User, usageGoal string) {
+	if user == nil {
+		return
+	}
+	user.UsageGoal = NormalizeUsageGoal(usageGoal)
+}
+
+// AlternativeUsageGoals lists the modes the owner is not currently in, in a
+// stable order, so a quick-switch surface can offer every other mode without
+// re-offering the one already in force.
+func AlternativeUsageGoals(current string) []string {
+	normalized := NormalizeUsageGoal(current)
+	alternatives := make([]string, 0, 2)
+	for _, goal := range []string{models.UsageGoalAvoid, models.UsageGoalTrying, models.UsageGoalHealth} {
+		if goal != normalized {
+			alternatives = append(alternatives, goal)
+		}
+	}
+	return alternatives
+}
+
 func SettingsCycleStartDateBounds(now time.Time, location *time.Location) (time.Time, time.Time) {
 	if location == nil {
 		location = time.UTC

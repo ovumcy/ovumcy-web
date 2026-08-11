@@ -97,6 +97,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"HasPredictionFactorHint":               viewData.HasPredictionFactorHint,
 		"UsageGoalLabelKey":                     services.UsageGoalTranslationKey(user.UsageGoal),
 		"UsageGoalSummaryKey":                   services.UsageGoalSummaryTranslationKey(user.UsageGoal),
+		"UsageGoalAlternatives":                 services.AlternativeUsageGoals(user.UsageGoal),
 		"IsOwner":                               viewData.IsOwner,
 	}
 	return data, nil

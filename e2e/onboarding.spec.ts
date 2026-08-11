@@ -501,6 +501,38 @@ test.describe('Onboarding flow', () => {
     );
   });
 
+  test('step 2 asks no age question and the mode question is skippable in one visible action', async ({
+    page,
+  }) => {
+    await registerAndOpenOnboarding(page, 'onboarding-step2-skip-mode');
+
+    const selectedDate = toISODate(new Date(Date.now() - 4 * 24 * 60 * 60 * 1000));
+    await submitStepOne(page, selectedDate);
+
+    const stepTwo = onboardingStepTwoForm(page);
+    // Age left onboarding entirely; the mode question stayed.
+    await expect(stepTwo.locator('input[name="age_group"]')).toHaveCount(0);
+    await expect(stepTwo.locator('input[name="usage_goal"]')).toHaveCount(3);
+
+    const skip = stepTwo.locator('[data-onboarding-usage-goal-skip]');
+    await expect(skip).toBeVisible();
+    await expect(skip).toHaveText(localeText('en', 'onboarding.step2.usage_goal_skip'));
+
+    // An answer is picked and then abandoned: skipping must submit no mode at
+    // all, not the last radio that happened to be selected.
+    await stepTwo
+      .locator('label.choice-option:has(input[name="usage_goal"][value="avoid_pregnancy"])')
+      .click();
+    await expect(stepTwo.locator('input[name="usage_goal"][value="avoid_pregnancy"]')).toBeChecked();
+
+    await Promise.all([page.waitForURL(/\/dashboard$/, { timeout: 15000 }), skip.click()]);
+
+    await expect(page.locator('[data-usage-goal-summary]')).toHaveAttribute(
+      'data-usage-goal-label-key',
+      'settings.goal.health'
+    );
+  });
+
   test('step 1 surfaces the day-1 spotting clarification tip above the date field', async ({
     page,
   }) => {

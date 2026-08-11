@@ -12,6 +12,7 @@ import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers'
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
+import { localeText } from './support/locale-helpers';
 
 async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<void> {
   const creds = createCredentials(prefix);
@@ -528,6 +529,41 @@ test.describe('Dashboard: today editor', () => {
 
     await page.reload();
     await expect(notes).toHaveValue(noteText);
+  });
+
+  test('usage-goal chips change the mode from the dashboard without visiting settings', async ({
+    page,
+  }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-usage-goal-switch');
+
+    const summary = page.locator('[data-usage-goal-summary]');
+    const quickSwitch = page.locator('[data-usage-goal-quick-switch]');
+    await expect(summary).toHaveAttribute('data-usage-goal-label-key', 'settings.goal.health');
+    await expect(quickSwitch).toBeVisible();
+
+    // The mode already in force is not offered again; the other two are.
+    await expect(quickSwitch.locator('[data-usage-goal-choice="health"]')).toHaveCount(0);
+    const avoidChip = quickSwitch.locator('[data-usage-goal-choice="avoid_pregnancy"]');
+    await expect(avoidChip).toHaveText(localeText('en', 'settings.goal.avoid'));
+
+    await avoidChip.click();
+
+    // The server answers with a re-render, so the whole page speaks in the new
+    // mode: the summary, and the chips now offering the way back.
+    await expect(summary).toHaveAttribute('data-usage-goal-label-key', 'settings.goal.avoid');
+    await expect(summary).toHaveAttribute('data-usage-goal-summary-key', 'usage_goal.summary.avoid');
+    await expect(quickSwitch.locator('[data-usage-goal-choice="health"]')).toHaveCount(1);
+    await expect(quickSwitch.locator('[data-usage-goal-choice="avoid_pregnancy"]')).toHaveCount(0);
+
+    // It is a real save, not a client-side flip: it survives a reload and the
+    // settings form shows the same answer.
+    await page.reload();
+    await expect(summary).toHaveAttribute('data-usage-goal-label-key', 'settings.goal.avoid');
+
+    await page.goto('/settings');
+    await expect(
+      page.locator('#settings-cycle input[name="usage_goal"][value="avoid_pregnancy"]')
+    ).toBeChecked();
   });
 
   test('closing the page runs beforeunload autosave for dirty notes', async ({ page, context }) => {
