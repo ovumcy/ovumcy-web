@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -39,6 +41,57 @@ func TestTrackingSettingsExposeBBTAndCervicalMucusOnDashboard(t *testing.T) {
 		bodyStringMatch{fragment: `id="dashboard-bbt"`, message: "expected dashboard BBT field after enabling tracking"},
 		bodyStringMatch{fragment: `name="cervical_mucus"`, message: "expected dashboard cervical mucus controls after enabling tracking"},
 	)
+}
+
+// TestTrackingSettingsJSONBodyKeepsThePublishedInvertedKeys pins the half of
+// the tracking endpoint the positive settings form does not cover: the v1 JSON
+// body still speaks hide_sex_chip / hide_cycle_factors / hide_notes_field, both
+// on the way in and in the echo, because renaming a v1 field is breaking. The
+// conversion into the positive view model happens on the service side, so the
+// stored columns must come back exactly as the caller sent them.
+func TestTrackingSettingsJSONBodyKeepsThePublishedInvertedKeys(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-json@example.com")
+
+	body := `{"track_bbt":true,"temperature_unit":"c","track_cervical_mucus":false,` +
+		`"hide_sex_chip":true,"hide_cycle_factors":false,"hide_notes_field":true,` +
+		`"show_historical_phases":false,"week_starts_on":"monday"}`
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/tracking", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("X-CSRF-Token", ctx.csrfToken)
+	request.Header.Set("Cookie", settingsCookieHeader(ctx.authCookie, ctx.csrfCookie))
+
+	response := mustAppResponse(t, ctx.app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	var echoed map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&echoed); err != nil {
+		t.Fatalf("decode tracking response: %v", err)
+	}
+	for key, expected := range map[string]bool{
+		"hide_sex_chip":      true,
+		"hide_cycle_factors": false,
+		"hide_notes_field":   true,
+	} {
+		if echoed[key] != expected {
+			t.Errorf("expected the v1 response to echo %s=%t, got %#v", key, expected, echoed[key])
+		}
+	}
+
+	var persisted struct {
+		HideSexChip      bool
+		HideCycleFactors bool
+		HideNotesField   bool
+	}
+	if err := ctx.database.Model(&models.User{}).
+		Select("hide_sex_chip", "hide_cycle_factors", "hide_notes_field").
+		Where("id = ?", ctx.user.ID).
+		First(&persisted).Error; err != nil {
+		t.Fatalf("load persisted tracking columns: %v", err)
+	}
+	if !persisted.HideSexChip || persisted.HideCycleFactors || !persisted.HideNotesField {
+		t.Fatalf("a v1 JSON save must store its hide_* fields verbatim, got %+v", persisted)
+	}
 }
 
 func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *testing.T) {
