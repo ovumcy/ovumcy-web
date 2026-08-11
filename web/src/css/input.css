@@ -4361,12 +4361,14 @@
   gap: 0.35rem;
   border-radius: 1rem;
   border: 1px solid var(--line-soft);
-  background: rgba(255, 249, 240, 0.96);
+  /* Opaque in both themes: the bar floats over scrolling content, and a
+     translucent background let page text read through it mid-scroll. */
+  background: #fff9f0;
   box-shadow: 0 12px 24px rgba(120, 85, 52, 0.2);
   padding: 0.24rem 0.42rem;
 
   :root[data-theme='dark'] & {
-    background: rgba(30, 24, 40, 0.95);
+    background: #1e1828;
     box-shadow: 0 12px 24px rgba(7, 5, 11, 0.55);
   }
 }
@@ -4587,7 +4589,11 @@
 
 @utility footer-with-mobile-nav {
   @media (max-width: 640px) {
-    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    /* `:root &` on purpose: the footer also carries the `pb-8` utility, which
+       is emitted after this rule and wins a plain single-class selector. */
+    :root & {
+      padding-bottom: var(--mobile-tabbar-clearance);
+    }
   }
 }
 
@@ -4638,6 +4644,9 @@
     --bg-glow-2: rgba(212, 165, 116, 0.24);
     --bg-stripes: rgba(207, 167, 128, 0.06);
     --mobile-tabbar-safe-space: calc(8rem + env(safe-area-inset-bottom));
+    /* The floating bar covers 0.75rem of bottom offset plus its own ~3.4rem
+       box; 5rem keeps the last content clear of it at the document bottom. */
+    --mobile-tabbar-clearance: calc(5rem + env(safe-area-inset-bottom));
   }
 
   :root[data-theme="dark"] {
