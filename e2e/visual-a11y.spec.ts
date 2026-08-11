@@ -12,6 +12,8 @@ import {
 import {
   assertNoHorizontalOverflow,
   expectElementAboveMobileTabbar,
+  expectOpaqueMobileTabbar,
+  expectPageBottomClearsMobileTabbar,
   expectVisibleFocusIndicator,
 } from './support/mobile-layout-helpers';
 import {
@@ -98,6 +100,31 @@ test.describe('Visual and accessibility regressions', () => {
     const sourceLink = page.locator('a[href="https://github.com/ovumcy/ovumcy-web"]');
     await sourceLink.scrollIntoViewIfNeeded();
     await expectElementAboveMobileTabbar(page, sourceLink);
+  });
+
+  test('mobile tabbar paints opaquely in both themes and page bottoms clear it', async ({
+    page,
+  }) => {
+    await registerOwnerAndReachDashboard(page, 'visual-tabbar-opacity');
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    const html = page.locator('html');
+    const footerPrivacyLink = page.locator('footer a[href^="/privacy"]');
+
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((value) => {
+        window.localStorage.setItem('ovumcy_theme', value);
+      }, theme);
+
+      for (const path of ['/dashboard', '/calendar', '/stats']) {
+        await page.goto(path);
+        await expect(page).toHaveURL(new RegExp(`${path}$`));
+        await expect(html).toHaveAttribute('data-theme', theme);
+
+        await expectOpaqueMobileTabbar(page);
+        await expectPageBottomClearsMobileTabbar(page, footerPrivacyLink);
+      }
+    }
   });
 
   test('primary navigation and actions show visible focus indicators', async ({

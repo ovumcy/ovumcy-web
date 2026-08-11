@@ -51,6 +51,119 @@ export async function expectVisibleFocusIndicator(locator: Locator): Promise<voi
   expect(outlineVisible || shadowVisible).toBe(true);
 }
 
+function parseColorAlpha(color: string): number | null {
+  const normalized = color.trim().toLowerCase();
+  if (normalized === 'transparent') {
+    return 0;
+  }
+
+  const channels = /^rgba?\(([^)]+)\)$/.exec(normalized);
+  if (!channels) {
+    return null;
+  }
+
+  const parts = channels[1]
+    .split(/[\s,/]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 3) {
+    return 1;
+  }
+  if (parts.length !== 4) {
+    return null;
+  }
+
+  const alpha = parts[3].endsWith('%')
+    ? Number.parseFloat(parts[3].slice(0, -1)) / 100
+    : Number.parseFloat(parts[3]);
+  return Number.isFinite(alpha) ? alpha : null;
+}
+
+/**
+ * The tabbar floats over scrolling content, so it must paint an opaque layer:
+ * either a fully opaque background or a real backdrop filter. A translucent
+ * background with `backdrop-filter: none` lets page text read through the bar
+ * mid-scroll, which no single-element position assertion can observe.
+ */
+export async function expectOpaqueMobileTabbar(page: Page): Promise<void> {
+  const tabbar = mobileTabbar(page);
+  await expect(tabbar).toBeVisible();
+
+  const paint = await tabbar.evaluate((node) => {
+    const style = window.getComputedStyle(node);
+    const backdropFilter =
+      style.backdropFilter || style.getPropertyValue('-webkit-backdrop-filter') || 'none';
+    return {
+      theme: document.documentElement.getAttribute('data-theme'),
+      backgroundColor: style.backgroundColor,
+      backgroundImage: style.backgroundImage,
+      backdropFilter: backdropFilter.trim(),
+      opacity: style.opacity,
+    };
+  });
+
+  const alpha = parseColorAlpha(paint.backgroundColor);
+  const describe = `mobile tabbar paint (${JSON.stringify(paint)})`;
+
+  // An unparsable background is UNKNOWN, never a pass.
+  expect(alpha, `${describe}: background-color must be a parsable rgb/rgba value`).not.toBeNull();
+  expect(Number.parseFloat(paint.opacity), `${describe}: element opacity must be 1`).toBe(1);
+
+  const backdropFiltered = paint.backdropFilter !== '' && paint.backdropFilter !== 'none';
+  expect(
+    alpha === 1 || backdropFiltered,
+    `${describe}: background alpha must be 1, or a backdrop-filter must be set`
+  ).toBe(true);
+}
+
+/**
+ * Scrolls to the very bottom of the document and asserts the given element —
+ * the last interactive one on the page — is not covered by the tabbar there.
+ */
+export async function expectPageBottomClearsMobileTabbar(
+  page: Page,
+  element: Locator,
+  options?: { minGap?: number }
+): Promise<void> {
+  const minGap = options?.minGap ?? 8;
+  const tabbar = mobileTabbar(page);
+
+  await expect(tabbar).toBeVisible();
+  await expect(element).toBeVisible();
+
+  await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+  });
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const maxScrollY = Math.max(
+          0,
+          document.documentElement.scrollHeight - window.innerHeight
+        );
+        return Math.round(maxScrollY - window.scrollY);
+      })
+    )
+    .toBeLessThanOrEqual(1);
+
+  const [elementBox, tabbarBox] = await Promise.all([element.boundingBox(), tabbar.boundingBox()]);
+  expect(elementBox, 'expected the last interactive element to have a visible bounding box').not.toBeNull();
+  expect(tabbarBox, 'expected mobile tabbar to have a visible bounding box').not.toBeNull();
+
+  const elementBottom = elementBox!.y + elementBox!.height;
+  const horizontallyOverlaps =
+    elementBox!.x < tabbarBox!.x + tabbarBox!.width && tabbarBox!.x < elementBox!.x + elementBox!.width;
+
+  if (!horizontallyOverlaps) {
+    return;
+  }
+
+  expect(
+    elementBottom,
+    `at the document bottom the element (bottom ${elementBottom}) must clear the tabbar (top ${tabbarBox!.y}) by ${minGap}px`
+  ).toBeLessThanOrEqual(tabbarBox!.y - minGap);
+}
+
 export async function expectElementAboveMobileTabbar(
   page: Page,
   element: Locator,
