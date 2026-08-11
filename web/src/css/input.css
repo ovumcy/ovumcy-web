@@ -128,7 +128,7 @@
   padding: 0.2rem;
 
   & .lang-link-active {
-    background: linear-gradient(135deg, #c78f5f, #d8aa80);
+    background: linear-gradient(135deg, #7f4f24, #8f5d2b);
     color: #fff7ed !important;
     -webkit-text-fill-color: #fff7ed !important;
     border-color: rgba(132, 82, 44, 0.45);
@@ -139,7 +139,7 @@
   }
 
   & .lang-link[aria-current='page'] {
-    background: linear-gradient(135deg, #c78f5f, #d8aa80);
+    background: linear-gradient(135deg, #7f4f24, #8f5d2b);
     color: #fff7ed !important;
     -webkit-text-fill-color: #fff7ed !important;
     border-color: rgba(132, 82, 44, 0.45);
@@ -150,7 +150,7 @@
   }
 
   :root[data-theme='dark'] & .lang-link-active {
-    background: linear-gradient(135deg, #7a5daa, #9a74cc);
+    background: linear-gradient(135deg, #55408b, #6d51ad);
     color: #f7f3ff !important;
     -webkit-text-fill-color: #f7f3ff !important;
     border-color: rgba(210, 190, 244, 0.35);
@@ -161,7 +161,7 @@
   }
 
   :root[data-theme='dark'] & .lang-link[aria-current='page'] {
-    background: linear-gradient(135deg, #7a5daa, #9a74cc);
+    background: linear-gradient(135deg, #55408b, #6d51ad);
     color: #f7f3ff !important;
     -webkit-text-fill-color: #f7f3ff !important;
     border-color: rgba(210, 190, 244, 0.35);
@@ -380,6 +380,11 @@
     min-height: 2.7rem;
   }
 
+  /* The selected label sits on the darker end of the fill, which flattens to
+     rgb(238, 202, 168) over the page. #7b4d2c measured 4.64:1 there — a pass
+     with no margin left for a rounding difference between engines; #6b4226
+     measures 5.61:1 against that stop and 7.50:1 against the lighter one.
+     Regression: e2e/a11y-wcag-audit.spec.ts. */
   .choice-input:checked + & {
     border-color: rgba(186, 131, 80, 0.95);
     background: linear-gradient(
@@ -387,7 +392,7 @@
       rgba(255, 236, 215, 0.98),
       rgba(237, 197, 160, 0.92)
     );
-    color: #7b4d2c;
+    color: #6b4226;
     box-shadow:
       inset 0 1px 0 rgba(255, 249, 240, 0.72),
       0 0 0 2px rgba(186, 131, 80, 0.18),
@@ -484,7 +489,7 @@
   }
 
   .lang-switch &[aria-current='page'] {
-    background: linear-gradient(135deg, #c78f5f, #d8aa80);
+    background: linear-gradient(135deg, #7f4f24, #8f5d2b);
     color: #fff7ed !important;
     -webkit-text-fill-color: #fff7ed !important;
     border-color: rgba(132, 82, 44, 0.45);
@@ -495,7 +500,7 @@
   }
 
   :root[data-theme='dark'] .lang-switch &[aria-current='page'] {
-    background: linear-gradient(135deg, #7a5daa, #9a74cc);
+    background: linear-gradient(135deg, #55408b, #6d51ad);
     color: #f7f3ff !important;
     -webkit-text-fill-color: #f7f3ff !important;
     border-color: rgba(210, 190, 244, 0.35);
@@ -512,9 +517,15 @@
   }
 }
 
+/* The active pill paints solid gradient stops, so both endpoints are checkable
+   and both have to clear WCAG AA for the 0.72rem label they carry. Measured
+   against the shipped text colours: light #7f4f24 6.49:1 / #8f5d2b 5.25:1 under
+   #fff7ed, dark #55408b 7.71:1 / #6d51ad 5.60:1 under #f7f3ff. The previous
+   warm pair (#c78f5f/#d8aa80) reached only 1.98:1 at its light end.
+   Regression: e2e/a11y-wcag-audit.spec.ts. */
 @utility lang-link-active {
   .lang-switch & {
-    background: linear-gradient(135deg, #c78f5f, #d8aa80);
+    background: linear-gradient(135deg, #7f4f24, #8f5d2b);
     color: #fff7ed !important;
     -webkit-text-fill-color: #fff7ed !important;
     border-color: rgba(132, 82, 44, 0.45);
@@ -525,7 +536,7 @@
   }
 
   :root[data-theme='dark'] .lang-switch & {
-    background: linear-gradient(135deg, #7a5daa, #9a74cc);
+    background: linear-gradient(135deg, #55408b, #6d51ad);
     color: #f7f3ff !important;
     -webkit-text-fill-color: #f7f3ff !important;
     border-color: rgba(210, 190, 244, 0.35);
@@ -1677,14 +1688,15 @@
 @utility range-field {
   appearance: none;
   width: 100%;
-  height: 0.56rem;
+  /* WCAG 2.2 AA 2.5.8: the pointer target has to be at least 24px in both
+     directions, and the rail alone was 9px tall. The element box grows to
+     1.5rem of transparent hit area while the visible 0.56rem rail moves to the
+     track pseudo-elements, so the control looks unchanged and only its target
+     grows. Regression: e2e/a11y-wcag-audit.spec.ts. */
+  height: 1.5rem;
+  border: 0;
   border-radius: 999px;
-  border: 1px solid rgba(212, 165, 116, 0.42);
-  background: linear-gradient(
-    90deg,
-    rgba(232, 196, 168, 0.68),
-    rgba(212, 165, 116, 0.4)
-  );
+  background: transparent;
   cursor: pointer;
 
   &:focus-visible {
@@ -1695,14 +1707,20 @@
   &::-webkit-slider-runnable-track {
     height: 0.56rem;
     border-radius: 999px;
-    background: transparent;
+    border: 1px solid rgba(212, 165, 116, 0.42);
+    background: linear-gradient(
+      90deg,
+      rgba(232, 196, 168, 0.68),
+      rgba(212, 165, 116, 0.4)
+    );
   }
 
   &::-webkit-slider-thumb {
     appearance: none;
     width: 1.22rem;
     height: 1.22rem;
-    margin-top: -0.37rem;
+    /* Centres the 1.22rem thumb on the 0.56rem track plus its 1px borders. */
+    margin-top: -0.27rem;
     border-radius: 999px;
     border: 1px solid rgba(151, 88, 39, 0.56);
     background: linear-gradient(145deg, #d79a64, #bf7140);
@@ -2225,7 +2243,7 @@
       rgba(255, 236, 215, 0.98),
       rgba(237, 197, 160, 0.92)
     );
-    color: #7b4d2c;
+    color: #6b4226;
     box-shadow:
       inset 0 1px 0 rgba(255, 249, 240, 0.72),
       0 0 0 2px rgba(186, 131, 80, 0.18),
@@ -2239,7 +2257,7 @@
       rgba(255, 236, 215, 0.98),
       rgba(237, 197, 160, 0.92)
     );
-    color: #7b4d2c;
+    color: #6b4226;
     box-shadow:
       inset 0 1px 0 rgba(255, 249, 240, 0.72),
       0 0 0 2px rgba(186, 131, 80, 0.18),
@@ -2253,7 +2271,7 @@
       rgba(255, 236, 215, 0.98),
       rgba(237, 197, 160, 0.92)
     );
-    color: #7b4d2c;
+    color: #6b4226;
     box-shadow:
       inset 0 1px 0 rgba(255, 249, 240, 0.72),
       0 0 0 2px rgba(186, 131, 80, 0.18),
@@ -2393,7 +2411,7 @@
       rgba(255, 236, 215, 0.98),
       rgba(237, 197, 160, 0.92)
     );
-    color: #7b4d2c;
+    color: #6b4226;
     box-shadow:
       inset 0 1px 0 rgba(255, 249, 240, 0.72),
       0 0 0 2px rgba(186, 131, 80, 0.18),
@@ -2463,7 +2481,7 @@
       rgba(255, 236, 215, 0.98),
       rgba(237, 197, 160, 0.92)
     );
-    color: #7b4d2c;
+    color: #6b4226;
     box-shadow:
       inset 0 1px 0 rgba(255, 249, 240, 0.72),
       0 0 0 2px rgba(186, 131, 80, 0.18),
