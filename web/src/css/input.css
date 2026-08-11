@@ -1733,19 +1733,24 @@
     box-shadow 220ms ease-out,
     background-color 220ms ease-out;
   border: none;
-  background: linear-gradient(
-    135deg,
-    var(--accent-primary),
-    var(--accent-secondary)
-  );
+  background: var(--action-primary);
   color: #fff;
-  box-shadow: 0 8px 16px rgba(212, 165, 116, 0.26);
+  box-shadow: 0 8px 16px rgba(154, 83, 36, 0.26);
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 12px 20px rgba(212, 165, 116, 0.35);
+    background: var(--action-primary-hover);
+    box-shadow: 0 12px 20px rgba(154, 83, 36, 0.34);
   }
 
+  &:active {
+    transform: translateY(0);
+    background: var(--action-primary-hover);
+    box-shadow: 0 6px 12px rgba(154, 83, 36, 0.3);
+  }
+
+  /* WCAG 1.4.3 exempts text in an inactive component, so the dimmed state keeps
+     the shared disabled treatment; the contrast gate skips disabled controls. */
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -1760,15 +1765,15 @@
   }
 
   [data-dashboard-editor][data-phase='follicular'] & {
-    background: linear-gradient(135deg, #d2b48c, #ead7bc);
+    background: var(--action-primary-follicular);
   }
 
   [data-dashboard-editor][data-phase='fertile'] & {
-    background: linear-gradient(135deg, var(--phase-fertile-accent), #96d08e);
+    background: var(--action-primary-fertile);
   }
 
   [data-dashboard-editor][data-phase='luteal'] & {
-    background: linear-gradient(135deg, var(--phase-luteal-accent), #c3a6dd);
+    background: var(--action-primary-luteal);
   }
 }
 
@@ -4614,6 +4619,17 @@
     --accent-primary: #d4a574;
     --accent-secondary: #e8c4a8;
     --accent-strong: #8f6238;
+    /* Primary-action fills are solid on purpose: white 0.88rem/700 text has to
+       clear WCAG AA 4.5:1, and only a flat colour can be verified — a gradient
+       has to be checked stop by stop and automated engines report it as
+       incomplete instead of as a violation. Measured against #fff:
+       #9a5324 5.77:1, #84431a 7.50:1, #8a6231 5.42:1, #3d7a41 5.17:1,
+       #6f4a99 6.74:1. */
+    --action-primary: #9a5324;
+    --action-primary-hover: #84431a;
+    --action-primary-follicular: #8a6231;
+    --action-primary-fertile: #3d7a41;
+    --action-primary-luteal: #6f4a99;
     --brand-color: #4a3d6a;
     --header-bg: rgba(255, 249, 240, 0.9);
     --header-border: #ecd9c6;
@@ -4659,6 +4675,15 @@
     --accent-primary: #d2935c;
     --accent-secondary: #a87a57;
     --accent-strong: #f0b57f;
+    /* Dark theme lifts each fill just far enough to separate from the card
+       (>=3:1 against #241f2f) while keeping white text above 4.5:1. Measured
+       against #fff: #a35b2b 5.14:1, #8f4e22 6.40:1, #94693c 4.83:1,
+       #417f45 4.83:1, #7b56a6 5.64:1. */
+    --action-primary: #a35b2b;
+    --action-primary-hover: #8f4e22;
+    --action-primary-follicular: #94693c;
+    --action-primary-fertile: #417f45;
+    --action-primary-luteal: #7b56a6;
     --brand-color: #ece3ff;
     --header-bg: rgba(24, 20, 31, 0.9);
     --header-border: rgba(101, 84, 126, 0.65);

@@ -9,6 +9,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { applyTheme, expectTextContrastAA } from './support/contrast-helpers';
 import {
   assertNoHorizontalOverflow,
   expectElementAboveMobileTabbar,
@@ -284,6 +285,64 @@ test.describe('Visual and accessibility regressions', () => {
       const box = await tabbarLinks.nth(index).boundingBox();
       expect(box, `tabbar link ${index} must have a visible box`).not.toBeNull();
       expect(box!.height, 'tabbar link must be at least 44px tall').toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('primary actions clear WCAG AA text contrast in both themes', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    // Pre-auth first: the login submit is the same `.btn-primary` component that
+    // carries every owner-facing primary action, and it needs no account.
+    await page.goto('/login');
+    await expect(page).toHaveURL(/\/login$/);
+
+    for (const theme of ['light', 'dark'] as const) {
+      await applyTheme(page, theme);
+      await expectTextContrastAA(page, '.btn-primary', `login primary action (${theme})`);
+
+      // The hover fill is a second painted background. Both endpoints of the
+      // transition must pass, so a reading taken mid-transition is bounded by
+      // them and cannot go under the bar.
+      await page.locator('form .btn-primary').first().hover();
+      await expectTextContrastAA(
+        page,
+        'form .btn-primary',
+        `login primary action, hovered (${theme})`
+      );
+    }
+
+    // The dashboard editor re-tints its primary action per cycle phase, so the
+    // phase-scoped fill is a second painted background the same bar applies to.
+    await registerOwnerAndReachDashboard(page, 'visual-contrast');
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    const editor = page.locator('[data-dashboard-editor]');
+    await expect(editor).toHaveAttribute('data-phase', /.+/);
+
+    for (const theme of ['light', 'dark'] as const) {
+      await applyTheme(page, theme);
+      await expectTextContrastAA(
+        page,
+        '[data-dashboard-editor] .btn-primary',
+        `dashboard primary action, rendered phase (${theme})`
+      );
+
+      // `data-phase` is the only input to the per-phase tint, so setting it
+      // directly reaches every phase fill without seeding a cycle per phase.
+      // The attribute is server-rendered, so the next applyTheme reload restores it.
+      for (const phase of ['menstrual', 'follicular', 'fertile', 'luteal'] as const) {
+        await editor.evaluate((node, value) => {
+          node.setAttribute('data-phase', value);
+        }, phase);
+        await expect(editor).toHaveAttribute('data-phase', phase);
+        await expectTextContrastAA(
+          page,
+          '[data-dashboard-editor] .btn-primary',
+          `dashboard primary action, phase ${phase} (${theme})`
+        );
+      }
     }
   });
 
