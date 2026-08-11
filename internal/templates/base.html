@@ -94,11 +94,8 @@
           </div>
         </nav>
 
-        <nav id="mobile-menu" data-mobile-menu hidden class="mt-2 space-y-2 sm:hidden" aria-label="{{t .Messages "a11y.nav.mobile_menu"}}">
-          <a href="/dashboard" class="nav-link block {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
-          <a href="/calendar" class="nav-link block {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
-          <a href="/stats" class="nav-link block {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
-          <a href="/settings" class="nav-link nav-link-icon block {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span aria-hidden="true">⚙️</span></a>
+        <!-- Account menu only: the four section destinations are the bottom tab bar's job on mobile. -->
+        <nav id="mobile-menu" data-mobile-menu="account" hidden class="mt-2 space-y-2 sm:hidden" aria-label="{{t .Messages "a11y.nav.mobile_menu"}}">
           {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-mobile" "Block" true "SwapOOB" false)}}
           <form action="/logout" method="post" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
