@@ -180,7 +180,7 @@
     {{if .HasDayData}}
     {{template "owner_log_summary" (dict "Messages" .Messages "Log" .Log "Symptoms" .Symptoms "SelectedSymptomID" .SelectedSymptomID "NoDataLabel" .NoDataLabel "TemperatureUnit" .TemperatureUnit)}}
     <div class="flex flex-wrap items-center gap-3">
-      <button type="button" class="btn-secondary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}">{{t .Messages "calendar.edit_entry"}}</button>
+      <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}" data-action-weight="primary">{{t .Messages "calendar.edit_entry"}}</button>
       {{if .AllowManualCycleStart}}
       <form
         hx-post="/api/v1/days/{{.DateString}}/cycle-start?source=calendar"
@@ -223,7 +223,7 @@
     <div class="journal-panel space-y-3 text-sm">
       <p>{{t .Messages "calendar.no_entry"}}</p>
       <div class="flex flex-wrap items-center gap-3">
-        <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}">{{t .Messages "calendar.add_entry"}}</button>
+        <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}" data-action-weight="primary">{{t .Messages "calendar.add_entry"}}</button>
         {{if .AllowManualCycleStart}}
         <form
           hx-post="/api/v1/days/{{.DateString}}/cycle-start?source=calendar"
