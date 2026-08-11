@@ -4654,7 +4654,10 @@
     --danger-strong-border: rgba(254, 202, 202, 0.92);
     --danger-title: #b91c1c;
     --chart-grid: rgba(172, 136, 96, 0.26);
-    --chart-line: #c4895a;
+    /* The series line is a non-text graphical object: WCAG 1.4.11 puts its
+       floor at 3:1 against the card it is drawn on. The previous #c4895a
+       measured 2.97:1 against the white card. */
+    --chart-line: #a8622c;
     --chart-dot: #b9753e;
     --bg-glow-1: rgba(232, 196, 168, 0.44);
     --bg-glow-2: rgba(212, 165, 116, 0.24);
@@ -4708,7 +4711,9 @@
     --danger-strong-border: rgba(215, 113, 113, 0.74);
     --danger-title: #ffb0aa;
     --chart-grid: rgba(169, 146, 184, 0.32);
-    --chart-line: #d29f74;
+    /* Validated against the elevated dark surface #2e263c; #d29f74 was too
+       light and under-saturated on it. */
+    --chart-line: #c07f3c;
     --chart-dot: #e4b385;
     --bg-glow-1: rgba(141, 104, 189, 0.18);
     --bg-glow-2: rgba(226, 152, 109, 0.14);
