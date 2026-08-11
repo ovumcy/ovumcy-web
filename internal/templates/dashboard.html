@@ -13,7 +13,7 @@
             data-fertility-badge
             data-fertility-badge-variant="{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}positive{{else}}neutral{{end}}"
             data-fertility-badge-key="{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}dashboard.fertility_badge_warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}dashboard.fertility_badge_positive{{else}}dashboard.high_fertility_badge{{end}}">
-            {{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}⚠️ {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}✨ {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}💧 {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
+            {{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}<span aria-hidden="true">⚠️</span> {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}<span aria-hidden="true">✨</span> {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}<span aria-hidden="true">💧</span> {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
           </p>
           {{end}}
           {{if .CycleHero.Approximate}}
@@ -110,7 +110,7 @@
           data-fertility-badge
           data-fertility-badge-variant="{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}positive{{else}}neutral{{end}}"
           data-fertility-badge-key="{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}dashboard.fertility_badge_warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}dashboard.fertility_badge_positive{{else}}dashboard.high_fertility_badge{{end}}">
-          {{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}⚠️ {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}✨ {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}💧 {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
+          {{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}<span aria-hidden="true">⚠️</span> {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}<span aria-hidden="true">✨</span> {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}<span aria-hidden="true">💧</span> {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
         </span>
         {{end}}
         <span class="dashboard-status-separator" aria-hidden="true">·</span>
@@ -200,7 +200,7 @@
           <p class="journal-muted" data-dashboard-date-subtitle>{{.FormattedDate}}</p>
         </div>
         {{if and .IsOwner .ShowYesterdayJump}}
-        <a href="/calendar?month={{.YesterdayMonth}}&day={{.Yesterday}}&edit=1" class="inline-link text-sm">← {{t .Messages "dashboard.fill_yesterday"}}</a>
+        <a href="/calendar?month={{.YesterdayMonth}}&day={{.Yesterday}}&edit=1" class="inline-link text-sm"><span aria-hidden="true">←</span> {{t .Messages "dashboard.fill_yesterday"}}</a>
         {{end}}
       </div>
 
@@ -222,9 +222,9 @@
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
         <div class="dashboard-quick-actions" data-dashboard-quick-actions>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="period" aria-label="{{t .Messages "dashboard.quick_action_period"}}" title="{{t .Messages "dashboard.quick_action_period"}}">🩸</button>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="mood" aria-label="{{t .Messages "dashboard.quick_action_mood"}}" title="{{t .Messages "dashboard.quick_action_mood"}}">😊</button>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="symptom" aria-label="{{t .Messages "dashboard.quick_action_symptom"}}" title="{{t .Messages "dashboard.quick_action_symptom"}}">💊</button>
+          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="period" aria-label="{{t .Messages "dashboard.quick_action_period"}}" title="{{t .Messages "dashboard.quick_action_period"}}"><span aria-hidden="true">🩸</span></button>
+          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="mood" aria-label="{{t .Messages "dashboard.quick_action_mood"}}" title="{{t .Messages "dashboard.quick_action_mood"}}"><span aria-hidden="true">😊</span></button>
+          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="symptom" aria-label="{{t .Messages "dashboard.quick_action_symptom"}}" title="{{t .Messages "dashboard.quick_action_symptom"}}"><span aria-hidden="true">💊</span></button>
         </div>
 
         <div class="dashboard-once-tip journal-muted text-sm" data-once-tip="dashboard-first-tour" hidden>{{t .Messages "dashboard.first_dashboard_tip"}}</div>
@@ -236,7 +236,7 @@
               class="period-toggle-main"
               data-period-toggle-label
               data-period-label-on="{{t .Messages "dashboard.period_day"}}"
-              data-period-label-off="{{t .Messages "dashboard.period_day"}}">🩸 {{t .Messages "dashboard.period_day"}}</span>
+              data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">🩸</span> {{t .Messages "dashboard.period_day"}}</span>
           </span>
         </label>
         {{if not .CurrentUser.ShownPeriodTip}}

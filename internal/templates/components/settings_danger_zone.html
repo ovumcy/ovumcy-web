@@ -1,6 +1,6 @@
 {{define "settings_danger_zone_section_content"}}
   <section id="settings-danger-zone" class="journal-card danger-card-strong p-5 sm:p-6 settings-danger-zone">
-    <h2 class="journal-subtitle danger-title">⚠️ {{t .Messages "settings.danger_zone.title"}}</h2>
+    <h2 class="journal-subtitle danger-title"><span aria-hidden="true">⚠️</span> {{t .Messages "settings.danger_zone.title"}}</h2>
     <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
 
     {{if eq .CurrentUser.Role "owner"}}

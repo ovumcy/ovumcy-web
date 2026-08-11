@@ -1,7 +1,7 @@
 {{define "settings_tracking_section_content"}}
   <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-tracking">
     <div>
-      <h2 class="journal-subtitle">🧪 {{t .Messages "settings.tracking.title"}}</h2>
+      <h2 class="journal-subtitle"><span aria-hidden="true">🧪</span> {{t .Messages "settings.tracking.title"}}</h2>
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.tracking.subtitle"}}</p>
     </div>
 
@@ -26,7 +26,7 @@
           data-tracking-setting="track-bbt">
           <input type="checkbox" name="track_bbt" value="true" data-binary-toggle-input {{if .TrackBBT}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main">🌡️ {{t .Messages "settings.tracking.track_bbt"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">🌡️</span> {{t .Messages "settings.tracking.track_bbt"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_bbt_hint"}}</span>
             <span
               class="journal-muted text-xs"
@@ -43,7 +43,7 @@
           data-tracking-setting="track-cervical-mucus">
           <input type="checkbox" name="track_cervical_mucus" value="true" data-binary-toggle-input {{if .TrackCervicalMucus}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main">💧 {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">💧</span> {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_cervical_mucus_hint"}}</span>
             <span
               class="journal-muted text-xs"
@@ -60,7 +60,7 @@
           data-tracking-setting="hide-sex-chip">
           <input type="checkbox" name="hide_sex_chip" value="true" data-binary-toggle-input {{if .HideSexChip}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main">◦ {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">◦</span> {{t .Messages "settings.tracking.hide_sex_chip"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_sex_chip_hint"}}</span>
             <span
               class="journal-muted text-xs"
@@ -77,7 +77,7 @@
           data-tracking-setting="hide-cycle-factors">
           <input type="checkbox" name="hide_cycle_factors" value="true" data-binary-toggle-input {{if .HideCycleFactors}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main">🏷️ {{t .Messages "settings.tracking.hide_cycle_factors"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">🏷️</span> {{t .Messages "settings.tracking.hide_cycle_factors"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_cycle_factors_hint"}}</span>
             <span
               class="journal-muted text-xs"
@@ -94,7 +94,7 @@
           data-tracking-setting="hide-notes-field">
           <input type="checkbox" name="hide_notes_field" value="true" data-binary-toggle-input {{if .HideNotesField}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main">📝 {{t .Messages "settings.tracking.hide_notes_field"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">📝</span> {{t .Messages "settings.tracking.hide_notes_field"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.hide_notes_field_hint"}}</span>
             <span
               class="journal-muted text-xs"
@@ -111,7 +111,7 @@
           data-tracking-setting="show-historical-phases">
           <input type="checkbox" name="show_historical_phases" value="true" data-binary-toggle-input {{if .ShowHistoricalPhases}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
-            <span class="period-toggle-main">📅 {{t .Messages "settings.tracking.show_historical_phases"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">📅</span> {{t .Messages "settings.tracking.show_historical_phases"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_historical_phases_hint"}}</span>
             <span
               class="journal-muted text-xs"

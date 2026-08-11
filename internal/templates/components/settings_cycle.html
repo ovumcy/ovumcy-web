@@ -1,6 +1,6 @@
 {{define "settings_cycle_section_content"}}
   <section id="settings-cycle" class="journal-card p-5 sm:p-6" data-settings-cycle-form>
-    <h2 class="journal-subtitle">🗓️ {{t .Messages "settings.cycle.title"}}</h2>
+    <h2 class="journal-subtitle"><span aria-hidden="true">🗓️</span> {{t .Messages "settings.cycle.title"}}</h2>
 
     <form
       action="/api/v1/users/current/cycle"
@@ -74,7 +74,7 @@
         <label class="period-toggle" data-binary-toggle data-active="{{if .AutoPeriodFill}}true{{else}}false{{end}}">
           <input type="checkbox" name="auto_period_fill" value="true" data-binary-toggle-input {{if .AutoPeriodFill}}checked{{end}}>
           <span class="period-toggle-copy">
-            <span class="period-toggle-main">🩸 {{t .Messages "settings.cycle.auto_period_fill"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">🩸</span> {{t .Messages "settings.cycle.auto_period_fill"}}</span>
           </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.cycle.auto_period_fill_hint"}}</p>
@@ -84,7 +84,7 @@
         <label class="period-toggle" data-binary-toggle data-active="{{if .IrregularCycle}}true{{else}}false{{end}}">
           <input type="checkbox" name="irregular_cycle" value="true" data-binary-toggle-input {{if .IrregularCycle}}checked{{end}}>
           <span class="period-toggle-copy">
-            <span class="period-toggle-main">〰️ {{t .Messages "settings.cycle.irregular_cycle"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">〰️</span> {{t .Messages "settings.cycle.irregular_cycle"}}</span>
           </span>
         </label>
         <p class="journal-muted text-sm" data-settings-irregular-cycle-hint>{{t .Messages "settings.cycle.irregular_cycle_hint"}}</p>
@@ -94,7 +94,7 @@
         <label class="period-toggle" data-binary-toggle data-active="{{if .UnpredictableCycle}}true{{else}}false{{end}}">
           <input type="checkbox" name="unpredictable_cycle" value="true" data-binary-toggle-input {{if .UnpredictableCycle}}checked{{end}}>
           <span class="period-toggle-copy">
-            <span class="period-toggle-main">∞ {{t .Messages "settings.cycle.unpredictable_cycle"}}</span>
+            <span class="period-toggle-main"><span aria-hidden="true">∞</span> {{t .Messages "settings.cycle.unpredictable_cycle"}}</span>
           </span>
         </label>
         <p class="journal-muted text-sm">{{t .Messages "settings.cycle.unpredictable_cycle_hint"}}</p>

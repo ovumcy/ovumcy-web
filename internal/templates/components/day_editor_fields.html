@@ -32,7 +32,7 @@
     {{if .DisableWhenNotPeriod}}data-disable-without-period="true"{{if not .CurrentIsPeriod}} disabled{{end}}{{end}}
     {{if eq .SelectedFlow .Value}}checked{{end}}>
   <span class="{{if .Compact}}radio-tile radio-tile-sm radio-tile-inline{{else}}radio-tile radio-tile-inline{{end}}">
-    <span class="radio-icon radio-icon-inline">{{if eq .Value "none"}}○{{else if eq .Value "spotting"}}◌{{else if eq .Value "light"}}◔{{else if eq .Value "medium"}}◑{{else}}◕{{end}}</span>
+    <span class="radio-icon radio-icon-inline" aria-hidden="true">{{if eq .Value "none"}}○{{else if eq .Value "spotting"}}◌{{else if eq .Value "light"}}◔{{else if eq .Value "medium"}}◑{{else}}◕{{end}}</span>
     <span>{{flowLabel .Messages .Value}}</span>
   </span>
 </label>
@@ -53,9 +53,13 @@
     name="mood"
     value="{{.Value}}"
     class="choice-input"
+    {{/* The chip's only content is a decorative emoji, so the control names
+         itself the way its tooltip already reads. The enclosing fieldset
+         legend supplies the "Mood" context. */}}
+    aria-label="{{.Value}}/5"
     {{if eq .SelectedMood .Value}}checked{{end}}>
   <span class="{{if .Compact}}mood-chip mood-chip-sm{{else}}mood-chip{{end}}" title="{{.Value}}/5">
-    <span class="mood-chip-emoji">{{moodEmoji .Value}}</span>
+    <span class="mood-chip-emoji" aria-hidden="true">{{moodEmoji .Value}}</span>
   </span>
 </label>
 {{end}}
@@ -85,7 +89,7 @@
 <details class="sex-activity-details" data-sex-activity-details {{if ne .SelectedSexActivity "none"}}open{{end}}>
   <summary class="sex-chip-summary">
     <span class="{{if .Compact}}check-chip check-chip-sm check-chip-static{{else}}check-chip check-chip-static{{end}} sex-chip-summary-pill{{if ne .SelectedSexActivity "none"}} choice-chip-active{{end}}">
-      <span class="symptom-icon sex-heart-icon">♥</span>
+      <span class="symptom-icon sex-heart-icon" aria-hidden="true">♥</span>
       <span class="symptom-label">{{t .Messages "dashboard.sex"}}</span>
       <span class="sex-chip-chevron" aria-hidden="true">▼</span>
     </span>
