@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -117,9 +118,10 @@ func NormalizeReminderLeadDays(value int) int {
 }
 
 // ValidateWebhookURL trims and parses a candidate webhook URL, returning the
-// cleaned value on success. It accepts ONLY absolute http/https URLs with a
-// host; every other scheme (file, gopher, javascript, data, ftp, …) and any
-// relative or hostless value is rejected with ErrWebhookURLInvalid. The error
+// cleaned value on success. It accepts ONLY absolute http/https URLs naming a
+// host and, when one is given, an in-range port; every other scheme (file,
+// gopher, javascript, data, ftp, …), any relative, opaque or hostless value, and
+// any port outside 1..65535 is rejected with ErrWebhookURLInvalid. The error
 // never embeds the candidate, so an invalid URL cannot leak into logs.
 //
 // This is a save-time scheme/shape guard only. Outbound SSRF defenses
@@ -143,10 +145,33 @@ func ValidateWebhookURL(raw string) (string, error) {
 	if scheme != "http" && scheme != "https" {
 		return "", ErrWebhookURLInvalid
 	}
-	if parsed.Host == "" {
-		return "", ErrWebhookURLInvalid
+	if err := validateWebhookAuthority(parsed); err != nil {
+		return "", err
 	}
 	return candidate, nil
+}
+
+// validateWebhookAuthority rejects an authority that parses but names no host to
+// connect to. It is shared with the delivery boundary, which re-runs it: save-time
+// validation never revisits a URL already in the database, so a row stored before
+// this check existed would otherwise keep being delivered.
+//
+// A non-empty Host is NOT enough. url.Parse gives "http://:8080/" a Host of
+// ":8080" with an empty Hostname(), so a port-only authority passes a Host != ""
+// test; Go's dialer then reads the empty host as the unspecified address and
+// connects to the local machine. Likewise Parse accepts any digits as a port, so
+// the range is checked here rather than left to a late transport error.
+func validateWebhookAuthority(parsed *url.URL) error {
+	if parsed.Opaque != "" || parsed.Hostname() == "" {
+		return ErrWebhookURLInvalid
+	}
+	if port := parsed.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return ErrWebhookURLInvalid
+		}
+	}
+	return nil
 }
 
 // SaveWebhookSettings validates and persists an owner's webhook notification

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -171,6 +172,64 @@ func TestWebhookDeliveryRejectsNonHTTPScheme(t *testing.T) {
 		if !errors.Is(err, ErrWebhookDeliveryURLScheme) {
 			t.Fatalf("expected scheme %q refused with ErrWebhookDeliveryURLScheme, got %v", target, err)
 		}
+	}
+}
+
+// TestWebhookDeliveryRejectsHostlessAuthority pins the authority check at the
+// DELIVERY boundary specifically. Save-time validation never revisits a row
+// already in the database, so an endpoint stored before that check existed — or
+// written straight to the column — reaches delivery unvalidated. A port-only
+// authority is the case that matters: url.Parse gives "http://:8080/" a non-empty
+// Host, so the pre-existing Host != "" test accepts it, and Go's dialer then reads
+// the empty hostname as the unspecified address and connects to the local machine.
+//
+// The gate is deliberately OFF here: with it on the guarded resolver refuses an
+// empty hostname anyway, which would hide whether this check does anything.
+func TestWebhookDeliveryRejectsHostlessAuthority(t *testing.T) {
+	deliverer := NewWebhookDeliverer(false)
+	for _, target := range []string{
+		"http://:8080/hook",
+		"http://:0/hook",
+		"http://user:pass@/hook",
+		"http://example.test:99999/hook",
+		"http://example.test:0/hook",
+	} {
+		err := deliverer.Deliver(context.Background(), target, samplePayload())
+		if !errors.Is(err, ErrWebhookDeliveryURLScheme) {
+			t.Fatalf("expected authority %q refused with ErrWebhookDeliveryURLScheme, got %v", target, err)
+		}
+	}
+}
+
+// TestWebhookDeliveryRefusesOversizedResponseHeaders proves the envelope bounds the
+// response HEADER block, not only the body. Headers are read before the body limit
+// can apply and default to Go's 10 MiB, so an owner-controlled endpoint could make
+// the pass buffer three orders of magnitude more than a webhook acknowledgement
+// needs. The positive anchor is the second half: an ordinary small header set on
+// the same server still succeeds, so the test cannot pass by refusing everything.
+func TestWebhookDeliveryRefusesOversizedResponseHeaders(t *testing.T) {
+	oversized := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		padding := strings.Repeat("x", 4096)
+		for index := range 16 { // 64 KiB of headers, past the 16 KiB cap
+			writer.Header().Set(fmt.Sprintf("X-Pad-%d", index), padding)
+		}
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer oversized.Close()
+
+	deliverer := NewWebhookDeliverer(false)
+	if err := deliverer.Deliver(context.Background(), oversized.URL, samplePayload()); err == nil {
+		t.Fatal("expected an oversized response header block to fail delivery")
+	}
+
+	modest := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("X-Small", "ok")
+		writer.WriteHeader(http.StatusOK)
+	}))
+	defer modest.Close()
+
+	if err := deliverer.Deliver(context.Background(), modest.URL, samplePayload()); err != nil {
+		t.Fatalf("an ordinary header set must still succeed, got %v", err)
 	}
 }
 
