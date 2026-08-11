@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
 var cycleSettingsMutation = healthMutationKind{action: "settings.cycle_update", target: "cycle_settings"}
@@ -10,6 +11,13 @@ func (handler *Handler) UpdateCycleSettings(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
 		return handler.failMutation(c, cycleSettingsMutation, unauthorizedErrorSpec())
+	}
+
+	// A body carrying the usage goal and nothing else is the dashboard quick
+	// switch. It rides this endpoint (and this audit target) rather than a
+	// twin route, and the service decides what a goal-only save writes.
+	if usageGoal, goalOnly := goalOnlyCycleSettingsRequest(c); goalOnly {
+		return handler.updateUsageGoalOnly(c, user, usageGoal)
 	}
 
 	input, parseError := handler.parseCycleSettingsInput(c)
@@ -32,4 +40,27 @@ func (handler *Handler) UpdateCycleSettings(c fiber.Ctx) error {
 
 	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "cycle_updated"})
 	return redirectOrJSON(c, "/settings")
+}
+
+func (handler *Handler) updateUsageGoalOnly(c fiber.Ctx, user *models.User, rawUsageGoal string) error {
+	usageGoal, err := handler.settingsService.SaveUsageGoal(c.Context(), user.ID, rawUsageGoal)
+	if err != nil {
+		return handler.failMutation(c, cycleSettingsMutation, settingsCycleUpdateErrorSpec())
+	}
+
+	handler.settingsService.ApplyUsageGoal(user, usageGoal)
+	handler.logMutationSuccess(c, cycleSettingsMutation)
+
+	if acceptsJSON(c) {
+		return c.JSON(fiber.Map{"ok": true, "usage_goal": usageGoal})
+	}
+	if isHTMX(c) {
+		// The mode reframes fertile-window copy, badges and summaries across the
+		// whole page, so the answer is a re-render rather than a status swap.
+		c.Set("HX-Refresh", "true")
+		return c.SendStatus(fiber.StatusNoContent)
+	}
+
+	handler.setFlashCookie(c, FlashPayload{SettingsSuccess: "cycle_updated"})
+	return redirectOrJSON(c, "/dashboard")
 }

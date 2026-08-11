@@ -44,7 +44,7 @@ async function registerAndOnboardWithStartDaysAgo(
   await expect(stepTwoForm).toBeVisible();
   await Promise.all([
     page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-    stepTwoForm.locator('button[type="submit"]').click(),
+    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
   ]);
 
   // Pin "today" to the browser timezone so the day-count baked into the banner

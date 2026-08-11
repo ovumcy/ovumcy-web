@@ -70,7 +70,7 @@ async function onboardOwnerWithAutoPeriodFill(
   }
   await expect(autoFillCheckbox).toBeChecked({ checked: autoPeriodFill });
 
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/2"] button[type="submit"]').click();
+  await page.locator('[data-onboarding-step2-submit]').click();
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
 }
 

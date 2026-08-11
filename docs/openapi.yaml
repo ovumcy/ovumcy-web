@@ -777,6 +777,14 @@ components:
         usage_goal:
           type: string
           enum: [health, avoid_pregnancy, trying_to_conceive]
+          description: >-
+            A body carrying `usage_goal` and neither `cycle_length` nor
+            `period_length` is a goal-only update: it writes that one column and
+            leaves every other cycle field untouched (this is what the dashboard
+            quick switch sends). Any other body is a full cycle save and must
+            carry both lengths. The goal is only ever changed by an explicit
+            owner action — nothing logged on a day, including a positive
+            pregnancy test, rewrites it.
         last_period_start:
           type: string
           format: date
@@ -999,12 +1007,14 @@ components:
           maximum: 14
         auto_period_fill: { type: boolean }
         irregular_cycle: { type: boolean }
-        age_group:
-          type: string
-          enum: ["", under_40, age_40_45, age_45_plus]
         usage_goal:
           type: string
           enum: [health, avoid_pregnancy, trying_to_conceive]
+          description: >-
+            Absent or unknown resolves to `health`, which is what the step's
+            visible skip action submits. Onboarding does not collect the age
+            bracket; `age_group` is written by
+            `PATCH /api/v1/users/current/cycle` only.
 
 paths:
   # =========================================================================

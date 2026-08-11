@@ -578,14 +578,16 @@ func (repo *UserRepository) SaveOnboardingStep1(ctx context.Context, userID uint
 	}).Error
 }
 
-func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error {
+// SaveOnboardingStep2 writes the columns the second onboarding step owns.
+// age_group is not among them — onboarding no longer collects it, and the
+// column is written by the settings cycle form only.
+func (repo *UserRepository) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"cycle_length":     cycleLength,
 		"period_length":    periodLength,
 		"luteal_phase":     14,
 		"auto_period_fill": autoPeriodFill,
 		"irregular_cycle":  irregularCycle,
-		"age_group":        ageGroup,
 		"usage_goal":       usageGoal,
 	}).Error
 }

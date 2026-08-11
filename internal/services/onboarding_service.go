@@ -22,7 +22,7 @@ var (
 type OnboardingUserRepository interface {
 	FindByID(ctx context.Context, userID uint) (models.User, error)
 	SaveOnboardingStep1(ctx context.Context, userID uint, start time.Time) error
-	SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error
+	SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error
 	CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error
 }
 
@@ -70,7 +70,11 @@ func (service *OnboardingService) ValidateAndParseStep1StartDate(raw string, now
 	return CalendarDay(parsed, time.UTC), nil
 }
 
-func (service *OnboardingService) SaveStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) (int, int, error) {
+// SaveStep2 persists the cycle defaults collected by the second onboarding
+// step plus the usage goal. The age bracket is deliberately NOT among them:
+// onboarding stopped asking for it, and the column is owned by the settings
+// cycle form alone, so a step-2 save can never overwrite an answer given there.
+func (service *OnboardingService) SaveStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) (int, int, error) {
 	safeCycleLength, safePeriodLength := SanitizeOnboardingCycleAndPeriod(cycleLength, periodLength)
 	if err := service.users.SaveOnboardingStep2(
 		ctx,
@@ -79,7 +83,6 @@ func (service *OnboardingService) SaveStep2(ctx context.Context, userID uint, cy
 		safePeriodLength,
 		autoPeriodFill,
 		irregularCycle,
-		NormalizeAgeGroup(ageGroup),
 		NormalizeUsageGoal(usageGoal),
 	); err != nil {
 		return 0, 0, err
@@ -87,18 +90,21 @@ func (service *OnboardingService) SaveStep2(ctx context.Context, userID uint, cy
 	return safeCycleLength, safePeriodLength, nil
 }
 
-func (service *OnboardingService) ParseAndNormalizeStep2Input(cycleRaw string, periodRaw string, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) (int, int, bool, bool, string, string, error) {
+// ParseAndNormalizeStep2Input normalizes the raw step-2 submission. An unset or
+// unknown usage goal resolves to the neutral default, which is what the visible
+// skip action submits.
+func (service *OnboardingService) ParseAndNormalizeStep2Input(cycleRaw string, periodRaw string, autoPeriodFill bool, irregularCycle bool, usageGoal string) (int, int, bool, bool, string, error) {
 	cycleLength, err := strconv.Atoi(strings.TrimSpace(cycleRaw))
 	if err != nil {
-		return 0, 0, false, false, "", "", ErrOnboardingStep2InputInvalid
+		return 0, 0, false, false, "", ErrOnboardingStep2InputInvalid
 	}
 	periodLength, err := strconv.Atoi(strings.TrimSpace(periodRaw))
 	if err != nil {
-		return 0, 0, false, false, "", "", ErrOnboardingStep2InputInvalid
+		return 0, 0, false, false, "", ErrOnboardingStep2InputInvalid
 	}
 
 	safeCycleLength, safePeriodLength := SanitizeOnboardingCycleAndPeriod(cycleLength, periodLength)
-	return safeCycleLength, safePeriodLength, autoPeriodFill, irregularCycle, NormalizeAgeGroup(ageGroup), NormalizeUsageGoal(usageGoal), nil
+	return safeCycleLength, safePeriodLength, autoPeriodFill, irregularCycle, NormalizeUsageGoal(usageGoal), nil
 }
 
 func (service *OnboardingService) CompleteOnboardingForUser(ctx context.Context, userID uint, location *time.Location) (time.Time, error) {

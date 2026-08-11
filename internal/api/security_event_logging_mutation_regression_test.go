@@ -759,7 +759,7 @@ var errAuditedMutationStorage = errors.New("storage refused")
 type stubOnboardingRepository struct {
 	findByID  func(ctx context.Context, userID uint) (models.User, error)
 	saveStep1 func(ctx context.Context, userID uint, start time.Time) error
-	saveStep2 func(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error
+	saveStep2 func(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error
 	complete  func(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error
 }
 
@@ -777,11 +777,11 @@ func (repo stubOnboardingRepository) SaveOnboardingStep1(ctx context.Context, us
 	return repo.saveStep1(ctx, userID, start)
 }
 
-func (repo stubOnboardingRepository) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, ageGroup string, usageGoal string) error {
+func (repo stubOnboardingRepository) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error {
 	if repo.saveStep2 == nil {
 		return errAuditedMutationStorage
 	}
-	return repo.saveStep2(ctx, userID, cycleLength, periodLength, autoPeriodFill, irregularCycle, ageGroup, usageGoal)
+	return repo.saveStep2(ctx, userID, cycleLength, periodLength, autoPeriodFill, irregularCycle, usageGoal)
 }
 
 func (repo stubOnboardingRepository) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
@@ -995,7 +995,7 @@ func TestAuditedMutationsRecordRefusalsAndStorageFailures(t *testing.T) {
 			// as a failure rather than the success its persisted half would suggest.
 			name: "onboarding step 2 whose completion fails",
 			repository: stubOnboardingRepository{
-				saveStep2: func(context.Context, uint, int, int, bool, bool, string, string) error { return nil },
+				saveStep2: func(context.Context, uint, int, int, bool, bool, string) error { return nil },
 			},
 			user:    onboardingOwner,
 			method:  http.MethodPost,

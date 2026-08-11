@@ -235,6 +235,21 @@ func (service *SettingsService) SaveCycleSettings(ctx context.Context, userID ui
 	return service.users.UpdateByID(ctx, userID, updates)
 }
 
+// SaveUsageGoal persists ONLY users.usage_goal, scoped to userID, and returns
+// the value actually stored. It is the partial form of SaveCycleSettings, for
+// the surfaces that change the mode on its own (the dashboard quick switch):
+// writing the whole cycle bundle from such a surface would push a page-old
+// snapshot of every other cycle column back over whatever settings holds now.
+// The goal is never derived from health data — only an explicit owner action
+// reaches this method.
+func (service *SettingsService) SaveUsageGoal(ctx context.Context, userID uint, rawUsageGoal string) (string, error) {
+	usageGoal := NormalizeUsageGoal(rawUsageGoal)
+	if err := service.users.UpdateByID(ctx, userID, map[string]any{"usage_goal": usageGoal}); err != nil {
+		return "", err
+	}
+	return usageGoal, nil
+}
+
 func (service *SettingsService) SaveTrackingSettings(ctx context.Context, userID uint, settings TrackingSettingsUpdate) error {
 	return service.users.UpdateByID(ctx, userID, map[string]any{
 		"track_bbt":              settings.TrackBBT,

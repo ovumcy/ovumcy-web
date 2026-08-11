@@ -30,7 +30,7 @@ func (stub *stubOnboardingRepo) SaveOnboardingStep1(context.Context, uint, time.
 	return nil
 }
 
-func (stub *stubOnboardingRepo) SaveOnboardingStep2(context.Context, uint, int, int, bool, bool, string, string) error {
+func (stub *stubOnboardingRepo) SaveOnboardingStep2(context.Context, uint, int, int, bool, bool, string) error {
 	return nil
 }
 

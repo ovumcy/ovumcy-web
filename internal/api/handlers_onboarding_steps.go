@@ -8,10 +8,11 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// Onboarding writes the same users columns the settings cycle form writes —
-// step 1 sets last_period_start, step 2 sets cycle_length/period_length/
-// luteal_phase/auto_period_fill/irregular_cycle/age_group/usage_goal — so both
-// carry the target the settings surface carries. An operator asking "were the
+// Onboarding writes a subset of the users columns the settings cycle form
+// writes — step 1 sets last_period_start, step 2 sets cycle_length/
+// period_length/luteal_phase/auto_period_fill/irregular_cycle/usage_goal (age
+// is asked for in settings only) — so both carry the target the settings
+// surface carries. An operator asking "were the
 // cycle settings changed?" filters on domain+target, and that filter must not
 // depend on which of the two surfaces produced the change.
 var (
@@ -71,7 +72,6 @@ func (handler *Handler) OnboardingStep2(c fiber.Ctx) error {
 		values.PeriodLength,
 		values.AutoPeriodFill,
 		values.IrregularCycle,
-		values.AgeGroup,
 		values.UsageGoal,
 	)
 	if err != nil {

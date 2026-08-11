@@ -4,6 +4,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -127,6 +129,75 @@ func TestDashboardShowsCurrentUsageGoalSummaryForOwner(t *testing.T) {
 	}
 	if got := htmlAttr(summary, "data-usage-goal-summary-key"); got != "usage_goal.summary.trying" {
 		t.Fatalf("expected usage-goal summary key %q, got %q", "usage_goal.summary.trying", got)
+	}
+}
+
+// TestDashboardOffersAQuickUsageGoalSwitchForOwner pins the quick-change
+// control next to the mode line: the modes the owner is NOT in are offered as
+// one-click chips, each patching the existing cycle-settings endpoint, and the
+// current mode is not offered again (the line above already names it).
+func TestDashboardOffersAQuickUsageGoalSwitchForOwner(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-usage-goal-switch@example.com", "StrongPass1", true)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("usage_goal", models.UsageGoalTrying).Error; err != nil {
+		t.Fatalf("update usage goal: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	group := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-usage-goal-quick-switch")
+	})
+	if group == nil {
+		t.Fatal("expected a dashboard usage-goal quick-switch group")
+	}
+	if got := htmlAttr(group, "role"); got != "group" {
+		t.Fatalf("expected the quick-switch container to be a labelled group, got role=%q", got)
+	}
+
+	choices := htmlFindElements(group, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-usage-goal-choice")
+	})
+	offered := make([]string, 0, len(choices))
+	for _, choice := range choices {
+		offered = append(offered, htmlAttr(choice, "data-usage-goal-choice"))
+	}
+	sort.Strings(offered)
+	want := []string{models.UsageGoalAvoid, models.UsageGoalHealth}
+	if !reflect.DeepEqual(offered, want) {
+		t.Fatalf("expected the two alternative modes %v to be offered, got %v", want, offered)
+	}
+
+	forms := htmlFindElements(group, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "form"
+	})
+	if len(forms) != len(choices) {
+		t.Fatalf("expected one form per offered mode, got %d forms for %d modes", len(forms), len(choices))
+	}
+	for _, form := range forms {
+		if got := htmlAttr(form, "hx-patch"); got != "/api/v1/users/current/cycle" {
+			t.Fatalf("expected the quick switch to patch the existing cycle endpoint, got %q", got)
+		}
+		// A goal-only patch: nothing else about the cycle may ride along, or a
+		// stale dashboard would silently rewrite settings changed elsewhere.
+		fields := htmlFindElements(form, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "input"
+		})
+		names := make([]string, 0, len(fields))
+		for _, field := range fields {
+			names = append(names, htmlAttr(field, "name"))
+		}
+		sort.Strings(names)
+		if !reflect.DeepEqual(names, []string{"csrf_token", "usage_goal"}) {
+			t.Fatalf("expected the quick switch to submit only the goal, got fields %v", names)
+		}
 	}
 }
 
