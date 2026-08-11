@@ -5,11 +5,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"golang.org/x/net/html"
 )
 
 func TestDashboardLogoutFormsRequireConfirmation(t *testing.T) {
@@ -186,6 +188,84 @@ func TestCalendarSelectedDayLoadsEditModeWhenRequested(t *testing.T) {
 	}
 	if got := htmlAttr(loader, "hx-get"); got != "/calendar/day/2026-03-12?mode=edit" {
 		t.Fatalf("expected the #day-editor lazy-loader to fetch edit mode from /calendar/day/2026-03-12?mode=edit, got hx-get=%q", got)
+	}
+}
+
+// navSectionHooks lists the section destinations a navigation landmark offers,
+// in document order, by their stable data-nav-link hooks.
+func navSectionHooks(root *html.Node) []string {
+	links := htmlFindElements(root, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-nav-link")
+	})
+	hooks := make([]string, 0, len(links))
+	for _, link := range links {
+		hooks = append(hooks, htmlAttr(link, "data-nav-link"))
+	}
+	return hooks
+}
+
+// TestMobileHeaderMenuCarriesOnlyAccountEntries pins the single-navigation
+// contract for mobile: the header menu used to repeat Today / Calendar /
+// Insights / Settings, so a phone carried two navigations to the same four
+// destinations — the menu pushed the page down when opened and left the bottom
+// tab bar visible underneath it. The four section destinations now live in the
+// tab bar alone; the header menu is the account menu (profile chip + logout)
+// and declares that reduced scope through data-mobile-menu="account". Desktop
+// renders its own full primary navigation and is unaffected.
+func TestMobileHeaderMenuCarriesOnlyAccountEntries(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "mobile-single-nav@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	sections := []string{"today", "calendar", "insights", "settings"}
+
+	for _, path := range []string{"/dashboard", "/calendar", "/stats", "/settings"} {
+		document := mustParseHTMLDocument(t, fetchPageBody(t, app, path, authCookie))
+
+		menu := htmlFindElement(document, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "nav" && htmlHasAttr(node, "data-mobile-menu")
+		})
+		if menu == nil {
+			t.Fatalf("%s: expected the header to render the mobile menu landmark", path)
+		}
+		if got := htmlAttr(menu, "data-mobile-menu"); got != "account" {
+			t.Errorf("%s: mobile menu declares data-mobile-menu=%q, expected \"account\"", path, got)
+		}
+		if hooks := navSectionHooks(menu); len(hooks) != 0 {
+			t.Errorf(
+				"%s: the mobile header menu still lists section destinations %v; the bottom tab bar already covers them, so a phone gets two navigations to the same places",
+				path, hooks,
+			)
+		}
+		if htmlElementByID(menu, "nav-user-chip-mobile") == nil {
+			t.Errorf("%s: the mobile menu must keep the profile entry", path)
+		}
+		if htmlElementByAttr(menu, "action", "/logout") == nil {
+			t.Errorf("%s: the mobile menu must keep the logout form", path)
+		}
+
+		tabbar := htmlElementByTagAndClass(document, "nav", "mobile-tabbar")
+		if tabbar == nil {
+			t.Fatalf("%s: expected the bottom tab bar to stay in place", path)
+		}
+		if got := navSectionHooks(tabbar); !slices.Equal(got, sections) {
+			t.Errorf("%s: the bottom tab bar must remain the mobile route to every section, got %v", path, got)
+		}
+
+		desktop := htmlFindElement(document, func(node *html.Node) bool {
+			if node.Type != html.ElementNode || node.Data != "nav" {
+				return false
+			}
+			return htmlFindElement(node, func(candidate *html.Node) bool {
+				return candidate.Type == html.ElementNode && htmlHasAttr(candidate, "data-nav-account-actions")
+			}) != nil
+		})
+		if desktop == nil {
+			t.Fatalf("%s: expected the desktop primary navigation to render", path)
+		}
+		if got := navSectionHooks(desktop); !slices.Equal(got, sections) {
+			t.Errorf("%s: desktop navigation must keep every section link, got %v", path, got)
+		}
 	}
 }
 
