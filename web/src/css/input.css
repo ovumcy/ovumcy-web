@@ -323,7 +323,7 @@
 }
 
 @utility settings-interface-theme-options {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 @utility settings-interface-option {
@@ -966,6 +966,17 @@
     );
   }
 
+  /* Both glows are warm light-theme paper tints, and they were never re-tuned
+     for the dark card: measured on it, the top-right one lifted it by up to
+     3.27:1 and the bottom-left one by 1.71:1 — a decoration painted as loudly
+     as a meaningful graphic, which is why it read as a render artifact. On the
+     light card the same two lift by 1.09:1–1.13:1, the subtlety they were drawn
+     for; the dark card gets no decorative layer instead of a mis-tinted one. */
+  :root[data-theme='dark'] &::before,
+  :root[data-theme='dark'] &::after {
+    background: none;
+  }
+
   @media (max-width: 640px) {
     padding: 1rem;
   }
@@ -1063,8 +1074,14 @@
   stroke-width: 12;
   stroke: rgba(212, 165, 116, 0.16);
 
+  /* The track carries meaning — it is the rest of the cycle the coloured
+     segments are drawn on — so WCAG 1.4.11 puts its floor at 3:1 against the
+     card. The previous rgba(157, 129, 196, 0.2) painted 1.34:1 on the dark
+     hero and was invisible; a solid stop measures 3.38:1 at the card's light
+     end and 3.95:1 at its dark end, still well below the phase segments
+     (5.4:1–7.2:1) so it stays the backdrop rather than data. */
   :root[data-theme='dark'] & {
-    stroke: rgba(157, 129, 196, 0.2);
+    stroke: #83769b;
   }
 }
 

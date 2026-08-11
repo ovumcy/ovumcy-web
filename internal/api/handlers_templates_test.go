@@ -3,11 +3,13 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"golang.org/x/net/html"
 )
 
 // withTemplateDefaultsForTest drives withTemplateDefaults inside a real Fiber
@@ -269,6 +271,53 @@ func TestBaseLayoutVersionsStaticAssets(t *testing.T) {
 	assertBodyNotContainsAll(t, rendered,
 		bodyStringMatch{fragment: "app.js?v=20260612", message: "did not expect a hardcoded legacy asset version"},
 	)
+}
+
+// TestBaseLayoutAppliesThemeBeforeStylesheet pins the no-flash contract the
+// client-side theme rests on. The bootstrap script resolves the stored
+// preference onto html[data-theme]; the first paint is blocked by the
+// stylesheet in <head>, so as long as the script is render-blocking *and*
+// precedes that stylesheet, the very first frame is already themed. Move the
+// script after the link, or add defer/async to it, and a cold start with a
+// saved dark theme flashes the light default. Browser proof of the same
+// invariant, measured against the recorded first paint:
+// e2e/theme-dark-mode.spec.ts.
+func TestBaseLayoutAppliesThemeBeforeStylesheet(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{assetVersion: "testrev1"})
+
+	request := httptest.NewRequest(http.MethodGet, "/login", nil)
+	request.Header.Set("Accept-Language", "en")
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	head := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "head"
+	})
+	if head == nil {
+		t.Fatal("expected a head element in the base layout")
+	}
+
+	ordered := htmlFindElements(head, func(node *html.Node) bool {
+		if node.Type != html.ElementNode {
+			return false
+		}
+		if node.Data == "script" {
+			return strings.Contains(htmlAttr(node, "src"), "/static/js/theme-bootstrap.js")
+		}
+		return node.Data == "link" && strings.Contains(htmlAttr(node, "href"), "/static/css/tailwind.css")
+	})
+	if len(ordered) != 2 {
+		t.Fatalf("expected exactly the theme bootstrap script and the stylesheet in head, got %d elements", len(ordered))
+	}
+	if ordered[0].Data != "script" {
+		t.Fatal("expected the theme bootstrap script to precede the stylesheet in head")
+	}
+	if htmlHasAttr(ordered[0], "defer") || htmlHasAttr(ordered[0], "async") {
+		t.Fatal("expected the theme bootstrap script to stay render-blocking (no defer/async)")
+	}
 }
 
 // TestSetAssetVersionNormalizesToken locks the normalization applied to the raw

@@ -10,6 +10,7 @@ func TestNormalizeInterfaceTheme(t *testing.T) {
 	}{
 		{name: "light", input: " light ", want: "light"},
 		{name: "dark", input: "DARK", want: "dark"},
+		{name: "system", input: " System ", want: "system"},
 		{name: "invalid", input: "sepia", want: ""},
 		{name: "empty", input: "   ", want: ""},
 	}

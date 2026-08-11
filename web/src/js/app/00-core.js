@@ -10,6 +10,7 @@
   var THEME_STORAGE_KEY = "ovumcy_theme";
   var THEME_LIGHT = "light";
   var THEME_DARK = "dark";
+  var THEME_SYSTEM = "system";
   var THEME_COLOR_LIGHT = "#fff9f0";
   var THEME_COLOR_DARK = "#18141f";
   var TIMEZONE_COOKIE_NAME = "ovumcy_tz";
@@ -50,12 +51,25 @@
     callback();
   }
 
+  // A rendered theme is always light or dark: `data-theme` never carries
+  // "system", so every stylesheet rule keeps matching on the two values it
+  // already knows.
   function normalizeTheme(value) {
     var theme = String(value || "").trim().toLowerCase();
     if (theme === THEME_DARK || theme === THEME_LIGHT) {
       return theme;
     }
     return "";
+  }
+
+  // A stored preference is light, dark, or "system" — the third one is a
+  // standing instruction to follow `prefers-color-scheme`, resolved at apply
+  // time rather than frozen into storage.
+  function normalizeThemePreference(value) {
+    if (String(value || "").trim().toLowerCase() === THEME_SYSTEM) {
+      return THEME_SYSTEM;
+    }
+    return normalizeTheme(value);
   }
 
   function supportsMatchMedia() {
@@ -75,14 +89,14 @@
 
   function readStoredTheme() {
     try {
-      return normalizeTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+      return normalizeThemePreference(window.localStorage.getItem(THEME_STORAGE_KEY));
     } catch {
       return "";
     }
   }
 
   function writeStoredTheme(theme) {
-    var normalized = normalizeTheme(theme);
+    var normalized = normalizeThemePreference(theme);
     if (!normalized) {
       return;
     }
@@ -125,12 +139,44 @@
     return applyTheme(readStoredTheme());
   }
 
+  function currentThemePreference() {
+    return readStoredTheme() || currentTheme();
+  }
+
+  // "System" has to keep following the system after load: an owner who reads in
+  // bed sees the OS flip to dark at sunset, not at the next navigation.
+  function bindSystemThemeChanges() {
+    if (!supportsMatchMedia()) {
+      return;
+    }
+
+    var query = window.matchMedia("(prefers-color-scheme: dark)");
+    var onSystemThemeChange = function () {
+      // An explicit light/dark preference outranks the system; the follow-live
+      // branch covers "system" and the never-chosen state, which resolves the
+      // same way.
+      if (normalizeTheme(readStoredTheme())) {
+        return;
+      }
+      applyTheme(THEME_SYSTEM);
+    };
+
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", onSystemThemeChange);
+      return;
+    }
+    if (typeof query.addListener === "function") {
+      query.addListener(onSystemThemeChange);
+    }
+  }
+
   function initThemePreference() {
     applyTheme(readStoredTheme());
+    bindSystemThemeChanges();
   }
 
   function setThemePreference(theme) {
-    var normalized = normalizeTheme(theme);
+    var normalized = normalizeThemePreference(theme);
     if (!normalized) {
       return currentTheme();
     }
