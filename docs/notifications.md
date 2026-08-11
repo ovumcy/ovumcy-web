@@ -322,9 +322,18 @@ Operator-relevant summary (the full, test-backed claim list lives in
   that exact validated IP (so a hostname cannot rebind to a private address
   after the check); a lookup failure fails closed. "Private" here spans RFC 1918,
   ULA, loopback, link-local, the unspecified address, RFC 6598 CGNAT
-  (`100.64.0.0/10`), and the RFC 6052 NAT64 well-known prefix (`64:ff9b::/96`)
-  when it wraps a private IPv4 — a NAT64 address wrapping a public IPv4 stays
-  allowed. This same flag applies to both the CLI pass and the built-in
+  (`100.64.0.0/10`), RFC 1122 "this network" (`0.0.0.0/8`), the deprecated IPv6
+  site-local range (`fec0::/10`), and the RFC 8215 local-use NAT64 block
+  (`64:ff9b:1::/48`).
+
+  It also spans the IPv6 forms that carry an IPv4 address *inside* them. On a
+  network that routes such a form the packet ends up at the embedded IPv4, so the
+  embedded address decides the verdict, not the IPv6 wrapper: `[2002:7f00:1::]`
+  is `127.0.0.1` written differently, and it is refused. The decoded forms are
+  RFC 6052 NAT64 (`64:ff9b::/96`), 6to4 (`2002::/16`), Teredo (`2001::/32`),
+  IPv4-compatible (`::/96`) and IPv4-translated (`::ffff:0:0:0/96`). A form
+  wrapping a **public** IPv4 stays allowed, since that is where it really
+  routes. This same flag applies to both the CLI pass and the built-in
   scheduler. The server also logs a startup warning when `REGISTRATION_MODE=open`
   is combined with `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=false`, surfacing exactly this
   multi-owner / publicly-reachable exposure at boot.

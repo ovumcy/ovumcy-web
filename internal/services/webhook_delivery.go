@@ -324,12 +324,53 @@ func isPrivateHost(host string) bool {
 // infrastructure legitimately lives there, so the gate classifies it as private.
 var cgnatNet = mustParseWebhookCIDR("100.64.0.0/10")
 
-// nat64WellKnownNet is the RFC 6052 NAT64 well-known prefix (64:ff9b::/96). An
-// address inside it embeds an IPv4 destination in its last four bytes; on a
-// network with a NAT64 gateway it routes to that embedded IPv4, so the embedded
-// address — not the IPv6 wrapper — decides internal reachability. isPrivateIP
-// unwraps it and re-classifies the embedded v4.
-var nat64WellKnownNet = mustParseWebhookCIDR("64:ff9b::/96")
+// siteLocalNet is the deprecated IPv6 site-local prefix (fec0::/10, deprecated by
+// RFC 3879). Go's net.IP.IsPrivate() covers only the ULA range fc00::/7, so a
+// site-local literal would otherwise classify as public even though a stack that
+// still honours it routes the address inside the site.
+var siteLocalNet = mustParseWebhookCIDR("fec0::/10")
+
+// thisNetworkNet is RFC 1122's "this network" block (0.0.0.0/8). IsUnspecified()
+// matches 0.0.0.0 exactly, yet the whole /8 is non-routable and a connect() to any
+// of it lands on the local host on common stacks — so the block, not just its first
+// address, is internal.
+var thisNetworkNet = mustParseWebhookCIDR("0.0.0.0/8")
+
+// nat64LocalUseNet is the RFC 8215 local-use NAT64 block (64:ff9b:1::/48). Unlike
+// the well-known prefix it carries no fixed embedded-IPv4 offset — RFC 6052 allows
+// six prefix lengths inside it, each placing the v4 differently — but "local use"
+// is the whole point of the block: a translation under it terminates inside the
+// operator's own network whatever it wraps. Classified private wholesale, which is
+// both simpler and stricter than decoding six layouts.
+var nat64LocalUseNet = mustParseWebhookCIDR("64:ff9b:1::/48")
+
+// The IPv6 transition prefixes whose addresses EMBED an IPv4 destination. On a
+// network that routes the form, the packet reaches the embedded IPv4 — so the
+// embedded address, not the IPv6 wrapper, decides internal reachability, exactly as
+// it already did for NAT64. Handling one form and not the rest is what made the
+// omission a defect (GHSA-hg2x-v5cc-m384): 2002:7f00:1:: is 127.0.0.1 spelled
+// differently. Each is decoded rather than blocked wholesale, so the NAT64 rule
+// generalizes unchanged — a wrapper around a PRIVATE v4 is blocked, a wrapper
+// around a PUBLIC v4 stays allowed.
+var (
+	// nat64WellKnownNet is the RFC 6052 NAT64 well-known prefix; v4 in bytes 12-15.
+	nat64WellKnownNet = mustParseWebhookCIDR("64:ff9b::/96")
+	// sixToFourNet is RFC 3056 6to4; v4 in bytes 2-5. Deprecated by RFC 7526 and so
+	// unrouted by a stock stack, but 6to4 relays persist on dual-stack gateways.
+	sixToFourNet = mustParseWebhookCIDR("2002::/16")
+	// teredoNet is RFC 4380 Teredo; it embeds TWO v4 addresses — the server in bytes
+	// 4-7 and the client in bytes 12-15, the latter stored bitwise-inverted.
+	teredoNet = mustParseWebhookCIDR("2001::/32")
+	// ipv4CompatibleNet is RFC 4291's deprecated IPv4-compatible form; v4 in bytes
+	// 12-15. It also contains :: and ::1, which is why the terminal classifications
+	// in isPrivateIP must run BEFORE any unwrapping: decoding ::1 first would yield
+	// 0.0.0.1 and turn IPv6 loopback into a public address.
+	ipv4CompatibleNet = mustParseWebhookCIDR("::/96")
+	// ipv4TranslatedNet is the RFC 2765 SIIT IPv4-translated form (::ffff:0:0:0/96);
+	// v4 in bytes 12-15. Distinct from IPv4-MAPPED (::ffff:0:0/96), which Go's
+	// net.IP.To4() already unwraps and the terminal checks therefore cover.
+	ipv4TranslatedNet = mustParseWebhookCIDR("::ffff:0:0:0/96")
+)
 
 // mustParseWebhookCIDR parses a CIDR literal once, at package-init time. Its only
 // callers pass compile-time constants, so a parse failure is a build-time
@@ -343,23 +384,67 @@ func mustParseWebhookCIDR(cidr string) *net.IPNet {
 	return network
 }
 
-// isPrivateIP is the core address classifier shared by the literal pre-check and
-// the guarded dialer: loopback, RFC1918/ULA private, link-local (unicast and
-// multicast), the unspecified address, RFC 6598 CGNAT space (100.64.0.0/10,
-// which net.IP.IsPrivate() omits), and the RFC 6052 NAT64 well-known prefix
-// (64:ff9b::/96) wrapping a private IPv4 all count as private.
-func isPrivateIP(ip net.IP) bool {
-	// NAT64 well-known prefix (64:ff9b::/96) embeds an IPv4 destination in its
-	// last four bytes; on a NAT64-gatewayed network the address routes to that
-	// embedded IPv4, so a wrapper around a PRIVATE v4 (64:ff9b::a00:1 → 10.0.0.1)
-	// must be blocked, while a wrapper around a PUBLIC v4 (64:ff9b::808:808 →
-	// 8.8.8.8) stays allowed. Re-classify the embedded v4 — it is never itself in
-	// the prefix, so this recurses at most once. Contains is true only for a
-	// 16-byte v6 ip, so the ip[12:16] index is always in range.
-	if nat64WellKnownNet.Contains(ip) {
-		return isPrivateIP(net.IPv4(ip[12], ip[13], ip[14], ip[15]))
+// embeddedIPv4s returns every IPv4 destination an IPv6 transition form wraps, or
+// nil when ip is not such a form. Teredo carries two — the relay server and the
+// tunnel client — and either reaching inside the network is enough to refuse the
+// target, so the result is a slice rather than a single address.
+//
+// A 4-byte or IPv4-mapped ip returns nil: Go's net.IP.To4() already unwraps that
+// case, so the caller's terminal classifications have seen it as a v4 already.
+// Contains is true only for a 16-byte v6 ip, so every byte index below is in range.
+func embeddedIPv4s(ip net.IP) []net.IP {
+	v6 := ip.To16()
+	if v6 == nil || ip.To4() != nil {
+		return nil
 	}
-	return ip.IsLoopback() || ip.IsPrivate() ||
+	switch {
+	case nat64WellKnownNet.Contains(ip), ipv4CompatibleNet.Contains(ip), ipv4TranslatedNet.Contains(ip):
+		return []net.IP{net.IPv4(v6[12], v6[13], v6[14], v6[15])}
+	case sixToFourNet.Contains(ip):
+		return []net.IP{net.IPv4(v6[2], v6[3], v6[4], v6[5])}
+	case teredoNet.Contains(ip):
+		return []net.IP{
+			net.IPv4(v6[4], v6[5], v6[6], v6[7]),
+			net.IPv4(^v6[12], ^v6[13], ^v6[14], ^v6[15]),
+		}
+	}
+	return nil
+}
+
+// isPrivateIP is the core address classifier shared by the literal pre-check and
+// the guarded dialer. Private means: loopback, RFC1918/ULA private, link-local
+// (unicast and multicast), the unspecified address, RFC 6598 CGNAT space
+// (100.64.0.0/10, which net.IP.IsPrivate() omits), RFC 1122 "this network"
+// (0.0.0.0/8), deprecated IPv6 site-local (fec0::/10), the RFC 8215 local-use NAT64
+// block, and any IPv6 transition form (embeddedIPv4s) wrapping an IPv4 that is
+// itself private.
+//
+// The terminal classifications run FIRST and unwrapping only afterwards, because
+// :: and ::1 sit inside the IPv4-compatible prefix ::/96: an unwrap-first
+// classifier decodes IPv6 loopback to 0.0.0.1, which is how the remedy first
+// proposed for this class turned two deprecated bypasses into a live loopback one.
+//
+// Measured, so the comment does not overstate the test: inverting the two halves
+// today does NOT move ::1, because 0.0.0.1 lands in the 0.0.0.0/8 rule two lines
+// up and is refused there instead. The ordering is therefore defence in depth
+// rather than the thing currently holding ::1 — it is what keeps ::1 refused if
+// that /8 rule is ever narrowed. Keep both; neither alone is the guarantee.
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() ||
 		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsUnspecified() || cgnatNet.Contains(ip)
+		ip.IsUnspecified() || cgnatNet.Contains(ip) ||
+		thisNetworkNet.Contains(ip) || siteLocalNet.Contains(ip) ||
+		nat64LocalUseNet.Contains(ip) {
+		return true
+	}
+	// A wrapper around a PRIVATE v4 (64:ff9b::a00:1 or 2002:a00:1:: → 10.0.0.1) is
+	// blocked; a wrapper around a PUBLIC v4 (64:ff9b::808:808 → 8.8.8.8) stays
+	// allowed, because that is where it actually routes. Every embedded address is a
+	// v4, which embeds nothing further, so this recurses exactly once.
+	for _, embedded := range embeddedIPv4s(ip) {
+		if isPrivateIP(embedded) {
+			return true
+		}
+	}
+	return false
 }

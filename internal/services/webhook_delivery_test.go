@@ -487,15 +487,23 @@ func TestIsPrivateIP(t *testing.T) {
 		"192.168.1.10": true,
 		"172.16.0.1":   true,
 		"169.254.0.1":  true, // link-local unicast
-		"224.0.0.1":    true, // link-local multicast
-		"::1":          true,
-		"fe80::1":      true, // IPv6 link-local
-		"fc00::1":      true, // IPv6 ULA (private)
-		"0.0.0.0":      true, // unspecified
-		"::":           true, // IPv6 unspecified
-		"8.8.8.8":      false,
-		"192.0.2.1":    false, // TEST-NET-1, public-classified
-		"2606:4700::1": false, // public IPv6
+		// The cloud instance-metadata address, the single most valuable target an
+		// SSRF reaches for. Covered by IsLinkLocalUnicast() above, pinned by name so
+		// a future narrowing of that check is named rather than merely counted.
+		"169.254.169.254": true,
+		"224.0.0.1":       true, // link-local multicast
+		// IPv4-mapped IPv6 loopback: the control for embeddedIPv4s' To4() != nil
+		// early return, which leaves this form to the terminal checks rather than
+		// decoding it (its prefix ::ffff:0:0/96 is NOT the IPv4-translated one).
+		"::ffff:127.0.0.1": true,
+		"::1":              true,
+		"fe80::1":          true, // IPv6 link-local
+		"fc00::1":          true, // IPv6 ULA (private)
+		"0.0.0.0":          true, // unspecified
+		"::":               true, // IPv6 unspecified
+		"8.8.8.8":          false,
+		"192.0.2.1":        false, // TEST-NET-1, public-classified
+		"2606:4700::1":     false, // public IPv6
 		// RFC 6598 CGNAT (100.64.0.0/10): internal/carrier space that Go's
 		// net.IP.IsPrivate() omits, so the gate must still block it — with the /10
 		// boundaries staying public to guard against over-block.
@@ -509,6 +517,35 @@ func TestIsPrivateIP(t *testing.T) {
 		"64:ff9b::a00:1":   true,  // wraps 10.0.0.1
 		"64:ff9b::6440:1":  true,  // wraps 100.64.0.1 (CGNAT)
 		"64:ff9b::808:808": false, // wraps 8.8.8.8 (public)
+		// The remaining IPv6-embeds-IPv4 transition forms, each classified by what it
+		// wraps exactly as NAT64 is (GHSA-hg2x-v5cc-m384 reported the first two; the
+		// rest were found while measuring that report). A wrapper around a PUBLIC v4
+		// stays allowed in every form, so these are not blanket prefix blocks.
+		"2002:7f00:1::":      true,  // 6to4 (RFC 3056) wrapping 127.0.0.1
+		"2002:a00:1::":       true,  // 6to4 wrapping 10.0.0.1
+		"2002:a9fe:a9fe::":   true,  // 6to4 wrapping 169.254.169.254 (link-local metadata)
+		"2002:808:808::":     false, // 6to4 wrapping 8.8.8.8 stays allowed
+		"::10.0.0.1":         true,  // IPv4-compatible (RFC 4291, deprecated)
+		"::127.0.0.1":        true,  // IPv4-compatible wrapping loopback
+		"::8.8.8.8":          false, // IPv4-compatible wrapping a public v4
+		"::ffff:0:127.0.0.1": true,  // IPv4-translated (RFC 2765 SIIT, ::ffff:0:0:0/96)
+		"::ffff:0:8.8.8.8":   false, // same form, public v4
+		// Teredo (RFC 4380) embeds TWO v4 addresses. Each half is pinned alone, or a
+		// classifier that decoded only one of them would still pass this map.
+		"2001:0:a00:1:0:0:f5ff:fffe":           true,  // server v4 = 10.0.0.1
+		"2001:0:808:808:0:0:f5ff:fffe":         true,  // public server, client ^0x0afffffe = 10.0.0.1
+		"2001:0:4136:e378:8000:63bf:3fff:fdd2": false, // both halves public
+		// Ranges that are internal without wrapping anything, each with the boundary
+		// just outside it pinned so the fix cannot widen into an over-block.
+		"fec0::1":            true,  // deprecated IPv6 site-local (RFC 3879)
+		"feff:ffff::1":       true,  // top of fec0::/10
+		"fe7f:ffff::1":       false, // just below fec0::/10, and not link-local
+		"0.1.2.3":            true,  // RFC 1122 "this network", beyond the unspecified address
+		"0.255.255.255":      true,  // top of 0.0.0.0/8
+		"1.0.0.1":            false, // just above 0.0.0.0/8
+		"64:ff9b:1::a00:1":   true,  // RFC 8215 local-use NAT64, private wholesale
+		"64:ff9b:1::808:808": true,  // ... including a public-looking wrap: the BLOCK is local-use
+		"64:ff9b:2::808:808": false, // just outside the /48
 		// TEST-NET-3 must stay external — the positive delivery path relies on it.
 		"203.0.113.10": false,
 	}
