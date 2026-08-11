@@ -14,7 +14,7 @@ import { ensureNotesFieldVisible } from './support/note-helpers';
 import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
-import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { localeText } from './support/locale-helpers';
 import {
   acceptConfirmDialog,
@@ -523,9 +523,7 @@ test.describe('Calendar page', () => {
       }),
       -13,
     );
-    const startInput = page.locator('#last-period-start');
-    await expect(dateFieldRoot(startInput)).toBeVisible();
-    await fillDateField(startInput, startISO);
+    await selectOnboardingStartDate(page, startISO);
     await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
     const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
     await expect(stepTwoForm).toBeVisible();

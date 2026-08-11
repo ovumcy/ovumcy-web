@@ -4,63 +4,72 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"golang.org/x/net/html"
 )
 
-// TestOnboardingDateFieldLocalizesAccessibilityLabels pins the server-rendered
-// i18n + a11y contract for the onboarding segmented date field across every
-// supported locale: the hidden field carries the request language, each segment
-// input exposes the localized aria-label, and the onboarding flow container
-// exposes the localized quick-pick labels. Assertions locate nodes by stable id
-// / data attribute (not markup order), so a legitimate reorder of the segments
-// does not false-fail. The actual quick-pick click behavior (clicking
-// "Yesterday" fills the date) is browser-side and covered by the Playwright
-// onboarding spec, not here.
-func TestOnboardingDateFieldLocalizesAccessibilityLabels(t *testing.T) {
+// TestOnboardingDatePickerLocalizesAccessibilityLabels pins the server-rendered
+// i18n + a11y contract for the onboarding month picker across every supported
+// locale: the shortcut buttons carry localized text and the month-navigation
+// buttons carry localized accessible names. It also pins the single-mechanism
+// contract — one transport input named last_period_start, and no second
+// segmented date field beside it. Assertions locate nodes by stable id / data
+// attribute (not markup order), so a legitimate reorder does not false-fail.
+// The picking behavior itself (clicking a day fills the value) is browser-side
+// and covered by the Playwright onboarding spec, not here.
+func TestOnboardingDatePickerLocalizesAccessibilityLabels(t *testing.T) {
 	cases := []struct {
-		lang       string
-		day        string
-		month      string
-		year       string
-		today      string
-		yesterday  string
-		twoDaysAgo string
+		lang          string
+		today         string
+		yesterday     string
+		previousMonth string
+		nextMonth     string
 	}{
-		{"en", "Day", "Month", "Year", "Today", "Yesterday", "2 days ago"},
-		{"ru", "День", "Месяц", "Год", "Сегодня", "Вчера", "2 дня назад"},
-		{"es", "Día", "Mes", "Año", "Hoy", "Ayer", "Hace 2 días"},
-		{"fr", "Jour", "Mois", "Année", "Aujourd'hui", "Hier", "Il y a 2 jours"},
-		{"de", "Tag", "Monat", "Jahr", "Heute", "Gestern", "Vor 2 Tagen"},
-		{"it", "Giorno", "Mese", "Anno", "Oggi", "Ieri", "2 giorni fa"},
+		{"en", "Today", "Yesterday", "Previous month", "Next month"},
+		{"ru", "Сегодня", "Вчера", "Предыдущий месяц", "Следующий месяц"},
+		{"es", "Hoy", "Ayer", "Mes anterior", "Mes siguiente"},
+		{"fr", "Aujourd'hui", "Hier", "Mois précédent", "Mois suivant"},
+		{"de", "Heute", "Gestern", "Vorheriger Monat", "Nächster Monat"},
+		{"it", "Oggi", "Ieri", "Mese precedente", "Mese successivo"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.lang, func(t *testing.T) {
 			document := renderOnboardingForLanguage(t, tc.lang)
 
-			hidden := htmlElementByID(document, "last-period-start")
-			if hidden == nil {
-				t.Fatalf("onboarding hidden date input #last-period-start not found")
+			transport := htmlElementByID(document, "last-period-start")
+			if transport == nil {
+				t.Fatalf("onboarding transport date input #last-period-start not found")
 			}
-			if got := htmlAttr(hidden, "lang"); got != tc.lang {
-				t.Fatalf("hidden date input lang = %q, want %q", got, tc.lang)
+			if got := htmlAttr(transport, "name"); got != "last_period_start" {
+				t.Fatalf("transport input name = %q, want %q", got, "last_period_start")
+			}
+			if htmlAttr(transport, "min") == "" || htmlAttr(transport, "max") == "" {
+				t.Fatalf("transport input must publish the allowed range as min/max")
 			}
 
-			assertDateSegmentAriaLabel(t, document, "last-period-start-day", tc.day)
-			assertDateSegmentAriaLabel(t, document, "last-period-start-month", tc.month)
-			assertDateSegmentAriaLabel(t, document, "last-period-start-year", tc.year)
-
-			flow := htmlFindElement(document, func(node *html.Node) bool {
-				return node.Type == html.ElementNode && htmlHasAttr(node, "data-onboarding-flow")
+			// One value, one mechanism: the segmented day/month/year field that
+			// used to duplicate this input is gone from the onboarding page.
+			segments := htmlFindElements(document, func(node *html.Node) bool {
+				return node.Type == html.ElementNode && htmlHasAttr(node, "data-date-field-part")
 			})
-			if flow == nil {
-				t.Fatalf("onboarding flow container [data-onboarding-flow] not found")
+			if len(segments) != 0 {
+				t.Fatalf("onboarding renders %d segmented date inputs beside the picker, want 0", len(segments))
 			}
-			assertQuickPickLabel(t, flow, "data-today-label", tc.today)
-			assertQuickPickLabel(t, flow, "data-yesterday-label", tc.yesterday)
-			assertQuickPickLabel(t, flow, "data-two-days-ago-label", tc.twoDaysAgo)
+
+			picker := htmlFindElement(document, func(node *html.Node) bool {
+				return node.Type == html.ElementNode && htmlHasAttr(node, "data-onboarding-picker")
+			})
+			if picker == nil {
+				t.Fatalf("onboarding picker [data-onboarding-picker] not found")
+			}
+
+			assertShortcutLabel(t, picker, "today", tc.today)
+			assertShortcutLabel(t, picker, "yesterday", tc.yesterday)
+			assertMonthNavLabel(t, picker, "data-onboarding-month-prev", tc.previousMonth)
+			assertMonthNavLabel(t, picker, "data-onboarding-month-next", tc.nextMonth)
 		})
 	}
 }
@@ -91,22 +100,30 @@ func renderOnboardingForLanguage(t *testing.T, lang string) *html.Node {
 	return mustParseHTMLDocument(t, string(body))
 }
 
-func assertDateSegmentAriaLabel(t *testing.T, document *html.Node, segmentID string, want string) {
+func assertShortcutLabel(t *testing.T, picker *html.Node, shortcut string, want string) {
 	t.Helper()
 
-	segment := htmlElementByID(document, segmentID)
-	if segment == nil {
-		t.Fatalf("onboarding date segment #%s not found", segmentID)
+	button := htmlFindElement(picker, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-onboarding-shortcut") == shortcut
+	})
+	if button == nil {
+		t.Fatalf("onboarding shortcut %q not found", shortcut)
 	}
-	if got := htmlAttr(segment, "aria-label"); got != want {
-		t.Fatalf("segment #%s aria-label = %q, want %q", segmentID, got, want)
+	if got := strings.TrimSpace(htmlNodeText(button)); got != want {
+		t.Fatalf("onboarding shortcut %q text = %q, want %q", shortcut, got, want)
 	}
 }
 
-func assertQuickPickLabel(t *testing.T, flow *html.Node, attr string, want string) {
+func assertMonthNavLabel(t *testing.T, picker *html.Node, attr string, want string) {
 	t.Helper()
 
-	if got := htmlAttr(flow, attr); got != want {
-		t.Fatalf("onboarding %s = %q, want %q", attr, got, want)
+	button := htmlFindElement(picker, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, attr)
+	})
+	if button == nil {
+		t.Fatalf("onboarding month navigation [%s] not found", attr)
+	}
+	if got := htmlAttr(button, "aria-label"); got != want {
+		t.Fatalf("onboarding [%s] aria-label = %q, want %q", attr, got, want)
 	}
 }

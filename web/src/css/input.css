@@ -3623,33 +3623,77 @@
     0 8px 16px rgba(212, 165, 116, 0.14);
 }
 
+/*
+  The onboarding month picker sizes itself from the column width rather than a
+  fixed height: at 390px the card leaves ~300px for seven columns, which keeps
+  every day cell comfortably above the 24px tap-target floor and near 44px,
+  with no inner scroll area that could clip a row under the Next button.
+*/
+@utility onboarding-picker {
+  padding: 0.75rem;
+}
+
 @utility onboarding-day-grid {
   align-content: start;
 }
 
-@utility onboarding-day-chip {
-  flex-direction: column;
+@utility onboarding-day-blank {
+  display: block;
+}
+
+@utility onboarding-day-cell {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 0.15rem;
-  min-height: 2.7rem;
-  text-align: center;
+  min-height: 2.5rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1;
+
+  :root[data-theme='dark'] & {
+    background: var(--bg-soft-strong);
+  }
 }
 
-@utility onboarding-day-chip-primary {
-  display: block;
-  font-size: 0.82rem;
-  line-height: 1.15;
+@utility onboarding-day-cell-today {
+  border-color: rgba(212, 165, 116, 0.75);
 }
 
-@utility onboarding-day-chip-secondary {
-  display: block;
-  font-size: 0.68rem;
-  line-height: 1.1;
-  color: var(--text-muted);
+/*
+  A selected day is a confirmed choice, not a progression or an uncertainty, so
+  it confirms with colour, shape and the ring below — on a SOLID fill. It reuses
+  the primary-action token rather than a literal: the token is opaque, carries a
+  dark-theme value, and its white-text ratios are the measured ones recorded in
+  the token block (light #9a5324 5.77:1, dark #a35b2b 5.14:1). Text over a
+  gradient is the case automated contrast engines report as incomplete instead of
+  as a violation, which is why no background-image belongs here.
+*/
+@utility onboarding-day-cell-selected {
+  border-color: var(--action-primary);
+  background: var(--action-primary);
+  box-shadow:
+    0 0 0 2px rgba(212, 165, 116, 0.24),
+    0 8px 16px rgba(212, 165, 116, 0.14);
+  color: #fff;
 }
 
-@utility onboarding-day-chip-today {
-  min-height: 3.05rem;
+@utility onboarding-day-cell-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@utility onboarding-shortcut {
+  min-height: 2.5rem;
+}
+
+@utility onboarding-month-nav {
+  min-height: 2.5rem;
+  min-width: 2.75rem;
+  padding-inline: 0.75rem;
 }
 
 @utility calendar-cell {

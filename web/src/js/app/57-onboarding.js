@@ -35,45 +35,171 @@
     }
   }
 
+  function onboardingMonthKey(value) {
+    return String(value.getFullYear()) + "-" + String(value.getMonth() + 1).padStart(2, "0");
+  }
+
+  function onboardingMonthStart(value) {
+    return new Date(value.getFullYear(), value.getMonth(), 1);
+  }
+
+  function onboardingMonthOffset(value, months) {
+    return new Date(value.getFullYear(), value.getMonth() + months, 1);
+  }
+
+  function onboardingMonthAllowed(state, month) {
+    if (!state.minDate || !state.maxDate) {
+      return false;
+    }
+    return month >= onboardingMonthStart(state.minDate) && month <= onboardingMonthStart(state.maxDate);
+  }
+
+  function clampOnboardingMonth(state, month) {
+    if (!state.minDate || !state.maxDate) {
+      return month;
+    }
+    if (month < onboardingMonthStart(state.minDate)) {
+      return onboardingMonthStart(state.minDate);
+    }
+    if (month > onboardingMonthStart(state.maxDate)) {
+      return onboardingMonthStart(state.maxDate);
+    }
+    return month;
+  }
+
+  function onboardingDateAllowed(state, value) {
+    if (!value || !state.minDate || !state.maxDate) {
+      return false;
+    }
+    return value >= state.minDate && value <= state.maxDate;
+  }
+
+  function renderOnboardingWeekdays(state) {
+    if (!state.weekdaysContainer) {
+      return;
+    }
+
+    state.weekdaysContainer.textContent = "";
+    for (var weekday = 0; weekday < 7; weekday++) {
+      // Jan 1 2023 was a Sunday, so 1 + weekday is Sunday-first; adding the
+      // shift rotates the first column to Monday for a Monday-first owner.
+      var sample = new Date(2023, 0, 1 + weekday + state.weekStartShift);
+      var cell = document.createElement("span");
+      cell.textContent = state.weekdayFormatter.format(sample);
+      state.weekdaysContainer.appendChild(cell);
+    }
+  }
+
   function renderOnboardingDayOptions(state) {
     var container = state.dayOptionsContainer;
-    if (!container) {
+    if (!container || !state.visibleMonth) {
       return;
     }
 
     container.textContent = "";
-    for (var index = 0; index < state.dayOptions.length; index++) {
-      var day = state.dayOptions[index];
-      var button = document.createElement("button");
-      var title;
-      button.type = "button";
-      button.className = "check-chip check-chip-sm justify-center onboarding-day-chip";
-      button.setAttribute("data-onboarding-day-option", "true");
-      button.setAttribute("data-onboarding-day-value", day.value);
-      button.setAttribute("aria-pressed", state.selectedDate === day.value ? "true" : "false");
-      title = day.secondaryLabel ? day.label + " " + day.secondaryLabel : day.label;
-      button.setAttribute("title", title);
-      if (day.isToday) {
-        button.classList.add("onboarding-day-chip-today");
-      }
-      if (state.selectedDate === day.value) {
-        button.classList.add("choice-chip-active");
-      }
-      if (day.secondaryLabel) {
-        var primary = document.createElement("span");
-        primary.className = "onboarding-day-chip-primary";
-        primary.textContent = day.label;
-        button.appendChild(primary);
 
-        var secondary = document.createElement("span");
-        secondary.className = "onboarding-day-chip-secondary";
-        secondary.textContent = day.secondaryLabel;
-        button.appendChild(secondary);
+    var year = state.visibleMonth.getFullYear();
+    var month = state.visibleMonth.getMonth();
+    // Leading blanks before day 1: the day-of-week index inside the owner's week.
+    var firstWeekday = (new Date(year, month, 1).getDay() + 7 - state.weekStartShift) % 7;
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    for (var blank = 0; blank < firstWeekday; blank++) {
+      var placeholder = document.createElement("span");
+      placeholder.className = "onboarding-day-blank";
+      placeholder.setAttribute("aria-hidden", "true");
+      container.appendChild(placeholder);
+    }
+
+    for (var day = 1; day <= daysInMonth; day++) {
+      var dayDate = new Date(year, month, day);
+      var value = formatDateValue(dayDate);
+      var button = document.createElement("button");
+
+      button.type = "button";
+      button.className = "onboarding-day-cell";
+      button.textContent = String(day);
+      button.setAttribute("data-onboarding-day-option", "true");
+      button.setAttribute("data-onboarding-day-value", value);
+      button.setAttribute("aria-label", state.dayNameFormatter.format(dayDate));
+
+      if (!onboardingDateAllowed(state, dayDate)) {
+        // A period cannot start in the future, and the server accepts nothing
+        // older than the window it published, so both edges are inert here.
+        button.disabled = true;
+        button.classList.add("onboarding-day-cell-disabled");
+        button.setAttribute("aria-pressed", "false");
       } else {
-        button.textContent = day.label;
+        button.setAttribute("aria-pressed", state.selectedDate === value ? "true" : "false");
+        if (state.selectedDate === value) {
+          button.classList.add("onboarding-day-cell-selected");
+        }
+        if (state.maxDate && value === formatDateValue(state.maxDate)) {
+          button.classList.add("onboarding-day-cell-today");
+        }
       }
+
       container.appendChild(button);
     }
+  }
+
+  function syncOnboardingMonthNav(state) {
+    if (state.monthTitle && state.visibleMonth) {
+      state.monthTitle.textContent = state.monthFormatter.format(state.visibleMonth);
+    }
+    if (state.picker && state.visibleMonth) {
+      state.picker.setAttribute("data-onboarding-visible-month", onboardingMonthKey(state.visibleMonth));
+    }
+    if (state.previousMonthButton) {
+      state.previousMonthButton.disabled = !state.visibleMonth
+        || !onboardingMonthAllowed(state, onboardingMonthOffset(state.visibleMonth, -1));
+    }
+    if (state.nextMonthButton) {
+      state.nextMonthButton.disabled = !state.visibleMonth
+        || !onboardingMonthAllowed(state, onboardingMonthOffset(state.visibleMonth, 1));
+    }
+  }
+
+  function syncOnboardingShortcuts(state) {
+    for (var index = 0; index < state.shortcutButtons.length; index++) {
+      var button = state.shortcutButtons[index];
+      var shortcutDate = onboardingShortcutDate(state, button.getAttribute("data-onboarding-shortcut"));
+      button.disabled = !onboardingDateAllowed(state, shortcutDate);
+      button.setAttribute(
+        "aria-pressed",
+        shortcutDate && state.selectedDate === formatDateValue(shortcutDate) ? "true" : "false"
+      );
+    }
+  }
+
+  function onboardingShortcutDate(state, shortcut) {
+    if (!state.maxDate) {
+      return null;
+    }
+    if (shortcut === "today") {
+      return new Date(state.maxDate);
+    }
+    if (shortcut === "yesterday") {
+      var yesterday = new Date(state.maxDate);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return yesterday;
+    }
+    return null;
+  }
+
+  function syncOnboardingSelectedReadout(state) {
+    if (!state.selectedReadout) {
+      return;
+    }
+
+    var selected = parseDateValue(state.selectedDate);
+    if (!selected) {
+      state.selectedReadout.textContent = "";
+      return;
+    }
+    state.selectedReadout.textContent = state.selectedLabel
+      ? state.selectedLabel.replace("%s", state.dayNameFormatter.format(selected))
+      : state.dayNameFormatter.format(selected);
   }
 
   function syncOnboardingStepUI(state) {
@@ -92,14 +218,65 @@
 
   function syncOnboardingStartDate(state) {
     var selectedDate = parseDateValue(state.selectedDate);
+    if (selectedDate && !onboardingDateAllowed(state, selectedDate)) {
+      selectedDate = null;
+    }
 
     state.selectedDate = selectedDate ? formatDateValue(selectedDate) : "";
-    if (state.startDateField) {
-      state.startDateField.setValue(state.selectedDate);
-    } else if (state.startDateInput) {
+    if (state.startDateInput) {
       state.startDateInput.value = state.selectedDate;
     }
+
+    var reference = selectedDate || state.maxDate;
+    if (!state.visibleMonth && reference) {
+      state.visibleMonth = onboardingMonthStart(reference);
+    }
+    if (state.visibleMonth) {
+      state.visibleMonth = clampOnboardingMonth(state, state.visibleMonth);
+    }
+
+    syncOnboardingMonthNav(state);
+    syncOnboardingShortcuts(state);
     renderOnboardingDayOptions(state);
+    syncOnboardingSelectedReadout(state);
+  }
+
+  function selectOnboardingDate(state, value) {
+    var selected = parseDateValue(value);
+    if (!onboardingDateAllowed(state, selected)) {
+      return;
+    }
+
+    state.selectedDate = formatDateValue(selected);
+    state.visibleMonth = onboardingMonthStart(selected);
+    clearOnboardingStatus(state, "1");
+    syncOnboardingStartDate(state);
+  }
+
+  function moveOnboardingMonth(state, step) {
+    if (!state.visibleMonth) {
+      return;
+    }
+
+    var target = onboardingMonthOffset(state.visibleMonth, step);
+    if (!onboardingMonthAllowed(state, target)) {
+      return;
+    }
+
+    state.visibleMonth = target;
+    syncOnboardingMonthNav(state);
+    renderOnboardingDayOptions(state);
+  }
+
+  function validateOnboardingStartDate(state) {
+    var selected = parseDateValue(state.selectedDate);
+    if (!selected) {
+      return state.requiredMessage;
+    }
+    if (!onboardingDateAllowed(state, selected)) {
+      return state.outOfRangeMessage;
+    }
+    return "";
   }
 
   function syncOnboardingTimezoneFields(state) {
@@ -162,28 +339,38 @@
       var state = root.__ovumcyOnboardingState;
 
       if (!state) {
+        var picker = root.querySelector("[data-onboarding-picker]");
+        var lang = String(root.getAttribute("data-lang") || "en") || "en";
+
         state = {
           root: root,
           step: normalizeOnboardingStep(root.getAttribute("data-initial-step")),
-          minDate: String(root.getAttribute("data-min-date") || ""),
-          maxDate: String(root.getAttribute("data-max-date") || ""),
+          minDate: parseDateValue(root.getAttribute("data-min-date")),
+          maxDate: parseDateValue(root.getAttribute("data-max-date")),
           selectedDate: String(root.getAttribute("data-last-period-start") || ""),
           cycleLength: clampInteger(root.getAttribute("data-cycle-length"), 28, 15, 90),
           periodLength: clampInteger(root.getAttribute("data-period-length"), 5, 1, 14),
           periodExceedsCycleMessage: String(root.getAttribute("data-period-exceeds-cycle-message") || "Period length must not exceed cycle length."),
-          relativeDayLabels: {
-            today: String(root.getAttribute("data-today-label") || ""),
-            yesterday: String(root.getAttribute("data-yesterday-label") || ""),
-            twoDaysAgo: String(root.getAttribute("data-two-days-ago-label") || "")
-          },
-          lang: String(root.getAttribute("data-lang") || "en"),
+          lang: lang,
+          weekStartShift: root.getAttribute("data-week-start") === "monday" ? 1 : 0,
+          monthFormatter: new Intl.DateTimeFormat(lang, { month: "long", year: "numeric" }),
+          weekdayFormatter: new Intl.DateTimeFormat(lang, { weekday: "short" }),
+          dayNameFormatter: new Intl.DateTimeFormat(lang, { day: "numeric", month: "long", year: "numeric" }),
+          visibleMonth: null,
           progress: root.querySelector("[data-onboarding-progress]"),
           progressBar: root.querySelector("[data-onboarding-progress-bar]"),
-          startDateField: typeof window.__ovumcyGetDateFieldController === "function"
-            ? window.__ovumcyGetDateFieldController(root.querySelector("#last-period-start"))
-            : null,
-          startDateInput: root.querySelector("#last-period-start"),
+          picker: picker,
+          selectedLabel: picker ? String(picker.getAttribute("data-selected-label") || "") : "",
+          requiredMessage: picker ? String(picker.getAttribute("data-required-message") || "") : "",
+          outOfRangeMessage: picker ? String(picker.getAttribute("data-out-of-range-message") || "") : "",
+          startDateInput: root.querySelector("[data-onboarding-start-date]"),
+          monthTitle: root.querySelector("[data-onboarding-month-title]"),
+          previousMonthButton: root.querySelector("[data-onboarding-month-prev]"),
+          nextMonthButton: root.querySelector("[data-onboarding-month-next]"),
+          weekdaysContainer: root.querySelector("[data-onboarding-weekdays]"),
           dayOptionsContainer: root.querySelector("[data-onboarding-day-options]"),
+          selectedReadout: root.querySelector("[data-onboarding-selected-date]"),
+          shortcutButtons: root.querySelectorAll("[data-onboarding-shortcut]"),
           cycleInput: root.querySelector("[data-onboarding-cycle-length]"),
           periodInput: root.querySelector("[data-onboarding-period-length]"),
           cycleValue: root.querySelector("[data-onboarding-cycle-length-value]"),
@@ -208,37 +395,44 @@
           statusTargets: {
             "1": root.querySelector("#onboarding-step1-status"),
             "2": root.querySelector("#onboarding-step2-status")
-          },
-          dayOptions: []
+          }
         };
-        state.dayOptions = buildDayOptions(state.minDate, state.maxDate, state.lang, state.relativeDayLabels);
         root.__ovumcyOnboardingState = state;
+        renderOnboardingWeekdays(state);
 
         root.addEventListener("click", function (event) {
+          var currentState = this.__ovumcyOnboardingState;
+
           var stepButton = closestFromEvent(event, "[data-onboarding-go-step]");
           if (stepButton && this.contains(stepButton)) {
-            goToOnboardingStep(this.__ovumcyOnboardingState, stepButton.getAttribute("data-onboarding-go-step"));
+            goToOnboardingStep(currentState, stepButton.getAttribute("data-onboarding-go-step"));
+            return;
+          }
+
+          var monthButton = closestFromEvent(event, "[data-onboarding-month-prev], [data-onboarding-month-next]");
+          if (monthButton && this.contains(monthButton)) {
+            moveOnboardingMonth(currentState, monthButton.hasAttribute("data-onboarding-month-next") ? 1 : -1);
+            return;
+          }
+
+          var shortcutButton = closestFromEvent(event, "[data-onboarding-shortcut]");
+          if (shortcutButton && this.contains(shortcutButton)) {
+            var shortcutDate = onboardingShortcutDate(currentState, shortcutButton.getAttribute("data-onboarding-shortcut"));
+            if (shortcutDate) {
+              selectOnboardingDate(currentState, formatDateValue(shortcutDate));
+            }
             return;
           }
 
           var dayButton = closestFromEvent(event, "button[data-onboarding-day-option]");
           if (dayButton && this.contains(dayButton)) {
-            this.__ovumcyOnboardingState.selectedDate = String(dayButton.getAttribute("data-onboarding-day-value") || "");
-            clearOnboardingStatus(this.__ovumcyOnboardingState, "1");
-            syncOnboardingStartDate(this.__ovumcyOnboardingState);
+            selectOnboardingDate(currentState, dayButton.getAttribute("data-onboarding-day-value"));
           }
         });
 
         root.addEventListener("input", function (event) {
           var currentState = this.__ovumcyOnboardingState;
           if (!event.target || !event.target.matches) {
-            return;
-          }
-
-          if (currentState.startDateInput && event.target === currentState.startDateInput) {
-            currentState.selectedDate = String(event.target.value || "");
-            clearOnboardingStatus(currentState, "1");
-            syncOnboardingStartDate(currentState);
             return;
           }
 
@@ -262,16 +456,13 @@
           var guidance;
           if (form && form.matches && form.matches("form[data-onboarding-form-step='1']")) {
             syncOnboardingTimezoneFields(currentState);
-            if (currentState.startDateField && !currentState.startDateField.validate()) {
+            var startDateError = validateOnboardingStartDate(currentState);
+            if (startDateError) {
               event.preventDefault();
               clearOnboardingStatus(currentState, "1");
               if (currentState.statusTargets["1"]) {
-                renderErrorStatus(
-                  currentState.statusTargets["1"],
-                  currentState.startDateField.validationMessage()
-                );
+                renderErrorStatus(currentState.statusTargets["1"], startDateError);
               }
-              currentState.startDateField.reportValidity();
             }
             return;
           }
@@ -315,4 +506,3 @@
       syncOnboardingStepTwo(state);
     }
   }
-

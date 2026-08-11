@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { fillDateField } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
+import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import {
   completeOnboardingIfPresent,
@@ -171,17 +172,7 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
 }
 
 async function completeOnboardingWithStartDate(page: Page, startDate: string): Promise<void> {
-  const startDateInput = page.locator('#last-period-start');
-  await expect(dateFieldRoot(startDateInput)).toBeVisible();
-
-  const startDateOption = page.locator(`[data-onboarding-day-option][data-onboarding-day-value="${startDate}"]`);
-  if ((await startDateOption.count()) > 0) {
-    await startDateOption.first().focus();
-    await page.keyboard.press('Enter');
-  } else {
-    await fillDateField(startDateInput, startDate);
-  }
-
+  await selectOnboardingStartDate(page, startDate);
   await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');

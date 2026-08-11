@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { clearDateField, dateFieldRoot, fillDateField } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import {
+  apiOriginHeader,
   continueFromRecoveryCode,
   createCredentials,
   expectInlineRegisterRecoveryStep,
@@ -12,6 +12,14 @@ import {
 } from './support/auth-helpers';
 import { switchPublicLanguage } from './support/language-helpers';
 import { localeText } from './support/locale-helpers';
+import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
+import { applyTheme, expectTextContrastAA } from './support/contrast-helpers';
+import {
+  onboardingDayCell,
+  onboardingPicker,
+  onboardingShortcut,
+  selectOnboardingStartDate,
+} from './support/onboarding-helpers';
 
 function toISODate(date: Date): string {
   const copy = new Date(date);
@@ -40,9 +48,7 @@ async function setRangeValue(locator: Locator, value: number): Promise<void> {
 
 async function ensureOnboardingStepOneVisible(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
-
-  const stepOneDateInput = page.locator('#last-period-start');
-  await expect(dateFieldRoot(stepOneDateInput)).toBeVisible();
+  await expect(onboardingPicker(page)).toBeVisible();
 }
 
 function onboardingStepOneForm(page: Page): Locator {
@@ -61,12 +67,8 @@ function onboardingStepTwoSubmit(page: Page): Locator {
   return page.locator('[data-onboarding-step2-submit]');
 }
 
-function onboardingQuickPickButtons(page: Page): Locator {
-  return page.locator('[data-onboarding-day-options] button[data-onboarding-day-option]');
-}
-
-async function activateOnboardingQuickPick(page: Page, quickPick: Locator): Promise<void> {
-  await quickPick.focus();
+async function activateOnboardingShortcut(page: Page, name: 'today' | 'yesterday'): Promise<void> {
+  await onboardingShortcut(page, name).focus();
   await page.keyboard.press('Enter');
 }
 
@@ -88,8 +90,7 @@ async function registerAndOpenOnboarding(page: Page, emailPrefix: string) {
 }
 
 async function submitStepOne(page: Page, dateISO: string): Promise<void> {
-  const input = page.locator('#last-period-start');
-  await fillDateField(input, dateISO);
+  await selectOnboardingStartDate(page, dateISO);
   await onboardingStepOneSubmit(page).click();
   await expect(onboardingStepTwoForm(page)).toBeVisible();
 }
@@ -115,56 +116,165 @@ test.describe('Onboarding flow', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
   });
 
-  test('step 1 quick-pick sets date and empty submit is blocked by validation', async ({ page }) => {
+  test('step 1 blocks an empty submit and the today shortcut fills the date', async ({ page }) => {
     await registerAndOpenOnboarding(page, 'onboarding-step1-quickpick');
 
-    const dateInput = page.locator('#last-period-start');
-    await clearDateField(dateInput);
+    const transport = page.locator('#last-period-start');
+    // A fresh owner has no baseline, so the picker opens with nothing selected.
+    await expect(transport).toHaveValue('');
 
     await onboardingStepOneSubmit(page).click();
     await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
-    await expect(page.locator('#onboarding-step1-status .status-error')).toBeVisible();
+    // Client guard and server answer carry the same key, so the assertion holds
+    // whichever of the two rendered this status.
+    await expect(page.locator('#onboarding-step1-status .status-error')).toHaveText(
+      localeText('en', 'onboarding.error.date_required')
+    );
+    await expect(onboardingStepTwoForm(page)).not.toBeVisible();
 
-    const stepTwoForm = onboardingStepTwoForm(page);
-    const stepTwoVisible = await stepTwoForm.isVisible().catch(() => false);
-    if (stepTwoVisible) {
-      await onboardingStepTwoBackButton(page).click();
-      await expect(dateFieldRoot(dateInput)).toBeVisible();
-    } else {
-      await expect(stepTwoForm).not.toBeVisible();
-    }
+    const today = String(await transport.getAttribute('max'));
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-    const quickPickButtons = onboardingQuickPickButtons(page);
-    const firstQuickPick = quickPickButtons.first();
-    await expect(firstQuickPick).toBeVisible();
-    await expect(firstQuickPick).toContainText('Today');
-    await expect(quickPickButtons.nth(1)).toContainText('Yesterday');
-    await expect(quickPickButtons.nth(2)).toContainText('2 days ago');
+    const todayShortcut = onboardingShortcut(page, 'today');
+    await expect(todayShortcut).toBeVisible();
+    await expect(todayShortcut).toHaveAttribute('aria-pressed', 'false');
 
-    const firstQuickPickValue = await firstQuickPick.getAttribute('data-onboarding-day-value');
-    expect(firstQuickPickValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    await expect(firstQuickPick).toHaveAttribute('aria-pressed', 'false');
+    await activateOnboardingShortcut(page, 'today');
 
-    await activateOnboardingQuickPick(page, firstQuickPick);
+    await expect(transport).toHaveValue(today);
+    await expect(todayShortcut).toHaveAttribute('aria-pressed', 'true');
+    await expect(onboardingDayCell(page, today)).toHaveAttribute('aria-pressed', 'true');
+    await expect(onboardingDayCell(page, today)).toHaveClass(/onboarding-day-cell-selected/);
 
-    await expect(dateInput).toHaveValue(String(firstQuickPickValue));
-    await expect(firstQuickPick).toHaveAttribute('aria-pressed', 'true');
-    await expect(firstQuickPick).toHaveClass(/choice-chip-active/);
     await onboardingStepOneSubmit(page).click();
     await expect(onboardingStepTwoForm(page)).toBeVisible();
     await expect(onboardingStepTwoForm(page)).toContainText(/21.?35/);
   });
 
-  test('today quick-pick keeps the exact selected date through onboarding completion', async ({
+  test('step 1 offers one month picker and no second date input', async ({ page }) => {
+    await registerAndOpenOnboarding(page, 'onboarding-step1-one-picker');
+
+    const panel = page.locator('[data-onboarding-panel="1"]');
+    const picker = onboardingPicker(page);
+    const transport = page.locator('#last-period-start');
+
+    // One value, one mechanism: the segmented DD/MM/YYYY field that used to sit
+    // next to the day grid is gone, and the only element carrying the submitted
+    // name is the picker's transport input.
+    await expect(panel.locator('[data-date-field]')).toHaveCount(0);
+    await expect(panel.locator('[data-date-field-part]')).toHaveCount(0);
+    await expect(panel.locator('input[name="last_period_start"]')).toHaveCount(1);
+    await expect(picker).toBeVisible();
+
+    const today = String(await transport.getAttribute('max'));
+    expect(today).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    // A period cannot start in the future: today is offered, nothing after it
+    // is. Enumerating the enabled cells proves both halves at once.
+    const selectableDays = await picker
+      .locator('[data-onboarding-day-option]:not([disabled])')
+      .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-onboarding-day-value')));
+    expect(selectableDays).toContain(today);
+    expect(selectableDays.filter((value) => String(value) > today)).toEqual([]);
+
+    // Shortcut buttons, read from the catalogue rather than re-typed.
+    await expect(onboardingShortcut(page, 'today')).toHaveText(
+      localeText('en', 'onboarding.step1.today')
+    );
+    await expect(onboardingShortcut(page, 'yesterday')).toHaveText(
+      localeText('en', 'onboarding.step1.yesterday')
+    );
+
+    const yesterday = shiftISODate(today, -1);
+    await onboardingShortcut(page, 'yesterday').focus();
+    await page.keyboard.press('Enter');
+    await expect(transport).toHaveValue(yesterday);
+    await expect(onboardingDayCell(page, yesterday)).toHaveAttribute('aria-pressed', 'true');
+
+    // Grid cells are real buttons with the date as their accessible name and a
+    // tap target well above the 24 px floor.
+    const todayCell = onboardingDayCell(page, today);
+    expect(await todayCell.evaluate((node) => node.tagName)).toBe('BUTTON');
+    const expectedName = await page.evaluate(
+      (value) =>
+        new Intl.DateTimeFormat('en', { day: 'numeric', month: 'long', year: 'numeric' }).format(
+          new Date(`${value}T00:00:00`)
+        ),
+      today
+    );
+    await expect(todayCell).toHaveAttribute('aria-label', expectedName);
+
+    const cellBox = await todayCell.boundingBox();
+    expect(cellBox!.width).toBeGreaterThanOrEqual(24);
+    expect(cellBox!.height).toBeGreaterThanOrEqual(24);
+
+    await selectOnboardingStartDate(page, today);
+    await onboardingStepOneSubmit(page).click();
+    await expect(onboardingStepTwoForm(page)).toBeVisible();
+  });
+
+  test('step 1 selected day paints a solid fill that clears AA in both themes', async ({ page }) => {
+    await registerAndOpenOnboarding(page, 'onboarding-step1-selected-contrast');
+    const today = String(await page.locator('#last-period-start').getAttribute('max'));
+
+    for (const theme of ['light', 'dark'] as const) {
+      // applyTheme reloads, and an unsubmitted selection does not survive that,
+      // so the date is re-picked inside each theme rather than once up front.
+      await applyTheme(page, theme);
+      await selectOnboardingStartDate(page, today);
+
+      const [selected] = await expectTextContrastAA(
+        page,
+        '.onboarding-day-cell-selected',
+        `onboarding selected day cell (${theme})`
+      );
+      // A selected state is neither a progression nor an uncertainty, so it
+      // carries no gradient — and a background-image is exactly what automated
+      // engines report as incomplete rather than as a violation.
+      expect(selected.backgroundImage, `selected day cell (${theme})`).toBe('none');
+    }
+  });
+
+  test('step 1 picker fits a 390 px viewport without covering Next', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await registerAndOpenOnboarding(page, 'onboarding-step1-mobile-fit');
+
+    const picker = onboardingPicker(page);
+    const nextButton = onboardingStepOneSubmit(page);
+    await expect(picker).toBeVisible();
+    await expect(nextButton).toBeVisible();
+    await expect(nextButton).toBeEnabled();
+
+    const pickerBox = (await picker.boundingBox())!;
+    const nextBox = (await nextButton.boundingBox())!;
+
+    // Fits the viewport horizontally — the shared helper names the offending
+    // element instead of only reporting the picker's own box — is not clipped
+    // vertically, and the Next button starts below it, not on top of it.
+    await assertNoHorizontalOverflow(page);
+    expect(nextBox.y).toBeGreaterThanOrEqual(pickerBox.y + pickerBox.height);
+    expect(
+      await picker.evaluate((node) => node.scrollHeight - node.clientHeight)
+    ).toBeLessThanOrEqual(1);
+
+    // Playwright's actionability check hits the real element under the pointer,
+    // so a Next covered by the picker would fail this click rather than pass it.
+    const today = String(await page.locator('#last-period-start').getAttribute('max'));
+    await selectOnboardingStartDate(page, shiftISODate(today, -2));
+    await nextButton.click();
+    await expect(onboardingStepTwoForm(page)).toBeVisible();
+  });
+
+  test('today shortcut keeps the exact selected date through onboarding completion', async ({
     page,
   }) => {
     await registerAndOpenOnboarding(page, 'onboarding-step1-today-persist');
 
-    const todayQuickPick = onboardingQuickPickButtons(page).first();
-    const selectedValue = await todayQuickPick.getAttribute('data-onboarding-day-value');
+    const selectedValue = await page.locator('#last-period-start').getAttribute('max');
     expect(selectedValue).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-    await activateOnboardingQuickPick(page, todayQuickPick);
+    await activateOnboardingShortcut(page, 'today');
+    await expect(page.locator('#last-period-start')).toHaveValue(String(selectedValue));
     await onboardingStepOneSubmit(page).click();
     await expect(onboardingStepTwoForm(page)).toBeVisible();
     await submitStepTwo(page);
@@ -174,7 +284,7 @@ test.describe('Onboarding flow', () => {
     await expect(page.locator('#settings-last-period-start')).toHaveValue(String(selectedValue));
   });
 
-  test('russian onboarding quick-picks stay localized even if server labels are missing', async ({
+  test('russian onboarding shortcuts stay localized', async ({
     page,
   }) => {
     const creds = createCredentials('onboarding-step1-ru-localized');
@@ -190,46 +300,76 @@ test.describe('Onboarding flow', () => {
     // Russian copy IS this test's subject, so the strings are asserted — but
     // read from ru.json rather than re-typed here, so a translation edit syncs
     // itself instead of failing a test that only looks like a UI regression.
-    const quickPickButtons = onboardingQuickPickButtons(page);
-    await expect(quickPickButtons.first()).toContainText(localeText('ru', 'onboarding.step1.today'));
-    await expect(quickPickButtons.nth(1)).toContainText(
+    await expect(onboardingShortcut(page, 'today')).toHaveText(
+      localeText('ru', 'onboarding.step1.today')
+    );
+    await expect(onboardingShortcut(page, 'yesterday')).toHaveText(
       localeText('ru', 'onboarding.step1.yesterday')
     );
-    await expect(quickPickButtons.nth(2)).toContainText(
-      localeText('ru', 'onboarding.step1.two_days_ago')
+    await expect(onboardingPicker(page).locator('[data-onboarding-month-prev]')).toHaveAttribute(
+      'aria-label',
+      localeText('ru', 'onboarding.step1.previous_month')
     );
+
+    // Weekday headers and the month title come from the browser's locale data
+    // for the page language, so they must not read as English.
+    const monthTitle = await onboardingPicker(page)
+      .locator('[data-onboarding-month-title]')
+      .textContent();
+    expect(String(monthTitle)).toMatch(/[а-яА-Я]/);
   });
 
-  test('step 1 rejects out-of-range manual dates instead of clamping them', async ({ page }) => {
+  test('step 1 offers no out-of-range date and the server still rejects one', async ({ page }) => {
     await registerAndOpenOnboarding(page, 'onboarding-step1-bounds');
 
     const input = page.locator('#last-period-start');
-    const min = await input.getAttribute('min');
-    const max = await input.getAttribute('max');
+    const min = String(await input.getAttribute('min'));
+    const max = String(await input.getAttribute('max'));
 
     expect(min).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(max).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(min! <= max!).toBe(true);
+    expect(min <= max).toBe(true);
 
-    const tooOldDate = shiftISODate(min!, -1);
-    const futureDate = shiftISODate(max!, 1);
-    const stepTwoForm = onboardingStepTwoForm(page);
-    const submitButton = onboardingStepOneSubmit(page);
-    const stepOneStatus = page.locator('#onboarding-step1-status');
+    // The picker cannot page past the months the range covers, and the cells
+    // outside it are rendered inert rather than omitted, so an owner can never
+    // hand the server a date it would reject.
+    const picker = onboardingPicker(page);
+    for (const direction of ['prev', 'next'] as const) {
+      const monthButton = picker.locator(`[data-onboarding-month-${direction}]`);
+      for (let step = 0; step < 6; step += 1) {
+        if (!(await monthButton.isEnabled())) {
+          break;
+        }
+        await monthButton.click();
+      }
+      await expect(monthButton).toBeDisabled();
 
-    await fillDateField(input, tooOldDate);
-    await expect(input).toHaveValue(tooOldDate);
-    await submitButton.click();
-    await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
-    await expect(stepTwoForm).not.toBeVisible();
-    await expect(stepOneStatus.locator('.status-error')).toBeVisible();
+      const selectable = await picker
+        .locator('[data-onboarding-day-option]:not([disabled])')
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-onboarding-day-value')));
+      expect(selectable.filter((value) => String(value) < min || String(value) > max)).toEqual([]);
+    }
+    await expect(
+      page.locator(
+        `[data-onboarding-day-option][data-onboarding-day-value="${shiftISODate(max, 1)}"]:not([disabled])`
+      )
+    ).toHaveCount(0);
 
-    await fillDateField(input, futureDate);
-    await expect(input).toHaveValue(futureDate);
-    await submitButton.click();
-    await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
-    await expect(stepTwoForm).not.toBeVisible();
-    await expect(stepOneStatus.locator('.status-error')).toBeVisible();
+    // The server bound is the one that matters, and no browser UI is between it
+    // and this call: a forced out-of-range post is answered 400, twice.
+    const csrfToken = String(await page.locator('meta[name="csrf-token"]').getAttribute('content'));
+    for (const outOfRange of [shiftISODate(min, -1), shiftISODate(max, 1)]) {
+      const response = await page.request.post('/api/v1/onboarding/steps/1', {
+        headers: { ...apiOriginHeader(page), 'HX-Request': 'true' },
+        form: { csrf_token: csrfToken, last_period_start: outOfRange },
+        maxRedirects: 0,
+      });
+      expect(response.status(), `expected 400 for ${outOfRange}`).toBe(400);
+    }
+
+    await page.reload();
+    await expect(onboardingPicker(page)).toBeVisible();
+    await expect(page.locator('#last-period-start')).toHaveValue('');
   });
 
   test('step 2 sliders and auto-fill toggle update state, and Back preserves values', async ({ page }) => {
@@ -265,8 +405,9 @@ test.describe('Onboarding flow', () => {
     await onboardingStepTwoBackButton(page).click();
 
     const stepOneInput = page.locator('#last-period-start');
-    await expect(dateFieldRoot(stepOneInput)).toBeVisible();
+    await expect(onboardingPicker(page)).toBeVisible();
     await expect(stepOneInput).toHaveValue(selectedDate);
+    await expect(onboardingDayCell(page, selectedDate)).toHaveAttribute('aria-pressed', 'true');
 
     await onboardingStepOneSubmit(page).click();
     await expect(onboardingStepTwoForm(page)).toBeVisible();

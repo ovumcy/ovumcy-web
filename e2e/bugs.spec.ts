@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { clearDateField, fillDateField, formatDisplayDate } from './support/date-field-helpers';
+import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
@@ -57,7 +58,7 @@ async function onboardOwnerWithAutoPeriodFill(
   await continueFromRecoveryCode(page);
   await expect(page).toHaveURL(/\/onboarding(?:\?.*)?$/);
 
-  await fillDateField(page.locator('#last-period-start'), onboardingDate);
+  await selectOnboardingStartDate(page, onboardingDate);
   await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
   await expect(page.locator('form[hx-post="/api/v1/onboarding/steps/2"]')).toBeVisible();
 
