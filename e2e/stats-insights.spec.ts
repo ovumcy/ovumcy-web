@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import {
   continueFromRecoveryCode,
   createCredentials,
@@ -36,9 +36,7 @@ async function registerAndOnboardWithStartDaysAgo(
   // Replicate completeOnboardingIfPresent's UI flow but with a custom
   // start_date so the cycle window is wide enough for the BBT chart.
   const startISO = isoDateDaysAgo(startDaysAgo);
-  const startInput = page.locator('#last-period-start');
-  await expect(dateFieldRoot(startInput)).toBeVisible();
-  await fillDateField(startInput, startISO);
+  await selectOnboardingStartDate(page, startISO);
   await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');

@@ -12,9 +12,7 @@
   data-age-group="{{.AgeGroup}}"
   data-usage-goal="{{.UsageGoal}}"
   data-period-exceeds-cycle-message="{{t .Messages "onboarding.step2.error_incompatible"}}"
-  data-today-label="{{t .Messages "onboarding.step1.today"}}"
-  data-yesterday-label="{{t .Messages "onboarding.step1.yesterday"}}"
-  data-two-days-ago-label="{{t .Messages "onboarding.step1.two_days_ago"}}"
+  data-week-start="{{.WeekStart}}"
   data-lang="{{.Lang}}">
   <div class="journal-card journal-hero overflow-hidden p-6 sm:p-8">
     <div class="space-y-3" data-onboarding-progress>
@@ -44,21 +42,40 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <input type="hidden" name="client_timezone" value="" data-onboarding-timezone-field>
 
-        <label class="field-label" id="last-period-start-label" for="last-period-start">{{t .Messages "onboarding.step1.field"}}</label>
-        <div data-onboarding-start-date-field>
-          {{template "localized_date_field" (dict
-            "Messages" .Messages
-            "FieldID" "last-period-start"
-            "FieldName" "last_period_start"
-            "Value" .LastPeriodStart
-            "Lang" .Lang
-            "LabelID" "last-period-start-label"
-            "Min" .MinDate
-            "Max" .MaxDate
-            "Required" true)}}
-        </div>
+        <p class="field-label" id="last-period-start-label">{{t .Messages "onboarding.step1.field"}}</p>
+        <div
+          class="journal-panel onboarding-picker space-y-3"
+          role="group"
+          aria-labelledby="last-period-start-label"
+          data-onboarding-picker
+          data-onboarding-visible-month=""
+          data-selected-label="{{t .Messages "onboarding.step1.selected"}}"
+          data-required-message="{{t .Messages "onboarding.error.date_required"}}"
+          data-out-of-range-message="{{t .Messages "onboarding.error.last_period_range"}}">
+          <input
+            type="hidden"
+            id="last-period-start"
+            name="last_period_start"
+            value="{{.LastPeriodStart}}"
+            min="{{.MinDate}}"
+            max="{{.MaxDate}}"
+            data-onboarding-start-date>
 
-        <div class="grid max-h-72 grid-cols-3 gap-2 overflow-y-auto pr-1 sm:grid-cols-4 lg:grid-cols-6 onboarding-day-grid" data-onboarding-day-options role="group" aria-label="{{t .Messages "onboarding.step1.field"}}"></div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-soft text-sm onboarding-shortcut" data-onboarding-shortcut="today">{{t .Messages "onboarding.step1.today"}}</button>
+            <button type="button" class="btn-soft text-sm onboarding-shortcut" data-onboarding-shortcut="yesterday">{{t .Messages "onboarding.step1.yesterday"}}</button>
+          </div>
+
+          <div class="flex items-center justify-between gap-2">
+            <button type="button" class="btn-secondary onboarding-month-nav" data-onboarding-month-prev aria-label="{{t .Messages "onboarding.step1.previous_month"}}">←</button>
+            <span class="field-label text-center" data-onboarding-month-title></span>
+            <button type="button" class="btn-secondary onboarding-month-nav" data-onboarding-month-next aria-label="{{t .Messages "onboarding.step1.next_month"}}">→</button>
+          </div>
+
+          <div class="grid grid-cols-7 gap-1 text-center text-xs journal-muted" data-onboarding-weekdays aria-hidden="true"></div>
+          <div class="grid grid-cols-7 gap-1 onboarding-day-grid" data-onboarding-day-options></div>
+          <p class="journal-muted text-sm" data-onboarding-selected-date aria-live="polite"></p>
+        </div>
 
         <button type="submit" class="btn-primary">{{t .Messages "onboarding.button.next"}}</button>
         <div id="onboarding-step1-status" class="save-status text-sm" aria-live="polite"></div>

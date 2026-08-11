@@ -8,7 +8,7 @@ import {
   registerOwnerViaUI,
   apiOriginHeader,
 } from './support/auth-helpers';
-import { dateFieldRoot, fillDateField } from './support/date-field-helpers';
+import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { localeText } from './support/locale-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { openCalendarDayEditor, shiftISODate, todayISOFromDashboard } from './support/stats-helpers';
@@ -49,9 +49,7 @@ async function registerAndOnboardWithStartDaysAgo(
   await continueFromRecoveryCode(page);
 
   const startISO = isoDateDaysAgo(startDaysAgo);
-  const startInput = page.locator('#last-period-start');
-  await expect(dateFieldRoot(startInput)).toBeVisible();
-  await fillDateField(startInput, startISO);
+  await selectOnboardingStartDate(page, startISO);
   await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');

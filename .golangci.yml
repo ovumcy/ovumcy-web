@@ -37,3 +37,10 @@ linters:
     - intrange
     - misspell
     - unconvert
+  settings:
+    misspell:
+      # Localized copy asserted by backend regressions is not English prose:
+      # "successivo" is Italian for "next" (it.json month-navigation label),
+      # which misspell's default locale reads as a misspelling of "succession".
+      ignore-rules:
+        - successivo
