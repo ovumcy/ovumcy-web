@@ -33,7 +33,7 @@
     }
 
     var language = readCheckedRadioValue(root, "language");
-    var theme = normalizeTheme(readCheckedRadioValue(root, "theme"));
+    var theme = normalizeThemePreference(readCheckedRadioValue(root, "theme"));
     var languageOptions = root.querySelectorAll("[data-settings-interface-language-option]");
     var themeOptions = root.querySelectorAll("[data-settings-interface-theme-option]");
 
@@ -46,7 +46,7 @@
 
     for (var themeIndex = 0; themeIndex < themeOptions.length; themeIndex++) {
       var themeOption = themeOptions[themeIndex];
-      themeOption.dataset.selected = normalizeTheme(themeOption.getAttribute("data-settings-interface-theme-option")) === theme
+      themeOption.dataset.selected = normalizeThemePreference(themeOption.getAttribute("data-settings-interface-theme-option")) === theme
         ? "true"
         : "false";
     }
@@ -55,7 +55,7 @@
   function currentSettingsInterfaceSelection(root) {
     return {
       language: readCheckedRadioValue(root, "language"),
-      theme: normalizeTheme(readCheckedRadioValue(root, "theme"))
+      theme: normalizeThemePreference(readCheckedRadioValue(root, "theme"))
     };
   }
 
@@ -121,7 +121,11 @@
     for (var index = 0; index < roots.length; index++) {
       var root = roots[index];
       var initialLanguage = readCheckedRadioValue(root, "language") || String(document.documentElement.getAttribute("lang") || "").trim();
-      var initialTheme = currentTheme();
+      // The stored preference, not the rendered theme: an owner on "system"
+      // must find the system tile selected, not whichever of light/dark the
+      // system happens to be resolving to right now. With nothing stored the
+      // rendered theme stays the initial selection, as before.
+      var initialTheme = currentThemePreference();
 
       if (!root.__ovumcySettingsInterfaceState) {
         root.__ovumcySettingsInterfaceState = {

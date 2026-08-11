@@ -225,10 +225,20 @@ func TestSettingsInterfaceSectionRendersSaveDiscardContract(t *testing.T) {
 	}) == nil {
 		t.Fatal("expected English language option in interface form")
 	}
-	if htmlFindElement(form, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && htmlAttr(node, "data-settings-interface-theme-option") == "dark"
-	}) == nil {
-		t.Fatal("expected dark theme option in interface form")
+	// All three theme preferences are first-class options; "system" is the one
+	// whose radio value the interface endpoint has to accept as well.
+	for _, theme := range []string{"light", "dark", "system"} {
+		option := htmlFindElement(form, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlAttr(node, "data-settings-interface-theme-option") == theme
+		})
+		if option == nil {
+			t.Fatalf("expected %s theme option in interface form", theme)
+		}
+		if htmlFindElement(option, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "input" && htmlAttr(node, "name") == "theme" && htmlAttr(node, "value") == theme
+		}) == nil {
+			t.Fatalf("expected %s theme option to carry a theme radio input", theme)
+		}
 	}
 }
 

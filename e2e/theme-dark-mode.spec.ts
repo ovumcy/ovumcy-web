@@ -1,6 +1,14 @@
 import { expect, test, type Frame, type Page } from '@playwright/test';
-import { dashboardPrimarySummaryMode } from './support/dashboard-helpers';
+import { dashboardCycleHero, dashboardPrimarySummaryMode } from './support/dashboard-helpers';
 import { cancelConfirmDialog } from './support/confirm-dialog-helpers';
+import {
+  WCAG_AA_GRAPHIC_CONTRAST,
+  applyTheme,
+  describeContrast,
+  describeDecoration,
+  measureDecorationLift,
+  measureGraphicContrast,
+} from './support/contrast-helpers';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -27,6 +35,54 @@ async function registerAndReachDashboard(
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
   return credentials;
+}
+
+/** What the cold-start probe records inside the page under test. */
+interface PaintTiming {
+  /** `performance.now()` when html[data-theme] was first written. */
+  themeSetAt: number | null;
+  /** The value it was written with. */
+  theme: string | null;
+  /** `startTime` of the first paint entry the browser reported. */
+  firstPaintAt: number | null;
+}
+
+/**
+ * Flips the emulated system colour scheme and returns once the page has seen the
+ * change. A "the theme must NOT have moved" assertion needs a settled page —
+ * asserted straight after `emulateMedia` it would also pass while the change was
+ * still on its way.
+ */
+async function awaitSystemColorSchemeFlip(page: Page, scheme: 'light' | 'dark'): Promise<void> {
+  // Emulating the scheme the page already reports fires no change event, and the
+  // wait below would hang until the test timeout instead of saying why.
+  const alreadyDark = await page.evaluate(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  );
+  expect(
+    alreadyDark,
+    `the page already reports prefers-color-scheme: ${scheme}, so flipping to it is not a flip`
+  ).toBe(scheme === 'light');
+
+  await page.evaluate(() => {
+    (window as unknown as { __ovumcySchemeFlip: Promise<void> }).__ovumcySchemeFlip =
+      new Promise<void>((resolve) => {
+        window
+          .matchMedia('(prefers-color-scheme: dark)')
+          .addEventListener('change', () => resolve(), { once: true });
+      });
+  });
+  await page.emulateMedia({ colorScheme: scheme });
+  await page.evaluate(
+    () => (window as unknown as { __ovumcySchemeFlip: Promise<void> }).__ovumcySchemeFlip
+  );
+  // One animation frame later, every other listener on the same query has run.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      })
+  );
 }
 
 test.describe('Theme mode', () => {
@@ -123,5 +179,200 @@ test.describe('Theme mode', () => {
     await secondPage.close();
 
     await logoutViaAPI(page);
+  });
+
+  /**
+   * The ceiling a decorative layer must stay under. In the light theme the hero's
+   * two corner glows lift the card by 1.09:1–1.13:1, which is the subtlety they
+   * were drawn for; this leaves room for that and still fails anything painted as
+   * loudly as a meaningful graphic.
+   */
+  const DECORATION_CEILING = 1.35;
+
+  test('dark theme keeps the cycle ring track visible and drops the light-theme glow', async ({
+    page,
+  }) => {
+    await registerAndReachDashboard(page, 'theme-dark-hero');
+    await applyTheme(page, 'dark');
+
+    expect(
+      await dashboardPrimarySummaryMode(page),
+      'the cycle ring only exists on the hero summary, so a fallback dashboard measures nothing'
+    ).toBe('hero');
+
+    const hero = dashboardCycleHero(page);
+    const track = hero.locator('.dashboard-cycle-hero-track');
+    await expect(track).toHaveCount(1);
+
+    // The track is the remainder of the cycle the phase segments are drawn on —
+    // a meaningful graphic, so WCAG 1.4.11 puts its floor at 3:1 against the card.
+    const trackContrast = await measureGraphicContrast(track, hero, 'cycle ring track (dark)');
+    expect(trackContrast.worstRatio, describeContrast(trackContrast)).toBeGreaterThanOrEqual(
+      WCAG_AA_GRAPHIC_CONTRAST
+    );
+
+    // `::after` first: it is the top-right corner glow, the loudest of the two.
+    for (const pseudo of ['::after', '::before'] as const) {
+      const decoration = await measureDecorationLift(hero, pseudo, `cycle hero ${pseudo} (dark)`);
+      expect(decoration.loudestRatio, describeDecoration(decoration)).toBeLessThanOrEqual(
+        DECORATION_CEILING
+      );
+    }
+
+    // Anti-vacuity: the same reader has to find the light theme's glows. A
+    // decoration reader that silently stopped resolving anything would pass the
+    // dark assertions above by measuring nothing at all.
+    await applyTheme(page, 'light');
+    const lightGlow = await measureDecorationLift(hero, '::after', 'cycle hero ::after (light)');
+    expect(lightGlow.stops.length, describeDecoration(lightGlow)).toBeGreaterThan(0);
+    expect(lightGlow.loudestRatio, describeDecoration(lightGlow)).toBeLessThanOrEqual(
+      DECORATION_CEILING
+    );
+
+    await logoutViaAPI(page);
+  });
+
+  test('the system theme option follows prefers-color-scheme live', async ({ page }) => {
+    await registerAndReachDashboard(page, 'theme-system');
+    await page.emulateMedia({ colorScheme: 'light' });
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+
+    const interfaceForm = page.locator('[data-settings-interface-form]');
+    const html = page.locator('html');
+    const systemOption = interfaceForm.locator('[data-settings-interface-theme-option="system"]');
+    const lightOption = interfaceForm.locator('[data-settings-interface-theme-option="light"]');
+    const saveButton = interfaceForm.locator('[data-settings-interface-save]');
+    const successFlash = page.locator(
+      '[data-flash-key="settings.success.interface_updated"][data-flash-status="success"]'
+    );
+    await expect(systemOption).toBeVisible();
+
+    await systemOption.locator('.radio-tile').click();
+    await expect(systemOption).toHaveAttribute('data-selected', 'true');
+    // "system" resolves at apply time: `data-theme` keeps carrying light or dark,
+    // so every stylesheet rule written for the two of them still matches.
+    await expect(html).toHaveAttribute('data-theme', 'light');
+
+    await saveButton.click();
+    // The success flash is rendered by the server, so it also proves the
+    // interface endpoint accepts the third value instead of the form having only
+    // written local storage on its way to a 400.
+    await expect(successFlash).toBeVisible();
+    await expect
+      .poll(async () => page.evaluate(() => window.localStorage.getItem('ovumcy_theme')))
+      .toBe('system');
+    await expect(systemOption).toHaveAttribute('data-selected', 'true');
+
+    // Live, with no navigation: the OS flipping to dark at sunset reaches a page
+    // that is already open.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(html).toHaveAttribute('data-theme', 'dark');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(html).toHaveAttribute('data-theme', 'light');
+
+    // ... and it is resolved again on the next page, not carried over.
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(html).toHaveAttribute('data-theme', 'dark');
+
+    // An explicit preference outranks the system and stops following it. Saved
+    // while the system reports light, so the flip below is a real state change.
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await page.emulateMedia({ colorScheme: 'light' });
+    await expect(html).toHaveAttribute('data-theme', 'light');
+    await lightOption.locator('.radio-tile').click();
+    await saveButton.click();
+    await expect(successFlash).toBeVisible();
+    await expect(html).toHaveAttribute('data-theme', 'light');
+    await expect
+      .poll(async () => page.evaluate(() => window.localStorage.getItem('ovumcy_theme')))
+      .toBe('light');
+
+    await awaitSystemColorSchemeFlip(page, 'dark');
+    await expect(html).toHaveAttribute('data-theme', 'light');
+
+    await logoutViaAPI(page);
+  });
+
+  test('a cold start with a saved dark theme is dark on the first paint', async ({
+    page,
+    context,
+  }) => {
+    // Seeding through a page on the origin, then opening a second one, is the
+    // cold start an owner gets: storage already holds the preference and the new
+    // document has to honour it before its first frame.
+    await page.goto('/login');
+    await expect(page).toHaveURL(/\/login$/);
+    await page.evaluate(() => window.localStorage.setItem('ovumcy_theme', 'dark'));
+
+    const cold = await context.newPage();
+    await cold.addInitScript(() => {
+      const timing: PaintTiming = { themeSetAt: null, theme: null, firstPaintAt: null };
+      (window as unknown as { __ovumcyPaintTiming: PaintTiming }).__ovumcyPaintTiming = timing;
+
+      new MutationObserver((records) => {
+        for (const record of records) {
+          if (record.attributeName !== 'data-theme' || timing.themeSetAt !== null) {
+            continue;
+          }
+          timing.themeSetAt = performance.now();
+          timing.theme = document.documentElement.getAttribute('data-theme');
+        }
+        // The document node is observed rather than documentElement: an init
+        // script runs before the parser has created <html>.
+      }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-theme'] });
+
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (timing.firstPaintAt === null) {
+            timing.firstPaintAt = entry.startTime;
+          }
+        }
+      }).observe({ type: 'paint', buffered: true });
+    });
+
+    try {
+      await cold.goto('/login');
+      await expect(cold.locator('html')).toHaveAttribute('data-theme', 'dark');
+      await cold.waitForLoadState('load');
+
+      const readTiming = async (): Promise<PaintTiming> =>
+        cold.evaluate(
+          () => (window as unknown as { __ovumcyPaintTiming: PaintTiming }).__ovumcyPaintTiming
+        );
+
+      // A missing paint entry is unknown, never a pass: without it there is no
+      // moment to compare the theme against.
+      await expect
+        .poll(async () => (await readTiming()).firstPaintAt !== null, {
+          message: 'the browser reported no paint entry, so the first-paint moment is unknown',
+        })
+        .toBe(true);
+
+      const timing = await readTiming();
+      expect(
+        timing.themeSetAt,
+        'nothing ever set html[data-theme], so the theme cannot have been applied before paint'
+      ).not.toBeNull();
+      expect(timing.theme, 'the first value written to html[data-theme]').toBe('dark');
+      expect(
+        Number(timing.themeSetAt),
+        `html[data-theme]=dark was applied at ${String(timing.themeSetAt)}ms but the first paint ` +
+          `happened at ${String(timing.firstPaintAt)}ms — the gap between them is the white flash`
+      ).toBeLessThanOrEqual(Number(timing.firstPaintAt));
+
+      // And the frame that paint produced was the dark canvas, not a light one
+      // repainted afterwards.
+      const canvas = await cold.evaluate(
+        () => window.getComputedStyle(document.body).backgroundColor
+      );
+      expect(canvas, 'the painted page background in the dark theme').toBe('rgb(24, 20, 31)');
+    } finally {
+      await cold.close();
+    }
   });
 });

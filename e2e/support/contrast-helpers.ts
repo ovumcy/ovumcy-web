@@ -7,6 +7,13 @@ import { expect, type Locator, type Page } from '@playwright/test';
  */
 export const WCAG_AA_TEXT_CONTRAST = 4.5;
 
+/**
+ * WCAG 2.1 AA minimum contrast for a non-text graphical object that carries
+ * meaning (1.4.11). The cycle ring's track is one: it is the remainder of the
+ * cycle the coloured phase segments are drawn on.
+ */
+export const WCAG_AA_GRAPHIC_CONTRAST = 3;
+
 interface Rgba {
   r: number;
   g: number;
@@ -223,12 +230,201 @@ export async function measureTextContrast(
   };
 }
 
-function describe(measurement: ContrastMeasurement): string {
+interface PaintedSurface {
+  measurable: boolean;
+  reason: string;
+  backgroundColor: string;
+  backgroundImage: string;
+  backdrop: string[];
+}
+
+/**
+ * The colours a surface (or one of its decorative pseudo-element layers) paints,
+ * plus the ancestor colours needed to flatten translucency. `pseudo` reads a
+ * `::before`/`::after` layer, whose own backdrop starts at the element's
+ * background — a decoration is painted on top of it.
+ */
+async function readPaintedSurface(locator: Locator, pseudo?: string): Promise<PaintedSurface> {
+  return locator.evaluate((node: Element, selector: string | null): PaintedSurface => {
+    const style = window.getComputedStyle(node, selector);
+    const rect = node.getBoundingClientRect();
+
+    const backdrop: string[] = [];
+    if (selector !== null) {
+      backdrop.push(window.getComputedStyle(node).backgroundColor);
+    }
+    for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+      backdrop.push(window.getComputedStyle(parent).backgroundColor);
+    }
+    backdrop.push(window.getComputedStyle(document.documentElement).backgroundColor);
+
+    const painted: PaintedSurface = {
+      measurable: true,
+      reason: '',
+      backgroundColor: style.backgroundColor,
+      backgroundImage: style.backgroundImage,
+      backdrop,
+    };
+
+    const hostStyle = window.getComputedStyle(node);
+    if (hostStyle.display === 'none' || hostStyle.visibility === 'hidden' || rect.width === 0) {
+      painted.measurable = false;
+      painted.reason = 'element is not rendered';
+    }
+
+    return painted;
+  }, pseudo ?? null);
+}
+
+function opaqueBackdrop(values: string[]): Rgba {
+  const found = values
+    .map((value) => parseCssColor(value))
+    .find((value): value is Rgba => value !== null && value.a === 1);
+  // No opaque ancestor anywhere is only reachable on a page with a transparent
+  // root; the canvas is white then.
+  return found ?? { r: 255, g: 255, b: 255, a: 1 };
+}
+
+/** Every colour the layer declares, parsed but not yet composited. */
+function parsedStops(painted: PaintedSurface, label: string): { source: string; color: Rgba }[] {
+  return backgroundStops(painted.backgroundColor, painted.backgroundImage).map((source) => {
+    const parsed = parseCssColor(source);
+    if (parsed === null) {
+      throw new Error(`${label}: unresolvable background stop ${source}`);
+    }
+    return { source, color: parsed };
+  });
+}
+
+/** The same stops, flattened over the nearest opaque colour behind the layer. */
+function flattenedStops(painted: PaintedSurface, label: string): { source: string; color: Rgba }[] {
+  const backdrop = opaqueBackdrop(painted.backdrop);
+  return parsedStops(painted, label).map((stop) => ({
+    source: stop.source,
+    color: flattenOver(stop.color, backdrop),
+  }));
+}
+
+/**
+ * Contrast of a graphic's paint (an SVG `stroke` or `fill`) against every colour
+ * the surface beneath it can paint. `worstRatio` is the weakest of them, because
+ * a reader gets the weakest one.
+ */
+export async function measureGraphicContrast(
+  graphic: Locator,
+  surface: Locator,
+  label: string,
+  property: 'stroke' | 'fill' = 'stroke'
+): Promise<ContrastMeasurement> {
+  const paint = await graphic.evaluate(
+    (node: Element, name: string) => window.getComputedStyle(node).getPropertyValue(name).trim(),
+    property
+  );
+  const graphicColor = parseCssColor(paint);
+  if (graphicColor === null) {
+    throw new Error(`${label}: unresolvable ${property} ${paint}`);
+  }
+
+  const painted = await readPaintedSurface(surface);
+  if (!painted.measurable) {
+    throw new Error(`${label}: the surface is unmeasurable (${painted.reason})`);
+  }
+
+  const surfaceStops = flattenedStops(painted, `${label} surface`);
+  if (surfaceStops.length === 0) {
+    throw new Error(
+      `${label}: the surface paints no background of its own ` +
+        `(background-color: ${painted.backgroundColor}, background-image: ${painted.backgroundImage})`
+    );
+  }
+
+  const stops: ContrastStop[] = surfaceStops.map((stop) => ({
+    source: stop.source,
+    painted: formatRgb(stop.color),
+    ratio: contrastRatio(flattenOver(graphicColor, stop.color), stop.color),
+  }));
+
+  return {
+    label,
+    color: paint,
+    backgroundColor: painted.backgroundColor,
+    backgroundImage: painted.backgroundImage,
+    stops,
+    worstRatio: Math.min(...stops.map((stop) => stop.ratio)),
+  };
+}
+
+export interface DecorationMeasurement {
+  label: string;
+  backgroundImage: string;
+  /** One entry per decorative stop × surface stop, flattened and rated. */
+  stops: ContrastStop[];
+  /** The strongest lift the decoration applies to the surface; 0 when it paints nothing. */
+  loudestRatio: number;
+}
+
+/**
+ * How loudly a decorative `::before`/`::after` layer paints against the surface
+ * it sits on. A decoration is meant to be felt, not seen: measuring it as a
+ * contrast ratio is what separates a soft tint from a layer as loud as a
+ * meaningful graphic — which is how a light-theme glow reads on a dark card.
+ */
+export async function measureDecorationLift(
+  surface: Locator,
+  pseudo: '::before' | '::after',
+  label: string
+): Promise<DecorationMeasurement> {
+  const painted = await readPaintedSurface(surface);
+  if (!painted.measurable) {
+    throw new Error(`${label}: the surface is unmeasurable (${painted.reason})`);
+  }
+  const surfaceStops = flattenedStops(painted, `${label} surface`);
+  if (surfaceStops.length === 0) {
+    throw new Error(`${label}: the surface paints no background of its own`);
+  }
+
+  // The decoration's own stops stay unflattened here: a pseudo-element is
+  // painted on top of the surface, so its alpha composites over the surface stop
+  // under it, not over whatever opaque ancestor sits further down.
+  const decoration = await readPaintedSurface(surface, pseudo);
+  const decorationStops = parsedStops(decoration, `${label} ${pseudo}`);
+
+  const stops: ContrastStop[] = [];
+  for (const decorationStop of decorationStops) {
+    for (const surfaceStop of surfaceStops) {
+      const flattened = flattenOver(decorationStop.color, surfaceStop.color);
+      stops.push({
+        source: `${decorationStop.source} over ${formatRgb(surfaceStop.color)}`,
+        painted: formatRgb(flattened),
+        ratio: contrastRatio(flattened, surfaceStop.color),
+      });
+    }
+  }
+
+  return {
+    label,
+    backgroundImage: decoration.backgroundImage,
+    stops,
+    loudestRatio: stops.length === 0 ? 0 : Math.max(...stops.map((stop) => stop.ratio)),
+  };
+}
+
+export function describeDecoration(measurement: DecorationMeasurement): string {
+  const stops = measurement.stops
+    .map((stop) => `${stop.source} -> ${stop.painted} at ${stop.ratio.toFixed(2)}:1`)
+    .join('; ');
+  return (
+    `${measurement.label}: background-image ${measurement.backgroundImage} ` +
+    `stops { ${stops || 'none'} }`
+  );
+}
+
+export function describeContrast(measurement: ContrastMeasurement): string {
   const stops = measurement.stops
     .map((stop) => `${stop.painted} -> ${stop.ratio.toFixed(2)}:1`)
     .join('; ');
   return (
-    `${measurement.label}: text ${measurement.color} on ` +
+    `${measurement.label}: ${measurement.color} on ` +
     `[background-color: ${measurement.backgroundColor}, background-image: ${measurement.backgroundImage}] ` +
     `stops { ${stops} }`
   );
@@ -256,7 +452,7 @@ export async function expectTextContrastAA(
       continue;
     }
     measured.push(measurement);
-    expect(measurement.worstRatio, describe(measurement)).toBeGreaterThanOrEqual(minimum);
+    expect(measurement.worstRatio, describeContrast(measurement)).toBeGreaterThanOrEqual(minimum);
   }
 
   expect(
