@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +214,52 @@ func TestSettingsCycleGoalOnlyPatchWritesNothingButTheGoal(t *testing.T) {
 	}
 	if persisted.AgeGroup != models.AgeGroup40To45 {
 		t.Fatalf("expected age_group untouched (%q), got %q", models.AgeGroup40To45, persisted.AgeGroup)
+	}
+}
+
+// TestSettingsCycleGoalOnlyPatchAnswersEveryCaller covers the two non-HTMX
+// shapes of the same goal-only save: a JSON body from an API client, and a
+// plain browser form post with no negotiation headers at all. The CSRF posture
+// is covered by the HTMX case above; this one isolates body parsing and
+// content negotiation.
+func TestSettingsCycleGoalOnlyPatchAnswersEveryCaller(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "settings-goal-only-negotiation@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	jsonRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/cycle", strings.NewReader(`{"usage_goal":"trying_to_conceive"}`))
+	jsonRequest.Header.Set("Content-Type", "application/json")
+	jsonRequest.Header.Set("Accept", "application/json")
+	jsonRequest.Header.Set("Cookie", authCookie)
+
+	jsonResponse := mustAppResponse(t, app, jsonRequest)
+	assertStatusCode(t, jsonResponse, http.StatusOK)
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(mustReadBodyString(t, jsonResponse.Body)), &payload); err != nil {
+		t.Fatalf("decode goal-only JSON response: %v", err)
+	}
+	if payload["usage_goal"] != models.UsageGoalTrying {
+		t.Fatalf("expected the stored goal echoed back, got %v", payload["usage_goal"])
+	}
+
+	formRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/cycle", strings.NewReader(url.Values{
+		"usage_goal": {models.UsageGoalAvoid},
+	}.Encode()))
+	formRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	formRequest.Header.Set("Cookie", authCookie)
+
+	formResponse := mustAppResponse(t, app, formRequest)
+	assertStatusCode(t, formResponse, http.StatusSeeOther)
+	if location := formResponse.Header.Get("Location"); location != "/dashboard" {
+		t.Fatalf("expected a browser caller to land back on the dashboard, got %q", location)
+	}
+
+	persisted := models.User{}
+	if err := database.Select("usage_goal").First(&persisted, user.ID).Error; err != nil {
+		t.Fatalf("load persisted user: %v", err)
+	}
+	if persisted.UsageGoal != models.UsageGoalAvoid {
+		t.Fatalf("expected the last save to win with %q, got %q", models.UsageGoalAvoid, persisted.UsageGoal)
 	}
 }
 

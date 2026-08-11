@@ -194,6 +194,9 @@ func TestMutationHandlersMapServiceFailuresThroughFailMutation(t *testing.T) {
 		{"day upsert", http.MethodPut, "/api/days/2026-02-17", url.Values{"is_period": {"true"}, "flow": {"medium"}}.Encode(), form},
 		{"cycle start mark", http.MethodPost, "/api/days/2026-02-17/cycle-start", "", ""},
 		{"cycle settings save", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"cycle_length": {"28"}, "period_length": {"5"}}.Encode(), form},
+		// A goal-only body takes the partial save path, whose own storage tail
+		// maps through the same settingsCycleUpdateErrorSpec.
+		{"usage goal only save", http.MethodPatch, "/api/v1/users/current/cycle", url.Values{"usage_goal": {"avoid_pregnancy"}}.Encode(), form},
 		{"tracking settings save", http.MethodPatch, "/api/v1/users/current/tracking", url.Values{"track_bbt": {"true"}}.Encode(), form},
 		// A valid IANA zone that differs from the stub user's empty Timezone
 		// reaches PersistTimezone -> the repo UPDATE, which fails with the DB
