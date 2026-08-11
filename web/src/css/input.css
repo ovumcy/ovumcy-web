@@ -1992,6 +1992,17 @@
   pointer-events: none;
 }
 
+/* Compact modifier for a control that is navigation rather than the screen's
+   action — it must not compete with the primary next to it. Only padding, text
+   size and weight come down; `min-height` stays at the shared 2.75rem so the
+   tap target does not shrink with the visual weight. Declared after the base
+   button utilities so its padding/font overrides theirs. */
+@utility btn-compact {
+  padding: 0.42rem 0.86rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 @utility btn-secondary-caution {
   border-color: rgba(177, 86, 78, 0.28);
   color: #8f5049;

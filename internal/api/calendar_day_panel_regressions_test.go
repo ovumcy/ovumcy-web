@@ -51,6 +51,96 @@ func TestCalendarDayPanelReadonlySummaryShowsSavedBBT(t *testing.T) {
 	}
 }
 
+// mustMatchCalendarTag returns the single opening tag matching pattern, so an
+// assertion about one control's attributes cannot be satisfied by a different
+// element elsewhere in the page.
+func mustMatchCalendarTag(t *testing.T, rendered string, pattern string, subject string) string {
+	t.Helper()
+
+	matches := regexp.MustCompile(pattern).FindAllString(rendered, -1)
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly one %s matching %s, got %d", subject, pattern, len(matches))
+	}
+	return matches[0]
+}
+
+// The calendar screen exists so a day can be edited, so the day panel's edit
+// action is the primary and "Today" is compact navigation beside the month
+// arrows. Both halves are pinned structurally: the weight each control
+// declares plus the button utility that paints it. Inverted (edit on
+// btn-secondary, Today on btn-primary) both assertions fail.
+func TestCalendarDayPanelEditActionCarriesThePrimaryWeight(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-edit-weight@example.com", "StrongPass1", true)
+
+	if err := database.Create(&models.DailyLog{
+		UserID:   user.ID,
+		Date:     time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC),
+		IsPeriod: true,
+		Flow:     models.FlowMedium,
+	}).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	request := httptest.NewRequest(http.MethodGet, "/calendar/day/2026-02-17", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	rendered := mustReadBodyString(t, response.Body)
+
+	editAction := mustMatchCalendarTag(
+		t,
+		rendered,
+		`<button[^>]*data-day-editor-open="2026-02-17"[^>]*>`,
+		"calendar day panel edit action",
+	)
+	if !strings.Contains(editAction, `data-action-weight="primary"`) {
+		t.Fatalf("expected the day panel edit action to declare the primary weight, got %q", editAction)
+	}
+	if !strings.Contains(editAction, `class="btn-primary"`) {
+		t.Fatalf("expected the day panel edit action to carry the primary fill, got %q", editAction)
+	}
+}
+
+func TestCalendarTodayControlCarriesTheCompactSecondaryWeight(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-today-weight@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/calendar", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	rendered := mustReadBodyString(t, response.Body)
+
+	// Named first so an inverted hierarchy reports the control that took the
+	// primary fill, not merely the absence of the navigation hook below.
+	if regexp.MustCompile(`<a[^>]*href="/calendar"[^>]*class="btn-primary"`).MatchString(rendered) {
+		t.Fatalf("expected no primary-filled month-navigation link on the calendar page")
+	}
+
+	todayControl := mustMatchCalendarTag(
+		t,
+		rendered,
+		`<a[^>]*data-calendar-today[^>]*>`,
+		"calendar today control",
+	)
+	if !strings.Contains(todayControl, `data-action-weight="secondary"`) {
+		t.Fatalf("expected the today control to declare the secondary weight, got %q", todayControl)
+	}
+	if !strings.Contains(todayControl, "btn-secondary") || !strings.Contains(todayControl, "btn-compact") {
+		t.Fatalf("expected the today control to render as compact secondary navigation, got %q", todayControl)
+	}
+	if strings.Contains(todayControl, "btn-primary") {
+		t.Fatalf("expected the today control to give up the primary fill, got %q", todayControl)
+	}
+}
+
 func TestCalendarDayPanelEditModeRendersDeleteActionForExistingEntry(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "calendar-confirm@example.com", "StrongPass1", true)

@@ -74,13 +74,16 @@ test.describe('Calendar page', () => {
   test('default month renders and navigation prev/next/today works', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-nav');
 
+    // Addressed by the navigation hook, not by the button utility: the Today
+    // control is compact secondary navigation, so the calendar screen's only
+    // primary fill is the day panel's edit action.
     const navigationCard = page.locator('div.journal-card').filter({
-      has: page.locator('a.btn-primary[href="/calendar"]'),
+      has: page.locator('[data-calendar-month-nav]'),
     }).first();
     const monthLabel = navigationCard.locator('p.journal-muted').first();
     const prevLink = navigationCard.locator('a.btn-secondary[href^="/calendar?month="]').first();
     const nextLink = navigationCard.locator('a.btn-secondary[href^="/calendar?month="]').nth(1);
-    const todayLink = navigationCard.locator('a.btn-primary[href="/calendar"]');
+    const todayLink = navigationCard.locator('a[data-calendar-today]');
 
     const initialLabel = ((await monthLabel.textContent()) ?? '').trim();
     expect(initialLabel.length).toBeGreaterThan(0);

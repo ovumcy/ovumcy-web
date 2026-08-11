@@ -19,9 +19,11 @@ import {
 } from './support/mobile-layout-helpers';
 import {
   markCycleStart,
+  openCalendarDayEditor,
   registerOwnerAndEnableIrregularMode,
   saveBBTOnDay,
   saveCycleFactorOnDay,
+  saveDayEditorForm,
   shiftISODate,
   todayISOFromDashboard,
 } from './support/stats-helpers';
@@ -355,6 +357,28 @@ test.describe('Visual and accessibility regressions', () => {
         page,
         '[data-dashboard-editor] .btn-primary',
         `dashboard primary action, fertile window (${theme})`
+      );
+    }
+
+    // The calendar day panel's edit action is the screen's primary, so it is a
+    // third surface painting `--action-primary` — here over a journal card
+    // rather than over the page canvas. A day needs an entry for the panel to
+    // render its read view, where that action lives.
+    const dayISO = shiftISODate(await todayISOFromDashboard(page), -2);
+    const dayMonth = dayISO.slice(0, 7);
+    const dayForm = await openCalendarDayEditor(page, dayISO);
+    await dayForm.locator('input[name="is_period"]').check();
+    await saveDayEditorForm(page, dayISO, dayForm);
+
+    const dayPanelPrimary = '#day-editor [data-action-weight="primary"]';
+    for (const theme of ['light', 'dark'] as const) {
+      await page.goto(`/calendar?month=${dayMonth}&day=${dayISO}`);
+      await applyTheme(page, theme);
+      await expect(page.locator(dayPanelPrimary)).toBeVisible();
+      await expectTextContrastAA(
+        page,
+        dayPanelPrimary,
+        `calendar day panel primary action (${theme})`
       );
     }
   });
