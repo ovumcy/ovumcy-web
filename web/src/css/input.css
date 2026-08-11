@@ -1803,12 +1803,15 @@
     background: var(--action-primary-follicular);
   }
 
-  [data-dashboard-editor][data-phase='fertile'] & {
-    background: var(--action-primary-fertile);
-  }
-
   [data-dashboard-editor][data-phase='luteal'] & {
     background: var(--action-primary-luteal);
+  }
+
+  /* Status outranks phase: any fertile-window day keeps the fertile tint,
+     whichever phase it falls in — declared last so the equal-specificity
+     cascade resolves to it. */
+  [data-dashboard-editor][data-fertility='fertile'] & {
+    background: var(--action-primary-fertile);
   }
 }
 

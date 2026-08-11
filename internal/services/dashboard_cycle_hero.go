@@ -144,10 +144,8 @@ func dashboardCycleHeroSegments(phaseCards []DashboardCycleHeroPhaseCard, cycleL
 
 func dashboardCycleHeroCurrentPhase(currentPhase string, currentDay int, periodLength int, ovulationDay int, cycleLength int) string {
 	switch currentPhase {
-	case "menstrual", "ovulation", "luteal":
+	case "menstrual", "ovulation", "luteal", "follicular":
 		return currentPhase
-	case "follicular", "fertile":
-		return "follicular"
 	}
 
 	switch {

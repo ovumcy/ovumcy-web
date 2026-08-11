@@ -527,7 +527,6 @@ func TestDashboardCycleHeroCurrentPhaseKnownValuesPassThrough(t *testing.T) {
 		{"ovulation", "ovulation"},
 		{"luteal", "luteal"},
 		{"follicular", "follicular"},
-		{"fertile", "follicular"},
 	}
 	for _, tc := range cases {
 		got := dashboardCycleHeroCurrentPhase(tc.input, 20, 5, 14, 28)

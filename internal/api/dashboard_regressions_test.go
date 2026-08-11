@@ -164,6 +164,9 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	if got := htmlAttr(dashboardStatusLine, "data-dashboard-phase"); got != "unknown" {
 		t.Fatalf("expected dashboard status line phase %q while cycle data is stale, got %q", "unknown", got)
 	}
+	if got := htmlAttr(dashboardStatusLine, "data-fertility-status"); got != "unknown" {
+		t.Fatalf("expected dashboard status line fertility %q while cycle data is stale, got %q", "unknown", got)
+	}
 
 	statsRequest := httptest.NewRequest(http.MethodGet, "/stats", nil)
 	statsRequest.Header.Set("Accept-Language", "en")
@@ -177,6 +180,84 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	statsDocument := mustParseHTMLDocument(t, mustReadBodyString(t, statsResponse.Body))
 	if dashboardElementByDataAttr(statsDocument, "data-stats-empty-state") == nil {
 		t.Fatal("expected stats page to show gated empty state before enough completed cycles")
+	}
+}
+
+// TestDashboardAndStatsAgreeOnPhaseAndFertilityOnAFertileWindowDay is the
+// item-24 render regression: on a fertile-window day both primary surfaces
+// declare the same 4-value phase, and "fertile" appears only as the separate
+// fertility-status axis — never in the phase slot.
+func TestDashboardAndStatsAgreeOnPhaseAndFertilityOnAFertileWindowDay(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-fertile-window-day@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	// Two completed 28-day cycles unlock the stats KPI row; cycle 28 /
+	// luteal 14 → ovulation day 14, fertile window days 9–14. Day 12 sits
+	// inside the window with a ±1-day timezone slack on both sides.
+	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -11)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": lastPeriodStart,
+	}).Error; err != nil {
+		t.Fatalf("update user cycle context: %v", err)
+	}
+	for _, offsetDays := range []int{-67, -39, -11} {
+		start := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, offsetDays)
+		if err := database.Create(&models.DailyLog{
+			UserID:     user.ID,
+			Date:       start,
+			IsPeriod:   true,
+			CycleStart: true,
+		}).Error; err != nil {
+			t.Fatalf("seed cycle start %d: %v", offsetDays, err)
+		}
+	}
+
+	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	dashboardRequest.Header.Set("Accept-Language", "en")
+	dashboardRequest.Header.Set("Cookie", authCookie)
+	dashboardResponse, err := app.Test(dashboardRequest, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("dashboard request failed: %v", err)
+	}
+	defer func() { _ = dashboardResponse.Body.Close() }()
+
+	dashboardDocument := mustParseHTMLDocument(t, mustReadBodyString(t, dashboardResponse.Body))
+	hero := dashboardElementByDataAttr(dashboardDocument, "data-dashboard-cycle-hero")
+	if hero == nil {
+		t.Fatal("expected the cycle hero on a fresh predictable baseline")
+	}
+	if got := htmlAttr(hero, "data-dashboard-phase"); got != "follicular" {
+		t.Fatalf("expected hero phase %q on a fertile-window day, got %q", "follicular", got)
+	}
+	if got := htmlAttr(hero, "data-fertility-status"); got != "fertile" {
+		t.Fatalf("expected hero fertility status %q on a fertile-window day, got %q", "fertile", got)
+	}
+
+	statsRequest := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	statsRequest.Header.Set("Accept-Language", "en")
+	statsRequest.Header.Set("Cookie", authCookie)
+	statsResponse, err := app.Test(statsRequest, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("stats request failed: %v", err)
+	}
+	defer func() { _ = statsResponse.Body.Close() }()
+
+	statsDocument := mustParseHTMLDocument(t, mustReadBodyString(t, statsResponse.Body))
+	phaseValue := dashboardElementByDataAttr(statsDocument, "data-stats-current-phase")
+	if phaseValue == nil {
+		t.Fatal("expected the stats current-phase value to declare its phase hook")
+	}
+	if got := htmlAttr(phaseValue, "data-stats-current-phase"); got != "follicular" {
+		t.Fatalf("expected stats phase %q on a fertile-window day, got %q", "follicular", got)
+	}
+	if got := htmlAttr(phaseValue, "data-fertility-status"); got != "fertile" {
+		t.Fatalf("expected stats fertility status %q on a fertile-window day, got %q", "fertile", got)
+	}
+	if dashboardElementByDataAttr(statsDocument, "data-fertile-window") == nil {
+		t.Fatal("expected the stats phase card to render the fertile-window line on a fertile day")
 	}
 }
 

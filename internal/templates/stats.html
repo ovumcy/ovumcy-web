@@ -89,7 +89,10 @@
           <p class="stat-value mt-2"><span class="mr-2">{{phaseIcon "unknown"}}</span>{{phaseLabel .Messages "unknown"}}</p>
           <p class="warning-amber mt-2 text-xs" data-stats-phase-estimated data-notice-key="dashboard.phase_estimated">{{t .Messages "dashboard.phase_estimated"}}</p>
           {{else}}
-          <p class="stat-value mt-2"><span class="mr-2">{{phaseIcon .Stats.CurrentPhase}}</span>{{phaseLabel .Messages .Stats.CurrentPhase}}</p>
+          <p class="stat-value mt-2" data-stats-current-phase="{{.Stats.CurrentPhase}}" data-fertility-status="{{.Stats.CurrentFertility}}"><span class="mr-2">{{phaseIcon .Stats.CurrentPhase}}</span>{{phaseLabel .Messages .Stats.CurrentPhase}}</p>
+          {{if eq .Stats.CurrentFertility "fertile"}}
+          <p class="journal-muted mt-2 text-xs" data-fertile-window>{{t .Messages "dashboard.fertile_window"}}</p>
+          {{end}}
           {{end}}
         {{end}}
       </article>

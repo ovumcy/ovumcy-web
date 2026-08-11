@@ -329,12 +329,15 @@ test.describe('Visual and accessibility regressions', () => {
         `dashboard primary action, rendered phase (${theme})`
       );
 
-      // `data-phase` is the only input to the per-phase tint, so setting it
-      // directly reaches every phase fill without seeding a cycle per phase.
-      // The attribute is server-rendered, so the next applyTheme reload restores it.
-      for (const phase of ['menstrual', 'follicular', 'fertile', 'luteal'] as const) {
+      // `data-phase` drives the per-phase tint and `data-fertility` the
+      // fertile-window tint (which outranks phase in the cascade), so setting
+      // them directly reaches every fill without seeding a cycle per state.
+      // Both attributes are server-rendered, so the next applyTheme reload
+      // restores them.
+      for (const phase of ['menstrual', 'follicular', 'luteal'] as const) {
         await editor.evaluate((node, value) => {
           node.setAttribute('data-phase', value);
+          node.setAttribute('data-fertility', 'not_fertile');
         }, phase);
         await expect(editor).toHaveAttribute('data-phase', phase);
         await expectTextContrastAA(
@@ -343,6 +346,16 @@ test.describe('Visual and accessibility regressions', () => {
           `dashboard primary action, phase ${phase} (${theme})`
         );
       }
+
+      await editor.evaluate((node) => {
+        node.setAttribute('data-fertility', 'fertile');
+      });
+      await expect(editor).toHaveAttribute('data-fertility', 'fertile');
+      await expectTextContrastAA(
+        page,
+        '[data-dashboard-editor] .btn-primary',
+        `dashboard primary action, fertile window (${theme})`
+      );
     }
   });
 

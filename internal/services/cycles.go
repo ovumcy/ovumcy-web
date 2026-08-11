@@ -11,6 +11,7 @@ import (
 type CycleStats struct {
 	CurrentCycleDay      int       `json:"current_cycle_day"`
 	CurrentPhase         string    `json:"current_phase"`
+	CurrentFertility     string    `json:"current_fertility"`
 	AverageCycleLength   float64   `json:"average_cycle_length"`
 	MedianCycleLength    int       `json:"median_cycle_length"`
 	MinCycleLength       int       `json:"min_cycle_length"`
@@ -48,7 +49,7 @@ const (
 )
 
 func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
-	stats := CycleStats{CurrentPhase: "unknown"}
+	stats := CycleStats{CurrentPhase: "unknown", CurrentFertility: FertilityStatusUnknown}
 	today := dateOnly(now)
 	sorted := sortDailyLogs(filterLogsNotAfter(logs, today))
 	if len(sorted) == 0 {
@@ -73,6 +74,7 @@ func BuildCycleStats(logs []models.DailyLog, now time.Time) CycleStats {
 
 	stats.CurrentCycleDay = cycleDayAt(stats.LastPeriodStart, today)
 	stats.CurrentPhase = detectCyclePhase(stats, sorted, today)
+	stats.CurrentFertility = ResolveFertilityStatus(stats, today)
 	return stats
 }
 
@@ -433,16 +435,35 @@ func resolveCyclePhase(stats CycleStats, logs []models.DailyLog, today time.Time
 	if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
 		return "unknown"
 	}
-	if betweenInclusive(today, stats.FertilityWindowStart, stats.FertilityWindowEnd) {
-		if sameDay(today, stats.OvulationDate) {
-			return "ovulation"
-		}
-		return "fertile"
+	if sameDay(today, stats.OvulationDate) {
+		return "ovulation"
 	}
 	if today.Before(stats.OvulationDate) {
 		return "follicular"
 	}
 	return "luteal"
+}
+
+// Fertility status is the axis orthogonal to CurrentPhase: whether today falls
+// inside the predicted fertile window. "Fertile" is a status, never a phase —
+// the phase taxonomy is strictly menstrual/follicular/ovulation/luteal/unknown.
+const (
+	FertilityStatusFertile    = "fertile"
+	FertilityStatusNotFertile = "not_fertile"
+	FertilityStatusUnknown    = "unknown"
+)
+
+// ResolveFertilityStatus reads the same window bounds the calendar shades
+// ([FertilityWindowStart, FertilityWindowEnd]), so the two surfaces cannot
+// drift apart on what "fertile" means.
+func ResolveFertilityStatus(stats CycleStats, today time.Time) string {
+	if stats.OvulationImpossible || stats.OvulationDate.IsZero() {
+		return FertilityStatusUnknown
+	}
+	if betweenInclusive(today, stats.FertilityWindowStart, stats.FertilityWindowEnd) {
+		return FertilityStatusFertile
+	}
+	return FertilityStatusNotFertile
 }
 
 func periodLoggedOnDay(logs []models.DailyLog, day time.Time) bool {

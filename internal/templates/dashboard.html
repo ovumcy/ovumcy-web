@@ -3,7 +3,7 @@
   <h1 class="sr-only" data-title-key="nav.dashboard">{{t .Messages "nav.dashboard"}}</h1>
   <section class="space-y-3" data-dashboard-shell data-phase="{{.Stats.CurrentPhase}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
     {{if .CycleHero.Visible}}
-    <section class="journal-card journal-hero dashboard-cycle-hero reveal" data-dashboard-cycle-hero data-dashboard-phase="{{.CycleHero.CurrentPhase}}"{{if .CycleHero.Approximate}} data-cycle-hero-approximate="true"{{end}}>
+    <section class="journal-card journal-hero dashboard-cycle-hero reveal" data-dashboard-cycle-hero data-dashboard-phase="{{.CycleHero.CurrentPhase}}" data-fertility-status="{{.Stats.CurrentFertility}}"{{if .CycleHero.Approximate}} data-cycle-hero-approximate="true"{{end}}>
       <div class="dashboard-cycle-hero-shell">
         <div class="dashboard-cycle-hero-topline">
           <p class="journal-kicker">{{t .Messages "dashboard.cycle_snapshot"}}</p>
@@ -93,11 +93,15 @@
     {{end}}
 
     {{if not .CycleHero.Visible}}
-    <div class="dashboard-status-line reveal" data-dashboard-status-line data-dashboard-phase="{{if .CycleDataStale}}unknown{{else}}{{.Stats.CurrentPhase}}{{end}}">
+    <div class="dashboard-status-line reveal" data-dashboard-status-line data-dashboard-phase="{{if .CycleDataStale}}unknown{{else}}{{.Stats.CurrentPhase}}{{end}}" data-fertility-status="{{if .CycleDataStale}}unknown{{else}}{{.Stats.CurrentFertility}}{{end}}">
       <span class="dashboard-status-item">
         <span aria-hidden="true">{{if .CycleDataStale}}{{phaseIcon "unknown"}}{{else}}{{phaseIcon .Stats.CurrentPhase}}{{end}}</span>
         <span>{{if .CycleDataStale}}{{phaseLabel .Messages "unknown"}}{{else}}{{phaseLabel .Messages .Stats.CurrentPhase}}{{end}}</span>
       </span>
+      {{if and (not .CycleDataStale) (eq .Stats.CurrentFertility "fertile")}}
+      <span class="dashboard-status-separator" aria-hidden="true">·</span>
+      <span class="dashboard-status-item" data-fertile-window>{{t .Messages "dashboard.fertile_window"}}</span>
+      {{end}}
       {{if .PredictionDisabled}}
       <span class="dashboard-status-separator" aria-hidden="true">·</span>
       <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}: {{t .Messages "dashboard.next_period_unknown"}}</span>
@@ -192,7 +196,7 @@
     {{end}}
   </section>
 
-  <div class="grid gap-6" data-dashboard-editor data-phase="{{.Stats.CurrentPhase}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
+  <div class="grid gap-6" data-dashboard-editor data-phase="{{.Stats.CurrentPhase}}" data-fertility="{{.Stats.CurrentFertility}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
     <section class="journal-card p-5 sm:p-6">
       <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
