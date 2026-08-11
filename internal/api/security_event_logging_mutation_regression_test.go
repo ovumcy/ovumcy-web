@@ -337,7 +337,7 @@ func TestStepupCallbacksAuditTheOwnerTheyActFor(t *testing.T) {
 		}
 
 		stepupCookie := readStepupCookie(t, startResponse)
-		state := extractStepupCallbackState(t, fixture, stepupCookie)
+		state := extractStepupCallbackState(t, fixture)
 
 		callbackResponse, auditLog := captureStepupCallbackAudit(t, fixture, stepupCookie, state)
 		defer func() { _ = callbackResponse.Body.Close() }()
@@ -362,7 +362,7 @@ func TestStepupCallbacksAuditTheOwnerTheyActFor(t *testing.T) {
 		}
 
 		stepupCookie := readStepupCookie(t, startResponse)
-		state := extractStepupCallbackState(t, fixture, stepupCookie)
+		state := extractStepupCallbackState(t, fixture)
 
 		callbackResponse, auditLog := captureStepupCallbackAudit(t, fixture, stepupCookie, state)
 		defer func() { _ = callbackResponse.Body.Close() }()

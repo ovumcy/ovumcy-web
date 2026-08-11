@@ -24,8 +24,8 @@ func newTOTPCookieTestApp(t *testing.T, secretKey []byte) (*fiber.App, *Handler)
 	handler := &Handler{secretKey: secretKey, cookieSecure: false}
 	app := fiber.New()
 	app.Get("/seal-pending", func(c fiber.Ctx) error {
-		userID := uint(fiber.Query[int](c, "user_id", 0))
-		remember := fiber.Query[bool](c, "remember_me", false)
+		userID := uint(fiber.Query(c, "user_id", 0))
+		remember := fiber.Query(c, "remember_me", false)
 		if err := handler.setTOTPPendingCookie(c, userID, remember); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
@@ -42,7 +42,7 @@ func newTOTPCookieTestApp(t *testing.T, secretKey []byte) (*fiber.App, *Handler)
 	// can seal for one owner and parse as another, the way two independent
 	// owners on one household instance would.
 	app.Get("/seal-setup", func(c fiber.Ctx) error {
-		userID := uint(fiber.Query[int](c, "user_id", 0))
+		userID := uint(fiber.Query(c, "user_id", 0))
 		raw := c.Query("raw_secret", "")
 		if err := handler.setTOTPSetupCookie(c, userID, raw); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
@@ -50,7 +50,7 @@ func newTOTPCookieTestApp(t *testing.T, secretKey []byte) (*fiber.App, *Handler)
 		return c.SendStatus(fiber.StatusOK)
 	})
 	app.Get("/parse-setup", func(c fiber.Ctx) error {
-		sessionUserID := uint(fiber.Query[int](c, "user_id", 0))
+		sessionUserID := uint(fiber.Query(c, "user_id", 0))
 		raw, err := handler.parseTOTPSetupCookie(c, sessionUserID)
 		if err != nil {
 			return c.Status(fiber.StatusBadRequest).SendString(err.Error())

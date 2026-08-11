@@ -152,7 +152,7 @@ func TestOIDCCompleteLocalPasswordSetupProviderErrorParam(t *testing.T) {
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
-	state := extractStepupCallbackState(t, fixture, stepupCookie)
+	state := extractStepupCallbackState(t, fixture)
 
 	form := url.Values{
 		"state": {state},
