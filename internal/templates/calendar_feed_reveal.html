@@ -6,7 +6,7 @@
     data-recovery-code-tools
     data-copy-success-message="{{t .Messages "settings.calendar_feed.reveal.copied"}}"
     data-copy-failed-message="{{t .Messages "settings.calendar_feed.reveal.copy_failed"}}">
-    <p class="journal-kicker">🗓️ {{t .Messages "settings.calendar_feed.reveal.kicker"}}</p>
+    <p class="journal-kicker"><span aria-hidden="true">🗓️</span> {{t .Messages "settings.calendar_feed.reveal.kicker"}}</p>
 
     <div>
       <h1 class="journal-title" data-calendar-feed-reveal-heading data-title-key="{{if .CalendarFeedRotated}}settings.calendar_feed.reveal.title_rotated{{else}}settings.calendar_feed.reveal.title{{end}}">

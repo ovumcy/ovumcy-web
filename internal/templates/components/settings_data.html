@@ -15,7 +15,7 @@
     data-export-summary-range-empty="{{t .Messages "settings.export_summary_range_empty"}}"
     id="settings-data">
     <div>
-      <h2 class="journal-subtitle">🗂️ {{t .Messages "settings.data.title"}}</h2>
+      <h2 class="journal-subtitle"><span aria-hidden="true">🗂️</span> {{t .Messages "settings.data.title"}}</h2>
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.data.storage_copy"}}</p>
     </div>
     <div class="grid gap-3 sm:grid-cols-2">
@@ -61,7 +61,7 @@
     </div>
     <div class="hidden journal-card p-4 space-y-3" data-export-calendar-panel>
       <div class="flex items-center justify-between gap-2">
-        <button type="button" class="btn-secondary" data-export-calendar-prev aria-label="{{t .Messages "settings.export_prev_month"}}">←</button>
+        <button type="button" class="btn-secondary" data-export-calendar-prev aria-label="{{t .Messages "settings.export_prev_month"}}"><span aria-hidden="true">←</span></button>
         <button
           type="button"
           class="btn-soft text-sm flex-1"
@@ -69,7 +69,7 @@
           aria-label="{{t .Messages "settings.export_jump_title"}}">
           <span class="field-label text-center" data-export-calendar-title></span>
         </button>
-        <button type="button" class="btn-secondary" data-export-calendar-next aria-label="{{t .Messages "settings.export_next_month"}}">→</button>
+        <button type="button" class="btn-secondary" data-export-calendar-next aria-label="{{t .Messages "settings.export_next_month"}}"><span aria-hidden="true">→</span></button>
       </div>
       <div class="hidden flex items-center gap-2" data-export-calendar-jump>
         <select class="input-field w-full" data-export-calendar-month aria-label="{{t .Messages "settings.export_month"}}"></select>

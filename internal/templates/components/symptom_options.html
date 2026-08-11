@@ -12,7 +12,7 @@
     {{if .IncludePreviewHooks}}data-symptom-label="{{$label}}"{{end}}
     {{if hasSymptom .SelectedSymptomID .Symptom.ID}}checked{{end}}>
   <span class="{{if .Compact}}check-chip check-chip-sm{{else}}check-chip{{end}}" title="{{$label}}">
-    <span class="symptom-icon">{{.Symptom.Icon}}</span>
+    <span class="symptom-icon" aria-hidden="true">{{.Symptom.Icon}}</span>
     <span class="symptom-label{{if and .Compact (eq .Lang "en")}} symptom-label-nowrap{{end}}">{{$label}}</span>
     {{if not .Symptom.IsActive}}
     <span class="journal-muted text-[11px]">{{t .Messages "settings.symptoms.archived_badge"}}</span>

@@ -3098,8 +3098,18 @@
       var label = labels[index];
       var onText = String(label.getAttribute("data-period-label-on") || "");
       var offText = String(label.getAttribute("data-period-label-off") || "");
-      var prefix = label.textContent && label.textContent.indexOf("🩸") === 0 ? "🩸 " : "";
-      label.textContent = prefix + (isPeriod ? onText : offText);
+      var text = isPeriod ? onText : offText;
+      // The glyph is decorative and carries aria-hidden, so it is moved rather
+      // than reprinted: rewriting textContent with a literal prefix would drop
+      // the wrapper and read the emoji out to assistive technology again.
+      var glyph = label.querySelector("[data-period-toggle-glyph]");
+      label.textContent = "";
+      if (glyph) {
+        label.appendChild(glyph);
+        label.appendChild(document.createTextNode(" " + text));
+      } else {
+        label.textContent = text;
+      }
     }
   }
 

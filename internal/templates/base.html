@@ -77,7 +77,7 @@
 
       {{if and .CurrentUser (not .HideNavigation)}}
       <div class="container-main pb-4">
-        <nav class="hidden items-center gap-2 sm:flex">
+        <nav class="hidden items-center gap-2 sm:flex" aria-label="{{t .Messages "a11y.nav.primary"}}">
           <a href="/dashboard" class="nav-link {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
           <a href="/calendar" class="nav-link {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
           <a href="/stats" class="nav-link {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
@@ -94,7 +94,7 @@
           </div>
         </nav>
 
-        <nav id="mobile-menu" data-mobile-menu hidden class="mt-2 space-y-2 sm:hidden">
+        <nav id="mobile-menu" data-mobile-menu hidden class="mt-2 space-y-2 sm:hidden" aria-label="{{t .Messages "a11y.nav.mobile_menu"}}">
           <a href="/dashboard" class="nav-link block {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
           <a href="/calendar" class="nav-link block {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
           <a href="/stats" class="nav-link block {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
@@ -140,7 +140,7 @@
     </main>
 
     {{if and .CurrentUser (not .HideNavigation)}}
-    <nav class="mobile-tabbar sm:hidden" aria-label="{{t .Messages "nav.menu"}}">
+    <nav class="mobile-tabbar sm:hidden" aria-label="{{t .Messages "a11y.nav.tabbar"}}">
       <a href="/dashboard" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/dashboard"}}mobile-tabbar-link-active{{else if isActiveRoute .CurrentPath "/"}}mobile-tabbar-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
       <a href="/calendar" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/calendar"}}mobile-tabbar-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
       <a href="/stats" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/stats"}}mobile-tabbar-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
@@ -150,7 +150,7 @@
 
     {{if not (isActiveRoute .CurrentPath "/privacy")}}
     <footer class="container-main pb-8 pt-2{{if and .CurrentUser (not .HideNavigation)}} footer-with-mobile-nav{{end}}">
-      <nav class="flex items-center justify-center">
+      <nav class="flex items-center justify-center" aria-label="{{t .Messages "a11y.nav.footer"}}">
         <a href="/privacy?back={{urlquery .CurrentPath}}" class="nav-link text-sm">{{t .Messages "nav.privacy"}}</a>
       </nav>
     </footer>
