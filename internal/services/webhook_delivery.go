@@ -51,6 +51,15 @@ const (
 	// We only need the status code; anything beyond this is drained-and-ignored so
 	// a hostile endpoint cannot make us buffer an unbounded body.
 	webhookResponseReadLimit = 8 * 1024
+	// webhookResponseHeaderLimit caps the response HEADER block, which is read
+	// before the body limit above can apply and otherwise takes Go's 10 MiB
+	// default. A webhook acknowledgement needs a status line and a handful of
+	// headers; 16 KiB is generous for that and still bounded.
+	webhookResponseHeaderLimit = 16 * 1024
+	// webhookPhaseTimeout bounds the TLS handshake and the wait for response
+	// headers individually. The total client budget still applies on top; this
+	// stops one phase from spending all of it.
+	webhookPhaseTimeout = 5 * time.Second
 	// webhookUserAgent identifies our POSTs without revealing anything sensitive.
 	webhookUserAgent = "ovumcy-webhook/1"
 )
@@ -156,6 +165,16 @@ func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http
 		Transport: &http.Transport{
 			DisableKeepAlives: true,
 			DialContext:       dialContext,
+			// The response body is capped at webhookResponseReadLimit, but headers
+			// are read before any of that and default to Go's 10 MiB — three orders
+			// of magnitude past anything a webhook acknowledgement needs, and read
+			// from an owner-controlled endpoint. Bound them to match the envelope.
+			MaxResponseHeaderBytes: webhookResponseHeaderLimit,
+			// The client Timeout already covers handshake and headers as part of the
+			// total budget. These bound each phase on its own, so one slow phase
+			// cannot consume the whole budget and starve the rest.
+			TLSHandshakeTimeout:   webhookPhaseTimeout,
+			ResponseHeaderTimeout: webhookPhaseTimeout,
 		},
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return errWebhookRedirect
@@ -235,6 +254,17 @@ func (client *webhookDeliveryClient) Deliver(ctx context.Context, decryptedURL s
 	scheme := strings.ToLower(parsed.Scheme)
 	if scheme != "http" && scheme != "https" {
 		log.Printf("webhook delivery skipped: reason=scheme_not_allowed host=%s", parsed.Hostname())
+		return ErrWebhookDeliveryURLScheme
+	}
+
+	// Re-run the authority shape check the save path already applies. Save-time
+	// validation never revisits a row already in the database, so an endpoint
+	// stored before that check existed would otherwise still reach the dialer. A
+	// port-only authority ("http://:8080/") is the case that matters: url.Parse
+	// gives it a non-empty Host, and Go then reads the empty hostname as the
+	// unspecified address and connects to the local machine.
+	if err := validateWebhookAuthority(parsed); err != nil {
+		log.Printf("webhook delivery skipped: reason=authority_invalid host=%s", parsed.Hostname())
 		return ErrWebhookDeliveryURLScheme
 	}
 

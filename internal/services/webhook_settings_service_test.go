@@ -68,6 +68,21 @@ func TestValidateWebhookURL(t *testing.T) {
 		// escape), so it exercises the parse-error branch rather than the
 		// scheme/host checks.
 		{name: "unparseable url rejected", raw: "http://example.com/%zz", wantErr: true},
+		// A port-only authority parses with a NON-EMPTY Host (":8080") while
+		// Hostname() is empty, so a Host != "" test accepts it — and Go's dialer
+		// reads an empty host as the unspecified address, i.e. the local machine.
+		{name: "port-only authority rejected", raw: "http://:8080/hook", wantErr: true},
+		{name: "port-only authority with port zero rejected", raw: "http://:0/hook", wantErr: true},
+		{name: "userinfo without host rejected", raw: "http://user:pass@/hook", wantErr: true},
+		// url.Parse accepts any digit string as a port and defers the complaint to
+		// the transport, so the range is pinned here with both boundaries.
+		{name: "port above range rejected", raw: "http://example.com:99999/hook", wantErr: true},
+		{name: "port zero rejected", raw: "http://example.com:0/hook", wantErr: true},
+		{name: "lowest port accepted", raw: "http://example.com:1/hook", wantErr: false},
+		{name: "highest port accepted", raw: "http://example.com:65535/hook", wantErr: false},
+		// Opaque URLs carry no authority at all. Already refused today by the empty
+		// Host, pinned so the Opaque/Hostname check cannot regress it.
+		{name: "opaque url rejected", raw: "http:opaque", wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
