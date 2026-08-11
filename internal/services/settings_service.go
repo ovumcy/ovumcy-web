@@ -250,14 +250,18 @@ func (service *SettingsService) SaveUsageGoal(ctx context.Context, userID uint, 
 	return usageGoal, nil
 }
 
+// SaveTrackingSettings persists the tracking preferences. The three section
+// toggles arrive positive and are written in the stored, inverted spelling
+// through TrackingVisibility.HiddenColumns — the one place that negation lives.
 func (service *SettingsService) SaveTrackingSettings(ctx context.Context, userID uint, settings TrackingSettingsUpdate) error {
+	hidden := settings.Visibility.HiddenColumns()
 	return service.users.UpdateByID(ctx, userID, map[string]any{
 		"track_bbt":              settings.TrackBBT,
 		"temperature_unit":       NormalizeTemperatureUnit(settings.TemperatureUnit),
 		"track_cervical_mucus":   settings.TrackCervicalMucus,
-		"hide_sex_chip":          settings.HideSexChip,
-		"hide_cycle_factors":     settings.HideCycleFactors,
-		"hide_notes_field":       settings.HideNotesField,
+		"hide_sex_chip":          hidden.HideSexChip,
+		"hide_cycle_factors":     hidden.HideCycleFactors,
+		"hide_notes_field":       hidden.HideNotesField,
 		"show_historical_phases": settings.ShowHistoricalPhases,
 		"week_starts_on":         NormalizeWeekStart(settings.WeekStartsOn),
 	})

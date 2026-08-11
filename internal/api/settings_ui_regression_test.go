@@ -116,9 +116,9 @@ func TestSettingsTrackingSectionRendersExpectedToggleContracts(t *testing.T) {
 	expectedToggles := []string{
 		"track-bbt",
 		"track-cervical-mucus",
-		"hide-sex-chip",
-		"hide-cycle-factors",
-		"hide-notes-field",
+		"show-sex-chip",
+		"show-cycle-factors",
+		"show-notes-field",
 	}
 
 	for _, attribute := range expectedToggles {
@@ -140,19 +140,114 @@ func TestSettingsTrackingSectionRendersExpectedToggleContracts(t *testing.T) {
 // toggle — including show-historical-phases, which was missing from the
 // settings render map so the toggle always rendered OFF regardless of the
 // saved value — reflects the persisted user setting on initial page load.
+//
+// The three section toggles are the polarity case: their columns are stored
+// inverted (hide_sex_chip, hide_cycle_factors, hide_notes_field) while the row
+// is labelled and rendered as "show", so this asserts the rendered state
+// against the stored column in both directions. A second conversion on the
+// render path flips one of these pairs and nothing else notices.
 func TestSettingsTrackingTogglesReflectPersistedState(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-tracking-state@example.com")
 
-	if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Updates(map[string]any{
-		"track_bbt":              true,
-		"track_cervical_mucus":   true,
-		"hide_sex_chip":          true,
-		"hide_cycle_factors":     true,
-		"hide_notes_field":       true,
-		"show_historical_phases": true,
-	}).Error; err != nil {
-		t.Fatalf("persist tracking settings: %v", err)
+	for _, testCase := range []struct {
+		name    string
+		stored  map[string]any
+		expects map[string]bool
+	}{
+		{
+			name: "every stored column set",
+			stored: map[string]any{
+				"track_bbt":              true,
+				"track_cervical_mucus":   true,
+				"hide_sex_chip":          true,
+				"hide_cycle_factors":     true,
+				"hide_notes_field":       true,
+				"show_historical_phases": true,
+			},
+			expects: map[string]bool{
+				"track-bbt":              true,
+				"track-cervical-mucus":   true,
+				"show-sex-chip":          false,
+				"show-cycle-factors":     false,
+				"show-notes-field":       false,
+				"show-historical-phases": true,
+			},
+		},
+		{
+			name: "every stored column clear",
+			stored: map[string]any{
+				"track_bbt":              false,
+				"track_cervical_mucus":   false,
+				"hide_sex_chip":          false,
+				"hide_cycle_factors":     false,
+				"hide_notes_field":       false,
+				"show_historical_phases": false,
+			},
+			expects: map[string]bool{
+				"track-bbt":              false,
+				"track-cervical-mucus":   false,
+				"show-sex-chip":          true,
+				"show-cycle-factors":     true,
+				"show-notes-field":       true,
+				"show-historical-phases": false,
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			if err := ctx.database.Model(&models.User{}).Where("id = ?", ctx.user.ID).Updates(testCase.stored).Error; err != nil {
+				t.Fatalf("persist tracking settings: %v", err)
+			}
+
+			document := renderSettingsDocumentForTest(t, ctx)
+			for toggle, expected := range testCase.expects {
+				assertTrackingToggleState(t, document, toggle, expected)
+			}
+		})
 	}
+}
+
+// TestSettingsTrackingSaveRoundTripsTheSectionTogglesPositively drives the
+// whole loop the single conversion point has to keep honest: the settings form
+// posts "shown", persistence stores "hidden", and the page renders the checkbox
+// back out of that stored column. An unchecked box posts nothing, which is what
+// makes the polarity load-bearing — omitting show_notes_field must store a
+// hidden notes section, and re-rendering it must not flip back.
+func TestSettingsTrackingSaveRoundTripsTheSectionTogglesPositively(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-tracking-polarity@example.com")
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
+		"show_sex_chip":      {"true"},
+		"show_cycle_factors": {"true"},
+		"temperature_unit":   {"c"},
+	}, map[string]string{"HX-Request": "true"})
+	assertStatusCode(t, response, http.StatusOK)
+
+	var persisted struct {
+		HideSexChip      bool
+		HideCycleFactors bool
+		HideNotesField   bool
+	}
+	if err := ctx.database.Model(&models.User{}).
+		Select("hide_sex_chip", "hide_cycle_factors", "hide_notes_field").
+		Where("id = ?", ctx.user.ID).
+		First(&persisted).Error; err != nil {
+		t.Fatalf("load persisted tracking columns: %v", err)
+	}
+	if persisted.HideSexChip || persisted.HideCycleFactors {
+		t.Fatalf("a checked show_* toggle must clear its stored hide_* column, got %+v", persisted)
+	}
+	if !persisted.HideNotesField {
+		t.Fatalf("an omitted show_notes_field must store hide_notes_field=true, got %+v", persisted)
+	}
+
+	document := renderSettingsDocumentForTest(t, ctx)
+	assertTrackingToggleState(t, document, "show-sex-chip", true)
+	assertTrackingToggleState(t, document, "show-cycle-factors", true)
+	assertTrackingToggleState(t, document, "show-notes-field", false)
+}
+
+func renderSettingsDocumentForTest(t *testing.T, ctx settingsSecurityTestContext) *html.Node {
+	t.Helper()
 
 	request := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	request.Header.Set("Accept-Language", "en")
@@ -165,21 +260,38 @@ func TestSettingsTrackingTogglesReflectPersistedState(t *testing.T) {
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected settings status 200, got %d", response.StatusCode)
 	}
+	return mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+}
 
-	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
-	for _, toggle := range []string{
-		"track-bbt", "track-cervical-mucus", "hide-sex-chip",
-		"hide-cycle-factors", "hide-notes-field", "show-historical-phases",
-	} {
-		node := htmlFindElement(document, func(n *html.Node) bool {
-			return n.Type == html.ElementNode && htmlAttr(n, "data-tracking-setting") == toggle
-		})
-		if node == nil {
-			t.Fatalf("expected tracking toggle %q", toggle)
-		}
-		if htmlAttr(node, "data-active") != "true" {
-			t.Errorf("toggle %q must render data-active=true for a persisted enabled setting, got %q", toggle, htmlAttr(node, "data-active"))
-		}
+// assertTrackingToggleState checks both halves of a rendered toggle — the
+// data-active hook and the checkbox's own checked attribute — so a render path
+// that agrees with itself only in the attribute cannot pass.
+func assertTrackingToggleState(t *testing.T, document *html.Node, toggle string, active bool) {
+	t.Helper()
+
+	node := htmlFindElement(document, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && htmlAttr(n, "data-tracking-setting") == toggle
+	})
+	if node == nil {
+		t.Fatalf("expected tracking toggle %q", toggle)
+	}
+
+	expected := "false"
+	if active {
+		expected = "true"
+	}
+	if got := htmlAttr(node, "data-active"); got != expected {
+		t.Errorf("toggle %q must render data-active=%s for the persisted state, got %q", toggle, expected, got)
+	}
+
+	input := htmlFindElement(node, func(n *html.Node) bool {
+		return n.Type == html.ElementNode && n.Data == "input" && htmlHasAttr(n, "data-binary-toggle-input")
+	})
+	if input == nil {
+		t.Fatalf("expected tracking toggle %q to carry a checkbox", toggle)
+	}
+	if checked := htmlHasAttr(input, "checked"); checked != active {
+		t.Errorf("toggle %q must render checked=%t for the persisted state, got %t", toggle, active, checked)
 	}
 }
 

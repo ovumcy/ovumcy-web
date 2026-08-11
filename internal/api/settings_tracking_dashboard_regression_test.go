@@ -18,6 +18,9 @@ func TestTrackingSettingsExposeBBTAndCervicalMucusOnDashboard(t *testing.T) {
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
 		"track_bbt":            {"true"},
 		"track_cervical_mucus": {"true"},
+		"show_sex_chip":        {"true"},
+		"show_cycle_factors":   {"true"},
+		"show_notes_field":     {"true"},
 		"temperature_unit":     {"c"},
 	}, map[string]string{
 		"HX-Request": "true",
@@ -99,11 +102,35 @@ func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *t
 func TestTrackingSettingsHideSensitiveSectionsOnDashboardAndCalendar(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-tracking-privacy@example.com")
 
-	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
-		"hide_sex_chip":      {"true"},
-		"hide_cycle_factors": {"true"},
-		"hide_notes_field":   {"true"},
+	// The three section toggles post positively: a checked box means "show".
+	// Save them on first, so the hidden state asserted below is a state this
+	// owner actually left rather than the value a request that mentions none of
+	// them would have produced anyway.
+	shownResponse := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
+		"show_sex_chip":      {"true"},
+		"show_cycle_factors": {"true"},
+		"show_notes_field":   {"true"},
 		"temperature_unit":   {"c"},
+	}, map[string]string{
+		"HX-Request": "true",
+	})
+	assertStatusCode(t, shownResponse, http.StatusOK)
+
+	shownDashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	shownDashboardRequest.Header.Set("Accept-Language", "en")
+	shownDashboardRequest.Header.Set("Cookie", ctx.authCookie)
+	shownDashboardResponse := mustAppResponse(t, ctx.app, shownDashboardRequest)
+	assertStatusCode(t, shownDashboardResponse, http.StatusOK)
+	assertBodyContainsAll(t, mustReadBodyString(t, shownDashboardResponse.Body),
+		bodyStringMatch{fragment: `id="today-notes"`, message: "expected dashboard notes field while shown"},
+		bodyStringMatch{fragment: `name="cycle_factor_keys"`, message: "expected dashboard cycle factor inputs while shown"},
+		bodyStringMatch{fragment: `name="sex_activity"`, message: "expected dashboard sex activity inputs while shown"},
+	)
+
+	// Unchecking a box posts nothing at all — that omission is what has to read
+	// as "hidden" now that the toggles are phrased positively.
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
+		"temperature_unit": {"c"},
 	}, map[string]string{
 		"HX-Request": "true",
 	})

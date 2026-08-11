@@ -19,13 +19,17 @@ func TestApplyTrackingSettings(t *testing.T) {
 		TemperatureUnit:    "",
 	}
 
+	// The three section toggles arrive positive: "not shown" is what the
+	// inverted columns store as hidden.
 	service.ApplyTrackingSettings(user, TrackingSettingsUpdate{
 		TrackBBT:           true,
 		TrackCervicalMucus: true,
-		HideSexChip:        true,
-		HideCycleFactors:   true,
-		HideNotesField:     true,
-		TemperatureUnit:    TemperatureUnitFahrenheit,
+		Visibility: TrackingVisibility{
+			ShowSexChip:      false,
+			ShowCycleFactors: false,
+			ShowNotesField:   false,
+		},
+		TemperatureUnit: TemperatureUnitFahrenheit,
 	})
 
 	if !user.TrackBBT {
@@ -55,10 +59,12 @@ func TestSaveTrackingSettings(t *testing.T) {
 	err := service.SaveTrackingSettings(context.Background(), 42, TrackingSettingsUpdate{
 		TrackBBT:           true,
 		TrackCervicalMucus: true,
-		HideSexChip:        true,
-		HideCycleFactors:   true,
-		HideNotesField:     true,
-		TemperatureUnit:    TemperatureUnitFahrenheit,
+		Visibility: TrackingVisibility{
+			ShowSexChip:      false,
+			ShowCycleFactors: false,
+			ShowNotesField:   false,
+		},
+		TemperatureUnit: TemperatureUnitFahrenheit,
 	})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)

@@ -68,6 +68,13 @@ type interfaceSettingsInput struct {
 	Theme    string `json:"theme" form:"theme"`
 }
 
+// trackingSettingsInput is the published v1 JSON body of
+// PATCH /api/v1/users/current/tracking. The three section toggles keep the
+// stored, inverted spelling here because renaming a v1 field is a breaking
+// change (CONTRIBUTING "API Stability Contract"); trackingUpdate converts them
+// into the positive view model through the services conversion point, so the
+// transport layer never performs the negation itself. The bundled HTML form
+// posts the positive show_* fields instead — see parseTrackingSettingsInput.
 type trackingSettingsInput struct {
 	TrackBBT             bool   `json:"track_bbt" form:"track_bbt"`
 	TemperatureUnit      string `json:"temperature_unit" form:"temperature_unit"`

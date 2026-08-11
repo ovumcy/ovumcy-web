@@ -214,12 +214,13 @@ type dashboardOwnerVisibility struct {
 
 func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.Time, location *time.Location) dashboardOwnerVisibility {
 	isOwner := IsOwnerUser(user)
+	visibility := TrackingVisibilityForUser(user)
 	return dashboardOwnerVisibility{
-		ShowSexChip:           isOwner && !user.HideSexChip,
+		ShowSexChip:           isOwner && visibility.ShowSexChip,
 		ShowBBTField:          isOwner && user.TrackBBT,
 		ShowCervicalMucus:     isOwner && user.TrackCervicalMucus,
-		ShowCycleFactors:      isOwner && !user.HideCycleFactors,
-		ShowNotesField:        isOwner && !user.HideNotesField,
+		ShowCycleFactors:      isOwner && visibility.ShowCycleFactors,
+		ShowNotesField:        isOwner && visibility.ShowNotesField,
 		AllowManualCycleStart: isOwner && IsAllowedManualCycleStartDate(today, now, location),
 	}
 }
