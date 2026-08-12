@@ -38,7 +38,7 @@ func statscycleinsightsCovBBTLog(t *testing.T, day string, bbt float64) models.D
 	t.Helper()
 	return models.DailyLog{
 		Date: statscycleinsightsCovDay(t, day),
-		BBT:  models.NewBBT(bbt),
+		BBT:  new(bbt),
 	}
 }
 

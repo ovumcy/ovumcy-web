@@ -71,13 +71,13 @@ func TestImportServiceRoundTripPreservesEntries(t *testing.T) {
 		{
 			UserID: source.ID, Date: time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 			IsPeriod: true, CycleStart: true, IsUncertain: true, Flow: models.FlowHeavy, Mood: 3,
-			SexActivity: models.SexActivityProtected, BBT: models.NewBBT(36.7), CervicalMucus: models.CervicalMucusCreamy,
+			SexActivity: models.SexActivityProtected, BBT: new(36.7), CervicalMucus: models.CervicalMucusCreamy,
 			PregnancyTest: models.PregnancyTestNegative, CycleFactorKeys: []string{models.CycleFactorStress, models.CycleFactorTravel},
 			SymptomIDs: []uint{crampsID, moodSwingsID, customID}, Notes: "heavy day",
 		},
 		{
 			UserID: source.ID, Date: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
-			Mood: 5, BBT: models.NewBBT(36.9), PregnancyTest: models.PregnancyTestPositive,
+			Mood: 5, BBT: new(36.9), PregnancyTest: models.PregnancyTestPositive,
 			SymptomIDs: []uint{swellingID}, CycleFactorKeys: []string{},
 		},
 	}
@@ -369,7 +369,7 @@ func TestImportServiceSanitizesGarbageValues(t *testing.T) {
 
 	payload := importPayload{Entries: []ExportJSONEntry{
 		{
-			Date: "2026-10-01", Period: true, Flow: "ZZZ", MoodRating: 999, BBT: models.NewBBT(9999),
+			Date: "2026-10-01", Period: true, Flow: "ZZZ", MoodRating: 999, BBT: new(9999.0),
 			SexActivity: "??", CervicalMucus: "??", PregnancyTest: "??",
 			CycleFactors: []string{"not_a_factor"},
 		},

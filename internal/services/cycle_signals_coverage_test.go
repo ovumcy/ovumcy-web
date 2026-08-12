@@ -27,7 +27,7 @@ func cyclesignalsCovPeriodLog(t *testing.T, date string) models.DailyLog {
 // cyclesignalsCovBBTLog returns a DailyLog with a BBT reading (no period).
 func cyclesignalsCovBBTLog(t *testing.T, date string, bbt float64) models.DailyLog {
 	t.Helper()
-	return models.DailyLog{Date: cyclesignalsCovDay(t, date), BBT: models.NewBBT(bbt)}
+	return models.DailyLog{Date: cyclesignalsCovDay(t, date), BBT: new(bbt)}
 }
 
 // cyclesignalsCovMucusLog returns a DailyLog with cervical mucus set (no period).
@@ -142,27 +142,27 @@ func TestCycleSignals_InferUserLutealPhase_OutOfRangeLutealLengthIsSkipped(t *te
 		{Date: day("2025-02-26"), IsPeriod: true, Flow: models.FlowMedium},
 
 		// Cycle 1 BBT — 6-day coverline window then rise Jan16-18.
-		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-06"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-16"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-17"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-18"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-01"), BBT: new(36.20)},
+		{Date: day("2025-01-02"), BBT: new(36.20)},
+		{Date: day("2025-01-03"), BBT: new(36.20)},
+		{Date: day("2025-01-04"), BBT: new(36.20)},
+		{Date: day("2025-01-05"), BBT: new(36.20)},
+		{Date: day("2025-01-06"), BBT: new(36.20)},
+		{Date: day("2025-01-16"), BBT: new(36.50)},
+		{Date: day("2025-01-17"), BBT: new(36.50)},
+		{Date: day("2025-01-18"), BBT: new(36.50)},
 
 		// Cycle 2 BBT — 6-day coverline window then rise Feb23-25.
 		// ovulation = Feb23−1 = Feb22 → luteal = Feb26 − Feb22 = 4 → skipped.
-		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-03"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-23"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-24"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-25"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-29"), BBT: new(36.20)},
+		{Date: day("2025-01-30"), BBT: new(36.20)},
+		{Date: day("2025-01-31"), BBT: new(36.20)},
+		{Date: day("2025-02-01"), BBT: new(36.20)},
+		{Date: day("2025-02-02"), BBT: new(36.20)},
+		{Date: day("2025-02-03"), BBT: new(36.20)},
+		{Date: day("2025-02-23"), BBT: new(36.50)},
+		{Date: day("2025-02-24"), BBT: new(36.50)},
+		{Date: day("2025-02-25"), BBT: new(36.50)},
 	}
 
 	phase, ok := InferUserLutealPhase(logs, time.UTC)
@@ -190,26 +190,26 @@ func TestCycleSignals_InferUserLutealPhase_LutealLengthOverTwentyIsSkipped(t *te
 
 		// Cycle 1 BBT — coverline window Jan1-6 then rise Jan8-10
 		// (ovulation = Jan8−1 = Jan7; luteal = Jan29−Jan7 = 22 > 20).
-		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-06"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-08"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-09"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-10"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-01"), BBT: new(36.20)},
+		{Date: day("2025-01-02"), BBT: new(36.20)},
+		{Date: day("2025-01-03"), BBT: new(36.20)},
+		{Date: day("2025-01-04"), BBT: new(36.20)},
+		{Date: day("2025-01-05"), BBT: new(36.20)},
+		{Date: day("2025-01-06"), BBT: new(36.20)},
+		{Date: day("2025-01-08"), BBT: new(36.50)},
+		{Date: day("2025-01-09"), BBT: new(36.50)},
+		{Date: day("2025-01-10"), BBT: new(36.50)},
 
 		// Cycle 2 BBT — valid: rise Feb13-15 → ovulation Feb12 → luteal = 14.
-		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-03"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-13"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-14"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-15"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-29"), BBT: new(36.20)},
+		{Date: day("2025-01-30"), BBT: new(36.20)},
+		{Date: day("2025-01-31"), BBT: new(36.20)},
+		{Date: day("2025-02-01"), BBT: new(36.20)},
+		{Date: day("2025-02-02"), BBT: new(36.20)},
+		{Date: day("2025-02-03"), BBT: new(36.20)},
+		{Date: day("2025-02-13"), BBT: new(36.50)},
+		{Date: day("2025-02-14"), BBT: new(36.50)},
+		{Date: day("2025-02-15"), BBT: new(36.50)},
 	}
 
 	phase, ok := InferUserLutealPhase(logs, time.UTC)
@@ -547,8 +547,8 @@ func TestCycleSignals_CollectCycleBBTPoints_ZeroBBTIsExcluded(t *testing.T) {
 	nextStart := cyclesignalsCovDay(t, "2025-01-29")
 
 	logs := []models.DailyLog{
-		{Date: cyclesignalsCovDay(t, "2025-01-02"), BBT: models.NewBBT(0.0)},  // must be excluded
-		{Date: cyclesignalsCovDay(t, "2025-01-03"), BBT: models.NewBBT(36.5)}, // valid
+		{Date: cyclesignalsCovDay(t, "2025-01-02"), BBT: new(0.0)},  // must be excluded
+		{Date: cyclesignalsCovDay(t, "2025-01-03"), BBT: new(36.5)}, // valid
 	}
 
 	points := collectCycleBBTPoints(logs, cycleStart, nextStart, time.UTC)
@@ -570,7 +570,7 @@ func TestCycleSignals_CollectCycleBBTPoints_CycleDayIsOneBased(t *testing.T) {
 
 	// A log on the same day as cycleStart must have CycleDay == 1.
 	logs := []models.DailyLog{
-		{Date: cyclesignalsCovDay(t, "2025-01-01"), BBT: models.NewBBT(36.2)},
+		{Date: cyclesignalsCovDay(t, "2025-01-01"), BBT: new(36.2)},
 	}
 
 	points := collectCycleBBTPoints(logs, cycleStart, nextStart, time.UTC)
@@ -583,8 +583,8 @@ func TestCycleSignals_CollectCycleBBTPoints_CycleDayIsOneBased(t *testing.T) {
 
 	// Also verify the second day is cycle day 2.
 	logs2 := []models.DailyLog{
-		{Date: cyclesignalsCovDay(t, "2025-01-01"), BBT: models.NewBBT(36.2)},
-		{Date: cyclesignalsCovDay(t, "2025-01-02"), BBT: models.NewBBT(36.2)},
+		{Date: cyclesignalsCovDay(t, "2025-01-01"), BBT: new(36.2)},
+		{Date: cyclesignalsCovDay(t, "2025-01-02"), BBT: new(36.2)},
 	}
 	points2 := collectCycleBBTPoints(logs2, cycleStart, nextStart, time.UTC)
 	if len(points2) != 2 {
@@ -748,30 +748,30 @@ func cyclesignalsCovBuildLutealLogs(t *testing.T) []models.DailyLog {
 
 		// === Cycle 1 BBT: Jan1→Jan29 ===
 		// 6-day coverline window (days 1-6): max = 36.20
-		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-06"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-01"), BBT: new(36.20)},
+		{Date: day("2025-01-02"), BBT: new(36.20)},
+		{Date: day("2025-01-03"), BBT: new(36.20)},
+		{Date: day("2025-01-04"), BBT: new(36.20)},
+		{Date: day("2025-01-05"), BBT: new(36.20)},
+		{Date: day("2025-01-06"), BBT: new(36.20)},
 		// Rise streak of 3 starting Jan16 (coverline=36.20; third ≥36.40):
-		{Date: day("2025-01-16"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-17"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-18"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-16"), BBT: new(36.50)},
+		{Date: day("2025-01-17"), BBT: new(36.50)},
+		{Date: day("2025-01-18"), BBT: new(36.50)},
 		// ovulation = Jan16−1 = Jan15; Jan29 − Jan15 = 14 days → luteal=14 ✓
 
 		// === Cycle 2 BBT: Jan29→Feb26 ===
 		// 6-day coverline window (days 1-6): max = 36.20
-		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-03"), BBT: models.NewBBT(36.20)},
+		{Date: day("2025-01-29"), BBT: new(36.20)},
+		{Date: day("2025-01-30"), BBT: new(36.20)},
+		{Date: day("2025-01-31"), BBT: new(36.20)},
+		{Date: day("2025-02-01"), BBT: new(36.20)},
+		{Date: day("2025-02-02"), BBT: new(36.20)},
+		{Date: day("2025-02-03"), BBT: new(36.20)},
 		// Rise streak of 3 starting Feb13 (coverline=36.20; third ≥36.40):
-		{Date: day("2025-02-13"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-14"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-15"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-02-13"), BBT: new(36.50)},
+		{Date: day("2025-02-14"), BBT: new(36.50)},
+		{Date: day("2025-02-15"), BBT: new(36.50)},
 		// ovulation = Feb13−1 = Feb12; Feb26 − Feb12 = 14 days → luteal=14 ✓
 	}
 	return logs

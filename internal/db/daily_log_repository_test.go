@@ -152,7 +152,7 @@ func TestDailyLogWriteScopedToUser(t *testing.T) {
 		SexActivity:     models.SexActivityNone,
 		CervicalMucus:   models.CervicalMucusNone,
 		PregnancyTest:   models.PregnancyTestNone,
-		BBT:             models.NewBBT(36.6),
+		BBT:             new(36.6),
 		CycleFactorKeys: []string{},
 		SymptomIDs:      []uint{11, 22},
 		Notes:           "owner A private note",

@@ -48,12 +48,6 @@ type DailyLog struct {
 	UpdatedAt       time.Time
 }
 
-// NewBBT wraps a measured basal body temperature as a nullable pointer. A nil
-// BBT means "not measured"; use this helper to build a measured value.
-func NewBBT(value float64) *float64 {
-	return &value
-}
-
 func (logEntry *DailyLog) BeforeSave(*gorm.DB) error {
 	if logEntry.CycleFactorKeys == nil {
 		logEntry.CycleFactorKeys = []string{}

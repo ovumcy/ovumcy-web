@@ -68,14 +68,14 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 2), CycleFactorKeys: []string{models.CycleFactorStress}, SymptomIDs: []uint{symptomByName["Headache"]}},
 		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 4), SymptomIDs: []uint{symptomByName["Cramps"]}},
 		{UserID: user.ID, Date: period3Start.AddDate(0, 0, 6), SymptomIDs: []uint{symptomByName["Acne"]}},
-		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, BBT: models.NewBBT(36.40)},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 1), BBT: models.NewBBT(36.45)},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 2), BBT: models.NewBBT(36.50)},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 3), BBT: models.NewBBT(36.42)},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 4), BBT: models.NewBBT(36.43)},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 5), BBT: models.NewBBT(36.70)},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 6), BBT: models.NewBBT(36.72)},
-		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 7), BBT: models.NewBBT(36.74)},
+		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, BBT: new(36.40)},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 1), BBT: new(36.45)},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 2), BBT: new(36.50)},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 3), BBT: new(36.42)},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 4), BBT: new(36.43)},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 5), BBT: new(36.70)},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 6), BBT: new(36.72)},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, 7), BBT: new(36.74)},
 	}
 	if err := database.Create(&logs).Error; err != nil {
 		t.Fatalf("create stats logs: %v", err)
