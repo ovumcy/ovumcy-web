@@ -173,7 +173,7 @@ func findCompetingCycleStart(logs []models.DailyLog, day time.Time, location *ti
 		if sameCalendarDay(logDay, day) {
 			continue
 		}
-		if logDay.Before(clusterStart) || logDay.After(clusterEnd) {
+		if !withinPeriodCluster(logDay, clusterStart, clusterEnd) {
 			continue
 		}
 		if conflict.IsZero() || logDay.Before(conflict) {
@@ -189,11 +189,23 @@ func manualCycleStartClusterBounds(logs []models.DailyLog, day time.Time, locati
 	hypotheticalLogs := logsWithSyntheticPeriodDay(logs, targetDay)
 	clusters := buildPeriodClusters(hypotheticalLogs)
 	for _, cluster := range clusters {
-		if !targetDay.Before(cluster.Start) && !targetDay.After(cluster.End) {
+		if withinPeriodCluster(targetDay, cluster.Start, cluster.End) {
 			return cluster.Start, cluster.End, true
 		}
 	}
 	return time.Time{}, time.Time{}, false
+}
+
+// withinPeriodCluster reports whether a calendar day falls inside the bounds
+// buildPeriodClusters produced. Those bounds are UTC-midnight values (dateOnly)
+// while the days compared against them are location-midnight working values, so
+// the day is re-anchored to UTC-midnight first. Comparing the two midnights
+// directly is an instant comparison under a non-zero UTC offset, which places a
+// day on the edge of its own cluster outside it — ahead of UTC the first day,
+// behind UTC the last one (issue #48 class).
+func withinPeriodCluster(day time.Time, clusterStart time.Time, clusterEnd time.Time) bool {
+	canonicalDay := dateOnly(day)
+	return !canonicalDay.Before(clusterStart) && !canonicalDay.After(clusterEnd)
 }
 
 func logsWithSyntheticPeriodDay(logs []models.DailyLog, day time.Time) []models.DailyLog {
