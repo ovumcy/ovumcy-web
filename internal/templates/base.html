@@ -82,9 +82,11 @@
           <a href="/calendar" class="nav-link {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
           <a href="/stats" class="nav-link {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
 
-          <!-- Settings is reached through the account chip alone: a gear beside it led to the same page. -->
+          <!-- Settings is reached through the account chip alone: a gear beside it led to the same page.
+               Being the only desktop route to settings, the chip also carries the section's active
+               state, computed with the same isActiveRoute call the three section links use. -->
           <div class="nav-account-actions" data-nav-account-actions>
-            {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-desktop" "Block" false "SwapOOB" false)}}
+            {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-desktop" "Block" false "SwapOOB" false "Active" (isActiveRoute .CurrentPath "/settings"))}}
             <form action="/logout" method="post" class="nav-logout-form" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
               <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
               <button type="submit" class="nav-link nav-link-logout">{{t .Messages "nav.logout"}}</button>
@@ -92,9 +94,10 @@
           </div>
         </nav>
 
-        <!-- Account menu only: the four section destinations are the bottom tab bar's job on mobile. -->
+        <!-- Account menu only: the four section destinations are the bottom tab bar's job on mobile,
+             and so is their active state — this chip stays unmarked so a phone shows one. -->
         <nav id="mobile-menu" data-mobile-menu="account" hidden class="mt-2 space-y-2 sm:hidden" aria-label="{{t .Messages "a11y.nav.mobile_menu"}}">
-          {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-mobile" "Block" true "SwapOOB" false)}}
+          {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-mobile" "Block" true "SwapOOB" false "Active" false)}}
           <form action="/logout" method="post" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <button type="submit" class="nav-link nav-link-logout w-full text-left">{{t .Messages "nav.logout"}}</button>

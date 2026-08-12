@@ -1,14 +1,20 @@
 {{define "current_user_identity_oob"}}
+{{/* The display-name form this swap answers renders only inside the settings page, so an
+     out-of-band chip replacement always happens while settings is the current section: the
+     desktop chip keeps its active state instead of losing it until the next full page load.
+     The mobile chip stays unmarked, matching the base layout. */}}
 {{template "nav_user_identity_chip" (dict
   "CurrentUser" .CurrentUser
   "Messages" .Messages
   "ElementID" "nav-user-chip-desktop"
   "Block" false
-  "SwapOOB" true)}}
+  "SwapOOB" true
+  "Active" true)}}
 {{template "nav_user_identity_chip" (dict
   "CurrentUser" .CurrentUser
   "Messages" .Messages
   "ElementID" "nav-user-chip-mobile"
   "Block" true
-  "SwapOOB" true)}}
+  "SwapOOB" true
+  "Active" false)}}
 {{end}}
