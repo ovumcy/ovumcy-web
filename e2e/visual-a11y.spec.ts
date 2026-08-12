@@ -12,10 +12,12 @@ import {
 import { applyTheme, expectTextContrastAA } from './support/contrast-helpers';
 import {
   assertNoHorizontalOverflow,
+  expectCalendarMonthFitsMobileViewport,
   expectElementAboveMobileTabbar,
   expectOpaqueMobileTabbar,
   expectPageBottomClearsMobileTabbar,
   expectVisibleFocusIndicator,
+  openLongestCalendarMonth,
 } from './support/mobile-layout-helpers';
 import {
   markCycleStart,
@@ -106,6 +108,17 @@ test.describe('Visual and accessibility regressions', () => {
     const sourceLink = page.locator('a[href="https://github.com/ovumcy/ovumcy-web"]');
     await sourceLink.scrollIntoViewIfNeeded();
     await expectElementAboveMobileTabbar(page, sourceLink);
+  });
+
+  test('mobile calendar shows a whole month, header included, without scrolling', async ({
+    page,
+  }) => {
+    await registerOwnerAndReachDashboard(page, 'visual-calendar-density');
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await openLongestCalendarMonth(page);
+    await assertNoHorizontalOverflow(page);
+    await expectCalendarMonthFitsMobileViewport(page);
   });
 
   test('mobile tabbar paints opaquely in both themes and page bottoms clear it', async ({

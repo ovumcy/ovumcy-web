@@ -164,6 +164,113 @@ export async function expectPageBottomClearsMobileTabbar(
   ).toBeLessThanOrEqual(tabbarBox!.y - minGap);
 }
 
+export type CalendarMonthGridGeometry = {
+  viewportHeight: number;
+  monthHeaderTop: number;
+  gridBottom: number;
+  tabbarTop: number;
+  rows: number;
+  cellCount: number;
+  cellWidth: number;
+  cellHeight: number;
+};
+
+/**
+ * Reads the calendar month screen as geometry: where the month header starts,
+ * where the last row of cells ends, and how big a single day cell is. The page
+ * is read at scroll offset 0 on purpose — the claim under test is what a phone
+ * shows before the owner scrolls.
+ */
+export async function measureCalendarMonthGrid(page: Page): Promise<CalendarMonthGridGeometry> {
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
+
+  const geometry = await page.evaluate(() => {
+    const monthHeader = document.querySelector('[data-calendar-month-nav]')?.closest('.journal-card');
+    const cells = Array.from(document.querySelectorAll<HTMLElement>('#calendar-grid-panel button[data-day]'));
+    const tabbar = document.querySelector<HTMLElement>('nav.mobile-tabbar');
+    if (!monthHeader || cells.length === 0 || !tabbar) {
+      return null;
+    }
+
+    const boxes = cells.map((cell) => cell.getBoundingClientRect());
+    const rowTops = new Set(boxes.map((box) => Math.round(box.top)));
+
+    return {
+      viewportHeight: window.innerHeight,
+      monthHeaderTop: monthHeader.getBoundingClientRect().top,
+      gridBottom: Math.max(...boxes.map((box) => box.bottom)),
+      tabbarTop: tabbar.getBoundingClientRect().top,
+      rows: rowTops.size,
+      cellCount: cells.length,
+      cellWidth: boxes[0].width,
+      cellHeight: boxes[0].height,
+    };
+  });
+
+  expect(geometry, 'expected the calendar month grid, its header card and the mobile tabbar to render').not.toBeNull();
+  return geometry!;
+}
+
+/**
+ * Opens the first month within the next year that fills a full six-row grid —
+ * the worst case for vertical density, and the only one worth pinning. A month
+ * is addressed by `?month=YYYY-MM`, so the choice is deterministic rather than
+ * whatever the current date happens to render.
+ */
+export async function openLongestCalendarMonth(page: Page): Promise<string> {
+  const startedAt = new Date();
+
+  for (let offset = 0; offset < 13; offset += 1) {
+    const probe = new Date(startedAt.getFullYear(), startedAt.getMonth() + offset, 1);
+    const month = `${probe.getFullYear()}-${String(probe.getMonth() + 1).padStart(2, '0')}`;
+
+    await page.goto(`/calendar?month=${month}`);
+    await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${month}$`));
+
+    const cells = page.locator('#calendar-grid-panel button[data-day]');
+    await expect(cells.first()).toBeVisible();
+    if ((await cells.count()) === 42) {
+      return month;
+    }
+  }
+
+  throw new Error('no six-row calendar month found within the next year');
+}
+
+/**
+ * A month grid is only usable on a phone if the whole month — with the month
+ * header above it — is on screen without scrolling, and if every day cell is
+ * still a real tap target. Both halves belong to one assertion: shrinking the
+ * cell until the month fits while the target drops below 44px trades one
+ * defect for another.
+ */
+export async function expectCalendarMonthFitsMobileViewport(
+  page: Page,
+  options?: { minTapTarget?: number }
+): Promise<CalendarMonthGridGeometry> {
+  const minTapTarget = options?.minTapTarget ?? 44;
+  const geometry = await measureCalendarMonthGrid(page);
+  const describe = `calendar month geometry (${JSON.stringify(geometry)})`;
+
+  expect(geometry.rows, `${describe}: expected the six-row worst case`).toBe(6);
+  expect(
+    geometry.monthHeaderTop,
+    `${describe}: the month header must be on screen without scrolling`
+  ).toBeGreaterThanOrEqual(0);
+  expect(
+    geometry.gridBottom,
+    `${describe}: the month's last row must sit above the bottom tabbar without scrolling`
+  ).toBeLessThanOrEqual(Math.min(geometry.tabbarTop, geometry.viewportHeight));
+  expect(
+    Math.min(geometry.cellWidth, geometry.cellHeight),
+    `${describe}: every day cell stays a ${minTapTarget}px tap target`
+  ).toBeGreaterThanOrEqual(minTapTarget);
+
+  return geometry;
+}
+
 export async function expectElementAboveMobileTabbar(
   page: Page,
   element: Locator,

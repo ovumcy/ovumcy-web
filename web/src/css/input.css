@@ -3233,6 +3233,14 @@
   align-items: center;
   gap: 0.3rem;
   justify-content: flex-end;
+
+  /* The markers carry the redundant non-colour encoding, so they keep their
+     sizes on mobile; only the space around them is compacted. */
+  @media (max-width: 640px) {
+    margin-top: 0.2rem;
+    min-height: 0.7rem;
+    gap: 0.2rem;
+  }
 }
 
 @utility calendar-ovulation-dot {
@@ -3649,9 +3657,14 @@
       0 0 0 2px rgba(22, 17, 31, 0.88);
   }
 
+  /* A phone shows the whole month or it shows nothing useful: at 390px the cell
+     is ~45px wide, so its height is what decides whether six rows fit above the
+     tabbar. The box stays the tap target (≥44px in both directions) and only the
+     visual padding shrinks — the day number keeps its 0.9rem size. */
   @media (max-width: 640px) {
-    min-height: 4.9rem;
-    padding: 0.42rem;
+    min-height: 3.2rem;
+    padding: 0.3rem 0.25rem;
+    border-radius: 0.7rem;
   }
 }
 
@@ -3902,6 +3915,11 @@
   font-size: 0.9rem;
   font-weight: 700;
   color: var(--text-primary);
+
+  /* Leading, never the font size: the day number stays 0.9rem on a phone. */
+  @media (max-width: 640px) {
+    line-height: 1.1;
+  }
 }
 
 @utility calendar-day-out {
