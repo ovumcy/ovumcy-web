@@ -548,6 +548,110 @@ func TestDashboardJournalMoreDisclosureOpensForDataItHolds(t *testing.T) {
 	})
 }
 
+// TestDashboardFramesTimingForTheGoalThatIsAboutIt pins the goal-aware timing
+// frame promised at onboarding. An account trying to conceive reads the page
+// for timing, so the status line also carries the ovulation estimate and the
+// morning temperature sits in the journal's visible tier; the disclosure then
+// stops counting a recorded temperature, which is no longer behind it. Every
+// other goal keeps the line and the two tiers it had.
+func TestDashboardFramesTimingForTheGoalThatIsAboutIt(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		goal   string
+		framed bool
+	}{
+		"trying to conceive": {goal: models.UsageGoalTrying, framed: true},
+		"general health":     {goal: models.UsageGoalHealth, framed: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "dashboard-timing-"+testCase.goal+"@example.com", "StrongPass1", true)
+			enableDashboardMeasurementTracking(t, database, user.ID)
+			seedDashboardStableCycleForGoal(t, database, user.ID, testCase.goal)
+			seedDashboardTodayLog(t, database, user.ID, func(entry *models.DailyLog) {
+				entry.BBT = new(36.6)
+			})
+
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+
+			statusLine := dashboardElementByDataAttr(document, "data-dashboard-status-line")
+			if statusLine == nil {
+				t.Fatal("expected the dashboard status line")
+			}
+			if got := htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-ovulation")) != nil; got != testCase.framed {
+				t.Fatalf("expected the ovulation estimate in the status line=%v, got %v", testCase.framed, got)
+			}
+			if dashboardElementByDataAttr(document, "data-dashboard-prediction-disclaimer") == nil {
+				t.Fatal("expected the prediction disclaimer beside a prediction surface")
+			}
+
+			form := dashboardSaveForm(t, document)
+			more := dashboardMoreDisclosure(t, form)
+			temperature := htmlFindElement(form, htmlNodeAttrEquals("id", "dashboard-bbt"))
+			if temperature == nil {
+				t.Fatal("expected the temperature field in the journal")
+			}
+			if got := htmlNodeContains(more, temperature); got == testCase.framed {
+				t.Fatalf("expected the temperature field inside the disclosure=%v, got %v", !testCase.framed, got)
+			}
+			if got := htmlHasAttr(more, "open"); got == testCase.framed {
+				t.Fatalf("expected today's temperature to open the disclosure=%v, got %v", !testCase.framed, got)
+			}
+		})
+	}
+}
+
+// TestDashboardTimingFrameKeepsSuppressedPredictionsSuppressed is the safety
+// half: the goal reframes what a prediction is called, never whether one is
+// made. An account that turned predictions off sees no ovulation estimate
+// whatever its goal, while the field placement — which no prediction feeds —
+// stays as the goal asked.
+func TestDashboardTimingFrameKeepsSuppressedPredictionsSuppressed(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-timing-suppressed@example.com", "StrongPass1", true)
+	enableDashboardMeasurementTracking(t, database, user.ID)
+	seedDashboardStableCycleForGoal(t, database, user.ID, models.UsageGoalTrying)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Update("unpredictable_cycle", true).Error; err != nil {
+		t.Fatalf("enable unpredictable cycle: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+
+	statusLine := dashboardElementByDataAttr(document, "data-dashboard-status-line")
+	if statusLine == nil {
+		t.Fatal("expected the dashboard status line")
+	}
+	if htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-ovulation")) != nil {
+		t.Fatal("did not expect an ovulation estimate while predictions are suppressed")
+	}
+
+	form := dashboardSaveForm(t, document)
+	temperature := htmlFindElement(form, htmlNodeAttrEquals("id", "dashboard-bbt"))
+	if temperature == nil {
+		t.Fatal("expected the temperature field in the journal")
+	}
+	if htmlNodeContains(dashboardMoreDisclosure(t, form), temperature) {
+		t.Fatal("expected the temperature field to stay in the visible tier for this goal")
+	}
+}
+
+// seedDashboardStableCycleForGoal gives the account a cycle context predictions
+// can be made from, under the usage goal the case is about.
+func seedDashboardStableCycleForGoal(t *testing.T, database *gorm.DB, userID uint, goal string) {
+	t.Helper()
+
+	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	if err := database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"usage_goal":        goal,
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": today.AddDate(0, 0, -2),
+	}).Error; err != nil {
+		t.Fatalf("seed cycle context for %s: %v", goal, err)
+	}
+}
+
 // enableDashboardMeasurementTracking switches on the two tracking-gated fields
 // the journal's disclosure holds (BBT and cervical mucus); the rest are on by
 // default.

@@ -403,6 +403,7 @@
   "dashboard.fertility_badge_positive": "Fase fértil, mejor momento",
   "dashboard.ovulation": "Ovulación",
   "dashboard.ovulation_range": "%s — %s",
+  "dashboard.ovulation_estimate": "aproximadamente %s",
   "dashboard.ovulation_need_cycles": "se necesitan 3 ciclos completos antes de que Ovumcy muestre un rango de ovulación",
   "dashboard.ovulation_approximate": "(aproximada)",
   "dashboard.prediction_disclaimer": "Son estimaciones, no consejo médico ni un método anticonceptivo.",

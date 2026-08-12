@@ -405,6 +405,7 @@
   "dashboard.fertility_badge_positive": "Фертильный период — лучшее время",
   "dashboard.ovulation": "Овуляция",
   "dashboard.ovulation_range": "%s — %s",
+  "dashboard.ovulation_estimate": "ориентировочно %s",
   "dashboard.ovulation_need_cycles": "нужно 3 завершённых цикла, чтобы Ovumcy показал диапазон овуляции",
   "dashboard.ovulation_approximate": "(приблизительно)",
   "dashboard.prediction_disclaimer": "Это оценки, а не медицинский совет и не метод контрацепции.",

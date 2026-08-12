@@ -10,6 +10,7 @@ import {
 import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import {
   dashboardMoreDisclosure,
+  dashboardStatusLine,
   openDashboardMoreFields,
   saveDashboardEntry,
 } from './support/dashboard-helpers';
@@ -794,6 +795,46 @@ test.describe('Dashboard: today editor', () => {
     await expect(
       page.locator('#settings-cycle input[name="usage_goal"][value="avoid_pregnancy"]')
     ).toBeChecked();
+  });
+
+  test('the goal about timing gets the ovulation estimate and the temperature in the open', async ({
+    page,
+  }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-timing-frame');
+    await enableBBTTracking(page);
+
+    const statusLine = dashboardStatusLine(page);
+    const ovulation = statusLine.locator('[data-dashboard-ovulation]');
+    const bbtInput = page.locator('#dashboard-bbt');
+
+    // The default goal is the neutral one: no timing line, temperature folded
+    // away with the other rare fields.
+    await expect(ovulation).toHaveCount(0);
+    await expect(bbtInput).toBeHidden();
+
+    await page.locator('[data-usage-goal-chip]').click();
+    await page.locator('[data-usage-goal-choice="trying_to_conceive"]').click();
+    await expect(page.locator('[data-usage-goal-summary]')).toHaveAttribute(
+      'data-usage-goal-label-key',
+      'settings.goal.trying'
+    );
+
+    // What the goal promised at onboarding, on the next load of the page.
+    await page.reload();
+    await expect(statusLine).toContainText(localeText('en', 'dashboard.ovulation'));
+    await expect(ovulation).toHaveCount(1);
+    await expect(bbtInput).toBeVisible();
+    await expect(dashboardMoreDisclosure(page).locator('#dashboard-bbt')).toHaveCount(0);
+
+    // A field in the visible tier still saves itself, and what was recorded
+    // reads back from the same place.
+    await saveToday(page, async () => {
+      await bbtInput.fill('36.60');
+      await bbtInput.blur();
+    });
+    await page.reload();
+    await expect(page.locator('#dashboard-bbt')).toHaveValue('36.60');
+    await expect(dashboardMoreDisclosure(page).locator('#dashboard-bbt')).toHaveCount(0);
   });
 
   test('closing the page runs beforeunload autosave for dirty notes', async ({ page, context }) => {
