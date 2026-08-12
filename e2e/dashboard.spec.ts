@@ -17,7 +17,7 @@ import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers'
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
-import { localeText } from './support/locale-helpers';
+import { everyLocaleText, localeText } from './support/locale-helpers';
 
 async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<void> {
   const creds = createCredentials(prefix);
@@ -225,11 +225,10 @@ test.describe('Dashboard: today editor', () => {
 
     await expect(autosaveIndicator).toHaveAttribute('data-autosave-state', 'invalid');
     const indicatorText = String((await autosaveIndicator.textContent()) || '').trim();
-    expect([
-      'Fix the form errors to save',
-      'Исправьте ошибки в форме для сохранения',
-      'Corrige los errores del formulario para guardar',
-    ]).toContain(indicatorText);
+    // The rendered language depends on the browser's Accept-Language, so the
+    // expectation is every catalogue's value for the key — read from the
+    // shipped catalogues, never re-typed here.
+    expect(everyLocaleText('dashboard.autosave_invalid')).toContain(indicatorText);
   });
 
   test('period/flow/symptoms/notes save and persist after reload; flow is single-select', async ({ page }) => {
