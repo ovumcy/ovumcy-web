@@ -517,6 +517,7 @@
   "dashboard.high_fertility_badge": "Fertilité élevée",
   "dashboard.fertility_badge_warning": "Période fertile",
   "dashboard.fertile_window": "Fenêtre fertile",
+  "dashboard.fertile_window_after_first_cycle": "Votre fenêtre fertile apparaîtra après votre premier cycle terminé",
   "dashboard.fertility_badge_positive": "Période fertile, meilleur moment",
   "dashboard.ovulation": "Ovulation",
   "dashboard.ovulation_range": "%s — %s",

@@ -7,7 +7,7 @@
       class="journal-card dashboard-status-header reveal"
       data-dashboard-status-header
       data-dashboard-phase="{{$phase}}"
-      data-fertility-status="{{if .CycleDataStale}}unknown{{else}}{{.Stats.CurrentFertility}}{{end}}"
+      data-fertility-status="{{if or .CycleDataStale (not .ShowFertilityStatus)}}unknown{{else}}{{.Stats.CurrentFertility}}{{end}}"
       {{if .CycleHero.Approximate}}data-cycle-hero-approximate="true"{{end}}>
       <div class="dashboard-status-top">
         <div class="dashboard-cycle-ring-wrap" data-dashboard-cycle-ring data-cycle-ring-segmented="{{if .CycleHero.Visible}}true{{else}}false{{end}}">
@@ -38,7 +38,10 @@
             <span aria-hidden="true">{{phaseIcon $phase}}</span>
             <span>{{phaseLabel .Messages $phase}}</span>
           </span>
-          {{if and (not .CycleDataStale) (eq .Stats.CurrentFertility "fertile")}}
+          {{/* The fertile window is read off the projected cycle, so before the
+               first completed cycle it says the onboarding slider back to the
+               owner. It waits for the data that makes it a measurement. */}}
+          {{if and .ShowFertilityStatus (not .CycleDataStale) (eq .Stats.CurrentFertility "fertile")}}
           <span class="dashboard-status-separator" aria-hidden="true">·</span>
           <span class="dashboard-status-item" data-fertile-window>{{t .Messages "dashboard.fertile_window"}}</span>
           {{end}}
@@ -100,6 +103,15 @@
                 {{end}}
               </span>
             </span>
+            {{else if .ShowFirstCycleBridge}}
+            {{/* The same slot before the first completed cycle: one line saying
+                 when the window arrives, instead of a date projected from the
+                 onboarding cycle length. */}}
+            <span class="dashboard-status-separator" aria-hidden="true">·</span>
+            <span
+              class="dashboard-status-item journal-muted"
+              data-dashboard-first-cycle-bridge
+              data-first-cycle-bridge-key="dashboard.fertile_window_after_first_cycle">{{t .Messages "dashboard.fertile_window_after_first_cycle"}}</span>
             {{end}}
             {{if .CycleHero.Approximate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>

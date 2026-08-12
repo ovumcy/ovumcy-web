@@ -403,6 +403,7 @@
   "dashboard.high_fertility_badge": "Высокая фертильность",
   "dashboard.fertility_badge_warning": "Фертильный период",
   "dashboard.fertile_window": "Фертильное окно",
+  "dashboard.fertile_window_after_first_cycle": "Фертильное окно появится после Вашего первого завершённого цикла",
   "dashboard.fertility_badge_positive": "Фертильный период — лучшее время",
   "dashboard.ovulation": "Овуляция",
   "dashboard.ovulation_range": "%s — %s",

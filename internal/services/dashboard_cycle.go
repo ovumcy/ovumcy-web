@@ -15,6 +15,9 @@ import (
 // filled is cleared, and the surfaces derived from them — the status header slot,
 // the reminder banner — say so instead of naming a date. The cycle day and the
 // late-cycle notice carry the state on their own.
+//
+// AwaitingFirstCycle reports the earliest data tier — no completed cycle yet —
+// which decides how much detail the header may show (DashboardAwaitingFirstCycle).
 type DashboardCycleContext struct {
 	CycleDayReference           int
 	CycleDayWarning             bool
@@ -37,6 +40,7 @@ type DashboardCycleContext struct {
 	DisplayOvulationExact       bool
 	DisplayOvulationImpossible  bool
 	NextPeriodEstimatePaused    bool
+	AwaitingFirstCycle          bool
 	NextPeriodInPast            bool
 	OvulationInPast             bool
 }
@@ -121,6 +125,25 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 // reminder and the .ics feed are the remaining callers of that pair.
 func DashboardCycleOverdue(user *models.User, stats CycleStats) bool {
 	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
+}
+
+// DashboardAwaitingFirstCycle reports that the account has not completed a
+// single cycle yet, which is the earliest tier of the same reliability signal
+// the stats page already counts on: CompletedCycleCount, the "based on N
+// completed cycles" number behind buildStatsPredictionReliability and
+// HasPersonalCycleRange. It is read here rather than recounted — a second count
+// of the same thing is a second answer waiting to disagree.
+//
+// Until that first cycle closes, every fertility surface on the dashboard is
+// derived from the onboarding cycle-length slider rather than from anything the
+// account recorded: the fertile window and the ovulation date are the settings
+// default projected forward. Showing them at the same confidence as a measured
+// window is the estimate-presented-as-fact the medical-safety invariant forbids,
+// so the header withholds them until one cycle has been observed. The phase and
+// the next-period estimate stay: the phase follows the recorded anchor, and the
+// next-period item already carries its own estimate qualifier.
+func DashboardAwaitingFirstCycle(stats CycleStats) bool {
+	return stats.CompletedCycleCount < 1
 }
 
 func DashboardCycleDayLooksLong(currentDay int, referenceLength int) bool {
@@ -259,11 +282,17 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 }
 
 func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.Time, location *time.Location) DashboardCycleContext {
+	// The tier is a property of the account's history, so it is resolved before
+	// the suppression branches and carried by every one of them: a context that
+	// reported "not awaiting" merely because predictions are off would disable
+	// the gate for exactly the accounts with the least data.
+	awaitingFirstCycle := DashboardAwaitingFirstCycle(stats)
 	if stats.PregnancyPaused {
 		return DashboardCycleContext{
 			CycleDayReference:  DashboardCycleReferenceLength(user, stats),
 			PredictionDisabled: true,
 			PregnancyPaused:    true,
+			AwaitingFirstCycle: awaitingFirstCycle,
 		}
 	}
 	if DashboardPredictionDisabled(user) {
@@ -272,6 +301,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 			CycleDayWarning:    false,
 			CycleDataStale:     false,
 			PredictionDisabled: true,
+			AwaitingFirstCycle: awaitingFirstCycle,
 		}
 	}
 
@@ -302,6 +332,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 		DisplayOvulationExact:       display.ovulationExact,
 		DisplayOvulationImpossible:  display.ovulationImpossible,
 		NextPeriodEstimatePaused:    display.estimatePaused,
+		AwaitingFirstCycle:          awaitingFirstCycle,
 		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
 		OvulationInPast:             dashboardOvulationInPast(display, today),
 	}

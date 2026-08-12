@@ -380,6 +380,124 @@ func TestDashboardAndStatsAgreeOnPhaseAndFertilityOnAFertileWindowDay(t *testing
 	}
 }
 
+// TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle is the
+// render regression for the first reliability tier. Both accounts below sit on
+// cycle day 12 of a 28-day baseline — a fertile-window day by the same math the
+// test above uses — and differ only in whether one cycle has been observed.
+//
+// With none, the fertile window and the ovulation date exist only because the
+// onboarding cycle-length slider was projected forward, so the header shows
+// neither and declares no fertility status; an account tracking to conceive
+// reads one bridge line naming when the window arrives instead. With one
+// completed cycle the header renders exactly as it always did. What the tier
+// never touches is asserted in both states: the phase and the next-period item,
+// which carries its own estimate qualifier.
+func TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		account        string
+		goal           string
+		completedCycle bool
+		wantFertility  bool
+		wantOvulation  bool
+		wantBridge     bool
+	}{
+		"trying to conceive, fresh baseline": {
+			account:    "trying-fresh",
+			goal:       models.UsageGoalTrying,
+			wantBridge: true,
+		},
+		"trying to conceive, one completed cycle": {
+			account:        "trying-one-cycle",
+			goal:           models.UsageGoalTrying,
+			completedCycle: true,
+			wantFertility:  true,
+			wantOvulation:  true,
+		},
+		"general health, fresh baseline": {
+			account: "health-fresh",
+			goal:    models.UsageGoalHealth,
+		},
+		"general health, one completed cycle": {
+			account:        "health-one-cycle",
+			goal:           models.UsageGoalHealth,
+			completedCycle: true,
+			wantFertility:  true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "dashboard-first-tier-"+testCase.account+"@example.com", "StrongPass1", true)
+			today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+			if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+				"usage_goal":        testCase.goal,
+				"cycle_length":      28,
+				"period_length":     5,
+				"last_period_start": today.AddDate(0, 0, -11),
+			}).Error; err != nil {
+				t.Fatalf("seed cycle baseline: %v", err)
+			}
+			if testCase.completedCycle {
+				// Two recorded starts 28 days apart: one completed cycle, and the
+				// running one still on day 12.
+				for _, offsetDays := range []int{-39, -11} {
+					if err := database.Create(&models.DailyLog{
+						UserID:     user.ID,
+						Date:       today.AddDate(0, 0, offsetDays),
+						IsPeriod:   true,
+						CycleStart: true,
+					}).Error; err != nil {
+						t.Fatalf("seed cycle start %d: %v", offsetDays, err)
+					}
+				}
+			}
+
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+
+			header := dashboardElementByDataAttr(document, "data-dashboard-status-header")
+			if header == nil {
+				t.Fatal("expected the dashboard status header")
+			}
+			wantStatus := "unknown"
+			if testCase.wantFertility {
+				wantStatus = "fertile"
+			}
+			if got := htmlAttr(header, "data-fertility-status"); got != wantStatus {
+				t.Fatalf("expected the header to declare fertility %q, got %q", wantStatus, got)
+			}
+
+			statusLine := dashboardElementByDataAttr(document, "data-dashboard-status-line")
+			if statusLine == nil {
+				t.Fatal("expected the dashboard status line")
+			}
+			if got := htmlFindElement(statusLine, htmlNodeHasAttr("data-fertile-window")) != nil; got != testCase.wantFertility {
+				t.Fatalf("expected the fertile-window item=%v, got %v", testCase.wantFertility, got)
+			}
+			if got := htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-ovulation")) != nil; got != testCase.wantOvulation {
+				t.Fatalf("expected the ovulation estimate=%v, got %v", testCase.wantOvulation, got)
+			}
+
+			bridge := htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-first-cycle-bridge"))
+			if got := bridge != nil; got != testCase.wantBridge {
+				t.Fatalf("expected the first-cycle bridge line=%v, got %v", testCase.wantBridge, got)
+			}
+			if bridge != nil {
+				if got := htmlAttr(bridge, "data-first-cycle-bridge-key"); got != "dashboard.fertile_window_after_first_cycle" {
+					t.Fatalf("expected the bridge line to name its copy key, got %q", got)
+				}
+			}
+
+			// The tier withholds the two slider-derived items and nothing else.
+			if got := htmlAttr(header, "data-dashboard-phase"); got == "" || got == "unknown" {
+				t.Fatalf("expected the phase to survive the tier, got %q", got)
+			}
+			if htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-next-period")) == nil {
+				t.Fatal("expected the next-period estimate to survive the tier")
+			}
+		})
+	}
+}
+
 func TestDashboardTodaySavePersistsPeriodToggleAndNotes(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "dashboard-today-save@example.com", "StrongPass1", true)

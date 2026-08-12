@@ -38,6 +38,13 @@ type DashboardViewService struct {
 	days   DashboardDayStateProvider
 }
 
+// DashboardViewData is everything the dashboard page renders.
+//
+// ShowFertilityStatus gates the slider-derived fertility half of the status
+// header — the fertile-window item and the status the header declares — on the
+// first completed cycle (DashboardAwaitingFirstCycle), for every goal: until one
+// cycle has been observed that window is the onboarding cycle length projected
+// forward, whatever the account is tracking for.
 type DashboardViewData struct {
 	Stats                             CycleStats
 	CycleContext                      DashboardCycleContext
@@ -63,6 +70,8 @@ type DashboardViewData struct {
 	ShowNotesField                    bool
 	MoreFieldsOpen                    bool
 	ShowOvulationEstimate             bool
+	ShowFirstCycleBridge              bool
+	ShowFertilityStatus               bool
 	ShowBBTInVisibleTier              bool
 	AllowManualCycleStart             bool
 	ManualCycleStartPolicy            ManualCycleStartPolicy
@@ -188,6 +197,8 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowNotesField:                    visibility.ShowNotesField,
 		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
 		ShowOvulationEstimate:             timingFrame.ShowOvulationEstimate,
+		ShowFirstCycleBridge:              timingFrame.ShowFirstCycleBridge,
+		ShowFertilityStatus:               !cycleContext.AwaitingFirstCycle,
 		ShowBBTInVisibleTier:              timingFrame.BBTInVisibleTier,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:            cycleStart.Policy,
@@ -228,8 +239,13 @@ type dashboardOwnerVisibility struct {
 // the ovulation estimate beside the next-period one and the morning temperature
 // such an account records daily sits in the journal's visible tier instead of
 // behind the "More" disclosure. Every other goal reads the page unchanged.
+//
+// ShowFirstCycleBridge is the one state where the timing item is replaced
+// rather than dropped: an account with no completed cycle yet gets a single line
+// naming when its fertile window arrives, so the goal it chose still answers it.
 type dashboardTimingFrame struct {
 	ShowOvulationEstimate bool
+	ShowFirstCycleBridge  bool
 	BBTInVisibleTier      bool
 }
 
@@ -239,16 +255,23 @@ type dashboardTimingFrame struct {
 // here too, and so does a cycle overdue enough that the next-period window is
 // withheld (NextPeriodEstimatePaused) — the ovulation estimate is derived from
 // the same projection, so an account trying to conceive would otherwise be the
-// one cohort still reading a placeholder where the window used to be. BBT keeps
-// existing only where the tracking settings grant it, and its placement is a
-// property of the goal alone: a late cycle is when a morning reading matters
-// most, so nothing about the cycle demotes the field.
+// one cohort still reading a placeholder where the window used to be. The third
+// condition is of the same kind and answers the same question from the other
+// end: before the first completed cycle (AwaitingFirstCycle) the projection has
+// nothing but the onboarding slider to project from, so the estimate is
+// manufactured rather than measured. That state alone gets the bridge line in
+// place of the estimate — a promise about data, not a date. BBT keeps existing
+// only where the tracking settings grant it, and its placement is a property of
+// the goal alone: a late cycle is when a morning reading matters most, so
+// nothing about the cycle demotes the field.
 func resolveDashboardTimingFrame(user *models.User, cycleContext DashboardCycleContext, visibility dashboardOwnerVisibility) dashboardTimingFrame {
 	if !IsOwnerUser(user) || NormalizeUsageGoal(user.UsageGoal) != models.UsageGoalTrying {
 		return dashboardTimingFrame{}
 	}
+	predictionSuppressed := cycleContext.PredictionDisabled || cycleContext.NextPeriodEstimatePaused
 	return dashboardTimingFrame{
-		ShowOvulationEstimate: !cycleContext.PredictionDisabled && !cycleContext.NextPeriodEstimatePaused,
+		ShowOvulationEstimate: !predictionSuppressed && !cycleContext.AwaitingFirstCycle,
+		ShowFirstCycleBridge:  !predictionSuppressed && cycleContext.AwaitingFirstCycle,
 		BBTInVisibleTier:      visibility.ShowBBTField,
 	}
 }
