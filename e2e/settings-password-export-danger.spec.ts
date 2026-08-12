@@ -98,7 +98,7 @@ async function saveTodayEntry(page: Page, note: string): Promise<void> {
 }
 
 async function createCustomSymptom(page: Page, name: string): Promise<void> {
-  const section = page.locator('#settings-symptoms-section');
+  const section = page.locator('#settings-symptoms');
   const form = section.locator('[data-symptom-create-form]');
 
   await form.locator('#settings-new-symptom-name').fill(name);
@@ -426,7 +426,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     // and no empty-state panel. The four `not.toContainText(...)` phrase checks
     // this replaces named copy that no longer exists anywhere in the app, so
     // they held no matter what the section rendered — including nothing.
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     await expect(symptomSection.locator('[data-custom-symptom-row]')).toHaveCount(1);
     await expect(symptomSection.locator('[data-symptom-group="active"]')).toBeVisible();
     await expect(symptomSection.locator('[data-symptom-empty-state]')).toHaveCount(0);
@@ -467,10 +467,10 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await expect(page.locator('[data-export-summary-total]')).toContainText('0');
     // After the wipe the section is back to its empty state: no rows, no
     // groups, and the "empty" panel rather than the "no active ones left" one.
-    await expect(page.locator('#settings-symptoms-section [data-custom-symptom-row]')).toHaveCount(0);
-    await expect(page.locator('#settings-symptoms-section [data-symptom-group]')).toHaveCount(0);
+    await expect(page.locator('#settings-symptoms [data-custom-symptom-row]')).toHaveCount(0);
+    await expect(page.locator('#settings-symptoms [data-symptom-group]')).toHaveCount(0);
     await expect(
-      page.locator('#settings-symptoms-section [data-symptom-empty-state="empty"]')
+      page.locator('#settings-symptoms [data-symptom-empty-state="empty"]')
     ).toBeVisible();
   });
 

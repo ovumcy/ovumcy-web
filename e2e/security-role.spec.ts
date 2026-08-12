@@ -183,7 +183,7 @@ test.describe('Security and role-based access', () => {
     await registerOwnerAndOpenSettings(page, 'security-owner-access');
 
     await expect(page.locator('section#settings-cycle')).toBeVisible();
-    await expect(page.locator('#settings-symptoms-section')).toBeVisible();
+    await expect(page.locator('#settings-symptoms')).toBeVisible();
     await expect(page.locator('[data-export-section]')).toBeVisible();
     await expect(page.locator('form[action="/api/v1/users/current/data-wipe"]')).toBeVisible();
 

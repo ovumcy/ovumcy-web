@@ -34,8 +34,8 @@
     {{if .Required}}data-date-field-required="true"{{end}}
     {{if .Min}}min="{{.Min}}"{{end}}
     {{if .Max}}max="{{.Max}}"{{end}}>
-  <div class="grid grid-cols-3 gap-2">
-    <div class="space-y-1">
+  <div class="date-field-parts">
+    <div class="space-y-1 date-field-part">
       <label class="field-label text-xs" for="{{.FieldID}}-day">{{$dayLabel}}</label>
       <input
         id="{{.FieldID}}-day"
@@ -49,7 +49,7 @@
         aria-label="{{$dayLabel}}"
         data-date-field-part="day">
     </div>
-    <div class="space-y-1">
+    <div class="space-y-1 date-field-part">
       <label class="field-label text-xs" for="{{.FieldID}}-month">{{$monthLabel}}</label>
       <input
         id="{{.FieldID}}-month"
@@ -63,7 +63,7 @@
         aria-label="{{$monthLabel}}"
         data-date-field-part="month">
     </div>
-    <div class="space-y-1">
+    <div class="space-y-1 date-field-part date-field-part-year">
       <label class="field-label text-xs" for="{{.FieldID}}-year">{{$yearLabel}}</label>
       <input
         id="{{.FieldID}}-year"
