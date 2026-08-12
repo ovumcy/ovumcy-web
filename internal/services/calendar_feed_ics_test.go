@@ -191,6 +191,63 @@ func TestBuildCalendarFeedICSSuppressesForUnpredictableCycle(t *testing.T) {
 	}
 }
 
+// TestBuildCalendarFeedICSSuppressesForOverdueCycle covers the third
+// medical-safety gate on the feed: an account whose cycle has run past its own
+// reference length by more than a week emits no prediction events.
+//
+// This is the surface where the phantom travelled furthest — the builder projects
+// three cycles ahead, so an overdue account pushed up to six invented all-day
+// events into whatever third-party calendar client holds the subscription, where
+// they outlive any in-app correction. The 2026-03-02 anchor with a 28-day cadence
+// puts "today" = 2026-04-25 on cycle day 55 against a 28-day reference.
+//
+// The first subtest is the positive anchor: the same account, same logs, a date
+// inside the reference length still gets its events, so the suppressed case
+// cannot pass by emitting nothing for an unrelated reason.
+func TestBuildCalendarFeedICSSuppressesForOverdueCycle(t *testing.T) {
+	user := predictableFeedUser(t, "2026-03-02")
+	logs := predictableFeedLogs(t)
+
+	renderFeed := func(now time.Time) string {
+		return string(BuildCalendarFeedICS(CalendarFeedICSInput{
+			User:       user,
+			Logs:       logs,
+			Now:        now,
+			Location:   time.UTC,
+			Disclaimer: "disclaimer",
+		}))
+	}
+
+	t.Run("a cycle inside its reference length still emits events", func(t *testing.T) {
+		body := renderFeed(mustParseDashboardDay(t, "2026-03-20"))
+		if !strings.Contains(body, "BEGIN:VEVENT") {
+			t.Fatalf("expected prediction events inside the reference length, got:\n%s", body)
+		}
+	})
+
+	t.Run("an overdue cycle emits no prediction events", func(t *testing.T) {
+		now := mustParseDashboardDay(t, "2026-04-25")
+
+		stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+		if !DashboardCycleOverdue(user, stats) {
+			t.Fatalf("test setup expects an overdue cycle: cycle day %d against reference %d",
+				stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
+		}
+
+		body := renderFeed(now)
+		if strings.Contains(body, "BEGIN:VEVENT") {
+			t.Fatalf("an overdue cycle must suppress ALL prediction events, got:\n%s", body)
+		}
+		// The subscription must not break: the feed is prediction-only, so
+		// suppression is the well-formed empty VCALENDAR a client keeps polling.
+		for _, marker := range []string{"BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:" + calendarFeedProductID, "END:VCALENDAR"} {
+			if !strings.Contains(body, marker) {
+				t.Fatalf("expected a well-formed empty VCALENDAR carrying %q, got:\n%s", marker, body)
+			}
+		}
+	})
+}
+
 func TestBuildCalendarFeedICSHandlesNoBaseline(t *testing.T) {
 	// A user with no last period start and no logs yields a valid empty feed,
 	// never a panic or a fabricated event.

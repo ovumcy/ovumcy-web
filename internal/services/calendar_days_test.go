@@ -186,6 +186,98 @@ func TestBuildCalendarDayStatesSuppressesPredictionsWhenPregnancyPaused(t *testi
 	}
 }
 
+// overdueCalendarLogs is a stable 28-day history ending 2026-02-26: four logged
+// cycle starts a cycle apart, so the observed average and median are both 28 and
+// stats.NextPeriodStart lands on 2026-03-26.
+func overdueCalendarLogs() []models.DailyLog {
+	logs := make([]models.DailyLog, 0, 4)
+	for _, day := range []time.Time{
+		time.Date(2025, time.December, 4, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, time.January, 29, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, time.February, 26, 0, 0, 0, 0, time.UTC),
+	} {
+		logs = append(logs, models.DailyLog{Date: day, IsPeriod: true, CycleStart: true})
+	}
+	return logs
+}
+
+// TestBuildCalendarDayStatesSuppressesPredictionsForOverdueCycle covers the third
+// medical-safety gate on the grid, and the shading it withheld is the strangest
+// of the three surfaces.
+//
+// appendPredictedCycles chains from stats.NextPeriodStart, which is NOT rolled
+// forward: with the last logged cycle start on 2026-02-26 it stays 2026-03-26
+// even once "today" is 2026-04-20. So an overdue account saw a predicted period
+// painted in the PAST — on days that came and went with no period logged — and
+// then a phantom window every cycle length after it, indefinitely. Both are
+// asserted here, in the month each falls in, against a same-account control on a
+// date inside the reference length.
+func TestBuildCalendarDayStatesSuppressesPredictionsForOverdueCycle(t *testing.T) {
+	user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5, LutealPhase: 14}
+	logs := overdueCalendarLogs()
+	march := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	april := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+
+	statsAt := func(now time.Time) CycleStats {
+		return NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	}
+
+	t.Run("a cycle inside its reference length still paints its prediction", func(t *testing.T) {
+		now := time.Date(2026, time.March, 23, 0, 0, 0, 0, time.UTC)
+		stats := statsAt(now)
+		if DashboardCycleOverdue(user, stats) {
+			t.Fatalf("control must not be overdue: cycle day %d against reference %d",
+				stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
+		}
+
+		days := BuildCalendarDayStates(user, march, logs, stats, now, time.UTC)
+		if !findCalendarDayStateByDateString(t, days, "2026-03-26").IsPredicted {
+			t.Fatalf("expected the predicted period on 2026-03-26 for a cycle inside its reference length")
+		}
+	})
+
+	t.Run("an overdue cycle paints no prediction, past or future", func(t *testing.T) {
+		now := time.Date(2026, time.April, 20, 0, 0, 0, 0, time.UTC)
+		stats := statsAt(now)
+		if !DashboardCycleOverdue(user, stats) {
+			t.Fatalf("test setup expects an overdue cycle: cycle day %d against reference %d",
+				stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
+		}
+		if got := CalendarDayKey(stats.NextPeriodStart); got != "2026-03-26" {
+			t.Fatalf("test setup expects the un-rolled next period start 2026-03-26, got %s", got)
+		}
+
+		// The past-painted period: 2026-03-26 is behind "today" and no period was
+		// ever logged there.
+		marchDays := BuildCalendarDayStates(user, march, logs, stats, now, time.UTC)
+		pastPainted := findCalendarDayStateByDateString(t, marchDays, "2026-03-26")
+		if pastPainted.IsPredicted {
+			t.Fatalf("an overdue cycle must not paint a predicted period in the past, got %#v", pastPainted)
+		}
+		if pastPainted.IsPreFertile || pastPainted.IsFertility || pastPainted.IsOvulation || pastPainted.IsTentativeOvulation {
+			t.Fatalf("an overdue cycle must not paint any prediction state on 2026-03-26, got %#v", pastPainted)
+		}
+
+		// The phantom future window, one projected cycle further on.
+		aprilDays := BuildCalendarDayStates(user, april, logs, stats, now, time.UTC)
+		for _, dateString := range []string{"2026-04-09", "2026-04-23"} {
+			day := findCalendarDayStateByDateString(t, aprilDays, dateString)
+			if day.IsPredicted || day.IsPreFertile || day.IsFertility || day.IsOvulation || day.IsTentativeOvulation {
+				t.Fatalf("an overdue cycle must not paint a projected window on %s, got %#v", dateString, day)
+			}
+		}
+
+		// Recorded facts are untouched: the logged cycle start still reads as a
+		// period day with data.
+		februaryDays := BuildCalendarDayStates(user, time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC), logs, stats, now, time.UTC)
+		logged := findCalendarDayStateByDateString(t, februaryDays, "2026-02-26")
+		if !logged.IsPeriod || !logged.HasData {
+			t.Fatalf("suppression must leave recorded facts alone, got %#v", logged)
+		}
+	})
+}
+
 func TestBuildCalendarDayStatesOpensEditDirectlyForFutureEmptyDays(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
