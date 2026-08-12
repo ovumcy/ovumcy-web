@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, type Request } from '@playwright/test';
 import {
+  apiOriginHeader,
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
   createCredentials,
@@ -7,6 +8,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './auth-helpers';
+import { selectOnboardingStartDate } from './onboarding-helpers';
 import { setRequestTimezoneFromBrowser } from './timezone-helpers';
 
 export function shiftISODate(iso: string, days: number): string {
@@ -16,6 +18,21 @@ export function shiftISODate(iso: string, days: number): string {
   const yyyy = shifted.getFullYear();
   const mm = String(shifted.getMonth() + 1).padStart(2, '0');
   const dd = String(shifted.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Today by the runner's own clock, as an ISO date. Distinct from
+ * `todayISOFromDashboard`, which reads the date the *server* rendered: use this
+ * one to compute the dates a scenario seeds, and that one when the assertion is
+ * about the day the app itself thinks it is.
+ */
+export function isoToday(): string {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
 }
 
@@ -40,6 +57,46 @@ export async function registerOwnerAndEnableIrregularMode(
   await cycleForm.locator('input[name="irregular_cycle"]').check();
   await cycleForm.locator('button[data-save-button]').click();
   await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
+}
+
+/**
+ * Registers an owner and onboards with an explicit last-period-start date,
+ * `startDaysAgo` days back, returning that date.
+ *
+ * `completeOnboardingIfPresent` hardcodes today-3, which makes today an
+ * auto-period-fill day and leaves the account inside the onboarding period
+ * cluster; every scenario that needs today to sit outside it, or that needs a
+ * baseline old enough to carry completed cycles, seeds through here instead.
+ *
+ * Step 1 holds exactly one mechanism for the value — the month picker — and its
+ * MinDate is the later of (Jan 1 of the current year) and (today - 60 days), so an
+ * anchor stays inside that window and older cycle starts are added afterwards
+ * through `markCycleStartViaAPI`, which has no past-date bound.
+ */
+export async function registerAndOnboardWithStartDaysAgo(
+  page: Page,
+  prefix: string,
+  startDaysAgo: number
+): Promise<string> {
+  const credentials = createCredentials(prefix);
+  await registerOwnerViaUI(page, credentials);
+  await expectInlineRegisterRecoveryStep(page);
+  await readRecoveryCode(page);
+  await continueFromRecoveryCode(page);
+
+  const startISO = shiftISODate(isoToday(), -startDaysAgo);
+  await selectOnboardingStartDate(page, startISO);
+  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+
+  const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
+  await expect(stepTwoForm).toBeVisible();
+  await Promise.all([
+    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
+    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
+  ]);
+
+  await setRequestTimezoneFromBrowser(page);
+  return startISO;
 }
 
 export async function todayISOFromDashboard(page: Page): Promise<string> {
@@ -88,6 +145,32 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
   // markCycleStart/openCalendarDayEditor navigation, so let that fetch settle
   // before returning or it competes with the next page.goto.
   await page.waitForLoadState('networkidle');
+}
+
+/**
+ * Backdates one cycle start through the API, replacing whatever start the date
+ * already carries.
+ *
+ * The counterpart to `markCycleStart` above: that one drives the calendar's own
+ * manual-start button and is the right tool when the button is the subject, this
+ * one is pure seeding and has no past-date bound, so it reaches the anchors
+ * onboarding's picker cannot.
+ *
+ * `page.request` sends no Origin of its own and the CSRF middleware validates it
+ * on every mutating request under the HTTPS posture, so the header is explicit
+ * here (`apiOriginHeader`).
+ */
+export async function markCycleStartViaAPI(page: Page, isoDate: string): Promise<void> {
+  const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
+  const response = await page.request.post(`/api/v1/days/${isoDate}/cycle-start`, {
+    headers: {
+      ...apiOriginHeader(page),
+      'X-CSRF-Token': csrf,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    form: { replace_existing: 'true' },
+  });
+  expect(response.status(), `mark cycle start at ${isoDate}`).toBeLessThan(400);
 }
 
 export async function openCalendarDayEditor(page: Page, isoDate: string): Promise<Locator> {

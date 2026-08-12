@@ -1,17 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import {
-  apiOriginHeader,
-  continueFromRecoveryCode,
-  createCredentials,
-  expectInlineRegisterRecoveryStep,
-  readRecoveryCode,
-  registerOwnerViaUI,
-} from './support/auth-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { localeText, localeTextByLocale, type Locale } from './support/locale-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
-import { shiftISODate } from './support/stats-helpers';
-import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
+import {
+  isoToday,
+  markCycleStartViaAPI,
+  registerAndOnboardWithStartDaysAgo,
+  shiftISODate,
+} from './support/stats-helpers';
 
 /**
  * The three late-cycle notice states, rendered.
@@ -36,15 +31,6 @@ import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 const BEYOND_RANGE_KEY = 'dashboard.late_cycle.beyond_range';
 const WITHIN_RANGE_KEY = 'dashboard.late_cycle.within_range';
 const NO_PERSONAL_RANGE_KEY = 'dashboard.late_cycle.no_personal_range';
-
-function isoToday(): string {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
 
 /** Whole calendar days from `fromISO` to `toISO`, DST-proof (UTC arithmetic). */
 function isoDaysBetween(fromISO: string, toISO: string): number {
@@ -89,59 +75,6 @@ function formatCounts(pattern: string, counts: number[]): string {
 
 function lateCycleNotice(page: Page) {
   return page.locator('[data-dashboard-cycle-warnings] [data-dashboard-cycle-day-warning]');
-}
-
-/**
- * Registers an owner and onboards with an explicit last-period-start date,
- * returning that date.
- *
- * Onboarding's own picker is the only way to set the baseline in step 1, and its
- * MinDate is the later of (Jan 1 of the current year) and (today - 60 days), so
- * every anchor below stays inside that window and older cycle starts are added
- * afterwards through the cycle-start endpoint, which has no past-date bound.
- */
-async function registerAndOnboardWithStartDaysAgo(
-  page: Page,
-  prefix: string,
-  startDaysAgo: number
-): Promise<string> {
-  const credentials = createCredentials(prefix);
-  await registerOwnerViaUI(page, credentials);
-  await expectInlineRegisterRecoveryStep(page);
-  await readRecoveryCode(page);
-  await continueFromRecoveryCode(page);
-
-  const startISO = shiftISODate(isoToday(), -startDaysAgo);
-  await selectOnboardingStartDate(page, startISO);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-
-  const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
-  await expect(stepTwoForm).toBeVisible();
-  await Promise.all([
-    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
-  ]);
-
-  await setRequestTimezoneFromBrowser(page);
-  return startISO;
-}
-
-/**
- * Backdates one cycle start. `page.request` sends no Origin of its own and the
- * CSRF middleware validates it on every mutating request under the HTTPS
- * posture, so the header is explicit here.
- */
-async function markCycleStartViaAPI(page: Page, isoDate: string): Promise<void> {
-  const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
-  const response = await page.request.post(`/api/v1/days/${isoDate}/cycle-start`, {
-    headers: {
-      ...apiOriginHeader(page),
-      'X-CSRF-Token': csrf,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    form: { replace_existing: 'true' },
-  });
-  expect(response.status(), `mark cycle start at ${isoDate}`).toBeLessThan(400);
 }
 
 test.describe('Dashboard late-cycle notice', () => {
