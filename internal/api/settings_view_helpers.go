@@ -43,6 +43,8 @@ func (handler *Handler) buildSettingsViewData(c fiber.Ctx, user *models.User, fl
 		"UnpredictableCycle":     viewData.UnpredictableCycle,
 		"AgeGroup":               viewData.AgeGroup,
 		"UsageGoal":              viewData.UsageGoal,
+		"UsageGoalLabelKey":      services.UsageGoalTranslationKey(viewData.UsageGoal),
+		"UsageGoalSummaryKey":    services.UsageGoalSummaryTranslationKey(viewData.UsageGoal),
 		"ShownPeriodTip":         viewData.ShownPeriodTip,
 		"TrackBBT":               viewData.TrackBBT,
 		"TemperatureUnit":        viewData.TemperatureUnit,

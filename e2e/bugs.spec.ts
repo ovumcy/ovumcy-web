@@ -7,8 +7,9 @@ import { saveSettingsLanguage } from './support/language-helpers';
 import {
   dashboardCurrentCycleDay,
   dashboardCurrentPhase,
-  dashboardCycleHero,
-  dashboardPrimarySummaryMode,
+  dashboardStatusHeader,
+  dashboardStatusLine,
+  expectDashboardStatusHeader,
 } from './support/dashboard-helpers';
 import { everyLocaleText, localeKeysMatchingEnglish, localeText } from './support/locale-helpers';
 import {
@@ -361,7 +362,7 @@ test.describe('Bug regressions', () => {
       await expectAutoFillWindowMarkers(page, onboardingDate, true);
     });
 
-    test('dashboard cycle hero next period stays aligned with calendar predicted start', async ({
+    test('dashboard status header next period stays aligned with calendar predicted start', async ({
       page,
     }) => {
       const creds = await registerOwnerAndReachDashboard(page, 'bug01-dashboard-calendar');
@@ -398,14 +399,12 @@ test.describe('Bug regressions', () => {
       await page.goto('/dashboard');
       await expect(page).toHaveURL(/\/dashboard$/);
 
-      const hero = page.locator('[data-dashboard-cycle-hero]');
-      const heroFooter = hero.locator('[data-dashboard-cycle-hero-next-period]');
-      await expect(hero).toBeVisible();
-      await expect(page.locator('[data-dashboard-status-line]')).toHaveCount(0);
+      const header = await expectDashboardStatusHeader(page);
+      const nextPeriod = header.locator('[data-dashboard-next-period]');
 
       const expectedStartLabel = await formatDisplayDate(page, nextPeriodStart);
       const expectedEndLabel = await formatDisplayDate(page, nextPeriodEnd);
-      await expect(heroFooter).toContainText(`${expectedStartLabel} — ${expectedEndLabel}`);
+      await expect(nextPeriod).toContainText(`${expectedStartLabel} — ${expectedEndLabel}`);
 
       await page.goto(`/calendar?month=${nextPeriodStart.slice(0, 7)}&day=${nextPeriodStart}`);
       await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${nextPeriodStart.slice(0, 7)}&day=${nextPeriodStart}`));
@@ -624,15 +623,15 @@ test.describe('Bug regressions', () => {
       await page.goto('/dashboard');
       await expect(page).toHaveURL(/\/dashboard$/);
 
-      // Unpredictable mode is a state the status line declares; assert it on
+      // Unpredictable mode is a state the status header declares; assert it on
       // the hook and the phase attribute rather than on three copy fragments,
       // one of which ("Ovulation:") was a negated literal that any rewording
       // or language switch satisfies.
-      const statusLine = page.locator('[data-dashboard-status-line]');
+      const statusLine = dashboardStatusLine(page);
       await expect(statusLine).toBeVisible();
-      await expect(statusLine).toHaveAttribute('data-dashboard-phase', /.+/);
+      await expect(dashboardStatusHeader(page)).toHaveAttribute('data-dashboard-phase', /.+/);
       // [data-dashboard-next-period] exists only in the predictions-on branch
-      // of the status line, and so does the ovulation item — its absence is the
+      // of the status line — its absence is the
       // structural proof that predictions are off, which the old
       // `not.toContainText('Ovulation:')` only approximated in English.
       await expect(page.locator('[data-dashboard-next-period]')).toHaveCount(0);
@@ -762,27 +761,17 @@ test.describe('Bug regressions', () => {
     test('dashboard menstrual phase stays clear in the primary summary', async ({ page }) => {
       await registerOwnerAndReachDashboard(page, 'improvement-menstrual-icon');
 
-      const mode = await dashboardPrimarySummaryMode(page);
       // The phase is state, so assert the state attribute. The regex it
       // replaces listed the EN and ES spellings as separate alternatives of the
       // same word, which is what a per-language branch degenerates into.
       expect(await dashboardCurrentPhase(page)).toBe('menstrual');
 
-      if (mode === 'hero') {
-        // The menstrual phase card reports its own cycle-day window; reading it
-        // off the card beats matching "Days 1-5" / "Tag 1-5" / "Дни 1-5".
-        const menstrualCard = dashboardCycleHero(page).locator('[data-cycle-hero-phase="menstrual"]');
-        await expect(menstrualCard).toBeVisible();
-        await expect(menstrualCard).toHaveAttribute('data-cycle-hero-phase-start', '1');
-        await expect(menstrualCard).toHaveAttribute('data-cycle-hero-phase-current', 'true');
-        const menstrualEnd = Number(await menstrualCard.getAttribute('data-cycle-hero-phase-end'));
-        expect(menstrualEnd).toBeGreaterThanOrEqual(1);
-        // One rendered-copy assertion: the card prints the window it declares.
-        await expect(menstrualCard).toContainText(String(menstrualEnd));
-      } else {
-        const phaseChip = page.locator('[data-dashboard-status-line] .dashboard-status-item').first();
-        await expect(phaseChip).toContainText('🩸');
-      }
+      // The one header always renders the phase first, glyph included, and the
+      // cycle day sits inside the ring beside it.
+      const phaseChip = dashboardStatusLine(page).locator('.dashboard-status-item').first();
+      await expect(phaseChip).toContainText('🩸');
+      await expect(phaseChip).toContainText(localeText('en', 'phases.menstrual'));
+      expect(await dashboardCurrentCycleDay(page)).toBeGreaterThanOrEqual(1);
     });
 
     test('stats empty state includes illustration and progress affordance for a new owner', async ({

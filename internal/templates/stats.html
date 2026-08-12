@@ -83,13 +83,6 @@
     {{if .ShowIrregularityNotice}}
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_recommendation"}}</div>
     {{end}}
-    {{if .IsOwner}}
-    <div class="journal-panel text-sm space-y-1" data-usage-goal-summary>
-      <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
-      <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
-      <p class="journal-muted text-xs">{{t .Messages "usage_goal.ui_only_hint"}}</p>
-    </div>
-    {{end}}
 
     <div class="grid gap-4 lg:grid-cols-3">
       <article class="journal-card stat-card reveal">

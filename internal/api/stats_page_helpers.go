@@ -153,8 +153,6 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		return nil, err
 	}
 
-	usageGoalLabelKey := services.UsageGoalTranslationKey(user.UsageGoal)
-	usageGoalSummaryKey := services.UsageGoalSummaryTranslationKey(user.UsageGoal)
 	cycleChartSummary := buildStatsCycleChartSummary(messages, viewData)
 	bbtChartSummary := buildStatsBBTChartSummary(messages, viewData.CurrentCycleBBTChart)
 
@@ -208,8 +206,6 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"ShowPerimenopauseHint":               viewData.ShowPerimenopauseHint,
 		"PredictionDisabled":                  viewData.PredictionDisabled,
 		"IsIrregularMode":                     viewData.IsIrregularMode,
-		"UsageGoalLabelKey":                   usageGoalLabelKey,
-		"UsageGoalSummaryKey":                 usageGoalSummaryKey,
 		"CycleChartSummary":                   cycleChartSummary,
 		"BBTChartSummary":                     bbtChartSummary,
 		"IsOwner":                             viewData.IsOwner,

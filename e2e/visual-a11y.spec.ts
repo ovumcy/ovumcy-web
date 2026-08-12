@@ -238,7 +238,6 @@ test.describe('Visual and accessibility regressions', () => {
     await page.goto('/stats');
     await expect(page).toHaveURL(/\/stats$/);
     await assertNoHorizontalOverflow(page);
-    await expect(page.locator('[data-usage-goal-summary]')).toBeVisible();
     await expect(page.locator('[data-stats-factor-context]')).toBeVisible();
     await expect(page.locator('#cycle-chart')).toBeVisible();
     await expect(page.locator('#cycle-chart')).toHaveAttribute('role', 'img');

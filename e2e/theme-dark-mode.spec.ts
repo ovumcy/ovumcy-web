@@ -1,12 +1,10 @@
 import { expect, test, type Frame, type Page } from '@playwright/test';
-import { dashboardCycleHero, dashboardPrimarySummaryMode } from './support/dashboard-helpers';
+import { expectDashboardStatusHeader } from './support/dashboard-helpers';
 import { cancelConfirmDialog } from './support/confirm-dialog-helpers';
 import {
   WCAG_AA_GRAPHIC_CONTRAST,
   applyTheme,
   describeContrast,
-  describeDecoration,
-  measureDecorationLift,
   measureGraphicContrast,
 } from './support/contrast-helpers';
 import {
@@ -171,7 +169,7 @@ test.describe('Theme mode', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(html).toHaveAttribute('data-theme', nextTheme);
-    await dashboardPrimarySummaryMode(page);
+    await expectDashboardStatusHeader(page);
 
     const secondPage = await context.newPage();
     await secondPage.goto('/privacy');
@@ -181,53 +179,27 @@ test.describe('Theme mode', () => {
     await logoutViaAPI(page);
   });
 
-  /**
-   * The ceiling a decorative layer must stay under. In the light theme the hero's
-   * two corner glows lift the card by 1.09:1–1.13:1, which is the subtlety they
-   * were drawn for; this leaves room for that and still fails anything painted as
-   * loudly as a meaningful graphic.
-   */
-  const DECORATION_CEILING = 1.35;
-
-  test('dark theme keeps the cycle ring track visible and drops the light-theme glow', async ({
-    page,
-  }) => {
-    await registerAndReachDashboard(page, 'theme-dark-hero');
+  test('dark theme keeps the cycle ring track visible in the status header', async ({ page }) => {
+    await registerAndReachDashboard(page, 'theme-dark-ring');
     await applyTheme(page, 'dark');
 
-    expect(
-      await dashboardPrimarySummaryMode(page),
-      'the cycle ring only exists on the hero summary, so a fallback dashboard measures nothing'
-    ).toBe('hero');
-
-    const hero = dashboardCycleHero(page);
-    const track = hero.locator('.dashboard-cycle-hero-track');
+    const header = await expectDashboardStatusHeader(page);
+    const track = header.locator('.dashboard-cycle-ring-track');
     await expect(track).toHaveCount(1);
 
     // The track is the remainder of the cycle the phase segments are drawn on —
     // a meaningful graphic, so WCAG 1.4.11 puts its floor at 3:1 against the card.
-    const trackContrast = await measureGraphicContrast(track, hero, 'cycle ring track (dark)');
-    expect(trackContrast.worstRatio, describeContrast(trackContrast)).toBeGreaterThanOrEqual(
+    const darkContrast = await measureGraphicContrast(track, header, 'cycle ring track (dark)');
+    expect(darkContrast.worstRatio, describeContrast(darkContrast)).toBeGreaterThanOrEqual(
       WCAG_AA_GRAPHIC_CONTRAST
     );
 
-    // `::after` first: it is the top-right corner glow, the loudest of the two.
-    for (const pseudo of ['::after', '::before'] as const) {
-      const decoration = await measureDecorationLift(hero, pseudo, `cycle hero ${pseudo} (dark)`);
-      expect(decoration.loudestRatio, describeDecoration(decoration)).toBeLessThanOrEqual(
-        DECORATION_CEILING
-      );
-    }
-
-    // Anti-vacuity: the same reader has to find the light theme's glows. A
-    // decoration reader that silently stopped resolving anything would pass the
-    // dark assertions above by measuring nothing at all.
+    // Anti-vacuity: the same reader has to resolve the light theme's track too.
+    // A reader that silently stopped resolving anything would pass the dark
+    // assertion above by measuring nothing at all.
     await applyTheme(page, 'light');
-    const lightGlow = await measureDecorationLift(hero, '::after', 'cycle hero ::after (light)');
-    expect(lightGlow.stops.length, describeDecoration(lightGlow)).toBeGreaterThan(0);
-    expect(lightGlow.loudestRatio, describeDecoration(lightGlow)).toBeLessThanOrEqual(
-      DECORATION_CEILING
-    );
+    const lightContrast = await measureGraphicContrast(track, header, 'cycle ring track (light)');
+    expect(lightContrast.stops.length, describeContrast(lightContrast)).toBeGreaterThan(0);
 
     await logoutViaAPI(page);
   });

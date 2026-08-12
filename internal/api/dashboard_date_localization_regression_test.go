@@ -12,7 +12,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-func TestDashboardStableHeroRendersEnglishPredictionWindowWithoutFallbackStatus(t *testing.T) {
+func TestDashboardStableHeaderRendersEnglishPredictionWindow(t *testing.T) {
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user := createOnboardingTestUser(t, database, "dashboard-date-localization@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
@@ -42,20 +42,17 @@ func TestDashboardStableHeroRendersEnglishPredictionWindowWithoutFallbackStatus(
 	}
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
-	hero := dashboardElementByDataAttr(document, "data-dashboard-cycle-hero")
-	if hero == nil {
-		t.Fatal("expected stable dashboard cycle hero")
+	header := dashboardElementByDataAttr(document, "data-dashboard-status-header")
+	if header == nil {
+		t.Fatal("expected the dashboard status header")
 	}
-	footerText := dashboardElementTextByDataAttr(t, hero, "data-dashboard-cycle-hero-next-period")
+	nextPeriodText := dashboardElementTextByDataAttr(t, header, "data-dashboard-next-period")
 	exactWindowPattern := regexp.MustCompile(`[A-Z][a-z]{2,8} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2,8} \d{1,2}, \d{4}`)
-	if !exactWindowPattern.MatchString(footerText) {
-		t.Fatalf("expected stable dashboard hero footer to render an English-localized next period window, got %q", footerText)
+	if !exactWindowPattern.MatchString(nextPeriodText) {
+		t.Fatalf("expected the dashboard status header to render an English-localized next period window, got %q", nextPeriodText)
 	}
-	if dashboardElementByDataAttr(document, "data-dashboard-status-line") != nil {
-		t.Fatalf("did not expect duplicated dashboard status line when hero is visible")
-	}
-	if htmlAttr(hero, "data-cycle-hero-approximate") == "true" {
-		t.Fatalf("did not expect exact stable cycle hero to be marked approximate")
+	if htmlAttr(header, "data-cycle-hero-approximate") == "true" {
+		t.Fatalf("did not expect an exact stable cycle context to be marked approximate")
 	}
 }
 
@@ -101,19 +98,16 @@ func TestDashboardEnglishRendersOvulationRangeForIrregularMode(t *testing.T) {
 	}
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
-	hero := dashboardElementByDataAttr(document, "data-dashboard-cycle-hero")
-	if hero == nil {
-		t.Fatal("expected irregular range state to keep the dashboard cycle hero")
+	header := dashboardElementByDataAttr(document, "data-dashboard-status-header")
+	if header == nil {
+		t.Fatal("expected irregular range state to keep the dashboard status header")
 	}
-	footerText := dashboardElementTextByDataAttr(t, hero, "data-dashboard-cycle-hero-next-period")
-	if !regexp.MustCompile(`[A-Z][a-z]{2,8} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2,8} \d{1,2}, \d{4}`).MatchString(footerText) {
-		t.Fatalf("expected English-localized next period range in dashboard hero footer, got %q", footerText)
+	nextPeriodText := dashboardElementTextByDataAttr(t, header, "data-dashboard-next-period")
+	if !regexp.MustCompile(`[A-Z][a-z]{2,8} \d{1,2}, \d{4}\s*—\s*[A-Z][a-z]{2,8} \d{1,2}, \d{4}`).MatchString(nextPeriodText) {
+		t.Fatalf("expected English-localized next period range in the dashboard status header, got %q", nextPeriodText)
 	}
-	if dashboardElementByDataAttr(document, "data-dashboard-status-line") != nil {
-		t.Fatalf("did not expect duplicated dashboard status line when hero is visible")
-	}
-	if htmlAttr(hero, "data-cycle-hero-approximate") != "true" {
-		t.Fatalf("expected irregular range dashboard hero to be marked approximate")
+	if htmlAttr(header, "data-cycle-hero-approximate") != "true" {
+		t.Fatalf("expected the irregular range header to be marked approximate")
 	}
 	explainer := dashboardElementByDataAttr(document, "data-dashboard-prediction-explainer")
 	if explainer == nil {
@@ -165,8 +159,12 @@ func TestDashboardEnglishRendersSharedSparsePredictionExplanationForIrregularMod
 	}
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
-	if dashboardElementByDataAttr(document, "data-dashboard-cycle-hero") != nil {
-		t.Fatal("did not expect dashboard cycle hero before sparse irregular history becomes reliable")
+	ring := dashboardElementByDataAttr(document, "data-dashboard-cycle-ring")
+	if ring == nil {
+		t.Fatal("expected the dashboard status header ring in sparse irregular state")
+	}
+	if got := htmlAttr(ring, "data-cycle-ring-segmented"); got != "false" {
+		t.Fatalf("did not expect a segmented ring before sparse irregular history becomes reliable, got %q", got)
 	}
 	explainer := dashboardElementByDataAttr(document, "data-dashboard-prediction-explainer")
 	if explainer == nil {

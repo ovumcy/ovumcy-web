@@ -144,6 +144,15 @@
             <span class="radio-tile"><span>{{t .Messages "settings.goal.health"}}</span></span>
           </label>
         </div>
+        <div
+          class="journal-panel text-sm space-y-1"
+          data-usage-goal-summary
+          data-usage-goal-label-key="{{.UsageGoalLabelKey}}"
+          data-usage-goal-summary-key="{{.UsageGoalSummaryKey}}">
+          <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
+          <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
+          <p class="journal-muted text-xs">{{t .Messages "usage_goal.ui_only_hint"}}</p>
+        </div>
       </div>
 
       <div class="settings-form-actions">

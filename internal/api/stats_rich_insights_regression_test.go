@@ -120,7 +120,6 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		bodyStringMatch{fragment: `aria-describedby="stats-cycle-trend-summary"`, message: "expected cycle chart summary reference"},
 		bodyStringMatch{fragment: `aria-labelledby="stats-bbt-title"`, message: "expected bbt chart accessible title"},
 		bodyStringMatch{fragment: `aria-describedby="stats-bbt-summary stats-bbt-caption"`, message: "expected bbt chart summary reference"},
-		bodyStringMatch{fragment: `data-usage-goal-summary`, message: "expected stats usage-goal summary panel hook"},
 		bodyStringMatch{fragment: `data-stats-prediction-explainer`, message: "expected stats prediction explainer hook"},
 		bodyStringMatch{fragment: `data-stats-factor-context`, message: "expected stats factor context hook"},
 	)
