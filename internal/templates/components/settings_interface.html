@@ -69,5 +69,19 @@
         <button type="button" class="btn-secondary" data-settings-interface-discard>{{t .Messages "settings.interface.discard"}}</button>
       </div>
     </form>
+
+    <!-- Persistent home of the install offer: the mobile row above the page is a
+         one-time nudge, this entry stays available after it is dismissed. It sits
+         outside the interface form — nothing here is saved to the account. -->
+    <div class="journal-panel settings-install-row" data-pwa-install-settings>
+      <div class="settings-install-copy">
+        <p class="field-label">{{t .Messages "pwa.install.title"}}</p>
+        <p class="journal-muted text-sm" data-pwa-install-hint="prompt">{{t .Messages "pwa.install.prompt_text"}}</p>
+        <p class="journal-muted text-sm" data-pwa-install-hint="ios" hidden>{{t .Messages "pwa.install.ios_text"}}</p>
+        <p class="journal-muted text-sm" data-pwa-install-hint="menu" hidden>{{t .Messages "pwa.install.menu_text"}}</p>
+        <p class="journal-muted text-sm" data-pwa-install-hint="installed" hidden>{{t .Messages "pwa.install.installed_text"}}</p>
+      </div>
+      <button type="button" class="btn-secondary" data-pwa-install-action="install" hidden>{{t .Messages "pwa.install.action.install"}}</button>
+    </div>
   </section>
 {{end}}

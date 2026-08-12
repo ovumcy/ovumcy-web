@@ -104,29 +104,26 @@
       {{end}}
     </header>
 
+    <!-- One compact row, shown only while a native install prompt is pending: the
+         multi-line pitch moved to the settings interface section, which keeps the
+         offer reachable after this row is dismissed. -->
     <section
-      data-pwa-install-banner
+      data-pwa-install-offer
       hidden
-      class="container-main mobile-install-banner sm:hidden"
+      class="container-main mobile-install-offer sm:hidden"
       aria-live="polite">
-      <div class="mobile-install-shell reveal">
-        <div class="mobile-install-copy">
-          <span class="mobile-install-kicker">{{t .Messages "pwa.install.kicker"}}</span>
-          <div class="mobile-install-heading">
-            <img src="/static/brand/ovumcy-icon.svg" width="40" height="40" alt="" class="mobile-install-icon" aria-hidden="true">
-            <div class="space-y-1">
-              <h2 class="mobile-install-title" data-pwa-install-title data-pwa-install-title-key="pwa.install.title">{{t .Messages "pwa.install.title"}}</h2>
-              <p class="mobile-install-text" data-pwa-install-copy="prompt" hidden>{{t .Messages "pwa.install.prompt_text"}}</p>
-              <p class="mobile-install-text" data-pwa-install-copy="ios" hidden>{{t .Messages "pwa.install.ios_text"}}</p>
-              <p class="mobile-install-text" data-pwa-install-copy="menu" hidden>{{t .Messages "pwa.install.menu_text"}}</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="mobile-install-actions">
-          <button type="button" class="btn-primary" data-pwa-install-action="install" hidden>{{t .Messages "pwa.install.action.install"}}</button>
-          <button type="button" class="btn-secondary" data-pwa-install-action="dismiss">{{t .Messages "pwa.install.action.later"}}</button>
-        </div>
+      <div class="mobile-install-row">
+        <button
+          type="button"
+          class="btn-primary mobile-install-cta"
+          data-pwa-install-action="install"
+          data-pwa-install-title
+          data-pwa-install-title-key="pwa.install.title">{{t .Messages "pwa.install.title"}}</button>
+        <button
+          type="button"
+          class="mobile-install-dismiss"
+          data-pwa-install-action="dismiss"
+          aria-label="{{t .Messages "pwa.install.action.later"}}"><span aria-hidden="true">×</span></button>
       </div>
     </section>
 

@@ -48,11 +48,11 @@
   "nav.current_role": "Rôle actuel",
   "nav.logout": "Déconnexion",
 
-  "pwa.install.kicker": "Application mobile",
   "pwa.install.title": "Installer Ovumcy",
   "pwa.install.prompt_text": "Ajoutez-la à votre écran d'accueil pour une expérience plein écran plus rapide.",
   "pwa.install.ios_text": "Ouvrez le menu de partage de Safari, puis appuyez sur Ajouter à l'écran d'accueil.",
   "pwa.install.menu_text": "Ouvrez le menu de votre navigateur et choisissez Ajouter à l'écran d'accueil.",
+  "pwa.install.installed_text": "Ovumcy est déjà installée sur cet appareil.",
   "pwa.install.action.install": "Installer l'application",
   "pwa.install.action.later": "Peut-être plus tard",
 

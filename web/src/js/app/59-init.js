@@ -1,7 +1,8 @@
   function initCSPFriendlyComponents() {
     bindThemeToggleButtons();
     bindMobileMenu();
-    bindPWAInstallBanner();
+    bindPWAInstallOffer();
+    bindPWAInstallSettingsRow();
     if (typeof window.__ovumcyBindLocalizedDateFields === "function") {
       window.__ovumcyBindLocalizedDateFields(document);
     }

@@ -4409,91 +4409,52 @@
   pointer-events: none;
 }
 
-@utility mobile-install-banner {
-  margin-top: 0.9rem;
+@utility mobile-install-offer {
+  margin-top: 0.7rem;
 }
 
-@utility mobile-install-shell {
-  display: grid;
-  gap: 0.9rem;
-  border-radius: 1.15rem;
-  border: 1px solid var(--line-soft);
-  background:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.97),
-      rgba(255, 243, 229, 0.95)
-    ),
-    var(--bg-card);
-  box-shadow: var(--shadow-soft);
-  padding: 0.95rem 1rem;
-
-  :root[data-theme='dark'] & {
-    background:
-      linear-gradient(145deg, rgba(47, 40, 62, 0.98), rgba(34, 28, 45, 0.95)),
-      var(--bg-card);
-  }
-
-  @media (max-width: 640px) {
-    padding: 0.9rem;
-  }
-}
-
-@utility mobile-install-copy {
-  min-width: 0;
-}
-
-@utility mobile-install-kicker {
-  display: inline-block;
-  margin-bottom: 0.45rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent-strong);
-}
-
-@utility mobile-install-heading {
+@utility mobile-install-row {
   display: flex;
-  align-items: flex-start;
-  gap: 0.78rem;
-}
-
-@utility mobile-install-icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  flex: 0 0 2.5rem;
-}
-
-@utility mobile-install-title {
-  margin: 0;
-  font-size: 1.06rem;
-  font-weight: 700;
-  line-height: 1.15;
-  color: var(--text-primary);
-
-  @media (max-width: 640px) {
-    font-size: 1rem;
-  }
-}
-
-@utility mobile-install-text {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.4;
-  color: var(--text-muted);
-}
-
-@utility mobile-install-actions {
-  display: grid;
+  align-items: center;
   gap: 0.5rem;
+}
 
-  & button {
-    display: inline-flex;
-    width: 100%;
-    align-items: center;
-    justify-content: center;
-  }
+@utility mobile-install-cta {
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+}
+
+@utility mobile-install-dismiss {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-card);
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+@utility settings-install-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+@utility settings-install-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
 }
 
 @utility mobile-tabbar {
