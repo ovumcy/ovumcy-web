@@ -29,6 +29,10 @@ func (repo *recordingTimezoneRepo) UpdateUserTimezone(_ context.Context, userID 
 	return repo.updateErr
 }
 
+func (repo *recordingTimezoneRepo) UpdateInterfaceLanguage(context.Context, uint, string) (bool, error) {
+	return true, nil
+}
+
 func (repo *recordingTimezoneRepo) UpdateReminderLeadDays(context.Context, uint, int) error {
 	return nil
 }

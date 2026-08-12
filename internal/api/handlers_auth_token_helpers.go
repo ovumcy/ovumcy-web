@@ -63,7 +63,11 @@ func (handler *Handler) applyStoredLanguage(c fiber.Ctx, user *models.User) {
 	if stored == "" || !handler.i18n.IsSupportedLanguage(stored) {
 		return
 	}
-	handler.setLanguageCookie(c, stored)
+	// Normalize here rather than leaning on setLanguageCookie's own call: the
+	// value written into the cookie is then the one this function validated,
+	// and a later cookie writer that stops normalizing cannot turn a stored
+	// "ru-RU" into a cookie no locale matches.
+	handler.setLanguageCookie(c, handler.i18n.NormalizeLanguage(stored))
 }
 
 func (handler *Handler) clearAuthCookie(c fiber.Ctx) {

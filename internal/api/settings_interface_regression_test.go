@@ -118,6 +118,39 @@ func TestSettingsInterfaceUpdatePersistsTheLanguageOnTheAccount(t *testing.T) {
 	}
 }
 
+// TestSettingsInterfaceUpdateRefusesAnUnsupportedLanguage pins the refusal that
+// replaced silent normalization. Folding an unknown code into the default was
+// harmless while the choice lived only in a cookie the next switch overwrote;
+// stored on the account and re-issued at every sign-in, it would make a
+// language the owner never picked stick to every device they own. Nothing is
+// stored and no cookie is set — the request changes no state at all.
+func TestSettingsInterfaceUpdateRefusesAnUnsupportedLanguage(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-interface-unsupported@example.com")
+
+	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/interface", url.Values{
+		"language": {"zz"},
+		"theme":    {"dark"},
+	}, map[string]string{
+		"Accept": "application/json",
+	})
+	assertStatusCode(t, response, http.StatusBadRequest)
+
+	if got := readAPIError(t, response.Body); got != "invalid settings input" {
+		t.Fatalf("expected invalid settings input error, got %q", got)
+	}
+	if cookie := responseCookie(response.Cookies(), languageCookieName); cookie != nil {
+		t.Fatalf("expected no language cookie for a refused language, got %#v", cookie)
+	}
+
+	var stored models.User
+	if err := ctx.database.First(&stored, ctx.user.ID).Error; err != nil {
+		t.Fatalf("reload user after the refused save: %v", err)
+	}
+	if stored.InterfaceLanguage != "" {
+		t.Fatalf("expected nothing stored for a refused language, got %q", stored.InterfaceLanguage)
+	}
+}
+
 // TestSettingsInterfaceUpdateReportsAFailedAccountWrite proves the save is not
 // silently degraded to a cookie-only change when the account write fails: the
 // owner is told, and the language cookie is NOT issued, so the two stores

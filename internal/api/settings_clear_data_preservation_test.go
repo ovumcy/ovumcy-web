@@ -12,7 +12,8 @@ import (
 // TestClearDataPreservesAccountIdentityFields enforces the SECURITY.md claim:
 //
 //	clear-data does NOT touch email, password hash, recovery code hash,
-//	role, display name, OIDC identity links, TOTP state, or onboarding status.
+//	role, display name, OIDC identity links, TOTP state, onboarding status,
+//	or the interface language.
 //
 // Sister test to TestClearDataRemovesTrackedCalendarEntriesAndResetsCycleSettings,
 // which covers the inverse claim (what clear-data DOES wipe). Together they form
@@ -26,6 +27,10 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 	displayName := "Owner Persona"
 	totpSecret := "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"
 	totpLastUsedStep := int64(1747526400)
+	// A non-default language: seeding the operator default would let the check
+	// below pass against a wipe that reset the column, since the reset value and
+	// the expected value would coincide.
+	interfaceLanguage := "ru"
 	if err := scenario.database.Model(&models.User{}).Where("id = ?", scenario.user.ID).Updates(map[string]any{
 		"display_name":         displayName,
 		"totp_secret":          totpSecret,
@@ -33,6 +38,7 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 		"totp_last_used_step":  totpLastUsedStep,
 		"local_auth_enabled":   true,
 		"onboarding_completed": true,
+		"interface_language":   interfaceLanguage,
 	}).Error; err != nil {
 		t.Fatalf("seed identity-related user fields: %v", err)
 	}
@@ -79,7 +85,14 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 		t.Fatalf("load user after clear-data: %v", err)
 	}
 
-	assertUserIdentityPreserved(t, before, after, displayName, totpSecret, totpLastUsedStep)
+	assertUserIdentityPreserved(t, identityPreservationCase{
+		before:            before,
+		after:             after,
+		displayName:       displayName,
+		totpSecret:        totpSecret,
+		totpLastUsedStep:  totpLastUsedStep,
+		interfaceLanguage: interfaceLanguage,
+	})
 
 	var oidcRowCount int64
 	if err := scenario.database.Model(&models.OIDCIdentity{}).Where("user_id = ?", scenario.user.ID).Count(&oidcRowCount).Error; err != nil {
@@ -90,12 +103,24 @@ func TestClearDataPreservesAccountIdentityFields(t *testing.T) {
 	}
 }
 
+// identityPreservationCase carries the baseline row plus the values seeded
+// explicitly for the columns whose expectation is a literal rather than the
+// before/after pair.
+type identityPreservationCase struct {
+	before, after     models.User
+	displayName       string
+	totpSecret        string
+	totpLastUsedStep  int64
+	interfaceLanguage string
+}
+
 // assertUserIdentityPreserved walks the identity-shaped User columns that the
 // clear-data contract must NOT wipe. Pulled out of the parent test so the
 // per-field branches do not balloon its cyclomatic complexity.
-func assertUserIdentityPreserved(t *testing.T, before, after models.User, displayName, totpSecret string, totpLastUsedStep int64) {
+func assertUserIdentityPreserved(t *testing.T, testCase identityPreservationCase) {
 	t.Helper()
 
+	before, after := testCase.before, testCase.after
 	stringChecks := []struct {
 		name          string
 		before, after string
@@ -104,8 +129,12 @@ func assertUserIdentityPreserved(t *testing.T, before, after models.User, displa
 		{"password_hash", before.PasswordHash, after.PasswordHash},
 		{"recovery_code_hash", before.RecoveryCodeHash, after.RecoveryCodeHash},
 		{"role", before.Role, after.Role},
-		{"display_name", displayName, after.DisplayName},
-		{"totp_secret", totpSecret, after.TOTPSecret},
+		{"display_name", testCase.displayName, after.DisplayName},
+		{"totp_secret", testCase.totpSecret, after.TOTPSecret},
+		// The interface language is a display preference, not part of the
+		// health record: a wipe that reset it would switch the owner's UI back
+		// to the operator default on every device at the next sign-in.
+		{"interface_language", testCase.interfaceLanguage, after.InterfaceLanguage},
 	}
 	for _, check := range stringChecks {
 		if check.before != check.after {
@@ -127,7 +156,7 @@ func assertUserIdentityPreserved(t *testing.T, before, after models.User, displa
 		}
 	}
 
-	if after.TOTPLastUsedStep != totpLastUsedStep {
-		t.Fatalf("expected totp_last_used_step preserved, before=%d after=%d", totpLastUsedStep, after.TOTPLastUsedStep)
+	if after.TOTPLastUsedStep != testCase.totpLastUsedStep {
+		t.Fatalf("expected totp_last_used_step preserved, before=%d after=%d", testCase.totpLastUsedStep, after.TOTPLastUsedStep)
 	}
 }

@@ -223,6 +223,10 @@ func (stub *stubSettingsUserRepo) UpdateDisplayName(context.Context, uint, strin
 	return nil
 }
 
+func (stub *stubSettingsUserRepo) UpdateInterfaceLanguage(context.Context, uint, string) (bool, error) {
+	return true, nil
+}
+
 func (stub *stubSettingsUserRepo) UpdateUserTimezone(context.Context, uint, string) error {
 	return nil
 }

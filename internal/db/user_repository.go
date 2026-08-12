@@ -143,6 +143,28 @@ func (repo *UserRepository) UpdateUserTimezone(ctx context.Context, userID uint,
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("timezone", timezone).Error
 }
 
+// UpdateInterfaceLanguage persists the owner's chosen UI language
+// (users.interface_language, migration 034) scoped strictly to userID. The
+// caller (SettingsService) passes a code already validated against the shipped
+// locale catalogue — this method never validates and writes the single column
+// only. It touches no security-posture field, so it deliberately does not bump
+// auth_session_version.
+//
+// It returns whether a row was actually updated. A settings save is the one
+// caller, and for it a zero-row outcome means the account is gone: reporting it
+// as "saved" would show the owner a success flash for a preference nothing
+// stored. The distinction has to come from here, because an UPDATE that matches
+// nothing is not an error to the driver.
+func (repo *UserRepository) UpdateInterfaceLanguage(ctx context.Context, userID uint, language string) (bool, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("interface_language", language)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
 // UpdateReminderLeadDays persists the owner's shared reminder lead window
 // (users.reminder_lead_days, issue #123) scoped strictly to userID. The caller
 // (SettingsService) is responsible for passing an already-clamped value

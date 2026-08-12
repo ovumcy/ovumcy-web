@@ -18,10 +18,20 @@ func (handler *Handler) UpdateInterfaceSettings(c fiber.Ctx) error {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
 
-	language := handler.i18n.NormalizeLanguage(input.Language)
 	if strings.TrimSpace(input.Language) == "" {
 		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
 	}
+	// A language this build does not ship is REFUSED here rather than folded
+	// into the default. Normalizing it was harmless while the choice lived only
+	// in a cookie the next explicit switch overwrote; now the same value is
+	// stored on the account and re-issued at every sign-in, so a typo or a
+	// hand-made request would make a language the owner never picked stick to
+	// every device they own. The submitted value is bounded by the form's own
+	// options, so refusing it costs nothing an owner can reach.
+	if !handler.i18n.IsSupportedLanguage(input.Language) {
+		return handler.respondMappedError(c, settingsInvalidInputErrorSpec())
+	}
+	language := handler.i18n.NormalizeLanguage(input.Language)
 
 	theme := services.NormalizeInterfaceTheme(input.Theme)
 	if theme == "" {

@@ -109,6 +109,15 @@ type stubSettingsTrackingUserRepo struct {
 	reminderUpdatedUserID     uint
 	reminderLeadDaysPersisted int
 	reminderErr               error
+	// Interface-language write: languageRowMatched is what the repository
+	// reports back, so a test can drive the zero-row outcome an account deleted
+	// mid-request produces. It defaults to false, so a test asserting a
+	// successful save has to say so explicitly.
+	languageCalls         int
+	languageUpdatedUserID uint
+	languagePersisted     string
+	languageRowMatched    bool
+	languageErr           error
 }
 
 func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(context.Context, uint, string) error {
@@ -117,6 +126,13 @@ func (stub *stubSettingsTrackingUserRepo) UpdateDisplayName(context.Context, uin
 
 func (stub *stubSettingsTrackingUserRepo) UpdateUserTimezone(context.Context, uint, string) error {
 	return nil
+}
+
+func (stub *stubSettingsTrackingUserRepo) UpdateInterfaceLanguage(_ context.Context, userID uint, language string) (bool, error) {
+	stub.languageCalls++
+	stub.languageUpdatedUserID = userID
+	stub.languagePersisted = language
+	return stub.languageRowMatched, stub.languageErr
 }
 
 func (stub *stubSettingsTrackingUserRepo) UpdateReminderLeadDays(_ context.Context, userID uint, leadDays int) error {
