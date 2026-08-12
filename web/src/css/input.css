@@ -3499,18 +3499,15 @@
   }
 }
 
+/* Both panels are sized by their own content: a chart panel by the chart shell's
+   own height, an empty-state panel by its single line. The `min-*: 0` pair is the
+   grid-blowout guard and stays. */
 @utility stats-trend-panel {
-  @media (min-width: 1024px) {
-    min-height: 24rem;
-  }
   min-width: 0;
   min-height: 0;
 }
 
 @utility stats-symptoms-panel {
-  @media (min-width: 1024px) {
-    min-height: 24rem;
-  }
   min-width: 0;
   min-height: 0;
 }

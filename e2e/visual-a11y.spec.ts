@@ -78,6 +78,28 @@ async function seedStatsInsightState(page: Page, prefix: string): Promise<void> 
   }
 }
 
+async function assertHeadingStructure(page: Page, label: string): Promise<void> {
+  const result = await page.evaluate(() => {
+    const nodes = Array.from(
+      document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6'),
+    );
+    const levels = nodes.map((node) => Number(node.tagName[1]));
+    const h1Count = levels.filter((level) => level === 1).length;
+    let skipsLevel = false;
+    let previous = 0;
+    for (const level of levels) {
+      if (previous !== 0 && level > previous + 1) skipsLevel = true;
+      previous = level;
+    }
+    return { h1Count, skipsLevel, levels };
+  });
+  expect(result.h1Count, `${label} must have exactly one <h1> (levels: ${result.levels.join(',')})`).toBe(1);
+  expect(
+    result.skipsLevel,
+    `${label} must not skip a heading level (levels: ${result.levels.join(',')})`,
+  ).toBe(false);
+}
+
 test.describe('Visual and accessibility regressions', () => {
   test('mobile dashboard, settings, and privacy stay within the viewport and above the tabbar', async ({
     page,
@@ -268,6 +290,36 @@ test.describe('Visual and accessibility regressions', () => {
     const cycleSummary = page.locator('#stats-cycle-trend-summary');
     await cycleSummary.scrollIntoViewIfNeeded();
     await expectElementAboveMobileTabbar(page, cycleSummary);
+
+    // Desktop, same seeded owner: no symptoms are logged in the last completed
+    // cycle, so the "Top symptoms in your last cycle" panel renders its empty
+    // state beside the BBT chart panel. The two share one `lg:grid-cols-2` row,
+    // and a stretched grid item made the empty card as tall as the chart — a
+    // card of white with one line in it. The card is sized to its own content,
+    // so it must stay well below the chart panel's height.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto('/stats');
+    await expect(page).toHaveURL(/\/stats$/);
+    const symptomsPanel = page.locator('[data-stats-last-cycle-symptoms]');
+    const bbtPanel = page.locator('[data-stats-bbt-panel]');
+    await expect(symptomsPanel.locator('.stats-empty-state')).toBeVisible();
+    await expect(bbtPanel).toBeVisible();
+    // The populated page is the only state that renders a section heading below
+    // the factor-context h2, so the heading walk runs here too — the dedicated
+    // heading test registers a fresh owner and sees the empty state. Pin the
+    // nested heading itself: without it the walk would prove nothing new.
+    await expect(page.locator('[data-stats-factor-recent-cycles] h3')).toBeVisible();
+    await assertHeadingStructure(page, '/stats (populated)');
+    const symptomsBox = await symptomsPanel.boundingBox();
+    const bbtBox = await bbtPanel.boundingBox();
+    expect(symptomsBox, 'last-cycle symptoms panel must have a visible box').not.toBeNull();
+    expect(bbtBox, 'BBT chart panel must have a visible box').not.toBeNull();
+    // Same row: a stretched item shares the chart panel's top edge and height.
+    expect(Math.round(symptomsBox!.y)).toBe(Math.round(bbtBox!.y));
+    expect(
+      symptomsBox!.height,
+      `empty-state card ${symptomsBox!.height}px must not be stretched to the chart panel's ${bbtBox!.height}px`,
+    ).toBeLessThan(bbtBox!.height - 100);
   });
 
   test('mobile tap targets meet the minimum size (tabbar 44px, language pills 40px)', async ({
@@ -410,39 +462,17 @@ test.describe('Visual and accessibility regressions', () => {
   test('owner pages expose a single h1 and never skip heading levels', async ({ page }) => {
     await registerOwnerAndReachDashboard(page, 'visual-heading-order');
 
-    const assertHeadingStructure = async (label: string): Promise<void> => {
-      const result = await page.evaluate(() => {
-        const nodes = Array.from(
-          document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6'),
-        );
-        const levels = nodes.map((node) => Number(node.tagName[1]));
-        const h1Count = levels.filter((level) => level === 1).length;
-        let skipsLevel = false;
-        let previous = 0;
-        for (const level of levels) {
-          if (previous !== 0 && level > previous + 1) skipsLevel = true;
-          previous = level;
-        }
-        return { h1Count, skipsLevel, levels };
-      });
-      expect(result.h1Count, `${label} must have exactly one <h1> (levels: ${result.levels.join(',')})`).toBe(1);
-      expect(
-        result.skipsLevel,
-        `${label} must not skip a heading level (levels: ${result.levels.join(',')})`,
-      ).toBe(false);
-    };
-
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
-    await assertHeadingStructure('/dashboard');
+    await assertHeadingStructure(page, '/dashboard');
 
     await page.goto('/stats');
     await expect(page).toHaveURL(/\/stats$/);
-    await assertHeadingStructure('/stats');
+    await assertHeadingStructure(page, '/stats');
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
-    await assertHeadingStructure('/settings');
+    await assertHeadingStructure(page, '/settings');
 
     // Calendar: open a day so the day panel heading (h2 under the page h1) renders.
     const today = await todayISOFromDashboard(page);
@@ -450,6 +480,6 @@ test.describe('Visual and accessibility regressions', () => {
     await expect(page).toHaveURL(/\/calendar/);
     await page.locator(`[data-day-editor-open="${today}"]`).first().click();
     await expect(page.locator('#day-editor h2')).toBeVisible();
-    await assertHeadingStructure('/calendar');
+    await assertHeadingStructure(page, '/calendar');
   });
 });
