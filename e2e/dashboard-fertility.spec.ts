@@ -76,26 +76,23 @@ test.describe('Dashboard: fertility badge', () => {
   test('eggwhite cervical mucus shows the High fertility badge on dashboard', async ({ page }) => {
     await registerAndSetEggwhiteToday(page, 'fertility-eggwhite');
 
-    // Dashboard hero now carries the high-fertility badge. For the default
-    // usage_goal=health the localized text is "High fertility" and the badge
-    // has neither the warning nor the positive variant class.
+    // The dashboard status header carries the high-fertility badge. For the
+    // default usage_goal=health the localized text is "High fertility" and the
+    // badge has neither the warning nor the positive variant class.
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    const heroBadge = page.locator('[data-dashboard-cycle-hero] [data-fertility-badge]');
-    await expect(heroBadge).toBeVisible();
-    await expect(heroBadge).toHaveAttribute('data-fertility-badge-variant', 'neutral');
-    await expect(heroBadge).toHaveAttribute(
+    const fertilityBadge = page.locator('[data-dashboard-status-line] [data-fertility-badge]');
+    await expect(fertilityBadge).toBeVisible();
+    await expect(fertilityBadge).toHaveAttribute('data-fertility-badge-variant', 'neutral');
+    await expect(fertilityBadge).toHaveAttribute(
       'data-fertility-badge-key',
       'dashboard.high_fertility_badge'
     );
     // One rendered-copy assertion for this surface, taken from the catalogue;
     // the variant is proved by the attribute above rather than by two negated
     // class checks.
-    await expect(heroBadge).toContainText(localeText('en', 'dashboard.high_fertility_badge'));
-    // The fallback `.dashboard-status-item` copy of the badge only renders
-    // when the cycle hero is hidden (`{{if not .CycleHero.Visible}}` in
-    // dashboard.html) — exercised separately by tests that suppress the hero.
+    await expect(fertilityBadge).toContainText(localeText('en', 'dashboard.high_fertility_badge'));
   });
 
   test('marking more than 8 consecutive period days surfaces the long-period warning once', async ({
@@ -176,7 +173,7 @@ test.describe('Dashboard: fertility badge', () => {
     page,
   }) => {
     await registerAndSetEggwhiteToday(page, 'fertility-goals');
-    const heroBadge = page.locator('[data-dashboard-cycle-hero] [data-fertility-badge]');
+    const fertilityBadge = page.locator('[data-dashboard-status-line] [data-fertility-badge]');
 
     // Each goal selects a distinct badge variant + copy key. Asserting the two
     // single-valued attributes replaces the mix of positive copy, negated copy
@@ -191,10 +188,10 @@ test.describe('Dashboard: fertility badge', () => {
     for (const [goal, variant, copyKey] of expectedByGoal) {
       await setUsageGoal(page, goal);
       await page.goto('/dashboard');
-      await expect(heroBadge).toBeVisible();
-      await expect(heroBadge).toHaveAttribute('data-fertility-badge-variant', variant);
-      await expect(heroBadge).toHaveAttribute('data-fertility-badge-key', copyKey);
-      await expect(heroBadge).toContainText(localeText('en', copyKey));
+      await expect(fertilityBadge).toBeVisible();
+      await expect(fertilityBadge).toHaveAttribute('data-fertility-badge-variant', variant);
+      await expect(fertilityBadge).toHaveAttribute('data-fertility-badge-key', copyKey);
+      await expect(fertilityBadge).toContainText(localeText('en', copyKey));
     }
   });
 });

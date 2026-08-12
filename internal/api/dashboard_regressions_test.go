@@ -129,12 +129,12 @@ func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testi
 		t.Fatal("expected stale cycle warning to include direct settings CTA")
 	}
 
-	statusLine := dashboardElementByDataAttr(document, "data-dashboard-status-line")
-	if statusLine == nil {
-		t.Fatal("expected dashboard status line when stale baseline suppresses the hero")
+	header := dashboardElementByDataAttr(document, "data-dashboard-status-header")
+	if header == nil {
+		t.Fatal("expected the dashboard status header while cycle data is stale")
 	}
-	if got := htmlAttr(statusLine, "data-dashboard-phase"); got != "unknown" {
-		t.Fatalf("expected dashboard status line phase %q while cycle data is stale, got %q", "unknown", got)
+	if got := htmlAttr(header, "data-dashboard-phase"); got != "unknown" {
+		t.Fatalf("expected dashboard status header phase %q while cycle data is stale, got %q", "unknown", got)
 	}
 }
 
@@ -162,15 +162,15 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	defer func() { _ = dashboardResponse.Body.Close() }()
 
 	dashboardDocument := mustParseHTMLDocument(t, mustReadBodyString(t, dashboardResponse.Body))
-	dashboardStatusLine := dashboardElementByDataAttr(dashboardDocument, "data-dashboard-status-line")
-	if dashboardStatusLine == nil {
-		t.Fatal("expected dashboard status line while cycle data is stale")
+	dashboardHeader := dashboardElementByDataAttr(dashboardDocument, "data-dashboard-status-header")
+	if dashboardHeader == nil {
+		t.Fatal("expected the dashboard status header while cycle data is stale")
 	}
-	if got := htmlAttr(dashboardStatusLine, "data-dashboard-phase"); got != "unknown" {
-		t.Fatalf("expected dashboard status line phase %q while cycle data is stale, got %q", "unknown", got)
+	if got := htmlAttr(dashboardHeader, "data-dashboard-phase"); got != "unknown" {
+		t.Fatalf("expected dashboard status header phase %q while cycle data is stale, got %q", "unknown", got)
 	}
-	if got := htmlAttr(dashboardStatusLine, "data-fertility-status"); got != "unknown" {
-		t.Fatalf("expected dashboard status line fertility %q while cycle data is stale, got %q", "unknown", got)
+	if got := htmlAttr(dashboardHeader, "data-fertility-status"); got != "unknown" {
+		t.Fatalf("expected dashboard status header fertility %q while cycle data is stale, got %q", "unknown", got)
 	}
 
 	statsRequest := httptest.NewRequest(http.MethodGet, "/stats", nil)
@@ -344,15 +344,15 @@ func TestDashboardAndStatsAgreeOnPhaseAndFertilityOnAFertileWindowDay(t *testing
 	defer func() { _ = dashboardResponse.Body.Close() }()
 
 	dashboardDocument := mustParseHTMLDocument(t, mustReadBodyString(t, dashboardResponse.Body))
-	hero := dashboardElementByDataAttr(dashboardDocument, "data-dashboard-cycle-hero")
-	if hero == nil {
-		t.Fatal("expected the cycle hero on a fresh predictable baseline")
+	header := dashboardElementByDataAttr(dashboardDocument, "data-dashboard-status-header")
+	if header == nil {
+		t.Fatal("expected the status header on a fresh predictable baseline")
 	}
-	if got := htmlAttr(hero, "data-dashboard-phase"); got != "follicular" {
-		t.Fatalf("expected hero phase %q on a fertile-window day, got %q", "follicular", got)
+	if got := htmlAttr(header, "data-dashboard-phase"); got != "follicular" {
+		t.Fatalf("expected status header phase %q on a fertile-window day, got %q", "follicular", got)
 	}
-	if got := htmlAttr(hero, "data-fertility-status"); got != "fertile" {
-		t.Fatalf("expected hero fertility status %q on a fertile-window day, got %q", "fertile", got)
+	if got := htmlAttr(header, "data-fertility-status"); got != "fertile" {
+		t.Fatalf("expected status header fertility status %q on a fertile-window day, got %q", "fertile", got)
 	}
 
 	statsRequest := httptest.NewRequest(http.MethodGet, "/stats", nil)

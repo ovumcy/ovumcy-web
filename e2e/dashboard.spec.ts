@@ -537,8 +537,13 @@ test.describe('Dashboard: today editor', () => {
     await registerOwnerOnDashboard(page, 'dashboard-usage-goal-switch');
 
     const summary = page.locator('[data-usage-goal-summary]');
+    const chip = page.locator('[data-usage-goal-chip]');
     const quickSwitch = page.locator('[data-usage-goal-quick-switch]');
     await expect(summary).toHaveAttribute('data-usage-goal-label-key', 'settings.goal.health');
+    // The header carries the mode as a chip; the two-mode switch is one click
+    // away, behind it.
+    await expect(chip).toContainText(localeText('en', 'settings.goal.health'));
+    await chip.click();
     await expect(quickSwitch).toBeVisible();
 
     // The mode already in force is not offered again; the other two are.

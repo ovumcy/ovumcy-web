@@ -65,13 +65,16 @@ test.describe('Dashboard: pregnancy test pause', () => {
 
     // Pause: the owner dashboard surfaces the pregnancy-paused explainer.
     // Assert the stable explainer key (locale-independent) rather than copy,
-    // and that the segmented cycle hero is suppressed.
+    // and that the ring drops its phase segments while predictions are paused.
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     const explainer = page.locator('[data-dashboard-prediction-explainer]');
     await expect(explainer).toBeVisible();
     await expect(explainer).toHaveAttribute('data-explainer-key', 'prediction.explainer.pregnancy_paused');
-    await expect(page.locator('[data-dashboard-cycle-hero]')).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-cycle-ring]')).toHaveAttribute(
+      'data-cycle-ring-segmented',
+      'false'
+    );
 
     // Removal: the result the owner recorded is theirs to take back. Removing
     // it clears the field to absent data and lifts the pause with it.
