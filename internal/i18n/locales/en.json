@@ -403,6 +403,7 @@
   "dashboard.fertility_badge_positive": "Fertile period, best timing",
   "dashboard.ovulation": "Ovulation",
   "dashboard.ovulation_range": "%s — %s",
+  "dashboard.ovulation_estimate": "around %s",
   "dashboard.ovulation_need_cycles": "3 completed cycles are needed before Ovumcy shows an ovulation range",
   "dashboard.ovulation_approximate": "(approximate)",
   "dashboard.prediction_disclaimer": "These are estimates, not medical advice or a method of contraception.",

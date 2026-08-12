@@ -62,6 +62,8 @@ type DashboardViewData struct {
 	ShowCycleFactors                  bool
 	ShowNotesField                    bool
 	MoreFieldsOpen                    bool
+	ShowOvulationEstimate             bool
+	ShowBBTInVisibleTier              bool
 	AllowManualCycleStart             bool
 	ManualCycleStartPolicy            ManualCycleStartPolicy
 	ShowHighFertilityBadge            bool
@@ -153,6 +155,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		hasCycleFactorExplanation,
 	)
 	visibility := dashboardOwnerVisibilityState(user, today, now, location)
+	timingFrame := resolveDashboardTimingFrame(user, cycleContext, visibility)
 	showHighFertilityBadge := dashboardHighFertilityBadge(user, todayLog)
 	showSpottingCycleWarning := dashboardSpottingCycleWarning(logs, todayLog, today, location)
 	reminderBanner := DashboardReminderBanner{}
@@ -183,7 +186,9 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowCervicalMucus:                 visibility.ShowCervicalMucus,
 		ShowCycleFactors:                  visibility.ShowCycleFactors,
 		ShowNotesField:                    visibility.ShowNotesField,
-		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility),
+		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
+		ShowOvulationEstimate:             timingFrame.ShowOvulationEstimate,
+		ShowBBTInVisibleTier:              timingFrame.BBTInVisibleTier,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:            cycleStart.Policy,
 		ShowHighFertilityBadge:            showHighFertilityBadge,
@@ -218,13 +223,40 @@ type dashboardOwnerVisibility struct {
 	AllowManualCycleStart bool
 }
 
+// dashboardTimingFrame is the goal-aware half of the dashboard. An account
+// tracking to conceive is on the page for timing, so the status header carries
+// the ovulation estimate beside the next-period one and the morning temperature
+// such an account records daily sits in the journal's visible tier instead of
+// behind the "More" disclosure. Every other goal reads the page unchanged.
+type dashboardTimingFrame struct {
+	ShowOvulationEstimate bool
+	BBTInVisibleTier      bool
+}
+
+// resolveDashboardTimingFrame decides that frame from the resolved usage goal.
+// The ovulation estimate follows the next-period item's gating exactly: a
+// suppressed prediction (unpredictable cycle, pregnancy pause) stays suppressed
+// here too, and BBT keeps existing only where the tracking settings grant it.
+func resolveDashboardTimingFrame(user *models.User, cycleContext DashboardCycleContext, visibility dashboardOwnerVisibility) dashboardTimingFrame {
+	if !IsOwnerUser(user) || NormalizeUsageGoal(user.UsageGoal) != models.UsageGoalTrying {
+		return dashboardTimingFrame{}
+	}
+	return dashboardTimingFrame{
+		ShowOvulationEstimate: !cycleContext.PredictionDisabled,
+		BBTInVisibleTier:      visibility.ShowBBTField,
+	}
+}
+
 // dashboardMoreFieldsHoldData answers whether the journal's "More" disclosure
 // must render open: it does exactly when today already holds one of the values
 // that live behind it. A field the owner's tracking settings hide is not
 // rendered at all, so a value left behind in its column cannot open the
 // disclosure over a control that does not exist — the visibility flags gate
 // every clause. The pregnancy test has no tracking toggle and is always there.
-func dashboardMoreFieldsHoldData(entry models.DailyLog, visibility dashboardOwnerVisibility) bool {
+// BBT is counted only while it is behind the disclosure: for a goal that lifts
+// it into the visible tier a recorded temperature is already in the open, and
+// opening the disclosure over it would fold nothing.
+func dashboardMoreFieldsHoldData(entry models.DailyLog, visibility dashboardOwnerVisibility, bbtInVisibleTier bool) bool {
 	if visibility.ShowSexChip && NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone {
 		return true
 	}
@@ -234,7 +266,7 @@ func dashboardMoreFieldsHoldData(entry models.DailyLog, visibility dashboardOwne
 	if NormalizeDayPregnancyTest(entry.PregnancyTest) != models.PregnancyTestNone {
 		return true
 	}
-	if visibility.ShowBBTField && entry.BBT != nil && IsValidDayBBT(entry.BBT) {
+	if visibility.ShowBBTField && !bbtInVisibleTier && entry.BBT != nil && IsValidDayBBT(entry.BBT) {
 		return true
 	}
 	if visibility.ShowCycleFactors && len(DayCycleFactorKeySet(entry.CycleFactorKeys)) > 0 {

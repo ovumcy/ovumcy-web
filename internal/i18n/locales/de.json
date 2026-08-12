@@ -403,6 +403,7 @@
   "dashboard.fertility_badge_positive": "Fruchtbare Phase, beste Zeit",
   "dashboard.ovulation": "Eisprung",
   "dashboard.ovulation_range": "%s — %s",
+  "dashboard.ovulation_estimate": "etwa %s",
   "dashboard.ovulation_need_cycles": "3 abgeschlossene Zyklen sind erforderlich, bevor Ovumcy einen Bereich für den Eisprung anzeigen kann",
   "dashboard.ovulation_approximate": "(ungefähr)",
   "dashboard.prediction_disclaimer": "Dies sind Schätzungen, keine medizinische Beratung und keine Verhütungsmethode.",

@@ -73,6 +73,29 @@
                 {{end}}
               </span>
             </span>
+            {{/* The goal decides how timing is framed: an account tracking to
+                 conceive is here for the fertile window, so the same status line
+                 also names the ovulation estimate. It rides the next-period
+                 item's gating — a suppressed prediction never reaches this
+                 branch — and stays an estimate in its own wording. */}}
+            {{if .ShowOvulationEstimate}}
+            <span class="dashboard-status-separator" aria-hidden="true">·</span>
+            <span class="dashboard-status-item">{{t .Messages "dashboard.ovulation"}}:
+              <span data-dashboard-ovulation>
+                {{if .DisplayOvulationImpossible}}
+                  {{t .Messages "dashboard.ovulation_unavailable"}}
+                {{else if .DisplayOvulationUseRange}}
+                  {{printf (t .Messages "dashboard.ovulation_range") (formatLocalizedDate .Lang .DisplayOvulationRangeStart "display") (formatLocalizedDate .Lang .DisplayOvulationRangeEnd "display")}}
+                {{else if .DisplayOvulationNeedsData}}
+                  {{t .Messages "dashboard.ovulation_need_cycles"}}
+                {{else if .DisplayOvulationDate.IsZero}}
+                  {{.NoDataLabel}}
+                {{else}}
+                  {{printf (t .Messages "dashboard.ovulation_estimate") (formatLocalizedDate .Lang .DisplayOvulationDate "display")}}{{if not .DisplayOvulationExact}} <span class="journal-muted">{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
+                {{end}}
+              </span>
+            </span>
+            {{end}}
             {{if .CycleHero.Approximate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
             <span class="dashboard-status-item journal-muted" data-dashboard-estimate-qualifier>{{t .Messages "dashboard.cycle_hero_estimated"}}</span>
@@ -267,6 +290,24 @@
           {{template "symptom_options" (dict "Messages" .Messages "PrimarySymptoms" .PrimarySymptoms "ExtraSymptoms" .ExtraSymptoms "HasExtraSymptoms" .HasExtraSymptoms "SelectedSymptomID" .SelectedSymptomID "Lang" .Lang "Compact" false "IncludePreviewHooks" false)}}
         </fieldset>
 
+        {{/* One temperature field, placed by the goal the server resolved: a
+             morning reading is part of the daily routine while trying to
+             conceive, so it stays in the open there and waits behind "More"
+             for every other goal. */}}
+        {{$bbtField := dict
+          "Messages" .Messages
+          "FieldID" "dashboard-bbt"
+          "Value" (displayBBT .TodayEntry.BBT .TemperatureUnit)
+          "TemperatureUnit" .TemperatureUnit
+          "TemperatureInputMin" .TemperatureInputMin
+          "TemperatureInputMax" .TemperatureInputMax
+          "TemperatureRangeError" .TemperatureRangeError
+          "TemperatureUnitSymbol" .TemperatureUnitSymbol
+          "TemperatureRangeHint" .TemperatureRangeHint}}
+        {{if and .ShowBBTField .ShowBBTInVisibleTier}}
+        {{template "temperature_input_field" $bbtField}}
+        {{end}}
+
         {{/* One tap is enough on this screen, so the tier above holds only what
              a day is usually logged with. Everything rarer waits behind one
              disclosure — and the disclosure renders open whenever today already
@@ -304,17 +345,8 @@
               {{template "pregnancy_test_options" (dict "Messages" .Messages "SelectedPregnancyTest" .TodayEntry.PregnancyTest "Compact" false)}}
             </fieldset>
 
-            {{if .ShowBBTField}}
-            {{template "temperature_input_field" (dict
-              "Messages" .Messages
-              "FieldID" "dashboard-bbt"
-              "Value" (displayBBT .TodayEntry.BBT .TemperatureUnit)
-              "TemperatureUnit" .TemperatureUnit
-              "TemperatureInputMin" .TemperatureInputMin
-              "TemperatureInputMax" .TemperatureInputMax
-              "TemperatureRangeError" .TemperatureRangeError
-              "TemperatureUnitSymbol" .TemperatureUnitSymbol
-              "TemperatureRangeHint" .TemperatureRangeHint)}}
+            {{if and .ShowBBTField (not .ShowBBTInVisibleTier)}}
+            {{template "temperature_input_field" $bbtField}}
             {{end}}
 
             {{if .ShowCycleFactors}}

@@ -519,6 +519,7 @@
   "dashboard.fertility_badge_positive": "Période fertile, meilleur moment",
   "dashboard.ovulation": "Ovulation",
   "dashboard.ovulation_range": "%s — %s",
+  "dashboard.ovulation_estimate": "vers le %s",
   "dashboard.ovulation_need_cycles": "3 cycles terminés sont nécessaires avant qu'Ovumcy affiche une plage d'ovulation",
   "dashboard.ovulation_approximate": "(approximatif)",
   "dashboard.prediction_disclaimer": "Ce sont des estimations, pas un avis médical ni une méthode de contraception.",
