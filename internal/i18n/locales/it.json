@@ -449,6 +449,7 @@
   "dashboard.cycle_factors.medication_change": "Cambio di farmaco",
   "dashboard.notes": "Note",
   "dashboard.fill_yesterday": "Ieri",
+  "dashboard.entry_date_switch": "Cambia la data della voce",
   "dashboard.add_note": "Aggiungi nota",
   "dashboard.edit_note": "Modifica nota",
   "dashboard.hide_note": "Nascondi nota",

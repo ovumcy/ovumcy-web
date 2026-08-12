@@ -449,6 +449,7 @@
   "dashboard.cycle_factors.medication_change": "Änderung der Medikation",
   "dashboard.notes": "Notizen",
   "dashboard.fill_yesterday": "Gestern",
+  "dashboard.entry_date_switch": "Eintragsdatum ändern",
   "dashboard.add_note": "Notiz hinzufügen",
   "dashboard.edit_note": "Notiz bearbeiten",
   "dashboard.hide_note": "Notiz ausblenden",

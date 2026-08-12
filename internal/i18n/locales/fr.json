@@ -565,6 +565,7 @@
   "dashboard.cycle_factors.medication_change": "Changement de médicament",
   "dashboard.notes": "Notes",
   "dashboard.fill_yesterday": "Hier",
+  "dashboard.entry_date_switch": "Changer la date de l'entrée",
   "dashboard.add_note": "Ajouter une note",
   "dashboard.edit_note": "Modifier la note",
   "dashboard.hide_note": "Masquer la note",
