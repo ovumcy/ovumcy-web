@@ -319,7 +319,7 @@ func isStatsIrregularMode(user *models.User) bool {
 }
 
 func buildStatsPredictionReliability(user *models.User, flags StatsFlags, stats CycleStats) (int, bool, string, string, bool) {
-	if flags.CompletedCycleCount < statsMinimumInsightsCycles || DashboardPredictionDisabled(user) {
+	if !HasPersonalCycleRange(user, flags.CompletedCycleCount) {
 		return 0, false, "", "", false
 	}
 

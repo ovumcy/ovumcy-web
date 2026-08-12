@@ -490,7 +490,12 @@
 
   "dashboard.current_phase": "Phase actuelle",
   "dashboard.cycle_day": "Jour du cycle",
-  "dashboard.cycle_day_long_hint": "Plus long que votre cycle habituel (%d jours).",
+  "dashboard.late_cycle.beyond_range.one": "Ce cycle dure %d jour de plus que votre plage habituelle.",
+  "dashboard.late_cycle.beyond_range.other": "Ce cycle dure %d jours de plus que votre plage habituelle.",
+  "dashboard.late_cycle.within_range.one": "Toujours dans votre plage enregistrée : %d à %d jour.",
+  "dashboard.late_cycle.within_range.other": "Toujours dans votre plage enregistrée : %d à %d jours.",
+  "dashboard.late_cycle.no_personal_range": "Pour l'instant, seulement le jour du cycle : une plage personnelle demande plus de cycles terminés.",
+  "dashboard.late_cycle.actions": "Vous pouvez noter :",
   "dashboard.cycle_day_stale_hint": "Les données du cycle peuvent être obsolètes. Mettez à jour la date de début de vos dernières règles.",
   "dashboard.phase_estimated": "Phase affichée à titre d'estimation en raison de valeurs de référence obsolètes.",
   "dashboard.next_period": "Prochaines règles",
