@@ -66,6 +66,20 @@ func TestShouldAskCycleStartQuestionDoesNotWaitForTheStoredPeriodFlag(t *testing
 	}
 }
 
+// A nil location is UTC, as everywhere else in this policy — a caller that
+// omits it must not get a different answer than one passing time.UTC.
+func TestShouldAskCycleStartQuestionTreatsANilLocationAsUTC(t *testing.T) {
+	user := &models.User{}
+	logs := []models.DailyLog{
+		{Date: mustParseCycleStartPolicyDay(t, "2026-02-01"), IsPeriod: true, CycleStart: true},
+	}
+	day := mustParseCycleStartPolicyDay(t, "2026-03-01")
+
+	if !ShouldAskCycleStartQuestion(user, logs, models.DailyLog{}, day, day, nil) {
+		t.Fatal("expected a nil location to resolve to UTC and keep the question")
+	}
+}
+
 func TestShouldAskCycleStartQuestionStaysSilentOutsideTheSuggestionState(t *testing.T) {
 	anchor := mustParseCycleStartPolicyDay(t, "2026-02-01")
 	day := mustParseCycleStartPolicyDay(t, "2026-03-01")

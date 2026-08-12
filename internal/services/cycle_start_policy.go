@@ -130,11 +130,11 @@ func ShouldSuggestManualCycleStart(user *models.User, logs []models.DailyLog, lo
 // there would have to replace that start, which is the separate manual control's
 // confirmation flow, not a calm one-tap question.
 func ShouldAskCycleStartQuestion(user *models.User, logs []models.DailyLog, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) bool {
-	if !cycleStartGapSuggestsNewCycle(user, logs, logEntry, day, now, location) {
-		return false
-	}
 	if location == nil {
 		location = time.UTC
+	}
+	if !cycleStartGapSuggestsNewCycle(user, logs, logEntry, day, now, location) {
+		return false
 	}
 	return findCompetingCycleStart(logs, DateAtLocation(day.In(location), location), location).IsZero()
 }
