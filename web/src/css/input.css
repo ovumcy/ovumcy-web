@@ -726,6 +726,28 @@
   }
 }
 
+/* The desktop settings entry, marked while settings is the current section. Fill and
+   text repeat nav-link-active so the chip reads as active exactly like the section
+   links beside it; the border turns solid because the resting chip is dashed. The
+   declarations hang off &.nav-user-chip rather than the bare class: Tailwind emits a
+   custom utility wherever its property group falls, which puts this one *before*
+   nav-user-chip and nav-user-chip-empty, and at equal specificity the resting fill and
+   the empty-state text colour would win. Two classes outrank one whatever the order. */
+@utility nav-user-chip-active {
+  &.nav-user-chip {
+    border-style: solid;
+    border-color: rgba(212, 165, 116, 0.62);
+    background: rgba(232, 196, 168, 0.56);
+    color: #6f4e33;
+  }
+
+  :root[data-theme='dark'] &.nav-user-chip {
+    border-color: rgba(159, 124, 215, 0.62);
+    background: rgba(159, 124, 215, 0.34);
+    color: #f2e8ff;
+  }
+}
+
 @utility nav-logout-form {
   margin: 0;
 }

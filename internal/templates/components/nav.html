@@ -2,9 +2,10 @@
 <a
   id="{{.ElementID}}"
   href="/settings#settings-account"
-  class="role-chip nav-user-chip{{if .Block}} block{{end}}{{if not (hasDisplayName .CurrentUser)}} nav-user-chip-empty{{end}}"
+  class="role-chip nav-user-chip{{if .Block}} block{{end}}{{if not (hasDisplayName .CurrentUser)}} nav-user-chip-empty{{end}}{{if .Active}} nav-user-chip-active{{end}}"
   title="{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}"
   aria-label="{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}"
+  {{if .Active}}aria-current="page"{{end}}
   {{if .SwapOOB}}hx-swap-oob="outerHTML"{{end}}>
   <span class="nav-user-chip-icon" aria-hidden="true">👤</span>
   {{if hasDisplayName .CurrentUser}}

@@ -73,6 +73,57 @@ func TestProfileUpdateHTMXReturnsUnicodeSafeIdentityOOBMarkup(t *testing.T) {
 	}
 }
 
+// TestProfileUpdateHTMXKeepsTheDesktopChipMarkedAsTheCurrentSection covers the
+// out-of-band half of the desktop settings marking. The chip is the only desktop
+// route to settings and carries the section's active state; this swap replaces it
+// while the owner is on the settings page — the display-name form renders nowhere
+// else — so a replacement that dropped the marking would clear the highlight
+// until the next full page load. The mobile chip stays unmarked, matching the
+// base layout, where the bottom tab bar does the marking.
+func TestProfileUpdateHTMXKeepsTheDesktopChipMarkedAsTheCurrentSection(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "profile-htmx-active@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	form := url.Values{"display_name": {"Maya"}}
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/users/current/profile", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Cookie", authCookie)
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Accept-Language", "en")
+
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("profile update request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200 for htmx profile update, got %d", response.StatusCode)
+	}
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+	desktop := htmlElementByID(document, "nav-user-chip-desktop")
+	if desktop == nil {
+		t.Fatalf("expected the desktop identity chip in the out-of-band swap")
+	}
+	if !navLinkIsActive(desktop, "nav-user-chip-active") {
+		t.Errorf(
+			"the swapped desktop chip lost the settings marking (class=%q aria-current=%q)",
+			htmlAttr(desktop, "class"), htmlAttr(desktop, "aria-current"),
+		)
+	}
+
+	mobile := htmlElementByID(document, "nav-user-chip-mobile")
+	if mobile == nil {
+		t.Fatalf("expected the mobile identity chip in the out-of-band swap")
+	}
+	if strings.Contains(htmlAttr(mobile, "class"), "nav-user-chip-active") || htmlAttr(mobile, "aria-current") != "" {
+		t.Errorf("the swapped mobile chip must stay unmarked, as the base layout renders it")
+	}
+}
+
 func TestProfileUpdateHTMXReturnsFallbackIdentityWhenDisplayNameCleared(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "profile-htmx-clear@example.com", "StrongPass1", true)

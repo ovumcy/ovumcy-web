@@ -274,6 +274,72 @@ func TestDesktopHeaderOffersASingleSettingsEntry(t *testing.T) {
 	}
 }
 
+// navLinkIsActive reports whether a navigation element carries the active
+// treatment: the nav-link-active / nav-user-chip-active class family plus the
+// aria-current="page" semantics that make the marking readable to assistive
+// technology.
+func navLinkIsActive(node *html.Node, activeClass string) bool {
+	return slices.Contains(strings.Fields(htmlAttr(node, "class")), activeClass) &&
+		htmlAttr(node, "aria-current") == "page"
+}
+
+// TestDesktopSettingsEntryMarksSettingsAsTheCurrentSection covers a loss that
+// came with the single-settings-entry change: the removed gear link had been the
+// desktop element carrying /settings's active state, and the surviving identity
+// chip did not take it over, so on /settings the desktop navigation marked no
+// current section at all while Today / Calendar / Insights each marked theirs.
+// The chip now computes its state through the same isActiveRoute call the
+// section links use, and the mobile menu chip stays unmarked because the bottom
+// tab bar is what marks the current section on a phone.
+func TestDesktopSettingsEntryMarksSettingsAsTheCurrentSection(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "settings-active-state@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	for _, path := range []string{"/dashboard", "/calendar", "/stats", "/settings"} {
+		document := mustParseHTMLDocument(t, fetchPageBody(t, app, path, authCookie))
+
+		desktop := desktopPrimaryNavigation(document)
+		if desktop == nil {
+			t.Fatalf("%s: expected the desktop primary navigation to render", path)
+		}
+		chip := htmlElementByID(desktop, "nav-user-chip-desktop")
+		if chip == nil {
+			t.Fatalf("%s: expected the desktop settings entry to render", path)
+		}
+
+		onSettings := path == "/settings"
+		if got := navLinkIsActive(chip, "nav-user-chip-active"); got != onSettings {
+			t.Errorf(
+				"%s: the desktop settings entry reports active=%t, expected %t (class=%q aria-current=%q)",
+				path, got, onSettings, htmlAttr(chip, "class"), htmlAttr(chip, "aria-current"),
+			)
+		}
+
+		// The mechanism is shared, so the section links must keep marking their
+		// own page: an active chip that came at their cost is not the fix.
+		insights := htmlElementByAttr(desktop, "data-nav-link", "insights")
+		if insights == nil {
+			t.Fatalf("%s: expected the insights section link to render", path)
+		}
+		if got, want := slices.Contains(strings.Fields(htmlAttr(insights, "class")), "nav-link-active"), path == "/stats"; got != want {
+			t.Errorf("%s: the insights section link reports active=%t, expected %t", path, got, want)
+		}
+
+		mobileMenuChip := htmlElementByID(document, "nav-user-chip-mobile")
+		if mobileMenuChip == nil {
+			t.Fatalf("%s: expected the mobile menu account chip to render", path)
+		}
+		if slices.Contains(strings.Fields(htmlAttr(mobileMenuChip, "class")), "nav-user-chip-active") ||
+			htmlAttr(mobileMenuChip, "aria-current") != "" {
+			t.Errorf(
+				"%s: the mobile menu account chip must stay unmarked — the bottom tab bar marks the current section on a phone, and two markings read as two current pages",
+				path,
+			)
+		}
+	}
+}
+
 // TestMobileHeaderMenuCarriesOnlyAccountEntries pins the single-navigation
 // contract for mobile: the header menu used to repeat Today / Calendar /
 // Insights / Settings, so a phone carried two navigations to the same four
