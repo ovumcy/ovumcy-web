@@ -3,10 +3,13 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/net/html"
 )
 
 // TestStatsPageRendersRichInsightsAndBBTChart guards the structural contracts
@@ -121,4 +124,122 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		bodyStringMatch{fragment: `data-stats-prediction-explainer`, message: "expected stats prediction explainer hook"},
 		bodyStringMatch{fragment: `data-stats-factor-context`, message: "expected stats factor context hook"},
 	)
+}
+
+// renderStatsInsightsPage drives a stats page render for an owner with four
+// recorded period starts (three completed cycles), so the insights branch of
+// stats.html is exercised. When unpredictableCycle is set, predictions are off
+// and the reliability signal is gated away, which is the negative half of
+// TestStatsPageAttachesPredictionReliabilityToPredictionContext.
+func renderStatsInsightsPage(t *testing.T, email string, unpredictableCycle bool) (string, *html.Node) {
+	t.Helper()
+
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	currentCycleStart := today.AddDate(0, 0, -8)
+	logs := []models.DailyLog{
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -84), IsPeriod: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -56), IsPeriod: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: currentCycleStart.AddDate(0, 0, -28), IsPeriod: true, Flow: models.FlowMedium},
+		{UserID: user.ID, Date: currentCycleStart, IsPeriod: true, Flow: models.FlowMedium},
+	}
+	if err := database.Create(&logs).Error; err != nil {
+		t.Fatalf("create period logs: %v", err)
+	}
+	updates := map[string]any{"last_period_start": currentCycleStart}
+	if unpredictableCycle {
+		updates["unpredictable_cycle"] = true
+	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
+		t.Fatalf("update user settings: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("stats request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	rendered := mustReadBodyString(t, response.Body)
+	return rendered, mustParseHTMLDocument(t, rendered)
+}
+
+func statsKPICards(document *html.Node) []*html.Node {
+	return htmlFindElements(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "article" && htmlHasClass(node, "stat-card")
+	})
+}
+
+func statsPredictionReliabilityLine(document *html.Node) *html.Node {
+	return htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-prediction-reliability")
+	})
+}
+
+// TestStatsPageAttachesPredictionReliabilityToPredictionContext pins where the
+// prediction-reliability signal lives: it is context attached to the
+// prediction, not a fourth metric standing beside the three KPI numbers. The
+// KPI row therefore stays at three stat cards whether or not the signal is
+// shown, and the signal renders as a context line carrying the chosen
+// reliability label key on data-prediction-reliability. Its gate is unchanged
+// — the line appears exactly when the service sets ShowPredictionReliability,
+// so the predictions-off owner sees the same three cards and no line.
+func TestStatsPageAttachesPredictionReliabilityToPredictionContext(t *testing.T) {
+	reliabilityLabelKeys := map[string]struct{}{
+		"stats.reliability.early":    {},
+		"stats.reliability.building": {},
+		"stats.reliability.stable":   {},
+		"stats.reliability.variable": {},
+	}
+
+	t.Run("signal shown", func(t *testing.T) {
+		rendered, document := renderStatsInsightsPage(t, "stats-reliability-context@example.com", false)
+
+		if cards := statsKPICards(document); len(cards) != 3 {
+			t.Errorf("expected the KPI row to hold 3 stat cards, got %d", len(cards))
+		}
+
+		reliability := statsPredictionReliabilityLine(document)
+		if reliability == nil {
+			t.Fatal("expected stats page to render the data-prediction-reliability context line")
+		}
+		labelKey := htmlAttr(reliability, "data-prediction-reliability")
+		if _, ok := reliabilityLabelKeys[labelKey]; !ok {
+			t.Fatalf("expected a reliability label key on the context line, got %q", labelKey)
+		}
+
+		for node := reliability.Parent; node != nil; node = node.Parent {
+			if node.Type == html.ElementNode && htmlHasClass(node, "stat-card") {
+				t.Fatal("reliability context line must not sit inside a KPI stat card")
+			}
+		}
+
+		linePosition := strings.Index(rendered, "data-prediction-reliability")
+		cardPosition := strings.Index(rendered, "stat-card")
+		if linePosition < 0 || cardPosition < 0 || linePosition > cardPosition {
+			t.Fatalf("expected the reliability context line to precede the KPI row (line at %d, first card at %d)", linePosition, cardPosition)
+		}
+	})
+
+	t.Run("signal gated off", func(t *testing.T) {
+		_, document := renderStatsInsightsPage(t, "stats-reliability-gated@example.com", true)
+
+		if cards := statsKPICards(document); len(cards) != 3 {
+			t.Fatalf("expected the KPI row to hold 3 stat cards with predictions off, got %d", len(cards))
+		}
+		if statsPredictionReliabilityLine(document) != nil {
+			t.Fatal("did not expect a reliability context line while predictions are disabled")
+		}
+	})
 }
