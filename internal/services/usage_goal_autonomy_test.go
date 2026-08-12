@@ -28,6 +28,10 @@ func (repo *usageGoalRecordingRepo) UpdateDisplayName(context.Context, uint, str
 	return nil
 }
 
+func (repo *usageGoalRecordingRepo) UpdateInterfaceLanguage(context.Context, uint, string) (bool, error) {
+	return true, nil
+}
+
 func (repo *usageGoalRecordingRepo) UpdateUserTimezone(context.Context, uint, string) error {
 	return nil
 }

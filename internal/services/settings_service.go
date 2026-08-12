@@ -15,6 +15,10 @@ var (
 	ErrSettingsPasswordMissing     = errors.New("settings password missing")
 	ErrSettingsPasswordInvalid     = errors.New("settings password invalid")
 	ErrSettingsLocalPasswordNotSet = errors.New("settings local password not set")
+	// ErrSettingsInterfaceLanguageNotStored is returned when the interface-language
+	// write matched no row — the account was deleted between the request's session
+	// check and the save. It is an internal failure, not owner-fault input.
+	ErrSettingsInterfaceLanguageNotStored = errors.New("settings interface language not stored")
 	// ErrSettingsReauthRateLimited is returned once the per-account re-auth
 	// budget is spent. It is deliberately returned BEFORE the password is
 	// compared, so an exhausted budget refuses even the correct password.
@@ -76,6 +80,7 @@ func (attempt ReauthAttempt) at() time.Time {
 type SettingsUserRepository interface {
 	UpdateDisplayName(ctx context.Context, userID uint, displayName string) error
 	UpdateUserTimezone(ctx context.Context, userID uint, timezone string) error
+	UpdateInterfaceLanguage(ctx context.Context, userID uint, language string) (bool, error)
 	UpdateReminderLeadDays(ctx context.Context, userID uint, leadDays int) error
 	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, mustChangePassword bool) error
 	UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error
@@ -263,8 +268,19 @@ func (service *SettingsService) SaveUsageGoal(ctx context.Context, userID uint, 
 // Like the reminder and webhook saves it does NOT bump auth_session_version —
 // the language of the interface is not part of the account's security posture,
 // so changing it must not sign the owner's other devices out.
+// A zero-row write is reported as ErrSettingsInterfaceLanguageNotStored rather
+// than as success: GORM answers a no-match UPDATE with a nil error, so a save
+// against an account that no longer exists would otherwise reach the owner as a
+// success flash for a preference nothing kept.
 func (service *SettingsService) SaveInterfaceLanguage(ctx context.Context, userID uint, language string) error {
-	return service.users.UpdateByID(ctx, userID, map[string]any{"interface_language": language})
+	stored, err := service.users.UpdateInterfaceLanguage(ctx, userID, language)
+	if err != nil {
+		return err
+	}
+	if !stored {
+		return ErrSettingsInterfaceLanguageNotStored
+	}
+	return nil
 }
 
 // SaveTrackingSettings persists the tracking preferences. The three section
