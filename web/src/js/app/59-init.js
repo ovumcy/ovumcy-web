@@ -9,6 +9,8 @@
     bindBinaryToggles(document);
     bindSymptomNameCounters(document);
     bindTemperatureInputs(document);
+    bindPregnancyTestFields(document);
+    bindHashDisclosureReveals();
     bindDashboardNotesCounters(document);
     bindSettingsCycleForms();
     bindSettingsTrackingForms();

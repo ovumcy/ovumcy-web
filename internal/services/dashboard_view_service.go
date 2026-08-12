@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
@@ -60,6 +61,7 @@ type DashboardViewData struct {
 	ShowCervicalMucus                 bool
 	ShowCycleFactors                  bool
 	ShowNotesField                    bool
+	MoreFieldsOpen                    bool
 	AllowManualCycleStart             bool
 	ManualCycleStartPolicy            ManualCycleStartPolicy
 	ShowHighFertilityBadge            bool
@@ -181,6 +183,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowCervicalMucus:                 visibility.ShowCervicalMucus,
 		ShowCycleFactors:                  visibility.ShowCycleFactors,
 		ShowNotesField:                    visibility.ShowNotesField,
+		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility),
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:            cycleStart.Policy,
 		ShowHighFertilityBadge:            showHighFertilityBadge,
@@ -213,6 +216,31 @@ type dashboardOwnerVisibility struct {
 	ShowCycleFactors      bool
 	ShowNotesField        bool
 	AllowManualCycleStart bool
+}
+
+// dashboardMoreFieldsHoldData answers whether the journal's "More" disclosure
+// must render open: it does exactly when today already holds one of the values
+// that live behind it. A field the owner's tracking settings hide is not
+// rendered at all, so a value left behind in its column cannot open the
+// disclosure over a control that does not exist — the visibility flags gate
+// every clause. The pregnancy test has no tracking toggle and is always there.
+func dashboardMoreFieldsHoldData(entry models.DailyLog, visibility dashboardOwnerVisibility) bool {
+	if visibility.ShowSexChip && NormalizeDaySexActivity(entry.SexActivity) != models.SexActivityNone {
+		return true
+	}
+	if visibility.ShowCervicalMucus && NormalizeDayCervicalMucus(entry.CervicalMucus) != models.CervicalMucusNone {
+		return true
+	}
+	if NormalizeDayPregnancyTest(entry.PregnancyTest) != models.PregnancyTestNone {
+		return true
+	}
+	if visibility.ShowBBTField && entry.BBT != nil && IsValidDayBBT(entry.BBT) {
+		return true
+	}
+	if visibility.ShowCycleFactors && len(DayCycleFactorKeySet(entry.CycleFactorKeys)) > 0 {
+		return true
+	}
+	return visibility.ShowNotesField && strings.TrimSpace(entry.Notes) != ""
 }
 
 func dashboardOwnerVisibilityState(user *models.User, today time.Time, now time.Time, location *time.Location) dashboardOwnerVisibility {

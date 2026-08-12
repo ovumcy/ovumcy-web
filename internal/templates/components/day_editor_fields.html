@@ -166,7 +166,12 @@
      radio, so the control renders with nothing filled and says so in words.
      Once a result is saved the same hidden value is offered back as an explicit
      secondary action, because otherwise the unset state would exist in the
-     model and be unreachable from the interface. */}}
+     model and be unreachable from the interface. That action is a button after
+     the group, not a third radio: inside the group it announced as "radio 3 of
+     3", which reads as a third result. The button clears the two results, moves
+     the hidden carrier onto "none" and lets the change it fires reach whichever
+     save model the surrounding form uses — the dashboard's autosave, or the
+     calendar editor's explicit Save. */}}
 {{define "pregnancy_test_option"}}
 <label class="choice-option" data-pregnancy-test-option="{{.Value}}">
   <input
@@ -192,13 +197,14 @@
     {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "negative" "Compact" .Compact)}}
     {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "positive" "Compact" .Compact)}}
   </div>
+  <input type="radio" name="pregnancy_test" value="none" data-pregnancy-test-unset {{if not $recorded}}checked {{end}}hidden>
   {{if $recorded}}
-  <label class="choice-option" data-pregnancy-test-remove data-action-weight="secondary">
-    <input type="radio" name="pregnancy_test" value="none" class="choice-input">
-    <span class="btn-secondary btn-compact pregnancy-test-remove-pill">{{t .Messages "dashboard.pregnancy_test.remove"}}</span>
-  </label>
+  <button
+    type="button"
+    class="btn-secondary btn-compact"
+    data-pregnancy-test-remove
+    data-action-weight="secondary">{{t .Messages "dashboard.pregnancy_test.remove"}}</button>
   {{else}}
-  <input type="radio" name="pregnancy_test" value="none" data-pregnancy-test-unset checked hidden>
   <p class="journal-muted text-sm" data-pregnancy-test-empty>{{t .Messages "dashboard.pregnancy_test.absent"}}</p>
   {{end}}
 </div>

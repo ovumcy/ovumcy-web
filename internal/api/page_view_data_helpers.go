@@ -69,6 +69,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"ShowBBTField":                          viewData.ShowBBTField,
 		"ShowCycleFactors":                      viewData.ShowCycleFactors,
 		"ShowNotesField":                        viewData.ShowNotesField,
+		"MoreFieldsOpen":                        viewData.MoreFieldsOpen,
 		"TemperatureUnit":                       bbtView.Unit,
 		"TemperatureUnitSymbol":                 bbtView.Symbol,
 		"TemperatureInputMin":                   bbtView.Min,

@@ -9,6 +9,15 @@ export async function ensureNotesFieldVisible(
   const disclosure = scope.locator('details.note-disclosure').first();
   const field = scope.locator(fieldSelector).first();
 
+  // On the dashboard the note disclosure sits inside the journal's "More"
+  // disclosure, and a summary inside a closed <details> cannot be clicked.
+  // Its own summary: a bare descendant locator would also match the summaries
+  // of the disclosures it holds, this one included.
+  const enclosing = scope.locator('[data-dashboard-more]:not([open])');
+  if ((await enclosing.count()) > 0) {
+    await enclosing.locator('> summary').click();
+  }
+
   if ((await disclosure.count()) > 0) {
     if (!(await disclosure.evaluate((node) => node.hasAttribute('open')))) {
       await disclosure.locator('summary').click();

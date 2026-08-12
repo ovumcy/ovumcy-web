@@ -292,6 +292,67 @@
     }, 1800);
   }
 
+  // A link into a collapsed disclosure lands on nothing: a target inside a
+  // closed <details> is not rendered, so the browser has nothing to scroll to
+  // and the jump silently does nothing. The journal's late-cycle actions point
+  // straight at fields that now live behind "More", so every same-page jump
+  // opens the disclosures above its target first. No inline handler and no
+  // markup of its own — the anchors stay plain links, and a browser without
+  // this script still submits and saves everything.
+  function openDisclosuresAbove(target) {
+    var node = target;
+    while (node && node !== document.body) {
+      if (node.tagName === "DETAILS" && !node.open) {
+        node.open = true;
+      }
+      node = node.parentNode;
+    }
+  }
+
+  function revealHashTarget(hash) {
+    var id = String(hash || "").replace(/^#/, "");
+    var target = id ? document.getElementById(id) : null;
+    if (!target) {
+      return null;
+    }
+    openDisclosuresAbove(target);
+    return target;
+  }
+
+  function scrollToHashTarget() {
+    var target = revealHashTarget(window.location.hash);
+    var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!target || typeof target.scrollIntoView !== "function") {
+      return;
+    }
+    target.scrollIntoView(reduceMotion ? { block: "start" } : { block: "start", behavior: "smooth" });
+  }
+
+  function bindHashDisclosureReveals() {
+    if (!document.body || document.body.dataset.hashDisclosureBound === "1") {
+      return;
+    }
+    document.body.dataset.hashDisclosureBound = "1";
+
+    // Opened synchronously on the click, before the browser acts on the link:
+    // by the time it looks for the target, the target is rendered and the
+    // default jump scrolls to it.
+    document.addEventListener("click", function (event) {
+      var link = closestFromEvent(event, "a[href^='#']");
+      if (!link) {
+        return;
+      }
+      revealHashTarget(link.getAttribute("href"));
+    });
+
+    // Arriving with the anchor already in the URL — a shared link, a reload,
+    // or a jump the browser could not make — needs the scroll as well.
+    window.addEventListener("hashchange", function () {
+      scrollToHashTarget();
+    });
+    scrollToHashTarget();
+  }
+
   function focusSectionControl(section, selector) {
     if (!section || !section.querySelector) {
       return;
