@@ -42,6 +42,13 @@ func (handler *Handler) UpsertDay(c fiber.Ctx) error {
 	feedback, feedbackErr := handler.applyUpsertDayAcknowledgements(c, request)
 
 	handler.logMutationSuccess(c, dayUpsertMutation)
+	// The inline question's answer can turn this save into a cycle-start mark
+	// too. Audit it under the same action the dedicated endpoint uses, so an
+	// operator filtering on health.cycle_start_mark still sees every mark; the
+	// saved entry — not the request — decides whether one happened.
+	if request.payload.ConfirmCycleStart && entry.CycleStart {
+		handler.logMutationSuccess(c, cycleStartMarkMutation)
+	}
 	return handler.respondUpsertDaySuccess(c, entry, feedback, feedbackErr)
 }
 
@@ -86,6 +93,7 @@ func buildUpsertDayEntryInput(payload dayPayload, cleanSymptomIDs []uint, user *
 
 	return services.DayEntryInput{
 		IsPeriod:              payload.IsPeriod,
+		ConfirmCycleStart:     payload.ConfirmCycleStart,
 		Flow:                  payload.Flow,
 		Mood:                  payload.Mood,
 		SexActivity:           payload.SexActivity,

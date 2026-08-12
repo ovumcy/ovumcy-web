@@ -223,6 +223,99 @@ func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
 	}
 }
 
+// seedInlineCycleStartAnchor prepares the state the day form's inline question
+// is asked in: one explicit cycle start 28 days back, nothing since.
+func seedInlineCycleStartAnchor(t *testing.T) (*DayService, *dayLogRepositoryStub, time.Time, time.Time) {
+	t.Helper()
+
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{settings: models.User{PeriodLength: 4}}
+	service := NewDayService(logs, users)
+
+	anchor := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
+	logs.entries["2026-02-01"] = models.DailyLog{
+		ID: 1, UserID: 10, Date: anchor, IsPeriod: true, CycleStart: true,
+	}
+	day := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	return service, logs, day, day
+}
+
+// A yes answered inline is carried by the day save itself, so the same request
+// that records the bleeding records the cycle start — no second hunt for the
+// manual control.
+func TestUpsertDayEntryAppliesTheConfirmedInlineCycleStart(t *testing.T) {
+	service, logs, day, now := seedInlineCycleStartAnchor(t)
+
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium, ConfirmCycleStart: true}, now, time.UTC)
+	if err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
+	}
+	if !entry.CycleStart {
+		t.Fatal("expected the confirmed inline answer to mark the saved day as a cycle start")
+	}
+	if !logs.entries["2026-03-01"].CycleStart {
+		t.Fatal("expected the persisted row to carry the cycle start, not only the returned entry")
+	}
+}
+
+// The question is asked, never assumed: an untouched control leaves the day a
+// plain period day, which is also what declining sends.
+func TestUpsertDayEntryWithoutTheInlineAnswerMarksNoCycleStart(t *testing.T) {
+	service, logs, day, now := seedInlineCycleStartAnchor(t)
+
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium}, now, time.UTC)
+	if err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
+	}
+	if entry.CycleStart || logs.entries["2026-03-01"].CycleStart {
+		t.Fatal("expected an unanswered inline question to write no cycle start")
+	}
+}
+
+// The answer is re-checked against the policy that raised the question, so a
+// yes on a day the form would never have asked about marks nothing: here the
+// previous start is four days back, which is the manual control's short-gap
+// confirmation flow, not a one-tap question.
+func TestUpsertDayEntryIgnoresAnInlineAnswerThePolicyWouldNotAskFor(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{settings: models.User{PeriodLength: 4}}
+	service := NewDayService(logs, users)
+	logs.entries["2026-02-25"] = models.DailyLog{
+		ID: 1, UserID: 10, Date: time.Date(2026, time.February, 25, 0, 0, 0, 0, time.UTC),
+		IsPeriod: true, CycleStart: true,
+	}
+
+	day := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium, ConfirmCycleStart: true}, day, time.UTC)
+	if err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
+	}
+	if entry.CycleStart || logs.entries["2026-03-01"].CycleStart {
+		t.Fatal("expected an answer outside the question's own policy state to mark nothing")
+	}
+	if !logs.entries["2026-02-25"].CycleStart {
+		t.Fatal("expected the existing cycle start to survive an ignored inline answer")
+	}
+}
+
+// A day saved as a non-period day carries no cycle start, however the answer
+// arrived — normalization drops it before the write.
+func TestUpsertDayEntryDropsTheInlineAnswerOnANonPeriodDay(t *testing.T) {
+	service, logs, day, now := seedInlineCycleStartAnchor(t)
+
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: false, Flow: models.FlowNone, ConfirmCycleStart: true}, now, time.UTC)
+	if err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
+	}
+	if entry.CycleStart || logs.entries["2026-03-01"].CycleStart {
+		t.Fatal("expected a non-period save to mark no cycle start")
+	}
+}
+
 func TestUpsertDayEntryWithAutoFillCreatesFollowingPeriodDays(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{

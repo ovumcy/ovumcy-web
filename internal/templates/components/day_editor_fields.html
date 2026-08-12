@@ -22,6 +22,42 @@
   <p id="{{.FieldID}}-hint" class="journal-muted text-xs">{{.TemperatureRangeHint}}</p>
 </fieldset>
 {{end}}
+{{/* cycle_start_question asks, beside the period toggle, whether a new cycle
+     begins on this day. It rides the day form: the answer is saved with the
+     entry, nothing is written or recomputed before that save, and leaving both
+     options untouched writes nothing at all. It carries data-period-fields so
+     the existing period-toggle sync reveals it the moment the toggle goes on
+     and disables its controls again when the toggle goes off. */}}
+{{define "cycle_start_question"}}
+<fieldset class="space-y-2" data-cycle-start-question data-period-fields {{if not .CurrentIsPeriod}}hidden{{end}}>
+  <legend class="field-label">{{t .Messages "dashboard.cycle_start_question"}}</legend>
+  <div class="cervical-mucus-row{{if .Compact}} cervical-mucus-row-compact{{end}}">
+    <label class="choice-option">
+      <input
+        type="radio"
+        name="cycle_start"
+        value="true"
+        class="choice-input"
+        data-cycle-start-answer="yes"
+        data-disable-without-period="true"
+        {{if not .CurrentIsPeriod}}disabled{{end}}>
+      <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}"><span>{{t .Messages "common.yes"}}</span></span>
+    </label>
+    <label class="choice-option">
+      <input
+        type="radio"
+        name="cycle_start"
+        value="false"
+        class="choice-input"
+        data-cycle-start-answer="no"
+        data-disable-without-period="true"
+        {{if not .CurrentIsPeriod}}disabled{{end}}>
+      <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}"><span>{{t .Messages "common.no"}}</span></span>
+    </label>
+  </div>
+  <p class="journal-muted text-xs">{{t .Messages "dashboard.cycle_start_question_hint"}}</p>
+</fieldset>
+{{end}}
 {{define "period_flow_option"}}
 <label class="choice-option">
   <input

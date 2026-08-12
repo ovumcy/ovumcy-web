@@ -50,6 +50,9 @@ func NormalizeDayEntryInput(input DayEntryInput) (DayEntryInput, error) {
 	}
 	if !input.IsPeriod {
 		input.Flow = models.FlowNone
+		// A cycle start is the first day of bleeding, so the inline answer only
+		// means anything on a day that is being saved as a period day.
+		input.ConfirmCycleStart = false
 	}
 	input.Flow = NormalizeDayFlow(input.Flow)
 	input.SexActivity = NormalizeDaySexActivity(input.SexActivity)

@@ -32,6 +32,12 @@ type DayEntryInput struct {
 	CycleFactorKeys       []string
 	Notes                 string
 	SymptomIDs            []uint
+	// ConfirmCycleStart carries the owner's answer to the inline question the
+	// day form asks next to the period toggle ("does a new cycle begin here?").
+	// It is set only for an explicit yes: an untouched control writes nothing.
+	// The write below re-checks the policy that raised the question, so an
+	// answer for a day the question was never asked on marks nothing.
+	ConfirmCycleStart     bool
 	PreserveSexActivity   bool
 	PreserveBBT           bool
 	PreserveCervicalMucus bool
@@ -276,6 +282,13 @@ func (service *DayService) UpsertDayEntryWithAutoFillAt(ctx context.Context, use
 		txService := &DayService{logs: txLogs, users: service.users}
 		var innerErr error
 		entry, innerErr = txService.applyDayWriteAndAutoFill(ctx, userID, dayStart, normalized, now, location)
+		if innerErr != nil {
+			return innerErr
+		}
+		if !normalized.ConfirmCycleStart {
+			return nil
+		}
+		entry, innerErr = txService.applyConfirmedCycleStart(ctx, userID, entry, dayStart, now, location)
 		return innerErr
 	}); err != nil {
 		return models.DailyLog{}, err
@@ -295,6 +308,43 @@ func (service *DayService) applyDayWriteAndAutoFill(ctx context.Context, userID 
 	}
 	if err := service.applyPeriodAutoFillSideEffects(ctx, userID, dayStart, normalized, wasPeriod, now, location); err != nil {
 		return models.DailyLog{}, err
+	}
+	return entry, nil
+}
+
+// applyConfirmedCycleStart marks the day the owner just saved as a cycle start,
+// but only when the same policy that raised the inline question still holds for
+// the saved entry. Nothing here is inferred: without the explicit yes the
+// caller never reaches this function, and a yes that no longer matches the
+// policy (the day is not a period day, the day already is a cycle start, a
+// competing start sits in the same period cluster) leaves the entry exactly as
+// saved — corrections of that kind belong to the separate manual control with
+// its own confirmations. It carries no transaction of its own so it composes
+// inside the caller's boundary.
+func (service *DayService) applyConfirmedCycleStart(ctx context.Context, userID uint, entry models.DailyLog, dayStart time.Time, now time.Time, location *time.Location) (models.DailyLog, error) {
+	if !entry.IsPeriod || entry.CycleStart {
+		return entry, nil
+	}
+
+	logs, err := service.logs.ListByUser(ctx, userID)
+	if err != nil {
+		return models.DailyLog{}, ErrDayEntryLoadFailed
+	}
+	userSettings, err := service.users.LoadSettingsByID(ctx, userID)
+	if err != nil {
+		return models.DailyLog{}, ErrDayEntryLoadFailed
+	}
+	// dayStart is the canonical UTC-midnight write key; the policy works on the
+	// location-midnight calendar day, and CalendarDay converts without the
+	// In(location) shift that would move the day backwards in UTC-minus locales.
+	day := CalendarDay(dayStart, location)
+	if !ShouldAskCycleStartQuestion(&userSettings, logs, entry, day, now, location) {
+		return entry, nil
+	}
+
+	entry.CycleStart = true
+	if err := service.logs.Save(ctx, &entry); err != nil {
+		return models.DailyLog{}, ErrDayEntryUpdateFailed
 	}
 	return entry, nil
 }

@@ -464,6 +464,8 @@
   "dashboard.clear_today": "Borrar la entrada de hoy",
   "dashboard.manual_cycle_start": "Marcar inicio de un nuevo ciclo",
   "dashboard.cycle_start_suggestion": "Puede que este sea el primer día del periodo. Si es así, márcalo como inicio de un nuevo ciclo.",
+  "dashboard.cycle_start_question": "¿Empezar un nuevo ciclo desde este día?",
+  "dashboard.cycle_start_question_hint": "No se recalcula nada hasta que guardes este día.",
   "dashboard.error.invalid_cycle_start_date": "Solo puedes marcar un nuevo inicio de ciclo en días pasados o como máximo 2 días por delante.",
   "dashboard.cycle_start_replace_message": "Ya marcaste un inicio de ciclo el %s. ¿Quieres reemplazarlo por %s?",
   "dashboard.cycle_start_replace_accept": "Reemplazar",

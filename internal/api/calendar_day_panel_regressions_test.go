@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
 
 func TestCalendarDayPanelReadonlySummaryShowsSavedBBT(t *testing.T) {
@@ -249,6 +251,134 @@ func TestCalendarDayPanelEditModePreservesAndSavesPeriodToggle(t *testing.T) {
 	}
 	if updated.IsPeriod {
 		t.Fatalf("expected unchecked edit-mode period toggle to persist as false")
+	}
+}
+
+// Period day and cycle start are one event for the person logging it, so the
+// day editor asks the question inline beside the period toggle instead of
+// sending the owner to the separate manual control. The hook must appear
+// exactly in the state the cycle-start policy suggests a new cycle in: seeded
+// here with an explicit cycle start 28 days back (suggestion state) against a
+// second owner whose previous start is 4 days back (not the suggestion state).
+func seedCycleStartAnchorForDayEditor(t *testing.T, database *gorm.DB, userID uint, daysBack int) time.Time {
+	t.Helper()
+
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	if err := database.Create(&models.DailyLog{
+		UserID:     userID,
+		Date:       today.AddDate(0, 0, -daysBack),
+		IsPeriod:   true,
+		Flow:       models.FlowMedium,
+		CycleStart: true,
+	}).Error; err != nil {
+		t.Fatalf("seed cycle start anchor: %v", err)
+	}
+	return today
+}
+
+func fetchDayEditorMarkup(t *testing.T, app *fiber.App, authCookie string, day time.Time) string {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/calendar/day/"+day.Format("2006-01-02")+"?mode=edit", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"=UTC"))
+	request.Header.Set(timezoneHeaderName, "UTC")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return mustReadBodyString(t, response.Body)
+}
+
+func TestDayEditorAsksTheCycleStartQuestionExactlyInTheSuggestionState(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+
+	asked := createOnboardingTestUser(t, database, "day-editor-cycle-start-question@example.com", "StrongPass1", true)
+	today := seedCycleStartAnchorForDayEditor(t, database, asked.ID, 28)
+	askedMarkup := fetchDayEditorMarkup(t, app, loginAndExtractAuthCookie(t, app, asked.Email, "StrongPass1"), today)
+
+	if got := strings.Count(askedMarkup, "data-cycle-start-question"); got != 1 {
+		t.Fatalf("expected exactly one inline cycle-start question in the suggestion state, got %d", got)
+	}
+	if !strings.Contains(askedMarkup, `name="cycle_start"`) {
+		t.Fatalf("expected the inline question to ride the day form as a cycle_start control")
+	}
+	if !strings.Contains(askedMarkup, `data-cycle-start-answer="no"`) {
+		t.Fatalf("expected the inline question to offer declining as its own control")
+	}
+
+	quiet := createOnboardingTestUser(t, database, "day-editor-cycle-start-quiet@example.com", "StrongPass1", true)
+	seedCycleStartAnchorForDayEditor(t, database, quiet.ID, 4)
+	quietMarkup := fetchDayEditorMarkup(t, app, loginAndExtractAuthCookie(t, app, quiet.Email, "StrongPass1"), today)
+
+	// Positive anchor first: the form itself renders, so the absence below is
+	// the policy staying quiet rather than a panel that failed to load.
+	if !strings.Contains(quietMarkup, "data-period-toggle") {
+		t.Fatalf("expected the day editor form to render for the second owner")
+	}
+	if strings.Contains(quietMarkup, "data-cycle-start-question") {
+		t.Fatalf("expected no inline cycle-start question four days after the previous start")
+	}
+}
+
+// The answer is carried by the save that records the bleeding, and only by an
+// explicit yes: the same form without the field leaves a plain period day.
+func TestDayEditorSaveCarriesTheInlineCycleStartAnswer(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+
+	saveDay := func(t *testing.T, email string, form url.Values) models.DailyLog {
+		t.Helper()
+
+		user := createOnboardingTestUser(t, database, email, "StrongPass1", true)
+		today := seedCycleStartAnchorForDayEditor(t, database, user.ID, 28)
+		authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+		request := httptest.NewRequest(http.MethodPut, "/api/v1/days/"+today.Format("2006-01-02"), strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("HX-Request", "true")
+		request.Header.Set("Accept-Language", "en")
+		request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"=UTC"))
+		request.Header.Set(timezoneHeaderName, "UTC")
+
+		response := mustAppResponse(t, app, request)
+		assertStatusCode(t, response, http.StatusOK)
+
+		var saved models.DailyLog
+		if err := database.Where("user_id = ? AND date = ?", user.ID, today).First(&saved).Error; err != nil {
+			t.Fatalf("load saved day: %v", err)
+		}
+		return saved
+	}
+
+	confirmed := saveDay(t, "day-save-cycle-start-yes@example.com", url.Values{
+		"is_period":   {"true"},
+		"flow":        {models.FlowMedium},
+		"cycle_start": {"true"},
+	})
+	if !confirmed.CycleStart {
+		t.Fatalf("expected the confirmed inline answer to mark the saved day as a cycle start")
+	}
+	if !confirmed.IsPeriod {
+		t.Fatalf("expected the confirmed day to stay a period day")
+	}
+
+	untouched := saveDay(t, "day-save-cycle-start-untouched@example.com", url.Values{
+		"is_period": {"true"},
+		"flow":      {models.FlowMedium},
+	})
+	if untouched.CycleStart {
+		t.Fatalf("expected an untouched inline question to write no cycle start")
+	}
+
+	declined := saveDay(t, "day-save-cycle-start-no@example.com", url.Values{
+		"is_period":   {"true"},
+		"flow":        {models.FlowMedium},
+		"cycle_start": {"false"},
+	})
+	if declined.CycleStart {
+		t.Fatalf("expected declining to leave a plain period day")
+	}
+	if !declined.IsPeriod {
+		t.Fatalf("expected declining to keep the period day itself")
 	}
 }
 

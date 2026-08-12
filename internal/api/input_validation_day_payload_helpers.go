@@ -22,6 +22,7 @@ func parseDayPayload(c fiber.Ctx, user *models.User) (dayPayload, error) {
 	} else {
 		var err error
 		payload.IsPeriod = services.ParseBoolLike(c.FormValue("is_period"))
+		payload.ConfirmCycleStart = services.ParseBoolLike(c.FormValue("cycle_start"))
 		payload.Flow = strings.ToLower(strings.TrimSpace(c.FormValue("flow")))
 		payload.Mood = clampFormIntValue(c.FormValue("mood"))
 		payload.SexActivity = strings.ToLower(strings.TrimSpace(c.FormValue("sex_activity")))

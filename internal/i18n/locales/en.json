@@ -464,6 +464,8 @@
   "dashboard.clear_today": "Clear today's entry",
   "dashboard.manual_cycle_start": "Mark new cycle start",
   "dashboard.cycle_start_suggestion": "This may be the first day of your period. If so, mark it as a new cycle start.",
+  "dashboard.cycle_start_question": "Start a new cycle from this day?",
+  "dashboard.cycle_start_question_hint": "Nothing is recalculated until you save this day.",
   "dashboard.error.invalid_cycle_start_date": "A new cycle start can be marked only for past days and no more than 2 days ahead.",
   "dashboard.cycle_start_replace_message": "You already marked a cycle start on %s. Replace it with %s?",
   "dashboard.cycle_start_replace_accept": "Replace",
