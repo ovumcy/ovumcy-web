@@ -8,10 +8,14 @@ import {
   registerOwnerViaUI,
   apiOriginHeader,
 } from './support/auth-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { localeText } from './support/locale-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
-import { openCalendarDayEditor, shiftISODate, todayISOFromDashboard } from './support/stats-helpers';
+import {
+  openCalendarDayEditor,
+  registerAndOnboardWithStartDaysAgo,
+  shiftISODate,
+  todayISOFromDashboard,
+} from './support/stats-helpers';
 
 async function registerAndOnboardDefault(page: Page, prefix: string): Promise<void> {
   const credentials = createCredentials(prefix);
@@ -20,45 +24,6 @@ async function registerAndOnboardDefault(page: Page, prefix: string): Promise<vo
   await readRecoveryCode(page);
   await continueFromRecoveryCode(page);
   await completeOnboardingIfPresent(page);
-  await setRequestTimezoneFromBrowser(page);
-}
-
-function isoDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-async function registerAndOnboardWithStartDaysAgo(
-  page: Page,
-  prefix: string,
-  startDaysAgo: number,
-): Promise<void> {
-  // completeOnboardingIfPresent hardcodes today-3 as the period start, which
-  // makes today an auto-period-fill day. Spotting-warning + future-cycle-
-  // start scenarios need today to sit outside the onboarding period cluster,
-  // so we run a custom onboarding flow that submits an explicit older date.
-  const credentials = createCredentials(prefix);
-  await registerOwnerViaUI(page, credentials);
-  await expectInlineRegisterRecoveryStep(page);
-  await readRecoveryCode(page);
-  await continueFromRecoveryCode(page);
-
-  const startISO = isoDateDaysAgo(startDaysAgo);
-  await selectOnboardingStartDate(page, startISO);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-
-  const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
-  await expect(stepTwoForm).toBeVisible();
-  await Promise.all([
-    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
-  ]);
-
   await setRequestTimezoneFromBrowser(page);
 }
 

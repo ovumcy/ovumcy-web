@@ -1,65 +1,12 @@
-import { expect, test, type Page } from '@playwright/test';
-import {
-  continueFromRecoveryCode,
-  createCredentials,
-  expectInlineRegisterRecoveryStep,
-  readRecoveryCode,
-  registerOwnerViaUI,
-  apiOriginHeader,
-} from './support/auth-helpers';
+import { expect, test } from '@playwright/test';
 import { displayDatesIn } from './support/date-field-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
-import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
-import { shiftISODate } from './support/stats-helpers';
-
-function isoDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-async function registerAndOnboardWithStartDaysAgo(
-  page: Page,
-  prefix: string,
-  startDaysAgo: number
-): Promise<void> {
-  const credentials = createCredentials(prefix);
-  await registerOwnerViaUI(page, credentials);
-  await expectInlineRegisterRecoveryStep(page);
-  await readRecoveryCode(page);
-  await continueFromRecoveryCode(page);
-
-  const startISO = isoDateDaysAgo(startDaysAgo);
-  await selectOnboardingStartDate(page, startISO);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-
-  const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
-  await expect(stepTwoForm).toBeVisible();
-  await Promise.all([
-    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
-  ]);
-
-  await setRequestTimezoneFromBrowser(page);
-}
-
-async function markCycleStartViaAPI(page: Page, isoDate: string): Promise<void> {
-  const csrf = (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
-  const response = await page.request.post(`/api/v1/days/${isoDate}/cycle-start`, {
-    headers: {
-      ...apiOriginHeader(page),
-      'X-CSRF-Token': csrf,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    form: { replace_existing: 'true' },
-  });
-  expect(response.status(), `mark cycle start at ${isoDate}`).toBeLessThan(400);
-}
+import {
+  isoToday,
+  markCycleStartViaAPI,
+  registerAndOnboardWithStartDaysAgo,
+  shiftISODate,
+} from './support/stats-helpers';
 
 test.describe('Dashboard prediction range', () => {
   // Regular (non-irregular) users with at least three completed cycles and
@@ -76,7 +23,7 @@ test.describe('Dashboard prediction range', () => {
     // cycle anchor and add the subsequent cycle starts.
     await registerAndOnboardWithStartDaysAgo(page, 'dashboard-prediction-range', 60);
 
-    const today = isoDateDaysAgo(0);
+    const today = isoToday();
     // Cycle starts: today-90, today-60 (onboarding anchor), today-35, today-5.
     // Completed cycle lengths: 30, 25, 30. Population StdDev ≈ 2.36 → span
     // = 2 days. Max-min spread = 5, below the IsIrregularCycleSpread
