@@ -326,6 +326,55 @@ func TestDayServiceMarkCycleStartManuallyPreservesEntryAndMarksExplicitStart(t *
 	}
 }
 
+// The replace confirmation and the clearing it authorizes read the same
+// UTC-midnight period-cluster bounds, so both must re-anchor the days they
+// compare. Ahead of UTC a competing start on the FIRST day of the cluster used
+// to read as sitting before the cluster: the owner confirmed the replacement
+// and the old start survived it, leaving two cycle starts in one bleeding
+// cluster.
+func TestDayServiceMarkCycleStartManuallyClearsAFirstClusterDayStartAheadOfUTC(t *testing.T) {
+	service, database := newDayServiceIntegration(t)
+	user := createDayServiceTestUser(t, database, "manual-cycle-start-replace-tz-service@example.com")
+
+	logs := []models.DailyLog{}
+	for day := 1; day <= 5; day++ {
+		logs = append(logs, models.DailyLog{
+			UserID:     user.ID,
+			Date:       time.Date(2026, time.March, day, 0, 0, 0, 0, time.UTC),
+			IsPeriod:   true,
+			Flow:       models.FlowMedium,
+			CycleStart: day == 1,
+		})
+	}
+	if err := database.Create(&logs).Error; err != nil {
+		t.Fatalf("create logs: %v", err)
+	}
+
+	belgrade := time.FixedZone("UTC+1", 1*60*60)
+	targetDay := time.Date(2026, time.March, 3, 0, 0, 0, 0, belgrade)
+	now := time.Date(2026, time.March, 5, 9, 0, 0, 0, belgrade)
+	// Both confirmations the flow asks for here are granted: the replacement
+	// itself and the short gap to the start being replaced.
+	options := ManualCycleStartOptions{ReplaceExisting: true, MarkUncertain: true}
+	if err := service.MarkCycleStartManually(context.Background(), user.ID, targetDay, now, belgrade, options); err != nil {
+		t.Fatalf("MarkCycleStartManually returned error: %v", err)
+	}
+
+	reloaded := []models.DailyLog{}
+	if err := database.Where("user_id = ?", user.ID).Order("date ASC").Find(&reloaded).Error; err != nil {
+		t.Fatalf("reload logs: %v", err)
+	}
+	starts := []string{}
+	for _, entry := range reloaded {
+		if entry.CycleStart {
+			starts = append(starts, CalendarDayKey(entry.Date))
+		}
+	}
+	if len(starts) != 1 || starts[0] != "2026-03-03" {
+		t.Fatalf("expected 2026-03-03 to be the only cycle start left, got %v", starts)
+	}
+}
+
 func TestDayServiceMarkCycleStartManuallyClearsPreviousExplicitStart(t *testing.T) {
 	service, database := newDayServiceIntegration(t)
 	user := createDayServiceTestUser(t, database, "manual-cycle-start-replace-service@example.com")

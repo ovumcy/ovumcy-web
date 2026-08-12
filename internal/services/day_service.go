@@ -705,7 +705,7 @@ func (service *DayService) clearCompetingCycleStarts(ctx context.Context, userID
 		}
 
 		logDay := CalendarDay(logEntry.Date, location)
-		if logDay.Before(clusterStart) || logDay.After(clusterEnd) {
+		if !withinPeriodCluster(logDay, clusterStart, clusterEnd) {
 			continue
 		}
 		if sameCalendarDay(logDay, selectedDay) && logEntry.ID == selectedEntry.ID {

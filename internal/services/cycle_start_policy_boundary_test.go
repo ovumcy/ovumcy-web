@@ -144,6 +144,55 @@ func TestResolveManualCycleStartPolicy_ShortGapBoundary(t *testing.T) {
 // it one calendar day backward in UTC-minus locales, inflating the gap by
 // one: a 5-day gap (too early) was reported as a 6-day implantation
 // candidate and a true 12-day gap fell outside the 6..12 window.
+// TestResolveManualCycleStartPolicy_CompetingStartCrossTimezone pins the
+// issue-#48-class fix on the replace-confirmation flow. The period-cluster
+// bounds are UTC-midnight values (buildPeriodClusters via dateOnly) while the
+// days compared against them are rebuilt at location midnight. Those are
+// different instants under a non-zero UTC offset, so the day on the edge of
+// its own cluster fell outside the bounds: ahead of UTC a competing cycle
+// start on the FIRST cluster day went undetected, behind UTC one on the LAST
+// day did. The owner then saw no replace confirmation and kept two cycle
+// starts inside one bleeding cluster. An interior day was detected either way
+// and is the control here.
+func TestResolveManualCycleStartPolicy_CompetingStartCrossTimezone(t *testing.T) {
+	// Europe/Belgrade in early March, and its UTC-minus mirror.
+	belgrade := time.FixedZone("UTC+1", 1*60*60)
+	lima := time.FixedZone("UTC-5", -5*60*60)
+
+	cases := []struct {
+		name      string
+		location  *time.Location
+		competing string
+	}{
+		{"UTC+1 competing start on the first cluster day", belgrade, "2026-03-01"},
+		{"UTC+1 competing start on an interior cluster day", belgrade, "2026-03-04"},
+		{"UTC-5 competing start on the last cluster day", lima, "2026-03-05"},
+		{"UTC-5 competing start on an interior cluster day", lima, "2026-03-02"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := make([]models.DailyLog, 0, 5)
+			for _, day := range []string{"2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05"} {
+				logs = append(logs, models.DailyLog{
+					Date:       mustParseCycleStartPolicyDay(t, day),
+					IsPeriod:   true,
+					CycleStart: day == tc.competing,
+				})
+			}
+
+			// The selected day arrives as ParseDayDate leaves it: midnight in
+			// the request location, while the stored logs above are
+			// UTC-midnight date-only values.
+			targetDay := time.Date(2026, 3, 3, 0, 0, 0, 0, tc.location)
+
+			policy := ResolveManualCycleStartPolicy(&models.User{}, logs, targetDay, targetDay, tc.location)
+			if got := CalendarDayKey(policy.ConflictDate); got != tc.competing {
+				t.Fatalf("ResolveManualCycleStartPolicy conflict date = %q, want %q", got, tc.competing)
+			}
+		})
+	}
+}
+
 func TestPotentialImplantationGapDays_CrossTimezone(t *testing.T) {
 	// Same geometry as the window-boundary test: ovulation for a 28-day cycle
 	// starting 2026-02-26 lands on 2026-03-11.
