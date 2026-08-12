@@ -15,7 +15,7 @@ func TestSettingsSymptomsSectionExplainsEmptyAndArchivedStates(t *testing.T) {
 		ctx := newSettingsSecurityTestContext(t, "settings-symptoms-empty@example.com")
 
 		document := mustParseHTMLDocument(t, renderSettingsPageForTest(t, ctx.app, ctx.authCookie))
-		section := htmlElementByID(document, "settings-symptoms-section")
+		section := htmlElementByID(document, "settings-symptoms")
 		if section == nil {
 			t.Fatal("expected settings symptoms section")
 		}
@@ -53,7 +53,7 @@ func TestSettingsSymptomsSectionExplainsEmptyAndArchivedStates(t *testing.T) {
 		}
 
 		document := mustParseHTMLDocument(t, renderSettingsPageForTest(t, ctx.app, ctx.authCookie))
-		section := htmlElementByID(document, "settings-symptoms-section")
+		section := htmlElementByID(document, "settings-symptoms")
 		if section == nil {
 			t.Fatal("expected settings symptoms section")
 		}

@@ -58,7 +58,7 @@ func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndDangerZone(t *testing.
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
 	order := []string{
 		"settings-cycle",
-		"settings-symptoms-section",
+		"settings-symptoms",
 		"settings-tracking",
 		"settings-interface",
 		"settings-account",
@@ -80,6 +80,43 @@ func TestSettingsPageUsesMedicalSectionsBeforeInterfaceAndDangerZone(t *testing.
 	}
 	if slices.Contains(sectionIDs, "settings-reminders") {
 		t.Fatalf("did not expect deprecated reminders section, got %v", sectionIDs)
+	}
+}
+
+func TestSettingsSectionNavIndexesEverySection(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-section-nav@example.com")
+
+	document := mustParseHTMLDocument(t, renderSettingsPageForTest(t, ctx.app, ctx.authCookie))
+	nav := htmlElementByTagAndClass(document, "nav", "settings-section-nav")
+	if nav == nil {
+		t.Fatal("expected the settings section navigation")
+	}
+
+	targets := make([]string, 0, 10)
+	for _, link := range htmlFindElements(nav, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "a"
+	}) {
+		targets = append(targets, strings.TrimPrefix(htmlAttr(link, "href"), "#"))
+	}
+
+	// The page's own sections are the direct children of its root <section>; the
+	// nested ones (change-password inside the account card) are not separate
+	// destinations and carry no link.
+	sectionIDs := make([]string, 0, 10)
+	for child := nav.Parent.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type != html.ElementNode || child.Data != "section" {
+			continue
+		}
+		if id := htmlAttr(child, "id"); id != "" {
+			sectionIDs = append(sectionIDs, id)
+		}
+	}
+
+	if !slices.Equal(targets, sectionIDs) {
+		t.Fatalf("expected the section index to list every rendered section in order, got links %v for sections %v", targets, sectionIDs)
+	}
+	if !slices.Contains(targets, "settings-danger-zone") {
+		t.Fatal("expected the destructive section to stay reachable from the section index")
 	}
 }
 

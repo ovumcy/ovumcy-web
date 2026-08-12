@@ -43,7 +43,7 @@
     action="/api/v1/symptoms/{{.Symptom.ID}}"
     method="post"
     hx-patch="/api/v1/symptoms/{{.Symptom.ID}}"
-    hx-target="#settings-symptoms-section"
+    hx-target="#settings-symptoms"
     hx-swap="outerHTML"
     class="settings-symptom-form"
     data-symptom-edit-form>
@@ -89,7 +89,7 @@
       action="/api/v1/symptoms/{{.Symptom.ID}}"
       method="post"
       hx-delete="/api/v1/symptoms/{{.Symptom.ID}}"
-      hx-target="#settings-symptoms-section"
+      hx-target="#settings-symptoms"
       hx-swap="outerHTML"
       hx-confirm="{{t $.Messages "settings.symptoms.confirm_hide"}}"
       data-confirm-accept="{{t $.Messages "settings.symptoms.hide"}}">
@@ -101,7 +101,7 @@
       action="/api/v1/symptoms/{{.Symptom.ID}}/restore"
       method="post"
       hx-post="/api/v1/symptoms/{{.Symptom.ID}}/restore"
-      hx-target="#settings-symptoms-section"
+      hx-target="#settings-symptoms"
       hx-swap="outerHTML">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
       <button type="submit" class="btn-secondary">{{t $.Messages "settings.symptoms.restore"}}</button>
@@ -111,7 +111,7 @@
 </div>
 {{end}}
 {{define "settings_symptoms_section_content"}}
-<section id="settings-symptoms-section" class="journal-card p-5 sm:p-6 space-y-5" data-settings-symptoms>
+<section id="settings-symptoms" class="journal-card p-5 sm:p-6 space-y-5" data-settings-symptoms>
   <div>
     <h2 class="journal-subtitle"><span aria-hidden="true">🧩</span> {{t .Messages "settings.symptoms.title"}}</h2>
     <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
@@ -121,7 +121,7 @@
     action="/api/v1/symptoms"
     method="post"
     hx-post="/api/v1/symptoms"
-    hx-target="#settings-symptoms-section"
+    hx-target="#settings-symptoms"
     hx-swap="outerHTML"
     class="settings-symptom-form"
     data-symptom-create-form>

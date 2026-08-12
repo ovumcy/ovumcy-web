@@ -16,35 +16,35 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="space-y-2">
-        <div class="flex items-center justify-between gap-2">
-          <label class="field-label" for="settings-cycle-length">{{t .Messages "settings.cycle.cycle_length"}}</label>
-          <span class="journal-muted text-sm"><span data-settings-cycle-length-value>{{.CycleLength}}</span> {{t .Messages "common.days_short"}}</span>
+        <label class="field-label" for="settings-cycle-length">{{t .Messages "settings.cycle.cycle_length"}}</label>
+        <div class="range-row">
+          <input
+            id="settings-cycle-length"
+            type="range"
+            min="15"
+            max="90"
+            name="cycle_length"
+            value="{{.CycleLength}}"
+            data-settings-cycle-length
+            class="range-field">
+          <span class="range-value"><span data-settings-cycle-length-value>{{.CycleLength}}</span> {{t .Messages "common.days_short"}}</span>
         </div>
-        <input
-          id="settings-cycle-length"
-          type="range"
-          min="15"
-          max="90"
-          name="cycle_length"
-          value="{{.CycleLength}}"
-          data-settings-cycle-length
-          class="w-full range-field">
       </div>
 
       <div class="space-y-2">
-        <div class="flex items-center justify-between gap-2">
-          <label class="field-label" for="settings-period-length">{{t .Messages "settings.cycle.period_length"}}</label>
-          <span class="journal-muted text-sm"><span data-settings-period-length-value>{{.PeriodLength}}</span> {{t .Messages "common.days_short"}}</span>
+        <label class="field-label" for="settings-period-length">{{t .Messages "settings.cycle.period_length"}}</label>
+        <div class="range-row range-row-compact">
+          <input
+            id="settings-period-length"
+            type="range"
+            min="1"
+            max="14"
+            name="period_length"
+            value="{{.PeriodLength}}"
+            data-settings-period-length
+            class="range-field">
+          <span class="range-value"><span data-settings-period-length-value>{{.PeriodLength}}</span> {{t .Messages "common.days_short"}}</span>
         </div>
-        <input
-          id="settings-period-length"
-          type="range"
-          min="1"
-          max="14"
-          name="period_length"
-          value="{{.PeriodLength}}"
-          data-settings-period-length
-          class="w-full range-field">
       </div>
 
       <div class="space-y-2">

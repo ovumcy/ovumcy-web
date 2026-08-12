@@ -677,7 +677,7 @@ test.describe('Settings: profile and cycle', () => {
   }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-primary');
 
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
 
     await page.goto('/dashboard');
@@ -704,7 +704,7 @@ test.describe('Settings: profile and cycle', () => {
   }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptoms');
 
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     await expect(symptomSection).toBeVisible();
 
     const createForm = symptomSection.locator('[data-symptom-create-form]');
@@ -759,7 +759,7 @@ test.describe('Settings: profile and cycle', () => {
   test('cancelling the hide confirmation keeps the custom symptom active', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-hide-cancel');
 
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
 
     const activeRow = customSymptomRow(symptomSection, 'Joint stiffness', 'active');
@@ -821,7 +821,7 @@ test.describe('Settings: profile and cycle', () => {
   }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptoms-restore');
 
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     await expect(symptomSection).toBeVisible();
 
     await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
@@ -866,7 +866,7 @@ test.describe('Settings: profile and cycle', () => {
     }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-validation');
 
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     const createForm = symptomSection.locator('[data-symptom-create-form]');
 
     await createCustomSymptom(symptomSection, 'Joint stiffness', '✨');
@@ -919,7 +919,7 @@ test.describe('Settings: profile and cycle', () => {
     }) => {
     await registerOwnerAndOpenSettings(page, 'settings-custom-symptom-overflow');
 
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     const createForm = symptomSection.locator('[data-symptom-create-form]');
     const longButAllowedName = 'Long symptom after evening workout';
     await createForm.locator('#settings-new-symptom-name').fill(longButAllowedName);
@@ -970,7 +970,7 @@ test.describe('Settings: profile and cycle', () => {
     // localized heading: a getByText('Active custom symptoms').toHaveCount(0)
     // is satisfied by any rewording or by switching language, so it could not
     // tell an absent group from a renamed heading.
-    const symptomSection = page.locator('#settings-symptoms-section');
+    const symptomSection = page.locator('#settings-symptoms');
     await expect(symptomSection.locator('[data-symptom-empty-state="empty"]')).toContainText(
       'No custom symptoms yet. Add one above to make it available in new entries.'
     );
