@@ -26,11 +26,16 @@ import {
  * The notice is addressed exclusively through the hooks the policy owns —
  * `[data-dashboard-cycle-warnings]`, `[data-dashboard-cycle-day-warning]`,
  * `data-late-cycle-key`, `data-late-cycle-tone` — and never through the status
- * header above it, so a redesign of the header (#429) cannot move this spec.
+ * header above it, so a redesign of the header (#429) cannot move this spec. The
+ * one deliberate exception is the beyond-range test, which also reads the
+ * header's next-period slot: the same threshold that raises this notice withholds
+ * the projected window, and "the notice appeared" is worth little if a confident
+ * date is still sitting one line above it.
  */
 const BEYOND_RANGE_KEY = 'dashboard.late_cycle.beyond_range';
 const WITHIN_RANGE_KEY = 'dashboard.late_cycle.within_range';
 const NO_PERSONAL_RANGE_KEY = 'dashboard.late_cycle.no_personal_range';
+const ESTIMATE_PAUSED_KEY = 'dashboard.next_period_estimate_paused';
 
 /** Whole calendar days from `fromISO` to `toISO`, DST-proof (UTC arithmetic). */
 function isoDaysBetween(fromISO: string, toISO: string): number {
@@ -105,6 +110,14 @@ test.describe('Dashboard late-cycle notice', () => {
         excessDays,
       ])
     );
+
+    // The other half of the same threshold: no next-period window is rendered at
+    // all. The projection would happily roll forward to the anchor plus another
+    // whole cycle, so the assertion is the slot's absence, not its contents.
+    await expect(page.locator('[data-dashboard-next-period]')).toHaveCount(0);
+    const pausedEstimate = page.locator('[data-dashboard-next-period-paused]');
+    await expect(pausedEstimate).toBeVisible();
+    await expect(pausedEstimate).toHaveText(localeText('en', ESTIMATE_PAUSED_KEY));
   });
 
   test('a long cycle still inside the recorded range names both bounds', async ({ page }) => {

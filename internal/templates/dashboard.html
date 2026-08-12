@@ -58,6 +58,9 @@
             </span>
             {{end}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
+            {{if .NextPeriodEstimatePaused}}
+            <span class="dashboard-status-item journal-muted" data-dashboard-next-period-paused data-next-period-paused-key="dashboard.next_period_estimate_paused">{{t .Messages "dashboard.next_period_estimate_paused"}}</span>
+            {{else}}
             <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}:
               <span data-dashboard-next-period>
                 {{if .DisplayNextPeriodUseRange}}
@@ -73,10 +76,12 @@
                 {{end}}
               </span>
             </span>
+            {{end}}
             {{/* The goal decides how timing is framed: an account tracking to
                  conceive is here for the fertile window, so the same status line
                  also names the ovulation estimate. It rides the next-period
-                 item's gating — a suppressed prediction never reaches this
+                 item's gating — a suppressed prediction, and a cycle overdue
+                 enough that the window above is withheld, never reach this
                  branch — and stays an estimate in its own wording. */}}
             {{if .ShowOvulationEstimate}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>

@@ -77,21 +77,21 @@ func TestBuildDashboardCycleContext(t *testing.T) {
 		LastPeriodStart: &userStart,
 	}
 	stats := CycleStats{
-		CurrentCycleDay:     36,
+		CurrentCycleDay:     30,
 		LastPeriodStart:     mustParseDashboardDay(t, "2026-02-10"),
 		MedianCycleLength:   28,
 		AveragePeriodLength: 5,
 		NextPeriodStart:     mustParseDashboardDay(t, "2026-03-10"),
 		OvulationDate:       mustParseDashboardDay(t, "2026-02-24"),
 	}
-	today := mustParseDashboardDay(t, "2026-03-14")
+	today := mustParseDashboardDay(t, "2026-03-11")
 
 	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
 	if context.CycleDayReference != 28 {
 		t.Fatalf("expected cycle day reference 28, got %d", context.CycleDayReference)
 	}
-	if !context.CycleDayWarning {
-		t.Fatalf("expected cycle day warning for long cycle day")
+	if context.CycleDayWarning {
+		t.Fatalf("did not expect a cycle day warning two days past the reference length")
 	}
 	if !context.CycleDataStale {
 		t.Fatalf("expected stale cycle data flag")
@@ -104,6 +104,129 @@ func TestBuildDashboardCycleContext(t *testing.T) {
 	}
 	if got := context.DisplayNextPeriodEnd.Format("2006-01-02"); got != "2026-04-11" {
 		t.Fatalf("expected exact next period end 2026-04-11, got %s", got)
+	}
+}
+
+// TestBuildDashboardCycleContextWithholdsTheWindowOnceTheCycleIsOverdue pins the
+// state a rolled-forward projection used to hide. DashboardUpcomingPredictions
+// advances the projection a whole cycle at a time, so it always returns a
+// strictly future date: on cycle day 36 against a 28-day reference the dashboard
+// named the anchor plus 56 days — a window nothing in the account's data
+// supports — with the same confidence it names tomorrow's. Past reference + 7
+// there is no window to show, and the cycle day plus the late-cycle notice carry
+// the state on their own.
+//
+// The stats below would otherwise produce a ±2-day uncertainty range (five
+// completed cycles, SD 2.4), so this also pins that the range fields go with the
+// single date rather than surviving as a softer version of the same claim.
+func TestBuildDashboardCycleContextWithholdsTheWindowOnceTheCycleIsOverdue(t *testing.T) {
+	userStart := mustParseDashboardDay(t, "2026-02-10")
+	user := &models.User{
+		CycleLength:     28,
+		PeriodLength:    5,
+		LastPeriodStart: &userStart,
+	}
+	stats := CycleStats{
+		CurrentCycleDay:     36,
+		LastPeriodStart:     mustParseDashboardDay(t, "2026-02-10"),
+		MedianCycleLength:   28,
+		AverageCycleLength:  28.4,
+		AveragePeriodLength: 5,
+		CompletedCycleCount: 5,
+		CycleLengthStdDev:   2.4,
+		NextPeriodStart:     mustParseDashboardDay(t, "2026-03-10"),
+		OvulationDate:       mustParseDashboardDay(t, "2026-02-24"),
+		OvulationExact:      true,
+	}
+	today := mustParseDashboardDay(t, "2026-03-17")
+
+	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	if context.CycleDayReference != 28 {
+		t.Fatalf("expected cycle day reference 28, got %d", context.CycleDayReference)
+	}
+	if !context.CycleDayWarning {
+		t.Fatalf("expected cycle day 36 against a 28-day reference to read as long")
+	}
+	if !context.NextPeriodEstimatePaused {
+		t.Fatalf("expected an overdue cycle to pause the next-period estimate")
+	}
+	if !context.LateCycle.Visible {
+		t.Fatalf("expected the late-cycle notice to keep carrying the state")
+	}
+	if !context.DisplayNextPeriodStart.IsZero() || !context.DisplayNextPeriodEnd.IsZero() {
+		t.Fatalf(
+			"expected no projected next-period window, got %s — %s",
+			context.DisplayNextPeriodStart.Format("2006-01-02"),
+			context.DisplayNextPeriodEnd.Format("2006-01-02"),
+		)
+	}
+	if context.DisplayNextPeriodUseRange ||
+		!context.DisplayNextPeriodRangeStart.IsZero() ||
+		!context.DisplayNextPeriodRangeEnd.IsZero() {
+		t.Fatalf("expected no projected next-period range either")
+	}
+	if !context.DisplayOvulationDate.IsZero() || context.DisplayOvulationUseRange || context.DisplayOvulationExact {
+		t.Fatalf("expected the ovulation estimate derived from the same projection to go with it")
+	}
+	if context.DisplayNextPeriodPrompt || context.DisplayNextPeriodNeedsData {
+		t.Fatalf("expected an overdue cycle to stay out of the prompt and needs-data branches")
+	}
+	if context.NextPeriodInPast || context.OvulationInPast {
+		t.Fatalf("expected no in-the-past warning about a window that is not shown")
+	}
+
+	banner := BuildDashboardReminderBanner(context, today, 0)
+	if banner.Show {
+		t.Fatalf("expected no reminder banner for a withheld estimate, got %q", banner.TitleKey)
+	}
+}
+
+// TestBuildDashboardCycleContextKeepsTheWindowAtExactlyTheLateThreshold is the
+// other side of the boundary: DashboardCycleDayLooksLong fires strictly past
+// reference + 7, so day 35 against a 28-day reference still shows its window.
+// Same account as the test above, one day earlier.
+func TestBuildDashboardCycleContextKeepsTheWindowAtExactlyTheLateThreshold(t *testing.T) {
+	userStart := mustParseDashboardDay(t, "2026-02-10")
+	user := &models.User{
+		CycleLength:     28,
+		PeriodLength:    5,
+		LastPeriodStart: &userStart,
+	}
+	stats := CycleStats{
+		CurrentCycleDay:     35,
+		LastPeriodStart:     mustParseDashboardDay(t, "2026-02-10"),
+		MedianCycleLength:   28,
+		AverageCycleLength:  28.4,
+		AveragePeriodLength: 5,
+		CompletedCycleCount: 5,
+		CycleLengthStdDev:   2.4,
+		NextPeriodStart:     mustParseDashboardDay(t, "2026-03-10"),
+		OvulationDate:       mustParseDashboardDay(t, "2026-02-24"),
+		OvulationExact:      true,
+	}
+	today := mustParseDashboardDay(t, "2026-03-16")
+
+	context := BuildDashboardCycleContext(user, stats, today, time.UTC)
+	if context.CycleDayWarning {
+		t.Fatalf("expected cycle day 35 against a 28-day reference to stay inside the threshold")
+	}
+	if context.NextPeriodEstimatePaused {
+		t.Fatalf("did not expect the estimate to pause at exactly reference + 7")
+	}
+	if !context.DisplayNextPeriodUseRange {
+		t.Fatalf("expected the uncertainty range to survive at exactly reference + 7")
+	}
+	if got := context.DisplayNextPeriodRangeStart.Format("2006-01-02"); got != "2026-04-05" {
+		t.Fatalf("expected range start 2026-04-05, got %s", got)
+	}
+	if got := context.DisplayNextPeriodRangeEnd.Format("2006-01-02"); got != "2026-04-09" {
+		t.Fatalf("expected range end 2026-04-09, got %s", got)
+	}
+	if got := context.DisplayNextPeriodStart.Format("2006-01-02"); got != "2026-04-07" {
+		t.Fatalf("expected next period start 2026-04-07, got %s", got)
+	}
+	if context.DisplayOvulationDate.IsZero() {
+		t.Fatalf("expected the ovulation estimate to survive at exactly reference + 7")
 	}
 }
 

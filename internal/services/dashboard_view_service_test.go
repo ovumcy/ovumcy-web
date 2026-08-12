@@ -374,6 +374,46 @@ func TestFirstMissingTrackedDayFindsTrackedGap(t *testing.T) {
 	}
 }
 
+// TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression
+// pins which cycle states the goal-aware ovulation item survives. The frame
+// answers a question about the goal, but the estimate it adds is a prediction:
+// it must disappear wherever the next-period window does — an unpredictable
+// cycle, a pregnancy pause, and a cycle overdue past reference + 7, where the
+// projection has nothing left to say. The temperature's placement answers the
+// goal question alone and is unmoved by any of them.
+func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(t *testing.T) {
+	user := &models.User{Role: models.RoleOwner, UsageGoal: models.UsageGoalTrying}
+	visibility := dashboardOwnerVisibility{ShowBBTField: true}
+
+	for name, testCase := range map[string]struct {
+		cycleContext DashboardCycleContext
+		wantEstimate bool
+	}{
+		"stable cycle": {
+			cycleContext: DashboardCycleContext{},
+			wantEstimate: true,
+		},
+		"predictions suppressed": {
+			cycleContext: DashboardCycleContext{PredictionDisabled: true},
+			wantEstimate: false,
+		},
+		"cycle overdue": {
+			cycleContext: DashboardCycleContext{NextPeriodEstimatePaused: true},
+			wantEstimate: false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			frame := resolveDashboardTimingFrame(user, testCase.cycleContext, visibility)
+			if frame.ShowOvulationEstimate != testCase.wantEstimate {
+				t.Fatalf("expected ovulation estimate=%v, got %v", testCase.wantEstimate, frame.ShowOvulationEstimate)
+			}
+			if !frame.BBTInVisibleTier {
+				t.Fatalf("expected the temperature field to stay in the visible tier for this goal")
+			}
+		})
+	}
+}
+
 func mustParseDashboardServiceDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)

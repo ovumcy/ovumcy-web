@@ -41,6 +41,7 @@ func (handler *Handler) buildDashboardViewData(ctx context.Context, user *models
 		"DisplayOvulationNeedsData":             viewData.CycleContext.DisplayOvulationNeedsData,
 		"DisplayOvulationExact":                 viewData.CycleContext.DisplayOvulationExact,
 		"DisplayOvulationImpossible":            viewData.CycleContext.DisplayOvulationImpossible,
+		"NextPeriodEstimatePaused":              viewData.CycleContext.NextPeriodEstimatePaused,
 		"NextPeriodInPast":                      viewData.CycleContext.NextPeriodInPast,
 		"OvulationInPast":                       viewData.CycleContext.OvulationInPast,
 		"ShowReminderBanner":                    viewData.ReminderBanner.Show,
