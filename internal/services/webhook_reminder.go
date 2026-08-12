@@ -18,9 +18,9 @@ import (
 //
 // Medical-safety invariant: this function reuses the EXACT prediction path the
 // dashboard uses (BuildCycleStatsFromLogs → DashboardUpcomingPredictions, gated
-// by DashboardPredictionDisabled / PregnancyPaused). It never fabricates a date
-// the app itself refuses to show — when in-app predictions are suppressed, it
-// emits nothing.
+// by DashboardPredictionDisabled / PregnancyPaused / DashboardCycleOverdue). It
+// never fabricates a date the app itself refuses to show — when in-app
+// predictions are suppressed, it emits nothing.
 
 const (
 	// DueReminderTypePeriod and DueReminderTypeOvulation identify which upcoming
@@ -113,8 +113,24 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 //   - Build cycle stats from the owner's logs via the SAME path the dashboard
 //     uses (StatsService.BuildCycleStatsFromLogs, which needs no repositories).
 //   - In-app predictions suppressed (DashboardPredictionDisabled — the owner's
-//     unpredictable-cycle mode — or stats.PregnancyPaused) ⇒ nothing. This is
-//     the medical-safety gate: never emit a date the app itself refuses to show.
+//     unpredictable-cycle mode — stats.PregnancyPaused, or DashboardCycleOverdue
+//     — the running cycle is past the account's reference length by more than a
+//     week) ⇒ nothing. This is the medical-safety gate: never emit a date the app
+//     itself refuses to show.
+//
+//     The overdue disjunct also ends a repeat that had no end: past that point
+//     DashboardUpcomingPredictions rolls the projection a whole cycle forward, so
+//     the next-period date it yields is manufactured, and — because that same
+//     date is the period reminder's watermark KEY — every roll produced an anchor
+//     no watermark covered and re-armed a fresh "period soon" send, once per
+//     projected cycle, for as long as the cycle stayed unclosed. Suppressing the
+//     reminder suppresses the write too: this decision emits nothing, the notify
+//     pass writes a watermark only after a 2xx delivery, so an overdue cycle
+//     leaves the watermarks exactly where the last real send left them. When the
+//     owner finally logs the real cycle start, the anchor is that new cycle's
+//     projected next-period date — different from the stale watermark — so the
+//     next legitimate reminder fires exactly once and its own watermark then
+//     covers it.
 //   - Resolve "today" as the owner-local calendar day (DateAtLocation) and the
 //     median-first projection cycle length the dashboard feeds to its predictions
 //     (DashboardProjectionCycleLength — the same statistic as stats.NextPeriodStart,
@@ -147,7 +163,7 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, logs, now, location)
 
 	// Medical-safety gate: if the app suppresses predictions, emit nothing.
-	if DashboardPredictionDisabled(user) || stats.PregnancyPaused {
+	if DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) {
 		return nil
 	}
 

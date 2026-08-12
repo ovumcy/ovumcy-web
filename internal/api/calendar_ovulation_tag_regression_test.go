@@ -12,10 +12,19 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// TestCalendarRendersOvulationTagWithoutFertileOverride pins the ovulation
+// marker's rendering: a dot on the ovulation day, never the textual badge, in the
+// running cycle and in the next projected one.
+//
+// The cycle is seeded relative to the CURRENT day (cycle day 5). A fixture pinned
+// to fixed calendar dates would paint nothing at all once the clock moved a week
+// past the account's reference length — the calendar withholds every projected
+// marker for an overdue cycle (services.DashboardCycleOverdue) — so the marker
+// contract has to be measured on an account whose cycle is actually running.
 func TestCalendarRendersOvulationTagWithoutFertileOverride(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "calendar-ovulation-tag@example.com", "StrongPass1", true)
-	periodStart := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+	periodStart := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -4)
 
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,
@@ -38,19 +47,24 @@ func TestCalendarRendersOvulationTagWithoutFertileOverride(t *testing.T) {
 
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	febRendered := renderCalendarMonthHTML(t, app, authCookie, "2026-02")
-	febDayMarkup := extractCalendarDayMarkup(t, febRendered, "2026-02-23")
-	if !regexp.MustCompile(`calendar-ovulation-dot`).MatchString(febDayMarkup) {
-		t.Fatalf("expected ovulation dot on 2026-02-23 in February calendar")
+	// Ovulation of the running cycle: cycle start + (28 - 14) - 1. The next
+	// projected cycle repeats it one cycle length later.
+	currentOvulation := periodStart.AddDate(0, 0, 13)
+	projectedOvulation := currentOvulation.AddDate(0, 0, 28)
+
+	currentRendered := renderCalendarMonthHTML(t, app, authCookie, currentOvulation.Format("2006-01"))
+	currentDayMarkup := extractCalendarDayMarkup(t, currentRendered, currentOvulation.Format("2006-01-02"))
+	if !regexp.MustCompile(`calendar-ovulation-dot`).MatchString(currentDayMarkup) {
+		t.Fatalf("expected ovulation dot on %s", currentOvulation.Format("2006-01-02"))
 	}
-	if regexp.MustCompile(`calendar-tag-label-full">Ovulation</span>`).MatchString(febDayMarkup) {
-		t.Fatalf("did not expect textual ovulation badge on 2026-02-23")
+	if regexp.MustCompile(`calendar-tag-label-full">Ovulation</span>`).MatchString(currentDayMarkup) {
+		t.Fatalf("did not expect textual ovulation badge on %s", currentOvulation.Format("2006-01-02"))
 	}
 
-	marRendered := renderCalendarMonthHTML(t, app, authCookie, "2026-03")
-	marDayMarkup := extractCalendarDayMarkup(t, marRendered, "2026-03-23")
-	if !regexp.MustCompile(`calendar-ovulation-dot`).MatchString(marDayMarkup) {
-		t.Fatalf("expected projected ovulation dot on 2026-03-23 in March calendar")
+	projectedRendered := renderCalendarMonthHTML(t, app, authCookie, projectedOvulation.Format("2006-01"))
+	projectedDayMarkup := extractCalendarDayMarkup(t, projectedRendered, projectedOvulation.Format("2006-01-02"))
+	if !regexp.MustCompile(`calendar-ovulation-dot`).MatchString(projectedDayMarkup) {
+		t.Fatalf("expected projected ovulation dot on %s", projectedOvulation.Format("2006-01-02"))
 	}
 }
 

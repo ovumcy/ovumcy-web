@@ -43,15 +43,20 @@ func armCalendarFeedForUserWithColumns(t *testing.T, database *gorm.DB, userID u
 	if err := repo.SaveCalendarFeedToken(t.Context(), userID, adjust(columns)); err != nil {
 		t.Fatalf("SaveCalendarFeedToken: %v", err)
 	}
-	for _, day := range []string{"2026-01-05", "2026-02-02", "2026-03-02"} {
-		parsed, _ := time.ParseInLocation("2006-01-02", day, time.UTC)
-		if err := database.Create(&models.DailyLog{UserID: userID, Date: parsed, IsPeriod: true}).Error; err != nil {
-			t.Fatalf("seed period log %s: %v", day, err)
+	// Three cycle starts one 28-day cycle apart, anchored to the CURRENT day: the
+	// feed emits no prediction events once a cycle has run past the account's
+	// reference length by more than a week (services.DashboardCycleOverdue), so a
+	// cadence pinned to fixed calendar dates stops producing events as soon as the
+	// clock moves past them. Relative seeding keeps the running cycle on day 3.
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	starts := []time.Time{today.AddDate(0, 0, -58), today.AddDate(0, 0, -30), today.AddDate(0, 0, -2)}
+	for _, start := range starts {
+		if err := database.Create(&models.DailyLog{UserID: userID, Date: start, IsPeriod: true}).Error; err != nil {
+			t.Fatalf("seed period log %s: %v", start.Format("2006-01-02"), err)
 		}
 	}
 	// Anchor the current cycle to the most recent seeded start.
-	start, _ := time.ParseInLocation("2006-01-02", "2026-03-02", time.UTC)
-	if err := database.Model(&models.User{}).Where("id = ?", userID).Update("last_period_start", start).Error; err != nil {
+	if err := database.Model(&models.User{}).Where("id = ?", userID).Update("last_period_start", starts[len(starts)-1]).Error; err != nil {
 		t.Fatalf("set last_period_start: %v", err)
 	}
 	return token

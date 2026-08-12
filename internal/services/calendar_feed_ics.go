@@ -19,10 +19,13 @@ import (
 // Medical-safety invariant (same as the webhook reminder decision): it reuses
 // the EXACT prediction path the dashboard uses (BuildCycleStatsFromLogs →
 // DashboardUpcomingPredictions, gated by DashboardPredictionDisabled /
-// stats.PregnancyPaused). It NEVER fabricates a date the app itself refuses to
-// show — when in-app predictions are suppressed (unpredictable cycle, or a
-// pregnancy pause), it emits ZERO prediction events, so a "fertile window" is
-// never pushed into a pregnant owner's calendar.
+// stats.PregnancyPaused / DashboardCycleOverdue). It NEVER fabricates a date the
+// app itself refuses to show — when in-app predictions are suppressed
+// (unpredictable cycle, a pregnancy pause, or a cycle running past its reference
+// length by more than a week), it emits ZERO prediction events, so neither a
+// "fertile window" is pushed into a pregnant owner's calendar nor three cycles
+// of invented period dates into a calendar client the app itself would not name
+// a single date to.
 //
 // Data-minimization invariant: every VEVENT SUMMARY is the SAME neutral,
 // contentless title (calendarFeedNeutralSummary) — no cycle phase, no date, no
@@ -91,8 +94,9 @@ type calendarFeedEvent struct {
 //   - Build cycle stats from the owner's logs via the SAME path the dashboard
 //     uses (StatsService.BuildCycleStatsFromLogs, which needs no repositories).
 //   - If in-app predictions are suppressed (DashboardPredictionDisabled — the
-//     owner's unpredictable-cycle mode — or stats.PregnancyPaused), emit ZERO
-//     events. This is the hard medical-safety suppression gate.
+//     owner's unpredictable-cycle mode — stats.PregnancyPaused, or
+//     DashboardCycleOverdue), emit ZERO events. This is the hard medical-safety
+//     suppression gate.
 //   - Otherwise project the next calendarFeedProjectionCycles cycles forward from
 //     the owner's last period start, reusing the dashboard's own cycle-start
 //     projection + window helpers, and emit a predicted-next-period event and an
@@ -118,8 +122,12 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, input.Logs, input.Now, input.Location)
 
 	// Medical-safety suppression gate: if the app suppresses predictions, emit
-	// nothing. Pregnancy-pause OR unpredictable-cycle mode both suppress.
-	if DashboardPredictionDisabled(user) || stats.PregnancyPaused {
+	// nothing. Unpredictable-cycle mode, a pregnancy pause, OR an overdue cycle
+	// (DashboardCycleOverdue — past the account's reference length by more than a
+	// week, where the projection can only roll a whole cycle forward) each
+	// suppress on their own. The feed carries prediction events only, so this is
+	// the empty-but-well-formed VCALENDAR path.
+	if DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) {
 		return nil
 	}
 

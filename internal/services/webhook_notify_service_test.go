@@ -402,6 +402,138 @@ func TestNotifyRetriesAfterFailure(t *testing.T) {
 	}
 }
 
+// notifyDay builds a UTC calendar day for the resume timeline below.
+func notifyDay(year int, month time.Month, day int) time.Time {
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+}
+
+// overdueResumeRecord is the owner of the resume timeline: a regular 28-day
+// account with period reminders on and a 3-day lead, anchored at the given last
+// period start and carrying the watermark a previous pass would have written.
+func overdueResumeRecord(lastPeriodStart time.Time, periodWatermark *time.Time) models.WebhookNotifyRecord {
+	anchor := lastPeriodStart
+	return models.WebhookNotifyRecord{
+		ID:                              1,
+		CycleLength:                     28,
+		PeriodLength:                    5,
+		LutealPhase:                     14,
+		LastPeriodStart:                 &anchor,
+		WebhookEnabled:                  true,
+		WebhookURL:                      "https://a.example/hook",
+		WebhookNotifyPeriod:             true,
+		WebhookNotifyOvulation:          false,
+		ReminderLeadDays:                3,
+		WebhookPeriodLastSentCycleStart: periodWatermark,
+	}
+}
+
+// runOverdueResumePass runs one notify pass over a single owner and returns the
+// report together with the stubs, so the caller can assert on deliveries and
+// watermark writes.
+func runOverdueResumePass(t *testing.T, record models.WebhookNotifyRecord, dayLogs []models.DailyLog, now time.Time) (NotifyReport, *stubNotifyRepo, *stubDeliverer) {
+	t.Helper()
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, stubLogReader{byUser: map[uint][]models.DailyLog{1: dayLogs}}, stubDecryptor{}, deliverer)
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce at %s: %v", now.Format("2006-01-02"), err)
+	}
+	return report, repo, deliverer
+}
+
+// TestNotifyOverdueCycleLeavesNoWatermarkAndResumesOnce walks the whole idempotency
+// story an overdue cycle used to break, as four passes over one owner.
+//
+// The watermark is keyed on the PREDICTED next-period date, which is also the
+// reminder's cycle anchor. While a cycle runs past its reference length the
+// projection rolls forward one whole cycle at a time, so before the overdue gate
+// every roll produced an anchor no watermark covered and re-armed a fresh "period
+// soon" send — once per invented cycle, for as long as the cycle stayed open.
+//
+//   - 2026-03-23, cycle day 26: the honest reminder for 2026-03-26 is sent and its
+//     watermark written.
+//   - 2026-04-20, cycle day 54: the projection has rolled to 2026-04-23, three days
+//     out and inside the lead window, but the account is overdue — nothing is sent,
+//     AND nothing is written, so the watermark still points at 2026-03-26. That is
+//     the resume path: suppression that wrote a watermark for the phantom would
+//     have consumed the next real cycle's key.
+//   - 2026-05-27, after the owner logs the real cycle start on 2026-05-02: the
+//     reminder for 2026-05-30 fires exactly once past the stale 2026-03-26
+//     watermark, and advances it.
+//   - Same day, with the advanced watermark: nothing again.
+func TestNotifyOverdueCycleLeavesNoWatermarkAndResumesOnce(t *testing.T) {
+	anchor := notifyDay(2026, time.February, 26)
+	history := []models.DailyLog{
+		periodStartLog(1, notifyDay(2025, time.December, 4)),
+		periodStartLog(1, notifyDay(2026, time.January, 1)),
+		periodStartLog(1, notifyDay(2026, time.January, 29)),
+		periodStartLog(1, anchor),
+	}
+
+	// Pass 1 — inside the reference length: the estimate is honest and is sent.
+	report1, repo1, deliverer1 := runOverdueResumePass(t, overdueResumeRecord(anchor, nil), history, notifyDay(2026, time.March, 23))
+	if report1.Sent != 1 {
+		t.Fatalf("pass 1 expected one honest reminder sent, got sent=%d due=%d", report1.Sent, report1.Due)
+	}
+	writes1 := repo1.writes()
+	if len(writes1) != 1 {
+		t.Fatalf("pass 1 expected one watermark write, got %d", len(writes1))
+	}
+	firstWatermark := writes1[0].anchor
+	if got := firstWatermark.Format("2006-01-02"); got != "2026-03-26" {
+		t.Fatalf("pass 1 watermark = %s, want the predicted 2026-03-26", got)
+	}
+	if got := deliverer1.deliveries()[0].payload.EventDate; got != "2026-03-26" {
+		t.Fatalf("pass 1 delivered event date = %s, want 2026-03-26", got)
+	}
+
+	// Pass 2 — the period never came and the cycle is overdue. The phantom
+	// 2026-04-23 is in-window, so only the overdue gate keeps it out.
+	report2, repo2, deliverer2 := runOverdueResumePass(t, overdueResumeRecord(anchor, &firstWatermark), history, notifyDay(2026, time.April, 20))
+	if report2.Due != 0 || report2.Sent != 0 {
+		t.Fatalf("pass 2 must compute nothing for an overdue cycle, got due=%d sent=%d", report2.Due, report2.Sent)
+	}
+	if len(deliverer2.deliveries()) != 0 {
+		t.Fatalf("pass 2 delivered a phantom reminder: %#v", deliverer2.deliveries())
+	}
+	if len(repo2.writes()) != 0 {
+		t.Fatalf("pass 2 wrote a watermark for a reminder it never sent: %#v", repo2.writes())
+	}
+	if report2.SkippedIdempotent != 0 {
+		t.Fatalf("pass 2 should have no candidate at all, not one hidden by a watermark (skipped=%d)", report2.SkippedIdempotent)
+	}
+
+	// Pass 3 — the owner logs the real cycle start. The stale watermark still
+	// names 2026-03-26, so the new cycle's reminder is free to fire once.
+	resumed := notifyDay(2026, time.May, 2)
+	resumedLogs := append(append([]models.DailyLog{}, history...), periodStartLog(1, resumed))
+	report3, repo3, deliverer3 := runOverdueResumePass(t, overdueResumeRecord(resumed, &firstWatermark), resumedLogs, notifyDay(2026, time.May, 27))
+	if report3.Sent != 1 {
+		t.Fatalf("pass 3 expected exactly one reminder after the real cycle start, got sent=%d due=%d", report3.Sent, report3.Due)
+	}
+	writes3 := repo3.writes()
+	if len(writes3) != 1 {
+		t.Fatalf("pass 3 expected one watermark write, got %d", len(writes3))
+	}
+	resumedWatermark := writes3[0].anchor
+	if got := resumedWatermark.Format("2006-01-02"); got != "2026-05-30" {
+		t.Fatalf("pass 3 watermark = %s, want the new cycle's 2026-05-30", got)
+	}
+	if got := deliverer3.deliveries()[0].payload.EventDate; got != "2026-05-30" {
+		t.Fatalf("pass 3 delivered event date = %s, want 2026-05-30", got)
+	}
+
+	// Pass 4 — the same day again: exactly once means once.
+	report4, repo4, deliverer4 := runOverdueResumePass(t, overdueResumeRecord(resumed, &resumedWatermark), resumedLogs, notifyDay(2026, time.May, 27))
+	if report4.Sent != 0 || len(deliverer4.deliveries()) != 0 {
+		t.Fatalf("pass 4 must send nothing, got sent=%d deliveries=%d", report4.Sent, len(deliverer4.deliveries()))
+	}
+	if len(repo4.writes()) != 0 {
+		t.Fatalf("pass 4 wrote a watermark despite sending nothing: %#v", repo4.writes())
+	}
+}
+
 // TestNotifyDryRunMakesNoRequestOrWatermark proves --dry-run computes due
 // reminders but performs no delivery and writes no watermark.
 func TestNotifyDryRunMakesNoRequestOrWatermark(t *testing.T) {

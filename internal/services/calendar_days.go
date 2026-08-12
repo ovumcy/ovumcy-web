@@ -81,7 +81,16 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	ovulationMap := make(map[string]bool)
 	tentativeOvulationMap := make(map[string]bool)
 
-	if DashboardPredictionDisabled(user) || stats.PregnancyPaused {
+	// Medical-safety suppression gate, the same three signals every projected
+	// surface gates on: unpredictable-cycle mode, a pregnancy pause, or a cycle
+	// running past the account's reference length by more than a week
+	// (DashboardCycleOverdue). Past that point stats.NextPeriodStart is a date the
+	// account's own data no longer supports: appendPredictedCycles chains from it,
+	// so the grid painted a predicted period in the PAST — one that never happened
+	// — and then a phantom window every cycle length after it. Every prediction map
+	// stays empty here; the recorded facts (logged period days, has-data, sex
+	// activity) are read elsewhere and are untouched.
+	if DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) {
 		return predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, tentativeOvulationMap
 	}
 
