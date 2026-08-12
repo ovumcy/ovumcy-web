@@ -429,7 +429,7 @@
   "usage_goal.summary.health": "Интерфейс остаётся нейтральным и делает акцент на наблюдении за паттернами со временем.",
   "dashboard.update_cycle_data": "Обновить данные цикла",
   "dashboard.today_editor": "Запись за сегодня",
-  "dashboard.cycle_hero_estimated": "Карта цикла приблизительная и построена по Вашим текущим базовым параметрам цикла.",
+  "dashboard.cycle_hero_estimated": "Карта цикла приблизительная: она построена по тому, как обычно проходит Ваш цикл.",
   "dashboard.period_day": "День месячных",
   "dashboard.period_day_action": "Отметить как день месячных",
   "dashboard.mood": "Настроение",

@@ -439,7 +439,7 @@ test.describe('Settings: profile and cycle', () => {
     const bbtInput = dashboardForm.locator('#dashboard-bbt');
     await expect(bbtInput).toBeVisible();
     await expect(dashboardForm.locator('.measurement-field-unit')).toContainText('°F');
-    await expect(dashboardForm).toContainText('93.20-109.40 °F');
+    await expect(dashboardForm).toContainText('93.2-109.4 °F');
     await bbtInput.fill('150.0');
     await bbtInput.blur();
     const invalidState = await bbtInput.evaluate((node) => {
