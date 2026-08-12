@@ -8,8 +8,15 @@ type credentialsInput struct {
 	Consent         string `json:"consent" form:"consent"`
 }
 
+// dayPayload is the transport shape of a day save. ConfirmCycleStart carries
+// the answer to the inline cycle-start question the HTML day form asks beside
+// the period toggle; it is read from the form body only and stays out of the
+// published v1 JSON body (`json:"-"`), which keeps marking a cycle start over
+// JSON the dedicated POST /api/v1/days/:date/cycle-start endpoint's job.
 type dayPayload struct {
-	IsPeriod        bool     `json:"is_period"`
+	IsPeriod          bool `json:"is_period"`
+	ConfirmCycleStart bool `json:"-"`
+
 	Flow            string   `json:"flow"`
 	Mood            int      `json:"mood"`
 	SexActivity     string   `json:"sex_activity"`

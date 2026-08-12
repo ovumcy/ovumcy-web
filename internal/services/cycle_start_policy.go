@@ -115,7 +115,35 @@ func LatestCycleStartAnchorBeforeOrOn(user *models.User, logs []models.DailyLog,
 }
 
 func ShouldSuggestManualCycleStart(user *models.User, logs []models.DailyLog, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) bool {
-	if !logEntry.IsPeriod || logEntry.CycleStart || !IsAllowedManualCycleStartDate(day, now, location) {
+	return logEntry.IsPeriod && cycleStartGapSuggestsNewCycle(user, logs, logEntry, day, now, location)
+}
+
+// ShouldAskCycleStartQuestion reports whether the day form asks, inline next to
+// the period toggle, whether a new cycle begins on this day.
+//
+// It is the suggestion policy above evaluated on the day as the form is about
+// to leave it, which is why the stored IsPeriod flag must not gate it: bleeding
+// starting is one event, so the question belongs to the toggle being turned on,
+// and on a day marked as a period day for the first time the persisted entry
+// still reads IsPeriod=false while the form renders. A day that already carries
+// a competing cycle start inside its period cluster is excluded — answering yes
+// there would have to replace that start, which is the separate manual control's
+// confirmation flow, not a calm one-tap question.
+func ShouldAskCycleStartQuestion(user *models.User, logs []models.DailyLog, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) bool {
+	if !cycleStartGapSuggestsNewCycle(user, logs, logEntry, day, now, location) {
+		return false
+	}
+	if location == nil {
+		location = time.UTC
+	}
+	return findCompetingCycleStart(logs, DateAtLocation(day.In(location), location), location).IsZero()
+}
+
+// cycleStartGapSuggestsNewCycle is the shared core: this day may be marked as a
+// cycle start, is not one already, and sits far enough past the previous anchor
+// that a new cycle is plausible.
+func cycleStartGapSuggestsNewCycle(user *models.User, logs []models.DailyLog, logEntry models.DailyLog, day time.Time, now time.Time, location *time.Location) bool {
+	if logEntry.CycleStart || !IsAllowedManualCycleStartDate(day, now, location) {
 		return false
 	}
 

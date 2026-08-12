@@ -464,6 +464,8 @@
   "dashboard.clear_today": "Heutigen Eintrag löschen",
   "dashboard.manual_cycle_start": "Neuen Zyklusbeginn markieren",
   "dashboard.cycle_start_suggestion": "Dies könnte der erste Tag Ihrer Periode sein. Falls ja, markieren Sie ihn als neuen Zyklusbeginn.",
+  "dashboard.cycle_start_question": "Einen neuen Zyklus ab diesem Tag beginnen?",
+  "dashboard.cycle_start_question_hint": "Es wird nichts neu berechnet, bevor Sie diesen Tag speichern.",
   "dashboard.error.invalid_cycle_start_date": "Ein neuer Zyklusbeginn kann nur für vergangene Tage und höchstens 2 Tage in die Zukunft markiert werden.",
   "dashboard.cycle_start_replace_message": "Sie haben bereits einen Zyklusbeginn am %s markiert. Durch %s ersetzen?",
   "dashboard.cycle_start_replace_accept": "Ersetzen",

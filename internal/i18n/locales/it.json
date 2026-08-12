@@ -464,6 +464,8 @@
   "dashboard.clear_today": "Cancella la voce di oggi",
   "dashboard.manual_cycle_start": "Segna inizio nuovo ciclo",
   "dashboard.cycle_start_suggestion": "Questo potrebbe essere il primo giorno del tuo periodo. Se lo è, segnalo come inizio di un nuovo ciclo.",
+  "dashboard.cycle_start_question": "Iniziare un nuovo ciclo da questo giorno?",
+  "dashboard.cycle_start_question_hint": "Non viene ricalcolato nulla finché non salvi questo giorno.",
   "dashboard.error.invalid_cycle_start_date": "Un nuovo inizio ciclo può essere segnato solo per giorni passati e non oltre 2 giorni nel futuro.",
   "dashboard.cycle_start_replace_message": "Hai già segnato un inizio ciclo il %s. Sostituirlo con %s?",
   "dashboard.cycle_start_replace_accept": "Sostituisci",

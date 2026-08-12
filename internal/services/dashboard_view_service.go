@@ -66,6 +66,7 @@ type DashboardViewData struct {
 	ShowMissedDaysLink                bool
 	MissedDay                         time.Time
 	ShowCycleStartSuggestion          bool
+	ShowCycleStartQuestion            bool
 	ShowSpottingCycleWarning          bool
 	PredictionExplanationPrimaryKey   string
 	PredictionExplanationSecondaryKey string
@@ -97,6 +98,7 @@ type DayEditorViewData struct {
 	ManualCycleStartPolicy     ManualCycleStartPolicy
 	ShowFutureCycleStartNotice bool
 	ShowCycleStartSuggestion   bool
+	ShowCycleStartQuestion     bool
 	ShowSpottingCycleWarning   bool
 	IsOwner                    bool
 }
@@ -124,7 +126,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 
 	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, logs, stats, now, location)
-	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, err := service.buildPickerViewState(
+	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStart, err := service.buildPickerViewState(
 		user,
 		today,
 		now,
@@ -180,11 +182,12 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		ShowCycleFactors:                  visibility.ShowCycleFactors,
 		ShowNotesField:                    visibility.ShowNotesField,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
-		ManualCycleStartPolicy:            cycleStartPolicy,
+		ManualCycleStartPolicy:            cycleStart.Policy,
 		ShowHighFertilityBadge:            showHighFertilityBadge,
 		ShowMissedDaysLink:                showMissedDaysLink,
 		MissedDay:                         missedDay,
-		ShowCycleStartSuggestion:          showCycleStartSuggestion,
+		ShowCycleStartSuggestion:          cycleStart.ShowSuggestion,
+		ShowCycleStartQuestion:            cycleStart.AskQuestion,
 		ShowSpottingCycleWarning:          showSpottingCycleWarning,
 		PredictionExplanationPrimaryKey:   predictionExplanation.PrimaryKey,
 		PredictionExplanationSecondaryKey: predictionExplanation.SecondaryKey,
@@ -247,7 +250,7 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 	if err != nil {
 		return DayEditorViewData{}, err
 	}
-	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, err := service.buildPickerViewState(
+	selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStart, err := service.buildPickerViewState(
 		user,
 		day,
 		now,
@@ -279,9 +282,10 @@ func (service *DashboardViewService) BuildDayEditorViewData(ctx context.Context,
 		ShowCycleFactors:           visibility.ShowCycleFactors,
 		ShowNotesField:             visibility.ShowNotesField,
 		AllowManualCycleStart:      visibility.AllowManualCycleStart,
-		ManualCycleStartPolicy:     cycleStartPolicy,
+		ManualCycleStartPolicy:     cycleStart.Policy,
 		ShowFutureCycleStartNotice: isFutureDate && visibility.AllowManualCycleStart,
-		ShowCycleStartSuggestion:   showCycleStartSuggestion,
+		ShowCycleStartSuggestion:   cycleStart.ShowSuggestion,
+		ShowCycleStartQuestion:     cycleStart.AskQuestion,
 		ShowSpottingCycleWarning:   shouldShowSpottingCycleWarning(logs, logEntry, day, location),
 		IsOwner:                    IsOwnerUser(user),
 	}, nil
@@ -328,24 +332,35 @@ func (service *DashboardViewService) buildDashboardStats(ctx context.Context, us
 	return stats, logs, nil
 }
 
-func (service *DashboardViewService) buildPickerViewState(user *models.User, day time.Time, now time.Time, logEntry models.DailyLog, symptoms []models.SymptomType, logs []models.DailyLog, location *time.Location) (map[uint]bool, []models.SymptomType, []models.SymptomType, []models.SymptomType, ManualCycleStartPolicy, bool, error) {
+// dayFormCycleStartState groups the cycle-start flags one day form needs: the
+// manual control's policy, the plain suggestion hint, and whether the form asks
+// the inline "does a new cycle begin here?" question beside the period toggle.
+type dayFormCycleStartState struct {
+	Policy         ManualCycleStartPolicy
+	ShowSuggestion bool
+	AskQuestion    bool
+}
+
+func (service *DashboardViewService) buildPickerViewState(user *models.User, day time.Time, now time.Time, logEntry models.DailyLog, symptoms []models.SymptomType, logs []models.DailyLog, location *time.Location) (map[uint]bool, []models.SymptomType, []models.SymptomType, []models.SymptomType, dayFormCycleStartState, error) {
 	selectedSymptomID := SymptomIDSet(logEntry.SymptomIDs)
 	rankedSymptoms := symptoms
 	if len(logs) == 0 {
 		primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
-		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, ManualCycleStartPolicy{}, false, nil
+		return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, dayFormCycleStartState{}, nil
 	}
 	if len(symptoms) >= 2 && completedCycleCountFromLogs(logs) >= 2 {
 		rankedSymptoms = RankSymptomsForEntryPicker(symptoms, logs)
 	}
 
 	primarySymptoms, extraSymptoms := SplitSymptomsForCollapsedPicker(rankedSymptoms, selectedSymptomID, 8)
-	showCycleStartSuggestion := ShouldSuggestManualCycleStart(user, logs, logEntry, day, now, location)
-	cycleStartPolicy := ManualCycleStartPolicy{}
-	if IsOwnerUser(user) {
-		cycleStartPolicy = ResolveManualCycleStartPolicy(user, logs, day, now, location)
+	cycleStart := dayFormCycleStartState{
+		ShowSuggestion: ShouldSuggestManualCycleStart(user, logs, logEntry, day, now, location),
 	}
-	return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStartPolicy, showCycleStartSuggestion, nil
+	if IsOwnerUser(user) {
+		cycleStart.Policy = ResolveManualCycleStartPolicy(user, logs, day, now, location)
+		cycleStart.AskQuestion = ShouldAskCycleStartQuestion(user, logs, logEntry, day, now, location)
+	}
+	return selectedSymptomID, rankedSymptoms, primarySymptoms, extraSymptoms, cycleStart, nil
 }
 
 func completedCycleCountFromLogs(logs []models.DailyLog) int {

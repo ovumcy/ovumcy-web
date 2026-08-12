@@ -369,6 +369,45 @@ func dashboardEntryDateChoices(t *testing.T, group *html.Node) map[string]*html.
 	return choices
 }
 
+// On the dashboard journal the cycle-start question is asked once, beside the
+// period toggle that raised it. The hint that used to send the owner to the
+// separate manual control gives way to it — two asks for one event is the
+// defect, so the hint's own hook is asserted absent while the question is up.
+func TestDashboardAsksTheCycleStartQuestionInsteadOfPointingAtTheManualControl(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-cycle-start-question@example.com", "StrongPass1", true)
+
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	entries := []models.DailyLog{
+		{UserID: user.ID, Date: today.AddDate(0, 0, -28), IsPeriod: true, Flow: models.FlowMedium, CycleStart: true},
+		{UserID: user.ID, Date: today, IsPeriod: true, Flow: models.FlowMedium},
+	}
+	if err := database.Create(&entries).Error; err != nil {
+		t.Fatalf("create daily logs: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"=UTC"))
+	request.Header.Set(timezoneHeaderName, "UTC")
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	rendered := mustReadBodyString(t, response.Body)
+
+	if got := strings.Count(rendered, "data-cycle-start-question"); got != 1 {
+		t.Fatalf("expected exactly one inline cycle-start question on the dashboard journal, got %d", got)
+	}
+	if strings.Contains(rendered, "data-cycle-start-suggestion") {
+		t.Fatalf("expected the manual-control hint to stand down while the inline question is asked")
+	}
+	// Positive anchor: the manual control itself stays available for corrections.
+	if !strings.Contains(rendered, "data-dashboard-cycle-start-button") {
+		t.Fatalf("expected the separate manual cycle-start control to stay on the page")
+	}
+}
+
 func assertDashboardSavedNoteDisclosure(t *testing.T, document *html.Node) {
 	t.Helper()
 

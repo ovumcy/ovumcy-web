@@ -305,6 +305,9 @@
         {{if not .CurrentUser.ShownPeriodTip}}
         <p class="dashboard-once-tip journal-muted text-sm" data-period-tip-copy hidden>{{t .Messages "dashboard.period_tip_once"}}</p>
         {{end}}
+        {{if .ShowCycleStartQuestion}}
+        {{template "cycle_start_question" (dict "Messages" .Messages "CurrentIsPeriod" .TodayEntry.IsPeriod "Compact" false)}}
+        {{end}}
 
         <fieldset id="dashboard-symptoms" class="space-y-3" data-dashboard-section="symptoms">
           <legend class="field-label">{{t .Messages "dashboard.symptoms"}}</legend>
@@ -425,8 +428,9 @@
           data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
           data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
           data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
-        {{if .ShowCycleStartSuggestion}}
-        <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+        {{/* The question beside the period toggle already asks this. */}}
+        {{if and .ShowCycleStartSuggestion (not .ShowCycleStartQuestion)}}
+        <p class="journal-muted text-sm" data-cycle-start-suggestion data-notice-key="dashboard.cycle_start_suggestion">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
         {{end}}
         {{if .ManualCycleStartPotentialImplantation}}
         <p class="journal-muted text-sm">{{t .Messages "dashboard.implantation_warning"}}</p>

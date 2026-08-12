@@ -468,6 +468,8 @@
   "dashboard.clear_today": "Очистить запись за сегодня",
   "dashboard.manual_cycle_start": "Отметить начало нового цикла",
   "dashboard.cycle_start_suggestion": "Похоже, это первый день месячных. Если да, отметьте начало нового цикла.",
+  "dashboard.cycle_start_question": "Начать новый цикл с этого дня?",
+  "dashboard.cycle_start_question_hint": "Ничего не пересчитывается, пока Вы не сохраните этот день.",
   "dashboard.error.invalid_cycle_start_date": "Начало нового цикла можно отметить только для прошедших дней и не дальше чем на 2 дня вперёд.",
   "dashboard.cycle_start_replace_message": "У Вас уже отмечено начало цикла %s. Заменить на %s?",
   "dashboard.cycle_start_replace_accept": "Заменить",

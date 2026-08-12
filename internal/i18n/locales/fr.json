@@ -580,6 +580,8 @@
   "dashboard.clear_today": "Effacer l'entrée d'aujourd'hui",
   "dashboard.manual_cycle_start": "Marquer le début d'un nouveau cycle",
   "dashboard.cycle_start_suggestion": "C'est peut-être le premier jour de vos règles. Si c'est le cas, marquez-le comme début d'un nouveau cycle.",
+  "dashboard.cycle_start_question": "Commencer un nouveau cycle à partir de ce jour ?",
+  "dashboard.cycle_start_question_hint": "Rien n'est recalculé tant que vous n'avez pas enregistré cette journée.",
   "dashboard.error.invalid_cycle_start_date": "Un début de cycle ne peut être marqué que pour les jours passés et au maximum 2 jours à l'avance.",
   "dashboard.cycle_start_replace_message": "Vous avez déjà marqué un début de cycle le %s. Remplacer par le %s ?",
   "dashboard.cycle_start_replace_accept": "Remplacer",

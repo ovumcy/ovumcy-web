@@ -33,6 +33,9 @@
           data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">🩸</span> {{t .Messages "dashboard.period_day"}}</span>
       </span>
     </label>
+    {{if .ShowCycleStartQuestion}}
+    {{template "cycle_start_question" (dict "Messages" .Messages "CurrentIsPeriod" .Log.IsPeriod "Compact" true)}}
+    {{end}}
 
     <fieldset class="space-y-2">
       <legend class="field-label">{{t .Messages "dashboard.symptoms"}}</legend>
@@ -154,8 +157,10 @@
   {{if .ShowFutureCycleStartNotice}}
   <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
   {{end}}
-  {{if .ShowCycleStartSuggestion}}
-  <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+  {{/* The question beside the period toggle already asks this; the hint stays
+       only where no form is open to carry an answer. */}}
+  {{if and .ShowCycleStartSuggestion (not .ShowCycleStartQuestion)}}
+  <p class="journal-muted text-sm" data-cycle-start-suggestion data-notice-key="dashboard.cycle_start_suggestion">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
   {{end}}
   {{if .ManualCycleStartPotentialImplantation}}
   <p class="journal-muted text-sm">{{t .Messages "dashboard.implantation_warning"}}</p>
@@ -214,7 +219,7 @@
     <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
     {{end}}
     {{if .ShowCycleStartSuggestion}}
-    <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+    <p class="journal-muted text-sm" data-cycle-start-suggestion data-notice-key="dashboard.cycle_start_suggestion">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
     {{end}}
     {{if .ManualCycleStartPotentialImplantation}}
     <p class="journal-muted text-sm">{{t .Messages "dashboard.implantation_warning"}}</p>
@@ -257,7 +262,7 @@
       <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
       {{end}}
       {{if .ShowCycleStartSuggestion}}
-      <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
+      <p class="journal-muted text-sm" data-cycle-start-suggestion data-notice-key="dashboard.cycle_start_suggestion">{{t .Messages "dashboard.cycle_start_suggestion"}}</p>
       {{end}}
       {{if .ManualCycleStartPotentialImplantation}}
       <p class="journal-muted text-sm">{{t .Messages "dashboard.implantation_warning"}}</p>
