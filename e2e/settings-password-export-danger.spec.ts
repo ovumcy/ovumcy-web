@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { saveDashboardEntry } from './support/dashboard-helpers';
 import { clearDateField, fillDateField } from './support/date-field-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -86,13 +87,14 @@ async function saveTodayEntry(page: Page, note: string): Promise<void> {
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
 
-  await page.locator('input[name="is_period"]').check();
-  await checkStyledControl(page.locator('input[name="flow"][value="medium"]'));
-  await ensureNotesFieldVisible(page, '#today-notes');
-  await page.locator('#today-notes').fill(note);
-
-  await page.locator('[data-dashboard-save-form] button[data-save-button]').click();
-  await expect(page.locator('#save-status .status-ok')).toBeVisible();
+  // The dashboard is autosave-only: the seeding edits go through the shared
+  // helper, which waits on the autosave request they trigger.
+  await saveDashboardEntry(page, async () => {
+    await page.locator('input[name="is_period"]').check();
+    await checkStyledControl(page.locator('input[name="flow"][value="medium"]'));
+    await ensureNotesFieldVisible(page, '#today-notes');
+    await page.locator('#today-notes').fill(note);
+  });
 }
 
 async function createCustomSymptom(page: Page, name: string): Promise<void> {

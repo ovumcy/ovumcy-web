@@ -8,6 +8,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
+import { saveDashboardEntry } from './support/dashboard-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -29,9 +30,15 @@ async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<voi
   await expect(page).toHaveURL(/\/dashboard$/);
 }
 
-async function saveToday(page: Page): Promise<void> {
-  await page.locator('button[data-save-button]').first().click();
-  await expect(page.locator('#save-status .status-ok')).toBeVisible();
+/**
+ * Makes the edits and lets the journal save itself.
+ *
+ * There is no save button any more: the dashboard is autosave-only, so a spec
+ * hands its field interactions to the shared helper, which binds the wait to the
+ * autosave request they trigger.
+ */
+async function saveToday(page: Page, edit: () => Promise<void>): Promise<void> {
+  await saveDashboardEntry(page, edit);
 }
 
 async function enableBBTTracking(page: Page): Promise<void> {
@@ -179,12 +186,13 @@ test.describe('Dashboard: today editor', () => {
     await expect(notesCounter).toHaveText('0/2000');
 
     const noteText = Array.from({ length: 60 }, (_, index) => `toggle-note-${index}-${Date.now()}`).join('\n');
-    await notes.fill(noteText);
+    await saveToday(page, async () => {
+      await notes.fill(noteText);
+    });
     const filledNoteText = await notes.inputValue();
     await expect(notesCounter).toHaveText(`${Array.from(filledNoteText).length}/2000`);
     const notesHeight = await notes.evaluate((node) => Math.round(node.getBoundingClientRect().height));
     expect(notesHeight).toBeLessThanOrEqual(340);
-    await saveToday(page);
 
     await page.reload();
     await expect(noteDisclosure).toHaveAttribute('open', '');
@@ -229,16 +237,6 @@ test.describe('Dashboard: today editor', () => {
     const firstSymptom = todaySymptomOptions(page).nth(0);
     const secondSymptom = todaySymptomOptions(page).nth(1);
 
-    await periodToggle.check();
-    await expect(flowMedium).toBeEnabled();
-
-    await checkStyledControl(flowMedium);
-    await expect(flowMedium).toBeChecked();
-
-    await checkStyledControl(flowHeavy);
-    await expect(flowHeavy).toBeChecked();
-    await expect(flowMedium).not.toBeChecked();
-
     await expect(firstSymptom).toBeVisible();
     await expect(secondSymptom).toBeVisible();
     const firstSymptomValue = await symptomInputForOption(firstSymptom).getAttribute('value');
@@ -247,25 +245,35 @@ test.describe('Dashboard: today editor', () => {
     expect(firstSymptomValue).toBeTruthy();
     expect(secondSymptomValue).toBeTruthy();
 
-    await symptomChipForOption(firstSymptom).click();
-    await symptomChipForOption(secondSymptom).click();
-    await expect(symptomInputForOption(firstSymptom)).toBeChecked();
-    await expect(symptomInputForOption(secondSymptom)).toBeChecked();
-
-    await symptomChipForOption(secondSymptom).click();
-    await expect(symptomInputForOption(firstSymptom)).toBeChecked();
-    await expect(symptomInputForOption(secondSymptom)).not.toBeChecked();
-
-    await cycleFactorChip(page, 'stress').click();
-    await cycleFactorChip(page, 'travel').click();
-    await expect(stressFactor).toBeChecked();
-    await expect(travelFactor).toBeChecked();
-
     const noteText = `dashboard-note-${Date.now()}`;
-    await openTodayNotes(page);
-    await notes.fill(noteText);
+    await saveToday(page, async () => {
+      await periodToggle.check();
+      await expect(flowMedium).toBeEnabled();
 
-    await saveToday(page);
+      await checkStyledControl(flowMedium);
+      await expect(flowMedium).toBeChecked();
+
+      await checkStyledControl(flowHeavy);
+      await expect(flowHeavy).toBeChecked();
+      await expect(flowMedium).not.toBeChecked();
+
+      await symptomChipForOption(firstSymptom).click();
+      await symptomChipForOption(secondSymptom).click();
+      await expect(symptomInputForOption(firstSymptom)).toBeChecked();
+      await expect(symptomInputForOption(secondSymptom)).toBeChecked();
+
+      await symptomChipForOption(secondSymptom).click();
+      await expect(symptomInputForOption(firstSymptom)).toBeChecked();
+      await expect(symptomInputForOption(secondSymptom)).not.toBeChecked();
+
+      await cycleFactorChip(page, 'stress').click();
+      await cycleFactorChip(page, 'travel').click();
+      await expect(stressFactor).toBeChecked();
+      await expect(travelFactor).toBeChecked();
+
+      await openTodayNotes(page);
+      await notes.fill(noteText);
+    });
 
     await page.reload();
     await expect(page).toHaveURL(/\/dashboard$/);
@@ -313,21 +321,22 @@ test.describe('Dashboard: today editor', () => {
     const flowLight = page.locator('input[name="flow"][value="light"]');
     const firstSymptom = todaySymptomOptions(page).nth(0);
 
-    await periodToggle.check();
-    await checkStyledControl(flowLight);
-    await symptomChipForOption(firstSymptom).click();
-    await expect(symptomInputForOption(firstSymptom)).toBeChecked();
-
-    await saveToday(page);
+    await saveToday(page, async () => {
+      await periodToggle.check();
+      await checkStyledControl(flowLight);
+      await symptomChipForOption(firstSymptom).click();
+      await expect(symptomInputForOption(firstSymptom)).toBeChecked();
+    });
     await page.reload();
 
     await expect(periodToggle).toBeChecked();
-    await periodToggle.uncheck();
+    await saveToday(page, async () => {
+      await periodToggle.uncheck();
+    });
 
     await expect(symptomInputForOption(firstSymptom)).toBeChecked();
     await expect(flowLight).toBeDisabled();
 
-    await saveToday(page);
     await page.reload();
 
     await expect(periodToggle).not.toBeChecked();
@@ -345,12 +354,13 @@ test.describe('Dashboard: today editor', () => {
 
     const noteText = `to-clear-${Date.now()}`;
 
-    await periodToggle.check();
-    await checkStyledControl(flowMedium);
-    await symptomChipForOption(firstSymptom).click();
-    await openTodayNotes(page);
-    await notes.fill(noteText);
-    await saveToday(page);
+    await saveToday(page, async () => {
+      await periodToggle.check();
+      await checkStyledControl(flowMedium);
+      await symptomChipForOption(firstSymptom).click();
+      await openTodayNotes(page);
+      await notes.fill(noteText);
+    });
 
     await page.reload();
 
@@ -391,11 +401,12 @@ test.describe('Dashboard: today editor', () => {
     const notes = page.locator('#today-notes');
     const noteText = `dashboard-calendar-sync-${Date.now()}`;
 
-    await periodToggle.check();
-    await checkStyledControl(flowMedium);
-    await openTodayNotes(page);
-    await notes.fill(noteText);
-    await saveToday(page);
+    await saveToday(page, async () => {
+      await periodToggle.check();
+      await checkStyledControl(flowMedium);
+      await openTodayNotes(page);
+      await notes.fill(noteText);
+    });
 
     await page.goto(`/calendar?month=${month}&day=${todayISO}`);
     await expect(page.locator('#day-editor')).toContainText(noteText);
@@ -420,9 +431,10 @@ test.describe('Dashboard: today editor', () => {
     expect(firstSymptomValue).toBeTruthy();
     expect(firstSymptomLabel).toBeTruthy();
 
-    await checkStyledControl(moodFour);
-    await symptomChipForOption(firstSymptom).click();
-    await saveToday(page);
+    await saveToday(page, async () => {
+      await checkStyledControl(moodFour);
+      await symptomChipForOption(firstSymptom).click();
+    });
 
     const todayAction = await todaySaveForm(page).first().getAttribute('hx-put');
     expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
@@ -529,6 +541,96 @@ test.describe('Dashboard: today editor', () => {
 
     await page.reload();
     await expect(notes).toHaveValue(noteText);
+  });
+
+  test('the journal saves without a button and offers one step back', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-autosave-undo');
+
+    const form = todaySaveForm(page).first();
+    const indicator = page.locator('[data-dashboard-autosave-indicator]');
+    const notes = page.locator('#today-notes');
+
+    // One save model on this screen: there is nothing to press.
+    await expect(form.locator('[data-save-button]')).toHaveCount(0);
+    // Idle says nothing at all.
+    await expect(indicator).toHaveAttribute('data-autosave-state', 'idle');
+    await expect(indicator).toHaveText('');
+
+    const savePath = await todaySavePath(page);
+    const firstNote = `undo-first-${Date.now()}`;
+    await saveToday(page, async () => {
+      await openTodayNotes(page);
+      await notes.fill(firstNote);
+    });
+
+    // "Saved" only after the server answered, and it comes with the way back.
+    await expect(indicator).toHaveAttribute('data-autosave-state', 'saved');
+    await expect(indicator).toContainText(localeText('en', 'dashboard.autosave_saved'));
+    const undo = indicator.locator('[data-dashboard-autosave-undo]');
+    await expect(undo).toBeVisible();
+    await expect(undo).toHaveText(localeText('en', 'dashboard.autosave_undo'));
+    await expect(undo).toHaveAttribute('type', 'button');
+
+    const secondNote = `undo-second-${Date.now()}`;
+    await saveToday(page, async () => {
+      await notes.fill(secondNote);
+    });
+
+    // Undo re-saves the state the server held before that save, through the
+    // same path — bind to its own request, not to the page settling.
+    const [undoRequest] = await Promise.all([
+      page.waitForRequest(
+        (candidate) => candidate.method() === 'PUT' && candidate.url().includes(savePath),
+      ),
+      indicator.locator('[data-dashboard-autosave-undo]').click(),
+    ]);
+    const undoResponse = await undoRequest.response();
+    expect(undoResponse, `expected a response for PUT ${savePath}`).not.toBeNull();
+    expect(undoResponse!.ok(), `the undo failed with ${undoResponse!.status()}`).toBeTruthy();
+    expect(undoRequest.postData() ?? '').toContain(`notes=${firstNote}`);
+
+    await expect(notes).toHaveValue(firstNote);
+    // Depth one: there is no undoing of an undo.
+    await expect(indicator.locator('[data-dashboard-autosave-undo]')).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.locator('#today-notes')).toHaveValue(firstNote);
+  });
+
+  test('undoing the first save of an empty day clears the day again', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-undo-clears-day');
+
+    // Onboarding auto-fills the current period, so today starts with data. Clear
+    // it first: the case under test is the first save of a day that holds none.
+    await clearTodayButton(page).click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(clearTodayButton(page)).toHaveCount(0);
+
+    const savePath = await todaySavePath(page);
+    await expect(todaySaveForm(page).first()).toHaveAttribute('data-today-entry-exists', 'false');
+
+    const periodToggle = page.locator('input[name="is_period"]');
+    await saveToday(page, async () => {
+      await periodToggle.check();
+    });
+
+    // An empty day is an absent entry, so the step back is the clear-today
+    // DELETE rather than an upsert of blank values.
+    const [deleteRequest] = await Promise.all([
+      page.waitForRequest(
+        (candidate) => candidate.method() === 'DELETE' && candidate.url().includes(savePath),
+      ),
+      page.locator('[data-dashboard-autosave-undo]').click(),
+    ]);
+    const deleteResponse = await deleteRequest.response();
+    expect(deleteResponse, `expected a response for DELETE ${savePath}`).not.toBeNull();
+    expect(deleteResponse!.ok(), `the undo failed with ${deleteResponse!.status()}`).toBeTruthy();
+
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.locator('input[name="is_period"]')).not.toBeChecked();
+    await expect(clearTodayButton(page)).toHaveCount(0);
   });
 
   test('usage-goal chips change the mode from the dashboard without visiting settings', async ({

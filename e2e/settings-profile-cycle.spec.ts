@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fillDateField } from './support/date-field-helpers';
-import { dashboardNextPeriodText } from './support/dashboard-helpers';
+import { dashboardNextPeriodText, saveDashboardEntry } from './support/dashboard-helpers';
 import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import {
@@ -154,14 +154,11 @@ async function saveTodayWithSymptom(page: Page, symptomName: string): Promise<st
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/dashboard$/);
 
-  await page.locator('input[name="is_period"]').check();
-  const customSymptom = await ensureSymptomInputVisible(
-    dashboardSaveForm(page),
-    symptomName
-  );
-  await checkStyledControl(customSymptom);
-  await page.locator('button[data-save-button]').first().click();
-  await expect(page.locator('#save-status .status-ok')).toBeVisible();
+  await saveDashboardEntry(page, async () => {
+    await page.locator('input[name="is_period"]').check();
+    const customSymptom = await ensureSymptomInputVisible(dashboardSaveForm(page), symptomName);
+    await checkStyledControl(customSymptom);
+  });
 
   const todayAction = await page
     .locator('[data-dashboard-save-form]')
@@ -447,13 +444,13 @@ test.describe('Settings: profile and cycle', () => {
     });
     expect(invalidState.valid).toBe(false);
     expect(invalidState.validationMessage).not.toBe('');
-    await bbtInput.fill('98.6');
-    await bbtInput.blur();
-    await expect(bbtInput).toHaveValue('98.60');
     await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toBeVisible();
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toHaveCount(0);
-    await page.locator('button[data-save-button]').first().click();
-    await expect(page.locator('#save-status .status-ok')).toBeVisible();
+    await saveDashboardEntry(page, async () => {
+      await bbtInput.fill('98.6');
+      await bbtInput.blur();
+    });
+    await expect(bbtInput).toHaveValue('98.60');
 
     const todayAction = await dashboardForm.getAttribute('hx-put');
     expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);

@@ -521,6 +521,7 @@
   "dashboard.autosave_saved": "Сохранено автоматически",
   "dashboard.autosave_invalid": "Исправьте ошибки в форме для сохранения",
   "dashboard.autosave_error": "Автосохранение не удалось",
+  "dashboard.autosave_undo": "Отменить",
   "dashboard.save_message_self_care": "Сохранено. Позаботьтесь о себе сегодня 🌸",
   "dashboard.save_message_fertile": "Сохранено. Сейчас фертильный период.",
   "dashboard.save_message_neutral": "Сохранено.",

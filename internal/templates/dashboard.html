@@ -213,11 +213,14 @@
         data-save-feedback
         data-dashboard-save-form
         data-dashboard-date="{{.Today}}"
-        data-autosave-idle="{{t .Messages "dashboard.autosave_idle"}}"
+        data-today-entry-exists="{{if .TodayEntryExists}}true{{else}}false{{end}}"
+        data-autosave-clear-url="/api/v1/days/{{.Today}}?source=dashboard"
         data-autosave-saving="{{t .Messages "dashboard.autosave_saving"}}"
         data-autosave-saved="{{t .Messages "dashboard.autosave_saved"}}"
         data-autosave-invalid="{{t .Messages "dashboard.autosave_invalid"}}"
-        data-autosave-error="{{t .Messages "dashboard.autosave_error"}}">
+        data-autosave-undo="{{t .Messages "dashboard.autosave_undo"}}"
+        data-day-save-failed-text="{{t .Messages "daylog.save_failed"}}"
+        data-day-save-retry-label="{{t .Messages "daylog.save_retry"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
@@ -329,10 +332,12 @@
         </details>
         {{end}}
 
+        {{/* The journal saves itself: the row carries the outcome, not a button.
+             Idle renders nothing at all — a permanent "auto-save is ready" line
+             is noise on a page whose only job is one deliberate tap. */}}
         <div class="flex flex-wrap items-center gap-3">
-          <button type="submit" class="btn-primary" data-save-button data-saving-label="{{t .Messages "common.saving"}}">{{if .TodayEntryExists}}{{t .Messages "dashboard.update_entry"}}{{else}}{{t .Messages "dashboard.save_today"}}{{end}}</button>
           <div id="save-status" class="save-status text-sm" aria-live="polite"></div>
-          <div class="dashboard-autosave-indicator journal-muted text-xs" data-dashboard-autosave-indicator aria-live="polite">{{t .Messages "dashboard.autosave_idle"}}</div>
+          <div class="dashboard-autosave-indicator journal-muted text-xs" data-dashboard-autosave-indicator data-autosave-state="idle" aria-live="polite"></div>
         </div>
       </form>
 

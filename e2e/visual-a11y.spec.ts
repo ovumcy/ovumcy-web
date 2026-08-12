@@ -86,9 +86,12 @@ test.describe('Visual and accessibility regressions', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     await assertNoHorizontalOverflow(page);
-    const dashboardAutosave = page.locator('[data-dashboard-autosave-indicator]');
-    await dashboardAutosave.scrollIntoViewIfNeeded();
-    await expectElementAboveMobileTabbar(page, dashboardAutosave);
+    // The autosave row renders nothing while idle — the journal is autosave-only
+    // and says so only when it has something to report — so the lowest control
+    // of the day form is the anchor for the tabbar clearance.
+    const dashboardLowestAction = page.locator('[data-dashboard-cycle-start-button]');
+    await dashboardLowestAction.scrollIntoViewIfNeeded();
+    await expectElementAboveMobileTabbar(page, dashboardLowestAction);
 
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
@@ -318,6 +321,15 @@ test.describe('Visual and accessibility regressions', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
+
+    // With the journal on autosave there is no save button, so the dashboard's
+    // primary action is the manual cycle start — and it only paints as primary
+    // once today is a cycle start. Mark it, so the phase-tinted fill this test
+    // exists for is actually on screen.
+    await page.locator('[data-dashboard-cycle-start-button]').click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page.locator('[data-dashboard-editor] .btn-primary')).toBeVisible();
 
     const editor = page.locator('[data-dashboard-editor]');
     await expect(editor).toHaveAttribute('data-phase', /.+/);
