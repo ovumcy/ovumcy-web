@@ -72,6 +72,10 @@ export async function registerOwnerAndEnableIrregularMode(
  * MinDate is the later of (Jan 1 of the current year) and (today - 60 days), so an
  * anchor stays inside that window and older cycle starts are added afterwards
  * through `markCycleStartViaAPI`, which has no past-date bound.
+ *
+ * Onboarding done, "today" is pinned to the browser's timezone, so a day count a
+ * caller computes from the returned anchor matches the one the app renders
+ * whatever zone the server runs in.
  */
 export async function registerAndOnboardWithStartDaysAgo(
   page: Page,
@@ -155,6 +159,12 @@ export async function markCycleStart(page: Page, isoDate: string): Promise<void>
  * manual-start button and is the right tool when the button is the subject, this
  * one is pure seeding and has no past-date bound, so it reaches the anchors
  * onboarding's picker cannot.
+ *
+ * The endpoint sets `IsPeriod=true` AND `CycleStart=true` on the day, then runs
+ * auto-period-fill. The explicit flag is the point: it is what
+ * `latestExplicitCycleStartBeforeOrOn` picks up, where a plain `is_period` day
+ * upsert would leave `stats.LastPeriodStart` anchored to the `user.LastPeriodStart`
+ * onboarding wrote.
  *
  * `page.request` sends no Origin of its own and the CSRF middleware validates it
  * on every mutating request under the HTTPS posture, so the header is explicit
