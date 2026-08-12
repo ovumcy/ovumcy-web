@@ -53,7 +53,7 @@ func TestExportBuildCSVRowsEmptyBBTForUnsetTemperature(t *testing.T) {
 			logs: []models.DailyLog{
 				{
 					Date: mustParseExportDay(t, "2026-02-18"),
-					BBT:  models.NewBBT(0),
+					BBT:  new(0.0),
 				},
 			},
 		},

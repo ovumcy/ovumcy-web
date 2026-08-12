@@ -30,7 +30,7 @@ func TestDashboardFormSavePreservesHiddenOwnerOnlyFields(t *testing.T) {
 		Date:            today,
 		Mood:            2,
 		SexActivity:     models.SexActivityProtected,
-		BBT:             models.NewBBT(36.65),
+		BBT:             new(36.65),
 		CervicalMucus:   models.CervicalMucusEggWhite,
 		CycleFactorKeys: []string{models.CycleFactorStress},
 		Notes:           "keep me",

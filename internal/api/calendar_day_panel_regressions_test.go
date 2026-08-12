@@ -29,7 +29,7 @@ func TestCalendarDayPanelReadonlySummaryShowsSavedBBT(t *testing.T) {
 	logEntry := models.DailyLog{
 		UserID: user.ID,
 		Date:   time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC),
-		BBT:    models.NewBBT(36.75),
+		BBT:    new(36.75),
 		Notes:  "tracked",
 	}
 	if err := database.Create(&logEntry).Error; err != nil {

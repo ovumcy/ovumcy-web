@@ -769,27 +769,27 @@ func TestNotifyDecisionMatchesDashboardWithInferredLutealPhase(t *testing.T) {
 
 		// Cycle 1 (Jan1→Jan29): coverline window Jan1-6, rise Jan19-21 →
 		// ovulation Jan18 (day before first high), luteal = Jan29-Jan18 = 11.
-		{Date: day("2025-01-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-03"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-04"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-05"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-06"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-19"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-20"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-01-21"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-01"), BBT: new(36.20)},
+		{Date: day("2025-01-02"), BBT: new(36.20)},
+		{Date: day("2025-01-03"), BBT: new(36.20)},
+		{Date: day("2025-01-04"), BBT: new(36.20)},
+		{Date: day("2025-01-05"), BBT: new(36.20)},
+		{Date: day("2025-01-06"), BBT: new(36.20)},
+		{Date: day("2025-01-19"), BBT: new(36.50)},
+		{Date: day("2025-01-20"), BBT: new(36.50)},
+		{Date: day("2025-01-21"), BBT: new(36.50)},
 
 		// Cycle 2 (Jan29→Feb26): coverline window Jan29-Feb3, rise Feb16-18 →
 		// ovulation Feb15, luteal = Feb26-Feb15 = 11.
-		{Date: day("2025-01-29"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-30"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-01-31"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-01"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-02"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-03"), BBT: models.NewBBT(36.20)},
-		{Date: day("2025-02-16"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-17"), BBT: models.NewBBT(36.50)},
-		{Date: day("2025-02-18"), BBT: models.NewBBT(36.50)},
+		{Date: day("2025-01-29"), BBT: new(36.20)},
+		{Date: day("2025-01-30"), BBT: new(36.20)},
+		{Date: day("2025-01-31"), BBT: new(36.20)},
+		{Date: day("2025-02-01"), BBT: new(36.20)},
+		{Date: day("2025-02-02"), BBT: new(36.20)},
+		{Date: day("2025-02-03"), BBT: new(36.20)},
+		{Date: day("2025-02-16"), BBT: new(36.50)},
+		{Date: day("2025-02-17"), BBT: new(36.50)},
+		{Date: day("2025-02-18"), BBT: new(36.50)},
 	}
 
 	// now = Feb26 + 15 days: with a 28-day cycle and the inferred 11-day luteal

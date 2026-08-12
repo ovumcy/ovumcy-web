@@ -313,15 +313,15 @@ func newStatsPatternAndBBTTestFixture(t *testing.T) (*StatsService, *models.User
 		{Date: mustParseStatsServiceDay(t, "2026-03-04"), SymptomIDs: []uint{3}},
 		// Current cycle: 6-day coverline window Mar26-31 (max 36.50), then a
 		// 3-day rise Apr1-3 → first high day 7, marker on day 6.
-		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, BBT: models.NewBBT(36.40)},
-		{Date: mustParseStatsServiceDay(t, "2026-03-27"), BBT: models.NewBBT(36.45)},
-		{Date: mustParseStatsServiceDay(t, "2026-03-28"), BBT: models.NewBBT(36.50)},
-		{Date: mustParseStatsServiceDay(t, "2026-03-29"), BBT: models.NewBBT(36.42)},
-		{Date: mustParseStatsServiceDay(t, "2026-03-30"), BBT: models.NewBBT(36.43)},
-		{Date: mustParseStatsServiceDay(t, "2026-03-31"), BBT: models.NewBBT(36.44)},
-		{Date: mustParseStatsServiceDay(t, "2026-04-01"), BBT: models.NewBBT(36.72)},
-		{Date: mustParseStatsServiceDay(t, "2026-04-02"), BBT: models.NewBBT(36.74)},
-		{Date: mustParseStatsServiceDay(t, "2026-04-03"), BBT: models.NewBBT(36.76)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-26"), IsPeriod: true, BBT: new(36.40)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-27"), BBT: new(36.45)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-28"), BBT: new(36.50)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-29"), BBT: new(36.42)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-30"), BBT: new(36.43)},
+		{Date: mustParseStatsServiceDay(t, "2026-03-31"), BBT: new(36.44)},
+		{Date: mustParseStatsServiceDay(t, "2026-04-01"), BBT: new(36.72)},
+		{Date: mustParseStatsServiceDay(t, "2026-04-02"), BBT: new(36.74)},
+		{Date: mustParseStatsServiceDay(t, "2026-04-03"), BBT: new(36.76)},
 	}
 
 	service := NewStatsService(

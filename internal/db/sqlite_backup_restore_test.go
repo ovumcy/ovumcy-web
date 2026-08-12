@@ -89,7 +89,7 @@ func seedBackupSourceDatabase(t *testing.T, path string) (*models.User, []models
 		},
 		{
 			UserID: user.ID, Date: backupRestoreDay(t, "2026-02-02"),
-			IsPeriod: true, Flow: "light", BBT: models.NewBBT(36.5),
+			IsPeriod: true, Flow: "light", BBT: new(36.5),
 		},
 		{
 			UserID: user.ID, Date: backupRestoreDay(t, "2026-02-15"),
