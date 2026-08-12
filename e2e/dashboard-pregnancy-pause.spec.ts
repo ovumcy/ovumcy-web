@@ -45,6 +45,9 @@ test.describe('Dashboard: pregnancy test pause', () => {
     await expect(control).toHaveAttribute('data-pregnancy-test-state', 'absent');
     await expect(control.locator('[data-pregnancy-test-option]')).toHaveCount(2);
     await expect(control.locator('[data-pregnancy-test-option="none"]')).toHaveCount(0);
+    // The accessibility tree agrees with the markup: two results, and the
+    // hidden "none" carrier is not one of them.
+    await expect(control.getByRole('radio')).toHaveCount(2);
     await expect(control.locator('[data-pregnancy-test-empty]')).toBeVisible();
     await expect(control.locator('[data-pregnancy-test-remove]')).toHaveCount(0);
 
@@ -59,9 +62,15 @@ test.describe('Dashboard: pregnancy test pause', () => {
     await expect(savedForm.locator('input[name="pregnancy_test"][value="positive"]')).toBeChecked();
     const savedControl = savedForm.locator('[data-pregnancy-test]');
     await expect(savedControl).toHaveAttribute('data-pregnancy-test-state', 'recorded');
-    const remove = savedControl.locator('[data-pregnancy-test-remove]');
+    // The removal stands beside the group as a button, never inside it as a
+    // third radio: the group still announces exactly two results.
+    await expect(savedControl.getByRole('radio')).toHaveCount(2);
+    const remove = savedControl.getByRole('button', {
+      name: localeText('en', 'dashboard.pregnancy_test.remove'),
+    });
     await expect(remove).toBeVisible();
-    await expect(remove).toHaveText(localeText('en', 'dashboard.pregnancy_test.remove'));
+    await expect(remove).toHaveAttribute('type', 'button');
+    await expect(savedControl.locator('[data-pregnancy-test-remove]')).toHaveCount(1);
 
     // Pause: the owner dashboard surfaces the pregnancy-paused explainer.
     // Assert the stable explainer key (locale-independent) rather than copy,

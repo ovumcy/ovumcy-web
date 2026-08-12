@@ -13,6 +13,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 	"golang.org/x/net/html"
+	"gorm.io/gorm"
 )
 
 func TestDashboardSymptomsNotesPanelUsesSavedSymptomsAndNotesState(t *testing.T) {
@@ -366,15 +367,7 @@ func TestDashboardPregnancyTestRendersAnUntestedDayAsAbsentData(t *testing.T) {
 		t.Fatal("expected no removal action when there is no result to remove")
 	}
 
-	carrier := htmlFindElement(field, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && htmlHasAttr(node, "data-pregnancy-test-unset")
-	})
-	if carrier == nil {
-		t.Fatal("expected the unset value to stay in the form, or an untouched control would post nothing")
-	}
-	if got := htmlAttr(carrier, "value"); got != models.PregnancyTestNone {
-		t.Fatalf("expected the carrier to post %q, got %q", models.PregnancyTestNone, got)
-	}
+	carrier := pregnancyTestUnsetCarrier(t, field)
 	if !htmlHasAttr(carrier, "checked") || !htmlHasAttr(carrier, "hidden") {
 		t.Fatal("expected the unset carrier to be checked and hidden from view")
 	}
@@ -384,7 +377,9 @@ func TestDashboardPregnancyTestRendersAnUntestedDayAsAbsentData(t *testing.T) {
 // half: once "did not test" stops being a selectable segment, the unset state
 // must stay reachable, or the most emotionally loaded field in the product
 // becomes a one-way door. Both results are anchored — a removal offered only
-// after a negative would leave a positive unremovable.
+// after a negative would leave a positive unremovable. The removal is a button
+// standing after the group, never a radio inside it: as a third radio it
+// announced as "3 of 3", which reads as a third possible result.
 func TestDashboardPregnancyTestOffersRemovalForEitherSavedResult(t *testing.T) {
 	for _, saved := range []string{models.PregnancyTestNegative, models.PregnancyTestPositive} {
 		t.Run(saved, func(t *testing.T) {
@@ -422,17 +417,201 @@ func TestDashboardPregnancyTestOffersRemovalForEitherSavedResult(t *testing.T) {
 			if remove == nil {
 				t.Fatalf("expected a saved %q result to be removable", saved)
 			}
-			removeInput := pregnancyTestOptionInput(t, remove)
-			if got := htmlAttr(removeInput, "value"); got != models.PregnancyTestNone {
-				t.Fatalf("expected the removal action to post %q, got %q", models.PregnancyTestNone, got)
+			if remove.Data != "button" || htmlAttr(remove, "type") != "button" {
+				t.Fatalf("expected the removal to be a type=button control, got <%s type=%q>", remove.Data, htmlAttr(remove, "type"))
 			}
-			if htmlHasAttr(removeInput, "checked") {
-				t.Fatal("expected the removal action to start unselected")
+			if htmlFindElement(remove, func(node *html.Node) bool {
+				return node.Type == html.ElementNode && node.Data == "input"
+			}) != nil {
+				t.Fatal("expected no input inside the removal action: the radiogroup keeps exactly the two results")
+			}
+			if htmlNodeContains(pregnancyTestResultRow(t, field), remove) {
+				t.Fatal("expected the removal to stand after the result row, not inside the radiogroup")
+			}
+			if got := strings.TrimSpace(htmlNodeText(remove)); got == "" {
+				t.Fatal("expected the removal button to name itself: its accessible name is its own text")
+			}
+
+			// The unset value keeps riding a hidden carrier, unselected while a
+			// result stands: the button moves it, so removal must have
+			// something to move.
+			carrier := pregnancyTestUnsetCarrier(t, field)
+			if htmlHasAttr(carrier, "checked") {
+				t.Fatal("expected the unset carrier to start unselected while a result is recorded")
+			}
+			if !htmlHasAttr(carrier, "hidden") {
+				t.Fatal("expected the unset carrier to stay hidden from view")
 			}
 			if pregnancyTestHasHook(field, "data-pregnancy-test-empty") {
 				t.Fatal("expected no empty state while a result is recorded")
 			}
 		})
+	}
+}
+
+// TestDashboardJournalKeepsRareFieldsBehindOneDisclosure pins the journal's
+// two tiers. Everything a day is usually logged with stays in the open; the
+// rare fields sit inside one closed disclosure, and a day that holds none of
+// them renders it closed.
+func TestDashboardJournalKeepsRareFieldsBehindOneDisclosure(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-more-closed@example.com", "StrongPass1", true)
+	enableDashboardMeasurementTracking(t, database, user.ID)
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+	form := dashboardSaveForm(t, document)
+	more := dashboardMoreDisclosure(t, form)
+
+	if htmlHasAttr(more, "open") {
+		t.Fatal("expected the disclosure to stay closed on a day that holds none of its fields")
+	}
+	if summary := htmlFindElement(more, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "summary"
+	}); summary == nil || strings.TrimSpace(htmlNodeText(summary)) == "" {
+		t.Fatal("expected the disclosure to name itself in its summary")
+	}
+
+	for _, tier := range []struct {
+		hook   func(*html.Node) bool
+		inside bool
+		name   string
+	}{
+		{hook: htmlNodeHasAttr("data-period-toggle"), inside: false, name: "the period toggle"},
+		{hook: htmlNodeHasAttr("data-period-fields"), inside: false, name: "the flow fieldset"},
+		{hook: htmlNodeAttrEquals("data-dashboard-section", "mood"), inside: false, name: "mood"},
+		{hook: htmlNodeAttrEquals("data-dashboard-section", "symptoms"), inside: false, name: "symptoms"},
+		{hook: htmlNodeAttrEquals("name", "sex_activity"), inside: true, name: "intimacy"},
+		{hook: htmlNodeAttrEquals("name", "cervical_mucus"), inside: true, name: "cervical mucus"},
+		{hook: htmlNodeHasAttr("data-pregnancy-test"), inside: true, name: "the pregnancy test"},
+		{hook: htmlNodeAttrEquals("id", "dashboard-bbt"), inside: true, name: "BBT"},
+		{hook: htmlNodeAttrEquals("name", "cycle_factor_keys"), inside: true, name: "cycle factors"},
+		{hook: htmlNodeHasAttr("data-note-disclosure"), inside: true, name: "the note disclosure"},
+	} {
+		element := htmlFindElement(form, tier.hook)
+		if element == nil {
+			t.Fatalf("expected %s to be rendered in the journal", tier.name)
+		}
+		if got := htmlNodeContains(more, element); got != tier.inside {
+			t.Fatalf("expected %s inside the disclosure=%v, got %v", tier.name, tier.inside, got)
+		}
+	}
+}
+
+// TestDashboardJournalMoreDisclosureOpensForDataItHolds is the other half of
+// the contract: a value already recorded is never hidden behind a closed
+// disclosure. Each field behind it opens it on its own, and a field the
+// tracking settings hide is absent from the form altogether — a value left in
+// its column cannot open the disclosure over a control that does not exist.
+func TestDashboardJournalMoreDisclosureOpensForDataItHolds(t *testing.T) {
+	for name, seed := range map[string]func(*models.DailyLog){
+		"sex_activity":   func(entry *models.DailyLog) { entry.SexActivity = models.SexActivityProtected },
+		"cervical_mucus": func(entry *models.DailyLog) { entry.CervicalMucus = models.CervicalMucusEggWhite },
+		"pregnancy_test": func(entry *models.DailyLog) { entry.PregnancyTest = models.PregnancyTestNegative },
+		"bbt":            func(entry *models.DailyLog) { entry.BBT = new(36.6) },
+		"cycle_factors":  func(entry *models.DailyLog) { entry.CycleFactorKeys = []string{models.CycleFactorStress} },
+		"notes":          func(entry *models.DailyLog) { entry.Notes = "logged in the evening" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "dashboard-more-"+name+"@example.com", "StrongPass1", true)
+			enableDashboardMeasurementTracking(t, database, user.ID)
+			seedDashboardTodayLog(t, database, user.ID, seed)
+
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+			more := dashboardMoreDisclosure(t, dashboardSaveForm(t, document))
+
+			if !htmlHasAttr(more, "open") {
+				t.Fatalf("expected a day holding %s to render the disclosure open", name)
+			}
+		})
+	}
+
+	t.Run("hidden by settings", func(t *testing.T) {
+		app, database := newOnboardingTestApp(t)
+		user := createOnboardingTestUser(t, database, "dashboard-more-hidden@example.com", "StrongPass1", true)
+		seedDashboardTodayLog(t, database, user.ID, func(entry *models.DailyLog) {
+			entry.CervicalMucus = models.CervicalMucusEggWhite
+		})
+
+		authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+		document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+		form := dashboardSaveForm(t, document)
+
+		if htmlFindElement(form, htmlNodeAttrEquals("name", "cervical_mucus")) != nil {
+			t.Fatal("expected an untracked field to stay absent from the form, not to be folded into the disclosure")
+		}
+		if htmlHasAttr(dashboardMoreDisclosure(t, form), "open") {
+			t.Fatal("expected a value behind an untracked field to leave the disclosure closed")
+		}
+	})
+}
+
+// enableDashboardMeasurementTracking switches on the two tracking-gated fields
+// the journal's disclosure holds (BBT and cervical mucus); the rest are on by
+// default.
+func enableDashboardMeasurementTracking(t *testing.T, database *gorm.DB, userID uint) {
+	t.Helper()
+
+	if err := database.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
+		"track_bbt":            true,
+		"track_cervical_mucus": true,
+		"temperature_unit":     services.TemperatureUnitCelsius,
+	}).Error; err != nil {
+		t.Fatalf("enable measurement tracking: %v", err)
+	}
+}
+
+// seedDashboardTodayLog writes today's entry with one field filled in.
+func seedDashboardTodayLog(t *testing.T, database *gorm.DB, userID uint, fill func(*models.DailyLog)) {
+	t.Helper()
+
+	entry := models.DailyLog{
+		UserID: userID,
+		Date:   services.DateAtLocation(time.Now().In(time.UTC), time.UTC),
+		Flow:   models.FlowNone,
+	}
+	fill(&entry)
+	if err := database.Create(&entry).Error; err != nil {
+		t.Fatalf("seed daily log: %v", err)
+	}
+}
+
+// dashboardSaveForm returns the owner's day form on the dashboard.
+func dashboardSaveForm(t *testing.T, document *html.Node) *html.Node {
+	t.Helper()
+
+	form := htmlFindElement(document, htmlNodeHasAttr("data-dashboard-save-form"))
+	if form == nil {
+		t.Fatal("expected the dashboard save form")
+	}
+	return form
+}
+
+// dashboardMoreDisclosure returns the journal's single "More" disclosure.
+func dashboardMoreDisclosure(t *testing.T, form *html.Node) *html.Node {
+	t.Helper()
+
+	disclosures := htmlFindElements(form, htmlNodeHasAttr("data-dashboard-more"))
+	if len(disclosures) != 1 {
+		t.Fatalf("expected exactly one More disclosure in the journal, got %d", len(disclosures))
+	}
+	if disclosures[0].Data != "details" {
+		t.Fatalf("expected the disclosure to be a <details>, got <%s>", disclosures[0].Data)
+	}
+	return disclosures[0]
+}
+
+func htmlNodeHasAttr(name string) func(*html.Node) bool {
+	return func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, name)
+	}
+}
+
+func htmlNodeAttrEquals(name string, value string) func(*html.Node) bool {
+	return func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, name) == value
 	}
 }
 
@@ -475,6 +654,45 @@ func pregnancyTestOptions(t *testing.T, field *html.Node) map[string]*html.Node 
 		t.Fatalf("expected exactly the two result options negative and positive, got %v", offered)
 	}
 	return options
+}
+
+// pregnancyTestResultRow returns the row that holds the two result radios.
+func pregnancyTestResultRow(t *testing.T, field *html.Node) *html.Node {
+	t.Helper()
+
+	row := htmlFindElement(field, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasClass(node, "pregnancy-test-row")
+	})
+	if row == nil {
+		t.Fatal("expected the two results to share one row")
+	}
+	return row
+}
+
+// pregnancyTestUnsetCarrier returns the hidden radio that carries "none".
+func pregnancyTestUnsetCarrier(t *testing.T, field *html.Node) *html.Node {
+	t.Helper()
+
+	carrier := htmlFindElement(field, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-pregnancy-test-unset")
+	})
+	if carrier == nil {
+		t.Fatal("expected the unset value to stay in the form, or an untouched control would post nothing")
+	}
+	if got := htmlAttr(carrier, "value"); got != models.PregnancyTestNone {
+		t.Fatalf("expected the carrier to post %q, got %q", models.PregnancyTestNone, got)
+	}
+	return carrier
+}
+
+// htmlNodeContains reports whether candidate is a descendant of parent.
+func htmlNodeContains(parent *html.Node, candidate *html.Node) bool {
+	for node := candidate; node != nil; node = node.Parent {
+		if node == parent {
+			return true
+		}
+	}
+	return false
 }
 
 func pregnancyTestOptionInput(t *testing.T, option *html.Node) *html.Node {

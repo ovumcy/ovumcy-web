@@ -1,6 +1,10 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fillDateField } from './support/date-field-helpers';
-import { dashboardNextPeriodText, saveDashboardEntry } from './support/dashboard-helpers';
+import {
+  dashboardNextPeriodText,
+  openDashboardMoreFields,
+  saveDashboardEntry,
+} from './support/dashboard-helpers';
 import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import {
@@ -427,6 +431,9 @@ test.describe('Settings: profile and cycle', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
     const dashboardForm = page.locator('[data-dashboard-save-form]').first();
+    // BBT, cervical mucus and intimacy sit behind the journal's "More"
+    // disclosure; a day with none of them recorded renders it closed.
+    await openDashboardMoreFields(page);
     // Address the field by its stable id, not its localized label ("BBT" is
     // «БТТ» in ru), the way every other field in this spec is addressed.
     const bbtInput = dashboardForm.locator('#dashboard-bbt');
@@ -479,6 +486,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.locator('[data-dashboard-save-form] input[name="bbt"]')).toHaveCount(0);
     await expect(page.locator('[data-dashboard-save-form] input[name="cervical_mucus"][value="dry"]')).toHaveCount(0);
+    await openDashboardMoreFields(page);
     await expect(page.locator('[data-dashboard-save-form] [data-sex-activity-details]')).toBeVisible();
   });
 
@@ -572,6 +580,7 @@ test.describe('Settings: profile and cycle', () => {
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
+    await openDashboardMoreFields(page);
     await expect(page.locator('[data-dashboard-save-form] input[name="cycle_factor_keys"]').first()).toBeVisible();
     await expect(page.locator('[data-dashboard-save-form] [data-note-disclosure]')).toBeVisible();
   });

@@ -8,7 +8,11 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
-import { saveDashboardEntry } from './support/dashboard-helpers';
+import {
+  dashboardMoreDisclosure,
+  openDashboardMoreFields,
+  saveDashboardEntry,
+} from './support/dashboard-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
@@ -156,6 +160,8 @@ test.describe('Dashboard: today editor', () => {
     page,
   }) => {
     await registerOwnerOnDashboard(page, 'dashboard-note-disclosure');
+    // The note disclosure lives inside the journal's "More" disclosure.
+    await openDashboardMoreFields(page);
 
     const noteDisclosure = page.locator('details.note-disclosure');
     const noteSummary = noteDisclosure.locator('summary');
@@ -204,6 +210,7 @@ test.describe('Dashboard: today editor', () => {
     await registerOwnerOnDashboard(page, 'dashboard-bbt-inline');
     await enableBBTTracking(page);
 
+    await openDashboardMoreFields(page);
     const bbtInput = page.locator('#dashboard-bbt');
     const autosaveIndicator = page.locator('[data-dashboard-autosave-indicator]');
 
@@ -246,6 +253,8 @@ test.describe('Dashboard: today editor', () => {
     expect(secondSymptomValue).toBeTruthy();
 
     const noteText = `dashboard-note-${Date.now()}`;
+    // Cycle factors and notes live behind the journal's "More" disclosure.
+    await openDashboardMoreFields(page);
     await saveToday(page, async () => {
       await periodToggle.check();
       await expect(flowMedium).toBeEnabled();
@@ -301,6 +310,120 @@ test.describe('Dashboard: today editor', () => {
     await lastSymptom.scrollIntoViewIfNeeded();
     await symptomChipForOption(lastSymptom).click();
     await expect(symptomInputForOption(lastSymptom)).toBeChecked();
+  });
+
+  test('mobile symptom grid keeps two columns and real tap targets', async ({ page }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-mobile-symptom-grid');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    const grid = page.locator('fieldset[data-dashboard-section="symptoms"] .symptom-grid').first();
+    const columns = await grid.evaluate(
+      (node) => window.getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length
+    );
+    expect(columns, 'the symptom grid must show two columns at 390px').toBe(2);
+
+    // Narrower chips must not buy their width from the tap target: the box
+    // grows and the label wraps instead.
+    const chips = await page
+      .locator('fieldset[data-dashboard-section="symptoms"] label.choice-option:visible .check-chip')
+      .all();
+    expect(chips.length).toBeGreaterThan(1);
+    for (const chip of chips) {
+      const box = await chip.boundingBox();
+      expect(box, 'a visible symptom chip must have a box').not.toBeNull();
+      expect(box!.height, 'a symptom chip must stay at least 44px tall').toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('rare journal fields wait behind More, which opens for a day that holds one', async ({
+    page,
+  }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-more-disclosure');
+    await enableBBTTracking(page);
+
+    // Onboarding fills the current period, so today starts with data. Clear it:
+    // the closed state is a claim about a day holding none of these fields.
+    await clearTodayButton(page).click();
+    await expect(page.locator('#confirm-modal')).toBeVisible();
+    await page.locator('#confirm-modal-accept').click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    const more = dashboardMoreDisclosure(page);
+    await expect(more).toHaveCount(1);
+    await expect(more).not.toHaveAttribute('open', '');
+    await expect(more.locator('> summary')).toContainText(localeText('en', 'dashboard.more_fields'));
+
+    // The tier a day is usually logged with stays in the open; the rest waits.
+    await expect(page.locator('input[name="is_period"]')).toBeAttached();
+    await expect(todaySymptomOptions(page).first()).toBeVisible();
+    await expect(page.locator('#dashboard-bbt')).toBeHidden();
+
+    // An anchor into the disclosure must not land on nothing: the late-cycle
+    // actions link straight at the pregnancy test, which now lives inside it.
+    // Measured on a day that holds none of these fields, so the server is not
+    // the one opening it.
+    await page.goto('/dashboard#dashboard-pregnancy-test');
+    await expect(dashboardMoreDisclosure(page)).toHaveAttribute('open', '');
+    await page.goto('/dashboard');
+    await expect(dashboardMoreDisclosure(page)).not.toHaveAttribute('open', '');
+
+    await openDashboardMoreFields(page);
+    const bbtInput = page.locator('#dashboard-bbt');
+    await saveToday(page, async () => {
+      await bbtInput.fill('36.60');
+      await bbtInput.blur();
+    });
+
+    // Fields inside still save through the autosave, and what was recorded is
+    // never left behind a closed disclosure.
+    await page.reload();
+    await expect(dashboardMoreDisclosure(page)).toHaveAttribute('open', '');
+    await expect(page.locator('#dashboard-bbt')).toHaveValue('36.60');
+  });
+
+  test('a saved pregnancy result is removed by a button, not by a third radio', async ({
+    page,
+  }) => {
+    await registerOwnerOnDashboard(page, 'dashboard-pregnancy-remove');
+    await openDashboardMoreFields(page);
+
+    const field = page.locator('[data-pregnancy-test]');
+    await expect(field).toHaveAttribute('data-pregnancy-test-state', 'absent');
+    // The group offers the two results and nothing else — the unset value rides
+    // a hidden carrier, which is not in the accessibility tree.
+    await expect(field.getByRole('radio')).toHaveCount(2);
+    await expect(field.locator('[data-pregnancy-test-remove]')).toHaveCount(0);
+
+    await saveToday(page, async () => {
+      await field.locator('[data-pregnancy-test-option="negative"]').click();
+    });
+
+    await page.reload();
+    await expect(dashboardMoreDisclosure(page)).toHaveAttribute('open', '');
+
+    const savedField = page.locator('[data-pregnancy-test]');
+    await expect(savedField).toHaveAttribute('data-pregnancy-test-state', 'recorded');
+    await expect(savedField.getByRole('radio')).toHaveCount(2);
+    const remove = savedField.getByRole('button', {
+      name: localeText('en', 'dashboard.pregnancy_test.remove'),
+    });
+    await expect(remove).toHaveAttribute('type', 'button');
+
+    // There is no save button on this screen: the removal marks the journal
+    // dirty and the autosave carries it.
+    await saveToday(page, async () => {
+      await remove.click();
+    });
+    await expect(savedField).toHaveAttribute('data-pregnancy-test-state', 'absent');
+
+    await page.reload();
+    await expect(page.locator('input[name="pregnancy_test"][value="negative"]')).not.toBeChecked();
+    await expect(page.locator('[data-pregnancy-test]')).toHaveAttribute(
+      'data-pregnancy-test-state',
+      'absent'
+    );
   });
 
   test('mobile dashboard keeps lower actions scrollable above the bottom tabbar', async ({ page }) => {

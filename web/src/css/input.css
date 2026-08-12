@@ -2162,7 +2162,7 @@
     display: flex;
     align-items: center;
     line-height: 1.2;
-    min-height: 2.65rem;
+    min-height: 2.75rem;
     padding: 0.62rem 0.7rem;
     min-width: 0;
   }
@@ -2548,6 +2548,18 @@
   }
 }
 
+/* The journal's one "More" disclosure. It borrows the summary pill the symptom
+   and note disclosures already use; only the separator and the chevron turn
+   belong to it. */
+@utility journal-more-details {
+  border-top: 1px dashed rgba(172, 136, 96, 0.34);
+  padding-top: 0.85rem;
+
+  &[open] .symptom-more-chevron {
+    transform: rotate(180deg);
+  }
+}
+
 @utility note-disclosure {
   border-top: 1px dashed rgba(172, 136, 96, 0.34);
   padding-top: 0.85rem;
@@ -2727,27 +2739,6 @@
   }
 }
 
-@utility pregnancy-test-remove-pill {
-  .choice-input:checked + & {
-    border-color: rgba(186, 131, 80, 0.95);
-    box-shadow: 0 0 0 2px rgba(186, 131, 80, 0.18);
-  }
-
-  .choice-input:focus-visible + & {
-    outline: 2px solid rgba(186, 131, 80, 0.58);
-    outline-offset: 2px;
-  }
-
-  :root[data-theme='dark'] .choice-input:checked + & {
-    border-color: rgba(222, 176, 117, 0.9);
-    box-shadow: 0 0 0 2px rgba(222, 176, 117, 0.2);
-  }
-
-  :root[data-theme='dark'] .choice-input:focus-visible + & {
-    outline-color: rgba(222, 176, 117, 0.7);
-  }
-}
-
 @utility measurement-field-row {
   display: inline-flex;
   align-items: center;
@@ -2778,13 +2769,13 @@
     margin-top: 0.46rem;
   }
   display: grid;
-  grid-template-columns: repeat(1, minmax(0, 1fr));
+  /* Two columns from the smallest screen up: a one-per-row symptom list pushed
+     the rest of the journal off the first screen. The chips keep a real 44px
+     tap target at half the width — the box grows and the label wraps, the font
+     never shrinks. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-auto-rows: 1fr;
   gap: 0.5rem;
-
-  @media (min-width: 640px) {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 
   & .choice-option {
     height: 100%;
@@ -2796,7 +2787,7 @@
     display: flex;
     align-items: center;
     line-height: 1.2;
-    min-height: 2.65rem;
+    min-height: 2.75rem;
     padding: 0.62rem 0.7rem;
     min-width: 0;
   }
@@ -2815,6 +2806,12 @@
 }
 
 @utility symptom-grid-compact {
+  /* The compact grid belongs to the calendar day panel, which is already a
+     narrow column on a phone: it keeps one chip per row there. */
+  @media (max-width: 640px) {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+
   & .check-chip {
     min-height: 2.18rem;
     padding: 0.4rem 0.52rem;

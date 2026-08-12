@@ -76,6 +76,34 @@ export async function saveDashboardEntry(
 }
 
 /**
+ * The journal's "More" disclosure, holding the fields a day rarely carries.
+ */
+export function dashboardMoreDisclosure(page: Page): Locator {
+  return page.locator('[data-dashboard-more]');
+}
+
+/**
+ * Opens the "More" disclosure when it is closed.
+ *
+ * A control inside a closed `<details>` is not rendered, so a spec that fills
+ * BBT, cervical mucus, cycle factors or notes on the dashboard has to open the
+ * disclosure first — the server renders it open only for a day that already
+ * holds one of those values.
+ */
+export async function openDashboardMoreFields(page: Page): Promise<Locator> {
+  const disclosure = dashboardMoreDisclosure(page);
+  await expect(disclosure).toHaveCount(1);
+
+  // Its own summary, not the ones belonging to the disclosures it holds
+  // (intimacy, notes) — a bare `summary` descendant locator matches three.
+  if (!(await disclosure.evaluate((node) => node.hasAttribute('open')))) {
+    await disclosure.locator('> summary').click();
+  }
+  await expect(disclosure).toHaveAttribute('open', '');
+  return disclosure;
+}
+
+/**
  * The dashboard's single status header.
  *
  * The wave-2 design pass removed the hero/status-line either-or: one header is

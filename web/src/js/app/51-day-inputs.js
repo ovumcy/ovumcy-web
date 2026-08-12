@@ -90,6 +90,68 @@
     }
   }
 
+  // Removing a saved pregnancy-test result is a button after the radiogroup,
+  // not a third radio: the group keeps exactly two results and announces them
+  // as two. The button does what the radio used to do — move the hidden "none"
+  // carrier — and then fires one change event from that carrier, which is the
+  // single signal both day forms already listen to: the dashboard marks itself
+  // dirty and autosaves, the calendar editor simply carries the new value into
+  // its explicit Save. Nothing here is keyed on which form it sits in.
+  function syncPregnancyTestField(field, recorded) {
+    var remove = field.querySelector("[data-pregnancy-test-remove]");
+    field.setAttribute("data-pregnancy-test-state", recorded ? "recorded" : "absent");
+    if (remove) {
+      setNodeHidden(remove, !recorded);
+    }
+  }
+
+  function clearPregnancyTestResult(field) {
+    var radios = field.querySelectorAll("input[name='pregnancy_test']");
+    var carrier = field.querySelector("[data-pregnancy-test-unset]");
+
+    for (var index = 0; index < radios.length; index++) {
+      radios[index].checked = false;
+    }
+    if (!carrier) {
+      return;
+    }
+    carrier.checked = true;
+    syncPregnancyTestField(field, false);
+    carrier.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function bindPregnancyTestFields(root) {
+    var scope = root && root.querySelectorAll ? root : document;
+    var fields = scope.querySelectorAll("[data-pregnancy-test]");
+
+    for (var index = 0; index < fields.length; index++) {
+      var field = fields[index];
+      if (field.dataset.pregnancyTestBound === "1") {
+        continue;
+      }
+      field.dataset.pregnancyTestBound = "1";
+
+      field.addEventListener("click", function (event) {
+        var button = closestFromEvent(event, "[data-pregnancy-test-remove]");
+        if (!button || !this.contains(button)) {
+          return;
+        }
+        clearPregnancyTestResult(this);
+      });
+
+      // Picking a result again after a removal must offer the way back out
+      // once more, or the removal turns the control into a one-way door until
+      // the next page load.
+      field.addEventListener("change", function (event) {
+        var radio = event.target;
+        if (!radio || radio.name !== "pregnancy_test" || !radio.checked) {
+          return;
+        }
+        syncPregnancyTestField(this, radio.value !== "none");
+      });
+    }
+  }
+
   function temperatureInputMaxLength(input) {
     var maxText = String(input.getAttribute("data-temperature-max") || "").trim();
     return Math.max(maxText.length, 5);
