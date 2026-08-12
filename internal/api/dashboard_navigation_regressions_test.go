@@ -204,6 +204,76 @@ func navSectionHooks(root *html.Node) []string {
 	return hooks
 }
 
+// desktopPrimaryNavigation returns the header's desktop navigation landmark —
+// the only <nav> that holds the account actions block.
+func desktopPrimaryNavigation(root *html.Node) *html.Node {
+	return htmlFindElement(root, func(node *html.Node) bool {
+		if node.Type != html.ElementNode || node.Data != "nav" {
+			return false
+		}
+		return htmlFindElement(node, func(candidate *html.Node) bool {
+			return candidate.Type == html.ElementNode && htmlHasAttr(candidate, "data-nav-account-actions")
+		}) != nil
+	})
+}
+
+// settingsHrefTargets lists, in document order, the href values under root that
+// lead to the settings page. A bare path, a query and a section fragment are
+// the same destination as far as a reader of the navigation is concerned.
+func settingsHrefTargets(root *html.Node) []string {
+	links := htmlFindElements(root, func(node *html.Node) bool {
+		if node.Type != html.ElementNode || !htmlHasAttr(node, "href") {
+			return false
+		}
+		path, _, _ := strings.Cut(htmlAttr(node, "href"), "#")
+		path, _, _ = strings.Cut(path, "?")
+		return path == "/settings" || strings.HasPrefix(path, "/settings/")
+	})
+	targets := make([]string, 0, len(links))
+	for _, link := range links {
+		targets = append(targets, htmlAttr(link, "href"))
+	}
+	return targets
+}
+
+// TestDesktopHeaderOffersASingleSettingsEntry pins the one-entry contract for
+// the desktop header. It used to carry a gear icon link and the account
+// identity chip side by side — two controls in the same navigation landmark
+// leading to the same page, with the gear adding nothing the chip does not
+// already offer. The chip is the survivor: it reaches settings and names the
+// account, so it must keep an accessible name of its own (its avatar glyph is
+// decorative and stays out of the accessibility tree).
+func TestDesktopHeaderOffersASingleSettingsEntry(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "single-settings-entry@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	for _, path := range []string{"/dashboard", "/calendar", "/stats", "/settings"} {
+		document := mustParseHTMLDocument(t, fetchPageBody(t, app, path, authCookie))
+
+		desktop := desktopPrimaryNavigation(document)
+		if desktop == nil {
+			t.Fatalf("%s: expected the desktop primary navigation to render", path)
+		}
+
+		targets := settingsHrefTargets(desktop)
+		if len(targets) != 1 {
+			t.Errorf(
+				"%s: the desktop header offers %d controls leading to settings (%v); exactly one must",
+				path, len(targets), targets,
+			)
+		}
+
+		entry := htmlElementByID(desktop, "nav-user-chip-desktop")
+		if entry == nil {
+			t.Fatalf("%s: the surviving desktop settings entry must be the account identity chip", path)
+		}
+		if got := strings.TrimSpace(htmlAttr(entry, "aria-label")); got == "" {
+			t.Errorf("%s: the account identity chip must carry an accessible name", path)
+		}
+	}
+}
+
 // TestMobileHeaderMenuCarriesOnlyAccountEntries pins the single-navigation
 // contract for mobile: the header menu used to repeat Today / Calendar /
 // Insights / Settings, so a phone carried two navigations to the same four
@@ -211,13 +281,17 @@ func navSectionHooks(root *html.Node) []string {
 // tab bar visible underneath it. The four section destinations now live in the
 // tab bar alone; the header menu is the account menu (profile chip + logout)
 // and declares that reduced scope through data-mobile-menu="account". Desktop
-// renders its own full primary navigation and is unaffected.
+// keeps its own primary navigation, unaffected by that reduction.
 func TestMobileHeaderMenuCarriesOnlyAccountEntries(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "mobile-single-nav@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	sections := []string{"today", "calendar", "insights", "settings"}
+	// Desktop reaches settings through the account chip (an account control, not
+	// a section link), so its section hooks stop at the three page destinations —
+	// TestDesktopHeaderOffersASingleSettingsEntry pins the settings route itself.
+	desktopSections := []string{"today", "calendar", "insights"}
 
 	for _, path := range []string{"/dashboard", "/calendar", "/stats", "/settings"} {
 		document := mustParseHTMLDocument(t, fetchPageBody(t, app, path, authCookie))
@@ -252,19 +326,15 @@ func TestMobileHeaderMenuCarriesOnlyAccountEntries(t *testing.T) {
 			t.Errorf("%s: the bottom tab bar must remain the mobile route to every section, got %v", path, got)
 		}
 
-		desktop := htmlFindElement(document, func(node *html.Node) bool {
-			if node.Type != html.ElementNode || node.Data != "nav" {
-				return false
-			}
-			return htmlFindElement(node, func(candidate *html.Node) bool {
-				return candidate.Type == html.ElementNode && htmlHasAttr(candidate, "data-nav-account-actions")
-			}) != nil
-		})
+		desktop := desktopPrimaryNavigation(document)
 		if desktop == nil {
 			t.Fatalf("%s: expected the desktop primary navigation to render", path)
 		}
-		if got := navSectionHooks(desktop); !slices.Equal(got, sections) {
+		if got := navSectionHooks(desktop); !slices.Equal(got, desktopSections) {
 			t.Errorf("%s: desktop navigation must keep every section link, got %v", path, got)
+		}
+		if htmlElementByID(desktop, "nav-user-chip-desktop") == nil {
+			t.Errorf("%s: the desktop navigation must keep the account chip, its only route to settings", path)
 		}
 	}
 }
