@@ -830,6 +830,12 @@ components:
 
     InterfaceSettings:
       type: object
+      description: |
+        Interface preferences save. `language` is stored twice: in the
+        `ovumcy_lang` cookie the response sets, and on the account
+        (`users.interface_language`), which is what re-issues that cookie on a
+        device signing in for the first time. `theme` has no server-side
+        storage — it stays in the browser's `localStorage`.
       properties:
         language:
           type: string

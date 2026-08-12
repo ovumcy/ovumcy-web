@@ -250,6 +250,23 @@ func (service *SettingsService) SaveUsageGoal(ctx context.Context, userID uint, 
 	return usageGoal, nil
 }
 
+// SaveInterfaceLanguage persists ONLY users.interface_language, scoped to
+// userID: the account-side half of the interface save, whose other half is the
+// `ovumcy_lang` cookie the transport layer writes.
+//
+// The language argument must already be normalized against the shipped locales
+// — the transport layer owns that catalogue (internal/i18n) and normalizes
+// before calling, the same division of labour PersistTimezone uses for IANA
+// names. This service deliberately does not import the locale catalogue: the
+// services layer stays free of i18n.
+//
+// Like the reminder and webhook saves it does NOT bump auth_session_version —
+// the language of the interface is not part of the account's security posture,
+// so changing it must not sign the owner's other devices out.
+func (service *SettingsService) SaveInterfaceLanguage(ctx context.Context, userID uint, language string) error {
+	return service.users.UpdateByID(ctx, userID, map[string]any{"interface_language": language})
+}
+
 // SaveTrackingSettings persists the tracking preferences. The three section
 // toggles arrive positive and are written in the stored, inverted spelling
 // through TrackingVisibility.HiddenColumns — the one place that negation lives.

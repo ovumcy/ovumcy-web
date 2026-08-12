@@ -35,6 +35,27 @@ func TestManagerFallsBackToDefaultForUnsupportedLanguage(t *testing.T) {
 	}
 }
 
+// TestIsSupportedLanguageSeparatesUnknownFromDefault pins the distinction
+// NormalizeLanguage cannot make. A stored language code (users.interface_language)
+// is only usable if this build actually ships its catalogue: normalization
+// answers with the default for an unknown code, which a caller reading a stored
+// value would take for a deliberate choice of that default.
+func TestIsSupportedLanguageSeparatesUnknownFromDefault(t *testing.T) {
+	manager := newTestI18nManager(t, LangEN)
+
+	for _, supported := range []string{LangRU, "ru-RU", "RU", LangEN} {
+		if !manager.IsSupportedLanguage(supported) {
+			t.Fatalf("expected %q to be recognized as a shipped locale", supported)
+		}
+	}
+	for _, unsupported := range []string{"", "   ", "zz", "pt-BR"} {
+		if manager.IsSupportedLanguage(unsupported) {
+			t.Fatalf("expected %q to be rejected as unsupported, while NormalizeLanguage answers %q",
+				unsupported, manager.NormalizeLanguage(unsupported))
+		}
+	}
+}
+
 func TestRequiredLocalesCoversAllSupportedLanguages(t *testing.T) {
 	want := []string{LangDE, LangEN, LangES, LangFR, LangIT, LangRU}
 

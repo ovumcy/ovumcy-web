@@ -140,6 +140,35 @@ test.describe('Navigation and language switch', () => {
     await expectPageTitle(page, lastLocale, 'settings.title');
   });
 
+  test('the language saved in settings survives a sign-out and a cleared cookie jar', async ({
+    page,
+  }) => {
+    const creds = await registerAndReachDashboard(page, 'nav-lang-account');
+
+    await page.goto('/settings');
+    await expect(page).toHaveURL(/\/settings$/);
+    await saveSettingsLanguage(page, 'ru');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+
+    await logoutViaAPI(page);
+
+    // Clearing the jar is the whole point: it takes the ovumcy_lang cookie with
+    // the session, so the next sign-in can only render Russian if the account
+    // itself carries the preference. The login page is the anchor that the jar
+    // really is empty — it comes back in the default language.
+    await page.context().clearCookies();
+
+    await page.goto('/login');
+    await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+    await expectPageTitle(page, 'en', 'auth.login_title');
+
+    await loginViaUI(page, creds);
+    await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ru');
+    await expectPageTitle(page, 'ru', 'nav.dashboard');
+    await expectNavLink(page, 'ru', 'today', 'nav.today');
+  });
+
   test('direct /recovery-code access without valid recovery context is blocked', async ({ page }) => {
     await page.goto('/recovery-code');
     await expect(page).toHaveURL(/\/login$/);

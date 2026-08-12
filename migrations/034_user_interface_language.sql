@@ -1,0 +1,27 @@
+-- Interface language as an account property.
+--
+-- Until now the chosen UI language lived only in the `ovumcy_lang` cookie, so
+-- signing in from a fresh browser dropped the owner back to the operator
+-- default (or to whatever Accept-Language negotiated). This column stores the
+-- language the owner chose explicitly in Settings, and every session-issue path
+-- re-issues the cookie from it.
+--
+-- The empty string is the column default and means "never chosen". For such an
+-- account the request keeps resolving exactly as before (cookie, then
+-- Accept-Language, then DEFAULT_LANGUAGE), so an existing install sees no
+-- change until its owner saves a language. A stored code is validated against
+-- the shipped locales on read, and an unsupported one is treated as never
+-- chosen.
+--
+-- A pure presentation preference -- not health data, not a secret, and
+-- deliberately outside the clear-data reset (see
+-- docs/security/data-handling.md).
+--
+-- Note for a later editor: the runner splits a file into statements on the
+-- semicolon, so a comment block must not contain one.
+--
+-- The migration runner skips any ADD COLUMN whose column already exists, so this
+-- file is idempotent across clean installs and rolling deploys. Rollback
+-- (forward-only repo) is documented in the commit body, not here.
+
+ALTER TABLE users ADD COLUMN interface_language TEXT NOT NULL DEFAULT '';

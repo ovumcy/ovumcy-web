@@ -75,6 +75,24 @@ type User struct {
 	// browser. Nullable/empty when never observed; only validated IANA values
 	// are written (see api.parseRequestTimezone). Not sensitive, not a secret.
 	Timezone string `gorm:"column:timezone"`
+	// InterfaceLanguage is the UI language the owner chose explicitly in
+	// Settings (migration 034). It is the account-side half of the
+	// `ovumcy_lang` cookie: the cookie still drives every render, and this
+	// column is what re-issues that cookie on a device that has none — a fresh
+	// browser, a cleared cookie jar, a second machine.
+	//
+	// Empty means NEVER CHOSEN, not "English": for such an account the request
+	// resolves the language exactly as it did before the column existed
+	// (cookie, then Accept-Language, then the operator's DEFAULT_LANGUAGE).
+	// Only an explicit save writes here, and the value written is already
+	// normalized against the shipped locales; a stored code is validated again
+	// on read, so an unsupported one degrades to "never chosen" rather than
+	// rendering a locale that does not exist.
+	//
+	// A presentation preference, not health data and not a secret — which is
+	// why clear-data deliberately leaves it standing (see
+	// UserRepository.ClearAllDataAndResetSettings).
+	InterfaceLanguage string `gorm:"column:interface_language;not null;default:''"`
 	// Webhook notification settings (issue #124). A future request-free batch
 	// pass reads these to decide whether to POST a period/ovulation reminder to
 	// an owner-configured webhook. This block is storage only — no reminder

@@ -92,6 +92,44 @@ func TestClearAllDataResetsDisplayPreferences(t *testing.T) {
 	}
 }
 
+// TestClearAllDataPreservesInterfaceLanguage pins users.interface_language OUT
+// of the clear-data reset map (migration 034). Its sibling above pins timezone
+// INTO that map, and the pair is the whole distinction: timezone is a coarse
+// location signal inferred from the browser, while the interface language is
+// the language the owner reads the product in — resetting it would answer a
+// "wipe my records" gesture by switching the UI back to English mid-session,
+// and would do so on every device at once through the next sign-in.
+//
+// The reset half is the positive anchor: asserting only "the language survived"
+// would pass just as well against a clear-data that reset nothing at all, so
+// the same test checks that a preference which IS owner data (timezone) went
+// back to its default in the same call.
+func TestClearAllDataPreservesInterfaceLanguage(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "clear-interface-language@example.com")
+
+	if err := repo.database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"interface_language": "ru",
+	}).Error; err != nil {
+		t.Fatalf("seed interface language: %v", err)
+	}
+	if err := repo.UpdateUserTimezone(context.Background(), user.ID, "Europe/Belgrade"); err != nil {
+		t.Fatalf("seed timezone: %v", err)
+	}
+
+	if err := repo.ClearAllDataAndResetSettings(context.Background(), user.ID); err != nil {
+		t.Fatalf("ClearAllDataAndResetSettings: %v", err)
+	}
+
+	got := reloadUserForWebhook(t, repo, user.ID)
+	if got.InterfaceLanguage != "ru" {
+		t.Fatalf("expected interface_language preserved through clear-data, got %q", got.InterfaceLanguage)
+	}
+	if got.Timezone != "" {
+		t.Fatalf("expected timezone reset by the same clear-data call, got %q", got.Timezone)
+	}
+}
+
 // TestClearAllDataResetsTimezoneAndKeepsIdentity pins users.timezone into the
 // clear-data reset map. The column is written from the request (the owner's
 // browser-detected IANA zone) and read by the request-free reminder pass, so it
