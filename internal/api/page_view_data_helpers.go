@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -174,15 +175,29 @@ func buildBBTFieldViewData(messages map[string]string, unit string) bbtFieldView
 	symbol := services.TemperatureUnitSymbol(resolvedUnit)
 	minLabel := fmt.Sprintf("%.2f", min)
 	maxLabel := fmt.Sprintf("%.2f", max)
+	// The input attributes stay machine-readable at two decimals; the copy the
+	// owner reads drops the padding zeros (34-43 °C, 93.2-109.4 °F).
+	minText := trimTemperatureLabelZeros(minLabel)
+	maxText := trimTemperatureLabelZeros(maxLabel)
 
 	return bbtFieldViewData{
 		Unit:       resolvedUnit,
 		Symbol:     symbol,
 		Min:        minLabel,
 		Max:        maxLabel,
-		RangeHint:  formatBBTLocalizedMessage(messages, "dashboard.bbt_range_hint", "Allowed range: %s-%s %s.", minLabel, maxLabel, symbol),
-		RangeError: formatBBTLocalizedMessage(messages, "dashboard.bbt_range_error", "Enter a value between %s and %s %s.", minLabel, maxLabel, symbol),
+		RangeHint:  formatBBTLocalizedMessage(messages, "dashboard.bbt_range_hint", "Allowed range: %s-%s %s.", minText, maxText, symbol),
+		RangeError: formatBBTLocalizedMessage(messages, "dashboard.bbt_range_error", "Enter a value between %s and %s %s.", minText, maxText, symbol),
 	}
+}
+
+// trimTemperatureLabelZeros drops the padding a fixed two-decimal format adds:
+// "34.00" reads as "34", "93.20" as "93.2". A label without a decimal point is
+// returned untouched, so the trim can never eat an integer's own zeros.
+func trimTemperatureLabelZeros(label string) string {
+	if !strings.Contains(label, ".") {
+		return label
+	}
+	return strings.TrimSuffix(strings.TrimRight(label, "0"), ".")
 }
 
 func formatBBTLocalizedMessage(messages map[string]string, key string, fallback string, min string, max string, symbol string) string {
