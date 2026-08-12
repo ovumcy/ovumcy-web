@@ -636,6 +636,53 @@ func TestDashboardTimingFrameKeepsSuppressedPredictionsSuppressed(t *testing.T) 
 	}
 }
 
+// TestDashboardTimingFrameDropsTheOvulationEstimateForAnOverdueCycle is the same
+// safety half against the other suppression signal. Once a cycle runs past its
+// reference length by more than a week the dashboard withholds the projected
+// window; the ovulation estimate is derived from that same projection, so an
+// account trying to conceive must not be the one cohort still reading a slot
+// where the window used to be. The field placement is a property of the goal
+// alone — a late cycle is when a morning reading matters most — so the
+// temperature stays in the visible tier.
+func TestDashboardTimingFrameDropsTheOvulationEstimateForAnOverdueCycle(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-timing-overdue@example.com", "StrongPass1", true)
+	enableDashboardMeasurementTracking(t, database, user.ID)
+	seedDashboardStableCycleForGoal(t, database, user.ID, models.UsageGoalTrying)
+	// Cycle day 37 against the 28-day reference: past 28 + 7.
+	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).
+		Update("last_period_start", today.AddDate(0, 0, -36)).Error; err != nil {
+		t.Fatalf("seed overdue cycle context: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+
+	statusLine := dashboardElementByDataAttr(document, "data-dashboard-status-line")
+	if statusLine == nil {
+		t.Fatal("expected the dashboard status line")
+	}
+	if htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-ovulation")) != nil {
+		t.Fatal("did not expect an ovulation estimate for a cycle past the late threshold")
+	}
+	if htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-next-period")) != nil {
+		t.Fatal("did not expect a next-period estimate for a cycle past the late threshold")
+	}
+	if htmlFindElement(statusLine, htmlNodeHasAttr("data-dashboard-next-period-paused")) == nil {
+		t.Fatal("expected the withheld-estimate line in place of the two estimates")
+	}
+
+	form := dashboardSaveForm(t, document)
+	temperature := htmlFindElement(form, htmlNodeAttrEquals("id", "dashboard-bbt"))
+	if temperature == nil {
+		t.Fatal("expected the temperature field in the journal")
+	}
+	if htmlNodeContains(dashboardMoreDisclosure(t, form), temperature) {
+		t.Fatal("expected the temperature field to stay in the visible tier for this goal")
+	}
+}
+
 // seedDashboardStableCycleForGoal gives the account a cycle context predictions
 // can be made from, under the usage goal the case is about.
 func seedDashboardStableCycleForGoal(t *testing.T, database *gorm.DB, userID uint, goal string) {

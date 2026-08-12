@@ -107,6 +107,11 @@ type DashboardReminderBanner struct {
 //
 // The banner is suppressed (Show=false) whenever:
 //   - predictions are disabled or paused (PredictionDisabled),
+//   - the next-period estimate is withheld because the cycle is overdue
+//     (NextPeriodEstimatePaused). The cleared Display* fields already suppress
+//     the banner through the zero-date branch below; the explicit check keeps the
+//     rule readable at the surface that would otherwise announce "period in ~N
+//     days" for a window the dashboard itself refuses to show,
 //   - the cycle context has no single-date estimate to summarize (needs more
 //     data, ovulation is impossible, or the corresponding date is zero),
 //   - the context is showing an uncertainty *range* instead of a single date
@@ -121,7 +126,7 @@ type DashboardReminderBanner struct {
 // When both the next period and ovulation fall inside the window on the same
 // request, the period reminder is returned (see DashboardReminderBannerKindPeriod).
 func BuildDashboardReminderBanner(cycleContext DashboardCycleContext, today time.Time, leadDays int) DashboardReminderBanner {
-	if cycleContext.PredictionDisabled {
+	if cycleContext.PredictionDisabled || cycleContext.NextPeriodEstimatePaused {
 		return DashboardReminderBanner{}
 	}
 	windowDays := dashboardReminderBannerWindowDays(leadDays)

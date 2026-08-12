@@ -390,6 +390,7 @@
   "dashboard.next_period_need_cycles": "3 cycles are needed for a reliable range",
   "dashboard.next_period_prompt": "Enter the start date of your last cycle",
   "dashboard.next_period_unknown": "unknown",
+  "dashboard.next_period_estimate_paused": "The next-period estimate returns with your next cycle start.",
   "prediction.explainer.unpredictable_compact": "Predictions off",
   "prediction.explainer.unpredictable": "Predictions are off in unpredictable cycle mode. Ovumcy shows recorded facts only.",
   "prediction.explainer.irregular_ranges": "Irregular cycle mode uses ranges instead of exact prediction dates.",

@@ -390,6 +390,7 @@
   "dashboard.next_period_need_cycles": "Sono necessari 3 cicli per un intervallo affidabile",
   "dashboard.next_period_prompt": "Inserisci la data di inizio del tuo ultimo ciclo",
   "dashboard.next_period_unknown": "sconosciuto",
+  "dashboard.next_period_estimate_paused": "La stima del prossimo ciclo mestruale tornerà con l'inizio del prossimo ciclo.",
   "prediction.explainer.unpredictable_compact": "Previsioni disattivate",
   "prediction.explainer.unpredictable": "Le previsioni sono disattivate in modalità ciclo imprevedibile. Ovumcy mostra solo i fatti registrati.",
   "prediction.explainer.irregular_ranges": "La modalità ciclo irregolare usa intervalli invece di date esatte di previsione.",

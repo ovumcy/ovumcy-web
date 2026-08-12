@@ -390,6 +390,7 @@
   "dashboard.next_period_need_cycles": "Für einen verlässlichen Bereich werden 3 Zyklen benötigt",
   "dashboard.next_period_prompt": "Geben Sie das Startdatum Ihres letzten Zyklus ein",
   "dashboard.next_period_unknown": "unbekannt",
+  "dashboard.next_period_estimate_paused": "Die Schätzung für die nächste Periode kehrt mit dem Beginn Ihres nächsten Zyklus zurück.",
   "prediction.explainer.unpredictable_compact": "Vorhersagen aus",
   "prediction.explainer.unpredictable": "Im Modus für unvorhersehbare Zyklen sind Vorhersagen deaktiviert. Ovumcy zeigt nur aufgezeichnete Fakten an.",
   "prediction.explainer.irregular_ranges": "Im Modus für unregelmäßige Zyklen werden Bereiche statt exakter Vorhersagedaten verwendet.",

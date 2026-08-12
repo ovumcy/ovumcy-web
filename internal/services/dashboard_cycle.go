@@ -7,6 +7,14 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// DashboardCycleContext is the dashboard's cycle state.
+//
+// NextPeriodEstimatePaused reports that the running cycle is long enough
+// (DashboardCycleDayLooksLong: past the reference length by more than a week)
+// that no next-period window is shown at all: every Display* field it would have
+// filled is cleared, and the surfaces derived from them — the status header slot,
+// the reminder banner — say so instead of naming a date. The cycle day and the
+// late-cycle notice carry the state on their own.
 type DashboardCycleContext struct {
 	CycleDayReference           int
 	CycleDayWarning             bool
@@ -28,6 +36,7 @@ type DashboardCycleContext struct {
 	DisplayOvulationNeedsData   bool
 	DisplayOvulationExact       bool
 	DisplayOvulationImpossible  bool
+	NextPeriodEstimatePaused    bool
 	NextPeriodInPast            bool
 	OvulationInPast             bool
 }
@@ -47,6 +56,7 @@ type dashboardPredictionDisplay struct {
 	ovulationNeedsData   bool
 	ovulationExact       bool
 	ovulationImpossible  bool
+	estimatePaused       bool
 }
 
 func DashboardPredictionDisabled(user *models.User) bool {
@@ -93,6 +103,24 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 		return user.CycleLength
 	}
 	return models.DefaultCycleLength
+}
+
+// DashboardCycleOverdue reports that the running cycle has passed the account's
+// own reference length by more than a week. It is the reference+7 rule of
+// DashboardCycleDayLooksLong — the one the late-cycle notice already states —
+// resolved against DashboardCycleReferenceLength, so the threshold keeps living
+// in exactly one place and no surface may re-derive it.
+//
+// This is the third medical-safety suppression signal, beside
+// DashboardPredictionDisabled(user) and stats.PregnancyPaused: past this point a
+// projection can only roll a whole cycle forward at a time (ProjectCycleStart),
+// so every date it yields is manufactured rather than estimated, and presenting
+// one as a window is the estimate-presented-as-fact the medical-safety invariant
+// forbids. Every surface that shows a projected window gates on all three —
+// dashboard display and reminder banner here; the calendar grid, the webhook
+// reminder and the .ics feed are the remaining callers of that pair.
+func DashboardCycleOverdue(user *models.User, stats CycleStats) bool {
+	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
 }
 
 func DashboardCycleDayLooksLong(currentDay int, referenceLength int) bool {
@@ -273,11 +301,16 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 		DisplayOvulationNeedsData:   display.ovulationNeedsData,
 		DisplayOvulationExact:       display.ovulationExact,
 		DisplayOvulationImpossible:  display.ovulationImpossible,
+		NextPeriodEstimatePaused:    display.estimatePaused,
 		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
 		OvulationInPast:             dashboardOvulationInPast(display, today),
 	}
 }
 
+// buildDashboardPredictionDisplay turns the projected cycle into the fields the
+// dashboard renders, withholding the whole projected window once
+// DashboardCycleOverdue reports the cycle is past its reference length by more
+// than a week.
 func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today time.Time, location *time.Location) dashboardPredictionDisplay {
 	prediction := DashboardUpcomingPredictions(
 		stats,
@@ -299,7 +332,31 @@ func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today 
 	if display.nextPeriodPrompt || display.nextPeriodNeedsData {
 		return finalizeDashboardPredictionDisplay(display)
 	}
+	if DashboardCycleOverdue(user, stats) {
+		return pauseDashboardPredictionDisplay(display)
+	}
 	return finalizeDashboardPredictionDisplay(applyDashboardPredictionRanges(display, user, stats, location))
+}
+
+// pauseDashboardPredictionDisplay withholds the projected window once the
+// running cycle is past the reference length by more than a week.
+//
+// DashboardUpcomingPredictions rolls the projection forward one whole cycle at a
+// time (ProjectCycleStart), so it always yields a strictly future date: at cycle
+// day 45 with a 28-day reference the header used to name the anchor plus 56 days
+// as confidently as it names tomorrow. A cycle that is already overdue carries no
+// evidence about when the next one starts, and presenting the roll-forward as a
+// window is exactly the estimate-presented-as-fact the medical-safety invariant
+// forbids. Both halves of the phantom projection go — the window and the
+// ovulation date derived from it — while ovulationNeedsData and
+// ovulationImpossible survive: they describe the account's data, not this
+// projection, and other surfaces gate on them.
+func pauseDashboardPredictionDisplay(display dashboardPredictionDisplay) dashboardPredictionDisplay {
+	return dashboardPredictionDisplay{
+		ovulationNeedsData:  display.ovulationNeedsData,
+		ovulationImpossible: display.ovulationImpossible,
+		estimatePaused:      true,
+	}
 }
 
 func dashboardNeedsNextPeriodData(user *models.User, stats CycleStats, nextPeriodStart time.Time) bool {

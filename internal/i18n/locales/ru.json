@@ -392,6 +392,7 @@
   "dashboard.next_period_need_cycles": "нужно 3 цикла для надёжного диапазона",
   "dashboard.next_period_prompt": "Укажите дату начала последнего цикла",
   "dashboard.next_period_unknown": "неизвестно",
+  "dashboard.next_period_estimate_paused": "Оценка следующих месячных вернётся с началом следующего цикла.",
   "prediction.explainer.unpredictable_compact": "Прогнозы выключены",
   "prediction.explainer.unpredictable": "В режиме непредсказуемого цикла прогнозы отключены. Ovumcy показывает только записанные факты.",
   "prediction.explainer.irregular_ranges": "В режиме нерегулярного цикла Ovumcy показывает диапазоны вместо точных дат прогноза.",

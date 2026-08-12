@@ -504,6 +504,7 @@
   "dashboard.next_period_need_cycles": "3 cycles sont nécessaires pour obtenir une plage fiable",
   "dashboard.next_period_prompt": "Saisissez la date de début de votre dernier cycle",
   "dashboard.next_period_unknown": "inconnu",
+  "dashboard.next_period_estimate_paused": "L'estimation des prochaines règles reviendra au début de votre prochain cycle.",
 
   "prediction.explainer.unpredictable_compact": "Prédictions désactivées",
   "prediction.explainer.unpredictable": "Les prédictions sont désactivées en mode cycle imprévisible. Ovumcy affiche uniquement les faits enregistrés.",

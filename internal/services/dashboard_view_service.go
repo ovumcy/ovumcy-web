@@ -236,13 +236,19 @@ type dashboardTimingFrame struct {
 // resolveDashboardTimingFrame decides that frame from the resolved usage goal.
 // The ovulation estimate follows the next-period item's gating exactly: a
 // suppressed prediction (unpredictable cycle, pregnancy pause) stays suppressed
-// here too, and BBT keeps existing only where the tracking settings grant it.
+// here too, and so does a cycle overdue enough that the next-period window is
+// withheld (NextPeriodEstimatePaused) — the ovulation estimate is derived from
+// the same projection, so an account trying to conceive would otherwise be the
+// one cohort still reading a placeholder where the window used to be. BBT keeps
+// existing only where the tracking settings grant it, and its placement is a
+// property of the goal alone: a late cycle is when a morning reading matters
+// most, so nothing about the cycle demotes the field.
 func resolveDashboardTimingFrame(user *models.User, cycleContext DashboardCycleContext, visibility dashboardOwnerVisibility) dashboardTimingFrame {
 	if !IsOwnerUser(user) || NormalizeUsageGoal(user.UsageGoal) != models.UsageGoalTrying {
 		return dashboardTimingFrame{}
 	}
 	return dashboardTimingFrame{
-		ShowOvulationEstimate: !cycleContext.PredictionDisabled,
+		ShowOvulationEstimate: !cycleContext.PredictionDisabled && !cycleContext.NextPeriodEstimatePaused,
 		BBTInVisibleTier:      visibility.ShowBBTField,
 	}
 }
