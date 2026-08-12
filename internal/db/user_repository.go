@@ -550,6 +550,7 @@ func (repo *UserRepository) LoadSettingsByID(ctx context.Context, userID uint) (
 			"hide_notes_field",
 			"show_historical_phases",
 			"week_starts_on",
+			"interface_language",
 			"shown_period_tip",
 			"age_group",
 			"usage_goal",
@@ -631,6 +632,14 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			// agree on. The next request re-detects the zone and persists it
 			// again, so the reset costs nothing but the stale value.
 			"timezone": "",
+			// users.interface_language is deliberately ABSENT from this map. It
+			// is not health data and not a location signal: it is the language
+			// the owner reads the interface in, and resetting it would answer a
+			// "wipe my records" gesture by switching the UI back to English
+			// mid-session. It survives the wipe exactly as email, password hash
+			// and display name do; account deletion removes the row anyway.
+			// Regression: TestClearAllDataPreservesInterfaceLanguage.
+			//
 			// Webhook notification settings (issue #124) are owner data: a
 			// clear-data wipe disarms delivery, clears the encrypted endpoint,
 			// resets the shared lead window to its default, and clears the

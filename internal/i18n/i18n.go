@@ -101,6 +101,19 @@ func (manager *Manager) NormalizeLanguage(raw string) string {
 	return manager.defaultLanguage
 }
 
+// IsSupportedLanguage reports whether raw names a locale this build actually
+// ships, after the same tag normalization NormalizeLanguage applies ("ru-RU"
+// and "RU" both name "ru").
+//
+// It is the read-side guard for a language code that arrives from storage
+// rather than from a request: NormalizeLanguage cannot serve there, because it
+// answers with the default for anything it does not recognize, and a caller
+// that must distinguish "not chosen" or "no longer shipped" from "chose the
+// default" would read that answer as a deliberate choice.
+func (manager *Manager) IsSupportedLanguage(raw string) bool {
+	return manager.isSupported(normalizeLanguageTag(raw))
+}
+
 func (manager *Manager) DetectFromAcceptLanguage(raw string) string {
 	for _, part := range strings.Split(raw, ",") {
 		token := strings.TrimSpace(part)

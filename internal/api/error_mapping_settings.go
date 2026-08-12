@@ -84,6 +84,15 @@ func settingsCalendarFeedUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update calendar feed")
 }
 
+// settingsInterfaceUpdateErrorSpec is the internal-failure spec for the
+// interface save's account-side half (users.interface_language). The save is
+// reported as failed rather than silently degraded to a cookie-only change:
+// an owner who picked a language in Settings and saw a success flash would
+// otherwise find the choice gone on the next device.
+func settingsInterfaceUpdateErrorSpec() APIErrorSpec {
+	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update interface settings")
+}
+
 func settingsTimezoneUpdateErrorSpec() APIErrorSpec {
 	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update timezone")
 }

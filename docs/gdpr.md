@@ -32,7 +32,7 @@ The `/privacy` page renders a public-facing privacy notice that states what is s
 
 The full data inventory lives in [`docs/security/data-handling.md`](security/data-handling.md#data-inventory) under "Data Inventory". The short version:
 
-- `users`: identity, password/recovery hashes, cycle preferences, tracking flags, optional encrypted TOTP secret.
+- `users`: identity, password/recovery hashes, cycle preferences, tracking flags, interface language, optional encrypted TOTP secret.
 - `daily_logs`: per-day cycle entries, owner-controlled symptoms, free-text notes.
 - `symptom_types`: owner-managed symptom catalogue.
 - `oidc_identities`: federated-login link (only when OIDC is enabled).
@@ -128,7 +128,7 @@ Restoring the data volume from a backup returns the database to its state at bac
 
 ## Cookie Consent (ePrivacy)
 
-Ovumcy uses only first-party functional cookies (auth, CSRF, language, timezone, flash, OIDC state, recovery, reset). All are strictly necessary for the requested service and therefore do not require an ePrivacy consent banner. The full inventory is in [`Cookies`](security/cryptography.md#cookies).
+Ovumcy uses only first-party functional cookies (auth, CSRF, language, timezone, flash, OIDC state, recovery, reset). All are strictly necessary for the requested service and therefore do not require an ePrivacy consent banner. The full inventory is in [`Cookies`](security/cryptography.md#cookies). The language cookie is also mirrored on the account (`users.interface_language`) so a signed-in owner keeps their language on a new device; it is a display preference, stored under the same lawful basis as the rest of the account settings.
 
 There are no analytics, advertising, or third-party tracking cookies — this is enforced by the strict Content Security Policy (`default-src 'self'; script-src 'self'; ...`). If you ever add an integration that introduces non-essential cookies, ePrivacy obligations attach and you must add a consent banner; the existing CSP makes accidental introduction unlikely.
 

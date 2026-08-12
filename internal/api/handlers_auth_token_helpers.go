@@ -31,7 +31,39 @@ func (handler *Handler) setAuthCookie(c fiber.Ctx, user *models.User, rememberMe
 	if err := handler.writeSealedCookie(c, authCookieSpec, []byte(token), expires); err != nil {
 		return "", err
 	}
+	handler.applyStoredLanguage(c, user)
 	return sessionID, nil
+}
+
+// applyStoredLanguage re-issues the language cookie from the account's stored
+// interface language, so a device that has no cookie — a fresh browser, a
+// cleared cookie jar, a second machine — is served the language its owner chose
+// instead of falling back to Accept-Language.
+//
+// It sits inside setAuthCookie on purpose. Every session-issue path goes
+// through that one helper (password login, TOTP challenge completion, OIDC
+// callback, OIDC link-confirm, register pickup, recovery sign-in, and the
+// in-place re-issue after a security-posture change), so the preference cannot
+// hold on one of them and silently not on the next one added.
+//
+// An empty column means the owner never chose a language: nothing is written,
+// and resolveRequestLanguage keeps deciding exactly as it did before the column
+// existed. An unsupported stored code is treated the same way rather than
+// normalized to the default — NormalizeLanguage would happily answer with the
+// operator default for it, which would pin an account to a language nobody
+// picked. Writing the cookie only for a value the shipped catalogue actually
+// carries keeps an unknown code a no-op instead of a 500 or a wrong locale.
+//
+// The caller has already refused a nil user: buildTokenWithSessionID runs
+// first and returns an error for one, so no session exists to attach a language
+// to. There is deliberately no second nil check here for a state that cannot
+// reach this line.
+func (handler *Handler) applyStoredLanguage(c fiber.Ctx, user *models.User) {
+	stored := strings.TrimSpace(user.InterfaceLanguage)
+	if stored == "" || !handler.i18n.IsSupportedLanguage(stored) {
+		return
+	}
+	handler.setLanguageCookie(c, stored)
 }
 
 func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
