@@ -486,6 +486,8 @@
   "dashboard.pregnancy_test.none": "Нет теста",
   "dashboard.pregnancy_test.negative": "Отрицательный",
   "dashboard.pregnancy_test.positive": "Положительный",
+  "dashboard.pregnancy_test.absent": "Результат за этот день не записан.",
+  "dashboard.pregnancy_test.remove": "Удалить результат",
   "prediction.explainer.pregnancy_paused": "Прогнозы цикла приостановлены после положительного теста на беременность. Отметьте начало новых месячных, чтобы возобновить их.",
   "dashboard.average_cycle": "Средний цикл",
   "dashboard.median_cycle": "Медианный цикл",

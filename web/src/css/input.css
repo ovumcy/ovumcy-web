@@ -2898,6 +2898,101 @@
   }
 }
 
+/*
+  Pregnancy test. The two results share one row and one set of tokens — the
+  neutral radio-tile that every other day picker already uses, whose selected
+  fill is the AA-measured pair above. Nothing here paints a result green or
+  red, and the selection is confirmed by a shape (hollow ring → filled ring)
+  as well as by that fill, so the state survives a colour-blind reading.
+*/
+@utility pregnancy-test-field {
+  display: grid;
+  gap: 0.55rem;
+  justify-items: start;
+}
+
+@utility pregnancy-test-row {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  width: 100%;
+
+  & .choice-option {
+    min-width: 0;
+  }
+
+  & .radio-tile {
+    min-height: 2.7rem;
+    flex-direction: row;
+    justify-content: center;
+    text-align: center;
+    gap: 0.4rem;
+    padding-inline: 0.72rem;
+  }
+
+  /* The radio itself is transparent, so without this the keyboard focus ring
+     lands on nothing visible. */
+  & .choice-input:focus-visible + .radio-tile {
+    outline: 2px solid rgba(186, 131, 80, 0.58);
+    outline-offset: 2px;
+  }
+
+  :root[data-theme='dark'] & .choice-input:focus-visible + .radio-tile {
+    outline-color: rgba(222, 176, 117, 0.7);
+  }
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+@utility pregnancy-test-row-compact {
+  /* Written against the base class so the pair stays order-independent. */
+  &.pregnancy-test-row {
+    gap: 0.45rem;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  }
+}
+
+@utility pregnancy-test-mark-off {
+  display: inline;
+  line-height: 1;
+
+  .choice-input:checked + .radio-tile & {
+    display: none;
+  }
+}
+
+@utility pregnancy-test-mark-on {
+  display: none;
+  line-height: 1;
+
+  .choice-input:checked + .radio-tile & {
+    display: inline;
+  }
+}
+
+@utility pregnancy-test-remove-pill {
+  .choice-input:checked + & {
+    border-color: rgba(186, 131, 80, 0.95);
+    box-shadow: 0 0 0 2px rgba(186, 131, 80, 0.18);
+  }
+
+  .choice-input:focus-visible + & {
+    outline: 2px solid rgba(186, 131, 80, 0.58);
+    outline-offset: 2px;
+  }
+
+  :root[data-theme='dark'] .choice-input:checked + & {
+    border-color: rgba(222, 176, 117, 0.9);
+    box-shadow: 0 0 0 2px rgba(222, 176, 117, 0.2);
+  }
+
+  :root[data-theme='dark'] .choice-input:focus-visible + & {
+    outline-color: rgba(222, 176, 117, 0.7);
+  }
+}
+
 @utility measurement-field-row {
   display: inline-flex;
   align-items: center;

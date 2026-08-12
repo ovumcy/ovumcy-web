@@ -598,6 +598,8 @@
   "dashboard.pregnancy_test.none": "Pas de test",
   "dashboard.pregnancy_test.negative": "Négatif",
   "dashboard.pregnancy_test.positive": "Positif",
+  "dashboard.pregnancy_test.absent": "Aucun résultat enregistré pour ce jour.",
+  "dashboard.pregnancy_test.remove": "Supprimer le résultat",
   "prediction.explainer.pregnancy_paused": "Les prédictions de cycle sont en pause après un test de grossesse positif. Enregistrez de nouvelles règles pour les reprendre.",
   "dashboard.average_cycle": "Cycle moyen",
   "dashboard.median_cycle": "Cycle médian",

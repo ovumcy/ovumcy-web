@@ -482,6 +482,8 @@
   "dashboard.pregnancy_test.none": "Kein Test",
   "dashboard.pregnancy_test.negative": "Negativ",
   "dashboard.pregnancy_test.positive": "Positiv",
+  "dashboard.pregnancy_test.absent": "Für diesen Tag ist kein Ergebnis erfasst.",
+  "dashboard.pregnancy_test.remove": "Ergebnis entfernen",
   "prediction.explainer.pregnancy_paused": "Nach einem positiven Schwangerschaftstest pausieren die Zyklusvorhersagen. Erfassen Sie eine neue Periode, um sie fortzusetzen.",
   "dashboard.average_cycle": "Durchschnittlicher Zyklus",
   "dashboard.median_cycle": "Medianer Zyklus",

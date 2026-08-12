@@ -327,6 +327,168 @@ func TestDashboardJournalEntryDateFollowsRequestTimezoneAtUTCBoundary(t *testing
 	}
 }
 
+// TestDashboardPregnancyTestRendersAnUntestedDayAsAbsentData pins the first
+// half of the pregnancy-test control's contract: an untested day is absent
+// data, not a selected choice. The field offers exactly the two results, both
+// unfilled, and says in its own hook that nothing is recorded; the "none" value
+// the column still stores rides on a hidden carrier, so an untouched control
+// writes back what it read.
+func TestDashboardPregnancyTestRendersAnUntestedDayAsAbsentData(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-pregnancy-absent@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+	field := pregnancyTestField(t, document)
+
+	if got := htmlAttr(field, "data-pregnancy-test-state"); got != "absent" {
+		t.Fatalf("expected an untested day to render as absent data, got state %q", got)
+	}
+	options := pregnancyTestOptions(t, field)
+	for _, value := range []string{"negative", "positive"} {
+		if options[value] == nil {
+			t.Fatalf("expected the %q result to stay on offer", value)
+		}
+	}
+	if options["none"] != nil {
+		t.Fatal("expected no selectable \"none\" segment: an untested day is absent data, not a third result")
+	}
+	for value, option := range options {
+		if htmlHasAttr(pregnancyTestOptionInput(t, option), "checked") {
+			t.Fatalf("expected no filled segment on an untested day, %q is checked", value)
+		}
+	}
+
+	if !pregnancyTestHasHook(field, "data-pregnancy-test-empty") {
+		t.Fatal("expected an untested day to name its own empty state")
+	}
+	if pregnancyTestHasHook(field, "data-pregnancy-test-remove") {
+		t.Fatal("expected no removal action when there is no result to remove")
+	}
+
+	carrier := htmlFindElement(field, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-pregnancy-test-unset")
+	})
+	if carrier == nil {
+		t.Fatal("expected the unset value to stay in the form, or an untouched control would post nothing")
+	}
+	if got := htmlAttr(carrier, "value"); got != models.PregnancyTestNone {
+		t.Fatalf("expected the carrier to post %q, got %q", models.PregnancyTestNone, got)
+	}
+	if !htmlHasAttr(carrier, "checked") || !htmlHasAttr(carrier, "hidden") {
+		t.Fatal("expected the unset carrier to be checked and hidden from view")
+	}
+}
+
+// TestDashboardPregnancyTestOffersRemovalForEitherSavedResult is the other
+// half: once "did not test" stops being a selectable segment, the unset state
+// must stay reachable, or the most emotionally loaded field in the product
+// becomes a one-way door. Both results are anchored — a removal offered only
+// after a negative would leave a positive unremovable.
+func TestDashboardPregnancyTestOffersRemovalForEitherSavedResult(t *testing.T) {
+	for _, saved := range []string{models.PregnancyTestNegative, models.PregnancyTestPositive} {
+		t.Run(saved, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "dashboard-pregnancy-"+saved+"@example.com", "StrongPass1", true)
+
+			today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+			if err := database.Create(&models.DailyLog{
+				UserID:        user.ID,
+				Date:          today,
+				Flow:          models.FlowNone,
+				PregnancyTest: saved,
+			}).Error; err != nil {
+				t.Fatalf("seed daily log: %v", err)
+			}
+
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+			field := pregnancyTestField(t, document)
+
+			if got := htmlAttr(field, "data-pregnancy-test-state"); got != "recorded" {
+				t.Fatalf("expected a saved result to render as recorded, got state %q", got)
+			}
+			options := pregnancyTestOptions(t, field)
+			for value, option := range options {
+				checked := htmlHasAttr(pregnancyTestOptionInput(t, option), "checked")
+				if checked != (value == saved) {
+					t.Fatalf("expected only %q to be filled, %q checked=%v", saved, value, checked)
+				}
+			}
+
+			remove := htmlFindElement(field, func(node *html.Node) bool {
+				return node.Type == html.ElementNode && htmlHasAttr(node, "data-pregnancy-test-remove")
+			})
+			if remove == nil {
+				t.Fatalf("expected a saved %q result to be removable", saved)
+			}
+			removeInput := pregnancyTestOptionInput(t, remove)
+			if got := htmlAttr(removeInput, "value"); got != models.PregnancyTestNone {
+				t.Fatalf("expected the removal action to post %q, got %q", models.PregnancyTestNone, got)
+			}
+			if htmlHasAttr(removeInput, "checked") {
+				t.Fatal("expected the removal action to start unselected")
+			}
+			if pregnancyTestHasHook(field, "data-pregnancy-test-empty") {
+				t.Fatal("expected no empty state while a result is recorded")
+			}
+		})
+	}
+}
+
+// pregnancyTestField returns the single rendered pregnancy-test control.
+func pregnancyTestField(t *testing.T, root *html.Node) *html.Node {
+	t.Helper()
+
+	fields := htmlFindElements(root, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-pregnancy-test")
+	})
+	if len(fields) != 1 {
+		t.Fatalf("expected exactly one pregnancy-test control, got %d", len(fields))
+	}
+	return fields[0]
+}
+
+// pregnancyTestHasHook reports whether the control renders a given state hook.
+func pregnancyTestHasHook(field *html.Node, hook string) bool {
+	return htmlFindElement(field, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, hook)
+	}) != nil
+}
+
+// pregnancyTestOptions maps each offered result to its option element.
+func pregnancyTestOptions(t *testing.T, field *html.Node) map[string]*html.Node {
+	t.Helper()
+
+	options := make(map[string]*html.Node)
+	for _, node := range htmlFindElements(field, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-pregnancy-test-option")
+	}) {
+		options[htmlAttr(node, "data-pregnancy-test-option")] = node
+	}
+	if len(options) != 2 {
+		offered := make([]string, 0, len(options))
+		for value := range options {
+			offered = append(offered, value)
+		}
+		sort.Strings(offered)
+		t.Fatalf("expected exactly the two result options negative and positive, got %v", offered)
+	}
+	return options
+}
+
+func pregnancyTestOptionInput(t *testing.T, option *html.Node) *html.Node {
+	t.Helper()
+
+	input := htmlFindElement(option, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "input" && htmlAttr(node, "name") == "pregnancy_test"
+	})
+	if input == nil {
+		t.Fatal("expected the option to carry a pregnancy_test radio")
+	}
+	return input
+}
+
 func dashboardEntryDateElement(t *testing.T, document *html.Node) *html.Node {
 	t.Helper()
 

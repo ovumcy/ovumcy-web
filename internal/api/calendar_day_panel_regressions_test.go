@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -181,6 +182,81 @@ func TestCalendarDayPanelEditModeRendersDeleteActionForExistingEntry(t *testing.
 		bodyStringMatch{fragment: `data-day-delete-form`, message: "expected delete form affordance for existing calendar entry"},
 		bodyStringMatch{fragment: `data-day-delete-button`, message: "expected delete button affordance for existing calendar entry"},
 	)
+}
+
+// TestCalendarDayEditorPregnancyTestRemovalClearsTheSavedResult drives the
+// removal end to end on the second day-entry surface: the editor renders the
+// same shared control the dashboard journal does, its removal action posts the
+// unset value, and the cleared day comes back as absent data rather than as a
+// selected segment. Anything less would leave the unset state reachable only
+// by deleting the whole day entry.
+func TestCalendarDayEditorPregnancyTestRemovalClearsTheSavedResult(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-pregnancy-removal@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	day := time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC)
+	if err := database.Create(&models.DailyLog{
+		UserID:        user.ID,
+		Date:          day,
+		Flow:          models.FlowNone,
+		PregnancyTest: models.PregnancyTestPositive,
+	}).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+
+	field := pregnancyTestField(t, mustParseHTMLDocument(t, calendarDayEditorMarkup(t, app, authCookie)))
+	if got := htmlAttr(field, "data-pregnancy-test-state"); got != "recorded" {
+		t.Fatalf("expected the day editor to render the saved result, got state %q", got)
+	}
+	if !pregnancyTestHasHook(field, "data-pregnancy-test-remove") {
+		t.Fatal("expected the day editor to offer the same removal action as the dashboard journal")
+	}
+
+	// What the removal action posts: the same day form, with the unset value.
+	form := url.Values{
+		"flow":           {models.FlowNone},
+		"pregnancy_test": {models.PregnancyTestNone},
+	}
+	saveRequest := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-17", strings.NewReader(form.Encode()))
+	saveRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	saveRequest.Header.Set("HX-Request", "true")
+	saveRequest.Header.Set("Accept-Language", "en")
+	saveRequest.Header.Set("Cookie", authCookie)
+
+	saveResponse := mustAppResponse(t, app, saveRequest)
+	assertStatusCode(t, saveResponse, http.StatusOK)
+
+	var updated models.DailyLog
+	if err := database.Where("user_id = ? AND date = ?", user.ID, day).First(&updated).Error; err != nil {
+		t.Fatalf("load updated log: %v", err)
+	}
+	if updated.PregnancyTest != models.PregnancyTestNone {
+		t.Fatalf("expected the removal to clear the field, got %q", updated.PregnancyTest)
+	}
+
+	cleared := pregnancyTestField(t, mustParseHTMLDocument(t, calendarDayEditorMarkup(t, app, authCookie)))
+	if got := htmlAttr(cleared, "data-pregnancy-test-state"); got != "absent" {
+		t.Fatalf("expected the cleared day to round-trip as absent data, got state %q", got)
+	}
+	if !pregnancyTestHasHook(cleared, "data-pregnancy-test-empty") {
+		t.Fatal("expected the cleared day to render the empty state")
+	}
+	if pregnancyTestHasHook(cleared, "data-pregnancy-test-remove") {
+		t.Fatal("expected no removal action once the result is gone")
+	}
+}
+
+func calendarDayEditorMarkup(t *testing.T, app *fiber.App, authCookie string) string {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/calendar/day/2026-02-17?mode=edit", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return mustReadBodyString(t, response.Body)
 }
 
 func TestCalendarDayPanelEditModePreservesAndSavesPeriodToggle(t *testing.T) {

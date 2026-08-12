@@ -123,8 +123,16 @@
   {{template "cervical_mucus_option" (dict "Messages" .Messages "SelectedCervicalMucus" .SelectedCervicalMucus "Value" "eggwhite" "Compact" .Compact)}}
 </div>
 {{end}}
+{{/* A pregnancy test has two results and an absence. Only the two results are
+     offered as options, at equal weight and in the same neutral tokens the
+     other day pickers use — neither is styled as good or bad news. The absence
+     is not a third choice: an untested day carries the "none" value on a hidden
+     radio, so the control renders with nothing filled and says so in words.
+     Once a result is saved the same hidden value is offered back as an explicit
+     secondary action, because otherwise the unset state would exist in the
+     model and be unreachable from the interface. */}}
 {{define "pregnancy_test_option"}}
-<label class="choice-option">
+<label class="choice-option" data-pregnancy-test-option="{{.Value}}">
   <input
     type="radio"
     name="pregnancy_test"
@@ -132,14 +140,30 @@
     class="choice-input"
     {{if eq .SelectedPregnancyTest .Value}}checked{{end}}>
   <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+    <span class="pregnancy-test-mark-off" aria-hidden="true">○</span>
+    <span class="pregnancy-test-mark-on" aria-hidden="true">●</span>
     <span>{{pregnancyTestLabel .Messages .Value}}</span>
   </span>
 </label>
 {{end}}
 {{define "pregnancy_test_options"}}
-<div class="cervical-mucus-row{{if .Compact}} cervical-mucus-row-compact{{end}}">
-  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "none" "Compact" .Compact)}}
-  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "negative" "Compact" .Compact)}}
-  {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "positive" "Compact" .Compact)}}
+{{$recorded := or (eq .SelectedPregnancyTest "negative") (eq .SelectedPregnancyTest "positive")}}
+<div
+  class="pregnancy-test-field"
+  data-pregnancy-test
+  data-pregnancy-test-state="{{if $recorded}}recorded{{else}}absent{{end}}">
+  <div class="pregnancy-test-row{{if .Compact}} pregnancy-test-row-compact{{end}}">
+    {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "negative" "Compact" .Compact)}}
+    {{template "pregnancy_test_option" (dict "Messages" .Messages "SelectedPregnancyTest" .SelectedPregnancyTest "Value" "positive" "Compact" .Compact)}}
+  </div>
+  {{if $recorded}}
+  <label class="choice-option" data-pregnancy-test-remove data-action-weight="secondary">
+    <input type="radio" name="pregnancy_test" value="none" class="choice-input">
+    <span class="btn-secondary btn-compact pregnancy-test-remove-pill">{{t .Messages "dashboard.pregnancy_test.remove"}}</span>
+  </label>
+  {{else}}
+  <input type="radio" name="pregnancy_test" value="none" data-pregnancy-test-unset checked hidden>
+  <p class="journal-muted text-sm" data-pregnancy-test-empty>{{t .Messages "dashboard.pregnancy_test.absent"}}</p>
+  {{end}}
 </div>
 {{end}}

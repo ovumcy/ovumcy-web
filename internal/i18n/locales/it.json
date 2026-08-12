@@ -482,6 +482,8 @@
   "dashboard.pregnancy_test.none": "Nessuno",
   "dashboard.pregnancy_test.negative": "Negativo",
   "dashboard.pregnancy_test.positive": "Positivo",
+  "dashboard.pregnancy_test.absent": "Nessun risultato registrato per questo giorno.",
+  "dashboard.pregnancy_test.remove": "Rimuovi risultato",
   "prediction.explainer.pregnancy_paused": "Le previsioni del ciclo sono sospese dopo un test di gravidanza positivo. Registra un nuovo periodo per riattivarle.",
   "dashboard.average_cycle": "Ciclo medio",
   "dashboard.median_cycle": "Ciclo mediano",
