@@ -84,7 +84,7 @@
     <div class="journal-panel text-sm journal-muted">{{t .Messages "stats.irregular_recommendation"}}</div>
     {{end}}
 
-    <div class="grid gap-4 lg:grid-cols-3">
+    <div class="grid grid-cols-2 gap-4 lg:grid-cols-3">
       <article class="journal-card stat-card reveal">
         <p class="stat-label">{{t .Messages "stats.last_cycle_length"}}</p>
         <p class="stat-value mt-2">{{if gt .Stats.LastCycleLength 0}}{{.Stats.LastCycleLength}} {{t .Messages "common.days_short"}}{{else}}{{.NoDataLabel}}{{end}}</p>
