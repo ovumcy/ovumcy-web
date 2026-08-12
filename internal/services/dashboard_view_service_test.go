@@ -388,6 +388,7 @@ func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(
 	for name, testCase := range map[string]struct {
 		cycleContext DashboardCycleContext
 		wantEstimate bool
+		wantBridge   bool
 	}{
 		"stable cycle": {
 			cycleContext: DashboardCycleContext{},
@@ -401,14 +402,108 @@ func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(
 			cycleContext: DashboardCycleContext{NextPeriodEstimatePaused: true},
 			wantEstimate: false,
 		},
+		"awaiting the first completed cycle": {
+			cycleContext: DashboardCycleContext{AwaitingFirstCycle: true},
+			wantEstimate: false,
+			wantBridge:   true,
+		},
+		"awaiting the first cycle with predictions off": {
+			cycleContext: DashboardCycleContext{AwaitingFirstCycle: true, PredictionDisabled: true},
+			wantEstimate: false,
+			wantBridge:   false,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			frame := resolveDashboardTimingFrame(user, testCase.cycleContext, visibility)
 			if frame.ShowOvulationEstimate != testCase.wantEstimate {
 				t.Fatalf("expected ovulation estimate=%v, got %v", testCase.wantEstimate, frame.ShowOvulationEstimate)
 			}
+			if frame.ShowFirstCycleBridge != testCase.wantBridge {
+				t.Fatalf("expected the first-cycle bridge line=%v, got %v", testCase.wantBridge, frame.ShowFirstCycleBridge)
+			}
 			if !frame.BBTInVisibleTier {
 				t.Fatalf("expected the temperature field to stay in the visible tier for this goal")
+			}
+		})
+	}
+}
+
+// TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle pins
+// the early data tier at its boundary — zero completed cycles against one — for
+// both the goal that asks about timing and the neutral one.
+//
+// With no completed cycle the fertile window and the ovulation date are the
+// onboarding cycle-length slider projected forward, so the header withholds both
+// and an account tracking to conceive reads one bridge line in the ovulation
+// item's place instead. The moment a single cycle closes, the account has an
+// observation to reason from and the header renders exactly as it did before.
+// The count itself is the stats reliability signal (CompletedCycleCount), read
+// rather than recomputed here.
+func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *testing.T) {
+	today := mustParseDashboardServiceDay(t, "2026-02-21")
+
+	for name, testCase := range map[string]struct {
+		completedCycles int
+		goal            string
+		wantFertility   bool
+		wantOvulation   bool
+		wantBridge      bool
+	}{
+		"trying, no completed cycle": {
+			completedCycles: 0,
+			goal:            models.UsageGoalTrying,
+			wantBridge:      true,
+		},
+		"trying, one completed cycle": {
+			completedCycles: 1,
+			goal:            models.UsageGoalTrying,
+			wantFertility:   true,
+			wantOvulation:   true,
+		},
+		"health, no completed cycle": {
+			completedCycles: 0,
+			goal:            models.UsageGoalHealth,
+		},
+		"health, one completed cycle": {
+			completedCycles: 1,
+			goal:            models.UsageGoalHealth,
+			wantFertility:   true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			user := &models.User{ID: 9, Role: models.RoleOwner, CycleLength: 28, UsageGoal: testCase.goal, TrackBBT: true}
+			service := NewDashboardViewService(
+				&stubDashboardStatsProvider{stats: CycleStats{
+					CompletedCycleCount: testCase.completedCycles,
+					CurrentCycleDay:     5,
+					MedianCycleLength:   28,
+					LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-02-17"),
+					NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-03-17"),
+				}},
+				&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today}},
+				&stubDashboardDayStateProvider{},
+			)
+
+			viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)
+			if err != nil {
+				t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+			}
+			if viewData.ShowFertilityStatus != testCase.wantFertility {
+				t.Fatalf("expected fertility status shown=%v, got %v", testCase.wantFertility, viewData.ShowFertilityStatus)
+			}
+			if viewData.ShowOvulationEstimate != testCase.wantOvulation {
+				t.Fatalf("expected ovulation estimate=%v, got %v", testCase.wantOvulation, viewData.ShowOvulationEstimate)
+			}
+			if viewData.ShowFirstCycleBridge != testCase.wantBridge {
+				t.Fatalf("expected the first-cycle bridge line=%v, got %v", testCase.wantBridge, viewData.ShowFirstCycleBridge)
+			}
+			// The tier moves nothing else: the cycle day and the next-period
+			// estimate the header shows beside them are untouched by it.
+			if viewData.Stats.CurrentCycleDay != 5 {
+				t.Fatalf("expected the cycle day to survive the tier, got %d", viewData.Stats.CurrentCycleDay)
+			}
+			if viewData.CycleContext.DisplayNextPeriodStart.IsZero() {
+				t.Fatal("expected the next-period estimate to survive the tier")
 			}
 		})
 	}

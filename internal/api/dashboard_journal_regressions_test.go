@@ -554,6 +554,10 @@ func TestDashboardJournalMoreDisclosureOpensForDataItHolds(t *testing.T) {
 // morning temperature sits in the journal's visible tier; the disclosure then
 // stops counting a recorded temperature, which is no longer behind it. Every
 // other goal keeps the line and the two tiers it had.
+//
+// Both accounts own one completed cycle: the estimate exists only once there is
+// an observed cycle to project from, and what the same goal reads before that
+// is TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle's subject.
 func TestDashboardFramesTimingForTheGoalThatIsAboutIt(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		goal   string
@@ -567,6 +571,7 @@ func TestDashboardFramesTimingForTheGoalThatIsAboutIt(t *testing.T) {
 			user := createOnboardingTestUser(t, database, "dashboard-timing-"+testCase.goal+"@example.com", "StrongPass1", true)
 			enableDashboardMeasurementTracking(t, database, user.ID)
 			seedDashboardStableCycleForGoal(t, database, user.ID, testCase.goal)
+			seedDashboardCompletedCycle(t, database, user.ID)
 			seedDashboardTodayLog(t, database, user.ID, func(entry *models.DailyLog) {
 				entry.BBT = new(36.6)
 			})
@@ -696,6 +701,26 @@ func seedDashboardStableCycleForGoal(t *testing.T, database *gorm.DB, userID uin
 		"last_period_start": today.AddDate(0, 0, -2),
 	}).Error; err != nil {
 		t.Fatalf("seed cycle context for %s: %v", goal, err)
+	}
+}
+
+// seedDashboardCompletedCycle records the two cycle starts that make one
+// completed cycle — the threshold the status header's fertility half waits for —
+// keeping the running cycle on the same recent anchor
+// seedDashboardStableCycleForGoal set.
+func seedDashboardCompletedCycle(t *testing.T, database *gorm.DB, userID uint) {
+	t.Helper()
+
+	today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+	for _, offsetDays := range []int{-30, -2} {
+		if err := database.Create(&models.DailyLog{
+			UserID:     userID,
+			Date:       today.AddDate(0, 0, offsetDays),
+			IsPeriod:   true,
+			CycleStart: true,
+		}).Error; err != nil {
+			t.Fatalf("seed cycle start %d: %v", offsetDays, err)
+		}
 	}
 }
 

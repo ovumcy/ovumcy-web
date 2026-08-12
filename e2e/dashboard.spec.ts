@@ -796,7 +796,7 @@ test.describe('Dashboard: today editor', () => {
     ).toBeChecked();
   });
 
-  test('the goal about timing gets the ovulation estimate and the temperature in the open', async ({
+  test('the goal about timing gets the first-cycle promise and the temperature in the open', async ({
     page,
   }) => {
     await registerOwnerOnDashboard(page, 'dashboard-timing-frame');
@@ -804,11 +804,13 @@ test.describe('Dashboard: today editor', () => {
 
     const statusLine = dashboardStatusLine(page);
     const ovulation = statusLine.locator('[data-dashboard-ovulation]');
+    const bridge = statusLine.locator('[data-dashboard-first-cycle-bridge]');
     const bbtInput = page.locator('#dashboard-bbt');
 
-    // The default goal is the neutral one: no timing line, temperature folded
-    // away with the other rare fields.
+    // The default goal is the neutral one: no timing line at all, temperature
+    // folded away with the other rare fields.
     await expect(ovulation).toHaveCount(0);
+    await expect(bridge).toHaveCount(0);
     await expect(bbtInput).toBeHidden();
 
     await page.locator('[data-usage-goal-chip]').click();
@@ -818,10 +820,22 @@ test.describe('Dashboard: today editor', () => {
       'settings.goal.trying'
     );
 
-    // What the goal promised at onboarding, on the next load of the page.
+    // What the goal promised at onboarding, on the next load of the page. This
+    // account has completed no cycle yet, so the timing item is the one line
+    // naming when its fertile window arrives — an ovulation date here could only
+    // be the onboarding cycle length projected forward. The date itself, once a
+    // cycle has been observed, is pinned in the Go render regression
+    // (TestDashboardFramesTimingForTheGoalThatIsAboutIt).
     await page.reload();
-    await expect(statusLine).toContainText(localeText('en', 'dashboard.ovulation'));
-    await expect(ovulation).toHaveCount(1);
+    await expect(ovulation).toHaveCount(0);
+    await expect(bridge).toHaveCount(1);
+    await expect(bridge).toHaveAttribute(
+      'data-first-cycle-bridge-key',
+      'dashboard.fertile_window_after_first_cycle'
+    );
+    await expect(bridge).toHaveText(
+      localeText('en', 'dashboard.fertile_window_after_first_cycle')
+    );
     await expect(bbtInput).toBeVisible();
     await expect(dashboardMoreDisclosure(page).locator('#dashboard-bbt')).toHaveCount(0);
 
