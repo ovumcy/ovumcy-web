@@ -4,9 +4,12 @@
   var pwaInstallDeferredEvent = null;
   var pwaInstallFallbackTimer = 0;
   var pwaInstallSubscribers = [];
+  // `dismissed` hides the one-time mobile offer only. Availability survives it so
+  // the settings entry can still install after the offer has been dismissed.
   var pwaInstallState = {
     available: false,
     busy: false,
+    dismissed: false,
     installed: false,
     mode: ""
   };
@@ -95,6 +98,7 @@
     return {
       available: !!pwaInstallState.available,
       busy: !!pwaInstallState.busy,
+      dismissed: !!pwaInstallState.dismissed,
       installed: !!pwaInstallState.installed,
       mode: String(pwaInstallState.mode || "")
     };
@@ -111,6 +115,7 @@
     var safeState = nextState || {};
     pwaInstallState.available = !!safeState.available;
     pwaInstallState.busy = !!safeState.busy;
+    pwaInstallState.dismissed = !!safeState.dismissed;
     pwaInstallState.installed = !!safeState.installed;
     pwaInstallState.mode = String(safeState.mode || "");
     emitPWAInstallState();
@@ -124,8 +129,11 @@
     pwaInstallFallbackTimer = 0;
   }
 
+  // A dismissed offer no longer suppresses the fallback or the deferred prompt:
+  // both keep resolving so the settings entry can describe (and, where the browser
+  // supports it, run) the install. Only the mobile offer reads `dismissed`.
   function schedulePWAInstallFallback() {
-    if (isStandalonePWA() || wasPWAInstallDismissed()) {
+    if (isStandalonePWA()) {
       return;
     }
 
@@ -139,6 +147,7 @@
         setPWAInstallState({
           available: true,
           busy: false,
+          dismissed: wasPWAInstallDismissed(),
           installed: false,
           mode: "ios"
         });
@@ -149,6 +158,7 @@
         setPWAInstallState({
           available: true,
           busy: false,
+          dismissed: wasPWAInstallDismissed(),
           installed: false,
           mode: "menu"
         });
@@ -156,15 +166,15 @@
     }, PWA_INSTALL_FALLBACK_DELAY_MS);
   }
 
-  function dismissPWAInstallPrompt() {
-    pwaInstallDeferredEvent = null;
+  function dismissPWAInstallOffer() {
     clearPWAInstallFallbackTimer();
     storePWAInstallDismissed();
     setPWAInstallState({
-      available: false,
+      available: pwaInstallState.available,
       busy: false,
-      installed: isStandalonePWA(),
-      mode: ""
+      dismissed: true,
+      installed: pwaInstallState.installed,
+      mode: pwaInstallState.mode
     });
   }
 
@@ -175,6 +185,7 @@
     setPWAInstallState({
       available: false,
       busy: false,
+      dismissed: false,
       installed: true,
       mode: ""
     });
@@ -184,7 +195,7 @@
     if (!event) {
       return;
     }
-    if (isStandalonePWA() || wasPWAInstallDismissed()) {
+    if (isStandalonePWA()) {
       return;
     }
 
@@ -196,6 +207,7 @@
     setPWAInstallState({
       available: true,
       busy: false,
+      dismissed: wasPWAInstallDismissed(),
       installed: false,
       mode: "prompt"
     });
@@ -213,6 +225,7 @@
     setPWAInstallState({
       available: false,
       busy: false,
+      dismissed: wasPWAInstallDismissed(),
       installed: isStandalonePWA(),
       mode: ""
     });
@@ -229,6 +242,7 @@
     setPWAInstallState({
       available: true,
       busy: true,
+      dismissed: pwaInstallState.dismissed,
       installed: false,
       mode: "prompt"
     });
@@ -252,7 +266,17 @@
           return true;
         }
 
-        dismissPWAInstallPrompt();
+        // The browser consumed the deferred event, so nothing can be prompted
+        // again on this page load; a reload re-arms `beforeinstallprompt` and the
+        // settings entry with it.
+        storePWAInstallDismissed();
+        setPWAInstallState({
+          available: false,
+          busy: false,
+          dismissed: true,
+          installed: false,
+          mode: ""
+        });
         return false;
       });
   }

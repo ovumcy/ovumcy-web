@@ -125,41 +125,34 @@
     syncMobileMenu(button, menu);
   }
 
-  function syncPWAInstallBanner(banner, state) {
+  // The compact offer is a single row and only appears while the browser has a
+  // native prompt to run: the manual home-screen instructions live in settings,
+  // where they do not cost first-screen space.
+  function syncPWAInstallOffer(offer, state) {
     var safeState = state || {};
-    var visible = !!safeState.available && !safeState.installed;
-    var mode = String(safeState.mode || "");
-    var installButton = banner.querySelector("[data-pwa-install-action='install']");
-    var promptCopy = banner.querySelector("[data-pwa-install-copy='prompt']");
-    var iosCopy = banner.querySelector("[data-pwa-install-copy='ios']");
-    var menuCopy = banner.querySelector("[data-pwa-install-copy='menu']");
+    var visible = !!safeState.available &&
+      !safeState.installed &&
+      !safeState.dismissed &&
+      String(safeState.mode || "") === "prompt";
+    var installButton = offer.querySelector("[data-pwa-install-action='install']");
 
-    setNodeHidden(banner, !visible);
-    if (!visible) {
-      return;
-    }
-
+    setNodeHidden(offer, !visible);
     if (installButton) {
-      setNodeHidden(installButton, mode !== "prompt");
       installButton.disabled = !!safeState.busy;
     }
-
-    setNodeHidden(promptCopy, mode !== "prompt");
-    setNodeHidden(iosCopy, mode !== "ios");
-    setNodeHidden(menuCopy, mode !== "menu");
   }
 
-  function bindPWAInstallBanner() {
-    var banner = document.querySelector("[data-pwa-install-banner]");
-    if (!banner) {
+  function bindPWAInstallOffer() {
+    var offer = document.querySelector("[data-pwa-install-offer]");
+    if (!offer) {
       return;
     }
 
-    if (banner.dataset.pwaInstallBound !== "1") {
-      banner.dataset.pwaInstallBound = "1";
+    if (offer.dataset.pwaInstallBound !== "1") {
+      offer.dataset.pwaInstallBound = "1";
 
-      var installButton = banner.querySelector("[data-pwa-install-action='install']");
-      var dismissButton = banner.querySelector("[data-pwa-install-action='dismiss']");
+      var installButton = offer.querySelector("[data-pwa-install-action='install']");
+      var dismissButton = offer.querySelector("[data-pwa-install-action='dismiss']");
       if (installButton) {
         installButton.addEventListener("click", function () {
           requestPWAInstallation();
@@ -167,12 +160,58 @@
       }
       if (dismissButton) {
         dismissButton.addEventListener("click", function () {
-          dismissPWAInstallPrompt();
+          dismissPWAInstallOffer();
         });
       }
 
       subscribePWAInstallState(function (state) {
-        syncPWAInstallBanner(banner, state);
+        syncPWAInstallOffer(offer, state);
+      });
+    }
+  }
+
+  function syncPWAInstallSettingsRow(row, state) {
+    var safeState = state || {};
+    var mode = String(safeState.mode || "");
+    var installed = !!safeState.installed;
+    var installButton = row.querySelector("[data-pwa-install-action='install']");
+    var activeHint = "prompt";
+
+    if (installed) {
+      activeHint = "installed";
+    } else if (mode === "ios" || mode === "menu") {
+      activeHint = mode;
+    }
+
+    if (installButton) {
+      setNodeHidden(installButton, installed || !safeState.available || mode !== "prompt");
+      installButton.disabled = !!safeState.busy;
+    }
+
+    var hints = row.querySelectorAll("[data-pwa-install-hint]");
+    for (var index = 0; index < hints.length; index++) {
+      setNodeHidden(hints[index], hints[index].getAttribute("data-pwa-install-hint") !== activeHint);
+    }
+  }
+
+  function bindPWAInstallSettingsRow() {
+    var row = document.querySelector("[data-pwa-install-settings]");
+    if (!row) {
+      return;
+    }
+
+    if (row.dataset.pwaInstallBound !== "1") {
+      row.dataset.pwaInstallBound = "1";
+
+      var installButton = row.querySelector("[data-pwa-install-action='install']");
+      if (installButton) {
+        installButton.addEventListener("click", function () {
+          requestPWAInstallation();
+        });
+      }
+
+      subscribePWAInstallState(function (state) {
+        syncPWAInstallSettingsRow(row, state);
       });
     }
   }
