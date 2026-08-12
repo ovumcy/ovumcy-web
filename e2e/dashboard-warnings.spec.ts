@@ -91,10 +91,13 @@ test.describe('Dashboard: spotting cycle warning', () => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
 
-    // The warning sits inside the [data-period-fields] fieldset right after
-    // the flow chips — scope the locator so a generic copy match on
-    // .journal-muted elsewhere on the page cannot mask a regression.
-    const periodFields = page.locator('[data-period-fields]');
+    // The warning sits inside the flow fieldset right after the flow chips —
+    // scope the locator so a generic copy match on .journal-muted elsewhere on
+    // the page cannot mask a regression. [data-period-fields] marks every
+    // section the period toggle reveals (the flow chips, the cycle-start
+    // question beside the toggle), so name this one by the controls it holds
+    // rather than by the shared reveal hook, which resolves to several nodes.
+    const periodFields = page.locator('[data-period-fields]:has(input[name="flow"])');
     await expect(periodFields).toBeVisible();
     await expect(periodFields).toContainText(localeText('en', 'dashboard.spotting_cycle_warning'));
   });
