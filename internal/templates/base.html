@@ -81,10 +81,8 @@
           <a href="/dashboard" class="nav-link {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
           <a href="/calendar" class="nav-link {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
           <a href="/stats" class="nav-link {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
-          <a href="/settings" class="nav-link nav-link-icon {{if isActiveRoute .CurrentPath "/settings"}}nav-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}">
-            <span aria-hidden="true">⚙️</span>
-          </a>
 
+          <!-- Settings is reached through the account chip alone: a gear beside it led to the same page. -->
           <div class="nav-account-actions" data-nav-account-actions>
             {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-desktop" "Block" false "SwapOOB" false)}}
             <form action="/logout" method="post" class="nav-logout-form" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
