@@ -1,54 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
+import { apiOriginHeader } from './support/auth-helpers';
 import {
-  continueFromRecoveryCode,
-  createCredentials,
-  expectInlineRegisterRecoveryStep,
-  readRecoveryCode,
-  registerOwnerViaUI,
-  apiOriginHeader,
-} from './support/auth-helpers';
-import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
-import { shiftISODate } from './support/stats-helpers';
+  isoToday,
+  markCycleStartViaAPI,
+  registerAndOnboardWithStartDaysAgo,
+  shiftISODate,
+} from './support/stats-helpers';
 import { localeText } from './support/locale-helpers';
-
-function isoDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-async function registerAndOnboardWithStartDaysAgo(
-  page: Page,
-  prefix: string,
-  startDaysAgo: number
-): Promise<string> {
-  const credentials = createCredentials(prefix);
-  await registerOwnerViaUI(page, credentials);
-  await expectInlineRegisterRecoveryStep(page);
-  await readRecoveryCode(page);
-  await continueFromRecoveryCode(page);
-
-  // Replicate completeOnboardingIfPresent's UI flow but with a custom
-  // start_date so the cycle window is wide enough for the BBT chart.
-  const startISO = isoDateDaysAgo(startDaysAgo);
-  await selectOnboardingStartDate(page, startISO);
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-
-  const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
-  await expect(stepTwoForm).toBeVisible();
-  await Promise.all([
-    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
-  ]);
-
-  await setRequestTimezoneFromBrowser(page);
-  return startISO;
-}
 
 async function csrfToken(page: Page): Promise<string> {
   return (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
@@ -81,23 +39,6 @@ async function savePeriodDay(page: Page, isoDate: string): Promise<void> {
   expect(response.status(), `save period on ${isoDate}`).toBeLessThan(400);
 }
 
-async function markCycleStartViaAPI(page: Page, isoDate: string): Promise<void> {
-  // POST /api/v1/days/{date}/cycle-start sets IsPeriod=true AND CycleStart=true
-  // on the day, then triggers auto-period-fill. Setting CycleStart explicitly
-  // is what makes latestExplicitCycleStartBeforeOrOn pick the day up; a plain
-  // is_period upsert without the explicit flag leaves stats.LastPeriodStart
-  // anchored to user.LastPeriodStart from onboarding.
-  const response = await page.request.post(`/api/v1/days/${isoDate}/cycle-start`, {
-    headers: {
-      ...apiOriginHeader(page),
-      'X-CSRF-Token': await csrfToken(page),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    form: { replace_existing: 'true' },
-  });
-  expect(response.status(), `mark cycle start at ${isoDate}`).toBeLessThan(400);
-}
-
 test.describe('Stats: BBT chart', () => {
   test('logging 5+ BBT values within the current cycle renders the BBT chart section', async ({
     page,
@@ -116,7 +57,7 @@ test.describe('Stats: BBT chart', () => {
     // today-30 (cycle 2 start) and today-7 (cycle 3 start, the current
     // cycle). Layer the BBT samples on today-5..today.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-bbt-chart', 60);
-    const today = isoDateDaysAgo(0);
+    const today = isoToday();
 
     await savePeriodDay(page, shiftISODate(today, -30));
     await savePeriodDay(page, shiftISODate(today, -7));
@@ -180,7 +121,7 @@ test.describe('Stats: BBT chart', () => {
     // so the bare { bbt: ... } JSON payloads never wipe an is_period flag we
     // care about.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-bbt-marker', 60);
-    const today = isoDateDaysAgo(0);
+    const today = isoToday();
 
     await markCycleStartViaAPI(page, shiftISODate(today, -30));
     await markCycleStartViaAPI(page, shiftISODate(today, -14));
@@ -254,7 +195,7 @@ test.describe('Stats: symptom patterns', () => {
     // and trip the short-gap confirmation requirement. 18 days leaves
     // headroom regardless of the boundary direction.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-symptom-pattern', 60);
-    const today = isoDateDaysAgo(0);
+    const today = isoToday();
 
     await markCycleStartViaAPI(page, shiftISODate(today, -42));
     await markCycleStartViaAPI(page, shiftISODate(today, -24));
@@ -334,7 +275,7 @@ test.describe('Stats: cycle range', () => {
     // MinCycleLength / MaxCycleLength from cycleLengths(observedStarts), and
     // the Range card prints stats.cycle_range_summary when MinCycleLength>0.
     await registerAndOnboardWithStartDaysAgo(page, 'stats-cycle-range', 60);
-    const today = isoDateDaysAgo(0);
+    const today = isoToday();
 
     await markCycleStartViaAPI(page, shiftISODate(today, -40));
     await markCycleStartViaAPI(page, shiftISODate(today, -15));
