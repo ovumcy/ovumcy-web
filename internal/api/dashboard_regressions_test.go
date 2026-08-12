@@ -85,7 +85,12 @@ func TestDashboardStaleCycleWarningIncludesSettingsCTAAndEstimatedPhase(t *testi
 	user := createOnboardingTestUser(t, database, "dashboard-stale-ui@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
-	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -60)
+	// Cycle day 31 against a 28-day reference: past the reference (stale) but
+	// inside the seven-day grace window, so the late-cycle notice — which now
+	// outranks the stale hint, see
+	// TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange —
+	// stays silent and this test still observes the state it names.
+	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -30)
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,
 		"period_length":     5,
@@ -180,6 +185,120 @@ func TestDashboardAndStatsUseSameStalePhasePresentation(t *testing.T) {
 	statsDocument := mustParseHTMLDocument(t, mustReadBodyString(t, statsResponse.Body))
 	if dashboardElementByDataAttr(statsDocument, "data-stats-empty-state") == nil {
 		t.Fatal("expected stats page to show gated empty state before enough completed cycles")
+	}
+}
+
+// dashboardLateCycleNotice returns the late-cycle paragraph and the row of
+// logging actions rendered beside it, so a test can address the chosen state by
+// its data-late-cycle-key attribute rather than by the rendered phrase.
+func dashboardLateCycleNotice(t *testing.T, app *fiber.App, authCookie string) (*html.Node, *html.Node) {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	warnings := dashboardElementByDataAttr(document, "data-dashboard-cycle-warnings")
+	if warnings == nil {
+		t.Fatal("expected the dashboard cycle warning container on a cycle past its expected end")
+	}
+	if dashboardElementByDataAttr(warnings, "data-dashboard-stale-warning") != nil {
+		t.Fatal("expected the late-cycle notice to replace the stale hint, not to render beside it")
+	}
+	notice := dashboardElementByDataAttr(warnings, "data-dashboard-cycle-day-warning")
+	if notice == nil {
+		t.Fatal("expected the late-cycle notice inside the warning container")
+	}
+	return notice, dashboardElementByDataAttr(warnings, "data-dashboard-late-cycle-actions")
+}
+
+// TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange is
+// the design-item-38 render regression for the insufficient-history half of the
+// late-cycle matrix. An account whose only cycle input is the onboarding
+// baseline has no completed cycle to compare against, so the notice must select
+// the no-personal-range key: the "usual range" it would otherwise cite is the
+// settings value, not a measurement.
+func TestDashboardLateCycleNoticeOutranksTheStaleHintAndClaimsNoInventedRange(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-late-cycle-no-history@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	lastPeriodStart := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, -60)
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": lastPeriodStart,
+	}).Error; err != nil {
+		t.Fatalf("update user cycle context: %v", err)
+	}
+
+	notice, actions := dashboardLateCycleNotice(t, app, authCookie)
+	if got := htmlAttr(notice, "data-late-cycle-key"); got != services.LateCycleNoPersonalRangeKey {
+		t.Fatalf("expected late-cycle key %q with no completed cycles, got %q", services.LateCycleNoPersonalRangeKey, got)
+	}
+	if got := htmlAttr(notice, "data-late-cycle-tone"); got != services.LateCycleToneNeutral {
+		t.Fatalf("expected a neutral tone when no range can be measured, got %q", got)
+	}
+
+	if actions == nil {
+		t.Fatal("expected the late-cycle notice to offer the logging actions that fit")
+	}
+	for _, action := range []string{"cycle-start", "pregnancy-test", "symptoms"} {
+		link := htmlFindElement(actions, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlAttr(node, "data-late-cycle-action") == action
+		})
+		if link == nil {
+			t.Fatalf("expected a %q logging action beside the late-cycle notice", action)
+		}
+		target := strings.TrimPrefix(htmlAttr(link, "href"), "#")
+		if target == "" {
+			t.Fatalf("expected the %q action to link to a control on the page", action)
+		}
+	}
+}
+
+// TestDashboardLateCycleNoticeStatesTheMeasuredExcessOnceHistoryExists is the
+// paired positive: the same surface, the same hooks, but an account that owns
+// two completed cycles — which is exactly the threshold the stats
+// prediction-reliability card uses — so the notice may state a measured excess.
+func TestDashboardLateCycleNoticeStatesTheMeasuredExcessOnceHistoryExists(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-late-cycle-history@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"cycle_length":  28,
+		"period_length": 5,
+	}).Error; err != nil {
+		t.Fatalf("update user cycle context: %v", err)
+	}
+	// Two completed 28-day cycles, then a running cycle on day 41 — past the
+	// 28-day reference plus the seven-day grace window, and past the observed
+	// maximum of 28 days by 13.
+	for _, offsetDays := range []int{-96, -68, -40} {
+		start := services.DateAtLocation(time.Now().UTC(), time.UTC).AddDate(0, 0, offsetDays)
+		if err := database.Create(&models.DailyLog{
+			UserID:     user.ID,
+			Date:       start,
+			IsPeriod:   true,
+			CycleStart: true,
+		}).Error; err != nil {
+			t.Fatalf("seed cycle start %d: %v", offsetDays, err)
+		}
+	}
+
+	notice, actions := dashboardLateCycleNotice(t, app, authCookie)
+	if got := htmlAttr(notice, "data-late-cycle-key"); got != services.LateCycleBeyondRangeKey {
+		t.Fatalf("expected late-cycle key %q once a personal range exists, got %q", services.LateCycleBeyondRangeKey, got)
+	}
+	if got := htmlAttr(notice, "data-late-cycle-tone"); got != services.LateCycleToneWarning {
+		t.Fatalf("expected the measured-excess state to carry the warning tone, got %q", got)
+	}
+	if actions == nil {
+		t.Fatal("expected the late-cycle notice to offer the logging actions that fit")
 	}
 }
 

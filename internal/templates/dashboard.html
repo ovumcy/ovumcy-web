@@ -186,15 +186,37 @@
     </div>
     {{end}}
 
-    {{if or .CycleDataStale .CycleDayWarning .NextPeriodInPast .OvulationInPast}}
+    {{if or .CycleDataStale .LateCycle.Visible .NextPeriodInPast .OvulationInPast}}
     <div class="flex flex-wrap items-center gap-3 text-sm" data-dashboard-cycle-warnings>
-      {{if .CycleDataStale}}
+      {{if .LateCycle.Visible}}
+      <p
+        class="{{if eq .LateCycle.Tone "warning"}}warning-amber{{else}}journal-muted{{end}}"
+        data-dashboard-cycle-day-warning
+        data-late-cycle-key="{{.LateCycle.MessageKey}}"
+        data-late-cycle-tone="{{.LateCycle.Tone}}">
+        {{- if eq .LateCycle.Form "range" -}}
+        {{printf (tn .Messages .Lang .LateCycle.MessageKey .LateCycle.RangeHigh) .LateCycle.RangeLow .LateCycle.RangeHigh}}
+        {{- else if eq .LateCycle.Form "count" -}}
+        {{printf (tn .Messages .Lang .LateCycle.MessageKey .LateCycle.Days) .LateCycle.Days}}
+        {{- else -}}
+        {{t .Messages .LateCycle.MessageKey}}
+        {{- end -}}
+      </p>
+      {{else if .CycleDataStale}}
       <p class="warning-amber" data-dashboard-stale-warning>{{t .Messages "dashboard.cycle_day_stale_hint"}}</p>
-      {{else if .CycleDayWarning}}
-      <p class="warning-amber" data-dashboard-cycle-day-warning>{{printf (t .Messages "dashboard.cycle_day_long_hint") .CycleDayReference}}</p>
       {{end}}
       {{if or .NextPeriodInPast .OvulationInPast}}
       <p class="warning-amber" data-dashboard-prediction-past>{{t .Messages "dashboard.prediction_in_past"}}</p>
+      {{end}}
+      {{if and .IsOwner .LateCycle.Visible}}
+      <span class="flex flex-wrap items-center gap-3" role="group" aria-label="{{t .Messages "dashboard.late_cycle.actions"}}" data-dashboard-late-cycle-actions>
+        <span class="journal-muted">{{t .Messages "dashboard.late_cycle.actions"}}</span>
+        {{if .AllowManualCycleStart}}
+        <a href="#dashboard-cycle-start" class="inline-link" data-late-cycle-action="cycle-start">{{t .Messages "dashboard.manual_cycle_start"}}</a>
+        {{end}}
+        <a href="#dashboard-pregnancy-test" class="inline-link" data-late-cycle-action="pregnancy-test">{{t .Messages "dashboard.pregnancy_test"}}</a>
+        <a href="#dashboard-symptoms" class="inline-link" data-late-cycle-action="symptoms">{{t .Messages "dashboard.symptoms"}}</a>
+      </span>
       {{end}}
       <a href="/settings#settings-cycle" class="btn-secondary text-sm">{{t .Messages "dashboard.update_cycle_data"}}</a>
     </div>
@@ -284,7 +306,7 @@
         <p class="dashboard-once-tip journal-muted text-sm" data-period-tip-copy hidden>{{t .Messages "dashboard.period_tip_once"}}</p>
         {{end}}
 
-        <fieldset class="space-y-3" data-dashboard-section="symptoms">
+        <fieldset id="dashboard-symptoms" class="space-y-3" data-dashboard-section="symptoms">
           <legend class="field-label">{{t .Messages "dashboard.symptoms"}}</legend>
           {{template "symptom_options" (dict "Messages" .Messages "PrimarySymptoms" .PrimarySymptoms "ExtraSymptoms" .ExtraSymptoms "HasExtraSymptoms" .HasExtraSymptoms "SelectedSymptomID" .SelectedSymptomID "Lang" .Lang "Compact" false "IncludePreviewHooks" false)}}
         </fieldset>
@@ -330,7 +352,7 @@
         </fieldset>
         {{end}}
 
-        <fieldset class="space-y-3">
+        <fieldset id="dashboard-pregnancy-test" class="space-y-3">
           <legend class="field-label">{{t .Messages "dashboard.pregnancy_test"}}</legend>
           {{template "pregnancy_test_options" (dict "Messages" .Messages "SelectedPregnancyTest" .TodayEntry.PregnancyTest "Compact" false)}}
         </fieldset>
@@ -375,7 +397,7 @@
       </form>
 
       {{if .AllowManualCycleStart}}
-      <div class="dashboard-secondary-actions">
+      <div id="dashboard-cycle-start" class="dashboard-secondary-actions">
         <form
           class="dashboard-secondary-form"
           hx-post="/api/v1/days/{{.Today}}/cycle-start?source=dashboard"

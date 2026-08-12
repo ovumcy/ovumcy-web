@@ -10,6 +10,7 @@ import (
 type DashboardCycleContext struct {
 	CycleDayReference           int
 	CycleDayWarning             bool
+	LateCycle                   LateCycleNotice
 	CycleDataStale              bool
 	PredictionDisabled          bool
 	PregnancyPaused             bool
@@ -255,6 +256,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 	return DashboardCycleContext{
 		CycleDayReference:           cycleDayReference,
 		CycleDayWarning:             cycleDayWarning,
+		LateCycle:                   BuildLateCycleNotice(user, stats, cycleDayWarning),
 		CycleDataStale:              cycleDataStale,
 		PredictionDisabled:          false,
 		DisplayNextPeriodStart:      display.nextPeriodStart,
