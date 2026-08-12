@@ -50,7 +50,6 @@
     {{if .ShowCycleFactors}}
     <fieldset class="space-y-2">
       <legend class="field-label">{{t .Messages "dashboard.cycle_factors"}}</legend>
-      <p class="journal-muted text-sm">{{t .Messages "dashboard.cycle_factors_hint"}}</p>
       {{template "cycle_factor_options" (dict "Messages" .Messages "CycleFactorKeys" .CycleFactorKeys "SelectedCycleFactorKey" .SelectedCycleFactorKey "Compact" true)}}
     </fieldset>
     {{end}}
