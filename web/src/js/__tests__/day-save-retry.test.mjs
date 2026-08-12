@@ -34,8 +34,108 @@ const PAGE = `<!doctype html><html><head></head><body>
   </form>
 </body></html>`;
 
+// The dashboard journal saves itself, so its failures arrive on the fetch path
+// rather than as htmx events — but the surface the owner sees must be the same
+// one, or "a save that did not land" would mean two different things on two
+// screens. Same fixture shape, same notice, same retry.
+const DASHBOARD_DATE = "2026-08-12";
+const DASHBOARD_PAGE = `<!doctype html><html><head><meta name="csrf-token" content="unit-test-token"></head><body>
+  <div data-dashboard-editor>
+    <form
+      hx-put="/api/v1/days/${DASHBOARD_DATE}"
+      hx-target="#save-status"
+      hx-swap="innerHTML"
+      data-save-feedback
+      data-dashboard-save-form
+      data-dashboard-date="${DASHBOARD_DATE}"
+      data-today-entry-exists="true"
+      data-autosave-clear-url="/api/v1/days/${DASHBOARD_DATE}?source=dashboard"
+      data-autosave-saving="Saving..."
+      data-autosave-saved="Saved"
+      data-autosave-invalid="Fix the form errors to save"
+      data-autosave-undo="Undo"
+      data-day-save-failed-text="${FAILED_TEXT}"
+      data-day-save-retry-label="${RETRY_LABEL}">
+      <input type="hidden" name="csrf_token" value="unit-test-token">
+      <input type="checkbox" name="is_period" value="true" checked>
+      <textarea id="today-notes" name="notes" data-dashboard-notes>${TYPED_NOTE}</textarea>
+      <div id="save-status" class="save-status" aria-live="polite"></div>
+      <div class="dashboard-autosave-indicator" data-dashboard-autosave-indicator data-autosave-state="idle" aria-live="polite"></div>
+    </form>
+  </div>
+</body></html>`;
+
 function dayEditorForm(window) {
   return window.document.querySelector("[data-day-editor-form]");
+}
+
+function dashboardSaveForm(window) {
+  return window.document.querySelector("[data-dashboard-save-form]");
+}
+
+function dashboardFailureNotice(window) {
+  return window.document.querySelector("#save-status [data-day-save-failed]");
+}
+
+function assertDashboardEntryIntact(window) {
+  const form = dashboardSaveForm(window);
+  assert.equal(
+    form.querySelector("#today-notes").value,
+    TYPED_NOTE,
+    "the typed note must survive the error path untouched"
+  );
+  assert.equal(form.querySelector("input[name='is_period']").checked, true);
+}
+
+/** Loads the dashboard fixture with a fetch that fails the given way. */
+async function loadDashboardWithFailingSave(outcome) {
+  const calls = [];
+  let mode = outcome;
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: DASHBOARD_PAGE,
+    beforeRun: (window) => {
+      window.fetch = (url, init) => {
+        calls.push({ url: String(url), init: init || {} });
+        if (mode === "offline") {
+          return Promise.reject(new Error("network down"));
+        }
+        if (mode === "rejected") {
+          return Promise.resolve({
+            ok: false,
+            status: 422,
+            headers: { get: () => null },
+            text: () =>
+              Promise.resolve(
+                '<div class="status-error" data-flash-key="error.invalid_payload">That temperature is out of range.</div>'
+              ),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(""),
+        });
+      };
+    },
+  });
+
+  return {
+    dom,
+    calls,
+    set: (next) => {
+      mode = next;
+    },
+  };
+}
+
+// The unload flush runs the same runner the 2 s debounce does, so the request
+// is reached without sitting out the debounce.
+async function attemptDashboardSave(window) {
+  const notes = window.document.querySelector("#today-notes");
+  notes.dispatchEvent(new window.Event("input", { bubbles: true }));
+  window.dispatchEvent(new window.Event("beforeunload"));
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function fireOnForm(window, name, detail) {
@@ -201,6 +301,101 @@ test("a rejected save never scripts the server response into the page", async ()
     assert.equal(container.querySelectorAll("img").length, 0);
     assert.equal(dom.window.__unitTestXSSFired, undefined);
     assert.equal(dom.window.__attrXSSFired, undefined);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("an autosave that never lands shows the same neutral notice on the dashboard", async () => {
+  const { dom, calls } = await loadDashboardWithFailingSave("offline");
+  try {
+    await attemptDashboardSave(dom.window);
+    assert.equal(calls.length, 1, "the autosave must have reached the wire");
+
+    const notice = dashboardFailureNotice(dom.window);
+    assert.ok(notice, "a failed autosave is never a silent state attribute");
+    assert.equal(notice.getAttribute("data-day-save-failed"), "unreachable");
+    assert.ok(notice.textContent.includes(FAILED_TEXT));
+    assert.ok(notice.classList.contains("status-notice"));
+    assert.equal(notice.classList.contains("status-error"), false);
+    assert.equal(dom.window.document.querySelectorAll("#save-status .status-ok").length, 0);
+    assert.equal(
+      dom.window.document.querySelector("#save-status").getAttribute("aria-live"),
+      "polite"
+    );
+    assert.ok(notice.querySelector("[data-day-save-retry]"), "the retry rides with the notice");
+    assertDashboardEntryIntact(dom.window);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("the dashboard retry re-enters the autosave with what is on screen", async () => {
+  const failing = await loadDashboardWithFailingSave("offline");
+  const { dom, calls } = failing;
+  try {
+    await attemptDashboardSave(dom.window);
+    assert.equal(calls.length, 1);
+
+    failing.set("ok");
+    dom.window.document
+      .querySelector("#save-status [data-day-save-retry]")
+      .dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Not an exact count: this harness delivers DOMContentLoaded twice, so the
+    // click can reach more than one copy of the same listener. "Exactly one PUT
+    // per retry" is pinned in the browser instead.
+    assert.ok(calls.length > 1, "the retry sends the entry again");
+    const retried = calls[calls.length - 1];
+    assert.equal(retried.url, `/api/v1/days/${DASHBOARD_DATE}`);
+    assert.equal(retried.init.method, "PUT");
+    assert.ok(
+      String(retried.init.body || "").includes(
+        new URLSearchParams([["notes", TYPED_NOTE]]).toString()
+      ),
+      "the retry carries exactly what is on screen"
+    );
+    assert.equal(dashboardFailureNotice(dom.window), null, "a landed save clears the notice");
+    assertDashboardEntryIntact(dom.window);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("a rejected autosave shows the server's own message on the dashboard too", async () => {
+  const { dom } = await loadDashboardWithFailingSave("rejected");
+  try {
+    await attemptDashboardSave(dom.window);
+
+    const notice = dashboardFailureNotice(dom.window);
+    assert.ok(notice);
+    assert.equal(notice.getAttribute("data-day-save-failed"), "rejected");
+    assert.ok(notice.textContent.includes("That temperature is out of range."));
+    assert.equal(
+      notice.querySelector("[data-notice-key]").getAttribute("data-notice-key"),
+      "error.invalid_payload"
+    );
+    assertDashboardEntryIntact(dom.window);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test("an htmx-reported failure on the dashboard form renders the same notice", async () => {
+  // The dashboard form still declares hx-put — the autosave runner and the e2e
+  // helpers read it — so an htmx-driven attempt (implicit submission, a legacy
+  // path) must land on the same surface rather than the generic error block.
+  const dom = await loadDOMWithScript(APP_BUNDLE, { html: DASHBOARD_PAGE });
+  try {
+    dashboardSaveForm(dom.window).dispatchEvent(
+      new dom.window.CustomEvent("htmx:sendError", { detail: { xhr: {} }, bubbles: true })
+    );
+
+    const notice = dashboardFailureNotice(dom.window);
+    assert.ok(notice, "one failure surface, both forms");
+    assert.equal(notice.getAttribute("data-day-save-failed"), "unreachable");
+    assertDashboardEntryIntact(dom.window);
   } finally {
     dom.window.close();
   }

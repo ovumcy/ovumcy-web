@@ -517,6 +517,7 @@
   "dashboard.autosave_saved": "Automatisch gespeichert",
   "dashboard.autosave_invalid": "Beheben Sie die Formularfehler, um zu speichern",
   "dashboard.autosave_error": "Automatisches Speichern fehlgeschlagen",
+  "dashboard.autosave_undo": "Rückgängig",
   "dashboard.save_message_self_care": "Gespeichert. Achten Sie heute gut auf sich 🌸",
   "dashboard.save_message_fertile": "Gespeichert. Sie befinden sich gerade in Ihrem fruchtbaren Fenster.",
   "dashboard.save_message_neutral": "Gespeichert.",

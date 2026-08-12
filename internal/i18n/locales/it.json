@@ -517,6 +517,7 @@
   "dashboard.autosave_saved": "Salvato automaticamente",
   "dashboard.autosave_invalid": "Correggi gli errori del modulo per salvare",
   "dashboard.autosave_error": "Salvataggio automatico non riuscito",
+  "dashboard.autosave_undo": "Annulla",
   "dashboard.save_message_self_care": "Salvato. Prenditi cura di te oggi 🌸",
   "dashboard.save_message_fertile": "Salvato. Sei nella tua finestra fertile in questo momento.",
   "dashboard.save_message_neutral": "Salvato.",

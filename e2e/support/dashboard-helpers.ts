@@ -1,4 +1,79 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, type Request } from '@playwright/test';
+
+export function dashboardSaveForm(page: Page): Locator {
+  return page.locator('[data-dashboard-save-form]').first();
+}
+
+/**
+ * Today's ISO date as the journal itself reports it.
+ *
+ * The form keeps its `hx-put` after the save button was removed — the autosave
+ * runner reads the verb and URL from it — so it stays the one place a spec
+ * learns which day it is editing.
+ */
+export async function dashboardTodayPath(page: Page): Promise<string> {
+  const action = await dashboardSaveForm(page).getAttribute('hx-put');
+  expect(action).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
+  return String(action);
+}
+
+export async function dashboardTodayISO(page: Page): Promise<string> {
+  return (await dashboardTodayPath(page)).replace('/api/v1/days/', '');
+}
+
+/**
+ * Makes the changes in `edit` and waits for the autosave they trigger.
+ *
+ * The dashboard has no save button: every change re-arms a 2 s debounce, so the
+ * request listener is registered BEFORE `edit` runs and the wait binds to the
+ * autosave's own request (`waitForRequest` → `request.response()`), never to
+ * page state. `edit` must therefore contain field interactions only — no
+ * navigation, and nothing that idles longer than the debounce, or the runner
+ * would send a first PUT mid-way through it.
+ *
+ * The settle assertion afterwards is the second half: the runner drops the
+ * dirty flag only once the server has answered, so a form that still carries it
+ * has a save the spec has not seen yet — and a `page.goto` at that moment would
+ * abort it, which is silent data loss.
+ */
+export async function saveDashboardEntry(
+  page: Page,
+  edit: () => Promise<void>,
+  options?: { savePath?: string }
+): Promise<string> {
+  const path = options?.savePath ?? (await dashboardTodayPath(page));
+  const matchesSave = (candidate: Request) =>
+    candidate.method() === 'PUT' && candidate.url().includes(path);
+
+  const sent: Request[] = [];
+  const record = (candidate: Request) => {
+    if (matchesSave(candidate)) {
+      sent.push(candidate);
+    }
+  };
+  page.on('request', record);
+
+  try {
+    const requestPromise = page.waitForRequest(matchesSave);
+    await edit();
+    await requestPromise;
+
+    const form = dashboardSaveForm(page);
+    await expect(form).not.toHaveAttribute('data-autosave-dirty', 'true');
+
+    // Every attempt that left the page has to have landed: a spec must not read
+    // its data back from a save that was refused.
+    for (const request of sent) {
+      const response = await request.response();
+      expect(response, `expected a response for PUT ${path}`).not.toBeNull();
+      expect(response!.ok(), `PUT ${path} failed with ${response!.status()}`).toBeTruthy();
+    }
+  } finally {
+    page.off('request', record);
+  }
+
+  return path.replace('/api/v1/days/', '');
+}
 
 /**
  * The dashboard's single status header.

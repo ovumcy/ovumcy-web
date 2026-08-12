@@ -914,6 +914,10 @@
 }
 
 @utility dashboard-autosave-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+
   &[data-autosave-state='saving'] {
     color: var(--accent-strong);
   }
@@ -924,6 +928,30 @@
 
   &[data-autosave-state='error'] {
     color: #8d4b45;
+  }
+}
+
+/* The step back from a save the owner never asked for. It rides beside
+   "Saved", so it stays quiet — a text control, never a second primary. */
+@utility autosave-undo-button {
+  flex: 0 0 auto;
+  min-height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-card);
+  padding: 0.15rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-strong);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--surface-elevated);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(169, 137, 231, 0.58);
+    outline-offset: 2px;
   }
 }
 

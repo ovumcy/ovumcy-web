@@ -9,6 +9,7 @@ import {
   registerOwnerViaUI,
   apiOriginHeader,
 } from './support/auth-helpers';
+import { saveDashboardEntry } from './support/dashboard-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
 
 async function registerOwnerAndReachDashboard(page: Page, prefix: string) {
@@ -110,10 +111,10 @@ test.describe('Security and role-based access', () => {
     const savedDay = String(todayAction || '').replace('/api/v1/days/', '');
 
     const payload = `<script>alert('xss-notes')</script><img src=x onerror=alert('xss-notes-img')>`;
-    await openTodayNotes(page);
-    await page.locator('#today-notes').fill(payload);
-    await page.locator('button[data-save-button]').first().click();
-    await expect(page.locator('#save-status .status-ok')).toBeVisible();
+    await saveDashboardEntry(page, async () => {
+      await openTodayNotes(page);
+      await page.locator('#today-notes').fill(payload);
+    });
 
     const month = savedDay.slice(0, 7);
     await page.goto(`/calendar?month=${month}&day=${savedDay}`);

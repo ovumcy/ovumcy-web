@@ -633,6 +633,7 @@
   "dashboard.autosave_saved": "Sauvegardé automatiquement",
   "dashboard.autosave_invalid": "Corrigez les erreurs du formulaire pour sauvegarder",
   "dashboard.autosave_error": "Échec de la sauvegarde automatique",
+  "dashboard.autosave_undo": "Annuler",
   "dashboard.save_message_self_care": "Enregistré. Prenez soin de vous aujourd'hui 🌸",
   "dashboard.save_message_fertile": "Enregistré. Vous êtes actuellement dans votre fenêtre fertile.",
   "dashboard.save_message_neutral": "Enregistré.",

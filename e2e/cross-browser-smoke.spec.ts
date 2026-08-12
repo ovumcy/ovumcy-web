@@ -7,6 +7,7 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { saveDashboardEntry } from './support/dashboard-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { localeText, type Locale } from './support/locale-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
@@ -62,13 +63,13 @@ test.describe('Cross-browser smoke', () => {
     const flowMediumChip = page.locator(
       'label.choice-option:has(input[name="flow"][value="medium"]) .radio-tile'
     );
-    await page.locator('input[name="is_period"]').check();
-    await expect(flowMedium).toBeEnabled();
-    await flowMediumChip.click();
-    await expect(flowMedium).toBeChecked();
-    await notes.fill(noteText);
-    await page.locator('button[data-save-button]').first().click();
-    await expect(page.locator('#save-status .status-ok')).toBeVisible();
+    await saveDashboardEntry(page, async () => {
+      await page.locator('input[name="is_period"]').check();
+      await expect(flowMedium).toBeEnabled();
+      await flowMediumChip.click();
+      await expect(flowMedium).toBeChecked();
+      await notes.fill(noteText);
+    });
 
     const iso = await todayISO(page);
     await page.goto(`/calendar?month=${iso.slice(0, 7)}&day=${iso}`);

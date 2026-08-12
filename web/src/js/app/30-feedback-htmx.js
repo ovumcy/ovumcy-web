@@ -279,9 +279,16 @@
   // owner's body. It is rendered on the neutral status-notice surface rather
   // than the red status-error one, inside the existing aria-live="polite"
   // container, and never as a success.
+  //
+  // Both day forms answer to it: the calendar editor, which saves on an
+  // explicit press, and the dashboard journal, which saves itself. Two failure
+  // surfaces for one kind of event would drift apart, so the selector below is
+  // the single membership test — widened rather than duplicated.
+  var DAY_SAVE_FORM_SELECTOR = "[data-day-editor-form], [data-dashboard-save-form]";
+
   function dayEditorFormFromEvent(event) {
     var form = getSaveFeedbackFormFromEvent(event);
-    if (!form || !form.matches || !form.matches("[data-day-editor-form]")) {
+    if (!form || !form.matches || !form.matches(DAY_SAVE_FORM_SELECTOR)) {
       return null;
     }
     return form;
@@ -343,6 +350,15 @@
   function retryDaySave(form) {
     // Resubmit the very same form node. Nothing was copied anywhere, so the
     // retry carries exactly what is on screen.
+    //
+    // The dashboard journal has no submit button to fall back on: its saves go
+    // through the autosave runner, so the retry re-enters that runner instead
+    // of asking htmx for a second mechanism on the same form.
+    if (form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyRetryDashboardAutosave === "function") {
+      window.__ovumcyRetryDashboardAutosave(form);
+      return;
+    }
+
     if (typeof form.requestSubmit === "function") {
       form.requestSubmit();
       return;
@@ -453,7 +469,7 @@
         return;
       }
 
-      var form = retryButton.closest("form[data-day-editor-form]");
+      var form = retryButton.closest("form[data-day-editor-form], form[data-dashboard-save-form]");
       if (!form) {
         return;
       }

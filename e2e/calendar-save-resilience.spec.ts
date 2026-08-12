@@ -8,6 +8,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { expectTextContrastAA } from './support/contrast-helpers';
+import { dashboardTodayISO } from './support/dashboard-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { localeText } from './support/locale-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
@@ -258,5 +259,94 @@ test.describe('day-entry save resilience', () => {
 
     await expect(page.locator(FAILURE_NOTICE)).toContainText(localeText('ru', 'daylog.save_failed'));
     await expect(page.locator(RETRY_BUTTON)).toHaveText(localeText('ru', 'daylog.save_retry'));
+  });
+});
+
+/**
+ * The dashboard journal saves itself, so its failures arrive on the autosave's
+ * fetch path rather than as htmx events. The owner must not be able to tell the
+ * difference: same neutral notice, same retry, same untouched entry. A silent
+ * error state on the indicator would leave a typed day looking saved.
+ */
+const DASHBOARD_SAVE_STATUS = '#save-status';
+const DASHBOARD_FAILURE_NOTICE = `${DASHBOARD_SAVE_STATUS} [data-day-save-failed]`;
+const DASHBOARD_RETRY_BUTTON = `${DASHBOARD_SAVE_STATUS} [data-day-save-retry]`;
+
+async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<string> {
+  const credentials = createCredentials(prefix);
+
+  await registerOwnerViaUI(page, credentials);
+  await expectInlineRegisterRecoveryStep(page);
+  await readRecoveryCode(page);
+  await continueFromRecoveryCode(page);
+  await completeOnboardingIfPresent(page);
+  await setRequestTimezoneFromBrowser(page);
+
+  await page.goto('/dashboard');
+  await expect(page).toHaveURL(/\/dashboard$/);
+  return dashboardTodayISO(page);
+}
+
+test.describe('dashboard autosave resilience', () => {
+  test('an autosave that never lands keeps the entry and offers the same retry', async ({
+    page,
+  }) => {
+    const todayISO = await registerOwnerOnDashboard(page, 'dashboard-autosave-offline');
+    const note = 'walked in the evening';
+
+    const interceptor = await interceptDayPUT(page, todayISO);
+    interceptor.set('network-failure');
+
+    const notes = await ensureNotesFieldVisible(page, '#today-notes');
+    // Bind to the autosave's own request: no button is pressed here, the change
+    // itself is what schedules the save.
+    const failedRequest = page.waitForRequest(
+      (candidate) =>
+        candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${todayISO}`),
+    );
+    await notes.fill(note);
+    await failedRequest;
+
+    const notice = page.locator(DASHBOARD_FAILURE_NOTICE);
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(localeText('en', 'daylog.save_failed'));
+    await expect(notice).not.toHaveClass(/status-error/);
+    await expect(page.locator(DASHBOARD_SAVE_STATUS)).toHaveAttribute('aria-live', 'polite');
+    await expect(page.locator(`${DASHBOARD_SAVE_STATUS} .status-ok`)).toHaveCount(0);
+    await expect(page.locator(`${DASHBOARD_SAVE_STATUS} [role="alert"]`)).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-autosave-indicator]')).not.toHaveAttribute(
+      'data-autosave-state',
+      'saved'
+    );
+    await expect(notes).toHaveValue(note);
+
+    const retry = page.locator(DASHBOARD_RETRY_BUTTON);
+    await expect(retry).toBeVisible();
+    await expect(retry).toHaveText(localeText('en', 'daylog.save_retry'));
+
+    // The retry re-enters the autosave with what is on screen.
+    interceptor.set('allow');
+    const [retryRequest] = await Promise.all([
+      page.waitForRequest(
+        (candidate) =>
+          candidate.method() === 'PUT' && candidate.url().includes(`/api/v1/days/${todayISO}`),
+      ),
+      retry.click(),
+    ]);
+    const retryResponse = await retryRequest.response();
+    expect(retryResponse, 'the retry must produce a response').not.toBeNull();
+    expect(retryResponse!.ok(), `the retry failed with ${retryResponse!.status()}`).toBeTruthy();
+    expect(retryRequest.postData() ?? '').toContain(`notes=${note.replace(/ /g, '+')}`);
+    expect(interceptor.attempts(), 'the retry must reach the endpoint again').toBe(2);
+
+    await expect(page.locator(DASHBOARD_FAILURE_NOTICE)).toHaveCount(0);
+    await expect(page.locator('[data-dashboard-autosave-indicator]')).toHaveAttribute(
+      'data-autosave-state',
+      'saved'
+    );
+
+    await page.unroute(`**/api/v1/days/${todayISO}`);
+    await page.reload();
+    await expect(page.locator('#today-notes')).toHaveValue(note);
   });
 });
