@@ -221,10 +221,27 @@
       <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="journal-subtitle">{{t .Messages "dashboard.today_editor"}}</h2>
-          <p class="journal-muted" data-dashboard-date-subtitle>{{.FormattedDate}}</p>
+          <p class="journal-muted" data-dashboard-date-subtitle data-dashboard-entry-date="{{.Today}}">{{.FormattedDate}}</p>
         </div>
-        {{if and .IsOwner .ShowYesterdayJump}}
-        <a href="/calendar?month={{.YesterdayMonth}}&day={{.Yesterday}}&edit=1" class="inline-link text-sm"><span aria-hidden="true">←</span> {{t .Messages "dashboard.fill_yesterday"}}</a>
+        {{if .IsOwner}}
+        <div
+          class="flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label="{{t .Messages "dashboard.entry_date_switch"}}"
+          data-dashboard-entry-date-switch>
+          <a
+            href="/dashboard"
+            class="btn-soft text-sm"
+            aria-current="page"
+            data-entry-date-choice="today"
+            data-entry-date="{{.Today}}">{{t .Messages "nav.today"}}</a>
+          <a
+            href="/calendar?month={{.YesterdayMonth}}&day={{.Yesterday}}&edit=1"
+            class="btn-soft text-sm"
+            data-entry-date-choice="yesterday"
+            data-entry-date="{{.Yesterday}}"
+            data-entry-date-empty="{{if .ShowYesterdayJump}}true{{else}}false{{end}}">{{t .Messages "dashboard.fill_yesterday"}}</a>
+        </div>
         {{end}}
       </div>
 

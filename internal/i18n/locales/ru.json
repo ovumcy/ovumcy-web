@@ -451,6 +451,7 @@
   "dashboard.cycle_factors.medication_change": "Изменение лекарств",
   "dashboard.notes": "Заметки",
   "dashboard.fill_yesterday": "Вчера",
+  "dashboard.entry_date_switch": "Изменить дату записи",
   "dashboard.add_note": "Добавить заметку",
   "dashboard.edit_note": "Изменить заметку",
   "dashboard.hide_note": "Скрыть заметку",

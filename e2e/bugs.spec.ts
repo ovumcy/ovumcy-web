@@ -262,6 +262,17 @@ test.describe('Bug regressions', () => {
         `date subtitle "${subtitleText}" should name ${expectedToday.weekday}`
       ).toContain(expectedToday.weekday.toLowerCase());
 
+      // The visible journal date carries the ISO day it edits, and the quick
+      // switch offers the request-local yesterday — an evening entry made after
+      // midnight has to be able to see and correct the day it lands on.
+      await expect(page.locator('[data-dashboard-entry-date]').first()).toHaveAttribute(
+        'data-dashboard-entry-date',
+        actualTodayISO
+      );
+      await expect(
+        page.locator('[data-dashboard-entry-date-switch] [data-entry-date-choice="yesterday"]')
+      ).toHaveAttribute('data-entry-date', shiftISODate(actualTodayISO, -1));
+
       const expectedCycleDay = page.evaluate(({ todayISO, startISO }) => {
         const today = new Date(`${todayISO}T00:00:00`);
         const start = new Date(`${startISO}T00:00:00`);

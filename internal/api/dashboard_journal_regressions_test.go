@@ -201,6 +201,174 @@ func TestDashboardOffersAQuickUsageGoalSwitchForOwner(t *testing.T) {
 	}
 }
 
+// TestDashboardJournalHeaderShowsTheEditableEntryDateAndItsQuickSwitch pins the
+// after-midnight contract: the journal header names the date the form writes to
+// — as localized copy carrying the ISO date in its own hook — and offers the
+// Today / Yesterday jumps unconditionally, so an evening entry logged after
+// midnight can be moved to the day it belongs to. Yesterday already holds an
+// entry here, the state that used to hide the only yesterday affordance.
+func TestDashboardJournalHeaderShowsTheEditableEntryDateAndItsQuickSwitch(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-entry-date@example.com", "StrongPass1", true)
+
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	yesterday := today.AddDate(0, 0, -1)
+	filledYesterday := models.DailyLog{
+		UserID:   user.ID,
+		Date:     yesterday,
+		IsPeriod: true,
+		Flow:     models.FlowMedium,
+	}
+	if err := database.Create(&filledYesterday).Error; err != nil {
+		t.Fatalf("seed yesterday daily log: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+
+	entryDate := dashboardEntryDateElement(t, document)
+	todayISO := today.Format("2006-01-02")
+	if got := htmlAttr(entryDate, "data-dashboard-entry-date"); got != todayISO {
+		t.Fatalf("expected the journal header to name %q as the editable date, got %q", todayISO, got)
+	}
+	saveForm := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-dashboard-save-form")
+	})
+	if saveForm == nil {
+		t.Fatal("expected the dashboard save form")
+	}
+	if got := htmlAttr(saveForm, "hx-put"); got != "/api/v1/days/"+todayISO {
+		t.Fatalf("expected the header date to be the date the form writes to, got hx-put=%q", got)
+	}
+
+	group := dashboardEntryDateSwitch(t, document)
+	if got := htmlAttr(group, "role"); got != "group" {
+		t.Fatalf("expected the entry-date switch to be a labelled group, got role=%q", got)
+	}
+	if htmlAttr(group, "aria-label") == "" {
+		t.Fatal("expected the entry-date switch group to carry an accessible name")
+	}
+	if htmlFindElement(saveForm, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-dashboard-entry-date-switch")
+	}) != nil {
+		t.Fatal("expected the entry-date switch to sit outside the save form, so switching writes nothing")
+	}
+
+	choices := dashboardEntryDateChoices(t, group)
+	todayChoice := choices["today"]
+	if todayChoice == nil {
+		t.Fatal("expected a Today entry-date choice")
+	}
+	if got := htmlAttr(todayChoice, "href"); got != "/dashboard" {
+		t.Fatalf("expected the Today choice to reuse the dashboard route, got href=%q", got)
+	}
+	if got := htmlAttr(todayChoice, "aria-current"); got != "page" {
+		t.Fatalf("expected the Today choice to be marked as the current date, got aria-current=%q", got)
+	}
+	if got := htmlAttr(todayChoice, "data-entry-date"); got != todayISO {
+		t.Fatalf("expected the Today choice to carry %q, got %q", todayISO, got)
+	}
+
+	yesterdayChoice := choices["yesterday"]
+	if yesterdayChoice == nil {
+		t.Fatal("expected a Yesterday entry-date choice even when yesterday already holds an entry")
+	}
+	yesterdayISO := yesterday.Format("2006-01-02")
+	wantHref := "/calendar?month=" + yesterday.Format("2006-01") + "&day=" + yesterdayISO + "&edit=1"
+	if got := htmlAttr(yesterdayChoice, "href"); got != wantHref {
+		t.Fatalf("expected the Yesterday choice to reuse the calendar day-editor route %q, got %q", wantHref, got)
+	}
+	if got := htmlAttr(yesterdayChoice, "data-entry-date"); got != yesterdayISO {
+		t.Fatalf("expected the Yesterday choice to carry %q, got %q", yesterdayISO, got)
+	}
+	if got := htmlAttr(yesterdayChoice, "data-entry-date-empty"); got != "false" {
+		t.Fatalf("expected the Yesterday choice to report the seeded entry, got data-entry-date-empty=%q", got)
+	}
+}
+
+// TestDashboardJournalEntryDateFollowsRequestTimezoneAtUTCBoundary is the
+// timezone half of the same contract: with the server on UTC and the request
+// resolving to a zone whose calendar day differs, the date shown in the journal
+// header — and the day the Yesterday jump targets — follow the request-local
+// zone, never the server's UTC date.
+func TestDashboardJournalEntryDateFollowsRequestTimezoneAtUTCBoundary(t *testing.T) {
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-entry-date-tz@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	nowUTC := time.Now().UTC()
+	timezoneName, location := timezoneWithDifferentCalendarDay(t, nowUTC)
+	localToday := services.DateAtLocation(nowUTC.In(location), location)
+	localTodayISO := localToday.Format("2006-01-02")
+	if serverTodayISO := services.DateAtLocation(nowUTC, time.UTC).Format("2006-01-02"); serverTodayISO == localTodayISO {
+		t.Fatalf("expected %s to sit on another calendar day than UTC, both are %q", timezoneName, localTodayISO)
+	}
+
+	response := dashboardWithTimezoneResponse(t, app, authCookie, timezoneName)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+	entryDate := dashboardEntryDateElement(t, document)
+	if got := htmlAttr(entryDate, "data-dashboard-entry-date"); got != localTodayISO {
+		t.Fatalf("expected the journal header to name the request-local date %q, got %q", localTodayISO, got)
+	}
+	// The localized copy and the hook must name the same day, or the visible
+	// date and the saved date part company again.
+	if got, want := strings.TrimSpace(htmlNodeText(entryDate)), services.LocalizedDashboardDate("ru", localToday); got != want {
+		t.Fatalf("expected the header copy to follow the request-local date %q, got %q", want, got)
+	}
+
+	choices := dashboardEntryDateChoices(t, dashboardEntryDateSwitch(t, document))
+	if got := htmlAttr(choices["today"], "data-entry-date"); got != localTodayISO {
+		t.Fatalf("expected the Today choice to follow the request-local date %q, got %q", localTodayISO, got)
+	}
+	localYesterdayISO := localToday.AddDate(0, 0, -1).Format("2006-01-02")
+	if got := htmlAttr(choices["yesterday"], "data-entry-date"); got != localYesterdayISO {
+		t.Fatalf("expected the Yesterday choice to follow the request-local date %q, got %q", localYesterdayISO, got)
+	}
+}
+
+func dashboardEntryDateElement(t *testing.T, document *html.Node) *html.Node {
+	t.Helper()
+
+	element := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-dashboard-entry-date")
+	})
+	if element == nil {
+		t.Fatal("expected the journal header to expose the editable date through data-dashboard-entry-date")
+	}
+	return element
+}
+
+func dashboardEntryDateSwitch(t *testing.T, document *html.Node) *html.Node {
+	t.Helper()
+
+	group := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-dashboard-entry-date-switch")
+	})
+	if group == nil {
+		t.Fatal("expected a Today / Yesterday entry-date switch next to the journal date")
+	}
+	return group
+}
+
+func dashboardEntryDateChoices(t *testing.T, group *html.Node) map[string]*html.Node {
+	t.Helper()
+
+	choices := make(map[string]*html.Node)
+	for _, node := range htmlFindElements(group, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-entry-date-choice")
+	}) {
+		if node.Data != "a" || htmlAttr(node, "href") == "" {
+			t.Fatalf("expected every entry-date choice to be a plain link, got <%s>", node.Data)
+		}
+		choices[htmlAttr(node, "data-entry-date-choice")] = node
+	}
+	if len(choices) != 2 || choices["today"] == nil || choices["yesterday"] == nil {
+		t.Fatalf("expected exactly the today and yesterday choices, got %d", len(choices))
+	}
+	return choices
+}
+
 func assertDashboardSavedNoteDisclosure(t *testing.T, document *html.Node) {
 	t.Helper()
 
