@@ -25,6 +25,9 @@ type dayLogRepositoryStub struct {
 	// listCalls counts ListByUser calls so a test can assert a guard returned
 	// before reading anything, rather than only that it did not panic.
 	listCalls int
+	// listErr fails every ListByUser, which the day write only reaches when it
+	// applies a confirmed cycle start.
+	listErr error
 }
 
 func newDayLogRepositoryStub() *dayLogRepositoryStub {
@@ -45,6 +48,9 @@ func (stub *dayLogRepositoryStub) dayKey(value time.Time) string {
 
 func (stub *dayLogRepositoryStub) ListByUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
 	stub.listCalls++
+	if stub.listErr != nil {
+		return nil, stub.listErr
+	}
 	logs := make([]models.DailyLog, 0)
 	for _, entry := range stub.entries {
 		if entry.UserID == userID {
@@ -166,10 +172,16 @@ func (stub *dayLogRepositoryStub) DeleteByUserAndDayRange(ctx context.Context, u
 type dayUserRepositoryStub struct {
 	settings models.User
 	loadErr  error
+	// loadErrFromCall makes loadErr fire only from the N-th LoadSettingsByID
+	// call (1-based), so a test can pass the autofill settings read and fail a
+	// later read in the same write — the counterpart of saveErrFromCall above.
+	loadErrFromCall int
+	loadCalls       int
 }
 
 func (stub *dayUserRepositoryStub) LoadSettingsByID(context.Context, uint) (models.User, error) {
-	if stub.loadErr != nil {
+	stub.loadCalls++
+	if stub.loadErr != nil && stub.loadCalls >= stub.loadErrFromCall {
 		return models.User{}, stub.loadErr
 	}
 	return stub.settings, nil
@@ -313,6 +325,90 @@ func TestUpsertDayEntryDropsTheInlineAnswerOnANonPeriodDay(t *testing.T) {
 	}
 	if entry.CycleStart || logs.entries["2026-03-01"].CycleStart {
 		t.Fatal("expected a non-period save to mark no cycle start")
+	}
+}
+
+// A day that already is a cycle start is left alone: the answer changes
+// nothing, so the write stops before it reads anything.
+func TestUpsertDayEntryLeavesAnExistingCycleStartUntouched(t *testing.T) {
+	service, logs, day, now := seedInlineCycleStartAnchor(t)
+	logs.entries["2026-03-01"] = models.DailyLog{
+		ID: 2, UserID: 10, Date: day, IsPeriod: true, Flow: models.FlowMedium, CycleStart: true,
+	}
+	// A failing history read is the probe: the same setup on a day that is not
+	// yet a cycle start reports ErrDayEntryLoadFailed (the table below), so a
+	// clean save here can only mean the confirmation stopped before reading.
+	logs.listErr = errors.New("history unavailable")
+
+	entry, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+		DayEntryInput{IsPeriod: true, Flow: models.FlowMedium, ConfirmCycleStart: true}, now, time.UTC)
+	if err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
+	}
+	if !entry.CycleStart {
+		t.Fatal("expected the existing cycle start to survive the save")
+	}
+}
+
+func TestUpsertDayEntryReportsAFailedCycleStartConfirmation(t *testing.T) {
+	loadFailure := errors.New("settings unavailable")
+	saveFailure := errors.New("write rejected")
+
+	testCases := []struct {
+		name      string
+		arrange   func(logs *dayLogRepositoryStub, users *dayUserRepositoryStub)
+		expected  error
+		seedEntry bool
+	}{
+		{
+			name: "the log history cannot be read",
+			arrange: func(logs *dayLogRepositoryStub, _ *dayUserRepositoryStub) {
+				logs.listErr = errors.New("history unavailable")
+			},
+			expected: ErrDayEntryLoadFailed,
+		},
+		{
+			name: "the owner settings cannot be read",
+			arrange: func(_ *dayLogRepositoryStub, users *dayUserRepositoryStub) {
+				users.loadErr = loadFailure
+				// The first read is the autofill settings inside the same write.
+				users.loadErrFromCall = 2
+			},
+			expected: ErrDayEntryLoadFailed,
+		},
+		{
+			name: "the cycle-start flag cannot be written",
+			arrange: func(logs *dayLogRepositoryStub, _ *dayUserRepositoryStub) {
+				logs.saveErrByDay["2026-03-01"] = saveFailure
+				// The first save is the day entry itself.
+				logs.saveErrFromCall["2026-03-01"] = 2
+			},
+			expected:  ErrDayEntryUpdateFailed,
+			seedEntry: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, logs, day, now := seedInlineCycleStartAnchor(t)
+			users := &dayUserRepositoryStub{settings: models.User{PeriodLength: 4}}
+			service := NewDayService(logs, users)
+			if testCase.seedEntry {
+				logs.entries["2026-03-01"] = models.DailyLog{
+					ID: 2, UserID: 10, Date: day, IsPeriod: true, Flow: models.FlowLight,
+				}
+			}
+			testCase.arrange(logs, users)
+
+			_, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), 10, day,
+				DayEntryInput{IsPeriod: true, Flow: models.FlowMedium, ConfirmCycleStart: true}, now, time.UTC)
+			if !errors.Is(err, testCase.expected) {
+				t.Fatalf("expected %v when %s, got %v", testCase.expected, testCase.name, err)
+			}
+			if logs.entries["2026-03-01"].CycleStart {
+				t.Fatal("expected no cycle start to survive a failed confirmation")
+			}
+		})
 	}
 }
 
