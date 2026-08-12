@@ -76,17 +76,24 @@
       </div>
 
       {{if and .CurrentUser (not .HideNavigation)}}
+      <!-- One condition per section, bound to a variable, so the active fill and the
+           aria-current="page" that makes it readable to assistive technology can never
+           drift apart: a class alone marks the current section for sighted eyes only. -->
+      {{- $todayActive := or (isActiveRoute .CurrentPath "/dashboard") (isActiveRoute .CurrentPath "/")}}
+      {{- $calendarActive := isActiveRoute .CurrentPath "/calendar"}}
+      {{- $insightsActive := isActiveRoute .CurrentPath "/stats"}}
+      {{- $settingsActive := isActiveRoute .CurrentPath "/settings"}}
       <div class="container-main pb-4">
         <nav class="hidden items-center gap-2 sm:flex" aria-label="{{t .Messages "a11y.nav.primary"}}">
-          <a href="/dashboard" class="nav-link {{if isActiveRoute .CurrentPath "/dashboard"}}nav-link-active{{else if isActiveRoute .CurrentPath "/"}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
-          <a href="/calendar" class="nav-link {{if isActiveRoute .CurrentPath "/calendar"}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
-          <a href="/stats" class="nav-link {{if isActiveRoute .CurrentPath "/stats"}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
+          <a href="/dashboard" class="nav-link {{if $todayActive}}nav-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today" {{if $todayActive}}aria-current="page"{{end}}>{{t .Messages "nav.today"}}</a>
+          <a href="/calendar" class="nav-link {{if $calendarActive}}nav-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar" {{if $calendarActive}}aria-current="page"{{end}}>{{t .Messages "nav.calendar"}}</a>
+          <a href="/stats" class="nav-link {{if $insightsActive}}nav-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights" {{if $insightsActive}}aria-current="page"{{end}}>{{t .Messages "nav.insights"}}</a>
 
           <!-- Settings is reached through the account chip alone: a gear beside it led to the same page.
                Being the only desktop route to settings, the chip also carries the section's active
                state, computed with the same isActiveRoute call the three section links use. -->
           <div class="nav-account-actions" data-nav-account-actions>
-            {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-desktop" "Block" false "SwapOOB" false "Active" (isActiveRoute .CurrentPath "/settings"))}}
+            {{template "nav_user_identity_chip" (dict "CurrentUser" .CurrentUser "Messages" .Messages "ElementID" "nav-user-chip-desktop" "Block" false "SwapOOB" false "Active" $settingsActive)}}
             <form action="/logout" method="post" class="nav-logout-form" data-confirm="{{t .Messages "auth.confirm_logout"}}" data-confirm-accept="{{t .Messages "nav.logout"}}">
               <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
               <button type="submit" class="nav-link nav-link-logout">{{t .Messages "nav.logout"}}</button>
@@ -135,11 +142,15 @@
     </main>
 
     {{if and .CurrentUser (not .HideNavigation)}}
+    {{- $todayActive := or (isActiveRoute .CurrentPath "/dashboard") (isActiveRoute .CurrentPath "/")}}
+    {{- $calendarActive := isActiveRoute .CurrentPath "/calendar"}}
+    {{- $insightsActive := isActiveRoute .CurrentPath "/stats"}}
+    {{- $settingsActive := isActiveRoute .CurrentPath "/settings"}}
     <nav class="mobile-tabbar sm:hidden" aria-label="{{t .Messages "a11y.nav.tabbar"}}">
-      <a href="/dashboard" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/dashboard"}}mobile-tabbar-link-active{{else if isActiveRoute .CurrentPath "/"}}mobile-tabbar-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today">{{t .Messages "nav.today"}}</a>
-      <a href="/calendar" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/calendar"}}mobile-tabbar-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar">{{t .Messages "nav.calendar"}}</a>
-      <a href="/stats" class="mobile-tabbar-link {{if isActiveRoute .CurrentPath "/stats"}}mobile-tabbar-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights">{{t .Messages "nav.insights"}}</a>
-      <a href="/settings" class="mobile-tabbar-link mobile-tabbar-icon {{if isActiveRoute .CurrentPath "/settings"}}mobile-tabbar-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}"><span class="mobile-tabbar-icon-glyph" aria-hidden="true">⚙️</span></a>
+      <a href="/dashboard" class="mobile-tabbar-link {{if $todayActive}}mobile-tabbar-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today" {{if $todayActive}}aria-current="page"{{end}}>{{t .Messages "nav.today"}}</a>
+      <a href="/calendar" class="mobile-tabbar-link {{if $calendarActive}}mobile-tabbar-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar" {{if $calendarActive}}aria-current="page"{{end}}>{{t .Messages "nav.calendar"}}</a>
+      <a href="/stats" class="mobile-tabbar-link {{if $insightsActive}}mobile-tabbar-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights" {{if $insightsActive}}aria-current="page"{{end}}>{{t .Messages "nav.insights"}}</a>
+      <a href="/settings" class="mobile-tabbar-link mobile-tabbar-icon {{if $settingsActive}}mobile-tabbar-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}" {{if $settingsActive}}aria-current="page"{{end}}><span class="mobile-tabbar-icon-glyph" aria-hidden="true">⚙️</span></a>
     </nav>
     {{end}}
 
