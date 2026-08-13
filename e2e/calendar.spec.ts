@@ -122,16 +122,29 @@ test.describe('Calendar page', () => {
     await expect(title).toHaveText(localeText('en', 'calendar.title'));
   });
 
-  test('legend includes period/predicted/fertility/ovulation markers', async ({ page }) => {
+  test('legend groups the grid encoding by concept and leads the grid', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-legend');
 
-    await expect(page.locator('.legend-dot.legend-dot-period')).toHaveCount(1);
-    await expect(page.locator('.legend-dot.legend-dot-predicted')).toHaveCount(1);
-    await expect(page.locator('.legend-outline')).toHaveCount(1);
-    await expect(page.locator('.legend-dot.legend-dot-fertile-edge')).toHaveCount(1);
-    await expect(page.locator('.legend-dot.legend-dot-fertile-peak')).toHaveCount(1);
-    const ovulationDot = page.locator('.legend-item .calendar-ovulation-dot');
-    const tentativeOvulation = page.locator('.legend-item .calendar-ovulation-dash');
+    const legend = page.locator('[data-calendar-legend]');
+    await expect(legend).toBeVisible();
+    await expect(legend.locator('.legend-swatch-period')).toHaveCount(1);
+    await expect(legend.locator('.legend-swatch-predicted')).toHaveCount(1);
+    await expect(legend.locator('.legend-swatch-start-window')).toHaveCount(1);
+    await expect(legend.locator('.legend-swatch-fertile')).toHaveCount(1);
+    await expect(legend.locator('.legend-swatch-today')).toHaveCount(1);
+    // Seven concepts, not the nine CSS states the grid happens to have.
+    await expect(legend.locator('.legend-item')).toHaveCount(7);
+
+    // The legend is above the first day cell, so it is on screen while the
+    // month is being read.
+    const legendBox = await legend.boundingBox();
+    const firstCellBox = await page.locator('button[data-day]').first().boundingBox();
+    expect(legendBox).not.toBeNull();
+    expect(firstCellBox).not.toBeNull();
+    expect(legendBox!.y).toBeLessThan(firstCellBox!.y);
+
+    const ovulationDot = legend.locator('.calendar-ovulation-dot');
+    const tentativeOvulation = legend.locator('.calendar-ovulation-dash');
     await expect(ovulationDot).toHaveCount(1);
     await expect(tentativeOvulation).toHaveCount(1);
 

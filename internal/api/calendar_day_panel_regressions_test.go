@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"golang.org/x/net/html"
 	"gorm.io/gorm"
 )
 
@@ -140,6 +141,43 @@ func TestCalendarTodayControlCarriesTheCompactSecondaryWeight(t *testing.T) {
 	}
 	if strings.Contains(todayControl, "btn-primary") {
 		t.Fatalf("expected the today control to give up the primary fill, got %q", todayControl)
+	}
+}
+
+// The legend explains an encoding the reader is about to use, so it has to be
+// inside the grid panel and ahead of the first day cell: under the grid, at the
+// end of the panel, it was off screen exactly while the month was being read.
+func TestCalendarLegendLeadsTheGridInsideTheSamePanel(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-legend-placement@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/calendar", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	panel := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "id") == "calendar-grid-panel"
+	})
+	if panel == nil {
+		t.Fatalf("expected the calendar grid panel")
+	}
+
+	// Document order decides this, not a class: the first of the two hooks the
+	// walk meets inside the panel must be the legend.
+	first := htmlFindElement(panel, func(node *html.Node) bool {
+		return node.Type == html.ElementNode &&
+			(htmlHasAttr(node, "data-calendar-legend") || htmlHasAttr(node, "data-day"))
+	})
+	if first == nil {
+		t.Fatalf("expected the grid panel to render both the legend and the day cells")
+	}
+	if !htmlHasAttr(first, "data-calendar-legend") {
+		t.Fatalf("expected the legend to precede the day cells inside the grid panel")
 	}
 }
 

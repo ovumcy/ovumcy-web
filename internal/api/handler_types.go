@@ -66,6 +66,7 @@ type CalendarDay struct {
 	OpenEditDirectly       bool
 	IsPeriod               bool
 	IsPredicted            bool
+	IsPredictedStartWindow bool
 	IsPreFertile           bool
 	IsFertility            bool
 	IsFertilityPeak        bool
