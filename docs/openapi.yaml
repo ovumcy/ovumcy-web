@@ -1070,7 +1070,12 @@ paths:
     post:
       tags: [meta]
       summary: Set UI language preference.
-      description: Writes the `ovumcy_lang` cookie for the chosen language. Public, no session required.
+      description: |
+        Writes the `ovumcy_lang` cookie for the chosen language. Public, no session required.
+        When the request does carry a valid session, the language is also stored on the account
+        (`users.interface_language`, the same column `PATCH /api/v1/users/current/interface`
+        writes), so a later session issue re-serves the switched language instead of reverting
+        the cookie to the stored one. The response is the same either way.
       security:
         - csrfToken: []
       requestBody:

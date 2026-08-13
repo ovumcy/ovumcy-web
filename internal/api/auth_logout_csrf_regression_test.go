@@ -31,6 +31,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 			totpPendingCookieName+"=temporary-totp-pending",
 			totpSetupCookieName+"=temporary-totp-setup",
 			calendarFeedRevealCookieName+"=temporary-feed-reveal",
+			languageCookieName+"=ru",
 		),
 	)
 
@@ -54,6 +55,13 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 	// The cookies logout has always cleared stay in the same list as the anchor —
 	// a logout that stopped emitting Set-Cookie at all fails here rather than
 	// passing for want of anything left to check.
+	//
+	// `ovumcy_lang` is the one member that is neither sealed nor session-scoped:
+	// a year-long plaintext cache of the account's stored language. Surviving a
+	// sign-out it tells whoever opens the browser next that this app is used here
+	// and in which language, before any authentication — so a deliberate session
+	// end retracts it too (clearSessionEndCookies). A session REJECTION must not,
+	// which TestSessionRejectionLeavesTheLanguageCookieInPlace pins.
 	for _, cookieName := range []string{
 		authCookieName,
 		recoveryCodeCookieName,
@@ -61,6 +69,7 @@ func TestAuthLogoutPostWithCSRFRedirectsAndClearsCookies(t *testing.T) {
 		totpPendingCookieName,
 		totpSetupCookieName,
 		calendarFeedRevealCookieName,
+		languageCookieName,
 	} {
 		cleared := responseCookie(response.Cookies(), cookieName)
 		if cleared == nil {

@@ -74,6 +74,24 @@ func (handler *Handler) setLanguageCookie(c fiber.Ctx, language string) {
 	})
 }
 
+// clearLanguageCookie retracts the language cookie with the same attributes
+// setLanguageCookie writes, so the browser drops it instead of keeping a value
+// whose Set-Cookie differed in path or scope. It is used where a session ends on
+// purpose (see clearSessionEndCookies): the cookie is a pre-auth cache of the
+// account's preference, and on a shared browser it otherwise tells the next
+// visitor that this app was used and in which language.
+func (handler *Handler) clearLanguageCookie(c fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     languageCookieName,
+		Value:    "",
+		Path:     "/",
+		HTTPOnly: false,
+		Secure:   handler.cookieSecure,
+		SameSite: "Lax",
+		Expires:  time.Now().Add(-1 * time.Hour),
+	})
+}
+
 func (handler *Handler) setTimezoneCookie(c fiber.Ctx, timezone string) {
 	c.Cookie(&fiber.Cookie{
 		Name:     timezoneCookieName,
