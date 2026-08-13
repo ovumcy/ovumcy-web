@@ -237,6 +237,65 @@ func TestBuildStatsCycleRibbonInfersPhasesOnlyWhenTheOwnerAsked(t *testing.T) {
 	}
 }
 
+// TestStatsCycleRibbonAxisDaysClampsAWildCycle pins the DOM bound. A cycle
+// merged by a missed period log is arbitrarily long — the axis stops at the
+// cap rather than emitting a cell per day of it, on every row of the stack.
+func TestStatsCycleRibbonAxisDaysClampsAWildCycle(t *testing.T) {
+	within := statsCycleRibbonAxisDays([]completedCycleSpan{{CycleLength: 26}, {CycleLength: 34}})
+	if within != 34 {
+		t.Fatalf("the axis is the longest cycle, got %d", within)
+	}
+
+	clamped := statsCycleRibbonAxisDays([]completedCycleSpan{
+		{CycleLength: 28},
+		{CycleLength: statsCycleRibbonMaxAxisDays + 40},
+	})
+	if clamped != statsCycleRibbonMaxAxisDays {
+		t.Fatalf("expected the axis clamped to %d, got %d", statsCycleRibbonMaxAxisDays, clamped)
+	}
+}
+
+// TestBuildStatsCycleRibbonRefusesAnEmptyAxis pins the guard that keeps a
+// degenerate span out of the render path. buildCompletedCycleSpans drops a
+// non-positive cycle length before it ever gets here, so this is defence in
+// depth against a future second producer of spans — and it is asserted rather
+// than assumed, because the failure it prevents is a stack of rows with no
+// cells, which reads as an empty card rather than as a bug.
+func TestBuildStatsCycleRibbonRefusesAnEmptyAxis(t *testing.T) {
+	ribbon := buildStatsCycleRibbon(
+		statscycleribbonOwner(false),
+		CycleStats{LutealPhase: 14},
+		nil,
+		[]completedCycleSpan{{CycleLength: 0}, {CycleLength: 0}},
+	)
+	if ribbon.Visible {
+		t.Fatal("expected no stack when no span carries a positive length")
+	}
+	if len(ribbon.Rows) != 0 {
+		t.Fatalf("expected no rows, got %d", len(ribbon.Rows))
+	}
+}
+
+// TestStatsCycleRibbonPhaseFallsBackWhenNoWindowIsCalculable covers the cycle
+// too short for PredictCycleWindow to place an ovulation day in it. The days
+// after the period are then simply follicular: the row must not claim an
+// ovulation it cannot locate, and must not leave the phase blank while the
+// owner has inferred phases switched on.
+func TestStatsCycleRibbonPhaseFallsBackWhenNoWindowIsCalculable(t *testing.T) {
+	cycleStart := statscycleribbonDay(t, "2026-01-01")
+	window := PredictCycleWindow(cycleStart, 6, 14)
+	if window.Calculable {
+		t.Fatal("expected a 6-day cycle with a 14-day luteal phase to have no calculable window")
+	}
+
+	if got := statsCycleRibbonPhase(2, 3, window, cycleStart); got != "menstrual" {
+		t.Fatalf("day 2 of a 3-day period is menstrual, got %q", got)
+	}
+	if got := statsCycleRibbonPhase(5, 3, window, cycleStart); got != "follicular" {
+		t.Fatalf("expected the follicular fallback with no window, got %q", got)
+	}
+}
+
 func TestBuildStatsCycleRibbonMarksRecordedDays(t *testing.T) {
 	logs := statscycleribbonHistory(t)
 	// A note on day 12 of the first cycle: an entry with data, not a period day.
