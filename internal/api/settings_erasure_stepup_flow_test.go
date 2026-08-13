@@ -135,6 +135,19 @@ func TestErasureStepupDeletesAccountOnlyAfterAFreshReauth(t *testing.T) {
 	if got := countStepupAccounts(t, fixture); got != 0 {
 		t.Fatalf("expected the account to be deleted after the callback, accounts = %d", got)
 	}
+
+	// The erasure completes through the same applyDeleteAccount as the
+	// password-gated route, so this arm must retract the session's cookies too —
+	// the language cache included, since the account it mirrored no longer
+	// exists. The auth cookie's retraction is the anchor that the teardown ran.
+	clearedAuth := responseCookie(callbackResponse.Cookies(), authCookieName)
+	if clearedAuth == nil || strings.TrimSpace(clearedAuth.Value) != "" {
+		t.Fatalf("expected the step-up deletion to retract the auth cookie, got %#v", clearedAuth)
+	}
+	clearedLanguage := responseCookie(callbackResponse.Cookies(), languageCookieName)
+	if clearedLanguage == nil || clearedLanguage.Value != "" {
+		t.Fatalf("expected the step-up deletion to retract the language cookie, got %#v", clearedLanguage)
+	}
 }
 
 // TestErasureStepupKeepsDataWhenTheReauthIsRefused covers the branches that

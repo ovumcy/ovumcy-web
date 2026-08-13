@@ -31,7 +31,17 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 		"GET /healthz":                        {},
 		"GET /readyz":                         {},
 		"GET /favicon.ico":                    {},
-		"POST /lang":                          {},
+		// The public language switch has to work for a visitor with no session —
+		// the login and onboarding pages are where it is used — so it carries
+		// neither AuthRequired nor OwnerOnly and cannot answer 403 for a cookie
+		// naming an unsupported role. It is not therefore outside the role model:
+		// its one state-changing effect on an account, storing the chosen language,
+		// applies the same `services.IsOwnerUser` predicate OwnerOnly enforces,
+		// inside the handler where the session is resolved. An unsupported-role
+		// cookie changes nothing and gets the ordinary answer; that is pinned by
+		// TestUnsupportedRoleLanguageSwitchStoresNothing
+		// (account_language_regressions_test.go), not by this cookie-role matrix.
+		"POST /lang": {},
 		"GET /login":                          {},
 		"GET /auth/oidc/start":                {},
 		"GET " + oidcLogoutBridgePath:         {},

@@ -52,6 +52,36 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 	return httpx.StatusErrorMarkup(rendered, flashKey)
 }
 
+// respondPageFormStatusFragment answers one mapped spec as the shared localized
+// status fragment, `text/html`. It is the arm for a client that is a browser
+// performing a full-page form navigation rather than an API caller: the JSON
+// envelope would be painted into the browser window as text. The content type is
+// set explicitly because SendString would otherwise label the markup
+// `text/plain` and the browser would show the tags. The catalogue is resolved
+// here because a refusal can be produced before LanguageMiddleware has run (the
+// edge limiters sit ahead of it), and without it the fragment renders its own
+// machine key as the visible message.
+//
+// Status and stable key still come from the spec, so this changes the carrier
+// and nothing about the contract.
+func (handler *Handler) respondPageFormStatusFragment(c fiber.Ctx, spec APIErrorSpec) error {
+	handler.ensureRequestMessages(c)
+	c.Type("html", "utf-8")
+	return c.Status(spec.Status).SendString(localizedStatusErrorMarkup(c, spec))
+}
+
+// respondPageFormMappedError is the page-form counterpart of respondMappedError:
+// a plain HTML navigation gets the status fragment above, every other
+// negotiation keeps the envelope every mapped rejection answers with. Used by
+// `POST /lang` — the one public form with no HTMX and no JavaScript behind it —
+// whose limiter refusal already answers in this shape.
+func (handler *Handler) respondPageFormMappedError(c fiber.Ctx, spec APIErrorSpec) error {
+	if responseFormat(c) != httpx.ResponseFormatHTML {
+		return handler.respondMappedError(c, spec)
+	}
+	return handler.respondPageFormStatusFragment(c, spec)
+}
+
 // transportErrorSpecsByStatus maps every HTTP status the app can answer as an
 // explicit *fiber.Error onto the shared error-spec shape, keyed by status code
 // alone. It exists because the envelope is an APP-WIDE contract: a client that
