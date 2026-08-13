@@ -10,6 +10,7 @@ import {
   registerOwnerViaUI,
 } from './support/auth-helpers';
 import { saveSettingsLanguage, switchPublicLanguage } from './support/language-helpers';
+import { assertNoHorizontalOverflow } from './support/mobile-layout-helpers';
 import { localeText, SUPPORTED_LOCALES, type Locale } from './support/locale-helpers';
 
 // This spec's subject IS the localization, so rendered copy is asserted here on
@@ -138,6 +139,47 @@ test.describe('Navigation and language switch', () => {
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('lang', lastLocale);
     await expectPageTitle(page, lastLocale, 'settings.title');
+  });
+
+  // The one place layout is measured in a language other than English.
+  //
+  // A translated string is not the same length as its source — de and fr run
+  // routinely half again as long as en — so a label that fits its control in
+  // English can push a row past the viewport in another language. Every other
+  // layout measurement in this suite runs in the default locale, which means
+  // that whole class was invisible: the language specs asserted the TEXT and
+  // the mobile specs asserted the BOX, and nothing asserted the text inside
+  // the box.
+  //
+  // Language is switched at desktop width because the settings sections are
+  // disclosures on a phone and the interface form sits inside a folded one.
+  // The resize is what folds them: the module listens to the same media query.
+  test('every locale fits a 390px viewport, folded and unfolded', async ({ page }) => {
+    await registerAndReachDashboard(page, 'nav-lang-overflow');
+
+    for (const locale of SUPPORTED_LOCALES) {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.goto('/settings');
+      await saveSettingsLanguage(page, locale);
+      await expect(page.locator('html')).toHaveAttribute('lang', locale);
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto('/settings');
+
+      // Folded: the summary rows, the section index and the tab bar.
+      await assertNoHorizontalOverflow(page);
+
+      // Unfolded: the labels, inputs and save rows a folded card hides. Without
+      // this half the test would measure ten headings and call the page safe.
+      const cycle = page.locator('#settings-cycle');
+      await expect(cycle).toHaveJSProperty('open', false);
+      await cycle.locator('summary').click();
+      await expect(cycle).toHaveJSProperty('open', true);
+      await assertNoHorizontalOverflow(page);
+
+      await page.goto('/dashboard');
+      await assertNoHorizontalOverflow(page);
+    }
   });
 
   test('the language saved in settings survives a sign-out and a cleared cookie jar', async ({
