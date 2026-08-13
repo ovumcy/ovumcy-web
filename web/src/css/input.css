@@ -1619,26 +1619,26 @@
     box-shadow var(--duration-base) var(--ease-soft),
     background-color var(--duration-base) var(--ease-soft);
   border: none;
-  background: var(--action-primary);
-  color: #fff;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-ink);
   box-shadow: var(--elevation-1);
 
   &:hover {
     transform: translateY(-1px);
-    background: var(--action-primary-hover);
+    background: var(--btn-primary-bg-hover);
     box-shadow: var(--elevation-2);
   }
 
   &:active {
     transform: translateY(0);
-    background: var(--action-primary-hover);
+    background: var(--btn-primary-bg-hover);
     box-shadow: var(--elevation-1);
   }
 
   /* WCAG 1.4.3 exempts text in an inactive component, so the dimmed state keeps
      the shared disabled treatment; the contrast gate skips disabled controls. */
   &:disabled {
-    opacity: 0.5;
+    opacity: var(--btn-inactive-opacity);
     cursor: not-allowed;
     pointer-events: none;
     transform: none !important;
@@ -1648,21 +1648,6 @@
   .settings-symptom-action-stack & {
     width: 100%;
     justify-content: center;
-  }
-
-  [data-dashboard-editor][data-phase='follicular'] & {
-    background: var(--action-primary-follicular);
-  }
-
-  [data-dashboard-editor][data-phase='luteal'] & {
-    background: var(--action-primary-luteal);
-  }
-
-  /* Status outranks phase: any fertile-window day keeps the fertile tint,
-     whichever phase it falls in — declared last so the equal-specificity
-     cascade resolves to it. */
-  [data-dashboard-editor][data-fertility='fertile'] & {
-    background: var(--action-primary-fertile);
   }
 }
 
@@ -1681,19 +1666,19 @@
     background-color var(--duration-base) var(--ease-soft);
 
   &:disabled {
-    opacity: 0.5;
+    opacity: var(--btn-inactive-opacity);
     cursor: not-allowed;
     pointer-events: none;
     transform: none !important;
     box-shadow: none !important;
   }
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--text-primary);
+  border: 1px solid var(--btn-surface-border);
+  background: var(--btn-surface);
+  color: var(--btn-surface-ink);
 
   &:hover {
     transform: translateY(-1px);
-    background: rgba(232, 196, 168, 0.45);
+    background: var(--btn-surface-hover);
   }
 
   .settings-symptom-action-stack & {
@@ -1705,17 +1690,11 @@
     width: 100%;
     justify-content: center;
   }
-
-  :root[data-theme='dark'] & {
-    background: rgba(47, 38, 63, 0.86);
-    color: var(--text-primary);
-  }
-
-  :root[data-theme='dark'] &:hover {
-    background: rgba(159, 124, 215, 0.26);
-  }
 }
 
+/* The quiet variant of the secondary role: same surface, accent ink. It marks
+   an action that is one of several equal choices (an export range, an
+   onboarding shortcut) rather than the screen's answer. */
 @utility btn-soft {
   display: inline-flex;
   align-items: center;
@@ -1731,7 +1710,7 @@
     background-color var(--duration-base) var(--ease-soft);
 
   &:disabled {
-    opacity: 0.5;
+    opacity: var(--btn-inactive-opacity);
     cursor: not-allowed;
     pointer-events: none;
     transform: none !important;
@@ -1740,57 +1719,11 @@
 
   &:hover {
     transform: translateY(-1px);
-    background: rgba(232, 196, 168, 0.45);
+    background: var(--btn-surface-hover);
   }
-  border: 1px solid rgba(199, 117, 109, 0.28);
-  background: rgba(255, 255, 255, 0.84);
-  color: #9f534d;
-
-  :root[data-theme='dark'] & {
-    background: rgba(47, 38, 63, 0.86);
-    color: var(--text-primary);
-  }
-
-  :root[data-theme='dark'] &:hover {
-    background: rgba(159, 124, 215, 0.26);
-  }
-}
-
-@utility btn-warning {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.75rem;
-  border-radius: var(--radius-pill);
-  padding: 0.58rem 1.12rem;
-  font-size: var(--text-sm);
-  font-weight: 700;
-  transition:
-    transform var(--duration-base) var(--ease-soft),
-    box-shadow var(--duration-base) var(--ease-soft),
-    background-color var(--duration-base) var(--ease-soft);
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    pointer-events: none;
-    transform: none !important;
-    box-shadow: none !important;
-  }
-  border: 1px solid rgba(196, 146, 74, 0.45);
-  background: rgba(255, 236, 196, 0.82);
-  color: #8b5a1c;
-
-  &:hover {
-    transform: translateY(-1px);
-    background: rgba(247, 218, 161, 0.92);
-  }
-
-  :root[data-theme='dark'] & {
-    border-color: rgba(214, 172, 102, 0.5);
-    background: rgba(107, 76, 35, 0.78);
-    color: #ffe2ad;
-  }
+  border: 1px solid var(--btn-surface-border);
+  background: var(--btn-surface);
+  color: var(--btn-quiet-ink);
 }
 
 @utility btn-danger {
@@ -1808,30 +1741,27 @@
     background-color var(--duration-base) var(--ease-soft);
 
   &:disabled {
-    opacity: 0.5;
+    opacity: var(--btn-inactive-opacity);
     cursor: not-allowed;
     pointer-events: none;
     transform: none !important;
     box-shadow: none !important;
   }
-  border: 1px solid rgba(177, 86, 78, 0.4);
-  background: rgba(252, 232, 229, 0.95);
-  color: #9b3d36;
+  border: 1px solid var(--btn-destructive-border);
+  background: var(--btn-destructive-bg);
+  color: var(--btn-destructive-ink);
 
   &:hover {
     transform: translateY(-1px);
-    background: rgba(250, 215, 209, 0.95);
-  }
-
-  :root[data-theme='dark'] & {
-    border-color: rgba(196, 108, 108, 0.58);
-    background: rgba(105, 49, 49, 0.82);
-    color: #ffd3d0;
+    background: var(--btn-destructive-bg-hover);
   }
 }
 
-@utility btn--disabled {
-  opacity: 0.5;
+/* The inactive state as a class, for a control that is inert without being a
+   disabled form element (a month link the calendar will not follow). Single
+   dash like every other utility in the sheet. */
+@utility btn-disabled {
+  opacity: var(--btn-inactive-opacity);
   cursor: not-allowed;
   pointer-events: none;
   transform: none !important;
@@ -1854,24 +1784,6 @@
   font-weight: 600;
 }
 
-@utility btn-secondary-caution {
-  border-color: rgba(177, 86, 78, 0.28);
-  color: #8f5049;
-
-  &:hover {
-    background: rgba(250, 222, 216, 0.4);
-  }
-
-  :root[data-theme='dark'] & {
-    border-color: rgba(196, 108, 108, 0.42);
-    color: #f0c2bf;
-  }
-
-  :root[data-theme='dark'] &:hover {
-    background: rgba(116, 57, 57, 0.6);
-  }
-}
-
 @utility period-toggle {
   display: inline-flex;
   align-items: center;
@@ -1887,22 +1799,22 @@
     box-shadow var(--duration-base) var(--ease-soft),
     transform var(--duration-base) var(--ease-soft);
 
+  /* The on-state is affirmative, not a warning: it uses the same warm accent
+     every other selected control in the app uses (check chip, radio tile),
+     never the period rose — an enabled setting is not a bleeding day. The fill
+     is flat because nothing here progresses or is uncertain. */
   &[data-active='true'] {
-    border-color: rgba(199, 117, 109, 0.52);
-    background: linear-gradient(
-      135deg,
-      rgba(255, 240, 236, 0.96),
-      rgba(255, 244, 234, 0.92)
-    );
+    border-color: rgba(186, 131, 80, 0.52);
+    background: rgba(255, 243, 227, 0.96);
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.42),
       var(--elevation-1);
   }
 
   &[data-active='true'] .period-toggle-state {
-    border-color: rgba(162, 83, 75, 0.52);
-    background: rgba(199, 117, 109, 0.16);
-    color: #8f4a42;
+    border-color: rgba(186, 131, 80, 0.52);
+    background: rgba(212, 165, 116, 0.18);
+    color: #8a5620;
   }
 
   & input {
@@ -1930,8 +1842,8 @@
   }
 
   & input:checked {
-    background: var(--period-color);
-    border-color: rgba(162, 83, 75, 0.7);
+    background: var(--action-primary);
+    border-color: var(--action-primary);
   }
 
   & input:focus-visible {
@@ -1954,12 +1866,8 @@
   }
 
   :root[data-theme='dark'] &[data-active='true'] {
-    border-color: rgba(222, 143, 136, 0.52);
-    background: linear-gradient(
-      135deg,
-      rgba(92, 51, 58, 0.92),
-      rgba(61, 46, 79, 0.88)
-    );
+    border-color: rgba(222, 176, 117, 0.5);
+    background: rgba(90, 66, 43, 0.88);
     box-shadow:
       inset 0 0 0 1px rgba(247, 243, 255, 0.06),
       var(--elevation-1);
@@ -2055,9 +1963,9 @@
   color: var(--text-muted);
 
   .period-toggle[data-active='true'] & {
-    border-color: rgba(162, 83, 75, 0.52);
-    background: rgba(199, 117, 109, 0.16);
-    color: #8f4a42;
+    border-color: rgba(186, 131, 80, 0.52);
+    background: rgba(212, 165, 116, 0.18);
+    color: #8a5620;
   }
 
   :root[data-theme='dark'] & {
@@ -3387,18 +3295,20 @@
   line-height: 1;
 }
 
+/* "Something is recorded on this day" — a record marker, not a phase, so it
+   takes the accent ink both themes already define rather than the blue it used
+   to be: that blue and the selection ring were the only two in the product.
+   Non-text, so the floor is 3:1 against the cell it sits on; measured over
+   every fill the --cal-* block composes it holds 5.29:1 light and 8.67:1 dark
+   on a plain cell, and 3.14:1 / 4.05:1 at worst — the light fertile-peak wash
+   and the dark start-window gradient. */
 @utility calendar-data-marker {
   display: inline-block;
   width: 0.52rem;
   height: 0.52rem;
   border-radius: var(--radius-pill);
-  background: rgba(95, 124, 182, 0.86);
-  box-shadow: 0 0 0 2px rgba(95, 124, 182, 0.18);
-
-  :root[data-theme='dark'] & {
-    background: rgba(139, 190, 255, 0.92);
-    box-shadow: 0 0 0 2px rgba(139, 190, 255, 0.18);
-  }
+  background: var(--ink-accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 @utility check-chip-static {
@@ -3728,10 +3638,14 @@
       0 0 0 2px rgba(255, 255, 255, 0.8);
   }
 
+  /* The selection ring is the accent ink, which reads deeper than the amber
+     today ring in either theme, so "the day I am looking at" and "today" stay
+     apart without the blue that used to carry it. Only the outer halo is
+     theme-specific. */
   &.selected {
-    border-color: rgba(72, 122, 209, 0.95);
+    border-color: var(--ink-accent);
     box-shadow:
-      inset 0 0 0 2px rgba(72, 122, 209, 0.72),
+      inset 0 0 0 2px var(--ink-accent),
       0 0 0 2px rgba(255, 255, 255, 0.84);
   }
 
@@ -3744,9 +3658,8 @@
   }
 
   :root[data-theme='dark'] &.selected {
-    border-color: rgba(124, 166, 244, 0.9);
     box-shadow:
-      inset 0 0 0 2px rgba(124, 166, 244, 0.62),
+      inset 0 0 0 2px var(--ink-accent),
       0 0 0 2px rgba(22, 17, 31, 0.88);
   }
 
@@ -3763,16 +3676,15 @@
 
 @utility selected {
   &.calendar-cell {
-    border-color: rgba(72, 122, 209, 0.95);
+    border-color: var(--ink-accent);
     box-shadow:
-      inset 0 0 0 2px rgba(72, 122, 209, 0.72),
+      inset 0 0 0 2px var(--ink-accent),
       0 0 0 2px rgba(255, 255, 255, 0.84);
   }
 
   :root[data-theme='dark'] &.calendar-cell {
-    border-color: rgba(124, 166, 244, 0.9);
     box-shadow:
-      inset 0 0 0 2px rgba(124, 166, 244, 0.62),
+      inset 0 0 0 2px var(--ink-accent),
       0 0 0 2px rgba(22, 17, 31, 0.88);
   }
 }
@@ -4682,13 +4594,9 @@
        clear WCAG AA 4.5:1, and only a flat colour can be verified — a gradient
        has to be checked stop by stop and automated engines report it as
        incomplete instead of as a violation. Measured against #fff:
-       #9a5324 5.77:1, #84431a 7.50:1, #8a6231 5.42:1, #3d7a41 5.17:1,
-       #6f4a99 6.74:1. */
+       #9a5324 5.77:1, #84431a 7.50:1. */
     --action-primary: #9a5324;
     --action-primary-hover: #84431a;
-    --action-primary-follicular: #8a6231;
-    --action-primary-fertile: #3d7a41;
-    --action-primary-luteal: #6f4a99;
     --brand-color: #4a3d6a;
     --header-bg: rgba(255, 249, 240, 0.9);
     --header-border: #ecd9c6;
@@ -4853,6 +4761,34 @@
     --duration-base: 200ms;
     --duration-slow: 300ms;
     --ease-soft: cubic-bezier(0.32, 0.06, 0.22, 1);
+
+    /* ---------------------------------------------------------------
+       Button roles. A button has three roles — primary (the one action
+       a screen is for), secondary (everything else) and destructive —
+       plus one inactive state shared by all of them. Each is defined
+       here once, so a call site chooses a role and never a colour, and
+       the quiet variant is the secondary role with accent ink rather
+       than a role of its own.
+       Ratios for --text-sm/700 text, worst case over the surface the
+       role is painted on, at rest and hovered: primary ink 5.77:1 /
+       7.50:1 light and 5.14:1 / 6.40:1 dark; secondary ink 8.45:1 /
+       6.69:1 and 11.80:1 / 8.77:1; quiet ink 6.38:1 / 5.06:1 and
+       8.04:1 / 5.97:1; destructive ink 5.75:1 / 5.11:1 and 8.18:1 /
+       6.63:1. The inactive state is exempt (WCAG 1.4.3) and the
+       contrast gate skips it. */
+    --btn-primary-bg: var(--action-primary);
+    --btn-primary-bg-hover: var(--action-primary-hover);
+    --btn-primary-ink: #ffffff;
+    --btn-surface: rgba(255, 255, 255, 0.9);
+    --btn-surface-hover: rgba(232, 196, 168, 0.45);
+    --btn-surface-border: var(--border-hairline);
+    --btn-surface-ink: var(--ink-strong);
+    --btn-quiet-ink: #7f5630;
+    --btn-destructive-bg: rgba(252, 232, 229, 0.95);
+    --btn-destructive-bg-hover: rgba(250, 215, 209, 0.95);
+    --btn-destructive-border: rgba(177, 86, 78, 0.4);
+    --btn-destructive-ink: #9b3d36;
+    --btn-inactive-opacity: 0.5;
   }
 
   /* The motion scale is the single lever, so the preference is honoured in
@@ -4878,13 +4814,9 @@
     --accent-strong: #f0b57f;
     /* Dark theme lifts each fill just far enough to separate from the card
        (>=3:1 against #241f2f) while keeping white text above 4.5:1. Measured
-       against #fff: #a35b2b 5.14:1, #8f4e22 6.40:1, #94693c 4.83:1,
-       #417f45 4.83:1, #7b56a6 5.64:1. */
+       against #fff: #a35b2b 5.14:1, #8f4e22 6.40:1. */
     --action-primary: #a35b2b;
     --action-primary-hover: #8f4e22;
-    --action-primary-follicular: #94693c;
-    --action-primary-fertile: #417f45;
-    --action-primary-luteal: #7b56a6;
     --brand-color: #ece3ff;
     --header-bg: rgba(24, 20, 31, 0.9);
     --header-border: rgba(101, 84, 126, 0.65);
@@ -4958,6 +4890,19 @@
     --surface-quiet: rgba(46, 38, 61, 0.84);
     --border-control: rgba(127, 105, 160, 0.72);
     --accent-soft: rgba(222, 176, 117, 0.2);
+
+    /* Button roles, dark side. Only the value-bearing entries are
+       restated; the rest resolve through the aliases above. The
+       destructive hover is stated here because the light one used to be
+       masked by the dark base rule's specificity, so hovering a
+       destructive action in this theme painted nothing at all. */
+    --btn-surface: rgba(47, 38, 63, 0.86);
+    --btn-surface-hover: rgba(159, 124, 215, 0.26);
+    --btn-quiet-ink: #f0b57f;
+    --btn-destructive-bg: rgba(105, 49, 49, 0.82);
+    --btn-destructive-bg-hover: rgba(126, 60, 60, 0.86);
+    --btn-destructive-border: rgba(196, 108, 108, 0.58);
+    --btn-destructive-ink: #ffd3d0;
   }
 
   html,

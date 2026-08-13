@@ -223,7 +223,7 @@
     }
 
     button.disabled = !enabled;
-    button.classList.toggle("btn--disabled", !enabled);
+    button.classList.toggle("btn-disabled", !enabled);
     button.setAttribute("aria-disabled", enabled ? "false" : "true");
   }
 

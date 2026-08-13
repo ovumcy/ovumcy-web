@@ -752,7 +752,7 @@ test.describe('Bug regressions', () => {
       const previousControl = navActions.locator(':scope > *').first();
 
       await expect(previousControl).toContainText(/\S+/);
-      await expect(previousControl).toHaveClass(/btn--disabled/);
+      await expect(previousControl).toHaveClass(/btn-disabled/);
       await expect(previousControl).not.toHaveAttribute('href', /.+/);
     });
   });
