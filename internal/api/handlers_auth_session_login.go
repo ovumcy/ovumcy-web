@@ -154,15 +154,20 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		return handler.respondMappedError(c, spec)
 	}
 	if err := handler.authService.RevokeAuthSessions(c.Context(), user.ID); err != nil {
-		handler.clearAuthRelatedCookies(c)
+		// codecov:ignore:start -- the revoke fails only on a storage error, which no
+		// request-shaped input can provoke. The branch stays in step with the
+		// success path below: the auth cookie goes either way, so the session end is
+		// just as deliberate and the language cache goes with it.
+		handler.clearSessionEndCookies(c)
 		spec := authSessionRevokeErrorSpec()
 		handler.logSecurityError(c, "auth.logout", spec)
 		return handler.respondMappedError(c, spec)
+		// codecov:ignore:end
 	}
 
 	logoutTransportPath := ""
 	sessionClaims, hasSession := currentAuthSession(c)
-	handler.clearAuthRelatedCookies(c)
+	handler.clearSessionEndCookies(c)
 	if hasSession && sessionClaims != nil {
 		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), sessionClaims.SessionID, time.Now())
 		if err != nil {

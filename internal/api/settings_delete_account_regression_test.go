@@ -79,6 +79,7 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.
 			cookiePair(ctx.csrfCookie),
 			recoveryCodeCookieName+"=temporary-recovery",
 			resetPasswordCookieName+"=temporary-reset",
+			languageCookieName+"=ru",
 		),
 	)
 
@@ -123,6 +124,20 @@ func TestSettingsDeleteAccountDeletesUserAndClearsAuthRelatedCookies(t *testing.
 	}
 	if resetCookieAfterDelete.Value != "" {
 		t.Fatalf("expected cleared reset password cookie value, got %q", resetCookieAfterDelete.Value)
+	}
+
+	// The account the language cookie cached no longer exists, and the browser
+	// may be shared: an erasure that leaves `ovumcy_lang=ru` behind still tells
+	// the next visitor the app was used here, in Russian.
+	languageCookieAfterDelete := responseCookie(response.Cookies(), languageCookieName)
+	if languageCookieAfterDelete == nil {
+		t.Fatalf("expected the language cookie to be cleared on delete-account success")
+	}
+	if languageCookieAfterDelete.Value != "" {
+		t.Fatalf("expected cleared language cookie value, got %q", languageCookieAfterDelete.Value)
+	}
+	if !languageCookieAfterDelete.Expires.Before(time.Now()) {
+		t.Fatalf("expected the language cookie to be retracted with a past expiry, got %s", languageCookieAfterDelete.Expires)
 	}
 }
 

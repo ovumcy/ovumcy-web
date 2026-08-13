@@ -250,7 +250,9 @@ func (handler *Handler) applyDeleteAccount(c fiber.Ctx, user *models.User) (APIE
 		return spec, false
 	}
 
-	handler.clearAuthRelatedCookies(c)
+	// The account the language cache mirrored no longer exists, so the cache is
+	// retracted with the session rather than left on the browser.
+	handler.clearSessionEndCookies(c)
 	handler.logMutationSuccess(c, deleteAccountMutation)
 	return APIErrorSpec{}, true
 }
