@@ -306,15 +306,17 @@ function flattenedStops(painted: PaintedSurface, label: string): { source: strin
 }
 
 /**
- * Contrast of a graphic's paint (an SVG `stroke` or `fill`) against every colour
- * the surface beneath it can paint. `worstRatio` is the weakest of them, because
- * a reader gets the weakest one.
+ * Contrast of a graphic's paint against every colour the surface beneath it can
+ * paint. `worstRatio` is the weakest of them, because a reader gets the weakest
+ * one. The paint is an SVG `stroke` or `fill`, or the `background-color` of a
+ * plain element — a data mark does not have to be drawn in SVG to be a
+ * graphical object, and the cycle ribbon's day cells are div backgrounds.
  */
 export async function measureGraphicContrast(
   graphic: Locator,
   surface: Locator,
   label: string,
-  property: 'stroke' | 'fill' = 'stroke'
+  property: 'stroke' | 'fill' | 'background-color' = 'stroke'
 ): Promise<ContrastMeasurement> {
   const paint = await graphic.evaluate(
     (node: Element, name: string) => window.getComputedStyle(node).getPropertyValue(name).trim(),
