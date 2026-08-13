@@ -117,11 +117,12 @@ func (service *SettingsService) ApplyUsageGoal(user *models.User, usageGoal stri
 
 // AlternativeUsageGoals lists the modes the owner is not currently in, in a
 // stable order, so a quick-switch surface can offer every other mode without
-// re-offering the one already in force.
+// re-offering the one already in force. The order matches the chooser on every
+// other surface: the neutral default first, the two alternative modes after it.
 func AlternativeUsageGoals(current string) []string {
 	normalized := NormalizeUsageGoal(current)
 	alternatives := make([]string, 0, 2)
-	for _, goal := range []string{models.UsageGoalAvoid, models.UsageGoalTrying, models.UsageGoalHealth} {
+	for _, goal := range []string{models.UsageGoalHealth, models.UsageGoalAvoid, models.UsageGoalTrying} {
 		if goal != normalized {
 			alternatives = append(alternatives, goal)
 		}

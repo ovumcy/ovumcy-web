@@ -136,16 +136,16 @@
         </div>
         <div class="grid gap-2">
           <label class="choice-option">
+            <input type="radio" name="usage_goal" value="health" class="choice-input" {{if or (eq .UsageGoal "health") (eq .UsageGoal "")}}checked{{end}}>
+            <span class="chip chip-stack"><span>{{t .Messages "settings.goal.health"}}</span></span>
+          </label>
+          <label class="choice-option">
             <input type="radio" name="usage_goal" value="avoid_pregnancy" class="choice-input" {{if eq .UsageGoal "avoid_pregnancy"}}checked{{end}}>
             <span class="chip chip-stack"><span>{{t .Messages "settings.goal.avoid"}}</span></span>
           </label>
           <label class="choice-option">
             <input type="radio" name="usage_goal" value="trying_to_conceive" class="choice-input" {{if eq .UsageGoal "trying_to_conceive"}}checked{{end}}>
             <span class="chip chip-stack"><span>{{t .Messages "settings.goal.trying"}}</span></span>
-          </label>
-          <label class="choice-option">
-            <input type="radio" name="usage_goal" value="health" class="choice-input" {{if or (eq .UsageGoal "health") (eq .UsageGoal "")}}checked{{end}}>
-            <span class="chip chip-stack"><span>{{t .Messages "settings.goal.health"}}</span></span>
           </label>
         </div>
         {{/* The mode summary sits inside the group it belongs to. Its

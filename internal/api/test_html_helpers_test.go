@@ -74,6 +74,21 @@ func htmlSectionIDs(root *html.Node) []string {
 	return ids
 }
 
+// htmlRadioValues lists the value attributes of one radio group in document
+// order, so a test can pin the order options are offered in.
+func htmlRadioValues(root *html.Node, name string) []string {
+	radios := htmlFindElements(root, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "input" &&
+			htmlAttr(node, "type") == "radio" && htmlAttr(node, "name") == name
+	})
+
+	values := make([]string, 0, len(radios))
+	for _, radio := range radios {
+		values = append(values, htmlAttr(radio, "value"))
+	}
+	return values
+}
+
 func htmlFindElement(root *html.Node, predicate func(*html.Node) bool) *html.Node {
 	var found *html.Node
 	var walk func(*html.Node)

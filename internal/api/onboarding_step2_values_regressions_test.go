@@ -58,6 +58,41 @@ func TestOnboardingPageRendersPersistedStep2Values(t *testing.T) {
 	}
 }
 
+// TestOnboardingStep2ModeChooserLeadsWithTheNeutralDefault pins the display
+// order of the mode question: the neutral default ("track my health") is the
+// first option and the two alternative modes follow it. Only the order is
+// pinned — the submitted value is read by name, never by position, so the
+// default stays the default whether it is answered, changed, or skipped.
+func TestOnboardingStep2ModeChooserLeadsWithTheNeutralDefault(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "onboarding-step2-goal-order@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	request := httptest.NewRequest(http.MethodGet, "/onboarding?step=2", nil)
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+	assertUsageGoalOrder(t, htmlRadioValues(document, "usage_goal"))
+}
+
+// assertUsageGoalOrder holds the one order every usage-goal chooser renders.
+func assertUsageGoalOrder(t *testing.T, values []string) {
+	t.Helper()
+
+	want := []string{models.UsageGoalHealth, models.UsageGoalAvoid, models.UsageGoalTrying}
+	if len(values) != len(want) {
+		t.Fatalf("expected usage-goal options %v, got %v", want, values)
+	}
+	for index, value := range want {
+		if values[index] != value {
+			t.Fatalf("expected usage-goal options %v, got %v", want, values)
+		}
+	}
+}
+
 // TestOnboardingStep2DropsAgeAndKeepsASkippableModeChoice pins the shape of the
 // second onboarding step: the age bracket is no longer asked for here (it stays
 // reachable in settings), while the usage-goal question stays visible and gains
