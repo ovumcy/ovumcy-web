@@ -4,9 +4,9 @@
   the login and onboarding pages wrote only the browser's language cookie, so for a signed-in owner
   the choice was silently reverted the next time a session was issued — the cookie is re-written
   from the account at every sign-in. A switch made with a session present is now saved on the
-  account as well, through the same save `Settings → Interface` uses, including its refusal of a
-  language this build does not ship. A visitor with no session is unaffected: the switch stays a
-  cookie, nothing is stored, and the answer is the same either way.
+  account as well, through the same save `Settings → Interface` uses, and only for a language this
+  build actually ships. A visitor with no session is unaffected: the switch stays a cookie, nothing
+  is stored, and the answer is the same either way.
 
 ### Security
 

@@ -95,16 +95,13 @@ func (handler *Handler) respondRateLimitedMappedError(c fiber.Ctx, spec APIError
 // is a full-page navigation: answering it with the JSON envelope paints the raw
 // envelope into the browser window. It renders the same localized status
 // fragment an HTMX client receives instead — the copy the owner can read, with
-// the stable key beside it. Content type is set explicitly because SendString
-// would otherwise label the markup text/plain and the browser would show the
-// tags.
+// the stable key beside it, through the shared respondPageFormStatusFragment
+// that the same route's account-write failure also answers with.
 func (handler *Handler) respondRateLimitedPageForm(c fiber.Ctx, spec APIErrorSpec) error {
 	if responseFormat(c) != httpx.ResponseFormatHTML {
 		return handler.respondRateLimitedMappedError(c, spec)
 	}
-	handler.ensureRequestMessages(c)
-	c.Type("html", "utf-8")
-	return c.Status(spec.Status).SendString(localizedStatusErrorMarkup(c, spec))
+	return handler.respondPageFormStatusFragment(c, spec)
 }
 
 func rateLimitedErrorEnvelope(c fiber.Ctx, spec APIErrorSpec) fiber.Map {

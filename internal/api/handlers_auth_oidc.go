@@ -132,7 +132,12 @@ func (handler *Handler) CompleteOIDCLogin(c fiber.Ctx) error {
 		if err := handler.oidcLogoutStateSvc.Save(c.Context(), sessionID, *result.Logout, time.Now()); err != nil { // codecov:ignore -- OIDC logout-state save error; covered by the e2e OIDC lanes
 			spec := authSessionCreateErrorSpec()
 			handler.logSecurityError(c, "auth.oidc_callback", spec)
-			handler.clearAuthRelatedCookies(c)
+			// The session issued a few lines up is torn down again, and
+			// setAuthCookie has already written `ovumcy_lang` from the account it
+			// was issued for. Retracting only the sealed cookies would leave that
+			// trace on the browser for a sign-in that did not happen — so this
+			// teardown clears exactly what the deliberate ends clear.
+			handler.clearSessionEndCookies(c)
 			handler.setFlashCookie(c, FlashPayload{AuthError: spec.Key})
 			return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 		}

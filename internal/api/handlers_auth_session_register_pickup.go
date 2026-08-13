@@ -143,8 +143,15 @@ func (handler *Handler) PickupRegister(c fiber.Ctx) error {
 	handler.clearOIDCLogoutBridgeCookie(c)
 
 	continuePath := services.PostLoginRedirectPath(&user)
+	// The teardown below undoes a session this request issued moments ago, so it
+	// retracts everything a deliberate session end retracts rather than the auth
+	// cookie alone. Nothing else is live for an account created seconds earlier,
+	// and the language cookie setAuthCookie may have written is a trace of a
+	// sign-in that is being abandoned. Stating the rule per call site — "this one
+	// wrote only the auth cookie" — would have to be re-derived every time
+	// setAuthCookie learns to write one more thing; it already learned once.
 	if err := handler.setRecoveryCodeIssuanceCookie(c, user.ID, payload.RC, continuePath, recoveryCodeSurfaceInlineRegister); err != nil {
-		handler.clearAuthCookie(c)
+		handler.clearSessionEndCookies(c) // codecov:ignore -- the issuance cookie fails only on an AEAD seal error; the owner id it refuses an unattributed seal for is non-zero by the pickup token that reached this line
 		spec := authRecoveryCodePersistErrorSpec()
 		handler.logSecurityError(c, "auth.register_pickup", spec)
 		return handler.redirectToPostRegisterSignin(c, "recovery_cookie_failed")

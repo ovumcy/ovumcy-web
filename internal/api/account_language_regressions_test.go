@@ -207,6 +207,78 @@ func TestOIDCCallbackIssuesTheLanguageCookieFromTheStoredPreference(t *testing.T
 	}
 }
 
+// TestOIDCCallbackTeardownRetractsTheLanguageCookieItJustIssued covers the
+// server-initiated end. The callback issues the session — which writes
+// `ovumcy_lang` from the account — and then tears it down again when the
+// provider-logout state cannot be stored. Retracting only the sealed cookies
+// there would leave the language of an account on a browser for a sign-in that
+// did not happen, which is the shared-browser trace the deliberate ends already
+// remove. The failure is injected by dropping the table the logout state is
+// saved into, which leaves every earlier step of the callback working.
+func TestOIDCCallbackTeardownRetractsTheLanguageCookieItJustIssued(t *testing.T) {
+	stub := newStubOIDCWorkflowService(true)
+	stub.authURL = "https://id.example.com/authorize"
+	stub.result = services.OIDCLoginResult{
+		User: models.User{
+			ID:                  31,
+			Role:                models.RoleOwner,
+			AuthSessionVersion:  1,
+			OnboardingCompleted: true,
+			InterfaceLanguage:   "ru",
+		},
+		Logout: &services.OIDCLogoutState{
+			UserID:                31,
+			EndSessionEndpoint:    "https://id.example.com/logout",
+			IDTokenHint:           "id-token",
+			PostLogoutRedirectURL: "https://app.example.com/login",
+		},
+	}
+	// cookieSecure mirrors the sibling callback regression: the sealed OIDC state
+	// cookie is SameSite=None, which the handler refuses to issue without Secure,
+	// so the start leg would otherwise never hand out a state to call back with.
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+	if err := database.Exec("DROP TABLE oidc_logout_states").Error; err != nil {
+		t.Fatalf("drop oidc_logout_states: %v", err)
+	}
+
+	startResponse := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/auth/oidc/start", nil))
+	assertStatusCode(t, startResponse, http.StatusTemporaryRedirect)
+	stateCookie := responseCookie(startResponse.Cookies(), oidcStateCookieName)
+	if stateCookie == nil {
+		t.Fatal("expected OIDC state cookie from start flow")
+	}
+
+	callbackRequest := httptest.NewRequest(http.MethodPost, security.OIDCCallbackPath, strings.NewReader(url.Values{
+		"state": {stub.lastStartState},
+		"code":  {"provider-code"},
+	}.Encode()))
+	callbackRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	callbackRequest.Header.Set("Accept-Language", "en")
+	callbackRequest.Header.Set("Cookie", stateCookie.String())
+
+	callbackResponse := mustAppResponse(t, app, callbackRequest)
+	assertStatusCode(t, callbackResponse, http.StatusSeeOther)
+	if location := callbackResponse.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the failed callback to redirect to /login, got %q", location)
+	}
+
+	// The auth cookie's retraction is the anchor: the teardown ran at all.
+	clearedAuth := responseCookie(callbackResponse.Cookies(), authCookieName)
+	if clearedAuth == nil || strings.TrimSpace(clearedAuth.Value) != "" {
+		t.Fatalf("expected the teardown to retract the auth cookie, got %#v", clearedAuth)
+	}
+	clearedLanguage := responseCookie(callbackResponse.Cookies(), languageCookieName)
+	if clearedLanguage == nil || clearedLanguage.Value != "" {
+		t.Fatalf("expected the teardown to retract the language cookie it issued, got %#v", clearedLanguage)
+	}
+	if !clearedLanguage.Expires.Before(time.Now()) {
+		t.Fatalf("expected the language cookie to be retracted with a past expiry, got %s", clearedLanguage.Expires)
+	}
+}
+
 // storedInterfaceLanguage reads the account column back through the SERVICE the
 // handlers write it with, not with a hand-written SELECT: what the next sign-in
 // re-issues is whatever that read returns, so a save the repository accepted but
@@ -298,24 +370,70 @@ func TestAuthenticatedLanguageSwitchStoresNothingForAnUnsupportedLanguage(t *tes
 // change exists to remove. The failure is injected by dropping the column the
 // save targets, which leaves session, CSRF and validation working. The error is
 // the shared mapped spec, not a status pair invented at the call site.
+//
+// Both negotiations are covered because the carrier differs and has to: this is
+// the one public form with no HTMX and no JavaScript behind it, so a plain
+// navigation is answered with the localized status fragment as `text/html` —
+// the same shape this path's rate-limit refusal already uses — while a JSON
+// client keeps the envelope. Painting the envelope into the browser window is
+// the defect the fragment arm exists to prevent, so a status-only assertion
+// would miss it.
 func TestAuthenticatedLanguageSwitchReportsAFailedAccountWrite(t *testing.T) {
-	ctx := newSettingsSecurityTestContext(t, "lang-switch-write-fails@example.com")
-	if err := ctx.database.Exec("ALTER TABLE users DROP COLUMN interface_language").Error; err != nil {
-		t.Fatalf("drop interface_language column: %v", err)
-	}
+	for _, testCase := range []struct {
+		name        string
+		headers     map[string]string
+		contentType string
+		assertBody  func(t *testing.T, response *http.Response)
+	}{
+		{
+			name:        "json client",
+			headers:     map[string]string{"Accept": "application/json"},
+			contentType: "application/json",
+			assertBody: func(t *testing.T, response *http.Response) {
+				t.Helper()
+				if got := readAPIError(t, response.Body); got != "failed to update interface settings" {
+					t.Fatalf("expected the interface-update failure envelope, got %q", got)
+				}
+			},
+		},
+		{
+			name:        "browser navigation",
+			headers:     nil,
+			contentType: "text/html",
+			assertBody: func(t *testing.T, response *http.Response) {
+				t.Helper()
+				body := mustReadBodyString(t, response.Body)
+				if strings.Contains(body, "error_detail") {
+					t.Fatalf("expected no JSON envelope painted into the browser window, got %q", body)
+				}
+				assertBodyContainsAll(t, body,
+					bodyStringMatch{fragment: `class="status-error"`, message: "expected the shared status fragment"},
+					bodyStringMatch{fragment: `data-flash-key="failed to update interface settings"`, message: "expected the stable key beside the copy"},
+				)
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := newSettingsSecurityTestContext(t, "lang-switch-write-fails-"+strings.ReplaceAll(testCase.name, " ", "-")+"@example.com")
+			if err := ctx.database.Exec("ALTER TABLE users DROP COLUMN interface_language").Error; err != nil {
+				t.Fatalf("drop interface_language column: %v", err)
+			}
 
-	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, LanguageSwitchPath, url.Values{
-		"lang": {"ru"},
-		"next": {"/dashboard"},
-	}, map[string]string{"Accept": "application/json"})
-	defer func() { _ = response.Body.Close() }()
+			response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, LanguageSwitchPath, url.Values{
+				"lang": {"ru"},
+				"next": {"/dashboard"},
+			}, testCase.headers)
+			defer func() { _ = response.Body.Close() }()
 
-	assertStatusCode(t, response, http.StatusInternalServerError)
-	if got := readAPIError(t, response.Body); got != "failed to update interface settings" {
-		t.Fatalf("expected the interface-update failure envelope, got %q", got)
-	}
-	if cookie := responseCookie(response.Cookies(), languageCookieName); cookie != nil {
-		t.Fatalf("expected no language cookie when the account write failed, got %#v", cookie)
+			assertStatusCode(t, response, http.StatusInternalServerError)
+			if got := response.Header.Get("Content-Type"); !strings.Contains(got, testCase.contentType) {
+				t.Fatalf("expected a %s answer, got Content-Type %q", testCase.contentType, got)
+			}
+			testCase.assertBody(t, response)
+			if cookie := responseCookie(response.Cookies(), languageCookieName); cookie != nil {
+				t.Fatalf("expected no language cookie when the account write failed, got %#v", cookie)
+			}
+		})
 	}
 }
 
@@ -338,6 +456,87 @@ func TestSwitchedLanguageSurvivesASessionReissue(t *testing.T) {
 	assertStatusCode(t, reissueResponse, http.StatusSeeOther)
 	if got := responseCookieValue(reissueResponse.Cookies(), languageCookieName); got != "ru" {
 		t.Fatalf("expected the re-issued session to serve ovumcy_lang=ru, got %q", got)
+	}
+}
+
+// TestLanguageSwitchAnswersTheSameWithNoSessionAndWithADeadOne is the
+// enumeration boundary of the account write, in the three states a caller can
+// present. The account write must not make the route answer differently by who
+// is asking: no cookie and a live owner session produce the same status, the
+// same redirect and the same language cookie. A caller presenting a cookie the
+// server cannot open gets one thing more — that dead cookie retracted — which is
+// the standing behaviour of every optional-auth surface and is self-directed:
+// it says something about the value the caller itself sent, and nothing about
+// any account. Asserted explicitly rather than tolerated, so a future change
+// that starts emitting an ACCOUNT-dependent difference here fails.
+func TestLanguageSwitchAnswersTheSameWithNoSessionAndWithADeadOne(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "lang-switch-shapes@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	anonymous := mustAppResponse(t, app, languageSwitchRequest("ru", "/login", ""))
+	authenticated := mustAppResponse(t, app, languageSwitchRequest("ru", "/login", authCookie))
+	stale := mustAppResponse(t, app, languageSwitchRequest("ru", "/login", authCookieName+"=not-a-sealed-value"))
+
+	for name, response := range map[string]*http.Response{
+		"anonymous":     anonymous,
+		"authenticated": authenticated,
+		"stale session": stale,
+	} {
+		assertStatusCode(t, response, http.StatusSeeOther)
+		if location := response.Header.Get("Location"); location != "/login" {
+			t.Fatalf("expected the %s switch to redirect to /login, got %q", name, location)
+		}
+		if got := responseCookieValue(response.Cookies(), languageCookieName); got != "ru" {
+			t.Fatalf("expected ovumcy_lang=ru on the %s switch, got %q", name, got)
+		}
+		if body := mustReadBodyString(t, response.Body); strings.TrimSpace(body) != "" {
+			t.Fatalf("expected an empty body on the %s switch, got %q", name, body)
+		}
+	}
+
+	if cookie := responseCookie(anonymous.Cookies(), authCookieName); cookie != nil {
+		t.Fatalf("expected a cookieless switch to touch no auth cookie, got %#v", cookie)
+	}
+	if cookie := responseCookie(authenticated.Cookies(), authCookieName); cookie != nil {
+		t.Fatalf("expected an authenticated switch to leave its own session alone, got %#v", cookie)
+	}
+	cleared := responseCookie(stale.Cookies(), authCookieName)
+	if cleared == nil || strings.TrimSpace(cleared.Value) != "" {
+		t.Fatalf("expected the unopenable auth cookie to be retracted, got %#v", cleared)
+	}
+	if got := storedInterfaceLanguage(t, database, user.ID); got != "ru" {
+		t.Fatalf("expected the authenticated switch of the three to have stored ru, got %q", got)
+	}
+}
+
+// TestUnsupportedRoleLanguageSwitchStoresNothing is the defense-in-depth half of
+// the account write. The route carries neither AuthRequired nor OwnerOnly — it
+// cannot, sign-in has to work for a visitor with no session — so the write
+// applies the owner predicate itself instead of inheriting it. Today the session
+// resolver already refuses an unsupported role, which is exactly why this case
+// is worth pinning: the two layers must both hold, and a resolver that one day
+// returns a non-owner user must not find a state-changing write behind it. The
+// switch still answers as it does for anyone else.
+func TestUnsupportedRoleLanguageSwitchStoresNothing(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "lang-switch-role@example.com", "StrongPass1", true)
+	seedStoredInterfaceLanguage(t, database, user.ID, "de")
+	if err := database.Model(&user).Update("role", "partner").Error; err != nil {
+		t.Fatalf("set unsupported legacy role: %v", err)
+	}
+	user.Role = "partner"
+
+	response := mustAppResponse(t, app, languageSwitchRequest("ru", "/login", issueAuthCookieForUser(t, user)))
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/login" {
+		t.Fatalf("expected the switch to redirect to /login, got %q", location)
+	}
+	if got := responseCookieValue(response.Cookies(), languageCookieName); got != "ru" {
+		t.Fatalf("expected ovumcy_lang=ru on the switch response, got %q", got)
+	}
+	if got := storedInterfaceLanguage(t, database, user.ID); got != "de" {
+		t.Fatalf("expected an unsupported-role session to store nothing, got %q", got)
 	}
 }
 
