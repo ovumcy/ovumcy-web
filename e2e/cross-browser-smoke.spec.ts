@@ -61,7 +61,7 @@ test.describe('Cross-browser smoke', () => {
 
     const flowMedium = page.locator('input[name="flow"][value="medium"]');
     const flowMediumChip = page.locator(
-      'label.choice-option:has(input[name="flow"][value="medium"]) .radio-tile'
+      'label.choice-option:has(input[name="flow"][value="medium"]) .chip-stack'
     );
     await saveDashboardEntry(page, async () => {
       await page.locator('input[name="is_period"]').check();
@@ -89,7 +89,7 @@ test.describe('Cross-browser smoke', () => {
 
     const html = page.locator('html');
     const interfaceForm = page.locator('[data-settings-interface-form]');
-    await interfaceForm.locator('[data-settings-interface-theme-option="dark"] .radio-tile').click();
+    await interfaceForm.locator('[data-settings-interface-theme-option="dark"] .chip-stack').click();
     await expect(html).toHaveAttribute('data-theme', 'dark');
     // Bind the language save to its own PATCH before navigating away — a bare
     // save click followed by page.goto races the in-flight request and can drop

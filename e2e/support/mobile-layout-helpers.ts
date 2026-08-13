@@ -187,7 +187,7 @@ export async function measureCalendarMonthGrid(page: Page): Promise<CalendarMont
   });
 
   const geometry = await page.evaluate(() => {
-    const monthHeader = document.querySelector('[data-calendar-month-nav]')?.closest('.journal-card');
+    const monthHeader = document.querySelector('[data-calendar-month-nav]')?.closest('.card');
     const cells = Array.from(document.querySelectorAll<HTMLElement>('#calendar-grid-panel button[data-day]'));
     const tabbar = document.querySelector<HTMLElement>('nav.mobile-tabbar');
     if (!monthHeader || cells.length === 0 || !tabbar) {

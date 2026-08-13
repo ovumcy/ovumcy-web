@@ -11,7 +11,7 @@
     data-symptom-active="{{if .Symptom.IsActive}}true{{else}}false{{end}}"
     {{if .IncludePreviewHooks}}data-symptom-label="{{$label}}"{{end}}
     {{if hasSymptom .SelectedSymptomID .Symptom.ID}}checked{{end}}>
-  <span class="{{if .Compact}}check-chip check-chip-sm{{else}}check-chip{{end}}" title="{{$label}}">
+  <span class="chip chip-lead{{if .Compact}} chip-sm{{end}}" title="{{$label}}">
     <span class="symptom-icon" aria-hidden="true">{{.Symptom.Icon}}</span>
     <span class="symptom-label{{if and .Compact (eq .Lang "en")}} symptom-label-nowrap{{end}}">{{$label}}</span>
     {{if not .Symptom.IsActive}}
@@ -63,7 +63,7 @@
     value="{{.Key}}"
     class="choice-input"
     {{if hasCycleFactor .SelectedCycleFactorKey .Key}}checked{{end}}>
-  <span class="{{if .Compact}}check-chip check-chip-sm{{else}}check-chip{{end}}">
+  <span class="chip chip-lead{{if .Compact}} chip-sm{{end}}">
     <span class="symptom-icon">{{cycleFactorIcon .Key}}</span>
     <span class="symptom-label">{{cycleFactorLabel .Messages .Key}}</span>
   </span>

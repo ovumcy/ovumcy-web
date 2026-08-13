@@ -108,7 +108,7 @@ test.describe('Theme mode', () => {
     const nextTheme = initialTheme === 'dark' ? 'light' : 'dark';
     const nextOption = nextTheme === 'dark' ? darkOption : lightOption;
     const previousOption = nextTheme === 'dark' ? lightOption : darkOption;
-    await nextOption.locator('.radio-tile').click();
+    await nextOption.locator('.chip-stack').click();
 
     await expect(html).toHaveAttribute('data-theme', nextTheme);
     await expect(nextOption).toHaveAttribute('data-selected', 'true');
@@ -157,7 +157,7 @@ test.describe('Theme mode', () => {
       .poll(async () => page.evaluate(() => window.localStorage.getItem('ovumcy_theme')))
       .toBe(storedBefore);
 
-    await nextOption.locator('.radio-tile').click();
+    await nextOption.locator('.chip-stack').click();
     await expect(saveButton).toBeEnabled();
     await saveButton.click();
     await expect(saveButton).toBeDisabled();
@@ -221,7 +221,7 @@ test.describe('Theme mode', () => {
     );
     await expect(systemOption).toBeVisible();
 
-    await systemOption.locator('.radio-tile').click();
+    await systemOption.locator('.chip-stack').click();
     await expect(systemOption).toHaveAttribute('data-selected', 'true');
     // "system" resolves at apply time: `data-theme` keeps carrying light or dark,
     // so every stylesheet rule written for the two of them still matches.
@@ -256,7 +256,7 @@ test.describe('Theme mode', () => {
     await expect(page).toHaveURL(/\/settings$/);
     await page.emulateMedia({ colorScheme: 'light' });
     await expect(html).toHaveAttribute('data-theme', 'light');
-    await lightOption.locator('.radio-tile').click();
+    await lightOption.locator('.chip-stack').click();
     await saveButton.click();
     await expect(successFlash).toBeVisible();
     await expect(html).toHaveAttribute('data-theme', 'light');

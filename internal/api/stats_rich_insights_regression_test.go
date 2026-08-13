@@ -176,7 +176,7 @@ func renderStatsInsightsPage(t *testing.T, email string, unpredictableCycle bool
 
 func statsKPICards(document *html.Node) []*html.Node {
 	return htmlFindElements(document, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && node.Data == "article" && htmlHasClass(node, "stat-card")
+		return node.Type == html.ElementNode && node.Data == "article" && htmlHasClass(node, "card-dense")
 	})
 }
 
@@ -219,13 +219,13 @@ func TestStatsPageAttachesPredictionReliabilityToPredictionContext(t *testing.T)
 		}
 
 		for node := reliability.Parent; node != nil; node = node.Parent {
-			if node.Type == html.ElementNode && htmlHasClass(node, "stat-card") {
+			if node.Type == html.ElementNode && htmlHasClass(node, "card-dense") {
 				t.Fatal("reliability context line must not sit inside a KPI stat card")
 			}
 		}
 
 		linePosition := strings.Index(rendered, "data-prediction-reliability")
-		cardPosition := strings.Index(rendered, "stat-card")
+		cardPosition := strings.Index(rendered, "card-dense")
 		if linePosition < 0 || cardPosition < 0 || linePosition > cardPosition {
 			t.Fatalf("expected the reliability context line to precede the KPI row (line at %d, first card at %d)", linePosition, cardPosition)
 		}

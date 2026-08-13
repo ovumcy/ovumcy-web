@@ -99,7 +99,7 @@ test.describe('WCAG AA audit regressions', () => {
       });
       await expectTextContrastAA(
         page,
-        '.choice-input:checked + .mood-chip',
+        '.choice-input:checked + .chip-round',
         `selected mood chip (${theme})`
       );
     }
@@ -112,7 +112,7 @@ test.describe('WCAG AA audit regressions', () => {
       // all render this tile, so one selector covers every selected state.
       await expectTextContrastAA(
         page,
-        '.choice-input:checked + .radio-tile',
+        '.choice-input:checked + .chip-stack',
         `selected choice tile (${theme})`
       );
     }

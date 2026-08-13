@@ -1,6 +1,6 @@
 {{define "content"}}
 <section class="space-y-6">
-  <div class="journal-card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+  <div class="card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
     <div>
       <h1 class="journal-subtitle" data-title-key="calendar.title">{{t .Messages "calendar.title"}}</h1>
       <p class="journal-muted mt-1" data-calendar-month-label>{{.MonthLabel}}</p>
@@ -33,7 +33,7 @@
 
     <section
       id="calendar-grid-panel"
-      class="journal-card p-2 sm:p-5">
+      class="card p-2 sm:p-5">
       {{/* The legend leads the grid: it explains an encoding the reader is
            about to use, so it has to be on screen while the month is. The
            entries are concepts, not CSS states — each swatch paints exactly
@@ -111,7 +111,7 @@
 
     </section>
 
-    <aside id="day-editor" class="journal-card p-4 sm:p-5">
+    <aside id="day-editor" class="card p-4 sm:p-5">
       {{if .SelectedDate}}
       <div
         hx-get="/calendar/day/{{.SelectedDate}}{{if .SelectedDateEditMode}}?mode=edit{{end}}"

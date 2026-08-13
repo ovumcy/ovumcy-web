@@ -83,7 +83,7 @@ test.describe('Calendar page', () => {
     // Addressed by the navigation hook, not by the button utility: the Today
     // control is compact secondary navigation, so the calendar screen's only
     // primary fill is the day panel's edit action.
-    const navigationCard = page.locator('div.journal-card').filter({
+    const navigationCard = page.locator('div.card').filter({
       has: page.locator('[data-calendar-month-nav]'),
     }).first();
     const monthLabel = navigationCard.locator('p.journal-muted').first();
@@ -346,7 +346,7 @@ test.describe('Calendar page', () => {
 
     await page.locator(`button[data-day="${futureISO}"]`).click();
 
-    const warningPanel = page.locator('#day-editor .journal-panel.text-sm').first();
+    const warningPanel = page.locator('#day-editor .card-quiet.text-sm').first();
     await expect(warningPanel).toBeVisible();
     await expect(warningPanel).not.toHaveText(/^$/);
     await expect(page.locator(`[data-day-editor-form][data-day-editor-date="${futureISO}"]`)).toBeVisible();

@@ -273,7 +273,7 @@ export async function saveCycleFactorOnDay(
 ): Promise<void> {
   const form = await openCalendarDayEditor(page, isoDate);
   const factorChip = form.locator(
-    `label.choice-option:has(input[name="cycle_factor_keys"][value="${factorKey}"]) .check-chip`
+    `label.choice-option:has(input[name="cycle_factor_keys"][value="${factorKey}"]) .chip-lead`
   );
   await factorChip.click();
   const [request] = await Promise.all([

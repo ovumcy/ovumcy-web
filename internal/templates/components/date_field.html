@@ -36,7 +36,7 @@
     {{if .Max}}max="{{.Max}}"{{end}}>
   <div class="date-field-parts">
     <div class="space-y-1 date-field-part">
-      <label class="field-label text-xs" for="{{.FieldID}}-day">{{$dayLabel}}</label>
+      <label class="field-label field-label-sm" for="{{.FieldID}}-day">{{$dayLabel}}</label>
       <input
         id="{{.FieldID}}-day"
         type="text"
@@ -50,7 +50,7 @@
         data-date-field-part="day">
     </div>
     <div class="space-y-1 date-field-part">
-      <label class="field-label text-xs" for="{{.FieldID}}-month">{{$monthLabel}}</label>
+      <label class="field-label field-label-sm" for="{{.FieldID}}-month">{{$monthLabel}}</label>
       <input
         id="{{.FieldID}}-month"
         type="text"
@@ -64,7 +64,7 @@
         data-date-field-part="month">
     </div>
     <div class="space-y-1 date-field-part date-field-part-year">
-      <label class="field-label text-xs" for="{{.FieldID}}-year">{{$yearLabel}}</label>
+      <label class="field-label field-label-sm" for="{{.FieldID}}-year">{{$yearLabel}}</label>
       <input
         id="{{.FieldID}}-year"
         type="text"

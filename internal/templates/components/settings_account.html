@@ -1,12 +1,12 @@
 {{define "settings_account_section_content"}}
-  <section class="journal-card p-5 sm:p-6 space-y-6" id="settings-account">
+  <section class="card p-5 sm:p-6 space-y-6" id="settings-account">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</h2>
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.account.subtitle"}}</p>
     </div>
 
     <div class="settings-account-stack">
-      <section class="journal-panel settings-account-block space-y-4">
+      <section class="card-quiet settings-account-block space-y-4">
         <div>
           <h3 class="field-label">{{t .Messages "settings.profile.title"}}</h3>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.profile.subtitle"}}</p>
@@ -34,7 +34,7 @@
             class="input-field">
           <p class="journal-muted text-xs">{{t .Messages "settings.profile.display_name_hint"}}</p>
 
-          <div class="journal-panel space-y-1" data-profile-email-panel>
+          <div class="card-quiet space-y-1" data-profile-email-panel>
             <p class="field-label">{{t .Messages "settings.profile.email"}}</p>
             <p class="text-sm break-all">{{.CurrentUser.Email}}</p>
           </div>
@@ -46,7 +46,7 @@
         </form>
       </section>
 
-      <section id="settings-change-password" class="journal-panel settings-account-block space-y-4">
+      <section id="settings-change-password" class="card-quiet settings-account-block space-y-4">
         {{if .CurrentUser.LocalAuthEnabled}}
         <div>
           <h3 class="field-label">{{t .Messages "settings.change_password.title"}}</h3>
@@ -143,7 +143,7 @@
         {{end}}
       </section>
 
-      <section class="journal-panel settings-account-block space-y-4">
+      <section class="card-quiet settings-account-block space-y-4">
         <div>
           <h3 class="field-label">{{t .Messages "settings.2fa.title"}}</h3>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.description"}}</p>
@@ -160,7 +160,7 @@
         </div>
       </section>
 
-      <section class="journal-panel settings-account-block space-y-4">
+      <section class="card-quiet settings-account-block space-y-4">
         <div>
           <h3 class="field-label">{{t .Messages "settings.security.advanced"}}</h3>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.security.advanced_hint"}}</p>

@@ -1,5 +1,5 @@
 {{define "settings_tracking_section_content"}}
-  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-tracking">
+  <section class="card p-5 sm:p-6 space-y-5" id="settings-tracking">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "flask"}}</span> {{t .Messages "settings.tracking.title"}}</h2>
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.tracking.subtitle"}}</p>
@@ -127,14 +127,14 @@
         <div class="settings-unit-switch" role="radiogroup" aria-label="{{t .Messages "settings.tracking.temperature_unit"}}">
           <label class="choice-option">
             <input type="radio" name="temperature_unit" value="c" class="choice-input" {{if eq .TemperatureUnit "c"}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline">
+            <span class="chip chip-stack chip-inline">
               <span>°C</span>
               <span>{{t .Messages "settings.tracking.temperature_unit_celsius"}}</span>
             </span>
           </label>
           <label class="choice-option">
             <input type="radio" name="temperature_unit" value="f" class="choice-input" {{if eq .TemperatureUnit "f"}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline">
+            <span class="chip chip-stack chip-inline">
               <span>°F</span>
               <span>{{t .Messages "settings.tracking.temperature_unit_fahrenheit"}}</span>
             </span>
@@ -148,13 +148,13 @@
         <div class="settings-unit-switch" role="radiogroup" aria-label="{{t .Messages "settings.tracking.week_starts_on"}}">
           <label class="choice-option">
             <input type="radio" name="week_starts_on" value="sunday" class="choice-input" {{if eq .WeekStartsOn "sunday"}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline">
+            <span class="chip chip-stack chip-inline">
               <span>{{t .Messages "settings.tracking.week_starts_on_sunday"}}</span>
             </span>
           </label>
           <label class="choice-option">
             <input type="radio" name="week_starts_on" value="monday" class="choice-input" {{if eq .WeekStartsOn "monday"}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline">
+            <span class="chip chip-stack chip-inline">
               <span>{{t .Messages "settings.tracking.week_starts_on_monday"}}</span>
             </span>
           </label>

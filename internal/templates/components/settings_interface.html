@@ -1,5 +1,5 @@
 {{define "settings_interface_section_content"}}
-  <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-interface">
+  <section class="card p-5 sm:p-6 space-y-5" id="settings-interface">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</h2>
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.interface.subtitle"}}</p>
@@ -17,7 +17,7 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
       <div class="settings-interface-grid">
-        <section class="journal-panel settings-interface-panel space-y-3">
+        <section class="card-quiet settings-interface-panel space-y-3">
           <div class="space-y-1">
             <p class="field-label">{{t .Messages "settings.interface.language"}}</p>
             <p class="journal-muted text-sm">{{t .Messages "settings.interface.language_hint"}}</p>
@@ -26,13 +26,13 @@
             {{range .LanguageOptions}}
             <label class="choice-option settings-interface-option" data-settings-interface-language-option="{{.Code}}" data-selected="{{if .Active}}true{{else}}false{{end}}">
               <input type="radio" name="language" value="{{.Code}}" class="choice-input" {{if .Active}}checked{{end}}>
-              <span class="radio-tile radio-tile-inline"><span>{{.Label}}</span></span>
+              <span class="chip chip-stack chip-inline"><span>{{.Label}}</span></span>
             </label>
             {{end}}
           </div>
         </section>
 
-        <section class="journal-panel settings-interface-panel space-y-3">
+        <section class="card-quiet settings-interface-panel space-y-3">
           <div class="space-y-1">
             <p class="field-label">{{t .Messages "settings.interface.theme"}}</p>
             <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
@@ -41,21 +41,21 @@
           <div class="settings-interface-options settings-interface-theme-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.theme"}}">
             <label class="choice-option settings-interface-option" data-settings-interface-theme-option="light" data-selected="false">
               <input type="radio" name="theme" value="light" class="choice-input" checked>
-              <span class="radio-tile radio-tile-inline">
+              <span class="chip chip-stack chip-inline">
                 <span aria-hidden="true">{{template "icon" "sun"}}</span>
                 <span>{{t .Messages "theme.name.light"}}</span>
               </span>
             </label>
             <label class="choice-option settings-interface-option" data-settings-interface-theme-option="dark" data-selected="false">
               <input type="radio" name="theme" value="dark" class="choice-input">
-              <span class="radio-tile radio-tile-inline">
+              <span class="chip chip-stack chip-inline">
                 <span aria-hidden="true">{{template "icon" "moon"}}</span>
                 <span>{{t .Messages "theme.name.dark"}}</span>
               </span>
             </label>
             <label class="choice-option settings-interface-option" data-settings-interface-theme-option="system" data-selected="false">
               <input type="radio" name="theme" value="system" class="choice-input">
-              <span class="radio-tile radio-tile-inline">
+              <span class="chip chip-stack chip-inline">
                 <span aria-hidden="true">{{template "icon" "monitor"}}</span>
                 <span>{{t .Messages "theme.name.system"}}</span>
               </span>
@@ -73,7 +73,7 @@
     <!-- Persistent home of the install offer: the mobile row above the page is a
          one-time nudge, this entry stays available after it is dismissed. It sits
          outside the interface form — nothing here is saved to the account. -->
-    <div class="journal-panel settings-install-row" data-pwa-install-settings>
+    <div class="card-quiet settings-install-row" data-pwa-install-settings>
       <div class="settings-install-copy">
         <p class="field-label">{{t .Messages "pwa.install.title"}}</p>
         <p class="journal-muted text-sm" data-pwa-install-hint="prompt">{{t .Messages "pwa.install.prompt_text"}}</p>

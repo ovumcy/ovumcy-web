@@ -23,7 +23,7 @@ const PAGE = `<!doctype html><html><head></head><body
     aria-hidden="true"
     aria-labelledby="confirm-modal-message">
     <div class="confirm-modal-center">
-      <section class="journal-card confirm-modal-card">
+      <section class="card card-modal">
         <p id="confirm-modal-message"></p>
         <div class="confirm-modal-actions">
           <button id="confirm-modal-cancel" type="button"></button>

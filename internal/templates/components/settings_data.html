@@ -1,6 +1,6 @@
 {{define "settings_data_section_content"}}
   <section
-    class="journal-card p-5 sm:p-6 space-y-4"
+    class="card p-5 sm:p-6 space-y-4"
     data-export-section
     data-export-week-start="{{.WeekStartsOn}}"
     data-export-min="{{if .HasExportData}}{{.ExportRangeMin}}{{end}}"
@@ -59,7 +59,7 @@
       <button type="button" class="btn-soft text-sm" data-export-preset="90">{{t .Messages "settings.export_preset_90"}}</button>
       <button type="button" class="btn-soft text-sm" data-export-preset="365">{{t .Messages "settings.export_preset_365"}}</button>
     </div>
-    <div class="hidden journal-card p-4 space-y-3" data-export-calendar-panel>
+    <div class="hidden card p-4 space-y-3" data-export-calendar-panel>
       <div class="flex items-center justify-between gap-2">
         <button type="button" class="btn-secondary" data-export-calendar-prev aria-label="{{t .Messages "settings.export_prev_month"}}"><span aria-hidden="true">←</span></button>
         <button

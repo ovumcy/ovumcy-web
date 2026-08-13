@@ -942,7 +942,7 @@ test.describe('Settings: profile and cycle', () => {
     await checkStyledControl(longSymptomInput);
     await assertSelectedSymptomChipHasNoTrailingMarker(
       page.locator(
-        `label.choice-option:has(input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]:checked) .check-chip`
+        `label.choice-option:has(input[name="symptom_ids"][data-symptom-name="${longButAllowedName}"]:checked) .chip-lead`
       )
     );
     await assertNoHorizontalOverflow(page);

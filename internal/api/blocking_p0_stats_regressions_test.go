@@ -119,7 +119,7 @@ func TestStatsPageKeepsMetricGridHiddenAfterOneCompletedCycle(t *testing.T) {
 	if htmlElementByID(document, "cycle-chart") != nil {
 		t.Fatalf("did not expect cycle chart before two completed cycles")
 	}
-	if htmlElementByTagAndClass(document, "article", "stat-card") != nil {
+	if htmlElementByTagAndClass(document, "article", "card-dense") != nil {
 		t.Fatalf("did not expect metric cards before two completed cycles")
 	}
 }

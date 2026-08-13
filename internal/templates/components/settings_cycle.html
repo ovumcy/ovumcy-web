@@ -1,5 +1,5 @@
 {{define "settings_cycle_section_content"}}
-  <section id="settings-cycle" class="journal-card p-5 sm:p-6" data-settings-cycle-form>
+  <section id="settings-cycle" class="card p-5 sm:p-6" data-settings-cycle-form>
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle.title"}}</h2>
 
     <form
@@ -108,19 +108,19 @@
         <div class="grid gap-2 sm:grid-cols-2">
           <label class="choice-option">
             <input type="radio" name="age_group" value="" class="choice-input" {{if eq .AgeGroup ""}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.unspecified"}}</span></span>
+            <span class="chip chip-stack chip-inline"><span>{{t .Messages "settings.age_group.unspecified"}}</span></span>
           </label>
           <label class="choice-option">
             <input type="radio" name="age_group" value="under_40" class="choice-input" {{if eq .AgeGroup "under_40"}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.under_40"}}</span></span>
+            <span class="chip chip-stack chip-inline"><span>{{t .Messages "settings.age_group.under_40"}}</span></span>
           </label>
           <label class="choice-option">
             <input type="radio" name="age_group" value="age_40_45" class="choice-input" {{if eq .AgeGroup "age_40_45"}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.40_to_45"}}</span></span>
+            <span class="chip chip-stack chip-inline"><span>{{t .Messages "settings.age_group.40_to_45"}}</span></span>
           </label>
           <label class="choice-option">
             <input type="radio" name="age_group" value="age_45_plus" class="choice-input" {{if eq .AgeGroup "age_45_plus"}}checked{{end}}>
-            <span class="radio-tile radio-tile-inline"><span>{{t .Messages "settings.age_group.45_plus"}}</span></span>
+            <span class="chip chip-stack chip-inline"><span>{{t .Messages "settings.age_group.45_plus"}}</span></span>
           </label>
         </div>
       </div>
@@ -133,19 +133,19 @@
         <div class="grid gap-2">
           <label class="choice-option">
             <input type="radio" name="usage_goal" value="avoid_pregnancy" class="choice-input" {{if eq .UsageGoal "avoid_pregnancy"}}checked{{end}}>
-            <span class="radio-tile"><span>{{t .Messages "settings.goal.avoid"}}</span></span>
+            <span class="chip chip-stack"><span>{{t .Messages "settings.goal.avoid"}}</span></span>
           </label>
           <label class="choice-option">
             <input type="radio" name="usage_goal" value="trying_to_conceive" class="choice-input" {{if eq .UsageGoal "trying_to_conceive"}}checked{{end}}>
-            <span class="radio-tile"><span>{{t .Messages "settings.goal.trying"}}</span></span>
+            <span class="chip chip-stack"><span>{{t .Messages "settings.goal.trying"}}</span></span>
           </label>
           <label class="choice-option">
             <input type="radio" name="usage_goal" value="health" class="choice-input" {{if or (eq .UsageGoal "health") (eq .UsageGoal "")}}checked{{end}}>
-            <span class="radio-tile"><span>{{t .Messages "settings.goal.health"}}</span></span>
+            <span class="chip chip-stack"><span>{{t .Messages "settings.goal.health"}}</span></span>
           </label>
         </div>
         <div
-          class="journal-panel text-sm space-y-1"
+          class="card-quiet text-sm space-y-1"
           data-usage-goal-summary
           data-usage-goal-label-key="{{.UsageGoalLabelKey}}"
           data-usage-goal-summary-key="{{.UsageGoalSummaryKey}}">
