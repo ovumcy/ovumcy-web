@@ -153,7 +153,7 @@ func dueRecord(id uint, urlToken string, now time.Time, lastPeriodDaysAgo int) m
 }
 
 func newTestNotifyService(repo *stubNotifyRepo, logs stubLogReader, decryptor stubDecryptor, deliverer WebhookDeliverer) *WebhookNotifyService {
-	return NewWebhookNotifyService(repo, logs, decryptor, deliverer, stubDisclaimer{text: "These are estimates, not medical advice or a method of contraception."})
+	return NewWebhookNotifyService(repo, logs, decryptor, deliverer, stubDisclaimer{text: "Predictions are estimates, not medical advice or a method of contraception."})
 }
 
 // --- tests ------------------------------------------------------------------

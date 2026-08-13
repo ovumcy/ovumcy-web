@@ -150,8 +150,9 @@ func TestLoginPageWithOIDCEnabledShowsSSOButton(t *testing.T) {
 
 	rendered := mustReadBodyString(t, response.Body)
 	assertBodyContainsAll(t, rendered,
+		// Structural hook only — the rendered SSO caption is Playwright's
+		// subject (e2e/auth-oidc.spec.ts), sourced from the catalogue.
 		bodyStringMatch{fragment: "data-auth-sso-cta", message: "expected SSO CTA marker in login page"},
-		bodyStringMatch{fragment: "Sign in with SSO", message: "expected localized SSO CTA copy"},
 	)
 }
 

@@ -8,6 +8,7 @@ import {
   loginViaUI,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import { localeText } from './support/locale-helpers';
 
 const oidcEnabled = process.env.OIDC_ENABLED === 'true';
 const localOIDCProvider = process.env.E2E_OIDC_PROVIDER === 'local';
@@ -80,7 +81,7 @@ test.describe('Auth: OIDC login entry', () => {
 
     const ssoCTA = page.locator('[data-auth-sso-cta]');
     await expect(ssoCTA).toBeVisible();
-    await expect(ssoCTA).toContainText('Sign in with SSO');
+    await expect(ssoCTA).toContainText(localeText('en', 'auth.login_with_sso'));
 
     await ssoCTA.click();
 

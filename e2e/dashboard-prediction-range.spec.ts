@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { displayDatesIn } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
+import { localeText } from './support/locale-helpers';
 import {
   isoToday,
   markCycleStartViaAPI,
@@ -14,7 +15,7 @@ test.describe('Dashboard prediction range', () => {
   // dashboard, replacing the previous age-35+ widening that applied to the
   // cohort with the lowest within-individual variability per Gibson et al.,
   // npj Digital Medicine 2023 (Apple Women's Health Study).
-  test('regular user with variable cycles sees a confidence range and the variability explainer', async ({
+  test('regular user with variable cycles sees a confidence range and no explainer', async ({
     page,
   }) => {
     // Onboarding's MinDate is the later of (Jan 1 of current year) and
@@ -47,15 +48,22 @@ test.describe('Dashboard prediction range', () => {
     expect(renderedDates[0] > today).toBeTruthy();
     expect(renderedDates[1] > renderedDates[0]).toBeTruthy();
 
-    // The explainer's chosen key is the state; the negative it replaces
-    // (not.toContain('3 cycles are needed')) was a phrase check that would have
-    // stayed green through any rewording of the sparse-mode copy. A key is
-    // single-valued, so pinning it here also proves the sparse explainer is not
-    // the one that rendered.
-    await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveAttribute(
-      'data-explainer-key',
-      'prediction.explainer.variable_ranges'
-    );
+    // The range names the quantity it shows, so a regular owner gets no
+    // explainer sentence under it. Absence of the block is the state: the
+    // explainer element is single-valued, so a count of zero also proves the
+    // sparse and irregular explainers are not the ones that rendered.
+    await expect(page.locator('[data-dashboard-prediction-explainer]')).toHaveCount(0);
+
+    // ...and the range says which quantity it is, in the catalogue's own words
+    // rather than a re-typed phrase.
+    // The literal tail after the last date placeholder — "(start window)" in
+    // English, its own wording in every other locale.
+    const startWindowLabel = localeText('en', 'dashboard.next_period_start_window')
+      .split('%s')
+      .pop()!
+      .trim();
+    expect(startWindowLabel.length, 'start-window key must carry a distinguishing tail').toBeGreaterThan(0);
+    expect(nextPeriodText).toContain(startWindowLabel);
   });
 
 });

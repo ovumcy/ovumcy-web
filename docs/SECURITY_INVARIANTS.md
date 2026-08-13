@@ -90,7 +90,8 @@ Every entry has a corresponding test or set of tests in `SECURITY.md → Test En
 ## Medical safety
 
 - Health predictions are estimates, never fact. Every owner-facing prediction surface — dashboard, stats, and calendar — renders a persistent "estimates, not medical advice or a method of contraception" disclaimer alongside the estimate qualifiers.
-- A template refactor cannot silently drop it: backend regressions assert the disclaimer on each surface via a stable `data-*` hook plus the exact safety string (`TestDashboardRendersPredictionDisclaimer`, `TestStatsRendersPredictionDisclaimer`, `TestCalendarRendersPredictionDisclaimer`). This is the one place backend tests deliberately pin localized copy, because the wording itself is the invariant.
+- The wording lives in exactly one catalogue entry (`medical.disclaimer`) that every one of those surfaces references, together with the two settings sections that ship predicted dates off the instance — webhook reminders and the calendar feed — and the webhook payload and `.ics` feed themselves. Consolidating the TEXT never consolidates the REQUIREMENT: the number of surfaces that show the disclaimer is itself the invariant.
+- A template refactor cannot silently drop it: backend regressions assert the disclaimer on each surface via a stable `data-*` hook plus the exact safety string (`TestDashboardRendersPredictionDisclaimer`, `TestStatsRendersPredictionDisclaimer`, `TestCalendarRendersPredictionDisclaimer`, `TestSettingsEgressSurfacesRenderPredictionDisclaimer`). This is the one place backend tests deliberately pin localized copy, because the wording itself is the invariant.
 
 ## GDPR (Art. 6, 9, 13, 15–22, 30, 32, 33)
 

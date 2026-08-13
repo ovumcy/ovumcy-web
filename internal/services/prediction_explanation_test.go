@@ -70,14 +70,18 @@ func TestBuildOwnerPredictionExplanation(t *testing.T) {
 		}
 	})
 
-	t.Run("regular user with data-driven range gets the variability explainer", func(t *testing.T) {
+	// A regular owner whose prediction renders as a range no longer gets an
+	// explainer sentence: the range itself, plus the next-period line naming
+	// the start window, is the affordance. Only an irregular owner keeps a
+	// range explainer, which the subtest above pins.
+	t.Run("regular user with data-driven range gets no explainer", func(t *testing.T) {
 		explanation := BuildOwnerPredictionExplanation(
 			&models.User{Role: models.RoleOwner},
 			DashboardCycleContext{DisplayNextPeriodUseRange: true},
 			false,
 		)
-		if explanation.PrimaryKey != "prediction.explainer.variable_ranges" {
-			t.Fatalf("expected variable_ranges primary key, got %#v", explanation)
+		if explanation.PrimaryKey != "" {
+			t.Fatalf("expected no primary key for a regular owner in range mode, got %#v", explanation)
 		}
 	})
 

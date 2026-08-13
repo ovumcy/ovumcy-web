@@ -45,16 +45,18 @@ func TestMR3Stats_PrimaryKeyIrregularRanges(t *testing.T) {
 	}
 }
 
-// TestMR3Stats_PrimaryKeyVariableRanges pins line 32 (!irregular &&
-// DisplayNextPeriodUseRange). A regular owner with NextPeriod UseRange must
-// yield "prediction.explainer.variable_ranges"; a regular owner with UseRange
-// false must yield "". A negated mutant (`user.IrregularCycle`) flips both.
-func TestMR3Stats_PrimaryKeyVariableRanges(t *testing.T) {
+// TestMR3Stats_PrimaryKeyRegularRangeHasNoExplainer guards the irregular
+// operand of the surviving range branch from the other side. The regular-owner
+// branch that used to return "prediction.explainer.variable_ranges" is gone, so
+// a mutant dropping `user.IrregularCycle` from that condition would hand the
+// irregular explainer to a regular owner in range mode; this pins the empty
+// key that only the intact condition produces.
+func TestMR3Stats_PrimaryKeyRegularRangeHasNoExplainer(t *testing.T) {
 	user := mr3statsOwner() // IrregularCycle == false
 
-	positive := DashboardCycleContext{DisplayNextPeriodUseRange: true}
-	if got := predictionExplanationPrimaryKey(user, positive); got != "prediction.explainer.variable_ranges" {
-		t.Fatalf("expected variable_ranges, got %q", got)
+	inRange := DashboardCycleContext{DisplayNextPeriodUseRange: true, DisplayOvulationUseRange: true}
+	if got := predictionExplanationPrimaryKey(user, inRange); got != "" {
+		t.Fatalf("expected no explainer for a regular owner in range mode, got %q", got)
 	}
 
 	contrast := DashboardCycleContext{}
