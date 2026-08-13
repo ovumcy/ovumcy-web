@@ -1,8 +1,10 @@
 {{define "settings_account_section_content"}}
-  <section class="card p-4 sm:p-5 space-y-4" id="settings-account">
+  <details class="card settings-section p-4 sm:p-5 space-y-4" id="settings-account" data-settings-section open>
     {{/* No subtitle: the one that used to sit here listed the block headings
          that follow it. */}}
-    <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</h2>
+    <summary class="settings-section-summary">
+      <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</h2>
+    </summary>
 
     <div class="settings-account-stack">
       <section class="card-quiet settings-account-block space-y-3">
@@ -205,5 +207,5 @@
         {{end}}
       </section>
     </div>
-  </section>
+  </details>
 {{end}}

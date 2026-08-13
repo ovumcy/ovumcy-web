@@ -224,7 +224,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     page,
   }) => {
     const state = await registerOwnerAndOpenSettings(page, 'settings-recovery-regenerate');
-    const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+    const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
 
     await expect(cycleForm).toBeVisible();
     await setRangeValue(page.locator('#settings-cycle-length'), 29);
@@ -392,16 +392,18 @@ test.describe('Settings: password, export, clear data, delete account', () => {
   test('clear data removes tracked entry and resets cycle defaults', async ({ page }) => {
     const creds = await registerOwnerAndOpenSettings(page, 'settings-clear-data');
 
-    const dangerZone = page.locator('section.settings-danger-zone');
+    // Addressed by id, not by tag+class: these cards are disclosures now, and a
+    // selector naming the tag stops matching the day the tag changes.
+    const dangerZone = page.locator('#settings-danger-zone');
     await expect(dangerZone.locator('form[action="/api/v1/users/current/data-wipe"]')).toHaveCount(1);
     await expect(page.locator('#settings-data form[action="/api/v1/users/current/data-wipe"]')).toHaveCount(0);
 
     await setRangeValue(page.locator('#settings-cycle-length'), 35);
     await setRangeValue(page.locator('#settings-period-length'), 7);
     await fillDateField(page.locator('#settings-last-period-start'), isoDaysAgo(12));
-    await page.locator('section#settings-cycle input[name="auto_period_fill"]').uncheck();
+    await page.locator('#settings-cycle input[name="auto_period_fill"]').uncheck();
     await page
-      .locator('section#settings-cycle form[action="/api/v1/users/current/cycle"] button[data-save-button]')
+      .locator('#settings-cycle form[action="/api/v1/users/current/cycle"] button[data-save-button]')
       .click();
     await expect(page.locator('#settings-cycle-status .status-ok')).toBeVisible();
 
@@ -448,14 +450,14 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await expect(page.locator('#settings-cycle-length')).toHaveValue('28');
     await expect(page.locator('#settings-period-length')).toHaveValue('5');
-    await expect(page.locator('section#settings-cycle input[name="auto_period_fill"]')).toBeChecked();
+    await expect(page.locator('#settings-cycle input[name="auto_period_fill"]')).toBeChecked();
     await expect(page.locator('#settings-last-period-start')).toHaveValue('');
 
     // #229 regression: show_historical_phases was loaded by LoadSettingsByID
     // but missing from the clear-data reset map, so it stayed stuck on
     // instead of visibly returning to its default (false/off) like every
     // sibling preference.
-    await expect(page.locator('section#settings-tracking input[name="show_historical_phases"]')).not.toBeChecked();
+    await expect(page.locator('#settings-tracking input[name="show_historical_phases"]')).not.toBeChecked();
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
 
     await page.goto('/dashboard');

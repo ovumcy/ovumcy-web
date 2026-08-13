@@ -235,7 +235,7 @@ test.describe('Bug regressions', () => {
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
 
-      const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+      const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
       await expect(cycleForm).toBeVisible();
       await fillDateField(
         cycleForm.locator('#settings-last-period-start'),
@@ -314,7 +314,7 @@ test.describe('Bug regressions', () => {
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
 
-      const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+      const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
       const todayISO = await browserLocalISODate(page);
       await fillDateField(cycleForm.locator('#settings-last-period-start'), shiftISODate(todayISO, -4));
       await setRangeValue('#settings-cycle-length', page, 28);
@@ -384,7 +384,7 @@ test.describe('Bug regressions', () => {
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
 
-      const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+      const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
       const todayISO = await browserLocalISODate(page);
       const lastPeriodStart = shiftISODate(todayISO, -14);
       const nextPeriodStart = shiftISODate(lastPeriodStart, 28);
@@ -604,7 +604,7 @@ test.describe('Bug regressions', () => {
       await page.goto('/settings');
       await expect(page).toHaveURL(/\/settings$/);
 
-      const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+      const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
       await expect(cycleForm).toBeVisible();
 
       await setRangeValue('#settings-cycle-length', page, 15);

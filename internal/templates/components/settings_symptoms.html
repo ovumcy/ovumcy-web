@@ -111,11 +111,14 @@
 </div>
 {{end}}
 {{define "settings_symptoms_section_content"}}
-<section id="settings-symptoms" class="card p-4 sm:p-5 space-y-4" data-settings-symptoms>
-  <div>
+{{/* This card replaces ITSELF through htmx (hx-swap="outerHTML"), so the
+     replacement must carry the disclosure attributes too — it arrives open,
+     which is right: the owner just acted inside it. */}}
+<details id="settings-symptoms" class="card settings-section p-4 sm:p-5 space-y-4" data-settings-symptoms data-settings-section open>
+  <summary class="settings-section-summary">
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "list"}}</span> {{t .Messages "settings.symptoms.title"}}</h2>
-    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
-  </div>
+  </summary>
+  <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
 
   <form
     action="/api/v1/symptoms"
@@ -216,5 +219,5 @@
     </div>
     {{end}}
   </div>
-</section>
+</details>
 {{end}}

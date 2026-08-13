@@ -99,12 +99,17 @@ func TestSettingsSectionNavIndexesEverySection(t *testing.T) {
 		targets = append(targets, strings.TrimPrefix(htmlAttr(link, "href"), "#"))
 	}
 
-	// The page's own sections are the direct children of its root <section>; the
-	// nested ones (change-password inside the account card) are not separate
+	// The page's own sections are the direct children of its root; the nested
+	// ones (change-password inside the account card) are not separate
 	// destinations and carry no link.
+	//
+	// Recognised by the data-settings-section marker rather than by a tag name:
+	// these cards are <details> disclosures, and keying on the literal "section"
+	// made this guard report an empty list — every link "extra", the index
+	// apparently indexing nothing — the day the tag changed.
 	sectionIDs := make([]string, 0, 10)
 	for child := nav.Parent.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type != html.ElementNode || child.Data != "section" {
+		if child.Type != html.ElementNode || !htmlHasAttr(child, "data-settings-section") {
 			continue
 		}
 		if id := htmlAttr(child, "id"); id != "" {

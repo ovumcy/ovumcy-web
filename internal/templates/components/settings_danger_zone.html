@@ -1,6 +1,8 @@
 {{define "settings_danger_zone_section_content"}}
-  <section id="settings-danger-zone" class="card card-danger-strong p-4 sm:p-5 settings-danger-zone">
-    <h2 class="journal-subtitle danger-title"><span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "settings.danger_zone.title"}}</h2>
+  <details id="settings-danger-zone" class="card card-danger-strong settings-section p-4 sm:p-5 settings-danger-zone" data-settings-section open>
+    <summary class="settings-section-summary">
+      <h2 class="journal-subtitle danger-title"><span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "settings.danger_zone.title"}}</h2>
+    </summary>
     <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
 
     {{if eq .CurrentUser.Role "owner"}}
@@ -107,5 +109,5 @@
       </form>
     </div>
     {{end}}
-  </section>
+  </details>
 {{end}}

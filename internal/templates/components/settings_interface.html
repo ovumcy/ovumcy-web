@@ -1,8 +1,10 @@
 {{define "settings_interface_section_content"}}
-  <section class="card p-4 sm:p-5 space-y-4" id="settings-interface">
+  <details class="card settings-section p-4 sm:p-5 space-y-4" id="settings-interface" data-settings-section open>
     {{/* No subtitle: the one that used to sit here ("App language and theme")
          named the two panels immediately below it. */}}
-    <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</h2>
+    <summary class="settings-section-summary">
+      <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</h2>
+    </summary>
 
     <form
       action="/api/v1/users/current/interface"
@@ -81,5 +83,5 @@
       </div>
       <button type="button" class="btn-secondary" data-pwa-install-action="install" hidden>{{t .Messages "pwa.install.action.install"}}</button>
     </div>
-  </section>
+  </details>
 {{end}}

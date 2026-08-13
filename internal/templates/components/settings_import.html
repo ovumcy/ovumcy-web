@@ -1,6 +1,8 @@
 {{define "settings_import_section_content"}}
-  <section
-    class="card p-4 sm:p-5 space-y-3"
+  <details
+    open
+    data-settings-section
+    class="card settings-section p-4 sm:p-5 space-y-3"
     data-import-section
     data-import-csrf="{{.CSRFToken}}"
     data-import-success-template="{{t .Messages "settings.import_success"}}"
@@ -9,10 +11,10 @@
     data-import-invalid-file="{{t .Messages "settings.import_invalid_file"}}"
     data-import-too-large="{{t .Messages "settings.import_too_large"}}"
     id="settings-import">
-    <div>
+    <summary class="settings-section-summary">
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "box"}}</span> {{t .Messages "settings.import_title"}}</h2>
-      <p id="settings-import-desc" class="journal-muted mt-1 text-sm">{{t .Messages "settings.import_description"}}</p>
-    </div>
+    </summary>
+    <p id="settings-import-desc" class="journal-muted mt-1 text-sm">{{t .Messages "settings.import_description"}}</p>
 
     {{/* One file field and its submit: a row, not two stacked blocks. */}}
     <form data-import-form novalidate class="space-y-2">
@@ -35,5 +37,5 @@
         <div id="settings-import-status" class="save-status text-sm" data-import-status aria-live="polite"></div>
       </div>
     </form>
-  </section>
+  </details>
 {{end}}

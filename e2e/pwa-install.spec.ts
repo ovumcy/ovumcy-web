@@ -98,6 +98,10 @@ test.describe('PWA install prompt', () => {
     // The dismissal is remembered client-side, so the row above the page stays
     // away — and the settings entry keeps the install one click from here.
     await expect(offer).toBeHidden();
+    // At this width the settings cards are disclosures and arrive closed; the
+    // claim under test is that the entry is REACHABLE, so open the section the
+    // way the owner would rather than weaken the assertion to presence in DOM.
+    await page.locator('#settings-interface summary').click();
     const settingsRow = page.locator('[data-pwa-install-settings]');
     const settingsInstall = settingsRow.locator('[data-pwa-install-action="install"]');
     await expect(settingsRow).toBeVisible();

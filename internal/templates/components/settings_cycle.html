@@ -1,6 +1,8 @@
 {{define "settings_cycle_section_content"}}
-  <section id="settings-cycle" class="card p-4 sm:p-5" data-settings-cycle-form>
-    <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle.title"}}</h2>
+  <details id="settings-cycle" class="card settings-section p-4 sm:p-5" data-settings-cycle-form data-settings-section open>
+    <summary class="settings-section-summary">
+      <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle.title"}}</h2>
+    </summary>
 
     <form
       action="/api/v1/users/current/cycle"
@@ -213,5 +215,5 @@
       </div>
       <p id="settings-reminder-lead-days-hint" class="journal-muted text-xs">{{t .Messages "settings.reminders.lead_days_hint"}}</p>
     </form>
-  </section>
+  </details>
 {{end}}

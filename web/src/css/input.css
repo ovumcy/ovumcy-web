@@ -521,6 +521,58 @@
   }
 }
 
+@utility settings-section-summary {
+  /* Each settings card is a <details> the server renders OPEN, so this summary
+     is a plain heading row everywhere by default and becomes a control only
+     inside the phone query below — the same 640px boundary the script reads, so
+     the two cannot disagree about which screen is which.
+     `pointer-events: none` is what makes it inert on a wide screen: the element
+     stays focusable, and the toggle listener re-opens anything a keyboard did
+     close, so a desktop reader can never end up with a section shut. */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  list-style: none;
+  pointer-events: none;
+
+  /* Both spellings: WebKit still ships the pseudo-element, the rest take the
+     list-style above. Leaving either in place puts a stray triangle beside a
+     heading that is not a control on this width. */
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &::after {
+    content: "";
+    display: none;
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    /* A CSS-drawn chevron, not a glyph: it carries no text to read out and it
+       stays out of the icon sprite, which is for content chrome. */
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform var(--duration-fast) var(--ease-soft);
+  }
+
+  @media (max-width: 640px) {
+    pointer-events: auto;
+    cursor: pointer;
+    /* Grow the box, never the font — the mobile tap-target floor is 44px. */
+    min-height: 2.75rem;
+
+    &::after {
+      display: block;
+    }
+
+    [open] > &::after {
+      transform: rotate(-135deg);
+    }
+  }
+}
+
 @utility settings-section-nav-link {
   display: inline-flex;
   align-items: center;

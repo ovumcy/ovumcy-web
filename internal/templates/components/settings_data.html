@@ -1,6 +1,8 @@
 {{define "settings_data_section_content"}}
-  <section
-    class="card p-4 sm:p-5 space-y-3"
+  <details
+    open
+    data-settings-section
+    class="card settings-section p-4 sm:p-5 space-y-3"
     data-export-section
     data-export-week-start="{{.WeekStartsOn}}"
     data-export-min="{{if .HasExportData}}{{.ExportRangeMin}}{{end}}"
@@ -14,10 +16,10 @@
     data-export-summary-range-template="{{t .Messages "settings.export_summary_range"}}"
     data-export-summary-range-empty="{{t .Messages "settings.export_summary_range_empty"}}"
     id="settings-data">
-    <div>
+    <summary class="settings-section-summary">
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "folder"}}</span> {{t .Messages "settings.data.title"}}</h2>
-      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.data.storage_copy"}}</p>
-    </div>
+    </summary>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.data.storage_copy"}}</p>
     <div class="grid gap-3 sm:grid-cols-2">
       <div class="space-y-1">
         <label class="field-label" id="export-from-label" for="export-from">{{t .Messages "settings.export_from"}}</label>
@@ -105,5 +107,5 @@
       <p>{{t .Messages "settings.export_data_hint"}}</p>
       <p>{{t .Messages "settings.local_data_hint"}}</p>
     </div>
-  </section>
+  </details>
 {{end}}

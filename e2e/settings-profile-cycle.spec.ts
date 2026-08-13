@@ -273,7 +273,7 @@ test.describe('Settings: profile and cycle', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
 
-    const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+    const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
     await expect(cycleForm).toBeVisible();
 
     const cycleLength = cycleForm.locator('#settings-cycle-length');
@@ -299,7 +299,7 @@ test.describe('Settings: profile and cycle', () => {
     await expect(page.locator('#settings-cycle-length')).toHaveValue(String(targetCycleLength));
     await expect(page.locator('#settings-period-length')).toHaveValue(String(targetPeriodLength));
     await expect(page.locator('#settings-last-period-start')).toHaveValue(targetStart);
-    await expect(page.locator('section#settings-cycle input[name="auto_period_fill"]')).not.toBeChecked();
+    await expect(page.locator('#settings-cycle input[name="auto_period_fill"]')).not.toBeChecked();
 
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/dashboard$/);
@@ -315,7 +315,7 @@ test.describe('Settings: profile and cycle', () => {
 
     await fillDateField(page.locator('#settings-last-period-start'), isoDaysFromNow(1));
     await page
-      .locator('section#settings-cycle form[action="/api/v1/users/current/cycle"] button[data-save-button]')
+      .locator('#settings-cycle form[action="/api/v1/users/current/cycle"] button[data-save-button]')
       .click();
 
     await expect(page.locator('#settings-cycle-status .status-error')).toBeVisible();
@@ -324,7 +324,7 @@ test.describe('Settings: profile and cycle', () => {
   test('irregular cycle toggle switches dashboard prediction to a pending-cycles estimate', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-irregular-cycle');
 
-    const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+    const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
     await expect(cycleForm).toBeVisible();
 
     const irregularToggle = cycleForm.locator('input[name="irregular_cycle"]');
@@ -556,8 +556,8 @@ test.describe('Settings: profile and cycle', () => {
   test('cycle and tracking drafts discard unsaved changes before navigation', async ({ page }) => {
     await registerOwnerAndOpenSettings(page, 'settings-drafts');
 
-    const cycleForm = page.locator('section#settings-cycle form[data-settings-draft-form="cycle"]');
-    const trackingForm = page.locator('section#settings-tracking form[data-settings-draft-form="tracking"]');
+    const cycleForm = page.locator('#settings-cycle form[data-settings-draft-form="cycle"]');
+    const trackingForm = page.locator('#settings-tracking form[data-settings-draft-form="tracking"]');
     const cycleLength = cycleForm.locator('#settings-cycle-length');
     const cycleSave = cycleForm.locator('[data-settings-cycle-save]');
     const cycleDiscard = cycleForm.locator('[data-settings-cycle-discard]');
@@ -613,7 +613,7 @@ test.describe('Settings: profile and cycle', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator('#settings-cycle-length')).toHaveValue(String(initialCycleLength));
-    await expect(page.locator('section#settings-tracking input[name="track_bbt"]')).not.toBeChecked();
+    await expect(page.locator('#settings-tracking input[name="track_bbt"]')).not.toBeChecked();
     await expect(page.locator('[data-settings-tracking-save]')).toBeDisabled();
     await expect(page.locator('[data-settings-tracking-discard]')).toBeDisabled();
   });
