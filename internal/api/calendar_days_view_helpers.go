@@ -19,6 +19,15 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			cellClass += " calendar-cell-period"
 			badgeClass += " calendar-tag-period"
 			stateKey = "period"
+		} else if state.IsPredictedStartWindow {
+			// The window the next period may START in outranks the projected
+			// bleeding days it overlaps: it is the more specific statement about
+			// the same day, and it is the quantity the dashboard's
+			// "Next period: X — Y" line names. One class, so the graded fill can
+			// never tie with the hatched one on the same cell.
+			cellClass += " calendar-cell-start-window"
+			badgeClass += " calendar-tag-start-window"
+			stateKey = "predicted-start-window"
 		} else if state.IsPredicted {
 			cellClass += " calendar-cell-predicted"
 			badgeClass += " calendar-tag-predicted"
@@ -65,6 +74,7 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			OpenEditDirectly:       state.OpenEditDirectly,
 			IsPeriod:               state.IsPeriod,
 			IsPredicted:            state.IsPredicted,
+			IsPredictedStartWindow: state.IsPredictedStartWindow,
 			IsPreFertile:           state.IsPreFertile,
 			IsFertility:            state.IsFertility,
 			IsFertilityPeak:        state.IsFertilityPeak,

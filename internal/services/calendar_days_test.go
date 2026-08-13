@@ -128,6 +128,88 @@ func TestBuildCalendarDayStatesIncludesCurrentBaselinePeriodWindow(t *testing.T)
 	}
 }
 
+// TestBuildCalendarDayStatesMarksThePredictedStartWindow pins the two facts the
+// grid used to render with one shading: the days the next period may START on
+// (the dashboard's "Next period: X — Y") and the projected bleeding days that
+// follow the first of them. The window is the dashboard's own range, so the two
+// surfaces cannot disagree, and it stops at the next cycle.
+func TestBuildCalendarDayStatesMarksThePredictedStartWindow(t *testing.T) {
+	monthStart := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		CompletedCycleCount: 4,
+		CycleLengthStdDev:   2,
+		LastPeriodStart:     time.Date(2026, time.March, 8, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:     time.Date(2026, time.April, 5, 0, 0, 0, 0, time.UTC),
+	}
+
+	rangeStart, rangeEnd, hasRange := DashboardPredictionRange(nil, stats, stats.NextPeriodStart, time.UTC)
+	if !hasRange || CalendarDayKey(rangeStart) != "2026-04-03" || CalendarDayKey(rangeEnd) != "2026-04-07" {
+		t.Fatalf("test setup expects the dashboard range 2026-04-03..2026-04-07, got %s..%s (hasRange=%t)",
+			CalendarDayKey(rangeStart), CalendarDayKey(rangeEnd), hasRange)
+	}
+
+	days := BuildCalendarDayStates(nil, monthStart, nil, stats, now, time.UTC)
+
+	for _, dateString := range []string{"2026-04-03", "2026-04-04", "2026-04-05", "2026-04-06", "2026-04-07"} {
+		if !findCalendarDayStateByDateString(t, days, dateString).IsPredictedStartWindow {
+			t.Fatalf("expected %s to be marked as a predicted start-window day", dateString)
+		}
+	}
+
+	// Ahead of the window the period has not been projected to start yet, and
+	// past its end the remaining projected bleeding days are a different fact.
+	beforeWindow := findCalendarDayStateByDateString(t, days, "2026-04-02")
+	if beforeWindow.IsPredictedStartWindow || beforeWindow.IsPredicted {
+		t.Fatalf("expected 2026-04-02 to carry no period projection, got %#v", beforeWindow)
+	}
+
+	afterWindow := findCalendarDayStateByDateString(t, days, "2026-04-08")
+	if afterWindow.IsPredictedStartWindow {
+		t.Fatalf("expected 2026-04-08 to sit outside the start window, got %#v", afterWindow)
+	}
+	if !afterWindow.IsPredicted {
+		t.Fatalf("expected 2026-04-08 to stay a projected period day, got %#v", afterWindow)
+	}
+
+	// The cycle chained after the next one is a projection of a projection: it
+	// keeps the plain projected shading and gets no window of its own.
+	mayDays := BuildCalendarDayStates(nil, time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC), nil, stats, now, time.UTC)
+	chained := findCalendarDayStateByDateString(t, mayDays, "2026-05-03")
+	if !chained.IsPredicted || chained.IsPredictedStartWindow {
+		t.Fatalf("expected the chained cycle on 2026-05-03 to stay a plain projected period day, got %#v", chained)
+	}
+}
+
+// A start window is a projection, so it follows every suppression the other
+// projected states follow — including the one that empties the grid entirely.
+func TestBuildCalendarDayStatesWithholdsTheStartWindowWhenPredictionsAreOff(t *testing.T) {
+	monthStart := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, time.March, 20, 0, 0, 0, 0, time.UTC)
+	user := &models.User{Role: models.RoleOwner, UnpredictableCycle: true}
+
+	stats := CycleStats{
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		CompletedCycleCount: 4,
+		CycleLengthStdDev:   2,
+		LastPeriodStart:     time.Date(2026, time.March, 8, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:     time.Date(2026, time.April, 5, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(user, monthStart, nil, stats, now, time.UTC)
+
+	for _, dateString := range []string{"2026-04-03", "2026-04-05", "2026-04-07"} {
+		day := findCalendarDayStateByDateString(t, days, dateString)
+		if day.IsPredictedStartWindow || day.IsPredicted {
+			t.Fatalf("unpredictable-cycle mode must paint no period projection on %s, got %#v", dateString, day)
+		}
+	}
+}
+
 func findCalendarDayStateByDateString(t *testing.T, days []CalendarDayState, date string) CalendarDayState {
 	t.Helper()
 	for _, day := range days {
@@ -255,7 +337,7 @@ func TestBuildCalendarDayStatesSuppressesPredictionsForOverdueCycle(t *testing.T
 		if pastPainted.IsPredicted {
 			t.Fatalf("an overdue cycle must not paint a predicted period in the past, got %#v", pastPainted)
 		}
-		if pastPainted.IsPreFertile || pastPainted.IsFertility || pastPainted.IsOvulation || pastPainted.IsTentativeOvulation {
+		if pastPainted.IsPredictedStartWindow || pastPainted.IsPreFertile || pastPainted.IsFertility || pastPainted.IsOvulation || pastPainted.IsTentativeOvulation {
 			t.Fatalf("an overdue cycle must not paint any prediction state on 2026-03-26, got %#v", pastPainted)
 		}
 
@@ -263,7 +345,7 @@ func TestBuildCalendarDayStatesSuppressesPredictionsForOverdueCycle(t *testing.T
 		aprilDays := BuildCalendarDayStates(user, april, logs, stats, now, time.UTC)
 		for _, dateString := range []string{"2026-04-09", "2026-04-23"} {
 			day := findCalendarDayStateByDateString(t, aprilDays, dateString)
-			if day.IsPredicted || day.IsPreFertile || day.IsFertility || day.IsOvulation || day.IsTentativeOvulation {
+			if day.IsPredicted || day.IsPredictedStartWindow || day.IsPreFertile || day.IsFertility || day.IsOvulation || day.IsTentativeOvulation {
 				t.Fatalf("an overdue cycle must not paint a projected window on %s, got %#v", dateString, day)
 			}
 		}

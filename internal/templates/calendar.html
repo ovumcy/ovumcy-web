@@ -34,6 +34,22 @@
     <section
       id="calendar-grid-panel"
       class="journal-card p-2 sm:p-5">
+      {{/* The legend leads the grid: it explains an encoding the reader is
+           about to use, so it has to be on screen while the month is. The
+           entries are concepts, not CSS states — each swatch paints exactly
+           what the matching day cell paints. */}}
+      <div class="calendar-legend mobile-safe-target mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" data-calendar-legend>
+        <span class="legend-item"><span class="legend-swatch legend-swatch-period" aria-hidden="true"></span>{{t .Messages "calendar.legend.period_recorded"}}</span>
+        {{if not .CurrentUser.UnpredictableCycle}}
+        <span class="legend-item"><span class="legend-swatch legend-swatch-predicted" aria-hidden="true"></span>{{t .Messages "calendar.legend.predicted_period"}}</span>
+        <span class="legend-item"><span class="legend-swatch legend-swatch-start-window" aria-hidden="true"></span>{{t .Messages "calendar.legend.start_window"}}</span>
+        <span class="legend-item"><span class="legend-swatch legend-swatch-fertile" aria-hidden="true"></span>{{t .Messages "calendar.legend.fertility"}}</span>
+        <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span><span class="calendar-ovulation-dash" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_group"}}</span>
+        {{end}}
+        <span class="legend-item"><span class="legend-swatch legend-swatch-today" aria-hidden="true"></span>{{t .Messages "calendar.tag.today"}}</span>
+        <span class="legend-item"><span class="calendar-data-marker" aria-hidden="true"></span><span class="calendar-sex-marker" aria-hidden="true">♥</span>{{t .Messages "calendar.legend.logged_entry"}}</span>
+      </div>
+
       <div class="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wide journal-muted sm:mb-3 sm:gap-2">
         {{range .WeekdayKeys}}<span>{{t $.Messages .}}</span>{{end}}
       </div>
@@ -93,19 +109,6 @@
       </div>
       {{end}}
 
-      <div class="calendar-legend mobile-safe-target mt-4 flex flex-wrap items-center gap-3 text-xs journal-muted">
-        <span class="legend-item"><span class="legend-dot legend-dot-period"></span>{{t .Messages "calendar.legend.actual_period"}}</span>
-        {{if not .CurrentUser.UnpredictableCycle}}
-        <span class="legend-item"><span class="legend-dot legend-dot-predicted"></span>{{t .Messages "calendar.legend.predicted_period"}}</span>
-        <span class="legend-item"><span class="legend-outline"></span>{{t .Messages "calendar.legend.low_probability"}}</span>
-        <span class="legend-item"><span class="legend-dot legend-dot-fertile-edge"></span>{{t .Messages "calendar.legend.fertility_edge"}}</span>
-        <span class="legend-item"><span class="legend-dot legend-dot-fertile-peak"></span>{{t .Messages "calendar.legend.fertility_peak"}}</span>
-        <span class="legend-item"><span class="calendar-ovulation-dot"></span>{{t .Messages "calendar.legend.ovulation"}}</span>
-        <span class="legend-item"><span class="calendar-ovulation-dash"></span>{{t .Messages "calendar.legend.ovulation_tentative"}}</span>
-        {{end}}
-        <span class="legend-item"><span class="calendar-data-marker"></span>{{t .Messages "calendar.legend.logged_entry"}}</span>
-        <span class="legend-item"><span class="calendar-sex-marker" aria-hidden="true">♥</span>{{t .Messages "calendar.sex_logged"}}</span>
-      </div>
     </section>
 
     <aside id="day-editor" class="journal-card p-4 sm:p-5">

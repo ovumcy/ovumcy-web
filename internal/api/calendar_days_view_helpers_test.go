@@ -45,6 +45,72 @@ func TestBuildCalendarDaysRendersFuturePeriodEntryAsRecordedPeriod(t *testing.T)
 	}
 }
 
+// The predicted start window and the projected bleeding days are two different
+// quantities, so they must not resolve to one class — and where they overlap the
+// window is the more specific statement, while a recorded period day outranks
+// both. One class per cell keeps the graded fill from tying with the hatched one.
+func TestBuildCalendarDaysSeparatesTheStartWindowFromProjectedPeriodDays(t *testing.T) {
+	handler := &Handler{}
+	days := handler.buildCalendarDays([]services.CalendarDayState{
+		{
+			DateString:             "2026-04-03",
+			Day:                    3,
+			InMonth:                true,
+			IsPredictedStartWindow: true,
+		},
+		{
+			DateString:             "2026-04-05",
+			Day:                    5,
+			InMonth:                true,
+			IsPredicted:            true,
+			IsPredictedStartWindow: true,
+		},
+		{
+			DateString:  "2026-04-08",
+			Day:         8,
+			InMonth:     true,
+			IsPredicted: true,
+		},
+		{
+			DateString:             "2026-04-09",
+			Day:                    9,
+			InMonth:                true,
+			IsPeriod:               true,
+			IsPredicted:            true,
+			IsPredictedStartWindow: true,
+		},
+	})
+
+	for _, day := range days[:2] {
+		if !strings.Contains(day.CellClass, "calendar-cell-start-window") {
+			t.Fatalf("day %s: expected the start-window class, got %q", day.DateString, day.CellClass)
+		}
+		if strings.Contains(day.CellClass, "calendar-cell-predicted") {
+			t.Fatalf("day %s: start window must not also carry the projected-period class, got %q", day.DateString, day.CellClass)
+		}
+		if day.StateKey != "predicted-start-window" {
+			t.Fatalf("day %s: stateKey = %q, want predicted-start-window", day.DateString, day.StateKey)
+		}
+	}
+
+	if !strings.Contains(days[2].CellClass, "calendar-cell-predicted") {
+		t.Fatalf("expected a projected period day outside the window to keep its own class, got %q", days[2].CellClass)
+	}
+	if strings.Contains(days[2].CellClass, "calendar-cell-start-window") {
+		t.Fatalf("a projected period day outside the window must not read as a start window, got %q", days[2].CellClass)
+	}
+	if days[2].StateKey != "predicted-period" {
+		t.Fatalf("stateKey = %q, want predicted-period", days[2].StateKey)
+	}
+
+	if !strings.Contains(days[3].CellClass, "calendar-cell-period") || strings.Contains(days[3].CellClass, "calendar-cell-start-window") {
+		t.Fatalf("a recorded period day must outrank every projection, got %q", days[3].CellClass)
+	}
+	if days[3].StateKey != "period" {
+		t.Fatalf("stateKey = %q, want period", days[3].StateKey)
+	}
+}
+
 func TestBuildCalendarDaysMapsStateToTemplateClasses(t *testing.T) {
 	handler := &Handler{}
 	states := []services.CalendarDayState{

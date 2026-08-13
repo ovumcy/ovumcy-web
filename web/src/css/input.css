@@ -3744,40 +3744,49 @@
   }
 }
 
+/* A recorded period day is a fact, so it is drawn flat and solid. Texture is
+   the grid's fact-vs-estimate encoding — solid = recorded, hatched = projected
+   bleeding day, graded = the window a period may start in — and it is what
+   carries the distinction when colour alone does not.
+
+   Each state repeats its declarations under :root[data-theme='dark'] even
+   though the token values are already theme-aware: the dark .calendar-cell
+   surface rule is more specific than a bare utility class, so a state without
+   that selector would lose its fill in the dark theme. */
 @utility calendar-cell-period {
-  border-color: rgba(199, 117, 109, 0.7);
-  background:
-    repeating-linear-gradient(
-      180deg,
-      rgba(199, 117, 109, 0.18) 0,
-      rgba(199, 117, 109, 0.18) 5px,
-      rgba(255, 255, 255, 0) 5px,
-      rgba(255, 255, 255, 0) 10px
-    ),
-    rgba(199, 117, 109, 0.18);
+  border-color: var(--cal-line-period);
+  background: var(--cal-fill-period);
 
   :root[data-theme='dark'] & {
-    border-color: rgba(222, 143, 136, 0.82);
-    background:
-      repeating-linear-gradient(
-        180deg,
-        rgba(181, 101, 97, 0.34) 0,
-        rgba(181, 101, 97, 0.34) 5px,
-        rgba(255, 255, 255, 0) 5px,
-        rgba(255, 255, 255, 0) 10px
-      ),
-      rgba(130, 73, 70, 0.34);
+    border-color: var(--cal-line-period);
+    background: var(--cal-fill-period);
   }
 }
 
 @utility calendar-cell-predicted {
-  border-color: rgba(212, 165, 116, 0.8);
+  border-color: var(--cal-line-predicted);
   border-style: dashed;
-  background: rgba(232, 196, 168, 0.28);
+  background: var(--cal-fill-predicted);
 
   :root[data-theme='dark'] & {
-    border-color: rgba(216, 176, 98, 0.82);
-    background: rgba(124, 97, 49, 0.28);
+    border-color: var(--cal-line-predicted);
+    background: var(--cal-fill-predicted);
+  }
+}
+
+/* The days the next period may START on — the range the dashboard prints as
+   "Next period: X — Y". Before wave 3 they carried the same shading as the
+   projected bleeding days, so one visual language stood for two different
+   quantities. The gradient is doing the one job a gradient is allowed to do
+   here: it fades across the window to say the exact day is not known. */
+@utility calendar-cell-start-window {
+  border-color: var(--cal-line-predicted);
+  border-style: dotted;
+  background: var(--cal-fill-start-window);
+
+  :root[data-theme='dark'] & {
+    border-color: var(--cal-line-predicted);
+    background: var(--cal-fill-start-window);
   }
 }
 
@@ -3795,44 +3804,18 @@
 }
 
 @utility calendar-cell-fertile {
-  border-color: rgba(137, 170, 145, 0.7);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0)),
-    repeating-linear-gradient(
-      45deg,
-      rgba(112, 155, 120, 0.16) 0,
-      rgba(112, 155, 120, 0.16) 6px,
-      rgba(255, 255, 255, 0) 6px,
-      rgba(255, 255, 255, 0) 14px
-    ),
-    rgba(184, 212, 193, 0.37);
+  border-color: var(--cal-line-fertile);
+  background: var(--cal-fill-fertile);
 
   :root[data-theme='dark'] & {
-    border-color: rgba(137, 179, 154, 0.8);
-    background:
-      linear-gradient(
-        135deg,
-        rgba(255, 255, 255, 0.05),
-        rgba(255, 255, 255, 0)
-      ),
-      repeating-linear-gradient(
-        45deg,
-        rgba(164, 203, 174, 0.12) 0,
-        rgba(164, 203, 174, 0.12) 6px,
-        rgba(255, 255, 255, 0) 6px,
-        rgba(255, 255, 255, 0) 14px
-      ),
-      rgba(69, 109, 88, 0.34);
+    border-color: var(--cal-line-fertile);
+    background: var(--cal-fill-fertile);
   }
 }
 
 @utility calendar-cell-fertile-edge {
   border-color: rgba(154, 184, 132, 0.78);
-  background-color: color-mix(
-    in srgb,
-    var(--fertile-edge-color) 76%,
-    white 24%
-  );
+  background-color: var(--cal-fill-fertile-edge);
 
   [data-calendar-view][data-usage-goal='avoid_pregnancy'] & {
     border-color: rgba(203, 139, 54, 0.78);
@@ -3853,17 +3836,13 @@
   }
 
   :root[data-theme='dark'] & {
-    background-color: rgba(92, 125, 86, 0.5);
+    background-color: var(--cal-fill-fertile-edge);
   }
 }
 
 @utility calendar-cell-fertile-peak {
   border-color: rgba(93, 147, 95, 0.82);
-  background-color: color-mix(
-    in srgb,
-    var(--fertile-peak-color) 82%,
-    white 18%
-  );
+  background-color: var(--cal-fill-fertile-peak);
 
   [data-calendar-view][data-usage-goal='avoid_pregnancy'] & {
     border-color: rgba(196, 116, 33, 0.82);
@@ -3884,7 +3863,7 @@
   }
 
   :root[data-theme='dark'] & {
-    background-color: rgba(78, 136, 79, 0.58);
+    background-color: var(--cal-fill-fertile-peak);
   }
 }
 
@@ -3904,9 +3883,9 @@
 }
 
 @utility calendar-cell-today {
-  border-color: rgba(212, 165, 116, 0.95);
+  border-color: rgb(var(--cal-today) / 0.95);
   box-shadow:
-    inset 0 0 0 2px rgba(212, 165, 116, 0.86),
+    inset 0 0 0 2px rgb(var(--cal-today) / 0.86),
     0 0 0 2px rgba(255, 255, 255, 0.8);
 
   @media (max-width: 640px) {
@@ -4020,20 +3999,26 @@
   }
 }
 
+/* The day tags read the same tokens as the cells and the legend swatches:
+   before wave 3 each of the three declared its own "fertile". */
 @utility calendar-tag-period {
-  background: var(--period-color);
+  background: rgb(var(--cal-period));
 }
 
 @utility calendar-tag-predicted {
-  background: var(--accent-primary);
+  background: rgb(var(--cal-predicted));
+}
+
+@utility calendar-tag-start-window {
+  background: rgb(var(--cal-predicted));
 }
 
 @utility calendar-tag-ovulation {
-  background: #d2a74f;
+  background: rgb(var(--cal-ovulation-solid));
 }
 
 @utility calendar-tag-fertile {
-  background: #7b9f87;
+  background: rgb(var(--cal-fertile-solid));
 }
 
 @utility legend-item {
@@ -4042,15 +4027,46 @@
   gap: 0.4rem;
 }
 
-@utility legend-dot {
-  width: 0.65rem;
-  height: 0.65rem;
-  border-radius: var(--radius-pill);
+/* A legend swatch paints exactly what the cell paints — same fill token, same
+   texture, same border — so the two cannot drift apart. It replaces the
+   `legend-dot` family, which had no call site left once the legend stopped
+   listing one entry per CSS state. */
+@utility legend-swatch {
   display: inline-block;
+  flex: none;
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: var(--radius-mark);
+  border: 1px solid transparent;
 }
 
-@utility legend-dot-period {
-  background: var(--period-color);
+@utility legend-swatch-period {
+  border-color: var(--cal-line-period);
+  background: var(--cal-fill-period);
+}
+
+@utility legend-swatch-predicted {
+  border-style: dashed;
+  border-color: var(--cal-line-predicted);
+  background: var(--cal-fill-predicted);
+}
+
+@utility legend-swatch-start-window {
+  border-style: dotted;
+  border-color: var(--cal-line-predicted);
+  background: var(--cal-fill-start-window);
+}
+
+/* One swatch for the whole window: the two tiers inside it (edge and peak) are
+   a shade of the same green, and the collapsed legend names the concept. */
+@utility legend-swatch-fertile {
+  border-color: var(--cal-line-fertile);
+  background: var(--cal-fill-fertile);
+}
+
+@utility legend-swatch-today {
+  border-color: rgb(var(--cal-today) / 0.95);
+  box-shadow: inset 0 0 0 2px rgb(var(--cal-today) / 0.86);
 }
 
 @utility dashboard-prediction-disclaimer {
@@ -4059,38 +4075,6 @@
   color: var(--text-muted);
   border-left: 3px solid var(--accent-primary);
   padding-left: 0.6rem;
-}
-
-@utility legend-dot-predicted {
-  background: var(--accent-primary);
-}
-
-@utility legend-dot-fertile {
-  background: var(--fertile-peak-color);
-}
-
-@utility legend-dot-fertile-edge {
-  background: var(--fertile-edge-color);
-  border-radius: var(--radius-mark);
-}
-
-@utility legend-dot-fertile-peak {
-  background: var(--fertile-peak-color);
-  border-radius: var(--radius-mark);
-}
-
-@utility legend-outline {
-  width: 0.78rem;
-  height: 0.78rem;
-  border-radius: var(--radius-mark);
-  border: 1px dashed rgba(172, 136, 96, 0.65);
-  background: rgba(255, 255, 255, 0.94);
-  display: inline-block;
-
-  :root[data-theme='dark'] & {
-    border-color: rgba(148, 126, 181, 0.74);
-    background: rgba(39, 32, 52, 0.92);
-  }
 }
 
 @utility chart-shell {
@@ -4615,8 +4599,19 @@
   }
 }
 
+/* The legend sits above the grid, not under it: nine entries in muted text at
+   the bottom of the panel were off-screen exactly while the grid was being
+   read. Seven concept-level entries fit two or three wrapped lines at 390px,
+   which is what keeps the month itself above the fold. */
 @utility calendar-legend {
+  font-size: var(--text-2xs);
+  line-height: 1.35;
+  color: var(--ink-muted);
+
   @media (max-width: 640px) {
+    column-gap: 0.55rem;
+    row-gap: 0.25rem;
+
     .main-with-mobile-nav & {
       scroll-margin-bottom: var(--mobile-tabbar-safe-space);
     }
@@ -4666,11 +4661,71 @@
     --header-border: #ecd9c6;
     --surface-tint: rgba(255, 255, 255, 0.88);
     --surface-elevated: rgba(255, 255, 255, 0.95);
-    --period-color: #c7756d;
-    --ovulation-color: #f4d58d;
-    --fertile-color: #b8d4c1;
-    --fertile-edge-color: #d9ebc6;
-    --fertile-peak-color: #8ecb86;
+    /* ---- calendar phase/state colours — single source ------------------ */
+    /* One definition per calendar concept, consumed by the day cell, the day
+       tag and the legend swatch alike, so a legend can no longer drift from
+       the thing it explains ("fertile" used to be declared in three places).
+       Channel triplets rather than finished colours: each consumer composes
+       its own alpha with rgb(var(--cal-x) / <a>), and the resulting stops stay
+       rgb()/rgba(), which is the only form the contrast gate can resolve.
+       The --cal-fill-* entries carry the TEXTURE that separates fact from
+       estimate — solid for what was recorded, hatched for a projected period
+       day, graded for the window a period may start in — so a surface picks up
+       colour and texture together and cannot re-invent either. */
+    --cal-period: 199 117 109;
+    --cal-predicted: 212 165 116;
+    --cal-fertile: 184 212 193;
+    --cal-fertile-ink: 112 155 120;
+    --cal-fertile-edge: 217 235 198;
+    --cal-fertile-peak: 142 203 134;
+    --cal-ovulation: 244 213 141;
+    --cal-today: 212 165 116;
+    /* A day tag paints white text on a solid fill, so ovulation and fertile
+       need the deeper reading of the same two concepts; the washes above are
+       mixed for dark text on a card. Theme-independent on purpose — the tag is
+       an opaque chip, not a wash over the surface. */
+    --cal-ovulation-solid: 210 167 79;
+    --cal-fertile-solid: 123 159 135;
+    --cal-fill-period: rgb(var(--cal-period) / 0.2);
+    --cal-fill-predicted: repeating-linear-gradient(
+      45deg,
+      rgb(var(--cal-predicted) / 0.34) 0,
+      rgb(var(--cal-predicted) / 0.34) 4px,
+      rgb(var(--cal-predicted) / 0.08) 4px,
+      rgb(var(--cal-predicted) / 0.08) 9px
+    );
+    --cal-fill-start-window: linear-gradient(
+      180deg,
+      rgb(var(--cal-predicted) / 0.42) 0%,
+      rgb(var(--cal-predicted) / 0.06) 100%
+    );
+    --cal-fill-fertile: repeating-linear-gradient(
+        45deg,
+        rgb(var(--cal-fertile-ink) / 0.16) 0,
+        rgb(var(--cal-fertile-ink) / 0.16) 6px,
+        rgb(255 255 255 / 0) 6px,
+        rgb(255 255 255 / 0) 14px
+      ),
+      rgb(var(--cal-fertile) / 0.37);
+    --cal-fill-fertile-edge: color-mix(
+      in srgb,
+      rgb(var(--cal-fertile-edge)) 76%,
+      white 24%
+    );
+    --cal-fill-fertile-peak: color-mix(
+      in srgb,
+      rgb(var(--cal-fertile-peak)) 82%,
+      white 18%
+    );
+    --cal-line-period: rgb(var(--cal-period) / 0.7);
+    --cal-line-predicted: rgb(var(--cal-predicted) / 0.85);
+    --cal-line-fertile: rgb(var(--cal-fertile-ink) / 0.7);
+    /* ---- end calendar phase/state colours ------------------------------ */
+    --period-color: rgb(var(--cal-period));
+    --ovulation-color: rgb(var(--cal-ovulation));
+    --fertile-color: rgb(var(--cal-fertile));
+    --fertile-edge-color: rgb(var(--cal-fertile-edge));
+    --fertile-peak-color: rgb(var(--cal-fertile-peak));
     --fertile-warning-edge: #f4d8ac;
     --fertile-warning-peak: #e09b4d;
     --fertile-positive-edge: #d9f0cf;
@@ -4802,11 +4857,43 @@
     --header-border: rgba(101, 84, 126, 0.65);
     --surface-tint: rgba(38, 31, 50, 0.82);
     --surface-elevated: rgba(46, 38, 60, 0.92);
-    --period-color: #de8f88;
-    --ovulation-color: #d6b062;
-    --fertile-color: #89b39a;
-    --fertile-edge-color: #6e946d;
-    --fertile-peak-color: #98d494;
+    /* ---- calendar phase/state colours — dark ---------------------------- */
+    /* Only the triplets and the alphas that need it are restated: the fills
+       above are expressions over these, so the texture stays one definition
+       across both themes. A projected fill is kept a shade thinner here — the
+       day number is light text, so a lighter wash costs contrast. */
+    --cal-period: 222 143 136;
+    --cal-predicted: 210 147 92;
+    --cal-fertile: 137 179 154;
+    --cal-fertile-ink: 164 203 174;
+    --cal-fertile-edge: 110 148 109;
+    --cal-fertile-peak: 152 212 148;
+    --cal-ovulation: 214 176 98;
+    --cal-today: 216 176 98;
+    --cal-fill-period: rgb(var(--cal-period) / 0.24);
+    /* Every green FILL is deeper here than the light-theme green it shares a
+       name with: the day number is light text on a dark card, so a wash mixed
+       toward the light greens drops it from ~7:1 to ~4:1. The literals sit in
+       the token block, where the cell and the legend swatch both read them —
+       that is what keeps the two from drifting the way they had. */
+    --cal-fill-fertile: repeating-linear-gradient(
+        45deg,
+        rgb(var(--cal-fertile-ink) / 0.12) 0,
+        rgb(var(--cal-fertile-ink) / 0.12) 6px,
+        rgb(255 255 255 / 0) 6px,
+        rgb(255 255 255 / 0) 14px
+      ),
+      rgb(69 109 88 / 0.34);
+    --cal-fill-fertile-edge: rgb(92 125 86 / 0.5);
+    --cal-fill-fertile-peak: rgb(78 136 79 / 0.58);
+    --cal-line-predicted: rgb(var(--cal-predicted) / 0.82);
+    --cal-line-fertile: rgb(var(--cal-fertile) / 0.8);
+    /* ---- end calendar phase/state colours — dark ------------------------ */
+    --period-color: rgb(var(--cal-period));
+    --ovulation-color: rgb(var(--cal-ovulation));
+    --fertile-color: rgb(var(--cal-fertile));
+    --fertile-edge-color: rgb(var(--cal-fertile-edge));
+    --fertile-peak-color: rgb(var(--cal-fertile-peak));
     --fertile-warning-edge: #8d7047;
     --fertile-warning-peak: #d49d59;
     --fertile-positive-edge: #5f8f62;
