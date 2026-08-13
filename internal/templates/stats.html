@@ -1,8 +1,8 @@
 {{define "content"}}
-<section class="space-y-6">
+<section class="space-y-4">
   <div>
     <h1 class="journal-title" data-title-key="stats.title">{{t .Messages "stats.title"}}</h1>
-    <p class="journal-muted mt-2">{{t .Messages "stats.subtitle"}}</p>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.subtitle"}}</p>
   </div>
 
   {{if .ShowPerimenopauseHint}}
@@ -18,7 +18,7 @@
   {{end}}
 
   {{if not .HasInsights}}
-  <section class="card p-5 sm:p-6 space-y-4" data-stats-empty-state data-stats-completed-cycles="{{.CompletedCycleCount}}">
+  <section class="card p-4 sm:p-5 space-y-4" data-stats-empty-state data-stats-completed-cycles="{{.CompletedCycleCount}}">
     <div class="stats-empty-hero" aria-hidden="true">
       <div class="card card-illustration">
         <span class="stats-empty-hero-orb stats-empty-hero-orb-primary"></span>
@@ -115,7 +115,7 @@
       </article>
     </div>
 
-    <section class="card p-5 sm:p-6 space-y-4 reveal">
+    <section class="card p-4 sm:p-5 space-y-4 reveal">
       <div class="grid gap-4 lg:grid-cols-2">
         <article class="card-quiet">
           <p class="stat-label">{{t .Messages "stats.cycle_length_card"}}</p>
@@ -142,10 +142,10 @@
     </section>
 
     {{if .HasRecentCycleFactors}}
-    <section class="card p-5 sm:p-6 space-y-4 reveal" data-stats-factor-context>
+    <section class="card p-4 sm:p-5 space-y-4 reveal" data-stats-factor-context>
       <div>
         <h2 class="journal-subtitle">{{t .Messages "stats.factor_context_title"}}</h2>
-        <p class="journal-muted mt-2 text-sm">{{printf (t .Messages "stats.factor_context_window") .CycleFactorWindowDays}}</p>
+        <p class="journal-muted mt-1 text-sm">{{printf (t .Messages "stats.factor_context_window") .CycleFactorWindowDays}}</p>
       </div>
       <ul class="flex flex-wrap gap-2">
         {{range .RecentCycleFactors}}
@@ -202,10 +202,10 @@
 
     {{if .IsOwner}}
     <div class="grid gap-6 lg:grid-cols-2 lg:items-start">
-      <section class="card p-5 sm:p-6 stats-symptoms-panel" data-stats-last-cycle-symptoms>
+      <section class="card p-4 sm:p-5 stats-symptoms-panel" data-stats-last-cycle-symptoms>
         <div>
           <h2 class="journal-subtitle">{{t .Messages "stats.last_cycle_symptoms_title"}}</h2>
-          <p class="journal-muted mt-2 text-sm">{{t .Messages "stats.last_cycle_symptoms_subtitle"}}</p>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.last_cycle_symptoms_subtitle"}}</p>
         </div>
         {{if .HasLastCycleSymptoms}}
         <ul class="mt-4 space-y-2 text-sm">
@@ -229,7 +229,7 @@
       </section>
 
       {{if .HasCurrentCycleBBTChart}}
-      <section class="card p-5 sm:p-6 stats-trend-panel" data-stats-bbt-panel>
+      <section class="card p-4 sm:p-5 stats-trend-panel" data-stats-bbt-panel>
         <div class="mb-4 flex items-center justify-between gap-3">
           <h2 id="stats-bbt-title" class="journal-subtitle">{{t .Messages "stats.bbt_title"}}</h2>
           <span class="journal-muted text-xs">{{t .Messages "stats.bbt_unit"}}</span>
@@ -254,10 +254,13 @@
     {{end}}
 
     <div class="grid gap-6 lg:grid-cols-[2fr_1fr] lg:items-start">
-      <section class="card p-5 sm:p-6 stats-trend-panel">
-        <div class="mb-4 flex items-center justify-between gap-3">
+      <section class="card p-4 sm:p-5 stats-trend-panel">
+        {{/* The caption names the window the chart covers. With no chart there
+             is no window, and the same sentence used to be printed twice on
+             one card — once here and once as the body. */}}
+        <div class="mb-3 flex items-center justify-between gap-3">
           <h2 id="stats-cycle-trend-title" class="journal-subtitle">{{t .Messages "stats.cycle_trend"}}</h2>
-          <span class="journal-muted text-xs">{{if .HasTrendData}}{{t .Messages "stats.recent_cycles"}}{{else}}{{t .Messages "stats.no_cycle_data"}}{{end}}</span>
+          {{if .HasTrendData}}<span class="journal-muted text-xs">{{t .Messages "stats.recent_cycles"}}</span>{{end}}
         </div>
         <div class="mb-3 flex flex-wrap items-center gap-3 text-xs journal-muted">
           <span class="inline-flex items-center gap-2">
@@ -285,11 +288,16 @@
         </div>
         <p id="stats-cycle-trend-summary" class="journal-muted mt-3 text-xs">{{.CycleChartSummary}}</p>
         {{else}}
-        <p class="journal-muted text-sm">{{t .Messages "stats.no_cycle_data"}}</p>
+        {{/* The same one-line hint the other sections use when the page as a
+             whole is not empty — not a panel of its own. */}}
+        <div class="stats-empty-state">
+          <span class="stats-empty-icon" aria-hidden="true">{{template "icon" "document"}}</span>
+          <p class="journal-muted text-sm">{{t .Messages "stats.no_cycle_data"}}</p>
+        </div>
         {{end}}
       </section>
 
-      <section class="card p-5 sm:p-6 stats-symptoms-panel">
+      <section class="card p-4 sm:p-5 stats-symptoms-panel">
         <h2 class="journal-subtitle">{{t .Messages "stats.symptom_frequency"}}</h2>
         {{if .SymptomCounts}}
         <ul class="mt-4 space-y-2 text-sm">
@@ -314,10 +322,10 @@
     </div>
 
     {{if and .IsOwner .HasSymptomPatterns}}
-    <section class="card p-5 sm:p-6 space-y-4" data-stats-symptom-patterns>
+    <section class="card p-4 sm:p-5 space-y-4" data-stats-symptom-patterns>
       <div>
         <h2 class="journal-subtitle" data-stats-symptom-patterns-heading data-heading-key="stats.symptom_patterns_title">{{t .Messages "stats.symptom_patterns_title"}}</h2>
-        <p class="journal-muted mt-2 text-sm">{{t .Messages "stats.symptom_patterns_subtitle"}}</p>
+        <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.symptom_patterns_subtitle"}}</p>
       </div>
       <div class="grid gap-3 sm:grid-cols-2">
         {{range .SymptomPatterns}}
@@ -346,10 +354,10 @@
     {{if and .IsOwner (or .HasPhaseMoodInsights .HasPhaseSymptomInsights)}}
     <div class="grid gap-6 lg:grid-cols-2">
       {{if .HasPhaseMoodInsights}}
-      <section class="card p-5 sm:p-6 space-y-4">
+      <section class="card p-4 sm:p-5 space-y-4">
         <div>
           <h2 class="journal-subtitle">{{t .Messages "stats.phase_mood_title"}}</h2>
-          <p class="journal-muted mt-2 text-sm">{{t .Messages "stats.phase_mood_subtitle"}}</p>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.phase_mood_subtitle"}}</p>
         </div>
         <div class="grid gap-3 sm:grid-cols-2">
           {{range .PhaseMoodInsights}}
@@ -372,10 +380,10 @@
       {{end}}
 
       {{if .HasPhaseSymptomInsights}}
-      <section class="card p-5 sm:p-6 space-y-4">
+      <section class="card p-4 sm:p-5 space-y-4">
         <div>
           <h2 class="journal-subtitle">{{t .Messages "stats.phase_symptoms_title"}}</h2>
-          <p class="journal-muted mt-2 text-sm">{{t .Messages "stats.phase_symptoms_subtitle"}}</p>
+          <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.phase_symptoms_subtitle"}}</p>
         </div>
         <div class="grid gap-3">
           {{range .PhaseSymptomInsights}}
