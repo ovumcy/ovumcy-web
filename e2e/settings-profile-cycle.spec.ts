@@ -374,20 +374,26 @@ test.describe('Settings: profile and cycle', () => {
     // handler writes: the sentence that used to restate it under every toggle
     // ("Currently visible in …") is no longer rendered — a switch showing its
     // own state does not need a line saying so.
+    //
+    // Nor is the helper line that followed it: it opened by restating the
+    // toggle's own label and closed by repeating, word for word, the section
+    // subtitle's promise that turning a field off never removes what is
+    // already logged. What each toggle must still carry is its LABEL, and it
+    // is read from the catalogue — this block previously re-typed the helper
+    // sentences as English literals, so the copy could be deleted from all six
+    // catalogues with every key-based search coming back clean.
     await expect(trackBBT).not.toBeChecked();
     await expect(trackCervicalMucus).not.toBeChecked();
     await expect(showSexChip).toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'false');
     await expect(showSexChipToggle).toHaveAttribute('data-active', 'true');
-    await expect(trackBBTToggle).toContainText(
-      'Adds a basal body temperature field to dashboard and calendar day editing.'
-    );
+    await expect(trackBBTToggle).toContainText(localeText('en', 'settings.tracking.track_bbt'));
     await expect(trackCervicalMucusToggle).toContainText(
-      'Adds cervical mucus choices to dashboard and calendar day editing.'
+      localeText('en', 'settings.tracking.track_cervical_mucus')
     );
     await expect(showSexChipToggle).toContainText(
-      'Adds the intimacy section to dashboard and calendar day editing.'
+      localeText('en', 'settings.tracking.show_sex_chip')
     );
 
     await trackBBT.check();

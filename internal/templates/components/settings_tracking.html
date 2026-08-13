@@ -18,6 +18,15 @@
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
+      {{/* No helper line under these five toggles. Each one used to carry two
+           sentences: the first restated its own label (under "Show BBT field",
+           the line "Adds a basal body temperature field..."), and the second
+           repeated, verbatim, what the section subtitle above already says
+           once for the whole group - that turning a field off never removes
+           what is already logged. The sixth toggle keeps its hint: past-cycle
+           phases are DERIVED, and where that shading comes from is not on its
+           label. Keep this comment free of pictographs: the glyph guard scans
+           template source without skipping {{ }} comments. */}}
       <div class="settings-toggle-list">
         <label
           class="period-toggle settings-tracking-toggle"
@@ -27,7 +36,6 @@
           <input type="checkbox" name="track_bbt" value="true" data-binary-toggle-input {{if .TrackBBT}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "thermometer"}}</span> {{t .Messages "settings.tracking.track_bbt"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_bbt_hint"}}</span>
           </span>
         </label>
 
@@ -39,7 +47,6 @@
           <input type="checkbox" name="track_cervical_mucus" value="true" data-binary-toggle-input {{if .TrackCervicalMucus}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "droplets"}}</span> {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_cervical_mucus_hint"}}</span>
           </span>
         </label>
 
@@ -51,7 +58,6 @@
           <input type="checkbox" name="show_sex_chip" value="true" data-binary-toggle-input {{if .ShowSexChip}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "heart"}}</span> {{t .Messages "settings.tracking.show_sex_chip"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_sex_chip_hint"}}</span>
           </span>
         </label>
 
@@ -63,7 +69,6 @@
           <input type="checkbox" name="show_cycle_factors" value="true" data-binary-toggle-input {{if .ShowCycleFactors}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "tag"}}</span> {{t .Messages "settings.tracking.show_cycle_factors"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_cycle_factors_hint"}}</span>
           </span>
         </label>
 
@@ -75,7 +80,6 @@
           <input type="checkbox" name="show_notes_field" value="true" data-binary-toggle-input {{if .ShowNotesField}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "pencil"}}</span> {{t .Messages "settings.tracking.show_notes_field"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_notes_field_hint"}}</span>
           </span>
         </label>
 
