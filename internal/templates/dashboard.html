@@ -216,11 +216,13 @@
   </section>
 
   <div class="grid gap-6" data-dashboard-editor data-phase="{{.Stats.CurrentPhase}}" data-fertility="{{.Stats.CurrentFertility}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
-    <section class="card p-5 sm:p-6">
-      <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <section class="card p-4 sm:p-5">
+      {{/* The title and the day it edits are one line: the date is what the
+           title is about, not a second heading. */}}
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 class="journal-subtitle">{{t .Messages "dashboard.today_editor"}}</h2>
-          <p class="journal-muted" data-dashboard-date-subtitle data-dashboard-entry-date="{{.Today}}">{{.FormattedDate}}</p>
+          <p class="journal-muted text-sm" data-dashboard-date-subtitle data-dashboard-entry-date="{{.Today}}">{{.FormattedDate}}</p>
         </div>
         {{if .IsOwner}}
         <div
@@ -249,7 +251,7 @@
         hx-put="/api/v1/days/{{.Today}}"
         hx-target="#save-status"
         hx-swap="innerHTML"
-        class="space-y-5"
+        class="space-y-4"
         data-save-feedback
         data-dashboard-save-form
         data-dashboard-date="{{.Today}}"
@@ -264,24 +266,29 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
-        <div class="dashboard-quick-actions" data-dashboard-quick-actions>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="period" aria-label="{{t .Messages "dashboard.quick_action_period"}}" title="{{t .Messages "dashboard.quick_action_period"}}"><span aria-hidden="true">{{template "icon" "drop"}}</span></button>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="mood" aria-label="{{t .Messages "dashboard.quick_action_mood"}}" title="{{t .Messages "dashboard.quick_action_mood"}}"><span aria-hidden="true">{{template "icon" "mood"}}</span></button>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="symptom" aria-label="{{t .Messages "dashboard.quick_action_symptom"}}" title="{{t .Messages "dashboard.quick_action_symptom"}}"><span aria-hidden="true">{{template "icon" "capsule"}}</span></button>
+        {{/* Two one-line rows became one: the jump shortcuts and the period
+             toggle are both single controls, and stacking them cost a row of
+             the journal's height for nothing. */}}
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="dashboard-quick-actions" data-dashboard-quick-actions>
+            <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="period" aria-label="{{t .Messages "dashboard.quick_action_period"}}" title="{{t .Messages "dashboard.quick_action_period"}}"><span aria-hidden="true">{{template "icon" "drop"}}</span></button>
+            <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="mood" aria-label="{{t .Messages "dashboard.quick_action_mood"}}" title="{{t .Messages "dashboard.quick_action_mood"}}"><span aria-hidden="true">{{template "icon" "mood"}}</span></button>
+            <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="symptom" aria-label="{{t .Messages "dashboard.quick_action_symptom"}}" title="{{t .Messages "dashboard.quick_action_symptom"}}"><span aria-hidden="true">{{template "icon" "capsule"}}</span></button>
+          </div>
+
+          <label class="period-toggle" data-binary-toggle data-active="{{if .TodayEntry.IsPeriod}}true{{else}}false{{end}}">
+            <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .TodayEntry.IsPeriod}}checked{{end}}>
+            <span class="period-toggle-copy">
+              <span
+                class="period-toggle-main"
+                data-period-toggle-label
+                data-period-label-on="{{t .Messages "dashboard.period_day"}}"
+                data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "dashboard.period_day"}}</span>
+            </span>
+          </label>
         </div>
 
         <div class="dashboard-once-tip journal-muted text-sm" data-once-tip="dashboard-first-tour" hidden>{{t .Messages "dashboard.first_dashboard_tip"}}</div>
-
-        <label class="period-toggle" data-binary-toggle data-active="{{if .TodayEntry.IsPeriod}}true{{else}}false{{end}}">
-          <input type="checkbox" name="is_period" value="true" data-period-toggle data-binary-toggle-input {{if .TodayEntry.IsPeriod}}checked{{end}}>
-          <span class="period-toggle-copy">
-            <span
-              class="period-toggle-main"
-              data-period-toggle-label
-              data-period-label-on="{{t .Messages "dashboard.period_day"}}"
-              data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "dashboard.period_day"}}</span>
-          </span>
-        </label>
         {{if not .CurrentUser.ShownPeriodTip}}
         <p class="dashboard-once-tip journal-muted text-sm" data-period-tip-copy hidden>{{t .Messages "dashboard.period_tip_once"}}</p>
         {{end}}
@@ -289,7 +296,7 @@
         {{template "cycle_start_question" (dict "Messages" .Messages "CurrentIsPeriod" .TodayEntry.IsPeriod "Compact" false)}}
         {{end}}
 
-        <fieldset class="space-y-3" data-period-fields {{if not .TodayEntry.IsPeriod}}hidden{{end}}>
+        <fieldset class="space-y-2" data-period-fields {{if not .TodayEntry.IsPeriod}}hidden{{end}}>
           <legend class="field-label">{{t .Messages "dashboard.flow"}}</legend>
           {{template "period_flow_options" (dict "Messages" .Messages "SelectedFlow" .TodayEntry.Flow "Compact" false "DisableWhenNotPeriod" true "CurrentIsPeriod" .TodayEntry.IsPeriod)}}
           {{if .ShowSpottingCycleWarning}}
@@ -297,12 +304,12 @@
           {{end}}
         </fieldset>
 
-        <fieldset class="space-y-3" data-dashboard-section="mood">
+        <fieldset class="space-y-2" data-dashboard-section="mood">
           <legend class="field-label">{{t .Messages "dashboard.mood"}}</legend>
           {{template "mood_picker" (dict "SelectedMood" .TodayEntry.Mood "Compact" false)}}
         </fieldset>
 
-        <fieldset id="dashboard-symptoms" class="space-y-3" data-dashboard-section="symptoms">
+        <fieldset id="dashboard-symptoms" class="space-y-2" data-dashboard-section="symptoms">
           <legend class="field-label">{{t .Messages "dashboard.symptoms"}}</legend>
           {{template "symptom_options" (dict "Messages" .Messages "PrimarySymptoms" .PrimarySymptoms "ExtraSymptoms" .ExtraSymptoms "HasExtraSymptoms" .HasExtraSymptoms "SelectedSymptomID" .SelectedSymptomID "Lang" .Lang "Compact" false "IncludePreviewHooks" false)}}
         </fieldset>
@@ -336,8 +343,8 @@
             <span class="symptom-more-label">{{t .Messages "dashboard.more_fields"}}</span>
             <span class="symptom-more-chevron" aria-hidden="true">▼</span>
           </summary>
-          <div class="mt-4 space-y-5">
-            <fieldset class="space-y-3">
+          <div class="mt-3 space-y-4">
+            <fieldset class="space-y-2">
               <legend class="field-label">{{t .Messages "dashboard.intimacy"}}</legend>
               {{if .ShowSexChip}}
               <div class="dashboard-once-tip journal-muted text-sm" data-once-tip="sex-section-settings" hidden>{{t .Messages "dashboard.sex_settings_hint"}}</div>
@@ -350,14 +357,14 @@
             </fieldset>
 
             {{if .ShowCervicalMucus}}
-            <fieldset class="space-y-3">
+            <fieldset class="space-y-2">
               <legend class="field-label">{{t .Messages "dashboard.cervical_mucus"}}</legend>
               <p class="dashboard-once-tip journal-muted text-sm" data-once-tip="cervical-mucus-explainer" hidden>{{t .Messages "dashboard.cervical_mucus_explainer"}}</p>
               {{template "cervical_mucus_options" (dict "Messages" .Messages "SelectedCervicalMucus" .TodayEntry.CervicalMucus "Compact" false)}}
             </fieldset>
             {{end}}
 
-            <fieldset id="dashboard-pregnancy-test" class="space-y-3">
+            <fieldset id="dashboard-pregnancy-test" class="space-y-2">
               <legend class="field-label">{{t .Messages "dashboard.pregnancy_test"}}</legend>
               {{template "pregnancy_test_options" (dict "Messages" .Messages "SelectedPregnancyTest" .TodayEntry.PregnancyTest "Compact" false)}}
             </fieldset>
@@ -367,7 +374,7 @@
             {{end}}
 
             {{if .ShowCycleFactors}}
-            <fieldset class="space-y-3">
+            <fieldset class="space-y-2">
               <legend class="field-label">{{t .Messages "dashboard.cycle_factors"}}</legend>
               {{template "cycle_factor_options" (dict "Messages" .Messages "CycleFactorKeys" .CycleFactorKeys "SelectedCycleFactorKey" .SelectedCycleFactorKey "Compact" false)}}
             </fieldset>
