@@ -41,15 +41,20 @@ func TestDashboardStatusHeaderCarriesTheSegmentedRingForStableCycleContext(t *te
 	if header == nil {
 		t.Fatal("expected the dashboard status header")
 	}
-	ring := dashboardElementByDataAttr(header, "data-dashboard-cycle-ring")
-	if ring == nil {
-		t.Fatal("expected the compact cycle ring inside the status header")
+	ribbon := dashboardElementByDataAttr(header, "data-dashboard-cycle-ribbon")
+	if ribbon == nil {
+		t.Fatal("expected the cycle ribbon inside the status header")
 	}
-	if got := htmlAttr(ring, "data-cycle-ring-segmented"); got != "true" {
-		t.Fatalf("expected a segmented ring on a stable cycle context, got %q", got)
+	if got := htmlAttr(ribbon, "data-cycle-ribbon-visible"); got != "true" {
+		t.Fatalf("expected a drawn ribbon on a stable cycle context, got %q", got)
 	}
-	if dashboardElementByDataAttr(ring, "data-dashboard-cycle-day") == nil {
-		t.Fatal("expected the cycle day inside the ring")
+	if dashboardElementByDataAttr(header, "data-dashboard-cycle-day") == nil {
+		t.Fatal("expected the cycle day beside the ribbon")
+	}
+	if htmlFindElement(ribbon, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlAttr(node, "data-cycle-ribbon-day") == "1"
+	}) == nil {
+		t.Fatal("expected the ribbon to run from cycle day 1")
 	}
 	if dashboardElementByDataAttr(header, "data-dashboard-status-line") == nil {
 		t.Fatal("expected the single status line inside the status header")
@@ -115,10 +120,10 @@ func TestDashboardStatusHeaderDropsTheNextPeriodSlotForAnOverdueCycle(t *testing
 	}
 }
 
-// TestDashboardStatusHeaderDropsRingSegmentsWhenPredictionsAreDisabled is the
+// TestDashboardStatusHeaderDropsTheRibbonWhenPredictionsAreDisabled is the
 // other half: the header still renders in unpredictable mode, but nothing draws
-// phase segments the account's data cannot support.
-func TestDashboardStatusHeaderDropsRingSegmentsWhenPredictionsAreDisabled(t *testing.T) {
+// a phase map the account's data cannot support.
+func TestDashboardStatusHeaderDropsTheRibbonWhenPredictionsAreDisabled(t *testing.T) {
 	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
 	user := createOnboardingTestUser(t, database, "dashboard-cycle-hero-disabled@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
@@ -144,16 +149,16 @@ func TestDashboardStatusHeaderDropsRingSegmentsWhenPredictionsAreDisabled(t *tes
 	if header == nil {
 		t.Fatal("expected the dashboard status header in unpredictable mode")
 	}
-	ring := dashboardElementByDataAttr(header, "data-dashboard-cycle-ring")
-	if ring == nil {
-		t.Fatal("expected the compact cycle ring in unpredictable mode")
+	ribbon := dashboardElementByDataAttr(header, "data-dashboard-cycle-ribbon")
+	if ribbon == nil {
+		t.Fatal("expected the cycle ribbon slot in unpredictable mode")
 	}
-	if got := htmlAttr(ring, "data-cycle-ring-segmented"); got != "false" {
-		t.Fatalf("did not expect a segmented ring in unpredictable mode, got %q", got)
+	if got := htmlAttr(ribbon, "data-cycle-ribbon-visible"); got != "false" {
+		t.Fatalf("did not expect a drawn ribbon in unpredictable mode, got %q", got)
 	}
-	if htmlFindElement(ring, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && htmlHasAttr(node, "data-cycle-hero-segment")
+	if htmlFindElement(ribbon, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-cycle-ribbon-day")
 	}) != nil {
-		t.Fatal("did not expect phase segments in unpredictable mode")
+		t.Fatal("did not expect ribbon day cells in unpredictable mode")
 	}
 }

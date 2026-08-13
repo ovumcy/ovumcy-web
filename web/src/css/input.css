@@ -997,88 +997,127 @@
   gap: 0.7rem 0.9rem;
 }
 
-@utility dashboard-cycle-ring-wrap {
-  position: relative;
+@utility dashboard-cycle-lead {
+  margin: 0;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 4.5rem;
-  height: 4.5rem;
+  min-width: 2rem;
 }
 
-@utility dashboard-cycle-ring {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-@utility dashboard-cycle-ring-track {
-  fill: none;
-  stroke-width: 16;
-  stroke: rgba(212, 165, 116, 0.16);
-
-  /* The track carries meaning — it is the rest of the cycle the coloured
-     segments are drawn on — so WCAG 1.4.11 puts its floor at 3:1 against the
-     card. The previous rgba(157, 129, 196, 0.2) painted 1.34:1 on the dark
-     card and was invisible; a solid stop measures 3.38:1 at the card's light
-     end and 3.95:1 at its dark end, still well below the phase segments
-     (5.4:1–7.2:1) so it stays the backdrop rather than data. */
-  :root[data-theme='dark'] & {
-    stroke: #83769b;
-  }
-}
-
-@utility dashboard-cycle-ring-segment {
-  fill: none;
-  stroke-width: 16;
-  transform-box: fill-box;
-  transform-origin: center;
-  transform: rotate(-90deg);
-  stroke-linecap: butt;
-}
-
-@utility dashboard-cycle-ring-segment-menstrual {
-  stroke: #d99590;
-}
-
-@utility dashboard-cycle-ring-segment-follicular {
-  stroke: #cf9a5e;
-}
-
-@utility dashboard-cycle-ring-segment-ovulation {
-  stroke: #dfb44e;
-}
-
-@utility dashboard-cycle-ring-segment-luteal {
-  stroke: #89aa72;
-}
-
-@utility dashboard-cycle-ring-marker {
-  stroke-width: 4;
-  fill: var(--bg-card);
-  stroke: #cf8e7c;
-
-  :root[data-theme='dark'] & {
-    fill: rgba(36, 29, 48, 0.96);
-  }
-}
-
-@utility dashboard-cycle-ring-center {
-  position: absolute;
-  inset: 50% auto auto 50%;
-  transform: translate(-50%, -50%);
-  margin: 0;
-  display: grid;
-  place-items: center;
-  text-align: center;
-}
-
-@utility dashboard-cycle-ring-day {
+@utility dashboard-cycle-lead-day {
   font-family: 'Quicksand', 'Avenir Next Rounded', 'Trebuchet MS', sans-serif;
   font-size: var(--text-2xl);
   font-weight: 700;
   line-height: 1;
   color: var(--text-primary);
+}
+
+/* The cycle ribbon.
+   One cell per day of the axis. A ring could carry two facts — the day number
+   and four arcs — and everything else the cycle knows had to be written out
+   beside it as another sentence. The linear form carries the phase map, the
+   fertile window, the days a period may start on and the days this account
+   recorded, and it is the only form in which the END of the cycle can be drawn
+   as uncertain: a circle's end meets its own start exactly.
+
+   Colour comes from the --phase-* family, which reuses the calendar's --cal-*
+   channels for the two concepts the calendar also paints, so the two screens
+   cannot disagree about what "menstrual" looks like. Texture is the calendar's
+   as well — hatched for a projected period day, graded for the start window —
+   so fact and estimate keep one visual language across the product. */
+@utility dashboard-cycle-ribbon-wrap {
+  /* The slot always renders so a spec can read the flag; with no honest cycle
+     map to draw it takes no space. `:empty` would not do — the template leaves
+     whitespace text nodes inside it. */
+  &[data-cycle-ribbon-visible='false'] {
+    display: none;
+  }
+}
+
+@utility dashboard-cycle-ribbon {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  height: 2.25rem;
+  border-radius: var(--radius-mark);
+  overflow: hidden;
+  background: var(--surface-quiet);
+
+  @media (max-width: 640px) {
+    height: 2rem;
+  }
+}
+
+@utility dashboard-cycle-ribbon-day {
+  --ribbon-phase: var(--phase-follicular);
+  --ribbon-alpha: 1;
+
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  background: rgb(var(--ribbon-phase) / var(--ribbon-alpha));
+
+  &[data-phase='menstrual'] {
+    --ribbon-phase: var(--phase-menstrual);
+  }
+
+  &[data-phase='ovulation'] {
+    --ribbon-phase: var(--phase-ovulation);
+  }
+
+  &[data-phase='luteal'] {
+    --ribbon-phase: var(--phase-luteal);
+  }
+
+  /* Past the projected cycle length there is no phase left to claim; the cell
+     exists only because the start window reaches it, and it shows the track. */
+  &[data-phase='beyond'] {
+    --ribbon-alpha: 0;
+  }
+
+  /* A period day still ahead is an estimate, and wears the same hatch the
+     calendar grid gives it. */
+  &[data-predicted-flow='true'] {
+    background-image: var(--cal-fill-predicted);
+  }
+
+  /* The graded tail: the days the next period may start on. This is the one
+     gradient the design rules allow, because here it encodes uncertainty
+     rather than decorating a surface. */
+  &[data-start-window='true'] {
+    background-image: var(--cal-fill-start-window);
+  }
+
+  /* Bottom edge — what is estimated: the fertile window and its peak. */
+  &[data-fertile='true']::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 0.25rem;
+    background: rgb(var(--cal-fertile-ink) / 0.55);
+  }
+
+  &[data-fertile-peak='true']::after {
+    background: rgb(var(--cal-fertile-peak));
+  }
+
+  /* Top edge — what was recorded, in the same --ink-accent the calendar's
+     logged-entry dot uses, so one mark means one thing on both screens. The
+     two edges never compete for the same strip, so a fertile day the owner
+     logged shows both. */
+  &[data-logged='true']::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 0.1875rem;
+    background: var(--ink-accent);
+  }
+
+  &[data-today='true'] {
+    box-shadow: inset 0 0 0 2px rgb(var(--cal-today));
+    z-index: 1;
+  }
 }
 
 @utility dashboard-status-notice {
@@ -4421,6 +4460,30 @@
        paint a light-theme border in the dark theme. */
     --cal-line-fertile-edge: rgb(154 184 132 / 0.78);
     --cal-line-fertile-peak: rgb(93 147 95 / 0.82);
+    /* ---- cycle-phase colours — one source for every phase surface ------ */
+    /* Phase and fertility are two orthogonal axes (#416), and this family is
+       the phase one: menstrual / follicular / ovulation / luteal, never
+       "fertile". The two phases the calendar also paints read its channels
+       rather than restating them — the dashboard hero used to carry four
+       one-off hex values of its own, so "menstrual" was a different colour on
+       Today than on the calendar. Channel triplets, like --cal-*: each
+       consumer composes its own alpha.
+
+       Measured against the white card (light) with the ribbon's own fills:
+       menstrual 3.39:1, ovulation 3.61:1 — the two phases a reader actually
+       looks for clear the 3:1 non-text floor — while follicular 1.71:1 and
+       luteal 2.32:1 sit under it deliberately. The band is a REDUNDANT graphic:
+       it is aria-hidden and every fact it draws is stated in the status line
+       beside it, so 1.4.11 does not bind it, and forcing all four to one
+       contrast level flattens them into a single luminance where neighbouring
+       phases stop being separable at all (measured: adjacent pairs collapse
+       from ~2:1 to ~1.05:1). What the band needs instead is a lightness ladder,
+       which is what these four are: adjacent pairs stay ≥1.46:1 in light and
+       ≥1.96:1 in dark, hue separating them further. */
+    --phase-menstrual: var(--cal-period);
+    --phase-follicular: 229 192 150;
+    --phase-ovulation: 172 127 36;
+    --phase-luteal: 183 161 212;
     /* ---- end calendar phase/state colours ------------------------------ */
     --period-color: rgb(var(--cal-period));
     --ovulation-color: rgb(var(--cal-ovulation));
@@ -4679,6 +4742,17 @@
        opposite of what the light theme needs. */
     --cal-line-fertile-edge: rgb(var(--cal-fertile-edge) / 0.92);
     --cal-line-fertile-peak: rgb(var(--cal-fertile-peak) / 0.78);
+    /* ---- cycle-phase colours — dark ------------------------------------- */
+    /* Menstrual follows the --cal-period triplet restated above; the other
+       three are SELECTED against the dark card, never flipped from their light
+       values — the same rule the chart line follows. The ladder inverts with
+       the ground: follicular and luteal are the recessive pair here as there,
+       but on a dark card recessive means darker. Measured against the card:
+       menstrual 6.39:1, ovulation 9.67:1, follicular 3.26:1, luteal 3.04:1;
+       adjacent pairs ≥1.96:1. */
+    --phase-follicular: 143 105 68;
+    --phase-ovulation: 236 196 110;
+    --phase-luteal: 121 96 160;
     /* ---- end calendar phase/state colours — dark ------------------------ */
     --period-color: rgb(var(--cal-period));
     --ovulation-color: rgb(var(--cal-ovulation));

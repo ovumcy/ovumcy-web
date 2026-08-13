@@ -175,7 +175,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 	return DashboardViewData{
 		Stats:                             stats,
 		CycleContext:                      cycleContext,
-		CycleHero:                         BuildDashboardCycleHero(user, stats, cycleContext),
+		CycleHero:                         BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
 		ReminderBanner:                    reminderBanner,
 		Today:                             today,
 		Yesterday:                         yesterday,
