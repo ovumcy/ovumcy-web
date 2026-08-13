@@ -67,7 +67,11 @@
             <span class="dashboard-status-item">{{t .Messages "dashboard.next_period"}}:
               <span data-dashboard-next-period>
                 {{if .DisplayNextPeriodUseRange}}
-                  {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "display")}}
+                  {{/* The uncertainty band around the START date — the same
+                       quantity the calendar legend calls the predicted start
+                       window, and a different quantity from the period days
+                       below, so each carries its own string. */}}
+                  {{printf (t .Messages "dashboard.next_period_start_window") (formatLocalizedDate .Lang .DisplayNextPeriodRangeStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodRangeEnd "display")}}
                 {{else if .DisplayNextPeriodNeedsData}}
                   {{printf (t .Messages "dashboard.next_period_estimate") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display")}} · {{t .Messages "dashboard.next_period_need_cycles"}}
                 {{else if .DisplayNextPeriodPrompt}}
@@ -75,7 +79,9 @@
                 {{else if .DisplayNextPeriodStart.IsZero}}
                   {{.NoDataLabel}}
                 {{else}}
-                  {{printf (t .Messages "dashboard.next_period_range") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodEnd "display")}}
+                  {{/* First to last predicted period day — the calendar legend's
+                       predicted period days. */}}
+                  {{printf (t .Messages "dashboard.next_period_days") (formatLocalizedDate .Lang .DisplayNextPeriodStart "display") (formatLocalizedDate .Lang .DisplayNextPeriodEnd "display")}}
                 {{end}}
               </span>
             </span>
@@ -197,7 +203,7 @@
       {{end}}
 
       {{if .IsOwner}}
-      <p class="dashboard-prediction-disclaimer text-sm" data-dashboard-prediction-disclaimer>{{t .Messages "dashboard.prediction_disclaimer"}}</p>
+      <p class="dashboard-prediction-disclaimer text-sm" data-dashboard-prediction-disclaimer>{{t .Messages "medical.disclaimer"}}</p>
       {{end}}
 
       {{if .HasPredictionFactorHint}}

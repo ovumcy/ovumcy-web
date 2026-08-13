@@ -6,7 +6,7 @@
   </div>
 
   {{if .IsFutureDate}}
-  <div class="card-quiet text-sm">{{t .Messages "warning.future_date"}}</div>
+  <div class="card-quiet text-sm"><span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "warning.future_date"}}</div>
   {{end}}
 
   {{if and .IsOwner .EditMode}}

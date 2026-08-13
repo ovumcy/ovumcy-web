@@ -82,7 +82,7 @@ func (echoDecryptor) DecryptWebhookURL(_ uint, encryptedURL string) (string, err
 type fixedDisclaimer struct{}
 
 func (fixedDisclaimer) Disclaimer(string) string {
-	return "These are estimates, not medical advice or a method of contraception."
+	return "Predictions are estimates, not medical advice or a method of contraception."
 }
 
 // dueRecord builds a period-due record for a regular 28-day owner whose last

@@ -65,7 +65,7 @@ Notes:
 
 ## How Sign-In Works
 
-1. The login page shows a `Sign in with SSO` button when `OIDC_ENABLED=true`.
+1. The login page shows a `Log in with SSO` button when `OIDC_ENABLED=true`.
 2. Ovumcy starts a server-side Authorization Code flow with PKCE and writes a sealed one-time state cookie containing the OIDC `state`, `nonce`, PKCE verifier, and expiry timestamp.
 3. The identity provider authenticates the user and returns the browser to `/auth/oidc/callback` — an auto-POST of the `code` and `state` in the request body (`form_post`, the default) or a `GET` redirect carrying them in the URL query (`query`). Ovumcy reads the callback from exactly one source keyed by the mode; it never reads both.
 4. Ovumcy validates the sealed state, exchanges the authorization code for tokens, and verifies the ID token plus `nonce`.

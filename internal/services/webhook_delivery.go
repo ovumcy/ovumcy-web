@@ -98,7 +98,7 @@ type WebhookPayload struct {
 	Message string `json:"message"`
 	// Disclaimer is the medical-safety qualifier, MANDATORY in every payload. It
 	// is the owner-localized "estimates, not medical advice or a method of
-	// contraception" string (i18n key dashboard.prediction_disclaimer).
+	// contraception" string (i18n key medical.disclaimer).
 	Disclaimer string `json:"disclaimer"`
 	// Type is the machine-readable reminder kind (DueReminderType*), so a webhook
 	// consumer can route on it without parsing Message.

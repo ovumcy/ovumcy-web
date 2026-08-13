@@ -47,7 +47,8 @@ type Options struct {
 
 // i18nDisclaimerProvider adapts the i18n Manager to services.DisclaimerProvider:
 // it returns the localized medical-safety disclaimer (i18n key
-// dashboard.prediction_disclaimer) for a language, falling back to the manager's
+// medical.disclaimer — the single catalogue entry every predictive surface
+// renders) for a language, falling back to the manager's
 // default language (Messages merges the default over the target). It is the seam
 // the request-free webhook notify pass uses so every payload carries the
 // owner-localized "estimates, not medical advice or a method of contraception"
@@ -56,7 +57,7 @@ type i18nDisclaimerProvider struct {
 	manager *i18n.Manager
 }
 
-const disclaimerMessageKey = "dashboard.prediction_disclaimer"
+const disclaimerMessageKey = "medical.disclaimer"
 
 func (provider i18nDisclaimerProvider) Disclaimer(language string) string {
 	if provider.manager == nil {

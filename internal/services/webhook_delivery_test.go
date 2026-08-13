@@ -57,7 +57,7 @@ func samplePayload() WebhookPayload {
 	return WebhookPayload{
 		Title:      "Period reminder",
 		Message:    "Estimated next period around 2026-03-12.",
-		Disclaimer: "These are estimates, not medical advice or a method of contraception.",
+		Disclaimer: "Predictions are estimates, not medical advice or a method of contraception.",
 		Type:       DueReminderTypePeriod,
 		EventDate:  "2026-03-12",
 		LeadDays:   3,

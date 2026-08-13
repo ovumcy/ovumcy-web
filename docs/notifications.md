@@ -13,7 +13,7 @@ model, consistent with Ovumcy's single-tenant, operator-controlled design.
 > Every reminder is an estimate, never a fact. The in-app banner, every
 > webhook payload, and the calendar feed all carry the same medical-safety
 > framing shown elsewhere in the app:
-> **"These are estimates, not medical advice or a method of contraception."**
+> **"Predictions are estimates, not medical advice or a method of contraception."**
 
 This document covers all three channels: what each one is, how an owner
 enables it, and — for the webhook channel, which needs a scheduled delivery
@@ -354,7 +354,7 @@ Operator-relevant summary (the full, test-backed claim list lives in
   full URL, path, query string, or userinfo.
 - **Disclaimer in every payload.** Every delivered JSON body includes a
   `disclaimer` field carrying the exact medical-safety string shown elsewhere
-  in the app: *"These are estimates, not medical advice or a method of
+  in the app: *"Predictions are estimates, not medical advice or a method of
   contraception."*
 - **URL encrypted at rest.** The stored webhook URL is AES-256-GCM ciphertext,
   bound to the owning user's id, exactly like a TOTP secret. If `SECRET_KEY`
@@ -376,7 +376,7 @@ Operator-relevant summary (the full, test-backed claim list lives in
 {
   "title": "Period reminder",
   "message": "Estimated next period around 2026-07-14.",
-  "disclaimer": "These are estimates, not medical advice or a method of contraception.",
+  "disclaimer": "Predictions are estimates, not medical advice or a method of contraception.",
   "type": "period-soon",
   "event_date": "2026-07-14",
   "lead_days": 3

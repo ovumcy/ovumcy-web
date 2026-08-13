@@ -49,6 +49,28 @@ func TestCalendarRendersPredictionDisclaimer(t *testing.T) {
 	assertPredictionDisclaimerRendered(t, "/calendar", `data-calendar-prediction-disclaimer`)
 }
 
+// TestSettingsEgressSurfacesRenderPredictionDisclaimer covers the two settings
+// sections that ship predicted dates off the instance: webhook reminders and
+// the calendar feed. Both used to spell the qualifier out in their own
+// catalogue entry; they now reference the single medical.disclaimer key, so
+// this pins that the consolidation of the TEXT did not silently drop either
+// SURFACE — the count of surfaces showing the disclaimer is the invariant.
+func TestSettingsEgressSurfacesRenderPredictionDisclaimer(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "settings-disclaimer@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	body := fetchPageBody(t, app, "/settings", authCookie)
+	for _, hook := range []string{`data-webhook-disclaimer`, `data-calendar-feed-disclaimer`} {
+		if !strings.Contains(body, hook) {
+			t.Fatalf("settings must render the disclaimer hook %q", hook)
+		}
+	}
+	if occurrences := strings.Count(body, "not medical advice or a method of contraception"); occurrences < 2 {
+		t.Fatalf("expected the safety copy on both settings egress surfaces, found %d occurrence(s)", occurrences)
+	}
+}
+
 // assertPredictionDisclaimerRendered loads a predictive owner surface and pins
 // both its stable data-hook and the exact safety copy, mirroring the dashboard
 // check so every ovulation/next-period surface keeps the persistent disclaimer.

@@ -94,7 +94,7 @@ func TestBuildCalendarFeedICSEmitsNeutralEventsWithDisclaimer(t *testing.T) {
 		Logs:       predictableFeedLogs(t),
 		Now:        now,
 		Location:   time.UTC,
-		Disclaimer: "These are estimates, not medical advice or a method of contraception.",
+		Disclaimer: "Predictions are estimates, not medical advice or a method of contraception.",
 	}))
 
 	// Structural RFC 5545 markers (never localized copy).
@@ -113,7 +113,7 @@ func TestBuildCalendarFeedICSEmitsNeutralEventsWithDisclaimer(t *testing.T) {
 	assertNeutralSummaries(t, body)
 
 	// Disclaimer must be present in a DESCRIPTION line (medical-safety).
-	if !strings.Contains(body, "DESCRIPTION:These are estimates") {
+	if !strings.Contains(body, "DESCRIPTION:Predictions are estimates") {
 		t.Fatalf("expected medical-safety disclaimer in DESCRIPTION, got:\n%s", body)
 	}
 }

@@ -29,8 +29,10 @@ func predictionExplanationPrimaryKey(user *models.User, cycleContext DashboardCy
 		return "prediction.explainer.irregular_sparse"
 	case user != nil && user.IrregularCycle && (cycleContext.DisplayNextPeriodUseRange || cycleContext.DisplayOvulationUseRange):
 		return "prediction.explainer.irregular_ranges"
-	case user != nil && !user.IrregularCycle && cycleContext.DisplayNextPeriodUseRange:
-		return "prediction.explainer.variable_ranges"
+	// A regular owner whose prediction renders as a range gets no explainer:
+	// the range is the affordance, and since wave 2 the next-period line names
+	// the quantity it shows ("start window"). A sentence saying the range is a
+	// range restated the surface instead of adding to it.
 	default:
 		return ""
 	}

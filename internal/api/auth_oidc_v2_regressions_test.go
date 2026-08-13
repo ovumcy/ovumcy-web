@@ -33,8 +33,9 @@ func TestLoginPageInOIDCOnlyModeHidesLocalAuthUI(t *testing.T) {
 
 	rendered := mustReadBodyString(t, response.Body)
 	assertBodyContainsAll(t, rendered,
+		// Structural hook only — the rendered SSO caption is Playwright's
+		// subject (e2e/auth-oidc.spec.ts), sourced from the catalogue.
 		bodyStringMatch{fragment: "data-auth-sso-cta", message: "expected SSO CTA in oidc_only mode"},
-		bodyStringMatch{fragment: "Sign in with SSO", message: "expected localized SSO CTA copy"},
 	)
 	assertBodyNotContainsAll(t, rendered,
 		bodyStringMatch{fragment: `id="login-form"`, message: "did not expect local login form in oidc_only mode"},

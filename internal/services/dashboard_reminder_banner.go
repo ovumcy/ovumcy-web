@@ -78,7 +78,7 @@ const (
 // prediction it summarizes and how many days away it is. It carries no
 // rendering concerns beyond the i18n key selection — the disclaimer and
 // estimate qualifier are rendered by the existing dashboard prediction
-// surface (dashboard.prediction_disclaimer), not duplicated here.
+// surface (medical.disclaimer), not duplicated here.
 //
 // Countable reports whether TitleKey is the "~N days" plural copy (which the
 // caller resolves with the day count) rather than the fixed "today"/"tomorrow"

@@ -1,7 +1,7 @@
 {{define "settings_account_section_content"}}
   <section class="card p-4 sm:p-5 space-y-4" id="settings-account">
-    {{/* No subtitle: settings.account.subtitle listed the block headings that
-         follow it. */}}
+    {{/* No subtitle: the one that used to sit here listed the block headings
+         that follow it. */}}
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</h2>
 
     <div class="settings-account-stack">
@@ -50,7 +50,7 @@
 
       <section id="settings-change-password" class="card-quiet settings-account-block space-y-3">
         {{if .CurrentUser.LocalAuthEnabled}}
-        {{/* No subtitle: settings.change_password.subtitle said "Update your
+        {{/* No subtitle: the one that used to sit here said "Update your
              account password" under the heading "Change password". */}}
         <h3 class="field-label field-label-lg">{{t .Messages "settings.change_password.title"}}</h3>
 
@@ -174,9 +174,8 @@
       </section>
 
       {{/* The advanced-security block holds exactly one control, so its own
-           heading and settings.security.advanced_hint were a wrapper around
-           the recovery-code heading below them. The recovery code names
-           itself. */}}
+           heading and hint were a wrapper around the recovery-code heading
+           below them. The recovery code names itself. */}}
       <section class="card-quiet settings-account-block space-y-3">
         <div>
           <h3 class="field-label field-label-lg">{{t .Messages "settings.recovery_code.title"}}</h3>

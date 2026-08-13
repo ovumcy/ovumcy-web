@@ -3,6 +3,10 @@
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "bell"}}</span> {{t .Messages "settings.webhook.title"}}</h2>
       <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.webhook.subtitle"}}</p>
+      {{/* The reminders carry predicted dates off the instance, so the section
+           states the medical-safety qualifier in its own right — the same
+           single-sourced sentence every other predictive surface renders. */}}
+      <p class="journal-muted mt-1 text-sm" data-webhook-disclaimer>{{t .Messages "medical.disclaimer"}}</p>
     </div>
 
     <form
