@@ -1,37 +1,124 @@
 package services
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // Round-2 mutation-survivor kill-tests for dashboard_cycle_hero.go.
 //
-// These pin the arithmetic at dashboardCycleHeroMarkerAtDay (lines 168-169),
-// where the marker X/Y coordinates are computed. The existing coverage tests
-// only probe degenerate angles (sin/cos == 0 or ±1), at which the + and *
-// operators coincide with their - and / mutants; these tests use a
-// non-degenerate angle so the ARITHMETIC_BASE mutants are distinguished.
+// These pin the ribbon's day arithmetic: the conversion from a calendar date to
+// a 1-based cycle day, the closed bounds of a day span, and the axis clamp. The
+// behaviour tests in the coverage file exercise these through whole heroes,
+// where an off-by-one inside one span can be masked by another; here each is
+// called directly with a non-degenerate input so the ARITHMETIC and CONDITIONAL
+// mutants are distinguished.
 
-// TestDashboardCycleHeroMarkerXUsesPlusRadiusCosine kills the ARITHMETIC_BASE
-// mutant at line 168 (centerX + radius*cos -> centerX - radius*cos).
-func TestDashboardCycleHeroMarkerXUsesPlusRadiusCosine(t *testing.T) {
-	// dayIndex=7, cycleLength=28 -> ratio=0.25 -> angle=0 -> cos(angle)=1.
-	// Original X = centerX + radius*cos = 110 + 78*1 = 188.0.
-	// The +->- mutation would yield 110 - 78 = 32.0.
-	marker := dashboardCycleHeroMarkerAtDay(7, 28)
-	if marker.X != "188.0" {
-		t.Fatalf("expected marker X 188.0 (centerX + radius*cos at angle 0), got %q", marker.X)
+// TestDashboardCycleHeroSpanFromDatesIsOneBased kills the mutants that drop the
+// +1 in the date→cycle-day conversion. The cycle start is day 1, not day 0, so a
+// window opening on the start date must report StartDay 1; without the +1 every
+// span slides one day early and the ribbon shades the wrong column.
+func TestDashboardCycleHeroSpanFromDatesIsOneBased(t *testing.T) {
+	cycleStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+
+	span := dashboardCycleHeroSpanFromDates(
+		cycleStart,
+		cycleStart,
+		cycleStart.AddDate(0, 0, 4),
+		cycleStart.AddDate(0, 0, 2),
+	)
+	if !span.Present {
+		t.Fatal("expected a present span for a valid date range")
+	}
+	if span.StartDay != 1 {
+		t.Fatalf("the cycle start is day 1, got StartDay %d", span.StartDay)
+	}
+	if span.EndDay != 5 {
+		t.Fatalf("four days after the start is day 5, got EndDay %d", span.EndDay)
+	}
+	if span.PeakDay != 3 {
+		t.Fatalf("two days after the start is day 3, got PeakDay %d", span.PeakDay)
 	}
 }
 
-// TestDashboardCycleHeroMarkerYUsesRadiusTimesSine kills the ARITHMETIC_BASE
-// mutant at line 169 (centerY + radius*sin -> centerY + radius/sin).
-func TestDashboardCycleHeroMarkerYUsesRadiusTimesSine(t *testing.T) {
-	// dayIndex=7, cycleLength=21 -> ratio=1/3 -> angle=pi/6 -> sin(angle)=0.5.
-	// Original Y = centerY + radius*sin = 110 + 78*0.5 = 149.0.
-	// The *->/ mutation would yield 110 + 78/0.5 = 266.0.
-	// Existing tests only check Y where sin=+/-1, at which * and / coincide,
-	// so a non-degenerate sine is required to distinguish the mutation.
-	marker := dashboardCycleHeroMarkerAtDay(7, 21)
-	if marker.Y != "149.0" {
-		t.Fatalf("expected marker Y 149.0 (centerY + radius*sin at angle pi/6), got %q", marker.Y)
+// TestDashboardCycleHeroSpanFromDatesRejectsAnInvertedRange pins the guard that
+// an end before its start is no span at all — a mutant weakening it would emit a
+// span whose covers() never matches and whose EndDay would still stretch the axis.
+func TestDashboardCycleHeroSpanFromDatesRejectsAnInvertedRange(t *testing.T) {
+	cycleStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+
+	inverted := dashboardCycleHeroSpanFromDates(
+		cycleStart,
+		cycleStart.AddDate(0, 0, 6),
+		cycleStart.AddDate(0, 0, 2),
+		time.Time{},
+	)
+	if inverted.Present {
+		t.Fatal("expected no span when the end precedes the start")
+	}
+
+	// A window that closed before this cycle began is not this cycle's window.
+	ended := dashboardCycleHeroSpanFromDates(
+		cycleStart,
+		cycleStart.AddDate(0, 0, -6),
+		cycleStart.AddDate(0, 0, -2),
+		time.Time{},
+	)
+	if ended.Present {
+		t.Fatal("expected no span when the whole range predates the cycle start")
+	}
+
+	// One that straddles the start is clamped to day 1 rather than dropped.
+	straddling := dashboardCycleHeroSpanFromDates(
+		cycleStart,
+		cycleStart.AddDate(0, 0, -2),
+		cycleStart.AddDate(0, 0, 1),
+		time.Time{},
+	)
+	if !straddling.Present || straddling.StartDay != 1 || straddling.EndDay != 2 {
+		t.Fatalf("expected a span clamped to days 1-2, got %+v", straddling)
+	}
+}
+
+// TestDashboardCycleHeroDaySpanCoversItsBounds pins covers() as a CLOSED range:
+// both the first and the last day belong to it. A mutant turning either <= into
+// < drops one end day, which on a fertile window silently un-shades the peak's
+// neighbour.
+func TestDashboardCycleHeroDaySpanCoversItsBounds(t *testing.T) {
+	span := dashboardCycleHeroDaySpan{StartDay: 9, EndDay: 15, Present: true}
+
+	for _, day := range []int{9, 12, 15} {
+		if !span.covers(day) {
+			t.Fatalf("expected day %d inside the span 9-15", day)
+		}
+	}
+	for _, day := range []int{8, 16} {
+		if span.covers(day) {
+			t.Fatalf("expected day %d outside the span 9-15", day)
+		}
+	}
+
+	absent := dashboardCycleHeroDaySpan{StartDay: 9, EndDay: 15}
+	if absent.covers(12) {
+		t.Fatal("an absent span covers nothing, whatever its bounds hold")
+	}
+}
+
+// TestDashboardCycleHeroAxisDaysGrowsOnlyForALaterWindow pins the axis: it is
+// the cycle length unless the start window reaches past it, and it never grows
+// beyond the DOM bound. A mutant flipping the comparison would shrink the axis
+// to a window that ends early, cutting the luteal phase off the ribbon.
+func TestDashboardCycleHeroAxisDaysGrowsOnlyForALaterWindow(t *testing.T) {
+	if got := dashboardCycleHeroAxisDays(28, dashboardCycleHeroDaySpan{}); got != 28 {
+		t.Fatalf("with no window the axis is the cycle length, got %d", got)
+	}
+	if got := dashboardCycleHeroAxisDays(28, dashboardCycleHeroDaySpan{StartDay: 24, EndDay: 26, Present: true}); got != 28 {
+		t.Fatalf("a window ending inside the cycle leaves the axis at 28, got %d", got)
+	}
+	if got := dashboardCycleHeroAxisDays(28, dashboardCycleHeroDaySpan{StartDay: 27, EndDay: 34, Present: true}); got != 34 {
+		t.Fatalf("a window ending past the cycle stretches the axis to 34, got %d", got)
+	}
+	if got := dashboardCycleHeroAxisDays(28, dashboardCycleHeroDaySpan{StartDay: 40, EndDay: 400, Present: true}); got != dashboardCycleHeroMaxAxisDays {
+		t.Fatalf("expected the axis clamped to %d, got %d", dashboardCycleHeroMaxAxisDays, got)
 	}
 }

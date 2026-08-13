@@ -159,12 +159,12 @@ func TestDashboardEnglishRendersSharedSparsePredictionExplanationForIrregularMod
 	}
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
-	ring := dashboardElementByDataAttr(document, "data-dashboard-cycle-ring")
-	if ring == nil {
-		t.Fatal("expected the dashboard status header ring in sparse irregular state")
+	ribbon := dashboardElementByDataAttr(document, "data-dashboard-cycle-ribbon")
+	if ribbon == nil {
+		t.Fatal("expected the dashboard status header ribbon slot in sparse irregular state")
 	}
-	if got := htmlAttr(ring, "data-cycle-ring-segmented"); got != "false" {
-		t.Fatalf("did not expect a segmented ring before sparse irregular history becomes reliable, got %q", got)
+	if got := htmlAttr(ribbon, "data-cycle-ribbon-visible"); got != "false" {
+		t.Fatalf("did not expect a drawn ribbon before sparse irregular history becomes reliable, got %q", got)
 	}
 	explainer := dashboardElementByDataAttr(document, "data-dashboard-prediction-explainer")
 	if explainer == nil {

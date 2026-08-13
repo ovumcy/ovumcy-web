@@ -10,28 +10,10 @@
       data-fertility-status="{{if or .CycleDataStale (not .ShowFertilityStatus)}}unknown{{else}}{{.Stats.CurrentFertility}}{{end}}"
       {{if .CycleHero.Approximate}}data-cycle-hero-approximate="true"{{end}}>
       <div class="dashboard-status-top">
-        <div class="dashboard-cycle-ring-wrap" data-dashboard-cycle-ring data-cycle-ring-segmented="{{if .CycleHero.Visible}}true{{else}}false{{end}}">
-          <svg class="dashboard-cycle-ring" viewBox="0 0 220 220" aria-hidden="true" focusable="false">
-            <circle class="dashboard-cycle-ring-track" cx="110" cy="110" r="78"></circle>
-            {{range .CycleHero.Segments}}
-            <circle
-              class="dashboard-cycle-ring-segment dashboard-cycle-ring-segment-{{.Phase}}"
-              cx="110"
-              cy="110"
-              r="78"
-              stroke-dasharray="{{.DashArray}}"
-              stroke-dashoffset="{{.DashOffset}}"
-              data-cycle-hero-segment="{{.Phase}}"></circle>
-            {{end}}
-            {{if .CycleHero.ShowCurrentDayMarker}}
-            <circle class="dashboard-cycle-ring-marker" cx="{{.CycleHero.CurrentDayMarker.X}}" cy="{{.CycleHero.CurrentDayMarker.Y}}" r="9"></circle>
-            {{end}}
-          </svg>
-          <p class="dashboard-cycle-ring-center">
-            <span class="sr-only">{{t .Messages "dashboard.cycle_day"}}</span>
-            <span class="dashboard-cycle-ring-day" data-dashboard-cycle-day>{{if gt .Stats.CurrentCycleDay 0}}{{if .CycleDataStale}}~{{end}}{{.Stats.CurrentCycleDay}}{{else}}{{.NoDataLabel}}{{end}}</span>
-          </p>
-        </div>
+        <p class="dashboard-cycle-lead">
+          <span class="sr-only">{{t .Messages "dashboard.cycle_day"}}</span>
+          <span class="dashboard-cycle-lead-day" data-dashboard-cycle-day>{{if gt .Stats.CurrentCycleDay 0}}{{if .CycleDataStale}}~{{end}}{{.Stats.CurrentCycleDay}}{{else}}{{.NoDataLabel}}{{end}}</span>
+        </p>
 
         <p class="dashboard-status-line" data-dashboard-status-line>
           <span class="dashboard-status-item">
@@ -152,6 +134,36 @@
             <div id="dashboard-usage-goal-status" class="save-status text-sm" aria-live="polite"></div>
           </div>
         </details>
+        {{end}}
+      </div>
+
+      {{/* The cycle ribbon. One cell per day of the axis, in cycle order: the
+           phase colours, the fertile window, the days a period may start on and
+           the days this account actually recorded, all drawn from the calendar's
+           own --cal-* source so the two screens cannot disagree. It is
+           aria-hidden because every fact it encodes is stated in the status line
+           above it — the ribbon is the picture of that sentence, not a second
+           source. */}}
+      <div
+        class="dashboard-cycle-ribbon-wrap"
+        data-dashboard-cycle-ribbon
+        data-cycle-ribbon-visible="{{if .CycleHero.Visible}}true{{else}}false{{end}}">
+        {{if .CycleHero.Visible}}
+        <div class="dashboard-cycle-ribbon" aria-hidden="true">
+          {{range .CycleHero.Days}}
+          <span
+            class="dashboard-cycle-ribbon-day"
+            data-cycle-ribbon-day="{{.Day}}"
+            data-phase="{{.Phase}}"
+            {{if .IsToday}}data-today="true"{{end}}
+            {{if .IsProjected}}data-projected="true"{{end}}
+            {{if .IsPredictedFlow}}data-predicted-flow="true"{{end}}
+            {{if .IsFertile}}data-fertile="true"{{end}}
+            {{if .IsFertilePeak}}data-fertile-peak="true"{{end}}
+            {{if .IsStartWindow}}data-start-window="true"{{end}}
+            {{if .IsLogged}}data-logged="true"{{end}}></span>
+          {{end}}
+        </div>
         {{end}}
       </div>
 

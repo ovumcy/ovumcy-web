@@ -19,7 +19,7 @@ func TestBuildDashboardCycleHeroBuildsSegmentedOverview(t *testing.T) {
 		DisplayOvulationExact: true,
 	}
 
-	hero := BuildDashboardCycleHero(user, stats, cycleContext)
+	hero := BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{})
 	if !hero.Visible {
 		t.Fatal("expected cycle hero to be visible")
 	}
@@ -39,11 +39,11 @@ func TestBuildDashboardCycleHeroBuildsSegmentedOverview(t *testing.T) {
 	expectCardRange(t, hero.PhaseCards[1], "follicular", 6, 13, false)
 	expectCardRange(t, hero.PhaseCards[2], "ovulation", 14, 14, false)
 	expectCardRange(t, hero.PhaseCards[3], "luteal", 15, 28, false)
-	if len(hero.Segments) != 4 {
-		t.Fatalf("expected 4 hero ring segments, got %d", len(hero.Segments))
+	if hero.AxisDays != 28 || len(hero.Days) != 28 {
+		t.Fatalf("expected a 28-day ribbon, got axis %d over %d cells", hero.AxisDays, len(hero.Days))
 	}
-	if !hero.ShowCurrentDayMarker {
-		t.Fatal("expected current-day marker")
+	if !hero.Days[2].IsToday {
+		t.Fatal("expected cycle day 3 to be marked as today")
 	}
 }
 
@@ -60,7 +60,7 @@ func TestBuildDashboardCycleHeroMarksRangeBasedViewsApproximate(t *testing.T) {
 		DisplayOvulationUseRange:  true,
 	}
 
-	hero := BuildDashboardCycleHero(user, stats, cycleContext)
+	hero := BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{})
 	if !hero.Visible {
 		t.Fatal("expected cycle hero to stay visible for range-based predictions")
 	}
@@ -85,14 +85,14 @@ func TestBuildDashboardCycleHeroSkipsSparseOrDisabledPredictionStates(t *testing
 	sparse := BuildDashboardCycleHero(user, stats, DashboardCycleContext{
 		DisplayNextPeriodNeedsData: true,
 		DisplayOvulationNeedsData:  true,
-	})
+	}, dashboardCycleHeroInput{})
 	if sparse.Visible {
 		t.Fatal("did not expect sparse irregular state to render segmented cycle hero")
 	}
 
 	disabled := BuildDashboardCycleHero(user, stats, DashboardCycleContext{
 		PredictionDisabled: true,
-	})
+	}, dashboardCycleHeroInput{})
 	if disabled.Visible {
 		t.Fatal("did not expect unpredictable mode to render segmented cycle hero")
 	}

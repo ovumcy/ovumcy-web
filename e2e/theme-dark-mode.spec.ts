@@ -16,6 +16,12 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './support/auth-helpers';
+import {
+  isoToday,
+  markCycleStartViaAPI,
+  registerAndOnboardWithStartDaysAgo,
+  shiftISODate,
+} from './support/stats-helpers';
 
 async function registerAndReachDashboard(
   page: Page,
@@ -179,27 +185,48 @@ test.describe('Theme mode', () => {
     await logoutViaAPI(page);
   });
 
-  test('dark theme keeps the cycle ring track visible in the status header', async ({ page }) => {
-    await registerAndReachDashboard(page, 'theme-dark-ring');
+  test('dark theme keeps the cycle ribbon readable in the status header', async ({ page }) => {
+    // The ribbon draws a phase map, so it needs an account whose data supports
+    // one: onboarding's MinDate is 60 days back, and the cycle-start API has no
+    // past bound, so the older anchors are backfilled through it.
+    await registerAndOnboardWithStartDaysAgo(page, 'theme-dark-ribbon', 60);
+    const today = isoToday();
+    for (const offset of [-90, -32, -6]) {
+      await markCycleStartViaAPI(page, shiftISODate(today, offset));
+    }
+
     await applyTheme(page, 'dark');
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
 
     const header = await expectDashboardStatusHeader(page);
-    const track = header.locator('.dashboard-cycle-ring-track');
-    await expect(track).toHaveCount(1);
+    await expect(header.locator('[data-dashboard-cycle-ribbon]')).toHaveAttribute(
+      'data-cycle-ribbon-visible',
+      'true'
+    );
+    // The two phases a reader looks for — the period itself and the ovulation
+    // day — carry the 3:1 non-text floor against the card in both themes. The
+    // recessive pair (follicular, luteal) deliberately does not: the band is a
+    // redundant aria-hidden graphic whose every fact is stated in the status
+    // line, and levelling all four collapses them into one luminance where
+    // neighbouring phases stop being separable at all.
+    const menstrual = header.locator('[data-cycle-ribbon-day][data-phase="menstrual"]').first();
+    await expect(menstrual).toHaveCount(1);
 
-    // The track is the remainder of the cycle the phase segments are drawn on —
-    // a meaningful graphic, so WCAG 1.4.11 puts its floor at 3:1 against the card.
-    const darkContrast = await measureGraphicContrast(track, header, 'cycle ring track (dark)');
+    const darkContrast = await measureGraphicContrast(menstrual, header, 'cycle ribbon menstrual (dark)');
     expect(darkContrast.worstRatio, describeContrast(darkContrast)).toBeGreaterThanOrEqual(
       WCAG_AA_GRAPHIC_CONTRAST
     );
 
-    // Anti-vacuity: the same reader has to resolve the light theme's track too.
+    // Anti-vacuity: the same reader has to resolve the light theme's cell too.
     // A reader that silently stopped resolving anything would pass the dark
     // assertion above by measuring nothing at all.
     await applyTheme(page, 'light');
-    const lightContrast = await measureGraphicContrast(track, header, 'cycle ring track (light)');
+    const lightContrast = await measureGraphicContrast(menstrual, header, 'cycle ribbon menstrual (light)');
     expect(lightContrast.stops.length, describeContrast(lightContrast)).toBeGreaterThan(0);
+    expect(lightContrast.worstRatio, describeContrast(lightContrast)).toBeGreaterThanOrEqual(
+      WCAG_AA_GRAPHIC_CONTRAST
+    );
 
     await logoutViaAPI(page);
   });
