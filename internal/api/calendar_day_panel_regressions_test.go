@@ -54,6 +54,50 @@ func TestCalendarDayPanelReadonlySummaryShowsSavedBBT(t *testing.T) {
 	}
 }
 
+// TestCalendarDaySummaryNamesTheLoggedMood is the read-back half of the mood
+// scale carrying names: a mood read back as a face and a fraction says as
+// little as the unnamed picker did. The saved step is displayed with the name
+// its key resolves to, and the face stays out of the accessibility tree beside
+// it — it decorates a value the text already carries.
+func TestCalendarDaySummaryNamesTheLoggedMood(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "calendar-mood-summary@example.com", "StrongPass1", true)
+
+	saved := services.DayMoodScale().Highest
+	day := time.Date(2026, time.February, 17, 0, 0, 0, 0, time.UTC)
+	if err := database.Create(&models.DailyLog{
+		UserID: user.ID,
+		Date:   day,
+		Flow:   models.FlowNone,
+		Mood:   saved,
+	}).Error; err != nil {
+		t.Fatalf("create daily log: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	request := httptest.NewRequest(http.MethodGet, "/calendar/day/"+day.Format("2006-01-02"), nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	name := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-mood-name-key")
+	})
+	if name == nil {
+		t.Fatal("expected the day summary to name the logged mood")
+	}
+	if got, want := htmlAttr(name, "data-mood-name-key"), services.MoodTranslationKey(saved); got != want {
+		t.Fatalf("summary name key %q, want %q", got, want)
+	}
+	rendered := strings.TrimSpace(htmlNodeText(name))
+	if rendered == "" || rendered == services.MoodTranslationKey(saved) {
+		t.Fatalf("expected a resolved mood name in the summary, got %q", rendered)
+	}
+}
+
 // mustMatchCalendarTag returns the single opening tag matching pattern, so an
 // assertion about one control's attributes cannot be satisfied by a different
 // element elsewhere in the page.

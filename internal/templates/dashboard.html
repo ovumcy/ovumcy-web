@@ -324,7 +324,7 @@
 
         <fieldset class="space-y-2" data-dashboard-section="mood">
           <legend class="field-label">{{t .Messages "dashboard.mood"}}</legend>
-          {{template "mood_picker" (dict "SelectedMood" .TodayEntry.Mood "Compact" false)}}
+          {{template "mood_picker" (dict "Messages" .Messages "SelectedMood" .TodayEntry.Mood "Compact" false)}}
         </fieldset>
 
         <fieldset id="dashboard-symptoms" class="space-y-2" data-dashboard-section="symptoms">

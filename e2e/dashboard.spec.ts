@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -67,6 +67,42 @@ async function enableBBTTracking(page: Page): Promise<void> {
 
 function todaySaveForm(page: Page) {
   return page.locator('[data-dashboard-save-form]');
+}
+
+interface MoodStepState {
+  step: string | null;
+  key: string | null;
+  ariaLabel: string | null;
+  title: string | null;
+  nameText: string;
+  nameShown: boolean;
+  chipHeight: number;
+}
+
+/**
+ * Every mood step's naming and geometry, read in one round trip.
+ *
+ * Whether a step's name shows is a computed `display`, not Playwright's
+ * visibility heuristic: the caption band is CSS-driven — the chosen step's name
+ * replaces the scale ends — and `display` is the declaration that decides it.
+ */
+async function readMoodSteps(picker: Locator): Promise<MoodStepState[]> {
+  return picker.locator('label[data-mood-option]').evaluateAll((labels) =>
+    labels.map((label) => {
+      const input = label.querySelector('input[name="mood"]');
+      const chip = label.querySelector('.chip-round');
+      const name = label.querySelector('[data-mood-name-key]');
+      return {
+        step: label.getAttribute('data-mood-option'),
+        key: name ? name.getAttribute('data-mood-name-key') : null,
+        ariaLabel: input ? input.getAttribute('aria-label') : null,
+        title: chip ? chip.getAttribute('title') : null,
+        nameText: name && name.textContent ? name.textContent.trim() : '',
+        nameShown: name ? window.getComputedStyle(name).display !== 'none' : false,
+        chipHeight: chip ? chip.getBoundingClientRect().height : 0,
+      };
+    })
+  );
 }
 
 function manualCycleStartButton(page: Page) {
@@ -337,6 +373,75 @@ test.describe('Dashboard: today editor', () => {
     }
   });
 
+  test('the mood scale names its steps at 390px without giving up its tap targets', async ({
+    page,
+  }) => {
+    test.slow();
+    await registerOwnerOnDashboard(page, 'dashboard-mood-scale-names');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload();
+    await expect(page).toHaveURL(/\/dashboard$/);
+
+    const picker = page.locator('[data-mood-picker]').first();
+    await expect(picker).toBeVisible();
+
+    const steps = await readMoodSteps(picker);
+    expect(steps.length, 'the picker must offer the whole mood scale').toBeGreaterThan(1);
+
+    // The expected copy is read from the catalogue through the key each step
+    // publishes, so the spec covers a step added later without being edited.
+    const expectedNames = steps.map((step) => {
+      expect(step.key, `mood step ${step.step} must publish its name key`).toBeTruthy();
+      return localeText('en', String(step.key));
+    });
+
+    steps.forEach((step, index) => {
+      // Named to assistive technology and on hover whether or not it is the
+      // chosen step: the caption is the visible half of a name that is always
+      // there.
+      expect(step.ariaLabel, `mood step ${step.step} names itself`).toBe(expectedNames[index]);
+      expect(step.title, `mood step ${step.step} names itself on hover`).toBe(expectedNames[index]);
+      expect(step.nameText, `mood step ${step.step} carries its visible name`).toBe(
+        expectedNames[index]
+      );
+      // The name is a caption under the row, so it may not buy its space from
+      // the tap target: the chip stays a real 44px control at 390px.
+      expect(
+        step.chipHeight,
+        `mood step ${step.step} must stay at least 44px tall`
+      ).toBeGreaterThanOrEqual(44);
+      expect(step.nameShown, `only the chosen step names itself in the caption`).toBe(false);
+    });
+
+    // Nothing chosen yet: the caption names the two ends, so the direction of
+    // the row is readable before the first tap.
+    const scaleEnds = picker.locator('[data-mood-scale-ends]');
+    await expect(scaleEnds).toBeVisible();
+    await expect(scaleEnds).toContainText(expectedNames[0]);
+    await expect(scaleEnds).toContainText(expectedNames[expectedNames.length - 1]);
+
+    const chosenIndex = Math.floor(steps.length / 2);
+    const chosenOption = picker.locator(`label[data-mood-option="${steps[chosenIndex].step}"]`);
+    // Tapped the way it is used: the chip is the affordance, and the row is
+    // centred first so the fixed mobile tabbar cannot be what receives the tap.
+    const chosenChip = chosenOption.locator('.chip-round');
+    await chosenChip.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+    await saveToday(page, async () => {
+      await chosenChip.click();
+    });
+    await expect(chosenOption.locator('input[name="mood"]')).toBeChecked();
+
+    // The chosen step now names itself in the caption band, alone: the scale
+    // ends step aside and no other step's name shows.
+    await expect(picker.locator('[data-mood-scale-ends]')).toBeHidden();
+    const afterChoice = await readMoodSteps(picker);
+    afterChoice.forEach((step, index) => {
+      expect(step.nameShown, `step ${step.step} caption after choosing ${chosenIndex}`).toBe(
+        index === chosenIndex
+      );
+    });
+  });
+
   test('rare journal fields wait behind More, which opens for a day that holds one', async ({
     page,
   }) => {
@@ -559,6 +664,13 @@ test.describe('Dashboard: today editor', () => {
       await symptomChipForOption(firstSymptom).click();
     });
 
+    // What the fourth step is called, taken from the picker that saved it —
+    // the summary has to read the same mood back under the same name.
+    const moodFourKey = await page
+      .locator('label[data-mood-option="4"] [data-mood-name-key]')
+      .getAttribute('data-mood-name-key');
+    expect(moodFourKey, 'the picker must publish the name key of the step it saved').toBeTruthy();
+
     const todayAction = await todaySaveForm(page).first().getAttribute('hx-put');
     expect(todayAction).toMatch(/^\/api\/v1\/days\/\d{4}-\d{2}-\d{2}$/);
 
@@ -567,7 +679,12 @@ test.describe('Dashboard: today editor', () => {
     await page.goto(`/calendar?month=${month}&day=${todayISO}`);
 
     const daySummary = page.locator('#day-editor');
-    await expect(daySummary).toContainText('4/5');
+    // The summary reads the mood back by name, not as a face and a fraction.
+    await expect(daySummary.locator('[data-mood-name-key]')).toHaveAttribute(
+      'data-mood-name-key',
+      String(moodFourKey)
+    );
+    await expect(daySummary).toContainText(localeText('en', String(moodFourKey)));
     await expect(daySummary).toContainText(String(firstSymptomLabel));
 
     await page.locator(`[data-day-editor-open="${todayISO}"]`).click();
