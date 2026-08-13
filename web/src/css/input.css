@@ -1089,29 +1089,34 @@
     background-image: var(--cal-fill-start-window);
   }
 
-  /* Bottom edge — what is estimated: the fertile window and its peak. */
+  /* Bottom edge — what is estimated: the fertile window and its peak. Fertility
+     is the second axis (#416), so it runs as its own strip under the phase band
+     rather than competing with it for the same colour. */
   &[data-fertile='true']::after {
     content: '';
     position: absolute;
     inset: auto 0 0 0;
-    height: 0.25rem;
-    background: rgb(var(--cal-fertile-ink) / 0.55);
+    height: 0.375rem;
+    background: rgb(var(--cal-fertile-ink) / 0.9);
   }
 
   &[data-fertile-peak='true']::after {
+    height: 0.5rem;
     background: rgb(var(--cal-fertile-peak));
   }
 
-  /* Top edge — what was recorded, in the same --ink-accent the calendar's
-     logged-entry dot uses, so one mark means one thing on both screens. The
-     two edges never compete for the same strip, so a fertile day the owner
-     logged shows both. */
+  /* Top edge — what was recorded. It reads in --ink-strong rather than the
+     --ink-accent the calendar's logged dot uses: that dot sits on a white cell,
+     while this one crosses four saturated phase colours, and only the ink token
+     is legible on all of them AND flips with the theme, where a fixed brown
+     would disappear into the dark band. The two edges never compete for the
+     same strip, so a fertile day the owner logged shows both. */
   &[data-logged='true']::before {
     content: '';
     position: absolute;
     inset: 0 0 auto 0;
-    height: 0.1875rem;
-    background: var(--ink-accent);
+    height: 0.25rem;
+    background: var(--ink-strong);
   }
 
   &[data-today='true'] {

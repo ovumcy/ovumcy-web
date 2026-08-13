@@ -213,7 +213,12 @@ test.describe('Theme mode', () => {
     const menstrual = header.locator('[data-cycle-ribbon-day][data-phase="menstrual"]').first();
     await expect(menstrual).toHaveCount(1);
 
-    const darkContrast = await measureGraphicContrast(menstrual, header, 'cycle ribbon menstrual (dark)');
+    const darkContrast = await measureGraphicContrast(
+      menstrual,
+      header,
+      'cycle ribbon menstrual (dark)',
+      'background-color'
+    );
     expect(darkContrast.worstRatio, describeContrast(darkContrast)).toBeGreaterThanOrEqual(
       WCAG_AA_GRAPHIC_CONTRAST
     );
@@ -222,7 +227,12 @@ test.describe('Theme mode', () => {
     // A reader that silently stopped resolving anything would pass the dark
     // assertion above by measuring nothing at all.
     await applyTheme(page, 'light');
-    const lightContrast = await measureGraphicContrast(menstrual, header, 'cycle ribbon menstrual (light)');
+    const lightContrast = await measureGraphicContrast(
+      menstrual,
+      header,
+      'cycle ribbon menstrual (light)',
+      'background-color'
+    );
     expect(lightContrast.stops.length, describeContrast(lightContrast)).toBeGreaterThan(0);
     expect(lightContrast.worstRatio, describeContrast(lightContrast)).toBeGreaterThanOrEqual(
       WCAG_AA_GRAPHIC_CONTRAST
