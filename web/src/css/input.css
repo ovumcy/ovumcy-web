@@ -783,14 +783,16 @@
 
 @utility card-danger-strong {
   &:is(.card, .card-quiet) {
+    /* The wash the surface never had: the shipped rule read `var(--panel-bg)`,
+       an undefined token, so the declaration was invalid at computed-value
+       time and the zone rendered unfilled. It is a quiet warm neutral, one
+       step off the page rather than an alarm field — the section has to be
+       plainly findable, which is a matter of it reading as its own surface
+       with a danger-toned border and heading, not of shouting. Both themes
+       carry the pairing measured in the token block. */
     border: 1px solid var(--danger-strong-border);
-    /* No fill of its own. The shipped rule read `var(--panel-bg)`, a token that
-       has never been defined, so the whole background declaration was invalid
-       at computed-value time and the zone has always rendered unfilled.
-       Recorded here rather than repainted: choosing a wash for it is a design
-       decision, not a rename. */
-    background: none;
-    box-shadow: inset 0 0 0 1px rgba(177, 86, 78, 0.08);
+    background: var(--danger-strong-bg);
+    box-shadow: none;
   }
 }
 
@@ -1183,6 +1185,20 @@
   &.field-label {
     font-size: var(--text-xs);
     line-height: var(--text-xs--line-height);
+  }
+}
+
+/* The step UP, for the heading of a group of controls inside a section card.
+   Same variant shape and same reason as field-label-sm above: one font-size
+   declaration, taken from the type scale. It exists because a settings card
+   used to render its block headings at the size of the labels underneath
+   them, so the page had a single flat level from the section title down and
+   read as a wall. The ladder is journal-subtitle (--text-xl) → this
+   (--text-lg) → field-label (--text-sm). */
+@utility field-label-lg {
+  &.field-label {
+    font-size: var(--text-lg);
+    line-height: var(--text-lg--line-height);
   }
 }
 
@@ -2816,15 +2832,20 @@
   font-weight: 700;
 }
 
+/* The per-section hint, used only where OTHER sections on the page do have
+   data — the whole-page empty state is one combined card with the
+   illustration, not five of these stacked. Sized to its own single line: it
+   is a hint, not a panel, so it takes the control radius and the smaller
+   inset rather than a card's. */
 @utility stats-empty-state {
-  margin-top: 1rem;
+  margin-top: 0.75rem;
   display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
-  border-radius: var(--radius-card);
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-control);
   border: 1px dashed rgba(172, 136, 96, 0.34);
   background: rgba(255, 248, 240, 0.56);
-  padding: 0.78rem 0.86rem;
+  padding: 0.45rem 0.7rem;
 
   :root[data-theme='dark'] & {
     background: var(--bg-soft-strong);
@@ -3130,7 +3151,7 @@
 
 @utility settings-toggle-list {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
 
   & .period-toggle {
     display: flex;
@@ -3184,7 +3205,7 @@
 
 @utility settings-account-stack {
   display: grid;
-  gap: 1rem;
+  gap: 0.65rem;
 }
 
 @utility settings-account-block {
@@ -3203,8 +3224,11 @@
   font-weight: 600;
 }
 
+/* The page stack already spaces the sections; the extra rule here only
+   pushed the zone further down a page whose length is the complaint. It
+   keeps a small separation so the section still reads as set apart. */
 @utility settings-danger-zone {
-  margin-top: 1rem;
+  margin-top: 0.35rem;
 }
 
 @utility danger-link {
@@ -4190,8 +4214,8 @@
 
 @utility dashboard-secondary-actions {
   border-top: 1px dashed rgba(177, 86, 78, 0.24);
-  margin-top: 1rem;
-  padding-top: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
   border-top-color: rgba(172, 136, 96, 0.24);
 
   :root[data-theme='dark'] & {
@@ -4201,8 +4225,8 @@
 
 @utility dashboard-danger-actions {
   border-top: 1px dashed rgba(177, 86, 78, 0.24);
-  margin-top: 1rem;
-  padding-top: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
 
   :root[data-theme='dark'] & {
     border-top-color: rgba(222, 143, 136, 0.24);
@@ -4420,7 +4444,13 @@
     --shadow-hover: var(--elevation-3);
     --danger-soft-border: rgba(196, 146, 74, 0.38);
     --danger-soft-bg: rgba(255, 247, 228, 0.62);
-    --danger-strong-border: rgba(254, 202, 202, 0.92);
+    /* The destructive section's own surface: a warm neutral a step off the
+       white card, with the danger signal carried by the border and the
+       heading instead of by the field. Measured on #fdf6f1 — --text-primary
+       7.93:1, --text-muted 5.73:1, --danger-title 6.05:1, and the nested
+       danger-soft block composites to #fef7e9 (7.96:1 / 5.74:1). */
+    --danger-strong-border: rgba(177, 86, 78, 0.42);
+    --danger-strong-bg: #fdf6f1;
     --danger-title: #b91c1c;
     --chart-grid: rgba(172, 136, 96, 0.26);
     /* The series line is a non-text graphical object: WCAG 1.4.11 puts its
@@ -4669,7 +4699,11 @@
     --shadow-hover: var(--elevation-3);
     --danger-soft-border: rgba(214, 168, 95, 0.48);
     --danger-soft-bg: rgba(67, 48, 24, 0.48);
-    --danger-strong-border: rgba(215, 113, 113, 0.74);
+    /* Dark side of the same pairing. Measured on #2b2229 —
+       --text-primary 12.51:1, --text-muted 8.56:1, --danger-title 8.83:1;
+       the nested danger-soft block composites to #372921 (11.36:1 / 7.78:1). */
+    --danger-strong-border: rgba(215, 113, 113, 0.62);
+    --danger-strong-bg: #2b2229;
     --danger-title: #ffb0aa;
     --chart-grid: rgba(169, 146, 184, 0.32);
     /* Validated against the elevated dark surface #2e263c; #d29f74 was too

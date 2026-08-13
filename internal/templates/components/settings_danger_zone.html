@@ -1,13 +1,13 @@
 {{define "settings_danger_zone_section_content"}}
-  <section id="settings-danger-zone" class="card card-danger-strong p-5 sm:p-6 settings-danger-zone">
+  <section id="settings-danger-zone" class="card card-danger-strong p-4 sm:p-5 settings-danger-zone">
     <h2 class="journal-subtitle danger-title"><span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "settings.danger_zone.title"}}</h2>
-    <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
 
     {{if eq .CurrentUser.Role "owner"}}
     {{if .CurrentUser.LocalAuthEnabled}}
-    <div class="card-quiet card-danger-soft mt-5 space-y-4">
+    <div class="card-quiet card-danger-soft mt-3 space-y-3">
       <div>
-        <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
+        <h3 class="field-label field-label-lg">{{t .Messages "settings.clear_data.title"}}</h3>
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.subtitle"}}</p>
       </div>
 
@@ -24,21 +24,27 @@
         data-clear-data-request-failed="{{t .Messages "common.error.request_failed"}}">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
-        {{template "password_toggle_field" (dict
-          "Messages" .Messages
-          "LabelKey" "settings.delete_account.password"
-          "FieldID" "settings-clear-data-password"
-          "FieldName" "password"
-          "Autocomplete" "current-password"
-          "Required" true)}}
-        <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.submit"}}</button>
+        {{/* Re-authentication is one field and one button, so they sit on one
+             row rather than stacking three blocks deep. */}}
+        <div class="settings-form-actions">
+          <div class="min-w-0 flex-1 space-y-1 sm:max-w-xs">
+            {{template "password_toggle_field" (dict
+              "Messages" .Messages
+              "LabelKey" "settings.delete_account.password"
+              "FieldID" "settings-clear-data-password"
+              "FieldName" "password"
+              "Autocomplete" "current-password"
+              "Required" true)}}
+          </div>
+          <button type="submit" class="btn-secondary">{{t .Messages "settings.clear_data.submit"}}</button>
+        </div>
         <div id="settings-clear-data-status" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
     {{else}}
-    <div class="card-quiet card-danger-soft mt-5 space-y-4" data-clear-data-stepup>
+    <div class="card-quiet card-danger-soft mt-3 space-y-3" data-clear-data-stepup>
       <div>
-        <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
+        <h3 class="field-label field-label-lg">{{t .Messages "settings.clear_data.title"}}</h3>
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.stepup_hint"}}</p>
       </div>
       <form
@@ -55,9 +61,9 @@
     {{end}}
 
     {{if .CurrentUser.LocalAuthEnabled}}
-    <div class="card-quiet card-danger-soft mt-5 space-y-4">
+    <div class="card-quiet card-danger-soft mt-3 space-y-3">
       <div>
-        <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
+        <h3 class="field-label field-label-lg">{{t .Messages "settings.delete_account.title"}}</h3>
       </div>
       <form
         hx-delete="/api/v1/users/current"
@@ -69,22 +75,25 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 
-        {{template "password_toggle_field" (dict
-          "Messages" .Messages
-          "LabelKey" "settings.delete_account.password"
-          "FieldID" "settings-delete-password"
-          "FieldName" "password"
-          "Autocomplete" "current-password"
-          "Required" true)}}
-
-        <button type="submit" class="btn-danger">{{t .Messages "settings.delete_account.submit"}}</button>
+        <div class="settings-form-actions">
+          <div class="min-w-0 flex-1 space-y-1 sm:max-w-xs">
+            {{template "password_toggle_field" (dict
+              "Messages" .Messages
+              "LabelKey" "settings.delete_account.password"
+              "FieldID" "settings-delete-password"
+              "FieldName" "password"
+              "Autocomplete" "current-password"
+              "Required" true)}}
+          </div>
+          <button type="submit" class="btn-danger">{{t .Messages "settings.delete_account.submit"}}</button>
+        </div>
         <div id="delete-account-feedback" class="save-status text-sm" aria-live="polite"></div>
       </form>
     </div>
     {{else}}
-    <div class="card-quiet card-danger-soft mt-5 space-y-4" data-delete-account-stepup>
+    <div class="card-quiet card-danger-soft mt-3 space-y-3" data-delete-account-stepup>
       <div>
-        <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
+        <h3 class="field-label field-label-lg">{{t .Messages "settings.delete_account.title"}}</h3>
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.delete_account.stepup_hint"}}</p>
       </div>
       <form
