@@ -141,6 +141,46 @@
       </div>
     </section>
 
+    {{if and .IsOwner .HasStatements}}
+    {{/* Statements about the account's own recorded history: how its cycle
+         length moved, and which symptom keeps returning in the same phase.
+         Every number here comes from logged days, so this section stays
+         readable when predictions are suppressed. */}}
+    <section class="card p-4 sm:p-5 space-y-4 reveal" data-stats-statements>
+      <div>
+        <h2 class="journal-subtitle" data-stats-statements-heading data-heading-key="stats.statements_title">{{t .Messages "stats.statements_title"}}</h2>
+        <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.statements_subtitle"}}</p>
+      </div>
+      <ul class="grid gap-3">
+        {{range .Statements}}
+        <li
+          class="card-quiet"
+          data-stats-statement="{{.Kind}}"
+          data-statement-key="{{.Key}}"
+          data-statement-count="{{.Count}}"
+          data-statement-total="{{.Total}}"
+          data-statement-direction="{{.Direction}}"
+          data-statement-phase="{{.Phase}}">
+          {{if eq .Kind "symptom_phase_recurrence"}}
+          <div class="flex flex-wrap items-center gap-2">
+            <span aria-hidden="true">{{template "icon" (phaseIcon .Phase)}}</span>
+            <span class="text-sm font-semibold text-(--text-primary)">{{phaseLabel $.Messages .Phase}}</span>
+            <span class="stats-symptom-icon">{{.SymptomIcon}}</span>
+            <span class="stats-symptom-name">{{symptomLabel $.Messages .SymptomName}}</span>
+          </div>
+          <p class="journal-muted mt-2 text-sm">{{printf (tn $.Messages $.Lang .Key .Total) .Count .Total}}</p>
+          {{else}}
+          <p class="text-sm font-semibold text-(--text-primary)">{{printf (tn $.Messages $.Lang .Key .Count) .Count}}</p>
+          {{if .DetailKey}}
+          <p class="journal-muted mt-2 text-xs">{{printf (tn $.Messages $.Lang .DetailKey .DetailCount) .DetailCount}}</p>
+          {{end}}
+          {{end}}
+        </li>
+        {{end}}
+      </ul>
+    </section>
+    {{end}}
+
     {{if .HasRecentCycleFactors}}
     <section class="card p-4 sm:p-5 space-y-4 reveal" data-stats-factor-context>
       <div>
