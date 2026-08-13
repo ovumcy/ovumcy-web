@@ -47,7 +47,7 @@
         <span class="legend-item"><span class="calendar-ovulation-dot" aria-hidden="true"></span><span class="calendar-ovulation-dash" aria-hidden="true"></span>{{t .Messages "calendar.legend.ovulation_group"}}</span>
         {{end}}
         <span class="legend-item"><span class="legend-swatch legend-swatch-today" aria-hidden="true"></span>{{t .Messages "calendar.tag.today"}}</span>
-        <span class="legend-item"><span class="calendar-data-marker" aria-hidden="true"></span><span class="calendar-sex-marker" aria-hidden="true">♥</span>{{t .Messages "calendar.legend.logged_entry"}}</span>
+        <span class="legend-item"><span class="calendar-data-marker" aria-hidden="true"></span><span class="calendar-sex-marker" aria-hidden="true">{{template "icon" "heart"}}</span>{{t .Messages "calendar.legend.logged_entry"}}</span>
       </div>
 
       <div class="mb-2 grid grid-cols-7 gap-1 text-center text-xs font-semibold uppercase tracking-wide journal-muted sm:mb-3 sm:gap-2">
@@ -89,7 +89,7 @@
               <span class="calendar-ovulation-dash" title="{{t $.Messages "calendar.ovulation_tentative"}}"></span>
               {{end}}
               {{if .HasSex}}
-              <span class="calendar-sex-marker" title="{{t $.Messages "calendar.sex_logged"}}" aria-hidden="true">♥</span>
+              <span class="calendar-sex-marker" title="{{t $.Messages "calendar.sex_logged"}}" aria-hidden="true">{{template "icon" "heart"}}</span>
               {{end}}
             </div>
           </button>

@@ -17,12 +17,12 @@ func TestDomainLabelPolicy(t *testing.T) {
 		{"pregnancy fallback", PregnancyTestTranslationKey("unexpected"), "dashboard.pregnancy_test.none"},
 		{"role owner", RoleTranslationKey("owner"), "role.owner"},
 		{"role passthrough", RoleTranslationKey("guest"), "guest"},
-		{"icon menstrual", PhaseIcon("menstrual"), "\U0001FA78"},
-		{"icon default", PhaseIcon("bad"), "\u2728"},
+		{"icon menstrual", PhaseIcon("menstrual"), "drop"},
+		{"icon default", PhaseIcon("bad"), "sparkle"},
 		// "fertile" is a fertility status, not a phase (plan item 24): the
 		// retired phase value must fall through to the unknown mapping.
 		{"phase retired fertile", PhaseTranslationKey("fertile"), "phases.unknown"},
-		{"icon retired fertile", PhaseIcon("fertile"), "\u2728"},
+		{"icon retired fertile", PhaseIcon("fertile"), "sparkle"},
 		{"symptom pain", SymptomGroup("Cramps"), "pain"},
 		{"symptom digestion", SymptomGroup("Food cravings"), "digestion"},
 		{"symptom other", SymptomGroup("Custom symptom"), "other"},

@@ -35,7 +35,7 @@
 
         <p class="dashboard-status-line" data-dashboard-status-line>
           <span class="dashboard-status-item">
-            <span aria-hidden="true">{{phaseIcon $phase}}</span>
+            <span aria-hidden="true">{{template "icon" (phaseIcon $phase)}}</span>
             <span>{{phaseLabel .Messages $phase}}</span>
           </span>
           {{/* The fertile window is read off the projected cycle, so before the
@@ -57,7 +57,7 @@
               data-fertility-badge
               data-fertility-badge-variant="{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}positive{{else}}neutral{{end}}"
               data-fertility-badge-key="{{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}dashboard.fertility_badge_warning{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}dashboard.fertility_badge_positive{{else}}dashboard.high_fertility_badge{{end}}">
-              {{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}<span aria-hidden="true">⚠️</span> {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}<span aria-hidden="true">✨</span> {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}<span aria-hidden="true">💧</span> {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
+              {{if eq .CurrentUser.UsageGoal "avoid_pregnancy"}}<span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "dashboard.fertility_badge_warning"}}{{else if eq .CurrentUser.UsageGoal "trying_to_conceive"}}<span aria-hidden="true">{{template "icon" "sparkle"}}</span> {{t .Messages "dashboard.fertility_badge_positive"}}{{else}}<span aria-hidden="true">{{template "icon" "droplets"}}</span> {{t .Messages "dashboard.high_fertility_badge"}}{{end}}
             </span>
             {{end}}
             <span class="dashboard-status-separator" aria-hidden="true">·</span>
@@ -265,9 +265,9 @@
         <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
 
         <div class="dashboard-quick-actions" data-dashboard-quick-actions>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="period" aria-label="{{t .Messages "dashboard.quick_action_period"}}" title="{{t .Messages "dashboard.quick_action_period"}}"><span aria-hidden="true">🩸</span></button>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="mood" aria-label="{{t .Messages "dashboard.quick_action_mood"}}" title="{{t .Messages "dashboard.quick_action_mood"}}"><span aria-hidden="true">😊</span></button>
-          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="symptom" aria-label="{{t .Messages "dashboard.quick_action_symptom"}}" title="{{t .Messages "dashboard.quick_action_symptom"}}"><span aria-hidden="true">💊</span></button>
+          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="period" aria-label="{{t .Messages "dashboard.quick_action_period"}}" title="{{t .Messages "dashboard.quick_action_period"}}"><span aria-hidden="true">{{template "icon" "drop"}}</span></button>
+          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="mood" aria-label="{{t .Messages "dashboard.quick_action_mood"}}" title="{{t .Messages "dashboard.quick_action_mood"}}"><span aria-hidden="true">{{template "icon" "mood"}}</span></button>
+          <button type="button" class="btn-secondary dashboard-quick-action" data-quick-action="symptom" aria-label="{{t .Messages "dashboard.quick_action_symptom"}}" title="{{t .Messages "dashboard.quick_action_symptom"}}"><span aria-hidden="true">{{template "icon" "capsule"}}</span></button>
         </div>
 
         <div class="dashboard-once-tip journal-muted text-sm" data-once-tip="dashboard-first-tour" hidden>{{t .Messages "dashboard.first_dashboard_tip"}}</div>
@@ -279,7 +279,7 @@
               class="period-toggle-main"
               data-period-toggle-label
               data-period-label-on="{{t .Messages "dashboard.period_day"}}"
-              data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">🩸</span> {{t .Messages "dashboard.period_day"}}</span>
+              data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "dashboard.period_day"}}</span>
           </span>
         </label>
         {{if not .CurrentUser.ShownPeriodTip}}

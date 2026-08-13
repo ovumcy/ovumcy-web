@@ -7,7 +7,7 @@
   aria-label="{{if hasDisplayName .CurrentUser}}{{userIdentity .CurrentUser}}{{else}}{{t .Messages "nav.profile_name_hint"}}{{end}}"
   {{if .Active}}aria-current="page"{{end}}
   {{if .SwapOOB}}hx-swap-oob="outerHTML"{{end}}>
-  <span class="nav-user-chip-icon" aria-hidden="true">👤</span>
+  <span class="nav-user-chip-icon" aria-hidden="true">{{template "icon" "user"}}</span>
   {{if hasDisplayName .CurrentUser}}
   <span class="role-chip-identity nav-user-chip-label" data-current-user-identity>{{userIdentity .CurrentUser}}</span>
   {{end}}

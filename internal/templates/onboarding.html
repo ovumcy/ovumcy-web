@@ -140,7 +140,7 @@
           <label class="period-toggle" data-binary-toggle data-active="{{if .AutoPeriodFill}}true{{else}}false{{end}}">
             <input type="checkbox" name="auto_period_fill" value="true" data-onboarding-auto-period-fill data-binary-toggle-input {{if .AutoPeriodFill}}checked{{end}}>
             <span class="period-toggle-copy">
-              <span class="period-toggle-main"><span aria-hidden="true">🩸</span> {{t .Messages "onboarding.step2.auto_period_fill"}}</span>
+              <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "onboarding.step2.auto_period_fill"}}</span>
             </span>
           </label>
           <p class="journal-muted text-sm">{{t .Messages "onboarding.step2.auto_period_fill_hint"}}</p>
@@ -150,7 +150,7 @@
           <label class="period-toggle" data-binary-toggle data-active="{{if .IrregularCycle}}true{{else}}false{{end}}">
             <input type="checkbox" name="irregular_cycle" value="true" autocomplete="off" data-binary-toggle-input {{if .IrregularCycle}}checked{{end}}>
             <span class="period-toggle-copy">
-              <span class="period-toggle-main"><span aria-hidden="true">〰️</span> {{t .Messages "onboarding.step2.irregular_cycle"}}</span>
+              <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "wave"}}</span> {{t .Messages "onboarding.step2.irregular_cycle"}}</span>
             </span>
           </label>
           <p class="journal-muted text-sm">{{t .Messages "onboarding.step2.irregular_cycle_hint"}}</p>

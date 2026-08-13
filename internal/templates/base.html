@@ -34,6 +34,7 @@
   data-theme-label-light="{{t .Messages "theme.switch_to_light"}}"
   data-theme-name-dark="{{t .Messages "theme.name.dark"}}"
   data-theme-name-light="{{t .Messages "theme.name.light"}}">
+  {{template "icon_sprite" .}}
   <a href="#main-content" class="skip-link">{{t .Messages "a11y.skip_to_content"}}</a>
   <div class="app-shell">
     <header class="paper-header">
@@ -150,7 +151,7 @@
       <a href="/dashboard" class="mobile-tabbar-link {{if $todayActive}}mobile-tabbar-link-active{{end}}" data-nav-link="today" data-nav-link-key="nav.today" {{if $todayActive}}aria-current="page"{{end}}>{{t .Messages "nav.today"}}</a>
       <a href="/calendar" class="mobile-tabbar-link {{if $calendarActive}}mobile-tabbar-link-active{{end}}" data-nav-link="calendar" data-nav-link-key="nav.calendar" {{if $calendarActive}}aria-current="page"{{end}}>{{t .Messages "nav.calendar"}}</a>
       <a href="/stats" class="mobile-tabbar-link {{if $insightsActive}}mobile-tabbar-link-active{{end}}" data-nav-link="insights" data-nav-link-key="nav.insights" {{if $insightsActive}}aria-current="page"{{end}}>{{t .Messages "nav.insights"}}</a>
-      <a href="/settings" class="mobile-tabbar-link mobile-tabbar-icon {{if $settingsActive}}mobile-tabbar-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}" {{if $settingsActive}}aria-current="page"{{end}}><span class="mobile-tabbar-icon-glyph" aria-hidden="true">⚙️</span></a>
+      <a href="/settings" class="mobile-tabbar-link mobile-tabbar-icon {{if $settingsActive}}mobile-tabbar-link-active{{end}}" data-nav-link="settings" data-nav-link-key="nav.settings" aria-label="{{t .Messages "nav.settings"}}" title="{{t .Messages "nav.settings"}}" {{if $settingsActive}}aria-current="page"{{end}}><span class="mobile-tabbar-icon-glyph" aria-hidden="true">{{template "icon" "settings"}}</span></a>
     </nav>
     {{end}}
 

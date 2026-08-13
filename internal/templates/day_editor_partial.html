@@ -30,7 +30,7 @@
           class="period-toggle-main"
           data-period-toggle-label
           data-period-label-on="{{t .Messages "dashboard.period_day"}}"
-          data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">🩸</span> {{t .Messages "dashboard.period_day"}}</span>
+          data-period-label-off="{{t .Messages "dashboard.period_day"}}"><span data-period-toggle-glyph aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "dashboard.period_day"}}</span>
       </span>
     </label>
     {{if .ShowCycleStartQuestion}}

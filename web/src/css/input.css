@@ -52,6 +52,34 @@
   @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
 }
 
+/* The first-party icon set. The sprite is inlined once per document by the base
+   layout and holds <symbol> definitions only, so it must take no space and paint
+   nothing; it is collapsed rather than display:none, which some engines have
+   treated as a reason to skip resolving <use> references into it. */
+@utility icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* An icon sizes off the font-size of whatever it decorates — the emoji it
+   replaced did the same — and inherits colour through currentColor, so themes
+   and state colours need no icon-specific rule. The stroke properties are
+   inherited, which is what carries them into the <use> shadow tree. */
+@utility icon {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.18em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 @utility skip-link {
   position: absolute;
   top: -100vh;
@@ -601,6 +629,11 @@
 @utility settings-section-nav-link {
   display: inline-flex;
   align-items: center;
+  /* The icon and the label are two flex items, and the whitespace between them
+     in the markup is not one — a flex container drops whitespace-only text
+     nodes, so the space an emoji used to carry in its own glyph box has to be
+     declared here. */
+  gap: 0.35rem;
   /* The mobile row does not wrap, so a pill must keep its own width instead of
      being squeezed until its label breaks. */
   flex: none;
