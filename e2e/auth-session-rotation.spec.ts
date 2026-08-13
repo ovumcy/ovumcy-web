@@ -53,7 +53,7 @@ test.describe('Auth session rotation', () => {
 
       // Make a benign change on /settings so the originating context has a
       // visible artifact to confirm the fresh cookie kept it signed in.
-      const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+      const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
       await expect(cycleForm).toBeVisible();
       await setRangeValue(page.locator('#settings-cycle-length'), 29);
       await cycleForm.locator('button[data-save-button]').click();

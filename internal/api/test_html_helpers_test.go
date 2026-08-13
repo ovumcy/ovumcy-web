@@ -62,9 +62,18 @@ func htmlElementByAttr(root *html.Node, name string, value string) *html.Node {
 	})
 }
 
+// htmlSectionIDs lists the ids of the page's identified sections in document
+// order. A section is recognised by what it IS, not by the tag it happens to
+// be spelled with: the settings cards are <details> disclosures, and a guard
+// keyed on the literal "section" reported the settings page as having no
+// sections at all the day they were converted. Anything carrying the
+// data-settings-section marker counts, whatever its tag.
 func htmlSectionIDs(root *html.Node) []string {
 	sections := htmlFindElements(root, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && node.Data == "section" && htmlAttr(node, "id") != ""
+		if node.Type != html.ElementNode || htmlAttr(node, "id") == "" {
+			return false
+		}
+		return node.Data == "section" || htmlHasAttr(node, "data-settings-section")
 	})
 
 	ids := make([]string, 0, len(sections))

@@ -157,7 +157,7 @@ test.describe('Stats factor context', () => {
     await logoutViaAPI(page);
     await registerOwnerAndEnableIrregularMode(page, 'stats-factor-stale-baseline');
 
-    const staleCycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+    const staleCycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
     await expect(staleCycleForm).toBeVisible();
     await fillDateField(staleCycleForm.locator('#settings-last-period-start'), shiftISODate(today, -30));
     // Bind to this save's own PATCH: the irregular-mode save inside

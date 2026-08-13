@@ -15,6 +15,7 @@
     bindSettingsCycleForms();
     bindSettingsTrackingForms();
     bindSettingsInterfaceForms();
+    bindSettingsSectionDisclosures();
     bindIconControls();
     bindDashboardEditors();
     bindDayEditorForms();

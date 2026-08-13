@@ -1,7 +1,12 @@
 {{define "settings_webhook_section_content"}}
-  <section class="card p-4 sm:p-5 space-y-4" id="settings-webhook">
-    <div>
+  {{/* The disclaimer stays in the BODY, beside the configuration it qualifies:
+       a closed section hides the two together, so the qualifier is never
+       separated from what it qualifies. */}}
+  <details class="card settings-section p-4 sm:p-5 space-y-4" id="settings-webhook" data-settings-section open>
+    <summary class="settings-section-summary">
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "bell"}}</span> {{t .Messages "settings.webhook.title"}}</h2>
+    </summary>
+    <div>
       <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.webhook.subtitle"}}</p>
       {{/* The reminders carry predicted dates off the instance, so the section
            states the medical-safety qualifier in its own right — the same
@@ -102,5 +107,5 @@
         <div id="settings-webhook-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
       </div>
     </form>
-  </section>
+  </details>
 {{end}}

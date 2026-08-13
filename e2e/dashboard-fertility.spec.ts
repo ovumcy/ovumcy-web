@@ -65,7 +65,7 @@ async function setUsageGoal(
 ): Promise<void> {
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);
-  const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+  const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
   await expect(cycleForm).toBeVisible();
   await cycleForm.locator(`label.choice-option:has(input[name="usage_goal"][value="${goal}"])`).click();
   await cycleForm.locator('button[data-save-button]').click();

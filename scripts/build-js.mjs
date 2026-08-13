@@ -17,6 +17,7 @@ const appBundleSources = [
   "./web/src/js/app/52-dashboard.js",
   "./web/src/js/app/53-dashboard-autosave.js",
   "./web/src/js/app/54-settings-forms.js",
+  "./web/src/js/app/54b-settings-sections.js",
   "./web/src/js/app/55-settings-interface.js",
   "./web/src/js/app/56-calendar.js",
   "./web/src/js/app/57-onboarding.js",

@@ -1,5 +1,9 @@
 {{define "content"}}
-<section class="space-y-4">
+{{/* data-settings-sections marks the TOP-LEVEL stack. The collapsible cards are
+     its direct children only: #settings-change-password is a nested block
+     inside the account card, and a bare [id^="settings-"] search would fold a
+     section inside a section. */}}
+<section class="space-y-4" data-settings-sections>
   <div>
     <h1 class="journal-title" data-title-key="settings.title">{{t .Messages "settings.title"}}</h1>
     <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.subtitle"}}</p>

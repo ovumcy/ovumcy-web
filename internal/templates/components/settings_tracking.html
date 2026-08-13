@@ -1,9 +1,13 @@
 {{define "settings_tracking_section_content"}}
-  <section class="card p-4 sm:p-5 space-y-4" id="settings-tracking">
-    <div>
+  {{/* A disclosure, rendered open. It is closed only by the phone-width script;
+       on every wider screen, and with no script at all, this is the section it
+       has always been. The subtitle sits inside, not in the summary: a closed
+       card is its title row, or the height is spent twice. */}}
+  <details class="card settings-section p-4 sm:p-5 space-y-4" id="settings-tracking" data-settings-section open>
+    <summary class="settings-section-summary">
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "flask"}}</span> {{t .Messages "settings.tracking.title"}}</h2>
-      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.tracking.subtitle"}}</p>
-    </div>
+    </summary>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.tracking.subtitle"}}</p>
 
     <form
       action="/api/v1/users/current/tracking"
@@ -151,5 +155,5 @@
         <div id="settings-tracking-status" class="save-status text-sm" aria-live="polite"></div>
       </div>
     </form>
-  </section>
+  </details>
 {{end}}

@@ -1,9 +1,9 @@
 {{define "settings_calendar_feed_section_content"}}
-  <section class="card p-4 sm:p-5 space-y-3" id="settings-calendar-feed">
-    <div>
+  <details class="card settings-section p-4 sm:p-5 space-y-3" id="settings-calendar-feed" data-settings-section open>
+    <summary class="settings-section-summary">
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.calendar_feed.title"}}</h2>
-      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.calendar_feed.subtitle"}}</p>
-    </div>
+    </summary>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.calendar_feed.subtitle"}}</p>
 
     <div class="space-y-1">
       <p class="field-label" data-calendar-feed-status="{{if .CalendarFeedConfigured}}configured{{else}}not-configured{{end}}">
@@ -56,5 +56,5 @@
     </div>
     {{end}}
     <div id="settings-calendar-feed-status" class="save-status text-sm" data-success-toast="true" aria-live="polite"></div>
-  </section>
+  </details>
 {{end}}

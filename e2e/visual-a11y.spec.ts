@@ -47,7 +47,7 @@ async function setCurrentCycleStart(page: Page, isoDate: string): Promise<void> 
   await page.goto('/settings');
   await expect(page).toHaveURL(/\/settings$/);
 
-  const cycleForm = page.locator('section#settings-cycle form[action="/api/v1/users/current/cycle"]');
+  const cycleForm = page.locator('#settings-cycle form[action="/api/v1/users/current/cycle"]');
   await expect(cycleForm).toBeVisible();
   await fillDateField(cycleForm.locator('#settings-last-period-start'), isoDate);
   await cycleForm.locator('button[data-save-button]').click();
@@ -120,6 +120,14 @@ test.describe('Visual and accessibility regressions', () => {
     await page.goto('/settings');
     await expect(page).toHaveURL(/\/settings$/);
     await assertNoHorizontalOverflow(page);
+    // Settings cards are disclosures at this width and arrive closed, so the
+    // clearance is measured where it can actually fail: with the section open.
+    // Asserting it against a collapsed card would measure nothing and stay
+    // green through any amount of overlap.
+    const trackingSection = page.locator('#settings-tracking');
+    await expect(trackingSection).toHaveJSProperty('open', false);
+    await trackingSection.locator('summary').click();
+    await expect(trackingSection).toHaveJSProperty('open', true);
     const trackingSave = page.locator('[data-settings-tracking-save]');
     await trackingSave.scrollIntoViewIfNeeded();
     await expectElementAboveMobileTabbar(page, trackingSave);
