@@ -363,7 +363,7 @@
           {{range .PhaseMoodInsights}}
           <article class="card-quiet card-fit">
             <div class="flex items-center gap-2">
-              <span aria-hidden="true">{{phaseIcon .Phase}}</span>
+              <span aria-hidden="true">{{template "icon" (phaseIcon .Phase)}}</span>
               <p class="text-sm font-semibold text-(--text-primary)">{{phaseLabel $.Messages .Phase}}</p>
             </div>
             {{if .HasData}}
@@ -389,7 +389,7 @@
           {{range .PhaseSymptomInsights}}
           <article class="card-quiet card-fit">
             <div class="flex items-center gap-2">
-              <span aria-hidden="true">{{phaseIcon .Phase}}</span>
+              <span aria-hidden="true">{{template "icon" (phaseIcon .Phase)}}</span>
               <p class="text-sm font-semibold text-(--text-primary)">{{phaseLabel $.Messages .Phase}}</p>
             </div>
             {{if .HasData}}
