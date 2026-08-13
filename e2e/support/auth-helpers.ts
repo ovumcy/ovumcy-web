@@ -1,4 +1,5 @@
 import { expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { isoToday, shiftISODate } from './iso-date-helpers';
 import { selectOnboardingStartDate } from './onboarding-helpers';
 
 export type Credentials = {
@@ -43,17 +44,6 @@ export function expectNoSensitiveAuthParams(urlString: string): void {
   expect(combined).not.toContain('iss=');
   expect(combined).not.toContain('token=');
   expect(combined).not.toContain('recovery=');
-}
-
-function isoDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 export async function registerOwnerViaUI(
@@ -160,7 +150,7 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   const isStepTwoVisible = await stepTwoForm.isVisible().catch(() => false);
 
   if (isStepOneVisible) {
-    await selectOnboardingStartDate(page, isoDateDaysAgo(3));
+    await selectOnboardingStartDate(page, shiftISODate(isoToday(), -3));
     await stepOneForm.locator('button[type="submit"]').click();
   }
 

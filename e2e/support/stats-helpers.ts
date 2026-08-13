@@ -8,33 +8,15 @@ import {
   readRecoveryCode,
   registerOwnerViaUI,
 } from './auth-helpers';
+import { isoToday, shiftISODate } from './iso-date-helpers';
 import { selectOnboardingStartDate } from './onboarding-helpers';
 import { setRequestTimezoneFromBrowser } from './timezone-helpers';
 
-export function shiftISODate(iso: string, days: number): string {
-  const [year, month, day] = iso.split('-').map((part) => Number(part));
-  const shifted = new Date(year, month - 1, day);
-  shifted.setDate(shifted.getDate() + days);
-  const yyyy = shifted.getFullYear();
-  const mm = String(shifted.getMonth() + 1).padStart(2, '0');
-  const dd = String(shifted.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-/**
- * Today by the runner's own clock, as an ISO date. Distinct from
- * `todayISOFromDashboard`, which reads the date the *server* rendered: use this
- * one to compute the dates a scenario seeds, and that one when the assertion is
- * about the day the app itself thinks it is.
- */
-export function isoToday(): string {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
+// The date arithmetic itself lives in the dependency-free `iso-date-helpers`, so
+// that `auth-helpers` can use it without importing this module back. Re-exported
+// here because the specs that seed cycle data already reach for it under this
+// module's name.
+export { isoToday, shiftISODate };
 
 export async function registerOwnerAndEnableIrregularMode(
   page: Page,
