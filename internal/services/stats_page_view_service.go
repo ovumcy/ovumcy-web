@@ -53,6 +53,7 @@ type StatsPageViewData struct {
 	SymptomPatterns                   []StatsSymptomPatternViewData
 	SymptomCounts                     []StatsSymptomCountViewData
 	CurrentCycleBBTChart              StatsBBTChartViewData
+	CycleRibbon                       StatsCycleRibbon
 	PhaseMoodInsights                 []StatsPhaseMoodInsight
 	PhaseSymptomInsights              []StatsPhaseSymptomInsight
 	Statements                        []StatsStatement
@@ -97,6 +98,7 @@ type statsOwnerInsightsViewData struct {
 	lastCycleSymptoms       []StatsSymptomCountViewData
 	symptomPatterns         []StatsSymptomPatternViewData
 	currentCycleBBTChart    StatsBBTChartViewData
+	cycleRibbon             StatsCycleRibbon
 	phaseSymptomInsights    []StatsPhaseSymptomInsight
 	statements              []StatsStatement
 	hasPhaseSymptomInsights bool
@@ -160,6 +162,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		SymptomPatterns:                     ownerInsights.symptomPatterns,
 		SymptomCounts:                       symptomCounts,
 		CurrentCycleBBTChart:                ownerInsights.currentCycleBBTChart,
+		CycleRibbon:                         ownerInsights.cycleRibbon,
 		PhaseMoodInsights:                   phaseMoodInsights,
 		PhaseSymptomInsights:                ownerInsights.phaseSymptomInsights,
 		Statements:                          ownerInsights.statements,
@@ -252,6 +255,7 @@ func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *
 		return statsOwnerInsightsViewData{}, fmt.Errorf("%w: %v", ErrStatsPageViewLoadSymptoms, err)
 	}
 	completedCycles := buildCompletedCycleSpans(logs, location)
+	insights.cycleRibbon = buildStatsCycleRibbon(user, stats, logs, completedCycles)
 	insights.lastCycleSymptoms = buildLastCycleSymptomCounts(language, logs, completedCycles, symptomByID, location)
 	insights.symptomPatterns = buildSymptomPatternInsights(logs, completedCycles, symptomByID, location)
 	insights.phaseSymptomInsights, insights.hasPhaseSymptomInsights = buildPhaseSymptomInsightsWithMap(logs, location, symptomByID)

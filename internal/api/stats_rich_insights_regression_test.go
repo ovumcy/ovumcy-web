@@ -376,6 +376,61 @@ func renderStatsInsightsPage(t *testing.T, email string, unpredictableCycle bool
 	return rendered, mustParseHTMLDocument(t, rendered)
 }
 
+// TestStatsPageStacksCompletedCyclesOnOneAxis pins the cycle stack's structural
+// contract: one row per completed cycle, every row carrying the SAME number of
+// day cells, and the cells past a row's own length marked as outside it. The
+// shared cell count is the whole mechanism — it is what makes a longer cycle
+// draw longer without a single computed width — so a row that stopped emitting
+// its surplus cells would silently turn the comparison into four equal bars.
+func TestStatsPageStacksCompletedCyclesOnOneAxis(t *testing.T) {
+	_, document := renderStatsInsightsPage(t, "stats-cycle-stack@example.com", false)
+
+	stack := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-stats-cycle-stack")
+	})
+	if stack == nil {
+		t.Fatal("expected the cycle stack section for an owner with completed cycles")
+	}
+
+	rows := htmlFindElements(stack, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-cycle-stack-row")
+	})
+	if len(rows) != 3 {
+		t.Fatalf("expected one row per completed cycle (3), got %d", len(rows))
+	}
+
+	axisDays := 0
+	for index, row := range rows {
+		cells := htmlFindElements(row, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlHasAttr(node, "data-cycle-stack-day")
+		})
+		if len(cells) == 0 {
+			t.Fatalf("row %d rendered no day cells", index)
+		}
+		if index == 0 {
+			axisDays = len(cells)
+		} else if len(cells) != axisDays {
+			t.Fatalf("row %d carries %d cells against the axis's %d — the rows share one axis", index, len(cells), axisDays)
+		}
+		if got := htmlAttr(cells[0], "data-cycle-stack-day"); got != "1" {
+			t.Fatalf("row %d starts at day %q, expected the ribbon to run from day 1", index, got)
+		}
+
+		inCycle := 0
+		for _, cell := range cells {
+			if htmlAttr(cell, "data-in-cycle") == "true" {
+				inCycle++
+			}
+		}
+		if inCycle == 0 {
+			t.Fatalf("row %d marks no day as inside its own cycle", index)
+		}
+		if inCycle > axisDays {
+			t.Fatalf("row %d marks %d days inside a %d-day axis", index, inCycle, axisDays)
+		}
+	}
+}
+
 func statsKPICards(document *html.Node) []*html.Node {
 	return htmlFindElements(document, func(node *html.Node) bool {
 		return node.Type == html.ElementNode && node.Data == "article" && htmlHasClass(node, "card-dense")
