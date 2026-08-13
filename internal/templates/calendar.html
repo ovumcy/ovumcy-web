@@ -10,7 +10,7 @@
       {{if .PrevMonth}}
       <a href="/calendar?month={{.PrevMonth}}" class="btn-secondary">{{t .Messages "calendar.prev"}}</a>
       {{else}}
-      <span class="btn-secondary btn--disabled" aria-disabled="true">{{t .Messages "calendar.prev"}}</span>
+      <span class="btn-secondary btn-disabled" aria-disabled="true">{{t .Messages "calendar.prev"}}</span>
       {{end}}
       <a href="/calendar?month={{.NextMonth}}" class="btn-secondary">{{t .Messages "calendar.next"}}</a>
       <a href="/calendar" class="btn-secondary btn-compact" data-calendar-today data-action-weight="secondary">{{t .Messages "calendar.today"}}</a>

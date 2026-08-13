@@ -319,7 +319,7 @@
 
     if (state.stepTwoSubmit) {
       state.stepTwoSubmit.disabled = guidance.invalid;
-      state.stepTwoSubmit.classList.toggle("btn--disabled", guidance.invalid);
+      state.stepTwoSubmit.classList.toggle("btn-disabled", guidance.invalid);
     }
 
     return guidance;

@@ -380,8 +380,8 @@ test.describe('Visual and accessibility regressions', () => {
       );
     }
 
-    // The dashboard editor re-tints its primary action per cycle phase, so the
-    // phase-scoped fill is a second painted background the same bar applies to.
+    // The dashboard editor carries the owner-facing primary action, on a card
+    // rather than on the page canvas.
     await registerOwnerAndReachDashboard(page, 'visual-contrast');
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto('/dashboard');
@@ -399,41 +399,50 @@ test.describe('Visual and accessibility regressions', () => {
     const editor = page.locator('[data-dashboard-editor]');
     await expect(editor).toHaveAttribute('data-phase', /.+/);
 
+    const primaryAction = page.locator('[data-dashboard-editor] .btn-primary');
+
     for (const theme of ['light', 'dark'] as const) {
       await applyTheme(page, theme);
       await expectTextContrastAA(
         page,
         '[data-dashboard-editor] .btn-primary',
-        `dashboard primary action, rendered phase (${theme})`
+        `dashboard primary action (${theme})`
       );
 
-      // `data-phase` drives the per-phase tint and `data-fertility` the
-      // fertile-window tint (which outranks phase in the cascade), so setting
-      // them directly reaches every fill without seeding a cycle per state.
-      // Both attributes are server-rendered, so the next applyTheme reload
+      // The primary role paints ONE fill. The editor used to re-tint its action
+      // per cycle phase and per fertile window, which is how a green button
+      // reached a rose/amber product; contrast alone cannot see that, because
+      // every tint cleared the bar on its own. `data-phase` and `data-fertility`
+      // are server-rendered, so setting them directly reaches every state
+      // without seeding a cycle per state, and the next applyTheme reload
       // restores them.
-      for (const phase of ['menstrual', 'follicular', 'luteal'] as const) {
-        await editor.evaluate((node, value) => {
-          node.setAttribute('data-phase', value);
-          node.setAttribute('data-fertility', 'not_fertile');
-        }, phase);
+      const fills = new Set<string>();
+      for (const [phase, fertility] of [
+        ['menstrual', 'not_fertile'],
+        ['follicular', 'not_fertile'],
+        ['luteal', 'not_fertile'],
+        ['luteal', 'fertile'],
+      ]) {
+        await editor.evaluate(
+          (node, value) => {
+            node.setAttribute('data-phase', value[0]);
+            node.setAttribute('data-fertility', value[1]);
+          },
+          [phase, fertility]
+        );
         await expect(editor).toHaveAttribute('data-phase', phase);
-        await expectTextContrastAA(
-          page,
-          '[data-dashboard-editor] .btn-primary',
-          `dashboard primary action, phase ${phase} (${theme})`
+        await expect(editor).toHaveAttribute('data-fertility', fertility);
+        fills.add(
+          await primaryAction.evaluate((node) => {
+            const painted = getComputedStyle(node);
+            return `${painted.backgroundColor} | ${painted.backgroundImage}`;
+          })
         );
       }
-
-      await editor.evaluate((node) => {
-        node.setAttribute('data-fertility', 'fertile');
-      });
-      await expect(editor).toHaveAttribute('data-fertility', 'fertile');
-      await expectTextContrastAA(
-        page,
-        '[data-dashboard-editor] .btn-primary',
-        `dashboard primary action, fertile window (${theme})`
-      );
+      expect(
+        [...fills],
+        `primary action must paint one fill across cycle phases (${theme})`
+      ).toHaveLength(1);
     }
 
     // The calendar day panel's edit action is the screen's primary, so it is a

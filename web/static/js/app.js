@@ -4404,7 +4404,7 @@
     }
 
     button.disabled = !enabled;
-    button.classList.toggle("btn--disabled", !enabled);
+    button.classList.toggle("btn-disabled", !enabled);
     button.setAttribute("aria-disabled", enabled ? "false" : "true");
   }
 
@@ -5296,7 +5296,7 @@
 
     if (state.stepTwoSubmit) {
       state.stepTwoSubmit.disabled = guidance.invalid;
-      state.stepTwoSubmit.classList.toggle("btn--disabled", guidance.invalid);
+      state.stepTwoSubmit.classList.toggle("btn-disabled", guidance.invalid);
     }
 
     return guidance;
