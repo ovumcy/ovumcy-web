@@ -82,17 +82,21 @@ func RoleTranslationKey(role string) string {
 	}
 }
 
+// PhaseIcon names the icon a phase is drawn with. The value is a key into the
+// first-party icon set the templates render, not a glyph: emoji rendered as
+// text were read out as page content ("cherry blossom", "maple leaf") and drew
+// differently on every platform.
 func PhaseIcon(phase string) string {
 	switch strings.ToLower(strings.TrimSpace(phase)) {
 	case "menstrual":
-		return "\U0001FA78"
+		return "drop"
 	case "follicular":
-		return "\U0001F338"
+		return "sprout"
 	case "ovulation":
-		return "\u2600\uFE0F"
+		return "sun"
 	case "luteal":
-		return "\U0001F342"
+		return "leaf"
 	default:
-		return "\u2728"
+		return "sparkle"
 	}
 }

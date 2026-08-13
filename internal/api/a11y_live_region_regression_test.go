@@ -4,10 +4,12 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 	"github.com/ovumcy/ovumcy-web/internal/templates"
 	"golang.org/x/net/html"
 )
@@ -276,6 +278,125 @@ func TestConfirmDialogIsRemovedFromTheAccessibilityTreeWhileClosed(t *testing.T)
 	}
 	if got := htmlAttr(modal, "aria-hidden"); got != "true" {
 		t.Errorf("the closed confirm dialog declares aria-hidden=%q, expected \"true\"", got)
+	}
+}
+
+// isInterfaceEmoji reports whether a rune is an emoji pictograph — the class
+// the first-party icon set replaced. Three tells, none of them a list of the
+// emoji that happened to be here: a codepoint in the pictograph planes, the
+// emoji presentation selector that turns a symbol into a colour glyph, and the
+// symbol/dingbat blocks. The two exceptions are typography rather than
+// pictographs and are drawn by the font at every size: the heart the calendar
+// marks a logged intimacy with, and the check mark a save confirms with.
+func isInterfaceEmoji(candidate rune) bool {
+	switch candidate {
+	case 0x2665, 0x2713:
+		return false
+	case 0xFE0F, 0x3030:
+		return true
+	}
+	switch {
+	case candidate >= 0x1F000 && candidate <= 0x1FAFF:
+		return true
+	case candidate >= 0x2600 && candidate <= 0x27BF:
+		return true
+	default:
+		return false
+	}
+}
+
+var iconReferencePattern = regexp.MustCompile(`{{template "icon" "([a-z-]+)"}}`)
+
+// spriteSymbolNames reads the icon names the sprite defines.
+func spriteSymbolNames(t *testing.T) map[string]bool {
+	t.Helper()
+	source, err := templates.Files.ReadFile("components/icons.html")
+	if err != nil {
+		t.Fatalf("read the icon sprite: %v", err)
+	}
+	names := make(map[string]bool)
+	for _, match := range regexp.MustCompile(`<symbol id="icon-([a-z-]+)"`).FindAllStringSubmatch(string(source), -1) {
+		names[match[1]] = true
+	}
+	if len(names) == 0 {
+		t.Fatal("the icon sprite defines no symbols: its markup changed and this guard stopped checking anything")
+	}
+	return names
+}
+
+// TestInterfaceGlyphsComeFromTheFirstPartyIconSet pins wave 3 item 12. Interface
+// chrome — navigation, buttons, section markers, toggles, banners — is drawn by
+// the inline SVG sprite rather than by emoji, which rendered as a different
+// picture on every platform and reached assistive technology as words. The
+// guard has three halves: no template carries an emoji pictograph any more,
+// every icon a template asks for exists in the sprite, and so does every icon
+// name the phase policy hands the templates.
+func TestInterfaceGlyphsComeFromTheFirstPartyIconSet(t *testing.T) {
+	symbols := spriteSymbolNames(t)
+
+	var scanned int
+	err := fs.WalkDir(templates.Files, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".html") {
+			return nil
+		}
+		source, readErr := templates.Files.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		scanned++
+
+		for _, line := range strings.Split(string(source), "\n") {
+			if !strings.ContainsFunc(line, isInterfaceEmoji) {
+				continue
+			}
+			t.Errorf(
+				"%s: an interface glyph is an emoji.\n"+
+					"Draw it in the icon set (components/icons.html) and reference it with {{template \"icon\" \"<name>\"}}.\n"+
+					"line: %s",
+				path, strings.TrimSpace(line),
+			)
+		}
+		for _, match := range iconReferencePattern.FindAllStringSubmatch(string(source), -1) {
+			if !symbols[match[1]] {
+				t.Errorf("%s: references the icon %q, which the sprite does not define", path, match[1])
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk embedded templates: %v", err)
+	}
+	if scanned == 0 {
+		t.Fatal("no templates were scanned: the embedded template FS layout changed and this guard silently stopped checking anything")
+	}
+
+	// The phase chip picks its icon in the services layer, so a rename there
+	// would ship a blank chip that no template-only scan can see.
+	for _, phase := range []string{"menstrual", "follicular", "ovulation", "luteal", "unknown"} {
+		if name := services.PhaseIcon(phase); !symbols[name] {
+			t.Errorf("PhaseIcon(%q) names the icon %q, which the sprite does not define", phase, name)
+		}
+	}
+}
+
+// TestBaseLayoutInlinesTheIconSprite keeps the sprite in the document every
+// icon references: <use> resolves same-document only here, by design — an
+// external sprite file would need a request the strict CSP is meant to make
+// unnecessary — so a page without it renders every icon blank.
+func TestBaseLayoutInlinesTheIconSprite(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "a11y-icon-sprite@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	body := fetchPageBody(t, app, "/dashboard", authCookie)
+	if !strings.Contains(body, `id="icon-drop"`) {
+		t.Error("the dashboard renders no icon sprite, so every icon on the page resolves to nothing")
+	}
+	if !strings.Contains(body, `href="#icon-drop"`) {
+		t.Error("the dashboard references no sprite icon, so the period quick action lost its glyph")
 	}
 }
 

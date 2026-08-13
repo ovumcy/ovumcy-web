@@ -125,7 +125,7 @@
 <details class="sex-activity-details" data-sex-activity-details {{if ne .SelectedSexActivity "none"}}open{{end}}>
   <summary class="sex-chip-summary">
     <span class="{{if .Compact}}check-chip check-chip-sm check-chip-static{{else}}check-chip check-chip-static{{end}} sex-chip-summary-pill{{if ne .SelectedSexActivity "none"}} choice-chip-active{{end}}">
-      <span class="symptom-icon sex-heart-icon" aria-hidden="true">♥</span>
+      <span class="symptom-icon sex-heart-icon" aria-hidden="true">{{template "icon" "heart"}}</span>
       <span class="symptom-label">{{t .Messages "dashboard.sex"}}</span>
       <span class="sex-chip-chevron" aria-hidden="true">▼</span>
     </span>

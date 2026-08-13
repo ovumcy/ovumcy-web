@@ -766,10 +766,12 @@ test.describe('Bug regressions', () => {
       // same word, which is what a per-language branch degenerates into.
       expect(await dashboardCurrentPhase(page)).toBe('menstrual');
 
-      // The one header always renders the phase first, glyph included, and the
-      // cycle day sits inside the ring beside it.
+      // The one header always renders the phase first, icon included, and the
+      // cycle day sits inside the ring beside it. The icon is addressed by its
+      // name in the first-party set: it is drawn markup, so it carries no text
+      // for a copy assertion to find.
       const phaseChip = dashboardStatusLine(page).locator('.dashboard-status-item').first();
-      await expect(phaseChip).toContainText('🩸');
+      await expect(phaseChip.locator('[data-icon="drop"]')).toHaveCount(1);
       await expect(phaseChip).toContainText(localeText('en', 'phases.menstrual'));
       expect(await dashboardCurrentCycleDay(page)).toBeGreaterThanOrEqual(1);
     });

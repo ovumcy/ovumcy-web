@@ -7,16 +7,16 @@
 
   {{if eq .CurrentUser.Role "owner"}}
   <nav class="settings-section-nav" aria-label="{{t .Messages "settings.title"}}">
-    <a href="#settings-cycle" class="settings-section-nav-link"><span aria-hidden="true">🗓️</span> {{t .Messages "settings.cycle.title"}}</a>
-    <a href="#settings-symptoms" class="settings-section-nav-link"><span aria-hidden="true">🧩</span> {{t .Messages "settings.symptoms.title"}}</a>
-    <a href="#settings-tracking" class="settings-section-nav-link"><span aria-hidden="true">🧪</span> {{t .Messages "settings.tracking.title"}}</a>
-    <a href="#settings-webhook" class="settings-section-nav-link"><span aria-hidden="true">🔔</span> {{t .Messages "settings.webhook.title"}}</a>
-    <a href="#settings-calendar-feed" class="settings-section-nav-link"><span aria-hidden="true">🗓️</span> {{t .Messages "settings.calendar_feed.title"}}</a>
-    <a href="#settings-interface" class="settings-section-nav-link"><span aria-hidden="true">🎛️</span> {{t .Messages "settings.interface.title"}}</a>
-    <a href="#settings-account" class="settings-section-nav-link"><span aria-hidden="true">👤</span> {{t .Messages "settings.account.title"}}</a>
-    <a href="#settings-data" class="settings-section-nav-link"><span aria-hidden="true">🗂️</span> {{t .Messages "settings.data.title"}}</a>
-    <a href="#settings-import" class="settings-section-nav-link"><span aria-hidden="true">🗃️</span> {{t .Messages "settings.import_title"}}</a>
-    <a href="#settings-danger-zone" class="settings-section-nav-link"><span aria-hidden="true">⚠️</span> {{t .Messages "settings.danger_zone.title"}}</a>
+    <a href="#settings-cycle" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle.title"}}</a>
+    <a href="#settings-symptoms" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "list"}}</span> {{t .Messages "settings.symptoms.title"}}</a>
+    <a href="#settings-tracking" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "flask"}}</span> {{t .Messages "settings.tracking.title"}}</a>
+    <a href="#settings-webhook" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "bell"}}</span> {{t .Messages "settings.webhook.title"}}</a>
+    <a href="#settings-calendar-feed" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.calendar_feed.title"}}</a>
+    <a href="#settings-interface" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</a>
+    <a href="#settings-account" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</a>
+    <a href="#settings-data" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "folder"}}</span> {{t .Messages "settings.data.title"}}</a>
+    <a href="#settings-import" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "box"}}</span> {{t .Messages "settings.import_title"}}</a>
+    <a href="#settings-danger-zone" class="settings-section-nav-link"><span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "settings.danger_zone.title"}}</a>
   </nav>
   {{end}}
 
@@ -31,7 +31,7 @@
 
   {{if or .ErrorKey .ChangePasswordErrorKey}}
   <div class="status-error flex items-center gap-2" data-flash-key="{{if .ErrorKey}}{{.ErrorKey}}{{else}}{{.ChangePasswordErrorKey}}{{end}}" data-flash-status="error"{{if .ChangePasswordErrorKey}} data-flash-target="change_password"{{end}}>
-    <span aria-hidden="true">⚠️</span>
+    <span aria-hidden="true">{{template "icon" "alert"}}</span>
     <span>{{if .ErrorKey}}{{t .Messages .ErrorKey}}{{else}}{{t .Messages .ChangePasswordErrorKey}}{{end}}</span>
   </div>
   {{end}}

@@ -1,7 +1,7 @@
 {{define "settings_interface_section_content"}}
   <section class="journal-card p-5 sm:p-6 space-y-5" id="settings-interface">
     <div>
-      <h2 class="journal-subtitle"><span aria-hidden="true">🎛️</span> {{t .Messages "settings.interface.title"}}</h2>
+      <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</h2>
       <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.interface.subtitle"}}</p>
     </div>
 
@@ -42,21 +42,21 @@
             <label class="choice-option settings-interface-option" data-settings-interface-theme-option="light" data-selected="false">
               <input type="radio" name="theme" value="light" class="choice-input" checked>
               <span class="radio-tile radio-tile-inline">
-                <span aria-hidden="true">☀️</span>
+                <span aria-hidden="true">{{template "icon" "sun"}}</span>
                 <span>{{t .Messages "theme.name.light"}}</span>
               </span>
             </label>
             <label class="choice-option settings-interface-option" data-settings-interface-theme-option="dark" data-selected="false">
               <input type="radio" name="theme" value="dark" class="choice-input">
               <span class="radio-tile radio-tile-inline">
-                <span aria-hidden="true">🌙</span>
+                <span aria-hidden="true">{{template "icon" "moon"}}</span>
                 <span>{{t .Messages "theme.name.dark"}}</span>
               </span>
             </label>
             <label class="choice-option settings-interface-option" data-settings-interface-theme-option="system" data-selected="false">
               <input type="radio" name="theme" value="system" class="choice-input">
               <span class="radio-tile radio-tile-inline">
-                <span aria-hidden="true">🖥️</span>
+                <span aria-hidden="true">{{template "icon" "monitor"}}</span>
                 <span>{{t .Messages "theme.name.system"}}</span>
               </span>
             </label>
