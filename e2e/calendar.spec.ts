@@ -8,6 +8,7 @@ import {
   registerOwnerViaUI,
   apiOriginHeader,
 } from './support/auth-helpers';
+import { applyTheme } from './support/contrast-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
@@ -60,6 +61,11 @@ async function openSexActivityDisclosure(form: Locator): Promise<void> {
     await disclosure.locator('summary').click();
   }
   await expect(form.locator('[data-sex-activity-option="protected"]')).toBeVisible();
+}
+
+/** The computed background-color the browser actually paints for a cell. */
+async function paintedBackgroundColor(cell: Locator): Promise<string> {
+  return cell.evaluate((node: Element) => window.getComputedStyle(node).backgroundColor);
 }
 
 async function todayISOFromCalendar(page: Page): Promise<string> {
@@ -626,6 +632,82 @@ test.describe('Calendar page', () => {
     await patchUsageGoal('trying_to_conceive');
     await page.goto('/calendar');
     await expect(page.locator('[data-calendar-view]')).toHaveAttribute('data-usage-goal', 'trying_to_conceive');
+  });
+
+  test('the two fertile tiers paint distinct fills for the default usage goal', async ({ page }) => {
+    test.slow();
+
+    // The tier classes (.calendar-cell-fertile-edge / -peak) always ship
+    // alongside .calendar-cell-fertile, whose `background` SHORTHAND resets the
+    // `background-color` they set. While the tier rules were written on the bare
+    // class the two tied at equal specificity and the shorthand won wherever it
+    // was emitted later — so the tiers rendered only under the two goal
+    // selectors, and the default goal painted the whole window flat. The tier
+    // rules are compounded with the base class now; this pins the RESULT, which
+    // is the only form the tie cannot pass green.
+    const creds = createCredentials('calendar-fertile-tiers');
+    await registerOwnerViaUI(page, creds);
+    await expectInlineRegisterRecoveryStep(page);
+    await readRecoveryCode(page);
+    await continueFromRecoveryCode(page);
+
+    // Anchor the cycle at day 1 of the current month: on the 28/14 defaults the
+    // predicted ovulation is cycle day 14 and the fertile window is the five
+    // days before it, so the whole window (edge days 9-11, peak days 12-13,
+    // ovulation on the 14th) sits mid-month and is inside that month's grid on
+    // every run date — unlike a window anchored relative to today, which can
+    // fall past the grid's trailing edge at a month's end.
+    const monthISO = await page.evaluate(() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    });
+    await selectOnboardingStartDate(page, `${monthISO}-01`);
+    await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
+    const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
+    await expect(stepTwoForm).toBeVisible();
+    await Promise.all([
+      page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
+      stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
+    ]);
+    await setRequestTimezoneFromBrowser(page);
+
+    await page.goto(`/calendar?month=${monthISO}`);
+    await expect(page.locator('[data-calendar-view]')).toHaveAttribute('data-usage-goal', 'health');
+
+    // The ovulation day carries .calendar-cell-fertile on its own — that is the
+    // flat fill the two tiers have to differ from.
+    const flatCell = page.locator(
+      '.calendar-cell-fertile:not(.calendar-cell-fertile-edge):not(.calendar-cell-fertile-peak)'
+    );
+    const edgeCell = page.locator('.calendar-cell-fertile-edge');
+    const peakCell = page.locator('.calendar-cell-fertile-peak');
+    await expect(flatCell.first()).toBeVisible();
+    await expect(edgeCell.first()).toBeVisible();
+    await expect(peakCell.first()).toBeVisible();
+
+    for (const theme of ['light', 'dark'] as const) {
+      await applyTheme(page, theme);
+
+      const flat = await paintedBackgroundColor(flatCell.first());
+      const edge = await paintedBackgroundColor(edgeCell.first());
+      const peak = await paintedBackgroundColor(peakCell.first());
+
+      expect(edge, `${theme}: fertile edge paints the flat fertile fill`).not.toBe(flat);
+      expect(peak, `${theme}: fertile peak paints the flat fertile fill`).not.toBe(flat);
+      expect(peak, `${theme}: fertile peak paints the fertile edge fill`).not.toBe(edge);
+
+      // The contrast gate resolves rgb()/rgba() only; a fill that computes to
+      // any other form (color-mix() serialises as color(srgb ...)) is one it
+      // cannot flatten, so it would be unmeasurable rather than compliant.
+      for (const [label, value] of [
+        ['fertile edge', edge],
+        ['fertile peak', peak],
+      ] as const) {
+        expect(value, `${theme}: ${label} fill is not resolvable as rgb()/rgba()`).toMatch(
+          /^rgba?\(/
+        );
+      }
+    }
   });
 
   test('summary-view manual cycle start on a day WITH logged data exposes its policy node so the confirm modal opens', async ({

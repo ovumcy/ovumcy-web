@@ -3758,9 +3758,47 @@
   }
 }
 
+/* The two tiers inside the fertile window: the edge days and the peak days
+   around ovulation. A cell always carries the tier class TOGETHER with
+   calendar-cell-fertile (buildCalendarDays composes the pair), and the tier is
+   the more specific statement about the same day, so every tier rule is written
+   against the base class.
+
+   That is a cascade requirement, not a style: a custom utility is emitted
+   wherever its property group falls, so source order settles nothing, and
+   .calendar-cell-fertile's background SHORTHAND resets the background-color a
+   bare .calendar-cell-fertile-edge sets. At equal specificity the shorthand won,
+   which is why the tiers used to render only under the two goal selectors in
+   the light theme, and nowhere at all in the dark one — there the dark base
+   rule was later still and outranked the goal palette too. No rule here
+   depends on where it lands in the bundle any more (specificity in brackets;
+   the two (0,3,0) rows never decide one cell — the goal palette only matches a
+   tier cell, and on a tier cell the dark tier rule below outranks both):
+
+     .calendar-cell-fertile                                (0,1,0)  base fill
+     .calendar-cell-fertile-edge.calendar-cell-fertile     (0,2,0)  tier
+     [data-usage-goal='…'] .calendar-cell-fertile-edge     (0,3,0)  goal palette
+     :root[data-theme='dark'] .calendar-cell-fertile       (0,3,0)  base, dark
+     :root[data-theme='dark'] …-edge.calendar-cell-fertile (0,4,0)  tier, dark
+
+   The goal palette deliberately sits BELOW the dark tier rule rather than
+   above it: its fills are mixed toward white, and a dark card carries light
+   day numbers, so in the dark theme the neutral tier fill is the readable one
+   and has to win. In the light theme no dark rule matches and the goal palette
+   is the most specific thing on the cell.
+
+   The tiers set background-color alone on purpose: the hatch the base paints as
+   background-image stays, and the tier changes the colour under it. */
 @utility calendar-cell-fertile-edge {
-  border-color: rgba(154, 184, 132, 0.78);
-  background-color: var(--cal-fill-fertile-edge);
+  &.calendar-cell-fertile {
+    border-color: var(--cal-line-fertile-edge);
+    background-color: var(--cal-fill-fertile-edge);
+  }
+
+  :root[data-theme='dark'] &.calendar-cell-fertile {
+    border-color: var(--cal-line-fertile-edge);
+    background-color: var(--cal-fill-fertile-edge);
+  }
 
   [data-calendar-view][data-usage-goal='avoid_pregnancy'] & {
     border-color: rgba(203, 139, 54, 0.78);
@@ -3779,15 +3817,18 @@
       white 22%
     );
   }
-
-  :root[data-theme='dark'] & {
-    background-color: var(--cal-fill-fertile-edge);
-  }
 }
 
 @utility calendar-cell-fertile-peak {
-  border-color: rgba(93, 147, 95, 0.82);
-  background-color: var(--cal-fill-fertile-peak);
+  &.calendar-cell-fertile {
+    border-color: var(--cal-line-fertile-peak);
+    background-color: var(--cal-fill-fertile-peak);
+  }
+
+  :root[data-theme='dark'] &.calendar-cell-fertile {
+    border-color: var(--cal-line-fertile-peak);
+    background-color: var(--cal-fill-fertile-peak);
+  }
 
   [data-calendar-view][data-usage-goal='avoid_pregnancy'] & {
     border-color: rgba(196, 116, 33, 0.82);
@@ -3805,10 +3846,6 @@
       var(--fertile-positive-peak) 82%,
       white 18%
     );
-  }
-
-  :root[data-theme='dark'] & {
-    background-color: var(--cal-fill-fertile-peak);
   }
 }
 
@@ -3882,9 +3919,10 @@
     color: #ffe0b0;
   }
 
+  /* No font-size here: --text-3xs is the base step already, so restating it
+     was a no-op. Mobile compacts the box (padding, leading), never the type. */
   @media (max-width: 640px) {
     display: inline-flex;
-    font-size: var(--text-3xs);
     padding: 0 0.14rem;
     line-height: 1;
     max-width: 100%;
@@ -3927,9 +3965,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 
+  /* Same as the today pill: the size step is already --text-3xs, so the mobile
+     block only compacts the box. */
   @media (max-width: 640px) {
     display: inline-flex;
-    font-size: var(--text-3xs);
     padding: 0 0.14rem;
     line-height: 1;
     max-width: 100%;
@@ -4648,19 +4687,21 @@
         rgb(255 255 255 / 0) 14px
       ),
       rgb(var(--cal-fertile) / 0.37);
-    --cal-fill-fertile-edge: color-mix(
-      in srgb,
-      rgb(var(--cal-fertile-edge)) 76%,
-      white 24%
-    );
-    --cal-fill-fertile-peak: color-mix(
-      in srgb,
-      rgb(var(--cal-fertile-peak)) 82%,
-      white 18%
-    );
+    /* The two tier washes carry their own alpha rather than a color-mix with
+       white: the wash is laid over the card the same way every other calendar
+       fill is, and the resulting stop stays rgb()/rgba() — color-mix() computes
+       to color(srgb …), which the contrast gate cannot flatten, and these two
+       fills reach it now that the tiers render for every usage goal. */
+    --cal-fill-fertile-edge: rgb(var(--cal-fertile-edge) / 0.76);
+    --cal-fill-fertile-peak: rgb(var(--cal-fertile-peak) / 0.82);
     --cal-line-period: rgb(var(--cal-period) / 0.7);
     --cal-line-predicted: rgb(var(--cal-predicted) / 0.85);
     --cal-line-fertile: rgb(var(--cal-fertile-ink) / 0.7);
+    /* The tier borders were inline on rules that only the two goal selectors
+       ever reached; named here so the newly reachable default goal does not
+       paint a light-theme border in the dark theme. */
+    --cal-line-fertile-edge: rgb(154 184 132 / 0.78);
+    --cal-line-fertile-peak: rgb(93 147 95 / 0.82);
     /* ---- end calendar phase/state colours ------------------------------ */
     --period-color: rgb(var(--cal-period));
     --ovulation-color: rgb(var(--cal-ovulation));
@@ -4853,6 +4894,11 @@
     --cal-fill-fertile-peak: rgb(78 136 79 / 0.58);
     --cal-line-predicted: rgb(var(--cal-predicted) / 0.82);
     --cal-line-fertile: rgb(var(--cal-fertile) / 0.8);
+    /* The tier borders derive from the tier identity colours here: on a dark
+       card the border has to be lighter than the fill it outlines, which is the
+       opposite of what the light theme needs. */
+    --cal-line-fertile-edge: rgb(var(--cal-fertile-edge) / 0.92);
+    --cal-line-fertile-peak: rgb(var(--cal-fertile-peak) / 0.78);
     /* ---- end calendar phase/state colours — dark ------------------------ */
     --period-color: rgb(var(--cal-period));
     --ovulation-color: rgb(var(--cal-ovulation));
