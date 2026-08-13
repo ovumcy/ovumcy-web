@@ -55,6 +55,8 @@ type StatsPageViewData struct {
 	CurrentCycleBBTChart              StatsBBTChartViewData
 	PhaseMoodInsights                 []StatsPhaseMoodInsight
 	PhaseSymptomInsights              []StatsPhaseSymptomInsight
+	Statements                        []StatsStatement
+	HasStatements                     bool
 	HasLastCycleSymptoms              bool
 	HasSymptomPatterns                bool
 	HasRecentCycleFactors             bool
@@ -96,6 +98,7 @@ type statsOwnerInsightsViewData struct {
 	symptomPatterns         []StatsSymptomPatternViewData
 	currentCycleBBTChart    StatsBBTChartViewData
 	phaseSymptomInsights    []StatsPhaseSymptomInsight
+	statements              []StatsStatement
 	hasPhaseSymptomInsights bool
 }
 
@@ -111,14 +114,18 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	}
 	symptomCounts := buildStatsSymptomCountViewData(language, frequencies)
 	phaseMoodInsights, hasPhaseMoodInsights := service.BuildPhaseMoodInsights(user, baseData.logs, location)
-	ownerInsights, err := service.buildOwnerStatsInsights(ctx, user, language, baseData.stats, baseData.logs, now, location)
+	// The one traversal that yields the completed-cycle lengths feeds every
+	// consumer below, including the statements section, so the tiers there are
+	// read off StatsFlags.CompletedCycleCount's own source rather than a
+	// second count of the same thing.
+	completedCycleLengths := CompletedCycleTrendLengths(baseData.logs, now, location)
+	ownerInsights, err := service.buildOwnerStatsInsights(ctx, user, language, baseData.stats, baseData.logs, completedCycleLengths, now, location)
 	if err != nil {
 		return StatsPageViewData{}, err
 	}
 
 	showIrregularityNotice := shouldShowStatsIrregularityNotice(user, baseData.flags, baseData.stats)
 	showIrregularInsufficientDataNotice := shouldShowStatsIrregularInsufficientDataNotice(user, baseData.flags)
-	completedCycleLengths := CompletedCycleTrendLengths(baseData.logs, now, location)
 	showShortCycleNotice := shouldShowStatsShortCycleNotice(user, completedCycleLengths)
 	showLongCycleNotice := shouldShowStatsLongCycleNotice(user, completedCycleLengths)
 	showPerimenopauseHint := shouldShowStatsPerimenopauseHint(user)
@@ -155,6 +162,8 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		CurrentCycleBBTChart:                ownerInsights.currentCycleBBTChart,
 		PhaseMoodInsights:                   phaseMoodInsights,
 		PhaseSymptomInsights:                ownerInsights.phaseSymptomInsights,
+		Statements:                          ownerInsights.statements,
+		HasStatements:                       len(ownerInsights.statements) > 0,
 		HasLastCycleSymptoms:                len(ownerInsights.lastCycleSymptoms) > 0,
 		HasSymptomPatterns:                  len(ownerInsights.symptomPatterns) > 0,
 		HasRecentCycleFactors:               hasCycleFactorExplanation && len(cycleFactorExplanation.RecentFactors) > 0,
@@ -221,13 +230,19 @@ func buildStatsSymptomCountViewData(language string, frequencies []SymptomFreque
 	return symptomCounts
 }
 
-func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *models.User, language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) (statsOwnerInsightsViewData, error) {
+func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *models.User, language string, stats CycleStats, logs []models.DailyLog, completedCycleLengths []int, now time.Time, location *time.Location) (statsOwnerInsightsViewData, error) {
 	insights := statsOwnerInsightsViewData{}
 	if !IsOwnerUser(user) {
 		return insights, nil
 	}
 
 	insights.currentCycleBBTChart = buildCurrentCycleBBTChart(stats, logs, now, location)
+	// The cycle-length trend needs no symptom catalogue, so it is built before
+	// the reader check below: an owner with no symptom repository still gets
+	// the statement about their own cycle lengths.
+	if trend, ok := buildCycleLengthTrendStatement(completedCycleLengths); ok {
+		insights.statements = append(insights.statements, trend)
+	}
 	if service.symptoms == nil {
 		return insights, nil
 	}
@@ -240,6 +255,7 @@ func (service *StatsService) buildOwnerStatsInsights(ctx context.Context, user *
 	insights.lastCycleSymptoms = buildLastCycleSymptomCounts(language, logs, completedCycles, symptomByID, location)
 	insights.symptomPatterns = buildSymptomPatternInsights(logs, completedCycles, symptomByID, location)
 	insights.phaseSymptomInsights, insights.hasPhaseSymptomInsights = buildPhaseSymptomInsightsWithMap(logs, location, symptomByID)
+	insights.statements = append(insights.statements, buildSymptomPhaseRecurrenceStatements(logs, symptomByID, location)...)
 	return insights, nil
 }
 

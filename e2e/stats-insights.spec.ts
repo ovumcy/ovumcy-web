@@ -266,6 +266,103 @@ test.describe('Stats: symptom patterns', () => {
   });
 });
 
+test.describe('Stats: history statements', () => {
+  test('completed cycles and a recurring luteal symptom render both statement families', async ({
+    page,
+  }) => {
+    // Two gates layer here, the same way the symptom-pattern test describes:
+    //   1. the trend statement needs three completed cycle lengths, and
+    //      CompletedCycleTrendLengths counts only starts strictly before today,
+    //      so four cycle starts have to precede today;
+    //   2. the recurrence family needs three closed cycles whose luteal phase
+    //      holds a logged day.
+    // Onboarding can anchor no deeper than today-60, so lay starts at -60,
+    // -42, -22 and -2: cycles of 18, 20 and 20 days, all comfortably above the
+    // short-gap confirmation boundary.
+    await registerAndOnboardWithStartDaysAgo(page, 'stats-statements', 60);
+    const today = isoToday();
+
+    await markCycleStartViaAPI(page, shiftISODate(today, -42));
+    await markCycleStartViaAPI(page, shiftISODate(today, -22));
+    await markCycleStartViaAPI(page, shiftISODate(today, -2));
+
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    const firstSymptomInput = page
+      .locator('fieldset[data-dashboard-section="symptoms"] input[name="symptom_ids"]')
+      .first();
+    await expect(firstSymptomInput).toBeAttached();
+    const symptomIDRaw = await firstSymptomInput.getAttribute('value');
+    expect(symptomIDRaw).toMatch(/^\d+$/);
+    const symptomID = Number(symptomIDRaw);
+
+    // Cycle day 10 of each closed cycle. With a 5-day period and cycles of
+    // 18-20 days the ovulation day lands on day 4-6, so day 10 is luteal in
+    // every one of them — and it sits past the auto-period-fill window, so the
+    // JSON PUT never clears a period flag.
+    const csrf = await csrfToken(page);
+    for (const offset of [-51, -33, -13]) {
+      const response = await page.request.put(`/api/v1/days/${shiftISODate(today, offset)}`, {
+        headers: {
+          ...apiOriginHeader(page),
+          'X-CSRF-Token': csrf,
+          'Content-Type': 'application/json',
+        },
+        data: { symptom_ids: [symptomID] },
+      });
+      expect(response.status(), `save symptom at offset ${offset}`).toBeLessThan(400);
+    }
+
+    await page.goto('/stats');
+    await expect(page).toHaveURL(/\/stats$/);
+
+    const statements = page.locator('[data-stats-statements]');
+    await expect(statements).toBeVisible();
+    await expect(statements.locator('[data-stats-statements-heading]')).toHaveAttribute(
+      'data-heading-key',
+      'stats.statements_title'
+    );
+
+    // The cycle-length trend leads the section. Which of the three directions
+    // it lands on depends on how the seeded starts round across a timezone
+    // boundary, so read the chosen key off the row and resolve its copy from
+    // the shipped catalogue rather than re-typing a sentence here.
+    const trend = statements.locator('[data-stats-statement="cycle_length_trend"]');
+    await expect(trend).toHaveCount(1);
+    const trendKey = await trend.getAttribute('data-statement-key');
+    expect(trendKey).toMatch(/^stats\.statement_cycle_trend_(shorter|longer|steady)$/);
+    const trendCount = Number(await trend.getAttribute('data-statement-count'));
+    expect(trendCount).toBeGreaterThan(0);
+    const trendCopy = localeText('en', `${trendKey}.${trendCount === 1 ? 'one' : 'other'}`);
+    await expect(trend).toContainText(trendCopy.replace('%d', String(trendCount)));
+
+    // The recurrence statement names a cycle phase — never a fertility status —
+    // the symptom it counted, and the two numbers its sentence prints.
+    const recurrence = statements.locator('[data-stats-statement="symptom_phase_recurrence"]');
+    await expect(recurrence).toHaveCount(1);
+    await expect(recurrence).toHaveAttribute(
+      'data-statement-key',
+      'stats.statement_symptom_recurrence'
+    );
+    const phase = await recurrence.getAttribute('data-statement-phase');
+    expect(['menstrual', 'follicular', 'ovulation', 'luteal']).toContain(phase);
+    const count = Number(await recurrence.getAttribute('data-statement-count'));
+    const total = Number(await recurrence.getAttribute('data-statement-total'));
+    expect(count).toBeGreaterThanOrEqual(2);
+    expect(total).toBeGreaterThanOrEqual(count);
+    expect(count * 2).toBeGreaterThan(total);
+
+    await expect(recurrence).toContainText(localeText('en', `phases.${phase}`));
+    const recurrenceCopy = localeText(
+      'en',
+      `stats.statement_symptom_recurrence.${total === 1 ? 'one' : 'other'}`
+    );
+    await expect(recurrence).toContainText(
+      recurrenceCopy.replace('%d', String(count)).replace('%d', String(total))
+    );
+  });
+});
+
 test.describe('Stats: cycle range', () => {
   test('two completed cycles of different lengths populate the cycle range stat card', async ({
     page,

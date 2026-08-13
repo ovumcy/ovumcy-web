@@ -125,6 +125,130 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 	)
 }
 
+// TestStatsPageRendersHistoryStatements pins the structural contract of the
+// statements section: the hook that marks it, the heading key, and one row per
+// statement carrying its kind, its chosen catalogue key and the numbers the
+// sentence prints. Copy stays out of here — the phrasing is the catalogue's and
+// the Playwright spec's subject; what must not drift is the pair of attributes
+// a spec addresses a statement by.
+func TestStatsPageRendersHistoryStatements(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "stats-history-statements@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	symptom := models.SymptomType{UserID: user.ID, Name: "Headache", Icon: "H", Color: "#111111"}
+	if err := database.Create(&symptom).Error; err != nil {
+		t.Fatalf("create custom symptom: %v", err)
+	}
+
+	// Anchor relative to today so the completed-cycle count, which is measured
+	// against the live clock, holds whenever CI runs this.
+	today := services.DateAtLocation(time.Now().In(time.UTC), time.UTC)
+	currentCycleStart := today.AddDate(0, 0, -8)
+	// Cycle lengths 31, 31, 27, 27 — the earlier half of the window runs four
+	// days longer than the recent half, so the trend statement is a "shorter"
+	// one and carries its window detail line rather than the steady wording.
+	starts := []time.Time{
+		currentCycleStart.AddDate(0, 0, -116),
+		currentCycleStart.AddDate(0, 0, -85),
+		currentCycleStart.AddDate(0, 0, -54),
+		currentCycleStart.AddDate(0, 0, -27),
+		currentCycleStart,
+	}
+
+	logs := make([]models.DailyLog, 0, len(starts)*2)
+	for index, start := range starts {
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start, IsPeriod: true, Flow: models.FlowMedium})
+		if index == len(starts)-1 {
+			continue
+		}
+		// Cycle day 22 sits past the ovulation day of every seeded cycle, so
+		// the symptom lands in the luteal phase of all four closed cycles.
+		logs = append(logs, models.DailyLog{UserID: user.ID, Date: start.AddDate(0, 0, 21), SymptomIDs: []uint{symptom.ID}})
+	}
+	if err := database.Create(&logs).Error; err != nil {
+		t.Fatalf("create statement logs: %v", err)
+	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"last_period_start": currentCycleStart,
+	}).Error; err != nil {
+		t.Fatalf("update user settings: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie)
+
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("stats request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", response.StatusCode)
+	}
+
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+	section := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-stats-statements")
+	})
+	if section == nil {
+		t.Fatal("expected the stats page to render the data-stats-statements section")
+	}
+
+	heading := htmlFindElement(section, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-stats-statements-heading")
+	})
+	if heading == nil {
+		t.Fatal("expected the statements section to carry its heading hook")
+	}
+	if key := htmlAttr(heading, "data-heading-key"); key != "stats.statements_title" {
+		t.Errorf("expected the heading to name its catalogue key, got %q", key)
+	}
+
+	rows := htmlFindElements(section, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-stats-statement")
+	})
+	if len(rows) < 2 {
+		t.Fatalf("expected the trend and recurrence statements to render, got %d rows", len(rows))
+	}
+
+	if kind := htmlAttr(rows[0], "data-stats-statement"); kind != "cycle_length_trend" {
+		t.Fatalf("expected the cycle-length trend to lead the section, got %q", kind)
+	}
+	if key := htmlAttr(rows[0], "data-statement-key"); key != "stats.statement_cycle_trend_shorter" {
+		t.Errorf("expected the shorter-trend key on the leading statement, got %q", key)
+	}
+	if direction := htmlAttr(rows[0], "data-statement-direction"); direction != "shorter" {
+		t.Errorf("expected the leading statement to name its direction, got %q", direction)
+	}
+
+	phases := map[string]struct{}{"menstrual": {}, "follicular": {}, "ovulation": {}, "luteal": {}}
+	sawRecurrence := false
+	for _, row := range rows[1:] {
+		if htmlAttr(row, "data-stats-statement") != "symptom_phase_recurrence" {
+			t.Fatalf("expected recurrence statements after the trend, got %q", htmlAttr(row, "data-stats-statement"))
+		}
+		sawRecurrence = true
+		if key := htmlAttr(row, "data-statement-key"); key != "stats.statement_symptom_recurrence" {
+			t.Errorf("expected the recurrence key, got %q", key)
+		}
+		// Fertility is a status, never a phase: a recurrence row may only ever
+		// name one of the four cycle phases.
+		if _, ok := phases[htmlAttr(row, "data-statement-phase")]; !ok {
+			t.Errorf("expected a cycle phase on the recurrence row, got %q", htmlAttr(row, "data-statement-phase"))
+		}
+		if htmlAttr(row, "data-statement-count") == "" || htmlAttr(row, "data-statement-total") == "" {
+			t.Errorf("expected the recurrence row to carry both of its numbers, got %q of %q",
+				htmlAttr(row, "data-statement-count"), htmlAttr(row, "data-statement-total"))
+		}
+	}
+	if !sawRecurrence {
+		t.Error("expected at least one symptom-by-phase recurrence statement")
+	}
+}
+
 // renderStatsInsightsPage drives a stats page render for an owner with four
 // recorded period starts (three completed cycles), so the insights branch of
 // stats.html is exercised. When unpredictableCycle is set, predictions are off
