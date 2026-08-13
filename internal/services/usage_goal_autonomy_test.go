@@ -138,8 +138,8 @@ func TestApplyUsageGoalNormalizesAndToleratesAMissingUser(t *testing.T) {
 func TestAlternativeUsageGoalsOffersEveryOtherMode(t *testing.T) {
 	cases := map[string][]string{
 		models.UsageGoalHealth: {models.UsageGoalAvoid, models.UsageGoalTrying},
-		models.UsageGoalAvoid:  {models.UsageGoalTrying, models.UsageGoalHealth},
-		models.UsageGoalTrying: {models.UsageGoalAvoid, models.UsageGoalHealth},
+		models.UsageGoalAvoid:  {models.UsageGoalHealth, models.UsageGoalTrying},
+		models.UsageGoalTrying: {models.UsageGoalHealth, models.UsageGoalAvoid},
 		// An unset column reads as the neutral default, so it offers the same
 		// pair as an explicit "track my health".
 		"": {models.UsageGoalAvoid, models.UsageGoalTrying},

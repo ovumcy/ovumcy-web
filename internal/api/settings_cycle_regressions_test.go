@@ -162,6 +162,19 @@ func TestSettingsPageRendersPersistedCycleValues(t *testing.T) {
 	}
 }
 
+// TestSettingsUsageGoalChooserLeadsWithTheNeutralDefault pins the display order
+// of the settings mode chooser against the same contract onboarding renders:
+// the neutral default first, the two alternative modes after it.
+func TestSettingsUsageGoalChooserLeadsWithTheNeutralDefault(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "settings-goal-order@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	document := mustParseHTMLDocument(t, renderSettingsPageForTest(t, app, authCookie))
+
+	assertUsageGoalOrder(t, htmlRadioValues(document, "usage_goal"))
+}
+
 // TestSettingsCycleGoalOnlyPatchWritesNothingButTheGoal covers the shape the
 // dashboard quick switch sends: a body carrying usage_goal and nothing else.
 // It rides the endpoint the settings form already uses, writes only that one
