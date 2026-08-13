@@ -31,6 +31,10 @@ func mapStatsBBTChartData(chart services.StatsBBTChartViewData, messages map[str
 		"labels": chart.Labels,
 		"values": chart.Values,
 	}
+	if dates, valueTexts := statsBBTChartPointColumns(chart); len(dates) > 0 {
+		payload["dates"] = dates
+		payload["valueTexts"] = valueTexts
+	}
 	if chart.Kind != "" {
 		payload["kind"] = chart.Kind
 	}
@@ -50,6 +54,29 @@ func mapStatsBBTChartData(chart services.StatsBBTChartViewData, messages map[str
 		}
 	}
 	return payload
+}
+
+// statsBBTChartPointColumns flattens the point list into the two per-index
+// columns the chart script reads for its crosshair: the calendar date the x
+// axis has no room for, and the reading already rendered as text. The readout
+// prints the server's string instead of re-rounding the float in the browser,
+// so it cannot disagree with the table twin printed underneath it. A day with
+// no reading carries an empty string and the readout says so.
+//
+// With no points there are no columns, and the keys stay off the payload
+// entirely rather than shipping a row of blanks.
+func statsBBTChartPointColumns(chart services.StatsBBTChartViewData) ([]string, []string) {
+	if len(chart.Points) == 0 {
+		return nil, nil
+	}
+
+	dates := make([]string, 0, len(chart.Points))
+	valueTexts := make([]string, 0, len(chart.Points))
+	for _, point := range chart.Points {
+		dates = append(dates, point.Date)
+		valueTexts = append(valueTexts, point.ValueText)
+	}
+	return dates, valueTexts
 }
 
 func buildStatsCycleChartSummary(messages map[string]string, viewData services.StatsPageViewData) string {
@@ -192,6 +219,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"SymptomPatterns":                     viewData.SymptomPatterns,
 		"SymptomCounts":                       viewData.SymptomCounts,
 		"BBTChartData":                        mapStatsBBTChartData(viewData.CurrentCycleBBTChart, messages),
+		"BBTChartPoints":                      viewData.CurrentCycleBBTChart.Points,
 		"PhaseMoodInsights":                   viewData.PhaseMoodInsights,
 		"PhaseSymptomInsights":                viewData.PhaseSymptomInsights,
 		"Statements":                          viewData.Statements,

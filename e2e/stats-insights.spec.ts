@@ -105,6 +105,76 @@ test.describe('Stats: BBT chart', () => {
     expect(numericValues.length).toBeGreaterThanOrEqual(5);
     expect(parsed.baseline).toBeUndefined();
     expect(parsed.markerIndex).toBeUndefined();
+
+    // The table twin. The canvas is aria-hidden and the crosshair is a pointer
+    // affordance, so this table is the only path to a per-day value that needs
+    // neither: it lists one row per plotted day and the same numbers the chart
+    // was handed.
+    const unit = localeText('en', 'stats.bbt_unit');
+    const noReading = localeText('en', 'stats.bbt_table_no_reading');
+    const disclosure = page.locator('[data-bbt-table-disclosure]');
+    await expect(disclosure).toBeAttached();
+    await expect(disclosure.locator('summary')).toHaveText(
+      localeText('en', 'stats.bbt_table_toggle')
+    );
+    await disclosure.locator('summary').click();
+    await expect(disclosure.locator('caption')).toHaveText(
+      localeText('en', 'stats.bbt_table_caption')
+    );
+
+    // A reading becomes text once, on the server; both the table and the
+    // crosshair print that string. Ground it in the seeded readings first, so
+    // the comparison below is not payload against payload.
+    // The same ±1 day boundary the rest of this spec tolerates can drop the
+    // sample logged on "today", so the rendered readings are the leading run of
+    // the seeded ones rather than all of them.
+    const valueTexts = parsed.valueTexts as string[];
+    const expectedCells = valueTexts.map((text) => (text === '' ? noReading : `${text}${unit}`));
+    const renderedReadings = expectedCells.filter((cell) => cell !== noReading);
+    expect(renderedReadings.length).toBeGreaterThanOrEqual(5);
+    expect(renderedReadings).toEqual(
+      bbtSeries.slice(0, renderedReadings.length).map((value) => `${value.toFixed(1)}${unit}`)
+    );
+
+    const values = parsed.values as Array<number | null>;
+    await expect(disclosure.locator('[data-bbt-table-row]')).toHaveCount(values.length);
+    expect(await disclosure.locator('[data-bbt-table-value]').allTextContents()).toEqual(
+      expectedCells
+    );
+
+    // The crosshair. Nothing is shown until the pointer is on the chart; a
+    // hover then names the day under it, its date and its reading. Opacity is
+    // the painted proof — Playwright's visibility check ignores it, so a
+    // readout stuck at 0 would pass toBeVisible() while showing nothing.
+    const hoverLayer = bbtChart.locator('.chart-hover-layer');
+    await expect(hoverLayer).toHaveCSS('opacity', '0');
+    expect(await bbtChart.getAttribute('data-chart-hover-index')).toBeNull();
+
+    const box = await bbtChart.boundingBox();
+    expect(box).not.toBeNull();
+    await bbtChart.hover({ position: { x: (box?.width ?? 0) - 6, y: (box?.height ?? 0) / 2 } });
+    await expect(hoverLayer).toHaveCSS('opacity', '1');
+
+    // Read back which day the crosshair resolved to instead of pinning an
+    // index: the plot's pixel geometry is the browser's business, the mapping
+    // from that day to the value shown is the product's.
+    const hoveredIndex = Number(await bbtChart.getAttribute('data-chart-hover-index'));
+    expect(hoveredIndex).toBe(values.length - 1);
+    await expect(bbtChart.locator('[data-chart-tooltip-day]')).toHaveText(
+      `${localeText('en', 'stats.bbt_table_day')} ${parsed.labels[hoveredIndex]}`
+    );
+    // The same cell the table prints for that day — one reading, one string.
+    await expect(bbtChart.locator('[data-chart-tooltip-value]')).toHaveText(
+      expectedCells[hoveredIndex]
+    );
+    await expect(
+      disclosure.locator('[data-bbt-table-row]').nth(hoveredIndex).locator('[data-bbt-table-value]')
+    ).toHaveText(expectedCells[hoveredIndex]);
+
+    // Dismissible: the same readout must not stay pinned over the chart.
+    await page.keyboard.press('Escape');
+    await expect(hoverLayer).toHaveCSS('opacity', '0');
+    expect(await bbtChart.getAttribute('data-chart-hover-index')).toBeNull();
   });
 
   test('a sustained BBT rise after the baseline window flags the probable ovulation marker', async ({

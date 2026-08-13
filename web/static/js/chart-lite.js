@@ -25,6 +25,15 @@
   var MARKER_RING_WIDTH = 2;
   var BASELINE_LABEL_INSET = 12;
 
+  // The crosshair is opt-in: a chart declares data-chart-hover when it has a
+  // text equivalent underneath it, so hovering can never be the only way to a
+  // value.
+  var HOVER_ATTRIBUTE = "data-chart-hover";
+  // Past these fractions of the plot width the tooltip would hang off the
+  // shell, so it anchors by its near edge instead of by its centre.
+  var TOOLTIP_START_FRACTION = 0.18;
+  var TOOLTIP_END_FRACTION = 0.82;
+
   function isFiniteNumber(value) {
     return typeof value === "number" && isFinite(value);
   }
@@ -105,6 +114,19 @@
         labels.push(label || String(index + 1));
       }
 
+      // Per-point text for the hover readout, aligned to the labels: the
+      // calendar date the x axis has no room for, and the reading already
+      // rendered by the server — the same string the table twin prints, so a
+      // rounding rule cannot differ between the two halves of one card.
+      var datesSource = Array.isArray(parsed.dates) ? parsed.dates : [];
+      var valueTextsSource = Array.isArray(parsed.valueTexts) ? parsed.valueTexts : [];
+      var dates = [];
+      var valueTexts = [];
+      for (var textIndex = 0; textIndex < labels.length; textIndex++) {
+        dates.push(textIndex < datesSource.length ? toText(datesSource[textIndex]).trim() : "");
+        valueTexts.push(textIndex < valueTextsSource.length ? toText(valueTextsSource[textIndex]).trim() : "");
+      }
+
       var baseline = toFiniteNumber(parsed.baseline);
       if (!isFiniteNumber(baseline) || baseline <= 0) {
         baseline = null;
@@ -120,6 +142,8 @@
       return {
         labels: labels,
         values: values,
+        dates: dates,
+        valueTexts: valueTexts,
         baseline: baseline,
         kind: kind,
         markerIndex: markerIndex,
@@ -445,10 +469,191 @@
     }
   }
 
+  // nearestChartIndex resolves a pointer position, expressed in the chart's own
+  // coordinate space, to the index of the closest plotted day.
+  //
+  // Every index is a candidate, including one whose value is a gap. Snapping to
+  // the nearest *reading* instead would report a temperature under a day that
+  // has none — the crosshair would silently move the value onto a neighbouring
+  // day, which is the one thing this chart's null handling exists to prevent.
+  // A gap resolves to itself and the tooltip says there is no reading.
+  function nearestChartIndex(x, count, xForIndex) {
+    if (!isFiniteNumber(x) || !(count > 0)) {
+      return -1;
+    }
+
+    var nearest = 0;
+    var nearestDistance = Infinity;
+    for (var index = 0; index < count; index++) {
+      var distance = Math.abs(xForIndex(index) - x);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = index;
+      }
+    }
+    return nearest;
+  }
+
+  // The pointer arrives in CSS pixels relative to the viewport; the chart is
+  // drawn in the coordinate space createCanvas sized, which the stylesheet then
+  // stretches to the shell. Measuring the canvas box each time keeps the two in
+  // step across a resize without re-reading layout state that could be stale.
+  function chartPointerX(state, clientX) {
+    var rect = state.canvas.getBoundingClientRect();
+    var scale = rect.width > 0 ? state.width / rect.width : 1;
+    return (clientX - rect.left) * scale;
+  }
+
+  function appendHoverLine(tooltip, hook) {
+    var line = document.createElement("div");
+    line.className = "chart-tooltip-line";
+    line.setAttribute(hook, "");
+    tooltip.appendChild(line);
+    return line;
+  }
+
+  function createHoverLayer(container) {
+    var layer = document.createElement("div");
+    layer.className = "chart-hover-layer";
+    // The layer paints the same values the table twin lists, so it adds
+    // nothing to the accessibility tree — exactly like the canvas it sits on.
+    layer.setAttribute("aria-hidden", "true");
+
+    var crosshair = document.createElement("div");
+    crosshair.className = "chart-crosshair";
+    layer.appendChild(crosshair);
+
+    var tooltip = document.createElement("div");
+    tooltip.className = "chart-tooltip";
+    tooltip.setAttribute("data-chart-tooltip", "");
+    layer.appendChild(tooltip);
+
+    container.appendChild(layer);
+
+    return {
+      layer: layer,
+      tooltip: tooltip,
+      dayLine: appendHoverLine(tooltip, "data-chart-tooltip-day"),
+      dateLine: appendHoverLine(tooltip, "data-chart-tooltip-date"),
+      valueLine: appendHoverLine(tooltip, "data-chart-tooltip-value")
+    };
+  }
+
+  function hoverDayText(state, index) {
+    var label = state.labels[index];
+    return state.dayLabel ? state.dayLabel + " " + label : label;
+  }
+
+  // The reading the server already rendered wins; formatting it again here is
+  // only the fallback for a payload that carries no text column.
+  function hoverValueText(state, index) {
+    var rendered = index < state.valueTexts.length ? state.valueTexts[index] : "";
+    if (rendered) {
+      return rendered + String(state.valueSuffix || "");
+    }
+
+    var value = state.values[index];
+    if (!isFiniteNumber(value)) {
+      return state.emptyValueText;
+    }
+    return formatChartValue(value, state.valueSuffix, state.valueDecimals);
+  }
+
+  function showChartHover(container, index) {
+    var state = container.chartHoverState;
+    if (!state || index < 0 || index >= state.labels.length) {
+      return;
+    }
+
+    var fraction = state.xForIndex(index) / state.width;
+    state.layer.style.setProperty("--chart-hover-x", fraction * 100 + "%");
+    state.dayLine.textContent = hoverDayText(state, index);
+
+    var date = index < state.dates.length ? state.dates[index] : "";
+    state.dateLine.textContent = date;
+    state.dateLine.hidden = date === "";
+    state.valueLine.textContent = hoverValueText(state, index);
+
+    state.tooltip.classList.toggle("chart-tooltip-start", fraction < TOOLTIP_START_FRACTION);
+    state.tooltip.classList.toggle("chart-tooltip-end", fraction > TOOLTIP_END_FRACTION);
+    state.layer.classList.add("chart-hover-visible");
+    container.setAttribute("data-chart-hover-index", String(index));
+  }
+
+  function hideChartHover(container) {
+    var state = container ? container.chartHoverState : null;
+    if (!state) {
+      return;
+    }
+    state.layer.classList.remove("chart-hover-visible");
+    container.removeAttribute("data-chart-hover-index");
+  }
+
+  // hideEveryChartHover closes every open readout except the one on the chart
+  // that holds `keepAround` — the element a dismissing gesture landed on.
+  function hideEveryChartHover(keepAround) {
+    var charts = document.querySelectorAll(CHART_SELECTOR);
+    for (var index = 0; index < charts.length; index++) {
+      if (keepAround && charts[index].contains(keepAround)) {
+        continue;
+      }
+      hideChartHover(charts[index]);
+    }
+  }
+
+  // The hit surface is the whole chart shell, not a disc per point: a shell is
+  // at least 240 x 190 px and every horizontal position resolves to a day, so
+  // there is no target to miss and no dead zone between points — which is what
+  // the 24 px minimum protects against. Pointer events cover mouse, pen and
+  // touch alike, so a tap opens the same readout a hover does.
+  function bindChartHoverListeners(container) {
+    if (container.chartHoverBound) {
+      return;
+    }
+    container.chartHoverBound = true;
+
+    var track = function (event) {
+      var state = container.chartHoverState;
+      if (!state) {
+        return;
+      }
+      var pointerX = chartPointerX(state, event.clientX);
+      showChartHover(container, nearestChartIndex(pointerX, state.labels.length, state.xForIndex));
+    };
+
+    container.addEventListener("pointermove", track);
+    container.addEventListener("pointerdown", track);
+    container.addEventListener("pointerleave", function () {
+      hideChartHover(container);
+    });
+    container.addEventListener("pointercancel", function () {
+      hideChartHover(container);
+    });
+  }
+
+  function setupChartHover(container, state) {
+    var layer = createHoverLayer(container);
+    state.layer = layer.layer;
+    state.tooltip = layer.tooltip;
+    state.dayLine = layer.dayLine;
+    state.dateLine = layer.dateLine;
+    state.valueLine = layer.valueLine;
+
+    // The crosshair spans the plot box, not the whole shell: below it are the
+    // day labels, which the hairline would otherwise strike through.
+    state.layer.style.setProperty("--chart-plot-top", (state.padding.top / state.height) * 100 + "%");
+    state.layer.style.setProperty("--chart-plot-height", (state.innerHeight / state.height) * 100 + "%");
+
+    container.chartHoverState = state;
+    bindChartHoverListeners(container);
+    hideChartHover(container);
+  }
+
   function drawChart(container) {
     if (!container) {
       return;
     }
+    container.chartHoverState = null;
 
     var emptyText = container.getAttribute("data-empty-text") || "Not enough cycle data yet.";
     var valueSuffix = container.getAttribute("data-value-suffix");
@@ -547,6 +752,25 @@
     }
     drawXLabels(context, chartData.labels, xForIndex, size.height, padding, colors.label);
     drawYLabels(context, ticks, padding, yForValue, valueSuffix, valueDecimals, colors.label);
+
+    if (container.hasAttribute(HOVER_ATTRIBUTE)) {
+      setupChartHover(container, {
+        canvas: canvasBundle.canvas,
+        labels: chartData.labels,
+        values: chartData.values,
+        dates: chartData.dates,
+        valueTexts: chartData.valueTexts,
+        width: size.width,
+        height: size.height,
+        padding: padding,
+        innerHeight: innerHeight,
+        xForIndex: xForIndex,
+        valueSuffix: valueSuffix,
+        valueDecimals: valueDecimals,
+        dayLabel: container.getAttribute("data-hover-day-label") || "",
+        emptyValueText: container.getAttribute("data-hover-empty-text") || ""
+      });
+    }
   }
 
   function renderCharts(root) {
@@ -576,6 +800,20 @@
   });
 
   window.addEventListener("resize", scheduleRender);
+
+  // A touch readout has no pointerleave to end it, so it is dismissed the two
+  // ways a transient overlay is expected to be: by touching elsewhere, and by
+  // Escape. Escape also gets a keyboard user out of a readout they opened with
+  // a pointer — the chart itself takes no focus, so there is nothing to trap.
+  document.addEventListener("pointerdown", function (event) {
+    hideEveryChartHover(event.target);
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" || event.key === "Esc") {
+      hideEveryChartHover(null);
+    }
+  });
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     var target = event && event.detail ? event.detail.target : null;

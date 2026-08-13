@@ -3842,15 +3842,145 @@
 }
 
 @utility chart-shell {
+  /* Named once so the hover layer can sit exactly on the content box the
+     canvas fills — the crosshair's percentages are of that box, not of the
+     padding box an inset:0 overlay would cover. */
+  --chart-shell-padding: 0.9rem;
+
+  position: relative;
   height: 18rem;
   border-radius: var(--radius-card);
   border: 1px solid var(--line-soft);
   background: rgba(255, 255, 255, 0.85);
-  padding: 0.9rem;
+  padding: var(--chart-shell-padding);
 
   :root[data-theme='dark'] & {
     background: rgba(33, 27, 44, 0.88);
   }
+}
+
+/* The hover readout, built by chart-lite.js: a hairline at the day under the
+   pointer and a panel naming that day, its date and its reading. Its position
+   arrives as --chart-hover-x, set on the layer through style.setProperty —
+   a DOM property write, so no template ever carries an inline style. */
+@utility chart-hover-layer {
+  position: absolute;
+  inset: var(--chart-shell-padding, 0.9rem);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-soft);
+
+  &.chart-hover-visible {
+    opacity: 1;
+  }
+}
+
+@utility chart-crosshair {
+  position: absolute;
+  top: var(--chart-plot-top, 0%);
+  left: var(--chart-hover-x, 0%);
+  width: 1px;
+  height: var(--chart-plot-height, 100%);
+  background: var(--ink-muted);
+}
+
+@utility chart-tooltip {
+  position: absolute;
+  top: var(--chart-plot-top, 0%);
+  left: var(--chart-hover-x, 0%);
+  transform: translateX(-50%);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-2);
+  padding: 0.35rem 0.55rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--ink-strong);
+  white-space: nowrap;
+
+  /* Near either edge the centred anchor would hang off the shell, so the
+     panel pins by its near edge instead. */
+  &.chart-tooltip-start {
+    transform: translateX(0);
+  }
+
+  &.chart-tooltip-end {
+    transform: translateX(-100%);
+  }
+}
+
+@utility chart-tooltip-line {
+  display: block;
+
+  &[data-chart-tooltip-date] {
+    color: var(--ink-muted);
+  }
+}
+
+/* The chart's text equivalent: the same series as a real table, one row per
+   plotted day, behind a disclosure so it does not compete with the drawing. */
+@utility chart-table-disclosure {
+  border-top: 1px dashed var(--border-hairline);
+  padding-top: 0.75rem;
+}
+
+@utility chart-table-summary {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+
+  &:hover {
+    color: var(--ink-strong);
+  }
+}
+
+@utility chart-table-scroll {
+  max-height: 18rem;
+  overflow: auto;
+}
+
+@utility chart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+
+  & th,
+  & td {
+    padding: 0.3rem 0.5rem;
+    text-align: start;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  & thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-card);
+    color: var(--ink-muted);
+    font-weight: 600;
+  }
+
+  & tbody th,
+  & tbody td {
+    color: var(--ink-strong);
+    font-weight: 500;
+  }
+}
+
+@utility chart-table-caption {
+  caption-side: top;
+  padding-bottom: 0.5rem;
+  text-align: start;
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
 }
 
 @utility stats-legend-dot-actual {
@@ -4526,6 +4656,11 @@
        measured 2.97:1 against the white card. */
     --chart-line: #a8622c;
     --chart-dot: #b9753e;
+    /* The coverline is a reference mark rather than the series, so it reads a
+       step quieter than --chart-line (4.72:1 here) while staying a non-text
+       graphical object with the same 3:1 floor: measured 3.30:1 against the
+       white card the chart shell paints on. */
+    --chart-baseline: #9f8a75;
     --bg-glow-1: rgba(232, 196, 168, 0.44);
     --bg-glow-2: rgba(212, 165, 116, 0.24);
     --bg-stripes: rgba(207, 167, 128, 0.06);
@@ -4789,6 +4924,14 @@
        light and under-saturated on it. */
     --chart-line: #c07f3c;
     --chart-dot: #e4b385;
+    /* The dark half the token never had: both the stylesheet and chart-lite.js
+       fell back to the light #9f8a75, so the coverline was painted with a
+       light-theme colour on the dark card. Measured against the same elevated
+       dark surface #2e263c as --chart-line: 3.66:1, and 4.24:1 against the
+       chart shell's own #211b2c — clear of the 3:1 floor for a non-text mark
+       and still under --chart-line's 4.35:1, so the reference keeps reading
+       behind the series. */
+    --chart-baseline: #8a7b93;
     --bg-glow-1: rgba(141, 104, 189, 0.18);
     --bg-glow-2: rgba(226, 152, 109, 0.14);
     --bg-stripes: rgba(138, 118, 170, 0.09);
