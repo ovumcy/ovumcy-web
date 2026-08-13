@@ -23,7 +23,7 @@ export async function saveSettingsLanguage(page: Page, code: string): Promise<vo
   await expect(option).toBeVisible();
 
   if ((await option.getAttribute('data-selected')) !== 'true') {
-    await option.locator('.radio-tile').click();
+    await option.locator('.chip-stack').click();
     // The radio change flips data-selected optimistically on the client, so the
     // assertion below can pass before the htmx PATCH persists the preference.
     // Bind to the save click's own request and await its response so callers

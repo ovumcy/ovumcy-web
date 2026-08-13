@@ -101,7 +101,7 @@ async function registerOwnerOnCalendar(page: Page, prefix: string): Promise<stri
 /** Fills the editor with values a spec can recognise again field by field. */
 async function fillDayEntry(form: Locator, note: string): Promise<void> {
   await form.locator('input[name="is_period"]').check();
-  await form.locator('label.choice-option:has(input[name="mood"][value="4"]) .mood-chip').click();
+  await form.locator('label.choice-option:has(input[name="mood"][value="4"]) .chip-round').click();
   await expect(form.locator('input[name="mood"][value="4"]')).toBeChecked();
   const notes = await ensureNotesFieldVisible(form, '#calendar-notes');
   await notes.fill(note);

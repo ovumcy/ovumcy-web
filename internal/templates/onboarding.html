@@ -13,12 +13,12 @@
   data-period-exceeds-cycle-message="{{t .Messages "onboarding.step2.error_incompatible"}}"
   data-week-start="{{.WeekStart}}"
   data-lang="{{.Lang}}">
-  <div class="journal-card journal-hero overflow-hidden p-6 sm:p-8">
+  <div class="card card-hero overflow-hidden p-6 sm:p-8">
     <div class="space-y-3" data-onboarding-progress>
       <p class="journal-kicker" data-onboarding-progress-kicker="1" {{if ne .OnboardingStep 1}}hidden{{end}}>{{t .Messages "onboarding.progress.step1"}}</p>
       <p class="journal-kicker" data-onboarding-progress-kicker="2" {{if ne .OnboardingStep 2}}hidden{{end}}>{{t .Messages "onboarding.progress.step2"}}</p>
 
-      <div class="journal-panel space-y-2">
+      <div class="card-quiet space-y-2">
         <div class="h-2 overflow-hidden rounded-full bg-[rgba(232,196,168,0.35)]">
           <div class="onboarding-progress-fill" data-onboarding-progress-bar data-step="{{.OnboardingStep}}"></div>
         </div>
@@ -43,7 +43,7 @@
 
         <p class="field-label" id="last-period-start-label">{{t .Messages "onboarding.step1.field"}}</p>
         <div
-          class="journal-panel onboarding-picker space-y-3"
+          class="card-quiet onboarding-picker space-y-3"
           role="group"
           aria-labelledby="last-period-start-label"
           data-onboarding-picker
@@ -161,15 +161,15 @@
           <div class="grid gap-2">
             <label class="choice-option">
               <input type="radio" name="usage_goal" value="avoid_pregnancy" class="choice-input" {{if eq .UsageGoal "avoid_pregnancy"}}checked{{end}}>
-              <span class="radio-tile"><span>{{t .Messages "settings.goal.avoid"}}</span></span>
+              <span class="chip chip-stack"><span>{{t .Messages "settings.goal.avoid"}}</span></span>
             </label>
             <label class="choice-option">
               <input type="radio" name="usage_goal" value="trying_to_conceive" class="choice-input" {{if eq .UsageGoal "trying_to_conceive"}}checked{{end}}>
-              <span class="radio-tile"><span>{{t .Messages "settings.goal.trying"}}</span></span>
+              <span class="chip chip-stack"><span>{{t .Messages "settings.goal.trying"}}</span></span>
             </label>
             <label class="choice-option">
               <input type="radio" name="usage_goal" value="health" class="choice-input" {{if or (eq .UsageGoal "health") (eq .UsageGoal "")}}checked{{end}}>
-              <span class="radio-tile"><span>{{t .Messages "settings.goal.health"}}</span></span>
+              <span class="chip chip-stack"><span>{{t .Messages "settings.goal.health"}}</span></span>
             </label>
           </div>
           <button type="submit" class="btn-secondary" data-onboarding-usage-goal-skip>{{t .Messages "onboarding.step2.usage_goal_skip"}}</button>

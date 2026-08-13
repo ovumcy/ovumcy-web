@@ -1,11 +1,11 @@
 {{define "settings_danger_zone_section_content"}}
-  <section id="settings-danger-zone" class="journal-card danger-card-strong p-5 sm:p-6 settings-danger-zone">
+  <section id="settings-danger-zone" class="card card-danger-strong p-5 sm:p-6 settings-danger-zone">
     <h2 class="journal-subtitle danger-title"><span aria-hidden="true">{{template "icon" "alert"}}</span> {{t .Messages "settings.danger_zone.title"}}</h2>
     <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.danger_zone.subtitle"}}</p>
 
     {{if eq .CurrentUser.Role "owner"}}
     {{if .CurrentUser.LocalAuthEnabled}}
-    <div class="journal-panel danger-card-soft mt-5 space-y-4">
+    <div class="card-quiet card-danger-soft mt-5 space-y-4">
       <div>
         <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.subtitle"}}</p>
@@ -36,7 +36,7 @@
       </form>
     </div>
     {{else}}
-    <div class="journal-panel danger-card-soft mt-5 space-y-4" data-clear-data-stepup>
+    <div class="card-quiet card-danger-soft mt-5 space-y-4" data-clear-data-stepup>
       <div>
         <h3 class="field-label">{{t .Messages "settings.clear_data.title"}}</h3>
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.clear_data.stepup_hint"}}</p>
@@ -55,7 +55,7 @@
     {{end}}
 
     {{if .CurrentUser.LocalAuthEnabled}}
-    <div class="journal-panel danger-card-soft mt-5 space-y-4">
+    <div class="card-quiet card-danger-soft mt-5 space-y-4">
       <div>
         <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
       </div>
@@ -82,7 +82,7 @@
       </form>
     </div>
     {{else}}
-    <div class="journal-panel danger-card-soft mt-5 space-y-4" data-delete-account-stepup>
+    <div class="card-quiet card-danger-soft mt-5 space-y-4" data-delete-account-stepup>
       <div>
         <h3 class="field-label">{{t .Messages "settings.delete_account.title"}}</h3>
         <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.delete_account.stepup_hint"}}</p>

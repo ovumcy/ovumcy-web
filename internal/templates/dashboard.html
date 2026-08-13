@@ -4,7 +4,7 @@
   <section class="space-y-3" data-dashboard-shell data-phase="{{.Stats.CurrentPhase}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
     {{$phase := .Stats.CurrentPhase}}{{if .CycleDataStale}}{{$phase = "unknown"}}{{else if .CycleHero.Visible}}{{$phase = .CycleHero.CurrentPhase}}{{end}}
     <section
-      class="journal-card dashboard-status-header reveal"
+      class="card dashboard-status-header reveal"
       data-dashboard-status-header
       data-dashboard-phase="{{$phase}}"
       data-fertility-status="{{if or .CycleDataStale (not .ShowFertilityStatus)}}unknown{{else}}{{.Stats.CurrentFertility}}{{end}}"
@@ -204,7 +204,7 @@
       <p class="dashboard-status-factor-hint text-sm" data-dashboard-factor-hint>
         <span class="journal-muted">{{t .Messages .PredictionExplanationSecondaryKey}}</span>
         {{range .PredictionFactorHintKeys}}
-        <span class="check-chip check-chip-static" data-cycle-factor="{{.}}">
+        <span class="chip chip-lead chip-static" data-cycle-factor="{{.}}">
           <span class="symptom-icon">{{cycleFactorIcon .}}</span>
           <span class="symptom-label">{{cycleFactorLabel $.Messages .}}</span>
         </span>
@@ -216,7 +216,7 @@
   </section>
 
   <div class="grid gap-6" data-dashboard-editor data-phase="{{.Stats.CurrentPhase}}" data-fertility="{{.Stats.CurrentFertility}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
-    <section class="journal-card p-5 sm:p-6">
+    <section class="card p-5 sm:p-6">
       <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="journal-subtitle">{{t .Messages "dashboard.today_editor"}}</h2>

@@ -714,7 +714,7 @@ test.describe('Bug regressions', () => {
 
       for (let index = 0; index < 6; index += 1) {
         const navActions = page
-          .locator('section.space-y-6 > div.journal-card')
+          .locator('section.space-y-6 > div.card')
           .first()
           .locator('.flex.flex-wrap.items-center.gap-2')
           .first();
@@ -745,7 +745,7 @@ test.describe('Bug regressions', () => {
       await expect(page).toHaveURL(new RegExp(`/calendar\\?month=${lowerBoundMonth}`));
 
       const navActions = page
-        .locator('section.space-y-6 > div.journal-card')
+        .locator('section.space-y-6 > div.card')
         .first()
         .locator('.flex.flex-wrap.items-center.gap-2')
         .first();

@@ -6,7 +6,7 @@
   </div>
 
   {{if .IsFutureDate}}
-  <div class="journal-panel text-sm">{{t .Messages "warning.future_date"}}</div>
+  <div class="card-quiet text-sm">{{t .Messages "warning.future_date"}}</div>
   {{end}}
 
   {{if and .IsOwner .EditMode}}
@@ -224,7 +224,7 @@
     <p class="journal-muted text-sm">{{t .Messages "dashboard.implantation_warning"}}</p>
     {{end}}
     {{else}}
-    <div class="journal-panel space-y-3 text-sm">
+    <div class="card-quiet space-y-3 text-sm">
       <p>{{t .Messages "calendar.no_entry"}}</p>
       <div class="flex flex-wrap items-center gap-3">
         <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}" data-action-weight="primary">{{t .Messages "calendar.add_entry"}}</button>

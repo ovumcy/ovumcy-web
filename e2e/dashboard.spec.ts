@@ -116,7 +116,7 @@ function symptomInputForOption(option: ReturnType<typeof todaySymptomOptions>) {
 }
 
 function symptomChipForOption(option: ReturnType<typeof todaySymptomOptions>) {
-  return option.locator('.check-chip');
+  return option.locator('.chip-lead');
 }
 
 function cycleFactorInput(page: Page, value: string) {
@@ -124,7 +124,7 @@ function cycleFactorInput(page: Page, value: string) {
 }
 
 function cycleFactorChip(page: Page, value: string) {
-  return page.locator(`label.choice-option:has(input[name="cycle_factor_keys"][value="${value}"]) .check-chip`);
+  return page.locator(`label.choice-option:has(input[name="cycle_factor_keys"][value="${value}"]) .chip-lead`);
 }
 
 async function openTodayNotes(page: Page): Promise<void> {
@@ -327,7 +327,7 @@ test.describe('Dashboard: today editor', () => {
     // Narrower chips must not buy their width from the tap target: the box
     // grows and the label wraps instead.
     const chips = await page
-      .locator('fieldset[data-dashboard-section="symptoms"] label.choice-option:visible .check-chip')
+      .locator('fieldset[data-dashboard-section="symptoms"] label.choice-option:visible .chip-lead')
       .all();
     expect(chips.length).toBeGreaterThan(1);
     for (const chip of chips) {
@@ -549,7 +549,7 @@ test.describe('Dashboard: today editor', () => {
     const moodFour = page.locator('input[name="mood"][value="4"]');
     const firstSymptom = todaySymptomOptions(page).nth(0);
     const firstSymptomValue = await symptomInputForOption(firstSymptom).getAttribute('value');
-    const firstSymptomLabel = await firstSymptom.locator('.check-chip').getAttribute('title');
+    const firstSymptomLabel = await firstSymptom.locator('.chip-lead').getAttribute('title');
 
     expect(firstSymptomValue).toBeTruthy();
     expect(firstSymptomLabel).toBeTruthy();

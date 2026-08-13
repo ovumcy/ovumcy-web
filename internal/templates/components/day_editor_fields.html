@@ -41,7 +41,7 @@
         data-cycle-start-answer="yes"
         data-disable-without-period="true"
         {{if not .CurrentIsPeriod}}disabled{{end}}>
-      <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}"><span>{{t .Messages "common.yes"}}</span></span>
+      <span class="chip chip-stack{{if .Compact}} chip-sm{{end}}"><span>{{t .Messages "common.yes"}}</span></span>
     </label>
     <label class="choice-option">
       <input
@@ -52,7 +52,7 @@
         data-cycle-start-answer="no"
         data-disable-without-period="true"
         {{if not .CurrentIsPeriod}}disabled{{end}}>
-      <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}"><span>{{t .Messages "common.no"}}</span></span>
+      <span class="chip chip-stack{{if .Compact}} chip-sm{{end}}"><span>{{t .Messages "common.no"}}</span></span>
     </label>
   </div>
   <p class="journal-muted text-xs">{{t .Messages "dashboard.cycle_start_question_hint"}}</p>
@@ -67,8 +67,8 @@
     class="choice-input"
     {{if .DisableWhenNotPeriod}}data-disable-without-period="true"{{if not .CurrentIsPeriod}} disabled{{end}}{{end}}
     {{if eq .SelectedFlow .Value}}checked{{end}}>
-  <span class="{{if .Compact}}radio-tile radio-tile-sm radio-tile-inline{{else}}radio-tile radio-tile-inline{{end}}">
-    <span class="radio-icon radio-icon-inline" aria-hidden="true">{{if eq .Value "none"}}○{{else if eq .Value "spotting"}}◌{{else if eq .Value "light"}}◔{{else if eq .Value "medium"}}◑{{else}}◕{{end}}</span>
+  <span class="chip chip-stack chip-inline{{if .Compact}} chip-sm{{end}}">
+    <span class="chip-icon" aria-hidden="true">{{if eq .Value "none"}}○{{else if eq .Value "spotting"}}◌{{else if eq .Value "light"}}◔{{else if eq .Value "medium"}}◑{{else}}◕{{end}}</span>
     <span>{{flowLabel .Messages .Value}}</span>
   </span>
 </label>
@@ -94,8 +94,8 @@
          legend supplies the "Mood" context. */}}
     aria-label="{{.Value}}/5"
     {{if eq .SelectedMood .Value}}checked{{end}}>
-  <span class="{{if .Compact}}mood-chip mood-chip-sm{{else}}mood-chip{{end}}" title="{{.Value}}/5">
-    <span class="mood-chip-emoji" aria-hidden="true">{{moodEmoji .Value}}</span>
+  <span class="chip chip-round{{if .Compact}} chip-sm{{end}}" title="{{.Value}}/5">
+    <span class="chip-emoji" aria-hidden="true">{{moodEmoji .Value}}</span>
   </span>
 </label>
 {{end}}
@@ -116,7 +116,7 @@
     value="{{.Value}}"
     class="choice-input"
     {{if eq .SelectedSexActivity .Value}}checked{{end}}>
-  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+  <span class="chip chip-stack{{if .Compact}} chip-sm{{end}}">
     <span>{{sexActivityLabel .Messages .Value}}</span>
   </span>
 </label>
@@ -124,7 +124,7 @@
 {{define "sex_activity_field"}}
 <details class="sex-activity-details" data-sex-activity-details {{if ne .SelectedSexActivity "none"}}open{{end}}>
   <summary class="sex-chip-summary">
-    <span class="{{if .Compact}}check-chip check-chip-sm check-chip-static{{else}}check-chip check-chip-static{{end}} sex-chip-summary-pill{{if ne .SelectedSexActivity "none"}} choice-chip-active{{end}}">
+    <span class="chip chip-lead chip-static{{if .Compact}} chip-sm{{end}} sex-chip-summary-pill{{if ne .SelectedSexActivity "none"}} chip-selected{{end}}">
       <span class="symptom-icon sex-heart-icon" aria-hidden="true">{{template "icon" "heart"}}</span>
       <span class="symptom-label">{{t .Messages "dashboard.sex"}}</span>
       <span class="sex-chip-chevron" aria-hidden="true">▼</span>
@@ -145,7 +145,7 @@
     value="{{.Value}}"
     class="choice-input"
     {{if eq .SelectedCervicalMucus .Value}}checked{{end}}>
-  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+  <span class="chip chip-stack{{if .Compact}} chip-sm{{end}}">
     <span>{{cervicalMucusLabel .Messages .Value}}</span>
   </span>
 </label>
@@ -180,7 +180,7 @@
     value="{{.Value}}"
     class="choice-input"
     {{if eq .SelectedPregnancyTest .Value}}checked{{end}}>
-  <span class="{{if .Compact}}radio-tile radio-tile-sm{{else}}radio-tile{{end}}">
+  <span class="chip chip-stack{{if .Compact}} chip-sm{{end}}">
     <span class="pregnancy-test-mark-off" aria-hidden="true">○</span>
     <span class="pregnancy-test-mark-on" aria-hidden="true">●</span>
     <span>{{pregnancyTestLabel .Messages .Value}}</span>

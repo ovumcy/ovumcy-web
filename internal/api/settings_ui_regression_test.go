@@ -410,7 +410,7 @@ func TestSettingsDangerZoneDeleteAccountCardShowsVisibleTitle(t *testing.T) {
 
 	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
 	deleteCard := htmlFindElement(document, func(node *html.Node) bool {
-		return node.Type == html.ElementNode && htmlHasClass(node, "danger-card-soft") && htmlFindElement(node, func(child *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasClass(node, "card-danger-soft") && htmlFindElement(node, func(child *html.Node) bool {
 			return child.Type == html.ElementNode && htmlAttr(child, "hx-delete") == "/api/v1/users/current"
 		}) != nil
 	})

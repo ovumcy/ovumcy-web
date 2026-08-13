@@ -355,114 +355,9 @@
 }
 
 @utility settings-interface-option {
-  & .radio-tile {
+  & .chip {
     text-align: center;
     white-space: normal;
-  }
-}
-
-@utility radio-tile {
-  .settings-interface-option & {
-    text-align: center;
-    white-space: normal;
-  }
-  display: inline-flex;
-  width: 100%;
-  min-height: 2.75rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-control);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 252, 247, 0.96),
-    rgba(255, 243, 229, 0.88)
-  );
-  padding: 0.58rem 0.64rem;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
-    var(--elevation-1);
-  min-height: 3rem;
-  flex-direction: column;
-
-  .sex-activity-row & {
-    min-height: 2.7rem;
-    flex-direction: row;
-    justify-content: center;
-    text-align: center;
-    padding-inline: 0.78rem;
-  }
-
-  .cervical-mucus-row & {
-    min-height: 2.7rem;
-    justify-content: center;
-    text-align: center;
-    padding-inline: 0.72rem;
-  }
-
-  .settings-unit-switch & {
-    min-height: 2.7rem;
-  }
-
-  /* The selected label sits on the darker end of the fill, which flattens to
-     rgb(238, 202, 168) over the page. #7b4d2c measured 4.64:1 there — a pass
-     with no margin left for a rounding difference between engines; #6b4226
-     measures 5.61:1 against that stop and 7.50:1 against the lighter one.
-     Regression: e2e/a11y-wcag-audit.spec.ts. */
-  .choice-input:checked + & {
-    border-color: rgba(186, 131, 80, 0.95);
-    background: linear-gradient(
-      135deg,
-      rgba(255, 236, 215, 0.98),
-      rgba(237, 197, 160, 0.92)
-    );
-    color: #6b4226;
-    box-shadow:
-      inset 0 1px 0 var(--surface-quiet),
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  .choice-input:disabled + & {
-    opacity: 0.76;
-  }
-
-  .choice-input:disabled:checked + & {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    box-shadow: none;
-  }
-
-  :root[data-theme='dark'] & {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    color: var(--text-primary);
-  }
-
-  :root[data-theme='dark'] .choice-input:checked + & {
-    border-color: rgba(222, 176, 117, 0.9);
-    background: linear-gradient(
-      135deg,
-      rgba(103, 73, 46, 0.9),
-      rgba(66, 48, 86, 0.88)
-    );
-    box-shadow:
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  @media (max-width: 640px) {
-    &:not(.radio-tile-sm) {
-      flex-direction: row;
-      justify-content: flex-start;
-      min-height: 2.75rem;
-      padding: 0.38rem 0.52rem;
-      gap: 0.36rem;
-    }
   }
 }
 
@@ -690,7 +585,19 @@
   color: var(--text-muted);
 }
 
-@utility role-chip {
+/*
+  The account entry in the navigation. It shipped as two classes always written
+  together — a `role-chip` badge plus a `nav-user-chip` override — and the
+  bundle emitted the override FIRST, so every property the two shared resolved
+  to the badge: the dashed border, the 0.75rem/600 type and the pointer cursor
+  never applied. Merged into the one component that rendered, which is also why
+  this is not a variant of `chip`: a static identity badge is not a selectable
+  token, it just borrowed the noun.
+*/
+@utility nav-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   border-radius: var(--radius-pill);
   border: 1px solid rgba(212, 165, 116, 0.35);
   background: rgba(255, 255, 255, 0.78);
@@ -699,41 +606,14 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
-  cursor: default;
-  user-select: none;
-
-  :root[data-theme='dark'] & {
-    border-color: rgba(157, 129, 196, 0.58);
-    background: rgba(43, 34, 58, 0.86);
-    color: #e8dcf7;
-  }
-}
-
-@utility role-chip-identity {
-  text-transform: none;
-  letter-spacing: 0.01em;
-  max-width: 16rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@utility nav-user-chip {
-  border-style: dashed;
-  background: rgba(255, 255, 255, 0.64);
-  font-weight: 600;
-  font-size: var(--text-xs);
-  letter-spacing: 0.01em;
-  text-transform: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
+  color: var(--ink-muted);
   max-width: min(100%, 16rem);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-decoration: none;
+  user-select: none;
+  /* The chip is a link. `cursor: default` is what the dead pair resolved to. */
   cursor: pointer;
 
   :root[data-theme='dark'] & {
@@ -746,6 +626,12 @@
 @utility nav-user-chip-label {
   min-width: 0;
   flex: 1 1 auto;
+  text-transform: none;
+  letter-spacing: 0.01em;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @utility nav-account-actions {
@@ -772,14 +658,13 @@
 
 /* The desktop settings entry, marked while settings is the current section. Fill and
    text repeat nav-link-active so the chip reads as active exactly like the section
-   links beside it; the border turns solid because the resting chip is dashed. The
-   declarations hang off &.nav-user-chip rather than the bare class: Tailwind emits a
-   custom utility wherever its property group falls, which puts this one *before*
-   nav-user-chip and nav-user-chip-empty, and at equal specificity the resting fill and
-   the empty-state text colour would win. Two classes outrank one whatever the order. */
+   links beside it. The declarations hang off &.nav-user-chip rather than the bare
+   class: Tailwind emits a custom utility wherever its property group falls, which
+   puts this one *before* nav-user-chip and nav-user-chip-empty, and at equal
+   specificity the resting fill and the empty-state text colour would win. Two
+   classes outrank one whatever the order. */
 @utility nav-user-chip-active {
   &.nav-user-chip {
-    border-style: solid;
     border-color: rgba(212, 165, 116, 0.62);
     background: rgba(232, 196, 168, 0.56);
     color: #6f4e33;
@@ -812,10 +697,18 @@
   }
 }
 
-@utility journal-card {
+/*
+  Card — the one grouping surface. Ten per-screen names carried this same
+  rectangle (journal / stat / phase-mood / phase-symptom / settings-symptom /
+  confirm-modal / danger-soft / danger-strong / stats-empty-hero); what actually
+  differed between them was emphasis and density, so those are the variants
+  below and nothing else is. A card is a grouping claim: if nothing is being
+  grouped, it is a rectangle and does not get one.
+*/
+@utility card {
   border-radius: var(--radius-card);
-  border: 1px solid var(--line-soft);
-  background: var(--bg-card);
+  border: 1px solid var(--border-hairline);
+  background: var(--surface-card);
   box-shadow: var(--shadow-soft);
   transition:
     transform var(--duration-base) var(--ease-soft),
@@ -833,20 +726,90 @@
   }
 }
 
-@utility journal-hero {
-  background:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.97),
-      rgba(255, 243, 229, 0.95)
-    ),
-    var(--bg-card);
+/* The quiet level: a card nested inside a card, which is why it neither lifts
+   nor casts a shadow. */
+@utility card-quiet {
   border-radius: var(--radius-card);
+  border: 1px solid var(--border-hairline);
+  background: var(--card-quiet-surface);
+  padding: 0.9rem 1rem;
 
-  :root[data-theme='dark'] & {
-    background:
-      linear-gradient(145deg, rgba(47, 40, 62, 0.98), rgba(34, 28, 45, 0.95)),
-      var(--bg-card);
+  @media (max-width: 640px) {
+    .main-with-mobile-nav & {
+      scroll-margin-bottom: var(--mobile-tabbar-safe-space);
+    }
+  }
+}
+
+/* The single-panel screens (auth, onboarding, 404) — one card carrying the
+   whole page, warmed a step above the flat surface. */
+@utility card-hero {
+  background: var(--card-hero-surface);
+  border-radius: var(--radius-card);
+}
+
+/* Density, not a screen: the KPI tiles on Insights. */
+@utility card-dense {
+  padding: 1rem;
+
+  @media (max-width: 640px) {
+    padding: 0.9rem;
+  }
+}
+
+/* A card that is a grid or flex child and must be allowed to shrink inside its
+   track. Replaces settings-symptom-card, phase-mood-card and phase-symptom-card,
+   which each declared a different subset of the same three properties. */
+@utility card-fit {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The confirmation dialog's panel: a card sized to a sentence. */
+@utility card-modal {
+  width: min(32rem, 100%);
+  padding: 1.25rem;
+}
+
+/* Emphasis. Written against the base classes so the pair stays
+   order-independent, the way nav-user-chip-active is. */
+@utility card-danger-soft {
+  &:is(.card, .card-quiet) {
+    border: 1px solid var(--danger-soft-border);
+    background: var(--danger-soft-bg);
+  }
+}
+
+@utility card-danger-strong {
+  &:is(.card, .card-quiet) {
+    border: 1px solid var(--danger-strong-border);
+    /* No fill of its own. The shipped rule read `var(--panel-bg)`, a token that
+       has never been defined, so the whole background declaration was invalid
+       at computed-value time and the zone has always rendered unfilled.
+       Recorded here rather than repainted: choosing a wash for it is a design
+       decision, not a rename. */
+    background: none;
+    box-shadow: inset 0 0 0 1px rgba(177, 86, 78, 0.08);
+  }
+}
+
+/* The Insights empty state's illustration frame. It is a card surface, but it
+   is not a target, so it does not take the card's hover lift. */
+@utility card-illustration {
+  position: relative;
+  width: min(100%, 17rem);
+  padding: 1rem 1rem 0.9rem;
+  overflow: hidden;
+
+  &.card {
+    border-color: var(--card-illustration-border);
+    background: var(--card-illustration-surface);
+  }
+
+  &.card:hover {
+    transform: none;
+    box-shadow: var(--shadow-soft);
   }
 }
 
@@ -865,23 +828,6 @@
   pointer-events: none;
   opacity: 0;
   transform: translateY(-6px);
-}
-
-@utility journal-panel {
-  border-radius: var(--radius-card);
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 248, 240, 0.8);
-  padding: 0.9rem 1rem;
-
-  :root[data-theme='dark'] & {
-    background: var(--bg-soft-strong);
-  }
-
-  @media (max-width: 640px) {
-    .main-with-mobile-nav & {
-      scroll-margin-bottom: var(--mobile-tabbar-safe-space);
-    }
-  }
 }
 
 @utility journal-kicker {
@@ -1192,14 +1138,6 @@
   padding-top: 0.5rem;
 }
 
-@utility stat-card {
-  padding: 1rem;
-
-  @media (max-width: 640px) {
-    padding: 0.9rem;
-  }
-}
-
 @utility stat-label {
   font-size: var(--text-xs);
   font-weight: 700;
@@ -1236,6 +1174,18 @@
   color: var(--text-primary);
 }
 
+/* The small step of the label, for the segmented date field's three parts.
+   Declared as a variant instead of stacking a `text-xs` utility on top of
+   `field-label`: two font-size declarations on one element are a silent tie
+   that the bundle's emission order decides, and the component's own size was
+   the dead half. Line-height comes with the step so the box is unchanged. */
+@utility field-label-sm {
+  &.field-label {
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+  }
+}
+
 @utility input-field {
   width: 100%;
   border-radius: var(--radius-control);
@@ -1259,6 +1209,17 @@
   :root[data-theme='dark'] &:focus {
     border-color: rgba(206, 166, 115, 0.85);
     box-shadow: 0 0 0 3px rgba(206, 166, 115, 0.25);
+  }
+}
+
+/* A field sized to its content rather than to the form column — the six-digit
+   TOTP code. It replaces a `w-40` utility written beside `input-field`, where
+   the component's width:100% and the utility's 10rem tied and only the bundle
+   order said which one applied; against the base class the intent is stated
+   rather than inferred. */
+@utility input-field-code {
+  &.input-field {
+    width: 10rem;
   }
 }
 
@@ -1686,7 +1647,7 @@
     justify-content: center;
   }
 
-  .settings-symptom-card-actions & {
+  .settings-symptom-actions & {
     width: 100%;
     justify-content: center;
   }
@@ -2004,358 +1965,182 @@
   }
 }
 
+/* The transparent radio/checkbox behind a chip. The selected, disabled and
+   dark-theme states it used to re-declare once per chip name now live on the
+   chip component, keyed off this input. */
 @utility choice-input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
-
-  &:checked + .radio-tile {
-    border-color: rgba(186, 131, 80, 0.95);
-    background: linear-gradient(
-      135deg,
-      rgba(255, 236, 215, 0.98),
-      rgba(237, 197, 160, 0.92)
-    );
-    color: #6b4226;
-    box-shadow:
-      inset 0 1px 0 var(--surface-quiet),
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  &:checked + .check-chip {
-    border-color: rgba(186, 131, 80, 0.95);
-    background: linear-gradient(
-      135deg,
-      rgba(255, 236, 215, 0.98),
-      rgba(237, 197, 160, 0.92)
-    );
-    color: #6b4226;
-    box-shadow:
-      inset 0 1px 0 var(--surface-quiet),
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  &:checked + .mood-chip {
-    border-color: rgba(186, 131, 80, 0.95);
-    background: linear-gradient(
-      135deg,
-      rgba(255, 236, 215, 0.98),
-      rgba(237, 197, 160, 0.92)
-    );
-    color: #6b4226;
-    box-shadow:
-      inset 0 1px 0 var(--surface-quiet),
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  &:checked + .mood-chip {
-    transform: translateY(-1px) scale(1.04);
-    box-shadow:
-      0 0 0 3px rgba(186, 131, 80, 0.24),
-      var(--elevation-2);
-  }
-
-  &:checked + .mood-chip .mood-chip-emoji {
-    transform: scale(1.08);
-  }
-
-  &:disabled + .radio-tile {
-    opacity: 0.76;
-  }
-
-  &:disabled + .check-chip {
-    opacity: 0.76;
-  }
-
-  &:disabled + .mood-chip {
-    opacity: 0.76;
-  }
-
-  &:disabled:checked + .radio-tile {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    box-shadow: none;
-  }
-
-  &:disabled:checked + .check-chip {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    box-shadow: none;
-  }
-
-  &:disabled:checked + .mood-chip {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    box-shadow: none;
-  }
-
-  :root[data-theme='dark'] &:checked + .radio-tile {
-    border-color: rgba(222, 176, 117, 0.9);
-    background: linear-gradient(
-      135deg,
-      rgba(103, 73, 46, 0.9),
-      rgba(66, 48, 86, 0.88)
-    );
-    box-shadow:
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  :root[data-theme='dark'] &:checked + .check-chip {
-    border-color: rgba(222, 176, 117, 0.9);
-    background: linear-gradient(
-      135deg,
-      rgba(103, 73, 46, 0.9),
-      rgba(66, 48, 86, 0.88)
-    );
-    box-shadow:
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  :root[data-theme='dark'] &:checked + .mood-chip {
-    border-color: rgba(222, 176, 117, 0.9);
-    background: linear-gradient(
-      135deg,
-      rgba(103, 73, 46, 0.9),
-      rgba(66, 48, 86, 0.88)
-    );
-    box-shadow:
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  :root[data-theme='dark'] &:checked + .mood-chip {
-    box-shadow:
-      0 0 0 3px rgba(222, 176, 117, 0.22),
-      var(--elevation-2);
-  }
 }
 
-@utility check-chip {
+/*
+  Chip — the one selectable token. It shipped as nine components under three
+  nouns (check-chip, choice-chip, mood-chip, role-chip, sex-chip, radio-tile,
+  the two day-grid cells and the today pill), of which three re-declared the
+  identical surface, selection, disabled and dark-theme blocks verbatim.
+
+  `chip` carries the surface and the states; a layout variant beside it says
+  what shape the token takes. Every declaration that the theme changes reads a
+  --chip-* token, so the component has no :root[data-theme='dark'] block and
+  cannot drift between screens.
+
+  Specificity is deliberate, because a custom utility lands wherever its
+  property group falls in the bundle and order settles nothing:
+    .chip                                base surface
+    .chip-stack / -lead / -round         shape
+    .chip-stack:not(.chip-sm)            the mobile squeeze
+    .chip-sm.chip / .row .chip-x.chip    size, and the row contexts above it
+    .calendar-day-editor-form ...        the compact day panel above those
+*/
+@utility chip {
   display: inline-flex;
   width: 100%;
-  min-height: 2.75rem;
   align-items: center;
-  justify-content: center;
   gap: 0.45rem;
   border-radius: var(--radius-control);
   border: 1px solid var(--border-control);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 252, 247, 0.96),
-    rgba(255, 243, 229, 0.88)
-  );
+  background: var(--chip-surface);
   padding: 0.58rem 0.64rem;
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink-strong);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    inset 0 1px 0 var(--chip-rim),
     var(--elevation-1);
+
+  /* The selected label sits on the darker end of the fill, which flattens to
+     rgb(238, 202, 168) over the page. #7b4d2c measured 4.64:1 there — a pass
+     with no margin left for a rounding difference between engines; the token's
+     #6b4226 measures 5.61:1 against that stop and 7.50:1 against the lighter
+     one. Regression: e2e/a11y-wcag-audit.spec.ts. */
+  .choice-input:checked + & {
+    border-color: var(--chip-selected-border);
+    background: var(--chip-selected-surface);
+    color: var(--chip-selected-ink);
+    box-shadow: var(--chip-selected-shadow);
+  }
+
+  .choice-input:disabled + & {
+    opacity: 0.76;
+  }
+
+  /* Selected but inert: it reads its own quiet surface rather than the
+     selected fill, which under light ink measured 1.52:1. */
+  .choice-input:disabled:checked + & {
+    border-color: var(--border-control);
+    background: var(--surface-quiet);
+    box-shadow: none;
+  }
+}
+
+/* Icon over label, the full-width picker tile. */
+@utility chip-stack {
+  min-height: 3rem;
+  justify-content: center;
+  flex-direction: column;
+
+  @media (max-width: 640px) {
+    &:not(.chip-sm) {
+      flex-direction: row;
+      justify-content: flex-start;
+      min-height: 2.75rem;
+      padding: 0.38rem 0.52rem;
+      gap: 0.36rem;
+    }
+  }
+}
+
+/* Icon then label on one line, the symptom and summary chip. */
+@utility chip-lead {
+  min-height: 2.75rem;
   justify-content: flex-start;
   position: relative;
   min-width: 0;
   overflow: hidden;
-
-  .symptom-grid & {
-    height: 100%;
-    display: flex;
-    align-items: center;
-    line-height: 1.2;
-    min-height: 2.75rem;
-    padding: 0.62rem 0.7rem;
-    min-width: 0;
-  }
-
-  .symptom-grid-compact & {
-    min-height: 2.18rem;
-    padding: 0.4rem 0.52rem;
-    gap: 0.36rem;
-  }
-
-  .choice-input:checked + & {
-    border-color: rgba(186, 131, 80, 0.95);
-    background: linear-gradient(
-      135deg,
-      rgba(255, 236, 215, 0.98),
-      rgba(237, 197, 160, 0.92)
-    );
-    color: #6b4226;
-    box-shadow:
-      inset 0 1px 0 var(--surface-quiet),
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  .choice-input:disabled + & {
-    opacity: 0.76;
-  }
-
-  .choice-input:disabled:checked + & {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    box-shadow: none;
-  }
-
-  :root[data-theme='dark'] & {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    color: var(--text-primary);
-  }
-
-  :root[data-theme='dark'] .choice-input:checked + & {
-    border-color: rgba(222, 176, 117, 0.9);
-    background: linear-gradient(
-      135deg,
-      rgba(103, 73, 46, 0.9),
-      rgba(66, 48, 86, 0.88)
-    );
-    box-shadow:
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
 }
 
-@utility mood-chip {
-  display: inline-flex;
-  width: 100%;
-  min-height: 2.75rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-control);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 252, 247, 0.96),
-    rgba(255, 243, 229, 0.88)
-  );
-  padding: 0.58rem 0.64rem;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.74),
-    var(--elevation-1);
+/* A glyph-only token that confirms by lifting instead of by ringing. */
+@utility chip-round {
   min-height: 3rem;
+  justify-content: center;
   max-width: 4rem;
   margin-inline: auto;
-  border-radius: var(--radius-pill);
-  padding: 0.5rem 0.9rem;
 
-  .choice-input:checked + & {
-    border-color: rgba(186, 131, 80, 0.95);
-    background: linear-gradient(
-      135deg,
-      rgba(255, 236, 215, 0.98),
-      rgba(237, 197, 160, 0.92)
-    );
-    color: #6b4226;
-    box-shadow:
-      inset 0 1px 0 var(--surface-quiet),
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
+  &.chip {
+    border-radius: var(--radius-pill);
+    padding: 0.5rem 0.9rem;
   }
 
-  .choice-input:checked + & {
+  .choice-input:checked + &.chip {
     transform: translateY(-1px) scale(1.04);
-    box-shadow:
-      0 0 0 3px rgba(186, 131, 80, 0.24),
-      var(--elevation-2);
+    box-shadow: var(--chip-selected-lift-shadow);
   }
 
-  .choice-input:checked + & .mood-chip-emoji {
+  .choice-input:checked + & .chip-emoji {
     transform: scale(1.08);
   }
 
-  .choice-input:disabled + & {
-    opacity: 0.76;
-  }
-
-  .choice-input:disabled:checked + & {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    box-shadow: none;
-  }
-
-  :root[data-theme='dark'] & {
-    border-color: var(--border-control);
-    background: var(--surface-quiet);
-    color: var(--text-primary);
-  }
-
-  :root[data-theme='dark'] .choice-input:checked + & {
-    border-color: rgba(222, 176, 117, 0.9);
-    background: linear-gradient(
-      135deg,
-      rgba(103, 73, 46, 0.9),
-      rgba(66, 48, 86, 0.88)
-    );
-    box-shadow:
-      0 0 0 2px var(--accent-soft),
-      var(--elevation-2);
-  }
-
-  :root[data-theme='dark'] .choice-input:checked + & {
-    box-shadow:
-      0 0 0 3px rgba(222, 176, 117, 0.22),
-      var(--elevation-2);
-  }
-
   @media (max-width: 640px) {
-    min-height: 2.75rem;
-    max-width: none;
-    padding-inline: 0;
-  }
-}
-
-@utility radio-tile-sm {
-  min-height: 2.75rem;
-  font-size: var(--text-xs);
-
-  @media (max-width: 640px) {
-    .calendar-day-editor-form & {
+    &.chip {
       min-height: 2.75rem;
-      flex-direction: row;
-      justify-content: center;
-      gap: 0.3rem;
-      padding: 0.28rem 0.4rem;
-      font-size: var(--text-xs);
-    }
-
-    .calendar-day-editor-form & .radio-icon {
-      font-size: var(--text-sm);
+      max-width: none;
+      padding-inline: 0;
     }
   }
 }
 
-@utility radio-icon {
+/* The compact step, shared by every shape. */
+@utility chip-sm {
+  &.chip {
+    min-height: 2.75rem;
+    font-size: var(--text-xs);
+  }
+
+  &.chip.chip-round {
+    max-width: 3.2rem;
+    padding: 0.34rem 0.72rem;
+  }
+
+  & .symptom-label {
+    font-size: var(--text-xs);
+    line-height: 1.1;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+/* Not selectable: a chip used as a read-only token (logged factors, the sex
+   summary), so it hugs its label instead of filling the column. */
+@utility chip-static {
+  &.chip.chip-lead {
+    width: auto;
+    min-height: 2.1rem;
+    padding-inline: 0.72rem;
+  }
+}
+
+/* A static chip in the selected state — the disclosure summary that says the
+   day already carries a value. It reads the same selection tokens as a checked
+   chip, so "selected" has one definition rather than a light-only copy. */
+@utility chip-selected {
+  &.chip {
+    border-color: var(--chip-selected-border);
+    background: var(--chip-selected-surface);
+    color: var(--chip-selected-ink);
+    box-shadow: var(--chip-selected-shadow);
+  }
+}
+
+@utility chip-icon {
   font-size: var(--text-base);
-
-  @media (max-width: 640px) {
-    .calendar-day-editor-form .radio-tile-sm & {
-      font-size: var(--text-sm);
-    }
-  }
 }
 
-@utility mood-chip-sm {
-  min-height: 2.75rem;
-  max-width: 3.2rem;
-  padding: 0.34rem 0.72rem;
-}
-
-@utility mood-chip-emoji {
+@utility chip-emoji {
   font-size: var(--text-xl);
   line-height: 1;
-
-  .choice-input:checked + .mood-chip & {
-    transform: scale(1.08);
-  }
 }
 
 @utility flow-radio-row {
@@ -2395,40 +2180,19 @@
   }
 }
 
-@utility radio-tile-inline {
-  flex-direction: row;
-  justify-content: center;
-  gap: 0.38rem;
-  min-height: 2.7rem;
-}
-
-@utility radio-icon-inline {
-  font-size: var(--text-base);
-}
-
-@utility check-chip-sm {
-  min-height: 2.75rem;
-  font-size: var(--text-xs);
-
-  & .symptom-label {
-    font-size: var(--text-xs);
-    line-height: 1.1;
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+/* A stacked chip laid back onto one line — the flow, age-group and settings
+   rows. Written against both base classes so it stays above the size step
+   whatever order the bundle emits. */
+@utility chip-inline {
+  &.chip.chip-stack {
+    flex-direction: row;
+    justify-content: center;
+    gap: 0.38rem;
+    min-height: 2.7rem;
   }
 }
 
 @utility symptom-label {
-  .check-chip-sm & {
-    font-size: var(--text-xs);
-    line-height: 1.1;
-    display: -webkit-box;
-    overflow: hidden;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
   display: block;
   flex: 1 1 auto;
   min-width: 0;
@@ -2598,11 +2362,16 @@
   }
 }
 
+/* The disclosure summary is a static chip with a slightly roomier gap and
+   inset; the shape, surface and selected state all come from the chip. */
 @utility sex-chip-summary-pill {
-  justify-content: flex-start;
-  gap: 0.5rem;
-  min-width: 0;
-  padding-inline: 0.75rem;
+  &.chip {
+    gap: 0.5rem;
+  }
+
+  &.chip.chip-lead.chip-static {
+    padding-inline: 0.75rem;
+  }
 }
 
 @utility sex-heart-icon {
@@ -2629,7 +2398,10 @@
     min-width: 0;
   }
 
-  & .radio-tile {
+  /* Written against both chip classes so the row wins over the chip's own
+     mobile squeeze without depending on which of the two the bundle emits
+     last. */
+  & .chip-stack.chip {
     min-height: 2.7rem;
     flex-direction: row;
     justify-content: center;
@@ -2657,7 +2429,7 @@
     min-width: 0;
   }
 
-  & .radio-tile {
+  & .chip-stack.chip {
     min-height: 2.7rem;
     justify-content: center;
     text-align: center;
@@ -2671,7 +2443,7 @@
 
 /*
   Pregnancy test. The two results share one row and one set of tokens — the
-  neutral radio-tile that every other day picker already uses, whose selected
+  neutral chip that every other day picker already uses, whose selected
   fill is the AA-measured pair above. Nothing here paints a result green or
   red, and the selection is confirmed by a shape (hollow ring → filled ring)
   as well as by that fill, so the state survives a colour-blind reading.
@@ -2692,7 +2464,7 @@
     min-width: 0;
   }
 
-  & .radio-tile {
+  & .chip-stack.chip {
     min-height: 2.7rem;
     flex-direction: row;
     justify-content: center;
@@ -2703,13 +2475,9 @@
 
   /* The radio itself is transparent, so without this the keyboard focus ring
      lands on nothing visible. */
-  & .choice-input:focus-visible + .radio-tile {
-    outline: 2px solid rgba(186, 131, 80, 0.58);
+  & .choice-input:focus-visible + .chip {
+    outline: 2px solid var(--chip-focus-ring);
     outline-offset: 2px;
-  }
-
-  :root[data-theme='dark'] & .choice-input:focus-visible + .radio-tile {
-    outline-color: rgba(222, 176, 117, 0.7);
   }
 
   @media (max-width: 640px) {
@@ -2729,7 +2497,7 @@
   display: inline;
   line-height: 1;
 
-  .choice-input:checked + .radio-tile & {
+  .choice-input:checked + .chip & {
     display: none;
   }
 }
@@ -2738,7 +2506,7 @@
   display: none;
   line-height: 1;
 
-  .choice-input:checked + .radio-tile & {
+  .choice-input:checked + .chip & {
     display: inline;
   }
 }
@@ -2786,7 +2554,7 @@
     min-width: 0;
   }
 
-  & .check-chip {
+  & .chip {
     height: 100%;
     display: flex;
     align-items: center;
@@ -2816,7 +2584,10 @@
     grid-template-columns: repeat(1, minmax(0, 1fr));
   }
 
-  & .check-chip {
+  /* `&.symptom-grid` on purpose: the compact grid is always the base grid too,
+     and the pair has to outrank the base grid's own chip rule by specificity
+     rather than by emission order. */
+  &.symptom-grid .chip {
     min-height: 2.18rem;
     padding: 0.4rem 0.52rem;
     gap: 0.36rem;
@@ -2896,7 +2667,7 @@
   }
 }
 
-@utility settings-symptom-card-actions {
+@utility settings-symptom-actions {
   min-width: 0;
   display: grid;
   gap: 0.55rem;
@@ -2914,12 +2685,7 @@
   }
 }
 
-@utility settings-symptom-card {
-  min-width: 0;
-  overflow: hidden;
-}
-
-@utility settings-symptom-card-header {
+@utility settings-symptom-header {
   min-width: 0;
   display: flex;
   align-items: center;
@@ -3048,10 +2814,6 @@
   white-space: nowrap;
   font-size: var(--text-xs);
   font-weight: 700;
-
-  @media (max-width: 640px) {
-    font-size: var(--text-xs);
-  }
 }
 
 @utility stats-empty-state {
@@ -3075,38 +2837,6 @@
   gap: 0.9rem;
   justify-items: center;
   padding: 0.4rem 0 0.2rem;
-}
-
-@utility stats-empty-hero-card {
-  position: relative;
-  width: min(100%, 17rem);
-  border-radius: var(--radius-card);
-  border: 1px solid rgba(182, 142, 101, 0.28);
-  background:
-    radial-gradient(
-      circle at top,
-      rgba(255, 255, 255, 0.8),
-      rgba(255, 247, 239, 0.94)
-    ),
-    linear-gradient(
-      160deg,
-      rgba(255, 249, 244, 0.96),
-      rgba(250, 236, 219, 0.92)
-    );
-  padding: 1rem 1rem 0.9rem;
-  overflow: hidden;
-  box-shadow: var(--elevation-2);
-
-  :root[data-theme='dark'] & {
-    border-color: rgba(157, 129, 196, 0.24);
-    background:
-      radial-gradient(
-        circle at top,
-        rgba(76, 62, 99, 0.8),
-        rgba(46, 37, 61, 0.95)
-      ),
-      linear-gradient(160deg, rgba(45, 37, 59, 0.98), rgba(34, 28, 45, 0.95));
-  }
 }
 
 @utility stats-empty-hero-orb {
@@ -3311,12 +3041,6 @@
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-@utility check-chip-static {
-  width: auto;
-  min-height: 2.1rem;
-  padding-inline: 0.72rem;
-}
-
 @utility stats-progress-meter {
   display: block;
   width: 100%;
@@ -3421,7 +3145,7 @@
   max-width: 22rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 
-  & .radio-tile {
+  & .chip-stack.chip {
     min-height: 2.7rem;
   }
 }
@@ -3516,18 +3240,6 @@
 @utility stats-symptoms-panel {
   min-width: 0;
   min-height: 0;
-}
-
-@utility choice-chip-active {
-  border-color: rgba(212, 165, 116, 0.95);
-  background: linear-gradient(
-    135deg,
-    rgba(255, 236, 215, 0.96),
-    rgba(237, 197, 160, 0.88)
-  );
-  box-shadow:
-    0 0 0 2px rgba(212, 165, 116, 0.24),
-    var(--elevation-1);
 }
 
 /*
@@ -4081,14 +3793,6 @@
   border-color: var(--chart-baseline, #9f8a75);
 }
 
-@utility phase-mood-card {
-  min-height: 0;
-}
-
-@utility phase-symptom-card {
-  min-height: 0;
-}
-
 @utility phase-symptom-row {
   display: flex;
   align-items: center;
@@ -4429,9 +4133,14 @@
   justify-content: center;
 }
 
-@utility confirm-modal-card {
-  width: min(32rem, 100%);
-  padding: 1.25rem;
+/* The dialog's message. It shipped as `journal-subtitle text-sm`, where the
+   heading component's own font-size was the dead half of the tie: the message
+   has always rendered at the small step, and only the weight came from the
+   heading. Stated once here so nothing is dead. */
+@utility confirm-modal-message {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 700;
 }
 
 @utility confirm-modal-actions {
@@ -4458,23 +4167,6 @@
     background: rgba(40, 32, 53, 0.92);
     color: #efcd9f;
   }
-}
-
-@utility danger-card-soft {
-  border: 1px solid var(--danger-soft-border);
-  background: var(--danger-soft-bg);
-}
-
-@utility danger-card-strong {
-  border: 1px solid var(--danger-strong-border);
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 246, 244, 0.96),
-      rgba(255, 238, 236, 0.94)
-    ),
-    var(--panel-bg);
-  box-shadow: inset 0 0 0 1px rgba(177, 86, 78, 0.08);
 }
 
 @utility danger-title {
@@ -4533,16 +4225,19 @@
 
 @utility calendar-day-editor-form {
   @media (max-width: 640px) {
-    & .radio-tile-sm {
+    /* The narrowest surface the pickers appear on, so it squeezes them below
+       every row context; the chip classes are named in full because those
+       contexts are two classes deep themselves. The font-size that used to sit
+       here was the compact step again and never applied. */
+    & .chip-sm.chip.chip-stack {
       min-height: 2.75rem;
       flex-direction: row;
       justify-content: center;
       gap: 0.3rem;
       padding: 0.28rem 0.4rem;
-      font-size: var(--text-xs);
     }
 
-    & .radio-tile-sm .radio-icon {
+    & .chip-sm.chip.chip-stack .chip-icon {
       font-size: var(--text-sm);
     }
   }
@@ -4557,11 +4252,11 @@
        here do apply — they set no property a utility on this element also sets. */
     scroll-padding-bottom: var(--mobile-tabbar-safe-space);
 
-    & .journal-card {
+    & .card {
       scroll-margin-bottom: var(--mobile-tabbar-safe-space);
     }
 
-    & .journal-panel {
+    & .card-quiet {
       scroll-margin-bottom: var(--mobile-tabbar-safe-space);
     }
 
@@ -4770,6 +4465,61 @@
        under an accented lift. */
     --accent-soft: rgba(186, 131, 80, 0.18);
 
+    /* Chip — the selectable token. Both themes are defined here so the
+       component carries no :root[data-theme='dark'] block of its own, which is
+       what let the resting and the selected fill drift apart per screen.
+       Text-on-chip worst cases, measured: --ink-strong on --chip-surface
+       8.10:1 light / 11.68:1 dark; --chip-selected-ink on the darker stop of
+       --chip-selected-surface 5.61:1 light (7.50:1 on the lighter stop) and
+       9.42:1 dark. */
+    --chip-surface: linear-gradient(
+      180deg,
+      rgba(255, 252, 247, 0.96),
+      rgba(255, 243, 229, 0.88)
+    );
+    /* The thin lit rim along the top edge; the same value in both themes. */
+    --chip-rim: rgba(255, 255, 255, 0.74);
+    --chip-selected-surface: linear-gradient(
+      135deg,
+      rgba(255, 236, 215, 0.98),
+      rgba(237, 197, 160, 0.92)
+    );
+    --chip-selected-border: rgba(186, 131, 80, 0.95);
+    --chip-selected-ink: #6b4226;
+    --chip-selected-shadow:
+      inset 0 1px 0 var(--surface-quiet), 0 0 0 2px var(--accent-soft),
+      var(--elevation-2);
+    /* The mood chip lifts instead of ringing, so it carries its own shadow. */
+    --chip-selected-lift-shadow:
+      0 0 0 3px rgba(186, 131, 80, 0.24), var(--elevation-2);
+    /* The radio itself is transparent, so the focus ring is painted on the
+       chip beside it. */
+    --chip-focus-ring: rgba(186, 131, 80, 0.58);
+
+    /* Card — the grouping surface, its quiet nested level, the auth hero and
+       the empty-state illustration frame. Same reason as the chip: one token
+       per surface instead of one dark block per card. */
+    --card-quiet-surface: rgba(255, 248, 240, 0.8);
+    --card-hero-surface:
+      linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.97),
+        rgba(255, 243, 229, 0.95)
+      ),
+      var(--surface-card);
+    --card-illustration-border: rgba(182, 142, 101, 0.28);
+    --card-illustration-surface:
+      radial-gradient(
+        circle at top,
+        rgba(255, 255, 255, 0.8),
+        rgba(255, 247, 239, 0.94)
+      ),
+      linear-gradient(
+        160deg,
+        rgba(255, 249, 244, 0.96),
+        rgba(250, 236, 219, 0.92)
+      );
+
     /* ---------------------------------------------------------------
        Type scale. Sizes that sit inside half a pixel of each other cannot
        carry hierarchy, so the ladder has real jumps and ends in a display
@@ -4949,6 +4699,37 @@
     --btn-destructive-bg-hover: rgba(126, 60, 60, 0.86);
     --btn-destructive-border: rgba(196, 108, 108, 0.58);
     --btn-destructive-ink: #ffd3d0;
+
+    /* Chip, dark side. --chip-rim is deliberately absent: the lit top edge is
+       the same white hairline in both themes, which is what the component
+       already rendered. */
+    --chip-surface: var(--surface-quiet);
+    --chip-selected-surface: linear-gradient(
+      135deg,
+      rgba(103, 73, 46, 0.9),
+      rgba(66, 48, 86, 0.88)
+    );
+    --chip-selected-border: rgba(222, 176, 117, 0.9);
+    --chip-selected-ink: var(--ink-strong);
+    --chip-selected-shadow: 0 0 0 2px var(--accent-soft), var(--elevation-2);
+    --chip-selected-lift-shadow:
+      0 0 0 3px rgba(222, 176, 117, 0.22), var(--elevation-2);
+    --chip-focus-ring: rgba(222, 176, 117, 0.7);
+
+    /* Card, dark side. --card-illustration-border/-surface below; the hero
+       reads the same two-stop recipe over the dark card. */
+    --card-quiet-surface: var(--bg-soft-strong);
+    --card-hero-surface:
+      linear-gradient(145deg, rgba(47, 40, 62, 0.98), rgba(34, 28, 45, 0.95)),
+      var(--surface-card);
+    --card-illustration-border: rgba(157, 129, 196, 0.24);
+    --card-illustration-surface:
+      radial-gradient(
+        circle at top,
+        rgba(76, 62, 99, 0.8),
+        rgba(46, 37, 61, 0.95)
+      ),
+      linear-gradient(160deg, rgba(45, 37, 59, 0.98), rgba(34, 28, 45, 0.95));
   }
 
   html,
