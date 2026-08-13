@@ -83,29 +83,44 @@
 </div>
 {{end}}
 {{define "mood_option"}}
-<label class="choice-option">
+<label class="choice-option" data-mood-option="{{.Value}}">
   <input
     type="radio"
     name="mood"
     value="{{.Value}}"
     class="choice-input"
     {{/* The chip's only content is a decorative emoji, so the control names
-         itself the way its tooltip already reads. The enclosing fieldset
-         legend supplies the "Mood" context. */}}
-    aria-label="{{.Value}}/5"
+         itself — with the step's name, not with its position on the scale,
+         which said nothing about what was being recorded. The enclosing
+         fieldset legend supplies the "Mood" context. */}}
+    aria-label="{{moodLabel .Messages .Value}}"
     {{if eq .SelectedMood .Value}}checked{{end}}>
-  <span class="chip chip-round{{if .Compact}} chip-sm{{end}}" title="{{.Value}}/5">
+  <span class="chip chip-round{{if .Compact}} chip-sm{{end}}" title="{{moodLabel .Messages .Value}}">
     <span class="chip-emoji" aria-hidden="true">{{moodEmoji .Value}}</span>
   </span>
+  {{/* The visible half of the same name. It is laid over the caption band under
+       the whole row rather than under its own face: five names under five faces
+       do not survive 390px in six languages without shrinking either the type
+       or the tap targets. Only the chosen one shows. */}}
+  <span
+    class="journal-muted text-xs mood-caption mood-step-name"
+    data-mood-name="{{.Value}}"
+    data-mood-name-key="{{moodLabelKey .Value}}">{{moodLabel .Messages .Value}}</span>
 </label>
 {{end}}
 {{define "mood_picker"}}
-<div class="{{if .Compact}}mood-row mood-row-compact{{else}}mood-row{{end}}">
-  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 1 "Compact" .Compact)}}
-  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 2 "Compact" .Compact)}}
-  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 3 "Compact" .Compact)}}
-  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 4 "Compact" .Compact)}}
-  {{template "mood_option" (dict "SelectedMood" .SelectedMood "Value" 5 "Compact" .Compact)}}
+{{$scale := moodScale}}
+<div class="mood-picker" data-mood-picker>
+  <div class="{{if .Compact}}mood-row mood-row-compact{{else}}mood-row{{end}}">
+    {{range $step := $scale.Steps}}
+    {{template "mood_option" (dict "Messages" $.Messages "SelectedMood" $.SelectedMood "Value" $step "Compact" $.Compact)}}
+    {{end}}
+  </div>
+  {{/* Nothing chosen yet: name the two ends so the direction of the row is
+       readable before the first tap. Both ends come from the scale itself. */}}
+  <p
+    class="journal-muted text-xs mood-caption mood-scale-ends"
+    data-mood-scale-ends>{{moodLabel .Messages $scale.Lowest}} – {{moodLabel .Messages $scale.Highest}}</p>
 </div>
 {{end}}
 {{define "sex_activity_option"}}

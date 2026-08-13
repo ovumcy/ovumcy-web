@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -961,6 +962,115 @@ func TestDashboardAsksTheCycleStartQuestionInsteadOfPointingAtTheManualControl(t
 	// Positive anchor: the manual control itself stays available for corrections.
 	if !strings.Contains(rendered, "data-dashboard-cycle-start-button") {
 		t.Fatalf("expected the separate manual cycle-start control to stay on the page")
+	}
+}
+
+// TestDashboardMoodPickerNamesEveryStepOfTheScale pins the fix for an audit
+// finding raised by two lenses at once: the mood picker was a row of faces with
+// nothing naming what any of them meant, so the scale was guessed and two
+// people picking the third face could be recording different things into a
+// health record. The faces stay — they present logged data — and every step now
+// carries a name.
+//
+// The contract asserted here is structural, so translated copy can change
+// freely: the picker offers exactly the steps the service scale defines; each
+// one exposes the name key the service resolves for it; each one's accessible
+// name, its tooltip and its visible name are the same resolved string, which is
+// what makes the visible label and the announced label the same label; and no
+// two steps resolve to the same name.
+func TestDashboardMoodPickerNamesEveryStepOfTheScale(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "dashboard-mood-names@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	document := mustParseHTMLDocument(t, mustRenderDashboard(t, app, authCookie, "en"))
+	picker := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-mood-picker")
+	})
+	if picker == nil {
+		t.Fatal("expected the journal to expose the mood picker through data-mood-picker")
+	}
+
+	scale := services.DayMoodScale()
+	options := htmlFindElements(picker, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-mood-option")
+	})
+	if len(options) != len(scale.Steps) {
+		t.Fatalf("expected one option per scale step (%d), got %d", len(scale.Steps), len(options))
+	}
+
+	namesByStep := make(map[int]string, len(scale.Steps))
+	for index, step := range scale.Steps {
+		option := options[index]
+		if got := htmlAttr(option, "data-mood-option"); got != strconv.Itoa(step) {
+			t.Fatalf("expected option %d to be step %d, got %q (the picker renders the scale in order)", index, step, got)
+		}
+
+		input := htmlFindElement(option, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && node.Data == "input" && htmlAttr(node, "name") == "mood"
+		})
+		if input == nil {
+			t.Fatalf("step %d: expected a mood radio inside the option", step)
+		}
+		if got := htmlAttr(input, "value"); got != strconv.Itoa(step) {
+			t.Fatalf("step %d: radio posts %q", step, got)
+		}
+
+		accessibleName := htmlAttr(input, "aria-label")
+		if strings.TrimSpace(accessibleName) == "" {
+			t.Fatalf("step %d: the control's only content is a decorative face, so it must name itself", step)
+		}
+
+		name := htmlFindElement(option, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlHasAttr(node, "data-mood-name")
+		})
+		if name == nil {
+			t.Fatalf("step %d: expected a visible name beside the face", step)
+		}
+		if got, want := htmlAttr(name, "data-mood-name-key"), services.MoodTranslationKey(step); got != want {
+			t.Fatalf("step %d: name key %q, want %q", step, got, want)
+		}
+		visibleName := strings.TrimSpace(htmlNodeText(name))
+		if visibleName != accessibleName {
+			t.Fatalf("step %d: visible name %q and accessible name %q disagree", step, visibleName, accessibleName)
+		}
+		if visibleName == services.MoodTranslationKey(step) {
+			t.Fatalf("step %d: the name rendered as its own catalogue key, so nothing resolved it", step)
+		}
+
+		chip := htmlFindElement(option, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlHasClass(node, "chip")
+		})
+		if chip == nil {
+			t.Fatalf("step %d: expected the face to sit on a chip", step)
+		}
+		if got := htmlAttr(chip, "title"); got != accessibleName {
+			t.Fatalf("step %d: tooltip %q disagrees with the accessible name %q", step, got, accessibleName)
+		}
+
+		for earlier, taken := range namesByStep {
+			if taken == visibleName {
+				t.Fatalf("steps %d and %d render the same name %q", earlier, step, visibleName)
+			}
+		}
+		namesByStep[step] = visibleName
+	}
+
+	// Nothing is logged for today, so no step is selected and the caption names
+	// the ends of the scale instead — the row's direction has to be readable
+	// before the first tap, which is the half of the finding a selected-step
+	// caption alone would leave standing.
+	ends := htmlFindElement(picker, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-mood-scale-ends")
+	})
+	if ends == nil {
+		t.Fatal("expected the picker to name the ends of the scale while nothing is chosen")
+	}
+	endsText := htmlNodeText(ends)
+	for _, step := range []int{scale.Lowest, scale.Highest} {
+		if !strings.Contains(endsText, namesByStep[step]) {
+			t.Fatalf("expected the scale-ends caption to name step %d, got %q", step, endsText)
+		}
 	}
 }
 

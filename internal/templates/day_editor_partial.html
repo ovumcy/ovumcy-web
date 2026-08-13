@@ -44,7 +44,7 @@
 
     <fieldset class="space-y-2">
       <legend class="field-label">{{t .Messages "dashboard.mood"}}</legend>
-      {{template "mood_picker" (dict "SelectedMood" .Log.Mood "Compact" true)}}
+      {{template "mood_picker" (dict "Messages" .Messages "SelectedMood" .Log.Mood "Compact" true)}}
     </fieldset>
 
     {{if .ShowCycleFactors}}

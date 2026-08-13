@@ -57,6 +57,13 @@ func newTemplateFuncMap() template.FuncMap {
 			return translateMessage(messages, services.RoleTranslationKey(role))
 		},
 		"moodEmoji": services.MoodEmoji,
+		"moodScale": services.DayMoodScale,
+		// An off-scale value has no name key, and translateMessage answers an
+		// empty key with an empty string — the no-data label is the caller's.
+		"moodLabel": func(messages map[string]string, value int) string {
+			return translateMessage(messages, services.MoodTranslationKey(value))
+		},
+		"moodLabelKey": services.MoodTranslationKey,
 		"hasBBT": func(value *float64) bool {
 			return value != nil && services.IsValidDayBBT(value)
 		},

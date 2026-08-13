@@ -73,6 +73,28 @@ func PregnancyTestTranslationKey(value string) string {
 	}
 }
 
+// MoodTranslationKey names a step of the mood scale. The faces alone leave the
+// scale to be guessed — two people picking the third one were recording
+// different things — so every step carries a name, and the name is a catalogue
+// key rather than a glyph or a fraction. A value outside the scale has no name;
+// callers render their own no-data label for it.
+func MoodTranslationKey(value int) string {
+	switch value {
+	case 1:
+		return "dashboard.mood.very_low"
+	case 2:
+		return "dashboard.mood.low"
+	case 3:
+		return "dashboard.mood.neutral"
+	case 4:
+		return "dashboard.mood.good"
+	case 5:
+		return "dashboard.mood.very_good"
+	default:
+		return ""
+	}
+}
+
 func RoleTranslationKey(role string) string {
 	switch NormalizeUserRole(role) {
 	case models.RoleOwner:

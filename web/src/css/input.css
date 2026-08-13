@@ -2240,6 +2240,53 @@
   }
 }
 
+/*
+  The mood scale names its steps. A name under every face costs the row: five
+  columns leave about 64px each at 390px, and names of twelve to thirteen
+  characters — which four of the six locales have — either wrap to three lines
+  or force the type down, and the tap targets grow only by the box, never by the
+  font. So the row keeps the faces and one caption band under it carries the
+  name: the selected step's, or the two ends of the scale while nothing is
+  chosen. Every step still names itself in the accessibility tree and in its
+  tooltip, so the caption is the visible half of a name that is always there.
+
+  The name is laid over that band rather than sitting in its own column, which
+  is what would force the wrap; the option label therefore drops its containing
+  block, harmless here because the hidden radio inside it sets no offsets.
+*/
+@utility mood-picker {
+  position: relative;
+  padding-bottom: 1.4rem;
+
+  .choice-option {
+    position: static;
+  }
+}
+
+/* Line height is left to the type step the caption already carries: two class
+   selectors declaring it would tie at equal specificity, and a tie settles on
+   whichever the bundle emits last. */
+@utility mood-caption {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  text-align: center;
+}
+
+@utility mood-step-name {
+  display: none;
+
+  .choice-input:checked ~ & {
+    display: block;
+  }
+}
+
+@utility mood-scale-ends {
+  .mood-picker:has(.choice-input:checked) & {
+    display: none;
+  }
+}
+
 /* A stacked chip laid back onto one line — the flow, age-group and settings
    rows. Written against both base classes so it stays above the size step
    whatever order the bundle emits. */
