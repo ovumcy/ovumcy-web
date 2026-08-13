@@ -1,17 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-import {
-  apiOriginHeader,
-  continueFromRecoveryCode,
-  createCredentials,
-  expectInlineRegisterRecoveryStep,
-  readRecoveryCode,
-  registerOwnerViaUI,
-} from './support/auth-helpers';
+import { apiOriginHeader } from './support/auth-helpers';
 import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import { localeText } from './support/locale-helpers';
-import { selectOnboardingStartDate } from './support/onboarding-helpers';
-import { shiftISODate, todayISOFromDashboard } from './support/stats-helpers';
-import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
+import {
+  registerAndOnboardWithStartDaysAgo,
+  shiftISODate,
+  todayISOFromDashboard,
+} from './support/stats-helpers';
 
 /**
  * The dashboard's calm cycle-start SUGGESTION — the `[data-cycle-start-suggestion]`
@@ -44,72 +39,42 @@ import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
  *   -40  onboarding start, so the account's last-period-start cannot become the
  *        anchor (the default onboarding of today-3 would make the gap 3 and no
  *        hint would render at all)
- *   -20  a period day, which only exists so the recorded start below sits INSIDE
- *        the cluster rather than on its first day (see below); it carries no
- *        cycle start, so it does not move the anchor
- *   -16  explicit cycle start -> the anchor, gap 16 >= 15, and the competing
- *        start inside the cluster
+ *   -16  explicit cycle start -> the anchor, gap 16 >= 15, the FIRST day of the
+ *        period cluster below, and the competing start inside it
  *   -12, -8, -4, today  period days at <= 5-day steps, which is what keeps them
  *        in ONE period cluster: `buildPeriodClusters` splits only on a gap of
- *        5+ empty days, so -20..today stays a single cluster and -16's start
+ *        5+ empty days, so -16..today stays a single cluster and -16's start
  *        competes with today
  *
  * Auto-period-fill (on by default from onboarding) widens each written day
  * forward by up to the period length and never writes a cycle start, so it can
  * only reinforce that single cluster, never split it or move the anchor.
  *
- * Why the competing start may not be the cluster's first day: inside
- * `findCompetingCycleStart` each candidate is rebuilt at location midnight while
- * the cluster bounds come from `dateOnly` (UTC midnight), so under a positive
- * UTC offset a start on the first day of the cluster reads as sitting *before*
- * the cluster and is skipped. Measured in `internal/services`: with
- * `Europe/Belgrade` the same logs yield no conflict for a start on the cluster's
- * first day and the expected conflict for an interior one. An interior day is
- * strictly inside the bounds at every offset, which is what makes this spec
- * timezone-independent.
+ * Why the competing start sits on the cluster's FIRST day: that position is the
+ * one the flow used to lose, so it is where the browser lane is worth spending.
+ * `findCompetingCycleStart` rebuilds each candidate at location midnight while
+ * the cluster bounds come from `dateOnly` (UTC midnight); those are different
+ * instants under a non-zero UTC offset, so a start on the cluster's first day
+ * read as sitting *before* the cluster ahead of UTC — no conflict reported, and
+ * the confirmed replacement left it in place. `withinPeriodCluster`
+ * (`internal/services/cycle_start_policy.go`) now re-anchors the compared day to
+ * the bounds' own UTC midnight, and the offset-parameterized guarantee lives in
+ * the service regression (`cycle_start_policy_boundary_test.go`), which pins
+ * both cluster edges against a UTC+1 and a UTC-5 location.
+ *
+ * This spec runs in whatever timezone the runner's browser reports (pinned by
+ * `registerAndOnboardWithStartDaysAgo`), so what it adds over that regression is the
+ * end-to-end path across the first-day position — the hint, the replace
+ * confirmation, and the clearing pass that must remove that start once the owner
+ * accepts. On a UTC runner (CI) the two midnights coincide and the position is
+ * no harder than any other; on a machine ahead of UTC — Europe/Belgrade, where
+ * this seed was run — it is precisely the day the old comparison dropped.
  *
  * Seeding goes through the API with an explicit `Origin` (the CSRF middleware
  * validates it and `page.request.*` sends none of its own) rather than through
  * the dashboard's save button: the button is being removed with the autosave
  * work, and this spec's subject is the hint, not the save control.
  */
-
-function isoDateDaysAgo(days: number): string {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() - days);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-async function registerAndOnboardWithStartDaysAgo(
-  page: Page,
-  prefix: string,
-  startDaysAgo: number
-): Promise<void> {
-  // completeOnboardingIfPresent hardcodes today-3 as the period start, which
-  // would leave the account's last-period-start as a three-day-old anchor and
-  // silence the policy. Run onboarding with an explicit older date instead.
-  const credentials = createCredentials(prefix);
-  await registerOwnerViaUI(page, credentials);
-  await expectInlineRegisterRecoveryStep(page);
-  await readRecoveryCode(page);
-  await continueFromRecoveryCode(page);
-
-  await selectOnboardingStartDate(page, isoDateDaysAgo(startDaysAgo));
-  await page.locator('form[hx-post="/api/v1/onboarding/steps/1"] button[type="submit"]').click();
-
-  const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
-  await expect(stepTwoForm).toBeVisible();
-  await Promise.all([
-    page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
-    stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
-  ]);
-
-  await setRequestTimezoneFromBrowser(page);
-}
 
 async function csrfToken(page: Page): Promise<string> {
   return (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
@@ -128,10 +93,11 @@ async function savePeriodDay(page: Page, isoDate: string): Promise<void> {
 }
 
 async function markCycleStartViaAPI(page: Page, isoDate: string): Promise<void> {
-  // `replace_existing=false` on purpose: this seed day must be conflict-free, so
-  // a rejected replace is a broken precondition rather than something to paper
-  // over. The endpoint sets is_period AND cycle_start on the day, which is what
-  // makes it the explicit anchor.
+  // Local on purpose, unlike the other seeding helpers: `replace_existing=false`
+  // is what makes this seed day conflict-free, so a rejected replace surfaces as
+  // a broken precondition instead of being papered over — `stats-helpers`'
+  // exported helper of the same name sends `true`. The endpoint sets is_period
+  // AND cycle_start on the day, which is what makes it the explicit anchor.
   const response = await page.request.post(`/api/v1/days/${isoDate}/cycle-start`, {
     headers: {
       ...apiOriginHeader(page),
@@ -151,7 +117,6 @@ async function fetchDay(page: Page, isoDate: string): Promise<Record<string, unk
   return (await response.json()) as Record<string, unknown>;
 }
 
-const CLUSTER_OPENING_DAYS_BACK = 20;
 const ANCHOR_DAYS_BACK = 16;
 const BRIDGE_DAYS_BACK = [12, 8, 4, 0];
 
@@ -165,7 +130,9 @@ test.describe('Dashboard: cycle-start suggestion', () => {
     const today = await todayISOFromDashboard(page);
     const anchorISO = shiftISODate(today, -ANCHOR_DAYS_BACK);
 
-    await savePeriodDay(page, shiftISODate(today, -CLUSTER_OPENING_DAYS_BACK));
+    // The anchor is written first and opens the cluster: nothing bleeding
+    // precedes it, so it is the cluster's first day, which is the position the
+    // conflict search and the clearing pass must both see.
     await markCycleStartViaAPI(page, anchorISO);
     for (const daysBack of BRIDGE_DAYS_BACK) {
       await savePeriodDay(page, shiftISODate(today, -daysBack));
