@@ -1,15 +1,14 @@
 {{define "settings_interface_section_content"}}
-  <section class="card p-5 sm:p-6 space-y-5" id="settings-interface">
-    <div>
-      <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.interface.subtitle"}}</p>
-    </div>
+  <section class="card p-4 sm:p-5 space-y-4" id="settings-interface">
+    {{/* No subtitle: settings.interface.subtitle ("App language and theme")
+         named the two panels immediately below it. */}}
+    <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "sliders"}}</span> {{t .Messages "settings.interface.title"}}</h2>
 
     <form
       action="/api/v1/users/current/interface"
       method="post"
       hx-patch="/api/v1/users/current/interface"
-      class="space-y-5"
+      class="space-y-4"
       data-settings-draft-form="interface"
       data-settings-interface-form
       data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
@@ -36,7 +35,6 @@
           <div class="space-y-1">
             <p class="field-label">{{t .Messages "settings.interface.theme"}}</p>
             <p class="journal-muted text-sm">{{t .Messages "settings.interface.theme_hint"}}</p>
-            <p class="journal-muted text-xs">{{t .Messages "settings.interface.preview_hint"}}</p>
           </div>
           <div class="settings-interface-options settings-interface-theme-options" role="radiogroup" aria-label="{{t .Messages "settings.interface.theme"}}">
             <label class="choice-option settings-interface-option" data-settings-interface-theme-option="light" data-selected="false">

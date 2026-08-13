@@ -1,6 +1,6 @@
 {{define "settings_data_section_content"}}
   <section
-    class="card p-5 sm:p-6 space-y-4"
+    class="card p-4 sm:p-5 space-y-3"
     data-export-section
     data-export-week-start="{{.WeekStartsOn}}"
     data-export-min="{{if .HasExportData}}{{.ExportRangeMin}}{{end}}"
@@ -16,7 +16,7 @@
     id="settings-data">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "folder"}}</span> {{t .Messages "settings.data.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.data.storage_copy"}}</p>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.data.storage_copy"}}</p>
     </div>
     <div class="grid gap-3 sm:grid-cols-2">
       <div class="space-y-1">
@@ -94,12 +94,16 @@
       <button type="button" data-export-action data-export-endpoint="/api/v1/exports/csv" data-export-type="csv" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">{{template "icon" "table"}}</span><span>{{t .Messages "settings.export_csv"}}</span></button>
       <button type="button" data-export-action data-export-endpoint="/api/v1/exports/json" data-export-type="json" class="btn-secondary inline-flex items-center justify-center"><span class="mr-2" aria-hidden="true">{{template "icon" "braces"}}</span><span>{{t .Messages "settings.export_json"}}</span></button>
     </div>
-    <p class="journal-muted text-sm" data-export-summary-total>{{printf (t .Messages "settings.export_summary_total") .ExportTotalEntries}}</p>
-    <p class="journal-muted text-sm" data-export-summary-range>
-      {{if .HasExportSummaryData}}{{printf (t .Messages "settings.export_summary_range") .ExportDateFromDisplay .ExportDateToDisplay}}{{else}}{{t .Messages "settings.export_summary_range_empty"}}{{end}}
-    </p>
-    <p class="journal-muted mt-3 text-xs">{{t .Messages "settings.export_data_hint"}}</p>
-    <p class="journal-muted text-xs">{{t .Messages "settings.local_data_hint"}}</p>
-
+    {{/* Two facts about the same selection, so one row rather than two lines. */}}
+    <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+      <p class="journal-muted" data-export-summary-total>{{printf (t .Messages "settings.export_summary_total") .ExportTotalEntries}}</p>
+      <p class="journal-muted" data-export-summary-range>
+        {{if .HasExportSummaryData}}{{printf (t .Messages "settings.export_summary_range") .ExportDateFromDisplay .ExportDateToDisplay}}{{else}}{{t .Messages "settings.export_summary_range_empty"}}{{end}}
+      </p>
+    </div>
+    <div class="journal-muted space-y-1 text-xs">
+      <p>{{t .Messages "settings.export_data_hint"}}</p>
+      <p>{{t .Messages "settings.local_data_hint"}}</p>
+    </div>
   </section>
 {{end}}

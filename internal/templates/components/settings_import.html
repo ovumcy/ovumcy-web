@@ -1,6 +1,6 @@
 {{define "settings_import_section_content"}}
   <section
-    class="card p-5 sm:p-6 space-y-4"
+    class="card p-4 sm:p-5 space-y-3"
     data-import-section
     data-import-csrf="{{.CSRFToken}}"
     data-import-success-template="{{t .Messages "settings.import_success"}}"
@@ -11,22 +11,21 @@
     id="settings-import">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "box"}}</span> {{t .Messages "settings.import_title"}}</h2>
-      <p id="settings-import-desc" class="journal-muted mt-2 text-sm">{{t .Messages "settings.import_description"}}</p>
+      <p id="settings-import-desc" class="journal-muted mt-1 text-sm">{{t .Messages "settings.import_description"}}</p>
     </div>
 
-    <form data-import-form novalidate>
-      <div class="space-y-2">
-        <label class="field-label" for="settings-import-file">{{t .Messages "settings.import_choose_file"}}</label>
+    {{/* One file field and its submit: a row, not two stacked blocks. */}}
+    <form data-import-form novalidate class="space-y-2">
+      <label class="field-label" for="settings-import-file">{{t .Messages "settings.import_choose_file"}}</label>
+
+      <div class="settings-form-actions">
         <input
           id="settings-import-file"
           type="file"
           accept=".json,application/json"
-          class="input-field"
+          class="input-field w-auto"
           aria-describedby="settings-import-desc"
           data-import-file>
-      </div>
-
-      <div class="settings-form-actions">
         <button
           type="submit"
           class="btn-secondary"
