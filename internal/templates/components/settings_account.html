@@ -1,16 +1,12 @@
 {{define "settings_account_section_content"}}
-  <section class="card p-5 sm:p-6 space-y-6" id="settings-account">
-    <div>
-      <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.account.subtitle"}}</p>
-    </div>
+  <section class="card p-4 sm:p-5 space-y-4" id="settings-account">
+    {{/* No subtitle: settings.account.subtitle listed the block headings that
+         follow it. */}}
+    <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "user"}}</span> {{t .Messages "settings.account.title"}}</h2>
 
     <div class="settings-account-stack">
-      <section class="card-quiet settings-account-block space-y-4">
-        <div>
-          <h3 class="field-label">{{t .Messages "settings.profile.title"}}</h3>
-          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.profile.subtitle"}}</p>
-        </div>
+      <section class="card-quiet settings-account-block space-y-3">
+        <h3 class="field-label field-label-lg">{{t .Messages "settings.profile.title"}}</h3>
 
         <form
           action="/api/v1/users/current/profile"
@@ -18,25 +14,31 @@
           hx-patch="/api/v1/users/current/profile"
           hx-target="#settings-profile-status"
           hx-swap="innerHTML"
-          class="space-y-4"
+          class="space-y-3"
           data-save-feedback>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-          <label class="field-label" for="settings-display-name">{{t .Messages "settings.profile.display_name"}}</label>
-          <input
-            id="settings-display-name"
-            type="text"
-            name="display_name"
-            value="{{.CurrentUser.DisplayName}}"
-            placeholder="{{t .Messages "settings.profile.display_name_placeholder"}}"
-            maxlength="64"
-            autocomplete="nickname"
-            class="input-field">
-          <p class="journal-muted text-xs">{{t .Messages "settings.profile.display_name_hint"}}</p>
+          {{/* The account email is one fact, so it sits in the row beside the
+               name it belongs with instead of in a card of its own. */}}
+          <div class="grid gap-3 sm:grid-cols-2 sm:items-start">
+            <div class="space-y-1">
+              <label class="field-label" for="settings-display-name">{{t .Messages "settings.profile.display_name"}}</label>
+              <input
+                id="settings-display-name"
+                type="text"
+                name="display_name"
+                value="{{.CurrentUser.DisplayName}}"
+                placeholder="{{t .Messages "settings.profile.display_name_placeholder"}}"
+                maxlength="64"
+                autocomplete="nickname"
+                class="input-field">
+              <p class="journal-muted text-xs">{{t .Messages "settings.profile.display_name_hint"}}</p>
+            </div>
 
-          <div class="card-quiet space-y-1" data-profile-email-panel>
-            <p class="field-label">{{t .Messages "settings.profile.email"}}</p>
-            <p class="text-sm break-all">{{.CurrentUser.Email}}</p>
+            <div class="space-y-1" data-profile-email-panel>
+              <p class="field-label">{{t .Messages "settings.profile.email"}}</p>
+              <p class="text-sm break-all">{{.CurrentUser.Email}}</p>
+            </div>
           </div>
 
           <div class="settings-form-actions">
@@ -46,12 +48,11 @@
         </form>
       </section>
 
-      <section id="settings-change-password" class="card-quiet settings-account-block space-y-4">
+      <section id="settings-change-password" class="card-quiet settings-account-block space-y-3">
         {{if .CurrentUser.LocalAuthEnabled}}
-        <div>
-          <h3 class="field-label">{{t .Messages "settings.change_password.title"}}</h3>
-          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.change_password.subtitle"}}</p>
-        </div>
+        {{/* No subtitle: settings.change_password.subtitle said "Update your
+             account password" under the heading "Change password". */}}
+        <h3 class="field-label field-label-lg">{{t .Messages "settings.change_password.title"}}</h3>
 
         <form
           id="settings-change-password-form"
@@ -77,21 +78,28 @@
             "Autocomplete" "current-password"
             "Required" true)}}
 
-          {{template "password_toggle_field" (dict
-            "Messages" .Messages
-            "LabelKey" "auth.new_password"
-            "FieldID" "settings-new-password"
-            "FieldName" "new_password"
-            "Autocomplete" "new-password"
-            "Required" true)}}
-
-          {{template "password_toggle_field" (dict
-            "Messages" .Messages
-            "LabelKey" "auth.confirm_password"
-            "FieldID" "settings-confirm-password"
-            "FieldName" "confirm_password"
-            "Autocomplete" "new-password"
-            "Required" true)}}
+          {{/* The new password and its confirmation are one decision, so they
+               share a row instead of stacking. */}}
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-1">
+              {{template "password_toggle_field" (dict
+                "Messages" .Messages
+                "LabelKey" "auth.new_password"
+                "FieldID" "settings-new-password"
+                "FieldName" "new_password"
+                "Autocomplete" "new-password"
+                "Required" true)}}
+            </div>
+            <div class="space-y-1">
+              {{template "password_toggle_field" (dict
+                "Messages" .Messages
+                "LabelKey" "auth.confirm_password"
+                "FieldID" "settings-confirm-password"
+                "FieldName" "confirm_password"
+                "Autocomplete" "new-password"
+                "Required" true)}}
+            </div>
+          </div>
           {{template "password_requirements_checklist" (dict "Messages" .Messages)}}
 
           <div class="settings-form-actions">
@@ -101,7 +109,7 @@
         </form>
         {{else}}
         <div>
-          <h3 class="field-label">{{t .Messages "settings.local_password.title"}}</h3>
+          <h3 class="field-label field-label-lg">{{t .Messages "settings.local_password.title"}}</h3>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.local_password.subtitle"}}</p>
         </div>
 
@@ -118,21 +126,26 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           {{template "password_username_context_field" (dict "Value" .CurrentUser.Email)}}
 
-          {{template "password_toggle_field" (dict
-            "Messages" .Messages
-            "LabelKey" "auth.new_password"
-            "FieldID" "settings-new-password"
-            "FieldName" "new_password"
-            "Autocomplete" "new-password"
-            "Required" true)}}
-
-          {{template "password_toggle_field" (dict
-            "Messages" .Messages
-            "LabelKey" "auth.confirm_password"
-            "FieldID" "settings-confirm-password"
-            "FieldName" "confirm_password"
-            "Autocomplete" "new-password"
-            "Required" true)}}
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div class="space-y-1">
+              {{template "password_toggle_field" (dict
+                "Messages" .Messages
+                "LabelKey" "auth.new_password"
+                "FieldID" "settings-new-password"
+                "FieldName" "new_password"
+                "Autocomplete" "new-password"
+                "Required" true)}}
+            </div>
+            <div class="space-y-1">
+              {{template "password_toggle_field" (dict
+                "Messages" .Messages
+                "LabelKey" "auth.confirm_password"
+                "FieldID" "settings-confirm-password"
+                "FieldName" "confirm_password"
+                "Autocomplete" "new-password"
+                "Required" true)}}
+            </div>
+          </div>
           {{template "password_requirements_checklist" (dict "Messages" .Messages)}}
 
           <div class="settings-form-actions">
@@ -143,10 +156,14 @@
         {{end}}
       </section>
 
-      <section class="card-quiet settings-account-block space-y-4">
-        <div>
-          <h3 class="field-label">{{t .Messages "settings.2fa.title"}}</h3>
-          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.description"}}</p>
+      {{/* One state and one action: a row, not a stack of four blocks. */}}
+      <section class="card-quiet settings-account-block space-y-2">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h3 class="field-label field-label-lg">{{t .Messages "settings.2fa.title"}}</h3>
+            <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.2fa.description"}}</p>
+          </div>
+          <a href="/settings/2fa" class="btn-secondary">{{t .Messages "settings.2fa.manage_button"}}</a>
         </div>
 
         {{if .CurrentUser.TOTPEnabled}}
@@ -154,20 +171,15 @@
         {{else}}
         <p class="journal-muted text-sm">{{t .Messages "settings.2fa.status_disabled_label"}}</p>
         {{end}}
-
-        <div>
-          <a href="/settings/2fa" class="btn-secondary">{{t .Messages "settings.2fa.manage_button"}}</a>
-        </div>
       </section>
 
-      <section class="card-quiet settings-account-block space-y-4">
+      {{/* The advanced-security block holds exactly one control, so its own
+           heading and settings.security.advanced_hint were a wrapper around
+           the recovery-code heading below them. The recovery code names
+           itself. */}}
+      <section class="card-quiet settings-account-block space-y-3">
         <div>
-          <h3 class="field-label">{{t .Messages "settings.security.advanced"}}</h3>
-          <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.security.advanced_hint"}}</p>
-        </div>
-
-        <div>
-          <h4 class="field-label">{{t .Messages "settings.recovery_code.title"}}</h4>
+          <h3 class="field-label field-label-lg">{{t .Messages "settings.recovery_code.title"}}</h3>
           <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.recovery_code.subtitle"}}</p>
         </div>
 

@@ -1,5 +1,5 @@
 {{define "settings_cycle_section_content"}}
-  <section id="settings-cycle" class="card p-5 sm:p-6" data-settings-cycle-form>
+  <section id="settings-cycle" class="card p-4 sm:p-5" data-settings-cycle-form>
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.cycle.title"}}</h2>
 
     <form
@@ -8,58 +8,63 @@
       hx-patch="/api/v1/users/current/cycle"
       hx-target="#settings-cycle-status"
       hx-swap="innerHTML"
-      class="mt-5 space-y-6"
+      class="mt-4 space-y-4"
       data-settings-draft-form="cycle"
       data-settings-unsaved-prompt="{{t .Messages "settings.draft.unsaved_prompt"}}"
       data-settings-unsaved-accept="{{t .Messages "settings.draft.discard"}}"
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-      <div class="space-y-2">
-        <label class="field-label" for="settings-cycle-length">{{t .Messages "settings.cycle.cycle_length"}}</label>
-        <div class="range-row">
-          <input
-            id="settings-cycle-length"
-            type="range"
-            min="15"
-            max="90"
-            name="cycle_length"
-            value="{{.CycleLength}}"
-            data-settings-cycle-length
-            class="range-field">
-          <span class="range-value"><span data-settings-cycle-length-value>{{.CycleLength}}</span> {{t .Messages "common.days_short"}}</span>
+      {{/* The three values that describe one cycle share one surface: they are
+           read and adjusted together, and separate blocks for each turned a
+           three-field group into three sections. */}}
+      <div class="card-quiet grid gap-3 lg:grid-cols-2 lg:items-start">
+        <div class="space-y-1">
+          <label class="field-label" for="settings-cycle-length">{{t .Messages "settings.cycle.cycle_length"}}</label>
+          <div class="range-row">
+            <input
+              id="settings-cycle-length"
+              type="range"
+              min="15"
+              max="90"
+              name="cycle_length"
+              value="{{.CycleLength}}"
+              data-settings-cycle-length
+              class="range-field">
+            <span class="range-value"><span data-settings-cycle-length-value>{{.CycleLength}}</span> {{t .Messages "common.days_short"}}</span>
+          </div>
         </div>
-      </div>
 
-      <div class="space-y-2">
-        <label class="field-label" for="settings-period-length">{{t .Messages "settings.cycle.period_length"}}</label>
-        <div class="range-row range-row-compact">
-          <input
-            id="settings-period-length"
-            type="range"
-            min="1"
-            max="14"
-            name="period_length"
-            value="{{.PeriodLength}}"
-            data-settings-period-length
-            class="range-field">
-          <span class="range-value"><span data-settings-period-length-value>{{.PeriodLength}}</span> {{t .Messages "common.days_short"}}</span>
+        <div class="space-y-1">
+          <label class="field-label" for="settings-period-length">{{t .Messages "settings.cycle.period_length"}}</label>
+          <div class="range-row range-row-compact">
+            <input
+              id="settings-period-length"
+              type="range"
+              min="1"
+              max="14"
+              name="period_length"
+              value="{{.PeriodLength}}"
+              data-settings-period-length
+              class="range-field">
+            <span class="range-value"><span data-settings-period-length-value>{{.PeriodLength}}</span> {{t .Messages "common.days_short"}}</span>
+          </div>
         </div>
-      </div>
 
-      <div class="space-y-2">
-        <label class="field-label" id="settings-last-period-start-label" for="settings-last-period-start">{{t .Messages "settings.cycle.last_period_start"}}</label>
-        {{template "localized_date_field" (dict
-          "Messages" .Messages
-          "FieldID" "settings-last-period-start"
-          "FieldName" "last_period_start"
-          "Value" .LastPeriodStart
-          "Lang" .Lang
-          "LabelID" "settings-last-period-start-label"
-          "DescribedBy" "settings-last-period-start-hint"
-          "Min" .CycleStartMinISO
-          "Max" .TodayISO)}}
-        <p id="settings-last-period-start-hint" class="journal-muted text-xs">{{t .Messages "settings.cycle.last_period_start_hint"}}</p>
+        <div class="space-y-1">
+          <label class="field-label" id="settings-last-period-start-label" for="settings-last-period-start">{{t .Messages "settings.cycle.last_period_start"}}</label>
+          {{template "localized_date_field" (dict
+            "Messages" .Messages
+            "FieldID" "settings-last-period-start"
+            "FieldName" "last_period_start"
+            "Value" .LastPeriodStart
+            "Lang" .Lang
+            "LabelID" "settings-last-period-start-label"
+            "DescribedBy" "settings-last-period-start-hint"
+            "Min" .CycleStartMinISO
+            "Max" .TodayISO)}}
+          <p id="settings-last-period-start-hint" class="journal-muted text-xs">{{t .Messages "settings.cycle.last_period_start_hint"}}</p>
+        </div>
       </div>
 
       <div class="space-y-1">
@@ -70,39 +75,38 @@
         <p class="journal-muted text-sm" data-settings-cycle-message="cycle-short" hidden>{{t .Messages "settings.cycle.info_cycle_short"}}</p>
       </div>
 
-      <div class="space-y-2">
-        <label class="period-toggle" data-binary-toggle data-active="{{if .AutoPeriodFill}}true{{else}}false{{end}}">
+      {{/* Same shape as the tracking toggles: the explanation rides inside the
+           control instead of standing under it as its own paragraph. */}}
+      <div class="settings-toggle-list">
+        <label class="period-toggle settings-tracking-toggle" data-binary-toggle data-active="{{if .AutoPeriodFill}}true{{else}}false{{end}}">
           <input type="checkbox" name="auto_period_fill" value="true" data-binary-toggle-input {{if .AutoPeriodFill}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "settings.cycle.auto_period_fill"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.cycle.auto_period_fill_hint"}}</span>
           </span>
         </label>
-        <p class="journal-muted text-sm">{{t .Messages "settings.cycle.auto_period_fill_hint"}}</p>
-      </div>
 
-      <div class="space-y-2">
-        <label class="period-toggle" data-binary-toggle data-active="{{if .IrregularCycle}}true{{else}}false{{end}}">
+        <label class="period-toggle settings-tracking-toggle" data-binary-toggle data-active="{{if .IrregularCycle}}true{{else}}false{{end}}">
           <input type="checkbox" name="irregular_cycle" value="true" data-binary-toggle-input {{if .IrregularCycle}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "wave"}}</span> {{t .Messages "settings.cycle.irregular_cycle"}}</span>
+            <span class="journal-muted text-sm" data-settings-irregular-cycle-hint>{{t .Messages "settings.cycle.irregular_cycle_hint"}}</span>
           </span>
         </label>
-        <p class="journal-muted text-sm" data-settings-irregular-cycle-hint>{{t .Messages "settings.cycle.irregular_cycle_hint"}}</p>
-      </div>
 
-      <div class="space-y-2">
-        <label class="period-toggle" data-binary-toggle data-active="{{if .UnpredictableCycle}}true{{else}}false{{end}}">
+        <label class="period-toggle settings-tracking-toggle" data-binary-toggle data-active="{{if .UnpredictableCycle}}true{{else}}false{{end}}">
           <input type="checkbox" name="unpredictable_cycle" value="true" data-binary-toggle-input {{if .UnpredictableCycle}}checked{{end}}>
-          <span class="period-toggle-copy">
+          <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">∞</span> {{t .Messages "settings.cycle.unpredictable_cycle"}}</span>
+            <span class="journal-muted text-sm">{{t .Messages "settings.cycle.unpredictable_cycle_hint"}}</span>
           </span>
         </label>
-        <p class="journal-muted text-sm">{{t .Messages "settings.cycle.unpredictable_cycle_hint"}}</p>
       </div>
 
-      <div class="space-y-3">
+      <div class="grid gap-3 lg:grid-cols-2 lg:items-start">
+      <div class="card-quiet card-fit space-y-2">
         <div>
-          <p class="field-label">{{t .Messages "settings.age_group.title"}}</p>
+          <p class="field-label field-label-lg">{{t .Messages "settings.age_group.title"}}</p>
           <p class="journal-muted text-sm">{{t .Messages "settings.age_group.hint"}}</p>
         </div>
         <div class="grid gap-2 sm:grid-cols-2">
@@ -125,9 +129,9 @@
         </div>
       </div>
 
-      <div class="space-y-3">
+      <div class="card-quiet card-fit space-y-2">
         <div>
-          <p class="field-label">{{t .Messages "settings.goal.title"}}</p>
+          <p class="field-label field-label-lg">{{t .Messages "settings.goal.title"}}</p>
           <p class="journal-muted text-sm">{{t .Messages "settings.goal.hint"}}</p>
         </div>
         <div class="grid gap-2">
@@ -144,14 +148,18 @@
             <span class="chip chip-stack"><span>{{t .Messages "settings.goal.health"}}</span></span>
           </label>
         </div>
+        {{/* The mode summary sits inside the group it belongs to. Its
+             third line said what settings.goal.hint above already says —
+             that the choice reframes the interface and not the maths — so
+             the template stops rendering it here. */}}
         <div
-          class="card-quiet text-sm space-y-1"
+          class="text-sm space-y-1"
           data-usage-goal-summary
           data-usage-goal-label-key="{{.UsageGoalLabelKey}}"
           data-usage-goal-summary-key="{{.UsageGoalSummaryKey}}">
           <p class="field-label">{{t .Messages "usage_goal.current_mode"}}: {{t .Messages .UsageGoalLabelKey}}</p>
           <p class="journal-muted">{{t .Messages .UsageGoalSummaryKey}}</p>
-          <p class="journal-muted text-xs">{{t .Messages "usage_goal.ui_only_hint"}}</p>
+        </div>
         </div>
       </div>
 
@@ -174,35 +182,36 @@
       hx-patch="/api/v1/users/current/reminders"
       hx-target="#settings-reminders-status"
       hx-swap="innerHTML"
-      class="mt-8 space-y-2"
+      class="mt-4 card-quiet space-y-2"
       data-settings-reminders-form
       data-save-feedback>
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-      <label class="field-label" for="settings-reminder-lead-days">{{t .Messages "settings.reminders.lead_days"}}</label>
-      <input
-        id="settings-reminder-lead-days"
-        type="number"
-        min="0"
-        max="14"
-        step="1"
-        inputmode="numeric"
-        name="reminder_lead_days"
-        value="{{.ReminderLeadDays}}"
-        data-settings-reminder-lead-days
-        aria-describedby="settings-reminder-lead-days-hint"
-        class="w-full input-field">
-      <p id="settings-reminder-lead-days-hint" class="journal-muted text-sm">{{t .Messages "settings.reminders.lead_days_hint"}}</p>
-
+      {{/* One number, so one row: the label, the field and its own save sit on
+           the same line instead of stacking four blocks deep. */}}
       <div class="settings-form-actions">
+        <label class="field-label" for="settings-reminder-lead-days">{{t .Messages "settings.reminders.lead_days"}}</label>
+        <input
+          id="settings-reminder-lead-days"
+          type="number"
+          min="0"
+          max="14"
+          step="1"
+          inputmode="numeric"
+          name="reminder_lead_days"
+          value="{{.ReminderLeadDays}}"
+          data-settings-reminder-lead-days
+          aria-describedby="settings-reminder-lead-days-hint"
+          class="w-20 input-field">
         <button
           type="submit"
-          class="btn-primary"
+          class="btn-secondary"
           data-settings-reminders-save
           data-save-button
           data-saving-label="{{t .Messages "common.saving"}}">{{t .Messages "settings.reminders.save"}}</button>
         <div id="settings-reminders-status" class="save-status text-sm" aria-live="polite"></div>
       </div>
+      <p id="settings-reminder-lead-days-hint" class="journal-muted text-xs">{{t .Messages "settings.reminders.lead_days_hint"}}</p>
     </form>
   </section>
 {{end}}

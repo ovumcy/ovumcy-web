@@ -1,8 +1,8 @@
 {{define "content"}}
-<section class="space-y-6">
+<section class="space-y-4">
   <div>
     <h1 class="journal-title" data-title-key="settings.title">{{t .Messages "settings.title"}}</h1>
-    <p class="journal-muted mt-2">{{t .Messages "settings.subtitle"}}</p>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.subtitle"}}</p>
   </div>
 
   {{if eq .CurrentUser.Role "owner"}}

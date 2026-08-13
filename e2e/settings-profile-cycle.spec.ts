@@ -363,19 +363,22 @@ test.describe('Settings: profile and cycle', () => {
     const trackBBTToggle = trackingSection.locator('[data-tracking-setting="track-bbt"]');
     const trackCervicalMucusToggle = trackingSection.locator('[data-tracking-setting="track-cervical-mucus"]');
     const showSexChipToggle = trackingSection.locator('[data-tracking-setting="show-sex-chip"]');
-    const trackBBTState = trackBBTToggle.locator('[data-binary-toggle-state]');
-    const trackCervicalMucusState = trackCervicalMucusToggle.locator('[data-binary-toggle-state]');
-    const showSexChipState = showSexChipToggle.locator('[data-binary-toggle-state]');
     const temperatureUnitFahrenheit = trackingSection.locator('input[name="temperature_unit"][value="f"]');
     const saveTrackingButton = trackingSection.locator('button[data-save-button]');
 
     // Every toggle in this section is phrased positively: checked means the
     // field is shown. The intimacy section is visible by default, so its box
     // starts checked while the two opt-in fields start unchecked.
+    //
+    // The state each toggle is in is read off `data-active`, which the same
+    // handler writes: the sentence that used to restate it under every toggle
+    // ("Currently visible in …") is no longer rendered — a switch showing its
+    // own state does not need a line saying so.
     await expect(trackBBT).not.toBeChecked();
     await expect(trackCervicalMucus).not.toBeChecked();
     await expect(showSexChip).toBeChecked();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
+    await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'false');
     await expect(showSexChipToggle).toHaveAttribute('data-active', 'true');
     await expect(trackBBTToggle).toContainText(
       'Adds a basal body temperature field to dashboard and calendar day editing.'
@@ -386,13 +389,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(showSexChipToggle).toContainText(
       'Adds the intimacy section to dashboard and calendar day editing.'
     );
-    await expect(trackBBTState).toHaveText('Currently hidden from new dashboard and calendar entries.');
-    await expect(trackCervicalMucusState).toHaveText(
-      'Currently hidden from new dashboard and calendar entries.'
-    );
-    await expect(showSexChipState).toHaveText(
-      'Currently visible in dashboard and calendar day editor.'
-    );
 
     await trackBBT.check();
     await trackCervicalMucus.check();
@@ -400,13 +396,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
     await expect(showSexChipToggle).toHaveAttribute('data-active', 'false');
-    await expect(trackBBTState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(trackCervicalMucusState).toHaveText(
-      'Currently visible in dashboard and calendar day editor.'
-    );
-    await expect(showSexChipState).toHaveText(
-      'Currently hidden from new dashboard and calendar entries.'
-    );
     await checkStyledControl(temperatureUnitFahrenheit);
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
@@ -419,13 +408,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'true');
     await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'true');
     await expect(showSexChipToggle).toHaveAttribute('data-active', 'false');
-    await expect(trackBBTState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(trackCervicalMucusState).toHaveText(
-      'Currently visible in dashboard and calendar day editor.'
-    );
-    await expect(showSexChipState).toHaveText(
-      'Currently hidden from new dashboard and calendar entries.'
-    );
     await expect(temperatureUnitFahrenheit).toBeChecked();
 
     await page.goto('/dashboard');
@@ -471,13 +453,9 @@ test.describe('Settings: profile and cycle', () => {
     await trackBBT.uncheck();
     await trackCervicalMucus.uncheck();
     await showSexChip.check();
-    await expect(trackBBTState).toHaveText('Currently hidden from new dashboard and calendar entries.');
-    await expect(trackCervicalMucusState).toHaveText(
-      'Currently hidden from new dashboard and calendar entries.'
-    );
-    await expect(showSexChipState).toHaveText(
-      'Currently visible in dashboard and calendar day editor.'
-    );
+    await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
+    await expect(trackCervicalMucusToggle).toHaveAttribute('data-active', 'false');
+    await expect(showSexChipToggle).toHaveAttribute('data-active', 'true');
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
     await expect(trackBBTToggle).toHaveAttribute('data-active', 'false');
@@ -504,9 +482,6 @@ test.describe('Settings: profile and cycle', () => {
     const showCycleFactorsToggle = trackingSection.locator('[data-tracking-setting="show-cycle-factors"]');
     const showNotesFieldToggle = trackingSection.locator('[data-tracking-setting="show-notes-field"]');
     const showHistoricalPhasesToggle = trackingSection.locator('[data-tracking-setting="show-historical-phases"]');
-    const showCycleFactorsState = showCycleFactorsToggle.locator('[data-binary-toggle-state]');
-    const showNotesFieldState = showNotesFieldToggle.locator('[data-binary-toggle-state]');
-    const showHistoricalPhasesState = showHistoricalPhasesToggle.locator('[data-binary-toggle-state]');
     const saveTrackingButton = trackingSection.locator('button[data-save-button]');
 
     // Cycle factors and notes are visible by default, so their positive
@@ -517,11 +492,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'true');
     await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'true');
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
-    await expect(showCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(showNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(showHistoricalPhasesState).toHaveText(
-      'Currently hidden; only the next predicted cycles show fertile windows.'
-    );
 
     await showCycleFactors.uncheck();
     await showNotesField.uncheck();
@@ -529,9 +499,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'false');
     await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'false');
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'true');
-    await expect(showCycleFactorsState).toHaveText('Currently hidden from new dashboard and calendar entries.');
-    await expect(showNotesFieldState).toHaveText('Currently hidden from new dashboard and calendar entries.');
-    await expect(showHistoricalPhasesState).toHaveText('Currently shown on past months in the calendar.');
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
 
@@ -543,9 +510,6 @@ test.describe('Settings: profile and cycle', () => {
     await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'false');
     await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'false');
     await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'true');
-    await expect(showCycleFactorsState).toHaveText('Currently hidden from new dashboard and calendar entries.');
-    await expect(showNotesFieldState).toHaveText('Currently hidden from new dashboard and calendar entries.');
-    await expect(showHistoricalPhasesState).toHaveText('Currently shown on past months in the calendar.');
 
     // Dashboard effect: an unchecked show-cycle-factors removes the
     // cycle-factor fieldset and an unchecked show-notes-field removes the notes
@@ -567,11 +531,9 @@ test.describe('Settings: profile and cycle', () => {
     await showCycleFactors.check();
     await showNotesField.check();
     await showHistoricalPhases.uncheck();
-    await expect(showCycleFactorsState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(showNotesFieldState).toHaveText('Currently visible in dashboard and calendar day editor.');
-    await expect(showHistoricalPhasesState).toHaveText(
-      'Currently hidden; only the next predicted cycles show fertile windows.'
-    );
+    await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'true');
+    await expect(showNotesFieldToggle).toHaveAttribute('data-active', 'true');
+    await expect(showHistoricalPhasesToggle).toHaveAttribute('data-active', 'false');
     await saveTrackingButton.click();
     await expect(page.locator('#settings-tracking-status .status-ok')).toBeVisible();
     await expect(showCycleFactorsToggle).toHaveAttribute('data-active', 'true');
@@ -983,9 +945,13 @@ test.describe('Settings: profile and cycle', () => {
     await createForm.locator('button[type="submit"]').click();
 
     await expect(symptomSection.locator('[data-symptom-group="active"]')).toBeVisible();
-    await expect(symptomSection.locator('[data-symptom-group="active"]')).toContainText(
-      'These appear in dashboard and calendar day editing.'
-    );
+    // The group is proved by the row it now holds. Its helper line ("These
+    // appear in dashboard and calendar day editing.") is no longer rendered —
+    // it restated the heading it sat under — so the empty-to-populated
+    // transition is asserted on the row, which is the fact the test is about.
+    await expect(
+      symptomSection.locator('[data-symptom-group="active"] [data-custom-symptom-row]')
+    ).toHaveCount(1);
     await expect(symptomSection.locator('[data-symptom-group="archived"]')).toHaveCount(0);
     await expect(symptomSection.locator('[data-symptom-empty-state="empty"]')).toHaveCount(0);
   });

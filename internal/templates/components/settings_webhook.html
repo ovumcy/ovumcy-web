@@ -1,8 +1,8 @@
 {{define "settings_webhook_section_content"}}
-  <section class="card p-5 sm:p-6 space-y-5" id="settings-webhook">
+  <section class="card p-4 sm:p-5 space-y-4" id="settings-webhook">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "bell"}}</span> {{t .Messages "settings.webhook.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.webhook.subtitle"}}</p>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.webhook.subtitle"}}</p>
     </div>
 
     <form
@@ -60,7 +60,6 @@
           <input type="checkbox" name="webhook_notify_period" value="true" data-binary-toggle-input {{if .WebhookNotifyPeriod}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "drop"}}</span> {{t .Messages "settings.webhook.notify_period"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.webhook.notify_period_hint"}}</span>
           </span>
         </label>
 
@@ -72,7 +71,6 @@
           <input type="checkbox" name="webhook_notify_ovulation" value="true" data-binary-toggle-input {{if .WebhookNotifyOvulation}}checked{{end}}>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "egg"}}</span> {{t .Messages "settings.webhook.notify_ovulation"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.webhook.notify_ovulation_hint"}}</span>
           </span>
         </label>
 
@@ -85,7 +83,6 @@
           <input type="checkbox" name="webhook_remove_url" value="true" data-binary-toggle-input>
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "trash"}}</span> {{t .Messages "settings.webhook.remove_url"}}</span>
-            <span class="journal-muted text-sm">{{t .Messages "settings.webhook.remove_url_hint"}}</span>
           </span>
         </label>
         {{end}}

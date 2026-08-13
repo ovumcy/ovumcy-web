@@ -111,10 +111,10 @@
 </div>
 {{end}}
 {{define "settings_symptoms_section_content"}}
-<section id="settings-symptoms" class="card p-5 sm:p-6 space-y-5" data-settings-symptoms>
+<section id="settings-symptoms" class="card p-4 sm:p-5 space-y-4" data-settings-symptoms>
   <div>
     <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "list"}}</span> {{t .Messages "settings.symptoms.title"}}</h2>
-    <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
+    <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.symptoms.subtitle"}}</p>
   </div>
 
   <form
@@ -164,12 +164,10 @@
 
   <div class="space-y-4">
     {{if .HasCustomSymptoms}}
-    <div class="space-y-3" data-symptom-group="active">
-      <div class="space-y-1">
-        <h3 class="field-label">{{t .Messages "settings.symptoms.active_heading"}}</h3>
-        <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.active_hint"}}</p>
-      </div>
-      <div class="space-y-3">
+    <div class="space-y-2" data-symptom-group="active">
+      {{/* No helper line: settings.symptoms.active_hint restated "Active". */}}
+      <h3 class="field-label field-label-lg">{{t .Messages "settings.symptoms.active_heading"}}</h3>
+      <div class="space-y-2">
         {{range .ActiveCustomSymptoms}}
         {{template "settings_custom_symptom_card" (dict
           "Messages" $.Messages
@@ -196,12 +194,12 @@
     {{end}}
 
     {{if .HasArchivedSymptoms}}
-    <div class="space-y-3" data-symptom-group="archived">
+    <div class="space-y-2" data-symptom-group="archived">
       <div class="space-y-1">
-        <h3 class="field-label">{{t .Messages "settings.symptoms.archived_heading"}}</h3>
+        <h3 class="field-label field-label-lg">{{t .Messages "settings.symptoms.archived_heading"}}</h3>
         <p class="journal-muted text-sm">{{t .Messages "settings.symptoms.archived_hint"}}</p>
       </div>
-      <div class="space-y-3">
+      <div class="space-y-2">
         {{range .ArchivedCustomSymptoms}}
         {{template "settings_custom_symptom_card" (dict
           "Messages" $.Messages

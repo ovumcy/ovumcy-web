@@ -1,11 +1,11 @@
 {{define "settings_calendar_feed_section_content"}}
-  <section class="card p-5 sm:p-6 space-y-5" id="settings-calendar-feed">
+  <section class="card p-4 sm:p-5 space-y-3" id="settings-calendar-feed">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.calendar_feed.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.calendar_feed.subtitle"}}</p>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.calendar_feed.subtitle"}}</p>
     </div>
 
-    <div class="space-y-2">
+    <div class="space-y-1">
       <p class="field-label" data-calendar-feed-status="{{if .CalendarFeedConfigured}}configured{{else}}not-configured{{end}}">
         {{if .CalendarFeedConfigured}}
           {{t .Messages "settings.calendar_feed.status_configured"}}

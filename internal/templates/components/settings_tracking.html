@@ -1,8 +1,8 @@
 {{define "settings_tracking_section_content"}}
-  <section class="card p-5 sm:p-6 space-y-5" id="settings-tracking">
+  <section class="card p-4 sm:p-5 space-y-4" id="settings-tracking">
     <div>
       <h2 class="journal-subtitle"><span aria-hidden="true">{{template "icon" "flask"}}</span> {{t .Messages "settings.tracking.title"}}</h2>
-      <p class="journal-muted mt-2 text-sm">{{t .Messages "settings.tracking.subtitle"}}</p>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "settings.tracking.subtitle"}}</p>
     </div>
 
     <form
@@ -28,11 +28,6 @@
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "thermometer"}}</span> {{t .Messages "settings.tracking.track_bbt"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_bbt_hint"}}</span>
-            <span
-              class="journal-muted text-xs"
-              data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.track_bbt_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.track_bbt_state_off"}}">{{if .TrackBBT}}{{t .Messages "settings.tracking.track_bbt_state_on"}}{{else}}{{t .Messages "settings.tracking.track_bbt_state_off"}}{{end}}</span>
           </span>
         </label>
 
@@ -45,11 +40,6 @@
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "droplets"}}</span> {{t .Messages "settings.tracking.track_cervical_mucus"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.track_cervical_mucus_hint"}}</span>
-            <span
-              class="journal-muted text-xs"
-              data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.track_cervical_mucus_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.track_cervical_mucus_state_off"}}">{{if .TrackCervicalMucus}}{{t .Messages "settings.tracking.track_cervical_mucus_state_on"}}{{else}}{{t .Messages "settings.tracking.track_cervical_mucus_state_off"}}{{end}}</span>
           </span>
         </label>
 
@@ -62,11 +52,6 @@
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "heart"}}</span> {{t .Messages "settings.tracking.show_sex_chip"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_sex_chip_hint"}}</span>
-            <span
-              class="journal-muted text-xs"
-              data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.show_sex_chip_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.show_sex_chip_state_off"}}">{{if .ShowSexChip}}{{t .Messages "settings.tracking.show_sex_chip_state_on"}}{{else}}{{t .Messages "settings.tracking.show_sex_chip_state_off"}}{{end}}</span>
           </span>
         </label>
 
@@ -79,11 +64,6 @@
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "tag"}}</span> {{t .Messages "settings.tracking.show_cycle_factors"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_cycle_factors_hint"}}</span>
-            <span
-              class="journal-muted text-xs"
-              data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.show_cycle_factors_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.show_cycle_factors_state_off"}}">{{if .ShowCycleFactors}}{{t .Messages "settings.tracking.show_cycle_factors_state_on"}}{{else}}{{t .Messages "settings.tracking.show_cycle_factors_state_off"}}{{end}}</span>
           </span>
         </label>
 
@@ -96,11 +76,6 @@
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "pencil"}}</span> {{t .Messages "settings.tracking.show_notes_field"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_notes_field_hint"}}</span>
-            <span
-              class="journal-muted text-xs"
-              data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.show_notes_field_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.show_notes_field_state_off"}}">{{if .ShowNotesField}}{{t .Messages "settings.tracking.show_notes_field_state_on"}}{{else}}{{t .Messages "settings.tracking.show_notes_field_state_off"}}{{end}}</span>
           </span>
         </label>
 
@@ -113,15 +88,12 @@
           <span class="period-toggle-copy settings-tracking-toggle-copy">
             <span class="period-toggle-main"><span aria-hidden="true">{{template "icon" "calendar"}}</span> {{t .Messages "settings.tracking.show_historical_phases"}}</span>
             <span class="journal-muted text-sm">{{t .Messages "settings.tracking.show_historical_phases_hint"}}</span>
-            <span
-              class="journal-muted text-xs"
-              data-binary-toggle-state
-              data-state-on="{{t .Messages "settings.tracking.show_historical_phases_state_on"}}"
-              data-state-off="{{t .Messages "settings.tracking.show_historical_phases_state_off"}}">{{if .ShowHistoricalPhases}}{{t .Messages "settings.tracking.show_historical_phases_state_on"}}{{else}}{{t .Messages "settings.tracking.show_historical_phases_state_off"}}{{end}}</span>
           </span>
         </label>
       </div>
 
+      {{/* Two two-option switches, so they share a row instead of stacking. */}}
+      <div class="grid gap-3 sm:grid-cols-2 sm:items-start">
       <div class="space-y-2">
         <p class="field-label">{{t .Messages "settings.tracking.temperature_unit"}}</p>
         <div class="settings-unit-switch" role="radiogroup" aria-label="{{t .Messages "settings.tracking.temperature_unit"}}">
@@ -159,7 +131,9 @@
             </span>
           </label>
         </div>
-        <p class="journal-muted text-sm">{{t .Messages "settings.tracking.week_starts_on_hint"}}</p>
+        {{/* No helper line: settings.tracking.week_starts_on_hint said back
+             what the label above it already says. */}}
+      </div>
       </div>
 
       <div class="settings-form-actions">
