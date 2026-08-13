@@ -629,7 +629,7 @@ func TestStatsCycleInsightsBBTChartCoverlineAndMarkerFromSharedDetector(t *testi
 		statscycleinsightsCovBBTLog(t, "2026-01-12", 36.55), // ≥ 36.30+0.2
 	}
 
-	chart := buildCurrentCycleBBTChart(stats, logs, now, time.UTC)
+	chart := buildCurrentCycleBBTChart("en", stats, logs, now, time.UTC)
 	if !chart.HasBaseline {
 		t.Fatalf("expected coverline present after a detected shift")
 	}
@@ -642,6 +642,49 @@ func TestStatsCycleInsightsBBTChartCoverlineAndMarkerFromSharedDetector(t *testi
 	// First elevated day = 10 → marker day 9 → zero-based index 8.
 	if chart.MarkerIndex != 8 {
 		t.Fatalf("expected marker index 8 (day 9), got %d", chart.MarkerIndex)
+	}
+}
+
+// TestStatsCycleInsightsBBTChartPointsSpellOutTheDrawnSeries pins the text half
+// of the chart: one point per plotted day, dated by walking the cycle start,
+// and the reading rendered once, here. 36.25 is why it is rendered once — it is
+// exactly representable in binary, so Go (tie to even) prints 36.2 where
+// JavaScript's toFixed (tie up) prints 36.3. Both surfaces read this string, so
+// the table cannot contradict the crosshair beside it.
+func TestStatsCycleInsightsBBTChartPointsSpellOutTheDrawnSeries(t *testing.T) {
+	cycleStart := statscycleinsightsCovDay(t, "2026-01-01")
+	stats := CycleStats{LastPeriodStart: cycleStart}
+	now := statscycleinsightsCovDay(t, "2026-01-14")
+
+	logs := []models.DailyLog{
+		statscycleinsightsCovBBTLog(t, "2026-01-01", 36.20),
+		statscycleinsightsCovBBTLog(t, "2026-01-02", 36.25),
+		statscycleinsightsCovBBTLog(t, "2026-01-03", 36.30),
+		statscycleinsightsCovBBTLog(t, "2026-01-04", 36.22),
+		statscycleinsightsCovBBTLog(t, "2026-01-05", 36.24),
+		// 2026-01-06 unlogged: a gap the chart breaks its line on.
+		statscycleinsightsCovBBTLog(t, "2026-01-07", 36.21),
+	}
+
+	chart := buildCurrentCycleBBTChart("en", stats, logs, now, time.UTC)
+	if len(chart.Points) != len(chart.Labels) {
+		t.Fatalf("expected one point per drawn label (%d), got %d", len(chart.Labels), len(chart.Points))
+	}
+
+	second := chart.Points[1]
+	if second.Day != 2 || second.DayLabel != "2" {
+		t.Fatalf("expected the second point to be cycle day 2, got day %d label %q", second.Day, second.DayLabel)
+	}
+	if second.Date != LocalizedDateShort("en", statscycleinsightsCovDay(t, "2026-01-02")) {
+		t.Fatalf("expected cycle day 2 to be dated from the cycle start, got %q", second.Date)
+	}
+	if !second.HasValue || second.ValueText != "36.2" {
+		t.Fatalf("expected 36.25 to render once, as 36.2, got %q", second.ValueText)
+	}
+
+	gap := chart.Points[5]
+	if gap.HasValue || gap.ValueText != "" {
+		t.Fatalf("expected cycle day 6 to stay an unlogged gap, got %q", gap.ValueText)
 	}
 }
 
@@ -663,7 +706,7 @@ func TestStatsCycleInsightsBBTChartNoShiftHidesCoverlineAndMarker(t *testing.T) 
 		statscycleinsightsCovBBTLog(t, "2026-01-07", 36.31),
 	}
 
-	chart := buildCurrentCycleBBTChart(stats, logs, now, time.UTC)
+	chart := buildCurrentCycleBBTChart("en", stats, logs, now, time.UTC)
 	if len(chart.Labels) == 0 {
 		t.Fatalf("expected chart series rendered with ≥5 recorded values")
 	}

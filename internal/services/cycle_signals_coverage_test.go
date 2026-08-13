@@ -525,7 +525,7 @@ func TestCycleSignals_BBTChartMarkerAndInferenceAgreeOnOvulationDay(t *testing.T
 
 	// Chart side: the marker built from the same logs.
 	stats := CycleStats{LastPeriodStart: cycleStart}
-	chart := buildCurrentCycleBBTChart(stats, logs, today, time.UTC)
+	chart := buildCurrentCycleBBTChart("en", stats, logs, today, time.UTC)
 	if !chart.HasMarker {
 		t.Fatalf("expected chart marker for the same logs")
 	}

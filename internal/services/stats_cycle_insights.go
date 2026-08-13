@@ -17,6 +17,20 @@ type StatsBBTChartViewData struct {
 	MarkerIndex    int
 	MarkerLabelKey string
 	HasMarker      bool
+	Points         []StatsBBTChartPointViewData
+}
+
+// StatsBBTChartPointViewData is one plotted day, spelled out for the surfaces
+// that cannot read a canvas: the hover tooltip and the table twin under the
+// chart. It restates the series the chart already draws — the same labels and
+// the same values, in the same order — and adds only the calendar date the
+// cycle day falls on, which the chart's x axis has no room for.
+type StatsBBTChartPointViewData struct {
+	Day       int
+	DayLabel  string
+	Date      string
+	ValueText string
+	HasValue  bool
 }
 
 type StatsSymptomPatternViewData struct {
@@ -178,7 +192,7 @@ func buildSymptomPatternInsights(logs []models.DailyLog, completedCycles []compl
 	return items
 }
 
-func buildCurrentCycleBBTChart(stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) StatsBBTChartViewData {
+func buildCurrentCycleBBTChart(language string, stats CycleStats, logs []models.DailyLog, now time.Time, location *time.Location) StatsBBTChartViewData {
 	cycleStart, today, ok := resolveCurrentCycleBBTBounds(stats, now, location)
 	if !ok {
 		return StatsBBTChartViewData{}
@@ -193,7 +207,39 @@ func buildCurrentCycleBBTChart(stats CycleStats, logs []models.DailyLog, now tim
 	detectionDays, detectionValues := bbtSeriesFromPoints(collectCycleBBTPoints(logs, cycleStart, today.AddDate(0, 0, 1), location))
 	firstHighDay, coverline, hasShift := detectBBTShiftFirstHighDay(detectionDays, detectionValues)
 	markerIndex, hasMarker := probableOvulationMarkerIndex(firstHighDay, hasShift, len(labels))
-	return newCurrentCycleBBTChartViewData(labels, values, coverline, hasShift, markerIndex, hasMarker)
+	points := buildCurrentCycleBBTChartPoints(language, cycleStart, labels, values)
+	return newCurrentCycleBBTChartViewData(labels, values, coverline, hasShift, markerIndex, hasMarker, points)
+}
+
+// buildCurrentCycleBBTChartPoints restates the drawn series as text. Cycle day
+// n is the nth day from the cycle start, which is how the labels were numbered
+// in the first place, so the date is a walk along the same axis rather than a
+// second derivation of it.
+func buildCurrentCycleBBTChartPoints(language string, cycleStart time.Time, labels []string, values []*float64) []StatsBBTChartPointViewData {
+	points := make([]StatsBBTChartPointViewData, 0, len(labels))
+	for index, label := range labels {
+		point := StatsBBTChartPointViewData{
+			Day:      index + 1,
+			DayLabel: label,
+			Date:     LocalizedDateShort(language, cycleStart.AddDate(0, 0, index)),
+		}
+		if index < len(values) && values[index] != nil {
+			point.ValueText = formatBBTChartPointValue(*values[index])
+			point.HasValue = true
+		}
+		points = append(points, point)
+	}
+	return points
+}
+
+// formatBBTChartPointValue renders one reading to the tenth of a degree the
+// chart labels its axis with. This is the only place a reading becomes text:
+// the table twin prints it and the crosshair readout is handed the same string
+// rather than re-rounding the float in the browser. Go rounds a tie to even and
+// JavaScript's toFixed rounds it up, so an exactly representable 36.25 would
+// otherwise read 36.2 in the table and 36.3 in the tooltip beside it.
+func formatBBTChartPointValue(value float64) string {
+	return strconv.FormatFloat(value, 'f', 1, 64)
 }
 
 func resolveCurrentCycleBBTBounds(stats CycleStats, now time.Time, location *time.Location) (time.Time, time.Time, bool) {
@@ -256,7 +302,7 @@ func buildCurrentCycleBBTSeries(recordedDays []int, dayValues map[int]float64) (
 	return labels, values, true
 }
 
-func newCurrentCycleBBTChartViewData(labels []string, values []*float64, coverline float64, hasCoverline bool, markerIndex int, hasMarker bool) StatsBBTChartViewData {
+func newCurrentCycleBBTChartViewData(labels []string, values []*float64, coverline float64, hasCoverline bool, markerIndex int, hasMarker bool, points []StatsBBTChartPointViewData) StatsBBTChartViewData {
 	return StatsBBTChartViewData{
 		Labels:         labels,
 		Values:         values,
@@ -266,6 +312,7 @@ func newCurrentCycleBBTChartViewData(labels []string, values []*float64, coverli
 		MarkerIndex:    markerIndex,
 		MarkerLabelKey: "stats.bbt_probable_ovulation",
 		HasMarker:      hasMarker,
+		Points:         points,
 	}
 }
 

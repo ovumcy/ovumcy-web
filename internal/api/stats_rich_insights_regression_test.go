@@ -1,8 +1,10 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -123,6 +125,82 @@ func TestStatsPageRendersRichInsightsAndBBTChart(t *testing.T) {
 		bodyStringMatch{fragment: `data-stats-prediction-explainer`, message: "expected stats prediction explainer hook"},
 		bodyStringMatch{fragment: `data-stats-factor-context`, message: "expected stats factor context hook"},
 	)
+
+	assertStatsBBTTableTwin(t, document)
+}
+
+// assertStatsBBTTableTwin pins the BBT chart's text equivalent. The canvas the
+// chart draws into is aria-hidden and the crosshair readout is a pointer
+// affordance, so the table is the only path to a per-day value that does not
+// require sight and a mouse: it must exist, carry a caption, and hold exactly
+// one row per plotted point — a shorter table is a value reachable by hovering
+// only. Structural contracts only; the rendered numbers are the subject of
+// e2e/stats-insights.spec.ts.
+func assertStatsBBTTableTwin(t *testing.T, document *html.Node) {
+	t.Helper()
+
+	chart := htmlElementByID(document, "bbt-chart")
+	if chart == nil {
+		t.Fatal("expected stats page to render BBT chart container")
+	}
+	for _, attribute := range []string{"data-chart-hover", "data-hover-day-label", "data-hover-empty-text"} {
+		if !htmlHasAttr(chart, attribute) {
+			t.Fatalf("expected the BBT chart to declare %s for the crosshair readout", attribute)
+		}
+	}
+
+	var payload struct {
+		Labels     []string `json:"labels"`
+		Dates      []string `json:"dates"`
+		ValueTexts []string `json:"valueTexts"`
+	}
+	if err := json.Unmarshal([]byte(htmlAttr(chart, "data-chart")), &payload); err != nil {
+		t.Fatalf("decode BBT chart payload: %v", err)
+	}
+	if len(payload.Labels) == 0 {
+		t.Fatal("expected the BBT chart payload to carry labels")
+	}
+	if len(payload.Dates) != len(payload.Labels) {
+		t.Fatalf("expected one crosshair date per chart point (%d), got %d", len(payload.Labels), len(payload.Dates))
+	}
+	if len(payload.ValueTexts) != len(payload.Labels) {
+		t.Fatalf("expected one rendered reading per chart point (%d), got %d", len(payload.Labels), len(payload.ValueTexts))
+	}
+
+	if htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "details" && htmlHasAttr(node, "data-bbt-table-disclosure")
+	}) == nil {
+		t.Fatal("expected the BBT table twin to sit behind a data-bbt-table-disclosure disclosure")
+	}
+
+	table := htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "table" && htmlHasAttr(node, "data-bbt-table")
+	})
+	if table == nil {
+		t.Fatal("expected a data-bbt-table table under the BBT chart")
+	}
+	if htmlFindElement(table, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && node.Data == "caption"
+	}) == nil {
+		t.Fatal("expected the BBT table twin to carry a caption")
+	}
+
+	rows := htmlFindElements(table, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-bbt-table-row")
+	})
+	if len(rows) != len(payload.Labels) {
+		t.Fatalf("expected one table row per chart point (%d), got %d", len(payload.Labels), len(rows))
+	}
+	for index, row := range rows {
+		if got, want := htmlAttr(row, "data-cycle-day"), strconv.Itoa(index+1); got != want {
+			t.Fatalf("row %d: expected data-cycle-day=%q, got %q", index, want, got)
+		}
+		if htmlFindElement(row, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlHasAttr(node, "data-bbt-table-value")
+		}) == nil {
+			t.Fatalf("row %d: expected a data-bbt-table-value cell", index)
+		}
+	}
 }
 
 // TestStatsPageRendersHistoryStatements pins the structural contract of the

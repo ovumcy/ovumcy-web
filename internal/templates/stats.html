@@ -274,6 +274,11 @@
           <h2 id="stats-bbt-title" class="journal-subtitle">{{t .Messages "stats.bbt_title"}}</h2>
           <span class="journal-muted text-xs">{{t .Messages "stats.bbt_unit"}}</span>
         </div>
+        {{/* data-chart-hover opts this chart into the crosshair: the pointer
+             reads back the day, the date and the reading it is over. The
+             canvas stays aria-hidden and the table below is the text
+             equivalent, so the crosshair adds no accessible content of its
+             own and never becomes the only way to a value. */}}
         <div
           id="bbt-chart"
           data-chart='{{toJSON .BBTChartData}}'
@@ -281,6 +286,9 @@
           data-value-suffix='{{t .Messages "stats.bbt_unit"}}'
           data-value-decimals="1"
           data-baseline-label='{{t .Messages "stats.bbt_baseline"}}'
+          data-chart-hover
+          data-hover-day-label='{{t .Messages "stats.bbt_table_day"}}'
+          data-hover-empty-text='{{t .Messages "stats.bbt_table_no_reading"}}'
           role="img"
           aria-labelledby="stats-bbt-title"
           aria-describedby="stats-bbt-summary stats-bbt-caption"
@@ -288,6 +296,32 @@
         </div>
         <p id="stats-bbt-summary" class="journal-muted mt-3 text-xs">{{.BBTChartSummary}}</p>
         <p id="stats-bbt-caption" class="journal-muted mt-2 text-sm">{{t .Messages "stats.bbt_caption"}}</p>
+        {{$bbtUnit := t .Messages "stats.bbt_unit"}}
+        {{$bbtNoReading := t .Messages "stats.bbt_table_no_reading"}}
+        <details class="chart-table-disclosure mt-3" data-bbt-table-disclosure>
+          <summary class="chart-table-summary">{{t .Messages "stats.bbt_table_toggle"}}</summary>
+          <div class="chart-table-scroll">
+            <table class="chart-table" data-bbt-table>
+              <caption class="chart-table-caption">{{t .Messages "stats.bbt_table_caption"}}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{{t .Messages "stats.bbt_table_day"}}</th>
+                  <th scope="col">{{t .Messages "stats.bbt_table_date"}}</th>
+                  <th scope="col">{{t .Messages "stats.bbt_table_value"}}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{range .BBTChartPoints}}
+                <tr data-bbt-table-row data-cycle-day="{{.Day}}">
+                  <th scope="row">{{.DayLabel}}</th>
+                  <td>{{.Date}}</td>
+                  <td data-bbt-table-value>{{if .HasValue}}{{.ValueText}}{{$bbtUnit}}{{else}}{{$bbtNoReading}}{{end}}</td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </section>
       {{end}}
     </div>
