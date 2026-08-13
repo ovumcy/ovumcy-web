@@ -382,6 +382,61 @@ func TestInterfaceGlyphsComeFromTheFirstPartyIconSet(t *testing.T) {
 	}
 }
 
+// phaseIconWrapperPattern matches the only sanctioned use of the phase-icon
+// helper: the name it returns handed straight to the icon template.
+var phaseIconWrapperPattern = regexp.MustCompile(`{{template "icon" \(phaseIcon [^()]*\)}}`)
+
+// TestTemplatesDrawThePhaseIconThroughTheIconTemplate closes the gap the guard
+// above cannot see. phaseIcon returns an icon *name*, not markup, so a bare
+// {{phaseIcon .Phase}} renders that name as visible text — Insights read
+// "drop Menstrual" and "sprout Follicular" next to the phase labels, in every
+// locale, and the sprite-and-emoji scan passed it because a name is neither an
+// emoji nor an {{template "icon" "..."}} reference. Every call site therefore
+// goes through the icon template.
+func TestTemplatesDrawThePhaseIconThroughTheIconTemplate(t *testing.T) {
+	var scanned, wrapped int
+	err := fs.WalkDir(templates.Files, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".html") {
+			return nil
+		}
+		source, readErr := templates.Files.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		scanned++
+
+		for number, line := range strings.Split(string(source), "\n") {
+			wrapped += len(phaseIconWrapperPattern.FindAllString(line, -1))
+			// What is left once the sanctioned form is removed is a call site
+			// whose result reaches the page as text.
+			if !strings.Contains(phaseIconWrapperPattern.ReplaceAllString(line, ""), "phaseIcon") {
+				continue
+			}
+			t.Errorf(
+				"%s:%d: the phase icon is invoked outside the icon template, so its name renders as visible text.\n"+
+					"Write {{template \"icon\" (phaseIcon <phase>)}} inside an element carrying aria-hidden=\"true\".\n"+
+					"line: %s",
+				path, number+1, strings.TrimSpace(line),
+			)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk embedded templates: %v", err)
+	}
+	if scanned == 0 {
+		t.Fatal("no templates were scanned: the embedded template FS layout changed and this guard silently stopped checking anything")
+	}
+	// Without this anchor the guard would also pass a UI that stopped drawing
+	// the phase icon anywhere at all.
+	if wrapped == 0 {
+		t.Fatal("no template draws the phase icon through the icon template any more: the phase chips lost their glyph, or the helper was renamed")
+	}
+}
+
 // TestBaseLayoutInlinesTheIconSprite keeps the sprite in the document every
 // icon references: <use> resolves same-document only here, by design — an
 // external sprite file would need a request the strict CSP is meant to make
