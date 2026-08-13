@@ -554,6 +554,8 @@
   "stats.title": "Einblicke",
   "stats.subtitle": "Sehen Sie, wie sich Zykluslänge, Phasen und Symptome im Lauf der Zeit verändern.",
   "stats.data_notice": "Die Datenmenge ist noch begrenzt. Das Bild wird klarer, je mehr Zyklen Sie protokollieren.",
+  "stats.cycle_stack_title": "Ihre letzten Zyklen nebeneinander",
+  "stats.cycle_stack_subtitle": "Eine Zeile je abgeschlossenem Zyklus, im gleichen Maßstab: eine längere Zeile ist ein längerer Zyklus.",
   "stats.cycle_trend": "Trend der Zykluslänge",
   "stats.last_12_cycles": "Letzte 12 Zyklen",
   "stats.recent_cycles": "Aktuelle Zyklen",

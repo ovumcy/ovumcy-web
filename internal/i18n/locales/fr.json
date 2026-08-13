@@ -656,6 +656,8 @@
   "stats.title": "Analyses",
   "stats.subtitle": "Observez comment la durée du cycle, les phases et les symptômes évoluent au fil du temps.",
   "stats.data_notice": "Les données sont encore limitées. Le tableau se précisera à mesure que vous enregistrerez davantage de cycles.",
+  "stats.cycle_stack_title": "Vos derniers cycles, côte à côte",
+  "stats.cycle_stack_subtitle": "Une ligne par cycle terminé, à la même échelle : une ligne plus longue est un cycle plus long.",
   "stats.cycle_trend": "Tendance de la durée du cycle",
   "stats.last_12_cycles": "12 derniers cycles",
   "stats.recent_cycles": "Cycles récents",

@@ -327,6 +327,41 @@
     </div>
     {{end}}
 
+    {{if and .IsOwner .CycleRibbon.Visible}}
+    {{/* The cycle stack: completed cycles on one shared axis, so their lengths
+         compare by eye instead of through three numbers. It shares the
+         dashboard band's encoding contract — the --phase-* colours, the logged
+         mark — and nothing else: that band is one running cycle with a
+         projected tail, this is finished ones side by side. Everything drawn
+         here was recorded; inferred phases ride the same ShowHistoricalPhases
+         preference the calendar's past cycles do. */}}
+    <section class="card p-4 sm:p-5" data-stats-cycle-stack>
+      <h2 class="journal-subtitle">{{t .Messages "stats.cycle_stack_title"}}</h2>
+      <p class="journal-muted mt-1 text-sm">{{t .Messages "stats.cycle_stack_subtitle"}}</p>
+      <ol class="stats-cycle-stack mt-4" data-cycle-stack-rows>
+        {{range .CycleRibbon.Rows}}
+        <li class="stats-cycle-stack-row" data-cycle-stack-row>
+          <span class="stats-cycle-stack-label">{{formatLocalizedDate $.Lang .Start "display"}}</span>
+          <span class="stats-cycle-stack-band" aria-hidden="true">
+            {{range .Days}}
+            <span
+              class="stats-cycle-stack-day"
+              data-cycle-stack-day="{{.Day}}"
+              {{if .InCycle}}data-in-cycle="true"{{end}}
+              {{if .Phase}}data-phase="{{.Phase}}"{{end}}
+              {{if .IsPeriod}}data-period="true"{{end}}
+              {{if .IsFertile}}data-fertile="true"{{end}}
+              {{if .IsFertilePeak}}data-fertile-peak="true"{{end}}
+              {{if .IsLogged}}data-logged="true"{{end}}></span>
+            {{end}}
+          </span>
+          <span class="stats-cycle-stack-length">{{.CycleLength}}{{t $.Messages "common.days_short"}}</span>
+        </li>
+        {{end}}
+      </ol>
+    </section>
+    {{end}}
+
     <div class="grid gap-6 lg:grid-cols-[2fr_1fr] lg:items-start">
       <section class="card p-4 sm:p-5 stats-trend-panel">
         {{/* The caption names the window the chart covers. With no chart there

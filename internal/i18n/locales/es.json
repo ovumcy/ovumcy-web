@@ -554,6 +554,8 @@
   "stats.title": "Análisis",
   "stats.subtitle": "Observa cómo cambian con el tiempo la duración del ciclo, las fases y los síntomas.",
   "stats.data_notice": "Aún hay pocos datos. La imagen se aclarará a medida que registres más ciclos.",
+  "stats.cycle_stack_title": "Tus últimos ciclos, uno junto a otro",
+  "stats.cycle_stack_subtitle": "Una fila por ciclo completado, en la misma escala: una fila más larga es un ciclo más largo.",
   "stats.cycle_trend": "Tendencia de la duración del ciclo",
   "stats.last_12_cycles": "Últimos 12 ciclos",
   "stats.recent_cycles": "Ciclos recientes",

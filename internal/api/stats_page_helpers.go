@@ -220,6 +220,7 @@ func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.Use
 		"SymptomCounts":                       viewData.SymptomCounts,
 		"BBTChartData":                        mapStatsBBTChartData(viewData.CurrentCycleBBTChart, messages),
 		"BBTChartPoints":                      viewData.CurrentCycleBBTChart.Points,
+		"CycleRibbon":                         viewData.CycleRibbon,
 		"PhaseMoodInsights":                   viewData.PhaseMoodInsights,
 		"PhaseSymptomInsights":                viewData.PhaseSymptomInsights,
 		"Statements":                          viewData.Statements,

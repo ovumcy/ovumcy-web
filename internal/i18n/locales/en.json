@@ -554,6 +554,8 @@
   "stats.title": "Insights",
   "stats.subtitle": "See how your cycle length, phases and symptoms change over time.",
   "stats.data_notice": "Data is still limited. The picture will sharpen as you log more cycles.",
+  "stats.cycle_stack_title": "Your recent cycles, side by side",
+  "stats.cycle_stack_subtitle": "One row per completed cycle, on a shared scale: a longer row is a longer cycle.",
   "stats.cycle_trend": "Cycle length trend",
   "stats.last_12_cycles": "Last 12 cycles",
   "stats.recent_cycles": "Recent cycles",

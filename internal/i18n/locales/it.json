@@ -554,6 +554,8 @@
   "stats.title": "Approfondimenti",
   "stats.subtitle": "Vedi come la lunghezza del ciclo, le fasi e i sintomi cambiano nel tempo.",
   "stats.data_notice": "I dati sono ancora limitati. Il quadro si chiarirà man mano che registrerai più cicli.",
+  "stats.cycle_stack_title": "I tuoi ultimi cicli, uno accanto all'altro",
+  "stats.cycle_stack_subtitle": "Una riga per ciclo completato, sulla stessa scala: una riga più lunga è un ciclo più lungo.",
   "stats.cycle_trend": "Tendenza della lunghezza del ciclo",
   "stats.last_12_cycles": "Ultimi 12 cicli",
   "stats.recent_cycles": "Cicli recenti",
