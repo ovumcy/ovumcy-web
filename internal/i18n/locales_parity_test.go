@@ -47,8 +47,8 @@ func TestLocaleKeysParity(t *testing.T) {
 
 // pluralBaseKeys finds the base keys of plural groups in the reference
 // locale. A base key is a plural group only when the reference defines both
-// its ".one" and ".other" variants — so keys that merely end in a category
-// word (for example "symptoms.group.other") are not misread as plurals.
+// its ".one" and ".other" variants — so a key that merely ends in a category
+// word ("…​.other" with no sibling "…​.one") is not misread as a plural group.
 func pluralBaseKeys(reference map[string]string) map[string]bool {
 	bases := map[string]bool{}
 	for key := range reference {

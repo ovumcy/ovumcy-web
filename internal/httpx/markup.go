@@ -5,19 +5,6 @@ import (
 	"html/template"
 )
 
-// StatusOKMarkup renders the shared non-dismissible status-ok wrapper.
-func StatusOKMarkup(message string) string {
-	return fmt.Sprintf(
-		"<div class=\"status-ok\"><span class=\"toast-message-wrap\"><span class=\"toast-icon\" aria-hidden=\"true\">✓</span><span class=\"toast-message\">%s</span></span></div>",
-		template.HTMLEscapeString(message),
-	)
-}
-
-// StatusOKTemplateHTML returns trusted shared success markup after escaping message content.
-func StatusOKTemplateHTML(message string) template.HTML {
-	return trustedEscapedHTML(StatusOKMarkup(message))
-}
-
 // StatusErrorMarkup renders the shared HTMX status-error wrapper. When
 // errorKey is non-empty, the wrapper exposes it as data-flash-key + a
 // data-flash-status="error" attribute so backend regressions and Playwright

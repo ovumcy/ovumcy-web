@@ -19,13 +19,6 @@ func BuiltinSymptomTranslationKey(name string) string {
 	return ""
 }
 
-func SymptomGroup(name string) string {
-	if symptom, ok := builtinSymptomByName(name); ok {
-		return symptom.Group
-	}
-	return "other"
-}
-
 func BuiltinSymptomReservedNames(provider BuiltinSymptomMessages) []string {
 	seen := make(map[string]struct{})
 	names := make([]string, 0)
