@@ -20,12 +20,6 @@
 @source "../js";
 @source "../../static/js/chart-lite.js";
 
-@theme {
-  --shadow-glow:
-    0 0 0 1px rgba(56, 189, 248, 0.35),
-    0 12px 24px -12px rgba(6, 182, 212, 0.55);
-}
-
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
@@ -204,122 +198,6 @@
   }
 }
 
-@utility theme-switch {
-  display: inline-flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.2rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--line-soft);
-  background: var(--surface-tint);
-  padding: 0.2rem;
-  flex-wrap: wrap;
-  width: fit-content;
-  max-width: 100%;
-
-  @media (max-width: 640px) {
-    width: 100%;
-  }
-}
-
-@utility theme-switch-option {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.42rem;
-  min-width: 5.25rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  padding: 0.34rem 0.78rem;
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  line-height: 1.15;
-  transition:
-    background-color var(--duration-base) var(--ease-soft),
-    border-color var(--duration-base) var(--ease-soft),
-    color var(--duration-base) var(--ease-soft),
-    transform var(--duration-base) var(--ease-soft);
-
-  &:hover {
-    background: rgba(232, 196, 168, 0.38);
-    border-color: var(--accent-soft);
-    color: var(--accent-strong);
-  }
-
-  &:focus-visible {
-    outline: 2px solid rgba(186, 131, 80, 0.55);
-    outline-offset: 2px;
-  }
-
-  &[data-selected='true'] {
-    background: linear-gradient(135deg, #c78f5f, #d8aa80);
-    color: #fff7ed;
-    -webkit-text-fill-color: #fff7ed;
-    border-color: rgba(132, 82, 44, 0.45);
-    text-shadow: 0 1px 1px rgba(89, 58, 32, 0.32);
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 247, 237, 0.12),
-      var(--elevation-1);
-  }
-
-  &[data-selected='true'] .theme-switch-check {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  :root[data-theme='dark'] &:hover {
-    background: rgba(171, 130, 226, 0.26);
-    border-color: rgba(191, 159, 239, 0.48);
-    color: #f0d3b5;
-  }
-
-  :root[data-theme='dark'] &[data-selected='true'] {
-    background: linear-gradient(135deg, #7a5daa, #9a74cc);
-    color: #f7f3ff;
-    -webkit-text-fill-color: #f7f3ff;
-    border-color: rgba(210, 190, 244, 0.35);
-    text-shadow: 0 1px 1px rgba(28, 21, 37, 0.55);
-    box-shadow:
-      inset 0 0 0 1px rgba(247, 243, 255, 0.08),
-      var(--elevation-1);
-  }
-
-  :root[data-theme='dark'] &[data-selected='true'] .theme-switch-check {
-    color: #ffe7c9;
-  }
-
-  @media (max-width: 640px) {
-    flex: 1 1 0;
-    min-width: 0;
-  }
-}
-
-@utility theme-switch-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  font-size: var(--text-xs);
-  font-weight: 800;
-  opacity: 0;
-  transform: scale(0.8);
-  transition:
-    opacity var(--duration-base) var(--ease-soft),
-    transform var(--duration-base) var(--ease-soft);
-
-  .theme-switch-option[data-selected='true'] & {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  :root[data-theme='dark'] .theme-switch-option[data-selected='true'] & {
-    color: #ffe7c9;
-  }
-}
-
 @utility settings-interface-grid {
   display: grid;
   gap: 1rem;
@@ -359,20 +237,6 @@
     text-align: center;
     white-space: normal;
   }
-}
-
-@utility settings-switch {
-  width: fit-content;
-  max-width: 100%;
-
-  @media (max-width: 640px) {
-    width: 100%;
-  }
-}
-
-@utility theme-switch-icon {
-  font-size: var(--text-sm);
-  line-height: 1;
 }
 
 @utility lang-link {
@@ -619,22 +483,6 @@
     background: rgba(159, 124, 215, 0.34);
     color: #f2e8ff;
   }
-}
-
-@utility nav-meta {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.42rem;
-  min-width: 0;
-}
-
-@utility nav-user-label {
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  text-transform: none;
-  color: var(--text-muted);
 }
 
 /*
@@ -1250,21 +1098,6 @@
   color: var(--text-primary);
 }
 
-@utility stat-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-
-  & dt {
-    color: var(--text-muted);
-  }
-
-  & dd {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-}
-
 @utility field-label {
   display: block;
   font-size: var(--text-sm);
@@ -1361,10 +1194,6 @@
     border-color: rgba(206, 166, 115, 0.85);
     box-shadow: 0 0 0 3px rgba(206, 166, 115, 0.25);
   }
-}
-
-@utility input-field-compact {
-  padding: 0.66rem 0.78rem;
 }
 
 /* Segmented D/M/Y field. The three parts hold 2, 2 and 4 characters, so they are
@@ -1564,11 +1393,6 @@
   font-weight: 700;
   line-height: 1.2;
   color: var(--text-primary);
-}
-
-@utility readonly-field {
-  opacity: 0.75;
-  cursor: default;
 }
 
 @utility remember-hint {
@@ -1884,12 +1708,6 @@
       var(--elevation-1);
   }
 
-  &[data-active='true'] .period-toggle-state {
-    border-color: rgba(186, 131, 80, 0.52);
-    background: rgba(212, 165, 116, 0.18);
-    color: #8a5620;
-  }
-
   & input {
     position: relative;
     appearance: none;
@@ -1956,12 +1774,6 @@
     box-shadow: var(--elevation-1);
   }
 
-  :root[data-theme='dark'] &[data-active='true'] .period-toggle-state {
-    border-color: rgba(222, 176, 117, 0.45);
-    background: rgba(210, 147, 92, 0.18);
-    color: #ffe0b0;
-  }
-
   @media (max-width: 640px) {
     width: 100%;
     align-items: flex-start;
@@ -2008,49 +1820,6 @@
 
   & .journal-muted {
     max-width: 68ch;
-  }
-}
-
-@utility settings-tracking-toggle {
-  & .period-toggle-state {
-    justify-self: start;
-  }
-}
-
-@utility period-toggle-state {
-  .settings-tracking-toggle & {
-    justify-self: start;
-  }
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 4.4rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid rgba(188, 165, 138, 0.32);
-  background: rgba(255, 255, 255, 0.58);
-  padding: 0.14rem 0.56rem;
-  font-size: var(--text-2xs);
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-
-  .period-toggle[data-active='true'] & {
-    border-color: rgba(186, 131, 80, 0.52);
-    background: rgba(212, 165, 116, 0.18);
-    color: #8a5620;
-  }
-
-  :root[data-theme='dark'] & {
-    border-color: rgba(157, 128, 198, 0.36);
-    background: rgba(36, 29, 48, 0.7);
-    color: #cfc1e7;
-  }
-
-  :root[data-theme='dark'] .period-toggle[data-active='true'] & {
-    border-color: rgba(222, 176, 117, 0.45);
-    background: rgba(210, 147, 92, 0.18);
-    color: #ffe0b0;
   }
 }
 
@@ -2375,34 +2144,6 @@
   }
 }
 
-@utility symptom-groups {
-  display: grid;
-  gap: 0.6rem;
-}
-
-@utility symptom-group-panel {
-  border-radius: var(--radius-card);
-  border: 1px solid var(--line-soft);
-  background: rgba(255, 248, 240, 0.78);
-  padding: 0.62rem;
-
-  & .symptom-grid {
-    margin-top: 0.46rem;
-  }
-
-  :root[data-theme='dark'] & {
-    background: var(--bg-soft-strong);
-  }
-}
-
-@utility symptom-group-title {
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
 @utility symptom-more-details {
   border-top: 1px dashed rgba(172, 136, 96, 0.34);
   padding-top: 0.75rem;
@@ -2696,9 +2437,6 @@
 }
 
 @utility symptom-grid {
-  .symptom-group-panel & {
-    margin-top: 0.46rem;
-  }
   display: grid;
   /* Two columns from the smallest screen up: a one-per-row symptom list pushed
      the rest of the journal off the first screen. The chips keep a real 44px
@@ -3373,31 +3111,6 @@
   }
 }
 
-@utility stats-empty-progress {
-  width: 100%;
-  height: 0.5rem;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: rgba(232, 196, 168, 0.26);
-  border: 1px solid rgba(212, 165, 116, 0.12);
-
-  :root[data-theme='dark'] & {
-    background: rgba(216, 176, 98, 0.34);
-    border-color: rgba(216, 176, 98, 0.24);
-  }
-}
-
-@utility stats-empty-progress-fill {
-  width: 0;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: linear-gradient(135deg, #d4a574, #e8c4a8);
-
-  :root[data-theme='dark'] & {
-    background: linear-gradient(135deg, #f0c38c, #d9aa74);
-  }
-}
-
 @utility settings-toggle-list {
   display: grid;
   gap: 0.5rem;
@@ -3463,14 +3176,6 @@
   :root[data-theme='dark'] & {
     background: var(--bg-soft-strong);
   }
-}
-
-@utility settings-locked-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--text-secondary);
-  font-weight: 600;
 }
 
 /* The page stack already spaces the sections; the extra rule here only
@@ -3874,12 +3579,6 @@
     align-items: flex-start;
     gap: 0.2rem;
   }
-}
-
-@utility calendar-badges {
-  display: flex;
-  min-width: 0;
-  justify-content: center;
 }
 
 @utility calendar-today-pill {
@@ -4616,12 +4315,6 @@
   display: flex;
 }
 
-@utility sex-chip-status {
-  :root[data-theme='dark'] & {
-    color: #f0d3b5;
-  }
-}
-
 @utility reveal {
   animation: reveal-up var(--duration-slow) var(--ease-soft);
 }
@@ -4725,7 +4418,6 @@
     --text-primary: #5a4a3a;
     --text-muted: #6f5f50;
     --accent-primary: #d4a574;
-    --accent-secondary: #e8c4a8;
     --accent-strong: #8f6238;
     /* Primary-action fills are solid on purpose: white --text-sm/700 text has to
        clear WCAG AA 4.5:1, and only a flat colour can be verified — a gradient
@@ -4825,17 +4517,11 @@
     --phase-ovulation: 172 127 36;
     --phase-luteal: 183 161 212;
     /* ---- end calendar phase/state colours ------------------------------ */
-    --period-color: rgb(var(--cal-period));
     --ovulation-color: rgb(var(--cal-ovulation));
-    --fertile-color: rgb(var(--cal-fertile));
-    --fertile-edge-color: rgb(var(--cal-fertile-edge));
-    --fertile-peak-color: rgb(var(--cal-fertile-peak));
     --fertile-warning-edge: #f4d8ac;
     --fertile-warning-peak: #e09b4d;
     --fertile-positive-edge: #d9f0cf;
     --fertile-positive-peak: #63b768;
-    --phase-fertile-accent: #6aa46b;
-    --phase-luteal-accent: #9270b4;
     --line-soft: #ecd9c6;
     /* Elevation is a scale, not a per-component decision: three levels, one
        per theme level. --shadow-soft / --shadow-hover are kept as the names
@@ -4886,9 +4572,7 @@
        is 8.10:1 light / 11.68:1 dark, --ink-muted on it 5.85:1 light /
        7.99:1 dark. --border-control and --accent-soft are hairlines and
        rings, never a text backdrop. */
-    --surface-page: var(--bg-primary);
     --surface-card: var(--bg-card);
-    --surface-muted: var(--bg-soft);
     --surface-raised: var(--surface-elevated);
     /* The quiet fill: a control that is inert (selected but disabled), and
        the thin top rim on a raised selected control. */
@@ -5039,7 +4723,6 @@
     --text-primary: #efe6df;
     --text-muted: #cbbfb7;
     --accent-primary: #d2935c;
-    --accent-secondary: #a87a57;
     --accent-strong: #f0b57f;
     /* Dark theme lifts each fill just far enough to separate from the card
        (>=3:1 against #241f2f) while keeping white text above 4.5:1. Measured
@@ -5099,17 +4782,11 @@
     --phase-ovulation: 236 196 110;
     --phase-luteal: 121 96 160;
     /* ---- end calendar phase/state colours — dark ------------------------ */
-    --period-color: rgb(var(--cal-period));
     --ovulation-color: rgb(var(--cal-ovulation));
-    --fertile-color: rgb(var(--cal-fertile));
-    --fertile-edge-color: rgb(var(--cal-fertile-edge));
-    --fertile-peak-color: rgb(var(--cal-fertile-peak));
     --fertile-warning-edge: #8d7047;
     --fertile-warning-peak: #d49d59;
     --fertile-positive-edge: #5f8f62;
     --fertile-positive-peak: #88c884;
-    --phase-fertile-accent: #97c98f;
-    --phase-luteal-accent: #b99ce1;
     --line-soft: rgba(116, 96, 145, 0.58);
     --elevation-1: 0 6px 14px rgba(8, 5, 12, 0.34);
     --elevation-2: 0 14px 28px rgba(8, 5, 12, 0.45);
