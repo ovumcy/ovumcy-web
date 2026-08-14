@@ -173,24 +173,6 @@ func (service *StatsService) BuildPhaseMoodInsights(user *models.User, logs []mo
 	return insights, hasData
 }
 
-func (service *StatsService) BuildPhaseSymptomInsights(ctx context.Context, user *models.User, logs []models.DailyLog, location *time.Location) ([]StatsPhaseSymptomInsight, bool, error) {
-	if !canBuildPhaseSymptomInsights(service, user) {
-		return nil, false, nil
-	}
-
-	symptomByID, err := service.phaseInsightSymptomMap(ctx, user.ID)
-	if err != nil {
-		return nil, false, err
-	}
-
-	insights, hasData := buildPhaseSymptomInsightsWithMap(logs, location, symptomByID)
-	return insights, hasData, nil
-}
-
-func canBuildPhaseSymptomInsights(service *StatsService, user *models.User) bool {
-	return IsOwnerUser(user) && service != nil && service.symptoms != nil
-}
-
 func buildPhaseSymptomInsightsWithMap(logs []models.DailyLog, location *time.Location, symptomByID map[uint]models.SymptomType) ([]StatsPhaseSymptomInsight, bool) {
 	cycles := buildCompletedCyclePhaseContexts(logs, location)
 	if len(cycles) < minimumPhaseInsightCycles || len(symptomByID) == 0 {

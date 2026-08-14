@@ -53,12 +53,17 @@ func TestBuildPhaseSymptomInsightsSortsAndTruncatesTopThree(t *testing.T) {
 			{ID: 4, Name: "Headache", Icon: "H"},
 		},
 	})
-	owner := &models.User{ID: 7, Role: models.RoleOwner}
-
-	insights, ok, err := service.BuildPhaseSymptomInsights(context.Background(), owner, buildPhaseInsightLogs(t), time.UTC)
+	// The live path (buildOwnerStatsInsights) checks the owner role and the
+	// symptom reader itself, then resolves the catalogue and folds the logs
+	// against it — so the test drives those two steps rather than a wrapper of
+	// its own.
+	const ownerID uint = 7
+	symptomByID, err := service.phaseInsightSymptomMap(context.Background(), ownerID)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
+
+	insights, ok := buildPhaseSymptomInsightsWithMap(buildPhaseInsightLogs(t), time.UTC, symptomByID)
 	if !ok {
 		t.Fatal("expected phase symptom insights to be available")
 	}

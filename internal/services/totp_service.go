@@ -23,7 +23,6 @@ const (
 )
 
 var (
-	ErrTOTPInvalidCode        = errors.New("totp invalid code")
 	ErrTOTPRateLimited        = errors.New("totp rate limited")
 	ErrTOTPDisableRateLimited = errors.New("totp disable rate limited")
 	ErrTOTPSecretEncrypt      = errors.New("totp secret encrypt failed")
