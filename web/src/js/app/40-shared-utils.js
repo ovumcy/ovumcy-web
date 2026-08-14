@@ -445,18 +445,3 @@
     return node ? String(node.textContent || "").trim() : "";
   }
 
-  function collectCheckedSymptomLabels(scope) {
-    if (!scope || !scope.querySelectorAll) {
-      return [];
-    }
-
-    var checked = scope.querySelectorAll("input[name='symptom_ids']:checked");
-    var labels = [];
-    for (var index = 0; index < checked.length; index++) {
-      var label = String(checked[index].dataset.symptomLabel || "").trim();
-      if (label) {
-        labels.push(label);
-      }
-    }
-    return labels;
-  }

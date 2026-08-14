@@ -964,16 +964,12 @@
   }
 
   function clearDataStatusTarget(form) {
-    if (!form || !form.querySelector) {
+    if (!form || !form.getAttribute) {
       return null;
     }
 
     var selector = String(form.getAttribute("data-clear-data-status-target") || "").trim();
-    if (selector) {
-      return document.querySelector(selector);
-    }
-
-    return form.querySelector("[data-clear-data-status]");
+    return selector ? document.querySelector(selector) : null;
   }
 
   function openClearDataConfirm(question, acceptLabel) {
@@ -2627,22 +2623,6 @@
     return node ? String(node.textContent || "").trim() : "";
   }
 
-  function collectCheckedSymptomLabels(scope) {
-    if (!scope || !scope.querySelectorAll) {
-      return [];
-    }
-
-    var checked = scope.querySelectorAll("input[name='symptom_ids']:checked");
-    var labels = [];
-    for (var index = 0; index < checked.length; index++) {
-      var label = String(checked[index].dataset.symptomLabel || "").trim();
-      if (label) {
-        labels.push(label);
-      }
-    }
-    return labels;
-  }
-
   function themeMessagesFromDataset() {
     var body = document.body;
     var dataset = body && body.dataset ? body.dataset : {};
@@ -2867,17 +2847,9 @@
     }
 
     var input = toggle.querySelector("[data-binary-toggle-input]");
-    var state = toggle.querySelector("[data-binary-toggle-state]");
     var active = !!(input && input.checked);
 
     toggle.setAttribute("data-active", active ? "true" : "false");
-    if (!state) {
-      return;
-    }
-
-    state.textContent = active
-      ? String(state.getAttribute("data-state-on") || "")
-      : String(state.getAttribute("data-state-off") || "");
   }
 
   function bindBinaryToggles(root) {
@@ -3182,51 +3154,16 @@
     }
   }
 
-  function syncDashboardPreview(root) {
+  // Reveals the period-only fields and restates the toggle's own labels. This
+  // once also drove a journal preview block, but no template has rendered
+  // [data-dashboard-preview] or any of its seven sub-targets for a long time,
+  // so that half was building a summary nothing displayed.
+  function syncPeriodToggleState(root) {
     var periodToggle = root.querySelector("[data-period-toggle]");
-    var notesField = root.querySelector("[data-dashboard-notes]");
-    var preview = root.querySelector("[data-dashboard-preview]");
     var isPeriod = !!(periodToggle && periodToggle.checked);
-    var notes = notesField ? String(notesField.value || "") : "";
-    var trimmedNotes = notes.trim();
-    var symptoms = collectCheckedSymptomLabels(root);
-    var hasSymptoms = symptoms.length > 0;
-    var hasNotes = trimmedNotes.length > 0;
-    var showPreview = isPeriod || hasSymptoms || hasNotes;
-    var symptomList = root.querySelector("[data-dashboard-symptom-list]");
-    var symptomEmpty = root.querySelector("[data-dashboard-symptom-empty]");
-    var notesValue = root.querySelector("[data-dashboard-notes-value]");
-    var notesEmpty = root.querySelector("[data-dashboard-notes-empty]");
 
     syncPeriodFieldsets(root, isPeriod);
     syncPeriodToggleLabels(root, isPeriod);
-
-    if (!preview) {
-      return;
-    }
-
-    setNodeHidden(preview, !showPreview);
-    setNodeHidden(root.querySelector("[data-dashboard-preview-heading='period']"), !isPeriod);
-    setNodeHidden(root.querySelector("[data-dashboard-preview-heading='other']"), isPeriod);
-    setNodeHidden(root.querySelector("[data-dashboard-period-summary]"), !isPeriod);
-    setNodeHidden(root.querySelector("[data-dashboard-other-summary]"), isPeriod);
-
-    if (symptomList) {
-      symptomList.textContent = "";
-      for (var index = 0; index < symptoms.length; index++) {
-        var item = document.createElement("li");
-        item.textContent = symptoms[index];
-        symptomList.appendChild(item);
-      }
-      setNodeHidden(symptomList, !hasSymptoms);
-    }
-
-    setNodeHidden(symptomEmpty, hasSymptoms);
-    if (notesValue) {
-      notesValue.textContent = notes;
-      setNodeHidden(notesValue, !hasNotes);
-    }
-    setNodeHidden(notesEmpty, hasNotes);
   }
 
   function syncPeriodToggleLabels(root, isPeriod) {
@@ -3701,7 +3638,7 @@
     root = root || form;
     bindBinaryToggles(root);
     bindDashboardNotesCounters(root);
-    syncDashboardPreview(root);
+    syncPeriodToggleState(root);
     syncNoteDisclosure(root);
   }
 
@@ -4078,7 +4015,7 @@
           var currentForm = this.querySelector("[data-dashboard-save-form]");
           var periodToggle = event.target && event.target.matches && event.target.matches("[data-period-toggle]") ? event.target : null;
           if (periodToggle || (event.target && (event.target.name === "symptom_ids" || event.target.name === "mood"))) {
-            syncDashboardPreview(this);
+            syncPeriodToggleState(this);
           }
           if (periodToggle && periodToggle.checked) {
             maybeAcknowledgePeriodTip(this);
@@ -4091,7 +4028,7 @@
         root.addEventListener("input", function (event) {
           var currentForm = this.querySelector("[data-dashboard-save-form]");
           if (event.target && event.target.matches && event.target.matches("[data-dashboard-notes]")) {
-            syncDashboardPreview(this);
+            syncPeriodToggleState(this);
             syncNoteDisclosure(this);
           }
           if (currentForm && event.target && event.target.name !== "csrf_token") {
@@ -4128,7 +4065,7 @@
       bindNoteDisclosures(root);
       bindAutosizeNoteFields(root);
       revealOnceTips(root);
-      syncDashboardPreview(root);
+      syncPeriodToggleState(root);
       syncNoteDisclosure(root);
       captureDashboardPersistedState(form);
       setDashboardAutosaveIndicator(form, "idle");

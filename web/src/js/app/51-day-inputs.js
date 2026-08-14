@@ -4,17 +4,9 @@
     }
 
     var input = toggle.querySelector("[data-binary-toggle-input]");
-    var state = toggle.querySelector("[data-binary-toggle-state]");
     var active = !!(input && input.checked);
 
     toggle.setAttribute("data-active", active ? "true" : "false");
-    if (!state) {
-      return;
-    }
-
-    state.textContent = active
-      ? String(state.getAttribute("data-state-on") || "")
-      : String(state.getAttribute("data-state-off") || "");
   }
 
   function bindBinaryToggles(root) {
