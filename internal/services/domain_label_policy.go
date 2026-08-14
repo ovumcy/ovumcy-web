@@ -95,15 +95,6 @@ func MoodTranslationKey(value int) string {
 	}
 }
 
-func RoleTranslationKey(role string) string {
-	switch NormalizeUserRole(role) {
-	case models.RoleOwner:
-		return "role.owner"
-	default:
-		return role
-	}
-}
-
 // PhaseIcon names the icon a phase is drawn with. The value is a key into the
 // first-party icon set the templates render, not a glyph: emoji rendered as
 // text were read out as page content ("cherry blossom", "maple leaf") and drew

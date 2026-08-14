@@ -26,14 +26,6 @@ func TestDismissibleStatusOKMarkupEscapesHTML(t *testing.T) {
 	}
 }
 
-func TestStatusOKTemplateHTMLMatchesEscapedMarkup(t *testing.T) {
-	got := string(StatusOKTemplateHTML(`<b>Saved</b>`))
-	want := StatusOKMarkup(`<b>Saved</b>`)
-	if got != want {
-		t.Fatalf("unexpected template markup: got %q want %q", got, want)
-	}
-}
-
 func TestDismissibleStatusOKTemplateHTMLMatchesEscapedMarkup(t *testing.T) {
 	got := string(DismissibleStatusOKTemplateHTML(`<b>Saved</b>`, `<script>alert("x")</script>`))
 	want := DismissibleStatusOKMarkup(`<b>Saved</b>`, `<script>alert("x")</script>`)

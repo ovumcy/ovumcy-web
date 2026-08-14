@@ -56,7 +56,6 @@
   "pwa.install.action.install": "Installer l'application",
   "pwa.install.action.later": "Peut-être plus tard",
 
-  "role.owner": "Propriétaire",
 
   "auth.welcome_back": "Bon retour",
   "auth.login_title": "Connectez-vous à votre compte",
@@ -814,11 +813,6 @@
   "phases.follicular": "Folliculaire",
   "phases.ovulation": "Ovulation",  "phases.luteal": "Lutéale",
 
-  "symptoms.group.pain": "Douleur et inconfort",
-  "symptoms.group.mood": "Humeur et énergie",
-  "symptoms.group.digestion": "Digestion et ballonnements",
-  "symptoms.group.skin": "Peau et pertes",
-  "symptoms.group.other": "Autres symptômes",
 
   "symptoms.acne": "Acné",
   "symptoms.bloating": "Ballonnements",
