@@ -50,7 +50,7 @@
 
       <div class="settings-toggle-list">
         <label
-          class="period-toggle settings-tracking-toggle"
+          class="period-toggle"
           data-binary-toggle
           data-active="{{if .WebhookEnabled}}true{{else}}false{{end}}"
           data-webhook-setting="enabled">
@@ -62,7 +62,7 @@
         </label>
 
         <label
-          class="period-toggle settings-tracking-toggle"
+          class="period-toggle"
           data-binary-toggle
           data-active="{{if .WebhookNotifyPeriod}}true{{else}}false{{end}}"
           data-webhook-setting="notify-period">
@@ -73,7 +73,7 @@
         </label>
 
         <label
-          class="period-toggle settings-tracking-toggle"
+          class="period-toggle"
           data-binary-toggle
           data-active="{{if .WebhookNotifyOvulation}}true{{else}}false{{end}}"
           data-webhook-setting="notify-ovulation">
@@ -85,7 +85,7 @@
 
         {{if .WebhookURLConfigured}}
         <label
-          class="period-toggle settings-tracking-toggle"
+          class="period-toggle"
           data-binary-toggle
           data-active="false"
           data-webhook-setting="remove-url">
