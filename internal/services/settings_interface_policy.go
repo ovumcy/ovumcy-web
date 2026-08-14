@@ -2,11 +2,6 @@ package services
 
 import "strings"
 
-type InterfaceSettingsUpdate struct {
-	Language string
-	Theme    string
-}
-
 // NormalizeInterfaceTheme accepts the three theme preferences the interface
 // form can submit. The theme itself stays client-side (localStorage), so the
 // server only validates the value; "system" is a standing instruction to follow

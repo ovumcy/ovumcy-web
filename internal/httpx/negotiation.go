@@ -6,13 +6,6 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
-type JSONMode uint8
-
-const (
-	JSONModeAcceptOnly JSONMode = iota
-	JSONModeAcceptOrContentType
-)
-
 type ResponseFormat uint8
 
 const (
@@ -30,24 +23,22 @@ func HasJSONContentType(c fiber.Ctx) bool {
 	return strings.Contains(contentType, fiber.MIMEApplicationJSON)
 }
 
-func AcceptsJSON(c fiber.Ctx, mode JSONMode) bool {
+// AcceptsJSON reports whether the caller asked for JSON, either through the
+// Accept header or by sending a JSON body.
+func AcceptsJSON(c fiber.Ctx) bool {
 	accept := strings.ToLower(c.Get("Accept"))
 	if strings.Contains(accept, fiber.MIMEApplicationJSON) {
 		return true
 	}
 
-	if mode == JSONModeAcceptOrContentType && HasJSONContentType(c) {
-		return true
-	}
-
-	return false
+	return HasJSONContentType(c)
 }
 
-func NegotiateResponseFormat(c fiber.Ctx, mode JSONMode) ResponseFormat {
+func NegotiateResponseFormat(c fiber.Ctx) ResponseFormat {
 	switch {
 	case IsHTMX(c):
 		return ResponseFormatHTMX
-	case AcceptsJSON(c, mode):
+	case AcceptsJSON(c):
 		return ResponseFormatJSON
 	default:
 		return ResponseFormatHTML

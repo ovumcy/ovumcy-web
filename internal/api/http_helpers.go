@@ -33,7 +33,7 @@ func hasJSONBody(c fiber.Ctx) bool {
 }
 
 func responseFormat(c fiber.Ctx) httpx.ResponseFormat {
-	return httpx.NegotiateResponseFormat(c, httpx.JSONModeAcceptOrContentType)
+	return httpx.NegotiateResponseFormat(c)
 }
 
 // csrfToken returns the per-request CSRF token the middleware stored in the

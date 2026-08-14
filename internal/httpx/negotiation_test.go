@@ -10,11 +10,10 @@ import (
 )
 
 type negotiationSnapshot struct {
-	HTMX                 bool   `json:"htmx"`
-	JSONAcceptOnly       bool   `json:"json_accept_only"`
-	JSONAcceptOrBodyType bool   `json:"json_accept_or_body_type"`
-	HasJSONContentType   bool   `json:"has_json_content_type"`
-	ResponseFormat       string `json:"response_format"`
+	HTMX               bool   `json:"htmx"`
+	AcceptsJSON        bool   `json:"accepts_json"`
+	HasJSONContentType bool   `json:"has_json_content_type"`
+	ResponseFormat     string `json:"response_format"`
 }
 
 func readNegotiationSnapshot(t *testing.T, headers map[string]string) negotiationSnapshot {
@@ -23,7 +22,7 @@ func readNegotiationSnapshot(t *testing.T, headers map[string]string) negotiatio
 	app := fiber.New()
 	app.Post("/", func(c fiber.Ctx) error {
 		format := "html"
-		switch NegotiateResponseFormat(c, JSONModeAcceptOrContentType) {
+		switch NegotiateResponseFormat(c) {
 		case ResponseFormatHTMX:
 			format = "htmx"
 		case ResponseFormatJSON:
@@ -31,11 +30,10 @@ func readNegotiationSnapshot(t *testing.T, headers map[string]string) negotiatio
 		}
 
 		return c.JSON(negotiationSnapshot{
-			HTMX:                 IsHTMX(c),
-			JSONAcceptOnly:       AcceptsJSON(c, JSONModeAcceptOnly),
-			JSONAcceptOrBodyType: AcceptsJSON(c, JSONModeAcceptOrContentType),
-			HasJSONContentType:   HasJSONContentType(c),
-			ResponseFormat:       format,
+			HTMX:               IsHTMX(c),
+			AcceptsJSON:        AcceptsJSON(c),
+			HasJSONContentType: HasJSONContentType(c),
+			ResponseFormat:     format,
 		})
 	})
 
@@ -70,27 +68,21 @@ func TestIsHTMXAndAcceptsJSONViaAcceptHeader(t *testing.T) {
 	if !snapshot.HTMX {
 		t.Fatal("expected HTMX=true")
 	}
-	if !snapshot.JSONAcceptOnly {
-		t.Fatal("expected JSONAcceptOnly=true")
-	}
-	if !snapshot.JSONAcceptOrBodyType {
-		t.Fatal("expected JSONAcceptOrBodyType=true")
+	if !snapshot.AcceptsJSON {
+		t.Fatal("expected AcceptsJSON=true")
 	}
 	if snapshot.ResponseFormat != "htmx" {
 		t.Fatalf("expected HTMX response format, got %q", snapshot.ResponseFormat)
 	}
 }
 
-func TestAcceptsJSONViaContentTypeOnlyWhenModeAllows(t *testing.T) {
+func TestAcceptsJSONViaContentTypeAlone(t *testing.T) {
 	snapshot := readNegotiationSnapshot(t, map[string]string{
 		"Content-Type": "application/json; charset=utf-8",
 	})
 
-	if snapshot.JSONAcceptOnly {
-		t.Fatal("expected JSONAcceptOnly=false when Accept header has no json")
-	}
-	if !snapshot.JSONAcceptOrBodyType {
-		t.Fatal("expected JSONAcceptOrBodyType=true for JSON Content-Type")
+	if !snapshot.AcceptsJSON {
+		t.Fatal("expected AcceptsJSON=true for a JSON Content-Type without a JSON Accept header")
 	}
 	if !snapshot.HasJSONContentType {
 		t.Fatal("expected HasJSONContentType=true for JSON Content-Type")
@@ -109,11 +101,8 @@ func TestAcceptsJSONFalseWhenHeadersDoNotContainJSON(t *testing.T) {
 	if snapshot.HTMX {
 		t.Fatal("expected HTMX=false")
 	}
-	if snapshot.JSONAcceptOnly {
-		t.Fatal("expected JSONAcceptOnly=false")
-	}
-	if snapshot.JSONAcceptOrBodyType {
-		t.Fatal("expected JSONAcceptOrBodyType=false")
+	if snapshot.AcceptsJSON {
+		t.Fatal("expected AcceptsJSON=false")
 	}
 	if snapshot.HasJSONContentType {
 		t.Fatal("expected HasJSONContentType=false")
