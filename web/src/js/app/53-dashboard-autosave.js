@@ -140,7 +140,7 @@
     root = root || form;
     bindBinaryToggles(root);
     bindDashboardNotesCounters(root);
-    syncDashboardPreview(root);
+    syncPeriodToggleState(root);
     syncNoteDisclosure(root);
   }
 
@@ -517,7 +517,7 @@
           var currentForm = this.querySelector("[data-dashboard-save-form]");
           var periodToggle = event.target && event.target.matches && event.target.matches("[data-period-toggle]") ? event.target : null;
           if (periodToggle || (event.target && (event.target.name === "symptom_ids" || event.target.name === "mood"))) {
-            syncDashboardPreview(this);
+            syncPeriodToggleState(this);
           }
           if (periodToggle && periodToggle.checked) {
             maybeAcknowledgePeriodTip(this);
@@ -530,7 +530,7 @@
         root.addEventListener("input", function (event) {
           var currentForm = this.querySelector("[data-dashboard-save-form]");
           if (event.target && event.target.matches && event.target.matches("[data-dashboard-notes]")) {
-            syncDashboardPreview(this);
+            syncPeriodToggleState(this);
             syncNoteDisclosure(this);
           }
           if (currentForm && event.target && event.target.name !== "csrf_token") {
@@ -567,7 +567,7 @@
       bindNoteDisclosures(root);
       bindAutosizeNoteFields(root);
       revealOnceTips(root);
-      syncDashboardPreview(root);
+      syncPeriodToggleState(root);
       syncNoteDisclosure(root);
       captureDashboardPersistedState(form);
       setDashboardAutosaveIndicator(form, "idle");

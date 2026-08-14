@@ -1,48 +1,13 @@
-  function syncDashboardPreview(root) {
+  // Reveals the period-only fields and restates the toggle's own labels. This
+  // once also drove a journal preview block, but no template has rendered
+  // [data-dashboard-preview] or any of its seven sub-targets for a long time,
+  // so that half was building a summary nothing displayed.
+  function syncPeriodToggleState(root) {
     var periodToggle = root.querySelector("[data-period-toggle]");
-    var notesField = root.querySelector("[data-dashboard-notes]");
-    var preview = root.querySelector("[data-dashboard-preview]");
     var isPeriod = !!(periodToggle && periodToggle.checked);
-    var notes = notesField ? String(notesField.value || "") : "";
-    var trimmedNotes = notes.trim();
-    var symptoms = collectCheckedSymptomLabels(root);
-    var hasSymptoms = symptoms.length > 0;
-    var hasNotes = trimmedNotes.length > 0;
-    var showPreview = isPeriod || hasSymptoms || hasNotes;
-    var symptomList = root.querySelector("[data-dashboard-symptom-list]");
-    var symptomEmpty = root.querySelector("[data-dashboard-symptom-empty]");
-    var notesValue = root.querySelector("[data-dashboard-notes-value]");
-    var notesEmpty = root.querySelector("[data-dashboard-notes-empty]");
 
     syncPeriodFieldsets(root, isPeriod);
     syncPeriodToggleLabels(root, isPeriod);
-
-    if (!preview) {
-      return;
-    }
-
-    setNodeHidden(preview, !showPreview);
-    setNodeHidden(root.querySelector("[data-dashboard-preview-heading='period']"), !isPeriod);
-    setNodeHidden(root.querySelector("[data-dashboard-preview-heading='other']"), isPeriod);
-    setNodeHidden(root.querySelector("[data-dashboard-period-summary]"), !isPeriod);
-    setNodeHidden(root.querySelector("[data-dashboard-other-summary]"), isPeriod);
-
-    if (symptomList) {
-      symptomList.textContent = "";
-      for (var index = 0; index < symptoms.length; index++) {
-        var item = document.createElement("li");
-        item.textContent = symptoms[index];
-        symptomList.appendChild(item);
-      }
-      setNodeHidden(symptomList, !hasSymptoms);
-    }
-
-    setNodeHidden(symptomEmpty, hasSymptoms);
-    if (notesValue) {
-      notesValue.textContent = notes;
-      setNodeHidden(notesValue, !hasNotes);
-    }
-    setNodeHidden(notesEmpty, hasNotes);
   }
 
   function syncPeriodToggleLabels(root, isPeriod) {

@@ -1,14 +1,10 @@
   function clearDataStatusTarget(form) {
-    if (!form || !form.querySelector) {
+    if (!form || !form.getAttribute) {
       return null;
     }
 
     var selector = String(form.getAttribute("data-clear-data-status-target") || "").trim();
-    if (selector) {
-      return document.querySelector(selector);
-    }
-
-    return form.querySelector("[data-clear-data-status]");
+    return selector ? document.querySelector(selector) : null;
   }
 
   function openClearDataConfirm(question, acceptLabel) {
