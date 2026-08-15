@@ -16,9 +16,9 @@ import (
 // and a rotated-key boot moves it. (The row-level disarm semantics are proven
 // in internal/db; the sentinel's ordering contract in internal/services.)
 func TestMustEnforceCalendarFeedKeyRotationAcrossBoots(t *testing.T) {
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "rotation-boot.db"))
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "rotation-boot.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite: %v", err)
+		t.Fatalf("OpenDatabase: %v", err)
 	}
 	t.Cleanup(func() { closeDatabase(database) })
 	repositories := db.NewRepositories(database)

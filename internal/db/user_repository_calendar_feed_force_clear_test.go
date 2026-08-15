@@ -27,7 +27,7 @@ import (
 // and bump the version together.
 func createArmedFeedUserForForceClear(t *testing.T, email string) (*UserRepository, uint) {
 	t.Helper()
-	database, err := OpenSQLite(filepath.Join(t.TempDir(), "feed-force-clear.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "feed-force-clear.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

@@ -2422,9 +2422,9 @@ func mustRateLimitedResponse(t *testing.T, app *fiber.App, request *http.Request
 // *sql.DB must reject further use, so SQLite has checkpointed its WAL and
 // freed the file before process exit.
 func TestCloseDatabaseClosesUnderlyingConnection(t *testing.T) {
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "close-test.db"))
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "close-test.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 
 	closeDatabase(database)
@@ -2448,9 +2448,9 @@ func TestCloseDatabaseClosesUnderlyingConnection(t *testing.T) {
 // subsequent closeDatabase still checkpoints and closes it, so SQLite releases
 // the file even on a failed start.
 func TestRunServerReturnsListenError(t *testing.T) {
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "runserver-err.db"))
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "runserver-err.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 	app := fiber.New()
 
@@ -2482,9 +2482,9 @@ func TestRunServerReturnsListenError(t *testing.T) {
 // Shutdown to take effect. The DB close now happens in main after runServer
 // returns; this test mirrors that final close and asserts the file is released.
 func TestRunServerReturnsAfterGracefulStop(t *testing.T) {
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "runserver-stop.db"))
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "runserver-stop.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 	app := fiber.New()
 
@@ -2551,9 +2551,9 @@ func TestRunServerReturnsAfterGracefulStop(t *testing.T) {
 // loop must still notice and bridge the gap once Serve registers the
 // listener.
 func TestRetryShutdownBridgesBootWindow(t *testing.T) {
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "boot-window-stop.db"))
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "boot-window-stop.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 	app := fiber.New()
 
@@ -2715,9 +2715,9 @@ func TestInstallGracefulShutdownBridgesSIGTERM(t *testing.T) {
 		t.Skip("SIGTERM self-delivery is not supported by the Go runtime on windows; validated in Linux CI")
 	}
 
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "sigterm-stop.db"))
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "sigterm-stop.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 	app := fiber.New()
 

@@ -10,7 +10,7 @@ import (
 
 func TestOpenSQLiteCreatesCaseInsensitiveUserEmailUniqueIndex(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-email-index.db")
-	database, err := OpenSQLite(databasePath)
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

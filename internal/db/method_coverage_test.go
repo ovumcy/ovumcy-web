@@ -16,7 +16,7 @@ import (
 
 func openMethodCoverageDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	database, err := OpenSQLite(filepath.Join(t.TempDir(), "method-coverage.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "method-coverage.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

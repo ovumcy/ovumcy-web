@@ -12,7 +12,7 @@ import (
 func TestNewHandlerRejectsEmptySecret(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-handler-init-test.db")
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

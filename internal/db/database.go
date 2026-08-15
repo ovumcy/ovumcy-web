@@ -108,10 +108,3 @@ func closeOpenedPool(database *gorm.DB) {
 	}
 	_ = sqlDB.Close()
 }
-
-func OpenSQLite(dbPath string) (*gorm.DB, error) {
-	return OpenDatabase(Config{
-		Driver:     DriverSQLite,
-		SQLitePath: dbPath,
-	})
-}

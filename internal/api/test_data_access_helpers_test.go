@@ -14,7 +14,7 @@ func newDataAccessTestHandler(t *testing.T) (*Handler, *gorm.DB) {
 	t.Helper()
 
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-data-access-test.db")
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

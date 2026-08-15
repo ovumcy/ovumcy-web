@@ -27,7 +27,7 @@ func countWhere(t *testing.T, database *gorm.DB, model any, query string, args .
 // independently of whether ON DELETE CASCADE is enforced.
 func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 	dir := t.TempDir()
-	database, err := OpenSQLite(filepath.Join(dir, "erasure.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "erasure.db")})
 	requireNoErr(t, err, "open sqlite")
 	t.Cleanup(func() {
 		if sqlDB, err := database.DB(); err == nil {
@@ -116,7 +116,7 @@ func TestDeleteAccountAndRelatedDataRollsBackOnChildDeleteError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			database, err := OpenSQLite(filepath.Join(dir, "delerr.db"))
+			database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "delerr.db")})
 			if err != nil {
 				t.Fatalf("open sqlite: %v", err)
 			}

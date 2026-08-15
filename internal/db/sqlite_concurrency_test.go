@@ -18,7 +18,7 @@ import (
 func openConcurrencyRepo(t *testing.T) *Repositories {
 	t.Helper()
 	dir := t.TempDir()
-	database, err := OpenSQLite(filepath.Join(dir, "retry.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "retry.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestWithinTransactionRespectsContextCancellation(t *testing.T) {
 // asserts not a single SQLITE_BUSY surfaces.
 func TestSQLiteConcurrentDayWritesNoBusyError(t *testing.T) {
 	dir := t.TempDir()
-	database, err := OpenSQLite(filepath.Join(dir, "concurrency.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "concurrency.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
