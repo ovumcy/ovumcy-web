@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { clearDateField, fillDateField, formatDisplayDate } from './support/date-field-helpers';
+import { fillDateField, formatDisplayDate } from './support/date-field-helpers';
 import { selectOnboardingStartDate } from './support/onboarding-helpers';
 import { openCalendarDayEditor } from './support/stats-helpers';
 import { checkStyledControl } from './support/form-helpers';

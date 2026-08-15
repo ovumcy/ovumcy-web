@@ -453,7 +453,11 @@ test.describe('Calendar page', () => {
       page.locator('#confirm-modal-accept').click(),
     ]);
     const cycleStartResponse = await cycleStartRequest.response();
-    expect(cycleStartResponse.status()).toBeLessThan(400);
+    expect(
+      cycleStartResponse,
+      `expected a response for POST /api/v1/days/${tomorrowISO}/cycle-start?source=calendar`
+    ).not.toBeNull();
+    expect(cycleStartResponse!.status()).toBeLessThan(400);
     await page.waitForLoadState('networkidle');
 
     await page.locator(`[data-day-editor-open="${tomorrowISO}"]`).first().click();
@@ -506,7 +510,11 @@ test.describe('Calendar page', () => {
       page.locator('#confirm-modal-accept').click(),
     ]);
     const cycleStartResponse = await cycleStartRequest.response();
-    expect(cycleStartResponse.status()).toBeLessThan(400);
+    expect(
+      cycleStartResponse,
+      `expected a response for POST /api/v1/days/${tomorrowISO}/cycle-start?source=calendar`
+    ).not.toBeNull();
+    expect(cycleStartResponse!.status()).toBeLessThan(400);
   });
 
   test('BBT tracking without a confirmed signal demotes the predicted ovulation day to a tentative dash', async ({
@@ -787,6 +795,10 @@ test.describe('Calendar page', () => {
       page.locator('#confirm-modal-accept').click(),
     ]);
     const cycleStartResponse = await cycleStartRequest.response();
-    expect(cycleStartResponse.status()).toBeLessThan(400);
+    expect(
+      cycleStartResponse,
+      `expected a response for POST /api/v1/days/${tomorrowISO}/cycle-start?source=calendar`
+    ).not.toBeNull();
+    expect(cycleStartResponse!.status()).toBeLessThan(400);
   });
 });

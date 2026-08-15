@@ -61,7 +61,7 @@ test.describe('Auth: recovery and reset password', () => {
     expect(download.suggestedFilename()).toBe('ovumcy-recovery-code.txt');
     const downloadPath = await download.path();
     expect(downloadPath).toBeTruthy();
-    const downloadedContent = await fs.readFile(downloadPath!, 'utf8');
+    const downloadedContent = await fs.readFile(downloadPath, 'utf8');
     expect(downloadedContent).toContain(recoveryCode);
 
     await checkbox.check();

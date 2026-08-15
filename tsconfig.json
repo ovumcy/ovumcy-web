@@ -1,0 +1,31 @@
+{
+  // Type-checking only — the repository ships no TypeScript build output.
+  // Playwright transpiles e2e/**/*.ts with esbuild and never type-checks it, so
+  // until this file existed a broken signature or a dangling import reached CI
+  // only as a failing spec, minutes into a browser run. `npm run lint:types`
+  // turns that into a fast, local, whole-directory error.
+  //
+  // "moduleResolution": "Bundler" matches how Playwright actually resolves the
+  // specs' extensionless relative imports ("./support/auth-helpers"); Node16
+  // would demand an explicit ".js" the runtime does not want.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["e2e/**/*.ts", "playwright.config.ts"]
+}
