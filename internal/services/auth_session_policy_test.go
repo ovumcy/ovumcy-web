@@ -12,9 +12,9 @@ func TestBuildAndParseAuthSessionToken(t *testing.T) {
 	secret := []byte("test-auth-secret")
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 
-	token, err := BuildAuthSessionTokenWithVersion(secret, 42, "owner", 3, 30*time.Minute, now)
+	token, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secret, 42, "owner", 3, 30*time.Minute, now)
 	if err != nil {
-		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
+		t.Fatalf("BuildAuthSessionTokenWithVersionAndSessionID() unexpected error: %v", err)
 	}
 
 	claims, err := ParseAuthSessionToken(secret, token, now.Add(1*time.Minute))
@@ -39,9 +39,9 @@ func TestParseAuthSessionTokenRejectsExpired(t *testing.T) {
 	secret := []byte("test-auth-secret")
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 
-	token, err := BuildAuthSessionToken(secret, 42, "owner", 1*time.Minute, now)
+	token, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secret, 42, "owner", 1, 1*time.Minute, now)
 	if err != nil {
-		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
+		t.Fatalf("BuildAuthSessionTokenWithVersionAndSessionID() unexpected error: %v", err)
 	}
 
 	_, err = ParseAuthSessionToken(secret, token, now.Add(2*time.Minute))
@@ -54,9 +54,9 @@ func TestParseAuthSessionTokenRejectsInvalidSignature(t *testing.T) {
 	secret := []byte("test-auth-secret")
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 
-	token, err := BuildAuthSessionToken(secret, 42, "owner", 30*time.Minute, now)
+	token, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secret, 42, "owner", 1, 30*time.Minute, now)
 	if err != nil {
-		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
+		t.Fatalf("BuildAuthSessionTokenWithVersionAndSessionID() unexpected error: %v", err)
 	}
 
 	_, err = ParseAuthSessionToken([]byte("other-secret"), token, now.Add(1*time.Minute))

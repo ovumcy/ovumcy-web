@@ -50,9 +50,9 @@ func TestRedirectAuthenticatedUserIfPresentRedirectsAuthenticatedRequest(t *test
 	if err != nil {
 		t.Fatalf("buildToken returned error: %v", err)
 	}
-	sealedToken, err := handler.encodeAuthCookieToken(token)
+	sealedToken, err := handler.sealCookieValue(authCookieName, []byte(token))
 	if err != nil {
-		t.Fatalf("encodeAuthCookieToken returned error: %v", err)
+		t.Fatalf("sealCookieValue returned error: %v", err)
 	}
 
 	app := fiber.New()

@@ -142,7 +142,11 @@ func TestAuthMiddlewareRejectsRevokedAuthSessionCookieForAPI(t *testing.T) {
 func buildLegacyJWTForUser(t *testing.T, user models.User) string {
 	t.Helper()
 
-	signed, err := services.BuildAuthSessionToken([]byte("test-secret-key"), user.ID, user.Role, time.Hour, time.Now())
+	// Session version 1 is pinned deliberately rather than read from the
+	// fixture: ResolveAuthSession checks the version before the role, so a
+	// mismatched one would make this token die in the revoked arm instead of
+	// the legacy-shape arm the test names.
+	signed, _, err := services.BuildAuthSessionTokenWithVersionAndSessionID([]byte("test-secret-key"), user.ID, user.Role, 1, time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("sign legacy jwt token: %v", err)
 	}
@@ -184,7 +188,7 @@ func TestAuthMiddlewareMapsSessionResolveErrorsToClearedAuthCookie(t *testing.T)
 
 	// A well-formed session token whose TTL already elapsed: parsing reports
 	// expiry before any user lookup, exercising the token-expired arm.
-	expiredToken, err := services.BuildAuthSessionToken([]byte("test-secret-key"), user.ID, user.Role, time.Hour, time.Now().Add(-2*time.Hour))
+	expiredToken, _, err := services.BuildAuthSessionTokenWithVersionAndSessionID([]byte("test-secret-key"), user.ID, user.Role, 1, time.Hour, time.Now().Add(-2*time.Hour))
 	if err != nil {
 		t.Fatalf("build expired session token: %v", err)
 	}

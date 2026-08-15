@@ -28,16 +28,15 @@ type AuthSessionClaims struct {
 	jwt.RegisteredClaims
 }
 
-func BuildAuthSessionToken(secretKey []byte, userID uint, role string, ttl time.Duration, now time.Time) (string, error) {
-	token, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, 1, ttl, now)
-	return token, err
-}
-
-func BuildAuthSessionTokenWithVersion(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, error) {
-	token, _, err := BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, sessionVersion, ttl, now)
-	return token, err
-}
-
+// BuildAuthSessionTokenWithVersionAndSessionID mints an auth session token and
+// returns the session id it embedded. It is the only builder: a caller that has
+// no use for the session id discards it, rather than reaching for a wrapper that
+// hides which session was created.
+//
+// The role travels into the claims unchecked on purpose. Whether a role may hold
+// a web session is decided by ValidateSupportedWebUser at the two places that
+// matter — where the api layer issues a cookie, and where ResolveAuthSession
+// admits one — so this stays a pure minting primitive.
 func BuildAuthSessionTokenWithVersionAndSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {
 	if userID == 0 {
 		return "", "", ErrAuthSessionTokenInvalidUserID

@@ -102,7 +102,12 @@ func issueAuthCookieForUser(t *testing.T, user models.User) string {
 	t.Helper()
 
 	service := services.NewAuthService(nil)
-	token, err := service.BuildAuthSessionToken([]byte("test-secret-key"), user.ID, user.Role, user.AuthSessionVersion, time.Hour, time.Now())
+	// The services builder mints for any role on purpose: this helper exists to
+	// hand an unsupported-role account a well-formed cookie, so the owner-only
+	// route matrix can prove the request is refused at the gate rather than at
+	// the mint. Going through the handler's own buildTokenWithSessionID would
+	// refuse to issue one and leave those routes untested.
+	token, _, err := service.BuildAuthSessionTokenWithSessionID([]byte("test-secret-key"), user.ID, user.Role, user.AuthSessionVersion, time.Hour, time.Now())
 	if err != nil {
 		t.Fatalf("build auth session token: %v", err)
 	}
