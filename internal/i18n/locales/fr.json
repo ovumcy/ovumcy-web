@@ -265,7 +265,6 @@
   "settings.symptoms.empty_active": "Aucun symptôme personnalisé visible pour l'instant. Restaurez-en un ci-dessous ou ajoutez-en un nouveau ci-dessus.",
   "settings.symptoms.confirm_hide": "Retirer ce symptôme personnalisé des nouvelles entrées ? Les journaux existants le conserveront.",
 
-  "settings.export_data": "Exporter les données",
   "settings.export_csv": "Exporter en CSV",
   "settings.export_json": "Exporter en JSON",
   "settings.export_presets": "Préréglages",
@@ -633,7 +632,6 @@
   "stats.no_symptom_data": "Aucune donnée de symptôme pour l'instant.",
   "stats.no_cycle_data": "Pas encore assez de données de cycle.",
   "stats.empty_title": "Continuez à enregistrer pour débloquer des analyses",
-  "stats.empty_body": "Saisissez le début de vos prochaines règles pour compléter votre premier cycle et débloquer des analyses.",
   "stats.empty_body_zero": "Complétez 2 cycles pour débloquer des analyses. Commencez par saisir le premier jour de vos prochaines règles.",
   "stats.empty_body_one": "Vous avez 1 cycle terminé. Complétez-en un autre pour débloquer des analyses.",
   "stats.completed_cycles_progress": "Cycles terminés : %d / 2",
