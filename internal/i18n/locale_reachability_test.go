@@ -84,6 +84,11 @@ type sourceEvidence struct {
 	funcReturns map[string][]string
 	declCounts  map[string]int
 
+	// goDirs records which directories actually contributed a parsed file, so
+	// the sweep can be held to visiting every package rather than merely to a
+	// plausible file count.
+	goDirs map[string]bool
+
 	goFiles       int
 	templateFiles int
 }
@@ -94,6 +99,7 @@ func newSourceEvidence() *sourceEvidence {
 		stringVars:  map[string][]string{},
 		funcReturns: map[string][]string{},
 		declCounts:  map[string]int{},
+		goDirs:      map[string]bool{},
 	}
 }
 
@@ -108,7 +114,7 @@ func TestEveryLocaleKeyIsReachableFromTheApplication(t *testing.T) {
 	if err := collectFromShippedTemplates(evidence); err != nil {
 		t.Fatalf("sweeping the shipped templates: %v", err)
 	}
-	refuseAnUnderfedSweep(t, evidence)
+	refuseAnUnderfedSweep(t, root, evidence)
 
 	manager, err := i18n.NewManager(i18n.LangEN)
 	if err != nil {
@@ -172,12 +178,27 @@ func moduleRoot(t *testing.T) string {
 // anything. Every assertion in this file passes trivially on an empty evidence
 // set, which is the exact shape of a check that is green about nothing.
 //
-// Measured 2026-08-15 on the tree this barrier ships with: the module holds
-// several hundred non-test Go files and 38 shipped templates. The floors below
-// sit far under both, so ordinary growth never trips them and a sweep that lost
-// a whole directory always does.
-func refuseAnUnderfedSweep(t *testing.T, evidence *sourceEvidence) {
+// Measured 2026-08-15 on the tree this barrier ships with (`find . -name '*.go'
+// ! -name '*_test.go'` outside the dot-directories, `find internal/templates
+// -name '*.html'`): 282 non-test Go files and 38 shipped templates.
+//
+// The magnitude floors below carry deliberate slack, which is also their weakness
+// — losing one mid-sized package would still clear 200. So the load-bearing
+// refusal is the structural one: every package under internal/ must have
+// contributed a file. A sweep that silently skips a directory is the failure
+// this barrier is least able to report on itself, and it has happened here
+// before: a template sweep that missed components/ called 15 of 29 live
+// functions dead on 2026-08-15.
+func refuseAnUnderfedSweep(t *testing.T, root string, evidence *sourceEvidence) {
 	t.Helper()
+
+	missed, err := packagesMissedBySweep(root, evidence)
+	if err != nil {
+		t.Fatalf("listing internal/: %v", err)
+	}
+	if len(missed) > 0 {
+		t.Fatalf("the sweep parsed no Go file in %s; every key those packages name would read as unreachable", strings.Join(missed, ", "))
+	}
 
 	if evidence.goFiles < 200 {
 		t.Fatalf("parsed only %d non-test Go files; the module is far larger, so this sweep measured the wrong tree", evidence.goFiles)
@@ -188,6 +209,29 @@ func refuseAnUnderfedSweep(t *testing.T, evidence *sourceEvidence) {
 	if len(evidence.literals) < 1000 {
 		t.Fatalf("collected only %d string literals; a sweep that parsed files but collected nothing would call every key dead", len(evidence.literals))
 	}
+}
+
+// packagesMissedBySweep names every package under internal/ that contributed no
+// parsed file. It is separate from the refusal above so it can be measured in
+// both directions; a refusal that only ever runs on a healthy tree proves
+// nothing about the case it exists for.
+func packagesMissedBySweep(root string, evidence *sourceEvidence) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(root, "internal"))
+	if err != nil {
+		return nil, err
+	}
+
+	var missed []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if !evidence.goDirs["internal/"+entry.Name()] {
+			missed = append(missed, "internal/"+entry.Name())
+		}
+	}
+	sort.Strings(missed)
+	return missed, nil
 }
 
 // everyShippedKey returns the union of the keys across every shipped catalogue.
@@ -390,6 +434,9 @@ func collectFromGoTree(root string, evidence *sourceEvidence) error {
 		}
 		collectFromGoFile(file, evidence)
 		evidence.goFiles++
+		if relative, relErr := filepath.Rel(root, filepath.Dir(path)); relErr == nil {
+			evidence.goDirs[filepath.ToSlash(relative)] = true
+		}
 		return nil
 	})
 }
@@ -776,6 +823,43 @@ func TestUnregisteredKeyFamilyIsRefusedRatherThanIgnored(t *testing.T) {
 	// absorb the variants of every key beneath it.
 	if formatMatchesAnyKey("cycle.%s", map[string]bool{"cycle.day.one": true}) {
 		t.Errorf("a single verb matched across a dot boundary; plural variants would be absorbed by an unrelated family")
+	}
+}
+
+// The structural refusal is the one that matters, so it is measured rather than
+// assumed: a sweep that skipped a package must be named, and a sweep that
+// visited every package must not be.
+func TestASweepThatSkippedAPackageIsNamed(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"api", "services", "i18n"} {
+		writeFixture(t, root, "internal/"+name+"/doc.go", "package "+name+"\n")
+	}
+
+	visitedEverything := newSourceEvidence()
+	if err := collectFromGoTree(root, visitedEverything); err != nil {
+		t.Fatalf("sweeping the fixture: %v", err)
+	}
+	missed, err := packagesMissedBySweep(root, visitedEverything)
+	if err != nil {
+		t.Fatalf("listing the fixture's internal/: %v", err)
+	}
+	if len(missed) > 0 {
+		t.Errorf("a sweep that read every package reported %v as missed; the refusal would fail a healthy tree", missed)
+	}
+
+	// The other direction: drop one package from what the sweep saw.
+	skippedOne := newSourceEvidence()
+	for dir := range visitedEverything.goDirs {
+		if dir != "internal/services" {
+			skippedOne.goDirs[dir] = true
+		}
+	}
+	missed, err = packagesMissedBySweep(root, skippedOne)
+	if err != nil {
+		t.Fatalf("listing the fixture's internal/: %v", err)
+	}
+	if len(missed) != 1 || missed[0] != "internal/services" {
+		t.Errorf("a sweep that skipped internal/services reported %v; a skipped package that goes unnamed is the failure this barrier cannot see in itself", missed)
 	}
 }
 
