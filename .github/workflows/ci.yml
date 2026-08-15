@@ -219,7 +219,22 @@ jobs:
         # cross-package integration tests), not only its own package's unit
         # tests. The patch-coverage gate consumes this profile. Scoped to the
         # module trees (see the note above the Staticcheck step).
-        run: go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
+        #
+        # `-timeout 20m` declares a budget that was previously left implicit.
+        # Go's default is 10 minutes PER PACKAGE, and internal/api sits right at
+        # that edge: measured 2026-08-15 on a dev host, 603 s run alone and 610 s
+        # inside `go test ./...`, with coverage instrumentation slower still
+        # (-covermode=atomic adds an atomic counter per block). The lane passed
+        # only because the runner happens to be faster than a dev host, which is
+        # not a margin anyone chose.
+        #
+        # What the budget prevents does not read as "this needed more time": the
+        # runtime panics with `test timed out after 10m0s` and dumps every
+        # goroutine, so a required check fails with a stack trace that reads like
+        # a product bug. Every `go test` in this file that runs a suite declares
+        # the same budget — fixing only the lane where the pressure was measured
+        # would leave the identical default armed in three other spellings.
+        run: go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -390,7 +405,7 @@ jobs:
           go test -list '.*' ./internal/services/ > "$RUNNER_TEMP/tests.txt"
           run_pattern="$(go run ./scripts/racepartition -shard=${{ matrix.shard }} -of=${{ strategy.job-total }} < "$RUNNER_TEMP/tests.txt")"
           echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} selects $(grep -cE '^(Test|Example|Fuzz)' "$RUNNER_TEMP/tests.txt") listed tests split by racepartition"
-          go test -race -run "$run_pattern" ./internal/services/
+          go test -race -timeout 20m -run "$run_pattern" ./internal/services/
 
   race-rest:
     runs-on: ubuntu-latest
@@ -425,7 +440,10 @@ jobs:
         # whole — splitting them would buy nothing and cost a job.
         env:
           CGO_ENABLED: "1"
-        run: go test -race ./internal/db/... ./internal/security/... ./internal/i18n/... ./internal/httpx/...
+        # `-timeout 20m`: the declared budget from the coverage step in test-go.
+        # The race detector is strictly slower per test, so an undeclared
+        # 10-minute default is armed harder here than where it was measured.
+        run: go test -race -timeout 20m ./internal/db/... ./internal/security/... ./internal/i18n/... ./internal/httpx/...
 
       - name: Go test with race detector — cross-owner isolation
         # The exclusion above is by package, not by property, and the property
@@ -436,7 +454,7 @@ jobs:
         # back to the package.
         env:
           CGO_ENABLED: "1"
-        run: go test -race -count=1 -run TestOwnerIsolationHoldsUnderConcurrentCrossOwnerRequests ./internal/api/
+        run: go test -race -timeout 20m -count=1 -run TestOwnerIsolationHoldsUnderConcurrentCrossOwnerRequests ./internal/api/
 
   # Thin gate job named exactly `race` — branch protection's required status
   # check is pinned to that literal name, which a matrix job cannot provide
