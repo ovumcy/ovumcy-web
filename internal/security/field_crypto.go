@@ -96,15 +96,3 @@ func openFieldCiphertext(encoded string, secretKey []byte, aad []byte) (string, 
 
 	return string(plaintext), nil
 }
-
-// EncryptFieldNoAADForTest produces a ciphertext using the legacy no-aad
-// format that earlier Ovumcy versions wrote to disk. It exists ONLY so
-// regression tests in other packages can construct legacy fixtures without
-// re-implementing the AEAD machinery (the HKDF labels are unexported).
-// Production code MUST NOT call this function — use EncryptField instead.
-func EncryptFieldNoAADForTest(plaintext string, secretKey []byte) (string, error) {
-	if len(secretKey) == 0 {
-		return "", errors.New("field crypto: secret key is required")
-	}
-	return sealFieldCiphertext(plaintext, secretKey, nil)
-}

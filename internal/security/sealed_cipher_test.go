@@ -17,8 +17,8 @@ func TestSealedCipherRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
 	}
-	if len(payload) <= c.NonceSize() {
-		t.Fatalf("Seal produced %d bytes, want more than the %d-byte nonce", len(payload), c.NonceSize())
+	if len(payload) <= c.aead.NonceSize() {
+		t.Fatalf("Seal produced %d bytes, want more than the %d-byte nonce", len(payload), c.aead.NonceSize())
 	}
 
 	opened, err := c.Open(payload, aad)
@@ -83,9 +83,9 @@ func TestSealedCipherRejectsTooShortPayload(t *testing.T) {
 		t.Fatalf("NewSecureCookieCipher: %v", err)
 	}
 
-	for size := 0; size <= c.NonceSize(); size++ {
+	for size := 0; size <= c.aead.NonceSize(); size++ {
 		if _, err := c.Open(make([]byte, size), []byte("aad")); err == nil {
-			t.Fatalf("Open must reject a %d-byte payload (nonce size %d)", size, c.NonceSize())
+			t.Fatalf("Open must reject a %d-byte payload (nonce size %d)", size, c.aead.NonceSize())
 		}
 	}
 }

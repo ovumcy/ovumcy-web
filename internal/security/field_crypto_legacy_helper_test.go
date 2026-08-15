@@ -4,15 +4,17 @@ import (
 	"testing"
 )
 
-// encryptFieldLegacyForTest is a thin same-package wrapper around the
-// cross-package test helper EncryptFieldNoAADForTest. It exists so the
-// other test functions in this file can stay readable without the longer
-// public-API name.
+// encryptFieldLegacyForTest seals a value in the legacy no-aad format that
+// earlier Ovumcy versions wrote to disk, so the fallback path in DecryptField
+// has a fixture to open. It goes through the same sealFieldCiphertext the
+// shipping EncryptField calls, with the aad EncryptField itself refuses —
+// this package's tests can reach it directly, and no production door for the
+// unbound format exists or should exist.
 func encryptFieldLegacyForTest(t *testing.T, secretKey []byte, plaintext string) string {
 	t.Helper()
-	encoded, err := EncryptFieldNoAADForTest(plaintext, secretKey)
+	encoded, err := sealFieldCiphertext(plaintext, secretKey, nil)
 	if err != nil {
-		t.Fatalf("EncryptFieldNoAADForTest: %v", err)
+		t.Fatalf("sealFieldCiphertext with nil aad: %v", err)
 	}
 	return encoded
 }
