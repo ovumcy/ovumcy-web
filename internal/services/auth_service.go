@@ -359,10 +359,6 @@ func (service *AuthService) BuildPasswordResetToken(secretKey []byte, userID uin
 	return BuildPasswordResetToken(secretKey, userID, passwordHash, ttl, now)
 }
 
-func (service *AuthService) BuildAuthSessionToken(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, error) {
-	return BuildAuthSessionTokenWithVersion(secretKey, userID, role, sessionVersion, ttl, now)
-}
-
 func (service *AuthService) BuildAuthSessionTokenWithSessionID(secretKey []byte, userID uint, role string, sessionVersion int, ttl time.Duration, now time.Time) (string, string, error) {
 	return BuildAuthSessionTokenWithVersionAndSessionID(secretKey, userID, role, sessionVersion, ttl, now)
 }

@@ -600,9 +600,9 @@ func TestAuthServiceResolveUserByAuthSessionToken(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	token, err := service.BuildAuthSessionToken(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
+	token, _, err := service.BuildAuthSessionTokenWithSessionID(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
 	if err != nil {
-		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
+		t.Fatalf("BuildAuthSessionTokenWithSessionID() unexpected error: %v", err)
 	}
 
 	user, err := service.ResolveUserByAuthSessionToken(context.Background(), secret, token, now.Add(1*time.Minute))
@@ -628,9 +628,9 @@ func TestAuthServiceResolveUserByAuthSessionTokenRejectsRevokedSession(t *testin
 	}
 	service := NewAuthService(repo)
 
-	token, err := service.BuildAuthSessionToken(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
+	token, _, err := service.BuildAuthSessionTokenWithSessionID(secret, 42, models.RoleOwner, 1, 30*time.Minute, now)
 	if err != nil {
-		t.Fatalf("BuildAuthSessionToken() unexpected error: %v", err)
+		t.Fatalf("BuildAuthSessionTokenWithSessionID() unexpected error: %v", err)
 	}
 
 	if _, err := service.ResolveUserByAuthSessionToken(context.Background(), secret, token, now.Add(1*time.Minute)); !errors.Is(err, ErrAuthSessionTokenRevoked) {

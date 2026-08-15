@@ -194,19 +194,6 @@ func (handler *Handler) refreshCurrentSession(c fiber.Ctx, user *models.User, sc
 	return nil
 }
 
-func (handler *Handler) encodeAuthCookieToken(rawToken string) (string, error) {
-	rawToken = strings.TrimSpace(rawToken)
-	if rawToken == "" {
-		return "", errors.New("auth token is required")
-	}
-
-	codec, err := handler.cookieCodec()
-	if err != nil {
-		return "", err
-	}
-	return codec.seal(authCookieName, []byte(rawToken))
-}
-
 func (handler *Handler) decodeSealedAuthCookieToken(rawValue string) (string, error) {
 	codec, err := handler.cookieCodec()
 	if err != nil {
