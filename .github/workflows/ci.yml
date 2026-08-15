@@ -146,9 +146,23 @@ jobs:
       # functions were reached from a templateFuncMap entry no template used.
       # What it does catch is a NEW function that nothing can reach.
       #
-      # -test keeps deliberate test seams out of the verdict. Nine functions are
-      # reachable only from tests today; until they move into _test.go files the
-      # production-scoped run stays red, so it is not wired here yet.
+      # -test keeps deliberate test seams out of the verdict, and the scope
+      # without it is deliberately NOT wired.
+      #
+      # Decision (2026-08-15): the nine declarations that were reachable only
+      # from tests are resolved — moved into test files, or re-pointed at the
+      # production path they were shadowing — and the production scope is still
+      # red, on two seams no code change removes. internal/testdb is test support
+      # shared by several packages' tests, so it can never live in a _test.go;
+      # i18n.PluralCategories is the single source of truth for a language's CLDR
+      # category set and is read from two packages' tests for the same reason.
+      # Wiring the scope would therefore mean carrying an exception list, and a
+      # list that grows by one line per audit is what it was meant to replace.
+      #
+      # The reachability it would have guaranteed is covered by purpose-built
+      # barriers instead, each failing on the layer deadcode cannot see:
+      # TestEveryTemplateFuncIsCalledByATemplate (internal/api) and
+      # TestEveryLocaleKeyIsReachableFromTheApplication (internal/i18n).
       #
       # deadcode exits 0 with findings on stdout, so the output is what decides.
       - name: Go dead code
