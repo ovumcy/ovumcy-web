@@ -48,9 +48,20 @@ func PluralCategory(language string, n int) string {
 }
 
 // PluralCategories lists every category PluralCategory can return for the
-// given language, in CLDR order. Used by the locale parity test to demand
-// exactly the variants a language needs — no missing Russian "few", no dead
-// English "many".
+// given language, in CLDR order. It is the single source of truth for the set
+// of suffixed keys a plural family owes per language — the locale parity test
+// demands exactly those variants (no missing Russian "few", no dead English
+// "many"), the printf-verb test compares them against each other, and the
+// late-cycle locale test in internal/services enumerates them for its own key
+// families. Callers in two packages are why this stays an exported
+// declaration in production code rather than moving into a _test.go: a
+// _test.go declaration is invisible outside its own package, and duplicating
+// the table would let the copies disagree about which variants a locale file
+// must carry. It is unreachable from the running binary on purpose; any check
+// that has to enumerate a plural key family should compute it from here.
+//
+// Decision (2026-08-15): keep as production code, documented, rather than
+// resolve the production-scope dead-code finding by duplicating the table.
 func PluralCategories(language string) []string {
 	if strings.ToLower(strings.TrimSpace(language)) == LangRU {
 		return []string{"one", "few", "many"}

@@ -161,7 +161,7 @@ func TestRunUsersDeleteRequiresConfirmationInputWhenYesFlagIsAbsent(t *testing.T
 func mustCLIUsersService(t *testing.T, databasePath string) *services.OperatorUserService {
 	t.Helper()
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

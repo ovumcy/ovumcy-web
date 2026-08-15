@@ -18,7 +18,7 @@ import (
 //     ErrResetTokenAlreadyConsumed because the stored hash already changed.
 func TestUpdatePasswordRecoveryCodeAndRevokeSessionsCASRejectsReplay(t *testing.T) {
 	dir := t.TempDir()
-	database, err := OpenSQLite(filepath.Join(dir, "cas_test.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "cas_test.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestOpenSQLiteConnectionPoolLimits(t *testing.T) {
 // revoked by an internal storage upgrade.
 func TestUpdatePasswordHashOnlyPreservesSessionVersion(t *testing.T) {
 	dir := t.TempDir()
-	database, err := OpenSQLite(filepath.Join(dir, "rehash_test.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "rehash_test.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

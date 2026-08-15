@@ -125,7 +125,7 @@ func createCLIUsersDatabase(t *testing.T) string {
 	t.Helper()
 
 	databasePath := filepath.Join(t.TempDir(), "cli-users-test.db")
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -142,7 +142,7 @@ func createCLIUsersDatabase(t *testing.T) string {
 func createCLIUsersUser(t *testing.T, databasePath string, email string, displayName string, role string, onboardingCompleted bool, createdAt time.Time) models.User {
 	t.Helper()
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -177,7 +177,7 @@ func createCLIUsersUser(t *testing.T, databasePath string, email string, display
 func listCLIUserEmails(t *testing.T, databasePath string) []string {
 	t.Helper()
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -202,7 +202,7 @@ func listCLIUserEmails(t *testing.T, databasePath string) []string {
 func seedCLIUsersHealthData(t *testing.T, databasePath string, userID uint) {
 	t.Helper()
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -239,7 +239,7 @@ func seedCLIUsersHealthData(t *testing.T, databasePath string, userID uint) {
 func assertCLIUsersDataCounts(t *testing.T, databasePath string, userID uint, wantUsers int64, wantSymptoms int64, wantLogs int64) {
 	t.Helper()
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestRunUsersCommandCreateRejectsWeakPassword(t *testing.T) {
 func countCLISymptomTypes(t *testing.T, databasePath string) int64 {
 	t.Helper()
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

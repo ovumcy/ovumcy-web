@@ -17,9 +17,9 @@ import (
 // the marker byte-identical. (Full row-level repair semantics are proven in
 // internal/db; the pass logic in internal/services.)
 func TestMustRenormalizeAuthEmailsAcrossBoots(t *testing.T) {
-	database, err := db.OpenSQLite(filepath.Join(t.TempDir(), "email-renormalize-boot.db"))
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "email-renormalize-boot.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite: %v", err)
+		t.Fatalf("OpenDatabase: %v", err)
 	}
 	t.Cleanup(func() { closeDatabase(database) })
 	repositories := db.NewRepositories(database)

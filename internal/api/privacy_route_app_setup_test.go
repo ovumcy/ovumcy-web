@@ -15,7 +15,7 @@ func newTestAppWithPrivacyRoute(t *testing.T) *fiber.App {
 
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-test.db")
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

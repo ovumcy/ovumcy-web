@@ -360,7 +360,7 @@ func TestMigrationReappliesWhenItsSchemaMigrationsRecordIsMissing(t *testing.T) 
 				t.Fatalf("close sql db: %v", err)
 			}
 
-			reopened, err := OpenSQLite(databasePath)
+			reopened, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: databasePath})
 			if err != nil {
 				t.Fatalf(
 					"expected migration %s to re-apply cleanly with %s.%s already present, but boot failed — the runner did not recognize its ADD COLUMN as skippable: %v",
@@ -724,7 +724,7 @@ func assertAppStateSchema(t *testing.T, database *gorm.DB) {
 func TestOpenSQLiteMigrationBootstrapIsIdempotent(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-idempotent.db")
 
-	firstOpen, err := OpenSQLite(databasePath)
+	firstOpen, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("first open sqlite: %v", err)
 	}
@@ -775,7 +775,7 @@ func TestOpenSQLiteReleasesTheConnectionWhenMigrationsFail(t *testing.T) {
 	failedPath := filepath.Join(t.TempDir(), "ovumcy-migration-failure.db")
 	seedShadowedSchemaMigrationsTable(t, failedPath)
 
-	database, err := OpenSQLite(failedPath)
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: failedPath})
 	if err == nil {
 		if sqlDB, handleErr := database.DB(); handleErr == nil {
 			_ = sqlDB.Close()
@@ -794,7 +794,7 @@ func TestOpenSQLiteReleasesTheConnectionWhenMigrationsFail(t *testing.T) {
 	// Positive anchor: the same two assertions against a successful open, closed
 	// by the test itself.
 	succeededPath := filepath.Join(t.TempDir(), "ovumcy-migration-success.db")
-	succeeded, err := OpenSQLite(succeededPath)
+	succeeded, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: succeededPath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -861,7 +861,7 @@ func assertSQLiteConnectionReleased(t *testing.T, databasePath string) {
 func openSQLiteForMigrationBootstrapTest(t *testing.T, databasePath string) *gorm.DB {
 	t.Helper()
 
-	database, err := OpenSQLite(databasePath)
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

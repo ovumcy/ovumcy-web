@@ -14,9 +14,9 @@ import (
 // ON CONFLICT (key) update) rather than erroring on the primary-key collision or
 // appending a second row.
 func TestAppStateRepositoryRoundTripAndUpsert(t *testing.T) {
-	database, err := OpenSQLite(filepath.Join(t.TempDir(), "app-state.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 	t.Cleanup(func() {
 		if sqlDB, dbErr := database.DB(); dbErr == nil {
@@ -60,9 +60,9 @@ func TestAppStateRepositoryRoundTripAndUpsert(t *testing.T) {
 // TestAppStateRepositoryRejectsBlankKey covers the guard: an empty/whitespace key
 // is not a valid marker. Get treats it as missing; Set refuses it.
 func TestAppStateRepositoryRejectsBlankKey(t *testing.T) {
-	database, err := OpenSQLite(filepath.Join(t.TempDir(), "app-state-blank.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state-blank.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 	t.Cleanup(func() {
 		if sqlDB, dbErr := database.DB(); dbErr == nil {
@@ -86,9 +86,9 @@ func TestAppStateRepositoryRejectsBlankKey(t *testing.T) {
 // relies on this so a real DB failure fails its catch-up safe rather than
 // silently reading "never ran".
 func TestAppStateRepositoryGetSurfacesNonNotFoundError(t *testing.T) {
-	database, err := OpenSQLite(filepath.Join(t.TempDir(), "app-state-closed.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(t.TempDir(), "app-state-closed.db")})
 	if err != nil {
-		t.Fatalf("OpenSQLite() unexpected error: %v", err)
+		t.Fatalf("OpenDatabase() unexpected error: %v", err)
 	}
 	repo := NewAppStateRepository(database)
 

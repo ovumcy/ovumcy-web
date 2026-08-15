@@ -54,7 +54,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 
 	databasePath := filepath.Join(t.TempDir(), "ovumcy-onboarding-test.db")
 
-	database, err := db.OpenSQLite(databasePath)
+	database, err := db.OpenDatabase(db.Config{Driver: db.DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

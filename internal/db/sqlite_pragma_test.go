@@ -20,7 +20,7 @@ import (
 // daily_logs row is gone.
 func TestSQLitePragmasEnforced(t *testing.T) {
 	dir := t.TempDir()
-	database, err := OpenSQLite(filepath.Join(dir, "pragma.db"))
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "pragma.db")})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}

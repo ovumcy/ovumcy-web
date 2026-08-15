@@ -14,7 +14,7 @@ func openRegistrationRepositoryForTest(t *testing.T) *UserRepository {
 	t.Helper()
 
 	databasePath := filepath.Join(t.TempDir(), "registration-repository.db")
-	database, err := OpenSQLite(databasePath)
+	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: databasePath})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
