@@ -471,6 +471,12 @@ test.describe('Dashboard: today editor', () => {
     // the one opening it.
     await page.goto('/dashboard#dashboard-pregnancy-test');
     await expect(dashboardMoreDisclosure(page)).toHaveAttribute('open', '');
+    // The disclosure's `open` attribute settles before the dashboard's htmx
+    // lazy-loads do, so the assertion above is not evidence the page is idle.
+    // Navigating on top of an in-flight request aborts it and `goto` reports
+    // net::ERR_ABORTED — a failure of the navigation, not of the product, which
+    // passes on retry and reads as a flake.
+    await page.waitForLoadState('networkidle');
     await page.goto('/dashboard');
     await expect(dashboardMoreDisclosure(page)).not.toHaveAttribute('open', '');
 
