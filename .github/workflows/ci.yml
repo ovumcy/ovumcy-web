@@ -63,6 +63,8 @@ jobs:
       DEADCODE_VERSION: v0.49.0
       # git SHA for v2.12.2: c0d3ddc9cf3faa61a4e378e879ece580256d76e5 (verified via go list -m -json)
       GOLANGCI_LINT_VERSION: v2.12.2
+      # git SHA for v1.7.12: 914e7df21a07ef503a81201c76d2b11c789d3fca (verified via go list -m -json)
+      ACTIONLINT_VERSION: v1.7.12
 
     steps:
       - name: Checkout
@@ -96,7 +98,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/go/bin
-          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-staticcheck${{ env.STATICCHECK_VERSION }}-deadcode${{ env.DEADCODE_VERSION }}-golangcilint${{ env.GOLANGCI_LINT_VERSION }}
+          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-staticcheck${{ env.STATICCHECK_VERSION }}-deadcode${{ env.DEADCODE_VERSION }}-golangcilint${{ env.GOLANGCI_LINT_VERSION }}-actionlint${{ env.ACTIONLINT_VERSION }}
 
       - name: Verify the restored binaries are the pinned versions
         # A cache hit is only as good as its key, and a key that quietly stopped
@@ -116,6 +118,7 @@ jobs:
           bin="$(go env GOPATH)/bin"
           "$bin/staticcheck" -version | grep -F "(${STATICCHECK_VERSION#v})"
           "$bin/golangci-lint" --version | grep -F "version ${GOLANGCI_LINT_VERSION#v} "
+          "$bin/actionlint" -version | grep -Fx "$ACTIONLINT_VERSION"
           test -x "$bin/deadcode"
 
       - name: Install staticcheck
@@ -160,6 +163,28 @@ jobs:
       - name: Install golangci-lint
         if: steps.go-tools.outputs.cache-hit != 'true'
         run: go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
+
+      - name: Install actionlint
+        if: steps.go-tools.outputs.cache-hit != 'true'
+        run: go install "github.com/rhysd/actionlint/cmd/actionlint@$ACTIONLINT_VERSION"
+
+      # The workflows are 1757 lines across ten files, a good deal of it bash
+      # inside `run:`, and nothing checked any of it. actionlint reads what YAML
+      # alone cannot: undefined `steps.*`/`needs.*` references, contexts used
+      # where they are not available, and `${{ }}` interpolated straight into a
+      # shell script (the script-injection class). Proved in both directions on
+      # 2026-08-15 — the ten workflows report nothing, and a copy carrying a
+      # bogus `steps.*` reference plus an interpolated PR title reports both and
+      # exits 1.
+      #
+      # shellcheck is DISABLED explicitly rather than left to the runner. The
+      # ubuntu image ships shellcheck, so actionlint would silently add a whole
+      # second analyser whose findings this repository has never measured, at a
+      # version the image chooses and can change under us — a barrier that means
+      # something different on each runner is not a barrier. Enabling it is a
+      # separate change that starts by measuring the findings.
+      - name: Lint the workflows
+        run: '"$(go env GOPATH)/bin/actionlint" -shellcheck='
 
       # No cache for golangci-lint's own analysis cache: its key can only name
       # go.sum and .golangci.yml, never the source tree, so a branch whose

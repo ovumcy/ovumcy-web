@@ -12,6 +12,13 @@ export default defineConfig({
   // local runs surface flakiness instead of hiding it behind retries.
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
+  // A test that failed and then passed on retry is NOT a pass. With `retries`
+  // above and this left at its default, CI reported such a run green and the
+  // flake was visible only to whoever opened the report — which is the same
+  // false green the suite guards against everywhere else. Scoped to CI because
+  // `retries` is: with 0 retries locally, nothing can be flaky by this
+  // definition, so the flag would never fire there anyway.
+  failOnFlakyTests: isCI,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:8080',
     headless: true,
