@@ -9,8 +9,9 @@
     "build:css": "node ./scripts/build-css.mjs",
     "build:js": "node ./scripts/build-js.mjs",
     "build": "npm run build:css && npm run build:js",
-    "lint": "npm run lint:js",
-    "lint:js": "eslint --max-warnings=0 web/src/js web/static/js/chart-lite.js web/static/js/app.js web/static/js/settings-export.js scripts",
+    "lint": "npm run lint:js && npm run lint:types",
+    "lint:js": "eslint --max-warnings=0 web/src/js web/static/js/chart-lite.js web/static/js/app.js web/static/js/settings-export.js scripts e2e playwright.config.ts",
+    "lint:types": "tsc --noEmit -p tsconfig.json",
     "test:unit": "node --test web/src/js/__tests__/*.test.mjs",
     "e2e": "node ./scripts/run-e2e.mjs --mode=stable --project=chromium",
     "e2e:ci": "node ./scripts/run-e2e.mjs --mode=ci --project=chromium",
@@ -24,12 +25,15 @@
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.62.1",
     "@tailwindcss/cli": "^4.3.3",
+    "@types/node": "^22.20.1",
     "eslint": "10.8.1",
     "globals": "17.10.0",
     "htmx.org": "2.0.10",
     "jsdom": "30.0.1",
     "otplib": "13.4.1",
-    "tailwindcss": "^4.3.0"
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.67.0"
   },
   "overrides": {
     "brace-expansion": "^5.0.8"

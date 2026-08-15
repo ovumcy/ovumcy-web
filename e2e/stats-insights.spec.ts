@@ -8,6 +8,22 @@ import {
 } from './support/stats-helpers';
 import { localeText } from './support/locale-helpers';
 
+// The shape `mapStatsBBTChartData` serialises into the chart's `data-chart`
+// attribute (lowercase keys; `baseline`/`marker*` are present only when a
+// coverline was detected, with no separate boolean). Naming it once is what
+// lets the assertions below read fields instead of indexing an `any`: an
+// untyped `JSON.parse` makes every `parsed.<field>` unverifiable, so a typo in
+// a field name reads as `undefined` and quietly satisfies a `toBeUndefined()`.
+type BBTChartPayload = {
+  labels: string[];
+  values: (number | null)[];
+  valueTexts?: string[];
+  baseline?: number;
+  markerIndex?: number;
+  markerLabel?: string;
+  markerLabelKey?: string;
+};
+
 async function csrfToken(page: Page): Promise<string> {
   return (await page.locator('meta[name="csrf-token"]').getAttribute('content')) ?? '';
 }
@@ -75,7 +91,7 @@ test.describe('Stats: BBT chart', () => {
         headers: { Accept: 'application/json', ...apiOriginHeader(page) },
       });
       expect(response.status(), `GET ${isoDate}`).toBe(200);
-      const body = await response.json();
+      const body = (await response.json()) as { BBT?: number; bbt?: number };
       expect(body.BBT ?? body.bbt, `BBT on ${isoDate}`).toBeGreaterThan(35);
     }
 
@@ -97,11 +113,11 @@ test.describe('Stats: BBT chart', () => {
     // WITHOUT a coverline: the section itself is gated only on >= 5 values.
     const chartData = await bbtChart.getAttribute('data-chart');
     expect(chartData).toBeTruthy();
-    const parsed = JSON.parse(chartData ?? '');
+    const parsed = JSON.parse(chartData ?? '') as BBTChartPayload;
     expect(Array.isArray(parsed.labels)).toBe(true);
     expect(parsed.labels.length).toBeGreaterThanOrEqual(5);
     expect(Array.isArray(parsed.values)).toBe(true);
-    const numericValues = parsed.values.filter((v: number | null) => v !== null);
+    const numericValues = parsed.values.filter((v) => v !== null);
     expect(numericValues.length).toBeGreaterThanOrEqual(5);
     expect(parsed.baseline).toBeUndefined();
     expect(parsed.markerIndex).toBeUndefined();
@@ -128,7 +144,7 @@ test.describe('Stats: BBT chart', () => {
     // The same ±1 day boundary the rest of this spec tolerates can drop the
     // sample logged on "today", so the rendered readings are the leading run of
     // the seeded ones rather than all of them.
-    const valueTexts = parsed.valueTexts as string[];
+    const valueTexts = parsed.valueTexts ?? [];
     const expectedCells = valueTexts.map((text) => (text === '' ? noReading : `${text}${unit}`));
     const renderedReadings = expectedCells.filter((cell) => cell !== noReading);
     expect(renderedReadings.length).toBeGreaterThanOrEqual(5);
@@ -136,7 +152,7 @@ test.describe('Stats: BBT chart', () => {
       bbtSeries.slice(0, renderedReadings.length).map((value) => `${value.toFixed(1)}${unit}`)
     );
 
-    const values = parsed.values as Array<number | null>;
+    const values = parsed.values;
     await expect(disclosure.locator('[data-bbt-table-row]')).toHaveCount(values.length);
     expect(await disclosure.locator('[data-bbt-table-value]').allTextContents()).toEqual(
       expectedCells
@@ -223,7 +239,7 @@ test.describe('Stats: BBT chart', () => {
 
     const chartData = await page.locator('#bbt-chart').getAttribute('data-chart');
     expect(chartData).toBeTruthy();
-    const parsed = JSON.parse(chartData ?? '');
+    const parsed = JSON.parse(chartData ?? '') as BBTChartPayload;
     // The exact maxDay (and therefore markerIndex) shifts by ±1 with TZ
     // boundary effects between the JS local date and the server's calendar
     // day for stats.LastPeriodStart. Instead of pinning the index, assert
@@ -240,9 +256,12 @@ test.describe('Stats: BBT chart', () => {
     expect(parsed.markerIndex).toBeGreaterThanOrEqual(0);
     expect(typeof parsed.baseline).toBe('number');
 
-    const coverline = parsed.baseline as number;
-    const values = parsed.values as Array<number | null>;
-    const riseValues = values.slice(parsed.markerIndex + 1, parsed.markerIndex + 4);
+    // Both were just asserted to be numbers; `!` keeps the reads typed
+    // without restating the check as a type guard.
+    const coverline = parsed.baseline!;
+    const markerIndex = parsed.markerIndex!;
+    const values = parsed.values;
+    const riseValues = values.slice(markerIndex + 1, markerIndex + 4);
     expect(riseValues).toHaveLength(3);
     for (const v of riseValues) {
       expect(v).not.toBeNull();

@@ -213,7 +213,24 @@ jobs:
         run: npm ci
 
       - name: Frontend lint
+        # Now scoped over e2e/ and playwright.config.ts as well. Until it was,
+        # the 47 .ts files of the browser suite were checked by nothing at all:
+        # this script never named them and TypeScript was not a dependency.
+        # Type-AWARE for those files, which is what buys `no-floating-promises`
+        # — a Playwright call whose `await` went missing still passes today,
+        # because the assertion it should have made never runs before the test
+        # ends. Measured 2026-08-15: 6.1 s locally for the whole scope.
         run: npm run lint:js
+
+      - name: Type-check the browser e2e suite
+        # The other half of the same hole. A broken signature or a dangling
+        # import in e2e/ used to reach CI only as a failing spec, minutes into
+        # a browser run; `tsc --noEmit` reports it in seconds. The first run of
+        # this check found six defects — three declarations nothing read and
+        # three reads of a possibly-null response — which are fixed in the same
+        # change, because a barrier that ships with a baseline is a list, not a
+        # barrier. Measured 2026-08-15: 2.4 s locally.
+        run: npm run lint:types
 
       - name: Frontend unit tests
         run: npm run test:unit

@@ -65,12 +65,6 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
   return { ...creds, recoveryCode };
 }
 
-async function readCSRFToken(page: Page): Promise<string> {
-  const csrfToken = await page.locator('meta[name="csrf-token"]').getAttribute('content');
-  expect(csrfToken).toBeTruthy();
-  return csrfToken ?? '';
-}
-
 async function todayISOFromCalendar(page: Page): Promise<string> {
   const todayButton = page.locator('button[data-day]:has(.calendar-today-pill)').first();
   await expect(todayButton).toBeVisible();

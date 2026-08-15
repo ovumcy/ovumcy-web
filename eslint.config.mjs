@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import globals from "globals";
+import tseslint from "typescript-eslint";
 
 export default [
   {
@@ -52,6 +53,38 @@ export default [
         ...globals.node,
         setImmediate: "readonly"
       }
+    }
+  },
+  // The browser e2e suite. Until this block existed nothing checked e2e/ at
+  // all — `lint:js` never scoped there and TypeScript was not a dependency —
+  // so a broken signature or a dangling import surfaced only as a failing spec
+  // minutes into a browser run. `npm run lint:types` (tsc --noEmit) covers the
+  // types; this covers what a type-checker does not judge.
+  //
+  // Type-AWARE, on purpose. The rule that pays for the whole block is
+  // `no-floating-promises`: a Playwright call whose `await` went missing still
+  // passes, silently, because the assertion it should have made never runs
+  // before the test ends. That is a false GREEN, the failure mode this
+  // repository cares about most, and no untyped linter can see it.
+  ...tseslint.configs.recommendedTypeChecked.map((config) => ({
+    ...config,
+    files: ["e2e/**/*.ts", "playwright.config.ts"]
+  })),
+  {
+    files: ["e2e/**/*.ts", "playwright.config.ts"],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname
+      }
+    },
+    rules: {
+      // The suite's own house style, already followed ~20 times: assert a
+      // response is not null, then read it through `!`. Forbidding the
+      // assertion would mean rewriting every one of those into a type guard
+      // for no gain — the `expect(...).not.toBeNull()` on the line above is
+      // what makes the failure legible.
+      "@typescript-eslint/no-non-null-assertion": "off"
     }
   }
 ];
