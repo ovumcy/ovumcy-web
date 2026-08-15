@@ -50,19 +50,77 @@ jobs:
     permissions:
       contents: read
 
+    # Each pinned analysis-tool version lives here, in exactly ONE place,
+    # because the binary cache key below is built from these same values. A key
+    # repeating the version as its own literal would be keyed on a SPELLING
+    # rather than on the thing: bumping a `go install` line and forgetting the
+    # key hands every later run the OLD binary out of cache, silently, while the
+    # workflow reads as though it had been bumped.
+    env:
+      # git SHA for v0.6.1 (tag 2025.1.1): b8ec13ce4d00445d75da053c47498e6f9ec5d7d6 (verified via go list -m -json)
+      STATICCHECK_VERSION: v0.6.1
+      # git SHA for golang.org/x/tools v0.49.0: 18332fec72972efbb8ab9881984fec2d8cfc2b58 (verified via go list -m -json)
+      DEADCODE_VERSION: v0.49.0
+      # git SHA for v2.12.2: c0d3ddc9cf3faa61a4e378e879ece580256d76e5 (verified via go list -m -json)
+      GOLANGCI_LINT_VERSION: v2.12.2
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
+        id: setup-go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
+      # Caches the tool BINARIES. This is NOT the forbidden analysis cache, and
+      # the difference is the whole reason it is allowed: golangci-lint's
+      # analysis cache stores facts derived from a source tree that an
+      # actions/cache key cannot name, so a hit can carry a verdict computed
+      # against different code — that is what produced six deterministic phantom
+      # SA5011 findings (2026-08-03; see the note above the golangci-lint step).
+      # A compiled binary carries no facts about this repository at all: it is a
+      # pure function of its pinned version and the toolchain that built it, and
+      # the key names both in full.
+      #
+      # No `restore-keys`: a prefix match would serve a binary of a DIFFERENT
+      # pinned version, the exact failure the full key exists to prevent. A miss
+      # costs the 54 s below and nothing else.
+      #
+      # Measured 2026-08-15 on run 31849738519: `Install golangci-lint` 41 s,
+      # `Install staticcheck` 9 s, `Install deadcode` 4 s, on a 7 min 23 s job.
+      - name: Cache Go tool binaries
+        id: go-tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/bin
+          key: ${{ runner.os }}-gotools-go${{ steps.setup-go.outputs.go-version }}-staticcheck${{ env.STATICCHECK_VERSION }}-deadcode${{ env.DEADCODE_VERSION }}-golangcilint${{ env.GOLANGCI_LINT_VERSION }}
+
+      - name: Verify the restored binaries are the pinned versions
+        # A cache hit is only as good as its key, and a key that quietly stopped
+        # tracking a bump would lint this repository with the wrong tool while
+        # every step stayed green. This turns that into a red step.
+        #
+        # Both tools print the version WITHOUT the leading `v` (measured
+        # 2026-08-15: `staticcheck.exe 2025.1.1 (0.6.1)` and `golangci-lint has
+        # version 2.12.2 built with ...`), so the pin is matched with `${VAR#v}`
+        # — grepping the tag as written would fail every cache hit. `deadcode`
+        # has no version flag; the key covers it and its own step fails loudly
+        # if the binary is missing.
+        if: steps.go-tools.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="$(go env GOPATH)/bin"
+          "$bin/staticcheck" -version | grep -F "(${STATICCHECK_VERSION#v})"
+          "$bin/golangci-lint" --version | grep -F "version ${GOLANGCI_LINT_VERSION#v} "
+          test -x "$bin/deadcode"
+
       - name: Install staticcheck
-        # git SHA for v0.6.1 (tag 2025.1.1): b8ec13ce4d00445d75da053c47498e6f9ec5d7d6 (verified via go list -m -json)
-        run: go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
+        if: steps.go-tools.outputs.cache-hit != 'true'
+        run: go install "honnef.co/go/tools/cmd/staticcheck@$STATICCHECK_VERSION"
 
       # The Go wildcards in this job are scoped to our module's package trees
       # (cmd, internal, migrations, scripts, web) instead of ./... — this job
@@ -74,8 +132,8 @@ jobs:
         run: '"$(go env GOPATH)/bin/staticcheck" ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...'
 
       - name: Install deadcode
-        # git SHA for golang.org/x/tools v0.49.0: 18332fec72972efbb8ab9881984fec2d8cfc2b58 (verified via go list -m -json)
-        run: go install golang.org/x/tools/cmd/deadcode@v0.49.0
+        if: steps.go-tools.outputs.cache-hit != 'true'
+        run: go install "golang.org/x/tools/cmd/deadcode@$DEADCODE_VERSION"
 
       # A barrier, not a detector: this reports nothing on the tree it was added
       # to, and its job is to keep it that way. Measured 2026-08-15 — it found
@@ -100,8 +158,8 @@ jobs:
           fi
 
       - name: Install golangci-lint
-        # git SHA for v2.12.2: c0d3ddc9cf3faa61a4e378e879ece580256d76e5 (verified via go list -m -json)
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+        if: steps.go-tools.outputs.cache-hit != 'true'
+        run: go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_LINT_VERSION"
 
       # No cache for golangci-lint's own analysis cache: its key can only name
       # go.sum and .golangci.yml, never the source tree, so a branch whose
@@ -472,7 +530,6 @@ jobs:
     permissions:
       contents: read
     needs:
-      - test
       - changes
     # `e2e` is a required status check (branch protection). Historical note:
     # this job gates each work STEP instead of using a job-level `if` because
@@ -488,6 +545,22 @@ jobs:
     # ordinary path, not only if the two allowlists in `changes` ever diverge.
     # Those guards carry the battery's fail-safe form
     # (`!= 'false'`): an absent output must not silently green a job that ran.
+    #
+    # NOT `needs: test`. That edge was the whole critical path: measured
+    # 2026-08-15 on run 31849738519, `test-go` ran 7 min 23 s and this job did
+    # not start until it finished, so a 13 min 48 s browser suite reported at
+    # 21 min 27 s. Nothing here consumes an artifact or an output of the unit
+    # battery — the edge only expressed "don't burn browser minutes until the
+    # cheap suites pass", which on a public repository buys nothing and costs
+    # every green run those 7 minutes twice over (pull_request, then again in
+    # merge_group).
+    #
+    # Dropping it also closes a hole rather than opening one. A failed
+    # dependency SKIPS a job, and a skipped required check counts as SATISFIED
+    # (measured 2026-08-08) — so while this edge existed, a failing `test-go`
+    # left `e2e` skipped, i.e. green, and the browser suite never judged that
+    # commit at all. Now it runs on its own evidence and reports its own
+    # verdict.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
 
@@ -562,7 +635,6 @@ jobs:
     permissions:
       contents: read
     needs:
-      - test
       - changes
     # Required status check with admin enforcement: always run the job and gate
     # the work per step (see the `e2e` job above) so docs-only PRs stay green
@@ -635,7 +707,6 @@ jobs:
     permissions:
       contents: read
     needs:
-      - test
       - changes
     # Not a required status check, so cross-browser coverage beyond the plain
     # `e2e` job's Chromium run is deferred to push/release/dispatch. The
