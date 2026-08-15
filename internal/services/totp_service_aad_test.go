@@ -11,14 +11,21 @@ import (
 
 func nowForTOTPTest() time.Time { return time.Now() }
 
-func encryptFieldLegacyForTOTPTest(t *testing.T, secretKey []byte, plaintext string) string {
-	t.Helper()
-	encoded, err := security.EncryptFieldNoAADForTest(plaintext, secretKey)
-	if err != nil {
-		t.Fatalf("EncryptFieldNoAADForTest: %v", err)
-	}
-	return encoded
-}
+// A users.totp_secret ciphertext as a pre-aad Ovumcy revision actually wrote
+// it: sealed with nil aad, base64url-framed, recorded rather than re-derived.
+// The same bytes are the legacy half of the back-compat fixture in
+// internal/security/field_crypto_golden_test.go, which pins the HKDF labels
+// and the nonce||ciphertext layout; they are repeated here because a test
+// fixture in one package's _test.go is invisible to another package. If this
+// value stops opening, key derivation or framing has changed and every
+// 2FA-enabled account upgraded from that revision would lose their second
+// factor — fix the regression, do not regenerate the constant.
+const (
+	legacyTOTPSecretKey  = "golden-backcompat-secret-key-0123456789"
+	legacyTOTPRawSecret  = "JBSWY3DPEHPK3PXP"
+	legacyTOTPCiphertext = "qqd8hcE4OAzAXieRHELQMKshSBcewFcPLCu4Lb0CCOv_BV1UQuUNHSJyTLE"
+	legacyTOTPOwnerID    = 42
+)
 
 // TestTOTPService_ValidateCode_RejectsCiphertextFromAnotherUser is the
 // runtime contract test for Finding #2 (encrypted TOTP secret was not
@@ -80,17 +87,14 @@ func TestTOTPService_ValidateCode_RejectsCiphertextFromAnotherUser(t *testing.T)
 // their security posture — they just logged in).
 func TestTOTPService_ValidateCode_LegacyCiphertextReencrypts(t *testing.T) {
 	repo := &stubTOTPUserRepo{}
-	secretKey := []byte("test-secret-key-32-bytes-padding!")
+	secretKey := []byte(legacyTOTPSecretKey)
 	svc := NewTOTPService(repo, secretKey, nil)
 
-	rawSecret := "JBSWY3DPEHPK3PXP"
-	legacy := encryptFieldLegacyForTOTPTest(t, secretKey, rawSecret)
-
-	code, err := totp.GenerateCode(rawSecret, nowForTOTPTest())
+	code, err := totp.GenerateCode(legacyTOTPRawSecret, nowForTOTPTest())
 	if err != nil {
 		t.Fatalf("GenerateCode: %v", err)
 	}
-	valid, err := svc.ValidateCode(context.Background(), 42, legacy, code)
+	valid, err := svc.ValidateCode(context.Background(), legacyTOTPOwnerID, legacyTOTPCiphertext, code)
 	if err != nil {
 		t.Fatalf("ValidateCode on legacy ciphertext: %v", err)
 	}
@@ -101,21 +105,21 @@ func TestTOTPService_ValidateCode_LegacyCiphertextReencrypts(t *testing.T) {
 	if !repo.reencryptCalled {
 		t.Fatal("ValidateCode succeeded on legacy ciphertext but did not invoke UpdateTOTPSecretCiphertext for re-encryption")
 	}
-	if repo.reencryptedUserID != 42 {
-		t.Errorf("re-encrypt called for userID=%d, want 42", repo.reencryptedUserID)
+	if repo.reencryptedUserID != legacyTOTPOwnerID {
+		t.Errorf("re-encrypt called for userID=%d, want %d", repo.reencryptedUserID, legacyTOTPOwnerID)
 	}
 	// The re-encrypted value MUST be aad-bound. The simplest way to assert
 	// this is to verify it opens cleanly under the expected aad and reports
 	// isLegacy=false.
-	got, isLegacy, err := security.DecryptField(repo.reencryptedCiphertext, secretKey, aadForTOTPSecret(42))
+	got, isLegacy, err := security.DecryptField(repo.reencryptedCiphertext, secretKey, aadForTOTPSecret(legacyTOTPOwnerID))
 	if err != nil {
 		t.Fatalf("re-encrypted ciphertext failed to decrypt under new aad: %v", err)
 	}
 	if isLegacy {
 		t.Fatal("re-encrypted ciphertext is still in legacy (no-aad) form")
 	}
-	if got != rawSecret {
-		t.Fatalf("re-encrypted plaintext mismatch: got %q, want %q", got, rawSecret)
+	if got != legacyTOTPRawSecret {
+		t.Fatalf("re-encrypted plaintext mismatch: got %q, want %q", got, legacyTOTPRawSecret)
 	}
 
 	if repo.updateTOTPCalled {

@@ -77,12 +77,6 @@ func newSealedCipher(secretKey []byte, saltLabel, infoLabel string) (*SealedCiph
 	return &SealedCipher{aead: aead}, nil
 }
 
-// NonceSize returns the AEAD nonce length in bytes — the length of the nonce
-// prefix in payloads produced by Seal.
-func (c *SealedCipher) NonceSize() int {
-	return c.aead.NonceSize()
-}
-
 // Seal encrypts plaintext bound to aad and returns nonce||ciphertext with a
 // fresh random nonce. The aad is passed through to the AEAD as-is; callers
 // enforce their own non-empty-AAD policies.
