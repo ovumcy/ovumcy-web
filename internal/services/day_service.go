@@ -80,13 +80,6 @@ type DayService struct {
 	runInTx DayLogTxRunner
 }
 
-func NewDayService(logs DayLogRepository, users DayUserRepository) *DayService {
-	return &DayService{
-		logs:  logs,
-		users: users,
-	}
-}
-
 // NewDayServiceWithTx wires a transaction runner so multi-step writes commit
 // atomically. The composition root supplies runInTx; tests may omit it.
 func NewDayServiceWithTx(logs DayLogRepository, users DayUserRepository, runInTx DayLogTxRunner) *DayService {

@@ -35,12 +35,12 @@ func TestCalendarViewPolicyNilLocationUsesUTC(t *testing.T) {
 	}
 }
 
-// calendarviewpolicyCovNilLocationViaWrapper verifies the same nil-guard through
-// the public ResolveCalendarMonthAndSelectedDate wrapper (which chains through).
-func TestCalendarViewPolicyNilLocationViaWrapper(t *testing.T) {
+// calendarviewpolicyCovNilLocationWithSelectedDay verifies the same nil-guard on
+// the path that derives the active month from the selected day.
+func TestCalendarViewPolicyNilLocationWithSelectedDay(t *testing.T) {
 	now := time.Date(2026, time.April, 5, 12, 0, 0, 0, time.UTC)
 
-	withNil, selNil, err := ResolveCalendarMonthAndSelectedDate("", "2026-04-05", now, nil)
+	withNil, selNil, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2026-04-05", now, nil, time.Time{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

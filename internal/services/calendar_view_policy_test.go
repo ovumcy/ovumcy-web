@@ -8,18 +8,20 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestResolveCalendarMonthAndSelectedDate(t *testing.T) {
+// A zero minMonth is the "no lower bound" input: the clamp and the
+// selected-date reset both stay inert, which is the behaviour these cases pin.
+func TestResolveCalendarMonthAndSelectedDateWithoutMinimumMonth(t *testing.T) {
 	now := time.Date(2026, time.February, 21, 10, 30, 0, 0, time.UTC)
 
 	t.Run("invalid month", func(t *testing.T) {
-		_, _, err := ResolveCalendarMonthAndSelectedDate("2026-99", "", now, time.UTC)
+		_, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-99", "", now, time.UTC, time.Time{})
 		if !errors.Is(err, ErrCalendarMonthInvalid) {
 			t.Fatalf("expected ErrCalendarMonthInvalid, got %v", err)
 		}
 	})
 
 	t.Run("uses selected day month when month missing", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDate("", "2026-02-17", now, time.UTC)
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "2026-02-17", now, time.UTC, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -32,7 +34,7 @@ func TestResolveCalendarMonthAndSelectedDate(t *testing.T) {
 	})
 
 	t.Run("keeps explicit month query", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDate("2026-03", "2026-02-17", now, time.UTC)
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-03", "2026-02-17", now, time.UTC, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -45,7 +47,7 @@ func TestResolveCalendarMonthAndSelectedDate(t *testing.T) {
 	})
 
 	t.Run("ignores invalid selected day", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDate("2026-03", "invalid-day", now, time.UTC)
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2026-03", "invalid-day", now, time.UTC, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -58,7 +60,7 @@ func TestResolveCalendarMonthAndSelectedDate(t *testing.T) {
 	})
 
 	t.Run("defaults selected day to today when both params missing", func(t *testing.T) {
-		month, selectedDate, err := ResolveCalendarMonthAndSelectedDate("", "", now, time.UTC)
+		month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", "", now, time.UTC, time.Time{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -102,9 +104,11 @@ func TestResolveCalendarMonthAndSelectedDateWithinBounds(t *testing.T) {
 	})
 }
 
-func TestCalendarAdjacentMonthValues(t *testing.T) {
+// With a zero minMonth there is no lower bound, so the previous month is always
+// offered — the complement of the bounded case below.
+func TestCalendarAdjacentMonthValuesWithoutMinimumMonth(t *testing.T) {
 	monthStart := time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC)
-	prev, next := CalendarAdjacentMonthValues(monthStart)
+	prev, next := CalendarAdjacentMonthValuesWithinBounds(monthStart, time.Time{})
 	if prev != "2026-01" {
 		t.Fatalf("expected prev month 2026-01, got %q", prev)
 	}
