@@ -10,10 +10,10 @@ import (
 
 var ErrCalendarMonthInvalid = errors.New("calendar invalid month")
 
-func ResolveCalendarMonthAndSelectedDate(monthQueryRaw string, selectedDayRaw string, now time.Time, location *time.Location) (time.Time, string, error) {
-	return ResolveCalendarMonthAndSelectedDateWithinBounds(monthQueryRaw, selectedDayRaw, now, location, time.Time{})
-}
-
+// ResolveCalendarMonthAndSelectedDateWithinBounds resolves the active month and
+// the selected day. A zero minMonth means no lower bound: calendarMonthBefore
+// reports false for every month, so neither the clamp nor the selected-date
+// reset fires.
 func ResolveCalendarMonthAndSelectedDateWithinBounds(monthQueryRaw string, selectedDayRaw string, now time.Time, location *time.Location, minMonth time.Time) (time.Time, string, error) {
 	if location == nil {
 		location = time.UTC
@@ -50,10 +50,9 @@ func ResolveCalendarMonthAndSelectedDateWithinBounds(monthQueryRaw string, selec
 	return activeMonth, selectedDate, nil
 }
 
-func CalendarAdjacentMonthValues(monthStart time.Time) (string, string) {
-	return CalendarAdjacentMonthValuesWithinBounds(monthStart, time.Time{})
-}
-
+// CalendarAdjacentMonthValuesWithinBounds returns the previous and next month
+// values for the navigation controls; the previous one is empty when it would
+// fall before minMonth. A zero minMonth means no lower bound.
 func CalendarAdjacentMonthValuesWithinBounds(monthStart time.Time, minMonth time.Time) (string, string) {
 	prevMonth := monthStart.AddDate(0, -1, 0)
 	prevValue := prevMonth.Format("2006-01")
