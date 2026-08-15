@@ -524,14 +524,42 @@ jobs:
           # (not in consumers) if that ever changes.
           echo "run_battery=$run_e2e" >> "$GITHUB_OUTPUT"
 
-  e2e:
+  # The browser suite runs here, split across shards, and the required status
+  # check named `e2e` is the thin gate job below — the same shape branch
+  # protection already forces on `test`, and for the same reason: a matrix job
+  # reports one context per cell (`e2e-shard (1)`, ...), none of which is the
+  # literal name the required check is pinned to.
+  #
+  # Sharding is NOT raising parallelism inside one database, which
+  # `.claude/rules/e2e.md` rules out for the SQLite-backed stateful flows.
+  # Every shard is its own runner: its own `go run` app, its own SQLite file
+  # under .tmp/e2e, and still `--workers=1` from the runner (`--mode=ci`). What
+  # changes is how many app instances exist, not how many tests share one.
+  # This is only safe because every spec provisions its own owner —
+  # `createCredentials` mints a unique address per call — so no spec depends on
+  # state another spec file left behind.
+  #
+  # Measured 2026-08-15: 200 tests over 33 spec files, 793 s in one lane; three
+  # shards split them 76/60/64. The shard count is NOT repeated in the
+  # `--shard=` argument — `strategy.job-total` reads it off the matrix itself,
+  # so adding a shard is a one-line edit that cannot leave the divisor behind.
+  e2e-shard:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
     needs:
       - changes
-    # `e2e` is a required status check (branch protection). Historical note:
+    strategy:
+      # One shard's failure must not cancel its siblings: the point of the
+      # split is to learn everything the browser lane knows in one run.
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+    # Historical note:
     # this job gates each work STEP instead of using a job-level `if` because
     # job-level skips were believed to leave the required check unsatisfied —
     # that is not how GitHub behaves today (a skipped job reports as a
@@ -563,32 +591,39 @@ jobs:
     # verdict.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
+      # On `push` the browser lane is a three-spec smoke, which is smaller than
+      # a single shard's share — so it runs whole on shard 1 and the other
+      # shards stand down rather than paying setup to run a fraction of it.
+      # Written in the fail-safe direction (`!= 'false'` at every use) like
+      # RUN_E2E: an expression that ever evaluates empty must leave the work
+      # running, never silently drop it.
+      SHARD_ACTIVE: ${{ github.event_name != 'push' || matrix.shard == 1 }}
 
     steps:
       - name: Checkout
-        if: env.RUN_E2E != 'false'
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        if: env.RUN_E2E != 'false'
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Setup Node.js
-        if: env.RUN_E2E != 'false'
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
 
       - name: Install frontend and e2e dependencies
-        if: env.RUN_E2E != 'false'
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
         run: npm ci
 
       - name: Cache Playwright browsers
-        if: env.RUN_E2E != 'false'
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -596,7 +631,7 @@ jobs:
           key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
-        if: env.RUN_E2E != 'false' && steps.playwright-cache.outputs.cache-hit != 'true'
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Install Playwright OS dependencies (cache hit)
@@ -604,16 +639,21 @@ jobs:
         # ~/.cache/ms-playwright; system packages (apt) never persist across
         # a fresh runner, so they still need installing even on a browser
         # cache hit — this is the fast path (no browser download).
-        if: env.RUN_E2E != 'false' && steps.playwright-cache.outputs.cache-hit == 'true'
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false' && steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
       - name: Run Playwright e2e (smoke on push, full otherwise)
-        if: env.RUN_E2E != 'false'
+        # The divisor comes from `strategy.job-total`, which GitHub computes
+        # from the matrix above — never a second literal to keep in step with
+        # it. `--shard` splits by spec file, and each shard gets its own app
+        # and database, so the runner's own `--workers=1` still holds inside
+        # one shard.
+        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             npm run e2e:ci -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
           else
-            npm run e2e:ci
+            npm run e2e:ci -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
           fi
         env:
           E2E_APP_PORT: 18080
@@ -622,12 +662,48 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-artifacts
+          name: playwright-artifacts-shard-${{ matrix.shard }}
           path: |
             playwright-report
             test-results
             .tmp/e2e
           if-no-files-found: ignore
+
+  # Thin gate job named exactly `e2e` — branch protection's required status
+  # check is pinned to that literal context name, and a matrix job cannot
+  # provide it (its contexts are `e2e-shard (1)`, `e2e-shard (2)`, ...).
+  # Identical in shape and in reasoning to the `test` gate above: WITHOUT AN
+  # `if`, A FAILED DEPENDENCY SKIPS THIS JOB, and a skipped required check
+  # counts as satisfied — which would hand the merge a green `e2e` on a run
+  # where every shard failed.
+  #
+  # `needs.e2e-shard.result` is the aggregate over the whole matrix: `success`
+  # only when every shard succeeded, `failure` when any of them failed. With
+  # `fail-fast: false` above, all shards have reported by the time this runs.
+  e2e:
+    runs-on: ubuntu-latest
+    needs:
+      - e2e-shard
+    if: ${{ !cancelled() }}
+    permissions:
+      contents: read
+    steps:
+      - name: Judge the browser shards
+        env:
+          SHARDS_RESULT: ${{ needs.e2e-shard.result }}
+        run: |
+          set -euo pipefail
+          echo "e2e-shard=$SHARDS_RESULT"
+          # `skipped` is a PASS here and only here, for the same reason it is in
+          # the `test` gate: the `changes` job judged the diff irrelevant, which
+          # is a decision not to run rather than a failure to run. Anything else
+          # — failure, cancelled, or a state this gate has never seen — is this
+          # context's failure.
+          case "$SHARDS_RESULT" in
+            success|skipped) ;;
+            *) echo "::error::the browser shards reported \"$SHARDS_RESULT\""; exit 1 ;;
+          esac
+          echo "every browser shard passed."
 
   e2e-postgres-smoke:
     runs-on: ubuntu-latest
