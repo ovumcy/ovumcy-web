@@ -1,6 +1,8 @@
 package services
 
 import (
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,6 +148,213 @@ func TestBuildCalendarDayStatesPaintsAProjectedCycleOnTheLastGridDay(t *testing.
 	// The cycle before it, comfortably inside the grid, must stay painted too.
 	if middle := findCalendarDayStateByDateString(t, days, "2026-10-04"); !middle.IsPredicted {
 		t.Fatalf("expected the projected cycle starting on 2026-10-04 to be painted")
+	}
+}
+
+// expectedCalendarDayKeys lists the ISO keys of the inclusive calendar range
+// [first, last], computed in UTC — a zone with no transitions — so the
+// expectation never inherits the arithmetic it is meant to check.
+func expectedCalendarDayKeys(first time.Time, last time.Time) []string {
+	keys := make([]string, 0, 16)
+	end := dateOnly(last)
+	for day := dateOnly(first); !day.After(end); day = day.AddDate(0, 0, 1) {
+		keys = append(keys, day.Format("2006-01-02"))
+	}
+	return keys
+}
+
+// assertCalendarDayKeySet compares the marked keys as one ordered list, so a
+// dropped day, a repeated one collapsing into its neighbour and a day painted
+// past the range all surface in a single message. It reports rather than
+// aborts: each builder is an independent subject of the same case.
+func assertCalendarDayKeySet(t *testing.T, subject string, actual map[string]bool, expected []string) {
+	t.Helper()
+
+	got := strings.Join(sortedCalendarDayKeys(actual), " ")
+	want := strings.Join(expected, " ")
+	if got != want {
+		t.Errorf("%s: expected calendar days [%s], got [%s]", subject, want, got)
+	}
+}
+
+func sortedCalendarDayKeys(source map[string]bool) []string {
+	keys := make([]string, 0, len(source))
+	for key, marked := range source {
+		if marked {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// TestCalendarRangeBuildersCoverEveryCalendarDayOfTheirRange pins the three
+// builders that write the prediction maps — appendCalendarDateRange,
+// appendPredictedPeriod and appendFertilityWindow — against the shape mismatch
+// a midnight-skipping DST zone creates. Adding 24h-ish increments to an instant
+// and testing that instant against a bound is not calendar-day arithmetic: in
+// America/Santiago (2026-09-06) and America/Havana (2026-03-08) local midnight
+// does not exist, and AddDate resolves the missing wall clock BACKWARD into the
+// previous calendar day. The step then writes that day's key a second time and
+// the range loses a day — the transition day itself for an offset-indexed
+// builder, its own last day for one that walks to a bound.
+//
+// The maps are sets, so a repeat write collapses and the observable damage is
+// the missing day plus the day-count mismatch; the visit ORDER is pinned
+// separately on the shared iterator below.
+func TestCalendarRangeBuildersCoverEveryCalendarDayOfTheirRange(t *testing.T) {
+	testCases := []struct {
+		name  string
+		zone  string
+		first time.Time
+		last  time.Time
+	}{
+		{
+			name:  "santiago range spanning the skipped midnight",
+			zone:  "America/Santiago",
+			first: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+			last:  time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:  "havana range spanning the skipped midnight",
+			zone:  "America/Havana",
+			first: time.Date(2026, time.March, 5, 0, 0, 0, 0, time.UTC),
+			last:  time.Date(2026, time.March, 11, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:  "santiago control month without a transition",
+			zone:  "America/Santiago",
+			first: time.Date(2026, time.November, 3, 0, 0, 0, 0, time.UTC),
+			last:  time.Date(2026, time.November, 9, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:  "utc control",
+			zone:  "UTC",
+			first: time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC),
+			last:  time.Date(2026, time.September, 9, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			location, err := time.LoadLocation(testCase.zone)
+			if err != nil {
+				t.Fatalf("load %s: %v", testCase.zone, err)
+			}
+
+			start := CalendarDay(testCase.first, location)
+			end := CalendarDay(testCase.last, location)
+			expected := expectedCalendarDayKeys(testCase.first, testCase.last)
+
+			dateRange := make(map[string]bool)
+			appendCalendarDateRange(dateRange, start, end)
+			assertCalendarDayKeySet(t, "appendCalendarDateRange", dateRange, expected)
+
+			predictedPeriod := make(map[string]bool)
+			appendPredictedPeriod(predictedPeriod, start, len(expected))
+			assertCalendarDayKeySet(t, "appendPredictedPeriod", predictedPeriod, expected)
+
+			// The ovulation date sits on the last day of the window, so the
+			// closing three days are the peak and everything before them the edge.
+			fertilityEdge := make(map[string]bool)
+			fertilityPeak := make(map[string]bool)
+			appendFertilityWindow(fertilityEdge, fertilityPeak, start, end, end)
+
+			window := make(map[string]bool, len(fertilityEdge)+len(fertilityPeak))
+			for key := range fertilityEdge {
+				window[key] = true
+			}
+			for key := range fertilityPeak {
+				if window[key] {
+					t.Fatalf("appendFertilityWindow: %s marked as both edge and peak", key)
+				}
+				window[key] = true
+			}
+			assertCalendarDayKeySet(t, "appendFertilityWindow", window, expected)
+			assertCalendarDayKeySet(t, "appendFertilityWindow peak", fertilityPeak, expected[len(expected)-3:])
+		})
+	}
+}
+
+// TestCalendarDateRangeEndsOnItsLastDayWithMixedMidnightShapes covers the same
+// bound with operands built from different midnights: the projected and
+// historical pre-fertile bands start on a request-location midnight and end on
+// the UTC midnight PredictCycleWindow produces. Compared as instants in any
+// UTC-minus zone, the location-midnight step passes the UTC-midnight bound a
+// few hours early and the band loses its closing day in every month, not only
+// across a transition.
+func TestCalendarDateRangeEndsOnItsLastDayWithMixedMidnightShapes(t *testing.T) {
+	santiago, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Fatalf("load America/Santiago: %v", err)
+	}
+
+	first := time.Date(2026, time.November, 17, 0, 0, 0, 0, time.UTC)
+	last := time.Date(2026, time.November, 19, 0, 0, 0, 0, time.UTC)
+
+	dateRange := make(map[string]bool)
+	appendCalendarDateRange(dateRange, CalendarDay(first, santiago), dateOnly(last))
+
+	assertCalendarDayKeySet(t, "appendCalendarDateRange", dateRange, expectedCalendarDayKeys(first, last))
+}
+
+// TestForEachCalendarDayVisitsEveryDayOnceInOrder pins the property the three
+// range builders share through their one stepping point: ascending, one visit
+// per calendar day, ending on the range's last day whatever the zone does to
+// the clock inside it. The span deliberately spans both hemispheres' 2026
+// transitions.
+func TestForEachCalendarDayVisitsEveryDayOnceInOrder(t *testing.T) {
+	for _, zone := range []string{"America/Santiago", "America/Havana", "UTC"} {
+		t.Run(zone, func(t *testing.T) {
+			location, err := time.LoadLocation(zone)
+			if err != nil {
+				t.Fatalf("load %s: %v", zone, err)
+			}
+
+			first := time.Date(2026, time.March, 4, 0, 0, 0, 0, time.UTC)
+			expected := expectedCalendarDayKeys(first, time.Date(2026, time.September, 10, 0, 0, 0, 0, time.UTC))
+
+			visited := make([]string, 0, len(expected))
+			forEachCalendarDay(CalendarDay(first, location), len(expected), func(day time.Time) {
+				visited = append(visited, CalendarDayKey(day))
+			})
+
+			if strings.Join(visited, " ") != strings.Join(expected, " ") {
+				t.Fatalf("expected visits [%s], got [%s]", strings.Join(expected, " "), strings.Join(visited, " "))
+			}
+		})
+	}
+}
+
+// TestBuildCalendarDayStatesShadesThePredictedPeriodDayThatSkipsMidnight is the
+// owner-visible half of the same defect: a predicted period running across
+// 2026-09-06 in America/Santiago left that day unshaded on the grid.
+func TestBuildCalendarDayStatesShadesThePredictedPeriodDayThatSkipsMidnight(t *testing.T) {
+	santiago, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Fatalf("load America/Santiago: %v", err)
+	}
+
+	user := &models.User{WeekStartsOn: models.WeekStartMonday}
+	monthStart := time.Date(2026, time.September, 1, 0, 0, 0, 0, santiago)
+	now := time.Date(2026, time.September, 12, 15, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		CurrentCycleDay:     10,
+		LastPeriodStart:     CalendarDay(time.Date(2026, time.September, 3, 0, 0, 0, 0, time.UTC), santiago),
+	}
+
+	days := BuildCalendarDayStates(user, monthStart, nil, stats, now, santiago)
+
+	for _, dateString := range []string{"2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07"} {
+		if day := findCalendarDayStateByDateString(t, days, dateString); !day.IsPredicted {
+			t.Fatalf("expected predicted period day %s to be shaded, got %#v", dateString, day)
+		}
+	}
+	if day := findCalendarDayStateByDateString(t, days, "2026-09-08"); day.IsPredicted {
+		t.Fatalf("expected 2026-09-08 to sit past the predicted period, got %#v", day)
 	}
 }
 
