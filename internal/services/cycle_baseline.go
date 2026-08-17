@@ -140,8 +140,14 @@ func ProjectCycleStart(lastPeriodStart time.Time, cycleLength int, today time.Ti
 	return projectedStart, projectedCycleDay, true
 }
 
+// ShiftCycleStartToFutureOvulation rolls the cycle anchor forward whole cycles
+// until the predicted ovulation is no longer in the past. The guard counts
+// calendar days, matching the lag arithmetic below it: ovulationDate arrives as
+// a UTC-midnight date-only value and today as a location-midnight working
+// value, so comparing them as instants fired the shift on the ovulation day
+// itself in every non-UTC zone (issue #48 class).
 func ShiftCycleStartToFutureOvulation(cycleStart time.Time, ovulationDate time.Time, cycleLength int, today time.Time) time.Time {
-	if cycleLength <= 0 || !ovulationDate.Before(today) {
+	if cycleLength <= 0 || CalendarDaysBetween(ovulationDate, today) <= 0 {
 		return cycleStart
 	}
 	lagDays := CalendarDaysBetween(ovulationDate, today)

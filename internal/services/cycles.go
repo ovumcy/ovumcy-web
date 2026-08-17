@@ -625,6 +625,13 @@ func dateOnly(t time.Time) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
+// filterLogsNotAfter drops the logs whose calendar day falls after cutoff.
+// The comparison is a calendar-day one because the two operands carry
+// different midnight shapes: DailyLog.Date is stored at UTC midnight while
+// callers hand a cutoff built at location midnight (calendar_days.go,
+// cycle_start_policy.go, stats_cycle_insights.go). Compared as instants, a
+// UTC-plus zone reads today's own entry as belonging to tomorrow and drops it
+// (issue #48 class).
 func filterLogsNotAfter(logs []models.DailyLog, cutoff time.Time) []models.DailyLog {
 	if len(logs) == 0 || cutoff.IsZero() {
 		return logs
@@ -632,7 +639,7 @@ func filterLogsNotAfter(logs []models.DailyLog, cutoff time.Time) []models.Daily
 
 	filtered := make([]models.DailyLog, 0, len(logs))
 	for _, log := range logs {
-		if dateOnly(log.Date).After(cutoff) {
+		if CalendarDaysBetween(cutoff, log.Date) > 0 {
 			continue
 		}
 		filtered = append(filtered, log)
