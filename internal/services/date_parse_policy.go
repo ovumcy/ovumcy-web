@@ -49,13 +49,13 @@ func ParseDayDate(raw string, location *time.Location) (time.Time, error) {
 
 	year, month, day := parsed.Date()
 
-	// startOfCalendarDay returns the first instant that exists on the requested
+	// StartOfCalendarDay returns the first instant that exists on the requested
 	// day whenever one does, so a resolved value carrying a DIFFERENT calendar
 	// date is the signal that the zone skipped the whole day: it is time.Date's
 	// backward normalization into the previous day, kept there for the stored-
 	// value helpers that have no error channel. Reading it as a parsed date is
 	// the silent one-day shift, so the input boundary refuses it here instead.
-	resolved := startOfCalendarDay(year, month, day, location)
+	resolved := StartOfCalendarDay(year, month, day, location)
 	if resolvedYear, resolvedMonth, resolvedDay := resolved.Date(); resolvedYear != year || resolvedMonth != month || resolvedDay != day {
 		return time.Time{}, ErrDayDateNonexistent
 	}

@@ -81,11 +81,18 @@ func TestNextRunHourZeroAccepted(t *testing.T) {
 // loop recomputed the same negative delay: a full notify pass over every owner,
 // repeated from local 23:00 until the transition.
 //
+// Advancing past such a day is not the answer either: that skips the day's pass
+// for every owner, and a reminder due only on that day is then never delivered
+// (nothing ran, so no watermark can compensate). The day resolves to its FIRST
+// EXISTING INSTANT — the transition — which is the convention the rest of the
+// tree already follows through services.StartOfCalendarDay.
+//
 // The zones are west of UTC on purpose: only there does Go normalize a missing
 // midnight backward. East-of-UTC zones normalize forward and would prove nothing.
 // Verified against this host's tzdata:
-// time.Date(2025,9,7,0,0,0,0,Santiago) -> 2025-09-06T23:00:00-04:00 and
-// time.Date(2026,3,8,0,0,0,0,Havana)   -> 2026-03-07T23:00:00-05:00.
+// time.Date(2025,9,7,0,0,0,0,Santiago) -> 2025-09-06T23:00:00-04:00, whose day
+// really begins at 2025-09-07T01:00:00-03:00; time.Date(2026,3,8,0,0,0,0,Havana)
+// -> 2026-03-07T23:00:00-05:00, day begins 2026-03-08T01:00:00-04:00.
 func TestNextRunHourZeroAcrossMissingMidnight(t *testing.T) {
 	cases := []struct {
 		name string
@@ -97,9 +104,11 @@ func TestNextRunHourZeroAcrossMissingMidnight(t *testing.T) {
 		day   int
 		hour  int
 		min   int
+		// want is the first instant the transition day really has, in RFC3339.
+		want string
 	}{
-		{name: "America/Santiago 2025-09-07", zone: "America/Santiago", year: 2025, month: 9, day: 6, hour: 23, min: 30},
-		{name: "America/Havana 2026-03-08", zone: "America/Havana", year: 2026, month: 3, day: 7, hour: 23, min: 30},
+		{name: "America/Santiago 2025-09-07", zone: "America/Santiago", year: 2025, month: 9, day: 6, hour: 23, min: 30, want: "2025-09-07T01:00:00-03:00"},
+		{name: "America/Havana 2026-03-08", zone: "America/Havana", year: 2026, month: 3, day: 7, hour: 23, min: 30, want: "2026-03-08T01:00:00-04:00"},
 	}
 
 	for _, tc := range cases {
@@ -118,9 +127,17 @@ func TestNextRunHourZeroAcrossMissingMidnight(t *testing.T) {
 			if !got.After(now) {
 				t.Fatalf("nextRun must return an instant strictly after now: got %s, now %s", got.Format(time.RFC3339), now.Format(time.RFC3339))
 			}
-			// It must also read as midnight locally: the schedule keeps its hour.
-			if h, m, s := got.In(loc).Clock(); h != 0 || m != 0 || s != 0 {
-				t.Fatalf("expected the fire to stay at local 00:00:00, got %s", got.In(loc).Format(time.RFC3339))
+			// The pass must still happen ON the transition day: skipping it drops a
+			// day of reminders for every owner.
+			if y, m, d := got.In(loc).Date(); y != tc.year || m != tc.month || d != tc.day+1 {
+				t.Fatalf("expected the fire to land on the transition day %d-%02d-%02d, got %s", tc.year, tc.month, tc.day+1, got.In(loc).Format(time.RFC3339))
+			}
+			want, err := time.Parse(time.RFC3339, tc.want)
+			if err != nil {
+				t.Fatalf("bad want literal %q: %v", tc.want, err)
+			}
+			if !got.Equal(want) {
+				t.Fatalf("expected the transition day's first existing instant %s, got %s", want.Format(time.RFC3339), got.In(loc).Format(time.RFC3339))
 			}
 
 			// Scheduler seam, no real clock involved: the armed delay must be
