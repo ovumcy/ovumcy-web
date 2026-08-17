@@ -54,6 +54,35 @@ function dashboardPage({ entryExists = false, notes = "" } = {}) {
 </body></html>`;
 }
 
+/**
+ * Records every fetch and leaves each one unresolved until `settleAll` is
+ * called, so a test can hold a save open on the wire without a timer.
+ */
+function installDeferredFetchRecorder(window) {
+  const calls = [];
+  const pending = [];
+  window.fetch = (url, init) => {
+    calls.push({ url: String(url), init: init || {} });
+    return new Promise((resolve) => {
+      pending.push(() =>
+        resolve({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: () => Promise.resolve(""),
+        })
+      );
+    });
+  };
+  return {
+    calls,
+    settleAll() {
+      const waiting = pending.splice(0, pending.length);
+      waiting.forEach((resolve) => resolve());
+    },
+  };
+}
+
 /** Records every fetch the bundle makes and answers each one with `ok`. */
 function installFetchRecorder(window, { ok = true } = {}) {
   const calls = [];
@@ -96,10 +125,12 @@ function fireChange(node) {
   node.dispatchEvent(new node.ownerDocument.defaultView.Event("change", { bubbles: true }));
 }
 
-// The keepalive flush the bundle installs for page unload runs the same runner
-// the 2 s debounce does, so a test can reach the request without sitting out
-// the debounce. What it cannot do is invent a request the runner would not
-// make: an untouched form is still skipped, which is exactly the rail below.
+// The keepalive flush the bundle installs for page unload reaches the same
+// runner the 2 s debounce does, so a test can get at the request without
+// sitting out the debounce. What it cannot do is invent a request the runner
+// would not make: an untouched form is still skipped, which is exactly the rail
+// below. With a save already open it takes the other branch and sends the
+// newest body itself — the subject of the in-flight test further down.
 function flushAutosave(window) {
   window.dispatchEvent(new window.Event("beforeunload"));
 }
@@ -232,6 +263,59 @@ test("undoing the first save of an empty day clears it instead of writing an emp
     assert.equal(calls()[1].init.method, "DELETE", "an empty day is an absent entry, not an empty one");
     assert.equal(calls()[1].url, `/api/v1/days/${TODAY}?source=dashboard`);
     assert.equal(toggle.checked, false, "the screen goes back with it");
+  } finally {
+    dom.window.close();
+  }
+});
+
+// The journal has no save button, so the page leaving is the last chance the
+// newest value gets. An edit made while an earlier save is still open bumps the
+// version but queues nothing — the only thing that would ever carry it is the
+// re-arm that runs after the response, a timer no unload survives. So the
+// unload flush has to put that body on the wire itself.
+test("an edit made while a save is in flight still reaches the server on unload", async () => {
+  const recorder = { value: null };
+  const dom = await loadDOMWithScript(APP_BUNDLE, {
+    html: dashboardPage({ entryExists: true, notes: "" }),
+    beforeRun: (window) => {
+      recorder.value = installDeferredFetchRecorder(window);
+    },
+  });
+  const { calls, settleAll } = recorder.value;
+  try {
+    const notes = dom.window.document.querySelector("#today-notes");
+    notes.value = "first edit";
+    notes.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    flushAutosave(dom.window);
+    await settle();
+
+    assert.equal(calls.length, 1, "the first edit goes out");
+    assert.ok(bodyOf(calls[0]).includes(formValue("notes", "first edit")));
+
+    // The response never arrives: this save is still open on the wire.
+    notes.value = "newer edit before navigation";
+    notes.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    flushAutosave(dom.window);
+    await settle();
+
+    assert.equal(calls.length, 2, "the edit made during the open save is sent on its own request");
+    const flushed = calls[1];
+    assert.equal(flushed.url, `/api/v1/days/${TODAY}`);
+    assert.equal(flushed.init.method, "PUT");
+    assert.equal(flushed.init.keepalive, true, "an unload request must outlive the page");
+    assert.ok(
+      bodyOf(flushed).includes(formValue("notes", "newer edit before navigation")),
+      "the newest journal value is what the server must end up holding"
+    );
+
+    // A cancelled navigation fires beforeunload again; the same body must not
+    // be sent a second time.
+    flushAutosave(dom.window);
+    await settle();
+    assert.equal(calls.length, 2, "the unload flush sends a given version at most once");
+
+    settleAll();
+    await settle();
   } finally {
     dom.window.close();
   }
