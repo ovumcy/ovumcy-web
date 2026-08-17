@@ -256,13 +256,14 @@ func TestListAllForNotifyReturnsErrorOnQueryFailure(t *testing.T) {
 	}
 }
 
-// TestUpdateWebhookWatermarkCanonicalizesToUTCMidnight proves the watermark
-// write (issue #124, slice 3) stores the cycle anchor as UTC-midnight even when
-// handed a location-bearing time — the write uses Updates(map), which bypasses
-// the model BeforeSave hook, so the method must canonicalize itself. A drifted
+// TestClaimWebhookWatermarkCanonicalizesToUTCMidnight proves the watermark claim
+// (issue #124, slice 3) stores the cycle anchor as UTC-midnight even when handed
+// a location-bearing time — the write uses Update/Updates, which bypasses the
+// model BeforeSave hook, so the method must canonicalize itself. A drifted
 // (non-midnight, non-UTC) stored value would compare unequal to a UTC-midnight
-// anchor on the next pass and break idempotency.
-func TestUpdateWebhookWatermarkCanonicalizesToUTCMidnight(t *testing.T) {
+// anchor on the next pass and break both idempotency and the claim predicate,
+// which is exact equality on the stored value.
+func TestClaimWebhookWatermarkCanonicalizesToUTCMidnight(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
 	user := createUserForTimezoneTest(t, repo, "wh-watermark@example.com")
 
@@ -278,8 +279,12 @@ func TestUpdateWebhookWatermarkCanonicalizesToUTCMidnight(t *testing.T) {
 	}
 	anchor := time.Date(2026, time.March, 14, 15, 0, 0, 0, loc)
 
-	if err := repo.UpdateWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor); err != nil {
-		t.Fatalf("UpdateWebhookWatermark: %v", err)
+	claimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor)
+	if err != nil {
+		t.Fatalf("ClaimWebhookWatermark: %v", err)
+	}
+	if !claimed {
+		t.Fatal("the first claim on an empty watermark must be won")
 	}
 
 	after := reloadUserForWebhook(t, repo, user.ID)
@@ -297,20 +302,24 @@ func TestUpdateWebhookWatermarkCanonicalizesToUTCMidnight(t *testing.T) {
 	}
 	// Advancing a send watermark is not a security-posture change.
 	if after.AuthSessionVersion != before.AuthSessionVersion {
-		t.Fatalf("UpdateWebhookWatermark must not bump auth_session_version: before=%d after=%d", before.AuthSessionVersion, after.AuthSessionVersion)
+		t.Fatalf("ClaimWebhookWatermark must not bump auth_session_version: before=%d after=%d", before.AuthSessionVersion, after.AuthSessionVersion)
 	}
 }
 
-// TestUpdateWebhookWatermarkOvulationColumn proves the ovulation kind writes the
+// TestClaimWebhookWatermarkOvulationColumn proves the ovulation kind writes the
 // ovulation column (and not the period one), so the two kinds dedupe
 // independently.
-func TestUpdateWebhookWatermarkOvulationColumn(t *testing.T) {
+func TestClaimWebhookWatermarkOvulationColumn(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
 	user := createUserForTimezoneTest(t, repo, "wh-ovulation@example.com")
 
 	anchor := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
-	if err := repo.UpdateWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypeOvulation, anchor); err != nil {
-		t.Fatalf("UpdateWebhookWatermark: %v", err)
+	claimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypeOvulation, anchor)
+	if err != nil {
+		t.Fatalf("ClaimWebhookWatermark: %v", err)
+	}
+	if !claimed {
+		t.Fatal("the first claim on an empty watermark must be won")
 	}
 
 	after := reloadUserForWebhook(t, repo, user.ID)
@@ -322,14 +331,17 @@ func TestUpdateWebhookWatermarkOvulationColumn(t *testing.T) {
 	}
 }
 
-// TestUpdateWebhookWatermarkRejectsUnknownType proves an unrecognized reminder
+// TestClaimWebhookWatermarkRejectsUnknownType proves an unrecognized reminder
 // type is rejected (no column write), so a typo can never scribble an unexpected
 // column.
-func TestUpdateWebhookWatermarkRejectsUnknownType(t *testing.T) {
+func TestClaimWebhookWatermarkRejectsUnknownType(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
 	user := createUserForTimezoneTest(t, repo, "wh-badtype@example.com")
 
-	err := repo.UpdateWebhookWatermark(context.Background(), user.ID, "not-a-real-kind", time.Now())
+	claimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, "not-a-real-kind", time.Now())
+	if claimed {
+		t.Fatal("an unknown reminder type must never report a won claim")
+	}
 	if err == nil {
 		t.Fatal("expected an error for an unknown reminder type")
 	}
@@ -339,21 +351,146 @@ func TestUpdateWebhookWatermarkRejectsUnknownType(t *testing.T) {
 	}
 }
 
-// TestUpdateWebhookWatermarkScopedToUser proves the watermark write is strictly
+// TestClaimWebhookWatermarkScopedToUser proves the watermark write is strictly
 // scoped to the target user id: advancing owner A's watermark never touches owner
 // B's row (the household-multi-owner isolation boundary).
-func TestUpdateWebhookWatermarkScopedToUser(t *testing.T) {
+func TestClaimWebhookWatermarkScopedToUser(t *testing.T) {
 	repo := openWebhookRepoForTest(t)
 	owner := createUserForTimezoneTest(t, repo, "wh-wm-owner@example.com")
 	other := createUserForTimezoneTest(t, repo, "wh-wm-other@example.com")
 
 	anchor := time.Date(2026, time.May, 20, 0, 0, 0, 0, time.UTC)
-	if err := repo.UpdateWebhookWatermark(context.Background(), owner.ID, models.WebhookReminderTypePeriod, anchor); err != nil {
-		t.Fatalf("UpdateWebhookWatermark: %v", err)
+	if _, err := repo.ClaimWebhookWatermark(context.Background(), owner.ID, models.WebhookReminderTypePeriod, anchor); err != nil {
+		t.Fatalf("ClaimWebhookWatermark: %v", err)
 	}
 
 	otherAfter := reloadUserForWebhook(t, repo, other.ID)
 	if otherAfter.WebhookPeriodLastSentCycleStart != nil {
 		t.Fatalf("owner B's watermark must be untouched, got %v", otherAfter.WebhookPeriodLastSentCycleStart)
+	}
+}
+
+// TestClaimWebhookWatermarkIsExclusivePerAnchor proves the claim predicate on the
+// real engine: the first claim on an anchor is won, a second claim on the SAME
+// anchor is lost (zero rows, not an error), and a claim on a DIFFERENT anchor —
+// the next cycle — is won again. That is what stops two overlapping notify passes
+// from both delivering the same reminder while leaving the next cycle claimable.
+func TestClaimWebhookWatermarkIsExclusivePerAnchor(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-claim-exclusive@example.com")
+
+	anchor := time.Date(2026, time.March, 26, 0, 0, 0, 0, time.UTC)
+
+	first, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor)
+	if err != nil {
+		t.Fatalf("first claim: %v", err)
+	}
+	if !first {
+		t.Fatal("the first claim on an empty watermark must be won")
+	}
+
+	second, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor)
+	if err != nil {
+		t.Fatalf("second claim must not error, a lost claim is a normal outcome: %v", err)
+	}
+	if second {
+		t.Fatal("a second claim on an anchor already claimed must be lost")
+	}
+
+	// A location-bearing spelling of the same calendar day is the same claim: the
+	// method canonicalizes before comparing, so a pass running in the owner's zone
+	// cannot re-claim what a pass running in UTC already took.
+	loc, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		t.Fatalf("load location: %v", err)
+	}
+	sameDay, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, time.Date(2026, time.March, 26, 9, 0, 0, 0, loc))
+	if err != nil {
+		t.Fatalf("same-day claim: %v", err)
+	}
+	if sameDay {
+		t.Fatal("a claim on the same calendar day in another zone must be lost")
+	}
+
+	nextCycle := anchor.AddDate(0, 0, 28)
+	third, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, nextCycle)
+	if err != nil {
+		t.Fatalf("next-cycle claim: %v", err)
+	}
+	if !third {
+		t.Fatal("the next cycle's anchor is a different reminder and must be claimable")
+	}
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart == nil || !after.WebhookPeriodLastSentCycleStart.UTC().Equal(nextCycle) {
+		t.Fatalf("expected the watermark at %s, got %v", nextCycle, after.WebhookPeriodLastSentCycleStart)
+	}
+}
+
+// TestReleaseWebhookWatermarkRestoresOnlyItsOwnClaim proves the release side: it
+// puts back the value the claiming pass found (including SQL NULL, so a first-ever
+// reminder stays retryable), and it refuses to roll back a watermark that has
+// moved on — a claim somebody else now owns must not be resurrected.
+func TestReleaseWebhookWatermarkRestoresOnlyItsOwnClaim(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-release@example.com")
+
+	anchor := time.Date(2026, time.March, 26, 0, 0, 0, 0, time.UTC)
+	if _, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if err := repo.ReleaseWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor, nil); err != nil {
+		t.Fatalf("release to NULL: %v", err)
+	}
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart != nil {
+		t.Fatalf("a released first-ever claim must leave the column NULL, got %v", after.WebhookPeriodLastSentCycleStart)
+	}
+	// Released means retryable: the same anchor can be claimed again.
+	reclaimed, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, anchor)
+	if err != nil {
+		t.Fatalf("reclaim: %v", err)
+	}
+	if !reclaimed {
+		t.Fatal("a released anchor must be claimable again, otherwise a failed delivery is a permanent skip")
+	}
+
+	// Now the previous-value path: a pass that found the March anchor claims April
+	// and fails, so the column must go back to March exactly.
+	previous := anchor
+	april := time.Date(2026, time.April, 23, 0, 0, 0, 0, time.UTC)
+	if _, err := repo.ClaimWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, april); err != nil {
+		t.Fatalf("april claim: %v", err)
+	}
+	if err := repo.ReleaseWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, april, &previous); err != nil {
+		t.Fatalf("release to previous: %v", err)
+	}
+	after = reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart == nil || !after.WebhookPeriodLastSentCycleStart.UTC().Equal(previous) {
+		t.Fatalf("expected the watermark restored to %s, got %v", previous, after.WebhookPeriodLastSentCycleStart)
+	}
+
+	// A stale release — the column no longer holds the anchor this pass wrote — is
+	// a no-op, not an error, and leaves the newer value standing.
+	if err := repo.ReleaseWebhookWatermark(context.Background(), user.ID, models.WebhookReminderTypePeriod, april, nil); err != nil {
+		t.Fatalf("stale release must not error: %v", err)
+	}
+	after = reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart == nil || !after.WebhookPeriodLastSentCycleStart.UTC().Equal(previous) {
+		t.Fatalf("a stale release must leave the newer watermark alone, got %v", after.WebhookPeriodLastSentCycleStart)
+	}
+}
+
+// TestReleaseWebhookWatermarkRejectsUnknownType mirrors the claim's type guard:
+// an unrecognized reminder kind is rejected before any column is touched.
+func TestReleaseWebhookWatermarkRejectsUnknownType(t *testing.T) {
+	repo := openWebhookRepoForTest(t)
+	user := createUserForTimezoneTest(t, repo, "wh-release-badtype@example.com")
+
+	if err := repo.ReleaseWebhookWatermark(context.Background(), user.ID, "not-a-real-kind", time.Now(), nil); err == nil {
+		t.Fatal("expected an error for an unknown reminder type")
+	}
+	after := reloadUserForWebhook(t, repo, user.ID)
+	if after.WebhookPeriodLastSentCycleStart != nil || after.WebhookOvulationLastSentCycleStart != nil {
+		t.Fatal("a rejected type must not write any watermark column")
 	}
 }

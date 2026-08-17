@@ -73,14 +73,24 @@ type watermarkWrite struct {
 	anchor       time.Time
 }
 
-// stubNotifyRepo serves a fixed record set and records every watermark write, so
-// a test can assert watermarks advance ONLY on success.
+// stubNotifyRepo serves a fixed record set and tracks the watermark column the
+// pass leaves behind. A claim appends a write; a release removes the matching one
+// again, because a released claim leaves the column exactly where the pass found
+// it — so writes() reports the NET watermark writes of a pass and a test can
+// still assert that a watermark stands only for a delivered reminder.
+//
+// claimErr makes the claim itself fail (a storage error before any request);
+// claimLost makes it return false, standing in for a concurrent pass that won the
+// same anchor.
 type stubNotifyRepo struct {
-	records      []models.WebhookNotifyRecord
-	listErr      error
-	watermarkErr error
-	mu           sync.Mutex
-	watermarks   []watermarkWrite
+	records    []models.WebhookNotifyRecord
+	listErr    error
+	claimErr   error
+	claimLost  bool
+	releaseErr error
+	mu         sync.Mutex
+	watermarks []watermarkWrite
+	releases   []watermarkWrite
 }
 
 func (stub *stubNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookNotifyRecord, error) {
@@ -90,11 +100,31 @@ func (stub *stubNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookN
 	return stub.records, nil
 }
 
-func (stub *stubNotifyRepo) UpdateWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time) error {
+func (stub *stubNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time) (bool, error) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
+	if stub.claimErr != nil {
+		return false, stub.claimErr
+	}
+	if stub.claimLost {
+		return false, nil
+	}
 	stub.watermarks = append(stub.watermarks, watermarkWrite{userID: userID, reminderType: reminderType, anchor: anchor})
-	return stub.watermarkErr
+	return true, nil
+}
+
+func (stub *stubNotifyRepo) ReleaseWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, _ *time.Time) error {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	stub.releases = append(stub.releases, watermarkWrite{userID: userID, reminderType: reminderType, anchor: anchor})
+	for i := len(stub.watermarks) - 1; i >= 0; i-- {
+		claim := stub.watermarks[i]
+		if claim.userID == userID && claim.reminderType == reminderType && claim.anchor.Equal(anchor) {
+			stub.watermarks = append(stub.watermarks[:i], stub.watermarks[i+1:]...)
+			break
+		}
+	}
+	return stub.releaseErr
 }
 
 func (stub *stubNotifyRepo) writes() []watermarkWrite {
@@ -102,6 +132,14 @@ func (stub *stubNotifyRepo) writes() []watermarkWrite {
 	defer stub.mu.Unlock()
 	out := make([]watermarkWrite, len(stub.watermarks))
 	copy(out, stub.watermarks)
+	return out
+}
+
+func (stub *stubNotifyRepo) released() []watermarkWrite {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	out := make([]watermarkWrite, len(stub.releases))
+	copy(out, stub.releases)
 	return out
 }
 
@@ -690,14 +728,14 @@ func TestNotifySkipsOwnerWhenLogReadFails(t *testing.T) {
 	}
 }
 
-// TestNotifyWatermarkWriteFailureStillCountsSent proves the delivery-vs-watermark
-// split: a watermark write that fails AFTER a successful 2xx is logged but does
-// NOT turn the send into a failure — the reminder was delivered, so it counts as
-// sent (a stuck watermark would at worst re-send next pass, never lose data).
-func TestNotifyWatermarkWriteFailureStillCountsSent(t *testing.T) {
+// TestNotifyClaimFailureDeliversNothing proves the claim is a precondition of the
+// request, not bookkeeping around it: when the claim cannot be taken (a storage
+// error), NOTHING is delivered. Counting it as failed is what an operator needs —
+// the reminder is still pending and the next pass retries it.
+func TestNotifyClaimFailureDeliversNothing(t *testing.T) {
 	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
 	record := dueRecord(1, "https://a.example/hook", now, 26)
-	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}, watermarkErr: errors.New("watermark write failed")}
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}, claimErr: errors.New("watermark claim failed")}
 	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
 	deliverer := &stubDeliverer{}
 	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
@@ -706,11 +744,98 @@ func TestNotifyWatermarkWriteFailureStillCountsSent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
-	if report.Sent != 1 {
-		t.Fatalf("a delivered reminder counts as sent even when the watermark write fails, sent=%d", report.Sent)
+	if len(deliverer.deliveries()) != 0 {
+		t.Fatalf("an unclaimed reminder must never be delivered, deliveries=%d", len(deliverer.deliveries()))
 	}
-	if report.Failed != 0 {
-		t.Fatalf("a watermark write failure is not a delivery failure, failed=%d", report.Failed)
+	if report.Sent != 0 || report.Failed != 1 {
+		t.Fatalf("expected sent=0 failed=1 for an unclaimable reminder, got sent=%d failed=%d", report.Sent, report.Failed)
+	}
+	if len(report.OwnerIDsFailed) != 1 || report.OwnerIDsFailed[0] != 1 {
+		t.Fatalf("expected owner 1 flagged as failed, got %v", report.OwnerIDsFailed)
+	}
+}
+
+// TestNotifyLostClaimSkipsWithoutDelivering proves the losing side of the race:
+// when a concurrent pass already owns the (owner, kind, anchor), this pass makes
+// NO outbound request and accounts the reminder as skipped-idempotent — the
+// reminder is being delivered, just not by this pass, so it is not a failure.
+func TestNotifyLostClaimSkipsWithoutDelivering(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}, claimLost: true}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.Due != 1 {
+		t.Fatalf("the decision still computes the reminder as due, due=%d", report.Due)
+	}
+	if len(deliverer.deliveries()) != 0 {
+		t.Fatalf("a lost claim must not deliver, deliveries=%d", len(deliverer.deliveries()))
+	}
+	if report.Sent != 0 || report.Failed != 0 {
+		t.Fatalf("a lost claim is neither a send nor a failure, sent=%d failed=%d", report.Sent, report.Failed)
+	}
+	if report.SkippedIdempotent != 1 {
+		t.Fatalf("a lost claim must be accounted skipped-idempotent, skipped=%d", report.SkippedIdempotent)
+	}
+}
+
+// TestNotifyFailedDeliveryReleasesTheClaim proves the retry semantics survive the
+// claim: a failed POST hands the claim back, keyed on the same (owner, kind,
+// anchor), so the watermark is left where the pass found it and the reminder
+// stays retryable instead of turning into a permanent skip.
+func TestNotifyFailedDeliveryReleasesTheClaim(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{failEvery: true}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.Failed != 1 || report.Sent != 0 {
+		t.Fatalf("expected failed=1 sent=0, got failed=%d sent=%d", report.Failed, report.Sent)
+	}
+	releases := repo.released()
+	if len(releases) != 1 {
+		t.Fatalf("a failed delivery must release its claim exactly once, got %d releases", len(releases))
+	}
+	if releases[0].userID != 1 || releases[0].reminderType != DueReminderTypePeriod {
+		t.Fatalf("release must name the claimed owner and kind, got %+v", releases[0])
+	}
+	if len(repo.writes()) != 0 {
+		t.Fatal("after the release the watermark must stand exactly where the pass found it")
+	}
+}
+
+// TestNotifyReleaseFailureStillReportsTheFailedDelivery proves a release that
+// itself errors does not change the pass's accounting: the delivery failed and is
+// reported as failed, nothing is delivered twice, and the pass continues.
+func TestNotifyReleaseFailureStillReportsTheFailedDelivery(t *testing.T) {
+	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
+	record := dueRecord(1, "https://a.example/hook", now, 26)
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}, releaseErr: errors.New("release failed")}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	deliverer := &stubDeliverer{failEvery: true}
+	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), now, time.UTC, false)
+	if err != nil {
+		t.Fatalf("a release failure must not fail the pass: %v", err)
+	}
+	if report.Failed != 1 || report.Sent != 0 {
+		t.Fatalf("expected failed=1 sent=0, got failed=%d sent=%d", report.Failed, report.Sent)
+	}
+	if len(deliverer.deliveries()) != 1 {
+		t.Fatalf("expected exactly one attempted delivery, got %d", len(deliverer.deliveries()))
 	}
 }
 

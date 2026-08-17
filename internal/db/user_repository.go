@@ -239,26 +239,90 @@ var webhookWatermarkColumns = map[string]string{
 	models.WebhookReminderTypeOvulation: "webhook_ovulation_last_sent_cycle_start",
 }
 
-// UpdateWebhookWatermark advances the per-kind "last sent" watermark for one
-// owner after a SUCCESSFUL webhook delivery (issue #124, slice 3), scoped
-// strictly to userID. reminderType selects the column (period/ovulation);
-// cycleAnchor is the cycle-start the reminder covered.
+// canonicalWatermarkAnchor reduces a cycle anchor to UTC midnight, the single
+// stored form of every watermark value. It is done HERE rather than by the
+// model's BeforeSave hook because these writes go through Update/Updates, which
+// bypass the hook — a raw location-bearing time would otherwise be stored
+// verbatim and compare unequal to a UTC-midnight anchor on the next pass,
+// breaking idempotency and, with it, the claim predicate below.
+func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
+	year, month, day := cycleAnchor.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+}
+
+// ClaimWebhookWatermark takes an exclusive claim on one (owner, reminder kind,
+// cycle anchor) send BEFORE it is delivered, scoped strictly to userID, and
+// reports whether this caller won it. reminderType selects the column
+// (period/ovulation); cycleAnchor is the cycle-start the reminder covers.
 //
-// cycleAnchor is canonicalized to UTC-midnight HERE because this write uses
-// Updates(map[string]any{...}), which bypasses the model's BeforeSave hook that
-// normally does it — so a raw location-bearing time would otherwise be stored
-// verbatim and could compare unequal to a UTC-midnight anchor on the next pass,
-// breaking idempotency. It touches only the one watermark column: NOT
-// auth_session_version (advancing a send watermark is not a security-posture
-// change) and NOT any other setting.
-func (repo *UserRepository) UpdateWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time) error {
+// The claim IS the watermark write — there is no second, separate advance after
+// delivery. Writing it first is what makes the notify pass safe against overlap:
+// the scheduler goroutine and an operator `ovumcy notify` process both compute
+// their due-set from a record snapshot, so both can see the same uncovered
+// anchor. An unconditional write let both deliver; a conditional one cannot.
+//
+// The UPDATE is a compare-and-set and its predicate is the persistence-side
+// mirror of the suppression the pure decision layer already applies (a reminder
+// whose watermark covers its anchor is not due):
+//
+//   - id = ? scopes the write to one owner, never another row.
+//   - "column IS NULL OR column <> anchor" is "the stored watermark does not
+//     already cover this anchor". A reminder that reached this call was emitted
+//     by the decision, which means the snapshot watermark did NOT cover the
+//     anchor — so the only way this predicate is false is another pass having
+//     written exactly this anchor in between. That is precisely the race, and
+//     losing it is the correct outcome.
+//
+// Exactly one concurrent caller can see one row affected, because the conditional
+// UPDATE is evaluated under the row lock: whichever statement runs second reads
+// the column the first one already set. Zero rows is a normal outcome, not an
+// error — the caller skips the send instead of duplicating it.
+//
+// It touches only the one watermark column: NOT auth_session_version (taking a
+// send claim is not a security-posture change) and NOT any other setting.
+func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time) (bool, error) {
+	column, ok := webhookWatermarkColumns[reminderType]
+	if !ok {
+		return false, fmt.Errorf("unknown webhook reminder type %q", reminderType)
+	}
+	anchorUTC := canonicalWatermarkAnchor(cycleAnchor)
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND ("+column+" IS NULL OR "+column+" <> ?)", userID, anchorUTC).
+		Update(column, anchorUTC)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// ReleaseWebhookWatermark gives a claim back after the delivery it covered
+// failed, restoring the watermark to the value the claiming pass found, scoped
+// strictly to userID. It is what keeps a retryable failure retryable: without it
+// a claim taken before a failed POST would read exactly like a successful send
+// and permanently suppress the reminder.
+//
+// The restore is itself a compare-and-set — "column = anchor" — so it can only
+// undo THIS pass's own claim. If the column has moved on (a later pass re-claimed
+// the anchor, or the owner's row was written by another path), zero rows are
+// affected and the newer value stands; rolling back blindly would resurrect a
+// reminder somebody else has already sent.
+//
+// previous is written verbatim, not canonicalized: "unchanged" means the exact
+// value that was there. A nil previous restores SQL NULL (never sent yet). A
+// zero-row outcome is normal and not an error.
+func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) error {
 	column, ok := webhookWatermarkColumns[reminderType]
 	if !ok {
 		return fmt.Errorf("unknown webhook reminder type %q", reminderType)
 	}
-	year, month, day := cycleAnchor.Date()
-	anchorUTC := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
-	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update(column, anchorUTC).Error
+	anchorUTC := canonicalWatermarkAnchor(cycleAnchor)
+	var restored any
+	if previous != nil && !previous.IsZero() {
+		restored = *previous
+	}
+	return repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND "+column+" = ?", userID, anchorUTC).
+		Updates(map[string]any{column: restored}).Error
 }
 
 // SaveCalendarFeedToken sets (creates or rotates) the calendar-feed token
