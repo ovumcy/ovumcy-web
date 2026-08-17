@@ -265,7 +265,12 @@ func DashboardUpcomingPredictions(stats CycleStats, user *models.User, today tim
 
 	prediction.NextPeriodStart = CalendarDay(cycleStart.AddDate(0, 0, cycleLength), today.Location())
 	window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
-	if window.Calculable && window.OvulationDate.Before(today) {
+	// window.OvulationDate is a UTC-midnight date-only value while today is a
+	// location-midnight working value, so the two are compared as calendar days
+	// rather than as instants: local midnight in a UTC-minus zone falls hours
+	// after UTC midnight of the same date, which read today's ovulation as past
+	// and rolled the anchor a full cycle forward (issue #48 class).
+	if window.Calculable && CalendarDaysBetween(window.OvulationDate, today) > 0 {
 		cycleStart = ShiftCycleStartToFutureOvulation(cycleStart, window.OvulationDate, cycleLength, today)
 		window = PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
 	}

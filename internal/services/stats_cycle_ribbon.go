@@ -145,8 +145,16 @@ func statsCycleRibbonRow(cycle completedCycleSpan, axisDays int, luteal int, sho
 		if showPhases {
 			cell.Phase = statsCycleRibbonPhase(day, cycle.PeriodLength, window, cycle.Start)
 			if window.Calculable {
-				cell.IsFertile = !date.Before(window.FertilityWindowStart) && !date.After(window.FertilityWindowEnd)
-				cell.IsFertilePeak = date.Equal(window.OvulationDate)
+				// date is a location midnight (cycle.Start carries the row's own
+				// location) while the window bounds are UTC-midnight date-only
+				// values, so both ends are compared as calendar days — exactly as
+				// the phase axis above already does through CalendarDaysBetween.
+				// As instants the pair drops the last fertile day in a UTC-minus
+				// zone and the first one in a UTC-plus zone, and the peak equality
+				// is never true outside UTC at all (issue #48 class).
+				cell.IsFertile = CalendarDaysBetween(window.FertilityWindowStart, date) >= 0 &&
+					CalendarDaysBetween(date, window.FertilityWindowEnd) >= 0
+				cell.IsFertilePeak = CalendarDaysBetween(date, window.OvulationDate) == 0
 			}
 		} else if isPeriod {
 			// With inferred phases off, the observed period days are still a

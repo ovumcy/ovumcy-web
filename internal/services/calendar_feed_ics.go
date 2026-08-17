@@ -169,7 +169,12 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		}
 
 		window := PredictCycleWindow(anchor, cycleLength, stats.LutealPhase)
-		if window.Calculable && !window.OvulationDate.Before(today) {
+		// nextPeriodStart above is a location midnight like today, so it compares
+		// directly; window.OvulationDate is a UTC-midnight date-only value and
+		// needs a calendar-day comparison, or the ovulation event disappears from
+		// the feed on the ovulation day itself in every UTC-minus zone (issue #48
+		// class).
+		if window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 {
 			appendEvent("ovulation", CalendarDay(window.OvulationDate, input.Location))
 		}
 	}

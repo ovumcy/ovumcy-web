@@ -289,7 +289,12 @@ func ovulationCycleAnchor(stats CycleStats, today time.Time, cycleLength int) ti
 		return time.Time{}
 	}
 	window := PredictCycleWindow(cycleStart, cycleLength, stats.LutealPhase)
-	if window.Calculable && window.OvulationDate.Before(today) {
+	// The same calendar-day comparison DashboardUpcomingPredictions makes:
+	// window.OvulationDate is a UTC-midnight date-only value, today an owner
+	// location midnight, and comparing them as instants shifted the outbound
+	// reminder's anchor a full cycle on the ovulation day itself in every
+	// UTC-minus zone (issue #48 class).
+	if window.Calculable && CalendarDaysBetween(window.OvulationDate, today) > 0 {
 		cycleStart = ShiftCycleStartToFutureOvulation(cycleStart, window.OvulationDate, cycleLength, today)
 	}
 	return CalendarDay(cycleStart, today.Location())
