@@ -208,6 +208,115 @@ func TestOvulationCycleAnchorKeepsTodaysCycleWestOfUTC(t *testing.T) {
 	}
 }
 
+// TestDashboardOvulationInPastIsCalendarBound locks the non-range branch of
+// dashboard_cycle.go's dashboardOvulationInPast: display.ovulationDate is the
+// PredictCycleWindow output (UTC midnight) while today is a location midnight.
+// West of UTC the ovulation day itself read as already past, so the dashboard
+// named the ovulation date and printed the amber "date is already in the past"
+// warning beside it.
+//
+// The range branch one line above is the control that must stay untouched: both
+// of its operands come from DashboardOvulationRange, built with CalendarDay in
+// the request location, so they already share a shape.
+func TestDashboardOvulationInPastIsCalendarBound(t *testing.T) {
+	t.Parallel()
+
+	const renderDay = "2026-02-16"
+
+	for _, testCase := range []struct{ name, zone string }{
+		{name: "west of UTC", zone: "America/New_York"},
+		{name: "east of UTC", zone: "Asia/Tokyo"},
+		{name: "UTC control", zone: "UTC"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			location := calendarDayComparisonZone(t, testCase.zone)
+			today := calendarDayComparisonToday(t, renderDay, location)
+
+			todaysOvulation := dashboardPredictionDisplay{
+				ovulationDate: dateOnly(mustParseDashboardDay(t, renderDay)),
+			}
+			if dashboardOvulationInPast(todaysOvulation, today) {
+				t.Fatalf("an ovulation predicted for today must not read as already past")
+			}
+
+			// Positive anchor: an ovulation genuinely on an earlier calendar day
+			// still reports true, so the guard cannot be satisfied by disabling
+			// the state altogether.
+			pastOvulation := dashboardPredictionDisplay{
+				ovulationDate: dateOnly(mustParseDashboardDay(t, "2026-02-15")),
+			}
+			if !dashboardOvulationInPast(pastOvulation, today) {
+				t.Fatalf("an ovulation on an earlier calendar day must still read as past")
+			}
+
+			// The range branch, unchanged: same-shape operands on both sides.
+			todaysRangeEnd := dashboardPredictionDisplay{
+				ovulationUseRange:   true,
+				ovulationRangeEnd:   CalendarDay(mustParseDashboardDay(t, renderDay), location),
+				ovulationRangeStart: CalendarDay(mustParseDashboardDay(t, "2026-02-12"), location),
+			}
+			if dashboardOvulationInPast(todaysRangeEnd, today) {
+				t.Fatalf("an ovulation range ending today must not read as already past")
+			}
+			pastRangeEnd := todaysRangeEnd
+			pastRangeEnd.ovulationRangeEnd = CalendarDay(mustParseDashboardDay(t, "2026-02-15"), location)
+			if !dashboardOvulationInPast(pastRangeEnd, today) {
+				t.Fatalf("an ovulation range that ended yesterday must still read as past")
+			}
+		})
+	}
+}
+
+// TestBuildDashboardCycleContextKeepsTodaysOvulationOutOfThePastWarning drives
+// the same site through the surface that renders it: an ordinary account, no
+// irregular mode, no DST date, whose projected ovulation falls on the day the
+// dashboard is rendered. The context must name the date AND leave
+// OvulationInPast false — naming the date while flagging it as past is the pair
+// the owner saw.
+func TestBuildDashboardCycleContextKeepsTodaysOvulationOutOfThePastWarning(t *testing.T) {
+	t.Parallel()
+
+	// Anchor 2026-02-03 with a 28-day cycle and a 14-day luteal phase puts
+	// ovulation on cycle day 14, i.e. exactly 2026-02-16.
+	const cycleStart = "2026-02-03"
+	const ovulationDay = "2026-02-16"
+
+	for _, testCase := range []struct{ name, zone string }{
+		{name: "west of UTC", zone: "America/New_York"},
+		{name: "east of UTC", zone: "Asia/Tokyo"},
+		{name: "UTC control", zone: "UTC"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			location := calendarDayComparisonZone(t, testCase.zone)
+			today := calendarDayComparisonToday(t, ovulationDay, location)
+			user := &models.User{Role: models.RoleOwner, CycleLength: 28, PeriodLength: 5}
+			stats := CycleStats{
+				LastPeriodStart:     CalendarDay(mustParseDashboardDay(t, cycleStart), location),
+				MedianCycleLength:   28,
+				AverageCycleLength:  28,
+				AveragePeriodLength: 5,
+				LutealPhase:         14,
+				CurrentCycleDay:     14,
+			}
+
+			context := BuildDashboardCycleContext(user, stats, today, location)
+			if got := CalendarDayKey(context.DisplayOvulationDate); got != ovulationDay {
+				t.Fatalf("displayed ovulation date = %s, want %s", got, ovulationDay)
+			}
+			if context.OvulationInPast {
+				t.Fatalf("the dashboard must not flag today's ovulation date as already in the past")
+			}
+			if context.NextPeriodInPast {
+				t.Fatalf("the next-period warning is a separate predicate and must stay false here")
+			}
+		})
+	}
+}
+
 // TestStatsCycleRibbonFertileWindowIsCalendarBound locks stats_cycle_ribbon.go,
 // the one site that breaks in BOTH directions: the row's dates are location
 // midnights while the window bounds are UTC midnights, so west of UTC the last
