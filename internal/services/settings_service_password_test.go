@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,50 @@ func TestValidatePasswordChangeRejectsWeakPassword(t *testing.T) {
 	err = service.ValidatePasswordChange(string(passwordHash), "StrongPass1", "12345678", "12345678")
 	if !errors.Is(err, ErrSettingsWeakPassword) {
 		t.Fatalf("expected ErrSettingsWeakPassword, got %v", err)
+	}
+}
+
+// TestSettingsPasswordFormsSeparateTooLongFromWeak carries the too-long/weak
+// split into the settings layer. Both password-setting entry points are
+// covered, because they translate the shared policy verdict independently:
+// ValidatePasswordChange for an account that already has a local password, and
+// PrepareLocalPasswordHash for an SSO-only account enabling one. Collapsing
+// either back onto ErrSettingsWeakPassword puts the composition message on a
+// length failure — the defect this PR exists to remove — and no assertion on
+// the change-password form would notice.
+func TestSettingsPasswordFormsSeparateTooLongFromWeak(t *testing.T) {
+	service := NewSettingsService(nil)
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+
+	// 37 characters, 73 bytes, with uppercase, lowercase and a digit: length is
+	// the only rule it breaks.
+	tooLong := "Пароль1" + strings.Repeat("ы", 30)
+	if runes, bytes := len([]rune(tooLong)), len(tooLong); runes > maxPasswordBytes || bytes <= maxPasswordBytes {
+		t.Fatalf("test setup: passphrase is %d runes / %d bytes, want <= %d runes and > %d bytes", runes, bytes, maxPasswordBytes, maxPasswordBytes)
+	}
+
+	err = service.ValidatePasswordChange(string(passwordHash), "StrongPass1", tooLong, tooLong)
+	if !errors.Is(err, ErrSettingsPasswordTooLong) {
+		t.Fatalf("ValidatePasswordChange: expected ErrSettingsPasswordTooLong, got %v", err)
+	}
+	if errors.Is(err, ErrSettingsWeakPassword) {
+		t.Fatal("ValidatePasswordChange: the length refusal must not also read as the composition one")
+	}
+
+	if _, err := service.PrepareLocalPasswordHash(&models.User{}, tooLong, tooLong); !errors.Is(err, ErrSettingsPasswordTooLong) {
+		t.Fatalf("PrepareLocalPasswordHash: expected ErrSettingsPasswordTooLong, got %v", err)
+	}
+
+	// The composition failures keep the weak sentinel on both entry points.
+	if err := service.ValidatePasswordChange(string(passwordHash), "StrongPass1", "12345678", "12345678"); !errors.Is(err, ErrSettingsWeakPassword) {
+		t.Fatalf("ValidatePasswordChange: expected ErrSettingsWeakPassword for a composition failure, got %v", err)
+	}
+	if _, err := service.PrepareLocalPasswordHash(&models.User{}, "12345678", "12345678"); !errors.Is(err, ErrSettingsWeakPassword) {
+		t.Fatalf("PrepareLocalPasswordHash: expected ErrSettingsWeakPassword for a composition failure, got %v", err)
 	}
 }
 
