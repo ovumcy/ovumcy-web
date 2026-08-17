@@ -44,23 +44,45 @@ func BuildCalendarDayStates(user *models.User, monthStart time.Time, logs []mode
 	}
 	gridStart, gridEnd := calendarGridBounds(monthStart, weekStart)
 	latestLogByDate, hasDataMap := buildCalendarLogMaps(logs)
-	predictionMaps := buildCalendarPredictionMaps(user, logs, stats, gridEnd, now, location)
+	// The projection bound keeps the request-local shape it has always had:
+	// appendPredictedCycles compares it against a CalendarDay value built in
+	// the same location, so both operands stay start-of-day in one zone.
+	predictionMaps := buildCalendarPredictionMaps(user, logs, stats, CalendarDay(gridEnd, location), now, location)
 
 	todayKey := DateAtLocation(now, location).Format("2006-01-02")
 
-	days := make([]CalendarDayState, 0, 42)
-	for day := gridStart; !day.After(gridEnd); day = day.AddDate(0, 0, 1) {
+	// The grid is a run of CALENDAR days, so it is counted and stepped as
+	// calendar days rather than by adding 24h-ish increments to an instant and
+	// testing that instant against a bound. CalendarDaysBetween compares only
+	// the calendar components of the two bounds, and the step runs over
+	// UTC-anchored days, where no midnight is ever skipped.
+	gridDayCount := CalendarDaysBetween(gridStart, gridEnd) + 1
+	days := make([]CalendarDayState, 0, gridDayCount)
+	for offset := range gridDayCount {
+		day := gridStart.AddDate(0, 0, offset)
 		days = append(days, buildCalendarDayState(day, monthStart, todayKey, latestLogByDate, hasDataMap, predictionMaps))
 	}
 
 	return days
 }
 
+// calendarGridBounds returns the first and last calendar day of the month grid,
+// both inclusive and both anchored at UTC midnight — the package's canonical
+// shape for a date-only value.
+//
+// The arithmetic deliberately leaves the request timezone: in a UTC-minus zone
+// whose DST jump lands on midnight (America/Santiago 2026-09-06,
+// America/Havana 2026-03-08) local midnight does not exist on that date, and
+// AddDate resolves the missing wall clock BACKWARD into the previous calendar
+// day. A bound built that way names the wrong day, and a grid stepped from it
+// emits that day twice and drops the last day of the range. UTC has no
+// transitions, so the same arithmetic there is exact for every zone.
 func calendarGridBounds(monthStart time.Time, weekStart string) (time.Time, time.Time) {
-	monthEnd := monthStart.AddDate(0, 1, -1)
-	startOffset := weekStartOffset(monthStart.Weekday(), weekStart)
+	firstOfMonth := CalendarDay(monthStart, time.UTC)
+	monthEnd := firstOfMonth.AddDate(0, 1, -1)
+	startOffset := weekStartOffset(firstOfMonth.Weekday(), weekStart)
 	endOffset := weekStartOffset(monthEnd.Weekday(), weekStart)
-	gridStart := monthStart.AddDate(0, 0, -startOffset)
+	gridStart := firstOfMonth.AddDate(0, 0, -startOffset)
 	gridEnd := monthEnd.AddDate(0, 0, 6-endOffset)
 	return gridStart, gridEnd
 }
