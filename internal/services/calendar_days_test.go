@@ -650,3 +650,152 @@ func TestBuildCalendarDayStatesHidesHistoricalFertileWindowsByDefault(t *testing
 		}
 	}
 }
+
+// TestBuildCalendarDayStatesEmitsEveryCalendarDayOnce pins the grid's own
+// shape invariant, independent of anything painted on it: one cell per
+// calendar day of the grid range, in ascending order, no day repeated, and
+// both the first and the last day of the range present.
+//
+// The zones that break it are the UTC-minus ones whose DST jump lands on
+// midnight — America/Santiago on 2026-09-06, America/Havana on 2026-03-08.
+// No instant exists at 00:00 local on those dates, and stepping the grid with
+// plain AddDate resolved the missing midnight BACKWARD into the previous
+// calendar day: that day was emitted twice, every later step carried its 23:00
+// wall clock, and the instant-valued loop bound then stopped one step early so
+// the last day of the range never rendered. The two controls — the same zone
+// in a month nowhere near a transition, and UTC — hold the ordinary path.
+func TestBuildCalendarDayStatesEmitsEveryCalendarDayOnce(t *testing.T) {
+	santiago, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Fatalf("load America/Santiago: %v", err)
+	}
+	havana, err := time.LoadLocation("America/Havana")
+	if err != nil {
+		t.Fatalf("load America/Havana: %v", err)
+	}
+
+	testCases := []struct {
+		name       string
+		location   *time.Location
+		weekStart  string
+		year       int
+		month      time.Month
+		firstDay   string
+		lastDay    string
+		crossesDST string
+	}{
+		{
+			name:       "santiago september crosses a skipped midnight",
+			location:   santiago,
+			weekStart:  models.WeekStartSunday,
+			year:       2026,
+			month:      time.September,
+			firstDay:   "2026-08-30",
+			lastDay:    "2026-10-03",
+			crossesDST: "2026-09-06",
+		},
+		{
+			name:       "santiago september with a monday week start",
+			location:   santiago,
+			weekStart:  models.WeekStartMonday,
+			year:       2026,
+			month:      time.September,
+			firstDay:   "2026-08-31",
+			lastDay:    "2026-10-04",
+			crossesDST: "2026-09-06",
+		},
+		{
+			name:       "havana march crosses a skipped midnight",
+			location:   havana,
+			weekStart:  models.WeekStartSunday,
+			year:       2026,
+			month:      time.March,
+			firstDay:   "2026-03-01",
+			lastDay:    "2026-04-04",
+			crossesDST: "2026-03-08",
+		},
+		{
+			name:      "control: santiago november, no transition in range",
+			location:  santiago,
+			weekStart: models.WeekStartSunday,
+			year:      2026,
+			month:     time.November,
+			firstDay:  "2026-11-01",
+			lastDay:   "2026-12-05",
+		},
+		{
+			name:      "control: utc september",
+			location:  time.UTC,
+			weekStart: models.WeekStartSunday,
+			year:      2026,
+			month:     time.September,
+			firstDay:  "2026-08-30",
+			lastDay:   "2026-10-03",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			user := &models.User{WeekStartsOn: testCase.weekStart}
+			monthStart := time.Date(testCase.year, testCase.month, 1, 0, 0, 0, 0, testCase.location)
+			now := time.Date(testCase.year, testCase.month, 15, 12, 0, 0, 0, time.UTC)
+
+			days := BuildCalendarDayStates(user, monthStart, nil, CycleStats{}, now, testCase.location)
+
+			assertCalendarGridCoversEachDayOnce(t, days, testCase.firstDay, testCase.lastDay)
+
+			if testCase.crossesDST != "" {
+				// The transition date itself must be one of the cells: it is the
+				// day the broken step resolved backward and never emitted.
+				findCalendarDayStateByDateString(t, days, testCase.crossesDST)
+			}
+		})
+	}
+}
+
+// assertCalendarGridCoversEachDayOnce checks the grid emits exactly the
+// calendar days of [firstDay, lastDay], one cell each, in ascending order. The
+// per-cell comparison is what names the culprit: it reports the first cell
+// whose date is not the one the calendar demands, which is the repeated day.
+func assertCalendarGridCoversEachDayOnce(t *testing.T, days []CalendarDayState, firstDay string, lastDay string) {
+	t.Helper()
+
+	first, err := time.Parse("2006-01-02", firstDay)
+	if err != nil {
+		t.Fatalf("parse first grid day %s: %v", firstDay, err)
+	}
+	last, err := time.Parse("2006-01-02", lastDay)
+	if err != nil {
+		t.Fatalf("parse last grid day %s: %v", lastDay, err)
+	}
+
+	wantCount := CalendarDaysBetween(first, last) + 1
+	if len(days) != wantCount {
+		t.Fatalf("grid cell count: want %d (%s..%s), got %d", wantCount, firstDay, lastDay, len(days))
+	}
+
+	seen := make(map[string]int, len(days))
+	for index, day := range days {
+		want := first.AddDate(0, 0, index).Format("2006-01-02")
+		if day.DateString != want {
+			t.Fatalf("grid cell %d: want %s, got %s — the grid must run in ascending calendar-day order with no day repeated", index, want, day.DateString)
+		}
+		if got := day.Date.Format("2006-01-02"); got != day.DateString {
+			t.Fatalf("grid cell %d: Date %s disagrees with DateString %s", index, got, day.DateString)
+		}
+		if day.Day != day.Date.Day() {
+			t.Fatalf("grid cell %d (%s): Day %d disagrees with its own date", index, day.DateString, day.Day)
+		}
+		seen[day.DateString]++
+	}
+
+	for _, day := range days {
+		if seen[day.DateString] > 1 {
+			t.Fatalf("grid repeats %s %d times", day.DateString, seen[day.DateString])
+		}
+	}
+
+	if days[len(days)-1].DateString != lastDay {
+		t.Fatalf("last grid day: want %s, got %s", lastDay, days[len(days)-1].DateString)
+	}
+}
