@@ -92,13 +92,25 @@ func IsValidDayMood(value int) bool {
 	return value == 0 || (value >= MinDayMood && value <= MaxDayMood)
 }
 
+// TrimDayNotes caps a note at MaxDayNotesLength CHARACTERS, the unit the notes
+// textareas declare through maxlength. Measured in bytes the same number cut
+// what the browser had already accepted, silently: 2000 typed Cyrillic
+// characters are 4000 bytes and came back as roughly 1000 characters.
+//
+// HTML maxlength counts UTF-16 code units, so a character (rune) count is at
+// worst MORE permissive than the browser — an astral character is one rune and
+// two code units — and the server therefore never truncates a value the browser
+// was willing to submit. The cut stays on a character boundary.
 func TrimDayNotes(value string) string {
-	if len(value) <= MaxDayNotesLength {
+	if utf8.RuneCountInString(value) <= MaxDayNotesLength {
 		return value
 	}
-	end := MaxDayNotesLength
-	for end > 0 && !utf8.RuneStart(value[end]) {
-		end--
+	characters := 0
+	for index := range value {
+		if characters == MaxDayNotesLength {
+			return value[:index]
+		}
+		characters++
 	}
-	return value[:end]
+	return value
 }

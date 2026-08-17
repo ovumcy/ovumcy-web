@@ -54,28 +54,26 @@ func TestNormalizeDayEntryInputRejectsNegativeMood(t *testing.T) {
 	}
 }
 
-// TestTrimDayNotesDoesNotUnderflowOnAllContinuationBytes pins the rune-rewind
-// loop's lower-bound guard `end > 0` in TrimDayNotes (day_input.go). When an
-// over-limit notes value is made entirely of UTF-8 continuation bytes — crafted
-// invalid input that is reachable from the untrusted day-notes field, and which
-// the existing valid-UTF-8 cases never produce — the rewind walks `end` down to
-// index 0. The guard must stop there and yield an empty string. The
-// CONDITIONALS_BOUNDARY mutant `end > 0` -> `end >= 0` instead decrements to -1
-// and panics on value[:-1]; a panic fails this test.
-func TestTrimDayNotesDoesNotUnderflowOnAllContinuationBytes(t *testing.T) {
-	// 0x80 is a UTF-8 continuation byte and never a rune start, so a run of them
-	// longer than the cap drives the rewind loop all the way to index 0.
+// TestTrimDayNotesCapsCraftedInvalidUTF8 pins the character-counting loop in
+// TrimDayNotes (day_input.go) on crafted invalid input, which is reachable from
+// the untrusted day-notes field and which the valid-UTF-8 cases never produce.
+// A run of bare UTF-8 continuation bytes decodes as one replacement character
+// per byte, so the count and the cut must agree on that reading: the
+// CONDITIONALS_BOUNDARY mutant `characters == MaxDayNotesLength` ->
+// `characters >= MaxDayNotesLength` never fires and the whole over-limit value
+// comes back, while an off-by-one in the guard drops the cut below the cap.
+// Neither may panic on the slice bound.
+func TestTrimDayNotesCapsCraftedInvalidUTF8(t *testing.T) {
+	// 0x80 is a UTF-8 continuation byte and never a rune start; each one counts
+	// as a single character, so this value is exactly one character over the cap.
 	value := strings.Repeat("\x80", MaxDayNotesLength+1)
 
 	got := TrimDayNotes(value)
 
-	if got != "" {
-		t.Fatalf("expected empty result when every in-range byte is a continuation byte, got %d bytes", len(got))
+	if characters := utf8.RuneCountInString(got); characters != MaxDayNotesLength {
+		t.Fatalf("expected an over-limit value to be cut to exactly %d characters, got %d", MaxDayNotesLength, characters)
 	}
-	if len(got) > MaxDayNotesLength {
-		t.Fatalf("expected trimmed length <= %d, got %d", MaxDayNotesLength, len(got))
-	}
-	if !utf8.ValidString(got) {
-		t.Fatalf("expected valid UTF-8 result, got invalid string of length %d", len(got))
+	if !strings.HasPrefix(value, got) {
+		t.Fatalf("expected the result to be a prefix of the input, got %d bytes", len(got))
 	}
 }
