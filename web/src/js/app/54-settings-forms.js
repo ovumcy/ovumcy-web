@@ -329,6 +329,44 @@
     }
   }
 
+  // The settings draft shell prompts on the way out and sends nothing. That is
+  // the opposite of what the dashboard journal does on unload
+  // (`flushDashboardAutosaveBeforeUnload`), and deliberately so — the two
+  // surfaces make opposite promises:
+  //
+  //   - The journal has no save button at all. Everything typed there is
+  //     already destined for the server, so the page leaving is the last chance
+  //     the newest value gets and a keepalive flush only keeps a promise the
+  //     surface already made.
+  //   - A settings card has a Save button that stays disabled until a control
+  //     differs from what the server rendered, a Discard beside it, and a
+  //     dirty/`navigating` state machine whose whole purpose is to make
+  //     "nothing is written until Save" true. Sending on unload would make Save
+  //     decorative.
+  //
+  // Three further reasons a flush would be wrong here, not merely redundant:
+  //
+  //   - The prompt is a question whose "yes" means discard, and its outcome is
+  //     not observable to the page. A flush could not be conditioned on the
+  //     answer, so it would persist exactly what the owner had just chosen to
+  //     throw away.
+  //   - A draft is not a partial record of a fact, the way a half-typed journal
+  //     entry is; it is a configuration under edit. The cycle card's fields are
+  //     read together — `cycleGuidanceState` clamps and cross-checks the two
+  //     lengths, and the submit handler refuses an invalid combination and an
+  //     incomplete `last_period_start`. Those three values move every ovulation
+  //     and next-period surface, so a value the owner never confirmed would
+  //     change a health display. The interface card previews the theme live and
+  //     records it only on Save, so a flush there would store a theme that was
+  //     merely being looked at.
+  //   - Membership in this shell is one attribute wide. Keeping the unload path
+  //     request-free means `data-settings-draft-form` never carries the power to
+  //     write, so nothing destructive or credential-bearing — password change,
+  //     data wipe, account deletion, webhook URL, calendar feed — can acquire
+  //     auto-submission on navigation by being given the marker later.
+  //
+  // Pinned by `web/src/js/__tests__/settings-unsaved-leave.test.mjs`, which
+  // asserts that no request leaves through any channel while the page unwinds.
   function bindSettingsDraftLeaveGuard() {
     if (document.body.dataset.settingsDraftLeaveGuardBound === "1") {
       return;
@@ -340,6 +378,11 @@
         return;
       }
 
+      // Cancelling the event is what raises the browser's own dialog; the
+      // wording is the browser's and cannot be set from here. The in-app link
+      // and submit interceptors below carry the localized prompt instead, so
+      // this handler covers only the exits they cannot see (tab close, address
+      // bar, history).
       event.preventDefault();
       event.returnValue = "";
     });
