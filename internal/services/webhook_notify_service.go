@@ -24,11 +24,22 @@ import (
 // owner's row. One owner's health data is therefore never carried into a request
 // aimed at another owner.
 //
-// Idempotency: the watermark is written only after a 2xx delivery. A failed POST
-// leaves the watermark unchanged, so the next pass (a same-day re-run or a
-// concurrent operator cron) retries it; a succeeded POST advances the watermark,
-// so a re-run skips it. This write-on-success is the coordination point with
-// slice-1's watermark columns.
+// Idempotency: the watermark is CLAIMED before the POST and released when the
+// POST fails. A pass takes the claim by compare-and-set on the same watermark
+// column the decision reads, so at most one pass can own a given (owner, kind,
+// cycle anchor); a failed POST hands the claim back, leaving the watermark where
+// the pass found it, so the next pass (a same-day re-run or a concurrent
+// operator cron) still retries it, and a succeeded POST leaves the claim
+// standing, so a re-run skips it.
+//
+// Claiming BEFORE delivery rather than writing after it is what makes the pass
+// safe against OVERLAP. The due-set is computed from the record snapshot taken by
+// ListAllForNotify, so two passes that both list before either writes — the
+// scheduler goroutine and an operator `ovumcy notify` process, which is a
+// separate OS process and therefore beyond any in-process lock — each see an
+// uncovered anchor and each decide the reminder is due. With the write deferred
+// to after Deliver, both delivered. The claim is the coordination point with
+// slice-1's watermark columns; it is the only mutual exclusion the pass has.
 //
 // No-secret discipline: the pass logs counts and at most owner ids — never the
 // URL, token, decrypted health specifics, or payload.
@@ -39,9 +50,14 @@ type NotifyUserRepository interface {
 	// ListAllForNotify returns the per-owner notify projection (webhook_url is
 	// CIPHERTEXT). Ordered by id for a deterministic pass.
 	ListAllForNotify(ctx context.Context) ([]models.WebhookNotifyRecord, error)
-	// UpdateWebhookWatermark advances the per-kind watermark for one owner after a
-	// successful send. cycleAnchor is canonicalized to UTC-midnight by the repo.
-	UpdateWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time) error
+	// ClaimWebhookWatermark takes an exclusive claim on one (owner, kind, cycle
+	// anchor) send by compare-and-set on the per-kind watermark, and reports
+	// whether this caller won it. false means a concurrent pass owns the send.
+	// cycleAnchor is canonicalized to UTC-midnight by the repo.
+	ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time) (bool, error)
+	// ReleaseWebhookWatermark restores the watermark to previous after the delivery
+	// a claim covered failed, conditional on the column still holding cycleAnchor.
+	ReleaseWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) error
 }
 
 // NotifyLogReader is the narrow read surface for an owner's day logs (the
@@ -85,13 +101,18 @@ type NotifyReport struct {
 	// Sent is the number of reminders successfully delivered (2xx). Always 0 on a
 	// dry run.
 	Sent int
-	// SkippedIdempotent is the number of due reminders skipped because the incoming
-	// watermark already covered them (they were sent on an earlier pass). The pure
-	// decision layer excludes these, so this counts owners whose decision returned
-	// nothing purely due to watermarks — surfaced for observability.
+	// SkippedIdempotent is the number of due reminders skipped because a watermark
+	// already covered them (they were sent on an earlier — or an overlapping —
+	// pass). Two moments contribute: the pure decision layer excludes reminders
+	// whose incoming watermark covers them, and a claim lost to a concurrent pass
+	// is skipped at delivery time. A lost claim is a skip, never a failure: the
+	// reminder IS being delivered, by the pass that won it.
 	SkippedIdempotent int
-	// Failed is the number of reminders whose delivery failed (non-2xx, timeout,
-	// refused redirect, bad scheme). Their watermark was NOT advanced.
+	// Failed is the number of reminders that could not be delivered: the POST
+	// failed (non-2xx, timeout, refused redirect, bad scheme) and its claim was
+	// released, or the claim itself could not be taken because the watermark write
+	// errored. Either way the watermark is left where the pass found it, so the
+	// next pass retries.
 	Failed int
 	// DryRun records whether this pass computed-only (no delivery, no watermark).
 	DryRun bool
@@ -237,25 +258,56 @@ func (service *WebhookNotifyService) processOwner(
 			continue
 		}
 
-		if err := service.deliverer.Deliver(ctx, decryptedURL, payload); err != nil {
-			// Delivery already logged host-only inside Deliver. Leave the watermark
-			// unchanged so the next pass retries.
+		// Claim the send BEFORE the request leaves. previousWatermark is the value
+		// this pass's snapshot carried, and it is what a failed delivery restores.
+		previousWatermark := watermarkForReminderType(settings, reminder.Type)
+		claimed, err := service.users.ClaimWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor)
+		if err != nil {
+			// Owner id only: the reminder type is a health specific, and this line
+			// lands in whatever log the pass was started from. Nothing was delivered
+			// and no watermark moved, so the reminder is still pending — counted as
+			// failed so an operator sees it, and retried by the next pass.
+			log.Printf("webhook notify: watermark claim failed, owner id=%d", record.ID)
 			report.Failed++
 			report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, record.ID)
 			continue
 		}
-
-		// Success: advance the watermark for this kind so a re-run skips it. A
-		// watermark write failure is logged but not counted as a delivery failure —
-		// the reminder WAS delivered; a stuck watermark would at worst re-send next
-		// pass, never lose data.
-		if err := service.users.UpdateWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor); err != nil {
-			// Owner id only: the reminder type is a health specific, and this line
-			// lands in whatever log the pass was started from.
-			log.Printf("webhook notify: watermark write failed after send, owner id=%d", record.ID)
+		if !claimed {
+			// A concurrent pass owns this send. The reminder is being delivered —
+			// just not by us — so this is a skip, not a failure, and delivering it
+			// anyway is exactly the duplicate egress the claim exists to prevent.
+			report.SkippedIdempotent++
+			continue
 		}
+
+		if err := service.deliverer.Deliver(ctx, decryptedURL, payload); err != nil {
+			// Delivery already logged host-only inside Deliver. Give the claim back so
+			// the watermark is left where this pass found it and the next pass retries;
+			// a claim kept after a failed POST would read exactly like a successful send
+			// and suppress the reminder for good.
+			report.Failed++
+			report.OwnerIDsFailed = appendUniqueID(report.OwnerIDsFailed, record.ID)
+			if releaseErr := service.users.ReleaseWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark); releaseErr != nil {
+				log.Printf("webhook notify: watermark release failed after a failed delivery, owner id=%d", record.ID)
+			}
+			continue
+		}
+
+		// Success: the claim stands as the watermark for this kind, so a re-run
+		// skips it. No second write is needed — the claim WAS the write.
 		report.Sent++
 	}
+}
+
+// watermarkForReminderType returns the incoming watermark of the kind a reminder
+// belongs to, as the pass's record snapshot carried it. It is the value a
+// released claim restores, so "unchanged after a failed delivery" means exactly
+// the value this pass decided against.
+func watermarkForReminderType(settings WebhookReminderSettings, reminderType string) *time.Time {
+	if reminderType == DueReminderTypeOvulation {
+		return settings.OvulationWatermark
+	}
+	return settings.PeriodWatermark
 }
 
 // buildPayload turns a due reminder into the transport-free notification body.

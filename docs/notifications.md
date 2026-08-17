@@ -257,9 +257,12 @@ webhook as part of an install script that also runs `ovumcy users create`).
 
 - Each reminder kind (period, ovulation) has its own **watermark**, storing
   the cycle-start anchor date the reminder was last successfully sent for.
-- The watermark advances **only after a successful (2xx) delivery**. A failed
-  delivery (timeout, non-2xx, refused redirect, connection error) leaves the
-  watermark untouched.
+- The watermark is **claimed before the request goes out** and given back when
+  the request fails, so a failed delivery (timeout, non-2xx, refused redirect,
+  connection error) leaves the watermark exactly where the pass found it. The
+  claim is what makes two passes running *at the same time* safe as well: it is
+  taken by a conditional write that only one of them can win, so the pass that
+  loses it skips the reminder instead of sending a second copy.
 - Consequence: re-running the pass is always safe.
   - A reminder already delivered this cycle is not sent again.
   - A reminder whose delivery failed last time is retried automatically on the
