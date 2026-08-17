@@ -297,6 +297,12 @@ func TestCalendarDayKeyRoundTripsAcrossMidnightDSTTransitions(t *testing.T) {
 // to 2011-12-31 00:00 UTC+14, so no instant at all exists on 2011-12-30. The
 // helper must not reach for the next transition there (that lands on a
 // different day) and keeps time.Date's own resolution instead.
+//
+// This is the contract for a STORED value being rebuilt, where there is no
+// error channel to report the gap on. It is not the contract for user input:
+// ParseDayDate refuses the same date with ErrDayDateNonexistent rather than
+// returning the previous day as a successful parse
+// (TestParseDayDateRefusesACalendarDayTheZoneNeverHad).
 func TestCalendarDayKeepsStdlibResolutionForACalendarDayThatNeverExisted(t *testing.T) {
 	apia, err := time.LoadLocation("Pacific/Apia")
 	if err != nil {

@@ -57,7 +57,11 @@ func startOfCalendarDay(year int, month time.Month, day int, location *time.Loca
 	}
 
 	// No instant on the requested day exists (a zone that skips a whole
-	// calendar day, e.g. Pacific/Apia 2011-12-30). Keep time.Date's own answer.
+	// calendar day, e.g. Pacific/Apia 2011-12-30). Keep time.Date's own answer:
+	// the callers reached from here (CalendarDay, DateAtLocation) rebuild stored
+	// values and have no error channel. The returned value therefore carries a
+	// DIFFERENT calendar date than the one requested, which is exactly how
+	// ParseDayDate detects the case and refuses the input instead.
 	return candidate
 }
 

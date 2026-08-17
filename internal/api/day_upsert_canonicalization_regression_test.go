@@ -108,6 +108,76 @@ func TestUpsertDayCanonicalizesStoredDateToUTCMidnightForRequestTimezone(t *test
 	}
 }
 
+// TestUpsertDayRefusesACalendarDayTheRequestZoneNeverHad is the transport-level
+// lock for the whole-day-skipped case. Pacific/Apia crossed the date line at the
+// end of 2011 and never had a 2011-12-30 at all; parsing that path parameter used
+// to yield 2011-12-29 with no error, so the save landed on a day the request had
+// not named and the client had no way to tell. The route must answer a mapped
+// validation refusal — the same one an empty or malformed date already gets —
+// and must not write a row.
+func TestUpsertDayRefusesACalendarDayTheRequestZoneNeverHad(t *testing.T) {
+	const zoneName = "Pacific/Apia"
+
+	if _, err := time.LoadLocation(zoneName); err != nil {
+		t.Fatalf("zoneinfo for %s unavailable: %v", zoneName, err)
+	}
+
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "upsert-nonexistent-day@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	body, err := json.Marshal(map[string]any{
+		"is_period":   true,
+		"flow":        models.FlowMedium,
+		"symptom_ids": []uint{},
+		"notes":       "",
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/days/2011-12-30", bytes.NewReader(body))
+	request.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
+	request.Header.Set("Cookie", joinCookieHeader(authCookie, timezoneCookieName+"="+zoneName))
+	request.Header.Set(timezoneHeaderName, zoneName)
+
+	response, err := app.Test(request, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("upsert request failed: %v", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for a day %s never had, got %d", zoneName, response.StatusCode)
+	}
+
+	var envelope struct {
+		Error       string `json:"error"`
+		ErrorDetail struct {
+			Key      string `json:"key"`
+			Category string `json:"category"`
+		} `json:"error_detail"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode error envelope: %v", err)
+	}
+	if envelope.ErrorDetail.Category != string(APIErrorCategoryValidation) {
+		t.Fatalf("expected a validation refusal the client can act on, got category %q (key %q)",
+			envelope.ErrorDetail.Category, envelope.ErrorDetail.Key)
+	}
+	if envelope.Error == "" {
+		t.Fatal("expected a mapped error message in the envelope")
+	}
+
+	var stored int64
+	if err := database.Raw("SELECT COUNT(*) FROM daily_logs WHERE user_id = ?", user.ID).Row().Scan(&stored); err != nil {
+		t.Fatalf("count daily_logs: %v", err)
+	}
+	if stored != 0 {
+		t.Fatalf("expected no day written for a refused date, found %d row(s) — the save shifted to a day the request never named", stored)
+	}
+}
+
 func assertUpsertUTCDate(t *testing.T, rawDate, expectedPrefix string) {
 	t.Helper()
 	if !strings.HasPrefix(rawDate, expectedPrefix) {
