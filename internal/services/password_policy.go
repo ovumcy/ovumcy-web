@@ -12,6 +12,16 @@ var ErrWeakPassword = errors.New("weak password")
 // as an opaque internal error instead of a stable validation error.
 const maxPasswordBytes = 72
 
+// ValidatePasswordStrength enforces the two ends of the length rule in
+// deliberately DIFFERENT units, because the reasons behind them differ: the
+// minimum is a count of code points (what a person perceives as typing eight
+// characters), while the maximum is a count of bytes (bcrypt's input limit,
+// which knows nothing about code points). A passphrase in a non-Latin script
+// therefore reaches the maximum at roughly half the character count of a Latin
+// one, and emoji sooner still. Owner-facing copy must say so — the
+// auth.password_requirements / auth.error.weak_password entries in every locale
+// state the maximum in Latin characters and warn that other scripts count for
+// more. Regression: TestPasswordLengthCopyStatesTheMaximumInTheUnitEnforced.
 func ValidatePasswordStrength(password string) error {
 	if len([]rune(password)) < 8 {
 		return ErrWeakPassword
