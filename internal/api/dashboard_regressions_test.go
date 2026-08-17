@@ -780,6 +780,67 @@ func TestBuildDashboardViewDataOmitsReminderBannerForNonOwner(t *testing.T) {
 	}
 }
 
+// TestDashboardDoesNotFlagTodaysOvulationAsPastWestOfUTC is the rendered half of
+// the services-layer guard in calendar_day_comparison_regression_test.go: the
+// projected ovulation date is a UTC-midnight value while the request's "today"
+// is a location midnight, so west of UTC the ovulation day itself read as
+// already past and the amber prediction-past notice rendered beside the very
+// date the header had just named. One ordinary account, no irregular mode, no
+// DST date — the state appeared on the ovulation day of every cycle.
+//
+// The anchor is seeded relative to the live clock: the subject computes against
+// time.Now(), so a fixed calendar date would drift out of the cycle it was
+// written for.
+func TestDashboardDoesNotFlagTodaysOvulationAsPastWestOfUTC(t *testing.T) {
+	const timezoneName = "America/New_York"
+
+	location, err := time.LoadLocation(timezoneName)
+	if err != nil {
+		t.Fatalf("load %s: %v", timezoneName, err)
+	}
+
+	app, database, _ := newOnboardingTestAppWithLocation(t, time.UTC)
+	user := createOnboardingTestUser(t, database, "dashboard-ovulation-today@example.com", "StrongPass1", true)
+
+	// A 28-day cycle with the default 14-day luteal phase ovulates on cycle
+	// day 14, so an anchor 13 days back puts the predicted ovulation on today.
+	today := services.DateAtLocation(time.Now(), location)
+	currentStart := today.AddDate(0, 0, -13)
+	previousStart := currentStart.AddDate(0, 0, -28)
+	for _, cycleStart := range []time.Time{previousStart, currentStart} {
+		for offset := range 5 {
+			day := services.CalendarDay(cycleStart.AddDate(0, 0, offset), time.UTC)
+			entry := models.DailyLog{
+				UserID:     user.ID,
+				Date:       day,
+				IsPeriod:   true,
+				CycleStart: offset == 0,
+				Flow:       models.FlowMedium,
+			}
+			if err := database.Create(&entry).Error; err != nil {
+				t.Fatalf("seed period day %s: %v", day.Format("2006-01-02"), err)
+			}
+		}
+	}
+	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+		"cycle_length":      28,
+		"period_length":     5,
+		"last_period_start": services.CalendarDay(currentStart, time.UTC),
+	}).Error; err != nil {
+		t.Fatalf("update ovulation-today cycle context: %v", err)
+	}
+
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+	response := dashboardWithTimezoneResponse(t, app, authCookie, timezoneName)
+	document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+
+	if htmlFindElement(document, func(node *html.Node) bool {
+		return node.Type == html.ElementNode && htmlHasAttr(node, "data-dashboard-prediction-past")
+	}) != nil {
+		t.Fatal("did not expect the prediction-past notice on the ovulation day itself")
+	}
+}
+
 func newOnboardingTestAppWithLocation(t *testing.T, location *time.Location) (*fiber.App, *gorm.DB, *time.Location) {
 	t.Helper()
 

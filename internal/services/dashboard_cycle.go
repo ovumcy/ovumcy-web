@@ -454,9 +454,20 @@ func dashboardNextPeriodInPast(display dashboardPredictionDisplay, today time.Ti
 
 func dashboardOvulationInPast(display dashboardPredictionDisplay, today time.Time) bool {
 	if display.ovulationUseRange {
+		// Both bounds come from DashboardOvulationRange, which builds them with
+		// CalendarDay in the request location, so this pair already shares
+		// today's midnight shape and compares directly.
 		return !display.ovulationRangeEnd.IsZero() && display.ovulationRangeEnd.Before(today)
 	}
-	return !display.ovulationImpossible && !display.ovulationDate.IsZero() && display.ovulationDate.Before(today)
+	// ovulationDate is the PredictCycleWindow output — a UTC-midnight date-only
+	// value — while today is a location midnight, so the two are compared as
+	// calendar days, exactly as the shift guard in DashboardUpcomingPredictions
+	// that decides this same date already does. As instants, local midnight in a
+	// UTC-minus zone falls hours after UTC midnight of the same date, which read
+	// the ovulation day itself as past and printed the amber "date is already in
+	// the past" notice beside the date the header had just named (issue #48
+	// class).
+	return !display.ovulationImpossible && !display.ovulationDate.IsZero() && CalendarDaysBetween(display.ovulationDate, today) > 0
 }
 
 func CompletedCycleTrendLengths(logs []models.DailyLog, now time.Time, location *time.Location) []int {
