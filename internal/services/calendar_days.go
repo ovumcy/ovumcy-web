@@ -192,16 +192,53 @@ func appendCurrentBaselinePreFertile(preFertileMap map[string]bool, stats CycleS
 	appendCalendarDateRange(preFertileMap, preFertileStart, preFertileEnd)
 }
 
-func appendCalendarDateRange(target map[string]bool, start time.Time, end time.Time) {
+// forEachCalendarDay visits `count` consecutive calendar days starting on the
+// calendar date of `start`, ascending, each day exactly once. It is the single
+// stepping point for the builders that fill the prediction maps.
+//
+// The walk is calendar-day arithmetic, never instant arithmetic. Adding 24h-ish
+// increments to a location-midnight instant breaks in a zone whose DST jump
+// lands on midnight (America/Santiago 2026-09-06, America/Havana 2026-03-08):
+// the missing wall clock resolves BACKWARD into the previous calendar day, so
+// the step writes that day's key a second time and the range loses a day — the
+// transition day itself when the caller indexes by offset, the range's last day
+// when it walks to a bound. Re-anchoring to UTC midnight — the same move
+// CalendarDaysBetween makes on its operands — removes the transition from the
+// walk entirely. The visited days carry calendar components only; every caller
+// reads them through CalendarDayKey or CalendarDaysBetween, so the anchoring
+// zone is not observable.
+func forEachCalendarDay(start time.Time, count int, visit func(day time.Time)) {
+	if start.IsZero() || count <= 0 {
+		return
+	}
+	day := CalendarDay(start, time.UTC)
+	for range count {
+		visit(day)
+		day = day.AddDate(0, 0, 1)
+	}
+}
+
+// calendarRangeLength is the number of calendar days in the inclusive range
+// [start, end], or zero when the range is empty. The comparison is by calendar
+// day, not by instant: the two bounds routinely carry different midnight shapes
+// (a request-location midnight against the UTC midnight PredictCycleWindow
+// produces), and compared as instants in a UTC-minus zone the location-midnight
+// bound sits hours past the UTC-midnight one on the same date.
+func calendarRangeLength(start time.Time, end time.Time) int {
 	if start.IsZero() || end.IsZero() {
-		return
+		return 0
 	}
-	if end.Before(start) {
-		return
+	span := CalendarDaysBetween(start, end)
+	if span < 0 {
+		return 0
 	}
-	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
-		target[day.Format("2006-01-02")] = true
-	}
+	return span + 1
+}
+
+func appendCalendarDateRange(target map[string]bool, start time.Time, end time.Time) {
+	forEachCalendarDay(start, calendarRangeLength(start, end), func(day time.Time) {
+		target[CalendarDayKey(day)] = true
+	})
 }
 
 func appendCalendarSingleDate(target map[string]bool, day time.Time) {
@@ -211,17 +248,14 @@ func appendCalendarSingleDate(target map[string]bool, day time.Time) {
 }
 
 func appendFertilityWindow(fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, start time.Time, end time.Time, ovulationDate time.Time) {
-	if start.IsZero() || end.IsZero() || end.Before(start) {
-		return
-	}
-	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+	forEachCalendarDay(start, calendarRangeLength(start, end), func(day time.Time) {
 		offset := CalendarDaysBetween(day, ovulationDate)
 		if offset >= 0 && offset <= 2 {
-			fertilityPeakMap[day.Format("2006-01-02")] = true
-			continue
+			fertilityPeakMap[CalendarDayKey(day)] = true
+			return
 		}
-		fertilityEdgeMap[day.Format("2006-01-02")] = true
-	}
+		fertilityEdgeMap[CalendarDayKey(day)] = true
+	})
 }
 
 func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, stats CycleStats, gridEnd time.Time, location *time.Location) {
@@ -288,10 +322,9 @@ func appendHistoricalCycles(preFertileMap map[string]bool, fertilityEdgeMap map[
 }
 
 func appendPredictedPeriod(predictedPeriodMap map[string]bool, cycleStart time.Time, predictedPeriodLength int) {
-	for offset := range predictedPeriodLength {
-		day := cycleStart.AddDate(0, 0, offset)
-		predictedPeriodMap[day.Format("2006-01-02")] = true
-	}
+	forEachCalendarDay(cycleStart, predictedPeriodLength, func(day time.Time) {
+		predictedPeriodMap[CalendarDayKey(day)] = true
+	})
 }
 
 func appendPredictedWindow(preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, cycleStart time.Time, predictedCycleLength int, predictedPeriodLength int, lutealPhase int) {
