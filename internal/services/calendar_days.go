@@ -231,7 +231,13 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 
 	predictedCycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
 	predictedPeriodLength := predictedPeriodLength(stats.AveragePeriodLength)
-	for cycleStart := CalendarDay(stats.NextPeriodStart, location); !cycleStart.After(gridEnd); cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
+	// The bound is a CALENDAR-DAY comparison, not an instant one: cycleStart
+	// comes from CalendarDay and gridEnd from plain AddDate arithmetic, and in
+	// a zone whose DST jump skips midnight the two carry different start-of-day
+	// shapes (01:00 local against 00:00). Compared as instants, a projected
+	// cycle falling exactly on the last grid day reads as past the grid and its
+	// markers are never painted.
+	for cycleStart := CalendarDay(stats.NextPeriodStart, location); CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
 		appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
 	}

@@ -99,6 +99,56 @@ func TestBuildCalendarDayStatesProjectsOvulationIntoFutureCycles(t *testing.T) {
 	}
 }
 
+// TestBuildCalendarDayStatesPaintsAProjectedCycleOnTheLastGridDay pins the
+// projection loop's boundary against the shape mismatch a midnight-skipping
+// DST zone creates. In America/Santiago no instant exists at 2026-09-06 00:00,
+// so a cycle anchored on that date starts at 01:00-03 and every cycle chained
+// after it carries the same 01:00 wall clock, while the grid bounds are plain
+// AddDate arithmetic sitting at 00:00. Compared as instants, a projected cycle
+// falling exactly on the last grid day looks like it is past the grid: the
+// loop stops one iteration early and that cycle's predicted-period and
+// fertile markers are never painted. The boundary is a calendar-day question,
+// not an instant one.
+//
+// October 2026 with a Monday week start is the reproducing month: its grid
+// ends on Sunday 2026-11-01, which is 2026-09-06 plus two 28-day cycles. The
+// grid deliberately starts after the transition date — a rendered range that
+// spans a skipped midnight loses a cell to the day loop's own AddDate
+// arithmetic, which is a separate defect this test must not depend on.
+func TestBuildCalendarDayStatesPaintsAProjectedCycleOnTheLastGridDay(t *testing.T) {
+	santiago, err := time.LoadLocation("America/Santiago")
+	if err != nil {
+		t.Fatalf("load America/Santiago: %v", err)
+	}
+
+	user := &models.User{WeekStartsOn: models.WeekStartMonday}
+	monthStart := time.Date(2026, time.October, 1, 0, 0, 0, 0, santiago)
+	now := time.Date(2026, time.October, 20, 15, 0, 0, 0, time.UTC)
+
+	stats := CycleStats{
+		MedianCycleLength:   28,
+		AveragePeriodLength: 5,
+		CurrentCycleDay:     12,
+		LastPeriodStart:     time.Date(2026, time.August, 9, 0, 0, 0, 0, time.UTC),
+		NextPeriodStart:     time.Date(2026, time.September, 6, 0, 0, 0, 0, time.UTC),
+	}
+
+	days := BuildCalendarDayStates(user, monthStart, nil, stats, now, santiago)
+
+	last := days[len(days)-1]
+	if last.DateString != "2026-11-01" {
+		t.Fatalf("expected the grid to end on 2026-11-01, got %s", last.DateString)
+	}
+	if !last.IsPredicted {
+		t.Fatalf("expected the projected cycle starting on the last grid day 2026-11-01 to be painted")
+	}
+
+	// The cycle before it, comfortably inside the grid, must stay painted too.
+	if middle := findCalendarDayStateByDateString(t, days, "2026-10-04"); !middle.IsPredicted {
+		t.Fatalf("expected the projected cycle starting on 2026-10-04 to be painted")
+	}
+}
+
 func TestBuildCalendarDayStatesIncludesCurrentBaselinePeriodWindow(t *testing.T) {
 	monthStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
 	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
