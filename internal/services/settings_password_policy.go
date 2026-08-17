@@ -16,6 +16,7 @@ var (
 	ErrSettingsInvalidCurrentPassword     = errors.New("settings invalid current password")
 	ErrSettingsNewPasswordMustDiffer      = errors.New("settings new password must differ")
 	ErrSettingsWeakPassword               = errors.New("settings weak password")
+	ErrSettingsPasswordTooLong            = errors.New("settings password too long")
 	ErrSettingsPasswordHashFailed         = errors.New("settings password hash failed")
 	ErrSettingsRecoveryCodeGenerateFailed = errors.New("settings recovery code generate failed")
 	ErrSettingsPasswordUpdateFailed       = errors.New("settings password update failed")
@@ -41,10 +42,25 @@ func (service *SettingsService) ValidatePasswordChange(passwordHash string, curr
 	if currentPassword == newPassword {
 		return ErrSettingsNewPasswordMustDiffer
 	}
-	if err := ValidatePasswordStrength(newPassword); err != nil {
-		return ErrSettingsWeakPassword
+	if err := settingsPasswordPolicyError(ValidatePasswordStrength(newPassword)); err != nil {
+		return err
 	}
 	return nil
+}
+
+// settingsPasswordPolicyError is the settings-layer twin of
+// authPasswordPolicyError: the same split, carried through this package's own
+// sentinels so both the change-password form and the local-password setup form
+// can name the length refusal on its own.
+func settingsPasswordPolicyError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrPasswordTooLong):
+		return ErrSettingsPasswordTooLong
+	default:
+		return ErrSettingsWeakPassword
+	}
 }
 
 func (service *SettingsService) ChangePassword(ctx context.Context, attempt ReauthAttempt, user *models.User, currentPassword string, newPassword string, confirmPassword string) error {
@@ -105,8 +121,8 @@ func (service *SettingsService) PrepareLocalPasswordHash(user *models.User, newP
 	if newPassword != confirmPassword {
 		return "", ErrSettingsPasswordMismatch
 	}
-	if err := ValidatePasswordStrength(newPassword); err != nil {
-		return "", ErrSettingsWeakPassword
+	if err := settingsPasswordPolicyError(ValidatePasswordStrength(newPassword)); err != nil {
+		return "", err
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), passwordHashCost)

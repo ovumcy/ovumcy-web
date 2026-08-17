@@ -47,6 +47,8 @@ func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 		return settingsLocalPasswordRequiredErrorSpec()
 	case errors.Is(err, services.ErrSettingsNewPasswordMustDiffer):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyMustDiffer)
+	case errors.Is(err, services.ErrSettingsPasswordTooLong):
+		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyPasswordTooLong)
 	case errors.Is(err, services.ErrSettingsWeakPassword):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyWeakPassword)
 	case errors.Is(err, services.ErrSettingsPasswordHashFailed), errors.Is(err, services.ErrSettingsRecoveryCodeGenerateFailed):

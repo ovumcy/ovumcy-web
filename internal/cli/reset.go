@@ -92,6 +92,11 @@ func runResetPasswordCommand(databaseConfig db.Config, email string, prompt pass
 			return fmt.Errorf("user %s not found", normalizedEmail)
 		case errors.Is(err, services.ErrAuthResetInvalid):
 			return errors.New("password is required")
+		case errors.Is(err, services.ErrAuthPasswordTooLong):
+			// Without this arm the split would surface here as the raw sentinel
+			// text under the default branch. The operator terminal counts bytes
+			// happily, so unlike the owner-facing copy this one says so.
+			return errors.New("password is longer than 72 bytes (bcrypt's input limit); note that non-ASCII characters take more than one byte each")
 		case errors.Is(err, services.ErrAuthWeakPassword):
 			return errors.New("password does not meet strength requirements")
 		default:

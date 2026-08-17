@@ -48,9 +48,14 @@ var authErrorTranslationKeys = map[string]string{
 	"email already exists":        "auth.error.email_exists",
 	"register pickup unavailable": "auth.error.post_register_signin",
 	"weak password":               "auth.error.weak_password",
-	"password mismatch":           "auth.error.password_mismatch",
-	"invalid recovery code":       "auth.error.invalid_recovery_code",
-	"too many recovery attempts":  "auth.error.too_many_recovery_attempts",
+	// One spec key serves both transports and both layers: the auth forms and
+	// the settings change-password form emit the same string
+	// (SettingsPasswordChangeKeyPasswordTooLong), so the HTML render and the
+	// JSON payload cannot drift apart.
+	"password too long":          "auth.error.password_too_long",
+	"password mismatch":          "auth.error.password_mismatch",
+	"invalid recovery code":      "auth.error.invalid_recovery_code",
+	"too many recovery attempts": "auth.error.too_many_recovery_attempts",
 	// The 2FA challenge's locale entries live under the flat error.totp_* namespace
 	// (present in all six locales), unlike the auth.error.* keys around them. Kept
 	// under their own names rather than renamed: the translations are correct and
