@@ -9,8 +9,9 @@ import (
 )
 
 // DateAtLocation projects an instant-in-time `value` onto the calendar of
-// `location` and returns midnight of that calendar day. Use this for
-// time.Time values that represent a real instant (time.Now(),
+// `location` and returns the start of that calendar day — midnight, or the
+// day's first existing instant when a DST jump skips it (startOfCalendarDay).
+// Use this for time.Time values that represent a real instant (time.Now(),
 // user.CreatedAt) where the in-location calendar day is what you want.
 //
 // Do NOT use this for date-only stored values (DailyLog.Date,
@@ -24,16 +25,50 @@ func DateAtLocation(value time.Time, location *time.Location) time.Time {
 	}
 	localized := value.In(location)
 	year, month, day := localized.Date()
-	return time.Date(year, month, day, 0, 0, 0, 0, location)
+	return startOfCalendarDay(year, month, day, location)
 }
 
-// CalendarDay rebuilds a date-only stored value at midnight in `location`,
-// preserving the calendar components of `value` exactly as stored. Use this
-// for time.Time values whose semantics is "a calendar date" rather than
-// "an instant in time" — DailyLog.Date, User.LastPeriodStart, derived stats
-// fields. Unlike DateAtLocation, this does not apply In(location) and
-// therefore does not shift the calendar day across timezones, which matters
-// when stored values were persisted with a UTC-midnight timestamp.
+// startOfCalendarDay returns the first instant that actually exists on the
+// given calendar day in `location`. It is the one construction point for
+// every "midnight of this calendar day" value in the package, so the
+// YYYY-MM-DD key a helper is handed always round-trips.
+//
+// Plain time.Date cannot be used directly: in a UTC-minus zone whose DST jump
+// lands exactly on midnight (America/Santiago, America/Havana), local midnight
+// does not exist and time.Date resolves the nonexistent wall clock through its
+// `utc >= end` branch, which normalizes BACKWARD into the previous calendar
+// day — the spring-forward date could then not be entered at all. Positive
+// offsets take the `utc < start` branch and normalize forward within the same
+// day, so they were never affected and are left byte-for-byte alone here, as
+// are zones without transitions (UTC included): the fallback below only fires
+// when the requested day did not survive the construction.
+func startOfCalendarDay(year int, month time.Month, day int, location *time.Location) time.Time {
+	candidate := time.Date(year, month, day, 0, 0, 0, 0, location)
+	if y, m, d := candidate.Date(); y == year && m == month && d == day {
+		return candidate
+	}
+
+	// Midnight was skipped: the day really begins at the transition ending the
+	// zone period the normalized candidate fell back into.
+	if _, transition := candidate.ZoneBounds(); !transition.IsZero() {
+		if y, m, d := transition.Date(); y == year && m == month && d == day {
+			return transition
+		}
+	}
+
+	// No instant on the requested day exists (a zone that skips a whole
+	// calendar day, e.g. Pacific/Apia 2011-12-30). Keep time.Date's own answer.
+	return candidate
+}
+
+// CalendarDay rebuilds a date-only stored value at the start of its calendar
+// day in `location` (startOfCalendarDay), preserving the calendar components
+// of `value` exactly as stored. Use this for time.Time values whose semantics
+// is "a calendar date" rather than "an instant in time" — DailyLog.Date,
+// User.LastPeriodStart, derived stats fields. Unlike DateAtLocation, this
+// does not apply In(location) and therefore does not shift the calendar day
+// across timezones, which matters when stored values were persisted with a
+// UTC-midnight timestamp.
 func CalendarDay(value time.Time, location *time.Location) time.Time {
 	if location == nil {
 		location = time.UTC
@@ -42,7 +77,7 @@ func CalendarDay(value time.Time, location *time.Location) time.Time {
 		return time.Time{}
 	}
 	year, month, day := value.Date()
-	return time.Date(year, month, day, 0, 0, 0, 0, location)
+	return startOfCalendarDay(year, month, day, location)
 }
 
 // CalendarDayKey returns the YYYY-MM-DD ISO string for a date-only stored

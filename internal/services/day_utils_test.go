@@ -213,6 +213,107 @@ func TestDateAtLocationShiftsToNextLocalDayAcrossUTCBoundary(t *testing.T) {
 	}
 }
 
+// TestCalendarDayKeyRoundTripsAcrossMidnightDSTTransitions pins the one
+// property every date-only surface depends on: the YYYY-MM-DD key a helper is
+// handed must be the YYYY-MM-DD key it returns. In a UTC-minus zone whose DST
+// jump lands exactly on midnight, local midnight does not exist and time.Date
+// normalizes the nonexistent wall clock BACKWARD into the previous calendar
+// day, so the spring-forward date could not be entered at all: the onboarding
+// anchor, the day entry and the export row all shifted one day earlier.
+//
+// The list carries three midnight-transition zones on their own transition
+// dates, a positive-offset zone (which normalizes forward and was never
+// affected), a zone whose jump is at 02:00 (midnight exists), and UTC (no
+// transitions at all) so a future change that breaks the unaffected zones is
+// caught here too.
+func TestCalendarDayKeyRoundTripsAcrossMidnightDSTTransitions(t *testing.T) {
+	cases := []struct {
+		zone string
+		day  string
+		note string
+	}{
+		{zone: "America/Santiago", day: "2026-09-06", note: "UTC-4 -> UTC-3 jump at 00:00"},
+		{zone: "America/Havana", day: "2026-03-08", note: "UTC-5 -> UTC-4 jump at 00:00"},
+		{zone: "America/Asuncion", day: "2024-10-06", note: "UTC-4 -> UTC-3 jump at 00:00 (last DST year)"},
+		{zone: "Asia/Beirut", day: "2026-03-29", note: "control: positive offset, jump at 00:00"},
+		{zone: "Europe/Berlin", day: "2026-03-29", note: "control: jump at 02:00, midnight exists"},
+		{zone: "UTC", day: "2026-03-08", note: "control: no transitions"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.zone+" "+tc.day, func(t *testing.T) {
+			location, err := time.LoadLocation(tc.zone)
+			if err != nil {
+				t.Fatalf("load %s: %v", tc.zone, err)
+			}
+			reference, err := time.Parse("2006-01-02", tc.day)
+			if err != nil {
+				t.Fatalf("parse reference day %s: %v", tc.day, err)
+			}
+			year, month, day := reference.Date()
+
+			// The single parse entry point for date inputs.
+			parsed, err := ParseDayDate(tc.day, location)
+			if err != nil {
+				t.Fatalf("ParseDayDate(%s, %s): %v", tc.day, tc.zone, err)
+			}
+			if got := parsed.Format("2006-01-02"); got != tc.day {
+				t.Errorf("ParseDayDate(%s, %s) = %s, want %s (%s)", tc.day, tc.zone, got, tc.day, tc.note)
+			}
+			// The returned instant is the day's FIRST existing instant: one
+			// nanosecond earlier is already the previous calendar day.
+			if got := parsed.Add(-time.Nanosecond).Format("2006-01-02"); got == tc.day {
+				t.Errorf("ParseDayDate(%s, %s) = %s is not the first instant of the day",
+					tc.day, tc.zone, parsed.Format(time.RFC3339))
+			}
+
+			// A date-only stored value (persisted at UTC-midnight) rebuilt in
+			// the request-local zone.
+			stored := time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+			if got := CalendarDay(stored, location).Format("2006-01-02"); got != tc.day {
+				t.Errorf("CalendarDay(%s, %s) = %s, want %s (%s)", tc.day, tc.zone, got, tc.day, tc.note)
+			}
+
+			// An instant inside the local calendar day projected back onto it.
+			instant := time.Date(year, month, day, 12, 0, 0, 0, location).UTC()
+			if got := DateAtLocation(instant, location).Format("2006-01-02"); got != tc.day {
+				t.Errorf("DateAtLocation(local noon of %s, %s) = %s, want %s (%s)",
+					tc.day, tc.zone, got, tc.day, tc.note)
+			}
+
+			// The canonical storage shape: parse in the request zone, persist
+			// at UTC-midnight, read the key back.
+			if got := CalendarDayKey(CalendarDay(parsed, time.UTC)); got != tc.day {
+				t.Errorf("CalendarDayKey(CalendarDay(ParseDayDate(%s, %s), UTC)) = %s, want %s",
+					tc.day, tc.zone, got, tc.day)
+			}
+		})
+	}
+}
+
+// TestCalendarDayKeepsStdlibResolutionForACalendarDayThatNeverExisted covers
+// the one case the transition lookup cannot repair: a zone that skips a whole
+// calendar day. Pacific/Apia jumped from 2011-12-29 23:59:59 UTC-10 straight
+// to 2011-12-31 00:00 UTC+14, so no instant at all exists on 2011-12-30. The
+// helper must not reach for the next transition there (that lands on a
+// different day) and keeps time.Date's own resolution instead.
+func TestCalendarDayKeepsStdlibResolutionForACalendarDayThatNeverExisted(t *testing.T) {
+	apia, err := time.LoadLocation("Pacific/Apia")
+	if err != nil {
+		t.Fatalf("load Pacific/Apia: %v", err)
+	}
+
+	stored := time.Date(2011, time.December, 30, 0, 0, 0, 0, time.UTC)
+	got := CalendarDay(stored, apia)
+
+	if key := got.Format("2006-01-02"); key != "2011-12-29" {
+		t.Fatalf("CalendarDay(2011-12-30, Pacific/Apia) = %s, want the stdlib resolution 2011-12-29", key)
+	}
+	if got.Location() != apia {
+		t.Fatalf("expected location Pacific/Apia, got %s", got.Location())
+	}
+}
+
 func TestSymptomIDSet(t *testing.T) {
 	set := SymptomIDSet([]uint{3, 3, 5})
 	if len(set) != 2 {
