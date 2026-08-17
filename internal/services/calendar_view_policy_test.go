@@ -140,3 +140,164 @@ func TestCalendarMinimumNavigableMonth(t *testing.T) {
 		t.Fatalf("expected minimum month 2023-03-01, got %s", minMonth.Format("2006-01-02"))
 	}
 }
+
+// TestCalendarMonthAnchorsSurviveASkippedFirstOfMonthMidnight pins the whole
+// month-anchoring surface of this file against the one date shape that breaks
+// it: a UTC-minus zone whose DST jump lands exactly on the FIRST of a month.
+// No instant exists at 00:00 local that day, and a plain time.Date /
+// ParseInLocation resolves the missing wall clock BACKWARD into the last day of
+// the PREVIOUS month. Every value derived from that anchor then names the wrong
+// month — the rendered grid, the month label, the ?month= value, both
+// navigation links, and the lower navigation bound.
+//
+// The two reproducing pairs come from a full scan of the zone database shipped
+// with the toolchain (598 zones, tzdata 2025c, every date 1970-01-01..2040-12-31):
+// 66 zone/date pairs skip midnight on the 1st, all of them west of UTC.
+//
+//	America/Asuncion 2023-10-01 → time.Date(...) = 2023-09-30 23:00 -04:00
+//	America/Havana   2012-04-01 → time.Date(...) = 2012-03-31 23:00 -05:00
+//
+// East-of-UTC zones normalize FORWARD and keep the date, so a test on one of
+// them goes green while proving nothing; both controls below therefore hold the
+// ordinary path instead — the same zone in a month with no transition, and UTC.
+func TestCalendarMonthAnchorsSurviveASkippedFirstOfMonthMidnight(t *testing.T) {
+	asuncion, err := time.LoadLocation("America/Asuncion")
+	if err != nil {
+		t.Fatalf("load America/Asuncion: %v", err)
+	}
+	havana, err := time.LoadLocation("America/Havana")
+	if err != nil {
+		t.Fatalf("load America/Havana: %v", err)
+	}
+
+	testCases := []struct {
+		name        string
+		location    *time.Location
+		month       string
+		selectedDay string
+		prevMonth   string
+		nextMonth   string
+		skipsFirst  bool
+	}{
+		{
+			name:        "asuncion october 2023 skips the first midnight",
+			location:    asuncion,
+			month:       "2023-10",
+			selectedDay: "2023-10-15",
+			prevMonth:   "2023-09",
+			nextMonth:   "2023-11",
+			skipsFirst:  true,
+		},
+		{
+			name:        "havana april 2012 skips the first midnight",
+			location:    havana,
+			month:       "2012-04",
+			selectedDay: "2012-04-15",
+			prevMonth:   "2012-03",
+			nextMonth:   "2012-05",
+			skipsFirst:  true,
+		},
+		{
+			// November 2023 has an ordinary first, so its own anchor is fine; the
+			// PREVIOUS-month link steps onto 2023-10-01 and is not.
+			name:        "asuncion november 2023 steps back onto a skipped first",
+			location:    asuncion,
+			month:       "2023-11",
+			selectedDay: "2023-11-15",
+			prevMonth:   "2023-10",
+			nextMonth:   "2023-12",
+		},
+		{
+			name:        "control: asuncion june 2023, no transition in reach",
+			location:    asuncion,
+			month:       "2023-06",
+			selectedDay: "2023-06-15",
+			prevMonth:   "2023-05",
+			nextMonth:   "2023-07",
+		},
+		{
+			name:        "control: utc october 2023",
+			location:    time.UTC,
+			month:       "2023-10",
+			selectedDay: "2023-10-15",
+			prevMonth:   "2023-09",
+			nextMonth:   "2023-11",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			requested, err := time.Parse("2006-01", testCase.month)
+			if err != nil {
+				t.Fatalf("parse the requested month %q: %v", testCase.month, err)
+			}
+			// Re-measure the premise against the tzdata actually linked into this
+			// run rather than trusting the table: a zone-database revision that
+			// moves either transition must fail loudly here, not turn the case
+			// into a control that silently proves nothing.
+			probe := time.Date(requested.Year(), requested.Month(), 1, 0, 0, 0, 0, testCase.location)
+			skipped := probe.Month() != requested.Month()
+			if skipped != testCase.skipsFirst {
+				t.Fatalf("premise drifted: time.Date(1st of %s, %s) = %s, so midnight-skipped=%t but the case expects %t — rescan the zone database and repin",
+					testCase.month, testCase.location, probe.Format(time.RFC3339), skipped, testCase.skipsFirst)
+			}
+
+			now := time.Date(2026, time.August, 17, 12, 0, 0, 0, time.UTC)
+
+			t.Run("month query", func(t *testing.T) {
+				month, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds(testCase.month, "", now, testCase.location, time.Time{})
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got := month.Format("2006-01"); got != testCase.month {
+					t.Fatalf("?month=%s rendered %s", testCase.month, got)
+				}
+
+				prev, next := CalendarAdjacentMonthValuesWithinBounds(month, time.Time{})
+				if prev != testCase.prevMonth {
+					t.Fatalf("previous month link for %s = %q, want %q", testCase.month, prev, testCase.prevMonth)
+				}
+				if next != testCase.nextMonth {
+					t.Fatalf("next month link for %s = %q, want %q", testCase.month, next, testCase.nextMonth)
+				}
+			})
+
+			t.Run("month derived from the selected day", func(t *testing.T) {
+				month, selectedDate, err := ResolveCalendarMonthAndSelectedDateWithinBounds("", testCase.selectedDay, now, testCase.location, time.Time{})
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if selectedDate != testCase.selectedDay {
+					t.Fatalf("selected date = %q, want %q", selectedDate, testCase.selectedDay)
+				}
+				if got := month.Format("2006-01"); got != testCase.month {
+					t.Fatalf("selected day %s put the grid on %s, want %s", testCase.selectedDay, got, testCase.month)
+				}
+			})
+
+			t.Run("minimum navigable month", func(t *testing.T) {
+				// The bound is the month of CreatedAt minus three years, so an
+				// account created three years after the transition date has its
+				// lower bound land on exactly that first-of-month.
+				user := &models.User{
+					CreatedAt: time.Date(requested.Year()+3, requested.Month(), 14, 12, 0, 0, 0, time.UTC),
+				}
+				minMonth := CalendarMinimumNavigableMonth(user, testCase.location)
+				if got := minMonth.Format("2006-01"); got != testCase.month {
+					t.Fatalf("minimum navigable month = %s, want %s", got, testCase.month)
+				}
+			})
+
+			t.Run("clamp to the minimum month", func(t *testing.T) {
+				minMonth := time.Date(requested.Year(), requested.Month(), 1, 0, 0, 0, 0, time.UTC)
+				month, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2001-01", "", now, testCase.location, minMonth)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if got := month.Format("2006-01"); got != testCase.month {
+					t.Fatalf("month clamped to the lower bound = %s, want %s", got, testCase.month)
+				}
+			})
+		})
+	}
+}
