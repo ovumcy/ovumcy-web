@@ -10,7 +10,7 @@ import (
 
 // DateAtLocation projects an instant-in-time `value` onto the calendar of
 // `location` and returns the start of that calendar day — midnight, or the
-// day's first existing instant when a DST jump skips it (startOfCalendarDay).
+// day's first existing instant when a DST jump skips it (StartOfCalendarDay).
 // Use this for time.Time values that represent a real instant (time.Now(),
 // user.CreatedAt) where the in-location calendar day is what you want.
 //
@@ -25,13 +25,19 @@ func DateAtLocation(value time.Time, location *time.Location) time.Time {
 	}
 	localized := value.In(location)
 	year, month, day := localized.Date()
-	return startOfCalendarDay(year, month, day, location)
+	return StartOfCalendarDay(year, month, day, location)
 }
 
-// startOfCalendarDay returns the first instant that actually exists on the
+// StartOfCalendarDay returns the first instant that actually exists on the
 // given calendar day in `location`. It is the one construction point for
 // every "midnight of this calendar day" value in the package, so the
-// YYYY-MM-DD key a helper is handed always round-trips.
+// YYYY-MM-DD key a helper is handed always round-trips. It is exported for
+// the same reason it exists: the reminder scheduler resolves the day of its
+// daily pass the same way, and a second implementation of this rule is how
+// the class of defects it fixes comes back.
+//
+// `location` must not be nil — every caller resolves that first (the wrappers
+// below and reminders.nextRun default it to UTC).
 //
 // Plain time.Date cannot be used directly: in a UTC-minus zone whose DST jump
 // lands exactly on midnight (America/Santiago, America/Havana), local midnight
@@ -42,7 +48,7 @@ func DateAtLocation(value time.Time, location *time.Location) time.Time {
 // day, so they were never affected and are left byte-for-byte alone here, as
 // are zones without transitions (UTC included): the fallback below only fires
 // when the requested day did not survive the construction.
-func startOfCalendarDay(year int, month time.Month, day int, location *time.Location) time.Time {
+func StartOfCalendarDay(year int, month time.Month, day int, location *time.Location) time.Time {
 	candidate := time.Date(year, month, day, 0, 0, 0, 0, location)
 	if y, m, d := candidate.Date(); y == year && m == month && d == day {
 		return candidate
@@ -66,7 +72,7 @@ func startOfCalendarDay(year int, month time.Month, day int, location *time.Loca
 }
 
 // CalendarDay rebuilds a date-only stored value at the start of its calendar
-// day in `location` (startOfCalendarDay), preserving the calendar components
+// day in `location` (StartOfCalendarDay), preserving the calendar components
 // of `value` exactly as stored. Use this for time.Time values whose semantics
 // is "a calendar date" rather than "an instant in time" — DailyLog.Date,
 // User.LastPeriodStart, derived stats fields. Unlike DateAtLocation, this
@@ -81,7 +87,7 @@ func CalendarDay(value time.Time, location *time.Location) time.Time {
 		return time.Time{}
 	}
 	year, month, day := value.Date()
-	return startOfCalendarDay(year, month, day, location)
+	return StartOfCalendarDay(year, month, day, location)
 }
 
 // CalendarDayKey returns the YYYY-MM-DD ISO string for a date-only stored
