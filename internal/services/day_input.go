@@ -3,7 +3,6 @@ package services
 import (
 	"errors"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -100,11 +99,14 @@ func IsValidDayMood(value int) bool {
 // HTML maxlength counts UTF-16 code units, so a character (rune) count is at
 // worst MORE permissive than the browser — an astral character is one rune and
 // two code units — and the server therefore never truncates a value the browser
-// was willing to submit. The cut stays on a character boundary.
+// was willing to submit.
+//
+// Ranging over the string yields the byte offset of each character's first
+// byte, so a single pass both counts and locates the cut: an over-limit value
+// is sliced at the offset of the character after the cap — always a character
+// boundary — and a value at or under the cap falls out of the loop and is
+// returned whole.
 func TrimDayNotes(value string) string {
-	if utf8.RuneCountInString(value) <= MaxDayNotesLength {
-		return value
-	}
 	characters := 0
 	for index := range value {
 		if characters == MaxDayNotesLength {
