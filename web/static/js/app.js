@@ -3730,8 +3730,32 @@
     renderDaySaveUnreachable(form);
   }
 
+  // Pick the HTTP verb from whichever hx-* attribute the form uses so the
+  // autosave fetch tracks the canonical REST verb declared in the template
+  // (PUT for /api/v1/days/{date} upsert, falling back to POST / action for
+  // legacy or non-HTMX forms).
+  function dashboardAutosaveEndpoint(form) {
+    var hxVerbs = ["hx-put", "hx-patch", "hx-delete", "hx-post"];
+    var endpoint = {
+      method: "POST",
+      url: String(form.getAttribute("action") || "").trim()
+    };
+    var hxValue;
+
+    for (var verbIndex = 0; verbIndex < hxVerbs.length; verbIndex += 1) {
+      hxValue = form.getAttribute(hxVerbs[verbIndex]);
+      if (hxValue) {
+        endpoint.method = hxVerbs[verbIndex].substring(3).toUpperCase();
+        endpoint.url = String(hxValue).trim();
+        break;
+      }
+    }
+    return endpoint;
+  }
+
   function runDashboardAutosave(form, keepalive, mode) {
     var requestVersion;
+    var endpoint;
     var url;
     var method;
     var headers;
@@ -3758,27 +3782,19 @@
     requestVersion = form.__ovumcyAutosaveVersion || 0;
     captureDashboardPersistedState(form);
     previousState = form.__ovumcyPersistedState;
-    // Pick the HTTP verb from whichever hx-* attribute the form uses so the
-    // autosave fetch tracks the canonical REST verb declared in the template
-    // (PUT for /api/v1/days/{date} upsert, falling back to POST / action for
-    // legacy or non-HTMX forms).
-    var hxVerbs = ["hx-put", "hx-patch", "hx-delete", "hx-post"];
-    method = "POST";
-    url = String(form.getAttribute("action") || "").trim();
-    for (var verbIndex = 0; verbIndex < hxVerbs.length; verbIndex += 1) {
-      var hxValue = form.getAttribute(hxVerbs[verbIndex]);
-      if (hxValue) {
-        method = hxVerbs[verbIndex].substring(3).toUpperCase();
-        url = String(hxValue).trim();
-        break;
-      }
-    }
+    endpoint = dashboardAutosaveEndpoint(form);
+    method = endpoint.method;
+    url = endpoint.url;
     headers = dashboardRequestHeaders();
     body = buildDashboardAutosaveBody(form);
     // What is on the wire is what the server will hold: snapshot it here, and
     // promote it to "persisted" only once the server has said yes.
     sentState = dashboardFormState(form, false);
 
+    // Which edit is on the wire, readable from outside this call: the unload
+    // flush has to know whether the open request already carries the newest
+    // body or an older one.
+    form.__ovumcyAutosaveInFlightVersion = requestVersion;
     form.__ovumcyAutosaveInFlight = window.fetch(url, {
       method: method,
       credentials: "same-origin",
@@ -3816,6 +3832,7 @@
       return false;
     }).finally(function () {
       form.__ovumcyAutosaveInFlight = null;
+      form.__ovumcyAutosaveInFlightVersion = 0;
       if (form.dataset.autosaveDirty === "true" && !form.__ovumcyAutosaveFailed) {
         form.__ovumcyAutosaveTimer = window.setTimeout(function () {
           runDashboardAutosave(form, false);
@@ -3985,6 +4002,58 @@
     return runDashboardAutosave(form, false, "undo");
   }
 
+  // The page going away is the last chance the newest journal value gets, and
+  // the ordinary runner cannot take it: while a save is open it hands back that
+  // pending promise, which carries the older body. An edit made in that window
+  // bumps the version and queues nothing — the only thing that would ever send
+  // it is the re-arm in the runner's `finally`, a 2 s timer no unload survives
+  // (and one that would go out without `keepalive` besides). So a newer version
+  // leaves on its own keepalive request, beside the one already on the wire.
+  //
+  // The day upsert is idempotent, so a version this flush already sent is not
+  // taken off the dirty ledger: should the navigation be cancelled, the normal
+  // path re-sending the same body costs nothing, while clearing dirty here
+  // against a request whose outcome nobody will see could lose the edit twice.
+  function flushDashboardAutosaveBeforeUnload(form) {
+    var version;
+    var endpoint;
+
+    if (!form || form.dataset.autosaveDirty !== "true") {
+      return;
+    }
+    if (!form.__ovumcyAutosaveInFlight) {
+      runDashboardAutosave(form, true);
+      return;
+    }
+
+    version = form.__ovumcyAutosaveVersion || 0;
+    // The open request already carries this edit.
+    if (version === (form.__ovumcyAutosaveInFlightVersion || 0)) {
+      return;
+    }
+    // beforeunload fires again on every cancelled navigation: send once.
+    if (version === (form.__ovumcyAutosaveUnloadFlushedVersion || 0)) {
+      return;
+    }
+    // The same refusal the ordinary runner makes: a body it would not send is
+    // not one to smuggle out on the unload path.
+    if (!validateTemperatureInputs(form, false)) {
+      return;
+    }
+
+    endpoint = dashboardAutosaveEndpoint(form);
+    form.__ovumcyAutosaveUnloadFlushedVersion = version;
+    window.fetch(endpoint.url, {
+      method: endpoint.method,
+      credentials: "same-origin",
+      keepalive: true,
+      headers: dashboardRequestHeaders(),
+      body: buildDashboardAutosaveBody(form).toString()
+    }).catch(function () {
+      // The page is leaving; there is no surface left to report to.
+    });
+  }
+
   function bindDashboardAutosaveBeforeUnload() {
     if (document.body && document.body.dataset.dashboardAutosaveBeforeUnloadBound === "1") {
       return;
@@ -3996,9 +4065,7 @@
     window.addEventListener("beforeunload", function () {
       var forms = document.querySelectorAll("[data-dashboard-save-form]");
       for (var index = 0; index < forms.length; index++) {
-        if (forms[index].dataset.autosaveDirty === "true") {
-          runDashboardAutosave(forms[index], true);
-        }
+        flushDashboardAutosaveBeforeUnload(forms[index]);
       }
     });
   }
