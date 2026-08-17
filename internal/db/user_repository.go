@@ -261,34 +261,59 @@ func canonicalWatermarkAnchor(cycleAnchor time.Time) time.Time {
 // their due-set from a record snapshot, so both can see the same uncovered
 // anchor. An unconditional write let both deliver; a conditional one cannot.
 //
-// The UPDATE is a compare-and-set and its predicate is the persistence-side
-// mirror of the suppression the pure decision layer already applies (a reminder
-// whose watermark covers its anchor is not due):
+// The UPDATE is a compare-and-set on the value the caller EXPECTS TO REPLACE —
+// previous, the watermark this pass's own record snapshot carried — not on the
+// value it is about to write:
 //
 //   - id = ? scopes the write to one owner, never another row.
-//   - "column IS NULL OR column <> anchor" is "the stored watermark does not
-//     already cover this anchor". A reminder that reached this call was emitted
-//     by the decision, which means the snapshot watermark did NOT cover the
-//     anchor — so the only way this predicate is false is another pass having
-//     written exactly this anchor in between. That is precisely the race, and
-//     losing it is the correct outcome.
+//   - "column IS NULL" (previous nil) or "column = previous" is "the column has
+//     not moved since I read it". Anything else means another writer got there
+//     first, so this pass's due-set was computed against a watermark that no
+//     longer exists and its conclusion cannot be trusted.
+//
+// Keying on the ANCHOR instead ("column <> anchor") is the tempting shorter form
+// and it is wrong in one direction that matters: a pass holding a stale snapshot
+// would win the claim over a NEWER watermark and move the column BACKWARDS. Its
+// own delivery would announce a superseded cycle, and — because the column then
+// no longer covers the newer anchor — the newer reminder would ship a second time
+// on the next pass. The stale pass must lose. Regression:
+// TestClaimWebhookWatermarkIsLostWhenTheColumnMovedSinceTheSnapshot.
+//
+// The next cycle stays claimable, which is the whole point of comparing against
+// previous rather than against a fixed value: a pass that read watermark W and
+// decided anchor X is due passes previous=W and wins, moving W to X.
+//
+// A nil or zero previous expects SQL NULL. A stored zero timestamp is a value
+// nothing in this code path writes; were one to exist, every claim against it
+// would be lost and the reminder suppressed — the fail-closed direction for an
+// egress path, and never a duplicate send.
 //
 // Exactly one concurrent caller can see one row affected, because the conditional
 // UPDATE is evaluated under the row lock: whichever statement runs second reads
 // the column the first one already set. Zero rows is a normal outcome, not an
-// error — the caller skips the send instead of duplicating it.
+// error — the caller skips the send instead of duplicating it. Same shape as the
+// TOTP replay guard's "totp_last_used_step < ?" below.
 //
 // It touches only the one watermark column: NOT auth_session_version (taking a
 // send claim is not a security-posture change) and NOT any other setting.
-func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time) (bool, error) {
+func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) (bool, error) {
 	column, ok := webhookWatermarkColumns[reminderType]
 	if !ok {
 		return false, fmt.Errorf("unknown webhook reminder type %q", reminderType)
 	}
 	anchorUTC := canonicalWatermarkAnchor(cycleAnchor)
-	result := repo.database.WithContext(ctx).Model(&models.User{}).
-		Where("id = ? AND ("+column+" IS NULL OR "+column+" <> ?)", userID, anchorUTC).
-		Update(column, anchorUTC)
+
+	// Two spellings rather than one expression with a NULL-valued parameter: SQL
+	// equality against NULL is never true in any dialect, so "column = ?" with a
+	// NULL bind would silently match no row and lose every first-ever claim.
+	claim := repo.database.WithContext(ctx).Model(&models.User{})
+	if previous == nil || previous.IsZero() {
+		claim = claim.Where("id = ? AND "+column+" IS NULL", userID)
+	} else {
+		claim = claim.Where("id = ? AND "+column+" = ?", userID, *previous)
+	}
+
+	result := claim.Update(column, anchorUTC)
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -307,9 +332,12 @@ func (repo *UserRepository) ClaimWebhookWatermark(ctx context.Context, userID ui
 // affected and the newer value stands; rolling back blindly would resurrect a
 // reminder somebody else has already sent.
 //
-// previous is written verbatim, not canonicalized: "unchanged" means the exact
-// value that was there. A nil previous restores SQL NULL (never sent yet). A
-// zero-row outcome is normal and not an error.
+// previous must be the SAME value the caller handed ClaimWebhookWatermark, and
+// that is exactly what the claim replaced: the claim only succeeds when the
+// column still holds previous, so "restore previous" cannot overwrite a value
+// this pass never saw. It is written verbatim, not canonicalized — "unchanged"
+// means the exact value that was there. A nil previous restores SQL NULL (never
+// sent yet). A zero-row outcome is normal and not an error.
 func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) error {
 	column, ok := webhookWatermarkColumns[reminderType]
 	if !ok {

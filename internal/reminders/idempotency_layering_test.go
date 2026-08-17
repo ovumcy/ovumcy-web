@@ -30,10 +30,10 @@ import (
 // already-sent reminder — exactly as the real DB repository behaves.
 //
 // The two writers mirror the repository exactly. The claim is the conditional
-// UPDATE ... WHERE id = ? AND (col IS NULL OR col <> anchor) — one row affected
-// means this pass owns the send, zero rows means another pass already claimed the
-// same anchor. The release is the compare-and-set back, conditional on the column
-// still holding the anchor this pass wrote.
+// UPDATE ... WHERE id = ? AND col IS <the value the pass read> — one row affected
+// means this pass owns the send, zero rows means the column moved since the
+// snapshot, so another pass owns it. The release is the compare-and-set back,
+// conditional on the column still holding the anchor this pass wrote.
 //
 // snapshot, when set, turns ListAllForNotify into a rendezvous: no caller leaves
 // with a snapshot until every participant has one. That is the overlap window a
@@ -59,19 +59,30 @@ func (r *statefulNotifyRepo) ListAllForNotify(context.Context) ([]models.Webhook
 	return out, nil
 }
 
-func (r *statefulNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time) (bool, error) {
+func (r *statefulNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	column := r.column(userID, reminderType)
 	if column == nil {
 		return false, nil
 	}
-	anchorUTC := utcMidnight(anchor)
-	if *column != nil && (*column).Equal(anchorUTC) {
+	if !sameWatermark(*column, previous) {
+		// The column moved since this pass read it: another pass owns the send.
 		return false, nil
 	}
+	anchorUTC := utcMidnight(anchor)
 	*column = &anchorUTC
 	return true, nil
+}
+
+// sameWatermark reports whether a stored watermark equals the value a pass
+// expected to find, NULL included — the stub's spelling of the claim's
+// compare-and-set predicate.
+func sameWatermark(stored *time.Time, expected *time.Time) bool {
+	if stored == nil || expected == nil {
+		return stored == nil && expected == nil
+	}
+	return stored.Equal(*expected)
 }
 
 func (r *statefulNotifyRepo) ReleaseWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time) error {

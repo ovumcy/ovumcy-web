@@ -265,9 +265,18 @@ webhook as part of an install script that also runs `ovumcy users create`).
   loses it skips the reminder instead of sending a second copy.
 - Consequence: re-running the pass is always safe.
   - A reminder already delivered this cycle is not sent again.
-  - A reminder whose delivery failed last time is retried automatically on the
-    next pass, with no separate retry mechanism to configure — the schedule
+  - A reminder whose delivery *returned* an error is retried automatically on
+    the next pass, with no separate retry mechanism to configure — the schedule
     itself **is** the retry loop.
+  - The one exception: because the claim is taken before the request, a pass that
+    is **killed outright** between the two — the host reboots, the container is
+    evicted or OOM-killed, an interactive `ovumcy notify` is interrupted — leaves
+    the reminder marked as handled although nothing was delivered, and that
+    cycle's reminder is then skipped for good. The trade is deliberate: a
+    reminder is a convenience, a duplicate reminder about health data sent to an
+    endpoint is not, so the pass prefers to miss one rather than send it twice.
+    If a reminder you expected never arrived and the logs show the pass dying
+    mid-run, that is this case; the next cycle is unaffected.
 - This means you can run the pass (or the built-in scheduler) on an ordinary
   daily schedule and never worry about double-notifying an owner because a
   previous run overlapped, was re-triggered, or ran twice due to a scheduler

@@ -82,15 +82,20 @@ type watermarkWrite struct {
 // claimErr makes the claim itself fail (a storage error before any request);
 // claimLost makes it return false, standing in for a concurrent pass that won the
 // same anchor.
+// claimExpected and releaseRestored record the prior-value argument of each call,
+// so a test can assert the claim is compared against — and the release restores —
+// the watermark the pass's snapshot actually carried.
 type stubNotifyRepo struct {
-	records    []models.WebhookNotifyRecord
-	listErr    error
-	claimErr   error
-	claimLost  bool
-	releaseErr error
-	mu         sync.Mutex
-	watermarks []watermarkWrite
-	releases   []watermarkWrite
+	records         []models.WebhookNotifyRecord
+	listErr         error
+	claimErr        error
+	claimLost       bool
+	releaseErr      error
+	mu              sync.Mutex
+	watermarks      []watermarkWrite
+	releases        []watermarkWrite
+	claimExpected   []*time.Time
+	releaseRestored []*time.Time
 }
 
 func (stub *stubNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookNotifyRecord, error) {
@@ -100,9 +105,10 @@ func (stub *stubNotifyRepo) ListAllForNotify(context.Context) ([]models.WebhookN
 	return stub.records, nil
 }
 
-func (stub *stubNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time) (bool, error) {
+func (stub *stubNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time) (bool, error) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
+	stub.claimExpected = append(stub.claimExpected, previous)
 	if stub.claimErr != nil {
 		return false, stub.claimErr
 	}
@@ -113,9 +119,10 @@ func (stub *stubNotifyRepo) ClaimWebhookWatermark(_ context.Context, userID uint
 	return true, nil
 }
 
-func (stub *stubNotifyRepo) ReleaseWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, _ *time.Time) error {
+func (stub *stubNotifyRepo) ReleaseWebhookWatermark(_ context.Context, userID uint, reminderType string, anchor time.Time, previous *time.Time) error {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
+	stub.releaseRestored = append(stub.releaseRestored, previous)
 	stub.releases = append(stub.releases, watermarkWrite{userID: userID, reminderType: reminderType, anchor: anchor})
 	for i := len(stub.watermarks) - 1; i >= 0; i-- {
 		claim := stub.watermarks[i]
@@ -813,6 +820,49 @@ func TestNotifyFailedDeliveryReleasesTheClaim(t *testing.T) {
 	}
 	if len(repo.writes()) != 0 {
 		t.Fatal("after the release the watermark must stand exactly where the pass found it")
+	}
+}
+
+// TestNotifyClaimsAgainstTheWatermarkItsSnapshotCarried proves the pass hands the
+// compare-and-set the value it actually read, not nil and not the anchor. That
+// argument is what makes a stale pass lose instead of writing the watermark
+// backwards, and it is what a release restores — so the release must be given the
+// SAME value, which is exactly what the claim replaced.
+func TestNotifyClaimsAgainstTheWatermarkItsSnapshotCarried(t *testing.T) {
+	// An owner whose previous cycle's reminder was already sent: the snapshot
+	// carries a watermark, and the reminder now due belongs to a later cycle.
+	anchor := notifyDay(2026, time.February, 26)
+	stale := notifyDay(2026, time.January, 29)
+	history := []models.DailyLog{
+		periodStartLog(1, notifyDay(2026, time.January, 1)),
+		periodStartLog(1, stale),
+		periodStartLog(1, anchor),
+	}
+	record := overdueResumeRecord(anchor, &stale)
+
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
+	deliverer := &stubDeliverer{failEvery: true}
+	service := newTestNotifyService(repo, stubLogReader{byUser: map[uint][]models.DailyLog{1: history}}, stubDecryptor{}, deliverer)
+
+	report, err := service.RunOnce(context.Background(), notifyDay(2026, time.March, 23), time.UTC, false)
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.Due != 1 {
+		t.Fatalf("expected one due reminder for this timeline, got due=%d", report.Due)
+	}
+
+	if len(repo.claimExpected) != 1 {
+		t.Fatalf("expected exactly one claim, got %d", len(repo.claimExpected))
+	}
+	if repo.claimExpected[0] == nil || !repo.claimExpected[0].Equal(stale) {
+		t.Fatalf("the claim must compare against the snapshot's watermark %s, got %v", stale, repo.claimExpected[0])
+	}
+	if len(repo.releaseRestored) != 1 {
+		t.Fatalf("the failed delivery must release its claim exactly once, got %d", len(repo.releaseRestored))
+	}
+	if repo.releaseRestored[0] == nil || !repo.releaseRestored[0].Equal(stale) {
+		t.Fatalf("the release must restore what the claim replaced (%s), got %v", stale, repo.releaseRestored[0])
 	}
 }
 

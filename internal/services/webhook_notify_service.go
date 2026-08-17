@@ -41,6 +41,17 @@ import (
 // to after Deliver, both delivered. The claim is the coordination point with
 // slice-1's watermark columns; it is the only mutual exclusion the pass has.
 //
+// The cost, stated plainly: claiming first turns a returned delivery error into a
+// retry but a HARD KILL between claim and release into a permanent skip. A pass
+// that dies mid-POST — host reboot, OOM kill, container eviction, an interrupted
+// `ovumcy notify` — leaves the claim standing with nothing delivered, and no
+// counter records it (the process that would have counted it is gone). That is
+// at-most-once for this window, deliberately: a missed reminder is a convenience
+// lost, a duplicate reminder about health data at an owner's endpoint is not.
+// Narrowing it further needs a claim that is distinguishable from a completed
+// send, which the single date column cannot express — a schema decision, not a
+// change to make here. Stated for operators in docs/notifications.md.
+//
 // No-secret discipline: the pass logs counts and at most owner ids — never the
 // URL, token, decrypted health specifics, or payload.
 
@@ -52,11 +63,16 @@ type NotifyUserRepository interface {
 	ListAllForNotify(ctx context.Context) ([]models.WebhookNotifyRecord, error)
 	// ClaimWebhookWatermark takes an exclusive claim on one (owner, kind, cycle
 	// anchor) send by compare-and-set on the per-kind watermark, and reports
-	// whether this caller won it. false means a concurrent pass owns the send.
+	// whether this caller won it. previous is the watermark the caller's record
+	// snapshot carried and is the value the set is compared against, so a claim is
+	// lost whenever the column moved at all since that snapshot — not only when it
+	// moved to this same anchor. false means another pass owns the send.
 	// cycleAnchor is canonicalized to UTC-midnight by the repo.
-	ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time) (bool, error)
+	ClaimWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) (bool, error)
 	// ReleaseWebhookWatermark restores the watermark to previous after the delivery
 	// a claim covered failed, conditional on the column still holding cycleAnchor.
+	// previous must be the same value handed to ClaimWebhookWatermark, which is
+	// what that claim replaced.
 	ReleaseWebhookWatermark(ctx context.Context, userID uint, reminderType string, cycleAnchor time.Time, previous *time.Time) error
 }
 
@@ -259,9 +275,11 @@ func (service *WebhookNotifyService) processOwner(
 		}
 
 		// Claim the send BEFORE the request leaves. previousWatermark is the value
-		// this pass's snapshot carried, and it is what a failed delivery restores.
+		// this pass's snapshot carried: it is what the claim compares against — so a
+		// pass whose snapshot has been overtaken loses rather than writing the column
+		// backwards — and it is what a failed delivery restores.
 		previousWatermark := watermarkForReminderType(settings, reminder.Type)
-		claimed, err := service.users.ClaimWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor)
+		claimed, err := service.users.ClaimWebhookWatermark(ctx, record.ID, reminder.Type, reminder.CycleAnchor, previousWatermark)
 		if err != nil {
 			// Owner id only: the reminder type is a health specific, and this line
 			// lands in whatever log the pass was started from. Nothing was delivered
@@ -300,9 +318,10 @@ func (service *WebhookNotifyService) processOwner(
 }
 
 // watermarkForReminderType returns the incoming watermark of the kind a reminder
-// belongs to, as the pass's record snapshot carried it. It is the value a
-// released claim restores, so "unchanged after a failed delivery" means exactly
-// the value this pass decided against.
+// belongs to, as the pass's record snapshot carried it. It is both the value the
+// claim's compare-and-set is taken against and the value a released claim
+// restores, so "unchanged after a failed delivery" means exactly the value this
+// pass decided against.
 func watermarkForReminderType(settings WebhookReminderSettings, reminderType string) *time.Time {
 	if reminderType == DueReminderTypeOvulation {
 		return settings.OvulationWatermark

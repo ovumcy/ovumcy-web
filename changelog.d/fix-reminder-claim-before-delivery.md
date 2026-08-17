@@ -9,4 +9,7 @@
   claims a reminder before the request goes out, by a conditional write only one pass can win; the
   pass that loses skips it, and the one that wins delivers. A failed delivery hands the claim back,
   so the reminder is still retried on the next pass exactly as before, and `--dry-run` continues to
-  make no request and to write nothing at all.
+  make no request and to write nothing at all. One trade comes with it, now written down in the
+  notifications guide: a pass killed outright mid-request — a reboot, an OOM kill, an interrupted
+  `ovumcy notify` — skips that cycle's reminder instead of retrying it, because a missed reminder is
+  a smaller harm than a duplicate one about health data.
