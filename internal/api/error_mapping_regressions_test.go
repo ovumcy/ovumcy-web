@@ -308,6 +308,13 @@ func TestMapSettingsPasswordChangeError(t *testing.T) {
 			want: settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password"),
 		},
 		{
+			// Shares one spec key with the auth forms on purpose, so the HTML
+			// render and the JSON payload cannot drift onto different sentences.
+			name: "password too long",
+			err:  services.ErrSettingsPasswordTooLong,
+			want: settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password too long"),
+		},
+		{
 			name: "hash failed",
 			err:  services.ErrSettingsPasswordHashFailed,
 			want: globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to secure password"),

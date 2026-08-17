@@ -53,6 +53,8 @@ func mapAuthRegisterError(err error) APIErrorSpec {
 		return authFormErrorSpec(fiber.StatusForbidden, APIErrorCategoryForbidden, "registration disabled")
 	case errors.Is(err, services.ErrAuthPasswordMismatch):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password mismatch")
+	case errors.Is(err, services.ErrAuthPasswordTooLong):
+		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password too long")
 	case errors.Is(err, services.ErrAuthWeakPassword):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password")
 	case errors.Is(err, services.ErrAuthEmailExists):
@@ -127,6 +129,8 @@ func mapPasswordResetCompleteError(err error) APIErrorSpec {
 	switch {
 	case errors.Is(err, services.ErrAuthPasswordMismatch):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password mismatch")
+	case errors.Is(err, services.ErrAuthPasswordTooLong):
+		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "password too long")
 	case errors.Is(err, services.ErrAuthWeakPassword):
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "weak password")
 	case errors.Is(err, services.ErrAuthResetInvalid):

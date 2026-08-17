@@ -20,6 +20,7 @@ const (
 	SettingsPasswordChangeKeyInvalidCurrent   = "invalid current password"
 	SettingsPasswordChangeKeyMustDiffer       = "new password must differ"
 	SettingsPasswordChangeKeyWeakPassword     = "weak password"
+	SettingsPasswordChangeKeyPasswordTooLong  = "password too long"
 )
 
 // The functions below resolve settings flash messages into status keys and
@@ -50,7 +51,12 @@ func IsChangePasswordErrorMessage(message string) bool {
 		SettingsPasswordChangeKeyPasswordMismatch,
 		SettingsPasswordChangeKeyInvalidCurrent,
 		SettingsPasswordChangeKeyMustDiffer,
-		SettingsPasswordChangeKeyWeakPassword:
+		SettingsPasswordChangeKeyWeakPassword,
+		// Omitting the new key here would not fail to render — it would render
+		// in the wrong place, as a general settings error instead of one
+		// attached to the change-password form. Regression:
+		// TestIsChangePasswordErrorMessageCoversTheTooLongRefusal.
+		SettingsPasswordChangeKeyPasswordTooLong:
 		return true
 	default:
 		return false

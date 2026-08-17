@@ -25,6 +25,7 @@ var (
 	ErrAuthRegisterFailed        = errors.New("auth register failed")
 	ErrAuthPasswordMismatch      = errors.New("auth register password mismatch")
 	ErrAuthWeakPassword          = errors.New("auth register weak password")
+	ErrAuthPasswordTooLong       = errors.New("auth register password too long")
 	ErrAuthInvalidCreds          = errors.New("auth invalid credentials")
 	ErrAuthResetInvalid          = errors.New("auth reset invalid input")
 	ErrAuthPasswordHash          = errors.New("auth password hash failed")
@@ -123,6 +124,21 @@ func (service *AuthService) FindByID(ctx context.Context, userID uint) (models.U
 	return service.users.FindByID(ctx, userID)
 }
 
+// authPasswordPolicyError translates the shared password-policy verdict into
+// this layer's sentinels. The too-long refusal keeps its own sentinel the whole
+// way to the owner: collapsing it back into ErrAuthWeakPassword here would undo
+// the split at the first hop and hand the transport a single spec key again.
+func authPasswordPolicyError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, ErrPasswordTooLong):
+		return ErrAuthPasswordTooLong
+	default:
+		return ErrAuthWeakPassword
+	}
+}
+
 func (service *AuthService) ValidateRegistrationCredentials(password string, confirmPassword string) error {
 	password = strings.TrimSpace(password)
 	confirmPassword = strings.TrimSpace(confirmPassword)
@@ -133,8 +149,8 @@ func (service *AuthService) ValidateRegistrationCredentials(password string, con
 	if password != confirmPassword {
 		return ErrAuthPasswordMismatch
 	}
-	if err := ValidatePasswordStrength(password); err != nil {
-		return ErrAuthWeakPassword
+	if err := authPasswordPolicyError(ValidatePasswordStrength(password)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -175,8 +191,8 @@ func (service *AuthService) ValidateResetPasswordInput(password string, confirmP
 	if password != confirmPassword {
 		return ErrAuthPasswordMismatch
 	}
-	if err := ValidatePasswordStrength(password); err != nil {
-		return ErrAuthWeakPassword
+	if err := authPasswordPolicyError(ValidatePasswordStrength(password)); err != nil {
+		return err
 	}
 	return nil
 }
@@ -188,8 +204,8 @@ func (service *AuthService) ForceResetPasswordByEmail(ctx context.Context, email
 	if normalizedEmail == "" || newPassword == "" {
 		return ErrAuthResetInvalid
 	}
-	if err := ValidatePasswordStrength(newPassword); err != nil {
-		return ErrAuthWeakPassword
+	if err := authPasswordPolicyError(ValidatePasswordStrength(newPassword)); err != nil {
+		return err
 	}
 
 	exists, err := service.users.ExistsByNormalizedEmail(ctx, normalizedEmail)
