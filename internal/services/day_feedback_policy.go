@@ -124,13 +124,25 @@ func currentPeriodStreakAtDay(logs []models.DailyLog, day time.Time, location *t
 		return 0, time.Time{}, false
 	}
 
-	targetDay := DateAtLocation(day, location)
+	// The walk below is a run of CALENDAR days, so it is stepped as calendar
+	// days: the requested day is re-anchored to UTC midnight and the cursor
+	// moves there, the same convention BuildCalendarDayStates uses for the
+	// month grid. Stepping inside the request zone re-enters time.Date there,
+	// and in a UTC-minus zone whose DST jump lands on midnight
+	// (America/Santiago 2026-09-06) the missing wall clock normalizes BACKWARD
+	// into the previous calendar day: the step off 2026-09-07 landed on
+	// 2026-09-05 and 2026-09-06 was never queried, undercounting a continuous
+	// period by a day and jumping the gap that should have ended the walk. UTC
+	// has no transitions, so the same arithmetic there visits every calendar
+	// day exactly once for every request zone. Only the cursor's shape changes:
+	// the calendar day it names on any other date is the one it named before.
+	targetDay := CalendarDay(DateAtLocation(day, location), time.UTC)
 	logByDay := make(map[string]models.DailyLog, len(logs))
 	for _, logEntry := range sortDailyLogs(logs) {
-		logByDay[CalendarDay(logEntry.Date, location).Format("2006-01-02")] = logEntry
+		logByDay[CalendarDayKey(logEntry.Date)] = logEntry
 	}
 
-	current, ok := logByDay[targetDay.Format("2006-01-02")]
+	current, ok := logByDay[CalendarDayKey(targetDay)]
 	if !ok || !current.IsPeriod {
 		return 0, time.Time{}, false
 	}
@@ -138,7 +150,7 @@ func currentPeriodStreakAtDay(logs []models.DailyLog, day time.Time, location *t
 	streak := 0
 	cycleStart := targetDay
 	for cursor := targetDay; ; cursor = cursor.AddDate(0, 0, -1) {
-		logEntry, exists := logByDay[cursor.Format("2006-01-02")]
+		logEntry, exists := logByDay[CalendarDayKey(cursor)]
 		if !exists || !logEntry.IsPeriod {
 			break
 		}
