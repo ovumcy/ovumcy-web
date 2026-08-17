@@ -16,17 +16,25 @@ const markerKey = models.AppStateKeyLastReminderRunDate
 // edges.
 //
 // Granularity is hour-only: the target is always the top of the given hour. The
-// candidate is built with time.Date in location for today; if that instant is
-// not strictly in the future (the hour already passed, or is exactly now), the
-// candidate for the next calendar day is used.
+// candidate is built with time.Date in location for today; while that instant is
+// not strictly in the future (the hour already passed, is exactly now, or the
+// zone normalized it into the past), the candidate is rebuilt one calendar day
+// later.
 //
 // DST correctness comes from rebuilding the candidate with time.Date on the
 // TARGET day rather than adding 24h to a previous fire:
 //
 //   - Spring-forward (a local hour is skipped, e.g. 02:00→03:00): time.Date for
-//     the missing wall-clock hour normalizes forward to the equivalent real
-//     instant, so the pass still fires that day near the intended time and the
-//     schedule does not stall.
+//     the missing wall-clock hour resolves to a concrete real instant, but the
+//     DIRECTION is not guaranteed. It normalizes forward only in some zones;
+//     where the skipped hour is midnight (America/Santiago 2025-09-07,
+//     America/Havana 2026-03-08, both west of UTC) it normalizes BACKWARD, to
+//     23:00 of the previous local day. With hour 0 that lands before now, which
+//     is why the advance is a loop and not a single step: a candidate in the past
+//     would make the scheduler's delay negative and fire a full notify pass over
+//     every owner on every loop turn until the transition. The loop terminates
+//     because a calendar day carries the candidate forward by 24h minus an offset
+//     delta that is always smaller than a day.
 //   - Fall-back (a local hour repeats, e.g. 02:00 occurs twice): time.Date
 //     resolves the target to one concrete instant; the pass fires once for that
 //     local date. The once-per-local-day marker guarantees the repeated wall-
@@ -43,9 +51,9 @@ func nextRun(now time.Time, hour int, location *time.Location) time.Time {
 	local := now.In(location)
 
 	candidate := time.Date(local.Year(), local.Month(), local.Day(), hour, 0, 0, 0, location)
-	if !candidate.After(now) {
-		tomorrow := local.AddDate(0, 0, 1)
-		candidate = time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), hour, 0, 0, 0, location)
+	for !candidate.After(now) {
+		local = local.AddDate(0, 0, 1)
+		candidate = time.Date(local.Year(), local.Month(), local.Day(), hour, 0, 0, 0, location)
 	}
 	return candidate
 }

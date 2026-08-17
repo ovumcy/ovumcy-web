@@ -73,6 +73,66 @@ func TestNextRunHourZeroAccepted(t *testing.T) {
 	}
 }
 
+// TestNextRunHourZeroAcrossMissingMidnight is the regression for the hot loop a
+// single-day advance produced. In a zone whose spring-forward transition lands on
+// MIDNIGHT, tomorrow's 00:00 does not exist and time.Date normalizes it BACKWARD
+// — to 23:00 of the current day, i.e. before now. A single advance returned that
+// past instant, untilNextRun went negative, the timer fired immediately and the
+// loop recomputed the same negative delay: a full notify pass over every owner,
+// repeated from local 23:00 until the transition.
+//
+// The zones are west of UTC on purpose: only there does Go normalize a missing
+// midnight backward. East-of-UTC zones normalize forward and would prove nothing.
+// Verified against this host's tzdata:
+// time.Date(2025,9,7,0,0,0,0,Santiago) -> 2025-09-06T23:00:00-04:00 and
+// time.Date(2026,3,8,0,0,0,0,Havana)   -> 2026-03-07T23:00:00-05:00.
+func TestNextRunHourZeroAcrossMissingMidnight(t *testing.T) {
+	cases := []struct {
+		name string
+		zone string
+		// now is expressed as local wall-clock fields on the day BEFORE the
+		// transition, shortly before the midnight that does not exist.
+		year  int
+		month time.Month
+		day   int
+		hour  int
+		min   int
+	}{
+		{name: "America/Santiago 2025-09-07", zone: "America/Santiago", year: 2025, month: 9, day: 6, hour: 23, min: 30},
+		{name: "America/Havana 2026-03-08", zone: "America/Havana", year: 2026, month: 3, day: 7, hour: 23, min: 30},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			loc := mustLoadLocation(t, tc.zone)
+			now := time.Date(tc.year, tc.month, tc.day, tc.hour, tc.min, 0, 0, loc)
+
+			// Guard the premise: the next calendar day's midnight really is missing
+			// in this zone, and time.Date resolves it to an instant at or before now.
+			missing := time.Date(tc.year, tc.month, tc.day+1, 0, 0, 0, 0, loc)
+			if missing.After(now) {
+				t.Fatalf("premise broken: local midnight of the transition day resolved to %s, which is after now %s (tzdata may have changed)", missing.Format(time.RFC3339), now.Format(time.RFC3339))
+			}
+
+			got := nextRun(now, 0, loc)
+			if !got.After(now) {
+				t.Fatalf("nextRun must return an instant strictly after now: got %s, now %s", got.Format(time.RFC3339), now.Format(time.RFC3339))
+			}
+			// It must also read as midnight locally: the schedule keeps its hour.
+			if h, m, s := got.In(loc).Clock(); h != 0 || m != 0 || s != 0 {
+				t.Fatalf("expected the fire to stay at local 00:00:00, got %s", got.In(loc).Format(time.RFC3339))
+			}
+
+			// Scheduler seam, no real clock involved: the armed delay must be
+			// positive, which is what stops the timer from firing in a tight loop.
+			scheduler := New(nil, nil, Config{Hour: 0, Location: loc})
+			if delay := scheduler.untilNextRun(now); delay <= 0 {
+				t.Fatalf("untilNextRun must arm a positive delay, got %s (next %s, now %s)", delay, got.Format(time.RFC3339), now.Format(time.RFC3339))
+			}
+		})
+	}
+}
+
 // TestNextRunNilLocationDefaultsUTC covers the defensive nil-location branch.
 func TestNextRunNilLocationDefaultsUTC(t *testing.T) {
 	now := time.Date(2026, 3, 10, 6, 0, 0, 0, time.UTC)
