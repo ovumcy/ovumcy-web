@@ -208,6 +208,50 @@ func TestImportServiceRejectsDuplicateDatesWithinFile(t *testing.T) {
 	}
 }
 
+// TestImportServiceRejectsADateTheRequestZoneNeverHad keeps a row naming a
+// calendar day the request zone skipped entirely (Pacific/Apia crossed the date
+// line and never had 2011-12-30) on the same per-row path as any other invalid
+// row: counted as rejected and skipped, never silently written onto the previous
+// day. The neighbouring valid row still imports, so one bad row does not refuse
+// the file.
+func TestImportServiceRejectsADateTheRequestZoneNeverHad(t *testing.T) {
+	apia, err := time.LoadLocation("Pacific/Apia")
+	if err != nil {
+		t.Fatalf("load Pacific/Apia: %v", err)
+	}
+
+	_, database := newDayServiceIntegration(t)
+	repositories := db.NewRepositories(database)
+	symptomService := NewSymptomService(repositories.Symptoms)
+	user := createDayServiceTestUser(t, database, "import-nonexistent-day@example.com")
+
+	payload := importPayload{Entries: []ExportJSONEntry{
+		{Date: "2011-12-30", Period: true, Flow: models.FlowMedium, CycleFactors: []string{}},
+		{Date: "2011-12-28", Period: true, Flow: models.FlowMedium, CycleFactors: []string{}},
+	}}
+	raw, _ := json.Marshal(payload)
+
+	importService := newImportServiceIntegration(t, database, symptomService)
+	result, err := importService.ImportJSON(context.Background(), user.ID, raw, apia)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if result.Added != 1 || result.Rejected != 1 {
+		t.Fatalf("expected 1 added / 1 rejected, got %+v", result)
+	}
+
+	var stored []models.DailyLog
+	if err := database.Where("user_id = ?", user.ID).Find(&stored).Error; err != nil {
+		t.Fatalf("load days: %v", err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("expected exactly one imported day, got %d", len(stored))
+	}
+	if key := CalendarDayKey(stored[0].Date); key != "2011-12-28" {
+		t.Fatalf("expected only 2011-12-28 imported, got %s — the rejected row landed on a day the file never named", key)
+	}
+}
+
 func TestImportServiceRejectsMalformedPayload(t *testing.T) {
 	importService := NewImportService(nil, nil, nil, nil)
 	if _, err := importService.ImportJSON(context.Background(), 1, []byte("{not json"), time.UTC); err != ErrImportMalformed {
