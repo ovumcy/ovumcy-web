@@ -20,8 +20,15 @@ permissions:
 # string of fixup pushes doesn't queue every intermediate run to completion.
 # Only cancels pull_request runs — push (main), release, and workflow_dispatch
 # always run to completion, since each may gate a deploy.
+#
+# Those non-PR events therefore take one group PER COMMIT. Sharing a group per
+# ref made them queue behind each other instead, and GitHub holds at most one
+# pending run per group: on 2026-08-18 the push run for 6ad13ff5 sat queued and
+# never started, while the run for the commit after it completed. A commit on
+# main is a state to test, not a draft to supersede, and the lanes only this
+# event runs go with it — e2e-cross-browser, image-smoke, e2e-postgres-smoke.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
