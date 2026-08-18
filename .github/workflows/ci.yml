@@ -36,17 +36,19 @@ jobs:
   # everything basic pass" (e2e, e2e-postgres-smoke) depend on both.
   test-go:
     runs-on: ubuntu-latest
-    # Whole-job docs-only skip (see the `changes` job): coverage-upload and
-    # patch-coverage cascade off this job's skip through their needs edge, and
-    # the thin `test` gate job follows both unit jobs the same way.
+    # Whole-job skip on `run_core` (see the `changes` job), which now clears
+    # for TWO reasons: a docs-only diff, and a `push` to `main`, where the
+    # merge queue already ran this lane on the identical commit. coverage-upload
+    # and patch-coverage cascade off this job's skip through their needs edge,
+    # and the thin `test` gate job follows both unit jobs the same way.
     #
     # The shape the whole battery shares: run unless `changes` positively
-    # determined this diff is irrelevant. A detection job that failed leaves
+    # determined this run does not need it. A detection job that failed leaves
     # the output empty, which is not 'false', so the lane still runs — a
     # skipped required check would otherwise pass the merge on no evidence.
     needs:
       - changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_battery != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
     permissions:
       contents: read
 
@@ -249,7 +251,7 @@ jobs:
     needs:
       - changes
     # Same fail-safe gate as test-go above.
-    if: ${{ !cancelled() && needs.changes.outputs.run_battery != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
     permissions:
       contents: read
 
@@ -336,11 +338,13 @@ jobs:
         run: |
           set -euo pipefail
           echo "test-go=$GO_RESULT test-frontend=$FRONTEND_RESULT"
-          # `skipped` is a PASS here and only here: the `changes` job judged the
-          # diff irrelevant to the battery, which is a decision not to run, not
-          # a failure to run. Anything else — failure, cancelled, or a state
-          # this gate has never seen — is this context's failure, because the
-          # whole point of the job is to have a verdict to report.
+          # `skipped` is a PASS here and only here: the `changes` job cleared
+          # `run_core` — the diff was docs-only, or this is a `push` whose core
+          # suite the merge queue already ran on the identical commit. Either
+          # way it is a decision not to run, not a failure to run. Anything else
+          # — failure, cancelled, or a state this gate has never seen — is this
+          # context's failure, because the whole point of the job is to have a
+          # verdict to report.
           for result in "$GO_RESULT" "$FRONTEND_RESULT"; do
             case "$result" in
               success|skipped) ;;
@@ -368,7 +372,7 @@ jobs:
     needs:
       - changes
     # Same fail-safe gate as test-go above.
-    if: ${{ !cancelled() && needs.changes.outputs.run_battery != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
     permissions:
       contents: read
     strategy:
@@ -411,7 +415,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_battery != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
     permissions:
       contents: read
 
@@ -479,8 +483,8 @@ jobs:
           set -euo pipefail
           echo "race-services=$SERVICES_RESULT race-rest=$REST_RESULT"
           # `skipped` is a PASS here and only here, for the same reason as in
-          # the other two gates: the `changes` job judged the diff irrelevant,
-          # which is a decision not to run rather than a failure to run.
+          # the other two gates: the `changes` job cleared `run_core`, which is
+          # a decision not to run rather than a failure to run.
           for result in "$SERVICES_RESULT" "$REST_RESULT"; do
             case "$result" in
               success|skipped) ;;
@@ -490,6 +494,15 @@ jobs:
           echo "every race lane passed."
 
   coverage-upload:
+    # Codecov's record of `main` is written from the MERGE-QUEUE run, not from
+    # the `push` that follows it. It always was — the queue run reaches Codecov
+    # first — and measurement says Codecov files it correctly: across 420
+    # branches it knows for this repository there is not one
+    # `gh-readonly-queue/*` entry, and commit 97f641e2… carries `branch: main`
+    # (api.codecov.io/api/v2/github/ovumcy/repos/ovumcy-web, queried
+    # 2026-08-18). The push run only ever added a second session for the same
+    # numbers. It no longer runs at all: this job cascades to skipped off
+    # test-go, which `run_core` clears on push.
     runs-on: ubuntu-latest
     needs:
       - test-go
@@ -510,13 +523,18 @@ jobs:
 
       - name: Upload coverage to Codecov
         id: codecov
-        # Tolerate a Codecov ingest failure on push AND on workflow_dispatch. The
-        # gate that actually protects coverage is the local patch-coverage job
-        # below; Codecov's own statuses are informational and no `codecov/*` check
-        # is required on main. Without workflow_dispatch here, re-running a green
-        # run by hand can fail on the very external flake the push path already
-        # forgives — the same failure mode, judged differently for no reason.
-        continue-on-error: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        # Tolerate a Codecov ingest failure everywhere except a pull request.
+        # The gate that actually protects coverage is the local patch-coverage
+        # job below; Codecov's own statuses are informational and no `codecov/*`
+        # check is required on main. `merge_group` joined this list when the
+        # authoritative upload moved here: an external ingest flake must not
+        # colour the run that the README badge now reads, and it never had the
+        # standing to, since the same flake was forgiven one event later. The
+        # `push` arm stays for the fail-safe path — a `changes` job that dies
+        # leaves `run_core` empty and this job runs on push after all — and
+        # `workflow_dispatch` so that re-running a green run by hand cannot fail
+        # on a flake the other events forgive.
+        continue-on-error: ${{ github.event_name != 'pull_request' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: coverage.out
@@ -530,7 +548,7 @@ jobs:
           use_pypi: true
 
       - name: Warn on non-blocking Codecov failure
-        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.codecov.outcome == 'failure' }}
+        if: ${{ github.event_name != 'pull_request' && steps.codecov.outcome == 'failure' }}
         run: echo "::warning::Codecov upload failed on ${{ github.event_name }}. Coverage artifact was generated successfully, but Codecov ingest returned an external error."
 
   patch-coverage:
@@ -578,14 +596,18 @@ jobs:
       contents: read
     outputs:
       run_e2e: ${{ steps.detect.outputs.run_e2e }}
-      # Same docs-only determination, consumed by the unit/race battery
-      # (test-go, test-frontend, race) as a whole-job gate. Kept as a separate
-      # output so the two allowlists can diverge later without re-wiring
-      # consumers. Unlike e2e's historical step-level gating below, the
-      # battery jobs skip at the job level: GitHub reports a skipped job as a
-      # satisfied required check (proven in practice on the sibling
-      # sync-community/managed repos, whose whole Go battery merges this way).
-      run_battery: ${{ steps.detect.outputs.run_battery }}
+      # "Run the core suite" — the unit halves, both race lanes and the browser
+      # shards: every lane whose evidence the merge queue has already produced
+      # for this exact tree. It is `run_e2e` minus the work the queue did, so it
+      # clears on a docs-only diff AND on a `push` to `main`; `run_e2e` above
+      # stays true on push, because e2e-cross-browser, image-smoke and the
+      # Postgres smoke are exactly the lanes the queue does NOT run.
+      #
+      # Unlike e2e's historical step-level gating below, the unit and race jobs
+      # skip at the job level: GitHub reports a skipped job as a satisfied
+      # required check (proven in practice on the sibling sync-community/managed
+      # repos, whose whole Go battery merges this way).
+      run_core: ${{ steps.detect.outputs.run_core }}
 
     steps:
       - name: Checkout
@@ -660,7 +682,7 @@ jobs:
               ;;
             *)
               base=""
-              verdict="$EVENT_NAME carries no base to diff against: running e2e and the battery."
+              verdict="$EVENT_NAME carries no base to diff against: nothing is judged irrelevant here."
               ;;
           esac
 
@@ -684,10 +706,34 @@ jobs:
           fi
 
           echo "$verdict"
+
+          # `run_core` starts from the same allowlist verdict — diverge here,
+          # never in a consumer, if the two ever need different file sets — and
+          # then drops the work the merge queue has already done.
+          #
+          # A `push` to `main` can only be a merge the queue built: the «Protect
+          # main» rule requires a pull request and the queue, and its bypass
+          # list is empty, so no other write reaches this branch. On this rebase
+          # queue the merge_group run's headSha is byte for byte the commit that
+          # becomes `main` — measured 2026-08-18, 97f641e2… identical in run
+          # 32081210308 and at the head of `main` — so the unit, frontend, race
+          # and browser-shard lanes here would re-test a tree proven minutes
+          # earlier. What the queue does NOT run stays: e2e-cross-browser and
+          # image-smoke gate themselves on the event, and e2e-postgres-smoke's
+          # own RUN_HEAVY keeps its work off pull requests and off the queue, so
+          # `push` is the only place it ever executes.
+          #
+          # Fail-safe in the same direction as everything above: the clear is
+          # written only inside the `push` branch, so an unknown event, a
+          # crashed job or an empty output all leave the core suite RUNNING.
+          run_core="$run_e2e"
+          if [ "$EVENT_NAME" = "push" ]; then
+            run_core=false
+            echo "push to main: the merge queue already ran the core suite on this exact commit; running only the lanes it skips."
+          fi
+
           echo "run_e2e=$run_e2e" >> "$GITHUB_OUTPUT"
-          # The battery shares the e2e allowlist verbatim today; diverge here
-          # (not in consumers) if that ever changes.
-          echo "run_battery=$run_e2e" >> "$GITHUB_OUTPUT"
+          echo "run_core=$run_core" >> "$GITHUB_OUTPUT"
 
   # The browser suite runs here, split across shards, and the required status
   # check named `e2e` is the thin gate job below — the same shape branch
@@ -756,39 +802,44 @@ jobs:
     # verdict.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
-      # On `push` the browser lane is a three-spec smoke, which is smaller than
-      # a single shard's share — so it runs whole on shard 1 and the other
-      # shards stand down rather than paying setup to run a fraction of it.
+      # The browser lane no longer runs on `push` at all. It used to run a
+      # three-spec smoke there, whole on shard 1 with the other two standing
+      # down; the merge queue now runs the FULL sharded suite on the identical
+      # commit (see `run_core` in the `changes` job), so the smoke re-proved a
+      # strict subset of what had already passed. Cross-browser coverage, which
+      # the queue genuinely does not run, is e2e-cross-browser's job and gates
+      # itself on the event.
+      #
       # Written in the fail-safe direction (`!= 'false'` at every use) like
       # RUN_E2E: an expression that ever evaluates empty must leave the work
       # running, never silently drop it.
-      SHARD_ACTIVE: ${{ github.event_name != 'push' || matrix.shard == 1 }}
+      RUN_SHARDS: ${{ needs.changes.outputs.run_core }}
 
     steps:
       - name: Checkout
-        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
+        if: env.RUN_E2E != 'false' && env.RUN_SHARDS != 'false'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Go
-        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
+        if: env.RUN_E2E != 'false' && env.RUN_SHARDS != 'false'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Setup Node.js
-        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
+        if: env.RUN_E2E != 'false' && env.RUN_SHARDS != 'false'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
 
       - name: Install frontend and e2e dependencies
-        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
+        if: env.RUN_E2E != 'false' && env.RUN_SHARDS != 'false'
         run: npm ci
 
       - name: Cache Playwright browsers
-        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
+        if: env.RUN_E2E != 'false' && env.RUN_SHARDS != 'false'
         id: playwright-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -796,7 +847,7 @@ jobs:
           key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
-        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false' && steps.playwright-cache.outputs.cache-hit != 'true'
+        if: env.RUN_E2E != 'false' && env.RUN_SHARDS != 'false' && steps.playwright-cache.outputs.cache-hit != 'true'
         # NO `--with-deps`: this downloads the browser binary and touches apt not
         # at all. This lane is CHROMIUM-ONLY, which is what makes that safe — see
         # the paragraph at the end. The apt half used to live here and in a second
@@ -838,19 +889,14 @@ jobs:
         # image could drop a dependency this no longer installs.
         run: timeout 600 npx playwright install chromium
 
-      - name: Run Playwright e2e (smoke on push, full otherwise)
+      - name: Run Playwright e2e
         # The divisor comes from `strategy.job-total`, which GitHub computes
         # from the matrix above — never a second literal to keep in step with
         # it. `--shard` splits by spec file, and each shard gets its own app
         # and database, so the runner's own `--workers=1` still holds inside
         # one shard.
-        if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false'
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            npm run e2e:ci -- e2e/auth-login-register.spec.ts e2e/dashboard.spec.ts e2e/theme-dark-mode.spec.ts
-          else
-            npm run e2e:ci -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
-          fi
+        if: env.RUN_E2E != 'false' && env.RUN_SHARDS != 'false'
+        run: npm run e2e:ci -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           E2E_APP_PORT: 18080
 
@@ -891,8 +937,8 @@ jobs:
           set -euo pipefail
           echo "e2e-shard=$SHARDS_RESULT"
           # `skipped` is a PASS here and only here, for the same reason it is in
-          # the `test` gate: the `changes` job judged the diff irrelevant, which
-          # is a decision not to run rather than a failure to run. Anything else
+          # the `test` gate: the `changes` job cleared `run_core`, which is a
+          # decision not to run rather than a failure to run. Anything else
           # — failure, cancelled, or a state this gate has never seen — is this
           # context's failure.
           case "$SHARDS_RESULT" in
@@ -913,6 +959,12 @@ jobs:
     # without leaving this required check unsatisfied. The Postgres/multi-locale
     # coverage this job adds over the plain `e2e` job is also only needed on
     # push/release/dispatch, not on every PR, so RUN_HEAVY gates it further.
+    #
+    # RUN_HEAVY excludes `merge_group` too, which makes this the ONE core-looking
+    # lane that `push` must keep: measured 2026-08-18, the job took 3 s in queue
+    # run 32081210308 (every step gated off) and 240 s in push run 32081716803
+    # doing the real work. Reading it as a third repeat of the browser suite and
+    # trimming it would delete the only Postgres evidence this repository has.
     env:
       RUN_E2E: ${{ needs.changes.outputs.run_e2e }}
       RUN_HEAVY: ${{ github.event_name == 'push' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
