@@ -797,7 +797,26 @@ jobs:
 
       - name: Install Playwright browser
         if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false' && steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        # `playwright install --with-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
+        #
+        # Bounded at 600s against a measured 11-50 s over nine successful runs, and
+        # retried once, because an apt mirror that is wedged now is usually fine
+        # 20 seconds later. Worst case is 20 minutes and a real failure, instead of
+        # 45 minutes and a verdict that names the wrong thing.
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if timeout 600 npx playwright install --with-deps chromium; then exit 0; fi
+            echo "::warning::npx playwright install --with-deps chromium did not finish within 600s (attempt $attempt of 2)"
+            sleep 20
+          done
+          exit 1
 
       - name: Install Playwright OS dependencies (cache hit)
         # The cache above only covers the downloaded browser binaries under
@@ -805,7 +824,26 @@ jobs:
         # a fresh runner, so they still need installing even on a browser
         # cache hit — this is the fast path (no browser download).
         if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false' && steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        # `playwright install-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
+        #
+        # Bounded at 300s against a measured 11-50 s over nine successful runs, and
+        # retried once, because an apt mirror that is wedged now is usually fine
+        # 20 seconds later. Worst case is 10 minutes and a real failure, instead of
+        # 45 minutes and a verdict that names the wrong thing.
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if timeout 300 npx playwright install-deps chromium; then exit 0; fi
+            echo "::warning::npx playwright install-deps chromium did not finish within 300s (attempt $attempt of 2)"
+            sleep 20
+          done
+          exit 1
 
       - name: Run Playwright e2e (smoke on push, full otherwise)
         # The divisor comes from `strategy.job-total`, which GitHub computes
@@ -919,11 +957,49 @@ jobs:
 
       - name: Install Playwright browser
         if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        # `playwright install --with-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
+        #
+        # Bounded at 600s against a measured 11-50 s over nine successful runs, and
+        # retried once, because an apt mirror that is wedged now is usually fine
+        # 20 seconds later. Worst case is 20 minutes and a real failure, instead of
+        # 45 minutes and a verdict that names the wrong thing.
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if timeout 600 npx playwright install --with-deps chromium; then exit 0; fi
+            echo "::warning::npx playwright install --with-deps chromium did not finish within 600s (attempt $attempt of 2)"
+            sleep 20
+          done
+          exit 1
 
       - name: Install Playwright OS dependencies (cache hit)
         if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        # `playwright install-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
+        #
+        # Bounded at 300s against a measured 11-50 s over nine successful runs, and
+        # retried once, because an apt mirror that is wedged now is usually fine
+        # 20 seconds later. Worst case is 10 minutes and a real failure, instead of
+        # 45 minutes and a verdict that names the wrong thing.
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if timeout 300 npx playwright install-deps chromium; then exit 0; fi
+            echo "::warning::npx playwright install-deps chromium did not finish within 300s (attempt $attempt of 2)"
+            sleep 20
+          done
+          exit 1
 
       - name: Run Playwright Postgres smoke
         if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
@@ -983,11 +1059,49 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium firefox webkit
+        # `playwright install --with-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
+        #
+        # Bounded at 900s against a measured 11-50 s over nine successful runs, and
+        # retried once, because an apt mirror that is wedged now is usually fine
+        # 20 seconds later. Worst case is 30 minutes and a real failure, instead of
+        # 45 minutes and a verdict that names the wrong thing.
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if timeout 900 npx playwright install --with-deps chromium firefox webkit; then exit 0; fi
+            echo "::warning::npx playwright install --with-deps chromium firefox webkit did not finish within 900s (attempt $attempt of 2)"
+            sleep 20
+          done
+          exit 1
 
       - name: Install Playwright OS dependencies (cache hit)
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium firefox webkit
+        # `playwright install-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
+        #
+        # Bounded at 600s against a measured 11-50 s over nine successful runs, and
+        # retried once, because an apt mirror that is wedged now is usually fine
+        # 20 seconds later. Worst case is 20 minutes and a real failure, instead of
+        # 45 minutes and a verdict that names the wrong thing.
+        run: |
+          set -euo pipefail
+          for attempt in 1 2; do
+            if timeout 600 npx playwright install-deps chromium firefox webkit; then exit 0; fi
+            echo "::warning::npx playwright install-deps chromium firefox webkit did not finish within 600s (attempt $attempt of 2)"
+            sleep 20
+          done
+          exit 1
 
       - name: Run Playwright cross-browser smoke
         run: npm run e2e:cross-browser
