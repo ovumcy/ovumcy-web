@@ -28,24 +28,263 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Split from a single `test` job into test-go/test-frontend: the two halves
+  # Split from a single `test` job into a Go half and a frontend half: the two
   # never depended on each other's output, so running them as parallel jobs
   # instead of sequential steps shortens wall-clock to roughly max(go, frontend)
-  # instead of their sum. Downstream jobs that only need the Go side (coverage
-  # upload, patch-coverage) depend on test-go alone; jobs that gate on "did
-  # everything basic pass" (e2e, e2e-postgres-smoke) depend on both.
-  test-go:
+  # instead of their sum. Jobs that gate on "did everything basic pass" (e2e,
+  # e2e-postgres-smoke) depend on both.
+  #
+  # The Go half is now three jobs, because ONE package ruled it. Measured on
+  # run 32081716803: `Go test with coverage` was 369 s of a 463 s job, and
+  # internal/api alone reported 353.040 s of that 369 s — every other package
+  # in the module finished inside the remaining 16 s, in parallel with it. A
+  # split by PACKAGE would therefore have bought nothing at all: the wall-clock
+  # IS one package's test binary. So the split is by TEST NAME inside
+  # internal/api (test-go-shard, the same `-run` partition the race lane
+  # already runs on internal/services), with every other package in one whole
+  # lane beside it (test-go-rest) and the analysis tools in a third
+  # (test-go-analysis) — those are a fixed cost that must not be paid N times,
+  # and their binary cache key would be, too.
+  #
+  # Sharding a coverage run splits its profile with it, so the lanes hand their
+  # profiles to `coverage-merge`, which folds them back into the single
+  # `coverage-out` artifact that coverage-upload and the required patch-coverage
+  # gate have always consumed. Neither consumer learned about the split.
+  test-go-shard:
     runs-on: ubuntu-latest
-    # Whole-job skip on `run_core` (see the `changes` job), which now clears
-    # for TWO reasons: a docs-only diff, and a `push` to `main`, where the
-    # merge queue already ran this lane on the identical commit. coverage-upload
-    # and patch-coverage cascade off this job's skip through their needs edge,
-    # and the thin `test` gate job follows both unit jobs the same way.
+    # Whole-job skip on `run_unit` (see the `changes` job), the narrower slice
+    # of `run_core`: it clears for a docs-only diff, for a `push` to `main`
+    # where the merge queue already ran this lane on the identical commit, and
+    # for a diff that is browser specs alone — a Playwright spec is neither
+    # compiled into the Go binary nor go:embed'ed, so it can move no Go test,
+    # lint finding or coverage line. coverage-merge, and through it
+    # coverage-upload and patch-coverage, cascade off this job's skip along
+    # their needs edges, and the thin `test` gate job follows every unit lane
+    # the same way.
     #
     # The shape the whole battery shares: run unless `changes` positively
     # determined this run does not need it. A detection job that failed leaves
     # the output empty, which is not 'false', so the lane still runs — a
     # skipped required check would otherwise pass the merge on no evidence.
+    needs:
+      - changes
+    if: ${{ !cancelled() && needs.changes.outputs.run_unit != 'false' }}
+    permissions:
+      contents: read
+    outputs:
+      # coverage-merge has to know how many profiles it is owed, and the shard
+      # count lives in exactly ONE place: the matrix below. Every shard writes
+      # the same value here, so last-writer-wins is the value all of them
+      # wrote; a literal in the merge job would be a count keyed on a SPELLING,
+      # silently wrong on the day the matrix grows and reading only as a
+      # coverage drop.
+      shard-total: ${{ steps.shard-total.outputs.value }}
+    strategy:
+      # One shard's failure must not cancel its siblings: the point of the
+      # split is to learn everything the Go suite knows in one run.
+      fail-fast: false
+      matrix:
+        shard:
+          - 1
+          - 2
+          - 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Record the shard count for the merge job
+        id: shard-total
+        run: echo "value=${{ strategy.job-total }}" >> "$GITHUB_OUTPUT"
+
+      - name: Go test with coverage — internal/api shard
+        # The names come from `go test -list`, never from a hand-written
+        # pattern: a pattern keyed on a SPELLING would leave a new test
+        # matching no shard at all, running NOWHERE while every shard reported
+        # success. scripts/racepartition owns that split, and its tests pin
+        # exhaustiveness and disjointness against a synthesised listing. The
+        # divisor comes from `strategy.job-total`, computed from the matrix
+        # above, so adding a shard cannot leave a second literal behind.
+        #
+        # `set -e` is what makes a failing listing stop the shard: the pattern
+        # is taken through a command substitution, whose status the assignment
+        # carries, and a shard that silently fell back to an empty pattern
+        # would report success having run nothing at all.
+        #
+        # `-coverpkg` and `-timeout 20m` are the whole lane's, unchanged — see
+        # test-go-rest below, which carries the note for both. What `-run`
+        # changes is only WHICH tests credit those packages, which is what
+        # coverage-merge puts back together.
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -list '.*' ./internal/api/ > "$RUNNER_TEMP/tests.txt"
+          run_pattern="$(go run ./scripts/racepartition -shard=${{ matrix.shard }} -of=${{ strategy.job-total }} < "$RUNNER_TEMP/tests.txt")"
+          echo "shard ${{ matrix.shard }}/${{ strategy.job-total }} selects its share of $(grep -cE '^(Test|Example|Fuzz)' "$RUNNER_TEMP/tests.txt") listed tests"
+          go test ./internal/api/ -timeout 20m -run "$run_pattern" -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
+
+      - name: Upload the shard coverage profile
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-shard-api-${{ matrix.shard }}
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 1
+
+  test-go-rest:
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+    # Same fail-safe gate, and the same slice, as test-go-shard above: the
+    # three Go lanes are one suite and are excused together or not at all.
+    if: ${{ !cancelled() && needs.changes.outputs.run_unit != 'false' }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go test with coverage — every package but the sharded one
+        # The package list is DERIVED from the toolchain and one exclusion,
+        # never written out: a hand-kept list is a rule keyed on a spelling, and
+        # here its failure would be a new package tested by no lane at all while
+        # both lanes stayed green. `go list` over the same trees `-coverpkg`
+        # names is the full set; internal/api is removed because test-go-shard
+        # runs it. The count check is what makes the exclusion honest — if it
+        # ever drops none, or more than one, this step fails instead of quietly
+        # testing less. (Renaming internal/api would land it back HERE, whole
+        # and slow: visible, never silent.)
+        #
+        # -coverpkg credits a line when ANY test exercises it (including
+        # cross-package integration tests), not only its own package's unit
+        # tests. The patch-coverage gate consumes the merged profile. Scoped to
+        # the module trees (see the note above the Staticcheck step in
+        # test-go-analysis).
+        #
+        # `-timeout 20m` declares a budget that was previously left implicit.
+        # Go's default is 10 minutes PER PACKAGE, and internal/api sits right at
+        # that edge: measured 2026-08-15 on a dev host, 603 s run alone and 610 s
+        # inside `go test ./...`, with coverage instrumentation slower still
+        # (-covermode=atomic adds an atomic counter per block). The lane passed
+        # only because the runner happens to be faster than a dev host, which is
+        # not a margin anyone chose. Sharding does not retire the budget: a
+        # shard runs a third of one package, and the budget is per package in
+        # every other lane too.
+        #
+        # What the budget prevents does not read as "this needed more time": the
+        # runtime panics with `test timed out after 10m0s` and dumps every
+        # goroutine, so a required check fails with a stack trace that reads like
+        # a product bug. Every `go test` in this file that runs a suite declares
+        # the same budget — fixing only the lane where the pressure was measured
+        # would leave the identical default armed in the other spellings.
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Both listings go through a command substitution first: `set -e`
+          # carries a failing `go list` out of one, and would NOT out of a
+          # process substitution feeding `mapfile` — there the status read is
+          # mapfile's, so a listing that died half-way would arrive as a
+          # shorter package set and test less, quietly.
+          sharded="$(go list ./internal/api)"
+          all="$(go list ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...)"
+          rest="$(printf '%s\n' "$all" | grep -vFx "$sharded")"
+          mapfile -t rest_packages <<< "$rest"
+          dropped=$(( $(printf '%s\n' "$all" | wc -l) - ${#rest_packages[@]} ))
+          if [ "$dropped" -ne 1 ]; then
+            echo "::error::excluding $sharded dropped $dropped package(s), expected exactly 1"
+            exit 1
+          fi
+          echo "testing ${#rest_packages[@]} package(s); $sharded runs in test-go-shard"
+          go test "${rest_packages[@]}" -timeout 20m -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
+
+      - name: Upload the whole-package coverage profile
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-shard-rest
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 1
+
+  # Sharding a coverage run splits its profile with it. This job folds the
+  # pieces back into the single `coverage-out` artifact that coverage-upload
+  # and the required patch-coverage gate have always downloaded, so neither of
+  # them learned anything about the split.
+  #
+  # A UNION with summed counts, not a concatenation: every lane runs with the
+  # same `-coverpkg` over the whole module, so every profile lists every
+  # coverable block, and a block its own lane did not execute is present at 0.
+  # Dropping those zeros would be the expensive mistake — patchcov treats a
+  # line ABSENT from the profile as non-coverable and ignores it, so a lost
+  # block turns an uncovered modified line into one the required gate never
+  # judges. scripts/covmerge owns the fold and its tests pin both halves.
+  coverage-merge:
+    runs-on: ubuntu-latest
+    needs:
+      - test-go-shard
+      - test-go-rest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download the lane coverage profiles
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-shard-*
+          path: .coverage-shards
+
+      - name: Merge the lane coverage profiles
+        # `-expect` is the guard for the failure that leaves no other trace: an
+        # artifact that never arrived merges into a profile which parses
+        # cleanly, covers less, and reads downstream as a coverage drop this
+        # pull request caused. The matrix half of the count is read from the
+        # matrix itself; `+ 1` is test-go-rest, the one whole-package lane.
+        env:
+          SHARD_TOTAL: ${{ needs.test-go-shard.outputs.shard-total }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$SHARD_TOTAL" ]; then
+            echo "::error::the shard matrix reported no size — refusing to guess how many profiles are owed"
+            exit 1
+          fi
+          go run ./scripts/covmerge -in .coverage-shards -glob coverage.out -out coverage.out -expect "$((SHARD_TOTAL + 1))"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-out
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 1
+
+  test-go-analysis:
+    runs-on: ubuntu-latest
+    # Same fail-safe gate, and the same slice, as test-go-shard above, for the
+    # same reason: this lane's skip is judged by the `test` gate, never taken
+    # for a pass. The analysis tools read Go sources too, so a browser-spec-only
+    # diff excuses them exactly as it excuses the suite.
     needs:
       - changes
     if: ${{ !cancelled() && needs.changes.outputs.run_unit != 'false' }}
@@ -216,41 +455,11 @@ jobs:
       - name: Go vet
         run: go vet ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
 
-      - name: Go test with coverage
-        # -coverpkg credits a line when ANY test exercises it (including
-        # cross-package integration tests), not only its own package's unit
-        # tests. The patch-coverage gate consumes this profile. Scoped to the
-        # module trees (see the note above the Staticcheck step).
-        #
-        # `-timeout 20m` declares a budget that was previously left implicit.
-        # Go's default is 10 minutes PER PACKAGE, and internal/api sits right at
-        # that edge: measured 2026-08-15 on a dev host, 603 s run alone and 610 s
-        # inside `go test ./...`, with coverage instrumentation slower still
-        # (-covermode=atomic adds an atomic counter per block). The lane passed
-        # only because the runner happens to be faster than a dev host, which is
-        # not a margin anyone chose.
-        #
-        # What the budget prevents does not read as "this needed more time": the
-        # runtime panics with `test timed out after 10m0s` and dumps every
-        # goroutine, so a required check fails with a stack trace that reads like
-        # a product bug. Every `go test` in this file that runs a suite declares
-        # the same budget — fixing only the lane where the pressure was measured
-        # would leave the identical default armed in three other spellings.
-        run: go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m -coverprofile=coverage.out -covermode=atomic -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/...
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-out
-          path: coverage.out
-          if-no-files-found: error
-          retention-days: 1
-
   test-frontend:
     runs-on: ubuntu-latest
     needs:
       - changes
-    # Same fail-safe gate as test-go above.
+    # Same fail-safe gate as test-go-shard above.
     if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
     permissions:
       contents: read
@@ -310,11 +519,14 @@ jobs:
   # repos/ovumcy/ovumcy-web/rules/branches/main`). Renaming or removing the
   # `test` job outright would leave that required check permanently
   # unsatisfied and block every future PR; this job keeps the name while the
-  # actual work runs in the parallel test-go/test-frontend jobs above.
+  # actual work runs in the parallel Go and frontend lanes above.
   test:
     runs-on: ubuntu-latest
     needs:
-      - test-go
+      - test-go-shard
+      - test-go-rest
+      - test-go-analysis
+      - coverage-merge
       - test-frontend
     # WITHOUT AN `if`, A FAILED DEPENDENCY SKIPS THIS JOB — and a skipped
     # required check counts as satisfied, so a failing Go suite left no required
@@ -327,17 +539,27 @@ jobs:
     # `!cancelled()` makes this job RUN whatever its dependencies did, and the
     # step below turns their results into this context's verdict. A cancelled
     # run is still excluded: a superseded PR run must not report a failure.
+    #
+    # `coverage-merge` is judged here for the same measured reason, one layer
+    # further down: patch-coverage consumes its artifact, so a merge that
+    # FAILED would skip patch-coverage, and a skipped required check is
+    # satisfied. Judging it here is what keeps a broken coverage hand-off red
+    # somewhere. It has no `if:` of its own, so it is skipped whenever a lane
+    # it needs failed — and the lane's own result is what colours this gate then.
     if: ${{ !cancelled() }}
     permissions:
       contents: read
     steps:
-      - name: Judge the two unit halves
+      - name: Judge the unit lanes
         env:
-          GO_RESULT: ${{ needs.test-go.result }}
+          SHARD_RESULT: ${{ needs.test-go-shard.result }}
+          REST_RESULT: ${{ needs.test-go-rest.result }}
+          ANALYSIS_RESULT: ${{ needs.test-go-analysis.result }}
+          MERGE_RESULT: ${{ needs.coverage-merge.result }}
           FRONTEND_RESULT: ${{ needs.test-frontend.result }}
         run: |
           set -euo pipefail
-          echo "test-go=$GO_RESULT test-frontend=$FRONTEND_RESULT"
+          echo "test-go-shard=$SHARD_RESULT test-go-rest=$REST_RESULT test-go-analysis=$ANALYSIS_RESULT coverage-merge=$MERGE_RESULT test-frontend=$FRONTEND_RESULT"
           # `skipped` is a PASS here and only here: the `changes` job cleared
           # `run_core` — the diff was docs-only, or this is a `push` whose core
           # suite the merge queue already ran on the identical commit. Either
@@ -345,13 +567,13 @@ jobs:
           # — failure, cancelled, or a state this gate has never seen — is this
           # context's failure, because the whole point of the job is to have a
           # verdict to report.
-          for result in "$GO_RESULT" "$FRONTEND_RESULT"; do
+          for result in "$SHARD_RESULT" "$REST_RESULT" "$ANALYSIS_RESULT" "$MERGE_RESULT" "$FRONTEND_RESULT"; do
             case "$result" in
               success|skipped) ;;
-              *) echo "::error::a unit half reported \"$result\""; exit 1 ;;
+              *) echo "::error::a unit lane reported \"$result\""; exit 1 ;;
             esac
           done
-          echo "test-go and test-frontend passed."
+          echo "every unit lane passed."
 
   # internal/services alone was 461 s of the race lane's 589 s (measured
   # 2026-08-15), and 75% of THAT sits in the 99 tests whose files hash
@@ -371,7 +593,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    # Same fail-safe gate as test-go above.
+    # Same shape as the Go lanes above, on the slice of its own: `run_race`
+    # clears when a diff carries no compiled Go and no workflow change.
     if: ${{ !cancelled() && needs.changes.outputs.run_race != 'false' }}
     permissions:
       contents: read
@@ -444,7 +667,7 @@ jobs:
         # whole — splitting them would buy nothing and cost a job.
         env:
           CGO_ENABLED: "1"
-        # `-timeout 20m`: the declared budget from the coverage step in test-go.
+        # `-timeout 20m`: the declared budget from the coverage lanes above.
         # The race detector is strictly slower per test, so an undeclared
         # 10-minute default is armed harder here than where it was measured.
         run: go test -race -timeout 20m ./internal/db/... ./internal/security/... ./internal/i18n/... ./internal/httpx/...
@@ -501,11 +724,14 @@ jobs:
     # `gh-readonly-queue/*` entry, and commit 97f641e2… carries `branch: main`
     # (api.codecov.io/api/v2/github/ovumcy/repos/ovumcy-web, queried
     # 2026-08-18). The push run only ever added a second session for the same
-    # numbers. It no longer runs at all: this job cascades to skipped off
-    # test-go, which `run_core` clears on push.
+    # numbers. It no longer runs at all: this job cascades to skipped off the
+    # unit lanes, which `run_core` clears on push.
+    #
+    # `coverage-merge` rather than a test lane: the artifact name and contents
+    # are unchanged, only the job that produces `coverage-out` moved.
     runs-on: ubuntu-latest
     needs:
-      - test-go
+      - coverage-merge
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
@@ -553,8 +779,13 @@ jobs:
 
   patch-coverage:
     runs-on: ubuntu-latest
+    # The profile this gate reads is now merged from the sharded lanes
+    # (coverage-merge above); the artifact it downloads, `coverage-out`, is the
+    # same name carrying the same whole-suite coverage it always did. This is a
+    # REQUIRED check, and a failed dependency would skip it into a satisfied
+    # state — the `test` gate judges coverage-merge for exactly that reason.
     needs:
-      - test-go
+      - coverage-merge
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -616,13 +847,14 @@ jobs:
       # `run_race` — the race lanes. The detector instruments COMPILED Go, so a
       # change carrying no `.go`, no `go.mod` and no `go.sum` cannot introduce a
       # data race: the binaries are identical and the same tests still run
-      # unraced in test-go. Locales, templates and web assets are go:embed'ed
+      # unraced in the Go lanes. Locales, templates and web assets are go:embed'ed
       # DATA — changing them changes what the binary contains, never how it
       # synchronises. `.github/**` is carved back IN even though it compiles
       # nothing: a pull request editing the race job itself must not be judged
       # irrelevant by the job it is editing.
       run_race: ${{ steps.detect.outputs.run_race }}
-      # `run_unit` — test-go. A Playwright spec is neither compiled into the Go
+      # `run_unit` — the three Go lanes (test-go-shard, test-go-rest,
+      # test-go-analysis). A Playwright spec is neither compiled into the Go
       # binary nor go:embed'ed, so an `e2e/**`-only change cannot alter a Go
       # test, a lint finding or a coverage line. test-FRONTEND deliberately
       # keeps gating on `run_core` instead: its `lint:types` step type-checks
