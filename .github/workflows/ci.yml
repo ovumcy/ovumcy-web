@@ -798,7 +798,9 @@ jobs:
       - name: Install Playwright browser
         if: env.RUN_E2E != 'false' && env.SHARD_ACTIVE != 'false' && steps.playwright-cache.outputs.cache-hit != 'true'
         # NO `--with-deps`: this downloads the browser binary and touches apt not
-        # at all. The apt half used to live here and in a second step below, and
+        # at all. This lane is CHROMIUM-ONLY, which is what makes that safe — see
+        # the paragraph at the end. The apt half used to live here and in a second
+        # step below, and
         # it was the single least reliable thing in CI — three hangs in 24 hours
         # on an unresponsive Azure mirror (runs 32070919012, 32085785273 and,
         # after the timeout bound landed, 32090266798 failing honestly at 905 s).
@@ -819,6 +821,17 @@ jobs:
         # geometry assertions, which is the one way a font could matter — so this
         # is a change the browser suite itself judges, and its verdict on this
         # pull request is the evidence for it.
+        #
+        # SCOPE: this removal is correct for the chromium-only lanes and WRONG for
+        # e2e-cross-browser, which therefore keeps its apt steps. The delta apt
+        # actually computes differs by an order of magnitude — measured on push run
+        # 32081716803, same commit, same image: `9 newly installed` here and in
+        # e2e-postgres-smoke, against `181 newly installed` in the cross-browser
+        # lane, of which 165 are real libraries (gstreamer1.0-*, libav*, libcairo-*
+        # — WebKit's media stack), not fonts. Evidence gathered on a chromium lane
+        # does not carry to a lane that also builds Firefox and WebKit, and the
+        # pull-request run cannot catch the difference: e2e-cross-browser runs only
+        # on push, release and workflow_dispatch, so it would have broken on `main`.
         #
         # If Chromium ever fails to LAUNCH rather than to render, look here first:
         # the claim above rests on one image's package list, and a future runner
@@ -938,7 +951,9 @@ jobs:
       - name: Install Playwright browser
         if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
         # NO `--with-deps`: this downloads the browser binary and touches apt not
-        # at all. The apt half used to live here and in a second step below, and
+        # at all. This lane is CHROMIUM-ONLY, which is what makes that safe — see
+        # the paragraph at the end. The apt half used to live here and in a second
+        # step below, and
         # it was the single least reliable thing in CI — three hangs in 24 hours
         # on an unresponsive Azure mirror (runs 32070919012, 32085785273 and,
         # after the timeout bound landed, 32090266798 failing honestly at 905 s).
@@ -959,6 +974,17 @@ jobs:
         # geometry assertions, which is the one way a font could matter — so this
         # is a change the browser suite itself judges, and its verdict on this
         # pull request is the evidence for it.
+        #
+        # SCOPE: this removal is correct for the chromium-only lanes and WRONG for
+        # e2e-cross-browser, which therefore keeps its apt steps. The delta apt
+        # actually computes differs by an order of magnitude — measured on push run
+        # 32081716803, same commit, same image: `9 newly installed` here and in
+        # e2e-postgres-smoke, against `181 newly installed` in the cross-browser
+        # lane, of which 165 are real libraries (gstreamer1.0-*, libav*, libcairo-*
+        # — WebKit's media stack), not fonts. Evidence gathered on a chromium lane
+        # does not carry to a lane that also builds Firefox and WebKit, and the
+        # pull-request run cannot catch the difference: e2e-cross-browser runs only
+        # on push, release and workflow_dispatch, so it would have broken on `main`.
         #
         # If Chromium ever fails to LAUNCH rather than to render, look here first:
         # the claim above rests on one image's package list, and a future runner
@@ -1023,33 +1049,49 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        # NO `--with-deps`: this downloads the browser binary and touches apt not
-        # at all. The apt half used to live here and in a second step below, and
-        # it was the single least reliable thing in CI — three hangs in 24 hours
-        # on an unresponsive Azure mirror (runs 32070919012, 32085785273 and,
-        # after the timeout bound landed, 32090266798 failing honestly at 905 s).
+        # `playwright install --with-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
         #
-        # What it was buying, read off the install log of run 32081716803:
-        # `0 upgraded, 9 newly installed, 0 to remove and 12 not upgraded`. Every
-        # real Playwright dependency is already on the ubuntu-latest image; the
-        # nine were all FONTS — fonts-ipafont-gothic (Japanese), fonts-wqy-zenhei
-        # (Chinese), fonts-tlwg-loma-otf (Thai), fonts-unifont, fonts-freefont-ttf
-        # and the xfonts-* set. This application ships six locales — de en es fr
-        # it ru — so no CJK or Thai text exists to render, no spec contains a CJK
-        # or Thai character, and Cyrillic is served by DejaVu, which the image
-        # already carries.
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
         #
-        # Playwright asserts the DOM, not pixels: a missing glyph cannot fail
-        # `toHaveText`, and the suite makes no screenshot comparison at all
-        # (`toHaveScreenshot`/`toMatchSnapshot`: zero occurrences). It does make
-        # geometry assertions, which is the one way a font could matter — so this
-        # is a change the browser suite itself judges, and its verdict on this
-        # pull request is the evidence for it.
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 1500 npx playwright install --with-deps chromium firefox webkit
+
+      - name: Install Playwright OS dependencies (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        # `playwright install-deps` is an apt front end, and apt hangs on an
+        # unresponsive mirror rather than failing. Unbounded, that hang runs until
+        # the JOB timeout — 45 minutes — and GitHub reports a timed-out job as
+        # `cancelled`, not `failed`, so a required check goes red with no failed
+        # step to look at. It happened twice inside 24 hours: run 32070919012 on
+        # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
+        # 2026-08-18, both on this same step.
         #
-        # If Chromium ever fails to LAUNCH rather than to render, look here first:
-        # the claim above rests on one image's package list, and a future runner
-        # image could drop a dependency this no longer installs.
-        run: timeout 600 npx playwright install chromium firefox webkit
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
+        #
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 1200 npx playwright install-deps chromium firefox webkit
 
       - name: Run Playwright cross-browser smoke
         run: npm run e2e:cross-browser
