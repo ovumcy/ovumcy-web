@@ -805,18 +805,18 @@ jobs:
         # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
         # 2026-08-18, both on this same step.
         #
-        # Bounded at 600s against a measured 11-50 s over nine successful runs, and
-        # retried once, because an apt mirror that is wedged now is usually fine
-        # 20 seconds later. Worst case is 20 minutes and a real failure, instead of
-        # 45 minutes and a verdict that names the wrong thing.
-        run: |
-          set -euo pipefail
-          for attempt in 1 2; do
-            if timeout 600 npx playwright install --with-deps chromium; then exit 0; fi
-            echo "::warning::npx playwright install --with-deps chromium did not finish within 600s (attempt $attempt of 2)"
-            sleep 20
-          done
-          exit 1
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
+        #
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 1200 npx playwright install --with-deps chromium
 
       - name: Install Playwright OS dependencies (cache hit)
         # The cache above only covers the downloaded browser binaries under
@@ -832,18 +832,18 @@ jobs:
         # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
         # 2026-08-18, both on this same step.
         #
-        # Bounded at 300s against a measured 11-50 s over nine successful runs, and
-        # retried once, because an apt mirror that is wedged now is usually fine
-        # 20 seconds later. Worst case is 10 minutes and a real failure, instead of
-        # 45 minutes and a verdict that names the wrong thing.
-        run: |
-          set -euo pipefail
-          for attempt in 1 2; do
-            if timeout 300 npx playwright install-deps chromium; then exit 0; fi
-            echo "::warning::npx playwright install-deps chromium did not finish within 300s (attempt $attempt of 2)"
-            sleep 20
-          done
-          exit 1
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
+        #
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 900 npx playwright install-deps chromium
 
       - name: Run Playwright e2e (smoke on push, full otherwise)
         # The divisor comes from `strategy.job-total`, which GitHub computes
@@ -965,18 +965,18 @@ jobs:
         # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
         # 2026-08-18, both on this same step.
         #
-        # Bounded at 600s against a measured 11-50 s over nine successful runs, and
-        # retried once, because an apt mirror that is wedged now is usually fine
-        # 20 seconds later. Worst case is 20 minutes and a real failure, instead of
-        # 45 minutes and a verdict that names the wrong thing.
-        run: |
-          set -euo pipefail
-          for attempt in 1 2; do
-            if timeout 600 npx playwright install --with-deps chromium; then exit 0; fi
-            echo "::warning::npx playwright install --with-deps chromium did not finish within 600s (attempt $attempt of 2)"
-            sleep 20
-          done
-          exit 1
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
+        #
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 1200 npx playwright install --with-deps chromium
 
       - name: Install Playwright OS dependencies (cache hit)
         if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
@@ -988,18 +988,18 @@ jobs:
         # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
         # 2026-08-18, both on this same step.
         #
-        # Bounded at 300s against a measured 11-50 s over nine successful runs, and
-        # retried once, because an apt mirror that is wedged now is usually fine
-        # 20 seconds later. Worst case is 10 minutes and a real failure, instead of
-        # 45 minutes and a verdict that names the wrong thing.
-        run: |
-          set -euo pipefail
-          for attempt in 1 2; do
-            if timeout 300 npx playwright install-deps chromium; then exit 0; fi
-            echo "::warning::npx playwright install-deps chromium did not finish within 300s (attempt $attempt of 2)"
-            sleep 20
-          done
-          exit 1
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
+        #
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 900 npx playwright install-deps chromium
 
       - name: Run Playwright Postgres smoke
         if: env.RUN_E2E != 'false' && env.RUN_HEAVY == 'true'
@@ -1067,18 +1067,18 @@ jobs:
         # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
         # 2026-08-18, both on this same step.
         #
-        # Bounded at 900s against a measured 11-50 s over nine successful runs, and
-        # retried once, because an apt mirror that is wedged now is usually fine
-        # 20 seconds later. Worst case is 30 minutes and a real failure, instead of
-        # 45 minutes and a verdict that names the wrong thing.
-        run: |
-          set -euo pipefail
-          for attempt in 1 2; do
-            if timeout 900 npx playwright install --with-deps chromium firefox webkit; then exit 0; fi
-            echo "::warning::npx playwright install --with-deps chromium firefox webkit did not finish within 900s (attempt $attempt of 2)"
-            sleep 20
-          done
-          exit 1
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
+        #
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 1500 npx playwright install --with-deps chromium firefox webkit
 
       - name: Install Playwright OS dependencies (cache hit)
         if: steps.playwright-cache.outputs.cache-hit == 'true'
@@ -1090,18 +1090,18 @@ jobs:
         # 2026-08-17 (45 min, took the README badge red) and run 32085785273 on
         # 2026-08-18, both on this same step.
         #
-        # Bounded at 600s against a measured 11-50 s over nine successful runs, and
-        # retried once, because an apt mirror that is wedged now is usually fine
-        # 20 seconds later. Worst case is 20 minutes and a real failure, instead of
-        # 45 minutes and a verdict that names the wrong thing.
-        run: |
-          set -euo pipefail
-          for attempt in 1 2; do
-            if timeout 600 npx playwright install-deps chromium firefox webkit; then exit 0; fi
-            echo "::warning::npx playwright install-deps chromium firefox webkit did not finish within 600s (attempt $attempt of 2)"
-            sleep 20
-          done
-          exit 1
+        # Bounded, and NOT retried. Both halves are measured, and the first
+        # attempt at this fix got both of them wrong (run 32087754303):
+        #
+        #   - the bound cannot be tight. The 11-50 s this step usually takes is
+        #     the path where the packages are already present; a cold run pulls
+        #     21.1 MB from the Azure mirror and legitimately ran past 300 s. The
+        #     bound exists to beat the 45-minute job timeout, nothing finer.
+        #   - a retry cannot work. `timeout` kills apt mid-transaction and the
+        #     orphan keeps /var/lib/dpkg/lock-frontend, so the next attempt dies
+        #     at once on `Could not get lock` — observed, exit 100. A bounded
+        #     single attempt fails honestly; a retry only fails twice.
+        run: timeout 1200 npx playwright install-deps chromium firefox webkit
 
       - name: Run Playwright cross-browser smoke
         run: npm run e2e:cross-browser
