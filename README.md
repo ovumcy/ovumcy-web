@@ -7,7 +7,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml"><img src="https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <!-- The CI badge reads the MERGE-QUEUE run, not the push that follows it: `main` is
+       written only through the queue, so that run is the last attempt to enter the branch
+       and it tests the exact commit that lands. The unfiltered badge read the push run,
+       where any cancellation renders as failing — a job that hits `timeout-minutes` is
+       reported `cancelled`, which took the badge red on 2026-08-17 with no failed job in
+       the run. Do not add `branch=main`: queue runs live on `gh-readonly-queue/...`, and
+       that pair returns "no status". -->
+  <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml?query=event%3Amerge_group"><img src="https://github.com/ovumcy/ovumcy-web/actions/workflows/ci.yml/badge.svg?event=merge_group" alt="CI"></a>
   <a href="https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml"><img src="https://github.com/ovumcy/ovumcy-web/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="https://securityscorecards.dev/viewer/?uri=github.com/ovumcy/ovumcy-web"><img src="https://api.securityscorecards.dev/projects/github.com/ovumcy/ovumcy-web/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://www.bestpractices.dev/projects/13130"><img src="https://www.bestpractices.dev/projects/13130/badge" alt="OpenSSF Best Practices"></a>
