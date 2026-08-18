@@ -509,8 +509,12 @@ This README intentionally focuses on functionality that exists today rather than
 
 ## License
 
-Ovumcy is licensed under AGPL v3.
-See [LICENSE](LICENSE).
+Copyright (C) 2026 Ovumcy Contributors.
+
+Ovumcy is licensed under AGPL v3. See [LICENSE](LICENSE) for the full text of the license.
+
+If you run a modified version of Ovumcy as a network service, section 13 of the license
+obliges you to make the complete source code of that version available to its users.
 
 Third-party software redistributed with the built application (e.g. htmx) is listed with its
 license in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
