@@ -48,7 +48,7 @@ jobs:
     # skipped required check would otherwise pass the merge on no evidence.
     needs:
       - changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.run_unit != 'false' }}
     permissions:
       contents: read
 
@@ -372,7 +372,7 @@ jobs:
     needs:
       - changes
     # Same fail-safe gate as test-go above.
-    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.run_race != 'false' }}
     permissions:
       contents: read
     strategy:
@@ -415,7 +415,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_core != 'false' }}
+    if: ${{ !cancelled() && needs.changes.outputs.run_race != 'false' }}
     permissions:
       contents: read
 
@@ -608,6 +608,26 @@ jobs:
       # required check (proven in practice on the sibling sync-community/managed
       # repos, whose whole Go battery merges this way).
       run_core: ${{ steps.detect.outputs.run_core }}
+      # Two narrower slices of `run_core`, each with its own ground. They are
+      # separate outputs rather than one, because what makes a change
+      # irrelevant to the race detector has nothing to do with what makes it
+      # irrelevant to the Go suite, and folding them would hide that.
+      #
+      # `run_race` — the race lanes. The detector instruments COMPILED Go, so a
+      # change carrying no `.go`, no `go.mod` and no `go.sum` cannot introduce a
+      # data race: the binaries are identical and the same tests still run
+      # unraced in test-go. Locales, templates and web assets are go:embed'ed
+      # DATA — changing them changes what the binary contains, never how it
+      # synchronises. `.github/**` is carved back IN even though it compiles
+      # nothing: a pull request editing the race job itself must not be judged
+      # irrelevant by the job it is editing.
+      run_race: ${{ steps.detect.outputs.run_race }}
+      # `run_unit` — test-go. A Playwright spec is neither compiled into the Go
+      # binary nor go:embed'ed, so an `e2e/**`-only change cannot alter a Go
+      # test, a lint finding or a coverage line. test-FRONTEND deliberately
+      # keeps gating on `run_core` instead: its `lint:types` step type-checks
+      # the e2e suite, so it is the one job such a change must run.
+      run_unit: ${{ steps.detect.outputs.run_unit }}
 
     steps:
       - name: Checkout
@@ -732,8 +752,36 @@ jobs:
             echo "push to main: the merge queue already ran the core suite on this exact commit; running only the lanes it skips."
           fi
 
+          # The two narrower slices. Both start from `run_core`, so everything
+          # it already cleared stays cleared, and both are only ever narrowed
+          # inside a branch that has a real file list — an unknown event, a
+          # crashed diff or an empty listing leaves them exactly as `run_core`
+          # left them, which is the running direction.
+          run_race="$run_core"
+          run_unit="$run_core"
+          if [ -n "${files:-}" ]; then
+            # Anything that can change the compiled program, plus the workflow
+            # directory: a pull request that edits the race job must still run
+            # it. Measured 2026-08-18 over the last 59 merged pull requests:
+            # 22 carried no compiled Go, and 8 of those were `.github/**`, so
+            # this carve-out costs a third of the slice and is not optional.
+            compiled="$(printf '%s\n' "$files" | grep -E '(\.go$|^go\.mod$|^go\.sum$|^\.github/)' || true)"
+            if [ -z "$compiled" ]; then
+              run_race=false
+              echo "no compiled Go and no workflow change: the race lanes report success without running."
+            fi
+            # Browser-spec-only: the e2e allowlist plus the docs/meta one.
+            beyond_specs="$(printf '%s\n' "$files" | grep -vE '^(e2e/|docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
+            if [ -z "$beyond_specs" ]; then
+              run_unit=false
+              echo "browser specs only: the Go suite reports success without running."
+            fi
+          fi
+
           echo "run_e2e=$run_e2e" >> "$GITHUB_OUTPUT"
           echo "run_core=$run_core" >> "$GITHUB_OUTPUT"
+          echo "run_race=$run_race" >> "$GITHUB_OUTPUT"
+          echo "run_unit=$run_unit" >> "$GITHUB_OUTPUT"
 
   # The browser suite runs here, split across shards, and the required status
   # check named `e2e` is the thin gate job below — the same shape branch
