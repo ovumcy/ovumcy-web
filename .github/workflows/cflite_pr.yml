@@ -14,8 +14,27 @@ on:
     # "PR" context is not a required check, so a workflow-level paths filter
     # is safe here (nothing waits on a report that never comes). The daily
     # batch workflow still fuzzes every target regardless.
+    #
+    # Scoped to what the targets can actually reach, not to every Go file. All
+    # six targets are `internal/services` policy parsers — `build.sh` compiles
+    # exactly `github.com/ovumcy/ovumcy-web/internal/services` and nothing else
+    # — and `go list -deps ./internal/services` resolves inside this repository
+    # to three packages: services, security, models (measured 2026-08-18, Go
+    # 1.26.6). A pull request touching none of them cannot change what these
+    # binaries execute, so fuzzing it re-runs the same harness over the same
+    # code. That was 30 of the last 59 merged pull requests, at 7.9 minutes
+    # each.
+    #
+    # Listed as directory globs rather than `**.go` on purpose: a filter is
+    # fail-DANGEROUS in the narrow direction — too tight and the check silently
+    # stops running — so the glob is deliberately wider than the file type it
+    # cares about. Widen this list whenever a target is added outside
+    # `internal/services`, or when that package gains an intra-repo import; the
+    # `go list -deps` line above is the command that settles it.
     paths:
-      - "**.go"
+      - "internal/services/**"
+      - "internal/security/**"
+      - "internal/models/**"
       - "go.mod"
       - "go.sum"
       - ".clusterfuzzlite/**"
