@@ -110,6 +110,15 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	// configuration defaults, suppression is the floor and a qualifier is not
 	// enough (docs/SECURITY_INVARIANTS.md -> medical safety), so the save falls
 	// back to the neutral message rather than softening the fertile one.
+	//
+	// FOLLOW-UP: this is the fifth surface carrying that same zero-completed-cycle
+	// floor, and the only one still spelling it out for itself — the calendar day
+	// states, the .ics feed, the webhook reminder and the dashboard reminder
+	// banner are being collapsed behind one shared suppression predicate in this
+	// package. Fold this call into that predicate once it exists: a floor stated
+	// at N of N+1 sites diverges the moment the shared one gains a disjunct or is
+	// narrowed to let a recorded observation through, and this site would keep the
+	// old rule silently.
 	if !DashboardAwaitingFirstCycle(stats) &&
 		!stats.FertilityWindowStart.IsZero() &&
 		!day.Before(stats.FertilityWindowStart) &&
