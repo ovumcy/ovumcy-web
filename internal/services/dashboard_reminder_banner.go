@@ -164,12 +164,15 @@ func dashboardReminderBannerForPeriod(cycleContext DashboardCycleContext, today 
 }
 
 func dashboardReminderBannerForOvulation(cycleContext DashboardCycleContext, today time.Time, windowDays int) (DashboardReminderBanner, bool) {
-	// AwaitingFirstCycle is the same first-cycle floor the header applies to the
-	// ovulation estimate (ShowOvulationEstimate): with no completed cycle the
-	// date counted down to here would be the onboarding slider projected forward,
-	// and the banner is the one place that date still spoke while the header
-	// beside it stayed quiet.
-	if cycleContext.AwaitingFirstCycle || cycleContext.DisplayOvulationUseRange || cycleContext.DisplayOvulationNeedsData || cycleContext.DisplayOvulationImpossible {
+	// FertilitySuppressed is the shared fertility floor as the context resolved
+	// it (FertilityProjectionSuppressed) — read, never re-derived here: with no
+	// completed cycle the date counted down to would be the onboarding slider
+	// projected forward, and the banner was the one place that date still spoke
+	// while the header beside it stayed quiet. Reading the carried decision is
+	// what keeps this surface moving with the calendar, the feed and the webhook
+	// when the predicate changes. The three disjuncts after it are the banner's
+	// own display conditions, not policy.
+	if cycleContext.FertilitySuppressed || cycleContext.DisplayOvulationUseRange || cycleContext.DisplayOvulationNeedsData || cycleContext.DisplayOvulationImpossible {
 		return DashboardReminderBanner{}, false
 	}
 	daysUntil, ok := dashboardReminderBannerDaysUntil(cycleContext.DisplayOvulationDate, today, windowDays)

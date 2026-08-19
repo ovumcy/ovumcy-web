@@ -163,10 +163,23 @@ func assertWebhookOvulationReminder(t *testing.T, user *models.User, logs []mode
 	}
 }
 
+// assertDashboardOvulationBanner also pins the banner to the SHARED predicate,
+// not merely to the tier: the banner reads a decision the cycle context
+// resolved, so the case asserts that the carried decision is the predicate's
+// own answer. Without that link the banner row would keep passing if the floor
+// were dropped from FertilityProjectionSuppressed — the banner would go on
+// reading AwaitingFirstCycle while the calendar, the feed and the webhook moved.
 func assertDashboardOvulationBanner(t *testing.T, user *models.User, stats CycleStats, today time.Time, location *time.Location, testCase firstCycleFloorCase) {
 	t.Helper()
 
 	cycleContext := BuildDashboardCycleContext(user, stats, today, location)
+	if got, want := cycleContext.FertilitySuppressed, FertilityProjectionSuppressed(user, stats); got != want {
+		t.Errorf("banner: cycle context carries FertilitySuppressed = %v, want the shared predicate's %v", got, want)
+	}
+	if got, want := cycleContext.FertilitySuppressed, !testCase.wantOvulation; got != want {
+		t.Errorf("banner: cycle context carries FertilitySuppressed = %v, want %v", got, want)
+	}
+
 	banner := BuildDashboardReminderBanner(cycleContext, today, 3)
 	isOvulationBanner := banner.Show && banner.Kind == DashboardReminderBannerKindOvulation
 	if isOvulationBanner != testCase.wantOvulation {
