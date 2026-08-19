@@ -33,16 +33,38 @@ type dayserviceCovUserStub struct {
 	// AcknowledgePeriodTip persistence capture.
 	shownPeriodTipPersisted bool
 	shownPeriodTipValue     bool
+
+	// userIDs records the owner id of every user-repository call in arrival
+	// order. Without it, updateCalls counts that a write happened but says
+	// nothing about which account it landed on, and owner scoping
+	// (docs/SECURITY_INVARIANTS.md, privacy boundary) stays unfalsifiable here.
+	userIDs []uint
 }
 
-func (s *dayserviceCovUserStub) LoadSettingsByID(context.Context, uint) (models.User, error) {
+// assertUserRepositoryCallsTargetOwner mirrors the workflow stub's guard: at
+// least one call, and every recorded id is the acting owner.
+func (s *dayserviceCovUserStub) assertUserRepositoryCallsTargetOwner(t *testing.T, want uint) {
+	t.Helper()
+	if len(s.userIDs) == 0 {
+		t.Fatalf("expected at least one user-repository call for owner %d, saw none", want)
+	}
+	for index, got := range s.userIDs {
+		if got != want {
+			t.Fatalf("user-repository call %d targeted owner %d, want the acting owner %d", index+1, got, want)
+		}
+	}
+}
+
+func (s *dayserviceCovUserStub) LoadSettingsByID(_ context.Context, userID uint) (models.User, error) {
+	s.userIDs = append(s.userIDs, userID)
 	if s.loadErr != nil {
 		return models.User{}, s.loadErr
 	}
 	return s.settings, nil
 }
 
-func (s *dayserviceCovUserStub) UpdateByID(ctx context.Context, _ uint, updates map[string]any) error {
+func (s *dayserviceCovUserStub) UpdateByID(ctx context.Context, userID uint, updates map[string]any) error {
+	s.userIDs = append(s.userIDs, userID)
 	s.updateCalls++
 	if s.updateErr != nil {
 		return s.updateErr
@@ -642,6 +664,7 @@ func TestDayService_RefreshDerivedCycleSettings_EmptyLogSetPersistsDefaultLuteal
 	if users.settings.LutealPhase != defaultLutealPhaseDays {
 		t.Fatalf("expected the default luteal phase %d to be persisted when inference has no data, got %d", defaultLutealPhaseDays, users.settings.LutealPhase)
 	}
+	users.assertUserRepositoryCallsTargetOwner(t, 10)
 }
 
 // ---------------------------------------------------------------------------

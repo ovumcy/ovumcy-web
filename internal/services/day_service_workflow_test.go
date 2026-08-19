@@ -177,9 +177,31 @@ type dayUserRepositoryStub struct {
 	// later read in the same write — the counterpart of saveErrFromCall above.
 	loadErrFromCall int
 	loadCalls       int
+	// userIDs records the owner id of every LoadSettingsByID and UpdateByID
+	// call in arrival order. Discarding it left owner scoping unfalsifiable at
+	// this layer: any mutation of the id argument passed the whole day suite,
+	// so a settings write aimed at another account read as a clean run.
+	userIDs []uint
 }
 
-func (stub *dayUserRepositoryStub) LoadSettingsByID(context.Context, uint) (models.User, error) {
+// assertUserRepositoryCallsTargetOwner fails unless the stub saw at least one
+// call and every one of them carried want. The "at least one" half matters as
+// much as the comparison: a seam that was never reached is unobservable, not
+// proven, and a loop over an empty slice would report success about nothing.
+func (stub *dayUserRepositoryStub) assertUserRepositoryCallsTargetOwner(t *testing.T, want uint) {
+	t.Helper()
+	if len(stub.userIDs) == 0 {
+		t.Fatalf("expected at least one user-repository call for owner %d, saw none", want)
+	}
+	for index, got := range stub.userIDs {
+		if got != want {
+			t.Fatalf("user-repository call %d targeted owner %d, want the acting owner %d", index+1, got, want)
+		}
+	}
+}
+
+func (stub *dayUserRepositoryStub) LoadSettingsByID(_ context.Context, userID uint) (models.User, error) {
+	stub.userIDs = append(stub.userIDs, userID)
 	stub.loadCalls++
 	if stub.loadErr != nil && stub.loadCalls >= stub.loadErrFromCall {
 		return models.User{}, stub.loadErr
@@ -187,7 +209,8 @@ func (stub *dayUserRepositoryStub) LoadSettingsByID(context.Context, uint) (mode
 	return stub.settings, nil
 }
 
-func (stub *dayUserRepositoryStub) UpdateByID(ctx context.Context, _ uint, updates map[string]any) error {
+func (stub *dayUserRepositoryStub) UpdateByID(ctx context.Context, userID uint, updates map[string]any) error {
+	stub.userIDs = append(stub.userIDs, userID)
 	if updates == nil {
 		return nil
 	}
@@ -743,5 +766,94 @@ func TestMarkCycleStartManuallyWrapsPersistenceFailure(t *testing.T) {
 	}
 	if logs.entries["2026-02-08"].CycleStart {
 		t.Fatalf("failed persistence must not leave the cycle-start flag set in the read model")
+	}
+}
+
+// TestDayServiceUserRepositoryCallsTargetTheActingOwner is the owner-scope
+// guard for every seam where DayService reaches the user repository: the
+// autofill settings read, the inline cycle-start confirmation, the manual
+// cycle-start policy read, the derived-settings refresh and both
+// acknowledgements. The privacy boundary scopes a per-user read or write to the
+// acting account and to no other (docs/SECURITY_INVARIANTS.md), and until the
+// stub recorded the id nothing at this layer could tell a correctly scoped call
+// from one aimed at a different row: replacing every id with a literal 1 left
+// the whole day suite — and the API suite — green.
+func TestDayServiceUserRepositoryCallsTargetTheActingOwner(t *testing.T) {
+	const actingOwner uint = 10
+
+	testCases := []struct {
+		name    string
+		arrange func(logs *dayLogRepositoryStub)
+		act     func(t *testing.T, service *DayService)
+	}{
+		{
+			name: "the day save reads the autofill settings, confirms the cycle start and refreshes the derived ones",
+			arrange: func(logs *dayLogRepositoryStub) {
+				logs.entries["2026-02-01"] = models.DailyLog{
+					ID: 1, UserID: actingOwner,
+					Date:     time.Date(2026, time.February, 1, 0, 0, 0, 0, time.UTC),
+					IsPeriod: true, CycleStart: true,
+				}
+			},
+			act: func(t *testing.T, service *DayService) {
+				t.Helper()
+				day := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+				if _, err := service.UpsertDayEntryWithAutoFillAt(context.Background(), actingOwner, day,
+					DayEntryInput{IsPeriod: true, Flow: models.FlowMedium, ConfirmCycleStart: true}, day, time.UTC); err != nil {
+					t.Fatalf("UpsertDayEntryWithAutoFillAt() unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name: "the manual cycle start reads the policy settings and refreshes the derived ones",
+			arrange: func(logs *dayLogRepositoryStub) {
+				logs.entries["2026-02-08"] = models.DailyLog{
+					ID: 2, UserID: actingOwner,
+					Date:     time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC),
+					IsPeriod: true, Flow: models.FlowLight,
+				}
+			},
+			act: func(t *testing.T, service *DayService) {
+				t.Helper()
+				targetDay := time.Date(2026, time.February, 8, 0, 0, 0, 0, time.UTC)
+				if err := service.MarkCycleStartManually(context.Background(), actingOwner, targetDay, targetDay, time.UTC, ManualCycleStartOptions{}); err != nil {
+					t.Fatalf("MarkCycleStartManually() unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name:    "the period tip acknowledgement",
+			arrange: func(*dayLogRepositoryStub) {},
+			act: func(t *testing.T, service *DayService) {
+				t.Helper()
+				if err := service.AcknowledgePeriodTip(context.Background(), actingOwner); err != nil {
+					t.Fatalf("AcknowledgePeriodTip() unexpected error: %v", err)
+				}
+			},
+		},
+		{
+			name:    "the long-period warning acknowledgement",
+			arrange: func(*dayLogRepositoryStub) {},
+			act: func(t *testing.T, service *DayService) {
+				t.Helper()
+				cycleStart := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+				if err := service.AcknowledgeLongPeriodWarning(context.Background(), actingOwner, cycleStart, time.UTC); err != nil {
+					t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
+				}
+			},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			logs := newDayLogRepositoryStub()
+			users := &dayUserRepositoryStub{settings: models.User{PeriodLength: 4}}
+			service := NewDayService(logs, users)
+			testCase.arrange(logs)
+
+			testCase.act(t, service)
+
+			users.assertUserRepositoryCallsTargetOwner(t, actingOwner)
+		})
 	}
 }

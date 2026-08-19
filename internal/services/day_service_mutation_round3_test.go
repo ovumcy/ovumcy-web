@@ -161,16 +161,37 @@ type mr3dayUserStub struct {
 	settings    models.User
 	loadErr     error
 	lastUpdates map[string]any
+	// userIDs records the owner id of every user-repository call, so a mutant
+	// that swaps the acting owner for another account is observable here rather
+	// than only in the written map (docs/SECURITY_INVARIANTS.md, privacy
+	// boundary).
+	userIDs []uint
 }
 
-func (s *mr3dayUserStub) LoadSettingsByID(context.Context, uint) (models.User, error) {
+// assertUserRepositoryCallsTargetOwner mirrors the workflow stub's guard: at
+// least one call, and every recorded id is the acting owner.
+func (s *mr3dayUserStub) assertUserRepositoryCallsTargetOwner(t *testing.T, want uint) {
+	t.Helper()
+	if len(s.userIDs) == 0 {
+		t.Fatalf("expected at least one user-repository call for owner %d, saw none", want)
+	}
+	for index, got := range s.userIDs {
+		if got != want {
+			t.Fatalf("user-repository call %d targeted owner %d, want the acting owner %d", index+1, got, want)
+		}
+	}
+}
+
+func (s *mr3dayUserStub) LoadSettingsByID(_ context.Context, userID uint) (models.User, error) {
+	s.userIDs = append(s.userIDs, userID)
 	if s.loadErr != nil {
 		return models.User{}, s.loadErr
 	}
 	return s.settings, nil
 }
 
-func (s *mr3dayUserStub) UpdateByID(ctx context.Context, _ uint, updates map[string]any) error {
+func (s *mr3dayUserStub) UpdateByID(ctx context.Context, userID uint, updates map[string]any) error {
+	s.userIDs = append(s.userIDs, userID)
 	s.lastUpdates = updates
 	return nil
 }
@@ -228,6 +249,7 @@ func TestMR3Day_ClearAutoFilledPeriodNeighbors_NonUTCCoverage(t *testing.T) {
 	if !logs.entries["2026-02-11"].IsPeriod {
 		t.Fatal("the anchor day 2026-02-11 must not be cleared")
 	}
+	users.assertUserRepositoryCallsTargetOwner(t, 10)
 }
 
 // NOTE: day_feedback_policy.go:62 NEGATION (`if location != nil { cycleStart =
@@ -264,6 +286,7 @@ func TestMR3Day_UpsertDayEntryWithAutoFillAt_ReturnsPopulatedEntry(t *testing.T)
 	if entry.Flow != models.FlowMedium {
 		t.Fatalf("returned entry Flow = %q, want %q", entry.Flow, models.FlowMedium)
 	}
+	users.assertUserRepositoryCallsTargetOwner(t, 10)
 }
 
 // --- day_service.go:448 NEGATION — MarkCycleStartManually tx-close propagates error ---
@@ -288,6 +311,7 @@ func TestMR3Day_MarkCycleStartManually_PropagatesTxError(t *testing.T) {
 	if !errors.Is(err, ErrManualCycleStartFailed) {
 		t.Fatalf("expected ErrManualCycleStartFailed wrap, got %v", err)
 	}
+	users.assertUserRepositoryCallsTargetOwner(t, 10)
 }
 
 func mr3dayKeys(stub *mr3dayLogStub) []string {
