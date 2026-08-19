@@ -1,6 +1,7 @@
 import { expect, test, type Frame, type Page } from '@playwright/test';
 import { expectDashboardStatusHeader } from './support/dashboard-helpers';
 import { cancelConfirmDialog } from './support/confirm-dialog-helpers';
+import { saveInterfaceSettingsForm } from './support/settings-interface-helpers';
 import {
   WCAG_AA_GRAPHIC_CONTRAST,
   applyTheme,
@@ -89,53 +90,6 @@ async function awaitSystemColorSchemeFlip(page: Page, scheme: 'light' | 'dark'):
   );
 }
 
-/**
- * Saves the settings interface form and returns only once the server has
- * answered the save.
- *
- * Waiting on the save button's own state does not prove that. The shared htmx
- * busy handler only touches `form[data-save-feedback] [data-save-button]`, and
- * the interface form is neither, so nothing disables this button while its
- * PATCH is outstanding — what re-disables it is the reload that the endpoint's
- * `HX-Redirect` triggers. That makes "disabled again" a proxy for "some page
- * loaded", not for "the account took the save": with the endpoint persisting
- * nothing and confirming nothing while still redirecting, the scenario ran
- * green end to end. Every other signal in it is client-fed — the form writes
- * `ovumcy_theme` synchronously in its own submit listener, and both the
- * `data-theme` attribute and the next page's theme are read back out of that
- * same storage.
- *
- * So the wait binds to the click's OWN request and to that request's response,
- * which is the only wait that outlives the PATCH and cannot be satisfied by a
- * navigation the test did not ask for. The success flash is the server-backed
- * half: the handler puts it in a flash cookie and answers with a redirect, so
- * the notice is rendered by `/settings` itself and no client state can
- * fabricate it. The theme has no account column to read back — it is client
- * storage by design — so what the flash proves is that the endpoint accepted
- * this save rather than the page going on showing a preference it refused.
- */
-async function saveInterfaceForm(page: Page): Promise<void> {
-  const form = page.locator('[data-settings-interface-form]');
-  const [saveRequest] = await Promise.all([
-    page.waitForRequest(
-      (request) =>
-        request.method() === 'PATCH' && request.url().includes('/api/v1/users/current/interface')
-    ),
-    form.locator('[data-settings-interface-save]').click(),
-  ]);
-
-  const saveResponse = await saveRequest.response();
-  expect(
-    saveResponse?.ok(),
-    `the interface PATCH answered ${String(saveResponse?.status())}, so nothing was saved`
-  ).toBe(true);
-  await expect(
-    page.locator(
-      '[data-flash-key="settings.success.interface_updated"][data-flash-status="success"]'
-    )
-  ).toBeVisible();
-}
-
 test.describe('Theme mode', () => {
   test('theme toggle switches mode and persists between pages', async ({ page, context }) => {
     await registerAndReachDashboard(page, 'theme-mode');
@@ -212,7 +166,11 @@ test.describe('Theme mode', () => {
 
     await nextOption.locator('.chip-stack').click();
     await expect(saveButton).toBeEnabled();
-    await saveInterfaceForm(page);
+    // The success flash is the only server-backed readback this scenario has:
+    // the theme itself lives in client storage by design, so what the flash
+    // proves is that the endpoint accepted the save rather than the page going
+    // on showing a preference it refused.
+    await saveInterfaceSettingsForm(page, { expectSuccessFlash: true });
     // Kept as the draft's own end state, no longer as the wait for the save.
     await expect(saveButton).toBeDisabled();
     await expect(html).toHaveAttribute('data-theme', nextTheme);
