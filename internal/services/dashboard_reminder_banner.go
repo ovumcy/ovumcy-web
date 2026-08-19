@@ -164,7 +164,12 @@ func dashboardReminderBannerForPeriod(cycleContext DashboardCycleContext, today 
 }
 
 func dashboardReminderBannerForOvulation(cycleContext DashboardCycleContext, today time.Time, windowDays int) (DashboardReminderBanner, bool) {
-	if cycleContext.DisplayOvulationUseRange || cycleContext.DisplayOvulationNeedsData || cycleContext.DisplayOvulationImpossible {
+	// AwaitingFirstCycle is the same first-cycle floor the header applies to the
+	// ovulation estimate (ShowOvulationEstimate): with no completed cycle the
+	// date counted down to here would be the onboarding slider projected forward,
+	// and the banner is the one place that date still spoke while the header
+	// beside it stayed quiet.
+	if cycleContext.AwaitingFirstCycle || cycleContext.DisplayOvulationUseRange || cycleContext.DisplayOvulationNeedsData || cycleContext.DisplayOvulationImpossible {
 		return DashboardReminderBanner{}, false
 	}
 	daysUntil, ok := dashboardReminderBannerDaysUntil(cycleContext.DisplayOvulationDate, today, windowDays)

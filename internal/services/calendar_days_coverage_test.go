@@ -266,6 +266,10 @@ func TestCalendarDaysPreFertileEndIsOneDayBeforeFertilityStart(t *testing.T) {
 	now := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
 
 	stats := CycleStats{
+		// CompletedCycleCount lifts the fixture above the first-cycle floor
+		// (FertilityProjectionSuppressed): these cases pin the window math, not
+		// the tier that withholds a window with only the slider behind it.
+		CompletedCycleCount:  1,
 		AveragePeriodLength:  5,
 		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		FertilityWindowStart: time.Date(2026, time.March, 16, 0, 0, 0, 0, time.UTC),
@@ -309,6 +313,7 @@ func TestCalendarDaysFertilityWindowPeakThreshold(t *testing.T) {
 	now := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
 
 	stats := CycleStats{
+		CompletedCycleCount:  1,
 		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		NextPeriodStart:      time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC),
 		OvulationDate:        time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
@@ -438,6 +443,7 @@ func TestCalendarDaysPredictedWindowPreFertileEndBoundary(t *testing.T) {
 	now := time.Date(2026, time.April, 1, 0, 0, 0, 0, time.UTC)
 
 	stats := CycleStats{
+		CompletedCycleCount: 1,
 		MedianCycleLength:   28,
 		AveragePeriodLength: 5,
 		LutealPhase:         14,

@@ -121,10 +121,37 @@ func DashboardProjectionCycleLength(user *models.User, stats CycleStats) int {
 // so every date it yields is manufactured rather than estimated, and presenting
 // one as a window is the estimate-presented-as-fact the medical-safety invariant
 // forbids. Every surface that shows a projected window gates on all three —
-// dashboard display and reminder banner here; the calendar grid, the webhook
-// reminder and the .ics feed are the remaining callers of that pair.
+// through PredictionsSuppressed, which is where the three now live together.
 func DashboardCycleOverdue(user *models.User, stats CycleStats) bool {
 	return DashboardCycleDayLooksLong(stats.CurrentCycleDay, DashboardCycleReferenceLength(user, stats))
+}
+
+// PredictionsSuppressed is the whole-projection suppression gate: unpredictable-
+// cycle mode, a pregnancy pause, or a cycle overdue past its own reference
+// length. Any one of them withholds every projected date, on every surface.
+//
+// It exists as one predicate because the three disjuncts had been written out
+// once per surface — the calendar grid, the .ics feed and the webhook pass each
+// carried their own copy — so a fourth suppression signal had to be found at
+// four sites, and the one that was missed (the completed-cycle floor below)
+// stayed missing silently. A new signal belongs here, never in a caller.
+func PredictionsSuppressed(user *models.User, stats CycleStats) bool {
+	return DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats)
+}
+
+// FertilityProjectionSuppressed adds the zero-completed-cycle floor to the three
+// signals above, and is the gate for the fertility half of the projection: the
+// fertile window, the peak band and the ovulation date, wherever they are shown
+// or sent — calendar grid, .ics feed, webhook reminder, dashboard banner.
+//
+// The two predicates are deliberately not one. PredictionsSuppressed withholds
+// everything; the first-cycle floor withholds only what has nothing but the
+// onboarding slider behind it, which is exactly the fertility half (see
+// DashboardAwaitingFirstCycle). The next-period estimate keeps its own path: it
+// is anchored on a day the owner recorded and already carries an estimate
+// qualifier, and the dashboard header shows it in this tier too.
+func FertilityProjectionSuppressed(user *models.User, stats CycleStats) bool {
+	return PredictionsSuppressed(user, stats) || DashboardAwaitingFirstCycle(stats)
 }
 
 // DashboardAwaitingFirstCycle reports that the account has not completed a

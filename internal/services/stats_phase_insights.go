@@ -49,7 +49,13 @@ type completedCyclePhaseContext struct {
 }
 
 func buildCompletedCyclePhaseContexts(logs []models.DailyLog, location *time.Location) []completedCyclePhaseContext {
-	starts := DetectCycleStarts(logs)
+	// ObservedCycleStarts, the same detector buildCompletedCycleSpans reads, and
+	// for the same reason: it is the one that honours an explicit cycle start and
+	// withholds a cluster whose only explicit start the owner marked uncertain.
+	// The raw gap walk (DetectCycleStarts) keeps that start, and the two used to
+	// run side by side in a single render — the ribbon reporting one merged cycle
+	// where the phase cards counted two.
+	starts := ObservedCycleStarts(logs)
 	if len(starts) < 2 {
 		return nil
 	}

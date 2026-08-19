@@ -70,6 +70,10 @@ func TestBuildCalendarDayStatesProjectsOvulationIntoFutureCycles(t *testing.T) {
 	now := time.Date(2026, time.February, 23, 0, 0, 0, 0, time.UTC)
 
 	stats := CycleStats{
+		// CompletedCycleCount lifts the fixture above the first-cycle floor
+		// (FertilityProjectionSuppressed): these cases pin the window math, not
+		// the tier that withholds a window with only the slider behind it.
+		CompletedCycleCount:  1,
 		MedianCycleLength:    28,
 		AveragePeriodLength:  5,
 		LastPeriodStart:      time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC),
@@ -363,6 +367,7 @@ func TestBuildCalendarDayStatesIncludesCurrentBaselinePeriodWindow(t *testing.T)
 	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
 
 	stats := CycleStats{
+		CompletedCycleCount: 1,
 		AveragePeriodLength: 5,
 		LastPeriodStart:     time.Date(2026, time.March, 8, 0, 0, 0, 0, time.UTC),
 	}
@@ -647,6 +652,7 @@ func TestBuildCalendarDayStatesMarksTentativeOvulationWhenBBTHasNoShift(t *testi
 	}
 
 	stats := CycleStats{
+		CompletedCycleCount:  1,
 		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		NextPeriodStart:      time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC),
 		OvulationDate:        time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
@@ -685,9 +691,10 @@ func TestBuildCalendarDayStatesKeepsBBTDemotedDashInGridOnEveryRunDate(t *testin
 		todayKey := today.Format("2006-01-02")
 		cycleStart := today.AddDate(0, 0, -13)
 		stats := CycleStats{
-			LastPeriodStart: cycleStart,
-			OvulationDate:   today,
-			NextPeriodStart: cycleStart.AddDate(0, 0, 28),
+			CompletedCycleCount: 1,
+			LastPeriodStart:     cycleStart,
+			OvulationDate:       today,
+			NextPeriodStart:     cycleStart.AddDate(0, 0, 28),
 		}
 		monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, location)
 
@@ -726,6 +733,7 @@ func TestBuildCalendarDayStatesSeparatesFertilityEdgeAndPeak(t *testing.T) {
 	now := time.Date(2026, time.March, 12, 0, 0, 0, 0, time.UTC)
 
 	stats := CycleStats{
+		CompletedCycleCount:  1,
 		LastPeriodStart:      time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC),
 		NextPeriodStart:      time.Date(2026, time.March, 29, 0, 0, 0, 0, time.UTC),
 		OvulationDate:        time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
@@ -769,6 +777,7 @@ func TestBuildCalendarDayStatesKeepsConfirmedOvulationWhenBBTHasShift(t *testing
 	}
 
 	stats := CycleStats{
+		CompletedCycleCount:  1,
 		LastPeriodStart:      time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC),
 		NextPeriodStart:      time.Date(2026, time.April, 7, 0, 0, 0, 0, time.UTC),
 		OvulationDate:        time.Date(2026, time.March, 15, 0, 0, 0, 0, time.UTC),
