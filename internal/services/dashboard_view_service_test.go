@@ -12,16 +12,23 @@ import (
 type stubDashboardStatsProvider struct {
 	stats CycleStats
 	err   error
+
+	// Captured user arguments — used to prove the cycle-stats reads, which
+	// derive the predictions the dashboard renders, carry the session owner.
+	rangeUsers   []*models.User
+	fromLogUsers []*models.User
 }
 
-func (stub *stubDashboardStatsProvider) BuildCycleStatsForRange(ctx context.Context, _ *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
+func (stub *stubDashboardStatsProvider) BuildCycleStatsForRange(ctx context.Context, user *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
+	stub.rangeUsers = append(stub.rangeUsers, user)
 	if stub.err != nil {
 		return CycleStats{}, nil, stub.err
 	}
 	return stub.stats, nil, nil
 }
 
-func (stub *stubDashboardStatsProvider) BuildCycleStatsFromLogs(_ *models.User, _ []models.DailyLog, _ time.Time, _ *time.Location) CycleStats {
+func (stub *stubDashboardStatsProvider) BuildCycleStatsFromLogs(user *models.User, _ []models.DailyLog, _ time.Time, _ *time.Location) CycleStats {
+	stub.fromLogUsers = append(stub.fromLogUsers, user)
 	return stub.stats
 }
 
@@ -378,7 +385,8 @@ func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
 			{Date: now, IsPeriod: true},
 		},
 	}
-	service := NewDashboardViewService(&stubDashboardStatsProvider{}, viewer, days)
+	stats := &stubDashboardStatsProvider{stats: CycleStats{MedianCycleLength: 28}}
+	service := NewDashboardViewService(stats, viewer, days)
 
 	if _, err := service.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
@@ -414,6 +422,46 @@ func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
 	for index, capturedID := range days.allLogsUserIDs {
 		if capturedID != sessionOwnerID {
 			t.Fatalf("FetchAllLogsForUser call %d read owner id %d, want the session owner %d", index, capturedID, sessionOwnerID)
+		}
+	}
+
+	// The cycle-stats reads decide what the dashboard predicts, so a session
+	// mixed up here shows one account's phase and fertile window on another's
+	// dashboard — the same boundary, one layer further in. An owner view
+	// derives its stats from the entry-context logs, so this path reaches
+	// BuildCycleStatsFromLogs and never BuildCycleStatsForRange.
+	if len(stats.fromLogUsers) == 0 {
+		t.Fatal("expected the stats provider to be reached; it recorded no BuildCycleStatsFromLogs call")
+	}
+	for index, captured := range stats.fromLogUsers {
+		if captured == nil {
+			t.Fatalf("BuildCycleStatsFromLogs call %d received no user at all", index)
+		}
+		if captured.ID != sessionOwnerID {
+			t.Fatalf("BuildCycleStatsFromLogs call %d read owner id %d, want the session owner %d", index, captured.ID, sessionOwnerID)
+		}
+	}
+
+	// The ranged stats read is the other half of the same seam and is reached
+	// only by a session that needs no entry-context logs, so it gets its own
+	// session user rather than being left unobserved.
+	const rangeSessionID uint = 7373
+
+	rangeStats := &stubDashboardStatsProvider{stats: CycleStats{MedianCycleLength: 28}}
+	rangeSession := &models.User{ID: rangeSessionID, Role: "viewer", CycleLength: 28}
+	rangeService := NewDashboardViewService(rangeStats, &stubDashboardViewerProvider{}, &stubDashboardDayStateProvider{})
+	if _, err := rangeService.BuildDashboardViewData(context.Background(), rangeSession, "en", now, time.UTC); err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error on the ranged stats path: %v", err)
+	}
+	if len(rangeStats.rangeUsers) == 0 {
+		t.Fatal("expected the stats provider to be reached; it recorded no BuildCycleStatsForRange call")
+	}
+	for index, captured := range rangeStats.rangeUsers {
+		if captured == nil {
+			t.Fatalf("BuildCycleStatsForRange call %d received no user at all", index)
+		}
+		if captured.ID != rangeSessionID {
+			t.Fatalf("BuildCycleStatsForRange call %d read session id %d, want %d", index, captured.ID, rangeSessionID)
 		}
 	}
 }
