@@ -12,9 +12,13 @@ import (
 type stubCalendarViewDayReader struct {
 	logs []models.DailyLog
 	err  error
+
+	// Captured userID argument — used to prove the day read is owner-scoped.
+	logsUserID uint
 }
 
-func (stub *stubCalendarViewDayReader) FetchLogsForUser(ctx context.Context, _ uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (stub *stubCalendarViewDayReader) FetchLogsForUser(ctx context.Context, userID uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
+	stub.logsUserID = userID
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -27,9 +31,15 @@ type stubCalendarViewStatsProvider struct {
 	stats CycleStats
 	logs  []models.DailyLog
 	err   error
+
+	// Captured owner argument — used to prove the stats build is owner-scoped.
+	statsUserID uint
 }
 
-func (stub *stubCalendarViewStatsProvider) BuildCycleStatsForRange(ctx context.Context, _ *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
+func (stub *stubCalendarViewStatsProvider) BuildCycleStatsForRange(ctx context.Context, user *models.User, _ time.Time, _ time.Time, _ time.Time, _ *time.Location) (CycleStats, []models.DailyLog, error) {
+	if user != nil {
+		stub.statsUserID = user.ID
+	}
 	if stub.err != nil {
 		return CycleStats{}, nil, stub.err
 	}
@@ -39,12 +49,13 @@ func (stub *stubCalendarViewStatsProvider) BuildCycleStatsForRange(ctx context.C
 }
 
 func TestBuildCalendarPageViewData(t *testing.T) {
-	service := NewCalendarViewService(
-		&stubCalendarViewDayReader{},
-		&stubCalendarViewStatsProvider{stats: CycleStats{MedianCycleLength: 28}},
-	)
+	dayReader := &stubCalendarViewDayReader{}
+	statsProvider := &stubCalendarViewStatsProvider{stats: CycleStats{MedianCycleLength: 28}}
+	service := NewCalendarViewService(dayReader, statsProvider)
 
-	user := &models.User{ID: 1, Role: models.RoleOwner}
+	// The id is deliberately not 1: an owner argument replaced by a constant must not
+	// coincide with the authenticated owner's id, or the guard below cannot go red.
+	user := &models.User{ID: 4242, Role: models.RoleOwner}
 	now := mustParseCalendarViewDay(t, "2026-02-21")
 	monthStart := mustParseCalendarViewDay(t, "2026-02-01")
 
@@ -70,6 +81,25 @@ func TestBuildCalendarPageViewData(t *testing.T) {
 	}
 	if len(viewData.DayStates) == 0 {
 		t.Fatalf("expected non-empty day states")
+	}
+
+	// Privacy boundary: both collaborators must be handed the authenticated owner, and the
+	// same one. A zero id is invalid input, never a reason to treat the read as unscoped.
+	if dayReader.logsUserID == 0 {
+		t.Fatalf("day read received no owner id")
+	}
+	if dayReader.logsUserID != user.ID {
+		t.Fatalf("expected day read scoped to owner id %d, got %d", user.ID, dayReader.logsUserID)
+	}
+	if statsProvider.statsUserID != user.ID {
+		t.Fatalf("expected stats build scoped to owner id %d, got %d", user.ID, statsProvider.statsUserID)
+	}
+	if statsProvider.statsUserID != dayReader.logsUserID {
+		t.Fatalf(
+			"day read and stats build disagree on the owner: day=%d stats=%d",
+			dayReader.logsUserID,
+			statsProvider.statsUserID,
+		)
 	}
 }
 
