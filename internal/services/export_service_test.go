@@ -12,9 +12,13 @@ import (
 type stubExportDayReader struct {
 	logs []models.DailyLog
 	err  error
+	// ownerIDs records the owner operand of every read, so a build that exported
+	// under some other account's id can be observed instead of merely assumed.
+	ownerIDs []uint
 }
 
-func (stub *stubExportDayReader) FetchLogsForOptionalRange(context.Context, uint, *time.Time, *time.Time, *time.Location) ([]models.DailyLog, error) {
+func (stub *stubExportDayReader) FetchLogsForOptionalRange(_ context.Context, userID uint, _ *time.Time, _ *time.Time, _ *time.Location) ([]models.DailyLog, error) {
+	stub.ownerIDs = append(stub.ownerIDs, userID)
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -26,15 +30,69 @@ func (stub *stubExportDayReader) FetchLogsForOptionalRange(context.Context, uint
 type stubExportSymptomReader struct {
 	symptoms []models.SymptomType
 	err      error
+	// ownerIDs records the owner operand of every catalog read; symptom names are
+	// per-owner rows, so an unscoped read here leaks another account's labels.
+	ownerIDs []uint
 }
 
-func (stub *stubExportSymptomReader) FetchSymptoms(context.Context, uint) ([]models.SymptomType, error) {
+func (stub *stubExportSymptomReader) FetchSymptoms(_ context.Context, userID uint) ([]models.SymptomType, error) {
+	stub.ownerIDs = append(stub.ownerIDs, userID)
 	if stub.err != nil {
 		return nil, stub.err
 	}
 	result := make([]models.SymptomType, len(stub.symptoms))
 	copy(result, stub.symptoms)
 	return result, nil
+}
+
+// TestExportServiceReadsEveryEntryPointUnderTheActingOwner pins the owner operand
+// of the export read path on both collaborators. Until the stubs above recorded
+// it, every export test asserted shapes and counts only, so a read that fetched a
+// constant owner's days or symptom catalog stayed green — the privacy boundary in
+// docs/SECURITY_INVARIANTS.md forbids exactly that. Each of the four entry points
+// is driven separately: they are independent call sites, and one of them losing
+// the owner must not be masked by the other three.
+func TestExportServiceReadsEveryEntryPointUnderTheActingOwner(t *testing.T) {
+	const actingOwnerID uint = 8137
+
+	days := &stubExportDayReader{logs: []models.DailyLog{
+		{Date: mustParseExportDay(t, "2026-02-18"), SymptomIDs: []uint{1}},
+	}}
+	symptoms := &stubExportSymptomReader{symptoms: []models.SymptomType{{ID: 1, Name: "Cramps"}}}
+	service := NewExportService(days, symptoms)
+
+	ctx := context.Background()
+	if _, _, err := service.LoadDataForRange(ctx, actingOwnerID, nil, nil, time.UTC); err != nil {
+		t.Fatalf("LoadDataForRange() unexpected error: %v", err)
+	}
+	if _, err := service.BuildSummary(ctx, actingOwnerID, nil, nil, time.UTC); err != nil {
+		t.Fatalf("BuildSummary() unexpected error: %v", err)
+	}
+	if _, err := service.BuildJSONEntries(ctx, actingOwnerID, nil, nil, time.UTC); err != nil {
+		t.Fatalf("BuildJSONEntries() unexpected error: %v", err)
+	}
+	if _, err := service.BuildCSVRows(ctx, actingOwnerID, nil, nil, time.UTC); err != nil {
+		t.Fatalf("BuildCSVRows() unexpected error: %v", err)
+	}
+
+	// Positive anchors: all four entry points read days, and the three that resolve
+	// symptom names read the catalog. A run that reached a collaborator fewer times
+	// than that fails here rather than passing as "no mismatched owner found".
+	assertExportOwnerObserved(t, "day reader", days.ownerIDs, 4, actingOwnerID)
+	assertExportOwnerObserved(t, "symptom reader", symptoms.ownerIDs, 3, actingOwnerID)
+}
+
+func assertExportOwnerObserved(t *testing.T, collaborator string, observed []uint, wantCalls int, wantOwnerID uint) {
+	t.Helper()
+
+	if len(observed) != wantCalls {
+		t.Fatalf("expected %d %s reads, got %d", wantCalls, collaborator, len(observed))
+	}
+	for index, ownerID := range observed {
+		if ownerID != wantOwnerID {
+			t.Fatalf("%s read #%d ran for owner %d, want acting owner %d", collaborator, index+1, ownerID, wantOwnerID)
+		}
+	}
 }
 
 func TestExportBuildSummaryUsesDateBounds(t *testing.T) {
