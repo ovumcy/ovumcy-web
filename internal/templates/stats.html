@@ -103,7 +103,7 @@
         {{else}}
         <p class="stat-label">{{t .Messages "dashboard.current_phase"}}</p>
           {{if .CycleDataStale}}
-          <p class="stat-value mt-2"><span class="mr-2" aria-hidden="true">{{template "icon" (phaseIcon "unknown")}}</span>{{phaseLabel .Messages "unknown"}}</p>
+          <p class="stat-value mt-2" data-stats-current-phase="unknown" data-fertility-status="unknown"><span class="mr-2" aria-hidden="true">{{template "icon" (phaseIcon "unknown")}}</span>{{phaseLabel .Messages "unknown"}}</p>
           <p class="warning-amber mt-2 text-xs" data-stats-phase-estimated data-notice-key="dashboard.phase_estimated">{{t .Messages "dashboard.phase_estimated"}}</p>
           {{else}}
           <p class="stat-value mt-2" data-stats-current-phase="{{.Stats.CurrentPhase}}" data-fertility-status="{{.Stats.CurrentFertility}}"><span class="mr-2" aria-hidden="true">{{template "icon" (phaseIcon .Stats.CurrentPhase)}}</span>{{phaseLabel .Messages .Stats.CurrentPhase}}</p>

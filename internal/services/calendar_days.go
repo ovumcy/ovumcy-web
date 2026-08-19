@@ -137,27 +137,42 @@ func buildCalendarPredictionMaps(user *models.User, logs []models.DailyLog, stat
 	ovulationMap := maps.ovulation
 	tentativeOvulationMap := maps.tentativeOvulation
 
-	// Medical-safety suppression gate, the same three signals every projected
-	// surface gates on: unpredictable-cycle mode, a pregnancy pause, or a cycle
-	// running past the account's reference length by more than a week
-	// (DashboardCycleOverdue). Past that point stats.NextPeriodStart is a date the
-	// account's own data no longer supports: appendPredictedCycles chains from it,
-	// so the grid painted a predicted period in the PAST — one that never happened
-	// — and then a phantom window every cycle length after it. Every prediction map
-	// stays empty here; the recorded facts (logged period days, has-data, sex
-	// activity) are read elsewhere and are untouched.
-	if DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) {
+	// Medical-safety suppression gate, the shared predicate every projected
+	// surface gates on (PredictionsSuppressed): unpredictable-cycle mode, a
+	// pregnancy pause, or a cycle running past the account's reference length by
+	// more than a week (DashboardCycleOverdue). Past that point
+	// stats.NextPeriodStart is a date the account's own data no longer supports:
+	// appendPredictedCycles chains from it, so the grid painted a predicted period
+	// in the PAST — one that never happened — and then a phantom window every
+	// cycle length after it. Every prediction map stays empty here; the recorded
+	// facts (logged period days, has-data, sex activity) are read elsewhere and
+	// are untouched.
+	if PredictionsSuppressed(user, stats) {
 		return maps
 	}
 
+	// The fertility half of the projection carries the extra first-cycle floor:
+	// until one cycle has been observed, the fertile window, the peak band and the
+	// ovulation day are the onboarding slider projected forward, so the grid
+	// paints none of them (FertilityProjectionSuppressed). The predicted period
+	// days keep their anchor in a recorded cycle start and stay.
+	fertilitySuppressed := FertilityProjectionSuppressed(user, stats)
+
 	appendCurrentBaselinePeriod(predictedPeriodMap, stats, location)
-	appendCurrentBaselinePreFertile(preFertileMap, stats, location)
-	appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, stats.FertilityWindowStart, stats.FertilityWindowEnd, stats.OvulationDate)
-	appendCalendarSingleDate(ovulationMap, stats.OvulationDate)
-	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location)
+	if !fertilitySuppressed {
+		appendCurrentBaselinePreFertile(preFertileMap, stats, location)
+		appendFertilityWindow(fertilityEdgeMap, fertilityPeakMap, stats.FertilityWindowStart, stats.FertilityWindowEnd, stats.OvulationDate)
+		appendCalendarSingleDate(ovulationMap, stats.OvulationDate)
+	}
+	appendPredictedCycles(predictedPeriodMap, preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, stats, gridEnd, location, !fertilitySuppressed)
 	appendPredictedStartRange(maps.predictedStartRange, user, stats, location)
 	appendHistoricalCycles(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, logs, stats, user, location)
-	appendCurrentCycleBBTSignal(user, logs, stats, now, ovulationMap, tentativeOvulationMap, location)
+	if !fertilitySuppressed {
+		// The BBT pass only ever downgrades the projected ovulation day to
+		// "tentative", so with the fertility maps withheld it would reintroduce
+		// the very day the floor just removed, one shade lighter.
+		appendCurrentCycleBBTSignal(user, logs, stats, now, ovulationMap, tentativeOvulationMap, location)
+	}
 
 	return maps
 }
@@ -280,7 +295,11 @@ func appendFertilityWindow(fertilityEdgeMap map[string]bool, fertilityPeakMap ma
 	})
 }
 
-func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, stats CycleStats, gridEnd time.Time, location *time.Location) {
+// appendPredictedCycles chains the projected cycles across the visible grid.
+// includeFertility is false in the first-cycle tier: the chained period days
+// still descend from a recorded anchor, while the window inside each of them
+// would be the onboarding slider projected forward one cycle at a time.
+func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map[string]bool, fertilityEdgeMap map[string]bool, fertilityPeakMap map[string]bool, ovulationMap map[string]bool, stats CycleStats, gridEnd time.Time, location *time.Location, includeFertility bool) {
 	if stats.NextPeriodStart.IsZero() {
 		return
 	}
@@ -295,7 +314,9 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	// markers are never painted.
 	for cycleStart := CalendarDay(stats.NextPeriodStart, location); CalendarDaysBetween(cycleStart, gridEnd) >= 0; cycleStart = cycleStart.AddDate(0, 0, predictedCycleLength) {
 		appendPredictedPeriod(predictedPeriodMap, cycleStart, predictedPeriodLength)
-		appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
+		if includeFertility {
+			appendPredictedWindow(preFertileMap, fertilityEdgeMap, fertilityPeakMap, ovulationMap, cycleStart, predictedCycleLength, predictedPeriodLength, stats.LutealPhase)
+		}
 	}
 }
 

@@ -125,11 +125,18 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 	// nothing. Unpredictable-cycle mode, a pregnancy pause, OR an overdue cycle
 	// (DashboardCycleOverdue — past the account's reference length by more than a
 	// week, where the projection can only roll a whole cycle forward) each
-	// suppress on their own. The feed carries prediction events only, so this is
+	// suppress on their own, and they are read here through the one predicate
+	// every surface shares. The feed carries prediction events only, so this is
 	// the empty-but-well-formed VCALENDAR path.
-	if DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) {
+	if PredictionsSuppressed(user, stats) {
 		return nil
 	}
+
+	// The ovulation events carry the extra first-cycle floor: with no completed
+	// cycle behind it, the projected ovulation day is the onboarding slider, and
+	// this feed sends it off the instance into a calendar client that keeps it
+	// long after the app would correct it (FertilityProjectionSuppressed).
+	includeOvulation := !FertilityProjectionSuppressed(user, stats)
 
 	today := DateAtLocation(input.Now, input.Location)
 	cycleLength := DashboardProjectionCycleLength(user, stats)
@@ -174,7 +181,7 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		// needs a calendar-day comparison, or the ovulation event disappears from
 		// the feed on the ovulation day itself in every UTC-minus zone (issue #48
 		// class).
-		if window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 {
+		if includeOvulation && window.Calculable && CalendarDaysBetween(window.OvulationDate, today) <= 0 {
 			appendEvent("ovulation", CalendarDay(window.OvulationDate, input.Location))
 		}
 	}

@@ -9,58 +9,93 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// The stats doubles observe the owner operand of every read they serve. All
+// four reads are owner-scoped in production — the ranged logs, all logs, the
+// frequency calculation and the symptom catalogue — and while the doubles
+// discarded the id, each of those call sites could be re-pointed at a constant
+// owner with the whole stats selection still green. The *ByOwner maps let a
+// test serve different data per owner so the rendered page, not just the
+// recorded id, tells the two apart.
 type stubStatsDayReader struct {
 	logsForRange   []models.DailyLog
 	logsForAll     []models.DailyLog
+	logsByOwner    map[uint][]models.DailyLog
 	rangeErr       error
 	allErr         error
 	fetchAllCalled bool
 	gotFrom        time.Time
 	gotTo          time.Time
+	gotRangeOwner  uint
+	gotAllOwner    uint
 }
 
-func (stub *stubStatsDayReader) FetchLogsForUser(ctx context.Context, _ uint, from time.Time, to time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (stub *stubStatsDayReader) FetchLogsForUser(ctx context.Context, userID uint, from time.Time, to time.Time, _ *time.Location) ([]models.DailyLog, error) {
+	stub.gotRangeOwner = userID
 	stub.gotFrom = from
 	stub.gotTo = to
 	if stub.rangeErr != nil {
 		return nil, stub.rangeErr
 	}
-	result := make([]models.DailyLog, len(stub.logsForRange))
-	copy(result, stub.logsForRange)
-	return result, nil
+	return copyDailyLogsForOwner(stub.logsByOwner, userID, stub.logsForRange), nil
 }
 
-func (stub *stubStatsDayReader) FetchAllLogsForUser(context.Context, uint) ([]models.DailyLog, error) {
+func (stub *stubStatsDayReader) FetchAllLogsForUser(_ context.Context, userID uint) ([]models.DailyLog, error) {
+	stub.gotAllOwner = userID
 	stub.fetchAllCalled = true
 	if stub.allErr != nil {
 		return nil, stub.allErr
 	}
-	result := make([]models.DailyLog, len(stub.logsForAll))
-	copy(result, stub.logsForAll)
-	return result, nil
+	return copyDailyLogsForOwner(stub.logsByOwner, userID, stub.logsForAll), nil
+}
+
+// copyDailyLogsForOwner serves the owner's own rows when the test supplied a
+// per-owner map, and the flat slice otherwise. It always copies: a double that
+// hands out its own backing array lets the subject mutate the fixture.
+func copyDailyLogsForOwner(byOwner map[uint][]models.DailyLog, userID uint, fallback []models.DailyLog) []models.DailyLog {
+	source := fallback
+	if byOwner != nil {
+		source = byOwner[userID]
+	}
+	result := make([]models.DailyLog, len(source))
+	copy(result, source)
+	return result
 }
 
 type stubStatsSymptomReader struct {
-	frequencies []SymptomFrequency
-	symptoms    []models.SymptomType
-	err         error
+	frequencies        []SymptomFrequency
+	frequenciesByOwner map[uint][]SymptomFrequency
+	symptoms           []models.SymptomType
+	symptomsByOwner    map[uint][]models.SymptomType
+	err                error
+	gotFrequencyOwner  uint
+	gotSymptomOwner    uint
 }
 
-func (stub *stubStatsSymptomReader) CalculateFrequencies(context.Context, uint, []models.DailyLog) ([]SymptomFrequency, error) {
+func (stub *stubStatsSymptomReader) CalculateFrequencies(_ context.Context, userID uint, _ []models.DailyLog) ([]SymptomFrequency, error) {
+	stub.gotFrequencyOwner = userID
 	if stub.err != nil {
 		return nil, stub.err
 	}
-	result := make([]SymptomFrequency, len(stub.frequencies))
-	copy(result, stub.frequencies)
+	source := stub.frequencies
+	if stub.frequenciesByOwner != nil {
+		source = stub.frequenciesByOwner[userID]
+	}
+	result := make([]SymptomFrequency, len(source))
+	copy(result, source)
 	return result, nil
 }
 
-func (stub *stubStatsSymptomReader) FetchSymptoms(context.Context, uint) ([]models.SymptomType, error) {
+func (stub *stubStatsSymptomReader) FetchSymptoms(_ context.Context, userID uint) ([]models.SymptomType, error) {
+	stub.gotSymptomOwner = userID
 	if stub.err != nil {
 		return nil, stub.err
 	}
-	result := make([]models.SymptomType, len(stub.symptoms))
-	copy(result, stub.symptoms)
+	source := stub.symptoms
+	if stub.symptomsByOwner != nil {
+		source = stub.symptomsByOwner[userID]
+	}
+	result := make([]models.SymptomType, len(source))
+	copy(result, source)
 	return result, nil
 }
 

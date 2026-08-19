@@ -176,6 +176,18 @@ func periodStartLog(userID uint, day time.Time) models.DailyLog {
 	}
 }
 
+// completedCycleStartLogs returns the owner's current cycle start plus the
+// previous start exactly one 28-day cycle earlier. The ovulation reminder is
+// withheld until one cycle has been observed (FertilityProjectionSuppressed),
+// and a previous start one full cycle back observes the same 28 days the record
+// carries, so every projected date stays where the case pins it.
+func completedCycleStartLogs(userID uint, day time.Time) []models.DailyLog {
+	return []models.DailyLog{
+		periodStartLog(userID, day.AddDate(0, 0, -28)),
+		periodStartLog(userID, day),
+	}
+}
+
 // dueRecord returns a notify record for a regular 28-day owner whose last period
 // started lastPeriodDaysAgo before now, with webhook delivery on and the given
 // ciphertext-of-record URL token. With a 28-day cycle and lastPeriodDaysAgo=26,
@@ -917,7 +929,7 @@ func TestNotifyDeliversOvulationReminderCopy(t *testing.T) {
 	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
 	record := ovulationDueRecord(1, "https://a.example/hook", now)
 	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
-	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: completedCycleStartLogs(1, *record.LastPeriodStart)}}
 	deliverer := &stubDeliverer{}
 	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
 

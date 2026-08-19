@@ -162,8 +162,9 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// stats derivation (baseline + pregnancy-pause resolution) without a store.
 	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, logs, now, location)
 
-	// Medical-safety gate: if the app suppresses predictions, emit nothing.
-	if DashboardPredictionDisabled(user) || stats.PregnancyPaused || DashboardCycleOverdue(user, stats) {
+	// Medical-safety gate: if the app suppresses predictions, emit nothing. The
+	// three signals are read through the predicate every surface shares.
+	if PredictionsSuppressed(user, stats) {
 		return nil
 	}
 
@@ -177,8 +178,15 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	if due, ok := decidePeriodReminder(settings, prediction, today, leadDays); ok {
 		reminders = append(reminders, due)
 	}
-	if due, ok := decideOvulationReminder(stats, settings, prediction, today, cycleLength, leadDays); ok {
-		reminders = append(reminders, due)
+	// The ovulation reminder carries the extra first-cycle floor: before one
+	// cycle has been observed its date comes from the onboarding slider alone,
+	// and this pass sends it to an endpoint outside the instance
+	// (FertilityProjectionSuppressed). The period reminder keeps its own path —
+	// it is anchored on a recorded cycle start and rides the estimate flag.
+	if !FertilityProjectionSuppressed(user, stats) {
+		if due, ok := decideOvulationReminder(stats, settings, prediction, today, cycleLength, leadDays); ok {
+			reminders = append(reminders, due)
+		}
 	}
 
 	if len(reminders) == 0 {
