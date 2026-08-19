@@ -12,9 +12,13 @@ import (
 type stubSettingsViewLoader struct {
 	user models.User
 	err  error
+
+	// Captured userID argument — used to prove the read is owner-scoped.
+	settingsUserID uint
 }
 
-func (stub *stubSettingsViewLoader) LoadSettings(ctx context.Context, _ uint) (models.User, error) {
+func (stub *stubSettingsViewLoader) LoadSettings(ctx context.Context, userID uint) (models.User, error) {
+	stub.settingsUserID = userID
 	if stub.err != nil {
 		return models.User{}, stub.err
 	}
@@ -28,10 +32,15 @@ type stubSettingsViewExportBuilder struct {
 	called    bool
 	callIndex int
 	calls     []settingsViewSummaryCall
+
+	// Captured userID arguments, one per call — used to prove every summary
+	// read is owner-scoped, not just the first.
+	summaryUserIDs []uint
 }
 
-func (stub *stubSettingsViewExportBuilder) BuildSummary(ctx context.Context, _ uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error) {
+func (stub *stubSettingsViewExportBuilder) BuildSummary(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error) {
 	stub.called = true
+	stub.summaryUserIDs = append(stub.summaryUserIDs, userID)
 	stub.calls = append(stub.calls, newSettingsViewSummaryCall(from, to, location))
 	if stub.err != nil {
 		return ExportSummary{}, stub.err
@@ -69,10 +78,14 @@ type stubSettingsViewSymptomProvider struct {
 	symptoms []models.SymptomType
 	err      error
 	called   bool
+
+	// Captured userID argument — used to prove the read is owner-scoped.
+	symptomsUserID uint
 }
 
-func (stub *stubSettingsViewSymptomProvider) FetchSymptoms(ctx context.Context, _ uint) ([]models.SymptomType, error) {
+func (stub *stubSettingsViewSymptomProvider) FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error) {
 	stub.called = true
+	stub.symptomsUserID = userID
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -156,6 +169,52 @@ func TestBuildSettingsPageViewDataOwnerLoadsExportSummary(t *testing.T) {
 		summaryFromDisplay: "01.02.2026",
 		summaryToDisplay:   "21.02.2026",
 	})
+}
+
+// The settings page reads three separate stores for the acting owner: the
+// persisted settings row, the export summary and the custom symptom catalogue.
+// Each read must carry the authenticated owner's id, so this pins all three
+// operands against an owner id that is neither zero nor the first row's id —
+// a hard-coded owner would otherwise render one owner's health settings,
+// symptom catalogue or export summary to another.
+func TestBuildSettingsPageViewDataScopesEveryOwnerReadToTheAuthenticatedOwner(t *testing.T) {
+	settingsLoader := &stubSettingsViewLoader{
+		user: models.User{
+			CycleLength:    28,
+			PeriodLength:   5,
+			AutoPeriodFill: true,
+		},
+	}
+	exportBuilder := &stubSettingsViewExportBuilder{
+		responses: []ExportSummary{
+			{TotalEntries: 2, HasData: true, DateFrom: "2026-02-01", DateTo: "2026-02-21"},
+			{TotalEntries: 2, HasData: true, DateFrom: "2026-02-01", DateTo: "2026-02-21"},
+		},
+	}
+	symptomProvider := &stubSettingsViewSymptomProvider{
+		symptoms: []models.SymptomType{{ID: 2, Name: "Joint stiffness"}},
+	}
+	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil, nil)
+
+	owner := &models.User{ID: 4242, Role: models.RoleOwner}
+	if _, err := service.BuildSettingsPageViewData(context.Background(), owner, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); err != nil {
+		t.Fatalf("BuildSettingsPageViewData() unexpected error: %v", err)
+	}
+
+	if settingsLoader.settingsUserID != owner.ID {
+		t.Fatalf("expected settings read scoped to owner id %d, got %d", owner.ID, settingsLoader.settingsUserID)
+	}
+	if len(exportBuilder.summaryUserIDs) == 0 {
+		t.Fatalf("expected at least one export summary read for the owner")
+	}
+	for index, summaryUserID := range exportBuilder.summaryUserIDs {
+		if summaryUserID != owner.ID {
+			t.Fatalf("expected export summary read %d scoped to owner id %d, got %d", index, owner.ID, summaryUserID)
+		}
+	}
+	if symptomProvider.symptomsUserID != owner.ID {
+		t.Fatalf("expected symptom read scoped to owner id %d, got %d", owner.ID, symptomProvider.symptomsUserID)
+	}
 }
 
 func TestBuildSettingsPageViewDataOwnerClampsExportDefaultToRequestLocalToday(t *testing.T) {
