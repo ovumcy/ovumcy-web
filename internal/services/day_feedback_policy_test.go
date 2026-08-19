@@ -232,6 +232,9 @@ func TestAcknowledgeLongPeriodWarningPersistsCycleStart(t *testing.T) {
 	if got := users.settings.LongPeriodWarnedAt.Format("2006-01-02"); got != "2026-03-01" {
 		t.Fatalf("expected persisted warning date 2026-03-01, got %s", got)
 	}
+	// The written map is only half of the claim: the acknowledgement must land
+	// on the acting owner's row, never on another account's.
+	users.assertUserRepositoryCallsTargetOwner(t, 10)
 }
 
 func mustParseDayFeedbackDate(t *testing.T, raw string) time.Time {
