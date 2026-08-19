@@ -94,6 +94,35 @@ func (stub *stubSettingsViewSymptomProvider) FetchSymptoms(ctx context.Context, 
 	return result, nil
 }
 
+// stubSettingsViewWebhookStatusBuilder records the owner id the view forwards
+// into the webhook projection. The id is the AAD the ciphertext is bound to, so
+// a hard-coded one would silently report every owner's webhook unconfigured.
+type stubSettingsViewWebhookStatusBuilder struct {
+	display WebhookURLDisplay
+
+	// Captured userID argument — used to prove the read is owner-scoped.
+	webhookUserID uint
+}
+
+func (stub *stubSettingsViewWebhookStatusBuilder) BuildWebhookURLDisplay(userID uint, _ string) WebhookURLDisplay {
+	stub.webhookUserID = userID
+	return stub.display
+}
+
+// stubSettingsViewCalendarFeedStatusBuilder records the owner id the view
+// forwards into the .ics feed status, which reports whether a feed is armed.
+type stubSettingsViewCalendarFeedStatusBuilder struct {
+	status CalendarFeedStatus
+
+	// Captured userID argument — used to prove the read is owner-scoped.
+	feedUserID uint
+}
+
+func (stub *stubSettingsViewCalendarFeedStatusBuilder) BuildFeedStatus(ctx context.Context, userID uint) CalendarFeedStatus {
+	stub.feedUserID = userID
+	return stub.status
+}
+
 func TestBuildSettingsPageViewDataClassifiesChangePasswordError(t *testing.T) {
 	settingsLoader := &stubSettingsViewLoader{
 		user: models.User{
@@ -171,12 +200,14 @@ func TestBuildSettingsPageViewDataOwnerLoadsExportSummary(t *testing.T) {
 	})
 }
 
-// The settings page reads three separate stores for the acting owner: the
-// persisted settings row, the export summary and the custom symptom catalogue.
-// Each read must carry the authenticated owner's id, so this pins all three
-// operands against an owner id that is neither zero nor the first row's id —
-// a hard-coded owner would otherwise render one owner's health settings,
-// symptom catalogue or export summary to another.
+// The settings page reads five separate stores for the acting owner: the
+// persisted settings row, the export summary, the custom symptom catalogue, the
+// webhook URL projection and the .ics feed status. Each read must carry the
+// authenticated owner's id, so this pins every operand against a non-zero owner
+// id no fixture supplies by default — a hard-coded owner would otherwise render
+// one owner's health settings, symptom catalogue, export summary or feed state
+// to another. The two status builders are covered here rather than left nil
+// precisely because a nil collaborator returns early and observes nothing.
 func TestBuildSettingsPageViewDataScopesEveryOwnerReadToTheAuthenticatedOwner(t *testing.T) {
 	settingsLoader := &stubSettingsViewLoader{
 		user: models.User{
@@ -194,7 +225,13 @@ func TestBuildSettingsPageViewDataScopesEveryOwnerReadToTheAuthenticatedOwner(t 
 	symptomProvider := &stubSettingsViewSymptomProvider{
 		symptoms: []models.SymptomType{{ID: 2, Name: "Joint stiffness"}},
 	}
-	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, nil, nil)
+	webhookStatus := &stubSettingsViewWebhookStatusBuilder{
+		display: WebhookURLDisplay{Configured: true, Host: "hooks.example.test"},
+	}
+	calendarFeedStatus := &stubSettingsViewCalendarFeedStatusBuilder{
+		status: CalendarFeedStatus{Configured: true},
+	}
+	service := NewSettingsViewService(settingsLoader, exportBuilder, symptomProvider, webhookStatus, calendarFeedStatus)
 
 	owner := &models.User{ID: 4242, Role: models.RoleOwner}
 	if _, err := service.BuildSettingsPageViewData(context.Background(), owner, "en", SettingsViewInput{}, mustParseSettingsViewDay(t, "2026-02-21"), time.UTC); err != nil {
@@ -214,6 +251,12 @@ func TestBuildSettingsPageViewDataScopesEveryOwnerReadToTheAuthenticatedOwner(t 
 	}
 	if symptomProvider.symptomsUserID != owner.ID {
 		t.Fatalf("expected symptom read scoped to owner id %d, got %d", owner.ID, symptomProvider.symptomsUserID)
+	}
+	if webhookStatus.webhookUserID != owner.ID {
+		t.Fatalf("expected webhook projection scoped to owner id %d, got %d", owner.ID, webhookStatus.webhookUserID)
+	}
+	if calendarFeedStatus.feedUserID != owner.ID {
+		t.Fatalf("expected calendar feed status scoped to owner id %d, got %d", owner.ID, calendarFeedStatus.feedUserID)
 	}
 }
 
