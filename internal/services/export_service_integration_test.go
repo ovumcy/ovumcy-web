@@ -80,25 +80,29 @@ func TestExportServiceLoadDataForRangeFiltersInclusiveBoundariesPostgres(t *test
 	assertExportServiceLoadDataForRangeFiltersInclusiveBoundaries(t, newDayServicePostgresIntegration, "export-range-data-service-postgres@example.com")
 }
 
-// TestExportServiceScopesRangeExportToRequestingOwner pins the owner-isolation
+// assertExportServiceScopesRangeExportToRequestingOwner pins the owner-isolation
 // invariant on the export read path against a database that holds two independent
 // owners (household self-hosting). Owner B is created first, so B holds the lowest
 // user id: an export that read a constant owner instead of the requesting one
 // returns B's days and B's symptom catalog here, and every assertion below fails.
 // The boundary itself is docs/SECURITY_INVARIANTS.md — no surface may expose
-// another account's data.
-func TestExportServiceScopesRangeExportToRequestingOwner(t *testing.T) {
-	dayService, database := newDayServiceIntegration(t)
+// another account's data. Both dialects run it: the daily-log read carries the
+// owner predicate into SQL, and this repository maintains a separate Postgres
+// migration set, so a divergence there is exactly the leak this case exists for.
+func assertExportServiceScopesRangeExportToRequestingOwner(t *testing.T, setup func(*testing.T) (*DayService, *gorm.DB), emailA string, emailB string) {
+	t.Helper()
+
+	dayService, database := setup(t)
 	repositories := db.NewRepositories(database)
 	symptomService := NewSymptomService(repositories.Symptoms)
 	exportService := NewExportService(dayService, symptomService)
 
-	ownerB := createDayServiceTestUser(t, database, "export-idor-b@example.com")
+	ownerB := createDayServiceTestUser(t, database, emailB)
 	bSymptom, err := symptomService.CreateSymptomForUser(context.Background(), ownerB.ID, "Owner B Only", "", "")
 	if err != nil {
 		t.Fatalf("seed owner B symptom: %v", err)
 	}
-	ownerA := createDayServiceTestUser(t, database, "export-idor-a@example.com")
+	ownerA := createDayServiceTestUser(t, database, emailA)
 	aSymptom, err := symptomService.CreateSymptomForUser(context.Background(), ownerA.ID, "Owner A Only", "", "")
 	if err != nil {
 		t.Fatalf("seed owner A symptom: %v", err)
@@ -187,6 +191,24 @@ func TestExportServiceScopesRangeExportToRequestingOwner(t *testing.T) {
 	if symptomNamesB[bSymptom.ID] != "Owner B Only" {
 		t.Fatalf("expected owner B's own symptom name in B's export, got %q", symptomNamesB[bSymptom.ID])
 	}
+}
+
+func TestExportServiceScopesRangeExportToRequestingOwner(t *testing.T) {
+	assertExportServiceScopesRangeExportToRequestingOwner(
+		t,
+		newDayServiceIntegration,
+		"export-idor-a@example.com",
+		"export-idor-b@example.com",
+	)
+}
+
+func TestExportServiceScopesRangeExportToRequestingOwnerPostgres(t *testing.T) {
+	assertExportServiceScopesRangeExportToRequestingOwner(
+		t,
+		newDayServicePostgresIntegration,
+		"export-idor-a-postgres@example.com",
+		"export-idor-b-postgres@example.com",
+	)
 }
 
 func TestExportServiceBuildSummaryForRangeFiltersInclusiveBoundaries(t *testing.T) {

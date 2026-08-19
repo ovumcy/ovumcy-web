@@ -10,5 +10,7 @@ so a run that reached one of them fewer times than expected fails instead of rep
 "no mismatch found". Alongside it, an integration case seeds two independent owners on
 one database, exports as the later-created owner and asserts that neither the other
 owner's day rows nor the other owner's symptom names appear, while each owner still
-exports their own data. No behaviour changes; the read path already carried the owner
+exports their own data; like the range-boundary assertions beside it, it runs on both
+SQLite and Postgres, since the owner predicate reaches SQL through a separate migration
+set per dialect. No behaviour changes; the read path already carried the owner
 correctly.
