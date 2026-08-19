@@ -26,6 +26,9 @@ func TestResolveDayFeedbackUsesSelfCareMessageForEarlyPeriodDays(t *testing.T) {
 	}
 }
 
+// The positive anchor for the suppression below: one COMPLETED cycle (two
+// observed starts) makes the fertility window an observation of this account,
+// and the fertile save message renders.
 func TestResolveDayFeedbackUsesFertileMessageDuringFertilityWindow(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	users := &dayUserRepositoryStub{}
@@ -40,6 +43,57 @@ func TestResolveDayFeedbackUsesFertileMessageDuringFertilityWindow(t *testing.T)
 	}
 	if state.MessageKey != daySaveMessageFertile {
 		t.Fatalf("expected fertile message, got %q", state.MessageKey)
+	}
+}
+
+// TestResolveDayFeedbackWithholdsTheFertileMessageBeforeTheFirstCompletedCycle
+// pins the medical-safety floor for the day-save message: with a single logged
+// period start the account has completed no cycle, so cycleLengths returns
+// nothing, the median and the average stay 0, and predictedCycleLength falls
+// through to models.DefaultCycleLength. The fertility window that comes out is
+// that default projected forward with the default luteal phase — configuration,
+// not observation. Display confidence follows data confidence there:
+// suppression is the floor and a qualifier is not enough
+// (docs/SECURITY_INVARIANTS.md → medical safety), so the save message drops
+// back to the neutral one.
+func TestResolveDayFeedbackWithholdsTheFertileMessageBeforeTheFirstCompletedCycle(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	users := &dayUserRepositoryStub{}
+	service := NewDayService(logs, users)
+
+	firstStart := mustParseDayFeedbackDate(t, "2026-03-01")
+	seeded := make([]models.DailyLog, 0, 4)
+	for offset := range 4 {
+		day := firstStart.AddDate(0, 0, offset)
+		entry := models.DailyLog{UserID: 10, Date: day, IsPeriod: true}
+		logs.entries[day.Format("2006-01-02")] = entry
+		seeded = append(seeded, entry)
+	}
+
+	// The precondition this guard rests on, asserted rather than assumed: no
+	// completed cycle, and the requested day genuinely inside the projected
+	// window — otherwise the test could go green on a window that moved.
+	day := mustParseDayFeedbackDate(t, "2026-03-12")
+	stats := BuildCycleStats(seeded, day)
+	if stats.CompletedCycleCount != 0 {
+		t.Fatalf("expected zero completed cycles from one logged period start, got %d", stats.CompletedCycleCount)
+	}
+	if stats.FertilityWindowStart.IsZero() || day.Before(stats.FertilityWindowStart) || day.After(stats.FertilityWindowEnd) {
+		t.Fatalf("expected %s inside the projected fertility window %s..%s",
+			day.Format("2006-01-02"),
+			stats.FertilityWindowStart.Format("2006-01-02"),
+			stats.FertilityWindowEnd.Format("2006-01-02"))
+	}
+
+	state, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10}, day, day, time.UTC)
+	if err != nil {
+		t.Fatalf("ResolveDayFeedback() unexpected error: %v", err)
+	}
+	if state.MessageKey == daySaveMessageFertile {
+		t.Fatal("expected no fertile claim on a window derived only from configuration defaults")
+	}
+	if state.MessageKey != daySaveMessageNeutral {
+		t.Fatalf("expected the neutral save message before the first completed cycle, got %q", state.MessageKey)
 	}
 }
 

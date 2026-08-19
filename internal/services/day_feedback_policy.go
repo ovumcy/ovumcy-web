@@ -100,7 +100,20 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 			return daySaveMessageSelfCare
 		}
 	}
-	if !stats.FertilityWindowStart.IsZero() && !day.Before(stats.FertilityWindowStart) && !day.After(stats.FertilityWindowEnd) {
+	// The fertile line is a claim about right now, so it may only be made from
+	// something the account recorded. Until the first cycle closes
+	// (DashboardAwaitingFirstCycle, the same tier the dashboard withholds its
+	// fertility surfaces at) there are no observed cycle lengths, so
+	// predictedCycleLength falls through to models.DefaultCycleLength and the
+	// window is that default projected forward with the default luteal phase.
+	// Display confidence follows data confidence: where the only source is
+	// configuration defaults, suppression is the floor and a qualifier is not
+	// enough (docs/SECURITY_INVARIANTS.md -> medical safety), so the save falls
+	// back to the neutral message rather than softening the fertile one.
+	if !DashboardAwaitingFirstCycle(stats) &&
+		!stats.FertilityWindowStart.IsZero() &&
+		!day.Before(stats.FertilityWindowStart) &&
+		!day.After(stats.FertilityWindowEnd) {
 		return daySaveMessageFertile
 	}
 	return daySaveMessageNeutral
