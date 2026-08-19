@@ -27,7 +27,9 @@
 - The three suppression signals every projected surface shares (`PredictionsSuppressed`) and the
   first-cycle fertility floor on top of them (`FertilityProjectionSuppressed`) live in one place
   each, instead of being written out once per surface — which is how the floor came to be missing
-  from four of them without a failing test.
+  from four of them without a failing test. Surfaces built from the dashboard cycle context read the
+  decision that context already resolved rather than recombining the signals for themselves, so a
+  future disjunct reaches all of them at once.
 - The stats service doubles now record the owner id of all four owner-scoped reads (ranged logs, all
   logs, frequency calculation, symptom catalogue) and can serve different data per owner. A
   two-owner stats render pins each seam: every one of the four could previously have been re-pointed

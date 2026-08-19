@@ -18,6 +18,14 @@ import (
 //
 // AwaitingFirstCycle reports the earliest data tier — no completed cycle yet —
 // which decides how much detail the header may show (DashboardAwaitingFirstCycle).
+//
+// FertilitySuppressed is that policy already applied, resolved once here from
+// FertilityProjectionSuppressed(user, stats) — the same predicate the calendar
+// grid, the .ics feed and the webhook pass call. Surfaces built from this
+// context read the field rather than recombining AwaitingFirstCycle with the
+// suppression signals themselves: a floor re-derived per surface diverges the
+// moment the shared predicate gains a disjunct or is narrowed to let a recorded
+// observation through.
 type DashboardCycleContext struct {
 	CycleDayReference           int
 	CycleDayWarning             bool
@@ -41,6 +49,7 @@ type DashboardCycleContext struct {
 	DisplayOvulationImpossible  bool
 	NextPeriodEstimatePaused    bool
 	AwaitingFirstCycle          bool
+	FertilitySuppressed         bool
 	NextPeriodInPast            bool
 	OvulationInPast             bool
 }
@@ -319,21 +328,27 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 	// reported "not awaiting" merely because predictions are off would disable
 	// the gate for exactly the accounts with the least data.
 	awaitingFirstCycle := DashboardAwaitingFirstCycle(stats)
+	// Resolved beside the tier and carried by every branch below, for the same
+	// reason: a context that answered "not suppressed" on a suppression branch
+	// would hand the banner the very rule it is meant to be gated by.
+	fertilitySuppressed := FertilityProjectionSuppressed(user, stats)
 	if stats.PregnancyPaused {
 		return DashboardCycleContext{
-			CycleDayReference:  DashboardCycleReferenceLength(user, stats),
-			PredictionDisabled: true,
-			PregnancyPaused:    true,
-			AwaitingFirstCycle: awaitingFirstCycle,
+			CycleDayReference:   DashboardCycleReferenceLength(user, stats),
+			PredictionDisabled:  true,
+			PregnancyPaused:     true,
+			AwaitingFirstCycle:  awaitingFirstCycle,
+			FertilitySuppressed: fertilitySuppressed,
 		}
 	}
 	if DashboardPredictionDisabled(user) {
 		return DashboardCycleContext{
-			CycleDayReference:  DashboardCycleReferenceLength(user, stats),
-			CycleDayWarning:    false,
-			CycleDataStale:     false,
-			PredictionDisabled: true,
-			AwaitingFirstCycle: awaitingFirstCycle,
+			CycleDayReference:   DashboardCycleReferenceLength(user, stats),
+			CycleDayWarning:     false,
+			CycleDataStale:      false,
+			PredictionDisabled:  true,
+			AwaitingFirstCycle:  awaitingFirstCycle,
+			FertilitySuppressed: fertilitySuppressed,
 		}
 	}
 
@@ -365,6 +380,7 @@ func BuildDashboardCycleContext(user *models.User, stats CycleStats, today time.
 		DisplayOvulationImpossible:  display.ovulationImpossible,
 		NextPeriodEstimatePaused:    display.estimatePaused,
 		AwaitingFirstCycle:          awaitingFirstCycle,
+		FertilitySuppressed:         fertilitySuppressed,
 		NextPeriodInPast:            dashboardNextPeriodInPast(display, today),
 		OvulationInPast:             dashboardOvulationInPast(display, today),
 	}
