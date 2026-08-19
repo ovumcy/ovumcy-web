@@ -29,9 +29,13 @@ type stubDashboardViewerProvider struct {
 	logEntry models.DailyLog
 	symptoms []models.SymptomType
 	err      error
+
+	// Captured user arguments — used to prove reads carry the session owner.
+	viewerUsers []*models.User
 }
 
-func (stub *stubDashboardViewerProvider) FetchDayLogForViewer(ctx context.Context, _ *models.User, _ time.Time, _ *time.Location) (models.DailyLog, []models.SymptomType, error) {
+func (stub *stubDashboardViewerProvider) FetchDayLogForViewer(ctx context.Context, user *models.User, _ time.Time, _ *time.Location) (models.DailyLog, []models.SymptomType, error) {
+	stub.viewerUsers = append(stub.viewerUsers, user)
 	if stub.err != nil {
 		return models.DailyLog{}, nil, stub.err
 	}
@@ -44,16 +48,22 @@ type stubDashboardDayStateProvider struct {
 	hasData bool
 	err     error
 	logs    []models.DailyLog
+
+	// Captured userID arguments — used to prove reads are owner-scoped.
+	dayStateUserIDs []uint
+	allLogsUserIDs  []uint
 }
 
-func (stub *stubDashboardDayStateProvider) DayHasDataForDate(ctx context.Context, _ uint, _ time.Time, _ *time.Location) (bool, error) {
+func (stub *stubDashboardDayStateProvider) DayHasDataForDate(ctx context.Context, userID uint, _ time.Time, _ *time.Location) (bool, error) {
+	stub.dayStateUserIDs = append(stub.dayStateUserIDs, userID)
 	if stub.err != nil {
 		return false, stub.err
 	}
 	return stub.hasData, nil
 }
 
-func (stub *stubDashboardDayStateProvider) FetchAllLogsForUser(ctx context.Context, _ uint) ([]models.DailyLog, error) {
+func (stub *stubDashboardDayStateProvider) FetchAllLogsForUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
+	stub.allLogsUserIDs = append(stub.allLogsUserIDs, userID)
 	if stub.err != nil {
 		return nil, stub.err
 	}
@@ -338,6 +348,73 @@ func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 	)
 	if _, err := dayLogErrService.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC); !errors.Is(err, ErrDashboardViewLoadDayLog) {
 		t.Fatalf("expected ErrDashboardViewLoadDayLog, got %v", err)
+	}
+}
+
+// TestDashboardViewProvidersReadOnlyTheSessionOwner pins owner propagation on
+// the dashboard's whole read path. Every provider call these two builders make
+// reads special-category health data, so each must carry the acting session
+// owner and nothing else: the viewer fetch takes the user itself, the day-state
+// reads take its id. The stubs record what they were handed, and the account id
+// is deliberately not 1 — an unscoped or hard-coded read would otherwise agree
+// with the fixture by accident. Each provider is asserted to have been reached
+// at least once, so a run that recorded nothing fails here instead of passing
+// as "no mismatch found".
+func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
+	const sessionOwnerID uint = 4242
+
+	user := &models.User{ID: sessionOwnerID, Role: models.RoleOwner, CycleLength: 28}
+	now := mustParseDashboardServiceDay(t, "2026-02-21")
+	day := mustParseDashboardServiceDay(t, "2026-02-20")
+
+	viewer := &stubDashboardViewerProvider{
+		logEntry: models.DailyLog{Date: now, Notes: "owner-note"},
+		symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
+	}
+	days := &stubDashboardDayStateProvider{
+		hasData: true,
+		logs: []models.DailyLog{
+			{Date: mustParseDashboardServiceDay(t, "2026-02-01"), IsPeriod: true, CycleStart: true},
+			{Date: now, IsPeriod: true},
+		},
+	}
+	service := NewDashboardViewService(&stubDashboardStatsProvider{}, viewer, days)
+
+	if _, err := service.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
+		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	}
+	if _, err := service.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC); err != nil {
+		t.Fatalf("BuildDayEditorViewData() unexpected error: %v", err)
+	}
+
+	if len(viewer.viewerUsers) == 0 {
+		t.Fatal("expected the viewer provider to be reached; it recorded no call")
+	}
+	for index, captured := range viewer.viewerUsers {
+		if captured == nil {
+			t.Fatalf("viewer call %d received no user at all", index)
+		}
+		if captured.ID != sessionOwnerID {
+			t.Fatalf("viewer call %d read owner id %d, want the session owner %d", index, captured.ID, sessionOwnerID)
+		}
+	}
+
+	if len(days.dayStateUserIDs) == 0 {
+		t.Fatal("expected the day-state provider to be reached; it recorded no DayHasDataForDate call")
+	}
+	for index, capturedID := range days.dayStateUserIDs {
+		if capturedID != sessionOwnerID {
+			t.Fatalf("DayHasDataForDate call %d read owner id %d, want the session owner %d", index, capturedID, sessionOwnerID)
+		}
+	}
+
+	if len(days.allLogsUserIDs) == 0 {
+		t.Fatal("expected the day-state provider to be reached; it recorded no FetchAllLogsForUser call")
+	}
+	for index, capturedID := range days.allLogsUserIDs {
+		if capturedID != sessionOwnerID {
+			t.Fatalf("FetchAllLogsForUser call %d read owner id %d, want the session owner %d", index, capturedID, sessionOwnerID)
+		}
 	}
 }
 
