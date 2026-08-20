@@ -25,10 +25,14 @@ type stubOnboardingRepo struct {
 	completeAutoFill  bool
 	// The four ids below record which owner each call was scoped to. The stub
 	// serves a single embedded user, so no other assertion in this file can
-	// observe the service resolving or writing the wrong account.
+	// observe the service resolving or writing the wrong account. Every method
+	// records — including the ones no test drives yet, so a case written
+	// against this stub later is instrumented by default rather than blind
+	// while looking instrumented.
 	findUserID     uint
 	step1UserID    uint
 	step1Start     time.Time
+	step2UserID    uint
 	completeUserID uint
 }
 
@@ -46,7 +50,8 @@ func (stub *stubOnboardingRepo) SaveOnboardingStep1(_ context.Context, userID ui
 	return nil
 }
 
-func (stub *stubOnboardingRepo) SaveOnboardingStep2(context.Context, uint, int, int, bool, bool, string) error {
+func (stub *stubOnboardingRepo) SaveOnboardingStep2(_ context.Context, userID uint, _ int, _ int, _ bool, _ bool, _ string) error {
+	stub.step2UserID = userID
 	return nil
 }
 

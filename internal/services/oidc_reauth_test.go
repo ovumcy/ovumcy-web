@@ -99,6 +99,19 @@ func TestOIDCLoginServiceValidateReauthExchangeHappyFreshAuthTime(t *testing.T) 
 	if err := service.ValidateReauthExchange(context.Background(), "code", "verifier", "nonce", 5, 5*time.Minute, now); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
+	// The step-up identity must be resolved by the FULL (issuer, subject) pair.
+	// The owner comparison below it (identity.UserID != expectedUserID) only
+	// ever sees whatever row the lookup returned, so a lookup that dropped the
+	// issuer — resolving by subject alone, and so matching a same-subject
+	// account at a different provider — passes every other case in this file,
+	// UserIDMismatch included. This is the primitive that gates erasure re-auth
+	// for an account with no local password, so the key is pinned here.
+	if identities.lastIssuer != "https://id.example.com" {
+		t.Fatalf("expected the step-up identity to be resolved by issuer %q, got %q", "https://id.example.com", identities.lastIssuer)
+	}
+	if identities.lastSubject != "sub-1" {
+		t.Fatalf("expected the step-up identity to be resolved by subject %q, got %q", "sub-1", identities.lastSubject)
+	}
 	if identities.touchedID != 10 {
 		t.Fatalf("expected TouchLastUsed for identity 10, got %d", identities.touchedID)
 	}

@@ -12,19 +12,23 @@ type onboardingserviceCovStep2Repo struct {
 	stubOnboardingRepo
 	saveStep2Err    error
 	saveStep2Called bool
-	// savedUserID records which owner the step-2 write was scoped to; the
-	// cycle/period values below are the same for every account and cannot
-	// distinguish one owner's baseline from another's.
-	savedUserID uint
-	savedCycle  int
-	savedPeriod int
+	savedCycle      int
+	savedPeriod     int
 }
 
+// SaveOnboardingStep2 overrides the embedded stub only to inject an error and
+// to capture the sanitized cycle/period values. The owner id keeps being
+// recorded in the embedded stub's step2UserID, so both stubs report it the same
+// way and neither can drift into ignoring it — the cycle/period values are the
+// same for every account and cannot distinguish one owner's baseline from
+// another's.
 func (s *onboardingserviceCovStep2Repo) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error {
 	s.saveStep2Called = true
-	s.savedUserID = userID
 	s.savedCycle = cycleLength
 	s.savedPeriod = periodLength
+	if err := s.stubOnboardingRepo.SaveOnboardingStep2(ctx, userID, cycleLength, periodLength, autoPeriodFill, irregularCycle, usageGoal); err != nil {
+		return err // codecov:ignore -- the embedded stub never errors; forwarded for shape
+	}
 	return s.saveStep2Err
 }
 
@@ -52,8 +56,8 @@ func TestOnboardingServiceSaveStep2ReturnsSanitizedValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveStep2 unexpected error: %v", err)
 	}
-	if repo.savedUserID != onboardingFixtureUserID {
-		t.Fatalf("SaveStep2 owner: got %d, want %d", repo.savedUserID, onboardingFixtureUserID)
+	if repo.step2UserID != onboardingFixtureUserID {
+		t.Fatalf("SaveStep2 owner: got %d, want %d", repo.step2UserID, onboardingFixtureUserID)
 	}
 	if gotCycle != 90 {
 		t.Fatalf("SaveStep2 cycle: got %d, want 90", gotCycle)
@@ -339,8 +343,8 @@ func TestOnboardingServiceSaveStep2SanitizesBeforePersist(t *testing.T) {
 	if !repo.saveStep2Called {
 		t.Fatal("expected SaveOnboardingStep2 to be called")
 	}
-	if repo.savedUserID != 7 {
-		t.Fatalf("SaveStep2 owner: got %d, want 7", repo.savedUserID)
+	if repo.step2UserID != 7 {
+		t.Fatalf("SaveStep2 owner: got %d, want 7", repo.step2UserID)
 	}
 	if repo.savedCycle != 15 || repo.savedPeriod != 5 {
 		t.Fatalf("repo received cycle=%d period=%d, want 15/5", repo.savedCycle, repo.savedPeriod)
