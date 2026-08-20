@@ -131,6 +131,24 @@ func TestSanitizeCurrentPathQuery(t *testing.T) {
 			raw:  "/privacy?back=%2Fcalendar%3Fmonth%3D2026-08",
 			want: "/privacy?back=%2Fcalendar%3Fmonth%3D2026-08",
 		},
+		// Each shape's reject branch, walked by a value a reader can justify
+		// rather than by one chosen to touch a line.
+		{name: "a full date is not a month anchor", raw: "/calendar?month=2026-08-14", want: "/calendar"},
+		{name: "a bare year is not a month anchor", raw: "/calendar?month=2026", want: "/calendar"},
+		{name: "an impossible day is refused though its shape is right", raw: "/calendar?day=2026-02-31", want: "/calendar"},
+		{name: "a month anchor is not a day", raw: "/calendar?selected=2026-08", want: "/calendar"},
+		{name: "edit=0 is outside the truthy set", raw: "/calendar?edit=0", want: "/calendar"},
+		{name: "edit=maybe is outside the truthy set", raw: "/calendar?edit=maybe", want: "/calendar"},
+		{name: "step=0 is below the reachable range", raw: "/onboarding?step=0", want: "/onboarding"},
+		{name: "a negative step is refused", raw: "/onboarding?step=-1", want: "/onboarding"},
+		{name: "a non-numeric step is refused", raw: "/onboarding?step=two", want: "/onboarding"},
+		// isLocalRoutePathShape's own reject branches: a character no registered
+		// route can contain, and the empty path half.
+		{name: "a back path with a space is not a route", raw: "/privacy?back=%2Fcalendar%20day", want: "/privacy"},
+		{name: "a back path with a route-template colon is refused", raw: "/privacy?back=%2Fcalendar%2Fday%2F%3Adate", want: "/privacy"},
+		{name: "an empty back value is dropped", raw: "/privacy?back=", want: "/privacy"},
+		// Case-insensitive truthy spellings still survive, as ParseBoolLike reads them.
+		{name: "edit=TRUE survives", raw: "/calendar?edit=TRUE", want: "/calendar?edit=TRUE"},
 	}
 
 	for _, testCase := range tests {
@@ -150,12 +168,53 @@ func TestSanitizeCurrentPathQuery(t *testing.T) {
 func TestSanitizeCurrentPathQueryIsDeterministic(t *testing.T) {
 	t.Parallel()
 
-	raw := "/calendar?selected=2026-02-17&month=2026-02&edit=1&day=2026-02-17"
-	first := SanitizeCurrentPathQuery(raw)
+	// Comparing each result to the FIRST one would be satisfied by the identity
+	// function, so the expected bytes are written out: the parameters arrive in
+	// one order and must always be emitted in another, sorted one. Go randomizes
+	// map iteration per range statement, so repeating the call is what turns an
+	// unsorted implementation from flaky into reliably red.
+	const raw = "/calendar?selected=2026-02-17&month=2026-02&edit=1&day=2026-02-17"
+	const want = "/calendar?day=2026-02-17&edit=1&month=2026-02&selected=2026-02-17"
 
-	for range 32 {
-		if got := SanitizeCurrentPathQuery(raw); got != first {
-			t.Fatalf("SanitizeCurrentPathQuery(%q) is not deterministic: %q then %q", raw, first, got)
+	for attempt := range 64 {
+		if got := SanitizeCurrentPathQuery(raw); got != want {
+			t.Fatalf("attempt %d: SanitizeCurrentPathQuery(%q) = %q, want %q", attempt, raw, got, want)
 		}
+	}
+}
+
+// TestEveryValueMatchesShapeRefusesAMissingShape pins the fail-closed guard for
+// a shape that is absent rather than unsatisfied. Nothing in
+// currentPathQueryShapes is nil today, so the state is constructed here
+// directly instead of being reached through a request — the guard exists for a
+// later edit that adds a key and forgets its shape, where calling the nil func
+// would panic on a request path rather than dropping the parameter.
+func TestEveryValueMatchesShapeRefusesAMissingShape(t *testing.T) {
+	t.Parallel()
+
+	if everyValueMatchesShape([]string{"2026-02"}, nil) {
+		t.Fatal("expected a missing shape to refuse the value, not accept it")
+	}
+	if everyValueMatchesShape(nil, nil) {
+		t.Fatal("expected a missing shape to refuse even an empty value list")
+	}
+}
+
+// TestCurrentPathQueryShapesHasNoMissingShape is the companion anchor: it proves
+// the guard above is defending an invariant that currently holds, so a nil entry
+// added later is caught here as well as absorbed there.
+func TestCurrentPathQueryShapesHasNoMissingShape(t *testing.T) {
+	t.Parallel()
+
+	if len(currentPathQueryShapes) == 0 {
+		t.Fatal("expected the shape map to be populated")
+	}
+	for key, matchesShape := range currentPathQueryShapes {
+		if matchesShape == nil {
+			t.Fatalf("query parameter %q is allowlisted with no shape to check its value against", key)
+		}
+	}
+	if _, present := currentPathQueryShapes[currentPathBackParameter]; present {
+		t.Fatal("back must not sit in the shape map: its policy rewrites the value rather than judging it")
 	}
 }

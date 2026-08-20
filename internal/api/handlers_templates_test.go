@@ -80,13 +80,28 @@ func TestWithTemplateDefaultsFillsMissingDefaults(t *testing.T) {
 		t.Fatalf("expected default language en, got %v", data["Lang"])
 	}
 	if data["CurrentPath"] != "/calendar?month=2026-02" {
-		t.Fatalf("expected request path captured, got %v", data["CurrentPath"])
+		t.Fatalf("expected request path captured with its allowlisted query, got %v", data["CurrentPath"])
 	}
 	if data["AssetVersion"] != "testver" {
 		t.Fatalf("expected asset version threaded, got %v", data["AssetVersion"])
 	}
 	if data["NoDataLabel"] != "-" {
 		t.Fatalf("expected NoDataLabel to fall back to '-', got %v", data["NoDataLabel"])
+	}
+}
+
+// TestWithTemplateDefaultsTruncatesANonAllowlistedQuery pins, at the seam that
+// actually feeds the templates, that a parameter no page reads does not reach
+// CurrentPath. `window` is such a parameter: nothing calls c.Query("window"), so
+// /stats renders identically without it, and the address the layout echoes into
+// every page must not carry it.
+func TestWithTemplateDefaultsTruncatesANonAllowlistedQuery(t *testing.T) {
+	t.Parallel()
+
+	data := withTemplateDefaultsForTest(t, "/stats?window=90", fiber.Map{})
+
+	if data["CurrentPath"] != "/stats" {
+		t.Fatalf("expected the non-allowlisted query truncated to /stats, got %v", data["CurrentPath"])
 	}
 }
 

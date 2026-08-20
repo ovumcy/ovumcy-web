@@ -44,7 +44,13 @@ func SanitizeRedirectPath(raw string, fallback string) string {
 // would. So a retained value must also match what its consumer accepts, and a
 // parameter whose value does not match is dropped rather than trimmed — the
 // same fail-closed direction the rest of this function takes.
-var currentPathQueryAllowlist = map[string]func(string) bool{
+// `back` is deliberately NOT a member: its policy is not a predicate over a
+// value but a rewrite of it (fragment stripped, own query filtered, path
+// re-checked), so it is allowlisted by its own branch in
+// sanitizeCurrentPathQuery and decided by SanitizeBackNavigationValue. Holding
+// a nil entry for it here instead made this map claim to answer a question it
+// cannot, and left an unreachable nil check standing at the point of use.
+var currentPathQueryShapes = map[string]func(string) bool{
 	// parseCalendarMonthQuery: time.Parse("2006-01") on the trimmed value.
 	"month": isCalendarMonthQueryShape,
 	// parseCalendarDayParam -> ParseDayDate: time.Parse("2006-01-02") on the
@@ -56,10 +62,6 @@ var currentPathQueryAllowlist = map[string]func(string) bool{
 	"edit": isBoolLikeQueryShape,
 	// ResolveOnboardingStep: Atoi then clamped to 1..2.
 	"step": isOnboardingStepQueryShape,
-	// A local in-app path. Validated structurally rather than by this
-	// predicate, because it also needs the nested query filter; see
-	// sanitizeNestedBackValues.
-	"back": nil,
 }
 
 const currentPathBackParameter = "back"
@@ -184,10 +186,8 @@ func sanitizeCurrentPathQuery(rawURI string, allowBack bool) (string, bool) {
 
 	retained := url.Values{}
 	for key, parameterValues := range values {
-		matchesShape, allowed := currentPathQueryAllowlist[key]
-		if !allowed {
-			continue
-		}
+		// `back` is allowlisted here rather than through the shape map: its
+		// decision rewrites the value instead of judging it.
 		if key == currentPathBackParameter {
 			if !allowBack {
 				continue
@@ -197,6 +197,10 @@ func sanitizeCurrentPathQuery(rawURI string, allowBack bool) (string, bool) {
 				continue
 			}
 			retained[key] = nested
+			continue
+		}
+		matchesShape, allowed := currentPathQueryShapes[key]
+		if !allowed {
 			continue
 		}
 		if !everyValueMatchesShape(parameterValues, matchesShape) {
@@ -214,6 +218,12 @@ func sanitizeCurrentPathQuery(rawURI string, allowBack bool) (string, bool) {
 // everyValueMatchesShape drops a repeated parameter as a whole as soon as one of
 // its occurrences fails the shape: keeping the good half of a crafted pair would
 // leave the caller in control of which one survives.
+// A nil shape is not reachable from currentPathQueryShapes as it stands, and is
+// refused rather than dereferenced anyway: calling a nil func would panic, so a
+// future entry added to the map without its shape must degrade to "drop the
+// parameter" instead of taking down the request. Pinned by
+// TestEveryValueMatchesShapeRefusesAMissingShape, which constructs that state
+// directly rather than claiming it occurs today.
 func everyValueMatchesShape(parameterValues []string, matchesShape func(string) bool) bool {
 	if matchesShape == nil {
 		return false
@@ -264,7 +274,11 @@ func SanitizeBackNavigationValue(value string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if nested == "" || SanitizeRedirectPath(nested, "") != nested {
+	// Emptiness is not tested separately here: SanitizeRedirectPath returns the
+	// empty fallback for an empty candidate, so an empty value reaches
+	// isLocalRoutePathShape, which is the one place that decides whether a path
+	// can name a route. Two places answering that left the shared one unreached.
+	if SanitizeRedirectPath(nested, "") != nested {
 		return "", false
 	}
 	nestedPath, _, _ := strings.Cut(nested, "?")
