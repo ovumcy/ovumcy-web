@@ -90,6 +90,32 @@ func TestUserRepositoryRefusesAnAccountWithARoleTheProductDoesNotHave(t *testing
 	}
 }
 
+// TestUserRepositoryRefusesAnAbsentAccountAtTheRoleCheck covers the one input
+// that carries no role to inspect at all.
+//
+// A nil account is invalid input, never a reason to skip the comparison: the
+// role check reads a field off the value it is handed, so an implementation
+// that let nil through would not fall back to some safe default — it would
+// panic inside the repository, on the path that creates accounts. Refusing it
+// with the same error as an unsupported role keeps the guard total over its
+// input, and the callers below prove the refusal still happens before the
+// write.
+func TestUserRepositoryRefusesAnAbsentAccountAtTheRoleCheck(t *testing.T) {
+	for _, writer := range userCreatingRepositoryMethods() {
+		t.Run(writer.Name, func(t *testing.T) {
+			database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "absent-account.db"))
+			repository := NewUserRepository(database)
+
+			err := writer.Create(context.Background(), repository, nil)
+
+			if !errors.Is(err, ErrUnsupportedUserRole) {
+				t.Fatalf("%s(nil) error = %v, want ErrUnsupportedUserRole", writer.Name, err)
+			}
+			assertNoUserRowsStored(t, database)
+		})
+	}
+}
+
 // userCreatingRepositoryMethod names one repository entry point that writes a
 // role into users, so the cases above run against every one of them rather than
 // against whichever came to mind.
