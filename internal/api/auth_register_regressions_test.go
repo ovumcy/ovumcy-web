@@ -1,12 +1,15 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestRegisterValidationErrorRedirectDoesNotLeakEmailOrErrorInQuery(t *testing.T) {
@@ -91,10 +94,20 @@ func TestRegisterResponseParityBetweenNewAndDuplicateEmail(t *testing.T) {
 		t.Fatalf("Location header mismatch: new=%q duplicate=%q", newLoc, dupLoc)
 	}
 
+	// Byte-for-byte, not by length: a body that carries a per-branch token of
+	// the same width ("register_welcome" vs "register_welcomf") is an oracle
+	// that any length comparison reads as parity. Both bodies must also be
+	// explicitly empty, so equal-but-populated redirect bodies cannot pass.
 	newBody := mustReadBodyString(t, newResponse.Body)
 	dupBody := mustReadBodyString(t, dupResponse.Body)
-	if len(newBody) != len(dupBody) {
-		t.Fatalf("body length mismatch: new=%d duplicate=%d", len(newBody), len(dupBody))
+	if newBody != dupBody {
+		t.Fatalf("body mismatch: new=%q duplicate=%q", newBody, dupBody)
+	}
+	if newBody != "" {
+		t.Fatalf("expected an empty redirect body on the new-email branch, got %q", newBody)
+	}
+	if dupBody != "" {
+		t.Fatalf("expected an empty redirect body on the duplicate-email branch, got %q", dupBody)
 	}
 
 	newCookies := indexSetCookies(newResponse)
@@ -122,6 +135,54 @@ func TestRegisterResponseParityBetweenNewAndDuplicateEmail(t *testing.T) {
 		}
 		if cookies[recoveryCodeCookieName] != nil {
 			t.Fatalf("%s response unexpectedly issued recovery cookie", label)
+		}
+	}
+
+	assertRegisterJSONPayloadParity(t, app, "parity-fresh-json@example.com", primaryEmail)
+}
+
+// assertRegisterJSONPayloadParity re-drives both branches with a JSON-negotiated
+// request. The HTML branch answers with an empty 303 body, so comparing bodies
+// there — however strictly — cannot observe a payload-carried oracle at all; the
+// JSON representation of the same endpoint is where the register response has
+// fields to diverge in. Both payloads are decoded and pinned to their expected
+// values, so a divergence that keeps every body the same width still fails, and
+// so does a token that drifts on both branches at once.
+func assertRegisterJSONPayloadParity(t *testing.T, app *fiber.App, freshEmail, duplicateEmail string) {
+	t.Helper()
+
+	newResponse := mustAppResponse(t, app, jsonRegisterRequest(freshEmail))
+	dupResponse := mustAppResponse(t, app, jsonRegisterRequest(duplicateEmail))
+
+	assertStatusCode(t, newResponse, http.StatusCreated)
+	assertStatusCode(t, dupResponse, http.StatusCreated)
+
+	newBody := mustReadBodyString(t, newResponse.Body)
+	dupBody := mustReadBodyString(t, dupResponse.Body)
+	if newBody != dupBody {
+		t.Fatalf("JSON body mismatch: new=%q duplicate=%q", newBody, dupBody)
+	}
+
+	for _, branch := range []struct {
+		label string
+		body  string
+	}{{label: "new", body: newBody}, {label: "duplicate", body: dupBody}} {
+		payload := struct {
+			OK       bool   `json:"ok"`
+			NextStep string `json:"next_step"`
+			NextPath string `json:"next_path"`
+		}{}
+		if err := json.Unmarshal([]byte(branch.body), &payload); err != nil {
+			t.Fatalf("decode %s register payload %q: %v", branch.label, branch.body, err)
+		}
+		if !payload.OK {
+			t.Fatalf("%s register payload reported ok=false: %q", branch.label, branch.body)
+		}
+		if payload.NextStep != "register_welcome" {
+			t.Fatalf("%s register payload next_step = %q, want %q", branch.label, payload.NextStep, "register_welcome")
+		}
+		if payload.NextPath != "/register/welcome" {
+			t.Fatalf("%s register payload next_path = %q, want %q", branch.label, payload.NextPath, "/register/welcome")
 		}
 	}
 }
@@ -158,6 +219,12 @@ func registerRequest(email string) *http.Request {
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept-Language", "en")
+	return request
+}
+
+func jsonRegisterRequest(email string) *http.Request {
+	request := registerRequest(email)
+	request.Header.Set("Accept", fiber.MIMEApplicationJSON)
 	return request
 }
 
