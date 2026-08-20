@@ -48,3 +48,20 @@ func TestBuildPrivacyBackNavigationUsesCalendarBackLabelWhenRequested(t *testing
 		t.Fatalf("expected nav.calendar breadcrumb key, got %q", navigation.BreadcrumbBackLabelKey)
 	}
 }
+
+// TestBuildPrivacyBackNavigationFiltersTheQueryOfTheBackPath pins the second
+// surface that echoes a caller-supplied query into the markup: the privacy
+// page's own back link. SanitizeRedirectPath accepts any local path, so without
+// the query allowlist a crafted /privacy?back=… link put the address it carried
+// into the rendered href — and into the next navigation the visitor makes.
+func TestBuildPrivacyBackNavigationFiltersTheQueryOfTheBackPath(t *testing.T) {
+	t.Parallel()
+
+	navigation := BuildPrivacyBackNavigation("/login?email=victim@example.com&error=invalid", false)
+	if navigation.BackPath != "/login" {
+		t.Fatalf("expected the unlisted query parameters dropped from the back path, got %q", navigation.BackPath)
+	}
+	if navigation.BreadcrumbBackLabelKey != "common.home" {
+		t.Fatalf("expected common.home breadcrumb key, got %q", navigation.BreadcrumbBackLabelKey)
+	}
+}

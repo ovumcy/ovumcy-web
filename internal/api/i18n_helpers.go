@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
 func translateMessage(messages map[string]string, key string) string {
@@ -90,8 +91,12 @@ func (handler *Handler) withTemplateDefaults(c fiber.Ctx, data fiber.Map) fiber.
 	return data
 }
 
+// currentPathWithQuery is the address the shared layout renders back into the
+// page — the language switcher's `next` field and the outgoing privacy link —
+// so the caller-supplied query is filtered down to the parameters the pages
+// actually read before it can reach the markup.
 func currentPathWithQuery(c fiber.Ctx) string {
-	path := string(c.Request().URI().RequestURI())
+	path := services.SanitizeCurrentPathQuery(string(c.Request().URI().RequestURI()))
 	if path == "" {
 		return c.Path()
 	}
