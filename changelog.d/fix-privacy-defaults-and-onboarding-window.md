@@ -31,10 +31,19 @@
 
 - **The GDPR cross-reference claimed the opposite of what the code does, and its cited test could
   not tell.** The Art. 9(2)(a) row said deployments "rely on operator-captured consent" and that the
-  codebase "exposes no third-party transmission" with "no external network calls" as the control —
-  while registration refuses an account whose consent field is falsy, and webhook delivery POSTs to
-  the endpoint an owner configured. The row now states both controls as they are and cites tests
-  that can observe them. The security-document pair guard grows past the webhook rows to hold it
-  there: consent capture, outbound transmission and the privacy-by-default settings are read out of
-  the code that decides them and the table is held to what it finds, in both directions, so a build
-  that really did drop either control would fail until the row moved with it.
+  codebase "exposes no third-party transmission" with "no external network calls" as the control.
+  Registration refuses an account whose consent field is falsy, and two paths carry health-derived
+  data off the instance: webhook reminders to the endpoint an owner configured, and the read-only
+  `.ics` calendar feed, whose subscriber is commonly a third-party calendar service receiving that
+  owner's predicted days. The row now states the consent gate and both egress paths with the
+  containment each has, and cites tests that can observe them. The security-document pair guard
+  grows past the webhook rows to hold it there: consent capture, the egress set and the
+  privacy-by-default settings are read out of the code that decides them — the feed's from the
+  route that mounts it — and the table is held to what they say, in both directions, so naming one
+  egress path no longer passes for naming them all.
+- **The one premise behind an accepted schema divergence is now asserted.** Migration 035 moves the
+  `auto_period_fill` column default on PostgreSQL; SQLite cannot restate a default without
+  rebuilding the account table, which is the parent of every foreign key in the schema, so the old
+  literal stays and is harmless only because every insert path names the column. A test inserts a
+  row that omits it on each engine and pins what each stores, so a change that starts relying on
+  the column default fails on a test instead of on an owner's data.
