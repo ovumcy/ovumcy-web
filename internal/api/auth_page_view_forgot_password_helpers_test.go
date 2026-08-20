@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/url"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
@@ -10,16 +9,12 @@ import (
 func TestBuildForgotPasswordPageDataUsesFlashEmailForRecoveryStep(t *testing.T) {
 	t.Parallel()
 
-	query := url.Values{
-		"error": {"invalid input"},
-		"email": {"query@example.com"},
-	}
 	flash := FlashPayload{
 		AuthError:   "invalid recovery code",
 		ForgotEmail: " Owner@Example.com ",
 	}
 
-	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, func(c fiber.Ctx) error {
 		return c.JSON(buildForgotPasswordPageData(map[string]string{}, flash))
 	})
 
@@ -34,14 +29,10 @@ func TestBuildForgotPasswordPageDataUsesFlashEmailForRecoveryStep(t *testing.T) 
 	}
 }
 
-func TestBuildForgotPasswordPageDataDoesNotUseQueryEmail(t *testing.T) {
+func TestBuildForgotPasswordPageDataWithoutFlashHasNoEmail(t *testing.T) {
 	t.Parallel()
 
-	query := url.Values{
-		"email": {"query@example.com"},
-	}
-
-	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, func(c fiber.Ctx) error {
 		return c.JSON(buildForgotPasswordPageData(map[string]string{}, FlashPayload{}))
 	})
 
@@ -51,4 +42,17 @@ func TestBuildForgotPasswordPageDataDoesNotUseQueryEmail(t *testing.T) {
 	if payload["ShowRecoveryCodeStep"] != false {
 		t.Fatalf("expected ShowRecoveryCodeStep=false, got %#v", payload["ShowRecoveryCodeStep"])
 	}
+}
+
+// The query exclusion is pinned on the real route, not on the builder:
+// buildForgotPasswordPageData takes no fiber.Ctx, so nothing calling it
+// directly can observe a query read added to ShowForgotPasswordPage. The
+// email-field anchor also proves the page stayed on its first step — a
+// query-sourced email would have advanced it to the recovery-code step.
+func TestForgotPasswordPageIgnoresAQueryOfferedPIIAndErrorState(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	body := requestAuthPageWithHostileQuery(t, app, "/forgot-password")
+
+	assertAuthPageIgnoredTheQuery(t, body, "forgot-email")
 }
