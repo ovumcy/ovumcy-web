@@ -18,10 +18,10 @@ test.describe('Dashboard prediction range', () => {
   test('regular user with variable cycles sees a confidence range and no explainer', async ({
     page,
   }) => {
-    // Onboarding's MinDate is the later of (Jan 1 of current year) and
-    // (today - 60 days), so we seed at the 60-day boundary and use the
-    // cycle-start API (which has no past-date limit) to backfill an older
-    // cycle anchor and add the subsequent cycle starts.
+    // Onboarding's MinDate is today - 60 days on every calendar date, so we
+    // seed at the 60-day boundary and use the cycle-start API (which has no
+    // past-date limit) to backfill an older cycle anchor and add the
+    // subsequent cycle starts.
     await registerAndOnboardWithStartDaysAgo(page, 'dashboard-prediction-range', 60);
 
     const today = isoToday();

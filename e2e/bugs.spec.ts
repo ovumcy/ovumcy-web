@@ -65,11 +65,17 @@ async function onboardOwnerWithAutoPeriodFill(
 
   const autoFillToggle = page.locator('label[data-binary-toggle]:has(input[name="auto_period_fill"])');
   const autoFillCheckbox = page.locator('input[name="auto_period_fill"]');
-  await expect(autoFillCheckbox).toBeChecked();
-  if (!autoPeriodFill) {
+  // The toggle ships OFF for a new account, so this helper drives it to the
+  // state its caller asked for rather than inheriting a default and flipping
+  // once. The toggle label is clicked (not the input) so the binary-toggle
+  // wiring the owner actually uses is what changes the value, and the
+  // assertion below pins the resulting state either way.
+  const initiallyChecked = await autoFillCheckbox.isChecked();
+  if (initiallyChecked !== autoPeriodFill) {
     await autoFillToggle.click();
   }
   await expect(autoFillCheckbox).toBeChecked({ checked: autoPeriodFill });
+  await expect(autoFillToggle).toHaveAttribute('data-active', String(autoPeriodFill));
 
   await page.locator('[data-onboarding-step2-submit]').click();
   await expect(page).toHaveURL(/\/dashboard(?:\?.*)?$/);

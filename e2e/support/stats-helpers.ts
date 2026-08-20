@@ -51,9 +51,14 @@ export async function registerOwnerAndEnableIrregularMode(
  * baseline old enough to carry completed cycles, seeds through here instead.
  *
  * Step 1 holds exactly one mechanism for the value — the month picker — and its
- * MinDate is the later of (Jan 1 of the current year) and (today - 60 days), so an
- * anchor stays inside that window and older cycle starts are added afterwards
- * through `markCycleStartViaAPI`, which has no past-date bound.
+ * MinDate is today - 60 days on every calendar date, so an anchor stays inside
+ * that window and older cycle starts are added afterwards through
+ * `markCycleStartViaAPI`, which has no past-date bound.
+ *
+ * Step 2 arms automatic period fill, which ships OFF for a new account: the
+ * period days around the anchor are what turn it into a completed first cycle,
+ * and every caller here seeds from that baseline. A spec whose subject IS the
+ * default drives onboarding itself rather than calling this.
  *
  * Onboarding done, "today" is pinned to the browser's timezone, so a day count a
  * caller computes from the returned anchor matches the one the app renders
@@ -76,6 +81,14 @@ export async function registerAndOnboardWithStartDaysAgo(
 
   const stepTwoForm = page.locator('form[hx-post="/api/v1/onboarding/steps/2"]');
   await expect(stepTwoForm).toBeVisible();
+
+  // Armed explicitly, never inherited — see the note above. `check()` is
+  // idempotent; the assertion keeps this failing loudly if the control moves
+  // instead of quietly onboarding an account with no period days.
+  const autoPeriodFill = stepTwoForm.locator('input[name="auto_period_fill"]');
+  await autoPeriodFill.check();
+  await expect(autoPeriodFill).toBeChecked();
+
   await Promise.all([
     page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
     stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
