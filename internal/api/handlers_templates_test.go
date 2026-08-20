@@ -74,12 +74,12 @@ func TestWithTemplateDefaultsPreservesSeededValues(t *testing.T) {
 func TestWithTemplateDefaultsFillsMissingDefaults(t *testing.T) {
 	t.Parallel()
 
-	data := withTemplateDefaultsForTest(t, "/stats?window=90", fiber.Map{})
+	data := withTemplateDefaultsForTest(t, "/calendar?month=2026-02", fiber.Map{})
 
 	if data["Lang"] != "en" {
 		t.Fatalf("expected default language en, got %v", data["Lang"])
 	}
-	if data["CurrentPath"] != "/stats?window=90" {
+	if data["CurrentPath"] != "/calendar?month=2026-02" {
 		t.Fatalf("expected request path captured, got %v", data["CurrentPath"])
 	}
 	if data["AssetVersion"] != "testver" {
