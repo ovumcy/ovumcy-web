@@ -352,29 +352,98 @@ DROP TABLE register_pickup_tokens;`,
 	}
 }
 
-// TestAnExplicitColumnDropStillApplies keeps the column half expressible. Now
-// that the snapshot covers every table rather than the ones a migration drops,
-// an intentional column removal would be caught with the accidental ones unless
-// the visible form of that intent is read as the authorization it is.
-func TestAnExplicitColumnDropStillApplies(t *testing.T) {
-	databasePath := filepath.Join(t.TempDir(), "drop-column.db")
+// TestAColumnDisappearanceTheMigrationExplainsStillApplies keeps the column
+// half expressible. Now that the snapshot covers every table rather than the
+// ones a migration drops, a column that goes missing on purpose would be
+// refused along with the accidental ones unless the visible forms of that
+// intent are read as the authorization they are.
+//
+// There are two such forms and both engines support both. A DROP COLUMN
+// retires the column. A RENAME COLUMN does not remove anything at all: the
+// values are still there under the new name, so refusing it would have the
+// guard reporting a loss that did not happen — the mirror of the defect it
+// exists to catch — and advising a backup restore for a routine operation.
+func TestAColumnDisappearanceTheMigrationExplainsStillApplies(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		sql         string
+		goneColumn  string
+		addedColumn string
+	}{
+		{
+			name: "an explicit drop",
+			sql: `-- 900 retires the shown_period_tip flag.
+ALTER TABLE users DROP COLUMN shown_period_tip;`,
+			goneColumn: "shown_period_tip",
+		},
+		{
+			name: "a rename, which loses nothing",
+			sql: `-- 900 renames usage_goal to usage_intent.
+ALTER TABLE users RENAME COLUMN usage_goal TO usage_intent;`,
+			goneColumn:  "usage_goal",
+			addedColumn: "usage_intent",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			databasePath := filepath.Join(t.TempDir(), "column-intent.db")
+			seedFullyMigratedDatabaseWithSentinelDay(t, databasePath)
+
+			requireNoErr(t, applyFixtureMigration(
+				t, databasePath, "900_fixture_column_intent.sql", testCase.sql,
+			), "a column disappearance the migration explains must apply")
+
+			reader := openSQLiteFileForReplayTest(t, databasePath)
+			defer closeReplayDatabase(t, reader)
+
+			if reader.Migrator().HasColumn("users", testCase.goneColumn) {
+				t.Errorf("the migration was accepted but users.%s is still there", testCase.goneColumn)
+			}
+			if testCase.addedColumn != "" && !reader.Migrator().HasColumn("users", testCase.addedColumn) {
+				t.Errorf("the rename was accepted but users.%s is not there", testCase.addedColumn)
+			}
+			if !reader.Migrator().HasColumn("users", "email") {
+				t.Error("the migration took a column it did not name")
+			}
+		})
+	}
+}
+
+// TestARenameDoesNotExcuseAColumnLostBesideIt pins how far the rename hatch
+// reaches: it authorizes the one name the statement renames and nothing else.
+//
+// The fixture renames daily_logs.notes and, in the same migration, rebuilds the
+// table from a replacement that omits every other late column — the shape of a
+// replay against a newer schema, wearing one legitimate rename. The refusal
+// must name what was really lost and must not name the renamed column, or the
+// hatch would be reading one explained disappearance as consent for the rest of
+// the table.
+func TestARenameDoesNotExcuseAColumnLostBesideIt(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "rename-and-lose.db")
 	seedFullyMigratedDatabaseWithSentinelDay(t, databasePath)
 
-	requireNoErr(t, applyFixtureMigration(
-		t, databasePath, "900_fixture_drop_column.sql",
-		`-- 900 retires the shown_period_tip flag.
-ALTER TABLE users DROP COLUMN shown_period_tip;`,
-	), "an explicit column drop must apply")
+	err := applyFixtureMigration(t, databasePath, "900_fixture_rename_and_lose.sql", `ALTER TABLE daily_logs RENAME COLUMN notes TO note_text;
+ALTER TABLE daily_logs RENAME TO daily_logs_old;
+CREATE TABLE daily_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  date DATE NOT NULL,
+  note_text TEXT
+);
+INSERT INTO daily_logs (id, user_id, date, note_text)
+SELECT id, user_id, date, note_text FROM daily_logs_old;
+DROP TABLE daily_logs_old;`)
 
-	reader := openSQLiteFileForReplayTest(t, databasePath)
-	defer closeReplayDatabase(t, reader)
+	if err == nil {
+		t.Fatal("expected a rebuild that loses columns beside a rename to be refused")
+	}
+	if !strings.Contains(err.Error(), "mood") {
+		t.Errorf("the refusal must name the column that was actually lost; got %v", err)
+	}
+	if strings.Contains(err.Error(), "notes") {
+		t.Errorf("the refusal must not name the renamed column, whose values are under the new name; got %v", err)
+	}
 
-	if reader.Migrator().HasColumn("users", "shown_period_tip") {
-		t.Error("the explicit column drop was accepted but the column is still there")
-	}
-	if !reader.Migrator().HasColumn("users", "email") {
-		t.Error("the explicit column drop took a column it did not name")
-	}
+	assertSentinelDayIntact(t, databasePath)
 }
 
 // applyFixtureMigration runs one synthetic migration through the real
