@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -31,52 +32,62 @@ var schemaParityTableExemptions = map[string]string{
 	"sqlite_sequence": "engine-internal AUTOINCREMENT bookkeeping SQLite creates on its own; Postgres holds the equivalent in column-owned sequences",
 }
 
-// schemaParityColumnExemptions lists "<table>.<column>" pairs allowed to exist
-// in one dialect and not the other, each with its one-line reason.
+// schemaParityColumnExemptions lists "<table>.<column>" pairs allowed to differ
+// across dialects — to exist on one engine only, or to sit in different type
+// families — each with its one-line reason.
 //
 // It is empty on purpose, and an empty allowlist is worth more than a
 // pre-populated one: every column the migrations create today exists on both
-// engines under the same name, so an exemption-free comparison is also what
-// covers the columns a later migration adds. A column present on one engine
-// only is a schema divergence until someone writes down why it is not.
+// engines under the same name and in the same type family, so an exemption-free
+// comparison is also what covers the columns a later migration adds. A column
+// present on one engine only, or storing text on one engine and a number on the
+// other, is a schema divergence until someone writes down why it is not.
 var schemaParityColumnExemptions = map[string]string{}
 
-// dialectSchema is one engine's migrated schema: table name -> set of column
-// names. Both names are lowercased, because the case an identifier is stored
-// in is a dialect artifact (Postgres folds unquoted identifiers to lower case)
-// rather than a schema difference.
+// columnParity is what one column is compared by across dialects: its type
+// FAMILY, plus the raw type the driver reported, carried only so a failure can
+// name what it saw.
+type columnParity struct {
+	Family  string
+	RawType string
+}
+
+// dialectSchema is one engine's migrated schema: table name -> column name ->
+// columnParity. Both names are lowercased, because the case an identifier is
+// stored in is a dialect artifact (Postgres folds unquoted identifiers to lower
+// case) rather than a schema difference.
 //
-// Names are all this comparison holds the dialects to, and the boundary is not
-// laziness on two counts:
+// Two axes are deliberately out of the comparison, each for a measured reason:
 //
-//   - The SQL TYPE differs legitimately — integer/bigint, text/varchar, and the
-//     two boolean representations — so comparing types would report the
-//     dialects being dialects as divergence.
-//   - NULLABILITY looks dialect-neutral and is not, at least not as the drivers
-//     report it. Measured 2026-08-20 against the current schema: comparing
-//     ColumnTypes().Nullable() failed on eight columns, and every one of them
-//     was a PRIMARY KEY (users.id, daily_logs.id, symptom_types.id,
+//   - The RAW SQL type. integer/bigint, text/varchar, real/double precision and
+//     integer/bigserial differ legitimately between the engines, so comparing
+//     the reported type string would report the dialects being dialects. Only
+//     the family it normalizes to is compared — see columnTypeFamily.
+//   - NULLABILITY — tried, and dropped. It looks dialect-neutral and is not, as
+//     the drivers report it: comparing ColumnTypes().Nullable() failed on eight
+//     columns of a schema that does not diverge, and every one of them was a
+//     PRIMARY KEY (users.id, daily_logs.id, symptom_types.id,
 //     oidc_identities.id, app_state.key, oidc_logout_states.session_id,
 //     register_pickup_tokens.nonce, schema_migrations.version) — SQLite reports
 //     an implicitly-NOT-NULL key column as nullable, Postgres as not nullable.
-//     That is a driver artifact on a schema that does not diverge, so
-//     nullability stays out rather than shipping eight standing exemptions that
-//     would hide a real NOT NULL divergence among them.
-type dialectSchema map[string]map[string]struct{}
+//     Shipping eight standing exemptions to keep the check would have hidden a
+//     real NOT NULL divergence among them, so nullability stays out. Measured
+//     2026-08-20; recorded here so the idea is not re-tried blind.
+type dialectSchema map[string]map[string]columnParity
 
 // TestMigratedSchemasMatchAcrossDialects holds the two supported engines to the
-// same migrated schema: the same tables, and the same column names within each
-// table.
+// same migrated schema: the same tables, the same column names within each
+// table, and the same type family for each of those columns.
 //
 // It exists because OpenDatabase applies the embedded migrations OF THE DRIVER
 // IT OPENED (applyEmbeddedMigrations → loadEmbeddedMigrations), so the SQLite
 // and Postgres sets are two separate bodies of SQL. The existing
 // TestEmbeddedMigrationSetsMatchAcrossDialects compares those sets by version
 // and file name — that the two trees consist of identically numbered steps —
-// and nothing compares what the steps DO. A migration that creates a table or a
-// column in one tree and forgets it in the other keeps both names and both
-// versions aligned, leaves that test green, and still ships two different
-// schemas.
+// and nothing compares what the steps DO. A migration that creates a table in
+// one tree and forgets it in the other, or writes the same column as INTEGER
+// here and TEXT there, keeps both names and both versions aligned, leaves that
+// test green, and still ships two different schemas.
 //
 // Everything derived from the live schema then quietly narrows on one engine:
 // the account-erasure sweep in delete_account_completeness_test.go derives its
@@ -99,8 +110,31 @@ func TestMigratedSchemasMatchAcrossDialects(t *testing.T) {
 		t.Fatalf("read an empty schema from a migrated database (sqlite=%d tables, postgres=%d tables) — the reader is broken, not the schema", len(sqliteSchema), len(postgresSchema))
 	}
 
+	// Positive anchor for the type axis: two drivers both reporting nothing
+	// would make every column "unknown()" on both sides and the family
+	// comparison would pass while measuring nothing.
+	assertParityTypeAxisResolves(t, sqliteSchema, string(DriverSQLite))
+	assertParityTypeAxisResolves(t, postgresSchema, string(DriverPostgres))
+
 	assertParitySchemaTablesMatch(t, sqliteSchema, postgresSchema)
 	assertParitySchemaColumnsMatch(t, sqliteSchema, postgresSchema)
+}
+
+// assertParityTypeAxisResolves fails when no column of a whole schema landed in
+// a named family — the shape a driver that reports no type at all would
+// produce, and the shape in which the family comparison below would agree with
+// itself about nothing.
+func assertParityTypeAxisResolves(t *testing.T, schema dialectSchema, dialect string) {
+	t.Helper()
+
+	for _, table := range sortedParityNames(schema) {
+		for _, column := range sortedParityColumnNames(schema[table]) {
+			if !strings.HasPrefix(schema[table][column].Family, "unknown(") {
+				return
+			}
+		}
+	}
+	t.Errorf("no column of the %s schema resolved to a named type family — the driver reported no usable types, so the family comparison is vacuous", dialect)
 }
 
 // openSQLiteForSchemaParityTest opens a throwaway SQLite database through
@@ -141,18 +175,73 @@ func readMigratedSchemaForParity(t *testing.T, database *gorm.DB, dialect string
 		columnTypes, err := migrator.ColumnTypes(table)
 		requireNoErr(t, err, "column types of "+dialect+" table "+table)
 
-		columns := make(map[string]struct{}, len(columnTypes))
+		columns := make(map[string]columnParity, len(columnTypes))
 		for _, columnType := range columnTypes {
 			columnName := strings.ToLower(columnType.Name())
 			if reason, exempt := schemaParityColumnExemptions[tableName+"."+columnName]; exempt {
 				t.Logf("skipping %s column %s.%s: %s", dialect, tableName, columnName, reason)
 				continue
 			}
-			columns[columnName] = struct{}{}
+			rawType := columnType.DatabaseTypeName()
+			columns[columnName] = columnParity{Family: columnTypeFamily(rawType), RawType: rawType}
 		}
 		schema[tableName] = columns
 	}
 	return schema
+}
+
+// columnTypeFamily normalizes a driver-reported SQL type to the coarse family
+// the two engines must agree on. It is built from what ColumnTypes() actually
+// returns on each engine — SQLite echoes the declared type (TEXT, INTEGER,
+// BOOLEAN, DATETIME, REAL), Postgres reports its own spellings (text, int8,
+// bool, timestamptz, float8) — not from what the migration files say, so the
+// same normalization holds whichever driver produced the string.
+//
+// Inside a family every difference is ignored: integer vs bigint vs bigserial,
+// text vs varchar(255), real vs double precision, boolean however each engine
+// spells it. Only crossing a family boundary is a failure, which is the whole
+// point — a column written INTEGER in one migration tree and TEXT in the other
+// hands the application a number on one engine and a string on the other.
+//
+// A type matching no family becomes its own "unknown(<normalized>)" family
+// rather than being skipped: two engines reporting the same unfamiliar type
+// still compare equal, while a divergence involving one stays visible. Silently
+// passing an unrecognized type would make the guard quietly narrower than its
+// name every time a migration reaches for a type this list has not met.
+func columnTypeFamily(rawType string) string {
+	normalized := strings.ToLower(strings.TrimSpace(rawType))
+	// Drop any size or precision: varchar(255), numeric(10,2), timestamp(6).
+	if open := strings.Index(normalized, "("); open >= 0 {
+		normalized = strings.TrimSpace(normalized[:open])
+	}
+	if normalized == "" {
+		return "unknown()"
+	}
+
+	// Order matters: the probes are substrings, and several type names carry
+	// more than one of them. "interval" and "datetime" contain "int" and
+	// "date"/"time"; "timestamptz" contains "time". Temporal is therefore
+	// tested before integer, and the floating/exact-numeric family before
+	// integer so "numeric" is not read as an int.
+	families := []struct {
+		family string
+		probes []string
+	}{
+		{family: "temporal", probes: []string{"timestamp", "datetime", "date", "time", "interval"}},
+		{family: "boolean", probes: []string{"bool"}},
+		{family: "text", probes: []string{"text", "char", "clob", "string", "citext"}},
+		{family: "binary", probes: []string{"blob", "bytea", "binary"}},
+		{family: "float", probes: []string{"float", "double", "real", "numeric", "decimal", "money"}},
+		{family: "integer", probes: []string{"int", "serial"}},
+	}
+	for _, candidate := range families {
+		for _, probe := range candidate.probes {
+			if strings.Contains(normalized, probe) {
+				return candidate.family
+			}
+		}
+	}
+	return fmt.Sprintf("unknown(%s)", normalized)
 }
 
 // assertParitySchemaTablesMatch reports every table one engine has and the
@@ -170,8 +259,9 @@ func assertParitySchemaTablesMatch(t *testing.T, sqliteSchema dialectSchema, pos
 	t.Errorf("migrated schemas hold different tables: sqlite-only %v, postgres-only %v — the two migration trees create different tables; add the missing statement to the tree that lacks it, or record the table in schemaParityTableExemptions with the reason", sqliteOnly, postgresOnly)
 }
 
-// assertParitySchemaColumnsMatch compares column names within every table both
-// engines have. Tables only one engine has are already named by
+// assertParitySchemaColumnsMatch compares, within every table both engines
+// have, the column names and then the type family of each shared column.
+// Tables only one engine has are already named by
 // assertParitySchemaTablesMatch, so this pass stays on the intersection rather
 // than reporting them twice.
 func assertParitySchemaColumnsMatch(t *testing.T, sqliteSchema dialectSchema, postgresSchema dialectSchema) {
@@ -186,11 +276,27 @@ func assertParitySchemaColumnsMatch(t *testing.T, sqliteSchema dialectSchema, po
 
 		sqliteOnly := parityColumnsMissingFrom(sqliteColumns, postgresColumns)
 		postgresOnly := parityColumnsMissingFrom(postgresColumns, sqliteColumns)
-		if len(sqliteOnly) == 0 && len(postgresOnly) == 0 {
-			continue
+		if len(sqliteOnly) > 0 || len(postgresOnly) > 0 {
+			t.Errorf("table %s holds different columns across dialects: sqlite-only %v, postgres-only %v — add the missing column to the migration tree that lacks it, or record it in schemaParityColumnExemptions with the reason", table, sqliteOnly, postgresOnly)
 		}
 
-		t.Errorf("table %s holds different columns across dialects: sqlite-only %v, postgres-only %v — add the missing column to the migration tree that lacks it, or record it in schemaParityColumnExemptions with the reason", table, sqliteOnly, postgresOnly)
+		// The family pass runs even when the names already diverged: skipping
+		// the table there would let one missing column hide every type
+		// divergence beside it, and both come from the same hand-copied
+		// statement often enough that the second is exactly what gets missed.
+		// Columns absent on one side are named above, so they are stepped over
+		// here rather than reported twice.
+		for _, column := range sortedParityColumnNames(sqliteColumns) {
+			sqliteColumn := sqliteColumns[column]
+			postgresColumn, sharedColumn := postgresColumns[column]
+			if !sharedColumn {
+				continue
+			}
+			if sqliteColumn.Family == postgresColumn.Family {
+				continue
+			}
+			t.Errorf("column %s.%s sits in different type families across dialects: sqlite %s (%s), postgres %s (%s) — the two migration trees declare it as different kinds of value; align the declaration in the tree that is wrong, or record the column in schemaParityColumnExemptions with the reason", table, column, sqliteColumn.Family, sqliteColumn.RawType, postgresColumn.Family, postgresColumn.RawType)
+		}
 	}
 }
 
@@ -209,7 +315,7 @@ func parityTablesMissingFrom(have dialectSchema, want dialectSchema) []string {
 
 // parityColumnsMissingFrom returns the columns of have that want lacks, sorted
 // so the failure message is stable across runs.
-func parityColumnsMissingFrom(have map[string]struct{}, want map[string]struct{}) []string {
+func parityColumnsMissingFrom(have map[string]columnParity, want map[string]columnParity) []string {
 	missing := make([]string, 0)
 	for column := range have {
 		if _, present := want[column]; !present {
@@ -229,4 +335,16 @@ func sortedParityNames(schema dialectSchema) []string {
 	}
 	sort.Strings(tables)
 	return tables
+}
+
+// sortedParityColumnNames returns a table's column names in a stable order, so
+// several family divergences in one table report in the same sequence on every
+// run.
+func sortedParityColumnNames(columns map[string]columnParity) []string {
+	names := make([]string, 0, len(columns))
+	for name := range columns {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
