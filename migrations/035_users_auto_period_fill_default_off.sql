@@ -1,0 +1,27 @@
+-- 035: users.auto_period_fill is off for accounts created from here on.
+--
+-- The Postgres file of this version restates the column DEFAULT in one
+-- statement. SQLite has no ALTER COLUMN, so the only way to restate a DEFAULT
+-- there is to rebuild the table -- and users is the parent every other table's
+-- foreign key points at, while the runner applies a migration inside a
+-- transaction, where PRAGMA foreign_keys cannot be toggled. A copy/swap of the
+-- account table to rewrite one schema literal would trade a real risk to the
+-- account rows for nothing, so it is deliberately not done.
+--
+-- Nothing on this engine reads that literal. A column DEFAULT is consulted only
+-- by an INSERT that omits the column, and no insert path in this application
+-- omits it: models.User declares an explicit gorm default, so GORM names
+-- auto_period_fill in every INSERT it builds and the value written is always
+-- the one the caller set. What a new account gets is decided by
+-- models.DefaultAutoPeriodFill, which both account constructors and the
+-- clear-data reset read, and TestNewAccountsCarryAutoPeriodFillOff asserts that
+-- on the migrated schema of both engines rather than trusting either literal.
+--
+-- The statement below is the schema assertion this file can make honestly -- it
+-- reads no rows and changes nothing, and fails loudly if the column this
+-- migration is about is no longer there. It also keeps the two dialect trees at
+-- the same version and basename, which the runner and
+-- TestEmbeddedMigrationSetsMatchAcrossDialects require.
+--
+-- Rollback: none needed -- this file writes nothing.
+SELECT auto_period_fill FROM users WHERE 0;

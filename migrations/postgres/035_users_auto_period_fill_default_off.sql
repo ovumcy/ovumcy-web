@@ -1,0 +1,15 @@
+-- 035: users.auto_period_fill carries a default of FALSE from here on.
+--
+-- SECURITY.md's GDPR Art. 25 row states auto-period-fill as a privacy-by-design
+-- control that is OFF by default, while migration 002 created the column with
+-- DEFAULT TRUE. The code is what moved (models.DefaultAutoPeriodFill, both
+-- account constructors, the clear-data reset), and this statement brings the
+-- schema default with it so the two agree in both dialects.
+--
+-- No stored value is rewritten. This touches the column DEFAULT and nothing
+-- else, so an owner who turned auto-fill on keeps it, and an instance that has
+-- been running keeps every account exactly as its owner left it. The default
+-- governs accounts created after this point.
+--
+-- Rollback: ALTER TABLE users ALTER COLUMN auto_period_fill SET DEFAULT TRUE
+ALTER TABLE users ALTER COLUMN auto_period_fill SET DEFAULT FALSE;

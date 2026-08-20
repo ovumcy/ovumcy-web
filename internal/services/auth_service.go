@@ -259,7 +259,7 @@ func (service *AuthService) BuildOwnerUserWithRecovery(email string, rawPassword
 		Role:               models.RoleOwner,
 		CycleLength:        models.DefaultCycleLength,
 		PeriodLength:       models.DefaultPeriodLength,
-		AutoPeriodFill:     true,
+		AutoPeriodFill:     models.DefaultAutoPeriodFill,
 		CreatedAt:          createdAt,
 	}
 	return user, recoveryCode, nil
@@ -279,7 +279,7 @@ func (service *AuthService) BuildOIDCOwnerUser(email string, createdAt time.Time
 		Role:               models.RoleOwner,
 		CycleLength:        models.DefaultCycleLength,
 		PeriodLength:       models.DefaultPeriodLength,
-		AutoPeriodFill:     true,
+		AutoPeriodFill:     models.DefaultAutoPeriodFill,
 		CreatedAt:          createdAt,
 	}, nil
 }

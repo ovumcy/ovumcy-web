@@ -385,8 +385,10 @@ func TestAuthServiceBuildOwnerUserWithRecovery(t *testing.T) {
 	if user.CycleLength != models.DefaultCycleLength || user.PeriodLength != models.DefaultPeriodLength {
 		t.Fatalf("expected default cycle/period lengths, got %d/%d", user.CycleLength, user.PeriodLength)
 	}
-	if !user.AutoPeriodFill {
-		t.Fatalf("expected AutoPeriodFill=true")
+	// Off by default, per SECURITY.md's Art. 25 row; the whole producer set is
+	// swept in TestOwnerAccountConstructorsLeaveAutoPeriodFillOff.
+	if user.AutoPeriodFill != models.DefaultAutoPeriodFill {
+		t.Fatalf("expected AutoPeriodFill=%t, got %t", models.DefaultAutoPeriodFill, user.AutoPeriodFill)
 	}
 	if !user.CreatedAt.Equal(createdAt) {
 		t.Fatalf("expected CreatedAt preserved, got %s", user.CreatedAt)

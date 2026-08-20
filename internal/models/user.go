@@ -6,6 +6,18 @@ const (
 	RoleOwner           = "owner"
 	DefaultCycleLength  = 28
 	DefaultPeriodLength = 5
+	// DefaultAutoPeriodFill is the value users.auto_period_fill carries on an
+	// account nobody has configured yet. Auto-fill writes inferred period days
+	// the owner never logged, so `SECURITY.md`'s GDPR Art. 25 row states it as a
+	// privacy-by-default control and it is OFF: an account starts by recording
+	// only what the owner entered, and the onboarding toggle turns inference on.
+	// It is kept in models so the gorm column default, both account
+	// constructors, the db clear-data reset and the onboarding view state read
+	// one source of truth without a layering violation.
+	//
+	// Existing accounts are untouched by this default — no migration rewrites a
+	// stored value, so an owner who turned auto-fill on keeps it.
+	DefaultAutoPeriodFill = false
 	// DefaultReminderLeadDays is the column default for users.reminder_lead_days
 	// (issue #124) — the SHARED banner + webhook lead window. It matches
 	// services.DashboardReminderBannerWindowDays; kept in models so the db
@@ -49,7 +61,7 @@ type User struct {
 	CycleLength          int        `gorm:"not null;default:28"`
 	PeriodLength         int        `gorm:"not null;default:5"`
 	LutealPhase          int        `gorm:"column:luteal_phase;not null;default:14"`
-	AutoPeriodFill       bool       `gorm:"column:auto_period_fill;not null;default:true"`
+	AutoPeriodFill       bool       `gorm:"column:auto_period_fill;not null;default:false"`
 	IrregularCycle       bool       `gorm:"column:irregular_cycle;not null;default:false"`
 	TrackBBT             bool       `gorm:"column:track_bbt;not null;default:false"`
 	TemperatureUnit      string     `gorm:"column:temperature_unit;not null;default:c"`
