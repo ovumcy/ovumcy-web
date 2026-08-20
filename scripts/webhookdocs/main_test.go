@@ -25,6 +25,13 @@
 //     prefix list — and the default is read out of the code that parses it,
 //     never restated here, so flipping the default in code fails until every
 //     document that states it has moved.
+//
+// gdpr_claims_test.go extends the same pair discipline past the webhook rows,
+// to the GDPR cross-reference table: the rows whose claims the code can
+// contradict outright — consent capture, outbound transmission, and the
+// privacy-by-default settings — are read against the code that decides them.
+// The directory name predates that second subject and the guards share every
+// helper, so they stay in one package.
 package webhookdocs
 
 import (
@@ -257,46 +264,60 @@ func TestWebhookMatrixCitationsResolve(t *testing.T) {
 	root := repoRoot(t)
 	rows := webhookMatrixRows(t, root)
 
-	testName := regexp.MustCompile("`(Test[A-Za-z0-9_]*)`")
-	// A citation resolves through the row's LINK TARGET, so the path form is
-	// what counts; the same basename also appears as the link's label, and
-	// reading that as a path would look for it in the repository root.
-	testFile := regexp.MustCompile(`[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+_test\.go`)
-
 	citations := 0
 	for _, row := range rows {
-		files := map[string]string{}
-		for _, path := range testFile.FindAllString(row.enforced, -1) {
-			if _, done := files[path]; done {
-				continue
-			}
-			content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-			if err != nil {
-				t.Errorf("row %q cites %s, which does not exist: %v", truncate(row.claim), path, err)
-				continue
-			}
-			files[path] = string(content)
-		}
-
-		for _, match := range testName.FindAllStringSubmatch(row.enforced, -1) {
-			name := match[1]
-			citations++
-			found := false
-			for _, content := range files {
-				if strings.Contains(content, "func "+name+"(") {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Errorf("row %q cites %s, but no file the row links defines it (linked: %s): cite the test that can observe the claim, and move the row when the test is renamed", truncate(row.claim), name, strings.Join(sortedKeys(files), ", "))
-			}
-		}
+		citations += resolveRowCitations(t, root, truncate(row.claim), row.enforced)
 	}
 
 	if citations == 0 {
 		t.Fatalf("no test citations found in the %s webhook section: the citation sweep is checking nothing", matrixPath)
 	}
+}
+
+var (
+	citedTestName = regexp.MustCompile("`(Test[A-Za-z0-9_]*)`")
+	// A citation resolves through the row's LINK TARGET, so the path form is
+	// what counts; the same basename also appears as the link's label, and
+	// reading that as a path would look for it in the repository root.
+	citedTestFile = regexp.MustCompile(`[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+_test\.go`)
+)
+
+// resolveRowCitations reads one row's enforcing cell the way a reviewer would:
+// every backticked test name must be defined in a file that the same row links.
+// It returns how many citations it checked, so a caller can refuse a sweep that
+// found none. label identifies the row in failure text.
+func resolveRowCitations(t *testing.T, root string, label string, enforced string) int {
+	t.Helper()
+
+	files := map[string]string{}
+	for _, path := range citedTestFile.FindAllString(enforced, -1) {
+		if _, done := files[path]; done {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+		if err != nil {
+			t.Errorf("row %q cites %s, which does not exist: %v", label, path, err)
+			continue
+		}
+		files[path] = string(content)
+	}
+
+	citations := 0
+	for _, match := range citedTestName.FindAllStringSubmatch(enforced, -1) {
+		name := match[1]
+		citations++
+		found := false
+		for _, content := range files {
+			if strings.Contains(content, "func "+name+"(") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("row %q cites %s, but no file the row links defines it (linked: %s): cite the test that can observe the claim, and move the row when the test is renamed", label, name, strings.Join(sortedKeys(files), ", "))
+		}
+	}
+	return citations
 }
 
 // TestOperatorDocsStateTheGateAndTheCodeDefault pins the second half of the
