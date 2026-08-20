@@ -3,8 +3,10 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -152,11 +154,19 @@ func TestGetCurrentUserReturnsMinimalIdentityShape(t *testing.T) {
 		t.Fatalf("decode current-user JSON %q: %v", body, err)
 	}
 
+	// The documented key set, in the order the handler writes it. It is
+	// pinned by EQUALITY rather than by presence on purpose: a presence
+	// loop accepts every key it was not told about, so a sensitive field
+	// added to the identity DTO later (an OIDC subject, a feed-token hash)
+	// would reach every wrapper client with this suite green. Any new key
+	// fails here until someone classifies it and extends this slice; the
+	// denylist and the raw-body markers below stay as defense in depth for
+	// a key that gets classified wrongly.
 	expectedFields := []string{"id", "email", "display_name", "role", "onboarding_completed", "local_auth_enabled", "must_change_password"}
-	for _, field := range expectedFields {
-		if _, ok := payload[field]; !ok {
-			t.Fatalf("expected current-user payload to expose %q, got %v", field, payload)
-		}
+	expectedKeys := slices.Sorted(slices.Values(expectedFields))
+	actualKeys := slices.Sorted(maps.Keys(payload))
+	if !slices.Equal(actualKeys, expectedKeys) {
+		t.Fatalf("expected current-user payload to expose exactly the keys %v, got %v", expectedKeys, actualKeys)
 	}
 	for _, leakedField := range []string{"password_hash", "password", "recovery_code_hash", "recovery_code", "totp_secret", "totp_secret_encrypted"} {
 		if _, ok := payload[leakedField]; ok {
