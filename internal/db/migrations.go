@@ -31,6 +31,7 @@ var migrationFilePattern = regexp.MustCompile(`^(\d+)_.*\.sql$`)
 var addColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+ADD\s+COLUMN\s+([^\s]+)\b`)
 var dropTableStatementPattern = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;]+)`)
 var dropColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+DROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?([^\s;]+)`)
+var renameColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+RENAME\s+(?:COLUMN\s+)?([^\s;]+)\s+TO\s+([^\s;]+)`)
 var removedTableMarkerPattern = regexp.MustCompile(`(?im)^[ \t]*--[ \t]*` + regexp.QuoteMeta(removedTableMarker) + `[ \t]+([^\s;]+)[ \t]*$`)
 
 type embeddedMigration struct {
@@ -349,7 +350,7 @@ func snapshotEveryTableColumns(database *gorm.DB) ([]tableColumnsBefore, error) 
 // came to discard eight health columns while reporting success.
 func requireNoTableSilentlyNarrowed(database *gorm.DB, migration embeddedMigration, columnsBefore []tableColumnsBefore, statements []string) error {
 	removedOnPurpose := tablesRemovedOnPurpose(migration)
-	droppedColumns := columnsDroppedExplicitly(statements)
+	accountedFor := columnsAccountedForByName(statements)
 
 	for _, before := range columnsBefore {
 		if !database.Migrator().HasTable(before.Table) {
@@ -372,13 +373,13 @@ func requireNoTableSilentlyNarrowed(database *gorm.DB, migration embeddedMigrati
 		}
 
 		missing := missingColumnNames(before.Columns, columnsNow)
-		missing = withoutExplicitlyDroppedColumns(missing, droppedColumns[before.Table])
+		missing = withoutAccountedForColumns(missing, accountedFor[before.Table])
 		if len(missing) == 0 {
 			continue
 		}
 
 		return fmt.Errorf(
-			"refusing migration %s: table %s lost column(s) %s, which held data before it ran, and no statement in the migration drops them — a rebuild recreates the table from the columns its own version knew about, so re-applying it on a newer schema discards everything added after it. Nothing was written: the migration was rolled back and the database is unchanged; if migration %s is in fact applied, restore its schema_migrations row, otherwise restore from a backup",
+			"refusing migration %s: table %s lost column(s) %s, which held data before it ran, and no statement in the migration drops or renames them — a rebuild recreates the table from the columns its own version knew about, so re-applying it on a newer schema discards everything added after it. Nothing was written: the migration was rolled back and the database is unchanged; if migration %s is in fact applied, restore its schema_migrations row, otherwise restore from a backup",
 			migration.Name,
 			before.Table,
 			strings.Join(missing, ", "),
@@ -411,34 +412,57 @@ func tablesRemovedOnPurpose(migration embeddedMigration) map[string]struct{} {
 	return removed
 }
 
-// columnsDroppedExplicitly returns table -> the columns this migration removes
-// with an `ALTER TABLE ... DROP COLUMN`, the visible form of that intent.
-func columnsDroppedExplicitly(statements []string) map[string]map[string]struct{} {
-	dropped := make(map[string]map[string]struct{})
+// columnsAccountedForByName returns table -> the column names whose
+// disappearance this migration explains in its own SQL. There are two visible
+// forms of that intent and both engines support both:
+//
+//	ALTER TABLE t DROP COLUMN c            -- the column is retired
+//	ALTER TABLE t RENAME COLUMN c TO other -- the column is still there, renamed
+//
+// A rename is not a loss: the values are under the new name, and refusing it
+// would have the guard reporting a data loss that did not happen, which is the
+// mirror of the defect it exists to catch. Only the OLD name of the statement
+// is accounted for — renaming one column says nothing about the rest of the
+// table, so a rebuild that quietly drops a second column is still refused.
+//
+// The `TO` clause is what separates a column rename from a TABLE rename:
+// `ALTER TABLE t RENAME TO t_old` has no name before the TO and therefore
+// matches nothing here, which matters because that statement is the first half
+// of the rename-first rebuild idiom and must never authorize anything.
+func columnsAccountedForByName(statements []string) map[string]map[string]struct{} {
+	accountedFor := make(map[string]map[string]struct{})
+
+	record := func(tableName string, columnName string) {
+		table := normalizeSQLIdentifier(tableName)
+		if accountedFor[table] == nil {
+			accountedFor[table] = make(map[string]struct{})
+		}
+		accountedFor[table][normalizeSQLIdentifier(columnName)] = struct{}{}
+	}
+
 	for _, statement := range statements {
-		matches := dropColumnStatementPattern.FindStringSubmatch(stripLeadingSQLComments(statement))
-		if len(matches) != 3 {
+		body := stripLeadingSQLComments(statement)
+		if matches := dropColumnStatementPattern.FindStringSubmatch(body); len(matches) == 3 {
+			record(matches[1], matches[2])
 			continue
 		}
-		tableName := normalizeSQLIdentifier(matches[1])
-		if dropped[tableName] == nil {
-			dropped[tableName] = make(map[string]struct{})
+		if matches := renameColumnStatementPattern.FindStringSubmatch(body); len(matches) == 4 {
+			record(matches[1], matches[2])
 		}
-		dropped[tableName][normalizeSQLIdentifier(matches[2])] = struct{}{}
 	}
-	return dropped
+	return accountedFor
 }
 
-// withoutExplicitlyDroppedColumns removes from missing the columns the
-// migration itself asked to drop.
-func withoutExplicitlyDroppedColumns(missing []string, droppedColumns map[string]struct{}) []string {
-	if len(droppedColumns) == 0 {
+// withoutAccountedForColumns removes from missing the column names whose
+// disappearance the migration itself explained.
+func withoutAccountedForColumns(missing []string, accountedFor map[string]struct{}) []string {
+	if len(accountedFor) == 0 {
 		return missing
 	}
 
 	kept := make([]string, 0, len(missing))
 	for _, name := range missing {
-		if _, dropped := droppedColumns[name]; dropped {
+		if _, explained := accountedFor[name]; explained {
 			continue
 		}
 		kept = append(kept, name)

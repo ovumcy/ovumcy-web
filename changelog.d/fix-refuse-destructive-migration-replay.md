@@ -25,10 +25,13 @@
   way the database is left exactly as it was, and the refusal names the migration, the table, the
   columns it protected and what to restore.
 
-  Both losses stay expressible, each by something the author writes out and names: a column
-  removed by an explicit `ALTER TABLE … DROP COLUMN` in the migration's own SQL, and a table
-  retired for good by the marker line `-- ovumcy:removes-table <name>`, which authorizes the one
-  table it names. A bare `DROP TABLE` is deliberately not read as consent — it is the middle
+  Every disappearance a migration means stays expressible, each by something the author writes
+  out and names: a column retired by an explicit `ALTER TABLE … DROP COLUMN`, a column moved by
+  `ALTER TABLE … RENAME COLUMN old TO new` — which loses nothing, since the values are under the
+  new name — and a table retired for good by the marker line `-- ovumcy:removes-table <name>`,
+  which authorizes the one table it names. Each authorizes only what it names: renaming one
+  column does not excuse a second one going missing beside it. A bare `DROP TABLE` is
+  deliberately not read as consent — it is the middle
   statement of every rebuild in the tree, and reading it as consent is how migration 003 came to
   discard eight health columns while reporting success.
 
@@ -59,7 +62,9 @@
   the same code path: both SQLite rebuild idioms, each in a narrowing and a preserving variant so
   the refusal cannot be credited to a check that refuses everything; a table removal with the
   marker, without it, with a marker naming a different table, and with the marker words buried in
-  prose; and an explicit column drop, which must still apply.
+  prose; an explicit column drop and a column rename, both of which must still apply; and a
+  rebuild that renames one column while quietly losing another, which must still be refused,
+  naming the column that was really lost and not the renamed one.
 
 - **An account with a role this product does not have is refused where it is written.** Ovumcy is
   owner-role-only — every account is the sole owner of its own data, and there is no viewer or
