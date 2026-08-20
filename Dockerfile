@@ -1,6 +1,14 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.27rc2-alpine3.24@sha256:dcbb18cc5fa1082364dc6aa95224b6b55429d09cbb9631a053d8064c1c367300 AS builder
+# The builder tag must stay equal to the `go` directive in go.mod. Every CI Go
+# job resolves its toolchain with `go-version-file: go.mod`, so a builder ahead
+# of that directive ships a binary compiled by a toolchain no unit, race or e2e
+# run ever exercised — GOTOOLCHAIN only ever upgrades, never downgrades, so the
+# newer image simply wins. A release candidate reached this line that way. CI
+# now asserts the equality (`Builder toolchain matches go.mod` in
+# .github/workflows/ci.yml), and Dependabot is told to leave pre-release tags of
+# this image alone.
+FROM golang:1.26.6-alpine3.24@sha256:1a9c10cf505a9e6b1e96ea77ebdbfe79a0f10380181faf88bc3b51d7e4315fae AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
