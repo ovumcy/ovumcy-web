@@ -64,13 +64,14 @@ func TestBuildRegisterPageDataDefaultsToRegistrationDisabledWhenClosed(t *testin
 	}
 }
 
-// The query exclusion is pinned on the real route, not on the builder:
-// buildRegisterPageData takes no fiber.Ctx, so nothing calling it directly can
-// observe a query read added to ShowRegisterPage.
-func TestRegisterPageIgnoresAQueryOfferedPIIAndErrorState(t *testing.T) {
+// Pinned on the real route, not on the builder: buildRegisterPageData takes no
+// fiber.Ctx, so nothing calling it directly can observe a query read added to
+// ShowRegisterPage. The claim is exactly the field and the error block — see
+// assertAuthPageDidNotPrefillFromQuery for what this page does still carry.
+func TestRegisterPageDoesNotPrefillEmailOrErrorFromQuery(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	body := requestAuthPageWithHostileQuery(t, app, "/register")
 
-	assertAuthPageIgnoredTheQuery(t, body, "register-email")
+	assertAuthPageDidNotPrefillFromQuery(t, body, "register-email")
 }

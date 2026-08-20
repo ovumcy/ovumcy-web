@@ -44,15 +44,16 @@ func TestBuildForgotPasswordPageDataWithoutFlashHasNoEmail(t *testing.T) {
 	}
 }
 
-// The query exclusion is pinned on the real route, not on the builder:
-// buildForgotPasswordPageData takes no fiber.Ctx, so nothing calling it
-// directly can observe a query read added to ShowForgotPasswordPage. The
-// email-field anchor also proves the page stayed on its first step — a
-// query-sourced email would have advanced it to the recovery-code step.
-func TestForgotPasswordPageIgnoresAQueryOfferedPIIAndErrorState(t *testing.T) {
+// Pinned on the real route, not on the builder: buildForgotPasswordPageData
+// takes no fiber.Ctx, so nothing calling it directly can observe a query read
+// added to ShowForgotPasswordPage. The email-field anchor also proves the page
+// stayed on its first step — a query-sourced email would have advanced it to
+// the recovery-code step. The claim is exactly the field and the error block —
+// see assertAuthPageDidNotPrefillFromQuery for what this page does still carry.
+func TestForgotPasswordPageDoesNotPrefillEmailOrErrorFromQuery(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	body := requestAuthPageWithHostileQuery(t, app, "/forgot-password")
 
-	assertAuthPageIgnoredTheQuery(t, body, "forgot-email")
+	assertAuthPageDidNotPrefillFromQuery(t, body, "forgot-email")
 }
