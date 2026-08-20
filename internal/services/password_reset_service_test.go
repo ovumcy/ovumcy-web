@@ -163,6 +163,12 @@ func TestPasswordResetServiceCompleteReset(t *testing.T) {
 	if user == nil || user.ID != 42 {
 		t.Fatalf("expected resolved user 42, got %#v", user)
 	}
+	// The repository stub serves one embedded user, so the returned struct
+	// would look identical for a write scoped to any account. Pin the id the
+	// credential write was actually addressed to.
+	if repo.updatedUserID != 42 {
+		t.Fatalf("expected the reset write to be scoped to owner 42, got %d", repo.updatedUserID)
+	}
 	if recoveryCode == "" {
 		t.Fatalf("expected non-empty rotated recovery code")
 	}

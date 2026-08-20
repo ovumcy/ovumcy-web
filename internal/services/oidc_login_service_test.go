@@ -56,9 +56,17 @@ type stubOIDCIdentityStore struct {
 	touchedAt      time.Time
 	created        models.OIDCIdentity
 	createCallSeen bool
+	// lastIssuer / lastSubject record the lookup key the service handed over.
+	// Without them the stub answers every (issuer, subject) with the same
+	// identity, so a swapped or constant key at the resolution seam changes
+	// nothing observable and a mis-scoped link would go unnoticed.
+	lastIssuer  string
+	lastSubject string
 }
 
-func (stub *stubOIDCIdentityStore) FindByIssuerSubject(context.Context, string, string) (models.OIDCIdentity, bool, error) {
+func (stub *stubOIDCIdentityStore) FindByIssuerSubject(_ context.Context, issuer string, subject string) (models.OIDCIdentity, bool, error) {
+	stub.lastIssuer = issuer
+	stub.lastSubject = subject
 	if stub.findErr != nil {
 		return models.OIDCIdentity{}, false, stub.findErr
 	}
@@ -83,8 +91,13 @@ func (stub *stubOIDCIdentityStore) TouchLastUsed(ctx context.Context, identityID
 }
 
 type stubOIDCUserStore struct {
-	byID            models.User
-	byIDErr         error
+	byID    models.User
+	byIDErr error
+	// lastLookupID records the id the service resolved the account with. The
+	// stub answers any id with the same user, so this is the only way a test
+	// can see the account lookup being scoped to the linked identity's owner
+	// rather than to a constant.
+	lastLookupID    uint
 	byEmail         models.User
 	byEmailFound    bool
 	byEmailErr      error
@@ -107,7 +120,8 @@ func (stub *stubOIDCAutoProvisioner) AutoProvisionOwnerAccount(ctx context.Conte
 	return stub.user, nil
 }
 
-func (stub *stubOIDCUserStore) FindByID(context.Context, uint) (models.User, error) {
+func (stub *stubOIDCUserStore) FindByID(_ context.Context, userID uint) (models.User, error) {
+	stub.lastLookupID = userID
 	if stub.byIDErr != nil {
 		return models.User{}, stub.byIDErr
 	}
@@ -193,6 +207,19 @@ func TestOIDCLoginServiceAuthenticateUsesExistingIdentityLink(t *testing.T) {
 	}
 	if result.User.ID != 7 {
 		t.Fatalf("expected linked user id 7, got %d", result.User.ID)
+	}
+	// The stubs answer any argument with the same record, so the returned user
+	// alone proves nothing about scoping. Pin the lookup keys themselves: the
+	// identity must be resolved by the asserted (issuer, subject) pair, and the
+	// account by that identity's owner id — not by a constant.
+	if identities.lastIssuer != "https://id.example.com" {
+		t.Fatalf("expected identity lookup by issuer %q, got %q", "https://id.example.com", identities.lastIssuer)
+	}
+	if identities.lastSubject != "owner-subject" {
+		t.Fatalf("expected identity lookup by subject %q, got %q", "owner-subject", identities.lastSubject)
+	}
+	if users.lastLookupID != 7 {
+		t.Fatalf("expected the account to be resolved by the linked identity's owner id 7, got %d", users.lastLookupID)
 	}
 	if identities.touchedID != 44 {
 		t.Fatalf("expected last-used touch for identity 44, got %d", identities.touchedID)
