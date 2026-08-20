@@ -59,8 +59,13 @@ test.describe('WCAG AA audit regressions', () => {
     await page.setViewportSize({ width: 1280, height: 900 });
 
     // A recorded cycle start paints period cells and the fertile window that
-    // follows it, so both phase fills are on the page.
+    // follows it, so both phase fills are on the page. The window itself is
+    // withheld until one cycle has been observed, so the previous cycle's start
+    // is seeded too, exactly one 28-day cycle earlier: that is the length the
+    // account settings already carry, so the fertile days land where they always
+    // did and this case keeps measuring contrast rather than the data tier.
     const today = await todayISOFromDashboard(page);
+    await markCycleStart(page, shiftISODate(today, -34));
     await markCycleStart(page, shiftISODate(today, -6));
 
     await page.goto('/calendar');

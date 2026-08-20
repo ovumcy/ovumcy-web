@@ -12,7 +12,7 @@ import { applyTheme } from './support/contrast-helpers';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { expectElementAboveMobileTabbar } from './support/mobile-layout-helpers';
 import { ensureNotesFieldVisible } from './support/note-helpers';
-import { openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
+import { markCycleStart, openCalendarDayEditor, saveDayEditorForm } from './support/stats-helpers';
 import { setRequestTimezoneFromBrowser } from './support/timezone-helpers';
 import { checkStyledControl } from './support/form-helpers';
 import { selectOnboardingStartDate } from './support/onboarding-helpers';
@@ -563,6 +563,14 @@ test.describe('Calendar page', () => {
     ]);
     await setRequestTimezoneFromBrowser(page);
 
+    // The demotion acts on the PREDICTED ovulation day, and that projection is
+    // withheld until one cycle has been observed. Log this cycle's start and the
+    // previous one exactly 28 days before it — the length the account settings
+    // already carry — so the observed cycle changes nothing about where the
+    // predicted ovulation lands, and the latest logged start is still today-13.
+    await markCycleStart(page, shiftISODate(startISO, -28));
+    await markCycleStart(page, startISO);
+
     // Enable TrackBBT via the tracking settings endpoint. Send the full
     // default snapshot — the JSON body parser does not treat missing fields
     // as no-op, so a single-field patch would wipe the other tracking flags.
@@ -678,6 +686,16 @@ test.describe('Calendar page', () => {
       stepTwoForm.locator('[data-onboarding-step2-submit]').click(),
     ]);
     await setRequestTimezoneFromBrowser(page);
+
+    // The fertile window is withheld until one cycle has been observed, so the
+    // two cycles before this one are logged as well, 28 days apart — the length
+    // the account settings already carry, so the window stays mid-month exactly
+    // as described above. Two of them, not one: on a run date that IS the 1st,
+    // the anchor itself has not closed a cycle yet, and the pair before it has.
+    const anchorISO = `${monthISO}-01`;
+    await markCycleStart(page, shiftISODate(anchorISO, -56));
+    await markCycleStart(page, shiftISODate(anchorISO, -28));
+    await markCycleStart(page, anchorISO);
 
     await page.goto(`/calendar?month=${monthISO}`);
     await expect(page.locator('[data-calendar-view]')).toHaveAttribute('data-usage-goal', 'health');
