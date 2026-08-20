@@ -22,6 +22,11 @@ type oidclogoutstateserviceCovStore struct {
 	deleteExpiredErr    error
 	deleteExpiredCalls  int
 	deleteByIDCalls     int
+	// findSessionID records the key the service looked the record up by. The
+	// stub returns findRecord for any key, so without this a lookup that
+	// dropped the session id would still return the record and no assertion
+	// on the returned fields could tell the difference.
+	findSessionID string
 }
 
 func (s *oidclogoutstateserviceCovStore) Save(ctx context.Context, state *models.OIDCLogoutState) error {
@@ -30,6 +35,7 @@ func (s *oidclogoutstateserviceCovStore) Save(ctx context.Context, state *models
 }
 
 func (s *oidclogoutstateserviceCovStore) FindBySessionID(ctx context.Context, sessionID string) (models.OIDCLogoutState, bool, error) {
+	s.findSessionID = sessionID
 	if s.findErr != nil {
 		return models.OIDCLogoutState{}, false, s.findErr
 	}
@@ -369,6 +375,9 @@ func TestOIDCLogoutStateServiceLoadValidRecordReturnsData(t *testing.T) {
 	if !found {
 		t.Fatal("expected found=true for valid non-expired record")
 	}
+	if store.findSessionID != "sess-ok" {
+		t.Fatalf("expected the record to be looked up by session id %q, got %q", "sess-ok", store.findSessionID)
+	}
 	// Fields should be trimmed
 	if got.EndSessionEndpoint != "https://id.example.com/logout" {
 		t.Fatalf("EndSessionEndpoint not trimmed: %q", got.EndSessionEndpoint)
@@ -496,7 +505,14 @@ func TestOIDCLogoutStateServiceSaveFieldsTrimmedAndUTC(t *testing.T) {
 
 	loc, _ := time.LoadLocation("America/New_York")
 	now := time.Date(2026, 6, 1, 8, 0, 0, 0, loc) // non-UTC input
+	// A non-1 owner id: the erasure cascade keys on user_id
+	// (`DELETE FROM oidc_logout_states WHERE user_id = ?`), so a record saved
+	// under the wrong — or a zero — owner survives that owner's account
+	// deletion holding an id_token_hint until the 7-day TTL. Migration 033
+	// exists to purge exactly such unattributed rows.
+	const ownerID = uint(9)
 	state := OIDCLogoutState{
+		UserID:                ownerID,
 		EndSessionEndpoint:    "  https://id.example.com/logout  ",
 		IDTokenHint:           "  tok123  ",
 		PostLogoutRedirectURL: "  https://app.example.com/done  ",
@@ -510,6 +526,9 @@ func TestOIDCLogoutStateServiceSaveFieldsTrimmedAndUTC(t *testing.T) {
 	}
 	if store.saved.SessionID != "sess-trim" {
 		t.Fatalf("expected trimmed session ID, got %q", store.saved.SessionID)
+	}
+	if store.saved.UserID != ownerID {
+		t.Fatalf("expected the persisted row to carry owner id %d, got %d", ownerID, store.saved.UserID)
 	}
 	if store.saved.EndSessionEndpoint != "https://id.example.com/logout" {
 		t.Fatalf("EndSessionEndpoint not trimmed: %q", store.saved.EndSessionEndpoint)

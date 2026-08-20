@@ -9,6 +9,12 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// onboardingFixtureUserID is deliberately not 1. Every onboarding write is
+// scoped by the owner id the service forwards, and an id of 1 is
+// indistinguishable from a hard-coded owner in a fresh fixture — an assertion
+// written against 1 would be satisfied by the very defect it exists to catch.
+const onboardingFixtureUserID = uint(42)
+
 type stubOnboardingRepo struct {
 	user              models.User
 	findErr           error
@@ -17,16 +23,26 @@ type stubOnboardingRepo struct {
 	completeStartDay  time.Time
 	completePeriodLen int
 	completeAutoFill  bool
+	// The four ids below record which owner each call was scoped to. The stub
+	// serves a single embedded user, so no other assertion in this file can
+	// observe the service resolving or writing the wrong account.
+	findUserID     uint
+	step1UserID    uint
+	step1Start     time.Time
+	completeUserID uint
 }
 
-func (stub *stubOnboardingRepo) FindByID(context.Context, uint) (models.User, error) {
+func (stub *stubOnboardingRepo) FindByID(_ context.Context, userID uint) (models.User, error) {
+	stub.findUserID = userID
 	if stub.findErr != nil {
 		return models.User{}, stub.findErr
 	}
 	return stub.user, nil
 }
 
-func (stub *stubOnboardingRepo) SaveOnboardingStep1(context.Context, uint, time.Time) error {
+func (stub *stubOnboardingRepo) SaveOnboardingStep1(_ context.Context, userID uint, start time.Time) error {
+	stub.step1UserID = userID
+	stub.step1Start = start
 	return nil
 }
 
@@ -36,6 +52,7 @@ func (stub *stubOnboardingRepo) SaveOnboardingStep2(context.Context, uint, int, 
 
 func (stub *stubOnboardingRepo) CompleteOnboarding(ctx context.Context, userID uint, startDay time.Time, periodLength int, autoPeriodFill bool) error {
 	stub.completeCalled = true
+	stub.completeUserID = userID
 	stub.completeStartDay = startDay
 	stub.completePeriodLen = periodLength
 	stub.completeAutoFill = autoPeriodFill
@@ -50,13 +67,35 @@ func TestSanitizeOnboardingCycleAndPeriod(t *testing.T) {
 }
 
 func TestCompleteOnboardingForUserRequiresStep1Date(t *testing.T) {
-	service := NewOnboardingService(&stubOnboardingRepo{
-		user: models.User{},
-	})
+	repo := &stubOnboardingRepo{user: models.User{}}
+	service := NewOnboardingService(repo)
 
-	_, err := service.CompleteOnboardingForUser(context.Background(), 1, time.UTC)
+	_, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, time.UTC)
 	if !errors.Is(err, ErrOnboardingStepsRequired) {
 		t.Fatalf("expected ErrOnboardingStepsRequired, got %v", err)
+	}
+	if repo.findUserID != onboardingFixtureUserID {
+		t.Fatalf("expected the eligibility read to be scoped to owner %d, got %d", onboardingFixtureUserID, repo.findUserID)
+	}
+}
+
+// TestOnboardingServiceSaveStep1ForwardsTheCallersOwnerID pins the owner id on
+// the step-1 write. The repository stub accepts any id, so the forwarded value
+// is the only observable that distinguishes a correctly scoped write from one
+// that lands on a constant account.
+func TestOnboardingServiceSaveStep1ForwardsTheCallersOwnerID(t *testing.T) {
+	repo := &stubOnboardingRepo{}
+	service := NewOnboardingService(repo)
+
+	start := time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC)
+	if err := service.SaveStep1(context.Background(), onboardingFixtureUserID, start); err != nil {
+		t.Fatalf("SaveStep1() unexpected error: %v", err)
+	}
+	if repo.step1UserID != onboardingFixtureUserID {
+		t.Fatalf("expected step 1 to be written for owner %d, got %d", onboardingFixtureUserID, repo.step1UserID)
+	}
+	if !repo.step1Start.Equal(start) {
+		t.Fatalf("expected step 1 start %s, got %s", start, repo.step1Start)
 	}
 }
 
@@ -76,12 +115,18 @@ func TestCompleteOnboardingForUserNormalizesDateAndPeriod(t *testing.T) {
 	}
 	service := NewOnboardingService(repo)
 
-	startDay, err := service.CompleteOnboardingForUser(context.Background(), 1, location)
+	startDay, err := service.CompleteOnboardingForUser(context.Background(), onboardingFixtureUserID, location)
 	if err != nil {
 		t.Fatalf("CompleteOnboardingForUser() unexpected error: %v", err)
 	}
 	if !repo.completeCalled {
 		t.Fatal("expected CompleteOnboarding() to be called")
+	}
+	if repo.findUserID != onboardingFixtureUserID {
+		t.Fatalf("expected the baseline read to be scoped to owner %d, got %d", onboardingFixtureUserID, repo.findUserID)
+	}
+	if repo.completeUserID != onboardingFixtureUserID {
+		t.Fatalf("expected completion to be written for owner %d, got %d", onboardingFixtureUserID, repo.completeUserID)
 	}
 	if repo.completePeriodLen != 12 {
 		t.Fatalf("expected sanitized period length 12, got %d", repo.completePeriodLen)

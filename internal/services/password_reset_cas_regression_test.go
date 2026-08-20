@@ -19,6 +19,12 @@ type casStubAuthUserRepo struct {
 	casConsumed bool
 	// casOldHashSeen is the oldPasswordHash value the CAS UPDATE received.
 	casOldHashSeen string
+	// casUserIDSeen is the owner id the CAS UPDATE was scoped to. The stub
+	// simulates the predicate against a SINGLE embedded user, so every id
+	// reaches the same row: without recording it, neither the consumed flag,
+	// the returned error, nor the session-version bump can tell a reset that
+	// landed on the resolved account from one that landed on another.
+	casUserIDSeen uint
 	// casErr, if set, is returned on the next CAS call.
 	casErr error
 }
@@ -26,6 +32,7 @@ type casStubAuthUserRepo struct {
 func (s *casStubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(
 	_ context.Context, userID uint, oldPasswordHash, newPasswordHash, recoveryHash string,
 ) error {
+	s.casUserIDSeen = userID
 	if s.casErr != nil {
 		return s.casErr
 	}
@@ -75,6 +82,9 @@ func TestResetPasswordAndRotateRecoveryCodeCASRejectsReplay(t *testing.T) {
 	}
 	if !repo.casConsumed {
 		t.Fatal("expected CAS UPDATE to be called on first redeem")
+	}
+	if repo.casUserIDSeen != 7 {
+		t.Fatalf("expected the CAS UPDATE to be scoped to the resolved owner 7, got %d", repo.casUserIDSeen)
 	}
 	if repo.user.AuthSessionVersion != 2 {
 		t.Fatalf("expected auth_session_version 2 after first redeem, got %d", repo.user.AuthSessionVersion)
@@ -130,6 +140,9 @@ func TestCompleteResetSingleUseViaCAS(t *testing.T) {
 	}
 	if user == nil || user.ID != 42 {
 		t.Fatalf("expected user id 42, got %#v", user)
+	}
+	if repo.casUserIDSeen != 42 {
+		t.Fatalf("expected the CAS UPDATE to be scoped to the token's owner 42, got %d", repo.casUserIDSeen)
 	}
 	if recoveryCode == "" {
 		t.Fatal("expected non-empty rotated recovery code")

@@ -12,12 +12,17 @@ type onboardingserviceCovStep2Repo struct {
 	stubOnboardingRepo
 	saveStep2Err    error
 	saveStep2Called bool
-	savedCycle      int
-	savedPeriod     int
+	// savedUserID records which owner the step-2 write was scoped to; the
+	// cycle/period values below are the same for every account and cannot
+	// distinguish one owner's baseline from another's.
+	savedUserID uint
+	savedCycle  int
+	savedPeriod int
 }
 
 func (s *onboardingserviceCovStep2Repo) SaveOnboardingStep2(ctx context.Context, userID uint, cycleLength int, periodLength int, autoPeriodFill bool, irregularCycle bool, usageGoal string) error {
 	s.saveStep2Called = true
+	s.savedUserID = userID
 	s.savedCycle = cycleLength
 	s.savedPeriod = periodLength
 	return s.saveStep2Err
@@ -43,9 +48,12 @@ func TestOnboardingServiceSaveStep2ReturnsSanitizedValues(t *testing.T) {
 	svc := NewOnboardingService(repo)
 
 	// cycle=100 → clamped to 90, period=20 → clamped to 14, then capped to MaxPeriodLengthForCycle(90)=14
-	gotCycle, gotPeriod, err := svc.SaveStep2(context.Background(), 1, 100, 20, false, false, "")
+	gotCycle, gotPeriod, err := svc.SaveStep2(context.Background(), onboardingFixtureUserID, 100, 20, false, false, "")
 	if err != nil {
 		t.Fatalf("SaveStep2 unexpected error: %v", err)
+	}
+	if repo.savedUserID != onboardingFixtureUserID {
+		t.Fatalf("SaveStep2 owner: got %d, want %d", repo.savedUserID, onboardingFixtureUserID)
 	}
 	if gotCycle != 90 {
 		t.Fatalf("SaveStep2 cycle: got %d, want 90", gotCycle)
@@ -330,6 +338,9 @@ func TestOnboardingServiceSaveStep2SanitizesBeforePersist(t *testing.T) {
 	}
 	if !repo.saveStep2Called {
 		t.Fatal("expected SaveOnboardingStep2 to be called")
+	}
+	if repo.savedUserID != 7 {
+		t.Fatalf("SaveStep2 owner: got %d, want 7", repo.savedUserID)
 	}
 	if repo.savedCycle != 15 || repo.savedPeriod != 5 {
 		t.Fatalf("repo received cycle=%d period=%d, want 15/5", repo.savedCycle, repo.savedPeriod)
