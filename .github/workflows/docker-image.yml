@@ -110,19 +110,34 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # The required contexts on `main`, each a thin gate job over a matrix
-          # in ci.yml. Being in main is not enough on its own: a commit reaches
-          # main through the merge queue, and the queue judges the batch it
-          # built, so this asks the checks about this exact commit.
-          REQUIRED_CHECKS: test race e2e
+          # Exactly the five ci.yml's `publish-image` requires before it lets
+          # `:latest` follow `main`. Three of them would have made the RELEASE
+          # path more permissive than the rolling one: a commit whose
+          # `image-smoke` or `e2e-postgres-smoke` failed correctly holds
+          # `:latest` back, and tagging that same commit would then have shipped
+          # a signed, attested release image anyway.
+          #
+          # Being contained in main is not enough on its own to imply these. A
+          # commit reaches main through the merge queue, and the queue's run
+          # judges the batch it built while skipping `image-smoke`,
+          # `e2e-cross-browser` and the Postgres smoke outright — those three
+          # execute only on the `push` that follows. So the question has to be
+          # asked of this exact commit's checks, which is what this does.
+          REQUIRED_CHECKS: test race e2e e2e-postgres-smoke image-smoke
         run: |
           set -euo pipefail
 
           sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
 
           # The endpoint's default `filter=latest` returns the most recent run
-          # per check name — the same view branch protection takes, so a red
-          # re-run after a green one counts as red here too.
+          # per name PER CHECK SUITE, and a commit on main carries two: the
+          # merge-queue run that validated it and the push run that followed. So
+          # each of these names legitimately appears TWICE, and for
+          # `image-smoke` the two disagree — `skipped` in the queue suite,
+          # `success` in the push one (verified on 6a95d01d and fc30f490).
+          # Every row is therefore judged, not the first one found: taking the
+          # first would make the verdict depend on the order the API happened to
+          # return, and a failure in either suite must block the tag.
           runs="$(
             gh api --paginate \
               "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
@@ -134,14 +149,32 @@ jobs:
 
           failed=0
           for name in $REQUIRED_CHECKS; do
-            conclusion="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$name" '$1 == n { print $2; exit }')"
-            if [ -z "$conclusion" ]; then
-              echo "::error::no \`${name}\` check run exists for ${sha}. A tag push starts no CI run, so this commit's checks must already have run on main."
+            conclusions="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$name" '$1 == n { print $2 }')"
+
+            if [ -z "$conclusions" ]; then
+              echo "::error::no \`${name}\` check run exists for ${sha}. A tag push starts no CI run of its own, so this commit's checks must already have run on main."
               failed=1
-            elif [ "$conclusion" != "success" ]; then
-              echo "::error::the \`${name}\` check on ${sha} concluded \"${conclusion}\"."
-              failed=1
+              continue
             fi
+
+            # `skipped` passes, here and for the same reason ci.yml's own `test`
+            # gate accepts it: the `changes` job decided this run did not need
+            # that lane — a decision not to run, not a failure to run. It is not
+            # a hole a tag can be aimed at either, since `changes` clears a lane
+            # only for a diff that cannot reach it. Insisting on `success`
+            # instead would block a tag on a docs-only commit forever:
+            # `image-smoke` gates on `run_e2e`, so there it is skipped in BOTH
+            # suites. `pending` is not `skipped` — a queued or still-running
+            # check is no verdict, and this refuses on it.
+            while IFS= read -r conclusion; do
+              case "$conclusion" in
+                success|skipped) ;;
+                *)
+                  echo "::error::a \`${name}\` check run on ${sha} concluded \"${conclusion}\"."
+                  failed=1
+                  ;;
+              esac
+            done <<< "$conclusions"
           done
 
           if [ "$failed" -ne 0 ]; then
@@ -149,7 +182,7 @@ jobs:
             exit 1
           fi
 
-          echo "every required check (${REQUIRED_CHECKS}) succeeded on ${sha}."
+          echo "every required check (${REQUIRED_CHECKS}) passed on ${sha}."
 
   publish:
     needs:
