@@ -3,6 +3,7 @@ package services
 import (
 	"net/url"
 	"strings"
+	"time"
 )
 
 func SanitizeRedirectPath(raw string, fallback string) string {
@@ -29,37 +30,131 @@ func SanitizeRedirectPath(raw string, fallback string) string {
 }
 
 // currentPathQueryAllowlist is the closed set of query parameters a page may
-// echo back into its own rendered address. It holds exactly the parameters the
-// page handlers read: the calendar anchors, the onboarding step and the privacy
-// back-link. Anything else is dropped whatever its value, because the rendered
-// address reaches the markup of every page and, through the footer privacy
-// link, a new outgoing URL — so an attacker-supplied `email` or `error` in a
-// crafted link would land in browser history, the Referer header and the server
-// access log.
-var currentPathQueryAllowlist = map[string]struct{}{
-	"month":    {},
-	"day":      {},
-	"selected": {},
-	"edit":     {},
-	"step":     {},
-	"back":     {},
+// echo back into its own rendered address, each paired with the shape its own
+// consumer accepts. It holds exactly the parameters the page handlers read: the
+// calendar anchors, the onboarding step and the privacy back-link. Anything
+// else is dropped whatever its value, because the rendered address reaches the
+// markup of every page and, through the footer privacy link, a new outgoing URL
+// — so an attacker-supplied `email` or `error` in a crafted link would land in
+// browser history, the Referer header and the server access log.
+//
+// The names are only half the filter. An allowlist over names alone lets any
+// value through under an allowed key, which is the very same leak wearing a
+// different key: `?step=victim@example.com` renders exactly like `?email=`
+// would. So a retained value must also match what its consumer accepts, and a
+// parameter whose value does not match is dropped rather than trimmed — the
+// same fail-closed direction the rest of this function takes.
+var currentPathQueryAllowlist = map[string]func(string) bool{
+	// parseCalendarMonthQuery: time.Parse("2006-01") on the trimmed value.
+	"month": isCalendarMonthQueryShape,
+	// parseCalendarDayParam -> ParseDayDate: time.Parse("2006-01-02") on the
+	// trimmed value, plus a zone-existence check this policy cannot mirror
+	// (see isCalendarDayQueryShape).
+	"day":      isCalendarDayQueryShape,
+	"selected": isCalendarDayQueryShape,
+	// ParseBoolLike: a closed set of truthy spellings.
+	"edit": isBoolLikeQueryShape,
+	// ResolveOnboardingStep: Atoi then clamped to 1..2.
+	"step": isOnboardingStepQueryShape,
+	// A local in-app path. Validated structurally rather than by this
+	// predicate, because it also needs the nested query filter; see
+	// sanitizeNestedBackValues.
+	"back": nil,
 }
 
 const currentPathBackParameter = "back"
 
-// SanitizeCurrentPathQuery filters the query of a raw request URI down to
-// currentPathQueryAllowlist and returns the path with the surviving parameters
-// in a deterministic (sorted) order, or the bare path when none survive. The
-// path half is returned unchanged — deciding whether a path may be navigated to
-// is SanitizeRedirectPath's job, not this one's.
+// isCalendarMonthQueryShape mirrors parseCalendarMonthQuery: the month anchor is
+// parsed with the "2006-01" layout after trimming, so anything else never
+// reaches the calendar as a month and has no business being rendered.
+func isCalendarMonthQueryShape(value string) bool {
+	_, err := time.Parse("2006-01", strings.TrimSpace(value))
+	return err == nil
+}
+
+// isCalendarDayQueryShape mirrors the format half of ParseDayDate: the
+// "2006-01-02" layout after trimming.
 //
-// It fails closed: a query the parser rejects yields the bare path rather than
-// the raw input, so a malformed query can never pass through unfiltered.
+// ParseDayDate additionally refuses a date the request's own zone skips
+// entirely (a DST jump over local midnight), which needs a *time.Location this
+// policy deliberately does not take — it also filters `back` values, where no
+// request zone applies. The residual is therefore exactly "a well-formed date
+// that does not exist in the viewer's zone": ten digits and two dashes, which
+// cannot carry an address, a token or an error code. The page itself still
+// refuses such a date through ParseDayDate; only the rendered address is
+// slightly more permissive than the consumer.
+func isCalendarDayQueryShape(value string) bool {
+	_, err := time.Parse("2006-01-02", strings.TrimSpace(value))
+	return err == nil
+}
+
+// isBoolLikeQueryShape mirrors ParseBoolLike's truthy set. A value ParseBoolLike
+// reads as false is dropped rather than kept: an absent parameter parses to
+// false too, so dropping it renders a shorter address with identical meaning.
+func isBoolLikeQueryShape(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// isOnboardingStepQueryShape mirrors ResolveOnboardingStep's reachable range:
+// it parses an integer and clamps it to 1..2, so those two are the only step
+// values that ever describe a real page state.
+func isOnboardingStepQueryShape(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "1", "2":
+		return true
+	default:
+		return false
+	}
+}
+
+// isLocalRoutePathShape reports whether a path looks like a route this app can
+// actually serve. Every path registered in RegisterRoutes is built from ASCII
+// letters, digits, "/", "-", "_" and "." (`/calendar/day/2026-02-21`,
+// `/register/welcome`, `/favicon.ico`), and a concrete request path never
+// carries the ":" of a route template. Excluding everything else keeps an
+// address, a percent-escape or a control character out of a rendered `back`,
+// which SanitizeRedirectPath alone would accept as "some local path".
+func isLocalRoutePathShape(path string) bool {
+	if path == "" {
+		return false
+	}
+	for _, character := range path {
+		switch {
+		case character >= 'a' && character <= 'z',
+			character >= 'A' && character <= 'Z',
+			character >= '0' && character <= '9',
+			character == '/', character == '-', character == '_', character == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// SanitizeCurrentPathQuery filters a raw request URI down to what may safely be
+// rendered back into the page it describes: the fragment is dropped, and the
+// query is reduced to currentPathQueryAllowlist — allowed names carrying values
+// of the shape their own consumer accepts. It returns the path with the
+// surviving parameters in a deterministic (sorted) order, or the bare path when
+// none survive.
+//
+// The path half is otherwise returned unchanged — deciding whether a path may
+// be navigated to is SanitizeRedirectPath's job, not this one's.
+//
+// It fails closed throughout: a query the parser rejects yields the bare path
+// rather than the raw input, and a parameter whose value does not match its
+// shape is dropped rather than trimmed into one.
 //
 // `back` carries a path of its own, so its value is filtered by the same policy
-// one level down. Exactly one level: a `back` nested inside a `back` value is
-// dropped rather than recursed into, and an inner value that does not parse
-// drops `back` entirely instead of being kept raw.
+// one level down and must itself look like a local route. Exactly one level: a
+// `back` nested inside a `back` value is dropped rather than recursed into, and
+// an inner value that does not parse drops `back` entirely instead of being
+// kept raw.
 func SanitizeCurrentPathQuery(rawURI string) string {
 	sanitized, _ := sanitizeCurrentPathQuery(rawURI, true)
 	return sanitized
@@ -69,7 +164,15 @@ func SanitizeCurrentPathQuery(rawURI string) string {
 // the caller filtering a nested value can drop that value instead of keeping an
 // unfiltered one. The returned string is always safe to render either way.
 func sanitizeCurrentPathQuery(rawURI string, allowBack bool) (string, bool) {
-	path, query, hasQuery := strings.Cut(rawURI, "?")
+	// The fragment is cut first and discarded. It lives in the path half, so
+	// cutting at "?" alone would carry it through whole, and a URI with no "?"
+	// at all would be returned verbatim. A browser never sends a fragment to
+	// the server, but a caller-supplied `back` value reaches this same function
+	// with one intact. Nothing downstream needs it: neither the language switch
+	// nor the privacy back link.
+	withoutFragment, _, _ := strings.Cut(rawURI, "#")
+
+	path, query, hasQuery := strings.Cut(withoutFragment, "?")
 	if !hasQuery || query == "" {
 		return path, true
 	}
@@ -81,7 +184,8 @@ func sanitizeCurrentPathQuery(rawURI string, allowBack bool) (string, bool) {
 
 	retained := url.Values{}
 	for key, parameterValues := range values {
-		if _, allowed := currentPathQueryAllowlist[key]; !allowed {
+		matchesShape, allowed := currentPathQueryAllowlist[key]
+		if !allowed {
 			continue
 		}
 		if key == currentPathBackParameter {
@@ -95,6 +199,9 @@ func sanitizeCurrentPathQuery(rawURI string, allowBack bool) (string, bool) {
 			retained[key] = nested
 			continue
 		}
+		if !everyValueMatchesShape(parameterValues, matchesShape) {
+			continue
+		}
 		retained[key] = parameterValues
 	}
 
@@ -104,17 +211,65 @@ func sanitizeCurrentPathQuery(rawURI string, allowBack bool) (string, bool) {
 	return path + "?" + retained.Encode(), true
 }
 
+// everyValueMatchesShape drops a repeated parameter as a whole as soon as one of
+// its occurrences fails the shape: keeping the good half of a crafted pair would
+// leave the caller in control of which one survives.
+func everyValueMatchesShape(parameterValues []string, matchesShape func(string) bool) bool {
+	if matchesShape == nil {
+		return false
+	}
+	for _, value := range parameterValues {
+		if !matchesShape(value) {
+			return false
+		}
+	}
+	return true
+}
+
 // sanitizeNestedBackValues runs each back value through the same policy with
 // further nesting disabled, and reports false as soon as one of them fails to
-// parse — the whole parameter is then dropped.
+// parse or does not look like a local route — the whole parameter is then
+// dropped. SanitizeRedirectPath supplies the structural rules it already owns
+// (leading slash, no protocol-relative or absolute URL, no CR/LF); the route
+// character set is checked on top, since SanitizeRedirectPath would accept
+// "/victim@example.com" as just another local path.
 func sanitizeNestedBackValues(parameterValues []string) ([]string, bool) {
 	sanitized := make([]string, 0, len(parameterValues))
 	for _, value := range parameterValues {
-		nested, ok := sanitizeCurrentPathQuery(value, false)
+		nested, ok := SanitizeBackNavigationValue(value)
 		if !ok {
 			return nil, false
 		}
 		sanitized = append(sanitized, nested)
 	}
 	return sanitized, true
+}
+
+// SanitizeBackNavigationValue is the single decision about what a caller-supplied
+// back-link value may become. It reports false when the value must be dropped in
+// favour of a fallback.
+//
+// It exists so the two surfaces that render such a value cannot drift apart: the
+// `back` parameter inside a rendered current path, and the privacy page's own
+// back link, which receives the value straight from the query string. A check
+// that lived on only one of them left the other reachable with exactly the input
+// it refused.
+//
+// The value is fragment-stripped, its own query filtered by the same allowlist
+// one level down, and the result must be both a redirect-safe local path
+// (SanitizeRedirectPath's structural rules) and built from the characters this
+// app's routes actually use.
+func SanitizeBackNavigationValue(value string) (string, bool) {
+	nested, ok := sanitizeCurrentPathQuery(value, false)
+	if !ok {
+		return "", false
+	}
+	if nested == "" || SanitizeRedirectPath(nested, "") != nested {
+		return "", false
+	}
+	nestedPath, _, _ := strings.Cut(nested, "?")
+	if !isLocalRoutePathShape(nestedPath) {
+		return "", false
+	}
+	return nested, true
 }
