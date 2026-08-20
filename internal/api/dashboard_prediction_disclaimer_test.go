@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"golang.org/x/net/html"
 )
 
 // TestDashboardRendersPredictionDisclaimer pins the medical-safety labeling
@@ -54,20 +56,32 @@ func TestCalendarRendersPredictionDisclaimer(t *testing.T) {
 // the calendar feed. Both used to spell the qualifier out in their own
 // catalogue entry; they now reference the single medical.disclaimer key, so
 // this pins that the consolidation of the TEXT did not silently drop either
-// SURFACE — the count of surfaces showing the disclaimer is the invariant.
+// SURFACE. The binding is made PER SURFACE: each hook's own subtree must carry
+// the mandatory wording. A page-wide occurrence count cannot do that — an empty
+// calendar-feed disclaimer beside a webhook disclaimer stating the sentence
+// twice keeps the page total at two and passes while one egress surface ships
+// predicted dates with no qualifier at all.
 func TestSettingsEgressSurfacesRenderPredictionDisclaimer(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "settings-disclaimer@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
 	body := fetchPageBody(t, app, "/settings", authCookie)
+	document := mustParseHTMLDocument(t, body)
 	for _, hook := range []string{`data-webhook-disclaimer`, `data-calendar-feed-disclaimer`} {
-		if !strings.Contains(body, hook) {
+		elements := htmlFindElements(document, func(node *html.Node) bool {
+			return node.Type == html.ElementNode && htmlHasAttr(node, hook)
+		})
+		if len(elements) == 0 {
 			t.Fatalf("settings must render the disclaimer hook %q", hook)
 		}
-	}
-	if occurrences := strings.Count(body, "not medical advice or a method of contraception"); occurrences < 2 {
-		t.Fatalf("expected the safety copy on both settings egress surfaces, found %d occurrence(s)", occurrences)
+		for index, element := range elements {
+			text := normalizeHTMLText(htmlNodeText(element))
+			if !strings.Contains(text, "not medical advice or a method of contraception") {
+				t.Fatalf("disclaimer hook %q (occurrence %d of %d) must carry the safety copy in its own subtree, got %q",
+					hook, index+1, len(elements), text)
+			}
+		}
 	}
 }
 
