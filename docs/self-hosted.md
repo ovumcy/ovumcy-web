@@ -345,7 +345,7 @@ The first command destroys everything currently in that database. Take a fresh r
 Both additions are load-bearing:
 
 - **Dropping the schema** is the Postgres equivalent of `docker volume rm ovumcy_data` + `docker volume create` on the SQLite path, and for the same reason: the restore has to start from an empty target. A plain `pg_dump` writes `CREATE TABLE` followed by `COPY` and carries no `DROP` of its own, so against a database that still holds its schema every `CREATE TABLE` fails — and `COPY`, one all-or-nothing statement per table, only lands in a table that is still empty.
-- **`-v ON_ERROR_STOP=1`** makes `psql` treat those failures as failures. Its default is to run past every error and exit `0` regardless, which is what lets a restore that moved nothing report success.
+- **`-v ON_ERROR_STOP=1`** makes `psql` treat those failures as failures. Its default is to run past every error and exit `0` regardless, which is what lets a restore that moved none of the data report success.
 
 Without both, the restore's outcome depends on the state of the target database, and the three cases are indistinguishable from outside — all of them exit `0` after printing roughly 40 `ERROR:  relation "…" already exists` lines to stderr:
 
@@ -353,9 +353,16 @@ Without both, the restore's outcome depends on the state of the target database,
 | --- | --- |
 | Tables empty (fresh volume, rehearsal stack) | Restored every row — the case that makes the procedure look correct |
 | Partial loss (some rows survived) | Restored **nothing**; the missing rows stayed missing |
-| Data intact, or drifted since the backup | Changed **nothing**; the operator is looking at the wrong generation of data |
+| Data intact, or drifted since the backup | Restored **no row**, and rewound every **sequence** to the value it held in the backup — `setval` is the one statement in a plain dump that succeeds against a populated schema. The operator is looking at the wrong generation of data on a database whose next insert lands on an id that is already taken |
 
-With the drop step and `ON_ERROR_STOP=1`, the same restore prints no `ERROR:` lines, exits `0`, and leaves an export byte-identical to the one taken when the dump was made.
+With the drop step and `ON_ERROR_STOP=1`, the same restore prints no `ERROR:` lines, exits `0`, and brings back every table, row and sequence the dump carried.
+
+Two differences to the dump you took survive it, and neither of them is your data, so do not read either as a failed restore:
+
+- `pg_dump` 17.6 and newer wrap every dump in a fresh random `\restrict …` / `\unrestrict …` pair, so no two dumps of the same database are ever byte-identical.
+- Dropping and recreating `public` leaves a schema that `initdb` did not create, so every dump taken *after* a restore carries an `ALTER SCHEMA public OWNER` / `COMMENT ON SCHEMA public` / `REVOKE USAGE ON SCHEMA public` block that the dump taken before it did not.
+
+Compare two dumps by their `COPY` blocks and their `setval` lines rather than with a byte-for-byte `diff`.
 
 A clean exit now means the two commands ran, not that the data came back: a truncated or empty dump replays into a freshly dropped schema without a single error and exits `0` just the same, leaving the stack healthy and blank. Finish through [Post-Restore Verification](#post-restore-verification) — `/readyz` and a normal page load stay green on an empty database, so neither closes out a Postgres restore either.
 
