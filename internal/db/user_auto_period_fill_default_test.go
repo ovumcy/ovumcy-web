@@ -116,6 +116,63 @@ func assertNewAccountCarriesAutoPeriodFillOff(t *testing.T, database *gorm.DB, e
 	}
 }
 
+// TestAutoPeriodFillColumnDefaultDivergesAcrossEngines pins the trap migration
+// 035 accepted, so that a change which starts depending on it fails here rather
+// than on an owner's data.
+//
+// Postgres restates the column DEFAULT in one statement; SQLite has no ALTER
+// COLUMN, and `users` is the parent of every foreign key in the schema while
+// the runner applies each migration inside a transaction where PRAGMA
+// foreign_keys cannot be toggled — so rebuilding the account table to move one
+// literal was refused, and SQLite still carries the 002-era DEFAULT 1.
+//
+// Everything that makes that harmless rests on ONE premise: no insert path
+// omits the column. This test states the consequence if that premise ever
+// breaks — an account created by a raw INSERT, a second model, or a
+// Select/Omit narrowing the column set gets auto-fill ON on SQLite and OFF on
+// Postgres, from the same code. The cross-dialect parity test compares type
+// families, not defaults, so it cannot see this; TestNewAccountsCarryAutoPeriodFillOff
+// asserts the premise, and this test says what it is worth.
+//
+// A red run here means the divergence moved. If SQLite reports false, the
+// account table was rebuilt after all and this test goes away with the comment
+// above it; if Postgres reports true, migration 035 was undone.
+func TestAutoPeriodFillColumnDefaultDivergesAcrossEngines(t *testing.T) {
+	t.Run("sqlite stores the 002-era default", func(t *testing.T) {
+		database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "auto-period-fill-omitted.db"))
+		if stored := insertUserOmittingAutoPeriodFill(t, database, "sqlite-omitted@example.com"); !stored {
+			t.Fatal("SQLite stored auto_period_fill=false for an INSERT that omitted the column: the divergence this test documents is gone, and the migration comment plus this test should go with it")
+		}
+	})
+
+	t.Run("postgres stores the migrated default", func(t *testing.T) {
+		database := openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t))
+		if stored := insertUserOmittingAutoPeriodFill(t, database, "postgres-omitted@example.com"); stored {
+			t.Fatal("Postgres stored auto_period_fill=true for an INSERT that omitted the column: migration 035 no longer moves the column DEFAULT")
+		}
+	})
+}
+
+// insertUserOmittingAutoPeriodFill creates an account the way nothing in this
+// application does — naming only the columns without a default — and returns
+// what the engine put in auto_period_fill.
+func insertUserOmittingAutoPeriodFill(t *testing.T, database *gorm.DB, email string) bool {
+	t.Helper()
+
+	if err := database.Exec(
+		`INSERT INTO users (email, password_hash, role, created_at) VALUES (?, ?, ?, ?)`,
+		email, "hash", models.RoleOwner, time.Now().UTC(),
+	).Error; err != nil {
+		t.Fatalf("insert an account without naming auto_period_fill: %v", err)
+	}
+
+	var stored bool
+	if err := database.Raw(`SELECT auto_period_fill FROM users WHERE email = ?`, email).Row().Scan(&stored); err != nil {
+		t.Fatalf("read back auto_period_fill: %v", err)
+	}
+	return stored
+}
+
 // TestClearAllDataTurnsAutoPeriodFillOff is the containment half. Erasure that
 // re-arms the generator of inferred period days answers "wipe my records" by
 // restarting part of what produced them, which the security constitution's

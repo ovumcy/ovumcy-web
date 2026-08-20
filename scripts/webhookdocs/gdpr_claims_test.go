@@ -14,13 +14,15 @@ import (
 // both mistakes at once: Art. 9(2)(a) said deployments "rely on
 // operator-captured consent" and that the codebase "exposes no third-party
 // transmission", with "no external network calls" as the control — while
-// registration refuses a falsy consent field in the app, and webhook delivery
-// POSTs to the owner's endpoint. Its cited test could observe neither claim, so
-// nothing failed.
+// registration refuses a falsy consent field in the app, and the tree carries
+// two egress paths: webhook delivery POSTs to the owner's endpoint, and the
+// read-only .ics feed serves an owner's predicted days to whichever calendar
+// client holds the capability token, usually a third-party service. Its cited
+// test could observe none of that, so nothing failed.
 //
 // The three guards below read the code first and hold the document to it, in
-// both directions: a build that really did drop consent enforcement or outbound
-// delivery would fail these tests until the row moved with it. None of them
+// both directions: a build that really did drop consent enforcement, or either
+// egress path, would fail these tests until the row moved with it. None of them
 // pins wording — only which claim a row is making.
 //
 // What they deliberately do NOT do is sweep the whole table for citations the
@@ -34,9 +36,12 @@ const gdprHeading = "## GDPR Cross-Reference"
 // The code facts these rows describe, each read out of the one file that
 // decides it rather than restated here.
 const (
-	// deliverySitePath performs the outbound request. Its presence is the
-	// answer to "does this codebase transmit anything off the instance".
+	// deliverySitePath performs the outbound webhook request.
 	deliverySitePath = "internal/services/webhook_delivery.go"
+	// feedRouteSitePath mounts the .ics feed. The MOUNT is what makes the feed
+	// an egress path — a handler nobody routes to serves nothing — so the route
+	// table is read rather than the handler file.
+	feedRouteSitePath = "internal/api/routes.go"
 	// consentSiteGlob holds the registration handler. Consent is enforced in
 	// the transport layer, so the whole layer is read rather than one file that
 	// could be renamed around the guard.
@@ -48,10 +53,51 @@ const (
 
 var (
 	outboundRequestCall  = regexp.MustCompile(`httpClient\.Do\(`)
+	feedRouteMount       = regexp.MustCompile(`app\.Get\(calendarFeedRoutePath, handler\.ServeCalendarFeed\)`)
 	consentRejectionCall = regexp.MustCompile(`ParseBoolLike\(credentials\.Consent\)`)
 	consentErrorSpec     = regexp.MustCompile(`authConsentRequiredErrorSpec\(\)`)
 	autoPeriodFillValue  = regexp.MustCompile(`DefaultAutoPeriodFill\s*=\s*(true|false)`)
 )
+
+// egressPath is one way health-derived data can leave the instance: whether the
+// code still has it, what the Art. 9 row must say when it does, and what the
+// public mirror owes for it.
+//
+// The set is enumerated rather than exemplified. The row this guard was written
+// for named ONE path and read as complete, which is how the .ics feed — whose
+// usual subscriber is a third-party calendar service, and therefore the more
+// consequential of the two for an Art. 9 claim — went unmentioned in the row
+// that governs third-party transmission. A guard that checked "the webhook is
+// named" would have passed on that wording and resisted the correction.
+type egressPath struct {
+	name string
+	// present reports whether the shipped code still carries this path.
+	present func(t *testing.T, root string) bool
+	// site is the file `present` reads, for failure text.
+	site string
+	// row is what the Art. 9 row must say while the path exists, and must not
+	// say once it is gone.
+	row string
+	// mirror is what docs/SECURITY_INVARIANTS.md owes for the same path.
+	mirror string
+}
+
+var egressPaths = []egressPath{
+	{
+		name:    "webhook reminder delivery",
+		present: codePerformsOutboundDelivery,
+		site:    deliverySitePath,
+		row:     `webhook`,
+		mirror:  `owner-scoped egress`,
+	},
+	{
+		name:    "read-only .ics calendar feed",
+		present: codeServesCalendarFeed,
+		site:    feedRouteSitePath,
+		row:     `calendar feed|\.ics`,
+		mirror:  `calendar feed`,
+	},
+}
 
 // transmissionDenials are the shapes a row uses to say nothing leaves the
 // instance. They are patterns rather than exact sentences because the claim is
@@ -72,41 +118,52 @@ type gdprRow struct {
 }
 
 // TestGDPRTableDoesNotDenyTransmissionTheCodePerforms is the mutually-exclusive
-// half. Owner-controlled egress and "no external network calls" cannot both be
-// true of one tree, and an operator reading the table makes data-flow decisions
-// from whichever they find first.
+// half. Owner-armed egress and "no external network calls" cannot both be true
+// of one tree, and an operator reading the table makes data-flow decisions from
+// whichever they find first.
+//
+// It sweeps the egress SET, so naming one path is not enough: every path the
+// code still has must appear in the row, and a path the code has dropped must
+// not.
 func TestGDPRTableDoesNotDenyTransmissionTheCodePerforms(t *testing.T) {
 	root := repoRoot(t)
 	rows := gdprRows(t, root)
-	transmits := codePerformsOutboundDelivery(t, root)
+	mirror := normalizeSpace(readDoc(t, root, mirrorPath))
+	art9 := gdprRowByArticle(t, rows, "Art. 9")
+	claim := art9.obligation + " " + art9.control
 
-	for _, row := range rows {
-		for _, denial := range transmissionDenials {
-			cells := row.obligation + " " + row.control
-			if !matchesPattern(t, denial, cells) {
-				continue
-			}
-			if transmits {
-				t.Errorf("the %s row denies outbound transmission (%q) while %s issues one:\n  %s\nState the egress the code has — owner-configured, owner-scoped, off until armed — instead of denying it.", row.article, denial, deliverySitePath, truncate(cells))
-			}
+	transmits := false
+	for _, path := range egressPaths {
+		present := path.present(t, root)
+		if present {
+			transmits = true
+		}
+
+		named := matchesPattern(t, path.row, claim)
+		switch {
+		case present && !named:
+			t.Errorf("the code still carries %s (%s) but the %s row never names it:\n  %s\nThe row is where an operator looks for what leaves the instance, and naming one path reads as naming them all.", path.name, path.site, art9.article, truncate(claim))
+		case !present && named:
+			t.Errorf("the %s row describes %s, which %s no longer carries:\n  %s\nA control that was removed is retracted from the table, not left standing.", art9.article, path.name, path.site, truncate(claim))
+		}
+
+		if present && !matchesPattern(t, path.mirror, mirror) {
+			t.Errorf("%s does not describe %s: the two security documents must agree on what leaves the instance", mirrorPath, path.name)
 		}
 	}
 
-	art9 := gdprRowByArticle(t, rows, "Art. 9")
-	claim := art9.obligation + " " + art9.control
-	namesEgress := matchesPattern(t, `webhook`, claim)
-	switch {
-	case transmits && !namesEgress:
-		t.Errorf("%s issues outbound requests but the %s row never names that egress:\n  %s\nThe row is where an operator looks for what leaves the instance.", deliverySitePath, art9.article, truncate(claim))
-	case !transmits && namesEgress:
-		t.Errorf("the %s row describes webhook egress that %s no longer performs:\n  %s\nA control that was removed is retracted from the table, not left standing.", art9.article, deliverySitePath, truncate(claim))
+	if !transmits {
+		t.Fatalf("no egress path was found in the tree at all: this guard reads what leaves the instance out of %s and %s, and now reads nothing", deliverySitePath, feedRouteSitePath)
 	}
 
-	// The public mirror is the other half of the pair: it must carry the same
-	// egress, in its own register, for the same reason.
-	mirror := normalizeSpace(readDoc(t, root, mirrorPath))
-	if transmits && !matchesPattern(t, `owner-scoped egress`, mirror) {
-		t.Errorf("%s does not describe the outbound webhook egress as owner-scoped: the two security documents must agree on what leaves the instance", mirrorPath)
+	for _, row := range rows {
+		cells := row.obligation + " " + row.control
+		for _, denial := range transmissionDenials {
+			if !matchesPattern(t, denial, cells) {
+				continue
+			}
+			t.Errorf("the %s row denies outbound transmission (%q) while the tree still carries an egress path:\n  %s\nState the paths the code has — owner-armed, owner-scoped, revocable — instead of denying them.", row.article, denial, truncate(cells))
+		}
 	}
 }
 
@@ -175,6 +232,20 @@ func codePerformsOutboundDelivery(t *testing.T, root string) bool {
 		t.Fatalf("read %s: %v — this guard reads the transmission claim out of that file and now reads nothing", deliverySitePath, err)
 	}
 	return outboundRequestCall.Match(content)
+}
+
+// codeServesCalendarFeed reads the MOUNT, not the handler: the .ics feed is an
+// egress path because a route serves it to whoever holds the token. An
+// unmounted handler transmits nothing, and a mounted one transmits to a
+// subscriber this instance never sees.
+func codeServesCalendarFeed(t *testing.T, root string) bool {
+	t.Helper()
+
+	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(feedRouteSitePath)))
+	if err != nil {
+		t.Fatalf("read %s: %v — this guard reads the feed's existence out of the route table and now reads nothing", feedRouteSitePath, err)
+	}
+	return feedRouteMount.Match(content)
 }
 
 func codeEnforcesRegistrationConsent(t *testing.T, root string) bool {
