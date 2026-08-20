@@ -166,6 +166,12 @@ func assertPostgresNormalizedEmailUniqueness(t *testing.T, database *gorm.DB) {
 	}
 }
 
+// assertPostgresDailyLogsSchemaReconciled checks the Postgres tree's daily_logs
+// against the shared dailyLogsTrackingContract — the same list the SQLite
+// bootstrap runs — and then the two things only this engine can show: that a
+// user row exists to hang a day off, and that a real insert carrying every
+// tracking field, a NULL symptom_ids and a flow value no CHECK allows for is
+// accepted.
 func assertPostgresDailyLogsSchemaReconciled(t *testing.T, database *gorm.DB) {
 	t.Helper()
 
@@ -181,27 +187,8 @@ func assertPostgresDailyLogsSchemaReconciled(t *testing.T, database *gorm.DB) {
 		t.Fatalf("create postgres daily-log user: %v", err)
 	}
 
-	if !database.Migrator().HasColumn("daily_logs", "mood") {
-		t.Fatal("expected postgres daily_logs.mood column to exist after migrations")
-	}
-	if !database.Migrator().HasColumn("daily_logs", "sex_activity") {
-		t.Fatal("expected postgres daily_logs.sex_activity column to exist after migrations")
-	}
-	if !database.Migrator().HasColumn("daily_logs", "bbt") {
-		t.Fatal("expected postgres daily_logs.bbt column to exist after migrations")
-	}
-	if !database.Migrator().HasColumn("daily_logs", "cervical_mucus") {
-		t.Fatal("expected postgres daily_logs.cervical_mucus column to exist after migrations")
-	}
-	if !database.Migrator().HasColumn("daily_logs", "cycle_start") {
-		t.Fatal("expected postgres daily_logs.cycle_start column to exist after migrations")
-	}
-	if !database.Migrator().HasColumn("daily_logs", "is_uncertain") {
-		t.Fatal("expected postgres daily_logs.is_uncertain column to exist after migrations")
-	}
-	if !database.Migrator().HasColumn("daily_logs", "cycle_factor_keys") {
-		t.Fatal("expected postgres daily_logs.cycle_factor_keys column to exist after migrations")
-	}
+	assertDailyLogsTrackingContract(t, database, DriverPostgres)
+
 	if !database.Migrator().HasColumn("users", "luteal_phase") {
 		t.Fatal("expected postgres users.luteal_phase column to exist after migrations")
 	}

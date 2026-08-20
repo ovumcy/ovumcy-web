@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -447,6 +448,15 @@ func TestParseAddColumnStatementSeesPastLeadingComments(t *testing.T) {
 // otherwise invisible on a machine without the Postgres container: the SQLite
 // bootstrap stays green, and the divergence only surfaces where the missing
 // version is needed.
+//
+// It compares LABELS ONLY — version and file name — and nothing here looks at
+// what a file does. Two same-named migrations that write opposite effects, or
+// one that writes nothing at all where its twin rewrites every row, pass this
+// test by construction. The effect axis is covered by two other guards, and the
+// broader claim may not be read off this one:
+// TestEveryEffectFreeMigrationFileIsDeclaredDeliberate below refuses a file that
+// silently does nothing, and TestMigratedSchemasMatchAcrossDialects
+// (schema_parity_test.go) compares the schema the two trees actually produce.
 func TestEmbeddedMigrationSetsMatchAcrossDialects(t *testing.T) {
 	sqliteSet := embeddedMigrationIdentitiesForTest(t, DriverSQLite)
 	postgresSet := embeddedMigrationIdentitiesForTest(t, DriverPostgres)
@@ -472,6 +482,160 @@ func embeddedMigrationIdentitiesForTest(t *testing.T, driver Driver) []string {
 		identities = append(identities, migration.Version+"/"+migration.Name)
 	}
 	return identities
+}
+
+// deliberateNoOpMigrationFiles declares, per file, every embedded migration the
+// runner executes without changing anything — keyed "<dialect>/<version>", each
+// with the reason that file is allowed to do nothing.
+//
+// A version exists in both trees under the same name, so a file that does
+// nothing is indistinguishable from its twin by name alone; that is exactly the
+// hole TestEmbeddedMigrationSetsMatchAcrossDialects leaves open. Silence is what
+// this list removes: doing nothing on one engine is often right, but it is never
+// something a reader should have to infer from the SQL.
+//
+// The declaration lives here and NOT as a marker line inside the .sql, because an
+// applied migration is immutable — a marker would mean editing a file that has
+// already run on every existing installation. What the file itself carries is
+// prose; what the guard reads is this list, and every entry paraphrases the
+// reason its file already states.
+//
+// An entry is a hole in "both trees do the same work", so it may only be added
+// with the reason the asymmetry is legitimate. A stale entry fails just as an
+// undeclared file does: once the file grows a statement with an effect, the
+// exemption has to go with it.
+var deliberateNoOpMigrationFiles = map[string]string{
+	// 003 rebuilds the SQLite daily_logs table to make symptom_ids nullable and
+	// to drop the table-level CHECK on flow. The Postgres tree creates
+	// daily_logs in that shape to begin with, so there is nothing to reconcile
+	// on this engine.
+	"postgres/003": "the reconciled daily_logs shape — nullable symptom_ids, no CHECK on flow — is what the Postgres tree already creates, so only SQLite has a table to rebuild",
+
+	// 019 rewrites every stored date to canonical UTC-midnight TEXT. That shape
+	// exists only on SQLite, where glebarez stores DATE columns as TEXT and a
+	// legacy row may still carry the request locale's offset. This is the pair
+	// the identity comparison was green about while one side rewrote every row
+	// and the other ran `SELECT 1;`.
+	"postgres/019": "Postgres DATE columns hold a calendar day without offset metadata, so the glebarez TEXT-DATE canonicalization has no legacy shape to rewrite here",
+
+	// 035 restates the users.auto_period_fill DEFAULT. SQLite has no ALTER
+	// COLUMN, and users is the parent every child foreign key points at, so
+	// restating it there would mean a copy/swap of the account table inside the
+	// runner's transaction — a real risk to the account rows for a literal
+	// nothing reads. The file states this at length; the entry records it.
+	"sqlite/035": "SQLite has no ALTER COLUMN and rebuilding users would cascade every child row, while no insert path omits the column — models.DefaultAutoPeriodFill decides what a new account gets, asserted on both engines by TestNewAccountsCarryAutoPeriodFillOff",
+}
+
+// bareSelectStatementPattern matches a statement whose first keyword is SELECT.
+// Anchored, so an INSERT ... SELECT or a CREATE TABLE ... AS SELECT — both of
+// which write — never match on the SELECT they carry further in.
+var bareSelectStatementPattern = regexp.MustCompile(`(?is)^SELECT\b`)
+
+// selectIntoStatementPattern spots the one SELECT form that is not a bare read:
+// Postgres `SELECT ... INTO <table>` creates a table. Matching INTO anywhere in
+// the statement is deliberately over-eager — misreading a writing statement as
+// effect-free is the failure that matters here, and the opposite direction only
+// costs an entry in the list above.
+var selectIntoStatementPattern = regexp.MustCompile(`(?is)\bINTO\b`)
+
+// TestEveryEffectFreeMigrationFileIsDeclaredDeliberate refuses a migration file
+// that runs no statement with an effect unless the file is declared in
+// deliberateNoOpMigrationFiles with its reason.
+//
+// This is the effect half the label comparison cannot reach. Two files under one
+// version and one name may hold opposite amounts of work — migration 019
+// rewrites every stored date on SQLite and is a bare `SELECT 1;` on Postgres —
+// and the identity comparison is green about both. Emptiness is the cheapest
+// form of divergence to produce by accident (a version added to one tree and
+// stubbed out in the other to keep the sets aligned) and the cheapest to state
+// deliberately, so it is the axis this guard pins.
+//
+// It reads the embedded files through the runner's own splitter and comment
+// stripper, so what it judges is what the runner would actually execute — not a
+// second opinion about the text.
+func TestEveryEffectFreeMigrationFileIsDeclaredDeliberate(t *testing.T) {
+	effectFreeFiles := make(map[string]string)
+	totalFiles := 0
+
+	for _, driver := range []Driver{DriverSQLite, DriverPostgres} {
+		migrations, err := loadEmbeddedMigrations(driver)
+		if err != nil {
+			t.Fatalf("load embedded %s migrations: %v", driver, err)
+		}
+		for _, migration := range migrations {
+			totalFiles++
+			if migrationRunsNothingWithAnEffect(migration) {
+				effectFreeFiles[string(driver)+"/"+migration.Version] = migration.Name
+			}
+		}
+	}
+
+	// Positive anchors for the classifier itself. A classifier stuck on one
+	// answer would make this guard agree with nothing: all-false leaves the
+	// declaration requirement unreachable, all-true makes every file need an
+	// entry and says nothing about any of them.
+	if totalFiles == 0 {
+		t.Fatal("read no embedded migration files at all — the loader is broken, not the migrations")
+	}
+	if len(deliberateNoOpMigrationFiles) > 0 && len(effectFreeFiles) == 0 {
+		t.Fatalf("no embedded migration file was classified as effect-free, while %d are declared as deliberate no-ops — the classifier never returns true, so the declaration requirement below is unreachable", len(deliberateNoOpMigrationFiles))
+	}
+	if len(effectFreeFiles) == totalFiles {
+		t.Fatalf("all %d embedded migration files were classified as effect-free — the classifier never returns false, so it is measuring nothing", totalFiles)
+	}
+
+	for _, fileKey := range sortedMigrationKeys(effectFreeFiles) {
+		if strings.TrimSpace(deliberateNoOpMigrationFiles[fileKey]) != "" {
+			continue
+		}
+		t.Errorf("migration %s (%s) runs no statement with an effect and is not declared as deliberate: a file that silently does nothing is a divergence from its same-named twin in the other dialect tree until someone writes down why it is not — give the tree that lacks the work its statement, or record the file in deliberateNoOpMigrationFiles with the reason", fileKey, effectFreeFiles[fileKey])
+	}
+
+	for _, fileKey := range sortedMigrationKeys(deliberateNoOpMigrationFiles) {
+		if _, stillEffectFree := effectFreeFiles[fileKey]; stillEffectFree {
+			continue
+		}
+		t.Errorf("deliberateNoOpMigrationFiles declares %s a deliberate no-op, but that file is no longer one — either the file gained a statement with an effect, or its version was dropped from the tree; remove the entry, so the list keeps naming only live exemptions", fileKey)
+	}
+}
+
+// migrationRunsNothingWithAnEffect reports whether a migration file executes no
+// statement that can change schema or data.
+//
+// The split and the comment strip are the runner's own (splitSQLStatements,
+// stripLeadingSQLComments), so a chunk that is nothing but a prose header — what
+// a file's trailing comment block becomes after the split — is correctly seen as
+// no statement rather than as an unrecognized one. A file with no statement left
+// at all is effect-free too: pure prose runs nothing.
+//
+// Effect-free means every remaining statement is a bare read. Anything the
+// classifier does not recognize as a bare read counts as having an effect, so an
+// unfamiliar statement can only ever make a file look busier than it is.
+func migrationRunsNothingWithAnEffect(migration embeddedMigration) bool {
+	for _, statement := range splitSQLStatements(migration.SQL) {
+		body := strings.TrimSpace(stripLeadingSQLComments(statement))
+		if body == "" {
+			continue
+		}
+		if !bareSelectStatementPattern.MatchString(body) {
+			return false
+		}
+		if selectIntoStatementPattern.MatchString(body) {
+			return false
+		}
+	}
+	return true
+}
+
+// sortedMigrationKeys returns a keyed migration map's keys in a stable order, so
+// several undeclared or stale files report in the same sequence on every run.
+func sortedMigrationKeys(files map[string]string) []string {
+	keys := make([]string, 0, len(files))
+	for key := range files {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func countOIDCLogoutStatesWithNullUser(t *testing.T, database *gorm.DB) int64 {
@@ -994,45 +1158,101 @@ func assertSymptomTypesSchemaReconciled(t *testing.T, database *gorm.DB) {
 	}
 }
 
+// dailyLogsTrackingContract is the per-day tracking shape both migration trees
+// have to produce: every column the day editor and the export path read, and
+// whether the schema may leave it NULL.
+//
+// It is one list, read by both engines through assertDailyLogsTrackingContract,
+// because the two per-dialect assertions it replaces had already drifted apart:
+// the SQLite side asserted pregnancy_test, symptom_ids nullability and
+// cycle_factor_keys NOT NULL, and the Postgres side asserted none of the three
+// — so the Postgres tree could have shipped without pregnancy_test, or with
+// symptom_ids made NOT NULL, and both bootstraps stayed green. A shared list is
+// also what carries the next column added here onto both engines at once.
+//
+// Nullability is asserted per engine rather than compared between them:
+// TestMigratedSchemasMatchAcrossDialects deliberately leaves that axis out,
+// because the drivers report a PRIMARY KEY column's nullability differently.
+// None of the columns below is a key, and both drivers report all of them
+// identically (measured 2026-08-21 on the migrated schema of each engine).
+var dailyLogsTrackingContract = []struct {
+	Column  string
+	NotNull bool
+}{
+	{Column: "mood", NotNull: true},
+	{Column: "sex_activity", NotNull: true},
+	// bbt is nullable on purpose: NULL means "not measured", the sentinel-free
+	// replacement for the stored 0 that migration 024 retired.
+	{Column: "bbt", NotNull: false},
+	{Column: "cervical_mucus", NotNull: true},
+	{Column: "pregnancy_test", NotNull: true},
+	// symptom_ids stays nullable — migration 003 rebuilds the SQLite table for
+	// exactly that, and the insert probe in assertPostgresDailyLogsSchemaReconciled
+	// writes NULL into it.
+	{Column: "symptom_ids", NotNull: false},
+	{Column: "cycle_factor_keys", NotNull: true},
+	{Column: "cycle_start", NotNull: true},
+	{Column: "is_uncertain", NotNull: true},
+}
+
+// assertDailyLogsTrackingContract checks the shared contract against one live
+// migrated schema, through GORM's migrator rather than a dialect-specific
+// PRAGMA or information_schema query, so one body serves both engines and a
+// difference it reports cannot be an artifact of two different queries.
+//
+// The driver's own nullability answer is required, not assumed: ColumnTypes
+// returns whether it knows, and a driver that does not know would otherwise
+// leave every column silently reading as nullable.
+func assertDailyLogsTrackingContract(t *testing.T, database *gorm.DB, dialect Driver) {
+	t.Helper()
+
+	columnTypes, err := database.Migrator().ColumnTypes("daily_logs")
+	if err != nil {
+		t.Fatalf("read %s daily_logs column types: %v", dialect, err)
+	}
+
+	nullable := make(map[string]bool, len(columnTypes))
+	nullabilityReported := make(map[string]bool, len(columnTypes))
+	for _, columnType := range columnTypes {
+		columnName := strings.ToLower(strings.TrimSpace(columnType.Name()))
+		isNullable, reported := columnType.Nullable()
+		nullable[columnName] = isNullable
+		nullabilityReported[columnName] = reported
+	}
+
+	for _, expected := range dailyLogsTrackingContract {
+		if _, exists := nullable[expected.Column]; !exists {
+			t.Errorf("expected %s daily_logs.%s column to exist after migrations", dialect, expected.Column)
+			continue
+		}
+		if !nullabilityReported[expected.Column] {
+			t.Errorf("the %s driver reported no nullability for daily_logs.%s, so that half of the contract went unmeasured", dialect, expected.Column)
+			continue
+		}
+		if nullable[expected.Column] != !expected.NotNull {
+			t.Errorf("expected %s daily_logs.%s to be %s after migrations, got %s",
+				dialect, expected.Column,
+				describeNullability(!expected.NotNull), describeNullability(nullable[expected.Column]))
+		}
+	}
+}
+
+func describeNullability(isNullable bool) string {
+	if isNullable {
+		return "nullable"
+	}
+	return "not null"
+}
+
+// assertDailyLogsSchemaReconciled checks the SQLite tree's daily_logs against
+// the shared dailyLogsTrackingContract — the same list the Postgres bootstrap
+// runs — and then the one thing only this engine has to show: that migration
+// 003's rebuild really dropped the table-level CHECK on flow, which is readable
+// off sqlite_master and nowhere else.
 func assertDailyLogsSchemaReconciled(t *testing.T, database *gorm.DB) {
 	t.Helper()
 
-	columns := loadTableColumns(t, database, "daily_logs")
-	if _, exists := columns["mood"]; !exists {
-		t.Fatal("expected daily_logs.mood column to exist after migrations")
-	}
-	if _, exists := columns["sex_activity"]; !exists {
-		t.Fatal("expected daily_logs.sex_activity column to exist after migrations")
-	}
-	if _, exists := columns["bbt"]; !exists {
-		t.Fatal("expected daily_logs.bbt column to exist after migrations")
-	}
-	if _, exists := columns["cervical_mucus"]; !exists {
-		t.Fatal("expected daily_logs.cervical_mucus column to exist after migrations")
-	}
-	if _, exists := columns["pregnancy_test"]; !exists {
-		t.Fatal("expected daily_logs.pregnancy_test column to exist after migrations")
-	}
-	if _, exists := columns["symptom_ids"]; !exists {
-		t.Fatal("expected daily_logs.symptom_ids column to exist after migrations")
-	}
-	if _, exists := columns["cycle_factor_keys"]; !exists {
-		t.Fatal("expected daily_logs.cycle_factor_keys column to exist after migrations")
-	}
-	if _, exists := columns["cycle_start"]; !exists {
-		t.Fatal("expected daily_logs.cycle_start column to exist after migrations")
-	}
-	if _, exists := columns["is_uncertain"]; !exists {
-		t.Fatal("expected daily_logs.is_uncertain column to exist after migrations")
-	}
-
-	notNullFlags := loadTableColumnNotNullFlags(t, database, "daily_logs")
-	if notNullFlags["symptom_ids"] {
-		t.Fatal("expected daily_logs.symptom_ids to remain nullable")
-	}
-	if !notNullFlags["cycle_factor_keys"] {
-		t.Fatal("expected daily_logs.cycle_factor_keys to be not null")
-	}
+	assertDailyLogsTrackingContract(t, database, DriverSQLite)
 
 	tableDefinition := loadSQLiteObjectSQL(t, database, "table", "daily_logs")
 	normalized := strings.ToLower(strings.Join(strings.Fields(tableDefinition), ""))
@@ -1122,47 +1342,6 @@ func loadMigrationRecords(t *testing.T, database *gorm.DB) []migrationRecord {
 		t.Fatalf("load migration records: %v", err)
 	}
 	return records
-}
-
-func loadTableColumns(t *testing.T, database *gorm.DB, tableName string) map[string]struct{} {
-	t.Helper()
-
-	escapedTable := strings.ReplaceAll(tableName, `"`, `""`)
-	query := fmt.Sprintf(`PRAGMA table_info("%s")`, escapedTable)
-
-	var rows []struct {
-		Name string `gorm:"column:name"`
-	}
-	if err := database.Raw(query).Scan(&rows).Error; err != nil {
-		t.Fatalf("load table columns for %s: %v", tableName, err)
-	}
-
-	columns := make(map[string]struct{}, len(rows))
-	for _, row := range rows {
-		columns[strings.ToLower(strings.TrimSpace(row.Name))] = struct{}{}
-	}
-	return columns
-}
-
-func loadTableColumnNotNullFlags(t *testing.T, database *gorm.DB, tableName string) map[string]bool {
-	t.Helper()
-
-	escapedTable := strings.ReplaceAll(tableName, `"`, `""`)
-	query := fmt.Sprintf(`PRAGMA table_info("%s")`, escapedTable)
-
-	var rows []struct {
-		Name    string `gorm:"column:name"`
-		NotNull int    `gorm:"column:notnull"`
-	}
-	if err := database.Raw(query).Scan(&rows).Error; err != nil {
-		t.Fatalf("load table nullability for %s: %v", tableName, err)
-	}
-
-	flags := make(map[string]bool, len(rows))
-	for _, row := range rows {
-		flags[strings.ToLower(strings.TrimSpace(row.Name))] = row.NotNull == 1
-	}
-	return flags
 }
 
 func loadSQLiteObjectSQL(t *testing.T, database *gorm.DB, objectType string, objectName string) string {
