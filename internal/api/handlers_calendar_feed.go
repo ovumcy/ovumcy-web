@@ -26,9 +26,11 @@ import (
 //     resolves the owner by non-secret selector, constant-time-verifies the
 //     secret verifier, and scopes every read to the resolved user id.
 //   - 404-no-oracle: a malformed token, unknown selector, wrong verifier, and
-//     disabled feed ALL return an identical bare 404 with no body and no
-//     Set-Cookie, and are timing-equalized (a dummy bcrypt runs on the
-//     selector-miss path inside the service).
+//     disabled feed ALL return an identical bare 404 and no Set-Cookie, and are
+//     timing-equalized (a dummy bcrypt runs on the selector-miss path inside the
+//     service). Bare here means what c.SendStatus actually sends: Fiber's fixed
+//     status text under text/plain, the same bytes whatever the cause was — not
+//     an empty body.
 //   - Rate-limited per-IP by the edge /api-style limiter wired in main.go for
 //     this exact path; a 429 returns the limiter's own response (no UI needed).
 //   - Response headers pin text/calendar, a private 1-hour cache, and
@@ -50,7 +52,8 @@ const (
 // ServeCalendarFeed serves an owner's read-only .ics feed, authenticated by the
 // path token alone. It never sets a cookie and never renders an HTML error: the
 // only outcomes are 200 + calendar body, a bare 404 (every not-found/invalid
-// case, no oracle), or a generic 500 on an infrastructure failure.
+// case, answered with the same status text, so no oracle), or a generic 500 on
+// an infrastructure failure.
 func (handler *Handler) ServeCalendarFeed(c fiber.Ctx) error {
 	token := c.Params("token")
 	location := handler.requestLocation(c)
@@ -68,8 +71,9 @@ func (handler *Handler) ServeCalendarFeed(c fiber.Ctx) error {
 	}
 	if !ok {
 		// Uniform bare 404 for malformed token / unknown selector / wrong
-		// verifier / disabled feed. No body, no Set-Cookie, timing-equalized in
-		// the service.
+		// verifier / disabled feed: SendStatus answers with Fiber's fixed status
+		// text, identical in every case. No Set-Cookie, timing-equalized in the
+		// service.
 		return c.SendStatus(fiber.StatusNotFound)
 	}
 
