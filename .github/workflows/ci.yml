@@ -1595,10 +1595,17 @@ jobs:
     # the same way, since the Docker Image workflow no longer accepts one.
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     # A caller cannot grant a called workflow more than it holds, so this must
-    # match the permissions the publish job declares.
+    # match the permissions the publish job declares — plus `checks: read`, for
+    # the tag gate that workflow now runs ahead of the publish. That gate is
+    # skipped on this path (it is the tag path's substitute for the `needs:`
+    # above, which cannot cross a workflow boundary), but the ceiling has to
+    # cover a job the called workflow declares whether or not it runs. The
+    # publish job itself is unaffected: its own permissions block does not list
+    # `checks`, so it still receives none.
     permissions:
       artifact-metadata: write
       attestations: write
+      checks: read
       contents: read
       id-token: write
       packages: write
