@@ -3,9 +3,12 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -115,9 +118,62 @@ func TestCalendarFeedServesOwnersICSWithHardenedHeaders(t *testing.T) {
 	}
 }
 
+// feedResponseFingerprint is everything a client can observe about one feed
+// response except the per-request Date header: the status, the header set, and
+// the body bytes. Comparing fingerprints is how the no-oracle contract is
+// actually checked — a response that carries no calendar body can still differ
+// from its sibling in every other byte, and that difference IS the oracle.
+type feedResponseFingerprint struct {
+	status  int
+	headers string
+	body    string
+}
+
+// fingerprintFeedResponse renders a response into its comparable shape. Date is
+// dropped because fasthttp regenerates it per request (two cases either side of
+// a second boundary would differ for a reason that carries no information about
+// the token); every other header stays in, so a cause smuggled into a header is
+// as visible as one smuggled into the body.
+func fingerprintFeedResponse(t *testing.T, response *http.Response) feedResponseFingerprint {
+	t.Helper()
+	headerLines := make([]string, 0, len(response.Header))
+	for name, values := range response.Header {
+		if name == "Date" {
+			continue
+		}
+		headerLines = append(headerLines, name+": "+strings.Join(values, ", "))
+	}
+	sort.Strings(headerLines)
+	return feedResponseFingerprint{
+		status:  response.StatusCode,
+		headers: strings.Join(headerLines, "\n"),
+		body:    readBodyString(t, response),
+	}
+}
+
+// The shape every public feed 404 must have, measured from the running app
+// rather than modelled: the handler answers with c.SendStatus, which fills an
+// empty body with fiber's fixed status text, so the "bare" 404 is the same nine
+// bytes under text/plain whatever the cause was. Pinned as a constant so the
+// four cases cannot drift TOGETHER into something cause-bearing — mutual
+// identity alone would still hold if they all started explaining themselves.
+const (
+	calendarFeedBare404Body    = "Not Found"
+	calendarFeedBare404Headers = "Content-Length: 9\nContent-Type: text/plain; charset=utf-8"
+)
+
 // TestCalendarFeedReturnsBare404WithoutOracleForBadTokens proves the no-oracle
-// contract at the transport boundary: a bogus, malformed, and cleared-feed token
-// all return an identical bare 404 with no body and no Set-Cookie.
+// contract at the transport boundary: an unknown selector, a malformed token, a
+// correct-selector/wrong-verifier token and a token whose feed has since been
+// cleared all get the SAME response — same status, same headers, same body
+// bytes, no Set-Cookie — so the response tells an enumerator nothing about
+// which of the four they hit.
+//
+// The identity is asserted BETWEEN the cases, not case by case against a marker
+// of its own: four bodies that each merely lack "BEGIN:VCALENDAR" can still
+// differ from one another in every remaining byte, which is exactly the oracle
+// this route must not be. The shared shape is pinned alongside, so the cases
+// cannot drift together.
 func TestCalendarFeedReturnsBare404WithoutOracleForBadTokens(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "feed-404@example.com", "StrongPass1", true)
@@ -134,23 +190,50 @@ func TestCalendarFeedReturnsBare404WithoutOracleForBadTokens(t *testing.T) {
 		t.Fatalf("ClearCalendarFeedToken: %v", err)
 	}
 
-	for name, token := range map[string]string{
-		"bogus":            bogus,
-		"malformed":        malformed,
-		"wrongVerifier":    wrongVerifier,
-		"clearedValidOnce": validToken,
-	} {
-		request := httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil)
+	// A slice, not a map: the cases are compared against each other, so the
+	// order they are visited in has to be the same on every run for the failure
+	// message to name the same reference case.
+	badTokens := []struct {
+		name  string
+		token string
+	}{
+		{name: "bogus", token: bogus},
+		{name: "malformed", token: malformed},
+		{name: "wrongVerifier", token: wrongVerifier},
+		{name: "clearedValidOnce", token: validToken},
+	}
+
+	var reference feedResponseFingerprint
+	var referenceName string
+	for index, badToken := range badTokens {
+		request := httptest.NewRequest(http.MethodGet, calendarFeedURL(badToken.token), nil)
 		response := mustAppResponse(t, app, request)
-		if response.StatusCode != http.StatusNotFound {
-			t.Fatalf("%s: expected bare 404, got %d", name, response.StatusCode)
-		}
 		if len(response.Cookies()) != 0 {
-			t.Fatalf("%s: 404 must not set a cookie, got %#v", name, response.Cookies())
+			t.Fatalf("%s: 404 must not set a cookie, got %#v", badToken.name, response.Cookies())
 		}
-		if body := readBodyString(t, response); strings.Contains(body, "BEGIN:VCALENDAR") {
-			t.Fatalf("%s: 404 must not leak a calendar body, got:\n%s", name, body)
+		got := fingerprintFeedResponse(t, response)
+		if index == 0 {
+			reference, referenceName = got, badToken.name
+			continue
 		}
+		if got != reference {
+			t.Fatalf("%s answers differently from %s, which is an enumeration oracle:\n %s: %#v\n %s: %#v",
+				badToken.name, referenceName, referenceName, reference, badToken.name, got)
+		}
+	}
+
+	// The four agree with each other; now pin the shape they agree ON, so they
+	// cannot drift TOGETHER into a response that explains itself. Checked after
+	// the mutual comparison, and only once, so the identity assertion above is
+	// the one that fires when a single case diverges — that is the failure a
+	// reader needs to see named.
+	want := feedResponseFingerprint{
+		status:  http.StatusNotFound,
+		headers: calendarFeedBare404Headers,
+		body:    calendarFeedBare404Body,
+	}
+	if reference != want {
+		t.Fatalf("every bad-token case answered %#v; expected the bare no-oracle 404 %#v", reference, want)
 	}
 }
 
@@ -304,12 +387,17 @@ func TestCalendarFeedMigratesPre032RowOnFirstSuccessfulPoll(t *testing.T) {
 	}
 }
 
+// simulatedFeedLookupFailure is the text of the storage error injected below.
+// The 500 regression asserts this exact string is absent from the response, so
+// the injected error and the assertion cannot drift apart.
+const simulatedFeedLookupFailure = "simulated feed lookup failure"
+
 // failingFeedUserStore makes CalendarFeedService.ResolveFeed return an
 // infrastructure error, driving ServeCalendarFeed's err != nil branch.
 type failingFeedUserStore struct{}
 
 func (failingFeedUserStore) FindByCalendarFeedSelector(context.Context, string) (models.User, bool, error) {
-	return models.User{}, false, errors.New("simulated feed lookup failure")
+	return models.User{}, false, errors.New(simulatedFeedLookupFailure)
 }
 
 func (failingFeedUserStore) BackfillCalendarFeedVerifierMAC(context.Context, uint, string, string) error {
@@ -330,8 +418,18 @@ func (constFeedDisclaimer) Disclaimer(string) string { return "d" }
 
 // TestCalendarFeedReturns500OnInfrastructureError drives the ServeCalendarFeed
 // err != nil branch: when the feed service reports an infrastructure failure
-// (e.g. a DB read error), the handler returns a generic 500 via the top-level
-// error handler — never the raw error, and never a calendar body.
+// (e.g. a DB read error), the client gets the app-wide generic 500 envelope and
+// nothing else — no calendar body, and no word of what actually failed. A 500
+// that describes its cause is the same oracle as a 404 that does, with a
+// storage error's text (table names, driver detail) on top.
+//
+// The app is wired with RespondTransportError, the exact entry point the
+// composition root's top-level error handler calls (cmd/ovumcy/server.go), so
+// the envelope asserted here is the one a real client is served; cmd is not
+// importable from this package, and that handler's own totality is pinned there
+// by TestOvumcyErrorHandlerEnvelopesEveryFiberErrorStatus. On a bare fiber.New
+// the response would instead be the framework's "Internal Server Error" text,
+// which nothing in this app ever answers — pinning that would pin the double.
 func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 	_, database := newOnboardingTestApp(t)
 	i18nManager, err := i18n.NewManager("en")
@@ -346,7 +444,13 @@ func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 		t.Fatalf("init handler: %v", err)
 	}
 
-	app := fiber.New()
+	app := fiber.New(fiber.Config{ErrorHandler: func(c fiber.Ctx, err error) error {
+		var fiberErr *fiber.Error
+		if !errors.As(err, &fiberErr) {
+			return RespondTransportError(c, fiber.StatusInternalServerError)
+		}
+		return RespondTransportError(c, fiberErr.Code)
+	}})
 	app.Get(calendarFeedRoutePath, handler.ServeCalendarFeed)
 
 	// A well-formed token so the handler reaches the service (which then errors);
@@ -356,8 +460,37 @@ func TestCalendarFeedReturns500OnInfrastructureError(t *testing.T) {
 	if response.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("expected 500 on an infrastructure error, got %d", response.StatusCode)
 	}
-	if body := readBodyString(t, response); strings.Contains(body, "BEGIN:VCALENDAR") {
+	body := readBodyString(t, response)
+	// The raw storage error first, checked against the body a client actually
+	// receives rather than against the decoded envelope: a leak appended outside
+	// the JSON would survive a structural comparison alone, and this is the
+	// failure a reader needs named when the disclosure comes back.
+	if strings.Contains(body, simulatedFeedLookupFailure) {
+		t.Fatalf("500 leaked the raw storage error %q, got:\n%s", simulatedFeedLookupFailure, body)
+	}
+	if strings.Contains(body, "BEGIN:VCALENDAR") {
 		t.Fatalf("500 must not leak a calendar body, got:\n%s", body)
+	}
+	if contentType := response.Header.Get(fiber.HeaderContentType); contentType != "application/json; charset=utf-8" {
+		t.Fatalf("expected the mapped JSON envelope, got content type %q with body:\n%s", contentType, body)
+	}
+
+	// The exact generic envelope: the stable key derived from the status alone,
+	// and NO further member — an extra field is how a cause gets carried out.
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil {
+		t.Fatalf("500 body is not the mapped JSON envelope (%v), got:\n%s", err, body)
+	}
+	wantEnvelope := map[string]any{
+		"error": "internal_error",
+		"error_detail": map[string]any{
+			"key":      "internal_error",
+			"category": "internal",
+			"target":   "global",
+		},
+	}
+	if !reflect.DeepEqual(envelope, wantEnvelope) {
+		t.Fatalf("expected the generic internal_error envelope %#v, got %#v", wantEnvelope, envelope)
 	}
 }
 
