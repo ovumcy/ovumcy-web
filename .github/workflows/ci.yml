@@ -955,9 +955,29 @@ jobs:
               printf '%s\n' "$files"
               # Anything NOT matching this docs/meta allowlist forces e2e to run.
               app_changes="$(printf '%s\n' "$files" | grep -vE '^(docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
+              # One document is not inert text: scripts/backuprestoredoc reads
+              # the Postgres backup and restore commands out of the operator
+              # runbook and RUNS them against an ephemeral database, so an edit
+              # there breaks a test exactly as a Go edit does. It is caught by
+              # BOTH arms of the allowlist above (the `docs/` prefix and the
+              # `.md` suffix), so it is detected separately here — and consumed
+              # at `run_core` below, NOT here: the guard rides the Go lanes
+              # alone, and forcing it through `run_e2e` would buy a runbook
+              # typo a full browser battery that cannot look at it. Measured
+              # 2026-08-20: 10 of the 22 commits touching that file since June
+              # carried no other app-affecting file, so without the force
+              # nearly half of all runbook edits would land with the guard
+              # never having executed. The name is cross-checked from the
+              # guard's own package, so a rename cannot leave this filter
+              # pointing at nothing.
+              runbook_changes="$(printf '%s\n' "$files" | grep -E '^docs/self-hosted\.md$' || true)"
               if [ -z "$app_changes" ]; then
                 run_e2e=false
-                verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
+                if [ -n "$runbook_changes" ]; then
+                  verdict="documentation-only change that touches the executed operator runbook: the browser e2e jobs and the race lanes report success without running, and the Go lanes run for it."
+                else
+                  verdict="docs/meta-only change: the browser e2e jobs and the unit/race battery report success without running."
+                fi
               else
                 verdict="app-affecting change detected: running e2e and the battery."
               fi
@@ -986,6 +1006,16 @@ jobs:
           # written only inside the `push` branch, so an unknown event, a
           # crashed job or an empty output all leave the core suite RUNNING.
           run_core="$run_e2e"
+          # The runbook force, and the only place it is applied: the Go lanes
+          # execute the operator runbook (see the detection above), so a diff
+          # that touches it needs them even when everything else about the
+          # diff is documentation. It sits BEFORE the `push` branch on purpose
+          # — there the merge queue has already run the core suite, and this
+          # guard with it, on this exact commit, so `push` still wins.
+          if [ -n "${runbook_changes:-}" ]; then
+            run_core=true
+            echo "the executed operator runbook changed: the Go lanes run for it, the browser lanes do not."
+          fi
           if [ "$EVENT_NAME" = "push" ]; then
             run_core=false
             echo "push to main: the merge queue already ran the core suite on this exact commit; running only the lanes it skips."
@@ -1011,7 +1041,12 @@ jobs:
             fi
             # Browser-spec-only: the e2e allowlist plus the docs/meta one.
             beyond_specs="$(printf '%s\n' "$files" | grep -vE '^(e2e/|docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
-            if [ -z "$beyond_specs" ]; then
+            # The runbook force above reaches `run_core`, and this slice would
+            # take it straight back: `beyond_specs` excuses every `^docs/`
+            # path, so without the second half of this condition a
+            # runbook-only diff would clear the Go lanes again — the very
+            # lanes that run the guard reading it.
+            if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ]; then
               run_unit=false
               echo "browser specs only: the Go suite reports success without running."
             fi

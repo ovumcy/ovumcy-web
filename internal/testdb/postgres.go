@@ -31,6 +31,20 @@ const (
 func StartPostgresDSN(t *testing.T, databaseName string) string {
 	t.Helper()
 
+	dsn, _ := StartPostgres(t, databaseName)
+	return dsn
+}
+
+// StartPostgres is StartPostgresDSN plus the container id, for a test that must
+// also run a command INSIDE the container — the operator runbook reaches
+// pg_dump and psql through `docker compose exec -T postgres`, and a guard that
+// executes those commands needs the container the DSN points at, not only a
+// host connection to it. The container is started with POSTGRES_USER and
+// POSTGRES_DB set, so `$POSTGRES_USER`/`$POSTGRES_DB` resolve inside it exactly
+// as they do in the bundled compose stack.
+func StartPostgres(t *testing.T, databaseName string) (dsn string, containerID string) {
+	t.Helper()
+
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker is required for postgres tests")
 	}
@@ -42,7 +56,7 @@ func StartPostgresDSN(t *testing.T, databaseName string) string {
 
 	ensurePostgresImageAvailable(t)
 
-	containerID := runDockerCommand(t, "run", "-d", "--rm", "-P",
+	containerID = runDockerCommand(t, "run", "-d", "--rm", "-P",
 		"-e", "POSTGRES_USER="+postgresTestUser,
 		"-e", "POSTGRES_PASSWORD="+postgresTestPassword,
 		"-e", "POSTGRES_DB="+databaseName,
@@ -55,7 +69,7 @@ func StartPostgresDSN(t *testing.T, databaseName string) string {
 
 	waitForPostgresReadiness(t, containerID, databaseName)
 	port := loadPostgresMappedPort(t, containerID)
-	dsn := fmt.Sprintf(
+	dsn = fmt.Sprintf(
 		"host=127.0.0.1 port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
 		port,
 		postgresTestUser,
@@ -64,7 +78,7 @@ func StartPostgresDSN(t *testing.T, databaseName string) string {
 	)
 	waitForHostSQLReadiness(t, dsn)
 
-	return dsn
+	return dsn, containerID
 }
 
 func waitForPostgresReadiness(t *testing.T, containerID string, databaseName string) {
