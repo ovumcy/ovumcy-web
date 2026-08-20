@@ -65,3 +65,42 @@ func TestBuildPrivacyBackNavigationFiltersTheQueryOfTheBackPath(t *testing.T) {
 		t.Fatalf("expected common.home breadcrumb key, got %q", navigation.BreadcrumbBackLabelKey)
 	}
 }
+
+// TestBuildPrivacyBackNavigationAppliesTheWholeBackValuePolicy pins that this
+// surface gets the *same* decision as the `back` parameter of a rendered current
+// path, not a weaker one. It receives the value straight from the query string
+// rather than through the current-path filter, so every carrier has to be
+// refused here independently: a hostile value under an allowlisted key, a
+// fragment, an address in the path half itself, and a non-local target.
+func TestBuildPrivacyBackNavigationAppliesTheWholeBackValuePolicy(t *testing.T) {
+	t.Parallel()
+
+	const fallback = "/dashboard"
+
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "hostile value under an allowlisted key", raw: "/calendar?month=victim@example.com", want: "/calendar"},
+		{name: "fragment", raw: "/login#email=victim@example.com", want: "/login"},
+		{name: "address in the path half", raw: "/victim@example.com", want: fallback},
+		{name: "address as the whole value", raw: "victim@example.com", want: fallback},
+		{name: "absolute url", raw: "https://evil.example/path", want: fallback},
+		{name: "protocol relative", raw: "//evil.example", want: fallback},
+		{name: "empty falls back", raw: "", want: fallback},
+		// Positive controls: real navigation must still work.
+		{name: "a real month survives", raw: "/calendar?month=2026-08", want: "/calendar?month=2026-08"},
+		{name: "a plain path survives", raw: "/settings", want: "/settings"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := BuildPrivacyBackNavigation(testCase.raw, true).BackPath; got != testCase.want {
+				t.Fatalf("BuildPrivacyBackNavigation(%q).BackPath = %q, want %q", testCase.raw, got, testCase.want)
+			}
+		})
+	}
+}

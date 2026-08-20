@@ -123,6 +123,35 @@ func TestPrivacyPageKeepsItsAllowlistedBackParameter(t *testing.T) {
 	}
 }
 
+// TestPublicPageDropsAHostileValueUnderAnAllowlistedKey pins the other half of
+// the allowlist: the names are not enough on their own. `step` is a key the
+// pages really read, so a key-only filter waves `?step=victim@example.com`
+// straight through and renders exactly what `?email=` would have.
+func TestPublicPageDropsAHostileValueUnderAnAllowlistedKey(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+
+	for label, target := range map[string]string{
+		"hostile step":     "/login?step=" + currentPathLeakAddress,
+		"hostile month":    "/login?month=" + currentPathLeakAddress,
+		"hostile selected": "/login?selected=" + currentPathLeakAddress,
+		"hostile edit":     "/login?edit=" + currentPathLeakAddress,
+		"hostile back":     "/login?back=" + currentPathLeakAddress,
+		// A fragment is deliberately not exercised here: a browser never sends
+		// "#" to the server, and httptest does, so the request 404s instead of
+		// rendering a page. It is reachable only inside a `back` value, which
+		// TestPrivacyPageFiltersEveryCarrierReachedThroughItsBackParameter drives.
+	} {
+		body := smokeGET(t, app, "", target, http.StatusOK)
+
+		assertNoCurrentPathLeak(t, label, body)
+		if got := currentPathNextField(t, label, body); got != "/login" {
+			t.Fatalf("%s: expected the rendered path to be /login, got %q", label, got)
+		}
+	}
+}
+
 // TestPrivacyPageFiltersTheQuerySmuggledInsideItsBackParameter closes the same
 // leak one layer down: `back` is allowlisted, but its value is itself a path
 // that can carry a query, so a name-only allowlist would wave the address
@@ -139,6 +168,34 @@ func TestPrivacyPageFiltersTheQuerySmuggledInsideItsBackParameter(t *testing.T) 
 	assertNoCurrentPathLeak(t, label, body)
 	if got := currentPathNextField(t, label, body); got != "/privacy?back=%2Flogin" {
 		t.Fatalf("%s: expected the smuggled query to be filtered out of back, got %q", label, got)
+	}
+}
+
+// TestPrivacyPageFiltersEveryCarrierReachedThroughItsBackParameter proves the
+// nested level gets the same treatment as the top one and not a weaker one:
+// a fragment, a hostile value under an allowlisted key, and a back value that is
+// not a local route at all must each be filtered inside `back` exactly as they
+// are outside it.
+func TestPrivacyPageFiltersEveryCarrierReachedThroughItsBackParameter(t *testing.T) {
+	t.Parallel()
+
+	app, _ := newOnboardingTestApp(t)
+
+	for label, carrier := range map[string]struct{ smuggled, want string }{
+		"fragment inside back":                  {"/login#email=" + currentPathLeakAddress, "/privacy?back=%2Flogin"},
+		"hostile allowlisted key inside back":   {"/calendar?month=" + currentPathLeakAddress, "/privacy?back=%2Fcalendar"},
+		"address as the whole back value":       {currentPathLeakAddress, "/privacy"},
+		"address in the back path itself":       {"/" + currentPathLeakAddress, "/privacy"},
+		"absolute url as the back value":        {"https://evil.example/" + currentPathLeakAddress, "/privacy"},
+		"protocol-relative url as back":         {"//evil.example/" + currentPathLeakAddress, "/privacy"},
+		"legitimate month survives inside back": {"/calendar?month=2026-08", "/privacy?back=%2Fcalendar%3Fmonth%3D2026-08"},
+	} {
+		body := smokeGET(t, app, "", "/privacy?back="+url.QueryEscape(carrier.smuggled), http.StatusOK)
+
+		assertNoCurrentPathLeak(t, label, body)
+		if got := currentPathNextField(t, label, body); got != carrier.want {
+			t.Fatalf("%s: expected rendered path %q, got %q", label, carrier.want, got)
+		}
 	}
 }
 

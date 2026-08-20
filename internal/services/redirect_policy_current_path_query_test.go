@@ -34,7 +34,9 @@ func TestSanitizeCurrentPathQuery(t *testing.T) {
 			raw:  "/calendar?email=victim%40example.com&month=2026-02&error=invalid",
 			want: "/calendar?month=2026-02",
 		},
-		{name: "an allowlisted key present with an empty value is kept", raw: "/calendar?month=", want: "/calendar?month="},
+		// An empty value matches no consumer's shape, and the consumer reads an
+		// absent month exactly as it reads an empty one, so it is dropped.
+		{name: "an allowlisted key present with an empty value is dropped", raw: "/calendar?month=", want: "/calendar"},
 		{name: "a dropped key present with an empty value is dropped", raw: "/login?email=", want: "/login"},
 		{name: "a valueless dropped key is dropped", raw: "/login?email", want: "/login"},
 		{
@@ -43,6 +45,13 @@ func TestSanitizeCurrentPathQuery(t *testing.T) {
 			want: "/calendar?month=2026-02&month=2026-03",
 		},
 		{name: "a repeated dropped key is dropped", raw: "/login?email=a%40b.c&email=d%40e.f", want: "/login"},
+		// One good occurrence must not rescue a crafted one: keeping the half
+		// that matches would leave the caller choosing which survives.
+		{
+			name: "a repeated allowlisted key with one hostile occurrence is dropped whole",
+			raw:  "/calendar?month=2026-08&month=victim%40example.com",
+			want: "/calendar",
+		},
 		// Fail closed: a query Go's parser rejects is never echoed back raw,
 		// or an unparsable parameter would pass through unfiltered.
 		{name: "malformed escape falls back to the bare path", raw: "/login?email=%zz", want: "/login"},
@@ -70,6 +79,57 @@ func TestSanitizeCurrentPathQuery(t *testing.T) {
 			name: "a back nested inside a back is dropped rather than recursed",
 			raw:  "/privacy?back=%2Fprivacy%3Fback%3D%252Fdashboard",
 			want: "/privacy?back=%2Fprivacy",
+		},
+		// A fragment lives in the path half, so cutting at "?" alone leaves it
+		// whole. A browser never sends one to the server, but `back` is a
+		// caller-controlled value that runs through this same function, so the
+		// fragment is a live carrier there.
+		{name: "a fragment is dropped", raw: "/login#email=victim@example.com", want: "/login"},
+		{name: "a fragment after a query is dropped", raw: "/calendar?month=2026-08#email=victim@example.com", want: "/calendar?month=2026-08"},
+		{
+			name: "a fragment smuggled inside back is dropped",
+			raw:  "/privacy?back=%2Flogin%23email%3Dvictim%40example.com",
+			want: "/privacy?back=%2Flogin",
+		},
+		// An allowlist over names alone lets any value through under an allowed
+		// key, which is the same leak wearing a different key. Each value is
+		// therefore checked against the shape its own consumer accepts.
+		{name: "a hostile step value is dropped", raw: "/login?step=victim@example.com", want: "/login"},
+		{name: "an out-of-range step is dropped", raw: "/onboarding?step=7", want: "/onboarding"},
+		{name: "a hostile month value is dropped", raw: "/calendar?month=victim@example.com", want: "/calendar"},
+		{name: "a malformed month is dropped", raw: "/calendar?month=2026-13", want: "/calendar"},
+		{name: "a hostile day value is dropped", raw: "/calendar?day=victim@example.com", want: "/calendar"},
+		{name: "a hostile selected value is dropped", raw: "/calendar?selected=victim@example.com", want: "/calendar"},
+		{name: "a hostile edit value is dropped", raw: "/calendar?edit=victim@example.com", want: "/calendar"},
+		{
+			name: "a hostile value under an allowlisted key does not survive beside a good one",
+			raw:  "/calendar?month=2026-08&day=victim%40example.com",
+			want: "/calendar?month=2026-08",
+		},
+		{
+			name: "a hostile value smuggled under an allowlisted key inside back is dropped",
+			raw:  "/privacy?back=%2Fcalendar%3Fmonth%3Dvictim%40example.com",
+			want: "/privacy?back=%2Fcalendar",
+		},
+		// `back` must itself look like a local in-app path; every registered
+		// route is ASCII letters, digits, "/", "-", "_" and ".".
+		{name: "a back value that is not a path is dropped", raw: "/privacy?back=victim@example.com", want: "/privacy"},
+		{name: "a back path outside the route character set is dropped", raw: "/privacy?back=%2Fvictim%40example.com", want: "/privacy"},
+		{name: "an absolute back url is dropped", raw: "/privacy?back=https%3A%2F%2Fevil.example", want: "/privacy"},
+		{name: "a protocol-relative back is dropped", raw: "/privacy?back=%2F%2Fevil.example", want: "/privacy"},
+		// Positive controls: the fix must not degenerate into dropping
+		// everything the pages actually navigate with.
+		{name: "a real month survives", raw: "/calendar?month=2026-08", want: "/calendar?month=2026-08"},
+		{name: "a real selected date survives", raw: "/calendar?selected=2026-08-14", want: "/calendar?selected=2026-08-14"},
+		{name: "a real day survives", raw: "/calendar?day=2026-08-14", want: "/calendar?day=2026-08-14"},
+		{name: "edit=true survives", raw: "/calendar?edit=true", want: "/calendar?edit=true"},
+		{name: "edit=1 survives", raw: "/calendar?edit=1", want: "/calendar?edit=1"},
+		{name: "onboarding step 1 survives", raw: "/onboarding?step=1", want: "/onboarding?step=1"},
+		{name: "onboarding step 2 survives", raw: "/onboarding?step=2", want: "/onboarding?step=2"},
+		{
+			name: "a real back carrying a real month survives intact",
+			raw:  "/privacy?back=%2Fcalendar%3Fmonth%3D2026-08",
+			want: "/privacy?back=%2Fcalendar%3Fmonth%3D2026-08",
 		},
 	}
 
