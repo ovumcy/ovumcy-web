@@ -194,18 +194,31 @@ func ResolveCycleAndPeriodDefaults(cycleLength int, periodLength int) (int, int)
 	return resolvedCycleLength, resolvedPeriodLength
 }
 
+// OnboardingStartDateWindowDays is how far back step 1 accepts a last-period
+// start, in days before today. It is also the number the range error states in
+// every locale ("within the last 60 days"), and the two are held together by
+// TestOnboardingRangeCopyStatesTheEnforcedWindow.
+const OnboardingStartDateWindowDays = 60
+
+// OnboardingDateBounds returns the window step 1 accepts, which is also the
+// window the date picker offers: the last OnboardingStartDateWindowDays days,
+// ending today.
+//
+// The floor used to be raised to 1 January of the current year whenever that
+// was the later of the two, which made the accepted window one single day on
+// 1 January and shorter than the copy promised through all of January and
+// February. Completion is impossible without a start date
+// (ValidateOnboardingCompletionEligibility), so an owner onboarding in that
+// stretch could only proceed by entering a date they knew to be wrong — and
+// that date anchors the first cycle and every estimate built on it. The window
+// crossing into the previous calendar year is the point, not a side effect.
 func OnboardingDateBounds(now time.Time, location *time.Location) (time.Time, time.Time) {
 	if location == nil {
 		location = time.UTC
 	}
 
 	today := DateAtLocation(now.In(location), location)
-	minDate := time.Date(today.Year(), time.January, 1, 0, 0, 0, 0, location)
-	sixtyDaysAgo := today.AddDate(0, 0, -60)
-	if sixtyDaysAgo.After(minDate) {
-		minDate = sixtyDaysAgo
-	}
-	return minDate, today
+	return today.AddDate(0, 0, -OnboardingStartDateWindowDays), today
 }
 
 func RequiresOnboarding(user *models.User) bool {
