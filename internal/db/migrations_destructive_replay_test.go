@@ -152,13 +152,39 @@ func TestMigration003ReplayOnACurrentSchemaIsRefusedWithTheHealthColumnsIntact(t
 	if bootErr == nil {
 		t.Fatal("expected the boot to refuse re-applying migration 003 against a schema that has moved past it")
 	}
-	for _, expected := range []string{"003_daily_logs_schema_reconcile.sql", "034"} {
+	// The refusal names the highest version the ledger records, which is the
+	// newest migration in the tree. Read it rather than spelling it out: a
+	// literal here turns red the day a migration is added, for a reason that
+	// has nothing to do with what this guard protects.
+	for _, expected := range []string{"003_daily_logs_schema_reconcile.sql", newestEmbeddedMigrationVersion(t)} {
 		if !strings.Contains(bootErr.Error(), expected) {
 			t.Errorf("the refusal must name %q so an operator knows what stopped and why; got %v", expected, bootErr)
 		}
 	}
 
 	assertSentinelDayIntact(t, databasePath)
+}
+
+// newestEmbeddedMigrationVersion is the version of the last migration in the
+// SQLite tree — the one a fully migrated ledger records highest, and therefore
+// the one the replay refusal names.
+func newestEmbeddedMigrationVersion(t *testing.T) string {
+	t.Helper()
+
+	migrations, err := loadEmbeddedMigrations(DriverSQLite)
+	if err != nil {
+		t.Fatalf("load the embedded SQLite migrations: %v", err)
+	}
+	if len(migrations) == 0 {
+		t.Fatal("the embedded SQLite migration set is empty, so the refusal below would be asserted against nothing")
+	}
+	newest := migrations[len(migrations)-1].Version
+	if newest == "" {
+		// strings.Contains(anything, "") is true, so an empty version would
+		// make the caller's assertion pass without reading the refusal at all.
+		t.Fatal("the newest embedded migration carries no version, which would make the refusal assertion vacuous")
+	}
+	return newest
 }
 
 // TestAWipedSchemaMigrationsLedgerKeepsEveryDailyLogsColumn covers the case the
