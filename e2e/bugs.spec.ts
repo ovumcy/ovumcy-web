@@ -292,7 +292,7 @@ test.describe('Bug regressions', () => {
 
     });
 
-    test('calendar marks the current baseline period window before manual day logs exist', async ({
+    test('calendar marks the current baseline period window, and withholds the fertile half of it, before manual day logs exist', async ({
       page,
     }) => {
       const creds = await registerOwnerAndReachDashboard(page, 'bug01-baseline-period');
@@ -328,7 +328,13 @@ test.describe('Bug regressions', () => {
 
       await page.goto(`/calendar?month=${currentDay.slice(0, 7)}&day=${currentDay}`);
       await expect(page.locator(`button[data-day="${currentDay}"]`)).toHaveClass(/calendar-cell-predicted/);
-      await expect(page.locator(`button[data-day="${preFertileDay}"]`)).toHaveAttribute('data-calendar-state', 'pre-fertile');
+      // The account has recorded no cycle, so the fertile half of the projection
+      // is withheld: the day after the baseline period window would be shaded
+      // from the cycle-length slider alone, and a fertility claim with only a
+      // configuration default behind it is suppressed rather than qualified. The
+      // predicted period days asserted above stay — their anchor is the last
+      // period start the owner entered, and only the length falls back.
+      await expect(page.locator(`button[data-day="${preFertileDay}"]`)).toHaveAttribute('data-calendar-state', 'default');
     });
 
     test('onboarding with auto period fill disabled does not create logged-entry markers', async ({
