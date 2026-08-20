@@ -3,12 +3,35 @@ package db
 import (
 	"context"
 	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
+
+// userScopeColumn is the column that marks a table as holding one owner's rows.
+// Erasure completeness is defined against it: every table carrying it must be
+// empty for the deleted account.
+const userScopeColumn = "user_id"
+
+// erasureUserScopeExemptions lists tables that carry userScopeColumn yet are
+// deliberately NOT required to be empty for the deleted account afterwards,
+// each with the one-line reason that bounds the surviving rows.
+//
+// It is empty on purpose. Every user-scoped table in the schema today is erased
+// by DeleteAccountAndRelatedData, and an exemption-free sweep is what also
+// covers tables added later — an entry here is a hole punched in the GDPR
+// erasure guarantee, so it may only be added together with the reason those
+// rows are allowed to survive (a bounded TTL, a separate erasure path, rows
+// that belong to a different owner).
+//
+// Note that `users` is not a candidate: it is keyed by `id`, not by
+// userScopeColumn, so the derivation below never sees it and the account row
+// itself is asserted gone separately.
+var erasureUserScopeExemptions = map[string]string{}
 
 // countWhere returns the row count for model matching query, failing the test
 // on a query error — folding the repeated count-and-check-err blocks out of the
@@ -20,11 +43,65 @@ func countWhere(t *testing.T, database *gorm.DB, model any, query string, args .
 	return count
 }
 
+// countUserRowsInTable counts the rows a live table holds for userID, addressing
+// the table by the name the schema reports rather than through a model — the
+// point of the derivation is to reach tables no model in this test knows about.
+func countUserRowsInTable(t *testing.T, database *gorm.DB, table string, userID uint) int64 {
+	t.Helper()
+	var count int64
+	requireNoErr(t, database.Table(table).Where(userScopeColumn+" = ?", userID).Count(&count).Error, "count "+table)
+	return count
+}
+
+// userScopedTablesFromSchema derives from the LIVE schema every table carrying
+// a userScopeColumn column, minus erasureUserScopeExemptions, sorted for a
+// stable failure message.
+//
+// It reads the schema through GORM's migrator (GetTables/ColumnTypes) rather
+// than a dialect-specific sqlite_master or information_schema query, so the
+// same derivation holds on both supported engines. Deriving instead of listing
+// is the whole point: a hand-written list mirrors the implementation it is
+// meant to check, and a table added by a later migration but forgotten in
+// DeleteAccountAndRelatedData would never enter it.
+func userScopedTablesFromSchema(t *testing.T, database *gorm.DB) []string {
+	t.Helper()
+	migrator := database.Migrator()
+	tables, err := migrator.GetTables()
+	requireNoErr(t, err, "list tables")
+
+	scoped := make([]string, 0, len(tables))
+	for _, table := range tables {
+		columns, err := migrator.ColumnTypes(table)
+		requireNoErr(t, err, "column types of "+table)
+		for _, column := range columns {
+			if !strings.EqualFold(column.Name(), userScopeColumn) {
+				continue
+			}
+			if reason, exempt := erasureUserScopeExemptions[table]; exempt {
+				t.Logf("skipping user-scoped table %s: %s", table, reason)
+				break
+			}
+			scoped = append(scoped, table)
+			break
+		}
+	}
+	sort.Strings(scoped)
+	return scoped
+}
+
 // TestDeleteAccountAndRelatedDataRemovesAllUserRows proves account erasure is
 // complete across every user-scoped table — including register_pickup_tokens
 // (which has no foreign key) and oidc_identities — so no orphaned auth-linkage
 // rows survive a delete. This guards the GDPR right-to-erasure contract
 // independently of whether ON DELETE CASCADE is enforced.
+//
+// "Every user-scoped table" is derived from the live schema, not listed here:
+// the set under test is whatever carries a user_id column after the migrations
+// have run. That makes both halves of a forgotten table fail. A table with no
+// seed fails before the erasure ("the fixture covers nothing here"), and a
+// seeded table whose rows survive fails after it — so a later migration adding
+// a user-scoped table turns this test RED whether or not anyone remembers to
+// touch it.
 func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 	dir := t.TempDir()
 	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "erasure.db")})
@@ -69,25 +146,34 @@ func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
 		requireNoErr(t, database.Create(row).Error, "seed row")
 	}
 
+	// The set under test comes from the schema, so it cannot drift behind a
+	// migration the way a literal list does.
+	scopedTables := userScopedTablesFromSchema(t, database)
+	if len(scopedTables) == 0 {
+		t.Fatal("derived no user-scoped tables from the live schema — the derivation is broken, not the schema")
+	}
+	t.Logf("user-scoped tables derived from the live schema: %v", scopedTables)
+
+	// Positive anchor, and the fixture-coverage gate in one: every derived
+	// table must actually hold a row for this account before the erasure runs.
+	// Without it the post-erasure count of a table nothing seeded would be zero
+	// for the wrong reason, and the sweep would pass while proving nothing
+	// about it.
+	for _, table := range scopedTables {
+		if seeded := countUserRowsInTable(t, database, table, user.ID); seeded == 0 {
+			t.Fatalf("%s carries a %s column but this test seeds no row for the account under erasure — add a seed row above, and thread the table through DeleteAccountAndRelatedData, or record it in erasureUserScopeExemptions with the reason", table, userScopeColumn)
+		}
+	}
+
 	requireNoErr(t, repos.Users.DeleteAccountAndRelatedData(context.Background(), user.ID), "delete account")
 
 	if usersLeft := countWhere(t, database, &models.User{}, "id = ?", user.ID); usersLeft != 0 {
 		t.Fatalf("users still has %d row(s) for the deleted account", usersLeft)
 	}
 
-	type tableCheck struct {
-		label string
-		model any
-	}
-	for _, tc := range []tableCheck{
-		{"daily_logs", &models.DailyLog{}},
-		{"symptom_types", &models.SymptomType{}},
-		{"register_pickup_tokens", &models.RegisterPickupToken{}},
-		{"oidc_identities", &models.OIDCIdentity{}},
-		{"oidc_logout_states", &models.OIDCLogoutState{}},
-	} {
-		if remaining := countWhere(t, database, tc.model, "user_id = ?", user.ID); remaining != 0 {
-			t.Fatalf("%s still has %d row(s) for the deleted user — account erasure incomplete", tc.label, remaining)
+	for _, table := range scopedTables {
+		if remaining := countUserRowsInTable(t, database, table, user.ID); remaining != 0 {
+			t.Fatalf("%s still has %d row(s) for the deleted user — account erasure incomplete", table, remaining)
 		}
 	}
 
