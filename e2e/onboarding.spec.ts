@@ -393,13 +393,17 @@ test.describe('Onboarding flow', () => {
 
     await setRangeValue(cycleSlider, 35);
     await setRangeValue(periodSlider, 6);
-    await autoFillCheckbox.uncheck();
+    // Auto-fill now ships OFF, so the state this test has to prove the toggle
+    // reaches — and that Back preserves — is ON. Unchecking an already-unchecked
+    // box asserts nothing: every expectation below would stay green with the
+    // toggle's wiring removed entirely.
+    await autoFillCheckbox.check();
 
     await expect(cycleSlider).toHaveValue('35');
     await expect(periodSlider).toHaveValue('6');
-    await expect(autoFillCheckbox).not.toBeChecked();
+    await expect(autoFillCheckbox).toBeChecked();
     await expect(irregularCheckbox).not.toBeChecked();
-    await expect(autoFillToggle).toHaveAttribute('data-active', 'false');
+    await expect(autoFillToggle).toHaveAttribute('data-active', 'true');
     await expect(irregularToggle).toHaveAttribute('data-active', 'false');
 
     await onboardingStepTwoBackButton(page).click();
@@ -414,8 +418,8 @@ test.describe('Onboarding flow', () => {
 
     await expect(cycleSlider).toHaveValue('35');
     await expect(periodSlider).toHaveValue('6');
-    await expect(autoFillCheckbox).not.toBeChecked();
-    await expect(autoFillToggle).toHaveAttribute('data-active', 'false');
+    await expect(autoFillCheckbox).toBeChecked();
+    await expect(autoFillToggle).toHaveAttribute('data-active', 'true');
 
     await submitStepTwo(page);
     await expect(page).toHaveURL(/\/dashboard$/);

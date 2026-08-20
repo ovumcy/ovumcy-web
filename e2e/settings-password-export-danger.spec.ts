@@ -395,7 +395,14 @@ test.describe('Settings: password, export, clear data, delete account', () => {
     await setRangeValue(page.locator('#settings-cycle-length'), 35);
     await setRangeValue(page.locator('#settings-period-length'), 7);
     await fillDateField(page.locator('#settings-last-period-start'), isoDaysAgo(12));
-    await page.locator('#settings-cycle input[name="auto_period_fill"]').uncheck();
+    // Auto-period-fill is off by default for a new account, and clear-data
+    // resets it to that same default. So the state that makes the reset
+    // observable is ON before the wipe — the mirror of the
+    // show_historical_phases note below, and of what this line asserted while
+    // the default was the other way round.
+    const autoPeriodFill = page.locator('#settings-cycle input[name="auto_period_fill"]');
+    await autoPeriodFill.check();
+    await expect(autoPeriodFill).toBeChecked();
     await page
       .locator('#settings-cycle form[action="/api/v1/users/current/cycle"] button[data-save-button]')
       .click();
@@ -444,7 +451,7 @@ test.describe('Settings: password, export, clear data, delete account', () => {
 
     await expect(page.locator('#settings-cycle-length')).toHaveValue('28');
     await expect(page.locator('#settings-period-length')).toHaveValue('5');
-    await expect(page.locator('#settings-cycle input[name="auto_period_fill"]')).toBeChecked();
+    await expect(page.locator('#settings-cycle input[name="auto_period_fill"]')).not.toBeChecked();
     await expect(page.locator('#settings-last-period-start')).toHaveValue('');
 
     // #229 regression: show_historical_phases was loaded by LoadSettingsByID

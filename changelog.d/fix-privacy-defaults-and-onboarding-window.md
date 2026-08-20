@@ -47,3 +47,11 @@
   literal stays and is harmless only because every insert path names the column. A test inserts a
   row that omits it on each engine and pins what each stores, so a change that starts relying on
   the column default fails on a test instead of on an owner's data.
+- **The browser suite arms automatic period fill instead of inheriting it.** Nearly every
+  Playwright scenario reaches the dashboard expecting the onboarding period window to hold days,
+  and it held them only because the default was on — a dependency no spec stated. The two shared
+  onboarding helpers now turn the toggle on deliberately and assert the resulting state, so the
+  arming is visible where the days come from and the helper still fails loudly if the control
+  disappears. A spec whose subject IS the default drives onboarding itself. In the same pass,
+  clear-data's browser regression was inverted to match the product: it arms auto-fill before the
+  wipe and asserts it off afterwards, which is what makes the reset observable at all.

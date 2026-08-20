@@ -159,6 +159,20 @@ export async function completeOnboardingIfPresent(page: Page): Promise<void> {
   }
 
   await expect(stepTwoForm).toBeVisible();
+
+  // Automatic period fill ships OFF for a new account, so the days around the
+  // start date above exist only if this helper asks for them. Nearly every
+  // caller reaches the dashboard expecting the current period window to be
+  // populated, so the shared path arms the toggle deliberately instead of
+  // inheriting whatever the product default happens to be; a spec whose subject
+  // IS the default drives onboarding itself (bugs.spec.ts's
+  // onboardOwnerWithAutoPeriodFill, onboarding.spec.ts). `check()` is
+  // idempotent, and the assertion after it keeps the helper failing loudly if
+  // the control is renamed or removed rather than silently onboarding without it.
+  const autoPeriodFill = stepTwoForm.locator('input[name="auto_period_fill"]');
+  await autoPeriodFill.check();
+  await expect(autoPeriodFill).toBeChecked();
+
   await Promise.all([
     page.waitForURL(/\/dashboard(?:\?.*)?$/, { timeout: 15000 }),
     // Step 2 carries two submit buttons — "Finish" and the skip action for the
