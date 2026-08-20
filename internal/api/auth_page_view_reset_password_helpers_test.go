@@ -23,7 +23,7 @@ func TestBuildResetPasswordPageDataValidTokenAndForcedFlag(t *testing.T) {
 	})
 	flash := FlashPayload{AuthError: "invalid credentials"}
 
-	payload := evaluateAuthPageBuilderWithCookie(t, nil, cookieHeader, func(c fiber.Ctx) error {
+	payload := evaluateAuthPageBuilderWithCookie(t, cookieHeader, func(c fiber.Ctx) error {
 		return c.JSON(handler.buildResetPasswordPageData(c, map[string]string{}, flash))
 	})
 
@@ -46,7 +46,7 @@ func TestBuildResetPasswordPageDataMarksInvalidToken(t *testing.T) {
 		Token: "invalid-token",
 	})
 
-	payload := evaluateAuthPageBuilderWithCookie(t, nil, cookieHeader, func(c fiber.Ctx) error {
+	payload := evaluateAuthPageBuilderWithCookie(t, cookieHeader, func(c fiber.Ctx) error {
 		return c.JSON(handler.buildResetPasswordPageData(c, map[string]string{}, FlashPayload{}))
 	})
 

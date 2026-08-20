@@ -1,7 +1,6 @@
 package api
 
 import (
-	"net/url"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
@@ -10,15 +9,11 @@ import (
 func TestBuildLoginPageDataUsesFlashPriorityAndSetupFlag(t *testing.T) {
 	t.Parallel()
 
-	query := url.Values{
-		"error": {"weak password"},
-		"email": {"query@example.com"},
-	}
 	flash := FlashPayload{
 		AuthError: "invalid credentials",
 	}
 
-	payload := evaluateAuthPageBuilder(t, query, func(c fiber.Ctx) error {
+	payload := evaluateAuthPageBuilder(t, func(c fiber.Ctx) error {
 		return c.JSON(buildLoginPageData(map[string]string{}, flash, true, false, false, true))
 	})
 
@@ -40,4 +35,15 @@ func TestBuildLoginPageDataUsesFlashPriorityAndSetupFlag(t *testing.T) {
 	if payload["LocalPublicAuthEnabled"] != true {
 		t.Fatalf("expected LocalPublicAuthEnabled=true, got %#v", payload["LocalPublicAuthEnabled"])
 	}
+}
+
+// The query exclusion is pinned on the real route, not on the builder:
+// buildLoginPageData takes no fiber.Ctx, so nothing calling it directly can
+// observe a query read added to ShowLoginPage.
+func TestLoginPageIgnoresAQueryOfferedPIIAndErrorState(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	body := requestAuthPageWithHostileQuery(t, app, "/login")
+
+	assertAuthPageIgnoredTheQuery(t, body, "login-email")
 }
