@@ -1,0 +1,19 @@
+### Security
+
+- **A release tag no longer publishes an image on its own say-so.** Pushing `v*` starts no CI run —
+  CI is triggered by pushes to `main` — so the tag went straight to build-and-push with only the
+  pre-publish vulnerability scan between it and the registry. A tag on a commit that never merged,
+  or on one whose checks went red, produced a signed, attested release image regardless. The publish
+  workflow now runs a gate first: the tagged commit must be contained in `main`, and its `test`,
+  `race` and `e2e` checks must have concluded successfully. A tag that fails either condition fails
+  the workflow and publishes nothing; there is no override. Publishing `latest` from `main` is
+  unchanged — that path already waited on the same checks.
+
+### Fixed
+
+- **The release image is built by the Go toolchain the test suite actually runs.** The builder stage
+  had been bumped to `golang:1.27rc2-alpine3.24` while every CI job kept resolving its toolchain
+  from `go.mod` (1.26.6), and `GOTOOLCHAIN` only ever upgrades — so the published binary was
+  compiled by a release candidate that no unit, race or browser test had ever run under. The builder
+  is pinned back to `golang:1.26.6-alpine3.24`. CI now fails when the builder tag and the `go.mod`
+  directive disagree, and Dependabot no longer offers pre-release tags of that image.
