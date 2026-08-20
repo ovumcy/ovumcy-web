@@ -102,15 +102,41 @@ func userScopedTablesFromSchema(t *testing.T, database *gorm.DB) []string {
 // seeded table whose rows survive fails after it — so a later migration adding
 // a user-scoped table turns this test RED whether or not anyone remembers to
 // touch it.
+//
+// The derivation is per DIALECT, because the migration sets are: OpenDatabase
+// applies the embedded migrations of the driver it opened, so a table created
+// only in migrations/postgres never exists in a SQLite schema and a SQLite-only
+// derivation could not see it. The scenario therefore runs once per supported
+// engine — SQLite unconditionally, Postgres behind the shared docker-gated
+// container helper, which skips when docker is absent. The SQLite arm is what
+// keeps the guard non-vacuous on a host without docker.
 func TestDeleteAccountAndRelatedDataRemovesAllUserRows(t *testing.T) {
-	dir := t.TempDir()
-	database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "erasure.db")})
-	requireNoErr(t, err, "open sqlite")
-	t.Cleanup(func() {
-		if sqlDB, err := database.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
+	t.Run("sqlite", func(t *testing.T) {
+		dir := t.TempDir()
+		database, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: filepath.Join(dir, "erasure.db")})
+		requireNoErr(t, err, "open sqlite")
+		t.Cleanup(func() {
+			if sqlDB, err := database.DB(); err == nil {
+				_ = sqlDB.Close()
+			}
+		})
+		assertAccountErasureLeavesNoUserScopedRows(t, database)
 	})
+
+	t.Run("postgres", func(t *testing.T) {
+		// startPostgresTestConfig skips the subtest when docker is unavailable;
+		// the sqlite arm above still runs, so the guard never goes vacuous.
+		assertAccountErasureLeavesNoUserScopedRows(t, openPostgresForMigrationBootstrapTest(t, startPostgresTestConfig(t)))
+	})
+}
+
+// assertAccountErasureLeavesNoUserScopedRows runs the whole erasure scenario —
+// seed, derive the user-scoped set from the schema, gate that the fixture
+// covers it, erase, sweep — against an already-migrated database, so the same
+// assertions bind on every dialect the repository ships migrations for.
+// It is deliberately NOT a t.Helper: marking it one would report every failure
+// at the two call sites above, hiding which of the scenario's assertions broke.
+func assertAccountErasureLeavesNoUserScopedRows(t *testing.T, database *gorm.DB) {
 	repos := NewRepositories(database)
 
 	user := &models.User{
