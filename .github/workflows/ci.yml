@@ -154,6 +154,21 @@ jobs:
     permissions:
       contents: read
 
+    # This is the only lane that runs the Postgres integration suite —
+    # internal/db, internal/services and scripts/backuprestoredoc all reach it
+    # through internal/testdb, and internal/api (test-go-shard) has none of it.
+    # Those tests start a throwaway container, and without this variable a host
+    # that cannot start one SKIPS them; a skipped test is a lane reporting
+    # success for a suite that never ran, and no job asserted the suite ran.
+    # The ubuntu runner has docker, so here an unavailable docker is a broken
+    # runner, not a legitimate absence: the variable turns that skip into a
+    # failure. It is deliberately NOT set at workflow level and NOT on
+    # test-go-shard — a lane with no Postgres test would only be asserting
+    # something about a suite it does not run — and it is absent from a
+    # developer machine, where no docker still means "not my test to run".
+    env:
+      OVUMCY_REQUIRE_POSTGRES: "1"
+
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
