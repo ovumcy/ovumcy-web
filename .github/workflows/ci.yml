@@ -346,18 +346,33 @@ jobs:
           builder_tag="$(sed -n 's/^FROM golang:\([^@[:space:]]*\).*/\1/p' Dockerfile)"
           builder_version="${builder_tag%%-*}"
 
-          go_directive="$(sed -n 's/^go \([0-9][0-9A-Za-z.]*\)[[:space:]]*$/\1/p' go.mod)"
-          if [ -z "$go_directive" ]; then
-            echo "::error file=go.mod::could not read the \`go\` directive."
+          # `toolchain` wins where it is present, because that is what
+          # actions/setup-go does with `go-version-file: go.mod`: the `go` line
+          # is a MINIMUM, the `toolchain` line is the version actually built
+          # with. Reading only the `go` line would leave this guard comparing
+          # the builder against a directive CI had stopped building under, so
+          # the drift it exists to catch would pass green the day one is added —
+          # a guard that holds only until a routine event re-arms it. go.mod
+          # carries no `toolchain` line today; this is what keeps that from
+          # being load-bearing. `toolchain default` names no version and so
+          # falls through to the `go` line, which is what it means anyway.
+          directive="toolchain"
+          wanted="$(sed -n 's/^toolchain go\([0-9][0-9A-Za-z.]*\)[[:space:]]*$/\1/p' go.mod)"
+          if [ -z "$wanted" ]; then
+            directive="go"
+            wanted="$(sed -n 's/^go \([0-9][0-9A-Za-z.]*\)[[:space:]]*$/\1/p' go.mod)"
+          fi
+          if [ -z "$wanted" ]; then
+            echo "::error file=go.mod::could not read a \`go\` or \`toolchain\` directive."
             exit 1
           fi
 
-          if [ "$builder_version" != "$go_directive" ]; then
-            echo "::error file=Dockerfile::the builder stage is golang:${builder_tag} (Go ${builder_version}) but go.mod asks for ${go_directive}. Every CI Go job resolves its toolchain from go.mod, so the published binary would be built by a toolchain nothing in this repository tests. Pin the builder to ${go_directive}, or move go.mod first."
+          if [ "$builder_version" != "$wanted" ]; then
+            echo "::error file=Dockerfile::the builder stage is golang:${builder_tag} (Go ${builder_version}) but go.mod's \`${directive}\` directive asks for ${wanted}. Every CI Go job resolves its toolchain from go.mod, so the published binary would be built by a toolchain nothing in this repository tests. Pin the builder to ${wanted}, or move go.mod first."
             exit 1
           fi
 
-          echo "builder toolchain golang:${builder_tag} matches the go.mod directive ${go_directive}."
+          echo "builder toolchain golang:${builder_tag} matches go.mod's \`${directive}\` directive (${wanted})."
 
       - name: Setup Go
         id: setup-go
