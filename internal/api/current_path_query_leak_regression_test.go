@@ -53,7 +53,7 @@ func assertNoCurrentPathLeak(t *testing.T, label string, body string) {
 
 	for _, form := range currentPathLeakForms() {
 		if strings.Contains(body, form) {
-			t.Fatalf("%s: rendered page carries the caller-supplied query value %q", label, form)
+			t.Fatalf("%s: rendered page carries the caller-supplied value %q", label, form)
 		}
 	}
 }
