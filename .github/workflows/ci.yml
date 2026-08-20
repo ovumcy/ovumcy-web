@@ -318,6 +318,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The published binary is built by the Dockerfile's builder stage; every
+      # job in this workflow builds and tests with the toolchain named by
+      # go.mod's `go` directive (`go-version-file: go.mod`, in this step and in
+      # every other Go lane). Nothing tied the two together, and GOTOOLCHAIN
+      # only ever upgrades: a builder tag AHEAD of the directive is not
+      # downgraded to it, it simply wins. That is how `golang:1.27rc2-alpine3.24`
+      # came to compile the release image while the whole suite ran under 1.26.6
+      # — a release candidate shipping code no test had ever run under.
+      #
+      # Cheap, needs no toolchain, and sits before `Setup Go` so it reports
+      # before anything is installed. This lane feeds the required `test` gate,
+      # and any diff that can move either file (`Dockerfile`, `go.mod`) leaves
+      # `run_unit` true in the `changes` job, so the assertion cannot be skipped
+      # by the very change that breaks it.
+      - name: Builder toolchain matches go.mod
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          matches="$(grep -c '^FROM golang:' Dockerfile || true)"
+          if [ "$matches" != "1" ]; then
+            echo "::error file=Dockerfile::expected exactly one \`FROM golang:\` builder line, found ${matches}."
+            exit 1
+          fi
+
+          builder_tag="$(sed -n 's/^FROM golang:\([^@[:space:]]*\).*/\1/p' Dockerfile)"
+          builder_version="${builder_tag%%-*}"
+
+          go_directive="$(sed -n 's/^go \([0-9][0-9A-Za-z.]*\)[[:space:]]*$/\1/p' go.mod)"
+          if [ -z "$go_directive" ]; then
+            echo "::error file=go.mod::could not read the \`go\` directive."
+            exit 1
+          fi
+
+          if [ "$builder_version" != "$go_directive" ]; then
+            echo "::error file=Dockerfile::the builder stage is golang:${builder_tag} (Go ${builder_version}) but go.mod asks for ${go_directive}. Every CI Go job resolves its toolchain from go.mod, so the published binary would be built by a toolchain nothing in this repository tests. Pin the builder to ${go_directive}, or move go.mod first."
+            exit 1
+          fi
+
+          echo "builder toolchain golang:${builder_tag} matches the go.mod directive ${go_directive}."
+
       - name: Setup Go
         id: setup-go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

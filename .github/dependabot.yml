@@ -36,6 +36,23 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # Never offer a pre-release golang builder. Dependabot treats `1.27rc2` as
+    # simply newer than `1.26.6` and opened exactly that bump, which merged: the
+    # release image was then compiled by a release candidate while every CI Go
+    # job kept resolving its toolchain from go.mod's 1.26.6 — GOTOOLCHAIN
+    # upgrades but never downgrades, so nothing pulled the builder back. CI now
+    # asserts the two are equal (`Builder toolchain matches go.mod` in ci.yml),
+    # but that assertion would only redden on the next such bump; this is what
+    # keeps it from being offered.
+    #
+    # One pattern, because Go publishes exactly one pre-release channel to this
+    # image — `1.27rc1`, `1.27rc2`, never an alpha or a beta — and it is the
+    # spelling that actually got in. A real release tag is picked up unchanged:
+    # `1.26.6-alpine3.24` contains no `rc`.
+    ignore:
+      - dependency-name: "golang"
+        versions:
+          - "*rc*"
 
   # docker-compose (GA since 2025) tracks image: tags in compose manifests —
   # the operator baseline at the repo root plus every example stack under
