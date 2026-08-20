@@ -186,6 +186,211 @@ func TestAWipedSchemaMigrationsLedgerKeepsEveryDailyLogsColumn(t *testing.T) {
 	assertSentinelDayIntact(t, databasePath)
 }
 
+// TestARebuildNarrowingATableIsRefusedInEitherSQLiteIdiom runs synthetic
+// migrations through the real applyMigration, because the shape that matters
+// most is the one the embedded tree does NOT contain.
+//
+// SQLite has two ways to rebuild a table. Migrations 003 and 024 use the first:
+// create the replacement beside the original, copy, DROP the original, rename
+// the replacement onto its name. The second renames first — `ALTER TABLE t
+// RENAME TO t_old`, create t afresh, copy back, drop t_old — and it narrows t
+// exactly as much, while dropping only a name that did not exist when the
+// migration started. A guard that measured the tables a migration textually
+// drops saw nothing there: t_old is not in the schema to snapshot, and t is
+// never dropped at all. With a ledger lost entirely, which is the case the
+// effect half exists for, such a migration would have replayed and narrowed
+// the table in silence.
+//
+// Each idiom is run twice, and the widening case is the anchor: a rebuild that
+// preserves every column must still apply, or the guard would be passing by
+// refusing everything.
+func TestARebuildNarrowingATableIsRefusedInEitherSQLiteIdiom(t *testing.T) {
+	const narrowReplacement = `CREATE TABLE %s (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  date DATE NOT NULL
+);
+INSERT INTO %s (id, user_id, date) SELECT id, user_id, date FROM %s;`
+
+	const wideReplacement = `CREATE TABLE %s (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  date DATE NOT NULL,
+  is_period BOOLEAN NOT NULL DEFAULT 0,
+  flow TEXT NOT NULL DEFAULT 'none',
+  symptom_ids TEXT,
+  notes TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  mood INTEGER NOT NULL DEFAULT 0,
+  sex_activity TEXT NOT NULL DEFAULT 'none',
+  bbt REAL,
+  cervical_mucus TEXT NOT NULL DEFAULT 'none',
+  cycle_start BOOLEAN NOT NULL DEFAULT 0,
+  is_uncertain BOOLEAN NOT NULL DEFAULT 0,
+  cycle_factor_keys TEXT NOT NULL DEFAULT '[]',
+  pregnancy_test TEXT NOT NULL DEFAULT 'none'
+);
+INSERT INTO %s SELECT * FROM %s;`
+
+	// dropFirst is the idiom of migrations 003 and 024; renameFirst is the one
+	// the embedded tree does not use and the guard used to miss.
+	dropFirst := func(replacement string) string {
+		return fmt.Sprintf(replacement, "daily_logs_new", "daily_logs_new", "daily_logs") + `
+DROP TABLE daily_logs;
+ALTER TABLE daily_logs_new RENAME TO daily_logs;`
+	}
+	renameFirst := func(replacement string) string {
+		return `ALTER TABLE daily_logs RENAME TO daily_logs_old;
+` + fmt.Sprintf(replacement, "daily_logs", "daily_logs", "daily_logs_old") + `
+DROP TABLE daily_logs_old;`
+	}
+
+	for _, testCase := range []struct {
+		name          string
+		sql           string
+		expectRefusal bool
+	}{
+		{name: "drop-first rebuild that narrows", sql: dropFirst(narrowReplacement), expectRefusal: true},
+		{name: "rename-first rebuild that narrows", sql: renameFirst(narrowReplacement), expectRefusal: true},
+		{name: "drop-first rebuild that preserves every column", sql: dropFirst(wideReplacement)},
+		{name: "rename-first rebuild that preserves every column", sql: renameFirst(wideReplacement)},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			databasePath := filepath.Join(t.TempDir(), "rebuild.db")
+			seedFullyMigratedDatabaseWithSentinelDay(t, databasePath)
+
+			err := applyFixtureMigration(t, databasePath, "900_fixture_rebuild.sql", testCase.sql)
+
+			if !testCase.expectRefusal {
+				requireNoErr(t, err, "a rebuild that preserves every column must apply")
+				assertSentinelDayIntact(t, databasePath)
+				return
+			}
+
+			if err == nil {
+				t.Fatal("expected the narrowing rebuild to be refused")
+			}
+			for _, expected := range []string{"900_fixture_rebuild.sql", "daily_logs", "mood"} {
+				if !strings.Contains(err.Error(), expected) {
+					t.Errorf("the refusal must name %q; got %v", expected, err)
+				}
+			}
+			assertSentinelDayIntact(t, databasePath)
+		})
+	}
+}
+
+// TestRemovingATableNeedsTheMigrationToSayItMeantTo covers the other side of
+// the same check: a table that does not come back is a defect when it is the
+// middle of a rebuild and the whole point when a migration retires a table for
+// good, and only the migration can tell the two apart.
+//
+// The marker is what says so. It is namespaced, it is not prose, and it names
+// the one table it authorizes, so it cannot be written by accident — and a bare
+// `DROP TABLE` deliberately does not count, since that is the middle statement
+// of every rebuild in the tree.
+func TestRemovingATableNeedsTheMigrationToSayItMeantTo(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		sql           string
+		expectRefusal bool
+	}{
+		{
+			name:          "an unmarked removal is refused",
+			sql:           "DROP TABLE register_pickup_tokens;",
+			expectRefusal: true,
+		},
+		{
+			name: "a marker naming a different table does not authorize this one",
+			sql: `-- ovumcy:removes-table oidc_logout_states
+DROP TABLE register_pickup_tokens;`,
+			expectRefusal: true,
+		},
+		{
+			name: "a marker inside prose is not a marker",
+			sql: `-- This migration does not use ovumcy:removes-table register_pickup_tokens yet.
+DROP TABLE register_pickup_tokens;`,
+			expectRefusal: true,
+		},
+		{
+			name: "a marked removal applies",
+			sql: `-- 900 retires register_pickup_tokens, whose flow was withdrawn.
+-- ovumcy:removes-table register_pickup_tokens
+DROP TABLE register_pickup_tokens;`,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			databasePath := filepath.Join(t.TempDir(), "removal.db")
+			seedFullyMigratedDatabaseWithSentinelDay(t, databasePath)
+
+			err := applyFixtureMigration(t, databasePath, "900_fixture_removal.sql", testCase.sql)
+
+			reader := openSQLiteFileForReplayTest(t, databasePath)
+			defer closeReplayDatabase(t, reader)
+
+			if !testCase.expectRefusal {
+				requireNoErr(t, err, "a marked removal must apply")
+				if reader.Migrator().HasTable("register_pickup_tokens") {
+					t.Error("the marked removal was accepted but the table is still there")
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatal("expected the unmarked removal to be refused")
+			}
+			for _, expected := range []string{"register_pickup_tokens", removedTableMarker} {
+				if !strings.Contains(err.Error(), expected) {
+					t.Errorf("the refusal must name %q so the author can express the intent; got %v", expected, err)
+				}
+			}
+			if !reader.Migrator().HasTable("register_pickup_tokens") {
+				t.Error("the refusal must roll the migration back, but the table is gone")
+			}
+		})
+	}
+}
+
+// TestAnExplicitColumnDropStillApplies keeps the column half expressible. Now
+// that the snapshot covers every table rather than the ones a migration drops,
+// an intentional column removal would be caught with the accidental ones unless
+// the visible form of that intent is read as the authorization it is.
+func TestAnExplicitColumnDropStillApplies(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "drop-column.db")
+	seedFullyMigratedDatabaseWithSentinelDay(t, databasePath)
+
+	requireNoErr(t, applyFixtureMigration(
+		t, databasePath, "900_fixture_drop_column.sql",
+		`-- 900 retires the shown_period_tip flag.
+ALTER TABLE users DROP COLUMN shown_period_tip;`,
+	), "an explicit column drop must apply")
+
+	reader := openSQLiteFileForReplayTest(t, databasePath)
+	defer closeReplayDatabase(t, reader)
+
+	if reader.Migrator().HasColumn("users", "shown_period_tip") {
+		t.Error("the explicit column drop was accepted but the column is still there")
+	}
+	if !reader.Migrator().HasColumn("users", "email") {
+		t.Error("the explicit column drop took a column it did not name")
+	}
+}
+
+// applyFixtureMigration runs one synthetic migration through the real
+// applyMigration against a fully migrated database, so a fixture exercises the
+// guard exactly as an embedded migration would. The version is above every
+// embedded one, so the version-comparison half never fires and what a case
+// measures is the effect half alone.
+func applyFixtureMigration(t *testing.T, databasePath string, name string, sqlText string) error {
+	t.Helper()
+
+	database := openSQLiteFileForReplayTest(t, databasePath)
+	defer closeReplayDatabase(t, database)
+
+	return applyMigration(database, embeddedMigration{Version: "900", Order: 900, Name: name, SQL: sqlText})
+}
+
 // TestThePostgresMigrationTreeContainsNoTableDrop keeps the sweep's coverage
 // claim true of both supported engines.
 //
