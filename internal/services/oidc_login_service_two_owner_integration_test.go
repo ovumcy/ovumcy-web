@@ -87,8 +87,13 @@ func TestOIDCLoginServiceResolvesTheActingOwnersIdentity(t *testing.T) {
 		t.Fatalf("a step-up under owner A's issuer must not satisfy owner B's re-auth; got %v", err)
 	}
 
-	// The touch is the one write on this path: it must land on the acting
-	// owner's identity row and leave the other owner's alone.
+	// The touch is the one write on this path, and both rows carry it here
+	// because both owners logged in above. What these two assertions establish
+	// is that each login reached its OWN identity row: the resolution
+	// assertions further up are reading a store that was actually written to,
+	// and the two rows are distinguishable rather than one row answering both
+	// issuers. Neither line proves isolation — that would need last_used_at
+	// read before owner A's login and asserted still nil after owner B's.
 	if readTwoOwnerOIDCIdentity(t, database, identityB.ID).LastUsedAt == nil {
 		t.Fatal("expected owner B's identity to be touched by their own login")
 	}
