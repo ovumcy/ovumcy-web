@@ -36,7 +36,133 @@ permissions:
   contents: read
 
 jobs:
+  # The tag path had no gate at all. ci.yml's `push:` trigger is
+  # `branches: [main]`, so pushing `v1.2.3` starts NO CI run — no `test`, no
+  # `race`, no `e2e`, nothing — and the publish job below went straight to
+  # `docker build --push` with only its own pre-publish Trivy scan in the way.
+  # A tag on a branch that never merged, or on a commit whose checks went red,
+  # published a signed and attested release image regardless. ci.yml's
+  # `publish-image` deliberately excludes the release event because "release
+  # tags publish from their own tag push" — so this is where that gate is owed.
+  #
+  # `needs:` cannot cross workflow boundaries, so the gate cannot be an edge to
+  # ci.yml's jobs; it re-derives the same verdict from what those jobs left
+  # behind on the commit: it is contained in `main`, and its required checks
+  # concluded successfully.
+  #
+  # It FAILS the workflow, and there is no bypass input on purpose. A gate that
+  # publishes anyway while the operator remembers to look at a warning is the
+  # defect being closed, not a fix for it. If a tag is legitimately blocked,
+  # the remedy is to make the commit green — re-run the failed or stuck CI run
+  # on it, or merge it to `main` first — then delete and re-push the tag.
+  verify-release-tag:
+    # Tag path only. The `workflow_call` path from ci.yml already carries
+    # `needs: [test, race, e2e, e2e-postgres-smoke, image-smoke]`, so re-gating
+    # it here would be redundant, and a check run named `test` on a commit whose
+    # `test` job is still running (it is the caller) could not conclude.
+    #
+    # The discriminator is the ref TYPE, not the event name: inside a called
+    # workflow `github.event_name` is the CALLER's event — `push` there too —
+    # while `github.ref` stays the caller's ref, `refs/heads/main`. The same
+    # distinction the "Select public image reference" step below already draws.
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    permissions:
+      # `checks: read` is the whole of the widening, and it lives here, not on
+      # the publish job below, which keeps exactly the permissions it had.
+      checks: read
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The ancestry question is unanswerable on a shallow clone: with the
+          # default depth of 1 there is no history for merge-base to walk and
+          # the check would fail every tag, or worse, be "fixed" by weakening it
+          # into a string search.
+          fetch-depth: 0
+
+      - name: Assert the tagged commit is contained in main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Dereference first: for an annotated tag the pushed object is the tag,
+          # not the commit, and merge-base wants a commit.
+          sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+
+          # Explicit refspec rather than trusting the checkout's ref layout on a
+          # tag event.
+          git fetch --no-tags --force origin "+refs/heads/main:refs/remotes/origin/main"
+          main_sha="$(git rev-parse origin/main)"
+
+          # `--is-ancestor`, never a string search through `git log`: the
+          # question is reachability, and only the commit graph answers it.
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::tag ${GITHUB_REF_NAME} points at ${sha}, which is not contained in main (${main_sha}). Nothing on this repository's release path has judged that commit, and branch protection guards merges into main, not tags. Merge it to main first."
+            exit 1
+          fi
+
+          echo "tag ${GITHUB_REF_NAME} -> ${sha}, contained in main (${main_sha})."
+
+      - name: Assert the required checks passed on the tagged commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The required contexts on `main`, each a thin gate job over a matrix
+          # in ci.yml. Being in main is not enough on its own: a commit reaches
+          # main through the merge queue, and the queue judges the batch it
+          # built, so this asks the checks about this exact commit.
+          REQUIRED_CHECKS: test race e2e
+        run: |
+          set -euo pipefail
+
+          sha="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+
+          # The endpoint's default `filter=latest` returns the most recent run
+          # per check name — the same view branch protection takes, so a red
+          # re-run after a green one counts as red here too.
+          runs="$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100" \
+              --jq '.check_runs[] | [.name, .conclusion // "pending"] | @tsv'
+          )"
+
+          echo "check runs on ${sha}:"
+          printf '%s\n' "$runs"
+
+          failed=0
+          for name in $REQUIRED_CHECKS; do
+            conclusion="$(printf '%s\n' "$runs" | awk -F'\t' -v n="$name" '$1 == n { print $2; exit }')"
+            if [ -z "$conclusion" ]; then
+              echo "::error::no \`${name}\` check run exists for ${sha}. A tag push starts no CI run, so this commit's checks must already have run on main."
+              failed=1
+            elif [ "$conclusion" != "success" ]; then
+              echo "::error::the \`${name}\` check on ${sha} concluded \"${conclusion}\"."
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::refusing to publish a release image for ${GITHUB_REF_NAME}: the required checks on ${sha} are not green."
+            exit 1
+          fi
+
+          echo "every required check (${REQUIRED_CHECKS}) succeeded on ${sha}."
+
   publish:
+    needs:
+      - verify-release-tag
+    # A skipped `needs:` dependency blocks the dependent job unless its own `if`
+    # says otherwise, and on the `workflow_call` path the gate above is skipped
+    # by design — without this, `:latest` would simply stop publishing.
+    #
+    # Written in the fail-safe direction: the gate's `success` is the only thing
+    # that lets a TAG through, and `skipped` is accepted only where it is
+    # expected, off the tag path. A gate that somehow skipped on a tag push
+    # therefore blocks the publish rather than waving it past.
+    if: ${{ !cancelled() && (needs.verify-release-tag.result == 'success' || (needs.verify-release-tag.result == 'skipped' && github.ref_type != 'tag')) }}
     runs-on: ubuntu-latest
     permissions:
       artifact-metadata: write
