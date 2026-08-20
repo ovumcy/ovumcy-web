@@ -330,3 +330,88 @@ func TestBuildStatsCycleRibbonMarksRecordedDays(t *testing.T) {
 		}
 	}
 }
+
+// statscycleribbonInferredFertility counts, across the whole stack, the cells
+// that make a fertility claim: a shaded fertile day, the peak band, and an
+// ovulation phase cell. It is the quantity the medical-safety suppression has
+// to drive to zero — three encodings of one claim, so a guard reading only one
+// of them would go green while the other two still paint.
+func statscycleribbonInferredFertility(ribbon StatsCycleRibbon) (fertile int, peak int, ovulation int) {
+	for _, row := range ribbon.Rows {
+		for _, day := range row.Days {
+			if day.IsFertile {
+				fertile++
+			}
+			if day.IsFertilePeak {
+				peak++
+			}
+			if day.Phase == "ovulation" {
+				ovulation++
+			}
+		}
+	}
+	return fertile, peak, ovulation
+}
+
+// TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode is the
+// medical-safety gate on this surface. An owner in unpredictable-cycle mode has
+// said the cycle math does not describe her, and every other projected surface
+// answers by withholding the fertile window, the peak band and the ovulation
+// day — the calendar included, whose historical-phase pass sits BELOW the same
+// suppression return, so inferred history is not exempt there. The stack shaded
+// all three anyway, on the strength of the ShowHistoricalPhases preference
+// alone: a fertility claim at a confidence the data no longer carries.
+//
+// The case is named for unpredictable mode, which is the disjunct it drives; the
+// gate itself is the shared PredictionsSuppressed predicate, so a pregnancy
+// pause and an overdue cycle reach this surface through the same line and are
+// pinned on the predicate rather than re-pinned per surface here.
+//
+// The suppressed half is a negative assertion, so the same history renders once
+// with prediction enabled first: that anchor proves the three claims can appear
+// here at all, and that the guard is not green against an empty stack. What must
+// SURVIVE the gate is asserted too — the rows, their observed lengths and the
+// recorded period days are facts, not projections.
+func TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode(t *testing.T) {
+	logs := statscycleribbonHistory(t)
+	spans := buildCompletedCycleSpans(logs, time.UTC)
+
+	predicting := buildStatsCycleRibbon(
+		statscycleribbonOwner(true),
+		CycleStats{LutealPhase: 14},
+		logs,
+		spans,
+	)
+	fertile, peak, ovulation := statscycleribbonInferredFertility(predicting)
+	if fertile == 0 || peak == 0 || ovulation == 0 {
+		t.Fatalf("anchor: with prediction on, the stack shades a fertile window, a peak and an ovulation day; got fertile=%d peak=%d ovulation=%d", fertile, peak, ovulation)
+	}
+
+	owner := statscycleribbonOwner(true)
+	owner.UnpredictableCycle = true
+	ribbon := buildStatsCycleRibbon(
+		owner,
+		CycleStats{LutealPhase: 14},
+		logs,
+		spans,
+	)
+
+	if !ribbon.Visible || len(ribbon.Rows) != len(predicting.Rows) {
+		t.Fatalf("recorded cycles are facts and keep rendering: visible=%v rows=%d", ribbon.Visible, len(ribbon.Rows))
+	}
+	fertile, peak, ovulation = statscycleribbonInferredFertility(ribbon)
+	if fertile != 0 || peak != 0 || ovulation != 0 {
+		t.Fatalf("unpredictable mode suppresses every fertility claim on the stack; got fertile=%d peak=%d ovulation=%d", fertile, peak, ovulation)
+	}
+
+	// Row 0 is the 2026-01-01 cycle: five recorded period days, which stay.
+	row := ribbon.Rows[0]
+	if row.CycleLength != 30 || row.PeriodLength != 5 {
+		t.Fatalf("expected the observed 30-day cycle with five period days, got %d/%d", row.CycleLength, row.PeriodLength)
+	}
+	for _, day := range row.Days {
+		if day.Day <= row.PeriodLength && (!day.IsPeriod || day.Phase != "menstrual") {
+			t.Fatalf("day %d is a recorded period day: period=%v phase=%q", day.Day, day.IsPeriod, day.Phase)
+		}
+	}
+}
