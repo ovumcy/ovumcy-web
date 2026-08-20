@@ -14,6 +14,15 @@ import (
 // or concurrent redeem, not a DB error.
 var ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
 
+// ErrUnsupportedUserRole is returned by the two account-creating repository
+// methods when the row they were handed carries a role this product does not
+// have. Ovumcy is owner-role-only — every account is the sole owner of its own
+// data, and there is no viewer or partner role at all
+// (`docs/SECURITY_INVARIANTS.md`) — so a row with any other role would be
+// stored and then read by code written on the assumption that owner is the only
+// role there is.
+var ErrUnsupportedUserRole = errors.New("unsupported user role")
+
 type UniqueConstraintError struct {
 	Constraint string
 	Err        error
