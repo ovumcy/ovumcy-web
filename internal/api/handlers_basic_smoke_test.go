@@ -9,7 +9,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
@@ -129,6 +131,12 @@ func TestGetCurrentUserWithoutAuthCookieReturnsUnauthorized(t *testing.T) {
 // mutating calls it can make. The handler intentionally never includes
 // sensitive fields (password/recovery hashes, TOTP secret), so this test
 // also blocks accidental field leaks added by a future refactor.
+//
+// The shape is asserted over SEVERAL states of the same account, not just the
+// freshly onboarded one: a key added conditionally — `if user.OIDCSubject !=
+// "" { payload["oidc_subject"] = ... }` — is invisible to a guard that only
+// ever renders the state where the condition is false. The claim here is that
+// the key set does not depend on account state.
 func TestGetCurrentUserReturnsMinimalIdentityShape(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "current-user-shape@example.com", "StrongPass1", true)
@@ -140,6 +148,70 @@ func TestGetCurrentUserReturnsMinimalIdentityShape(t *testing.T) {
 	}
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
+	assertCurrentUserIdentityShape(t, app, authCookie, "local password, display name set", user.Email)
+
+	// Local auth off and the display name cleared, so a key emitted only for
+	// one polarity of those two cannot hide behind the seeded state.
+	if err := database.Model(&user).Updates(map[string]any{
+		"display_name":       "",
+		"local_auth_enabled": false,
+	}).Error; err != nil {
+		t.Fatalf("clear display name and local auth: %v", err)
+	}
+	assertCurrentUserIdentityShape(t, app, authCookie, "local auth off, display name empty", user.Email)
+
+	// An account with a linked OIDC identity. The identity row is written
+	// directly because the DTO reads account state, not the login route that
+	// produced it; the issuer and the subject are passed as forbidden values
+	// so a subject reaching the wire under an existing key fails too.
+	const (
+		linkedIssuer  = "https://idp.example.com"
+		linkedSubject = "oidc-subject-must-not-ship"
+	)
+	if err := database.Create(&models.OIDCIdentity{
+		UserID:    user.ID,
+		Issuer:    linkedIssuer,
+		Subject:   linkedSubject,
+		CreatedAt: time.Now().UTC(),
+	}).Error; err != nil {
+		t.Fatalf("link oidc identity: %v", err)
+	}
+	assertCurrentUserIdentityShape(t, app, authCookie, "oidc identity linked", user.Email, linkedIssuer, linkedSubject)
+
+	// The DTO's other two flags have no reachable opposite polarity, so the
+	// shape above is deliberately narrower than the flag combinations the
+	// payload can spell: setting must_change_password revokes the live
+	// session (services.ResolveAuthSession), and an account that has not
+	// finished onboarding is answered by the middleware before the handler
+	// runs. Both are pinned as refusals so a change that makes either state
+	// reachable fails here, instead of leaving the key set unexercised for a
+	// state the handler newly serves.
+	for _, unreachable := range []struct {
+		state  string
+		update map[string]any
+	}{
+		{state: "must change password", update: map[string]any{"must_change_password": true}},
+		{state: "onboarding incomplete", update: map[string]any{"must_change_password": false, "onboarding_completed": false}},
+	} {
+		if err := database.Model(&user).Updates(unreachable.update).Error; err != nil {
+			t.Fatalf("apply %q state: %v", unreachable.state, err)
+		}
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/users/current", nil)
+		request.Header.Set("Cookie", authCookie)
+		if response := mustAppResponse(t, app, request); response.StatusCode == http.StatusOK {
+			t.Fatalf("[%s] current-user answered 200: that state is now reachable, so the shape assertion above has to cover it too", unreachable.state)
+		}
+	}
+}
+
+// assertCurrentUserIdentityShape drives GET /api/v1/users/current with the
+// given session and asserts the whole shape contract against whatever account
+// state the caller has just written: the exact key set, the sensitive-field
+// denylist, the identity values, and the raw-body markers. state names the
+// account state under test so a failure says which one broke the contract.
+func assertCurrentUserIdentityShape(t *testing.T, app *fiber.App, authCookie string, state string, expectedEmail string, forbiddenValues ...string) {
+	t.Helper()
+
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/users/current", nil)
 	request.Header.Set("Cookie", authCookie)
 	response := mustAppResponse(t, app, request)
@@ -147,11 +219,11 @@ func TestGetCurrentUserReturnsMinimalIdentityShape(t *testing.T) {
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		t.Fatalf("read current-user body: %v", err)
+		t.Fatalf("[%s] read current-user body: %v", state, err)
 	}
 	payload := map[string]any{}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		t.Fatalf("decode current-user JSON %q: %v", body, err)
+		t.Fatalf("[%s] decode current-user JSON %q: %v", state, body, err)
 	}
 
 	// The documented key set, in the order the handler writes it. It is
@@ -166,23 +238,23 @@ func TestGetCurrentUserReturnsMinimalIdentityShape(t *testing.T) {
 	expectedKeys := slices.Sorted(slices.Values(expectedFields))
 	actualKeys := slices.Sorted(maps.Keys(payload))
 	if !slices.Equal(actualKeys, expectedKeys) {
-		t.Fatalf("expected current-user payload to expose exactly the keys %v, got %v", expectedKeys, actualKeys)
+		t.Fatalf("[%s] expected current-user payload to expose exactly the keys %v, got %v", state, expectedKeys, actualKeys)
 	}
 	for _, leakedField := range []string{"password_hash", "password", "recovery_code_hash", "recovery_code", "totp_secret", "totp_secret_encrypted"} {
 		if _, ok := payload[leakedField]; ok {
-			t.Fatalf("did not expect current-user payload to expose %q (sensitive field leak): %v", leakedField, payload)
+			t.Fatalf("[%s] did not expect current-user payload to expose %q (sensitive field leak): %v", state, leakedField, payload)
 		}
 	}
-	if payload["email"] != user.Email {
-		t.Fatalf("expected email %q, got %v", user.Email, payload["email"])
+	if payload["email"] != expectedEmail {
+		t.Fatalf("[%s] expected email %q, got %v", state, expectedEmail, payload["email"])
 	}
 	if payload["role"] != string(models.RoleOwner) {
-		t.Fatalf("expected role %q, got %v", models.RoleOwner, payload["role"])
+		t.Fatalf("[%s] expected role %q, got %v", state, models.RoleOwner, payload["role"])
 	}
 	bodyString := string(body)
-	for _, leak := range []string{"$2a$", "$2b$", "totp_secret"} {
+	for _, leak := range append([]string{"$2a$", "$2b$", "totp_secret"}, forbiddenValues...) {
 		if strings.Contains(bodyString, leak) {
-			t.Fatalf("current-user response contained sensitive token %q: %q", leak, bodyString)
+			t.Fatalf("[%s] current-user response contained sensitive token %q: %q", state, leak, bodyString)
 		}
 	}
 }
