@@ -37,13 +37,14 @@ func TestBuildLoginPageDataUsesFlashPriorityAndSetupFlag(t *testing.T) {
 	}
 }
 
-// The query exclusion is pinned on the real route, not on the builder:
-// buildLoginPageData takes no fiber.Ctx, so nothing calling it directly can
-// observe a query read added to ShowLoginPage.
-func TestLoginPageIgnoresAQueryOfferedPIIAndErrorState(t *testing.T) {
+// Pinned on the real route, not on the builder: buildLoginPageData takes no
+// fiber.Ctx, so nothing calling it directly can observe a query read added to
+// ShowLoginPage. The claim is exactly the field and the error block — see
+// assertAuthPageDidNotPrefillFromQuery for what this page does still carry.
+func TestLoginPageDoesNotPrefillEmailOrErrorFromQuery(t *testing.T) {
 	app, _ := newOnboardingTestApp(t)
 
 	body := requestAuthPageWithHostileQuery(t, app, "/login")
 
-	assertAuthPageIgnoredTheQuery(t, body, "login-email")
+	assertAuthPageDidNotPrefillFromQuery(t, body, "login-email")
 }

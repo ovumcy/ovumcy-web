@@ -65,17 +65,30 @@ func requestAuthPageWithHostileQuery(t *testing.T, app *fiber.App, path string) 
 	return mustReadBodyString(t, response.Body)
 }
 
-// assertAuthPageIgnoredTheQuery pins both halves of the exclusion on a rendered
-// auth page: the query email reaches neither the markup nor the form field that
-// would round-trip it, and the query error raises no server-error block. The
-// email input is looked up by id first, so a page that stopped rendering its
-// form fails here instead of passing on absence.
-func assertAuthPageIgnoredTheQuery(t *testing.T, body string, emailInputID string) {
+// assertAuthPageDidNotPrefillFromQuery pins both halves of what the page-data
+// builders decide: the query email does not prefill the page's own email field,
+// and the query error raises no server-error block. The email input is looked up
+// by id first, so a page that stopped rendering its form fails here instead of
+// passing on absence.
+//
+// The scope is deliberate and narrower than "this page carries no query-sourced
+// PII", which is FALSE today and must not be inferred from this file. The raw
+// request URI — query string included — does reach the markup through
+// CurrentPath (internal/api/i18n_helpers.go:93), rendered into the language
+// switch's hidden next field (internal/templates/base.html:53) and into the
+// privacy link's back parameter (internal/templates/base.html:161). So
+// /login?email=someone@example.com renders that address percent-encoded in both
+// places, and the back parameter carries it into a further outbound URL. That is
+// a separate finding against the shared layout with its own change; it is named
+// here so this guard's silence about it is a stated limit rather than an
+// accidental gap. Widening the assertion to the whole body belongs with that fix,
+// not before it.
+func assertAuthPageDidNotPrefillFromQuery(t *testing.T, body string, emailInputID string) {
 	t.Helper()
 
 	assertBodyNotContainsAll(t, body, bodyStringMatch{
 		fragment: hostileAuthPageQuery.Get("email"),
-		message:  "did not expect the query email to reach the rendered auth page",
+		message:  "did not expect the query email in raw form to reach the rendered auth page",
 	})
 
 	root := mustParseHTMLDocument(t, body)
