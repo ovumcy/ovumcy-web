@@ -756,10 +756,16 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			return err
 		}
 		return tx.Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-			"cycle_length":                    models.DefaultCycleLength,
-			"period_length":                   models.DefaultPeriodLength,
-			"luteal_phase":                    14,
-			"auto_period_fill":                true,
+			"cycle_length":  models.DefaultCycleLength,
+			"period_length": models.DefaultPeriodLength,
+			"luteal_phase":  14,
+			// auto_period_fill resets to models.DefaultAutoPeriodFill (off), not
+			// to the value the account carried. Auto-fill MANUFACTURES period
+			// days the owner never logged, so leaving it armed would answer an
+			// erasure gesture by restarting the generator that produced part of
+			// what was just erased — containment has to survive the transition,
+			// and the wiped account is a fresh account for this setting.
+			"auto_period_fill":                models.DefaultAutoPeriodFill,
 			"irregular_cycle":                 false,
 			"track_bbt":                       false,
 			"temperature_unit":                "c",

@@ -266,8 +266,11 @@ func TestBuildOIDCOwnerUserShape(t *testing.T) {
 	if user.Role != models.RoleOwner || user.AuthSessionVersion != 1 {
 		t.Fatalf("expected owner role with session version 1, got role=%q sv=%d", user.Role, user.AuthSessionVersion)
 	}
-	if user.CycleLength != models.DefaultCycleLength || user.PeriodLength != models.DefaultPeriodLength || !user.AutoPeriodFill {
+	if user.CycleLength != models.DefaultCycleLength || user.PeriodLength != models.DefaultPeriodLength {
 		t.Fatalf("expected default cycle settings on provisioning")
+	}
+	if user.AutoPeriodFill != models.DefaultAutoPeriodFill {
+		t.Fatalf("expected auto-period-fill %t on provisioning, got %t", models.DefaultAutoPeriodFill, user.AutoPeriodFill)
 	}
 	if !user.CreatedAt.Equal(registrationServiceTestNow) {
 		t.Fatalf("expected explicit createdAt to be preserved, got %s", user.CreatedAt)

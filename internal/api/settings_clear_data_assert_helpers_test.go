@@ -52,8 +52,8 @@ func assertClearDataPostconditions(t *testing.T, database *gorm.DB, user models.
 	if updatedUser.PeriodLength != 5 {
 		t.Fatalf("expected period length reset to 5, got %d", updatedUser.PeriodLength)
 	}
-	if !updatedUser.AutoPeriodFill {
-		t.Fatalf("expected auto period fill reset to true")
+	if updatedUser.AutoPeriodFill != models.DefaultAutoPeriodFill {
+		t.Fatalf("expected auto period fill reset to %t, got %t", models.DefaultAutoPeriodFill, updatedUser.AutoPeriodFill)
 	}
 	if updatedUser.LastPeriodStart != nil {
 		t.Fatalf("expected last period start to be cleared, got %v", updatedUser.LastPeriodStart)
