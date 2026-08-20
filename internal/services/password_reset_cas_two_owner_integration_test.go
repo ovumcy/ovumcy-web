@@ -2,15 +2,12 @@ package services
 
 import (
 	"context"
-	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 // TestResetPasswordAndRotateRecoveryCodeCASScopesTheWriteToTheResolvedOwner
@@ -25,28 +22,17 @@ import (
 // hash, recovery hash and the auth_session_version that carries the session
 // invalidation — must be byte-for-byte unchanged.
 func TestResetPasswordAndRotateRecoveryCodeCASScopesTheWriteToTheResolvedOwner(t *testing.T) {
-	database := newPasswordResetTwoOwnerDatabase(t)
-	repository := db.NewUserRepository(database)
-	service := NewAuthService(repository)
+	database := newTwoOwnerIntegrationDatabase(t, "ovumcy-reset-two-owner")
+	service := NewAuthService(db.NewUserRepository(database))
 
-	ownerA := createPasswordResetTwoOwnerUser(t, database, "reset-owner-a@example.com", "OwnerAPass1")
-	ownerB := createPasswordResetTwoOwnerUser(t, database, "reset-owner-b@example.com", "OwnerBPass1")
+	ownerA := createTwoOwnerUser(t, database, "reset-owner-a@example.com", withLocalCredentials(t, "OwnerAPass1"))
+	ownerB := createTwoOwnerUser(t, database, "reset-owner-b@example.com", withLocalCredentials(t, "OwnerBPass1"))
+	requireDistinctTwoOwnerFixture(t, ownerA, ownerB)
 
-	// The mutant this test exists to kill is a literal owner `1`; if the first
-	// account did not land on id 1 the test would go green while proving
-	// nothing.
-	if ownerA.ID != 1 {
-		t.Fatalf("fixture assumption broken: expected the first owner to hold id 1, got %d", ownerA.ID)
-	}
-	if ownerB.ID == ownerA.ID {
-		t.Fatalf("fixture assumption broken: the two owners must be distinct, both are %d", ownerB.ID)
-	}
+	before := readTwoOwnerUser(t, database, ownerA.ID)
 
-	before := readPasswordResetTwoOwnerUser(t, database, ownerA.ID)
-
-	target := readPasswordResetTwoOwnerUser(t, database, ownerB.ID)
-	oldHash := target.PasswordHash
-	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &target, oldHash, "EvenStronger2")
+	target := readTwoOwnerUser(t, database, ownerB.ID)
+	recoveryCode, err := service.ResetPasswordAndRotateRecoveryCodeCAS(context.Background(), &target, target.PasswordHash, "EvenStronger2")
 	if err != nil {
 		t.Fatalf("resetting owner B failed with %v — a CAS scoped to a different owner matches no row", err)
 	}
@@ -55,7 +41,7 @@ func TestResetPasswordAndRotateRecoveryCodeCASScopesTheWriteToTheResolvedOwner(t
 	}
 
 	// Isolation: owner A must not have been touched in any column.
-	after := readPasswordResetTwoOwnerUser(t, database, ownerA.ID)
+	after := readTwoOwnerUser(t, database, ownerA.ID)
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("owner A's row changed while owner B reset their password — the CAS write is not scoped to the resolved owner:\nbefore: %+v\nafter:  %+v", before, after)
 	}
@@ -68,7 +54,7 @@ func TestResetPasswordAndRotateRecoveryCodeCASScopesTheWriteToTheResolvedOwner(t
 
 	// Positive anchor: the reset must actually have landed on owner B, or the
 	// isolation half above would pass on a service that writes nothing at all.
-	gotB := readPasswordResetTwoOwnerUser(t, database, ownerB.ID)
+	gotB := readTwoOwnerUser(t, database, ownerB.ID)
 	if err := bcrypt.CompareHashAndPassword([]byte(gotB.PasswordHash), []byte("EvenStronger2")); err != nil {
 		t.Fatalf("expected owner B's new password to verify: %v", err)
 	}
@@ -80,60 +66,24 @@ func TestResetPasswordAndRotateRecoveryCodeCASScopesTheWriteToTheResolvedOwner(t
 	}
 }
 
-func newPasswordResetTwoOwnerDatabase(t *testing.T) *gorm.DB {
+// withLocalCredentials gives a seeded owner a real bcrypt password and recovery
+// hash, so the CAS predicate compares the same shape production does. MinCost
+// keeps two seeds plus the service's own hashing off the critical path.
+func withLocalCredentials(t *testing.T, password string) func(*models.User) {
 	t.Helper()
 
-	database, err := db.OpenDatabase(db.Config{
-		Driver:     db.DriverSQLite,
-		SQLitePath: filepath.Join(t.TempDir(), "ovumcy-reset-two-owner.db"),
-	})
-	if err != nil {
-		t.Fatalf("open integration database: %v", err)
-	}
-	t.Cleanup(func() {
-		if sqlDB, err := database.DB(); err == nil {
-			_ = sqlDB.Close()
+	return func(user *models.User) {
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+		if err != nil {
+			t.Fatalf("hash password for %s: %v", user.Email, err)
 		}
-	})
-	return database
-}
-
-func createPasswordResetTwoOwnerUser(t *testing.T, database *gorm.DB, email string, password string) models.User {
-	t.Helper()
-
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
-	if err != nil {
-		t.Fatalf("hash password for %s: %v", email, err)
+		recoveryHash, err := bcrypt.GenerateFromPassword([]byte("recovery-"+user.Email), bcrypt.MinCost)
+		if err != nil {
+			t.Fatalf("hash recovery code for %s: %v", user.Email, err)
+		}
+		user.PasswordHash = string(passwordHash)
+		user.RecoveryCodeHash = string(recoveryHash)
+		user.LocalAuthEnabled = true
+		user.AuthSessionVersion = 1
 	}
-	recoveryHash, err := bcrypt.GenerateFromPassword([]byte("recovery-"+email), bcrypt.MinCost)
-	if err != nil {
-		t.Fatalf("hash recovery code for %s: %v", email, err)
-	}
-
-	user := models.User{
-		Email:               email,
-		PasswordHash:        string(passwordHash),
-		RecoveryCodeHash:    string(recoveryHash),
-		LocalAuthEnabled:    true,
-		AuthSessionVersion:  1,
-		Role:                models.RoleOwner,
-		OnboardingCompleted: true,
-		CycleLength:         models.DefaultCycleLength,
-		PeriodLength:        models.DefaultPeriodLength,
-		CreatedAt:           time.Now().UTC(),
-	}
-	if err := database.Create(&user).Error; err != nil {
-		t.Fatalf("create user %s: %v", email, err)
-	}
-	return user
-}
-
-func readPasswordResetTwoOwnerUser(t *testing.T, database *gorm.DB, userID uint) models.User {
-	t.Helper()
-
-	var user models.User
-	if err := database.First(&user, userID).Error; err != nil {
-		t.Fatalf("read user %d: %v", userID, err)
-	}
-	return user
 }
