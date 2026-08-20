@@ -276,9 +276,11 @@ test.describe('Stats: symptom patterns', () => {
     page,
   }) => {
     // buildSymptomPatternInsights requires >= minimumPhaseInsightCycles (3)
-    // completed cycles. OnboardingDateBounds caps last_period_start at
-    // max(Jan 1 of current year, today-60), so the deepest onboarding can
-    // anchor is today-60. Lay three more cycle starts with 18-day gaps:
+    // completed cycles. OnboardingDateBounds floors last_period_start at
+    // today-60 on every calendar date, so the deepest onboarding can anchor
+    // is today-60 — including in January and February, where the floor used
+    // to be raised to 1 January and this spec's 60 would have been rejected.
+    // Lay three more cycle starts with 18-day gaps:
     // ResolveManualCycleStartPolicy floors gapDays through int truncation
     // after a TZ-aware diff, so a nominal 15-day gap can collapse to 14
     // and trip the short-gap confirmation requirement. 18 days leaves

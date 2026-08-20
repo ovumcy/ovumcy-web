@@ -2,47 +2,78 @@ package services
 
 import (
 	"errors"
+	"regexp"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-func TestOnboardingDateBounds_UsesYearStartWhenWithinFirstSixtyDays(t *testing.T) {
+// TestOnboardingDateBoundsSpanTheStatedWindowOnEveryAnchor pins the window the
+// copy promises against the window the validator and the date picker enforce,
+// on the anchors where they used to disagree. The floor was raised to 1 January
+// of the current year whenever that was later, so on 1 January the accepted
+// window was a single day and stayed short through February — while
+// onboarding.error.last_period_range told the owner "within the last 60 days"
+// and completion refused to proceed without a date.
+//
+// The January case is the one that fails on the old formula; the two later
+// anchors are the positive companions that keep the rolling window pinned, so a
+// bound that stopped moving with `today` cannot pass this test either.
+func TestOnboardingDateBoundsSpanTheStatedWindowOnEveryAnchor(t *testing.T) {
 	location, err := time.LoadLocation("Europe/Moscow")
 	if err != nil {
 		t.Fatalf("load location: %v", err)
 	}
 
-	now := time.Date(2026, time.February, 15, 18, 45, 0, 0, location)
-	minDate, maxDate := OnboardingDateBounds(now, location)
-
-	expectedMin := time.Date(2026, time.January, 1, 0, 0, 0, 0, location)
-	expectedMax := time.Date(2026, time.February, 15, 0, 0, 0, 0, location)
-	if !minDate.Equal(expectedMin) {
-		t.Fatalf("expected min date %s, got %s", expectedMin.Format(time.RFC3339), minDate.Format(time.RFC3339))
+	cases := []struct {
+		name        string
+		now         time.Time
+		expectedMin time.Time
+		expectedMax time.Time
+	}{
+		{
+			name:        "1 January reaches back into the previous year",
+			now:         time.Date(2026, time.January, 1, 18, 45, 0, 0, location),
+			expectedMin: time.Date(2025, time.November, 2, 0, 0, 0, 0, location),
+			expectedMax: time.Date(2026, time.January, 1, 0, 0, 0, 0, location),
+		},
+		{
+			name:        "mid-February still reaches back into the previous year",
+			now:         time.Date(2026, time.February, 15, 18, 45, 0, 0, location),
+			expectedMin: time.Date(2025, time.December, 17, 0, 0, 0, 0, location),
+			expectedMax: time.Date(2026, time.February, 15, 0, 0, 0, 0, location),
+		},
+		{
+			name:        "mid-April rolls sixty days back as before",
+			now:         time.Date(2026, time.April, 15, 9, 10, 0, 0, location),
+			expectedMin: time.Date(2026, time.February, 14, 0, 0, 0, 0, location),
+			expectedMax: time.Date(2026, time.April, 15, 0, 0, 0, 0, location),
+		},
 	}
-	if !maxDate.Equal(expectedMax) {
-		t.Fatalf("expected max date %s, got %s", expectedMax.Format(time.RFC3339), maxDate.Format(time.RFC3339))
-	}
-}
 
-func TestOnboardingDateBounds_UsesRollingSixtyDaysAfterWindow(t *testing.T) {
-	location, err := time.LoadLocation("Europe/Moscow")
-	if err != nil {
-		t.Fatalf("load location: %v", err)
-	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			minDate, maxDate := OnboardingDateBounds(testCase.now, location)
 
-	now := time.Date(2026, time.April, 15, 9, 10, 0, 0, location)
-	minDate, maxDate := OnboardingDateBounds(now, location)
-
-	expectedMin := time.Date(2026, time.February, 14, 0, 0, 0, 0, location)
-	expectedMax := time.Date(2026, time.April, 15, 0, 0, 0, 0, location)
-	if !minDate.Equal(expectedMin) {
-		t.Fatalf("expected min date %s, got %s", expectedMin.Format(time.RFC3339), minDate.Format(time.RFC3339))
-	}
-	if !maxDate.Equal(expectedMax) {
-		t.Fatalf("expected max date %s, got %s", expectedMax.Format(time.RFC3339), maxDate.Format(time.RFC3339))
+			if !minDate.Equal(testCase.expectedMin) {
+				t.Fatalf("expected min date %s, got %s", testCase.expectedMin.Format(time.RFC3339), minDate.Format(time.RFC3339))
+			}
+			if !maxDate.Equal(testCase.expectedMax) {
+				t.Fatalf("expected max date %s, got %s", testCase.expectedMax.Format(time.RFC3339), maxDate.Format(time.RFC3339))
+			}
+			if span := CalendarDaysBetween(minDate, maxDate); span != OnboardingStartDateWindowDays {
+				t.Fatalf("expected a %d-day window, got %d days (%s..%s)",
+					OnboardingStartDateWindowDays,
+					span,
+					minDate.Format("2006-01-02"),
+					maxDate.Format("2006-01-02"),
+				)
+			}
+		})
 	}
 }
 
@@ -330,5 +361,53 @@ func TestResolveOnboardingStep(t *testing.T) {
 				t.Fatalf("ResolveOnboardingStep(%q) = %d, want %d", testCase.raw, got, testCase.want)
 			}
 		})
+	}
+}
+
+// TestOnboardingRangeCopyStatesTheEnforcedWindow ties the number the owner
+// reads to the number the bound enforces. onboarding.error.last_period_range is
+// the message every out-of-range rejection maps to, and it names a figure —
+// "within the last 60 days" — that nothing checked against
+// OnboardingStartDateWindowDays. The two drifted apart once already, silently,
+// because a locale string and a Go constant have no compiler between them.
+//
+// Every supported locale is swept rather than English alone: a window change
+// that moves five files out of six leaves the sixth promising the old figure.
+// The copy is not pinned word for word — only the figure inside it — so
+// ordinary rewording stays free.
+func TestOnboardingRangeCopyStatesTheEnforcedWindow(t *testing.T) {
+	manager, err := i18n.NewManager(i18n.LangEN)
+	if err != nil {
+		t.Fatalf("init i18n manager: %v", err)
+	}
+
+	languages := manager.SupportedLanguages()
+	if len(languages) == 0 {
+		t.Fatal("expected the i18n manager to report supported languages")
+	}
+
+	const key = "onboarding.error.last_period_range"
+	digits := regexp.MustCompile(`[0-9]+`)
+
+	for _, language := range languages {
+		message := strings.TrimSpace(manager.Messages(language)[key])
+		if message == "" {
+			t.Errorf("locale %q has no %s message: the range rejection would render its raw key", language, key)
+			continue
+		}
+
+		figures := digits.FindAllString(message, -1)
+		if len(figures) != 1 {
+			t.Errorf("locale %q states %d figures in %s (%q); the window copy must name exactly the one number the bound enforces", language, len(figures), key, message)
+			continue
+		}
+		stated, err := strconv.Atoi(figures[0])
+		if err != nil {
+			t.Errorf("locale %q: parse %q out of %q: %v", language, figures[0], message, err)
+			continue
+		}
+		if stated != OnboardingStartDateWindowDays {
+			t.Errorf("locale %q promises a %d-day window in %s (%q) while OnboardingDateBounds enforces %d", language, stated, key, message, OnboardingStartDateWindowDays)
+		}
 	}
 }
