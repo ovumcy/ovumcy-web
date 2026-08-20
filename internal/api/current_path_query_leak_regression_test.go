@@ -229,3 +229,52 @@ func TestSignedInPageKeepsItsAllowlistedQueryParameters(t *testing.T) {
 		t.Fatalf("%s: expected the allowlisted step to survive, got %q", onboardingLabel, got)
 	}
 }
+
+// TestNotFoundPageDropsTheCallerSuppliedPathFromTheRenderedAddress closes the
+// same leak one level up. On a 404 the whole path is caller-chosen, not merely
+// its query, and the browser branch renders the full layout — so
+// /query-source@example.com/nowhere puts that address into the switcher field
+// and into the outgoing /privacy?back=… link exactly as ?email= did on a routed
+// page. The handler pins the rendered address itself, so nothing the caller
+// wrote survives into the markup.
+func TestNotFoundPageDropsTheCallerSuppliedPathFromTheRenderedAddress(t *testing.T) {
+	t.Parallel()
+
+	app, database := newOnboardingTestApp(t)
+	target := "/" + currentPathLeakAddress + "/nowhere"
+
+	// The two sessions render different halves of the layout — the switcher
+	// field is signed-out only, the primary navigation signed-in only — so they
+	// are separate subtests: a failure in one must not hide the other.
+	t.Run("signed out", func(t *testing.T) {
+		label := "signed-out not-found path"
+		body := smokeGET(t, app, "", target, http.StatusNotFound)
+
+		assertNoCurrentPathLeak(t, label, body)
+		if got := currentPathNextField(t, label, body); got != notFoundRenderedPath {
+			t.Fatalf("%s: expected the rendered path to be %q, got %q", label, notFoundRenderedPath, got)
+		}
+		if got := currentPathPrivacyBack(t, label, body); got != url.QueryEscape(notFoundRenderedPath) {
+			t.Fatalf("%s: expected the privacy link to carry %q, got %q", label, notFoundRenderedPath, got)
+		}
+	})
+
+	t.Run("signed in", func(t *testing.T) {
+		label := "signed-in not-found path"
+		owner := createOnboardingTestUser(t, database, "current-path-not-found@example.com", "StrongPass1", true)
+		ownerCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
+		body := smokeGET(t, app, ownerCookie, target, http.StatusNotFound)
+
+		assertNoCurrentPathLeak(t, label, body)
+		if got := currentPathPrivacyBack(t, label, body); got != url.QueryEscape(notFoundRenderedPath) {
+			t.Fatalf("%s: expected the privacy link to carry %q, got %q", label, notFoundRenderedPath, got)
+		}
+		// This session renders the primary navigation, and every active state in
+		// it derives from the same rendered address. A substitute naming a real
+		// section would light that section's tab and announce aria-current on a
+		// page that is not it, so the address must match no navigation route.
+		if strings.Contains(body, `aria-current="page"`) {
+			t.Fatalf("%s: the rendered address lit a navigation tab on a page that is not it", label)
+		}
+	})
+}
