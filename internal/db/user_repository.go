@@ -102,12 +102,52 @@ func (repo *UserRepository) RenormalizeUserEmail(ctx context.Context, userID uin
 	return result.RowsAffected == 1, result.Error
 }
 
+// requireOwnerRole is the persistence half of the owner-role-only boundary, and
+// it runs on both account-creating methods below — the only two writes in this
+// package that put a role into the users table.
+//
+// The column's CHECK still admits 'partner', a role the product does not have:
+// no constant declares it, no handler or template reads it, and narrowing the
+// constraint would mean rebuilding the users table on SQLite, which has no
+// ALTER for a CHECK. That rebuild would DROP the account table, and with
+// foreign_keys=ON a DROP TABLE fires every ON DELETE CASCADE hanging off it, so
+// the migration that tightened one unused constant would delete every day log
+// on the instance. The value is therefore refused where it is written instead
+// of where it is stored, which is also the only place any current caller can
+// reach: containment used to be web-policy only
+// (`docs/SECURITY_INVARIANTS.md` → the owner-role-only privacy boundary), and a
+// row carrying another role would be accepted by the database and then read by
+// code written on the assumption that owner is the only role.
+//
+// An empty role is the one value that is not a rejection: it means "take the
+// column default", which is owner. It is written out explicitly so the row
+// never depends on the gorm tag and the migration default agreeing.
+func requireOwnerRole(user *models.User) error {
+	if user == nil {
+		return ErrUnsupportedUserRole
+	}
+	if user.Role == "" {
+		user.Role = models.RoleOwner
+		return nil
+	}
+	if user.Role != models.RoleOwner {
+		return ErrUnsupportedUserRole
+	}
+	return nil
+}
+
 func (repo *UserRepository) Create(ctx context.Context, user *models.User) error {
+	if err := requireOwnerRole(user); err != nil {
+		return err
+	}
 	err := repo.database.WithContext(ctx).Create(user).Error
 	return classifyUserCreateError(err)
 }
 
 func (repo *UserRepository) CreateUserWithSymptoms(ctx context.Context, user *models.User, symptoms []models.SymptomType) error {
+	if err := requireOwnerRole(user); err != nil {
+		return err
+	}
 	return repo.database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := classifyUserCreateError(tx.Create(user).Error); err != nil {
 			return err
