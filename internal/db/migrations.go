@@ -21,9 +21,17 @@ import (
 // an unmatched statement is executed exactly as before.
 const sqlLineCommentPrefix = "--"
 
+// removedTableMarker is how a migration declares that a table it drops is meant
+// to stay gone, rather than being the middle of a table rebuild. It is quoted
+// into the refusal below, so an operator who hits the check reads the exact
+// line the migration is missing.
+const removedTableMarker = "ovumcy:removes-table"
+
 var migrationFilePattern = regexp.MustCompile(`^(\d+)_.*\.sql$`)
 var addColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+ADD\s+COLUMN\s+([^\s]+)\b`)
 var dropTableStatementPattern = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^\s;]+)`)
+var dropColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+DROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?([^\s;]+)`)
+var removedTableMarkerPattern = regexp.MustCompile(`(?im)^[ \t]*--[ \t]*` + regexp.QuoteMeta(removedTableMarker) + `[ \t]+([^\s;]+)[ \t]*$`)
 
 type embeddedMigration struct {
 	Version string
@@ -165,7 +173,7 @@ func applyMigration(database *gorm.DB, migration embeddedMigration) error {
 			return errors.New("migration has no SQL statements")
 		}
 
-		columnsBeforeTheDrop, err := snapshotColumnsOfDroppedTables(tx, statements)
+		columnsBefore, err := snapshotEveryTableColumns(tx)
 		if err != nil {
 			return fmt.Errorf("inspect migration %s: %w", migration.Name, err)
 		}
@@ -184,7 +192,7 @@ func applyMigration(database *gorm.DB, migration embeddedMigration) error {
 			}
 		}
 
-		if err := requireDroppedTablesKeptTheirColumns(tx, migration, columnsBeforeTheDrop); err != nil {
+		if err := requireNoTableSilentlyNarrowed(tx, migration, columnsBefore, statements); err != nil {
 			return err
 		}
 
@@ -200,9 +208,8 @@ func applyMigration(database *gorm.DB, migration embeddedMigration) error {
 	})
 }
 
-// droppedTableColumns is one table a migration is about to DROP, together with
-// the columns it had before the migration ran.
-type droppedTableColumns struct {
+// tableColumnsBefore is one table as it stood before a migration ran.
+type tableColumnsBefore struct {
 	Table   string
 	Columns []string
 }
@@ -270,57 +277,92 @@ func highestAppliedVersionAfter(appliedVersions map[string]struct{}, order int) 
 	return highestVersion, highestVersion != ""
 }
 
-// snapshotColumnsOfDroppedTables records the columns of every table the
-// migration's statements DROP, read before any of them runs.
+// snapshotEveryTableColumns records the columns of EVERY table there is, read
+// before the migration's first statement runs.
 //
 // It is the second half of the destructive-replay guard and covers the case the
 // version comparison cannot see: a database that lost its schema_migrations
 // content entirely records no later version, so the whole set replays from 001
 // with nothing to compare against. The post-condition below then measures the
 // effect itself.
-func snapshotColumnsOfDroppedTables(database *gorm.DB, statements []string) ([]droppedTableColumns, error) {
-	snapshot := make([]droppedTableColumns, 0)
-	seenTables := make(map[string]struct{})
+//
+// It measures every table rather than the tables the migration textually DROPs,
+// because the DROP is an idiom and not the invariant. SQLite has two ways to
+// rebuild a table, and the invariant has to hold for both:
+//
+//	CREATE TABLE t_new (…); INSERT INTO t_new SELECT … FROM t; DROP TABLE t;
+//	ALTER TABLE t_new RENAME TO t;                       -- migrations 003, 024
+//
+//	ALTER TABLE t RENAME TO t_old; CREATE TABLE t (…);
+//	INSERT INTO t SELECT … FROM t_old; DROP TABLE t_old; -- the rename-first form
+//
+// The second narrows t exactly as the first does, and a check keyed on the
+// dropped name sees nothing: t_old does not exist yet when the snapshot is
+// taken, and t is never dropped at all. Reading the whole schema is what makes
+// the guard about the effect instead of about the spelling.
+//
+// The cost is one column read per table per APPLIED migration, and it lands
+// only where a migration actually applies: a boot with nothing to do never
+// reaches applyMigration, because applyEmbeddedMigrations skips on the ledger
+// first, so a running instance pays nothing. Priced on this host 2026-08-20,
+// 20 clean SQLite bootstraps of the whole set each: mean 300 ms with the
+// snapshot against 113 ms without, best 218 ms against 88 ms — roughly 150 ms
+// added once, at install or at an upgrade that applies the whole set. On
+// Postgres the difference did not separate from container startup (9.3 s
+// against 14.3 s, in the wrong direction). Keyed on the schema rather than on
+// the statement text on purpose: a textual precondition for taking the
+// snapshot would have to enumerate the ways a table can lose a column, which
+// is the assumption that let the rename-first form through.
+func snapshotEveryTableColumns(database *gorm.DB) ([]tableColumnsBefore, error) {
+	tables, err := database.Migrator().GetTables()
+	if err != nil {
+		return nil, fmt.Errorf("list tables: %w", err)
+	}
 
-	for _, statement := range statements {
-		tableName, isDropTable := parseDropTableStatement(statement)
-		if !isDropTable {
-			continue
-		}
-		if _, alreadySeen := seenTables[tableName]; alreadySeen {
-			continue
-		}
-		seenTables[tableName] = struct{}{}
-
-		if !database.Migrator().HasTable(tableName) {
-			continue
-		}
-		columns, err := tableColumnNames(database, tableName)
+	snapshot := make([]tableColumnsBefore, 0, len(tables))
+	for _, table := range tables {
+		columns, err := tableColumnNames(database, table)
 		if err != nil {
 			return nil, err
 		}
-		snapshot = append(snapshot, droppedTableColumns{Table: tableName, Columns: columns})
+		snapshot = append(snapshot, tableColumnsBefore{Table: normalizeSQLIdentifier(table), Columns: columns})
 	}
-
 	return snapshot, nil
 }
 
-// requireDroppedTablesKeptTheirColumns fails the migration — and, being inside
-// its transaction, rolls back every statement it ran — when a table it dropped
-// came back without a column it had before.
+// requireNoTableSilentlyNarrowed fails the migration — and, being inside its
+// transaction, rolls back every statement it ran — when a table lost a column,
+// or the table itself, without the migration having said so.
 //
-// A migration that means to REMOVE a column says so with an explicit
-// `ALTER TABLE ... DROP COLUMN`, which this check does not look at; what it
-// refuses is a column removed as a side effect of rebuilding a table from a
-// narrower replacement, which is never what the migration author wrote and is
-// always the shape of a replay against a newer schema.
-func requireDroppedTablesKeptTheirColumns(database *gorm.DB, migration embeddedMigration, columnsBeforeTheDrop []droppedTableColumns) error {
-	for _, before := range columnsBeforeTheDrop {
+// Both losses are expressible, and each escape hatch is a thing the author
+// writes out by hand and names:
+//
+//   - a column removed by an explicit `ALTER TABLE t DROP COLUMN c` in this
+//     migration's own SQL is the visible form of that intent and is allowed;
+//   - a table removed on purpose carries the marker line
+//     `-- ovumcy:removes-table <name>` (see removedTableMarkerPattern), which
+//     names the one table it authorizes.
+//
+// A bare `DROP TABLE t` is deliberately NOT an authorization: it is the middle
+// of the rebuild idiom above, where the author's intent is to replace the
+// table, not to remove it — reading it as consent is exactly how migration 003
+// came to discard eight health columns while reporting success.
+func requireNoTableSilentlyNarrowed(database *gorm.DB, migration embeddedMigration, columnsBefore []tableColumnsBefore, statements []string) error {
+	removedOnPurpose := tablesRemovedOnPurpose(migration)
+	droppedColumns := columnsDroppedExplicitly(statements)
+
+	for _, before := range columnsBefore {
 		if !database.Migrator().HasTable(before.Table) {
+			if _, authorized := removedOnPurpose[before.Table]; authorized {
+				continue
+			}
 			return fmt.Errorf(
-				"refusing migration %s: it dropped table %s and did not put it back. Nothing was written — the migration was rolled back and the database is unchanged",
+				"refusing migration %s: table %s is gone after it ran and the migration does not say it meant to remove it — a rebuild that drops a table must put it back. Nothing was written: the migration was rolled back and the database is unchanged. If the removal is intended, the migration must carry the line `-- %s %s`; if it is not, and migration %s is in fact already applied, restore its schema_migrations row, otherwise restore from a backup",
 				migration.Name,
 				before.Table,
+				removedTableMarker,
+				before.Table,
+				migration.Version,
 			)
 		}
 
@@ -330,12 +372,13 @@ func requireDroppedTablesKeptTheirColumns(database *gorm.DB, migration embeddedM
 		}
 
 		missing := missingColumnNames(before.Columns, columnsNow)
+		missing = withoutExplicitlyDroppedColumns(missing, droppedColumns[before.Table])
 		if len(missing) == 0 {
 			continue
 		}
 
 		return fmt.Errorf(
-			"refusing migration %s: rebuilding table %s would have dropped column(s) %s, which held data before it ran — the migration rebuilds the table from the columns its own version knew about, so re-applying it on a newer schema discards everything added after it. Nothing was written — the migration was rolled back and the database is unchanged; if migration %s is in fact applied, restore its schema_migrations row, otherwise restore from a backup",
+			"refusing migration %s: table %s lost column(s) %s, which held data before it ran, and no statement in the migration drops them — a rebuild recreates the table from the columns its own version knew about, so re-applying it on a newer schema discards everything added after it. Nothing was written: the migration was rolled back and the database is unchanged; if migration %s is in fact applied, restore its schema_migrations row, otherwise restore from a backup",
 			migration.Name,
 			before.Table,
 			strings.Join(missing, ", "),
@@ -344,6 +387,63 @@ func requireDroppedTablesKeptTheirColumns(database *gorm.DB, migration embeddedM
 	}
 
 	return nil
+}
+
+// tablesRemovedOnPurpose returns the tables a migration declares it means to
+// remove for good.
+//
+// The declaration is a comment line of its own naming ONE table:
+//
+//	-- ovumcy:removes-table register_pickup_tokens
+//
+// It lives in the migration because that is where the intent is, reviewed as
+// one file with the statement that carries it out, and it cannot be written by
+// accident: the marker is namespaced, it is not English, and it authorizes only
+// the table it names — a migration that retires one table and rebuilds another
+// still has to put the rebuilt one back. It is read from the raw SQL rather
+// than from a statement chunk because the runner splits on `;` and a comment
+// can land anywhere.
+func tablesRemovedOnPurpose(migration embeddedMigration) map[string]struct{} {
+	removed := make(map[string]struct{})
+	for _, match := range removedTableMarkerPattern.FindAllStringSubmatch(migration.SQL, -1) {
+		removed[normalizeSQLIdentifier(match[1])] = struct{}{}
+	}
+	return removed
+}
+
+// columnsDroppedExplicitly returns table -> the columns this migration removes
+// with an `ALTER TABLE ... DROP COLUMN`, the visible form of that intent.
+func columnsDroppedExplicitly(statements []string) map[string]map[string]struct{} {
+	dropped := make(map[string]map[string]struct{})
+	for _, statement := range statements {
+		matches := dropColumnStatementPattern.FindStringSubmatch(stripLeadingSQLComments(statement))
+		if len(matches) != 3 {
+			continue
+		}
+		tableName := normalizeSQLIdentifier(matches[1])
+		if dropped[tableName] == nil {
+			dropped[tableName] = make(map[string]struct{})
+		}
+		dropped[tableName][normalizeSQLIdentifier(matches[2])] = struct{}{}
+	}
+	return dropped
+}
+
+// withoutExplicitlyDroppedColumns removes from missing the columns the
+// migration itself asked to drop.
+func withoutExplicitlyDroppedColumns(missing []string, droppedColumns map[string]struct{}) []string {
+	if len(droppedColumns) == 0 {
+		return missing
+	}
+
+	kept := make([]string, 0, len(missing))
+	for _, name := range missing {
+		if _, dropped := droppedColumns[name]; dropped {
+			continue
+		}
+		kept = append(kept, name)
+	}
+	return kept
 }
 
 // tablesDroppedByMigration returns, in file order and without repeats, the
