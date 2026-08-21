@@ -584,3 +584,48 @@ func TestOIDCLogoutStateServiceSaveDeleteExpiredCalledWithNow(t *testing.T) {
 		t.Fatalf("DeleteExpired cutoff: want %s, got %s", now, store.deleteExpiredCutoff)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// effectiveLogoutStateTime: a zero clock means "now", not the zero instant
+// ---------------------------------------------------------------------------
+
+// TestOIDCLogoutStateServiceLoadWithNoClockUsesTheCurrentTime pins the branch a
+// caller reaches by passing no time at all. Substituting the wall clock is the
+// only safe reading: the zero instant is before every ExpiresAt this table can
+// hold, so a service that carried it through would find nothing expired ever —
+// it would hand back end-session material a week past its TTL and sweep no row,
+// while every assertion about a live record stayed green.
+func TestOIDCLogoutStateServiceLoadWithNoClockUsesTheCurrentTime(t *testing.T) {
+	t.Parallel()
+
+	store := &oidclogoutstateserviceCovStore{
+		findFound: true,
+		findRecord: models.OIDCLogoutState{
+			UserID:             oidclogoutstateserviceCovOwner,
+			SessionID:          "sess-no-clock",
+			EndSessionEndpoint: "https://id.example.com/logout",
+			IDTokenHint:        "hint",
+			ExpiresAt:          time.Now().UTC().Add(-time.Hour),
+		},
+	}
+	svc := NewOIDCLogoutStateService(store)
+
+	before := time.Now().UTC()
+	state, found, err := svc.Load(context.Background(), "sess-no-clock", oidclogoutstateserviceCovOwner, time.Time{})
+	after := time.Now().UTC()
+	if err != nil {
+		t.Fatalf("Load() with a zero clock: unexpected error %v", err)
+	}
+	if found || state.IDTokenHint != "" {
+		t.Fatalf("a record that expired an hour ago must not be returned when the caller passes no clock — the zero instant was carried through instead of the current time (found=%t, state=%+v)", found, state)
+	}
+	if store.deleteBySessionID != "sess-no-clock" {
+		t.Fatalf("the expired record must be deleted on the way out, got delete of %q", store.deleteBySessionID)
+	}
+	if store.deleteExpiredCutoff.Before(before) || store.deleteExpiredCutoff.After(after) {
+		t.Fatalf("the TTL sweep ran with cutoff %s, outside the [%s, %s] window this call occupied — the substituted clock is not the current time", store.deleteExpiredCutoff, before, after)
+	}
+	if store.deleteExpiredCutoff.Location() != time.UTC {
+		t.Fatalf("the substituted clock must be UTC, got %v", store.deleteExpiredCutoff.Location())
+	}
+}
