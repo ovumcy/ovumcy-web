@@ -15,6 +15,7 @@ require (
 	golang.org/x/net v0.58.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.47.0
+	golang.org/x/tools v0.49.0
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
 	pgregory.net/rapid v1.3.0
@@ -43,6 +44,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	golang.org/x/mod v0.39.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	modernc.org/libc v1.73.4 // indirect

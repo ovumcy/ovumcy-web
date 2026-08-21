@@ -1,0 +1,13 @@
+package probe
+
+// The mirror image of the wrapper case: the spelling is identical and gorm
+// declared none of it. A name-matched rule refuses this; the rule is about the
+// method, so this one goes through.
+type local struct{}
+
+func (l local) AutoMigrate(dst ...any) error { return nil }
+
+func Boot() error {
+	var db local
+	return db.AutoMigrate()
+}

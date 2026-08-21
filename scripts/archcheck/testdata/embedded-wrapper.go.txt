@@ -1,0 +1,9 @@
+package probe
+
+import "gorm.io/gorm"
+
+// The receiver here is a local type, so a rule that compared the receiver's own
+// package would clear this call. The method it reaches is still gorm's.
+type store struct{ *gorm.DB }
+
+func Boot(s store) error { return s.AutoMigrate(struct{}{}) }

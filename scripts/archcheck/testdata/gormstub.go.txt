@@ -1,0 +1,9 @@
+package gorm
+
+// DB stands in for gorm's own, carrying the one method this rule names. The
+// stand-in is what lets the typed pass run offline: the probe module resolves
+// gorm.io/gorm to this package through a local replace, so no download and no
+// module cache are involved in deciding whose method a call reaches.
+type DB struct{}
+
+func (db *DB) AutoMigrate(dst ...any) error { return nil }

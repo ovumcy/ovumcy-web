@@ -1,0 +1,54 @@
+#!/bin/sh
+# ovumcy-web's own pre-commit check: the architecture contract, asked of the
+# content being committed.
+#
+# Tracked on purpose. The enrolled hook that reaches this one is shared by every
+# repository on this machine and holds nothing repository-specific; what belongs
+# to ovumcy-web lives here, in the repository, versioned with the code it is
+# about. A hook kept in .git/hooks/ instead would be untracked, and a check that
+# can disappear without a diff is the failure mode this whole surface exists to
+# close.
+#
+# This is the REFUSING surface of three. An edit-time guard flags the same two
+# invariants as they are written and cannot refuse a fragment it never sees
+# whole; CI is the backstop that no local skip reaches. The decision behind the
+# split, and the instrument all three run, are in scripts/archcheck.
+#
+# It measures the INDEX, not the working tree. A commit is a statement about
+# what is staged, and a working-tree scan would clear a commit whose staged half
+# still carries the violation the other half repairs.
+
+set -e
+
+# Only a change to Go source, or to what resolves it, can move either verdict.
+# Everything else commits at no cost — the copy plus the scan below is seconds,
+# and paying it on a translation or a stylesheet would buy nothing.
+if ! git diff --cached --name-only --diff-filter=d | grep -qE '\.go$|^go\.(mod|sum)$'; then
+  exit 0
+fi
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "BLOCKED - the Go toolchain is not on PATH, so the architecture check did not run." >&2
+  echo "The commit is refused rather than passed unchecked. Put go on PATH and commit again." >&2
+  exit 1
+fi
+
+# A path relative to the repository root, deliberately. git runs this hook from
+# the top of the working tree, and an absolute temporary path would have to
+# cross from the shell's world into the Go binary's — the two disagree about
+# what an absolute path looks like on Windows, and the scan would be handed a
+# directory it cannot open. .tmp*/ is already ignored.
+staged=.tmp/archcheck-index
+trap 'rm -rf "$staged"' EXIT INT TERM
+rm -rf "$staged"
+mkdir -p "$staged"
+
+# -f overwrites, -a takes every tracked path: the scan needs go.mod and the
+# whole import graph, not only the files this commit touches.
+git checkout-index -a -f --prefix="$staged/"
+
+if ! go run ./scripts/archcheck -root "$staged"; then
+  echo "BLOCKED - the staged tree violates the architecture contract; see the findings above." >&2
+  echo "Fix them and commit again, or state the exemption in the rule the finding names." >&2
+  exit 1
+fi
