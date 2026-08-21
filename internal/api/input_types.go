@@ -38,9 +38,15 @@ type totpChallengeInput struct {
 	Code string `json:"code" form:"code"`
 }
 
+// forgotPasswordInput carries both step-1 (email only) and step-2 (email +
+// recovery code + the account's CURRENT password) submissions of
+// POST /api/v1/password-resets. Password is the account's existing password,
+// never a new one: the recovery code substitutes for the second factor, not for
+// the first (docs/SECURITY_INVARIANTS.md → Password recovery).
 type forgotPasswordInput struct {
 	Email        string `json:"email" form:"email"`
 	RecoveryCode string `json:"recovery_code" form:"recovery_code"`
+	Password     string `json:"password" form:"password"`
 }
 
 type resetPasswordInput struct {

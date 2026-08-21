@@ -20,7 +20,7 @@ func TestResetPasswordTokenCannotBeReusedAfterSuccessfulReset(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "reset-one-time@example.com", "StrongPass1", true)
 
 	recoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
-	resetCookieValue := requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode)
+	resetCookieValue := requestResetCookieByRecoveryCode(t, app, user.Email, recoveryCode, "StrongPass1")
 
 	firstResetForm := url.Values{
 		"password":         {"EvenStronger2"},
@@ -146,7 +146,7 @@ func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "recovery-rotation-http@example.com", "StrongPass1", true)
 
 	originalRecoveryCode := mustSetRecoveryCodeForUser(t, database, user.ID)
-	resetCookieValue := requestResetCookieByRecoveryCode(t, app, user.Email, originalRecoveryCode)
+	resetCookieValue := requestResetCookieByRecoveryCode(t, app, user.Email, originalRecoveryCode, "StrongPass1")
 
 	resetForm := url.Values{
 		"password":         {"EvenStronger2"},
@@ -170,9 +170,13 @@ func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
 
 	// A fresh recovery attempt with the ORIGINAL code must be rejected:
 	// no redirect into the reset flow and no usable reset cookie.
+	// The reset above rewrote the password, so the retry presents the
+	// CURRENT one: what is under test is the rotation of the recovery code,
+	// not the password operand the route also requires.
 	retryForm := url.Values{
 		"email":         {user.Email},
 		"recovery_code": {originalRecoveryCode},
+		"password":      {"EvenStronger2"},
 	}
 	retryRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(retryForm.Encode()))
 	retryRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -191,12 +195,13 @@ func TestOriginalRecoveryCodeRejectedAfterCompletedReset(t *testing.T) {
 	}
 }
 
-func requestResetCookieByRecoveryCode(t *testing.T, app *fiber.App, email string, recoveryCode string) string {
+func requestResetCookieByRecoveryCode(t *testing.T, app *fiber.App, email string, recoveryCode string, password string) string {
 	t.Helper()
 
 	form := url.Values{
 		"email":         {email},
 		"recovery_code": {recoveryCode},
+		"password":      {password},
 	}
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")

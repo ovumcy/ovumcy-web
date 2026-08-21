@@ -99,6 +99,7 @@ func TestResetPasswordJSONSuccessDoesNotExposeRecoveryCode(t *testing.T) {
 	startResetRequest := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(url.Values{
 		"email":         {user.Email},
 		"recovery_code": {recoveryCode},
+		"password":      {"StrongPass1"},
 	}.Encode()))
 	startResetRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	startResetResponse := mustAppResponse(t, app, startResetRequest)

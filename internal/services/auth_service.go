@@ -344,7 +344,21 @@ func (service *AuthService) rehashPasswordIfStale(ctx context.Context, user *mod
 	user.PasswordHash = string(upgraded)
 }
 
-func (service *AuthService) FindUserByEmailAndRecoveryCode(ctx context.Context, email string, code string) (*models.User, error) {
+// FindUserByEmailRecoveryCodeAndPassword resolves the account behind a recovery
+// reset. It requires BOTH the account's current password and its recovery code:
+// the code is the substitute for the second factor, never for the first, so one
+// captured secret can no longer rewrite the password and mint a session.
+//
+// Every rejection returns the one ErrRecoveryCodeNotFound, and every rejection
+// spends the SAME bcrypt work as a success — two cost-12 comparisons. The
+// operands are therefore never short-circuited against each other: when the row
+// exists, both comparisons run and only their combined result decides, and when
+// it does not, equalizeRecoveryCodeLookupTiming spends both against the fixed
+// placeholders. A password compare skipped after a failed code compare (or the
+// reverse) would be a timing oracle telling an attacker which of the two
+// secrets they got right — and, through the code operand, whether the account
+// exists at all.
+func (service *AuthService) FindUserByEmailRecoveryCodeAndPassword(ctx context.Context, email string, code string, password string) (*models.User, error) {
 	normalizedEmail := NormalizeAuthEmail(email)
 	if normalizedEmail == "" {
 		return nil, ErrRecoveryCodeNotFound
@@ -354,16 +368,19 @@ func (service *AuthService) FindUserByEmailAndRecoveryCode(ctx context.Context, 
 		return nil, err
 	}
 	if !found {
-		equalizeRecoveryCodeLookupTiming(code)
+		equalizeRecoveryCodeLookupTiming(code, password)
 		return nil, ErrRecoveryCodeNotFound
 	}
 
 	hash := strings.TrimSpace(user.RecoveryCodeHash)
-	if !user.LocalAuthEnabled || hash == "" {
-		equalizeRecoveryCodeLookupTiming(code)
+	passwordHash := strings.TrimSpace(user.PasswordHash)
+	if !user.LocalAuthEnabled || hash == "" || passwordHash == "" {
+		equalizeRecoveryCodeLookupTiming(code, password)
 		return nil, ErrRecoveryCodeNotFound
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(NormalizeRecoveryCode(code))) != nil {
+	recoveryCodeMatches := bcrypt.CompareHashAndPassword([]byte(hash), []byte(NormalizeRecoveryCode(code))) == nil
+	passwordMatches := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) == nil
+	if !recoveryCodeMatches || !passwordMatches {
 		return nil, ErrRecoveryCodeNotFound
 	}
 	if err := ValidateSupportedWebUser(&user); err != nil {
@@ -477,8 +494,15 @@ func (service *AuthService) RevokeAuthSessions(ctx context.Context, userID uint)
 	return service.users.BumpAuthSessionVersion(ctx, userID)
 }
 
-func equalizeRecoveryCodeLookupTiming(code string) {
+// equalizeRecoveryCodeLookupTiming spends, on the early-return paths of the
+// recovery lookup, the bcrypt compute of BOTH operands the reset route now
+// verifies — the recovery code and the account password. Equalizing only the
+// code would make "this address has no account" measurably cheaper than a wrong
+// password on a real account by one whole cost-12 comparison, which is the
+// account-enumeration oracle this route must not have.
+func equalizeRecoveryCodeLookupTiming(code string, password string) {
 	_ = bcrypt.CompareHashAndPassword([]byte(recoveryCodeTimingEqualizationHash), []byte(NormalizeRecoveryCode(code)))
+	_ = bcrypt.CompareHashAndPassword([]byte(credentialsTimingEqualizationHash), []byte(password))
 }
 
 // equalizeAuthCredentialsTiming runs a bcrypt comparison against a fixed

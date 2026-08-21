@@ -470,10 +470,14 @@ func TestAuthServiceAuthenticateCredentials(t *testing.T) {
 	}
 }
 
-func TestAuthServiceFindUserByEmailAndRecoveryCode(t *testing.T) {
+func TestAuthServiceFindUserByEmailRecoveryCodeAndPassword(t *testing.T) {
 	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
 	if err != nil {
 		t.Fatalf("GenerateRecoveryCodeHash() unexpected error: %v", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
 	}
 
 	repo := &stubAuthUserRepo{
@@ -482,6 +486,7 @@ func TestAuthServiceFindUserByEmailAndRecoveryCode(t *testing.T) {
 		findByEmailOptionalUser: models.User{
 			ID:               22,
 			Email:            "owner@example.com",
+			PasswordHash:     string(passwordHash),
 			RecoveryCodeHash: recoveryHash,
 			LocalAuthEnabled: true,
 			Role:             models.RoleOwner,
@@ -489,16 +494,50 @@ func TestAuthServiceFindUserByEmailAndRecoveryCode(t *testing.T) {
 	}
 	service := NewAuthService(repo)
 
-	user, err := service.FindUserByEmailAndRecoveryCode(context.Background(), "Owner@Example.com", recoveryCode)
+	user, err := service.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "Owner@Example.com", recoveryCode, "StrongPass1")
 	if err != nil {
-		t.Fatalf("FindUserByEmailAndRecoveryCode() unexpected error: %v", err)
+		t.Fatalf("FindUserByEmailRecoveryCodeAndPassword() unexpected error: %v", err)
 	}
 	if user == nil || user.ID != 22 {
 		t.Fatalf("expected user id 22, got %#v", user)
 	}
 }
 
-func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMismatch(t *testing.T) {
+// TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsWrongPassword
+// pins the second operand: a correct recovery code alone must not resolve an
+// account, or the recovery code is again a single-secret takeover credential.
+func TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsWrongPassword(t *testing.T) {
+	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
+	if err != nil {
+		t.Fatalf("GenerateRecoveryCodeHash() unexpected error: %v", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+
+	repo := &stubAuthUserRepo{
+		findByEmailOptionalEmail: "owner@example.com",
+		findByEmailOptionalFound: true,
+		findByEmailOptionalUser: models.User{
+			ID:               22,
+			Email:            "owner@example.com",
+			PasswordHash:     string(passwordHash),
+			RecoveryCodeHash: recoveryHash,
+			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
+		},
+	}
+	service := NewAuthService(repo)
+
+	for name, password := range map[string]string{"wrong": "NotThePassword9", "empty": ""} {
+		if _, err := service.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "Owner@Example.com", recoveryCode, password); !errors.Is(err, ErrRecoveryCodeNotFound) {
+			t.Fatalf("expected ErrRecoveryCodeNotFound for a %s password, got %v", name, err)
+		}
+	}
+}
+
+func TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsMismatch(t *testing.T) {
 	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
 	if err != nil {
 		t.Fatalf("GenerateRecoveryCodeHash() unexpected error: %v", err)
@@ -516,15 +555,15 @@ func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMismatch(t *testing.T) 
 	}
 	service := NewAuthService(repo)
 
-	if _, err := service.FindUserByEmailAndRecoveryCode(context.Background(), "other@example.com", recoveryCode); !errors.Is(err, ErrRecoveryCodeNotFound) {
+	if _, err := service.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "other@example.com", recoveryCode, "StrongPass1"); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for mismatched email, got %v", err)
 	}
 }
 
-func TestAuthServiceFindUserByEmailAndRecoveryCodeRejectsMissingUser(t *testing.T) {
+func TestAuthServiceFindUserByEmailRecoveryCodeAndPasswordRejectsMissingUser(t *testing.T) {
 	service := NewAuthService(&stubAuthUserRepo{})
 
-	if _, err := service.FindUserByEmailAndRecoveryCode(context.Background(), "missing@example.com", "OVUM-ABCD-2345-EFGH"); !errors.Is(err, ErrRecoveryCodeNotFound) {
+	if _, err := service.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "missing@example.com", "OVUM-ABCD-2345-EFGH", "StrongPass1"); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for missing user, got %v", err)
 	}
 }

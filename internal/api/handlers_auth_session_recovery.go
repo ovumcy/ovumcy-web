@@ -46,6 +46,7 @@ func (handler *Handler) ForgotPassword(c fiber.Ctx) error {
 		c.IP(),
 		input.Email,
 		input.RecoveryCode,
+		input.Password,
 		now,
 		30*time.Minute,
 	)

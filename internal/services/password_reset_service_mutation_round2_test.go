@@ -36,7 +36,7 @@ func TestPasswordResetServiceStartRecoveryHonorsSharedLimiter(t *testing.T) {
 	// email + bad code so that, absent the shared count, the call would
 	// instead return ErrPasswordRecoveryCodeInvalid -- making the two
 	// outcomes distinguishable.
-	_, err := serviceA.StartRecovery(context.Background(), secretKey, key, email, "invalid", now, 30*time.Minute)
+	_, err := serviceA.StartRecovery(context.Background(), secretKey, key, email, "invalid", "StrongPass1", now, 30*time.Minute)
 	if !errors.Is(err, ErrPasswordRecoveryRateLimited) {
 		t.Fatalf("expected ErrPasswordRecoveryRateLimited from shared limiter, got %v", err)
 	}
