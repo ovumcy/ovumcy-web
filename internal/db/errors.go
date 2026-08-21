@@ -23,6 +23,15 @@ var ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
 // role there is.
 var ErrUnsupportedUserRole = errors.New("unsupported user role")
 
+// ErrOIDCLogoutStateUnattributed is returned by the OIDC logout-state
+// repository when a read, a delete or a write arrives with no owner id. Every
+// row is one owner's, so a missing owner is invalid input rather than a
+// licence to match every owner: a query that dropped the user_id term would
+// hand one owner another owner's end-session material, and a row written
+// without one is unreachable by account erasure
+// (`docs/SECURITY_INVARIANTS.md`).
+var ErrOIDCLogoutStateUnattributed = errors.New("oidc logout state requires an owner id")
+
 type UniqueConstraintError struct {
 	Constraint string
 	Err        error

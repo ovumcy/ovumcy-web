@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -139,7 +140,7 @@ func TestRegisterPickupTokenRepositoryIssuePurgesExpiredRows(t *testing.T) {
 // find-and-check blocks out of the scenario.
 func assertLogoutState(t *testing.T, repo *OIDCLogoutStateRepository, sessionID string, wantOK bool, wantEndpoint, wantHint string) {
 	t.Helper()
-	got, ok, err := repo.FindBySessionID(context.Background(), sessionID)
+	got, ok, err := repo.FindBySessionID(context.Background(), sessionID, ttlLogoutStateOwnerID)
 	requireNoErr(t, err, "find "+sessionID)
 	if ok != wantOK {
 		t.Fatalf("find %q ok=%t, want %t", sessionID, ok, wantOK)
@@ -157,6 +158,7 @@ func TestOIDCLogoutStateRepositorySaveFindTTL(t *testing.T) {
 	newState := func(sessionID, endpoint, hint string, expiresAt time.Time) *models.OIDCLogoutState {
 		return &models.OIDCLogoutState{
 			SessionID:             sessionID,
+			UserID:                ttlLogoutStateOwnerID,
 			EndSessionEndpoint:    endpoint,
 			IDTokenHint:           hint,
 			PostLogoutRedirectURL: "https://ovumcy.example.com/login",
@@ -178,7 +180,7 @@ func TestOIDCLogoutStateRepositorySaveFindTTL(t *testing.T) {
 	assertLogoutState(t, repo, "nope", false, "", "")
 
 	// Targeted delete.
-	requireNoErr(t, repo.DeleteBySessionID(context.Background(), "sess-1"), "delete")
+	requireNoErr(t, repo.DeleteBySessionID(context.Background(), "sess-1", ttlLogoutStateOwnerID), "delete")
 	assertLogoutState(t, repo, "sess-1", false, "", "")
 
 	// TTL sweep drops only expired rows.
@@ -187,4 +189,80 @@ func TestOIDCLogoutStateRepositorySaveFindTTL(t *testing.T) {
 	requireNoErr(t, repo.DeleteExpired(context.Background(), base), "delete expired")
 	assertLogoutState(t, repo, "stale", false, "", "")
 	assertLogoutState(t, repo, "valid", true, "", "")
+}
+
+// ttlLogoutStateOwnerID is the owner every row in
+// TestOIDCLogoutStateRepositorySaveFindTTL belongs to; the scenario there is
+// about persistence and TTL, so it stays with one owner throughout.
+const ttlLogoutStateOwnerID uint = 7
+
+// TestOIDCLogoutStateRepositoryScopesReadsAndDeletesToTheOwner pins the
+// privacy boundary on the OIDC logout-state table: an instance may host more
+// than one independent owner, and end-session material (the raw id_token_hint
+// among it) is per-owner data. A session id is not a secret the way that hint
+// is — it travels in a sealed cookie and is echoed back — so the predicate
+// pairs it with the owner rather than trusting it alone.
+//
+// The row here belongs to owner B. Owner A asking for it by the very session
+// id it is keyed on must see nothing, and owner A's delete must leave it
+// standing. Both assertions are negative, so each has its positive anchor in
+// the same test: owner B reads the row back and owner B's delete removes it —
+// without those, a repository that found and deleted nothing at all would pass.
+func TestOIDCLogoutStateRepositoryScopesReadsAndDeletesToTheOwner(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "logout-owner.db"))
+	repo := NewOIDCLogoutStateRepository(database)
+	ctx := context.Background()
+
+	const (
+		ownerA    uint = 11
+		ownerB    uint = 12
+		sessionID      = "sess-owned-by-b"
+	)
+
+	requireNoErr(t, repo.Save(ctx, &models.OIDCLogoutState{
+		SessionID:             sessionID,
+		UserID:                ownerB,
+		EndSessionEndpoint:    "https://id.example.com/logout",
+		IDTokenHint:           "owner-b-id-token",
+		PostLogoutRedirectURL: "https://ovumcy.example.com/login",
+		ExpiresAt:             time.Now().Add(time.Hour).UTC(),
+	}), "save owner B state")
+
+	got, found, err := repo.FindBySessionID(ctx, sessionID, ownerA)
+	requireNoErr(t, err, "owner A find")
+	if found {
+		t.Fatalf("owner %d read owner %d's provider-logout state by session id: the lookup is not scoped to the owner (got %#v)", ownerA, ownerB, got)
+	}
+
+	requireNoErr(t, repo.DeleteBySessionID(ctx, sessionID, ownerA), "owner A delete")
+	if _, stillThere, err := repo.FindBySessionID(ctx, sessionID, ownerB); err != nil || !stillThere {
+		t.Fatalf("owner %d's delete removed owner %d's row: the delete is not scoped to the owner (found=%t, err=%v)", ownerA, ownerB, stillThere, err)
+	}
+
+	// A zero owner is invalid input, never "any owner": were it widened, the
+	// two refusals above would be one forgotten argument away from undone.
+	if _, found, err := repo.FindBySessionID(ctx, sessionID, 0); !errors.Is(err, ErrOIDCLogoutStateUnattributed) || found {
+		t.Fatalf("find with no owner must be refused, got found=%t err=%v", found, err)
+	}
+	if err := repo.DeleteBySessionID(ctx, sessionID, 0); !errors.Is(err, ErrOIDCLogoutStateUnattributed) {
+		t.Fatalf("delete with no owner must be refused, got %v", err)
+	}
+	if err := repo.Save(ctx, &models.OIDCLogoutState{
+		SessionID:          "sess-unattributed",
+		EndSessionEndpoint: "https://id.example.com/logout",
+		IDTokenHint:        "hint",
+		ExpiresAt:          time.Now().Add(time.Hour).UTC(),
+	}); !errors.Is(err, ErrOIDCLogoutStateUnattributed) {
+		t.Fatalf("saving a row no owner can be reached by must be refused, got %v", err)
+	}
+
+	// Positive anchors: owner B's own read and delete work, so the refusals
+	// above are about the owner and not about a repository that does nothing.
+	if _, found, err := repo.FindBySessionID(ctx, sessionID, ownerB); err != nil || !found {
+		t.Fatalf("owner %d must read their own state back (found=%t, err=%v)", ownerB, found, err)
+	}
+	requireNoErr(t, repo.DeleteBySessionID(ctx, sessionID, ownerB), "owner B delete")
+	if _, found, err := repo.FindBySessionID(ctx, sessionID, ownerB); err != nil || found {
+		t.Fatalf("owner %d's own delete must remove their row (found=%t, err=%v)", ownerB, found, err)
+	}
 }

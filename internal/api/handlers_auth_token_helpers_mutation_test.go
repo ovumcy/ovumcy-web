@@ -30,8 +30,9 @@ import (
 // validRotationLogoutState returns a fully-formed provider logout state that
 // passes validOIDCLogoutState, so rotateOIDCLogoutState follows the Save/Delete
 // arm rather than the invalid-state Delete-only arm.
-func validRotationLogoutState() services.OIDCLogoutState {
+func validRotationLogoutState(ownerID uint) services.OIDCLogoutState {
 	return services.OIDCLogoutState{
+		UserID:                ownerID,
 		EndSessionEndpoint:    "https://idp.example.com/logout",
 		IDTokenHint:           "eyJhbGciOiJSUzI1NiJ9.header.signature",
 		PostLogoutRedirectURL: "https://app.example.com/",
@@ -58,7 +59,7 @@ func TestRotateOIDCLogoutStateMovesStateToNewSessionOnPasswordChange(t *testing.
 
 	oldSessionID := mustExtractAuthSessionIDFromCookieHeader(t, ctx.authCookie)
 	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(ctx.database).OIDCLogout)
-	if err := stateService.Save(context.Background(), oldSessionID, validRotationLogoutState(), time.Now().UTC()); err != nil {
+	if err := stateService.Save(context.Background(), oldSessionID, validRotationLogoutState(ctx.user.ID), time.Now().UTC()); err != nil {
 		t.Fatalf("seed logout state for old session: %v", err)
 	}
 
@@ -81,18 +82,18 @@ func TestRotateOIDCLogoutStateMovesStateToNewSessionOnPasswordChange(t *testing.
 		t.Fatalf("expected a fresh session id after refresh, got the retiring id %q", newSessionID)
 	}
 
-	movedState, found, err := stateService.Load(context.Background(), newSessionID, time.Now().UTC())
+	movedState, found, err := stateService.Load(context.Background(), newSessionID, ctx.user.ID, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("load logout state for new session: %v", err)
 	}
 	if !found {
 		t.Fatal("logout state was not rotated onto the new session id; rotateOIDCLogoutState did not move it")
 	}
-	if movedState.EndSessionEndpoint != validRotationLogoutState().EndSessionEndpoint {
-		t.Fatalf("rotated logout state end_session_endpoint = %q, want %q", movedState.EndSessionEndpoint, validRotationLogoutState().EndSessionEndpoint)
+	if movedState.EndSessionEndpoint != validRotationLogoutState(ctx.user.ID).EndSessionEndpoint {
+		t.Fatalf("rotated logout state end_session_endpoint = %q, want %q", movedState.EndSessionEndpoint, validRotationLogoutState(ctx.user.ID).EndSessionEndpoint)
 	}
 
-	staleState, staleFound, err := stateService.Load(context.Background(), oldSessionID, time.Now().UTC())
+	staleState, staleFound, err := stateService.Load(context.Background(), oldSessionID, ctx.user.ID, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("load logout state for old session: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestRefreshCurrentSessionDoesNotLogRotationFailureOnSuccess(t *testing.T) {
 
 	oldSessionID := mustExtractAuthSessionIDFromCookieHeader(t, ctx.authCookie)
 	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(ctx.database).OIDCLogout)
-	if err := stateService.Save(context.Background(), oldSessionID, validRotationLogoutState(), time.Now().UTC()); err != nil {
+	if err := stateService.Save(context.Background(), oldSessionID, validRotationLogoutState(ctx.user.ID), time.Now().UTC()); err != nil {
 		t.Fatalf("seed logout state for old session: %v", err)
 	}
 

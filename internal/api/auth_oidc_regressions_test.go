@@ -536,7 +536,7 @@ func TestOIDCCallbackPersistsProviderLogoutStateOnSuccessfulLogin(t *testing.T) 
 	// err == nil path the mutant inverts.
 	newSessionID := mustExtractAuthSessionIDFromCookieHeader(t, authCookie.Name+"="+authCookie.Value)
 	stateService := services.NewOIDCLogoutStateService(db.NewRepositories(database).OIDCLogout)
-	saved, found, err := stateService.Load(context.Background(), newSessionID, time.Now().UTC())
+	saved, found, err := stateService.Load(context.Background(), newSessionID, result.User.ID, time.Now().UTC())
 	if err != nil {
 		t.Fatalf("load persisted logout state: %v", err)
 	}
