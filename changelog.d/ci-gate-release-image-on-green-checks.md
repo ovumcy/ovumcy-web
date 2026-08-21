@@ -4,10 +4,12 @@
   CI is triggered by pushes to `main` — so the tag went straight to build-and-push with only the
   pre-publish vulnerability scan between it and the registry. A tag on a commit that never merged,
   or on one whose checks went red, produced a signed, attested release image regardless. The publish
-  workflow now runs a gate first: the tagged commit must be contained in `main`, and its `test`,
-  `race` and `e2e` checks must have concluded successfully. A tag that fails either condition fails
-  the workflow and publishes nothing; there is no override. Publishing `latest` from `main` is
-  unchanged — that path already waited on the same checks.
+  workflow now runs a gate first: the tagged commit must be contained in `main`, and the same five
+  checks that `latest` waits on — `test`, `race`, `e2e`, `e2e-postgres-smoke` and `image-smoke` —
+  must have passed on the run that judged it on `main` itself. A merge-queue run's verdict is not
+  accepted in their place: it does not run the image or Postgres smokes at all. A tag that fails
+  either condition fails the workflow and publishes nothing; there is no override. Publishing
+  `latest` from `main` is unchanged — that path already waited on these checks.
 
 ### Fixed
 
