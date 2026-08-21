@@ -10,7 +10,7 @@
 # now asserts the equality (`Builder toolchain matches go.mod` in
 # .github/workflows/ci.yml), and Dependabot is told to leave pre-release tags of
 # this image alone.
-FROM golang:1.26.6-alpine3.24@sha256:1a9c10cf505a9e6b1e96ea77ebdbfe79a0f10380181faf88bc3b51d7e4315fae AS builder
+FROM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./
