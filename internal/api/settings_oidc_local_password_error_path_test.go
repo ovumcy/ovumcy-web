@@ -124,6 +124,22 @@ func TestOIDCStartLocalPasswordSetupStartReauthError(t *testing.T) {
 	}
 }
 
+// reloadStepupUser re-reads the step-up fixture's owner from the database.
+//
+// Both callback refusals below answer with the same 303 to /settings that a
+// completed flow can also produce, so the transport alone cannot tell a refusal
+// from an enrollment. The refusal is observed in the account's state instead:
+// local auth still off and AuthSessionVersion untouched, the pair
+// FinalizeLocalPasswordSetup would have moved.
+func reloadStepupUser(t *testing.T, fixture *oidcStepupFixture) models.User {
+	t.Helper()
+	var persisted models.User
+	if err := fixture.database.First(&persisted, fixture.user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	return persisted
+}
+
 func TestOIDCCompleteLocalPasswordSetupStateMismatch(t *testing.T) {
 	t.Parallel()
 
@@ -132,6 +148,7 @@ func TestOIDCCompleteLocalPasswordSetupStateMismatch(t *testing.T) {
 	startResponse := fixture.postStart(t, "EvenStronger2", "EvenStronger2")
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
+	before := reloadStepupUser(t, fixture)
 
 	callbackResponse := postOIDCStepupCallback(t, fixture, stepupCookie, "wrong-state-value", "code")
 	defer func() { _ = callbackResponse.Body.Close() }()
@@ -141,6 +158,14 @@ func TestOIDCCompleteLocalPasswordSetupStateMismatch(t *testing.T) {
 	}
 	if location := callbackResponse.Header.Get("Location"); location != "/settings" {
 		t.Fatalf("expected redirect to /settings, got %q", location)
+	}
+
+	after := reloadStepupUser(t, fixture)
+	if after.LocalAuthEnabled {
+		t.Fatal("state mismatch must not enable local auth")
+	}
+	if after.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("state mismatch must not bump AuthSessionVersion: was %d, now %d", before.AuthSessionVersion, after.AuthSessionVersion)
 	}
 }
 
@@ -153,6 +178,7 @@ func TestOIDCCompleteLocalPasswordSetupProviderErrorParam(t *testing.T) {
 	defer func() { _ = startResponse.Body.Close() }()
 	stepupCookie := readStepupCookie(t, startResponse)
 	state := extractStepupCallbackState(t, fixture)
+	before := reloadStepupUser(t, fixture)
 
 	form := url.Values{
 		"state": {state},
@@ -173,6 +199,14 @@ func TestOIDCCompleteLocalPasswordSetupProviderErrorParam(t *testing.T) {
 	}
 	if flashValue := responseCookieValue(callbackResponse.Cookies(), flashCookieName); flashValue == "" {
 		t.Fatal("expected flash cookie on provider error callback")
+	}
+
+	after := reloadStepupUser(t, fixture)
+	if after.LocalAuthEnabled {
+		t.Fatal("a provider error must not enable local auth")
+	}
+	if after.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("a provider error must not bump AuthSessionVersion: was %d, now %d", before.AuthSessionVersion, after.AuthSessionVersion)
 	}
 }
 
