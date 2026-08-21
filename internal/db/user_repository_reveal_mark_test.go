@@ -189,6 +189,57 @@ func TestRevealClaimsAreScopedToTheirOwner(t *testing.T) {
 	}
 }
 
+// closeRevealMarkRepoHandle closes the *sql.DB under a reveal-mark repository so
+// the next statement fails at the driver — the one way to reach the claim
+// methods' error branch without a double standing in for the database.
+func closeRevealMarkRepoHandle(t *testing.T, repo *UserRepository) {
+	t.Helper()
+
+	sqlDB, err := repo.database.DB()
+	if err != nil {
+		t.Fatalf("database.DB() unexpected error: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+}
+
+// TestClaimRecoveryCodeRevealFailsClosedWhenTheUpdateErrors covers the error
+// branch of the compare-and-set. A claim that could not run at all must report
+// the failure AND read as false: the caller shows the recovery code on true and
+// treats it as "this call consumed the reveal", so an errored claim reporting
+// true would hand out a shown-once secret while the mark stayed armed — the
+// single-use property would be gone, and nothing downstream could tell.
+func TestClaimRecoveryCodeRevealFailsClosedWhenTheUpdateErrors(t *testing.T) {
+	repo := openRevealMarkRepoForTest(t)
+	user := createUserForRevealMarkTest(t, repo, "recovery-mark-closed@example.com")
+	closeRevealMarkRepoHandle(t, repo)
+
+	claimed, err := repo.ClaimRecoveryCodeReveal(context.Background(), user.ID, time.Now())
+	if err == nil {
+		t.Fatal("expected ClaimRecoveryCodeReveal against a closed database to surface an error")
+	}
+	if claimed {
+		t.Fatal("a claim that errored must never read as the call that consumed the reveal")
+	}
+}
+
+// TestClaimCalendarFeedRevealFailsClosedWhenTheUpdateErrors is the feed half of
+// the guard above, and carries the same reasoning about the subscribe URL.
+func TestClaimCalendarFeedRevealFailsClosedWhenTheUpdateErrors(t *testing.T) {
+	repo := openRevealMarkRepoForTest(t)
+	user := createUserForRevealMarkTest(t, repo, "feed-mark-closed@example.com")
+	closeRevealMarkRepoHandle(t, repo)
+
+	claimed, err := repo.ClaimCalendarFeedReveal(context.Background(), user.ID, time.Now())
+	if err == nil {
+		t.Fatal("expected ClaimCalendarFeedReveal against a closed database to surface an error")
+	}
+	if claimed {
+		t.Fatal("a claim that errored must never read as the call that consumed the reveal")
+	}
+}
+
 // revealMarkPairings maps the column a MINT writes to the reveal mark that mint
 // has to re-arm in the same statement.
 var revealMarkPairings = map[string]string{
