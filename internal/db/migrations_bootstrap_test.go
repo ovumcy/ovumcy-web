@@ -554,6 +554,8 @@ var selectIntoStatementPattern = regexp.MustCompile(`(?is)\bINTO\b`)
 // stripper, so what it judges is what the runner would actually execute — not a
 // second opinion about the text.
 func TestEveryEffectFreeMigrationFileIsDeclaredDeliberate(t *testing.T) {
+	assertMigrationEffectClassifierAnswersBothWays(t)
+
 	effectFreeFiles := make(map[string]string)
 	totalFiles := 0
 
@@ -570,18 +572,13 @@ func TestEveryEffectFreeMigrationFileIsDeclaredDeliberate(t *testing.T) {
 		}
 	}
 
-	// Positive anchors for the classifier itself. A classifier stuck on one
-	// answer would make this guard agree with nothing: all-false leaves the
-	// declaration requirement unreachable, all-true makes every file need an
-	// entry and says nothing about any of them.
+	// Loader sanity, not a classifier anchor: the classifier is anchored on
+	// fixtures above, before any of the live trees is read.
 	if totalFiles == 0 {
 		t.Fatal("read no embedded migration files at all — the loader is broken, not the migrations")
 	}
-	if len(deliberateNoOpMigrationFiles) > 0 && len(effectFreeFiles) == 0 {
-		t.Fatalf("no embedded migration file was classified as effect-free, while %d are declared as deliberate no-ops — the classifier never returns true, so the declaration requirement below is unreachable", len(deliberateNoOpMigrationFiles))
-	}
 	if len(effectFreeFiles) == totalFiles {
-		t.Fatalf("all %d embedded migration files were classified as effect-free — the classifier never returns false, so it is measuring nothing", totalFiles)
+		t.Fatalf("all %d embedded migration files were classified as effect-free — no migration tree can be that, so the reading of the trees is wrong before any of it is judged", totalFiles)
 	}
 
 	for _, fileKey := range sortedMigrationKeys(effectFreeFiles) {
@@ -596,6 +593,64 @@ func TestEveryEffectFreeMigrationFileIsDeclaredDeliberate(t *testing.T) {
 			continue
 		}
 		t.Errorf("deliberateNoOpMigrationFiles declares %s a deliberate no-op, but that file is no longer one — either the file gained a statement with an effect, or its version was dropped from the tree; remove the entry, so the list keeps naming only live exemptions", fileKey)
+	}
+}
+
+// assertMigrationEffectClassifierAnswersBothWays anchors
+// migrationRunsNothingWithAnEffect on two migrations this test owns — one that
+// does nothing, one that adds a column — and refuses to go on unless it answers
+// each correctly. The fixtures double as the classifier's definition: this is
+// what "runs nothing with an effect" is being taken to mean.
+//
+// It deliberately reads NEITHER the live trees NOR deliberateNoOpMigrationFiles.
+// An earlier version anchored on the live data — "some embedded file must have
+// come back effect-free" — gated on the exemption list being non-empty, and the
+// stale-exemption loop is precisely what empties that list, one entry at a time,
+// as each declared file gains real work. In that end state a classifier
+// refactored into always answering "has an effect" would leave effectFreeFiles
+// empty, the exemption list empty, and both reporting loops iterating over
+// nothing: a green test measuring nothing, with the next `SELECT 1;` twin
+// shipping undeclared. A guard's own self-check may not depend on the data it
+// judges, so the anchor is fixtures.
+func assertMigrationEffectClassifierAnswersBothWays(t *testing.T) {
+	t.Helper()
+
+	for _, fixture := range []struct {
+		Name        string
+		Migration   embeddedMigration
+		RunsNothing bool
+	}{
+		{
+			Name: "a file whose only statement is a bare read runs nothing",
+			Migration: embeddedMigration{
+				Version: "900",
+				Order:   900,
+				Name:    "900_recorded_for_version_parity.sql",
+				// No semicolon in the prose: the runner splits on every `;`,
+				// including one inside the leading comment block, so a prose
+				// semicolon leaves a fragment behind that is neither comment
+				// nor statement. The fixture is written the way a migration
+				// file has to be written.
+				SQL: "-- Recorded for version parity. This engine has no work to do.\n\nSELECT 1;\n",
+			},
+			RunsNothing: true,
+		},
+		{
+			Name: "a file that adds a column does not",
+			Migration: embeddedMigration{
+				Version: "901",
+				Order:   901,
+				Name:    "901_add_a_column.sql",
+				SQL:     "-- Add the column the day editor reads.\n\nALTER TABLE daily_logs ADD COLUMN pregnancy_test TEXT NOT NULL DEFAULT 'none';\n",
+			},
+			RunsNothing: false,
+		},
+	} {
+		classified := migrationRunsNothingWithAnEffect(fixture.Migration)
+		if classified == fixture.RunsNothing {
+			continue
+		}
+		t.Fatalf("classifier anchor %q: migrationRunsNothingWithAnEffect(%s) = %t, want %t — the classifier no longer answers both ways, so every judgement this test makes below it is unmeasured", fixture.Name, fixture.Migration.Name, classified, fixture.RunsNothing)
 	}
 }
 
