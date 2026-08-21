@@ -28,11 +28,10 @@ type oidclogoutstateserviceCovStore struct {
 	// on the returned fields could tell the difference. findUserID is the same
 	// argument for the owner: this stub ignores the owner predicate on purpose,
 	// so only the recorded value shows whether the service supplied one.
-	findSessionID       string
-	findUserID          uint
-	deleteByUserID      uint
-	unattributedCalls   int
-	unattributedSession string
+	findSessionID  string
+	findUserID     uint
+	findCalls      int
+	deleteByUserID uint
 }
 
 // oidclogoutstateserviceCovOwner is the owner every record this stub returns
@@ -48,15 +47,7 @@ func (s *oidclogoutstateserviceCovStore) Save(ctx context.Context, state *models
 func (s *oidclogoutstateserviceCovStore) FindBySessionID(ctx context.Context, sessionID string, userID uint) (models.OIDCLogoutState, bool, error) {
 	s.findSessionID = sessionID
 	s.findUserID = userID
-	if s.findErr != nil {
-		return models.OIDCLogoutState{}, false, s.findErr
-	}
-	return s.findRecord, s.findFound, nil
-}
-
-func (s *oidclogoutstateserviceCovStore) FindBySessionIDUnattributed(ctx context.Context, sessionID string) (models.OIDCLogoutState, bool, error) {
-	s.unattributedCalls++
-	s.unattributedSession = sessionID
+	s.findCalls++
 	if s.findErr != nil {
 		return models.OIDCLogoutState{}, false, s.findErr
 	}
