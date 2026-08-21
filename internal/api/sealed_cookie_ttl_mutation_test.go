@@ -426,9 +426,10 @@ func TestFlashCookieExpiresHonorsFiveMinuteTTL(t *testing.T) {
 // `20 * time.Minute` mutates to `20 / time.Minute` == 0s. This cookie seals the
 // one-time calendar-feed subscribe URL (a SECRET) for a shown-once reveal; a 0s
 // Expires makes it session-immediately-expiring so the reveal page can never
-// read it back. The payload carries no expiry and readCalendarFeedRevealState
-// does not validate one, so the Set-Cookie Expires attribute is the only TTL
-// surface — pin it against a literal 20m.
+// read it back. The same value is also written into the payload's `expires_at`,
+// which is the bound readCalendarFeedRevealState actually verifies; this test
+// pins the attribute half against a literal 20m, and the payload half is pinned
+// by the refusal guards in calendar_feed_reveal_expiry_regression_test.go.
 
 func TestCalendarFeedRevealCookieExpiresHonorsTwentyMinuteTTL(t *testing.T) {
 	t.Parallel()

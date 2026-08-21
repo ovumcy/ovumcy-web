@@ -27,9 +27,20 @@ import (
 // 036) says whether it still may be. The mint NULLs it in the same write that
 // persists the token, and the reveal page claims it with a compare-and-set.
 //
+// The mark closes a reveal that HAPPENED; a mint whose reveal was never
+// consumed is bounded by the payload's own expiry instead. The two are
+// independent, and both are server-side: the expiry answers "is this cookie
+// still current", the mark answers "has this owner's reveal already been spent".
+//
 // The URL never appears in a query string, a redirect target, JSON, or a log:
 // it lives only inside the AEAD-sealed cookie payload until the single reveal.
 
+// calendarFeedRevealCookieTTL is the reveal's lifetime, written from one value
+// into two places: the Set-Cookie `Expires` attribute and the `expires_at` the
+// sealed payload carries. Only the second is a bound. The attribute is a hint
+// the browser is free to ignore and the codec's open() has no notion of time,
+// so a reveal cookie without a server-verified expiry stays replayable until
+// the token is rotated, the feed revoked, or SECRET_KEY changes.
 const calendarFeedRevealCookieTTL = 20 * time.Minute
 
 type calendarFeedRevealPayload struct {
@@ -38,6 +49,14 @@ type calendarFeedRevealPayload struct {
 	// Rotated distinguishes a rotate reveal from a first-time generate reveal so
 	// the page can show the right heading/copy. It carries no secret.
 	Rotated bool `json:"rotated,omitempty"`
+	// ExpiresAt is the server-verified half of the reveal's lifetime, carried
+	// the way the recovery-code reveal cookie carries its own beside its owner
+	// id: the payload names the moment it stops being honored, and the reader
+	// compares that against the clock instead of trusting the browser to have
+	// dropped the cookie. A payload from before the field existed decodes to the
+	// zero time, which is always already past, so an absent bound is invalid
+	// input rather than permission to reveal for as long as the token lives.
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 type calendarFeedRevealState struct {
@@ -64,17 +83,20 @@ func (handler *Handler) setCalendarFeedRevealCookie(c fiber.Ctx, userID uint, fe
 		handler.clearCalendarFeedRevealCookie(c)
 		return errors.New("calendar feed url is required")
 	}
-	payload := calendarFeedRevealPayload{UserID: userID, FeedURL: url, Rotated: rotated}
+	expiresAt := time.Now().Add(calendarFeedRevealCookieTTL)
+
+	payload := calendarFeedRevealPayload{UserID: userID, FeedURL: url, Rotated: rotated, ExpiresAt: expiresAt}
 	serialized, err := json.Marshal(payload)
 	if err != nil {
 		return err // codecov:ignore -- json.Marshal of a fixed struct does not fail
 	}
-	return handler.writeSealedCookie(c, calendarFeedRevealCookieSpec, serialized, time.Now().Add(calendarFeedRevealCookieTTL))
+	return handler.writeSealedCookie(c, calendarFeedRevealCookieSpec, serialized, expiresAt)
 }
 
 // readCalendarFeedRevealState opens the sealed one-time cookie and returns the
 // revealed URL, or an empty state when the cookie is absent, malformed,
-// unattributed, or scoped to a different user. It does NOT clear the cookie and
+// unattributed, scoped to a different user, or past the expiry it carries —
+// including a payload that carries none. It does NOT clear the cookie and
 // does NOT decide single use — the caller claims the owner's reveal mark and
 // then clears the cookie, so a value this reader accepts twice is still shown
 // only once. Every failure path clears the cookie defensively so a corrupt value
@@ -103,6 +125,14 @@ func (handler *Handler) readCalendarFeedRevealState(c fiber.Ctx, userID uint) ca
 		return calendarFeedRevealState{}
 	}
 	if !sealedPayloadBelongsToSession(payload.UserID, userID) {
+		handler.clearCalendarFeedRevealCookie(c)
+		return calendarFeedRevealState{}
+	}
+	// Refusing here takes away the display, never the feed: the page already
+	// resolved an authenticated session, so the owner lands on /settings — where
+	// an absent cookie lands — with the feed itself untouched, and rotates to
+	// mint a new URL and re-arm the reveal in the same write.
+	if time.Now().After(payload.ExpiresAt) {
 		handler.clearCalendarFeedRevealCookie(c)
 		return calendarFeedRevealState{}
 	}
