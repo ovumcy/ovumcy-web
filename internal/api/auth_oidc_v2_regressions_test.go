@@ -385,10 +385,14 @@ func TestOIDCLogoutBridgeRedirectRefusesAnotherOwnersSessionID(t *testing.T) {
 	}
 
 	// Owner B's row must still be there: a cross-owner attempt may not consume
-	// what it could not read.
+	// what it could not read. Owner A's own row is untouched too — the request
+	// named A but B's session, so it matched nothing and consumed nothing.
 	logoutRepo := db.NewRepositories(database).OIDCLogout
 	if _, found, err := logoutRepo.FindBySessionID(context.Background(), claimsB.SessionID, ownerB.ID); err != nil || !found {
 		t.Fatalf("owner %d's provider-logout state was consumed by owner %d's request (found=%t, err=%v)", ownerB.ID, ownerA.ID, found, err)
+	}
+	if _, found, err := logoutRepo.FindBySessionID(context.Background(), claimsA.SessionID, ownerA.ID); err != nil || !found {
+		t.Fatalf("owner %d's own provider-logout state was consumed by a request that named another owner's session (found=%t, err=%v)", ownerA.ID, found, err)
 	}
 
 	// Positive anchor: the same row, reached by the owner it belongs to.
@@ -419,6 +423,14 @@ func TestOIDCLogoutBridgeRedirectRefusesAnotherOwnersSessionID(t *testing.T) {
 // minted in the minute before the deploy — and the row it could not consume is
 // left standing for the server-side TTL sweep rather than erroring or being
 // deleted by session id alone.
+//
+// Deliberately narrower than its subject: three layers refuse a zero owner
+// (validAt here, the service pre-check, the repository predicate), so removing
+// any one of them leaves this case green — the neighbours rescue it. It fails
+// only when the resolution goes back to the session id alone, which is the
+// widening it exists to catch. The rule that validAt itself refuses an
+// unattributed payload is pinned by
+// TestOIDCLogoutBridgeCookieRefusesAnUnattributedPayloadAndRetractsIt.
 func TestOIDCLogoutBridgeRedirectDegradesALegacyBridgeCookieToLocalSignOut(t *testing.T) {
 	t.Parallel()
 
