@@ -74,6 +74,13 @@ import (
 //     runtime registry of sealed cookies to enumerate — the same half
 //     TestEverySecretRevealClaimsItsConsumptionMark derives from the source,
 //     and for the same reason. Deriving it is what covers a cookie added later.
+//     A source walk can only see the spellings it recognises, though, and a
+//     roster that quietly comes back short is a green sweep over a cookie that
+//     was never judged — so the roster is cross-checked against every
+//     cookie-name constant the package declares
+//     (assertEveryCookieNameConstantIsSweptOrDeclaredUnsealed). A new sealed
+//     cookie then reddens on its NAME even when its spec is invisible to the
+//     walk.
 //
 // The limit, stated so no reader concludes the broader claim: exemption 2 is
 // decided from the payload's contents and the mint's determinism, so a payload
@@ -270,11 +277,14 @@ var sealedCookieExpiryProbes = map[string]sealedCookieExpiryProbe{
 func TestEverySealedCookiePayloadCarriesAServerVerifiedExpiry(t *testing.T) {
 	assertSealedPayloadClassifierAnswersBothWays(t)
 	assertSealedCookieRosterExtractorAnswersBothWays(t)
+	assertRosterCrossCheckAnswersBothWays(t)
 
-	names := sealedCookieNamesDeclaredInPackage(t)
+	files := parseSealedCookiePackageFiles(t)
+	names := sealedCookieRosterFrom(t, files)
 	if len(names) == 0 {
 		t.Fatal("the sweep found no sealed cookie declaration at all — it is measuring nothing")
 	}
+	assertEveryCookieNameConstantIsSweptOrDeclaredUnsealed(t, files, names)
 
 	boundedCookies := 0
 	for _, name := range names {
@@ -769,10 +779,9 @@ func signedTokenExpiry(candidate string) (time.Time, bool) {
 	return time.Unix(*payload.Exp, 0).UTC(), true
 }
 
-// sealedCookieNamesDeclaredInPackage derives the roster from every
-// sealedCookieSpec declared in the package's production files, so a cookie
-// added later is judged by this sweep without anyone remembering to list it.
-func sealedCookieNamesDeclaredInPackage(t *testing.T) []string {
+// parseSealedCookiePackageFiles parses this package's production files, the
+// source both halves of the roster work from.
+func parseSealedCookiePackageFiles(t *testing.T) []*ast.File {
 	t.Helper()
 
 	entries, err := os.ReadDir(".")
@@ -793,12 +802,166 @@ func sealedCookieNamesDeclaredInPackage(t *testing.T) []string {
 		}
 		files = append(files, parsed)
 	}
+	return files
+}
+
+// sealedCookieRosterFrom derives the roster from every sealedCookieSpec
+// declared as a composite literal, so a cookie added later is judged by this
+// sweep without anyone remembering to list it. It sees only literals, which is
+// why assertEveryCookieNameConstantIsSweptOrDeclaredUnsealed exists.
+func sealedCookieRosterFrom(t *testing.T, files []*ast.File) []string {
+	t.Helper()
 
 	names, err := sealedCookieNamesFromFiles(files)
 	if err != nil {
 		t.Fatalf("derive the sealed-cookie roster: %v", err)
 	}
 	return names
+}
+
+// notSealedCookieNames is the one exemption in this file, and it is here only
+// because the cross-check below judges every cookie-name CONSTANT rather than
+// the specs a literal walk happens to see. It is kept honest by being
+// falsifiable: a name declared here that turns out to be sealed fails the
+// sweep, so the escape hatch cannot quietly become one.
+var notSealedCookieNames = map[string]string{
+	"ovumcy_lang": "the chosen interface language — a display preference the client is meant to read (HTTPOnly:false, one year), written straight through c.Cookie by setLanguageCookie with no payload to bound",
+	"ovumcy_tz":   "the browser's IANA timezone — the same shape, set from the page's own script and read back for rendering: a preference, not a credential, and nothing in it is usable on replay",
+}
+
+// unsweptCookieFinding is one cookie-name constant the cross-check refuses,
+// carrying why it was refused so the failure names the culprit.
+type unsweptCookieFinding struct {
+	constant string
+	name     string
+	because  string
+}
+
+// auditCookieNameConstants cross-checks the derived roster against every
+// cookie-name constant the package declares. The roster walk recognises a spec
+// only as a bare `sealedCookieSpec{...}` literal, so a spec built by a helper —
+// `newSealedCookieSpec(fooCookieName, "/")`, the natural refactor once a dozen
+// specs share one shape — would be invisible to it, and the sweep would stay
+// GREEN while the new cookie shipped unbounded. Silence is the failure mode
+// this closes: a cookie added later now reddens on its NAME even when its spec
+// is invisible.
+//
+// Both directions are mechanical. A name in no spec and in no exemption is
+// unswept. A name declared unsealed is wrongly exempt if a spec literal
+// declares it after all, or if its constant is handed to anything that seals or
+// opens a sealed value.
+//
+// The residual, stated rather than papered over: a name that is BOTH declared
+// unsealed here AND sealed through a helper whose own name mentions neither
+// sealing nor opening would satisfy both directions. The two entries below are
+// plain `c.Cookie` writes at HTTPOnly:false, and turning one into a sealed
+// cookie is not a refactor that happens by accident.
+func auditCookieNameConstants(files []*ast.File, roster []string) (unswept []unsweptCookieFinding, wronglyExempt []unsweptCookieFinding) {
+	swept := map[string]bool{}
+	for _, name := range roster {
+		swept[name] = true
+	}
+	handedToTheSealedTransport := identifiersHandedToTheSealedTransport(files)
+
+	constants := stringConstantsFromFiles(files)
+	identifiers := make([]string, 0, len(constants))
+	for identifier := range constants {
+		identifiers = append(identifiers, identifier)
+	}
+	sort.Strings(identifiers)
+
+	for _, identifier := range identifiers {
+		if !strings.HasSuffix(identifier, "CookieName") {
+			continue
+		}
+		name := constants[identifier]
+		_, exempt := notSealedCookieNames[name]
+		switch {
+		case swept[name] && exempt:
+			wronglyExempt = append(wronglyExempt, unsweptCookieFinding{
+				constant: identifier,
+				name:     name,
+				because:  "a sealedCookieSpec declares it, so it is sealed after all",
+			})
+		case swept[name]:
+		case exempt && handedToTheSealedTransport[identifier]:
+			wronglyExempt = append(wronglyExempt, unsweptCookieFinding{
+				constant: identifier,
+				name:     name,
+				because:  "its constant is handed to the sealed-cookie transport, so something seals or opens it",
+			})
+		case exempt:
+		default:
+			unswept = append(unswept, unsweptCookieFinding{constant: identifier, name: name})
+		}
+	}
+	return unswept, wronglyExempt
+}
+
+// identifiersHandedToTheSealedTransport collects every identifier passed to a
+// call that seals or opens a sealed value. Matching on the callee's name being
+// about sealing or opening is deliberately over-inclusive: it costs nothing on
+// a name that is genuinely unsealed and catches the helper spellings a fixed
+// list of function names would miss.
+func identifiersHandedToTheSealedTransport(files []*ast.File) map[string]bool {
+	handed := map[string]bool{}
+	for _, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			callee := ""
+			switch function := call.Fun.(type) {
+			case *ast.Ident:
+				callee = function.Name
+			case *ast.SelectorExpr:
+				callee = function.Sel.Name
+			default:
+				return true
+			}
+			lowered := strings.ToLower(callee)
+			if !strings.Contains(lowered, "seal") && !strings.Contains(lowered, "open") {
+				return true
+			}
+			for _, argument := range call.Args {
+				if identifier, ok := argument.(*ast.Ident); ok {
+					handed[identifier.Name] = true
+				}
+			}
+			return true
+		})
+	}
+	return handed
+}
+
+// assertEveryCookieNameConstantIsSweptOrDeclaredUnsealed is the roster's
+// completeness half: len(roster) != 0 says the walk found something, never that
+// it found everything.
+func assertEveryCookieNameConstantIsSweptOrDeclaredUnsealed(t *testing.T, files []*ast.File, roster []string) {
+	t.Helper()
+
+	declared := 0
+	for identifier := range stringConstantsFromFiles(files) {
+		if strings.HasSuffix(identifier, "CookieName") {
+			declared++
+		}
+	}
+	if declared == 0 {
+		t.Fatal("the cross-check found no cookie-name constant at all — it is measuring nothing, so the roster's completeness is unproven")
+	}
+
+	unswept, wronglyExempt := auditCookieNameConstants(files, roster)
+	for _, finding := range unswept {
+		t.Errorf(
+			"%s (%q) names a cookie, appears in no sealedCookieSpec literal this sweep can see, and is not declared unsealed — a spec built by a helper call is invisible to the roster walk, so the cookie would ship unswept. Declare it in notSealedCookieNames with the reason it needs no bound, or give it a spec the walk can see",
+			finding.constant, finding.name)
+	}
+	for _, finding := range wronglyExempt {
+		t.Errorf(
+			"%s (%q) is declared unsealed — %q — but %s. An exemption that has stopped being true is the escape hatch this cross-check exists to close",
+			finding.constant, finding.name, notSealedCookieNames[finding.name], finding.because)
+	}
 }
 
 func sealedCookieNamesFromFiles(files []*ast.File) ([]string, error) {
@@ -1006,6 +1169,68 @@ var notACookieSpec = struct{ name string }{name: "ovumcy_not_a_cookie"}
 var probeCookieSpec = sealedCookieSpec{name: nameFromSomewhereElse, path: "/"}
 `)}); err == nil {
 		t.Fatal("a spec whose name the extractor cannot resolve must fail — a cookie missing from the roster is never swept")
+	}
+}
+
+// assertRosterCrossCheckAnswersBothWays anchors the completeness half on
+// fixtures this file owns: a cookie whose spec the literal walk cannot see must
+// be reported, the same cookie must pass once it is in the roster, an exemption
+// that has stopped being true must be reported by each of the two signals, and
+// a genuinely unsealed cookie must pass. None of it reads the live roster — an
+// anchor conditioned on the data it judges stops firing the day that data
+// changes.
+func assertRosterCrossCheckAnswersBothWays(t *testing.T) {
+	t.Helper()
+
+	// The hole this cross-check closes: a spec built by a helper call is
+	// invisible to the literal walk, so the roster comes back without it.
+	helperBuilt := []*ast.File{parseSweepFixtureFile(t, `package fixture
+
+const probeCookieName = "ovumcy_probe"
+
+var probeCookieSpec = newSealedCookieSpec(probeCookieName, "/")
+`)}
+	unswept, wronglyExempt := auditCookieNameConstants(helperBuilt, nil)
+	if len(unswept) != 1 || unswept[0].name != "ovumcy_probe" || len(wronglyExempt) != 0 {
+		t.Fatalf("a cookie name in no visible spec and in no exemption must be reported unswept, got %v / %v", unswept, wronglyExempt)
+	}
+	if unswept, wronglyExempt := auditCookieNameConstants(helperBuilt, []string{"ovumcy_probe"}); len(unswept) != 0 || len(wronglyExempt) != 0 {
+		t.Fatalf("the same cookie must pass once the roster carries it, got %v / %v", unswept, wronglyExempt)
+	}
+
+	// A name declared unsealed, which a spec declares after all.
+	sealedAfterAll := []*ast.File{parseSweepFixtureFile(t, `package fixture
+
+const languageCookieName = "ovumcy_lang"
+`)}
+	if _, wronglyExempt := auditCookieNameConstants(sealedAfterAll, []string{"ovumcy_lang"}); len(wronglyExempt) != 1 {
+		t.Fatalf("an exempt name a spec declares must be reported, got %v", wronglyExempt)
+	}
+
+	// The same name, sealed through the transport instead of through a spec.
+	openedAfterAll := []*ast.File{parseSweepFixtureFile(t, `package fixture
+
+const languageCookieName = "ovumcy_lang"
+
+func fixture(codec *secureCookieCodec, raw string) {
+	_, _ = codec.open(languageCookieName, raw)
+}
+`)}
+	if _, wronglyExempt := auditCookieNameConstants(openedAfterAll, nil); len(wronglyExempt) != 1 {
+		t.Fatalf("an exempt name handed to the sealed transport must be reported, got %v", wronglyExempt)
+	}
+
+	// And the direction that must stay quiet: genuinely unsealed, plainly written.
+	stillUnsealed := []*ast.File{parseSweepFixtureFile(t, `package fixture
+
+const languageCookieName = "ovumcy_lang"
+
+func fixture(c fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{Name: languageCookieName, Value: "en", HTTPOnly: false})
+}
+`)}
+	if unswept, wronglyExempt := auditCookieNameConstants(stillUnsealed, nil); len(unswept) != 0 || len(wronglyExempt) != 0 {
+		t.Fatalf("a cookie that is genuinely unsealed must pass, got %v / %v", unswept, wronglyExempt)
 	}
 }
 
