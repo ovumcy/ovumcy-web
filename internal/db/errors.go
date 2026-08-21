@@ -37,19 +37,12 @@ var ErrUnsupportedUserRole = errors.New("unsupported user role")
 // without one is unreachable by account erasure
 // (`docs/SECURITY_INVARIANTS.md`).
 //
-// It is a SEPARATE value from services.ErrOIDCLogoutStateUnattributed, whose
-// text is identical: `errors.Is` between the two is false. Neither can wrap the
-// other without `internal/services` importing `internal/db` — no production
-// file in `internal/services` does, so the whole business-logic package would
-// gain `internal/db`, gorm and the SQLite driver in its build graph for one
-// error value. What keeps the split harmless is that every owner-scoped entry
-// point on OIDCLogoutStateService refuses a zero owner BEFORE delegating, so
-// this value never escapes to a caller testing for the services one. Do not
-// drop either pre-check: `TestOIDCLogoutStateServiceRefusesAnAbsentOwner`
-// pins that the store is not reached at all, which is what the split rests on.
-// (`ErrResetTokenAlreadyConsumed` above is the same shape and is not covered
-// that way; the pair is one decision, not two.)
-var ErrOIDCLogoutStateUnattributed = errors.New("oidc logout state requires an owner id")
+// It is the shared value from internal/models, not a second one with the same
+// text: internal/services refuses the same input ahead of this layer and
+// cannot import this package, so callers there compare against
+// services.ErrOIDCLogoutStateUnattributed and must match the error this layer
+// raises.
+var ErrOIDCLogoutStateUnattributed = models.ErrOIDCLogoutStateUnattributed
 
 type UniqueConstraintError struct {
 	Constraint string

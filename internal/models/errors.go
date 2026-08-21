@@ -27,4 +27,12 @@ var (
 	// update in the user repository and surfaced unchanged by the auth
 	// service, it marks a replay or a concurrent redeem, not a DB failure.
 	ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
+
+	// ErrOIDCLogoutStateUnattributed reports that a provider-logout state
+	// read, write or delete arrived with no owner id. Every row is one
+	// owner's, so a missing owner is invalid input rather than a licence to
+	// match every owner. Raised by the logout-state repository, and ahead of
+	// it by the service that fronts it: both layers refuse a zero owner on
+	// their own, and this is the one value both refusals carry.
+	ErrOIDCLogoutStateUnattributed = errors.New("oidc logout state requires an owner id")
 )
