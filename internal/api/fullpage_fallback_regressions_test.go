@@ -100,7 +100,8 @@ func newFullPageFallbackApp(t *testing.T, options onboardingTestAppOptions) (*fi
 	})
 	app.Get("/__seed/logout-bridge", func(c fiber.Ctx) error {
 		sessionID := c.Query("sid", "")
-		if err := handler.oidcLogoutStateSvc.Save(c.Context(), sessionID, services.OIDCLogoutState{}, time.Now()); err != nil {
+		state := services.OIDCLogoutState{UserID: uint(fiber.Query(c, "user_id", 1))}
+		if err := handler.oidcLogoutStateSvc.Save(c.Context(), sessionID, state, time.Now()); err != nil {
 			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
 		}
 		if err := handler.setOIDCLogoutBridgeCookie(c, sessionID, time.Now()); err != nil {

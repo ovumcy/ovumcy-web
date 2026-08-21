@@ -247,10 +247,7 @@ func (service *OIDCLoginService) Authenticate(ctx context.Context, code string, 
 	if err != nil {
 		return OIDCLoginResult{}, err
 	}
-	result.Logout = service.buildLogoutState(exchange.Session)
-	if result.Logout != nil {
-		result.Logout.UserID = result.User.ID
-	}
+	result.Logout = service.buildLogoutState(exchange.Session, result.User.ID)
 	return result, nil
 }
 
@@ -410,8 +407,15 @@ func effectiveOIDCLoginTime(now time.Time) time.Time {
 	return now.UTC()
 }
 
-func (service *OIDCLoginService) buildLogoutState(session security.OIDCSession) *OIDCLogoutState {
-	if !service.config.ProviderLogoutEnabled() {
+// buildLogoutState assembles the provider-logout material for the account the
+// callback just resolved. userID is that account's id and is required: the
+// state is persisted as a row account erasure reaches by user_id, so building
+// one without an owner would put a row beyond the reach of the erasure it must
+// obey (`docs/SECURITY_INVARIANTS.md`). Returning nil here is the same
+// outcome as a provider that offers no end-session endpoint — the caller
+// simply issues no logout state.
+func (service *OIDCLoginService) buildLogoutState(session security.OIDCSession, userID uint) *OIDCLogoutState {
+	if !service.config.ProviderLogoutEnabled() || userID == 0 {
 		return nil
 	}
 
@@ -423,6 +427,7 @@ func (service *OIDCLoginService) buildLogoutState(session security.OIDCSession) 
 	}
 
 	return &OIDCLogoutState{
+		UserID:                userID,
 		EndSessionEndpoint:    endSessionEndpoint,
 		IDTokenHint:           idTokenHint,
 		PostLogoutRedirectURL: postLogoutRedirectURL,

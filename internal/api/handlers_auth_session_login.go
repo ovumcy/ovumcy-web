@@ -169,7 +169,7 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 	sessionClaims, hasSession := currentAuthSession(c)
 	handler.clearSessionEndCookies(c)
 	if hasSession && sessionClaims != nil {
-		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), sessionClaims.SessionID, time.Now())
+		logoutState, found, err := handler.oidcLogoutStateSvc.Load(c.Context(), sessionClaims.SessionID, sessionClaims.UserID, time.Now())
 		if err != nil {
 			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")
 		} else if found && validOIDCLogoutState(logoutState) {
