@@ -14,14 +14,19 @@ import (
 // clear happened, and can force errors, so the settings service's mint/persist/
 // clear/status behavior can be asserted without a database.
 type stubCalendarFeedSettingsRepo struct {
-	saved      *models.CalendarFeedTokenColumns
-	cleared    bool
-	saveErr    error
-	clearErr   error
-	findErr    error
-	claimErr   error
-	findUser   models.User
-	findUserID uint
+	saved   *models.CalendarFeedTokenColumns
+	cleared bool
+	// clearedUserID keeps the owner id the CLEAR was called with on its own
+	// field. Reusing findUserID would make the assertion ambiguous — the save
+	// and claim paths write that one too, so a revoke case could read an id no
+	// revoke ever supplied.
+	clearedUserID uint
+	saveErr       error
+	clearErr      error
+	findErr       error
+	claimErr      error
+	findUser      models.User
+	findUserID    uint
 }
 
 func (s *stubCalendarFeedSettingsRepo) SaveCalendarFeedToken(_ context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
@@ -61,6 +66,7 @@ func (s *stubCalendarFeedSettingsRepo) ClearCalendarFeedToken(_ context.Context,
 		return s.clearErr
 	}
 	s.cleared = true
+	s.clearedUserID = userID
 	s.findUser.ID = userID
 	s.findUser.CalendarFeedSelector = ""
 	s.findUser.CalendarFeedVerifierHash = ""
@@ -201,7 +207,12 @@ func TestGenerateFeedTokenFailsClosedWithoutSecretKey(t *testing.T) {
 	}
 }
 
-// TestRevokeFeedTokenClearsColumns proves revoke delegates to the clear path.
+// TestRevokeFeedTokenClearsColumns proves revoke delegates to the clear path AND
+// that it forwards the owner id it was asked to revoke. "The mock was called" is
+// not the outcome: revoke is the containment action behind the one sanctioned
+// secret-in-transport exception, so the operand it carries is the whole guard —
+// a clear aimed at a constant row would still set this flag. The mint path is
+// pinned the same way above; this closes the same seam on the revoke side.
 func TestRevokeFeedTokenClearsColumns(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
@@ -211,6 +222,9 @@ func TestRevokeFeedTokenClearsColumns(t *testing.T) {
 	}
 	if !repo.cleared {
 		t.Fatal("expected ClearCalendarFeedToken to be called")
+	}
+	if repo.clearedUserID != 9 {
+		t.Fatalf("expected the clear scoped to user 9, got %d", repo.clearedUserID)
 	}
 }
 
