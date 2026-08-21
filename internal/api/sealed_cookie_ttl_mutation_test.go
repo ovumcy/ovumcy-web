@@ -301,7 +301,10 @@ func TestOIDCLogoutBridgeValidAtBoundarySecondIsStillValid(t *testing.T) {
 
 	now := time.Date(2026, 6, 2, 9, 0, 0, 0, time.UTC)
 	payload := oidcLogoutBridgeCookiePayload{
-		SessionID:     "session-boundary",
+		SessionID: "session-boundary",
+		// validAt also refuses a payload naming no owner, so the boundary this
+		// case is about is only reachable with one supplied.
+		UserID:        oidcLogoutBridgeTestOwnerID,
 		ExpiresAtUnix: now.UTC().Unix(),
 	}
 	if !payload.validAt(now) {

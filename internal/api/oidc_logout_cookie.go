@@ -12,14 +12,25 @@ import (
 
 var oidcLogoutBridgeCookieSpec = sealedCookieSpec{name: oidcLogoutBridgeCookieName, path: oidcLogoutBridgePath}
 
+// oidcLogoutBridgeCookiePayload is what the provider-logout bridge resolves
+// from. The bridge runs after the auth cookie is gone, so this payload is the
+// only thing naming the account the hop acts for: it carries the owner beside
+// the session id, and the pair — never the session id alone — is what reads the
+// stored end-session material (`docs/SECURITY_INVARIANTS.md`).
 type oidcLogoutBridgeCookiePayload struct {
 	SessionID     string `json:"session_id"`
+	UserID        uint   `json:"user_id"`
 	ExpiresAtUnix int64  `json:"expires_at_unix"`
 }
 
-func (handler *Handler) setOIDCLogoutBridgeCookie(c fiber.Ctx, sessionID string, now time.Time) error {
+// setOIDCLogoutBridgeCookie seals the bridge handle for one owner's sign-out.
+// userID is required for the same reason sessionID is: a payload naming no
+// owner is refused on read, so minting one would only defer the failure to a
+// later request in a different place — and a zero owner must never reach the
+// lookup as "any owner".
+func (handler *Handler) setOIDCLogoutBridgeCookie(c fiber.Ctx, sessionID string, userID uint, now time.Time) error {
 	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
+	if sessionID == "" || userID == 0 {
 		handler.clearOIDCLogoutBridgeCookie(c)
 		return fiber.ErrBadRequest
 	}
@@ -29,6 +40,7 @@ func (handler *Handler) setOIDCLogoutBridgeCookie(c fiber.Ctx, sessionID string,
 	expiresAt := now.UTC().Add(time.Minute)
 	bridgePayload := oidcLogoutBridgeCookiePayload{
 		SessionID:     sessionID,
+		UserID:        userID,
 		ExpiresAtUnix: expiresAt.Unix(),
 	}
 
@@ -105,6 +117,14 @@ func validOIDCLogoutState(payload services.OIDCLogoutState) bool {
 
 func (payload oidcLogoutBridgeCookiePayload) validAt(now time.Time) bool {
 	if strings.TrimSpace(payload.SessionID) == "" {
+		return false
+	}
+	// A payload naming no owner is invalid input, never a licence to resolve
+	// the session id on its own: the reader retracts it in the same response
+	// rather than letting it be presented again. A bridge cookie minted by a
+	// build that predates the user_id field lands here and degrades to a local
+	// sign-out, bounded by this payload's own one-minute TTL above.
+	if payload.UserID == 0 {
 		return false
 	}
 	if payload.ExpiresAtUnix <= 0 {

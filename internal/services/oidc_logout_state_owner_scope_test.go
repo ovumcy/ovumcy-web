@@ -160,8 +160,18 @@ func TestOIDCLogoutStateServiceRefusesARecordThatIsNotTheAskingOwners(t *testing
 
 // TestOIDCLogoutStateServiceRefusesAnAbsentOwner covers the other half of the
 // same rule: a missing owner is invalid input on every owner-scoped entry
-// point, never a lookup that matches every owner. The store must not be
-// reached at all.
+// point, never a lookup that matches every owner.
+//
+// "The store is not reached at all" is the load-bearing half, not decoration.
+// The shipped store declares its own ErrOIDCLogoutStateUnattributed with the
+// same text as this package's, and `errors.Is` between the two is false —
+// linking them would drag `internal/db`, gorm and the SQLite driver into this
+// package's build graph for one value. What makes that split harmless is
+// exactly this: the refusal happens here, before any delegation, so the value
+// a caller sees is always this package's. Drop a pre-check and the store's
+// value escapes unwrapped, and every
+// `errors.Is(err, services.ErrOIDCLogoutStateUnattributed)` in a caller goes
+// silently false while the message it prints stays identical.
 func TestOIDCLogoutStateServiceRefusesAnAbsentOwner(t *testing.T) {
 	t.Parallel()
 
@@ -185,59 +195,17 @@ func TestOIDCLogoutStateServiceRefusesAnAbsentOwner(t *testing.T) {
 	}, time.Now()); !errors.Is(err, ErrOIDCLogoutStateUnattributed) {
 		t.Fatalf("Save() of a state nobody owns must be refused, got %v", err)
 	}
-	if store.deleteByIDCalls != 0 || store.saved != nil {
-		t.Fatalf("a refused call must not reach the store (deletes=%d, saved=%v)", store.deleteByIDCalls, store.saved)
-	}
-}
-
-// TestOIDCLogoutStateConsumeUnattributedStillDeletesThroughTheRowsOwner covers
-// the one deliberately ownerless entry point — the provider-logout bridge
-// redirect, which carries no session and reads only the sealed bridge cookie.
-// It may resolve without an owner because the cookie payload has none to give;
-// it may not then perform an ownerless WRITE. The delete is scoped to the
-// owner named by the row it just read, and a row with no owner is refused
-// outright rather than deleted by session id alone.
-func TestOIDCLogoutStateConsumeUnattributedStillDeletesThroughTheRowsOwner(t *testing.T) {
-	t.Parallel()
-
-	const ownerB uint = 12
-	record := models.OIDCLogoutState{
-		SessionID:             "sess-bridge",
-		UserID:                ownerB,
-		EndSessionEndpoint:    "https://id.example.com/logout",
-		IDTokenHint:           "owner-b-id-token",
-		PostLogoutRedirectURL: "https://app.example.com/login",
-		ExpiresAt:             time.Now().Add(time.Hour).UTC(),
+	if store.deleteByIDCalls != 0 || store.saved != nil || store.findCalls != 0 || store.deleteExpiredCalls != 0 {
+		t.Fatalf("a refused call must not reach the store at all — its own refusal carries a different error identity (finds=%d, deletes=%d, expiry sweeps=%d, saved=%v)", store.findCalls, store.deleteByIDCalls, store.deleteExpiredCalls, store.saved)
 	}
 
-	store := &oidclogoutstateserviceCovStore{findFound: true, findRecord: record}
-	service := NewOIDCLogoutStateService(store)
-
-	state, found, err := service.ConsumeUnattributed(context.Background(), "sess-bridge", time.Now())
-	if err != nil || !found {
-		t.Fatalf("ConsumeUnattributed(): found=%t err=%v", found, err)
+	// Positive anchor: the same service and the same store do reach it once an
+	// owner is named, so the zeros above are about the refusal and not about a
+	// store nothing ever calls.
+	if _, _, err := service.Load(ctx, "sess", oidclogoutstateserviceCovOwner, time.Now()); err != nil {
+		t.Fatalf("Load() for a named owner: unexpected error: %v", err)
 	}
-	if state.EndSessionEndpoint != record.EndSessionEndpoint {
-		t.Fatalf("unexpected end-session endpoint %q", state.EndSessionEndpoint)
-	}
-	if store.unattributedCalls != 1 || store.unattributedSession != "sess-bridge" {
-		t.Fatalf("expected exactly one unattributed lookup for the bridge session, got calls=%d id=%q", store.unattributedCalls, store.unattributedSession)
-	}
-	if store.deleteByIDCalls != 1 || store.deleteByUserID != ownerB {
-		t.Fatalf("the one-time delete must be scoped to the row's own owner: calls=%d owner=%d, want 1 call for owner %d", store.deleteByIDCalls, store.deleteByUserID, ownerB)
-	}
-
-	// A row with no owner cannot be deleted under any owner, so it is not
-	// usable at all: it is refused and left for the TTL sweep. Migration 033
-	// purged these and both writers now refuse to create another.
-	orphan := record
-	orphan.UserID = 0
-	orphanStore := &oidclogoutstateserviceCovStore{findFound: true, findRecord: orphan}
-	orphanService := NewOIDCLogoutStateService(orphanStore)
-	if _, found, err := orphanService.ConsumeUnattributed(context.Background(), "sess-bridge", time.Now()); found || err != nil {
-		t.Fatalf("an unattributed row must not be usable, got found=%t err=%v", found, err)
-	}
-	if orphanStore.deleteByIDCalls != 0 {
-		t.Fatalf("an unattributed row must not be deleted by session id alone, got %d delete(s)", orphanStore.deleteByIDCalls)
+	if store.findCalls != 1 {
+		t.Fatalf("expected the named-owner lookup to reach the store exactly once, got %d", store.findCalls)
 	}
 }

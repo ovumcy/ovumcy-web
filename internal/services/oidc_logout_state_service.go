@@ -16,15 +16,22 @@ const defaultOIDCLogoutStateTTL = 7 * 24 * time.Hour
 // input; this service refuses it too, because the store is an interface and
 // the guarantee must not depend on which implementation is wired in
 // (`docs/SECURITY_INVARIANTS.md`).
+//
+// The shipped store declares its own value of the same name and the same text,
+// and `errors.Is` between the two is false. Linking them would mean importing
+// `internal/db` here — no production file in this package does, so the whole
+// package would gain gorm and the SQLite driver in its build graph for one
+// error value. This value is the one callers test for, and it stays the only
+// one they can see because every entry point below refuses a zero owner BEFORE
+// touching the store: a store's own refusal is never propagated. Dropping a
+// pre-check would leak the store's value unwrapped, and a caller's
+// `errors.Is(err, ErrOIDCLogoutStateUnattributed)` would silently go false.
+// Regression: TestOIDCLogoutStateServiceRefusesAnAbsentOwner.
 var ErrOIDCLogoutStateUnattributed = errors.New("oidc logout state requires an owner id")
 
 type OIDCLogoutStateStore interface {
 	Save(ctx context.Context, state *models.OIDCLogoutState) error
 	FindBySessionID(ctx context.Context, sessionID string, userID uint) (models.OIDCLogoutState, bool, error)
-	// FindBySessionIDUnattributed is TRANSITIONAL and serves one caller only —
-	// see OIDCLogoutStateService.ConsumeUnattributed below. It is removed from
-	// this interface together with that method.
-	FindBySessionIDUnattributed(ctx context.Context, sessionID string) (models.OIDCLogoutState, bool, error)
 	DeleteBySessionID(ctx context.Context, sessionID string, userID uint) error
 	DeleteExpired(ctx context.Context, cutoff time.Time) error
 }
@@ -82,47 +89,6 @@ func (service *OIDCLogoutStateService) Load(ctx context.Context, sessionID strin
 // Consume is Load plus the one-time delete of the row it returned.
 func (service *OIDCLogoutStateService) Consume(ctx context.Context, sessionID string, userID uint, now time.Time) (OIDCLogoutState, bool, error) {
 	return service.load(ctx, sessionID, userID, now, true)
-}
-
-// ConsumeUnattributed resolves and consumes a logout state from a session id
-// with no owner to check it against.
-//
-// TRANSITIONAL — the single caller is the provider-logout bridge redirect,
-// which carries no session and reads only the sealed bridge cookie, whose
-// payload does not yet name the owner. Once it does, that caller uses Consume
-// and this method, its store method and this comment are deleted together. No
-// other caller may be added: an unattributed read is the shape the privacy
-// boundary exists to forbid, tolerated here only because the alternative would
-// be to let a zero owner mean "any owner" inside the checked path.
-func (service *OIDCLogoutStateService) ConsumeUnattributed(ctx context.Context, sessionID string, now time.Time) (OIDCLogoutState, bool, error) {
-	if service == nil || service.store == nil {
-		return OIDCLogoutState{}, false, nil
-	}
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return OIDCLogoutState{}, false, nil
-	}
-	now = effectiveLogoutStateTime(now)
-
-	if err := service.store.DeleteExpired(ctx, now); err != nil {
-		return OIDCLogoutState{}, false, err
-	}
-
-	record, found, err := service.store.FindBySessionIDUnattributed(ctx, sessionID)
-	if err != nil || !found {
-		return OIDCLogoutState{}, false, err
-	}
-	if record.UserID == 0 {
-		// Migration 033 purged the rows that predate the user_id column and
-		// both writers now refuse to create another, so this is unreachable.
-		// If one appears anyway it is not usable — the delete below could not
-		// be owner-scoped — and the TTL sweep clears it.
-		return OIDCLogoutState{}, false, nil
-	}
-
-	// The delete stays owner-scoped even here: the owner comes from the row
-	// that was just read, never from an absent operand.
-	return service.resolve(ctx, sessionID, record, now, true)
 }
 
 // Delete removes one owner's logout state for a session id.
