@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -244,8 +245,7 @@ func TestRecoveryCodeRevealIsAuditedOnEverySurfaceThatShowsIt(t *testing.T) {
 		authCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
 
 		const revealedCode = "OVUM-DEDI-CATE-D001"
-		sealed := sealCookieForTestApp(t, recoveryCodeCookieName,
-			[]byte(`{"uid":`+strconv.FormatUint(uint64(owner.ID), 10)+`,"recovery_code":"`+revealedCode+`","continue_path":"/dashboard","continue_target":"dashboard","surface":"dedicated"}`))
+		sealed := recoveryCodePageCookieForTest(t, owner.ID, revealedCode, time.Now().Add(recoveryCodeCookieTTL))
 
 		request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
 		request.Header.Set("Accept-Language", "en")
