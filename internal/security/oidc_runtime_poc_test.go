@@ -667,6 +667,70 @@ func TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs(t *testin
 	}
 }
 
+// TestGoOIDCFallsBackToDiscoveredAlgsWithoutAnAllowlist pins the library
+// behaviour that the test above borrows its power from, so a dependency bump
+// cannot quietly restore the vacuity this file exists to remove.
+//
+// TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs is red on
+// a missing allowlist only because go-oidc, handed an oidc.Config with an
+// empty SupportedSigningAlgs, substitutes the algorithms the discovery
+// document advertised (go-oidc v3.20.0, oidc.go:137-142 of Provider.Verifier).
+// The day that fallback becomes "default to RS256" or to a fixed asymmetric
+// set, the RS256 control verifies with or without ovumcy's allowlist, and the
+// discriminator goes green in both states while proving nothing. This test
+// fails first, and it names the cause: the library stopped reading discovery.
+//
+// It builds the bare verifier deliberately — production never does — against a
+// mock advertising ES256 only, and asserts the RS256 token is refused. The
+// allowlisted verifier from the same provider accepts that same token, which
+// is the anchor: the refusal is attributable to the empty config field, not to
+// a malformed token.
+func TestGoOIDCFallsBackToDiscoveredAlgsWithoutAnAllowlist(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	mock.signingAlgsSupported = []string{"ES256"}
+	caFile := writeIssuerCAFile(t, caPEM)
+
+	client := NewOIDCClient(OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    mock.issuer,
+		ClientID:     "ovumcy",
+		ClientSecret: "test-secret",
+		RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+		CAFile:       caFile,
+		LoginMode:    OIDCLoginModeHybrid,
+		LogoutMode:   OIDCLogoutModeAuto,
+	})
+
+	if _, _, err := client.loadProvider(client.clientContext(context.Background())); err != nil {
+		t.Fatalf("loadProvider: %v", err)
+	}
+
+	rs256, err := signTestRS256IDToken(mock, jwt.MapClaims{
+		"iss":   mock.issuer,
+		"sub":   "subject",
+		"aud":   "ovumcy",
+		"exp":   time.Now().Add(time.Hour).Unix(),
+		"iat":   time.Now().Unix(),
+		"nonce": "any-nonce",
+	})
+	if err != nil {
+		t.Fatalf("sign RS256 control token: %v", err)
+	}
+
+	bare := client.provider.Verifier(&oidc.Config{ClientID: "ovumcy"})
+	if _, err := bare.Verify(context.Background(), rs256); err == nil {
+		t.Fatal("go-oidc no longer restricts a verifier built without SupportedSigningAlgs to the discovery-advertised algorithms: an RS256 token verified against an IdP advertising ES256 only. TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs depends on that fallback to detect a missing allowlist and is now vacuous — give it a different discriminator before trusting it again")
+	}
+
+	allowlisted := client.provider.Verifier(&oidc.Config{
+		ClientID:             "ovumcy",
+		SupportedSigningAlgs: oidcSupportedSigningAlgs(),
+	})
+	if _, err := allowlisted.Verify(context.Background(), rs256); err != nil {
+		t.Fatalf("control: the same token must verify once ovumcy's allowlist is supplied, otherwise the refusal above says nothing about the fallback: %v", err)
+	}
+}
+
 // signTestRS256IDToken signs a control token with the mock IdP's real
 // RSA key so the algorithm-confusion test can assert positive behaviour
 // on the safe path.
