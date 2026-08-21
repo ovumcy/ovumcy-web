@@ -163,15 +163,13 @@ func TestOIDCLogoutStateServiceRefusesARecordThatIsNotTheAskingOwners(t *testing
 // point, never a lookup that matches every owner.
 //
 // "The store is not reached at all" is the load-bearing half, not decoration.
-// The shipped store declares its own ErrOIDCLogoutStateUnattributed with the
-// same text as this package's, and `errors.Is` between the two is false —
-// linking them would drag `internal/db`, gorm and the SQLite driver into this
-// package's build graph for one value. What makes that split harmless is
-// exactly this: the refusal happens here, before any delegation, so the value
-// a caller sees is always this package's. Drop a pre-check and the store's
-// value escapes unwrapped, and every
-// `errors.Is(err, services.ErrOIDCLogoutStateUnattributed)` in a caller goes
-// silently false while the message it prints stays identical.
+// The shipped store refuses a zero owner as well, and both layers name the one
+// value from internal/models — but the store is an interface, and a store
+// written later need not refuse anything. The refusal has to happen here,
+// before any delegation, so the guarantee holds whichever implementation is
+// wired in. Drop this pre-check and a zero owner reaches the store, where the
+// only thing standing between it and a lookup that matches every owner is the
+// SQL of the one implementation that ships today.
 func TestOIDCLogoutStateServiceRefusesAnAbsentOwner(t *testing.T) {
 	t.Parallel()
 
@@ -196,7 +194,7 @@ func TestOIDCLogoutStateServiceRefusesAnAbsentOwner(t *testing.T) {
 		t.Fatalf("Save() of a state nobody owns must be refused, got %v", err)
 	}
 	if store.deleteByIDCalls != 0 || store.saved != nil || store.findCalls != 0 || store.deleteExpiredCalls != 0 {
-		t.Fatalf("a refused call must not reach the store at all — its own refusal carries a different error identity (finds=%d, deletes=%d, expiry sweeps=%d, saved=%v)", store.findCalls, store.deleteByIDCalls, store.deleteExpiredCalls, store.saved)
+		t.Fatalf("a refused call must not reach the store at all — the refusal is this layer's own, not one borrowed from the implementation wired in (finds=%d, deletes=%d, expiry sweeps=%d, saved=%v)", store.findCalls, store.deleteByIDCalls, store.deleteExpiredCalls, store.saved)
 	}
 
 	// Positive anchor: the same service and the same store do reach it once an

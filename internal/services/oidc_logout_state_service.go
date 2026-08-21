@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -15,19 +14,16 @@ const defaultOIDCLogoutStateTTL = 7 * 24 * time.Hour
 // or delete arrives without the owner it acts for. The store refuses the same
 // input; this service refuses it too, because the store is an interface and
 // the guarantee must not depend on which implementation is wired in
-// (`docs/SECURITY_INVARIANTS.md`).
-//
-// The shipped store declares its own value of the same name and the same text,
-// and `errors.Is` between the two is false. Linking them would mean importing
-// `internal/db` here — no production file in this package does, so the whole
-// package would gain gorm and the SQLite driver in its build graph for one
-// error value. This value is the one callers test for, and it stays the only
-// one they can see because every entry point below refuses a zero owner BEFORE
-// touching the store: a store's own refusal is never propagated. Dropping a
-// pre-check would leak the store's value unwrapped, and a caller's
-// `errors.Is(err, ErrOIDCLogoutStateUnattributed)` would silently go false.
+// (`docs/SECURITY_INVARIANTS.md`). Neither pre-check is redundant with the
+// other: dropping the one here would leave the refusal to whatever store is
+// wired in, and a store written later need not have one.
 // Regression: TestOIDCLogoutStateServiceRefusesAnAbsentOwner.
-var ErrOIDCLogoutStateUnattributed = errors.New("oidc logout state requires an owner id")
+//
+// It is the shared value from internal/models, not a second one with the same
+// text: this package cannot import internal/db, and a redeclaration would
+// leave errors.Is false across the layer boundary for the very error being
+// tested for.
+var ErrOIDCLogoutStateUnattributed = models.ErrOIDCLogoutStateUnattributed
 
 type OIDCLogoutStateStore interface {
 	Save(ctx context.Context, state *models.OIDCLogoutState) error
