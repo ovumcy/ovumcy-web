@@ -540,6 +540,82 @@ func TestCalendarFeedGenerateScopedToOwner(t *testing.T) {
 	}
 }
 
+// TestCalendarFeedRevokeScopedToOwner is the revoke-side arm of the cross-owner
+// IDOR guard, and the only place the api→services owner-id threading of revoke is
+// observed end to end. Both single-owner revoke regressions above stay green when
+// the handler's user.ID is replaced by a constant on the way to the service, and
+// so does the repository suite, which is scoped and proven on its own — the
+// untested link was the argument in between.
+//
+// Two owners are armed, owner B revokes, and the verdict is read from both rows
+// and both feed URLs: A must keep serving (the containment must not spill) and B
+// must 404 (it must actually land). A's still-serving feed is also the positive
+// anchor for B's 404 — a revoke that killed every feed on the instance would
+// satisfy the 404 alone.
+func TestCalendarFeedRevokeScopedToOwner(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "feed-revoke-owner-a@example.com")
+
+	// Owner A arms a feed and keeps it.
+	tokenA := armCalendarFeedForUser(t, ctx.database, ctx.user.ID)
+	ownerABefore := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID)
+
+	// A second independent owner B arms one of their own — the feed the revoke
+	// below is actually aimed at.
+	ownerB := createOnboardingTestUser(t, ctx.database, "feed-revoke-owner-b@example.com", "StrongPass1", true)
+	tokenB := armCalendarFeedForUser(t, ctx.database, ownerB.ID)
+
+	// Both feeds serve before the revoke, so neither verdict below can be
+	// satisfied by a URL that never worked.
+	for label, token := range map[string]string{"A": tokenA, "B": tokenB} {
+		before := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(token), nil))
+		if before.StatusCode != http.StatusOK {
+			t.Fatalf("expected owner %s's feed to serve before the revoke, got %d", label, before.StatusCode)
+		}
+		_ = before.Body.Close()
+	}
+
+	// Owner B revokes, on owner B's own session.
+	authB := loginAndExtractAuthCookieWithCSRF(t, ctx.app, ownerB.Email, "StrongPass1")
+	csrfCookieB, csrfTokenB := loadSettingsCSRFContext(t, ctx.app, authB)
+
+	formB := url.Values{"csrf_token": {csrfTokenB}}
+	requestB := httptest.NewRequest(http.MethodDelete, "/api/v1/users/current/calendar-feed", strings.NewReader(formB.Encode()))
+	requestB.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	requestB.Header.Set("Accept", "application/json")
+	requestB.Header.Set("Cookie", settingsCookieHeader(authB, csrfCookieB))
+	responseB, err := ctx.app.Test(requestB, testConfigNoTimeout)
+	if err != nil {
+		t.Fatalf("owner B feed revoke failed: %v", err)
+	}
+	defer func() { _ = responseB.Body.Close() }()
+	assertStatusCode(t, responseB, http.StatusOK)
+
+	// Owner B's columns are the ones that were cleared.
+	ownerBAfter := reloadUserForCalendarFeedAPI(t, ctx, ownerB.ID)
+	if ownerBAfter.CalendarFeedSelector != "" || ownerBAfter.CalendarFeedVerifierHash != "" || ownerBAfter.CalendarFeedVerifierMAC != "" {
+		t.Fatalf("expected owner B's feed columns cleared by owner B's revoke, got selector=%q hash=%q mac=%q",
+			ownerBAfter.CalendarFeedSelector, ownerBAfter.CalendarFeedVerifierHash, ownerBAfter.CalendarFeedVerifierMAC)
+	}
+	feedB := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(tokenB), nil))
+	defer func() { _ = feedB.Body.Close() }()
+	if feedB.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected owner B's revoked feed URL to 404, got %d", feedB.StatusCode)
+	}
+
+	// Owner A's row is untouched and A's URL still serves.
+	ownerAAfter := reloadUserForCalendarFeedAPI(t, ctx, ctx.user.ID)
+	if ownerAAfter.CalendarFeedSelector != ownerABefore.CalendarFeedSelector ||
+		ownerAAfter.CalendarFeedVerifierHash != ownerABefore.CalendarFeedVerifierHash ||
+		ownerAAfter.CalendarFeedVerifierMAC != ownerABefore.CalendarFeedVerifierMAC {
+		t.Fatal("owner A's feed columns must not change when owner B revokes")
+	}
+	feedA := mustAppResponse(t, ctx.app, httptest.NewRequest(http.MethodGet, calendarFeedURL(tokenA), nil))
+	defer func() { _ = feedA.Body.Close() }()
+	if feedA.StatusCode != http.StatusOK {
+		t.Fatalf("expected owner A's feed to keep serving after owner B's revoke, got %d", feedA.StatusCode)
+	}
+}
+
 // failingCalendarFeedRepo forces the feed settings repository to error on every
 // write/clear, so the handler's service-error tails (and the shared 500 error
 // spec) can be exercised without tearing down a real database mid-request.
