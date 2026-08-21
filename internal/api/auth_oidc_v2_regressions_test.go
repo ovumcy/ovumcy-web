@@ -330,6 +330,10 @@ func prepareAuthenticatedOIDCLogoutContext(t *testing.T, logoutState services.OI
 	app, database := newOnboardingTestAppWithCSRF(t)
 	user := createOnboardingTestUser(t, database, "oidc-logout@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
+	// The state belongs to the account whose session it is keyed on — the
+	// store refuses a row no owner can be reached by, and every read of it is
+	// scoped to that owner.
+	logoutState.UserID = user.ID
 	persistOIDCLogoutStateForAuthCookie(t, database, authCookie, logoutState)
 
 	csrfRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
