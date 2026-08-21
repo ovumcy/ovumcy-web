@@ -207,13 +207,13 @@ func TestGenerateFeedTokenFailsClosedWithoutSecretKey(t *testing.T) {
 	}
 }
 
-// TestRevokeFeedTokenClearsColumns proves revoke delegates to the clear path AND
-// that it forwards the owner id it was asked to revoke. "The mock was called" is
+// TestRevokeFeedTokenClearsColumnsForTheRequestedOwner proves revoke delegates
+// to the clear path AND that it forwards the owner id it was asked to revoke. "The mock was called" is
 // not the outcome: revoke is the containment action behind the one sanctioned
 // secret-in-transport exception, so the operand it carries is the whole guard —
 // a clear aimed at a constant row would still set this flag. The mint path is
 // pinned the same way above; this closes the same seam on the revoke side.
-func TestRevokeFeedTokenClearsColumns(t *testing.T) {
+func TestRevokeFeedTokenClearsColumnsForTheRequestedOwner(t *testing.T) {
 	repo := &stubCalendarFeedSettingsRepo{}
 	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
 
