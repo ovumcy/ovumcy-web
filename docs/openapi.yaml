@@ -425,11 +425,21 @@ components:
 
     ForgotPasswordRequest:
       type: object
-      required: [email, recovery_code]
+      required: [email, recovery_code, password]
       properties:
         email:
           type: string
           format: email
+        password:
+          type: string
+          description: >-
+            The account's CURRENT password, required alongside the recovery
+            code. The recovery code substitutes for the second factor (TOTP),
+            never for the password, so this endpoint verifies two secrets. A
+            wrong or absent password is refused exactly as a wrong recovery
+            code is — same status, same body — and consumes the same attempt
+            budget. An owner who has forgotten the password cannot recover
+            here and needs the operator CLI `ovumcy reset-password <email>`.
         recovery_code:
           type: string
           pattern: "^OVUM-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$"
@@ -1231,10 +1241,13 @@ paths:
   /api/v1/password-resets:
     post:
       tags: [auth]
-      summary: Begin password reset via recovery code.
+      summary: Begin password reset with the password and the recovery code.
       description: |
-        Validates the `(email, recovery_code)` pair without leaking which one
-        was wrong. Per-IP rate limit: default 8 / 1 hour.
+        Validates the `(email, recovery_code, password)` triple without leaking
+        which part was wrong. The recovery code stands in for the second factor
+        only — the account password is required too — and every rejection
+        (unknown address, local auth disabled, wrong code, wrong or absent
+        password) answers identically. Per-IP rate limit: default 8 / 1 hour.
       security:
         - csrfToken: []
       requestBody:
