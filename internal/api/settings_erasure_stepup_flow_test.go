@@ -36,21 +36,37 @@ func postErasureStepupStart(t *testing.T, fixture *oidcStepupFixture, path strin
 func seedStepupDayEntry(t *testing.T, fixture *oidcStepupFixture) {
 	t.Helper()
 
+	seedStepupDayEntryFor(t, fixture, fixture.user.ID, time.Date(2026, 5, 13, 0, 0, 0, 0, time.UTC))
+}
+
+// seedStepupDayEntryFor seeds a day entry for any owner on the instance, not
+// just the one the fixture acts as. An owner with no rows at all is
+// indistinguishable from an owner whose rows were just wiped, so a second owner
+// only becomes evidence once it has something to lose.
+func seedStepupDayEntryFor(t *testing.T, fixture *oidcStepupFixture, userID uint, day time.Time) {
+	t.Helper()
+
 	entry := models.DailyLog{
-		UserID: fixture.user.ID,
-		Date:   time.Date(2026, 5, 13, 0, 0, 0, 0, time.UTC),
+		UserID: userID,
+		Date:   day,
 	}
 	if err := fixture.database.Create(&entry).Error; err != nil {
-		t.Fatalf("seed day entry: %v", err)
+		t.Fatalf("seed day entry for user %d: %v", userID, err)
 	}
 }
 
 func countStepupDayEntries(t *testing.T, fixture *oidcStepupFixture) int64 {
 	t.Helper()
 
+	return countStepupDayEntriesFor(t, fixture, fixture.user.ID)
+}
+
+func countStepupDayEntriesFor(t *testing.T, fixture *oidcStepupFixture, userID uint) int64 {
+	t.Helper()
+
 	var count int64
-	if err := fixture.database.Model(&models.DailyLog{}).Where("user_id = ?", fixture.user.ID).Count(&count).Error; err != nil {
-		t.Fatalf("count day entries: %v", err)
+	if err := fixture.database.Model(&models.DailyLog{}).Where("user_id = ?", userID).Count(&count).Error; err != nil {
+		t.Fatalf("count day entries for user %d: %v", userID, err)
 	}
 	return count
 }
@@ -265,7 +281,12 @@ func TestErasureStepupStartReturnsAnInterstitialForBrowsers(t *testing.T) {
 
 // TestErasureStepupCallbackRefusesAForeignSession covers the identity binding:
 // a step-up cookie minted for one owner, presented with another owner's
-// session, must erase nothing.
+// session, must erase nothing — neither the owner the sealed payload names nor
+// the owner whose session carried it in. Both accounts therefore hold a day
+// entry: with only the payload's owner countable, "refused" and "erased the
+// session's account instead" read the same, and the id inside a sealed payload
+// is exactly the kind that has to be combined with the session's own, never
+// swapped for it.
 func TestErasureStepupCallbackRefusesAForeignSession(t *testing.T) {
 	t.Parallel()
 
@@ -291,6 +312,7 @@ func TestErasureStepupCallbackRefusesAForeignSession(t *testing.T) {
 	if err := fixture.database.Create(&intruder).Error; err != nil {
 		t.Fatalf("create second owner: %v", err)
 	}
+	seedStepupDayEntryFor(t, fixture, intruder.ID, time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC))
 
 	form := url.Values{"state": {state}, "code": {"callback-code"}}
 	request := httptest.NewRequest(http.MethodPost, "/auth/oidc/callback", strings.NewReader(form.Encode()))
@@ -301,6 +323,19 @@ func TestErasureStepupCallbackRefusesAForeignSession(t *testing.T) {
 
 	if got := countStepupDayEntries(t, fixture); got != 1 {
 		t.Fatalf("a step-up presented with another owner's session must erase nothing, day entries = %d", got)
+	}
+	if got := countStepupDayEntriesFor(t, fixture, intruder.ID); got != 1 {
+		t.Fatalf("the erasure must not follow the session onto the other owner, second owner's day entries = %d", got)
+	}
+
+	// Every earlier refusal in the callback also leaves both diaries intact, so
+	// the counts alone cannot say which check stopped this. Pin the mismatch key.
+	flashCookie := responseCookie(response.Cookies(), flashCookieName)
+	if flashCookie == nil || strings.TrimSpace(flashCookie.Value) == "" {
+		t.Fatal("expected a flash cookie carrying the refusal")
+	}
+	if payload := decodeFlashCookieForTest(t, flashCookie.Value); payload.AuthError != settingsOIDCReauthMismatchErrorSpec().Key {
+		t.Fatalf("expected the identity-mismatch refusal %q, got %q", settingsOIDCReauthMismatchErrorSpec().Key, payload.AuthError)
 	}
 }
 
