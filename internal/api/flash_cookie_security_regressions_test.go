@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 func TestFlashCookieUsesSealedTransport(t *testing.T) {
@@ -31,12 +33,90 @@ func TestFlashCookieUsesSealedTransport(t *testing.T) {
 		t.Fatalf("did not expect flash cookie to expose email in plaintext: %q", flashCookie.Value)
 	}
 
-	decoded, err := base64.RawURLEncoding.DecodeString(flashCookie.Value)
-	if err == nil {
-		payload := FlashPayload{}
-		if json.Unmarshal(decoded, &payload) == nil {
-			t.Fatalf("expected flash cookie to be sealed; got plaintext payload: %#v", payload)
-		}
+	assertSealedCookieEnvelope(t, flashCookie.Value, &FlashPayload{})
+}
+
+// TestSealedEnvelopeAroundPlaintextFlashPayloadIsRefused pins the half of the
+// "sealed cookies" invariant that a shape check on the response cannot reach: a
+// value wearing the v2 envelope over base64url(plaintext JSON) is not a sealed
+// cookie, and the login page must refuse it. The same payload bytes are
+// presented twice — once sealed under the app's own key, once merely encoded —
+// so the seal is the only difference between the two requests, and the sealed
+// one is the positive anchor proving the page has a rendering path to lose.
+func TestSealedEnvelopeAroundPlaintextFlashPayloadIsRefused(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+
+	serialized, err := json.Marshal(FlashPayload{
+		AuthError:   "invalid credentials",
+		ForgotEmail: "forged-flash@example.com",
+	})
+	if err != nil {
+		t.Fatalf("marshal flash payload: %v", err)
+	}
+
+	// Positive anchor: sealed, the very same payload renders its error.
+	sealedResponse := loginPageWithFlashCookie(t, app, sealCookieForTestApp(t, flashCookieName, serialized))
+	sealedBody := mustReadBodyString(t, sealedResponse.Body)
+	if htmlAuthErrorByKey(mustParseHTMLDocument(t, sealedBody), "auth.error.invalid_credentials") == nil {
+		t.Fatal("expected a sealed flash payload to surface its auth error via data-error-key")
+	}
+
+	// The forgery: same bytes, same envelope, no seal.
+	forged := secureCookieVersion + "." + base64.RawURLEncoding.EncodeToString(serialized)
+	forgedResponse := loginPageWithFlashCookie(t, app, forged)
+	forgedBody := mustReadBodyString(t, forgedResponse.Body)
+	if htmlAuthErrorByKey(mustParseHTMLDocument(t, forgedBody), "auth.error.invalid_credentials") != nil {
+		t.Fatal("a plaintext flash payload behind the version envelope must not be honored")
+	}
+	assertBodyNotContainsAll(t, forgedBody,
+		bodyStringMatch{fragment: "forged-flash@example.com", message: "did not expect a forged flash email to reach the page"},
+	)
+
+	cleared := responseCookie(forgedResponse.Cookies(), flashCookieName)
+	if cleared == nil || cleared.Value != "" {
+		t.Fatalf("expected the refused flash cookie to be cleared, got %#v", cleared)
+	}
+}
+
+func loginPageWithFlashCookie(t *testing.T, app *fiber.App, flashValue string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/login", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", flashCookieName+"="+flashValue)
+
+	response := mustAppResponse(t, app, request)
+	assertStatusCode(t, response, http.StatusOK)
+	return response
+}
+
+// assertSealedCookieEnvelope is the shared sealing assertion for cookie values
+// carried in the "<version>.<base64url payload>" envelope that
+// secureCookieCodec.seal writes. It decodes the payload only: decoding the whole
+// value fails unconditionally on the "." separator, which is what left the
+// earlier form of this check — a plaintext test nested under `if err == nil` —
+// permanently unexecuted. plaintextTarget is a pointer to the struct the cookie
+// would carry in the clear; a payload that parses into it is not ciphertext.
+func assertSealedCookieEnvelope(t *testing.T, rawValue string, plaintextTarget any) {
+	t.Helper()
+
+	version, encodedPayload, found := strings.Cut(strings.TrimSpace(rawValue), ".")
+	if !found {
+		t.Fatalf("expected a %q version envelope in cookie value, got %q", secureCookieVersion+".", rawValue)
+	}
+	if version != secureCookieVersion {
+		t.Fatalf("expected cookie envelope version %q, got %q", secureCookieVersion, version)
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(encodedPayload))
+	if err != nil {
+		t.Fatalf("expected a base64url sealed payload, got %q: %v", encodedPayload, err)
+	}
+	if len(payload) == 0 {
+		t.Fatal("expected a non-empty sealed payload")
+	}
+	if json.Unmarshal(payload, plaintextTarget) == nil {
+		t.Fatalf("expected the cookie payload to be sealed ciphertext; it parsed as plaintext %T: %#v", plaintextTarget, plaintextTarget)
 	}
 }
 

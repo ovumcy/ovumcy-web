@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -23,17 +24,68 @@ func TestRecoveryCodeCookieIsNotPlaintextJSON(t *testing.T) {
 		t.Fatal("expected recovery cookie in register response")
 	}
 
-	decoded, err := base64.RawURLEncoding.DecodeString(recoveryCookie)
-	if err == nil {
-		payload := recoveryCodePagePayload{}
-		if json.Unmarshal(decoded, &payload) == nil {
-			t.Fatalf("expected recovery cookie to be sealed; got plaintext payload: %#v", payload)
-		}
-	}
+	assertSealedCookieEnvelope(t, recoveryCookie, &recoveryCodePagePayload{})
 
 	if strings.Contains(recoveryCookie, "OVUM-") {
 		t.Fatalf("expected recovery cookie value not to expose plaintext recovery code")
 	}
+}
+
+// TestSealedEnvelopeAroundPlaintextRecoveryPayloadIsRefused is the recovery-code
+// arm of TestSealedEnvelopeAroundPlaintextFlashPayloadIsRefused: the v2 envelope
+// is framing, not a seal, so base64url(plaintext JSON) behind it must reveal no
+// code. Both requests carry the same payload bytes, attributed to the same
+// account, and differ only in whether the codec sealed them — the sealed one is
+// the positive anchor proving the page still reveals what it should.
+func TestSealedEnvelopeAroundPlaintextRecoveryPayloadIsRefused(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	owner := createOnboardingTestUser(t, database, "recovery-cookie-forged-envelope@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
+
+	const revealedCode = "OVUM-ENVELOPE-COD"
+	serialized, err := json.Marshal(recoveryCodePagePayload{
+		UserID:         owner.ID,
+		RecoveryCode:   revealedCode,
+		ContinuePath:   "/dashboard",
+		ContinueTarget: recoveryCodeContinueTargetDashboard,
+		Surface:        recoveryCodeSurfaceDedicated,
+	})
+	if err != nil {
+		t.Fatalf("marshal recovery payload: %v", err)
+	}
+
+	// Positive anchor: sealed, this payload reveals its code to its owner.
+	sealedResponse := recoveryCodePageWithCookie(t, app, authCookie, sealCookieForTestApp(t, recoveryCodeCookieName, serialized))
+	if sealedResponse.StatusCode != http.StatusOK {
+		t.Fatalf("expected the owner's sealed recovery payload to render, got %d", sealedResponse.StatusCode)
+	}
+	if !strings.Contains(mustReadBodyString(t, sealedResponse.Body), revealedCode) {
+		t.Fatal("expected the sealed recovery payload to reveal its code")
+	}
+
+	// The forgery: same bytes, same envelope, no seal.
+	forged := secureCookieVersion + "." + base64.RawURLEncoding.EncodeToString(serialized)
+	forgedResponse := recoveryCodePageWithCookie(t, app, authCookie, forged)
+	if forgedResponse.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected a plaintext recovery payload behind the version envelope to be refused with a redirect, got %d", forgedResponse.StatusCode)
+	}
+	if strings.Contains(mustReadBodyString(t, forgedResponse.Body), revealedCode) {
+		t.Fatal("a plaintext recovery payload must not surface its code")
+	}
+
+	cleared := responseCookie(forgedResponse.Cookies(), recoveryCodeCookieName)
+	if cleared == nil || cleared.Value != "" {
+		t.Fatalf("expected the refused recovery cookie to be cleared, got %#v", cleared)
+	}
+}
+
+func recoveryCodePageWithCookie(t *testing.T, app *fiber.App, authCookie string, recoveryCookie string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie+"; "+recoveryCodeCookieName+"="+recoveryCookie)
+	return mustAppResponse(t, app, request)
 }
 
 func TestRecoveryCodeCookieRoundTripPreservesPayload(t *testing.T) {
