@@ -19,6 +19,22 @@ import (
 // handler runs, even if the route forgets to add handler.OwnerOnly. Combined
 // with the explicit OwnerOnly middleware on every mutation, this gives two
 // independent layers of role enforcement.
+//
+// Only the first of those two layers is observable here, and deliberately so:
+// AuthRequired short-circuits an unsupported-role cookie with the 403 this test
+// compares against, before OwnerOnly would run, so removing OwnerOnly from a
+// route changes neither the status nor the cleared cookie. Nothing about the
+// second layer can be concluded from this file. The layer it does not see —
+// that every state-mutating /api/v1 route behind AuthRequired declares
+// handler.OwnerOnly — is enforced against the route table itself by
+// TestEveryAuthenticatedV1MutationChainsOwnerOnly
+// (cmd/ovumcy/owner_only_route_chain_guard_test.go).
+//
+// The publicRoutes map below is also the reviewed answer to "which endpoints
+// take anonymous traffic": a new /api/v1 mutation registered outside
+// AuthRequired reddens this matrix until it is listed here, which is what lets
+// the route-table guard derive its own scope from the table instead of keeping
+// a second exclusion list that could drift out of step with this one.
 func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 	t.Parallel()
 
