@@ -16,6 +16,13 @@ import (
 // the browser is free to ignore, so a client that keeps the sealed value can
 // hand it back afterwards — a reveal cookie without a server-verified expiry
 // stays replayable until the code is rotated or SECRET_KEY changes.
+//
+// The expiry BOUNDS the replay window and does not close it: inside the window a
+// retained sealed value still opens. What closes it is the account's
+// server-side reveal mark, users.recovery_code_revealed_at (migration 036),
+// claimed by the reveal handlers through claimRecoveryCodeReveal. The two are
+// independent: the payload expiry answers "is this cookie still current", the
+// mark answers "has this account's reveal already been spent".
 const recoveryCodeCookieTTL = 20 * time.Minute
 
 const (

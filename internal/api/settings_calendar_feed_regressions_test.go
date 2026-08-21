@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/db"
@@ -110,19 +111,23 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 		t.Fatalf("expected the revealed URL to serve the feed (200), got %d", feedResp.StatusCode)
 	}
 
-	// The reveal is ONE-TIME: the reveal cookie was cleared, so a second visit
-	// carrying the (now-expired) cookie redirects to /settings with no URL.
+	// The reveal page retracts the cookie...
 	clearedCookie := responseCookie(revealResp.Cookies(), calendarFeedRevealCookieName)
 	if clearedCookie == nil || strings.TrimSpace(clearedCookie.Value) != "" {
 		t.Fatal("expected the reveal page to clear the one-time cookie")
 	}
-	secondResp, secondBody := followCalendarFeedReveal(t, ctx, clearedCookie)
+	// ...and the reveal is ONE-TIME independently of whether the client obeyed
+	// that retraction. The second visit therefore presents the ORIGINAL sealed
+	// value, which is what a client that kept it holds — replaying the cleared
+	// (empty) value would only prove that an empty cookie redirects, a property
+	// this test asserted for a year while the replay it is named for worked.
+	secondResp, secondBody := followCalendarFeedReveal(t, ctx, revealCookie)
 	_ = secondResp.Body.Close()
 	if secondResp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected a second reveal visit to redirect, got %d", secondResp.StatusCode)
+		t.Fatalf("expected a replay of the original sealed reveal cookie to redirect, got %d", secondResp.StatusCode)
 	}
 	if strings.Contains(secondBody, token) {
-		t.Fatal("a second reveal visit must not show the token again")
+		t.Fatal("a replayed reveal cookie must not show the token again")
 	}
 
 	// A fresh settings render must never contain the plaintext token: it shows
@@ -143,6 +148,90 @@ func TestCalendarFeedGenerateRevealsURLOnceAndNeverAgain(t *testing.T) {
 	if htmlElementByAttr(settingsDoc, "data-calendar-feed-status", "configured") == nil {
 		t.Fatal("expected the settings feed status to report 'configured'")
 	}
+}
+
+// TestCalendarFeedRevealRefusesAReplayedCookieAndRearmsOnRotate is the
+// consumption-mark contract for the subscribe URL, in the shape a client that
+// kept the sealed value can actually produce.
+//
+// Retracting the reveal cookie is a request to a browser, not a record: nothing
+// stopped that client from handing the same sealed value back on its own
+// session, and this cookie carries no payload expiry, so the window closed only
+// when the token was rotated, the feed revoked, or SECRET_KEY changed. What
+// closes it is users.calendar_feed_revealed_at, claimed by the reveal page with
+// a compare-and-set.
+//
+// Three legs, because refusing forever would satisfy the first two on its own:
+//   - the first reveal still shows the URL (positive anchor, without which the
+//     refusals below are green against a page that shows nobody anything)
+//   - the ORIGINAL sealed value, replayed on the same session, is refused, lands
+//     where an absent cookie lands, and carries no URL in the response
+//   - a rotate mints a new token and re-arms the mark in the same write, so the
+//     new reveal works — the mark tracks the outstanding reveal, it does not
+//     retire the surface
+func TestCalendarFeedRevealRefusesAReplayedCookieAndRearmsOnRotate(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "feed-reveal-replay@example.com")
+
+	generated := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed", url.Values{}, nil)
+	defer func() { _ = generated.Body.Close() }()
+	assertStatusCode(t, generated, http.StatusSeeOther)
+	sealedReveal := responseCookie(generated.Cookies(), calendarFeedRevealCookieName)
+
+	firstToken := assertCalendarFeedRevealShowsURL(t, ctx, sealedReveal)
+	assertCalendarFeedRevealRefused(t, ctx, sealedReveal, firstToken)
+
+	rotated := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/calendar-feed/rotate", url.Values{}, nil)
+	defer func() { _ = rotated.Body.Close() }()
+	assertStatusCode(t, rotated, http.StatusSeeOther)
+	rotatedReveal := responseCookie(rotated.Cookies(), calendarFeedRevealCookieName)
+
+	rotatedToken := assertCalendarFeedRevealShowsURL(t, ctx, rotatedReveal)
+	if rotatedToken == firstToken {
+		t.Fatal("expected the rotate to mint a different token than the generate")
+	}
+	// And the re-armed mark belongs to the new reveal only: the rotated cookie is
+	// spent too, and the ORIGINAL cookie stays refused rather than becoming
+	// presentable again on the back of someone else's re-arm.
+	assertCalendarFeedRevealRefused(t, ctx, rotatedReveal, rotatedToken)
+	assertCalendarFeedRevealRefused(t, ctx, sealedReveal, firstToken)
+}
+
+// assertCalendarFeedRevealShowsURL drives one reveal that must succeed and
+// returns the token it displayed, so a caller can assert against the value that
+// actually reached the page rather than one it re-typed.
+func assertCalendarFeedRevealShowsURL(t *testing.T, ctx settingsSecurityTestContext, sealed *http.Cookie) string {
+	t.Helper()
+
+	response, body := followCalendarFeedReveal(t, ctx, sealed)
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected the armed reveal to render, got %d", response.StatusCode)
+	}
+	urlNode := htmlElementByID(mustParseHTMLDocument(t, body), "calendar-feed-url")
+	if urlNode == nil {
+		t.Fatal("expected the reveal page to carry the subscribe URL element")
+	}
+	return extractFeedTokenFromURL(t, strings.TrimSpace(htmlNodeText(urlNode)))
+}
+
+// assertCalendarFeedRevealRefused states both halves of a refusal: the owner
+// lands on /settings — where an absent cookie lands — and the response carries
+// no subscribe URL.
+func assertCalendarFeedRevealRefused(t *testing.T, ctx settingsSecurityTestContext, sealed *http.Cookie, refusedToken string) {
+	t.Helper()
+
+	response, body := followCalendarFeedReveal(t, ctx, sealed)
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected a spent reveal to be refused with a redirect, got %d", response.StatusCode)
+	}
+	if location := response.Header.Get("Location"); location != "/settings" {
+		t.Fatalf("expected the refusal to land on /settings, got %q", location)
+	}
+	if strings.Contains(body, refusedToken) || strings.Contains(body, "/calendar/feed/") {
+		t.Fatal("a refused reveal must not carry the subscribe URL")
+	}
+	assertRevealCookieCleared(t, response, calendarFeedRevealCookieName)
 }
 
 // TestCalendarFeedGenerateJSONReturnsRevealPathNotURL proves the JSON branch of
@@ -465,6 +554,9 @@ func (failingCalendarFeedRepo) ClearCalendarFeedToken(context.Context, uint) err
 func (failingCalendarFeedRepo) FindByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
 }
+func (failingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, time.Time) (bool, error) {
+	return false, errors.New("claim failed")
+}
 
 // newFailingCalendarFeedHandlerApp builds a minimal app with an injected owner
 // and a feed settings service whose repository always fails, plus a real sealed-
@@ -500,6 +592,9 @@ func (savingCalendarFeedRepo) SaveCalendarFeedToken(context.Context, uint, model
 func (savingCalendarFeedRepo) ClearCalendarFeedToken(context.Context, uint) error { return nil }
 func (savingCalendarFeedRepo) FindByID(context.Context, uint) (models.User, error) {
 	return models.User{}, nil
+}
+func (savingCalendarFeedRepo) ClaimCalendarFeedReveal(context.Context, uint, time.Time) (bool, error) {
+	return true, nil
 }
 
 // TestCalendarFeedGenerateRevealCookieSealFailureMapsTo500 covers the tail where

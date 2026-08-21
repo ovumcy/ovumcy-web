@@ -1,0 +1,49 @@
+-- Server-side consumption marks for the two shown-once secret reveals.
+--
+-- Both reveal surfaces -- the recovery-code page and the calendar-feed
+-- subscribe URL -- enforced "exactly once" by writing a CLEARED cookie into the
+-- reveal response and nothing else. That is a request to the browser, not a
+-- record: a client that kept the sealed value could present it again on the
+-- owner's own session and be shown the secret a second time, for as long as the
+-- sealed payload stayed acceptable. The feed cookie carries no payload expiry at
+-- all, so its window ended only when the token was rotated, the feed was
+-- revoked, or SECRET_KEY changed.
+--
+-- Each column records the moment its reveal was consumed:
+--
+--   recovery_code_revealed_at  -- set when the recovery code was displayed,
+--                                 through the dedicated page or the inline
+--                                 post-registration block
+--   calendar_feed_revealed_at  -- set when the subscribe URL was displayed on
+--                                 the feed reveal page
+--
+-- NULL means "not revealed yet", which is what a fresh account and a freshly
+-- minted secret both carry: every UPDATE that mints a new recovery code or a new
+-- feed token NULLs the matching column in the same atomic write, so re-issuing
+-- the secret re-arms exactly one reveal. The reveal itself claims the mark with
+-- a compare-and-set -- UPDATE ... WHERE the column IS NULL -- so a replay and a
+-- concurrent second reveal both lose the race and are refused, in the shape
+-- users.totp_last_used_step already uses for TOTP step replay.
+--
+-- Nullable and with no DEFAULT on purpose: an existing account has no reveal
+-- outstanding that this migration could know about, and NULL is both the
+-- pre-migration reading of every row and the value a fresh mint restores. An
+-- account created before this migration therefore gets one reveal per secret it
+-- mints from here on, and nothing that already happened is retroactively
+-- refused.
+--
+-- The marks ride the users row, so account erasure removes them with the account
+-- and needs no new step. Clear-data deliberately does NOT reset them -- see the
+-- reset map in UserRepository.ClearAllDataAndResetSettings -- because clearing a
+-- consumption mark re-arms a reveal for a sealed cookie that may still be held.
+--
+-- The migration runner skips any ADD COLUMN whose column already exists, so this
+-- file is idempotent across clean installs and rolling deploys. Rollback
+-- (forward-only repo) is documented in the commit body, not here.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments,
+-- so a semicolon inside a comment is mis-parsed as a statement boundary.
+
+ALTER TABLE users ADD COLUMN recovery_code_revealed_at DATETIME;
+ALTER TABLE users ADD COLUMN calendar_feed_revealed_at DATETIME;

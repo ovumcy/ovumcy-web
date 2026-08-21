@@ -71,6 +71,11 @@ type AuthUserRepository interface {
 	// successful login; the caller has already proven the password.
 	UpdatePasswordHashOnly(ctx context.Context, userID uint, passwordHash string) error
 	BumpAuthSessionVersion(ctx context.Context, userID uint) error
+	// ClaimRecoveryCodeReveal atomically consumes the account's one-time
+	// recovery-code reveal, returning true only for the call that consumed it.
+	// Every UPDATE that mints a recovery code re-arms it in the same statement
+	// (migration 036).
+	ClaimRecoveryCodeReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error)
 }
 
 const (
@@ -443,6 +448,26 @@ func (service *AuthService) RegenerateRecoveryCode(ctx context.Context, userID u
 		return "", fmt.Errorf("%w: %v", ErrRecoveryCodeUpdate, err)
 	}
 	return recoveryCode, nil
+}
+
+// ClaimRecoveryCodeReveal consumes the account's one-time recovery-code reveal
+// and reports whether THIS call is the one that got it. False means the reveal
+// was already spent — a replayed sealed cookie, a second tab, a browser that
+// re-issued the request — and the caller must show nothing.
+//
+// The transport half (retracting the sealed cookie in the reveal response) asks
+// the browser to forget the value and cannot bind a client that kept it; this
+// mark is the half that holds.
+//
+// A zero userID is refused here, before the repository is reached: an absent
+// owner id is invalid input, not a claim that applies to whichever row comes
+// first. The compare-and-set below would match no row either — the guard makes
+// the refusal explicit rather than resting on that.
+func (service *AuthService) ClaimRecoveryCodeReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error) {
+	if userID == 0 {
+		return false, ErrAuthUserRequired
+	}
+	return service.users.ClaimRecoveryCodeReveal(ctx, userID, revealedAt)
 }
 
 func (service *AuthService) RevokeAuthSessions(ctx context.Context, userID uint) error {

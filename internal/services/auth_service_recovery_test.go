@@ -42,6 +42,8 @@ type stubAuthUserRepo struct {
 	updateHashOnlyCalls      int
 	updateHashOnlyUserID     uint
 	updateHashOnlyHash       string
+	claimRevealErr           error
+	claimRevealUserID        uint
 }
 
 func (stub *stubAuthUserRepo) ExistsByNormalizedEmail(context.Context, string) (bool, error) {
@@ -96,6 +98,9 @@ func (stub *stubAuthUserRepo) UpdateRecoveryCodeHashAndRevokeSessions(ctx contex
 	}
 	stub.updatedUserID = userID
 	stub.updatedRecoveryHash = recoveryHash
+	// The real UPDATE NULLs recovery_code_revealed_at in the same statement, so
+	// a fresh code arrives with its one-time reveal armed.
+	stub.user.RecoveryCodeRevealedAt = nil
 	stub.user.AuthSessionVersion = NormalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
 	return nil
 }
@@ -147,6 +152,9 @@ func (stub *stubAuthUserRepo) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx co
 	stub.user.ID = userID
 	stub.user.PasswordHash = passwordHash
 	stub.user.RecoveryCodeHash = recoveryHash
+	// Mirrors the same-statement NULL of recovery_code_revealed_at: the code
+	// this write mints arrives with its one-time reveal armed.
+	stub.user.RecoveryCodeRevealedAt = nil
 	stub.user.LocalAuthEnabled = true
 	stub.user.MustChangePassword = mustChangePassword
 	stub.user.AuthSessionVersion = NormalizeAuthSessionVersion(stub.user.AuthSessionVersion) + 1
@@ -166,6 +174,23 @@ func (stub *stubAuthUserRepo) UpdatePasswordHashOnly(ctx context.Context, userID
 	stub.updateHashOnlyHash = passwordHash
 	stub.user.PasswordHash = passwordHash
 	return nil
+}
+
+// ClaimRecoveryCodeReveal models the real compare-and-set: the first call
+// consumes the reveal, every later one loses because the mark is already set.
+// The mint methods above reset it to nil the way their UPDATE statements NULL
+// recovery_code_revealed_at.
+func (stub *stubAuthUserRepo) ClaimRecoveryCodeReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error) {
+	if stub.claimRevealErr != nil {
+		return false, stub.claimRevealErr
+	}
+	stub.claimRevealUserID = userID
+	if stub.user.RecoveryCodeRevealedAt != nil {
+		return false, nil
+	}
+	claimedAt := revealedAt.UTC()
+	stub.user.RecoveryCodeRevealedAt = &claimedAt
+	return true, nil
 }
 
 func (stub *stubAuthUserRepo) BumpAuthSessionVersion(ctx context.Context, userID uint) error {
@@ -586,6 +611,60 @@ func TestAuthServiceRegenerateRecoveryCode(t *testing.T) {
 	}
 	if repo.user.AuthSessionVersion != 2 {
 		t.Fatalf("expected AuthSessionVersion to be bumped to 2, got %d", repo.user.AuthSessionVersion)
+	}
+}
+
+// TestAuthServiceClaimRecoveryCodeRevealIsSingleUseAndOwnerBound pins the seam
+// the reveal handlers gate on: the first claim wins, a replay loses, and a claim
+// naming no account is refused BEFORE it reaches the repository — an absent
+// owner id is invalid input, never a claim that skips the comparison.
+func TestAuthServiceClaimRecoveryCodeRevealIsSingleUseAndOwnerBound(t *testing.T) {
+	repo := &stubAuthUserRepo{}
+	service := NewAuthService(repo)
+	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+
+	claimed, err := service.ClaimRecoveryCodeReveal(context.Background(), 42, now)
+	if err != nil {
+		t.Fatalf("ClaimRecoveryCodeReveal() unexpected error: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected the first claim to consume the reveal")
+	}
+	if repo.claimRevealUserID != 42 {
+		t.Fatalf("expected the claim to name owner 42, got %d", repo.claimRevealUserID)
+	}
+
+	replayed, err := service.ClaimRecoveryCodeReveal(context.Background(), 42, now)
+	if err != nil {
+		t.Fatalf("ClaimRecoveryCodeReveal() replay error: %v", err)
+	}
+	if replayed {
+		t.Fatal("expected a replayed claim to lose against the mark already set")
+	}
+
+	unattributed := &stubAuthUserRepo{}
+	if _, err := NewAuthService(unattributed).ClaimRecoveryCodeReveal(context.Background(), 0, now); !errors.Is(err, ErrAuthUserRequired) {
+		t.Fatalf("expected ErrAuthUserRequired for a claim naming no account, got %v", err)
+	}
+	if unattributed.claimRevealUserID != 0 || unattributed.user.RecoveryCodeRevealedAt != nil {
+		t.Fatal("a claim naming no account must never reach the repository")
+	}
+}
+
+// TestAuthServiceClaimRecoveryCodeRevealSurfacesStorageFailure keeps the
+// storage error distinguishable from "already claimed": the handler refuses on
+// either, but conflating them here would hide a database outage behind a
+// perfectly ordinary-looking replay.
+func TestAuthServiceClaimRecoveryCodeRevealSurfacesStorageFailure(t *testing.T) {
+	storageFailure := errors.New("claim failed")
+	repo := &stubAuthUserRepo{claimRevealErr: storageFailure}
+
+	claimed, err := NewAuthService(repo).ClaimRecoveryCodeReveal(context.Background(), 42, time.Now())
+	if !errors.Is(err, storageFailure) {
+		t.Fatalf("expected the storage failure to surface, got %v", err)
+	}
+	if claimed {
+		t.Fatal("a claim that could not be recorded must never report success")
 	}
 }
 

@@ -61,6 +61,10 @@ func (stubLogoutAuthRepo) UpdatePasswordHashOnly(context.Context, uint, string) 
 
 func (stubLogoutAuthRepo) BumpAuthSessionVersion(context.Context, uint) error { return nil }
 
+func (stubLogoutAuthRepo) ClaimRecoveryCodeReveal(context.Context, uint, time.Time) (bool, error) {
+	return false, nil
+}
+
 // TestLogoutHandlerEnforcesPerAccountRateLimit asserts that Handler.Logout
 // returns 429 with the documented error message when the per-account logout
 // limit configured on AuthService is exceeded. The first request records an

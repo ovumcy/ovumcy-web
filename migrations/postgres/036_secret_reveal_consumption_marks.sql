@@ -1,0 +1,32 @@
+-- Postgres mirror of migrations/036_secret_reveal_consumption_marks.sql
+-- (server-side consumption marks for the two shown-once secret reveals). Same
+-- version number so schema history stays aligned across engines.
+--
+-- recovery_code_revealed_at and calendar_feed_revealed_at record the moment each
+-- shown-once reveal was consumed. Until now both surfaces enforced "exactly
+-- once" by writing a cleared cookie into the reveal response and nothing else,
+-- so a client that kept the sealed value could present it again on the owner's
+-- own session and be shown the secret a second time.
+--
+-- NULL means "not revealed yet" -- the value a fresh account carries and the
+-- value every mint restores: the UPDATE that writes a new recovery code hash or
+-- a new feed token NULLs the matching column in the same atomic write, so
+-- re-issuing the secret re-arms exactly one reveal. The reveal claims the mark
+-- with a compare-and-set (UPDATE ... WHERE the column IS NULL), so a replay and
+-- a concurrent second reveal both lose the race and are refused.
+--
+-- Nullable and with no DEFAULT on purpose: an existing account has no reveal
+-- outstanding that this migration could know about, and nothing that already
+-- happened is retroactively refused. The marks ride the users row, so account
+-- erasure removes them with the account.
+--
+-- ALTER TABLE ADD COLUMN IF NOT EXISTS keeps the migration idempotent across the
+-- postgres test bootstrap and rolling deploys (in addition to the runner's own
+-- already-exists skip). Rollback (forward-only repo) is documented in the commit
+-- body, not here.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_code_revealed_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS calendar_feed_revealed_at TIMESTAMPTZ;
