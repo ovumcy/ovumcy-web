@@ -11,7 +11,10 @@ an opaque signed token whose own `exp` the verifier enforces, and a payload nami
 no account whose bytes the server contributed nothing to — never as a list of
 cookie names. A sealed cookie the sweep cannot classify fails rather than being
 skipped: an undecidable case is the defect it exists to catch. There is no
-allowlist, so a cookie added later is judged by the same rule.
+allowlist, so a cookie added later is judged by the same rule. The roster itself
+is cross-checked against every cookie-name constant the package declares, so a
+spec built by a helper call rather than a bare literal cannot slip past the source
+walk and leave the sweep green over a cookie it never judged.
 
 Alongside it, `SECURITY.md` now says what the calendar-feed tests actually prove:
 the revoke row cites the owner-scoped route regression, the settings-endpoint row
