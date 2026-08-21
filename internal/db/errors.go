@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/ovumcy/ovumcy-web/internal/models"
 	"gorm.io/gorm"
 )
 
@@ -12,7 +13,12 @@ import (
 // matches 0 rows — i.e. the reset token has already been redeemed or the
 // password state changed since the token was issued. It indicates a replay
 // or concurrent redeem, not a DB error.
-var ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
+//
+// It is the shared value from internal/models, not a second one with the same
+// text: internal/services names the same fact and cannot import this package,
+// so callers there compare against services.ErrResetTokenAlreadyConsumed and
+// must match the error this layer raises.
+var ErrResetTokenAlreadyConsumed = models.ErrResetTokenAlreadyConsumed
 
 // ErrUnsupportedUserRole is returned by the two account-creating repository
 // methods when the row they were handed carries a role this product does not

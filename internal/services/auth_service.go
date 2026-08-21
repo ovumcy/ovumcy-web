@@ -11,25 +11,31 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// ErrResetTokenAlreadyConsumed is the shared value from internal/models, not a
+// second one with the same text. It is raised by the repository's CAS update
+// and reaches callers here unchanged, and this package cannot import
+// internal/db — a redeclaration would leave errors.Is false across the layer
+// boundary for the very error being tested for.
+var ErrResetTokenAlreadyConsumed = models.ErrResetTokenAlreadyConsumed
+
 var (
-	ErrRecoveryCodeNotFound      = errors.New("recovery code not found")
-	ErrInvalidResetToken         = errors.New("invalid reset token")
-	ErrResetTokenAlreadyConsumed = errors.New("reset token already consumed")
-	ErrAuthUserRequired          = errors.New("auth user is required")
-	ErrAuthUserNotFound          = errors.New("auth user not found")
-	ErrAuthUserLookupFailed      = errors.New("auth user lookup failed")
-	ErrRecoveryCodeGenerate      = errors.New("recovery code generation failed")
-	ErrRecoveryCodeUpdate        = errors.New("recovery code update failed")
-	ErrAuthRegisterInvalid       = errors.New("auth register invalid input")
-	ErrAuthEmailExists           = errors.New("auth email already exists")
-	ErrAuthRegisterFailed        = errors.New("auth register failed")
-	ErrAuthPasswordMismatch      = errors.New("auth register password mismatch")
-	ErrAuthWeakPassword          = errors.New("auth register weak password")
-	ErrAuthPasswordTooLong       = errors.New("auth register password too long")
-	ErrAuthInvalidCreds          = errors.New("auth invalid credentials")
-	ErrAuthResetInvalid          = errors.New("auth reset invalid input")
-	ErrAuthPasswordHash          = errors.New("auth password hash failed")
-	ErrAuthPasswordUpdate        = errors.New("auth password update failed")
+	ErrRecoveryCodeNotFound = errors.New("recovery code not found")
+	ErrInvalidResetToken    = errors.New("invalid reset token")
+	ErrAuthUserRequired     = errors.New("auth user is required")
+	ErrAuthUserNotFound     = errors.New("auth user not found")
+	ErrAuthUserLookupFailed = errors.New("auth user lookup failed")
+	ErrRecoveryCodeGenerate = errors.New("recovery code generation failed")
+	ErrRecoveryCodeUpdate   = errors.New("recovery code update failed")
+	ErrAuthRegisterInvalid  = errors.New("auth register invalid input")
+	ErrAuthEmailExists      = errors.New("auth email already exists")
+	ErrAuthRegisterFailed   = errors.New("auth register failed")
+	ErrAuthPasswordMismatch = errors.New("auth register password mismatch")
+	ErrAuthWeakPassword     = errors.New("auth register weak password")
+	ErrAuthPasswordTooLong  = errors.New("auth register password too long")
+	ErrAuthInvalidCreds     = errors.New("auth invalid credentials")
+	ErrAuthResetInvalid     = errors.New("auth reset invalid input")
+	ErrAuthPasswordHash     = errors.New("auth password hash failed")
+	ErrAuthPasswordUpdate   = errors.New("auth password update failed")
 )
 
 // recoveryCodeTimingEqualizationHash and credentialsTimingEqualizationHash are
