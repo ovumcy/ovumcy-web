@@ -202,15 +202,12 @@ func (handler *Handler) RedirectOIDCLogout(c fiber.Ctx) error {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}
 
-	// This route carries no session — it runs after the auth cookie is gone and
-	// resolves purely from the sealed bridge cookie, whose payload names the
-	// session and nothing else. Until that payload carries the owner too, this
-	// is the one read that cannot be paired with one, so it goes through the
-	// explicitly unattributed entry point rather than through Consume with a
-	// zero owner. Adding the owner to oidcLogoutBridgeCookiePayload turns this
-	// into Consume(..., bridgePayload.UserID, ...) and retires
-	// ConsumeUnattributed entirely.
-	logoutState, found, err := handler.oidcLogoutStateSvc.ConsumeUnattributed(c.Context(), bridgePayload.SessionID, time.Now())
+	// This route carries no session — it runs after the auth cookie is gone —
+	// so the owner it acts for comes from the sealed bridge cookie, which names
+	// it alongside the session id. The pair is what resolves the row: a payload
+	// carrying one owner cannot reach another owner's end-session material, and
+	// one naming no owner never got past validAt above.
+	logoutState, found, err := handler.oidcLogoutStateSvc.Consume(c.Context(), bridgePayload.SessionID, bridgePayload.UserID, time.Now())
 	if err != nil || !found {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/login")
 	}

@@ -173,7 +173,7 @@ func (handler *Handler) Logout(c fiber.Ctx) error {
 		if err != nil {
 			handler.logSecurityEvent(c, "auth.logout", "provider_logout_state_unavailable")
 		} else if found && validOIDCLogoutState(logoutState) {
-			if err := handler.setOIDCLogoutBridgeCookie(c, sessionClaims.SessionID, time.Now()); err == nil {
+			if err := handler.setOIDCLogoutBridgeCookie(c, sessionClaims.SessionID, sessionClaims.UserID, time.Now()); err == nil {
 				logoutTransportPath = oidcLogoutBridgePath
 			}
 		}

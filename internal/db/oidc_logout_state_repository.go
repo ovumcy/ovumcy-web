@@ -66,26 +66,6 @@ func (repo *OIDCLogoutStateRepository) FindBySessionID(ctx context.Context, sess
 	return state, true, nil
 }
 
-// FindBySessionIDUnattributed resolves a logout state by session id alone.
-//
-// TRANSITIONAL — it exists for exactly one caller, the provider-logout bridge
-// redirect, which runs with no session and resolves purely from the sealed
-// bridge cookie, whose payload does not yet carry the owner. Nothing else may
-// use it. Once that payload carries the owner, the bridge reads through the
-// owner-scoped FindBySessionID above and this method is deleted with it.
-func (repo *OIDCLogoutStateRepository) FindBySessionIDUnattributed(ctx context.Context, sessionID string) (models.OIDCLogoutState, bool, error) {
-	var state models.OIDCLogoutState
-	if err := repo.database.WithContext(ctx).
-		Where("session_id = ?", strings.TrimSpace(sessionID)).
-		First(&state).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.OIDCLogoutState{}, false, nil
-		}
-		return models.OIDCLogoutState{}, false, err
-	}
-	return state, true, nil
-}
-
 // DeleteBySessionID removes one owner's logout state. Like the lookup it pairs
 // the session id with the owner, so a delete can never reach across owners,
 // and a zero userID is refused rather than widened to every owner.
