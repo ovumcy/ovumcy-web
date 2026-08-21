@@ -1,0 +1,6 @@
+package probe
+
+// db is declared nowhere, so the receiver does not resolve — which is the one
+// question the typed pass exists to answer. The scan must refuse rather than
+// report a clean tree.
+func Boot() error { return db.AutoMigrate() }

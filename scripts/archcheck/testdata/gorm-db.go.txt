@@ -1,0 +1,6 @@
+package probe
+
+import "gorm.io/gorm"
+
+// The plain case: gorm's own DB, named as such.
+func Boot(db *gorm.DB) error { return db.AutoMigrate(struct{}{}) }

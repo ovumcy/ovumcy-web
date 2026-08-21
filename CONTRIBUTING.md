@@ -16,9 +16,29 @@ npm ci
 ```bash
 # scoped past node_modules/, where a vendored JS dep ships a .go file
 go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
+go run ./scripts/archcheck
 npm run lint:js
 npm run build
 ```
+
+`scripts/archcheck` reads the whole tree and answers two architecture
+questions: nothing under `internal/api` or `internal/apideps` imports
+persistence, and no schema is migrated at runtime. It asks about the tree
+rather than about a diff, so it answers the same way however the code got
+there. CI runs it too.
+
+The same check refuses a commit, through `.githooks/pre-commit`. That file is
+tracked but git hooks are not, so it has to be installed once per clone:
+
+```bash
+printf '#!/bin/sh\nexec sh "$(git rev-parse --show-toplevel)/.githooks/pre-commit" "$@"\n' > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+A shim rather than a copy, so a later change to the tracked check is picked up
+without reinstalling.
+
+Skipping the install costs nothing but the early warning — CI is the backstop.
 
 If your change touches Go code, it must also pass patch coverage: every
 modified, coverable Go line needs to be exercised by a test. This isn't
