@@ -36,23 +36,20 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    # Never offer a pre-release golang builder. Dependabot treats `1.27rc2` as
-    # simply newer than `1.26.6` and opened exactly that bump, which merged: the
-    # release image was then compiled by a release candidate while every CI Go
-    # job kept resolving its toolchain from go.mod's 1.26.6 — GOTOOLCHAIN
-    # upgrades but never downgrades, so nothing pulled the builder back. CI now
-    # asserts the two are equal (`Builder toolchain matches go.mod` in ci.yml),
-    # but that assertion would only redden on the next such bump; this is what
-    # keeps it from being offered.
+    # A pre-release golang builder is refused by CI, not here. Dependabot treats
+    # `1.27rc2` as simply newer than `1.26.6` and opened exactly that bump, which
+    # merged: the release image was then compiled by a release candidate while
+    # every CI Go job kept resolving its toolchain from go.mod's 1.26.6 —
+    # GOTOOLCHAIN upgrades but never downgrades, so nothing pulled the builder
+    # back. `Builder toolchain matches go.mod` in ci.yml now fails any diff where
+    # the two disagree, which is what closes that lane.
     #
-    # One pattern, because Go publishes exactly one pre-release channel to this
-    # image — `1.27rc1`, `1.27rc2`, never an alpha or a beta — and it is the
-    # spelling that actually got in. A real release tag is picked up unchanged:
-    # `1.26.6-alpine3.24` contains no `rc`.
-    ignore:
-      - dependency-name: "golang"
-        versions:
-          - "*rc*"
+    # An `ignore` entry here would only stop the pull request being offered, and
+    # it cannot be written: a docker ignore condition takes version requirements,
+    # so `"*rc*"` is rejected outright — and an invalid file stops Dependabot for
+    # EVERY ecosystem in this repository, not just this entry. Trading a working
+    # security-update feed for a pull request CI already refuses is the wrong way
+    # round.
 
   # docker-compose (GA since 2025) tracks image: tags in compose manifests —
   # the operator baseline at the repo root plus every example stack under
