@@ -18,6 +18,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -104,6 +106,15 @@ func newTestCAAndLeaf(t *testing.T) (caPEM []byte, serverCert tls.Certificate) {
 //     forged with alg=HS256 using the JWKS public key as the HMAC
 //     secret cannot pass verification — closing the classical
 //     algorithm-confusion downgrade lane.
+//
+//     The HS256 and alg=none cases below are deliberately narrow: go-oidc
+//     filters both out of its own supported-algorithm map, so they stay
+//     rejected even with the allowlist unwired, and they pin the library's
+//     floor rather than ovumcy's list. What ovumcy itself decides is pinned
+//     by two separate tests — TestOIDCSupportedSigningAlgsAreAsymmetricOnly
+//     on the list's contents, and
+//     TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs on
+//     the fact that the list actually reaches provider.Verifier.
 
 type mockOIDCProvider struct {
 	server *httptest.Server
@@ -131,6 +142,13 @@ type mockOIDCProvider struct {
 	// to exercise the redirect origin-pin on the OIDC HTTP client (a
 	// same-origin target must be followed, a cross-origin one refused).
 	discoveryRedirectTo string
+
+	// signingAlgsSupported overrides the advertised
+	// id_token_signing_alg_values_supported (default: RS256 only, which every
+	// other test in the package relies on because it signs RS256). A test sets
+	// it to an algorithm the id_token is NOT signed with to prove that the
+	// verifier follows ovumcy's own allowlist and not the discovery document.
+	signingAlgsSupported []string
 
 	// idToken, when set, makes the /token endpoint answer a successful OAuth2
 	// token response carrying this signed id_token so the real ExchangeCode
@@ -189,6 +207,10 @@ func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http
 	if m.tokenEndpoint != "" {
 		tokenEndpoint = m.tokenEndpoint
 	}
+	signingAlgs := []string{"RS256"}
+	if len(m.signingAlgsSupported) > 0 {
+		signingAlgs = m.signingAlgsSupported
+	}
 	payload := map[string]any{
 		"issuer":                                m.issuer,
 		"authorization_endpoint":                m.issuer + "/authorize",
@@ -196,7 +218,7 @@ func (m *mockOIDCProvider) serveDiscoveryDocument(w http.ResponseWriter, r *http
 		"jwks_uri":                              jwksURI,
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
-		"id_token_signing_alg_values_supported": []string{"RS256"},
+		"id_token_signing_alg_values_supported": signingAlgs,
 	}
 	if m.endSessionEndpoint != "" {
 		payload["end_session_endpoint"] = m.endSessionEndpoint
@@ -546,6 +568,105 @@ func TestOIDC_RuntimePoC_AlgorithmNoneRejected(t *testing.T) {
 	}
 }
 
+// TestOIDCSupportedSigningAlgsAreAsymmetricOnly reads the contents of the
+// allowlist ovumcy hands to provider.Verifier. Nothing else in internal/ does:
+// the HS256 and alg=none PoCs above cannot observe this list, because go-oidc
+// refuses both algorithms on its own account, so an edit that added "HS256" or
+// "none" to oidcSupportedSigningAlgs would leave the whole package green while
+// re-opening the algorithm-confusion lane at the ovumcy end. The assertion is
+// written as a property (nothing symmetric, nothing unsigned) rather than a
+// copy of the shipped slice, so adding another asymmetric algorithm needs no
+// edit here and adding a symmetric one cannot be absorbed.
+func TestOIDCSupportedSigningAlgsAreAsymmetricOnly(t *testing.T) {
+	algs := oidcSupportedSigningAlgs()
+	if len(algs) == 0 {
+		t.Fatal("oidcSupportedSigningAlgs is empty: provider.Verifier would fall back to the algorithms advertised by the discovery document, leaving the IdP to decide which signatures ovumcy accepts")
+	}
+	for _, alg := range algs {
+		switch {
+		case strings.TrimSpace(alg) == "":
+			t.Errorf("oidcSupportedSigningAlgs contains a blank algorithm %q", alg)
+		case strings.EqualFold(strings.TrimSpace(alg), "none"):
+			t.Errorf("oidcSupportedSigningAlgs contains %q: an unsigned ID token would be accepted", alg)
+		case strings.HasPrefix(strings.ToUpper(strings.TrimSpace(alg)), "HS"):
+			t.Errorf("oidcSupportedSigningAlgs contains the symmetric algorithm %q: a token forged with the JWKS public key as the HMAC secret would verify (algorithm confusion)", alg)
+		}
+	}
+	if !slices.Contains(algs, oidc.RS256) {
+		t.Errorf("oidcSupportedSigningAlgs does not contain %q; every mainstream IdP signs ID tokens with it, so dropping it breaks sign-in rather than hardening it (got %v)", oidc.RS256, algs)
+	}
+}
+
+// TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs is the
+// case the HS256 and alg=none PoCs cannot be: it is red when the
+// SupportedSigningAlgs allowlist is missing from the oidc.Config that
+// loadProvider passes to provider.Verifier. go-oidc substitutes the
+// discovery-advertised algorithm set whenever that field is left empty, so
+// without the allowlist the upstream document — not ovumcy — decides which
+// signatures the verifier will open.
+//
+// The mock advertises ES256 only while the ID token is signed RS256. With the
+// allowlist wired in, ovumcy's own list wins and the RS256 token verifies;
+// with it gone, the verifier is pinned to the advertised ES256 and refuses the
+// control token. A token signed by a foreign RSA key is checked in the same
+// test so a verifier that opened everything could not pass for the wrong
+// reason.
+func TestOIDC_RuntimePoC_VerifierUsesOvumcyAllowlistOverDiscoveredAlgs(t *testing.T) {
+	mock, caPEM := newMockOIDCProvider(t)
+	// Diverge from the ID token's real algorithm: RS256 is signed below.
+	mock.signingAlgsSupported = []string{"ES256"}
+	caFile := writeIssuerCAFile(t, caPEM)
+
+	client := NewOIDCClient(OIDCConfig{
+		Enabled:      true,
+		IssuerURL:    mock.issuer,
+		ClientID:     "ovumcy",
+		ClientSecret: "test-secret",
+		RedirectURL:  "https://ovumcy.example/auth/oidc/callback",
+		CAFile:       caFile,
+		LoginMode:    OIDCLoginModeHybrid,
+		LogoutMode:   OIDCLogoutModeAuto,
+	})
+
+	_, verifier, err := client.loadProvider(client.clientContext(context.Background()))
+	if err != nil {
+		t.Fatalf("loadProvider: %v", err)
+	}
+
+	claims := jwt.MapClaims{
+		"iss":   mock.issuer,
+		"sub":   "subject",
+		"aud":   "ovumcy",
+		"exp":   time.Now().Add(time.Hour).Unix(),
+		"iat":   time.Now().Unix(),
+		"nonce": "any-nonce",
+	}
+	rs256, err := signTestRS256IDToken(mock, claims)
+	if err != nil {
+		t.Fatalf("sign RS256 control token: %v", err)
+	}
+	if _, err := verifier.Verify(context.Background(), rs256); err != nil {
+		t.Fatalf("verifier refused a correctly signed RS256 ID token while the IdP advertised ES256 only: %v; ovumcy's SupportedSigningAlgs allowlist is not reaching provider.Verifier, so go-oidc fell back to the discovery-advertised algorithms", err)
+	}
+
+	// Wrong-reason guard: the verifier above must not be one that opens
+	// anything. The same claims signed by a key the JWKS never published are
+	// refused.
+	foreignKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey (foreign signer): %v", err)
+	}
+	foreign := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	foreign.Header["kid"] = mock.keyID
+	rawForeign, err := foreign.SignedString(foreignKey)
+	if err != nil {
+		t.Fatalf("sign foreign RS256 token: %v", err)
+	}
+	if _, err := verifier.Verify(context.Background(), rawForeign); err == nil {
+		t.Fatal("verifier accepted an RS256 ID token signed by a key the mock IdP never published in its JWKS")
+	}
+}
+
 // signTestRS256IDToken signs a control token with the mock IdP's real
 // RSA key so the algorithm-confusion test can assert positive behaviour
 // on the safe path.
@@ -586,12 +707,6 @@ func TestOIDC_RuntimePoC_MockProviderReachable(t *testing.T) {
 		t.Fatalf("mock issuer URL malformed: %v", err)
 	}
 }
-
-// allowedAlgs is the spec ovumcy ships in oidcSupportedSigningAlgs.
-// Kept in this file so a code reader can see at a glance what the
-// runtime PoC expects to find on the verifier; if the production list
-// is expanded or trimmed, regenerate this slice to match.
-var _ = oidc.Config{SupportedSigningAlgs: oidcSupportedSigningAlgs()}
 
 // Make sure the test helpers below compile even if the asn1 / pkix
 // imports get tree-shaken; this is a no-op at runtime.
