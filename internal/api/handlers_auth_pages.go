@@ -1,6 +1,8 @@
 package api
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
@@ -15,6 +17,32 @@ import (
 // on either, and the sanitized path already distinguishes them. The event
 // records the fact of the reveal; the code itself never enters the line.
 var recoveryCodeRevealEgress = healthEgressKind{action: "auth.recovery_code_reveal", target: "recovery_code"}
+
+// claimRecoveryCodeReveal consumes the account's one-time recovery-code reveal
+// and reports whether this request may display the code. It is the gate BOTH
+// reveal surfaces pass — the dedicated page and the inline post-registration
+// block — because the answer is a property of the account, not of the surface.
+//
+// Retracting the sealed cookie is what the response can do about a browser; it
+// is not a record, and a client that kept the sealed value can present it again
+// on this same session. users.recovery_code_revealed_at is the record: every
+// UPDATE that mints a recovery code NULLs it in the same statement, and this
+// claim is a compare-and-set, so the second presentation of any sealed value —
+// replay, reload, or a concurrent tab — loses the race.
+//
+// A refusal retracts the cookie in the same response, so the caller only has to
+// take the code-less path it already takes when no cookie was presented. An
+// errored claim refuses too: the mark is what makes the reveal single-use, and a
+// reveal that cannot record itself is not single-use. That costs the display
+// only — the session stands, and the code is regenerated from Settings.
+func (handler *Handler) claimRecoveryCodeReveal(c fiber.Ctx, userID uint) bool {
+	claimed, err := handler.authService.ClaimRecoveryCodeReveal(c.Context(), userID, time.Now())
+	if err != nil || !claimed {
+		handler.clearRecoveryCodePageCookie(c)
+		return false
+	}
+	return true
+}
 
 func (handler *Handler) ShowLoginPage(c fiber.Ctx) error {
 	redirected, err := handler.redirectAuthenticatedUserIfPresent(c)
@@ -48,6 +76,12 @@ func (handler *Handler) ShowRegisterPage(c fiber.Ctx) error {
 	if user := handler.optionalAuthenticatedUser(c); user != nil {
 		recoveryState := handler.readRecoveryCodeDisplayState(c, user.ID, services.PostLoginRedirectPath(user))
 		if recoveryState.RecoveryCode != "" && recoveryState.Surface == recoveryCodeSurfaceInlineRegister {
+			// The claim runs only once a code would actually be displayed, so a
+			// visit to /register that reveals nothing never spends the account's
+			// one reveal. A refusal takes the same exit as an absent cookie.
+			if !handler.claimRecoveryCodeReveal(c, user.ID) {
+				return c.Redirect().Status(fiber.StatusSeeOther).To(services.PostLoginRedirectPath(user))
+			}
 			flash := handler.popFlashCookie(c)
 			handler.clearRecoveryCodePageCookie(c)
 			// The actor is already on the request context: the optional-auth lookup
@@ -93,6 +127,9 @@ func (handler *Handler) ShowRecoveryCodePage(c fiber.Ctx) error {
 	}
 	if recoveryState.Surface == recoveryCodeSurfaceInlineRegister {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/register")
+	}
+	if !handler.claimRecoveryCodeReveal(c, user.ID) {
+		return c.Redirect().Status(fiber.StatusSeeOther).To(fallbackContinuePath)
 	}
 	handler.clearRecoveryCodePageCookie(c)
 	handler.logEgressSuccess(c, recoveryCodeRevealEgress)

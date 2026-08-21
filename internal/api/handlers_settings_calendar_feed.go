@@ -2,6 +2,7 @@ package api
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/ovumcy/ovumcy-web/internal/services"
@@ -27,6 +28,13 @@ import (
 // the full URL into a one-time cookie (calendar_feed_reveal_cookie.go) and
 // redirect to a dedicated reveal page that shows it exactly once, mirroring the
 // recovery-code reveal. Revoke carries no secret. Nothing here logs the token.
+//
+// "Exactly once" is enforced by users.calendar_feed_revealed_at (migration 036),
+// not by the cookie retraction: the mint NULLs the mark in the same write that
+// persists the token, and the reveal page claims it with a compare-and-set. The
+// cookie decides WHICH URL may be shown and the mark decides WHETHER it still
+// may be, so a client that kept the sealed value gains nothing by presenting it
+// again.
 
 var (
 	calendarFeedGenerateMutation = healthMutationKind{action: "settings.calendar_feed_generate", target: "calendar_feed"}
@@ -129,9 +137,11 @@ func (handler *Handler) RevokeCalendarFeed(c fiber.Ctx) error {
 }
 
 // ShowCalendarFeedRevealPage renders the subscribe URL exactly once. It reads
-// the sealed one-time reveal cookie, CLEARS it immediately, and shows the URL;
-// on any refresh or later visit the cookie is gone, so it redirects back to
-// /settings and the URL is never shown again.
+// the sealed one-time reveal cookie, CLAIMS the owner's server-side reveal mark,
+// clears the cookie, and shows the URL. A refresh, a later visit, or a replay of
+// the original sealed value finds the mark already claimed and redirects back to
+// /settings, so the URL is never shown again until a generate or rotate mints a
+// new token and re-arms the mark in the same write.
 func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	user, ok := currentUser(c)
 	if !ok {
@@ -142,7 +152,21 @@ func (handler *Handler) ShowCalendarFeedRevealPage(c fiber.Ctx) error {
 	if state.FeedURL == "" {
 		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
 	}
-	// Shown-once: drop the cookie now so a reload cannot re-reveal the URL.
+	// Shown-once is decided HERE, by the server-side consumption mark, not by the
+	// cookie retraction below: a client that kept the sealed value can present it
+	// again on this same session, and a retraction it never obeyed costs it
+	// nothing. The claim is a compare-and-set, so a replay and a concurrent
+	// second reveal both lose and land on /settings — the same place an absent
+	// cookie lands. A claim that errors is refused for the same reason: the mark
+	// is what makes the reveal single-use, and a reveal that cannot record itself
+	// is not single-use. The cost of refusing is one rotation from settings.
+	claimed, err := handler.calendarFeedSettings.ClaimFeedReveal(c.Context(), user.ID, time.Now())
+	if err != nil || !claimed {
+		handler.clearCalendarFeedRevealCookie(c)
+		return c.Redirect().Status(fiber.StatusSeeOther).To("/settings")
+	}
+	// Retract the cookie too: the mark refuses the replay, and this keeps an
+	// unusable value from lingering in the browser.
 	handler.clearCalendarFeedRevealCookie(c)
 	handler.logEgressSuccess(c, calendarFeedRevealEgress)
 

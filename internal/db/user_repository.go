@@ -411,12 +411,55 @@ func (repo *UserRepository) ReleaseWebhookWatermark(ctx context.Context, userID 
 // feed-token columns and deliberately does NOT bump auth_session_version: a feed
 // token is a per-surface capability, not an account credential, so rotating it
 // must not revoke the owner's login sessions.
+//
+// It also NULLs calendar_feed_revealed_at in the SAME Updates(): a mint arms a
+// fresh one-time reveal of the new subscribe URL, so the consumption mark of the
+// previous one must not outlive the token it was about. Riding the same write
+// means a mint can never leave a token armed with a stale mark that would refuse
+// its own reveal.
 func (repo *UserRepository) SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"calendar_feed_selector":      columns.Selector,
 		"calendar_feed_verifier_hash": columns.VerifierHash,
 		"calendar_feed_verifier_mac":  columns.VerifierMAC,
+		"calendar_feed_revealed_at":   nil,
 	}).Error
+}
+
+// ClaimCalendarFeedReveal atomically claims the one-time reveal of the owner's
+// calendar-feed subscribe URL, scoped strictly to userID. It returns true iff
+// this call is the one that consumed it — the persisted
+// calendar_feed_revealed_at was NULL at the moment of the UPDATE.
+//
+// The compare-and-set is the whole mechanism: clearing the sealed cookie in the
+// reveal response asks the browser to forget the value, while a client that kept
+// it can present it again. A replay and a concurrent second reveal both find the
+// column already set, affect zero rows, and get false. Shaped after ClaimTOTPStep,
+// which claims a TOTP step the same way and for the same reason.
+func (repo *UserRepository) ClaimCalendarFeedReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND calendar_feed_revealed_at IS NULL", userID).
+		Update("calendar_feed_revealed_at", revealedAt.UTC())
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// ClaimRecoveryCodeReveal atomically claims the one-time reveal of the owner's
+// recovery code, scoped strictly to userID, and returns true iff this call is
+// the one that consumed it. It is the recovery-code half of
+// ClaimCalendarFeedReveal above and carries the same reasoning: both reveal
+// surfaces enforced "shown once" by retracting a cookie, which a retained sealed
+// value survives.
+func (repo *UserRepository) ClaimRecoveryCodeReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error) {
+	result := repo.database.WithContext(ctx).Model(&models.User{}).
+		Where("id = ? AND recovery_code_revealed_at IS NULL", userID).
+		Update("recovery_code_revealed_at", revealedAt.UTC())
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // BackfillCalendarFeedVerifierMAC writes the keyed verifier authenticator into a
@@ -531,9 +574,17 @@ func (repo *UserRepository) FindByCalendarFeedSelector(ctx context.Context, sele
 // settings, so a compromise never leaves a working feed behind. It lives in the
 // same Updates() as the version bump so a partial failure can never revoke
 // sessions while leaving the feed armed (or vice versa).
+//
+// recovery_code_revealed_at is NULLed in that same statement because the fresh
+// code arms its own one-time reveal (migration 036). Only a MINT clears a reveal
+// mark: the feed columns are cleared here rather than re-minted, so
+// calendar_feed_revealed_at is deliberately left standing — re-arming the reveal
+// of a token that no longer resolves would only make a retained sealed cookie
+// presentable again. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
 func (repo *UserRepository) UpdateRecoveryCodeHashAndRevokeSessions(ctx context.Context, userID uint, recoveryHash string) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
 		"recovery_code_hash":          recoveryHash,
+		"recovery_code_revealed_at":   nil,
 		"calendar_feed_selector":      nil,
 		"calendar_feed_verifier_hash": nil,
 		"calendar_feed_verifier_mac":  nil,
@@ -586,13 +637,19 @@ func (repo *UserRepository) UpdatePasswordHashOnly(ctx context.Context, userID u
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Update("password_hash", passwordHash).Error
 }
 
+// UpdatePasswordRecoveryCodeAndRevokeSessions writes a password hash and a fresh
+// recovery-code hash in one atomic update, bumping auth_session_version with
+// them. It NULLs recovery_code_revealed_at in the same statement: the code it
+// writes is about to be revealed once, so its consumption mark starts unset
+// (migration 036). Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
 func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx context.Context, userID uint, passwordHash string, recoveryHash string, mustChangePassword bool) error {
 	return repo.database.WithContext(ctx).Model(&models.User{}).Where("id = ?", userID).Updates(map[string]any{
-		"password_hash":        passwordHash,
-		"recovery_code_hash":   recoveryHash,
-		"must_change_password": mustChangePassword,
-		"local_auth_enabled":   true,
-		"auth_session_version": gorm.Expr("auth_session_version + 1"),
+		"password_hash":             passwordHash,
+		"recovery_code_hash":        recoveryHash,
+		"recovery_code_revealed_at": nil,
+		"must_change_password":      mustChangePassword,
+		"local_auth_enabled":        true,
+		"auth_session_version":      gorm.Expr("auth_session_version + 1"),
 	}).Error
 }
 
@@ -618,12 +675,18 @@ func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessions(ctx cont
 // re-generates a fresh feed afterward. Because the clear rides the same CAS
 // UPDATE, a replayed/concurrent redeem that loses the race (RowsAffected == 0)
 // neither rotates the credential nor clears the feed — both stay consistent.
+//
+// recovery_code_revealed_at rides that CAS as well, NULLed because the fresh
+// code arms its own one-time reveal (migration 036) — and for the same
+// consistency reason: the redeem that loses the race must not re-arm a reveal it
+// minted no code for. Regression: TestEveryRecoveryCodeMintClearsItsRevealMark.
 func (repo *UserRepository) UpdatePasswordRecoveryCodeAndRevokeSessionsCAS(ctx context.Context, userID uint, oldPasswordHash string, newPasswordHash string, recoveryHash string) error {
 	result := repo.database.WithContext(ctx).Model(&models.User{}).
 		Where("id = ? AND password_hash = ?", userID, oldPasswordHash).
 		Updates(map[string]any{
 			"password_hash":               newPasswordHash,
 			"recovery_code_hash":          recoveryHash,
+			"recovery_code_revealed_at":   nil,
 			"must_change_password":        false,
 			"local_auth_enabled":          true,
 			"calendar_feed_selector":      nil,
@@ -824,6 +887,14 @@ func (repo *UserRepository) ClearAllDataAndResetSettings(ctx context.Context, us
 			"calendar_feed_selector":      nil,
 			"calendar_feed_verifier_hash": nil,
 			"calendar_feed_verifier_mac":  nil,
+			// The two shown-once reveal marks (migration 036) are deliberately
+			// ABSENT from this map. They are not preferences and hold no health
+			// data — each records that a secret was already displayed — and NULL
+			// is the ARMED value, so resetting them here would answer a wipe by
+			// re-arming a reveal for a sealed cookie the client may still hold.
+			// Only a mint clears a mark, and the mints this wipe leaves possible
+			// (generate a feed, regenerate the code) each clear their own in the
+			// same write. Account deletion removes the row and the marks with it.
 			// Bump auth_session_version inside the same transaction so a
 			// successful clear-data wipe also revokes every auth cookie that
 			// existed before the wipe. Without this bump a stolen session that

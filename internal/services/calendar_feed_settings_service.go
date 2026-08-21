@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -50,6 +51,11 @@ type CalendarFeedSettingsRepository interface {
 	SaveCalendarFeedToken(ctx context.Context, userID uint, columns models.CalendarFeedTokenColumns) error
 	ClearCalendarFeedToken(ctx context.Context, userID uint) error
 	FindByID(ctx context.Context, userID uint) (models.User, error)
+	// ClaimCalendarFeedReveal atomically consumes the owner's one-time reveal of
+	// the subscribe URL, returning true only for the call that consumed it.
+	// SaveCalendarFeedToken re-arms it in the same statement that mints a token
+	// (migration 036).
+	ClaimCalendarFeedReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error)
 }
 
 // CalendarFeedSettingsService is the write-side seam for the feed lifecycle.
@@ -98,6 +104,30 @@ func (service *CalendarFeedSettingsService) RevokeFeedToken(ctx context.Context,
 		return fmt.Errorf("%w: %v", ErrCalendarFeedTokenPersist, err)
 	}
 	return nil
+}
+
+// ClaimFeedReveal consumes the owner's one-time reveal of the subscribe URL and
+// reports whether THIS call is the one that got it. False means the reveal was
+// already spent — a replayed sealed cookie, a second tab, a re-issued request —
+// and the caller must render no URL and audit no egress.
+//
+// Retracting the sealed cookie in the reveal response asks the browser to forget
+// the value and cannot bind a client that kept it, which is why the mark is what
+// makes "shown exactly once" true.
+//
+// A zero userID is refused here, before the repository is reached: an absent
+// owner id is invalid input, not a claim that applies to whichever row comes
+// first. The compare-and-set below would match no row either — the guard makes
+// the refusal explicit rather than resting on that.
+func (service *CalendarFeedSettingsService) ClaimFeedReveal(ctx context.Context, userID uint, revealedAt time.Time) (bool, error) {
+	if userID == 0 {
+		return false, fmt.Errorf("%w: calendar feed reveal requires an owner id", ErrCalendarFeedTokenPersist)
+	}
+	claimed, err := service.users.ClaimCalendarFeedReveal(ctx, userID, revealedAt)
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrCalendarFeedTokenPersist, err)
+	}
+	return claimed, nil
 }
 
 // CalendarFeedStatus is the render-safe projection the settings view uses. It

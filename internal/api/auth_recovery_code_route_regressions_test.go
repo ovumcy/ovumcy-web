@@ -153,18 +153,25 @@ func TestRecoveryCodePageRefusesUnattributedRecoveryCookie(t *testing.T) {
 // the positive anchor: it proves the page still renders the code and retracts
 // the cookie as it does, so the refusal below is not a page that shows nothing
 // to everybody.
+//
+// Each leg runs on its OWN account. A reveal now consumes the account's
+// server-side mark, so anchoring and refusing on one account would let the mark
+// refuse the second payload and leave the expiry itself untested — green about a
+// control it never reached.
 func TestRecoveryCodePageRefusesAnExpiredRecoveryCookie(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
-	owner := createOnboardingTestUser(t, database, "recovery-expired-reveal@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
+	anchor := createOnboardingTestUser(t, database, "recovery-expired-anchor@example.com", "StrongPass1", true)
+	anchorCookie := loginAndExtractAuthCookie(t, app, anchor.Email, "StrongPass1")
+	subject := createOnboardingTestUser(t, database, "recovery-expired-reveal@example.com", "StrongPass1", true)
+	subjectCookie := loginAndExtractAuthCookie(t, app, subject.Email, "StrongPass1")
 
 	const freshCode = "OVUM-FRESH-CODE00"
 	const expiredCode = "OVUM-STALE-CODE00"
 
-	assertRecoveryCodeRevealedAndCookieRetracted(t, app, authCookie,
-		recoveryCodePageCookieForTest(t, owner.ID, freshCode, time.Now().Add(5*time.Minute)), freshCode)
-	assertRecoveryCodeRevealRefused(t, app, authCookie,
-		recoveryCodePageCookieForTest(t, owner.ID, expiredCode, time.Now().Add(-time.Minute)), expiredCode)
+	assertRecoveryCodeRevealedAndCookieRetracted(t, app, anchorCookie,
+		recoveryCodePageCookieForTest(t, anchor.ID, freshCode, time.Now().Add(5*time.Minute)), freshCode)
+	assertRecoveryCodeRevealRefused(t, app, subjectCookie,
+		recoveryCodePageCookieForTest(t, subject.ID, expiredCode, time.Now().Add(-time.Minute)), expiredCode)
 }
 
 // TestRecoveryCodePageRefusesARecoveryCookieCarryingNoExpiry covers the payload
@@ -175,18 +182,140 @@ func TestRecoveryCodePageRefusesAnExpiredRecoveryCookie(t *testing.T) {
 // account keeps its session and lands on its continue path; a code it never got
 // to read is regenerated from Settings, which every flow that can issue this
 // cookie leaves reachable.
+//
+// The two legs run on separate accounts for the reason stated on the expiry
+// guard above: a reveal spends the account's consumption mark, and sharing one
+// account would let the mark answer for the missing bound.
 func TestRecoveryCodePageRefusesARecoveryCookieCarryingNoExpiry(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
-	owner := createOnboardingTestUser(t, database, "recovery-unbounded-reveal@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
+	anchor := createOnboardingTestUser(t, database, "recovery-unbounded-anchor@example.com", "StrongPass1", true)
+	anchorCookie := loginAndExtractAuthCookie(t, app, anchor.Email, "StrongPass1")
+	subject := createOnboardingTestUser(t, database, "recovery-unbounded-reveal@example.com", "StrongPass1", true)
+	subjectCookie := loginAndExtractAuthCookie(t, app, subject.Email, "StrongPass1")
 
 	const freshCode = "OVUM-BOUND-CODE00"
 	const unboundedCode = "OVUM-LEGACY-CODE0"
 
-	assertRecoveryCodeRevealedAndCookieRetracted(t, app, authCookie,
-		recoveryCodePageCookieForTest(t, owner.ID, freshCode, time.Now().Add(5*time.Minute)), freshCode)
-	assertRecoveryCodeRevealRefused(t, app, authCookie,
-		recoveryCodePageCookieForTest(t, owner.ID, unboundedCode, time.Time{}), unboundedCode)
+	assertRecoveryCodeRevealedAndCookieRetracted(t, app, anchorCookie,
+		recoveryCodePageCookieForTest(t, anchor.ID, freshCode, time.Now().Add(5*time.Minute)), freshCode)
+	assertRecoveryCodeRevealRefused(t, app, subjectCookie,
+		recoveryCodePageCookieForTest(t, subject.ID, unboundedCode, time.Time{}), unboundedCode)
+}
+
+// TestRecoveryCodeRevealRefusesAReplayedCookieAndRearmsOnRegenerate is the
+// consumption-mark contract for the recovery code, driven through the real
+// regeneration flow rather than a hand-sealed payload: what a client that kept
+// the cookie holds is exactly the value the server handed it.
+//
+// The payload expiry bounds that client's window to 20 minutes and does not
+// close it — inside the window the same sealed value opens and, until
+// users.recovery_code_revealed_at existed, revealed the code again. Three legs,
+// because a fix that simply refused forever would pass the first two:
+//   - the first reveal still shows the code (positive anchor)
+//   - the ORIGINAL sealed value, replayed on the same session, is refused, lands
+//     on the continue path an absent cookie lands on, and shows no code
+//   - regenerating mints a fresh code and re-arms the mark in the same write, so
+//     the new reveal works
+func TestRecoveryCodeRevealRefusesAReplayedCookieAndRearmsOnRegenerate(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "recovery-reveal-replay@example.com")
+
+	firstAuth, firstSealed := regenerateRecoveryCodeForTest(t, &ctx)
+	firstCode := assertRecoveryCodeRevealShowsCode(t, ctx.app, firstAuth, firstSealed)
+	// A refusal lands on the account's post-login path (/dashboard here), not on
+	// the /settings continue path the refused payload named: once the payload is
+	// refused, nothing in it is acted on.
+	assertRecoveryCodeRevealRefused(t, ctx.app, firstAuth, firstSealed, firstCode)
+
+	secondAuth, secondSealed := regenerateRecoveryCodeForTest(t, &ctx)
+	secondCode := assertRecoveryCodeRevealShowsCode(t, ctx.app, secondAuth, secondSealed)
+	if secondCode == firstCode {
+		t.Fatal("expected regeneration to mint a different recovery code")
+	}
+	// The re-armed mark belongs to the new reveal only: the second cookie is
+	// spent too, and the first stays refused rather than riding the re-arm.
+	assertRecoveryCodeRevealRefused(t, ctx.app, secondAuth, secondSealed, secondCode)
+	assertRecoveryCodeRevealRefused(t, ctx.app, secondAuth, firstSealed, firstCode)
+}
+
+// regenerateRecoveryCodeForTest drives POST /api/v1/users/current/recovery-code
+// and returns the refreshed auth cookie (regeneration bumps the session version)
+// together with the sealed reveal cookie the response handed the client. It
+// writes the refreshed cookie back into ctx so a second regeneration on the same
+// account is not refused by the version its own predecessor bumped.
+func regenerateRecoveryCodeForTest(t *testing.T, ctx *settingsSecurityTestContext) (string, string) {
+	t.Helper()
+
+	response := settingsFormRequestWithCSRF(t, *ctx, http.MethodPost, "/api/v1/users/current/recovery-code", url.Values{
+		"password": {"StrongPass1"},
+	}, nil)
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303 on recovery-code regeneration, got %d", response.StatusCode)
+	}
+	sealed := responseCookieValue(response.Cookies(), recoveryCodeCookieName)
+	if sealed == "" {
+		t.Fatal("expected a sealed recovery-code cookie after regeneration")
+	}
+	refreshedAuth := responseCookieValue(response.Cookies(), authCookieName)
+	if refreshedAuth == "" {
+		t.Fatal("expected a refreshed auth cookie after regeneration (the session version was bumped)")
+	}
+	ctx.authCookie = authCookieName + "=" + refreshedAuth
+	return ctx.authCookie, sealed
+}
+
+// assertRecoveryCodeRevealShowsCode drives one reveal that must succeed and
+// returns the code the page displayed, read through its stable hook so the
+// caller compares against what actually reached the owner.
+func assertRecoveryCodeRevealShowsCode(t *testing.T, app *fiber.App, authCookie string, sealed string) string {
+	t.Helper()
+
+	response := recoveryCodePageWithCookie(t, app, authCookie, sealed)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected the armed reveal to render, got %d", response.StatusCode)
+	}
+	return recoveryCodeFromRevealPage(t, mustReadBodyString(t, response.Body))
+}
+
+// TestRecoveryCodeRevealRefusesAReplayedInlineCookie is the same contract on the
+// OTHER surface that shows a recovery code: the block the register page renders
+// straight after sign-up. Both surfaces read one mark, so a fix applied to the
+// dedicated page alone would leave this one replayable — the shape of an
+// enumerable class closed at N of N+1.
+func TestRecoveryCodeRevealRefusesAReplayedInlineCookie(t *testing.T) {
+	app, _ := newOnboardingTestApp(t)
+	authCookie, sealed := registerAndExtractRecoveryCookies(t, app, "recovery-inline-replay@example.com", "StrongPass1")
+	if authCookie == "" || sealed == "" {
+		t.Fatal("expected auth and recovery cookies from the register pickup")
+	}
+	session := authCookieName + "=" + authCookie
+
+	first := registerPageWithRecoveryCookie(t, app, session, sealed)
+	if first.StatusCode != http.StatusOK {
+		t.Fatalf("expected the inline reveal to render, got %d", first.StatusCode)
+	}
+	revealedCode := recoveryCodeFromRevealPage(t, mustReadBodyString(t, first.Body))
+
+	replay := registerPageWithRecoveryCookie(t, app, session, sealed)
+	if replay.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected a replayed inline reveal to be refused with a redirect, got %d", replay.StatusCode)
+	}
+	if location := replay.Header.Get("Location"); location != "/onboarding" {
+		t.Fatalf("expected the refusal to land on the post-login path /onboarding, got %q", location)
+	}
+	if strings.Contains(mustReadBodyString(t, replay.Body), revealedCode) {
+		t.Fatal("a replayed inline reveal must not surface the recovery code")
+	}
+	assertRevealCookieCleared(t, replay, recoveryCodeCookieName)
+}
+
+func registerPageWithRecoveryCookie(t *testing.T, app *fiber.App, authCookie string, sealed string) *http.Response {
+	t.Helper()
+
+	request := httptest.NewRequest(http.MethodGet, "/register", nil)
+	request.Header.Set("Accept-Language", "en")
+	request.Header.Set("Cookie", authCookie+"; "+recoveryCodeCookieName+"="+sealed)
+	return mustAppResponse(t, app, request)
 }
 
 // recoveryCodePageCookieForTest seals a recovery-code page payload written as
@@ -215,10 +344,13 @@ func recoveryCodePageCookieForTest(t *testing.T, ownerID uint, recoveryCode stri
 // that same response.
 //
 // Deliberately NOT named "once": retraction is what the response can be seen to
-// do, and it is not single use. Within the payload's lifetime a client that
-// kept the sealed value can still present it again — that is what the expiry
-// bounds rather than removes, and closing it for good needs a server-side
-// consumption record this transport path deliberately does not have.
+// do, and it is not by itself single use — within the payload's lifetime a
+// client that kept the sealed value can still present it again, which is what
+// the expiry bounds rather than removes. What makes the reveal single use is the
+// account's consumption mark, pinned by
+// TestRecoveryCodeRevealRefusesAReplayedCookieAndRearmsOnRegenerate. Each helper
+// here therefore uses a FRESH account, so one case's claim cannot decide
+// another's.
 func assertRecoveryCodeRevealedAndCookieRetracted(t *testing.T, app *fiber.App, authCookie string, sealed string, expectedCode string) {
 	t.Helper()
 

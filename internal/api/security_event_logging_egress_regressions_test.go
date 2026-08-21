@@ -173,8 +173,8 @@ func TestExportPrologueAttributesTheFormatWithoutASession(t *testing.T) {
 // TestCalendarFeedRevealIsAuditedAsHealthEgress pins the audited unit for the
 // subscribe URL: the moment the capability reaches a person, not the polls a
 // calendar client makes with it afterwards. The reveal is one-time, so the test
-// also proves the negative half — a second visit reveals nothing and logs
-// nothing — against the first visit as its positive anchor.
+// also proves the negative half — a replay of the original sealed cookie reveals
+// nothing and logs nothing — against the first visit as its positive anchor.
 func TestCalendarFeedRevealIsAuditedAsHealthEgress(t *testing.T) {
 	ctx := newSettingsSecurityTestContextWithOptions(t, "feed-reveal-audit@example.com", onboardingTestAppOptions{enableCSRF: true, auditLogEnabled: true})
 
@@ -219,13 +219,19 @@ func TestCalendarFeedRevealIsAuditedAsHealthEgress(t *testing.T) {
 	if clearedCookie == nil || strings.TrimSpace(clearedCookie.Value) != "" {
 		t.Fatal("expected the reveal page to clear the one-time cookie")
 	}
+	// The second visit presents the ORIGINAL sealed value, not the cleared one:
+	// a client that kept the cookie is the case this negative is about, and an
+	// empty value proves only that an empty value reveals nothing. The audit
+	// stream is the sharper half of the assertion — a refused replay must leave
+	// no trace of a reveal that did not happen, so an operator counting reveals
+	// counts disclosures.
 	secondRequest := httptest.NewRequest(http.MethodGet, calendarFeedRevealPath, nil)
 	secondRequest.Header.Set("Accept-Language", "en")
-	secondRequest.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(clearedCookie)))
+	secondRequest.Header.Set("Cookie", joinCookieHeader(ctx.authCookie, cookiePair(revealCookie)))
 	second, secondLog := captureAuditedRequest(t, ctx.app, secondRequest)
 	defer func() { _ = second.Body.Close() }()
 	if second.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected a second reveal visit to redirect, got %d", second.StatusCode)
+		t.Fatalf("expected a replayed reveal cookie to redirect, got %d", second.StatusCode)
 	}
 	if strings.Contains(secondLog, "settings.calendar_feed_reveal") {
 		t.Fatalf("a visit that reveals nothing must not log a reveal, got %q", secondLog)

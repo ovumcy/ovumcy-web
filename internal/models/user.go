@@ -174,6 +174,27 @@ type User struct {
 	// re-checked against bcrypt, so rotating SECRET_KEY disarms armed feeds
 	// instead of silently keeping a stale authenticator alive.
 	CalendarFeedVerifierMAC string `gorm:"column:calendar_feed_verifier_mac"`
+	// RecoveryCodeRevealedAt and CalendarFeedRevealedAt are the server-side
+	// consumption marks of the two shown-once secret reveals (migration 036).
+	// Both surfaces used to enforce "exactly once" by writing a cleared cookie
+	// into the reveal response and nothing else, which is a request to the
+	// browser rather than a record: a client that kept the sealed value could
+	// present it again on the owner's own session and be shown the secret a
+	// second time.
+	//
+	// NIL means NOT REVEALED YET. It is what a fresh account carries and what
+	// every mint restores — the UPDATE that writes a new recovery-code hash or a
+	// new feed token NULLs the matching column in the same atomic write, so
+	// re-issuing the secret re-arms exactly one reveal. The reveal claims the
+	// mark with a compare-and-set (`... WHERE <column> IS NULL`), so a replay and
+	// a concurrent second reveal both lose the race and are refused.
+	//
+	// They are security state, not preferences: neither is rendered, neither is
+	// in the settings load allow-list, and clear-data deliberately leaves them
+	// standing (clearing a consumption mark re-arms a reveal for a sealed cookie
+	// that may still be held). Account erasure removes them with the row.
+	RecoveryCodeRevealedAt *time.Time `gorm:"column:recovery_code_revealed_at"`
+	CalendarFeedRevealedAt *time.Time `gorm:"column:calendar_feed_revealed_at"`
 }
 
 // CalendarFeedTokenColumns is the transport-free narrow view of the three stored

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
@@ -18,6 +19,7 @@ type stubCalendarFeedSettingsRepo struct {
 	saveErr    error
 	clearErr   error
 	findErr    error
+	claimErr   error
 	findUser   models.User
 	findUserID uint
 }
@@ -33,7 +35,25 @@ func (s *stubCalendarFeedSettingsRepo) SaveCalendarFeedToken(_ context.Context, 
 	s.findUser.ID = userID
 	s.findUser.CalendarFeedSelector = columns.Selector
 	s.findUser.CalendarFeedVerifierHash = columns.VerifierHash
+	// The real UPDATE NULLs calendar_feed_revealed_at in the same statement, so
+	// a freshly minted token arrives with its one-time reveal armed.
+	s.findUser.CalendarFeedRevealedAt = nil
 	return nil
+}
+
+// ClaimCalendarFeedReveal models the real compare-and-set: the first call
+// consumes the reveal, every later one loses because the mark is already set.
+func (s *stubCalendarFeedSettingsRepo) ClaimCalendarFeedReveal(_ context.Context, userID uint, revealedAt time.Time) (bool, error) {
+	if s.claimErr != nil {
+		return false, s.claimErr
+	}
+	s.findUserID = userID
+	if s.findUser.CalendarFeedRevealedAt != nil {
+		return false, nil
+	}
+	claimedAt := revealedAt.UTC()
+	s.findUser.CalendarFeedRevealedAt = &claimedAt
+	return true, nil
 }
 
 func (s *stubCalendarFeedSettingsRepo) ClearCalendarFeedToken(_ context.Context, userID uint) error {
@@ -225,5 +245,73 @@ func TestBuildFeedStatusReportsConfiguredOnlyFromSelector(t *testing.T) {
 	repoErr := &stubCalendarFeedSettingsRepo{findErr: errors.New("db down")}
 	if got := NewCalendarFeedSettingsService(repoErr, []byte(calendarFeedTestSecretKey)).BuildFeedStatus(context.Background(), 3); got.Configured {
 		t.Fatal("expected not-configured on load error")
+	}
+}
+
+// TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound pins the seam the reveal
+// page gates on: a mint arms exactly one reveal, the replay of a spent one
+// loses, and a claim naming no account is refused before it reaches the
+// repository — an absent owner id is invalid input, never a claim that skips the
+// comparison.
+func TestClaimFeedRevealIsSingleUsePerMintAndOwnerBound(t *testing.T) {
+	repo := &stubCalendarFeedSettingsRepo{}
+	service := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey))
+	now := time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)
+
+	if _, err := service.GenerateFeedToken(context.Background(), 7); err != nil {
+		t.Fatalf("GenerateFeedToken: %v", err)
+	}
+	claimed, err := service.ClaimFeedReveal(context.Background(), 7, now)
+	if err != nil {
+		t.Fatalf("ClaimFeedReveal: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected a freshly minted token to arm exactly one reveal")
+	}
+
+	replayed, err := service.ClaimFeedReveal(context.Background(), 7, now)
+	if err != nil {
+		t.Fatalf("ClaimFeedReveal replay: %v", err)
+	}
+	if replayed {
+		t.Fatal("expected a replayed claim to lose against the mark already set")
+	}
+
+	// A rotate is a second mint, so it re-arms.
+	if _, err := service.GenerateFeedToken(context.Background(), 7); err != nil {
+		t.Fatalf("GenerateFeedToken rotate: %v", err)
+	}
+	rearmed, err := service.ClaimFeedReveal(context.Background(), 7, now)
+	if err != nil {
+		t.Fatalf("ClaimFeedReveal after rotate: %v", err)
+	}
+	if !rearmed {
+		t.Fatal("expected a rotate to re-arm the reveal of the new subscribe URL")
+	}
+
+	unattributed := &stubCalendarFeedSettingsRepo{}
+	if _, err := NewCalendarFeedSettingsService(unattributed, []byte(calendarFeedTestSecretKey)).
+		ClaimFeedReveal(context.Background(), 0, now); !errors.Is(err, ErrCalendarFeedTokenPersist) {
+		t.Fatalf("expected a claim naming no account to be refused, got %v", err)
+	}
+	if unattributed.findUser.CalendarFeedRevealedAt != nil {
+		t.Fatal("a claim naming no account must never reach the repository")
+	}
+}
+
+// TestClaimFeedRevealSurfacesStorageFailure keeps a storage failure
+// distinguishable from "already claimed": the page refuses on either, but
+// conflating them would hide a database outage behind an ordinary-looking
+// replay.
+func TestClaimFeedRevealSurfacesStorageFailure(t *testing.T) {
+	repo := &stubCalendarFeedSettingsRepo{claimErr: errors.New("claim failed")}
+
+	claimed, err := NewCalendarFeedSettingsService(repo, []byte(calendarFeedTestSecretKey)).
+		ClaimFeedReveal(context.Background(), 7, time.Now())
+	if !errors.Is(err, ErrCalendarFeedTokenPersist) {
+		t.Fatalf("expected the storage failure to surface as a persist error, got %v", err)
+	}
+	if claimed {
+		t.Fatal("a claim that could not be recorded must never report success")
 	}
 }

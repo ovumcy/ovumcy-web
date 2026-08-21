@@ -16,9 +16,16 @@ import (
 // sealed one-time cookie mechanism as the recovery code (recovery_code_page_
 // cookie.go). The generate/rotate handler seals the full URL into this cookie
 // and redirects to a dedicated reveal page; that page reads the cookie once,
-// CLEARS it immediately, and renders the URL. On any later settings load the
-// cookie is gone, so the URL is never re-rendered into an HTML value — the
-// settings section then shows only configured/not-configured status.
+// CLAIMS the owner's server-side reveal mark, clears the cookie, and renders the
+// URL. On any later settings load the cookie is gone, so the URL is never
+// re-rendered into an HTML value — the settings section then shows only
+// configured/not-configured status.
+//
+// The once-ness is the MARK, not the clear. Clearing a cookie asks a browser to
+// forget a value it was handed and binds nothing that kept it, so this cookie
+// says only WHICH URL may be shown; users.calendar_feed_revealed_at (migration
+// 036) says whether it still may be. The mint NULLs it in the same write that
+// persists the token, and the reveal page claims it with a compare-and-set.
 //
 // The URL never appears in a query string, a redirect target, JSON, or a log:
 // it lives only inside the AEAD-sealed cookie payload until the single reveal.
@@ -67,10 +74,11 @@ func (handler *Handler) setCalendarFeedRevealCookie(c fiber.Ctx, userID uint, fe
 
 // readCalendarFeedRevealState opens the sealed one-time cookie and returns the
 // revealed URL, or an empty state when the cookie is absent, malformed,
-// unattributed, or scoped to a different user. It does NOT clear the cookie —
-// the caller clears it right after a successful read so the URL is shown
-// exactly once. Every failure path clears the cookie defensively so a corrupt
-// value cannot linger.
+// unattributed, or scoped to a different user. It does NOT clear the cookie and
+// does NOT decide single use — the caller claims the owner's reveal mark and
+// then clears the cookie, so a value this reader accepts twice is still shown
+// only once. Every failure path clears the cookie defensively so a corrupt value
+// cannot linger.
 func (handler *Handler) readCalendarFeedRevealState(c fiber.Ctx, userID uint) calendarFeedRevealState {
 	raw := strings.TrimSpace(c.Cookies(calendarFeedRevealCookieName))
 	if raw == "" {
