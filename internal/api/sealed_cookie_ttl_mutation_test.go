@@ -339,7 +339,8 @@ func TestReadRecoveryCodeDisplayStateEmptyTargetDerivesFromPath(t *testing.T) {
 		RecoveryCode: "recovery-code-fixture",
 		ContinuePath: "/settings",
 		// ContinueTarget intentionally empty.
-		Surface: recoveryCodeSurfaceDedicated,
+		Surface:   recoveryCodeSurfaceDedicated,
+		ExpiresAt: time.Now().Add(recoveryCodeCookieTTL),
 	}
 	serialized, err := json.Marshal(payload)
 	if err != nil {

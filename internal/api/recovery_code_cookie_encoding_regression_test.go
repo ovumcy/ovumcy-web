@@ -49,6 +49,7 @@ func TestSealedEnvelopeAroundPlaintextRecoveryPayloadIsRefused(t *testing.T) {
 		ContinuePath:   "/dashboard",
 		ContinueTarget: recoveryCodeContinueTargetDashboard,
 		Surface:        recoveryCodeSurfaceDedicated,
+		ExpiresAt:      time.Now().Add(recoveryCodeCookieTTL),
 	})
 	if err != nil {
 		t.Fatalf("marshal recovery payload: %v", err)
@@ -234,8 +235,11 @@ func TestRecoveryCodeCookieRefusesUnattributedOwner(t *testing.T) {
 	})
 	// Read-time guard, driven from a hand-sealed payload the writer would now
 	// refuse to mint.
+	// The payload carries a live expiry, so the owner id is the only guard that
+	// can refuse it — the lifetime bound cannot stand in for the scoping one.
 	app.Get("/seal-unattributed-payload", func(c fiber.Ctx) error {
-		serialized := []byte(`{"uid":0,"recovery_code":"` + unattributedCode + `","continue_path":"/settings","continue_target":"settings","surface":"dedicated"}`)
+		expiresAt := time.Now().Add(recoveryCodeCookieTTL).UTC().Format(time.RFC3339Nano)
+		serialized := []byte(`{"uid":0,"recovery_code":"` + unattributedCode + `","continue_path":"/settings","continue_target":"settings","surface":"dedicated","expires_at":"` + expiresAt + `"}`)
 		if err := handler.writeSealedCookie(c, recoveryCodeCookieSpec, serialized, time.Now().Add(time.Minute)); err != nil {
 			t.Fatalf("write sealed unattributed payload: %v", err)
 		}

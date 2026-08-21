@@ -10,6 +10,12 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// recoveryCodeCookieTTL is the reveal's lifetime, written from one value into
+// two places: the Set-Cookie `Expires` attribute and the `expires_at` the
+// sealed payload carries. Only the second is a bound. The attribute is a hint
+// the browser is free to ignore, so a client that keeps the sealed value can
+// hand it back afterwards — a reveal cookie without a server-verified expiry
+// stays replayable until the code is rotated or SECRET_KEY changes.
 const recoveryCodeCookieTTL = 20 * time.Minute
 
 const (
@@ -36,6 +42,14 @@ type recoveryCodePagePayload struct {
 	ContinuePath   string `json:"continue_path,omitempty"`
 	ContinueTarget string `json:"continue_target,omitempty"`
 	Surface        string `json:"surface,omitempty"`
+	// ExpiresAt is the server-verified half of the reveal's lifetime, carried
+	// the way the TOTP enrollment cookie carries its own beside its owner id:
+	// the payload names the moment it stops being honored, and the reader
+	// compares that against the clock instead of trusting the browser to have
+	// dropped the cookie. A payload from before the field existed decodes to the
+	// zero time, which is always already past, so an absent bound is invalid
+	// input rather than permission to reveal for as long as the code lives.
+	ExpiresAt time.Time `json:"expires_at"`
 }
 
 var recoveryCodeCookieSpec = sealedCookieSpec{name: recoveryCodeCookieName, path: "/"}
@@ -58,6 +72,7 @@ func (handler *Handler) setRecoveryCodeIssuanceCookie(c fiber.Ctx, userID uint, 
 		return errors.New("recovery code is required")
 	}
 	safeContinuePath := services.SanitizeRedirectPath(strings.TrimSpace(continuePath), "/dashboard")
+	expiresAt := time.Now().Add(recoveryCodeCookieTTL)
 
 	payload := recoveryCodePagePayload{
 		UserID:         userID,
@@ -65,13 +80,14 @@ func (handler *Handler) setRecoveryCodeIssuanceCookie(c fiber.Ctx, userID uint, 
 		ContinuePath:   safeContinuePath,
 		ContinueTarget: recoveryCodeContinueTargetFromPath(safeContinuePath),
 		Surface:        sanitizeRecoveryCodeSurface(surface),
+		ExpiresAt:      expiresAt,
 	}
 
 	serialized, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	return handler.writeSealedCookie(c, recoveryCodeCookieSpec, serialized, time.Now().Add(recoveryCodeCookieTTL))
+	return handler.writeSealedCookie(c, recoveryCodeCookieSpec, serialized, expiresAt)
 }
 
 func sanitizeRecoveryCodeContinueTarget(target string) string {
@@ -118,8 +134,9 @@ func sanitizeRecoveryCodeSurface(surface string) string {
 
 // readRecoveryCodeDisplayState opens the sealed one-time cookie and returns the
 // code to display, or the code-less fallback state when the cookie is absent,
-// malformed, unattributed, or scoped to a different account. Every rejection
-// path clears the cookie so an unusable value cannot linger.
+// malformed, unattributed, scoped to a different account, or past the expiry it
+// carries — including a payload that carries none. Every rejection path clears
+// the cookie so an unusable value cannot linger.
 func (handler *Handler) readRecoveryCodeDisplayState(c fiber.Ctx, userID uint, fallbackContinuePath string) recoveryCodeDisplayState {
 	fallback := services.SanitizeRedirectPath(strings.TrimSpace(fallbackContinuePath), "/dashboard")
 	fallbackTarget := recoveryCodeContinueTargetFromPath(fallback)
@@ -158,6 +175,14 @@ func (handler *Handler) readRecoveryCodeDisplayState(c fiber.Ctx, userID uint, f
 		return state
 	}
 	if !sealedPayloadBelongsToSession(payload.UserID, userID) {
+		handler.clearRecoveryCodePageCookie(c)
+		return state
+	}
+	// Refusing here takes away the display, never the sign-in: the page already
+	// resolved an authenticated session, so the owner lands on the same continue
+	// path they reach when the cookie is simply absent, and regenerates the code
+	// from Settings.
+	if time.Now().After(payload.ExpiresAt) {
 		handler.clearRecoveryCodePageCookie(c)
 		return state
 	}

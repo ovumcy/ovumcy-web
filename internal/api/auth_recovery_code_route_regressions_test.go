@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -92,9 +93,10 @@ func TestRecoveryCodePageRefusesUnattributedRecoveryCookie(t *testing.T) {
 	const ownedCode = "OVUM-OWNED-CODE00"
 	const unattributedCode = "OVUM-NOOWNER-CODE"
 
-	// Positive anchor: a payload minted for this account reveals its code.
-	attributed := sealCookieForTestApp(t, recoveryCodeCookieName,
-		[]byte(`{"uid":`+strconv.FormatUint(uint64(owner.ID), 10)+`,"recovery_code":"`+ownedCode+`","continue_path":"/dashboard","continue_target":"dashboard","surface":"dedicated"}`))
+	// Positive anchor: a payload minted for this account reveals its code. Both
+	// payloads carry the same unexpired bound, so the owner id is the only guard
+	// that separates them — the expiry cannot rescue this test's refusal.
+	attributed := recoveryCodePageCookieForTest(t, owner.ID, ownedCode, time.Now().Add(5*time.Minute))
 
 	attributedRequest := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
 	attributedRequest.Header.Set("Accept-Language", "en")
@@ -112,8 +114,7 @@ func TestRecoveryCodePageRefusesUnattributedRecoveryCookie(t *testing.T) {
 	}
 
 	// An unattributed payload carrying a different code must reveal nothing.
-	unattributed := sealCookieForTestApp(t, recoveryCodeCookieName,
-		[]byte(`{"uid":0,"recovery_code":"`+unattributedCode+`","continue_path":"/dashboard","continue_target":"dashboard","surface":"dedicated"}`))
+	unattributed := recoveryCodePageCookieForTest(t, 0, unattributedCode, time.Now().Add(5*time.Minute))
 
 	request := httptest.NewRequest(http.MethodGet, "/recovery-code", nil)
 	request.Header.Set("Accept-Language", "en")
@@ -137,6 +138,117 @@ func TestRecoveryCodePageRefusesUnattributedRecoveryCookie(t *testing.T) {
 	if cleared == nil || cleared.Value != "" {
 		t.Fatal("expected the refused recovery cookie to be cleared, not left presentable on a retry")
 	}
+}
+
+// TestRecoveryCodePageRefusesAnExpiredRecoveryCookie pins the reveal's time
+// bound where it has to hold: on the server. The 20-minute TTL reaches only the
+// Set-Cookie `Expires` attribute, which is a browser hint — a client that keeps
+// the sealed value can hand it back on its own session for as long as the code
+// and SECRET_KEY live. The bound therefore rides inside the sealed payload and
+// is verified on read, the way the TOTP enrollment cookie carries its own
+// ExpiresAt beside its owner id.
+//
+// Both payloads here are sealed under the app's own secret and minted for the
+// session presenting them, so only the expiry separates them. The fresh one is
+// the positive anchor: it proves the page still renders the code and retracts
+// the cookie as it does, so the refusal below is not a page that shows nothing
+// to everybody.
+func TestRecoveryCodePageRefusesAnExpiredRecoveryCookie(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	owner := createOnboardingTestUser(t, database, "recovery-expired-reveal@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
+
+	const freshCode = "OVUM-FRESH-CODE00"
+	const expiredCode = "OVUM-STALE-CODE00"
+
+	assertRecoveryCodeRevealedAndCookieRetracted(t, app, authCookie,
+		recoveryCodePageCookieForTest(t, owner.ID, freshCode, time.Now().Add(5*time.Minute)), freshCode)
+	assertRecoveryCodeRevealRefused(t, app, authCookie,
+		recoveryCodePageCookieForTest(t, owner.ID, expiredCode, time.Now().Add(-time.Minute)), expiredCode)
+}
+
+// TestRecoveryCodePageRefusesARecoveryCookieCarryingNoExpiry covers the payload
+// shape minted before the expiry field existed: it opens, it names the right
+// account, and it says nothing about when it stops being honored. An absent
+// bound is invalid input, not a licence to display, so the page refuses it and
+// retracts the cookie — the same treatment a payload naming no owner gets. The
+// account keeps its session and lands on its continue path; a code it never got
+// to read is regenerated from Settings, which every flow that can issue this
+// cookie leaves reachable.
+func TestRecoveryCodePageRefusesARecoveryCookieCarryingNoExpiry(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	owner := createOnboardingTestUser(t, database, "recovery-unbounded-reveal@example.com", "StrongPass1", true)
+	authCookie := loginAndExtractAuthCookie(t, app, owner.Email, "StrongPass1")
+
+	const freshCode = "OVUM-BOUND-CODE00"
+	const unboundedCode = "OVUM-LEGACY-CODE0"
+
+	assertRecoveryCodeRevealedAndCookieRetracted(t, app, authCookie,
+		recoveryCodePageCookieForTest(t, owner.ID, freshCode, time.Now().Add(5*time.Minute)), freshCode)
+	assertRecoveryCodeRevealRefused(t, app, authCookie,
+		recoveryCodePageCookieForTest(t, owner.ID, unboundedCode, time.Time{}), unboundedCode)
+}
+
+// recoveryCodePageCookieForTest seals a recovery-code page payload written as
+// raw JSON, so a test can present a shape the production writer will not mint:
+// an expiry already in the past, or — for the zero time — a payload from before
+// the field existed, carrying no expiry at all.
+func recoveryCodePageCookieForTest(t *testing.T, ownerID uint, recoveryCode string, expiresAt time.Time) string {
+	t.Helper()
+
+	fields := []string{
+		`"uid":` + strconv.FormatUint(uint64(ownerID), 10),
+		`"recovery_code":"` + recoveryCode + `"`,
+		`"continue_path":"/dashboard"`,
+		`"continue_target":"dashboard"`,
+		`"surface":"dedicated"`,
+	}
+	if !expiresAt.IsZero() {
+		fields = append(fields, `"expires_at":"`+expiresAt.UTC().Format(time.RFC3339Nano)+`"`)
+	}
+	return sealCookieForTestApp(t, recoveryCodeCookieName, []byte("{"+strings.Join(fields, ",")+"}"))
+}
+
+// assertRecoveryCodeRevealedAndCookieRetracted is the positive anchor the
+// expiry guards share: the same page and the same session render a payload that
+// differs from the refused one only in its expiry, and retract the cookie in
+// that same response.
+//
+// Deliberately NOT named "once": retraction is what the response can be seen to
+// do, and it is not single use. Within the payload's lifetime a client that
+// kept the sealed value can still present it again — that is what the expiry
+// bounds rather than removes, and closing it for good needs a server-side
+// consumption record this transport path deliberately does not have.
+func assertRecoveryCodeRevealedAndCookieRetracted(t *testing.T, app *fiber.App, authCookie string, sealed string, expectedCode string) {
+	t.Helper()
+
+	response := recoveryCodePageWithCookie(t, app, authCookie, sealed)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("expected an unexpired payload minted for this account to render, got %d", response.StatusCode)
+	}
+	if !strings.Contains(mustReadBodyString(t, response.Body), expectedCode) {
+		t.Fatal("the recovery-code page must still reveal an unexpired code minted for this account")
+	}
+	assertRevealCookieCleared(t, response, recoveryCodeCookieName)
+}
+
+// assertRecoveryCodeRevealRefused states both halves of a refusal: no code in
+// the response, and the cookie retracted in that same response rather than left
+// presentable on a retry.
+func assertRecoveryCodeRevealRefused(t *testing.T, app *fiber.App, authCookie string, sealed string, refusedCode string) {
+	t.Helper()
+
+	response := recoveryCodePageWithCookie(t, app, authCookie, sealed)
+	if response.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected the recovery payload to be refused with a redirect, got %d", response.StatusCode)
+	}
+	if location := response.Header.Get("Location"); location != "/dashboard" {
+		t.Fatalf("expected the refusal to land on the continue path /dashboard, got %q", location)
+	}
+	if strings.Contains(mustReadBodyString(t, response.Body), refusedCode) {
+		t.Fatal("a refused recovery payload must not surface its code")
+	}
+	assertRevealCookieCleared(t, response, recoveryCodeCookieName)
 }
 
 func TestRecoveryCodePageRejectsTamperedRecoveryCookie(t *testing.T) {
