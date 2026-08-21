@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -346,6 +348,15 @@ func TestPrepareAndFinalizeLocalPasswordSetup(t *testing.T) {
 	if !repo.updatePasswordCalled {
 		t.Fatal("expected password+recovery update on finalize")
 	}
+	// The id the update carries is the whole of its owner scoping:
+	// UpdatePasswordRecoveryCodeAndRevokeSessions writes the password hash, the
+	// recovery hash, local_auth_enabled and the auth_session_version bump under
+	// `WHERE id = ?` alone. Leaving it unasserted lets a wrong id overwrite
+	// another owner's credential and revoke their sessions with every other
+	// assertion here still green.
+	if repo.updatedUserID != 77 {
+		t.Fatalf("expected the update to target the acting owner 77, got %d", repo.updatedUserID)
+	}
 	if repo.updatedRecoveryHash == "" {
 		t.Fatal("expected persisted recovery hash on finalize")
 	}
@@ -368,5 +379,76 @@ func TestFinalizeLocalPasswordSetupRejectsWhenAlreadyEnabled(t *testing.T) {
 	}
 	if repo.updatePasswordCalled {
 		t.Fatal("must not touch DB when local auth already enabled")
+	}
+}
+
+// TestFinalizeLocalPasswordSetupScopesTheWriteToTheActingOwner drives the
+// local-password enrollment through the REAL user repository with two
+// independent owners in one database.
+//
+// The stub above records whichever id it is handed, so every owner reaches the
+// same fields; only a second row can tell the acting owner from a literal 1.
+// Owner A is created first and therefore holds id 1 — the value a dropped or
+// hard-coded owner id degenerates to — and the enrollment runs for owner B, the
+// SSO-only account. Owner A's row must stay byte-for-byte unchanged:
+// UpdatePasswordRecoveryCodeAndRevokeSessions is scoped by `WHERE id = ?`
+// alone, so a wrong id rewrites A's credential and, through the
+// auth_session_version bump, revokes A's sessions.
+func TestFinalizeLocalPasswordSetupScopesTheWriteToTheActingOwner(t *testing.T) {
+	database := newTwoOwnerIntegrationDatabase(t, "ovumcy-local-password-two-owner")
+	service := NewSettingsService(db.NewUserRepository(database))
+
+	ownerA := createTwoOwnerUser(t, database, "local-password-owner-a@example.com", withLocalCredentials(t, "OwnerAPass1"))
+	ownerB := createTwoOwnerUser(t, database, "local-password-owner-b@example.com", func(user *models.User) {
+		// Owner B is the SSO-only account enrolling a local password: no
+		// password hash, no recovery code, local auth still off.
+		user.PasswordHash = ""
+		user.RecoveryCodeHash = ""
+		user.LocalAuthEnabled = false
+		user.AuthSessionVersion = 1
+	})
+	requireDistinctTwoOwnerFixture(t, ownerA, ownerB)
+
+	before := readTwoOwnerUser(t, database, ownerA.ID)
+
+	acting := readTwoOwnerUser(t, database, ownerB.ID)
+	preparedHash, err := service.PrepareLocalPasswordHash(&acting, "EvenStronger2", "EvenStronger2")
+	if err != nil {
+		t.Fatalf("PrepareLocalPasswordHash() unexpected error: %v", err)
+	}
+	recoveryCode, err := service.FinalizeLocalPasswordSetup(context.Background(), &acting, preparedHash)
+	if err != nil {
+		t.Fatalf("FinalizeLocalPasswordSetup() unexpected error: %v", err)
+	}
+	if recoveryCode == "" {
+		t.Fatal("expected a recovery code for owner B")
+	}
+
+	// Isolation: owner B's enrollment must not have reached owner A's row.
+	after := readTwoOwnerUser(t, database, ownerA.ID)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("owner A's row changed while owner B enrolled a local password — the update is not scoped to the acting owner:\nbefore: %+v\nafter:  %+v", before, after)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(after.PasswordHash), []byte("OwnerAPass1")); err != nil {
+		t.Fatalf("owner A's password no longer verifies after owner B's enrollment: %v", err)
+	}
+	if after.AuthSessionVersion != before.AuthSessionVersion {
+		t.Fatalf("owner A's auth_session_version moved from %d to %d — another owner's enrollment revoked their sessions", before.AuthSessionVersion, after.AuthSessionVersion)
+	}
+
+	// Positive anchor: the enrollment must actually have landed on owner B, or
+	// the isolation half above would pass on a service that writes nothing.
+	gotB := readTwoOwnerUser(t, database, ownerB.ID)
+	if err := bcrypt.CompareHashAndPassword([]byte(gotB.PasswordHash), []byte("EvenStronger2")); err != nil {
+		t.Fatalf("expected owner B's new password to verify: %v", err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(gotB.RecoveryCodeHash), []byte(recoveryCode)); err != nil {
+		t.Fatalf("expected owner B's stored recovery hash to match the returned code: %v", err)
+	}
+	if !gotB.LocalAuthEnabled {
+		t.Fatal("expected owner B's local_auth_enabled to be set by the enrollment")
+	}
+	if gotB.AuthSessionVersion != 2 {
+		t.Fatalf("expected owner B's auth_session_version to be bumped to 2, got %d", gotB.AuthSessionVersion)
 	}
 }
