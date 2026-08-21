@@ -45,7 +45,18 @@ func (service *PasswordResetService) IssueResetTokenForUser(secretKey []byte, us
 	return service.auth.BuildPasswordResetToken(secretKey, user.ID, user.PasswordHash, ttl, now)
 }
 
-func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKey []byte, limiterKey string, email string, rawRecoveryCode string, now time.Time, tokenTTL time.Duration) (string, error) {
+// StartRecovery mints a password-reset token for an owner who proves TWO
+// factors: the account's current password AND its recovery code. The recovery
+// code stands in for the second factor (TOTP), never for the password — an
+// owner whose TOTP secret stopped decrypting after a SECRET_KEY rotation still
+// knows the password, while an attacker who photographed the recovery code once
+// no longer holds a standing takeover credential.
+//
+// Every failure below — unknown address, local auth disabled, wrong recovery
+// code, wrong or absent password, unsupported role — returns the SAME
+// ErrPasswordRecoveryCodeInvalid and books the SAME attempt failure, so the
+// route reveals neither account existence nor which operand was wrong.
+func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKey []byte, limiterKey string, email string, rawRecoveryCode string, password string, now time.Time, tokenTTL time.Duration) (string, error) {
 	if service.auth == nil {
 		return "", errors.New("auth service is required")
 	}
@@ -68,7 +79,7 @@ func (service *PasswordResetService) StartRecovery(ctx context.Context, secretKe
 		return "", ErrPasswordRecoveryCodeInvalid
 	}
 
-	user, err := service.auth.FindUserByEmailAndRecoveryCode(ctx, normalizedEmail, code)
+	user, err := service.auth.FindUserByEmailRecoveryCodeAndPassword(ctx, normalizedEmail, code, password)
 	if err != nil {
 		if errors.Is(err, ErrRecoveryCodeNotFound) {
 			service.recoveryPolicy.AddFailure(secretKey, limiterKey, normalizedEmail, now)

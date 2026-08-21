@@ -23,7 +23,7 @@ func TestPasswordResetServiceStartRecoveryRateLimited(t *testing.T) {
 		service.recoveryPolicy.AddFailure(secretKey, key, "owner@example.com", now.Add(-1*time.Minute))
 	}
 
-	_, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", "OVUM-ABCD-2345-EFGH", now, 30*time.Minute)
+	_, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", "OVUM-ABCD-2345-EFGH", "StrongPass1", now, 30*time.Minute)
 	if !errors.Is(err, ErrPasswordRecoveryRateLimited) {
 		t.Fatalf("expected ErrPasswordRecoveryRateLimited, got %v", err)
 	}
@@ -40,7 +40,7 @@ func TestPasswordResetServiceStartRecoveryInvalidEmailAddsFailure(t *testing.T) 
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	key := "127.0.0.1"
 
-	_, err := service.StartRecovery(context.Background(), secretKey, key, "invalid-email", "OVUM-ABCD-2345-EFGH", now, 30*time.Minute)
+	_, err := service.StartRecovery(context.Background(), secretKey, key, "invalid-email", "OVUM-ABCD-2345-EFGH", "StrongPass1", now, 30*time.Minute)
 	if !errors.Is(err, ErrPasswordRecoveryInputInvalid) {
 		t.Fatalf("expected ErrPasswordRecoveryInputInvalid, got %v", err)
 	}
@@ -60,12 +60,54 @@ func TestPasswordResetServiceStartRecoveryInvalidCodeAddsFailure(t *testing.T) {
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	key := "127.0.0.1"
 
-	_, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", "invalid", now, 30*time.Minute)
+	_, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", "invalid", "StrongPass1", now, 30*time.Minute)
 	if !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
 		t.Fatalf("expected ErrPasswordRecoveryCodeInvalid, got %v", err)
 	}
 	if !service.recoveryPolicy.TooManyRecent(secretKey, key, "owner@example.com", now) {
 		t.Fatalf("expected limiter to record failed recovery attempt")
+	}
+}
+
+// TestPasswordResetServiceStartRecoveryWrongPasswordAddsFailure pins that the
+// new operand is inside the attempt budget: a correct recovery code with a
+// wrong password must return the SAME ErrPasswordRecoveryCodeInvalid as a wrong
+// code and must consume an attempt, or the password join would be an unmetered
+// guessing surface.
+func TestPasswordResetServiceStartRecoveryWrongPasswordAddsFailure(t *testing.T) {
+	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
+	if err != nil {
+		t.Fatalf("GenerateRecoveryCodeHash() unexpected error: %v", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+
+	repo := &stubAuthUserRepo{
+		findByEmailOptionalEmail: "owner@example.com",
+		findByEmailOptionalFound: true,
+		findByEmailOptionalUser: models.User{
+			ID:               77,
+			Email:            "owner@example.com",
+			PasswordHash:     string(passwordHash),
+			RecoveryCodeHash: recoveryHash,
+			LocalAuthEnabled: true,
+			Role:             models.RoleOwner,
+		},
+	}
+	service := NewPasswordResetService(NewAuthService(repo), NewAttemptLimiter())
+	service.ConfigureRecoveryAttemptLimits(1, DefaultRecoveryAttemptsWindow)
+	secretKey := []byte("test-secret")
+
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	key := "127.0.0.1"
+
+	if _, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", recoveryCode, "NotThePassword9", now, 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
+		t.Fatalf("expected ErrPasswordRecoveryCodeInvalid for a wrong password, got %v", err)
+	}
+	if !service.recoveryPolicy.TooManyRecent(secretKey, key, "owner@example.com", now) {
+		t.Fatalf("expected limiter to record the wrong-password recovery attempt")
 	}
 }
 
@@ -79,13 +121,13 @@ func TestPasswordResetServiceStartRecoveryRateLimitsByIdentityAcrossIPs(t *testi
 	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	code := "invalid"
 
-	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.1", "owner@example.com", code, now, 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
+	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.1", "owner@example.com", code, "StrongPass1", now, 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
 		t.Fatalf("expected invalid recovery code on first attempt, got %v", err)
 	}
-	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.2", "owner@example.com", code, now.Add(time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
+	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.2", "owner@example.com", code, "StrongPass1", now.Add(time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryCodeInvalid) {
 		t.Fatalf("expected invalid recovery code on second attempt, got %v", err)
 	}
-	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.3", "owner@example.com", code, now.Add(2*time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryRateLimited) {
+	if _, err := service.StartRecovery(context.Background(), secretKey, "10.0.0.3", "owner@example.com", code, "StrongPass1", now.Add(2*time.Minute), 30*time.Minute); !errors.Is(err, ErrPasswordRecoveryRateLimited) {
 		t.Fatalf("expected ErrPasswordRecoveryRateLimited after distributed attempts, got %v", err)
 	}
 }
@@ -120,7 +162,7 @@ func TestPasswordResetServiceStartRecoverySuccessResetsLimiter(t *testing.T) {
 	key := "127.0.0.1"
 	service.recoveryPolicy.AddFailure(secretKey, key, "owner@example.com", now.Add(-1*time.Minute))
 
-	token, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", recoveryCode, now, 30*time.Minute)
+	token, err := service.StartRecovery(context.Background(), secretKey, key, "owner@example.com", recoveryCode, "StrongPass1", now, 30*time.Minute)
 	if err != nil {
 		t.Fatalf("StartRecovery() unexpected error: %v", err)
 	}

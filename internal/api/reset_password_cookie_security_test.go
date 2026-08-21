@@ -45,6 +45,7 @@ func TestResetPasswordCookieFlagsFollowCookieSecureConfig(t *testing.T) {
 			form := url.Values{
 				"email":         {user.Email},
 				"recovery_code": {recoveryCode},
+				"password":      {"StrongPass1"},
 			}
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/password-resets", strings.NewReader(form.Encode()))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
