@@ -1007,6 +1007,89 @@ func TestCompleteOIDCLinkConfirmationRoutesMustChangePasswordToReset(t *testing.
 	}
 }
 
+// TestCompleteOIDCLinkConfirmationRoutesAForcedResetTOTPTargetToResetWithoutASession
+// is the mirror of the test above for a target carrying BOTH
+// must_change_password and totp_enabled, and it pins a DECISION rather than
+// merely the behaviour that happens to exist today: the forced reset outranks
+// the TOTP challenge, so link-confirm must land on /reset-password with a
+// reset-password cookie and must NOT issue an ovumcy_auth session.
+//
+// The ordering is deliberate, and it is the intentional recovery path for an
+// owner whose second factor is unusable. TOTP secrets are encrypted under a key
+// derived from the application secret, so after a SECRET_KEY rotation the
+// stored ciphertext no longer opens and no code the authenticator produces can
+// ever satisfy the challenge; the operator-forced reset
+// (`ovumcy reset-password <email>`) is the way back in that
+// docs/security/cryptography.md and docs/self-hosted.md instruct an operator to
+// use. Making the second factor win would withdraw that escape hatch from
+// precisely the accounts whose second factor is already broken. It is not a
+// downgrade of session security: the reset still bumps AuthSessionVersion in
+// the same atomic update that writes the new password hash
+// (internal/db/user_repository.go).
+//
+// This handler is the sharp end of that decision, and the reason the case has
+// to exist HERE and not only at the login route or in the service. It branches
+// on the LoginService result's RequiresPasswordReset and has no RequiresTOTP
+// branch at all — its own second-factor gate reads targetUser.TOTPEnabled and
+// runs earlier. So were the service's precedence reversed, this target would
+// come back with RequiresPasswordReset == false, the reset branch would be
+// skipped, and control would fall through to setAuthCookie: a forced-rotation
+// account handed a live session by the link-confirm route while the login route
+// still refuses it. The sibling above cannot see that, because its fixture
+// never enables TOTP. The submission below therefore carries a VALID totp_code
+// — the handler's own gate must be satisfied for the fall-through to be
+// reachable at all, and an assertion that stopped at the gate would prove
+// nothing about the precedence.
+//
+// Read a failure here as "the decision was reversed", not as a stale assertion.
+// The public declaration of this accepted risk is recorded separately from this
+// test.
+func TestCompleteOIDCLinkConfirmationRoutesAForcedResetTOTPTargetToResetWithoutASession(t *testing.T) {
+	t.Parallel()
+
+	stub := newStubOIDCWorkflowService(true)
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		cookieSecure: true,
+		oidcService:  stub,
+	})
+	user := createOnboardingTestUser(t, database, "link-reset-totp@example.com", "StrongPass1", true)
+	rawSecret := setupTOTPForUser(t, database, user.ID, []byte(testHandlerSecretKey))
+	if err := database.Model(&user).Update("must_change_password", true).Error; err != nil {
+		t.Fatalf("set must_change_password: %v", err)
+	}
+
+	pendingPayload, err := newOIDCLinkPendingPayload(time.Now().UTC(), user.ID, "https://idp.example", "subject-reset-totp", user.Email)
+	if err != nil {
+		t.Fatalf("newOIDCLinkPendingPayload: %v", err)
+	}
+	cookie := sealLinkPendingCookieForTest(t, pendingPayload)
+
+	code, err := totp.GenerateCode(rawSecret, time.Now())
+	if err != nil {
+		t.Fatalf("GenerateCode: %v", err)
+	}
+
+	postRequest := httptest.NewRequest(http.MethodPost, oidcLinkConfirmPath, strings.NewReader(url.Values{
+		"password":  {"StrongPass1"},
+		"totp_code": {code},
+	}.Encode()))
+	postRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postRequest.Header.Set("Cookie", oidcLinkPendingCookieName+"="+cookie)
+
+	response := mustAppResponse(t, app, postRequest)
+	assertStatusCode(t, response, http.StatusSeeOther)
+	if location := response.Header.Get("Location"); location != "/reset-password" {
+		t.Fatalf("expected redirect to /reset-password for a forced-rotation target with TOTP enabled, got %q", location)
+	}
+	resetCookie := responseCookie(response.Cookies(), resetPasswordCookieName)
+	if resetCookie == nil || strings.TrimSpace(resetCookie.Value) == "" {
+		t.Fatal("expected reset-password cookie on the forced-reset recovery path")
+	}
+	if authCookie := responseCookie(response.Cookies(), authCookieName); authCookie != nil && strings.TrimSpace(authCookie.Value) != "" {
+		t.Fatal("did not expect an auth cookie for a forced-rotation target with TOTP enabled")
+	}
+}
+
 func TestCompleteOIDCLinkConfirmationWithLocalAuthDisabledRefusesUnavailable(t *testing.T) {
 	t.Parallel()
 

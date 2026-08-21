@@ -85,6 +85,58 @@ func TestLoginServiceAuthenticateForcedResetIssuesToken(t *testing.T) {
 	}
 }
 
+// TestLoginServiceForcedResetOutranksTOTPForAnAccountWithBothFlags pins a
+// DECISION, not merely the behaviour that happens to exist today: for an
+// account carrying BOTH MustChangePassword and TOTPEnabled, Authenticate
+// routes to the forced password reset and raises NO TOTP challenge.
+//
+// The ordering is deliberate, and it is the intentional recovery path for an
+// owner whose second factor is unusable. TOTP secrets are encrypted under a key
+// derived from the application secret, so after a SECRET_KEY rotation the
+// stored ciphertext no longer opens and the 2FA challenge can never be answered
+// by any code the authenticator produces; the operator-forced reset
+// (`ovumcy reset-password <email>`) is the way back in that
+// docs/security/cryptography.md and docs/self-hosted.md instruct an operator to
+// use. Making TOTP win would withdraw that escape hatch from precisely the
+// accounts whose second factor is already broken, leaving permanent owner
+// lockout with no in-product remedy.
+//
+// It is not a downgrade of session security: the reset still bumps
+// AuthSessionVersion in the same atomic update that writes the new password
+// hash (internal/db/user_repository.go), so every session predating it dies.
+//
+// Both halves of the assertion matter — RequiresPasswordReset alone would still
+// pass if the service started returning both flags at once, which the callers
+// resolve inconsistently. No other test in this package pins the ordering, so
+// deleting this case makes reversing the decision free and silent: read a
+// failure here as "the decision was reversed", never as a stale assertion. The
+// public declaration of this accepted risk is recorded separately from this
+// test.
+func TestLoginServiceForcedResetOutranksTOTPForAnAccountWithBothFlags(t *testing.T) {
+	service, reset := newLoginServiceForTest(
+		models.User{ID: 21, MustChangePassword: true, TOTPEnabled: true},
+		nil,
+		"issued-reset-token",
+	)
+
+	result, err := service.Authenticate(context.Background(), []byte("secret"), "127.0.0.1", "user@example.com", "StrongPass1", loginServiceTestTTL, loginServiceTestNow)
+	if err != nil {
+		t.Fatalf("Authenticate() unexpected error: %v", err)
+	}
+	if !result.RequiresPasswordReset {
+		t.Fatalf("expected forced reset to outrank the TOTP challenge for an account with both flags")
+	}
+	if result.RequiresTOTP {
+		t.Fatalf("expected no TOTP challenge on the forced-reset recovery path")
+	}
+	if result.ResetToken != "issued-reset-token" {
+		t.Fatalf("expected issued reset token, got %q", result.ResetToken)
+	}
+	if !reset.called || reset.lastUserID != 21 {
+		t.Fatalf("expected reset token issuance for user 21")
+	}
+}
+
 func TestLoginServiceAuthenticatePropagatesInvalidCredentials(t *testing.T) {
 	authErr := ErrAuthInvalidCreds
 	service, reset := newLoginServiceForTest(models.User{}, authErr, "unused")
