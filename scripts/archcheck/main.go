@@ -126,8 +126,12 @@ func main() {
 	for _, f := range findings {
 		fmt.Fprintln(os.Stderr, f)
 	}
+	// The pointer has to name something a clone actually has. Each finding
+	// already carries its own remedy, so this trailer only has to say where the
+	// contract behind them is written down: docs/architecture.md draws the
+	// layers, CONTRIBUTING.md says how to run this command.
 	fmt.Fprintf(os.Stderr,
-		"archcheck: %d finding(s). The architecture contract is in CLAUDE.md; the rules behind it are api.md and persistence.md.\n",
+		"archcheck: %d finding(s). The layer contract is docs/architecture.md; running this check is in CONTRIBUTING.md.\n",
 		len(findings))
 	os.Exit(1)
 }
