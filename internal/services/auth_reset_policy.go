@@ -36,7 +36,10 @@ type PasswordResetClaims struct {
 	jwt.RegisteredClaims
 }
 
-func BuildPasswordResetToken(secretKey []byte, userID uint, passwordHash string, ttl time.Duration, now time.Time) (string, error) {
+// BuildPasswordResetToken mints the reset token. storedHash is the account's
+// bcrypt hash as read from the row — never a raw password; the caller has one
+// only in the shape it already persists.
+func BuildPasswordResetToken(secretKey []byte, userID uint, storedHash string, ttl time.Duration, now time.Time) (string, error) {
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
 	}
@@ -44,7 +47,7 @@ func BuildPasswordResetToken(secretKey []byte, userID uint, passwordHash string,
 		now = time.Now()
 	}
 
-	passwordState := PasswordStateFingerprint(passwordHash)
+	passwordState := PasswordStateFingerprint(storedHash)
 	if passwordState == "" {
 		return "", ErrPasswordResetTokenInvalidPasswordState
 	}
@@ -107,8 +110,24 @@ func ParsePasswordResetToken(secretKey []byte, rawToken string, now time.Time) (
 	return claims, nil
 }
 
-func PasswordStateFingerprint(passwordHash string) string {
-	normalizedHash := strings.TrimSpace(passwordHash)
+// PasswordStateFingerprint reduces an account's ALREADY-HASHED credential to a
+// short change-detection value carried inside a reset token.
+//
+// storedHash is the bcrypt hash read from `users.password_hash`. A raw password
+// never reaches this function and must never be passed to it: the only callers
+// read the column, and the raw secret a request carries is spent exclusively on
+// `bcrypt.CompareHashAndPassword`. The SHA-256 below is therefore **not**
+// password hashing and must not be read as such — it fingerprints a value that
+// is already a slow, salted hash, so that a token dies the moment the
+// credential behind it changes. `ResolveUserByResetToken` recomputes this over
+// the current row and refuses a token whose fingerprint no longer matches,
+// which is what makes a reset token effectively one-time.
+//
+// A password KDF would be the wrong primitive here and buy nothing: the input
+// is not low-entropy, it is not a secret an attacker can test candidates
+// against, and the comparison must be cheap enough to run on every redeem.
+func PasswordStateFingerprint(storedHash string) string {
+	normalizedHash := strings.TrimSpace(storedHash)
 	if normalizedHash == "" {
 		return ""
 	}
@@ -117,8 +136,11 @@ func PasswordStateFingerprint(passwordHash string) string {
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-func IsPasswordStateFingerprintMatch(expected string, passwordHash string) bool {
-	actual := PasswordStateFingerprint(passwordHash)
+// IsPasswordStateFingerprintMatch compares a token's carried fingerprint with
+// one recomputed over storedHash — again the bcrypt hash from the row, never a
+// raw password. See PasswordStateFingerprint.
+func IsPasswordStateFingerprintMatch(expected string, storedHash string) bool {
+	actual := PasswordStateFingerprint(storedHash)
 	if strings.TrimSpace(expected) == "" || strings.TrimSpace(actual) == "" {
 		return false
 	}
