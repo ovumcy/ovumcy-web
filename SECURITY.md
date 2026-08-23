@@ -60,7 +60,7 @@ remediate before disclosing a vulnerability publicly.
 
 Detailed security design lives in per-concern documents under [`docs/security/`](docs/security/). This policy keeps the operator-facing essentials above plus the GDPR cross-reference and the Test Enforcement Matrix (the source-of-truth mapping of each claim to its Go test).
 
-- [Known Information Disclosure](docs/security/known-disclosures.md) — accepted residual signals (register-enumeration oracle, absolute session expiry, process-local limiter state, address-keyed login budget, unaudited calendar-feed polling, no duress mode and sequential account ids).
+- [Known Information Disclosure](docs/security/known-disclosures.md) — accepted residual signals (register-enumeration oracle, absolute session expiry, process-local limiter state, address-keyed login budget, unaudited calendar-feed polling, password reset issuing a session without a second-factor challenge, no duress mode and sequential account ids).
 - [OIDC Account Linking & Session Invalidation](docs/security/oidc-and-sessions.md) — upstream-IdP trust boundary and credential-rotation session revocation.
 - [Cryptography: Field Encryption, Cookies & SECRET_KEY](docs/security/cryptography.md) — field-level encryption, the cookie inventory, and the SECRET_KEY usage map.
 - [Data Inventory, Retention & Deletion](docs/security/data-handling.md) — what is persisted per account and how clear-data / delete-account erase it.
