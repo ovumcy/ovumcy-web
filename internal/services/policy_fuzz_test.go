@@ -15,6 +15,12 @@ import (
 // invariants, independent reimplementations), not just "does not panic". Under
 // `go test` they run their seed corpus as ordinary regression tests; run
 // `go test -run x -fuzz FuzzName ./internal/services` to actively fuzz one.
+//
+// This file is the source of truth for the targets, their seed corpora and
+// their oracles. policy_fuzz_libfuzzer.go repeats them for ClusterFuzzLite
+// behind the `gofuzz` tag and .clusterfuzzlite/build.sh names them a third time;
+// policy_fuzz_parity_barrier_test.go fails when the three stop agreeing, so a
+// seed or an oracle corrected here must be mirrored in the same commit.
 
 // FuzzParseDayDate checks that date parsing never panics and that any accepted
 // value is a date-only instant whose canonical rendering reparses to itself.

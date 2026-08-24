@@ -8,9 +8,13 @@ package services
 // testing.F fuzzers that live in _test.go files. Built ONLY under the `gofuzz`
 // tag, so the default build / test / vet / lint / coverage never see this file.
 //
-// policy_fuzz_test.go stays the source of truth for `go test -fuzz`; keep the
-// seed corpora and behavioral oracles here in sync with it when they change
-// (rarely — these wrap stable parsing/validation policy helpers).
+// policy_fuzz_test.go stays the source of truth for `go test -fuzz`. The sync
+// is no longer a request: policy_fuzz_parity_barrier_test.go reads all three
+// sites — this file, policy_fuzz_test.go and .clusterfuzzlite/build.sh — and
+// fails when their target sets, seed corpora or oracle bodies stop agreeing.
+// Change a seed or an oracle in policy_fuzz_test.go and mirror it here in the
+// same commit; the barrier runs in the ordinary `go test` lane and names which
+// declaration drifted.
 
 import (
 	"net/mail"
