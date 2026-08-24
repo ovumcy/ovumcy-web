@@ -147,6 +147,31 @@ func CalendarDaysBetween(from time.Time, to time.Time) int {
 	return int(end.Sub(start).Hours() / 24)
 }
 
+// uniqueSymptomIDs returns a day's symptom ids in their stored order with
+// repeats removed. Every surface that COUNTS symptoms per day walks the slice
+// through this (or through uniqueKnownSymptomIDs, which filters unknown ids on
+// top of it): a repeated id would count its day twice, which renders a phase
+// percentage above 100 and skews both the frequency list and the picker's usage
+// ranking. ValidateSymptomIDs already deduplicates before persisting, so this is
+// the second of two barriers rather than the only one — the read side does not
+// depend on the write side having been the one that ran.
+func uniqueSymptomIDs(symptomIDs []uint) []uint {
+	if len(symptomIDs) == 0 {
+		return nil
+	}
+
+	unique := make([]uint, 0, len(symptomIDs))
+	seen := make(map[uint]struct{}, len(symptomIDs))
+	for _, symptomID := range symptomIDs {
+		if _, duplicate := seen[symptomID]; duplicate {
+			continue
+		}
+		seen[symptomID] = struct{}{}
+		unique = append(unique, symptomID)
+	}
+	return unique
+}
+
 func SymptomIDSet(ids []uint) map[uint]bool {
 	set := make(map[uint]bool, len(ids))
 	for _, id := range ids {

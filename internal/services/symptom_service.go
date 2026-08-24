@@ -171,7 +171,7 @@ func (service *SymptomService) CalculateFrequencies(ctx context.Context, userID 
 
 	counts := make(map[uint]int)
 	for _, logEntry := range logs {
-		for _, id := range logEntry.SymptomIDs {
+		for _, id := range uniqueSymptomIDs(logEntry.SymptomIDs) {
 			counts[id]++
 		}
 	}

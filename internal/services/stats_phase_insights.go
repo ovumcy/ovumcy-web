@@ -236,10 +236,7 @@ func phaseForCompletedLogEntry(day time.Time, cycles []completedCyclePhaseContex
 }
 
 func appendPhaseSymptomCounts(counter *phaseSymptomCounter, symptomIDs []uint, symptomByID map[uint]models.SymptomType) {
-	for _, symptomID := range symptomIDs {
-		if _, exists := symptomByID[symptomID]; !exists {
-			continue
-		}
+	for _, symptomID := range uniqueKnownSymptomIDs(symptomIDs, symptomByID) {
 		counter.counts[symptomID]++
 	}
 }
