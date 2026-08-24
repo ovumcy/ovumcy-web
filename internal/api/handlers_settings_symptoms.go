@@ -93,7 +93,7 @@ func localizedSettingsSymptomError(c fiber.Ctx, source string) string {
 
 	messages := currentMessages(c)
 	if key := services.AuthErrorTranslationKey(source); key != "" {
-		if localized := translateMessage(messages, key); localized != key {
+		if localized, translated := lookupMessage(messages, key); translated {
 			return localized
 		}
 	}
@@ -108,7 +108,7 @@ func localizedSettingsSymptomStatus(c fiber.Ctx, status string) string {
 
 	messages := currentMessages(c)
 	if key := services.SettingsStatusTranslationKey(status); key != "" {
-		if localized := translateMessage(messages, key); localized != key {
+		if localized, translated := lookupMessage(messages, key); translated {
 			return localized
 		}
 	}

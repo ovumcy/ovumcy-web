@@ -335,36 +335,28 @@ func TestBaseLayoutAppliesThemeBeforeStylesheet(t *testing.T) {
 	}
 }
 
-// TestSetAssetVersionNormalizesToken locks the normalization applied to the raw
-// build revision before it reaches an asset URL: a dirty git SHA is truncated
-// and kept URL-safe, while an empty or fully invalid revision falls back to the
-// static default rather than emitting a bare ?v=.
-func TestSetAssetVersionNormalizesToken(t *testing.T) {
+// TestSetAssetVersionDelegatesToNormalizeAssetVersion pins the one thing the
+// exported setter owes beyond storing a string: the composition root hands it a
+// raw build revision, and what reaches the asset URL is normalizeAssetVersion's
+// verdict on it. What that verdict is — the allow-list, the 16-rune cap, the
+// fallback to the static default — belongs to
+// TestNormalizeAssetVersionCharacterClasses below; restating its rows here made
+// two tables that had to move together on every change to the allow-list, while
+// the delegation itself was the only row this test uniquely earned.
+func TestSetAssetVersionDelegatesToNormalizeAssetVersion(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name     string
-		revision string
-		want     string
-	}{
-		{name: "short revision preserved", revision: "abc123", want: "abc123"},
-		{name: "dirty suffix kept and truncated", revision: "0123456789abcdef0123-dirty", want: "0123456789abcdef"},
-		{name: "surrounding space trimmed", revision: "  fe9c1a  ", want: "fe9c1a"},
-		{name: "unsafe characters dropped", revision: "v1.2.3/../x", want: "v1.2.3..x"},
-		{name: "empty falls back to default", revision: "", want: defaultAssetVersion},
-		{name: "all-invalid falls back to default", revision: "///", want: defaultAssetVersion},
+	// A revision that normalization must visibly change, so storing the raw
+	// input cannot pass for delegation.
+	const revision = "  0123456789abcdef0123-dirty  "
+
+	handler := &Handler{}
+	handler.SetAssetVersion(revision)
+	if handler.assetVersion == revision {
+		t.Fatalf("SetAssetVersion stored the raw revision %q", revision)
 	}
-
-	for _, tt := range tests {
-
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			handler := &Handler{}
-			handler.SetAssetVersion(tt.revision)
-			if handler.assetVersion != tt.want {
-				t.Fatalf("SetAssetVersion(%q) => %q, want %q", tt.revision, handler.assetVersion, tt.want)
-			}
-		})
+	if want := normalizeAssetVersion(revision); handler.assetVersion != want {
+		t.Fatalf("SetAssetVersion(%q) => %q, want normalizeAssetVersion's %q", revision, handler.assetVersion, want)
 	}
 }
 
@@ -398,6 +390,9 @@ func TestNormalizeAssetVersionCharacterClasses(t *testing.T) {
 		{name: "sixteen valid chars kept whole", revision: "0123456789abcdef", want: "0123456789abcdef"},
 		{name: "seventeenth char truncated", revision: "0123456789abcdefX", want: "0123456789abcdef"},
 		{name: "invalid chars do not count toward cap", revision: "////0123456789abcdef", want: "0123456789abcdef"},
+		{name: "surrounding space trimmed", revision: "  fe9c1a  ", want: "fe9c1a"},
+		{name: "empty falls back to default", revision: "", want: defaultAssetVersion},
+		{name: "all-invalid falls back to default", revision: "///", want: defaultAssetVersion},
 	}
 
 	for _, tt := range tests {
@@ -410,12 +405,15 @@ func TestNormalizeAssetVersionCharacterClasses(t *testing.T) {
 	}
 }
 
-// TestParsePartialTemplatesIncludesBaseHelpers pins that parsePartialTemplates
-// parses the embedded base.html alongside each partial, so a partial that
-// delegates to a define declared in base.html (for example the
-// current_user_identity_oob partial invoking nav_user_identity_chip) resolves.
-// Asserting the parsed template set contains both defines keeps the contract
-// without coupling to page copy.
+// TestParsePartialTemplatesIncludesBaseHelpers pins the whole parse list
+// parsePartialTemplates hands each partial: the partial itself, the shared
+// components (nav_user_identity_chip, which the current_user_identity_oob
+// partial delegates to, is declared in components/nav.html), and base.html.
+//
+// "base" is the only define base.html declares, so it is also the only lookup
+// that can tell whether base.html is still in the list — asserting the chip
+// alone leaves the test green with base.html dropped, because the chip resolves
+// out of components/*.html on its own.
 func TestParsePartialTemplatesIncludesBaseHelpers(t *testing.T) {
 	t.Parallel()
 
@@ -428,9 +426,16 @@ func TestParsePartialTemplatesIncludesBaseHelpers(t *testing.T) {
 	if !ok {
 		t.Fatal("expected current_user_identity_oob partial to be parsed")
 	}
-	for _, name := range []string{"current_user_identity_oob", "nav_user_identity_chip"} {
-		if parsed.Lookup(name) == nil {
-			t.Fatalf("expected parsed partial set to include %q define (base.html helpers must be parsed in)", name)
+	for _, source := range []struct {
+		define string
+		from   string
+	}{
+		{define: "current_user_identity_oob", from: "the partial itself"},
+		{define: "nav_user_identity_chip", from: "components/nav.html"},
+		{define: "base", from: "base.html"},
+	} {
+		if parsed.Lookup(source.define) == nil {
+			t.Fatalf("expected the parsed partial set to include the %q define from %s", source.define, source.from)
 		}
 	}
 }

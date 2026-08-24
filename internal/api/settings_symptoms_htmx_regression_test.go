@@ -15,6 +15,33 @@ import (
 	"gorm.io/gorm"
 )
 
+// assertSymptomRowMatchesDatabase pins the swapped-in section against the row
+// the mutation actually wrote. The outer `data-settings-symptoms` hook only
+// says a section came back: a rerender carrying no rows at all, or rows from
+// before the mutation, satisfies it just as well, so the list can look empty
+// until the next reload while every database assertion stays green. Reading the
+// card's own id/name/state hooks back out of the response is what makes the
+// swap observable.
+func assertSymptomRowMatchesDatabase(t *testing.T, rendered string, stored models.SymptomType) {
+	t.Helper()
+
+	document := mustParseHTMLDocument(t, rendered)
+	row := htmlElementByAttr(document, "data-symptom-id", strconv.FormatUint(uint64(stored.ID), 10))
+	if row == nil {
+		t.Fatalf("expected the rerendered section to carry the card for symptom %d", stored.ID)
+	}
+	if got := htmlAttr(row, "data-symptom-name"); got != stored.Name {
+		t.Fatalf("rerendered symptom name is %q, the database holds %q", got, stored.Name)
+	}
+	wantState := "active"
+	if stored.ArchivedAt != nil {
+		wantState = "archived"
+	}
+	if got := htmlAttr(row, "data-symptom-state"); got != wantState {
+		t.Fatalf("rerendered symptom state is %q, the database holds %q", got, wantState)
+	}
+}
+
 func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) {
 	ctx := newSettingsSymptomsHTMXTestContext(t, "settings-symptoms-htmx@example.com")
 
@@ -38,6 +65,7 @@ func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) 
 	if stored.Color != "#E8799F" {
 		t.Fatalf("expected default symptom color, got %q", stored.Color)
 	}
+	assertSymptomRowMatchesDatabase(t, renderedCreate, stored)
 
 	archiveForm := url.Values{"csrf_token": {ctx.csrfToken}}
 	renderedArchive := performSettingsSymptomsHTMXRequest(t, ctx, http.MethodDelete, "/api/v1/symptoms/"+strconv.FormatUint(uint64(stored.ID), 10), archiveForm)
@@ -51,6 +79,7 @@ func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) 
 	if archivedState.ArchivedAt == nil {
 		t.Fatal("expected archived symptom to have archived_at set")
 	}
+	assertSymptomRowMatchesDatabase(t, renderedArchive, archivedState)
 
 	restoreForm := url.Values{"csrf_token": {ctx.csrfToken}}
 	renderedRestore := performSettingsSymptomsHTMXRequest(t, ctx, http.MethodPost, "/api/v1/symptoms/"+strconv.FormatUint(uint64(stored.ID), 10)+"/restore", restoreForm)
@@ -64,6 +93,7 @@ func TestSettingsSymptomsHTMXCreateArchiveRestoreRerendersSection(t *testing.T) 
 	if restoredState.ArchivedAt != nil {
 		t.Fatal("expected restored symptom to clear archived_at")
 	}
+	assertSymptomRowMatchesDatabase(t, renderedRestore, restoredState)
 }
 
 func TestSettingsSymptomsHTMXUpdateDuplicateShowsRowLocalError(t *testing.T) {
@@ -148,10 +178,11 @@ func TestSettingsSymptomsHTMXUpdateTooLongDoesNotEchoDraftName(t *testing.T) {
 		t.Fatalf("create symptom: %v", err)
 	}
 
-	// maxSymptomNameLength is 40; this distinctive 55-char draft is over the cap and
+	// maxSymptomNameLength is 40, so this draft is 41 runes — the first refused
+	// length, which also pins the cap's boundary — and distinctive enough that it
 	// cannot collide with the persisted name or any icon, so a plain absence check
 	// unambiguously proves the draft was not echoed back.
-	const tooLongDraft = "OVERLONG-DRAFT-ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+	const tooLongDraft = "OVERLONG-DRAFT-ZZZZZZZZZZZZZZZZZZZZZZZZZZ"
 	updateForm := url.Values{
 		"csrf_token": {csrfToken},
 		"name":       {tooLongDraft},
@@ -189,6 +220,13 @@ func TestSettingsSymptomsHTMXUpdateTooLongDoesNotEchoDraftName(t *testing.T) {
 		t.Fatalf("expected persisted symptom name unchanged, got %q", stored.Name)
 	}
 }
+
+// The too-long update path had a second bcrypt-heavy case
+// (TestSettingsSymptomsHTMXUpdateTooLongKeepsStoredSymptomUnchanged) built on
+// the same fixture and the same email, asserting the row-local error and the
+// unchanged stored name — both of which the case above already asserts, and
+// which it now reaches at the 41-rune boundary the other one used. It was
+// removed rather than kept as a second copy of one branch.
 
 func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	app, database := newOnboardingTestAppWithCSRF(t)
@@ -229,58 +267,6 @@ func TestSettingsSymptomsHTMXCreateTooLongDoesNotPersistSymptom(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected no custom symptoms after too-long create, found %d", count)
-	}
-}
-
-func TestSettingsSymptomsHTMXUpdateTooLongKeepsStoredSymptomUnchanged(t *testing.T) {
-	app, database := newOnboardingTestAppWithCSRF(t)
-	user := createOnboardingTestUser(t, database, "settings-symptoms-htmx-update-too-long@example.com", "StrongPass1", true)
-	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
-	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
-
-	symptom := models.SymptomType{
-		UserID: user.ID,
-		Name:   "Joint ease",
-		Icon:   "💧",
-		Color:  "#38BDF8",
-	}
-	if err := database.Create(&symptom).Error; err != nil {
-		t.Fatalf("create custom symptom: %v", err)
-	}
-
-	updateForm := url.Values{
-		"csrf_token": {csrfToken},
-		"name":       {"12345678901234567890123456789012345678901"},
-		"icon":       {"🔥"},
-	}
-	updateRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/symptoms/"+strconv.FormatUint(uint64(symptom.ID), 10), strings.NewReader(updateForm.Encode()))
-	updateRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	updateRequest.Header.Set("HX-Request", "true")
-	updateRequest.Header.Set("Cookie", joinCookieHeader(authCookie, cookiePair(csrfCookie)))
-
-	updateResponse, err := app.Test(updateRequest, testConfigNoTimeout)
-	if err != nil {
-		t.Fatalf("update too-long symptom htmx request failed: %v", err)
-	}
-	defer func() { _ = updateResponse.Body.Close() }()
-
-	if updateResponse.StatusCode != http.StatusOK {
-		t.Fatalf("expected htmx update status 200, got %d", updateResponse.StatusCode)
-	}
-	updateBody, err := io.ReadAll(updateResponse.Body)
-	if err != nil {
-		t.Fatalf("read htmx update body: %v", err)
-	}
-	renderedUpdate := string(updateBody)
-	assertBodyContainsAll(t, renderedUpdate,
-		bodyStringMatch{fragment: `data-symptom-row-error`, message: "expected row-local too-long update error container"},
-	)
-	stored := models.SymptomType{}
-	if err := database.First(&stored, symptom.ID).Error; err != nil {
-		t.Fatalf("reload symptom after too-long update: %v", err)
-	}
-	if stored.Name != "Joint ease" {
-		t.Fatalf("expected stored symptom name to remain unchanged, got %q", stored.Name)
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 func TestPrivacyRouteRendersPublicPage(t *testing.T) {
-	app := newTestAppWithPrivacyRoute(t)
+	app, _ := newOnboardingTestApp(t)
 
 	request := httptest.NewRequest(http.MethodGet, "/privacy", nil)
 	request.Header.Set("Accept-Language", "en")

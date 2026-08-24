@@ -7,14 +7,15 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// mapDayRangeError maps day-range parsing errors. Only the two per-field
+// sentinels narrow the message; ErrDayRangeInvalid and an unknown error share
+// the default, so the range verdict never depends on which of them arrived.
 func mapDayRangeError(err error) APIErrorSpec {
 	switch {
 	case errors.Is(err, services.ErrDayRangeFromInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid from date")
 	case errors.Is(err, services.ErrDayRangeToInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid to date")
-	case errors.Is(err, services.ErrDayRangeInvalid):
-		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid range")
 	default:
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid range")
 	}
@@ -48,21 +49,20 @@ func mapDayUpsertError(err error) APIErrorSpec {
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load day")
 	case errors.Is(err, services.ErrDayEntryCreateFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create day")
-	case errors.Is(err, services.ErrDayAutoFillApplyFailed),
-		errors.Is(err, services.ErrDayEntryUpdateFailed):
-		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day")
+	// The write failures (auto-fill apply, entry update) and an unrecognized
+	// error share the default: the upsert is the last step either way, so the
+	// owner is told the day could not be saved without the mapper claiming to
+	// know which write failed.
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update day")
 	}
 }
 
-func mapDayDeleteError(err error) APIErrorSpec {
-	switch {
-	case errors.Is(err, services.ErrDeleteDayFailed):
-		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day")
-	default:
-		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day")
-	}
+// mapDayDeleteError has a single outcome by construction: services.ErrDeleteDayFailed
+// is the only failure the delete path reports, and an unrecognized error is
+// answered the same way rather than by status granularity a client cannot use.
+func mapDayDeleteError(error) APIErrorSpec {
+	return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to delete day")
 }
 
 func invalidDateErrorSpec() APIErrorSpec {

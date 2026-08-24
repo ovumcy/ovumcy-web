@@ -9,15 +9,14 @@ import (
 
 // mapExportRangeError maps ExportService range-parsing domain errors to
 // transport specs. All cases (including unknown) are the same 400/validation
-// category; only the message narrows to the specific bad field.
+// category; only the message narrows to the specific bad field, so
+// ErrExportRangeInvalid shares the default rather than restating it.
 func mapExportRangeError(err error) APIErrorSpec {
 	switch {
 	case errors.Is(err, services.ErrExportFromDateInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid from date")
 	case errors.Is(err, services.ErrExportToDateInvalid):
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid to date")
-	case errors.Is(err, services.ErrExportRangeInvalid):
-		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid range")
 	default:
 		return globalErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid range")
 	}

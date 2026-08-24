@@ -71,7 +71,7 @@ func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOpti
 		t.Fatalf("init i18n: %v", err)
 	}
 
-	handler, err := NewHandler("test-secret-key", time.UTC, i18nManager, options.cookieSecure, newTestHandlerDependencies(database, i18nManager, options))
+	handler, err := NewHandler(testAppSecretKey, time.UTC, i18nManager, options.cookieSecure, newTestHandlerDependencies(database, i18nManager, options))
 	if err != nil {
 		t.Fatalf("init handler: %v", err)
 	}

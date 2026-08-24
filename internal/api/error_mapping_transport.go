@@ -43,10 +43,10 @@ func localizedStatusErrorMarkup(c fiber.Ctx, spec APIErrorSpec) string {
 	flashKey := spec.Key
 	if key := services.AuthErrorTranslationKey(spec.Key); key != "" {
 		flashKey = key
-		if localized := translateMessage(currentMessages(c), key); localized != key {
+		if localized, translated := lookupMessage(currentMessages(c), key); translated {
 			rendered = localized
 		}
-	} else if localized := translateMessage(currentMessages(c), spec.Key); localized != spec.Key {
+	} else if localized, translated := lookupMessage(currentMessages(c), spec.Key); translated {
 		rendered = localized
 	}
 	return httpx.StatusErrorMarkup(rendered, flashKey)
@@ -269,7 +269,7 @@ func (handler *Handler) respondSettingsError(c fiber.Ctx, spec APIErrorSpec) err
 		flashKey := spec.Key
 		if key := services.AuthErrorTranslationKey(spec.Key); key != "" {
 			flashKey = key
-			if localized := translateMessage(currentMessages(c), key); localized != key {
+			if localized, translated := lookupMessage(currentMessages(c), key); translated {
 				rendered = localized
 			}
 		}

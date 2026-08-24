@@ -204,8 +204,8 @@ func trimTemperatureLabelZeros(label string) string {
 }
 
 func formatBBTLocalizedMessage(messages map[string]string, key string, fallback string, min string, max string, symbol string) string {
-	pattern := translateMessage(messages, key)
-	if pattern == "" || pattern == key {
+	pattern, translated := lookupMessage(messages, key)
+	if !translated {
 		pattern = fallback
 	}
 	return fmt.Sprintf(pattern, min, max, symbol)
