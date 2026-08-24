@@ -47,6 +47,12 @@ type onboardingTestAppOptions struct {
 	// under test stays a few hundred bytes on the wire while its decoded size
 	// crosses the cap.
 	bodyLimit int
+	// dayService replaces the day service the composition root builds, for the
+	// regressions that need one of its reads to fail. It is a factory rather
+	// than a value because the database is created inside the app helper, and
+	// a fault-injecting repository has to wrap the real one to stay a day
+	// service in every other respect.
+	dayService func(database *gorm.DB) *services.DayService
 }
 
 func newOnboardingTestAppWithOptions(t *testing.T, options onboardingTestAppOptions) (*fiber.App, *gorm.DB) {
@@ -127,7 +133,7 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 	// same recipe the production binary uses, so the two cannot drift. Tests pass
 	// the default attempt limits, an empty (disabled) OIDC config, and—unlike
 	// production—leave LogoutAttempts unset to keep the auth-service default.
-	return bootstrap.BuildDependencies(db.NewRepositories(database), []byte(testAppSecretKey), i18nManager, bootstrap.Options{
+	dependencies := bootstrap.BuildDependencies(db.NewRepositories(database), []byte(testAppSecretKey), i18nManager, bootstrap.Options{
 		RegistrationMode:    registrationMode,
 		OIDCConfig:          security.OIDCConfig{},
 		OIDCServiceOverride: appOptions.oidcService,
@@ -135,6 +141,10 @@ func newTestHandlerDependencies(database *gorm.DB, i18nManager *i18n.Manager, op
 		RecoveryAttempts:    bootstrap.AttemptLimit{Max: services.DefaultRecoveryAttemptsLimit, Window: time.Hour},
 		AuditLogEnabled:     appOptions.auditLogEnabled,
 	})
+	if appOptions.dayService != nil {
+		dependencies.DayService = appOptions.dayService(database)
+	}
+	return dependencies
 }
 
 func testCSRFMiddlewareConfig(cookieSecure bool, handler *Handler) csrf.Config {

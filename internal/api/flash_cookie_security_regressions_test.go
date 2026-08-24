@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +13,47 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 )
+
+// TestFlashCookieWriteFailureIsReported drives the one path the flash carrier
+// used to lose: the sealed write fails, the handler redirects anyway, and the
+// user lands on a page with no explanation of the error that sent them there.
+// Nothing propagated and nothing was logged, so an operator had no way to
+// learn that the error carrier itself had stopped working — every redirecting
+// auth and settings error path assumes its flash was persisted.
+//
+// The codec is broken the way the composition root could break it (no secret),
+// which is the failure class the discarded error stood for.
+func TestFlashCookieWriteFailureIsReported(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	handler := &Handler{}
+	app := fiber.New()
+	app.Get("/probe", func(c fiber.Ctx) error {
+		handler.setFlashCookie(c, FlashPayload{AuthError: "auth.invalid_credentials"})
+		return c.SendStatus(fiber.StatusOK)
+	})
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	response := mustAppResponse(t, app, httptest.NewRequest(http.MethodGet, "/probe", nil))
+	assertStatusCode(t, response, http.StatusOK)
+
+	// The anchor: the write really did fail, so the assertion below is about a
+	// lost error rather than about a cookie that was written fine.
+	if cookie := responseCookie(response.Cookies(), flashCookieName); cookie != nil && strings.TrimSpace(cookie.Value) != "" {
+		t.Fatalf("expected no flash cookie from a handler with no secret, got %q", cookie.Value)
+	}
+
+	logged := output.String()
+	if !strings.Contains(logged, "flash cookie") {
+		t.Fatalf("the flash write failed and nothing said so; the redirect that follows would carry no explanation. Log was:\n%s", logged)
+	}
+	if strings.Contains(logged, "auth.invalid_credentials") {
+		t.Fatalf("the diagnostic must name the failure, never the payload it was carrying; got:\n%s", logged)
+	}
+}
 
 func TestFlashCookieUsesSealedTransport(t *testing.T) {
 	app, database := newOnboardingTestApp(t)

@@ -8,12 +8,18 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// mapCalendarViewError names every sentinel BuildCalendarPageViewData
+// declares, so `default` means "an error this mapper does not know" rather
+// than "the other one of the two". Regression:
+// TestMapCalendarViewErrorNamesEverySentinelItsProducerDeclares.
 func mapCalendarViewError(err error) APIErrorSpec {
 	switch {
 	case errors.Is(err, services.ErrCalendarViewLoadLogs):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load calendar")
-	default:
+	case errors.Is(err, services.ErrCalendarViewLoadStats):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load stats")
+	default:
+		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to load calendar page")
 	}
 }
 

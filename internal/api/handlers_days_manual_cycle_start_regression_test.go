@@ -1,16 +1,23 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/ovumcy/ovumcy-web/internal/db"
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
 
 func TestMarkCycleStartRequiresAuthJSON(t *testing.T) {
@@ -190,6 +197,111 @@ func loadManualCycleStartCSRFContext(t *testing.T, app *fiber.App, authCookie st
 	}
 
 	return csrfCookie, csrfToken
+}
+
+// failOnceListByUserRepository is the real daily-log repository with one
+// scheduled read failure. It wraps rather than replaces, so every other call
+// the request makes — including the mark's own re-read of the policy — reaches
+// real storage and the handler runs to its ordinary success.
+type failOnceListByUserRepository struct {
+	services.DayLogRepository
+	failNext atomic.Bool
+}
+
+func (repo *failOnceListByUserRepository) ListByUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
+	if repo.failNext.CompareAndSwap(true, false) {
+		return nil, errors.New("simulated cycle-start policy read failure")
+	}
+	return repo.DayLogRepository.ListByUser(ctx, userID)
+}
+
+// TestMarkCycleStartAuditsAnUnresolvedImplantationPolicy pins the one error
+// this handler used to discard. ResolveManualCycleStartPolicy answers whether
+// the marked day falls in the window the product cautions about; its failure
+// left the policy at its zero value, so the caution was suppressed — the safe
+// direction for a prediction claim — on a request that still answered 204 with
+// nothing logged. Suppression is kept; the silence is not: the audit line the
+// mark already emits carries the outcome, so an operator can tell a caution
+// that was not warranted from one that could not be computed.
+func TestMarkCycleStartAuditsAnUnresolvedImplantationPolicy(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	var faultyLogs *failOnceListByUserRepository
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{
+		auditLogEnabled: true,
+		dayService: func(database *gorm.DB) *services.DayService {
+			repositories := db.NewRepositories(database)
+			faultyLogs = &failOnceListByUserRepository{DayLogRepository: repositories.DailyLogs}
+			return services.NewDayServiceWithTx(faultyLogs, repositories.Users, func(ctx context.Context, fn func(services.DayLogRepository) error) error {
+				return repositories.DailyLogs.WithinTransaction(ctx, func(tx *db.DailyLogRepository) error {
+					return fn(tx)
+				})
+			})
+		},
+	})
+	user := createOnboardingTestUser(t, database, "manual-cycle-start-policy-audit@example.com", "StrongPass1", true)
+	authCookie := issueAuthCookieForUser(t, user)
+
+	// Yesterday, relative to the live clock: the subject reads the clock, so a
+	// fixed calendar date would pin a different case every year.
+	targetDay := services.DateAtLocation(time.Now().In(time.UTC), time.UTC).AddDate(0, 0, -1).Format("2006-01-02")
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	faultyLogs.failNext.Store(true)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/days/"+targetDay+"/cycle-start", strings.NewReader(""))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected the mark itself to succeed with 204 while only the policy read failed, got %d", response.StatusCode)
+	}
+
+	logged := output.String()
+	if !strings.Contains(logged, `action="health.cycle_start_mark"`) {
+		t.Fatalf("expected the mark's own audit line, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, `cycle_start_policy="unresolved"`) {
+		t.Fatalf("the implantation policy could not be resolved and the caution was suppressed, but no audit line says so; got:\n%s", logged)
+	}
+}
+
+// The other direction: with every read healthy the field must be absent, or
+// "unresolved" would be noise an operator learns to ignore rather than a
+// signal.
+func TestMarkCycleStartAuditOmitsThePolicyFieldWhenItResolves(t *testing.T) {
+	originalWriter := log.Writer()
+	defer log.SetOutput(originalWriter)
+
+	app, database := newOnboardingTestAppWithOptions(t, onboardingTestAppOptions{auditLogEnabled: true})
+	user := createOnboardingTestUser(t, database, "manual-cycle-start-policy-ok@example.com", "StrongPass1", true)
+	authCookie := issueAuthCookieForUser(t, user)
+	targetDay := services.DateAtLocation(time.Now().In(time.UTC), time.UTC).AddDate(0, 0, -1).Format("2006-01-02")
+
+	var output bytes.Buffer
+	log.SetOutput(&output)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/days/"+targetDay+"/cycle-start", strings.NewReader(""))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.Header.Set("Cookie", authCookie)
+
+	response := mustAppResponse(t, app, request)
+	if response.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d", response.StatusCode)
+	}
+
+	logged := output.String()
+	if !strings.Contains(logged, `action="health.cycle_start_mark"`) {
+		t.Fatalf("expected the mark's own audit line, got:\n%s", logged)
+	}
+	if strings.Contains(logged, "cycle_start_policy=") {
+		t.Fatalf("the policy resolved, so the audit line must not carry a degraded-read field; got:\n%s", logged)
+	}
 }
 
 func mustParseManualCycleStartDay(t *testing.T, raw string) time.Time {

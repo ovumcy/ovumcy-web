@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -20,11 +21,22 @@ func (handler *Handler) setFlashCookie(c fiber.Ctx, payload FlashPayload) {
 		return
 	}
 
+	// Both failures below end the same way for the user — a redirect with no
+	// explanation of the error that caused it — so the flash cannot be
+	// propagated to the caller: every one of its ~60 call sites is already on
+	// an error path whose response is decided. What it can do is stop being
+	// silent. One operational diagnostic per failure, naming the carrier and
+	// the reason and never the payload (a flash may carry the submitted email),
+	// is the difference between "no flash was warranted" and "the error carrier
+	// is broken". Regression: TestFlashCookieWriteFailureIsReported.
 	serialized, err := json.Marshal(payload)
 	if err != nil {
+		log.Printf("flash cookie: encode failed: %s", SafeLogError(err)) // codecov:ignore -- defensive: a struct of strings has no failing marshal
 		return
 	}
-	_ = handler.writeSealedCookie(c, flashCookieSpec, serialized, time.Now().Add(flashCookieTTL))
+	if err := handler.writeSealedCookie(c, flashCookieSpec, serialized, time.Now().Add(flashCookieTTL)); err != nil {
+		log.Printf("flash cookie: sealed write failed: %s", SafeLogError(err))
+	}
 }
 
 func (handler *Handler) popFlashCookie(c fiber.Ctx) FlashPayload {

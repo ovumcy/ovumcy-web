@@ -45,6 +45,11 @@ func collectCalledIdentifiers(node parse.Node, called map[string]bool) {
 		}
 	case *parse.IdentifierNode:
 		called[typed.Ident] = true
+	case *parse.ChainNode:
+		// `{{ (dict "k" .V).k }}` — the call is the chain's own node, and the
+		// field selection wraps it. Without this arm the call underneath reads
+		// as uncalled, which is the false report the walker exists to prevent.
+		collectCalledIdentifiers(typed.Node, called)
 	case *parse.IfNode:
 		collectBranch(&typed.BranchNode, called)
 	case *parse.RangeNode:
@@ -60,6 +65,24 @@ func collectBranch(branch *parse.BranchNode, called map[string]bool) {
 	collectCalledIdentifiers(branch.Pipe, called)
 	collectCalledIdentifiers(branch.List, called)
 	collectCalledIdentifiers(branch.ElseList, called)
+}
+
+// templateFilesInEmbed enumerates the embedded templates through fs.Glob on
+// the two patterns the embed directive itself declares, which is an
+// enumeration independent of the WalkDir below — the point being that the two
+// must agree.
+func templateFilesInEmbed(t *testing.T) []string {
+	t.Helper()
+
+	var files []string
+	for _, pattern := range []string{"*.html", "components/*.html"} {
+		matches, err := fs.Glob(templates.Files, pattern)
+		if err != nil {
+			t.Fatalf("globbing %s in the embedded templates: %v", pattern, err)
+		}
+		files = append(files, matches...)
+	}
+	return files
 }
 
 // callsAcrossEveryShippedTemplate parses every template embedded into the
@@ -111,13 +134,26 @@ func callsAcrossEveryShippedTemplate(t *testing.T) map[string]bool {
 		t.Fatalf("walking the embedded templates: %v", err)
 	}
 
-	// A walk that silently read nothing would make every assertion below pass
-	// while measuring an empty set — the shape of a green fixture about
-	// nothing. Measured 2026-08-15: 38 templates ship, 20 at the top level and
-	// 18 under components/, and an earlier sweep that missed the second
+	// A walk that read fewer templates than ship makes every assertion below
+	// weaker without failing: each template the walk misses takes its calls
+	// with it, and a live funcMap entry then reads as dead — a failure
+	// reported against the func map rather than against this walk. The
+	// expected count is therefore derived from the embed's own two patterns
+	// (`//go:embed *.html components/*.html`) instead of a hand-maintained
+	// literal, so it cannot go stale, and an exact comparison leaves no slack
+	// for a handful of silently dropped files.
+	//
+	// The floor stays as the anti-vacuity anchor: an embed that resolved to
+	// nothing would satisfy the equality above with 0 == 0 and measure an
+	// empty set. Measured 2026-08-15: 38 templates ship, 20 at the top level
+	// and 18 under components/; an earlier sweep that missed the second
 	// directory reported 15 of the 29 entries as dead.
-	if parsed < 30 {
-		t.Fatalf("parsed only %d templates; the embedded set is far larger, so this walk measured the wrong thing", parsed)
+	embedded := templateFilesInEmbed(t)
+	if len(embedded) < 30 {
+		t.Fatalf("the embedded set resolved to %d templates; it is far larger, so this sweep read the wrong thing", len(embedded))
+	}
+	if parsed != len(embedded) {
+		t.Fatalf("parsed %d of the %d templates the embed carries; a template this walk misses turns the func-map entries it calls into false dead reports", parsed, len(embedded))
 	}
 
 	return called
@@ -166,6 +202,7 @@ func TestCollectCalledIdentifiersSeesNestedCalls(t *testing.T) {
 {{range .Items}}{{ .Name | inPipeline }}{{end}}
 {{ outer (inner .Value) }}
 {{ template "partial" (dict "k" .V) }}
+{{ (chained "k" .V).k }}
 `
 
 	funcMap := texttemplate.FuncMap{
@@ -175,6 +212,12 @@ func TestCollectCalledIdentifiersSeesNestedCalls(t *testing.T) {
 		"outer":      func(any) string { return "" },
 		"inner":      func(any) any { return nil },
 		"dict":       func(...any) any { return nil },
+		// A field selected off a parenthesised call parses to a ChainNode,
+		// which is a node type of its own rather than a wrapper the pipeline
+		// walk reaches on its way down. `chained` is deliberately not called
+		// anywhere else in this probe, so the row can only pass if the walker
+		// descends into the chain itself.
+		"chained": func(...any) any { return nil },
 	}
 
 	tmpl, err := texttemplate.New("probe").Funcs(funcMap).Parse(source)
@@ -185,7 +228,7 @@ func TestCollectCalledIdentifiersSeesNestedCalls(t *testing.T) {
 	called := map[string]bool{}
 	collectCalledIdentifiers(tmpl.Root, called)
 
-	for _, want := range []string{"hasBBT", "topLevel", "inPipeline", "outer", "inner", "dict"} {
+	for _, want := range []string{"hasBBT", "topLevel", "inPipeline", "outer", "inner", "dict", "chained"} {
 		if !called[want] {
 			t.Errorf("the walker missed %q; a call it cannot see would read as an unused entry", want)
 		}

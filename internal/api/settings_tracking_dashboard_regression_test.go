@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,7 +13,31 @@ import (
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
 	"github.com/ovumcy/ovumcy-web/internal/services"
+	"gorm.io/gorm"
 )
+
+// TestSettingsFormRequestWithCSRFClosesItsResponseBody pins the helper to the
+// same contract mustAppResponse already keeps: the response body is closed by
+// the helper that produced it, not by whichever call site remembers. Ninety
+// call sites shared that decision and sixteen of them made it, so an unclosed
+// body could not be read as an oversight or as intent. The subtest is the
+// instrument — its cleanups have run by the time the parent resumes, so the
+// close is observable rather than assumed.
+func TestSettingsFormRequestWithCSRFClosesItsResponseBody(t *testing.T) {
+	ctx := newSettingsSecurityTestContext(t, "settings-form-helper-body-close@example.com")
+
+	var response *http.Response
+	t.Run("inside a scope whose cleanups run", func(t *testing.T) {
+		response = settingsFormRequestWithCSRF(t, ctx, http.MethodPatch, "/api/v1/users/current/tracking", url.Values{
+			"temperature_unit": {"c"},
+		}, map[string]string{"HX-Request": "true"})
+		assertStatusCode(t, response, http.StatusOK)
+	})
+
+	if _, err := response.Body.Read(make([]byte, 1)); err == nil {
+		t.Fatal("settingsFormRequestWithCSRF left its response body open; it must register the same t.Cleanup close mustAppResponse does")
+	}
+}
 
 func TestTrackingSettingsExposeBBTAndCervicalMucusOnDashboard(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-tracking-dashboard@example.com")
@@ -94,13 +119,77 @@ func TestTrackingSettingsJSONBodyKeepsThePublishedInvertedKeys(t *testing.T) {
 	}
 }
 
+// recoveryRotationWritableColumns are the users columns a recovery-code
+// regeneration is allowed to move: the fresh code and its one-time reveal
+// mark, the feed capability it disarms, the session version it bumps, and the
+// row's own timestamp. Every other column is settings state the rotation has
+// no business touching, and the sweep below holds all of them at once instead
+// of naming two sentinels.
+var recoveryRotationWritableColumns = map[string]bool{
+	"recovery_code_hash":          true,
+	"recovery_code_revealed_at":   true,
+	"calendar_feed_selector":      true,
+	"calendar_feed_verifier_hash": true,
+	"calendar_feed_verifier_mac":  true,
+	"auth_session_version":        true,
+	"updated_at":                  true,
+}
+
+// userRowSnapshot reads the owner's whole users row as columns, straight from
+// the live schema rather than through a struct that would re-list the fields
+// the assertion is supposed to discover. A column added by a later migration
+// is covered the day it exists.
+func userRowSnapshot(t *testing.T, database *gorm.DB, userID uint) map[string]string {
+	t.Helper()
+
+	row := map[string]any{}
+	if err := database.Table("users").Where("id = ?", userID).Take(&row).Error; err != nil {
+		t.Fatalf("snapshot users row: %v", err)
+	}
+	snapshot := make(map[string]string, len(row))
+	for column, value := range row {
+		snapshot[column] = fmt.Sprintf("%v", value)
+	}
+	return snapshot
+}
+
 func TestSettingsPageKeepsPersistedCycleValuesAfterRecoveryCodeRegeneration(t *testing.T) {
 	ctx := newSettingsSecurityTestContext(t, "settings-recovery-return@example.com")
+
+	before := userRowSnapshot(t, ctx.database, ctx.user.ID)
+	if len(before) < 20 {
+		t.Fatalf("the users snapshot resolved %d columns; the table is far wider, so this sweep read the wrong thing", len(before))
+	}
 
 	response := settingsFormRequestWithCSRF(t, ctx, http.MethodPost, "/api/v1/users/current/recovery-code", url.Values{
 		"password": {"StrongPass1"},
 	}, nil)
 	assertStatusCode(t, response, http.StatusSeeOther)
+
+	// The whole-row comparison. Two sentinels (period_length,
+	// unpredictable_cycle) were presented as whole-settings isolation: a
+	// scratch `cycle_length` added to the rotation's UPDATE left this test
+	// green. Every column outside the allowlist above must come back
+	// byte-identical, so a column the rotation starts writing fails here by
+	// name.
+	after := userRowSnapshot(t, ctx.database, ctx.user.ID)
+	if len(after) != len(before) {
+		t.Fatalf("the users row went from %d columns to %d across a recovery-code regeneration", len(before), len(after))
+	}
+	for column, wasValue := range before {
+		if recoveryRotationWritableColumns[column] {
+			continue
+		}
+		if after[column] != wasValue {
+			t.Errorf("recovery-code regeneration changed users.%s from %q to %q; it may only write %d columns, and that is not one of them",
+				column, wasValue, after[column], len(recoveryRotationWritableColumns))
+		}
+	}
+	// The positive anchor: a comparison that saw a stale read would report no
+	// drift for the same reason it reports no rotation.
+	if after["auth_session_version"] == before["auth_session_version"] {
+		t.Fatalf("auth_session_version stayed at %q; the snapshot did not observe the rotation at all", before["auth_session_version"])
+	}
 
 	recoveryCookie := responseCookieValue(response.Cookies(), recoveryCodeCookieName)
 	if recoveryCookie == "" {
