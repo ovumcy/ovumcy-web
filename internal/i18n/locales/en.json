@@ -408,7 +408,7 @@
   "dashboard.mood.very_good": "Very good",
   "dashboard.flow": "Flow",
   "dashboard.symptoms": "Symptoms",
-  "dashboard.owner_only_details": "Details are visible to the account owner only.",
+  "dashboard.owner_only_details": "Only the account owner can see these details.",
   "dashboard.sex": "Sex",
   "dashboard.sex.none": "None",
   "dashboard.sex.protected": "Protected",
