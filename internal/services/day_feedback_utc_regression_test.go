@@ -10,7 +10,7 @@ package services
 // (issue #48/#64 bug class).
 //
 // The fix rebuilds the value at time.UTC before the update.  These tests
-// assert the persisted LongPeriodWarnedAt is always UTC-midnight regardless of
+// assert the persisted LongPeriodWarningCycleStart is always UTC-midnight regardless of
 // the request timezone.
 
 import (
@@ -30,7 +30,7 @@ func TestAcknowledgeLongPeriodWarningPersistsUTCMidnightInUTCZone(t *testing.T) 
 		t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
 	}
 
-	stored := users.settings.LongPeriodWarnedAt
+	stored := users.settings.LongPeriodWarningCycleStart
 	if stored == nil {
 		t.Fatal("expected long_period_warning_cycle_start to be persisted, got nil")
 	}
@@ -64,7 +64,7 @@ func TestAcknowledgeLongPeriodWarningPersistsUTCMidnightFromEastZone(t *testing.
 		t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
 	}
 
-	stored := users.settings.LongPeriodWarnedAt
+	stored := users.settings.LongPeriodWarningCycleStart
 	if stored == nil {
 		t.Fatal("expected long_period_warning_cycle_start to be persisted, got nil")
 	}
@@ -95,7 +95,7 @@ func TestAcknowledgeLongPeriodWarningPersistsUTCMidnightFromWestZone(t *testing.
 		t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
 	}
 
-	stored := users.settings.LongPeriodWarnedAt
+	stored := users.settings.LongPeriodWarningCycleStart
 	if stored == nil {
 		t.Fatal("expected long_period_warning_cycle_start to be persisted, got nil")
 	}

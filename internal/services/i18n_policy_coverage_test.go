@@ -91,12 +91,11 @@ func TestI18nPolicyRussianPluralSwitchCases(t *testing.T) {
 	}
 }
 
-// TestI18nPolicyFrenchCountSingular covers line 137 (`if count == 1` in the
-// French branch). French does not change the word for "fois" between singular
-// and plural — both are "fois" — so the branch is equivalent for count-word
-// purposes. However the branch IS executed for count==1, and the test below
-// verifies the full output is correct so that any mutation to the surrounding
-// logic (e.g. flipping to lang=="de") is caught.
+// TestI18nPolicyFrenchCountSingular pins the French summary output across the
+// count/day combinations. French does not change the word for "fois" between
+// singular and plural, so there is no count-word branch to cover here — the
+// day word is the only form that varies, and the assertions below also catch a
+// mutation to the surrounding language dispatch (e.g. flipping to lang=="de").
 func TestI18nPolicyFrenchCountSingular(t *testing.T) {
 	// count==1, days==1 → singular day form
 	got := LocalizedSymptomFrequencySummary("fr", 1, 1)

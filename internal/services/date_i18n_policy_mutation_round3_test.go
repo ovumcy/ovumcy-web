@@ -9,8 +9,9 @@ func mr3i18nDate(year int, month time.Month, day int) time.Time {
 	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
 }
 
-// date_i18n_policy.go:55:34 BOUNDARY `monthIndex < 0`->`<= 0`.
-// January -> monthIndex 0; with `<= 0` the guard fires and returns English.
+// LocalizedMonthYear renders the Russian standalone (nominative) month name,
+// not the genitive running-text form and not the English default. January is
+// the first index into the table, so it also pins the 0-based conversion.
 func TestMR3I18n_LocalizedMonthYearRuJanuary(t *testing.T) {
 	got := LocalizedMonthYear("ru", mr3i18nDate(2026, time.January, 1))
 	if want := "Январь 2026"; got != want {
@@ -18,9 +19,8 @@ func TestMR3I18n_LocalizedMonthYearRuJanuary(t *testing.T) {
 	}
 }
 
-// date_i18n_policy.go:69:34 BOUNDARY in LocalizedDateLabel.
-// date_i18n_policy.go:77:35 BOUNDARY (ru long-month guard) -- January keeps both
-// guards on the in-range side; mutating either to `<= 0` flips January's branch.
+// LocalizedDateLabel's Russian arm pairs the short weekday with the genitive
+// long month — the one language where the label does not use the abbreviation.
 func TestMR3I18n_LocalizedDateLabelRuJanuary(t *testing.T) {
 	// 2026-01-05 is a Monday.
 	got := LocalizedDateLabel("ru", mr3i18nDate(2026, time.January, 5))
@@ -29,7 +29,8 @@ func TestMR3I18n_LocalizedDateLabelRuJanuary(t *testing.T) {
 	}
 }
 
-// date_i18n_policy.go:102:34 BOUNDARY in LocalizedDashboardDate.
+// LocalizedDashboardDate's Russian arm: day, genitive month, year, then the
+// long weekday last.
 func TestMR3I18n_LocalizedDashboardDateRuJanuary(t *testing.T) {
 	// 2026-01-05 is a Monday -> понедельник.
 	got := LocalizedDashboardDate("ru", mr3i18nDate(2026, time.January, 5))

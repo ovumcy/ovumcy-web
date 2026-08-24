@@ -18,10 +18,10 @@ func TestAcknowledgeLongPeriodWarningNormalizesCycleStartToMidnight(t *testing.T
 	if err := service.AcknowledgeLongPeriodWarning(context.Background(), 10, cycleStart, time.UTC); err != nil {
 		t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
 	}
-	if users.settings.LongPeriodWarnedAt == nil {
+	if users.settings.LongPeriodWarningCycleStart == nil {
 		t.Fatal("expected long-period warning date to be persisted")
 	}
-	persisted := *users.settings.LongPeriodWarnedAt
+	persisted := *users.settings.LongPeriodWarningCycleStart
 	if persisted.Hour() != 0 || persisted.Minute() != 0 || persisted.Second() != 0 || persisted.Nanosecond() != 0 {
 		t.Fatalf("expected persisted cycle start normalized to midnight, got %s", persisted.Format("2006-01-02T15:04:05"))
 	}

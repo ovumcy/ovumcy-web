@@ -220,9 +220,9 @@ func (stub *dayUserRepositoryStub) UpdateByID(ctx context.Context, userID uint, 
 		}
 	}
 	if value, exists := updates["long_period_warning_cycle_start"]; exists {
-		if warnedAt, ok := value.(time.Time); ok {
-			copyValue := warnedAt
-			stub.settings.LongPeriodWarnedAt = &copyValue
+		if cycleStart, ok := value.(time.Time); ok {
+			copyValue := cycleStart
+			stub.settings.LongPeriodWarningCycleStart = &copyValue
 		}
 	}
 	return nil

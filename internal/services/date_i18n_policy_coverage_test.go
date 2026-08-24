@@ -2,47 +2,35 @@ package services
 
 // date_i18n_policy_coverage_test.go
 //
-// Targets surviving mutants at lines 55, 69, 77, 102, 136, 144, 152, 161,
-// 179, 187, 195, 204 of internal/services/date_i18n_policy.go.
+// Per-locale January assertions for LocalizedMonthYear, LocalizedDateLabel and
+// LocalizedDashboardDate in internal/services/date_i18n_policy.go.
 //
-// The monthIndex bounds guards in LocalizedDateDisplay and LocalizedDateShort
-// (the shared localizedDayMonth) have a fallback BODY that is unreachable dead
-// code: time.Month is always 1-12 and every locale slice has 12 entries, so the
-// UPPER-bound term (monthIndex >= len(...)) never trips and its boundary/`||→&&`
-// mutations are equivalent. The LOWER-bound term (monthIndex < 0) is NOT
-// equivalent: a `< 0 → <= 0` (or its negation) redirects January onto the
-// stdlib fallback, and at a 3-digit year that fallback's 4-digit zero-padded
-// year differs from the locale path's %d year — observable, and already killed
-// by date_i18n_policy_mutation_test.go
-// (TestLocalizedDateDisplayEnglishJanuaryThreeDigitYear /
-// ...AlwaysLocalePathThreeDigitYear).
-//
-// Lines 55, 69, 77, 102 guard LocalizedMonthYear, LocalizedDateLabel, and
-// LocalizedDashboardDate. The existing tests only use February (monthIndex=1).
-// A relational-operator mutation of "< 0" to "<= 0" would silently redirect
-// January (monthIndex=0) to the English fallback path, which produces a
-// different string for non-English locales. Tests below use January to close
-// that gap.
+// These were written against monthIndex bounds guards that no longer exist:
+// the five parallel name maps became one fixed-size table per language
+// (localizedDateNames), and with [12]string / [7]string fields every index is
+// in range by construction — time.Month() is 1-12 and time.Weekday() is 0-6 —
+// so there is no lower-bound term to mutate and no stdlib fallback to be
+// redirected onto. What survives here is what was always worth keeping: each
+// locale renders January in its own words, which fails if a language's forms
+// go missing or the language dispatch is mutated. Table completeness for a
+// newly added locale is TestLocalizedDateFormsCoverEveryRequiredLocale's job.
 
 import (
 	"testing"
 	"time"
 )
 
-// datei18npolicyCovJanuary is the date used across all coverage tests below.
-// January (monthIndex=0) is the specific value needed to catch mutations that
-// change the lower-bound check from "< 0" to "<= 0".
+// datei18npolicyCovJanuary is the date used across all coverage tests below:
+// the first month and a weekday whose name differs in every supported language.
 var datei18npolicyCovJanuary = time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC) // Monday
 
 // ---------------------------------------------------------------------------
-// LocalizedMonthYear – line 55 guard
+// LocalizedMonthYear
 // ---------------------------------------------------------------------------
 
-// TestDateI18nPolicyMonthYearJanuary ensures that January is formatted with
-// the locale-specific name, not the English fallback.  A mutation of
-// "monthIndex < 0" to "monthIndex <= 0" would redirect index 0 (January) to
-// value.Format("January 2006"), producing "January 2026" for every locale
-// instead of the expected translated month name.
+// TestDateI18nPolicyMonthYearJanuary ensures that January is formatted with the
+// locale-specific standalone month name — the heading form, title-cased where
+// the language's running-text form is not.
 func TestDateI18nPolicyMonthYearJanuary(t *testing.T) {
 	tests := []struct {
 		lang string
@@ -66,22 +54,20 @@ func TestDateI18nPolicyMonthYearJanuary(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LocalizedDateLabel – line 69 guard (all locales) and line 77 guard (ru)
+// LocalizedDateLabel (all locales, and the Russian long-month path)
 // ---------------------------------------------------------------------------
 
 // TestDateI18nPolicyDateLabelJanuary ensures that January is formatted with
-// locale-specific month names.  The mutations guarded at lines 69 and 77 would
-// cause January to fall through to the English fallback "Mon, Jan 5" instead
-// of the correct translated representation.
+// locale-specific month names, including the Russian arm that reaches for the
+// genitive long form instead of the abbreviation the others use.
 func TestDateI18nPolicyDateLabelJanuary(t *testing.T) {
 	// Jan 5, 2026 is a Monday.
 	tests := []struct {
 		lang string
 		want string
 	}{
-		// Line 69 guard (general) + line 77 guard (ru long-month lookup)
+		// The Russian arm renders the genitive long month, not the abbreviation.
 		{"ru", "Пн, 5 января"},
-		// Line 69 guard for other locales
 		{"de", "Mo., 5. Jan."},
 		{"es", "lun, 5 ene"},
 		{"fr", "lun 5 jan"},
@@ -99,13 +85,12 @@ func TestDateI18nPolicyDateLabelJanuary(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// LocalizedDashboardDate – line 102 guard
+// LocalizedDashboardDate
 // ---------------------------------------------------------------------------
 
-// TestDateI18nPolicyDashboardDateJanuary ensures that January is formatted
-// with locale-specific month names rather than the English fallback.  A
-// "monthIndex <= 0" mutation on line 102 would redirect January to
-// value.Format("January 2, 2006, Monday") for every locale.
+// TestDateI18nPolicyDashboardDateJanuary ensures that January is formatted with
+// locale-specific long month and weekday names, in each language's own word
+// order.
 func TestDateI18nPolicyDashboardDateJanuary(t *testing.T) {
 	// Jan 5, 2026 is a Monday.
 	tests := []struct {

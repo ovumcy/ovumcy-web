@@ -54,7 +54,7 @@ func (service *DayService) ResolveDayFeedback(ctx context.Context, user *models.
 	}
 
 	streakLength, cycleStart, ok := currentPeriodStreakAtDay(logs, day, location)
-	if ok && streakLength > 8 && (user == nil || user.LongPeriodWarnedAt == nil || !sameCalendarDay(CalendarDay(*user.LongPeriodWarnedAt, location), cycleStart)) {
+	if ok && streakLength > 8 && (user.LongPeriodWarningCycleStart == nil || !sameCalendarDay(CalendarDay(*user.LongPeriodWarningCycleStart, location), cycleStart)) {
 		state.ShowLongPeriodWarning = true
 		state.LongPeriodCycleStart = cycleStart
 	}
@@ -79,6 +79,9 @@ func (service *DayService) AcknowledgeLongPeriodWarning(ctx context.Context, use
 	})
 }
 
+// resolveDaySaveMessageKey requires a non-nil user: its only caller,
+// ResolveDayFeedback, dereferences user.ID before it gets here, so a nil user
+// panics there rather than reaching a guard in this package.
 func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats) string {
 	// A positive pregnancy test pauses predictions (ResolvePregnancyPause);
 	// explain the pause right at save time instead of a routine
@@ -86,7 +89,7 @@ func resolveDaySaveMessageKey(user *models.User, day time.Time, stats CycleStats
 	if stats.PregnancyPaused {
 		return daySaveMessagePregnancyPaused
 	}
-	if user != nil && user.UnpredictableCycle {
+	if user.UnpredictableCycle {
 		return daySaveMessageNeutral
 	}
 	// `day` arrives as a location-midnight working value while the stats

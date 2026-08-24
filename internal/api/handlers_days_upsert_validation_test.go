@@ -214,7 +214,7 @@ func TestUpsertDayPersistsPregnancyTest(t *testing.T) {
 // which guards persisting the long-period-warning acknowledgement. Seeding an
 // 8-day period streak and upserting the ninth consecutive period day makes
 // ResolveDayFeedback return ShowLongPeriodWarning=true with a non-zero cycle start,
-// so the handler must persist LongPeriodWarnedAt (column
+// so the handler must persist LongPeriodWarningCycleStart (column
 // long_period_warning_cycle_start) to suppress the warning on later saves. The
 // CONDITIONALS_NEGATION mutant (`feedbackErr != nil`) skips the ack block on the
 // happy path, leaving the column NULL and re-showing the warning on every save.
@@ -276,10 +276,10 @@ func TestUpsertDayPersistsLongPeriodWarningAcknowledgement(t *testing.T) {
 	if err := database.Select("long_period_warning_cycle_start").First(&persisted, user.ID).Error; err != nil {
 		t.Fatalf("reload user: %v", err)
 	}
-	if persisted.LongPeriodWarnedAt == nil {
+	if persisted.LongPeriodWarningCycleStart == nil {
 		t.Fatal("expected long-period-warning acknowledgement to be persisted after a nine-day period streak upsert (feedbackErr==nil guard must run the ack)")
 	}
-	if got := services.CalendarDayKey(*persisted.LongPeriodWarnedAt); got != "2026-03-01" {
+	if got := services.CalendarDayKey(*persisted.LongPeriodWarningCycleStart); got != "2026-03-01" {
 		t.Fatalf("expected acknowledged cycle start 2026-03-01, got %s", got)
 	}
 }

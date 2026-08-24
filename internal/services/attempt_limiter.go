@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	// evictEveryN triggers a full-map stale-key sweep every N AddFailure calls.
+	// evictEveryN triggers a full-map stale-key sweep every N AddFailureAll calls.
 	// Keys are partly attacker-influenced (identity:<hmac>), so without periodic
 	// eviction the map grows unboundedly until process restart. N=128 keeps the
 	// sweep rare enough to be O(1) amortised while bounding residual memory.
@@ -27,7 +27,7 @@ const (
 type AttemptLimiter struct {
 	mu        sync.Mutex
 	attempts  map[string][]time.Time
-	addCallsN int // counts AddFailure/AddFailureAll invocations for eviction pacing
+	addCallsN int // counts AddFailureAll invocations for eviction pacing
 }
 
 func NewAttemptLimiter() *AttemptLimiter {
@@ -44,14 +44,6 @@ func NormalizeLimiterKey(raw string) string {
 	return key
 }
 
-func (limiter *AttemptLimiter) TooManyRecent(key string, now time.Time, limit int, window time.Duration) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-
-	pruned := limiter.pruneLocked(key, now, window)
-	return len(pruned) >= limit
-}
-
 func (limiter *AttemptLimiter) TooManyRecentAny(keys []string, now time.Time, limit int, window time.Duration) bool {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
@@ -62,18 +54,6 @@ func (limiter *AttemptLimiter) TooManyRecentAny(keys []string, now time.Time, li
 		}
 	}
 	return false
-}
-
-func (limiter *AttemptLimiter) AddFailure(key string, now time.Time, window time.Duration) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-
-	pruned := limiter.pruneLocked(key, now, window)
-	pruned = append(pruned, now)
-	limiter.attempts[key] = pruned
-
-	limiter.addCallsN++
-	limiter.maybeEvictStaleLocked(now, window)
 }
 
 func (limiter *AttemptLimiter) AddFailureAll(keys []string, now time.Time, window time.Duration) {
@@ -143,12 +123,6 @@ func (limiter *AttemptLimiter) enforceSizeCapLocked() {
 	for _, entry := range ages[:excess] {
 		delete(limiter.attempts, entry.key)
 	}
-}
-
-func (limiter *AttemptLimiter) Reset(key string) {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-	delete(limiter.attempts, key)
 }
 
 func (limiter *AttemptLimiter) ResetAll(keys []string) {
