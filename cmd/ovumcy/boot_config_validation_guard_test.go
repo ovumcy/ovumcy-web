@@ -37,6 +37,10 @@ func TestResolveProxySettingsRejectsAMalformedTrustedProxyEntry(t *testing.T) {
 		// an entry contains() can never match — the same silent miss as "bogus".
 		{"non-canonical ipv6", "2001:DB8::1", "2001:DB8::1"},
 		{"ipv4-mapped ipv6", "::ffff:10.0.0.1", "::ffff:10.0.0.1"},
+		// Both spellings are well formed, so only the repetition itself is the
+		// defect: the matcher's exact set collapses them and the banner counts
+		// a trusted proxy the matcher does not hold.
+		{"repeated ip", "203.0.113.7,203.0.113.7", "203.0.113.7"},
 	}
 
 	for _, tc := range cases {
@@ -85,6 +89,14 @@ func TestTrustedProxyCountTheBannerPrintsMatchesTheMatcher(t *testing.T) {
 		"127.0.0.1,::1",
 		"10.0.0.0/8x,192.168.0.0/16,bogus",
 		"203.0.113.7,10.0.0.0/8",
+		// A repeated entry is well-formed twice over, so nothing above refuses
+		// it — yet the matcher keys its exact set by the entry and collapses the
+		// pair into one, which is the same banner-vs-matcher lie as a typo.
+		"203.0.113.7,203.0.113.7",
+		// Scoping anchor for the duplicate check: ranges are appended to a
+		// slice rather than keyed, so a repeated CIDR keeps both copies and the
+		// two counts already agree — it must still boot.
+		"10.0.0.0/8,10.0.0.0/8",
 	}
 
 	accepted := 0
@@ -107,10 +119,12 @@ func TestTrustedProxyCountTheBannerPrintsMatchesTheMatcher(t *testing.T) {
 		}
 	}
 
-	// Anti-vacuity: the two well-formed lists must have been accepted, so the
-	// comparison above actually ran.
-	if accepted < 2 {
-		t.Fatalf("expected at least the two well-formed lists to be accepted, got %d", accepted)
+	// Anti-vacuity: the two well-formed lists and the repeated-CIDR list must
+	// have been accepted, so the comparison above actually ran — and a blanket
+	// duplicate check that also refused the CIDR pair would fail here rather
+	// than pass by refusing everything.
+	if accepted < 3 {
+		t.Fatalf("expected the two well-formed lists and the repeated-CIDR list to be accepted, got %d", accepted)
 	}
 }
 
