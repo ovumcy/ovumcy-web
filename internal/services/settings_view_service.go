@@ -20,8 +20,11 @@ type SettingsViewLoader interface {
 	LoadSettings(ctx context.Context, userID uint) (models.User, error)
 }
 
+// SettingsViewExportBuilder is the seam the settings page reads its export
+// figures through. It asks for the owner's whole history and the window ending
+// today in ONE call because the two used to be two reads of the same rows.
 type SettingsViewExportBuilder interface {
-	BuildSummary(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) (ExportSummary, error)
+	BuildSummaryHistoryAndWindow(ctx context.Context, userID uint, through time.Time, location *time.Location) (ExportSummary, ExportSummary, error)
 }
 
 type SettingsViewSymptomProvider interface {
@@ -310,7 +313,11 @@ func (service *SettingsViewService) populateOwnerCalendarFeedViewData(ctx contex
 }
 
 func (service *SettingsViewService) buildOwnerExportViewData(ctx context.Context, userID uint, language string, today time.Time, location *time.Location) (SettingsExportViewData, error) {
-	availableSummary, err := service.export.BuildSummary(ctx, userID, nil, nil, location)
+	// One read, two aggregates: the panel's selectable bounds come from
+	// everything the owner has, its default window ends today. The default
+	// window's lower bound is the owner's earliest entry, so the window IS the
+	// history up to today and needs no second query to describe it.
+	availableSummary, defaultSummary, err := service.export.BuildSummaryHistoryAndWindow(ctx, userID, today, location)
 	if err != nil {
 		return SettingsExportViewData{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadExport, err)
 	}
@@ -319,16 +326,6 @@ func (service *SettingsViewService) buildOwnerExportViewData(ctx context.Context
 	}
 
 	defaultFrom, defaultTo, selectableMin, selectableMax := resolveOwnerExportDateBounds(availableSummary, today)
-	defaultSummary, err := service.export.BuildSummary(
-		ctx,
-		userID,
-		exportSummaryBound(defaultFrom, location),
-		exportSummaryBound(defaultTo, location),
-		location,
-	)
-	if err != nil {
-		return SettingsExportViewData{}, fmt.Errorf("%w: %v", ErrSettingsViewLoadExport, err)
-	}
 
 	return SettingsExportViewData{
 		SummaryTotalEntries:    defaultSummary.TotalEntries,
@@ -372,24 +369,18 @@ func localizedExportSummaryDate(language string, raw string, location *time.Loca
 	return LocalizedDateDisplay(language, parsed)
 }
 
-func exportSummaryBound(raw string, location *time.Location) *time.Time {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil
-	}
-
-	parsed, err := ParseDayDate(trimmed, location)
-	if err != nil {
-		return nil
-	}
-	return &parsed
-}
-
+// compareISODate orders two date-only ISO strings. Both operands are trimmed
+// ONCE into locals and every arm reads those: the equality arm used to trim
+// while the ordering arm compared the raw strings, so a padded value was
+// "not equal" and then ordered by its leading space — 0x20 sorts below every
+// digit — and a later date reported as the earlier one.
 func compareISODate(left string, right string) int {
+	leftDate := strings.TrimSpace(left)
+	rightDate := strings.TrimSpace(right)
 	switch {
-	case strings.TrimSpace(left) == strings.TrimSpace(right):
+	case leftDate == rightDate:
 		return 0
-	case left < right:
+	case leftDate < rightDate:
 		return -1
 	default:
 		return 1

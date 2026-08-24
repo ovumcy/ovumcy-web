@@ -130,11 +130,29 @@ func AlternativeUsageGoals(current string) []string {
 	return alternatives
 }
 
+// SettingsCycleStartWindowDays is how far back the settings form accepts a
+// cycle start, in days before today. A year of history: correcting this value
+// is the one route an owner has to the anchor every prediction is measured
+// from, and a cycle that began months ago is exactly the case an irregular or
+// paused history produces.
+//
+// The floor used to be 1 January of the current year, which is a calendar
+// artefact and not a cycle one: on 2 January the form took two dates, and a
+// cycle that began in December — the normal case in early January — could only
+// be recorded as a later, wrong date. Onboarding's twin carried the same floor
+// and became a rolling window (OnboardingDateBounds, 60 days, the number its
+// copy states); this one is wider because it is a correction surface rather
+// than a first-run one, and rolling for the same reason. The window only ever
+// grew: every date the January floor accepted is inside it.
+const SettingsCycleStartWindowDays = 365
+
+// SettingsCycleStartDateBounds returns the window the settings form accepts for
+// the last cycle start, which is also the window its date picker offers: the
+// last SettingsCycleStartWindowDays days, ending today.
 func SettingsCycleStartDateBounds(now time.Time, location *time.Location) (time.Time, time.Time) {
 	if location == nil {
 		location = time.UTC
 	}
 	today := DateAtLocation(now.In(location), location)
-	minDate := time.Date(today.Year(), time.January, 1, 0, 0, 0, 0, location)
-	return minDate, today
+	return today.AddDate(0, 0, -SettingsCycleStartWindowDays), today
 }

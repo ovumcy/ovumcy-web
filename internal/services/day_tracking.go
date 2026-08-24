@@ -159,10 +159,27 @@ func normalizeStoredDayBBT(value *float64) *float64 {
 	if value == nil || *value <= 0 {
 		return nil
 	}
-	rounded := roundTemperatureValue(*value)
+	rounded := roundStoredTemperatureValue(*value)
 	return &rounded
 }
 
+// roundStoredTemperatureValue rounds a reading to its canonical STORED form.
+// Storage is always Celsius, and it keeps more decimals than either unit
+// displays on purpose: a reading entered in Fahrenheit is converted before it
+// is stored, and one step of 0.01 °F is 0.0056 °C, so a stored value rounded to
+// the two Celsius decimals the form shows cannot represent what the owner
+// typed. It came back one hundredth of a degree away after every save — a
+// recorded measurement altered without notice, far below the 0.1-0.5 °F shift a
+// BBT chart is read for and therefore invisible to every other check. Four
+// decimals keep every 0.01 °F step distinct and exactly recoverable, while
+// still collapsing the float noise the conversion produces.
+func roundStoredTemperatureValue(value float64) float64 {
+	return math.Round(value*10000) / 10000
+}
+
+// roundTemperatureValue rounds to the two decimals a temperature is DISPLAYED
+// with, in whichever unit it is being shown. It is a presentation rounding, not
+// the stored one.
 func roundTemperatureValue(value float64) float64 {
 	return math.Round(value*100) / 100
 }

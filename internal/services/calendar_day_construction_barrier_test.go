@@ -71,8 +71,6 @@ const calendarDayConstructionPoint = "internal/services/day_utils.go:StartOfCale
 // so a fixed site cannot leave a stale exemption behind.
 var calendarDayBarrierAllowlist = map[string]string{
 	"internal/reminders/next_run.go:fireOnCalendarDay:calendar day built in a location": "deliberate carve-out: a scheduling instant at a runtime hour, not a calendar day, and the two lines below it check the requested date survived and fall back to services.StartOfCalendarDay when it did not.",
-
-	"internal/services/settings_cycle_policy.go:SettingsCycleStartDateBounds:calendar day built in a location": "deliberate carve-out: January 1st of the CURRENT year as a form's lower bound. Measured over tzdata 2025c (598 zones, 1970-2040): January 1st has no midnight in 15 zone-years, the most recent of them 1996, and none of them in the future — so the year this expression can ask for is never one of them. Here it is not compared at all, only formatted into the date input's min attribute. OnboardingDateBounds carried the twin of this expression until its window became a rolling one built from today.",
 }
 
 // calendarDayBarrierBlindSpots is what this sweep provably cannot see. It is

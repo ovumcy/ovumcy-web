@@ -46,8 +46,10 @@ func TestSettingsCycleStartDateBoundsHonorsLocationNearLocalMidnight(t *testing.
 	if got := today.Format("2006-01-02"); got != "2026-02-15" {
 		t.Fatalf("expected today computed in request location (UTC+9) = 2026-02-15, got %s", got)
 	}
-	if got := minDate.Format("2006-01-02"); got != "2026-01-01" {
-		t.Fatalf("expected minDate = 2026-01-01, got %s", got)
+	// The floor is a rolling window measured from that same local today, not a
+	// calendar boundary: it has to move with the location too.
+	if got := minDate.Format("2006-01-02"); got != "2025-02-15" {
+		t.Fatalf("expected minDate = local today minus %d days = 2025-02-15, got %s", SettingsCycleStartWindowDays, got)
 	}
 
 	// nil location must default to UTC (no panic) and yield UTC-based bounds.
@@ -56,7 +58,7 @@ func TestSettingsCycleStartDateBoundsHonorsLocationNearLocalMidnight(t *testing.
 	if got := todayNil.Format("2006-01-02"); got != "2026-02-15" {
 		t.Fatalf("expected nil-location today defaulted to UTC = 2026-02-15, got %s", got)
 	}
-	if got := minDateNil.Format("2006-01-02"); got != "2026-01-01" {
-		t.Fatalf("expected nil-location minDate = 2026-01-01, got %s", got)
+	if got := minDateNil.Format("2006-01-02"); got != "2025-02-15" {
+		t.Fatalf("expected nil-location minDate = 2025-02-15, got %s", got)
 	}
 }
