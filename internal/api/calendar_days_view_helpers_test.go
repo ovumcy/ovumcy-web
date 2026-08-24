@@ -32,9 +32,18 @@ func TestBuildCalendarDaysRendersFuturePeriodEntryAsRecordedPeriod(t *testing.T)
 	// A period entry is a recorded fact regardless of its date: auto-fill never
 	// writes rows past today, so a future entry is a manual log and must not be
 	// styled as a projection (regression: real records rendered as predictions).
+	//
+	// The projection classes named below are the ones the builder can actually
+	// emit. An earlier form of this case asserted the absence of
+	// `calendar-cell-period-projected`, a class no branch of buildCalendarDays
+	// composes and no stylesheet defines: true for every possible input, and so
+	// green about nothing. The class a mis-wired future day would really pick up
+	// is whichever the projection arms produce.
 	for i, day := range days {
-		if strings.Contains(day.CellClass, "calendar-cell-period-projected") {
-			t.Fatalf("day %d: period entry must not carry projected class, got %q", i, day.CellClass)
+		for _, projection := range []string{"calendar-cell-predicted", "calendar-cell-start-window"} {
+			if strings.Contains(day.CellClass, projection) {
+				t.Fatalf("day %d: a recorded period entry must not carry the projection class %q, got %q", i, projection, day.CellClass)
+			}
 		}
 		if !strings.Contains(day.CellClass, "calendar-cell-period") {
 			t.Fatalf("day %d: expected period class, got %q", i, day.CellClass)
@@ -42,6 +51,18 @@ func TestBuildCalendarDaysRendersFuturePeriodEntryAsRecordedPeriod(t *testing.T)
 		if day.StateKey != "period" {
 			t.Fatalf("day %d: stateKey = %q, want period", i, day.StateKey)
 		}
+	}
+
+	// IsFuture is the seam. The service sets it on every day state it builds and
+	// buildCalendarDays reads it nowhere, so the two entries above differ in
+	// that flag alone and must therefore render identically. Asserting the two
+	// cells match is what makes the flag's inertness a contract rather than an
+	// accident: any branch that starts consulting it separates them here.
+	if days[0].CellClass != days[1].CellClass {
+		t.Fatalf("a future period entry rendered differently from a past one: %q vs %q", days[1].CellClass, days[0].CellClass)
+	}
+	if days[0].StateKey != days[1].StateKey {
+		t.Fatalf("a future period entry took a different state key: %q vs %q", days[1].StateKey, days[0].StateKey)
 	}
 }
 
