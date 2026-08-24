@@ -96,17 +96,27 @@ type sourceEvidence struct {
 	// this template renders exist at all".
 	templateKeyCallSites []templateKeyCallSite
 
+	// goFormatSites records every `fmt.Sprintf` in shipped Go whose format
+	// string is computed rather than written as a literal, and goFormatBodies
+	// the surrounding evidence each one needs. That is what the verb barrier
+	// (locale_format_verb_parity_test.go) measures: a catalogue value used as a
+	// printf pattern is a contract between six JSON files and a Go argument
+	// list, and nothing else in the build reads both ends.
+	goFormatSites  []goFormatSite
+	goFormatBodies map[string]goFormatBody
+
 	goFiles       int
 	templateFiles int
 }
 
 func newSourceEvidence() *sourceEvidence {
 	return &sourceEvidence{
-		literals:    map[string]bool{},
-		stringVars:  map[string][]string{},
-		funcReturns: map[string][]string{},
-		declCounts:  map[string]int{},
-		goDirs:      map[string]bool{},
+		literals:       map[string]bool{},
+		stringVars:     map[string][]string{},
+		funcReturns:    map[string][]string{},
+		declCounts:     map[string]int{},
+		goDirs:         map[string]bool{},
+		goFormatBodies: map[string]goFormatBody{},
 	}
 }
 
@@ -439,7 +449,11 @@ func collectFromGoTree(root string, evidence *sourceEvidence) error {
 		if parseErr != nil {
 			return fmt.Errorf("parsing %s: %w", path, parseErr)
 		}
-		collectFromGoFile(file, evidence)
+		relativeFile := path
+		if relative, relErr := filepath.Rel(root, path); relErr == nil {
+			relativeFile = filepath.ToSlash(relative)
+		}
+		collectFromGoFile(goOrigin{file: relativeFile, fileSet: fileSet}, file, evidence)
 		evidence.goFiles++
 		if relative, relErr := filepath.Rel(root, filepath.Dir(path)); relErr == nil {
 			evidence.goDirs[filepath.ToSlash(relative)] = true
@@ -448,7 +462,24 @@ func collectFromGoTree(root string, evidence *sourceEvidence) error {
 	})
 }
 
-func collectFromGoFile(file *ast.File, evidence *sourceEvidence) {
+// goOrigin carries the repository-relative path a parsed file came from and the
+// file set its positions resolve against, so a finding can name a place a
+// reader can open. It mirrors templateOrigin on the template side.
+type goOrigin struct {
+	file    string
+	fileSet *token.FileSet
+}
+
+func (origin goOrigin) lineOf(position token.Pos) int {
+	if origin.fileSet == nil || !position.IsValid() {
+		return 0
+	}
+	return origin.fileSet.Position(position).Line
+}
+
+func collectFromGoFile(origin goOrigin, file *ast.File, evidence *sourceEvidence) {
+	recordGoFormatSites(origin, file, evidence)
+
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch typed := node.(type) {
 		case *ast.BasicLit:
