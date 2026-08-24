@@ -373,9 +373,11 @@ func TestOperatorDocsStateTheGateAndTheCodeDefault(t *testing.T) {
 	}
 }
 
-// gateDefaultFromCode reads the default out of every getEnvBool call for the
-// gate and fails when they disagree — the server path and the CLI path parse
-// it separately, and a default that drifts between them is its own defect.
+// gateDefaultFromCode reads the default out of every getEnvBool /
+// getEnvBoolStrict call for the gate and fails when they disagree — the server
+// path and the CLI path parse it separately, and a default that drifts between
+// them is its own defect. Both getters count: they differ in what they do with
+// an unparseable value, not in the default an unset value falls back to.
 func gateDefaultFromCode(t *testing.T, root string) bool {
 	t.Helper()
 
@@ -384,7 +386,7 @@ func gateDefaultFromCode(t *testing.T, root string) bool {
 		t.Fatalf("glob %s: %v", gateParseGlob, err)
 	}
 
-	call := regexp.MustCompile(`getEnvBool\("` + gateEnv + `", (true|false)\)`)
+	call := regexp.MustCompile(`getEnvBool(?:Strict)?\("` + gateEnv + `", (true|false)\)`)
 	defaults := map[string]string{}
 	for _, path := range paths {
 		if strings.HasSuffix(path, "_test.go") {
@@ -405,7 +407,7 @@ func gateDefaultFromCode(t *testing.T, root string) bool {
 			return value == "true"
 		}
 	case 0:
-		t.Fatalf("no getEnvBool(%q, …) call found in %s: this guard reads the documented default out of the code and now reads nothing", gateEnv, gateParseGlob)
+		t.Fatalf("no getEnvBool/getEnvBoolStrict(%q, …) call found in %s: this guard reads the documented default out of the code and now reads nothing", gateEnv, gateParseGlob)
 	}
 	t.Fatalf("%s is parsed with more than one default (%v): the server and CLI paths must agree before any document can state one", gateEnv, defaults)
 	return false

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -62,21 +63,55 @@ func getEnvDuration(key string, fallback time.Duration) time.Duration {
 	return parsed
 }
 
+// parseBoolEnvValue holds the accepted vocabulary for every boolean env var. Both
+// getEnvBool and getEnvBoolStrict route through it so the lenient and the
+// refusing getter can never accept different spellings of the same value.
+func parseBoolEnvValue(value string) (bool, bool) {
+	switch strings.ToLower(value) {
+	case "1", "true", "yes", "on":
+		return true, true
+	case "0", "false", "no", "off":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
 func getEnvBool(key string, fallback bool) bool {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
 		return fallback
 	}
 
-	switch strings.ToLower(value) {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	default:
+	parsed, ok := parseBoolEnvValue(value)
+	if !ok {
 		log.Printf("invalid %s=%q, using fallback %t", key, value, fallback)
 		return fallback
 	}
+	return parsed
+}
+
+// getEnvBoolStrict reads a boolean env var like getEnvBool but refuses an
+// unparseable value instead of falling back to the default.
+//
+// It is used for the toggles whose fallback IS the insecure posture —
+// COOKIE_SECURE, HSTS_ENABLED, TRUST_PROXY_ENABLED,
+// WEBHOOK_BLOCK_PRIVATE_ADDRESSES. There a typo (COOKIE_SECURE=ture) used to
+// start the process on the default, so what the instance ran with could not be
+// answered from the operator's env file, only from the boot log. An unset
+// value is still the documented default; only a value the operator wrote and
+// this process cannot read stops the boot, naming the key and the value.
+func getEnvBoolStrict(key string, fallback bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback, nil
+	}
+
+	parsed, ok := parseBoolEnvValue(value)
+	if !ok {
+		return false, fmt.Errorf("invalid %s=%q: expected one of 1/true/yes/on or 0/false/no/off", key, value)
+	}
+	return parsed, nil
 }
 
 func parseCSV(value string) []string {

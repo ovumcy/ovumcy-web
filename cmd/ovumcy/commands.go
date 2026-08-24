@@ -124,7 +124,13 @@ func handleNotifyCommand(args []string, handlers cliCommandHandlers) (bool, erro
 	}
 	location := mustLoadLocation(getEnv("TZ", "Local"))
 	defaultLanguage := getEnv("DEFAULT_LANGUAGE", "en")
-	blockPrivateAddresses := getEnvBool("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
+	// Strict, exactly as at server boot: this pass is where the egress gate is
+	// enforced, so a value the server would refuse to start on must not be
+	// reinterpreted here into an unguarded delivery run.
+	blockPrivateAddresses, err := getEnvBoolStrict("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
+	if err != nil {
+		return true, err
+	}
 	return true, handlers.runNotify(databaseConfig, secretKey, defaultLanguage, location, blockPrivateAddresses, args[1:])
 }
 
