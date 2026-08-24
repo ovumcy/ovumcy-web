@@ -306,6 +306,12 @@ func (service *AuthService) AuthenticateCredentials(ctx context.Context, email s
 		return models.User{}, ErrAuthInvalidCreds
 	}
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		// The comparison above spends only the work the STORED hash carries.
+		// An account whose hash predates the current cost is therefore rejected
+		// measurably faster than an address with no account, which pays a full
+		// passwordHashCost comparison in the equalized branches above — the
+		// account-enumeration oracle in reverse. Buy the difference here.
+		topUpAuthCredentialsTiming(user.PasswordHash, password)
 		return models.User{}, ErrAuthInvalidCreds
 	}
 	if err := ValidateSupportedWebUser(&user); err != nil {
@@ -381,6 +387,13 @@ func (service *AuthService) FindUserByEmailRecoveryCodeAndPassword(ctx context.C
 	recoveryCodeMatches := bcrypt.CompareHashAndPassword([]byte(hash), []byte(NormalizeRecoveryCode(code))) == nil
 	passwordMatches := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)) == nil
 	if !recoveryCodeMatches || !passwordMatches {
+		// Both comparisons ran, but each spent only the work ITS stored hash
+		// carries, while equalizeRecoveryCodeLookupTiming above always spends
+		// two passwordHashCost comparisons. An account holding hashes minted
+		// before the current cost would answer faster than "no such address" —
+		// and unlike passwords, a recovery-code hash is never re-minted on a
+		// successful use, so a stale cost stays stale. Buy the difference.
+		topUpRecoveryLookupTiming(hash, code, passwordHash, password)
 		return nil, ErrRecoveryCodeNotFound
 	}
 	if err := ValidateSupportedWebUser(&user); err != nil {
@@ -530,6 +543,116 @@ var equalizeAuthCredentialsTiming = func(password string) {
 var equalizeRegistrationTiming = func(password string) {
 	_ = bcrypt.CompareHashAndPassword([]byte(credentialsTimingEqualizationHash), []byte(password))
 	_ = bcrypt.CompareHashAndPassword([]byte(recoveryCodeTimingEqualizationHash), []byte(password))
+}
+
+// timingTopUpPlaceholderInput is the value the top-up placeholder hashes below
+// are minted from. It is not a credential and cannot become one: the hashes it
+// produces are only ever compared with the result discarded, and every real
+// verification in this package compares against a hash read from the row.
+const timingTopUpPlaceholderInput = "ovumcy timing equalization placeholder"
+
+// timingTopUpHashesByCost holds one placeholder bcrypt hash per cost below
+// passwordHashCost. A comparison against a hash at cost k spends ~2^k units of
+// bcrypt work, so this table is what lets a rejection buy exactly the work a
+// legacy stored hash did not spend (see bcryptCostTopUpSchedule).
+//
+// The hashes are MINTED, never pasted in as constants: hand-written literals
+// would stay pinned to today's passwordHashCost, so raising the constant would
+// silently leave the new top cost unpaid and reopen the gap this table closes.
+// The one-time price is the sum of 2^k for k = bcrypt.MinCost ..
+// passwordHashCost-1, which is just under a single passwordHashCost hash —
+// roughly one login's work, paid once at startup and never per request.
+var timingTopUpHashesByCost = mintTimingTopUpHashes()
+
+func mintTimingTopUpHashes() map[int][]byte {
+	minted := make(map[int][]byte, passwordHashCost-bcrypt.MinCost)
+	for cost := bcrypt.MinCost; cost < passwordHashCost; cost++ {
+		hash, err := bcrypt.GenerateFromPassword([]byte(timingTopUpPlaceholderInput), cost)
+		if err != nil {
+			continue // codecov:ignore -- bcrypt only errors on an out-of-range cost; spendBcryptCostTopUp overpays a missing entry rather than under-paying it
+		}
+		minted[cost] = hash
+	}
+	return minted
+}
+
+// bcryptCostTopUpSchedule names the costs at which dummy bcrypt work has to be
+// spent so that a comparison already made against a hash at storedCost adds up
+// to the work of a comparison at passwordHashCost.
+//
+// bcrypt work is exponential in the cost — a comparison at cost c spends ~2^c
+// units — and the deficit 2^passwordHashCost - 2^c is exactly the sum of 2^k
+// for k = c .. passwordHashCost-1. One dummy comparison at each of those costs
+// therefore pays the deficit precisely. The schedule is derived from
+// passwordHashCost and the observed stored cost, never from a fixed pair, so
+// raising the constant widens it without a second edit.
+//
+// A stored cost at or above passwordHashCost owes nothing. A cost below
+// bcrypt.MinCost cannot come out of bcrypt.Cost (it rejects such a hash
+// outright); it is clamped so the schedule stays finite either way.
+func bcryptCostTopUpSchedule(storedCost int) []int {
+	if storedCost < bcrypt.MinCost {
+		storedCost = bcrypt.MinCost
+	}
+	if storedCost >= passwordHashCost {
+		return nil
+	}
+
+	schedule := make([]int, 0, passwordHashCost-storedCost)
+	for cost := storedCost; cost < passwordHashCost; cost++ {
+		schedule = append(schedule, cost)
+	}
+	return schedule
+}
+
+// spendBcryptCostTopUp pays, against placeholder hashes, the bcrypt work a real
+// comparison against storedHash left unspent relative to passwordHashCost. Like
+// the equalize* helpers it never authenticates anyone: every result is
+// discarded, and the placeholders are minted from a fixed non-credential input.
+//
+// fullCostPlaceholder is the caller's own passwordHashCost placeholder, spent
+// whole when the stored hash is unparseable — there bcrypt.CompareHashAndPassword
+// rejected the hash without running the KDF at all, so the entire cost is owed
+// rather than a deficit, and a zero-work rejection would be the loudest signal
+// of the three.
+func spendBcryptCostTopUp(storedHash string, operand string, fullCostPlaceholder string) {
+	storedCost, err := bcrypt.Cost([]byte(storedHash))
+	if err != nil {
+		_ = bcrypt.CompareHashAndPassword([]byte(fullCostPlaceholder), []byte(operand))
+		return
+	}
+
+	for _, topUpCost := range bcryptCostTopUpSchedule(storedCost) {
+		placeholder, ok := timingTopUpHashesByCost[topUpCost]
+		if !ok {
+			// Unreachable: the table covers every cost a schedule can name.
+			// If it ever does not, overpay by a full comparison instead of
+			// silently skipping the work.
+			_ = bcrypt.CompareHashAndPassword([]byte(fullCostPlaceholder), []byte(operand)) // codecov:ignore -- unreachable while the table covers bcrypt.MinCost..passwordHashCost-1
+			return
+		}
+		_ = bcrypt.CompareHashAndPassword(placeholder, []byte(operand))
+	}
+}
+
+// topUpAuthCredentialsTiming closes the login half of the same gap the
+// equalize* helpers close: the early-return branches of AuthenticateCredentials
+// always spend a passwordHashCost comparison, while the real comparison spends
+// only what the stored hash carries. Declared as a var for the same
+// test-substitution reason as equalizeAuthCredentialsTiming — production code
+// never reassigns it.
+var topUpAuthCredentialsTiming = func(storedHash string, password string) {
+	spendBcryptCostTopUp(storedHash, password, credentialsTimingEqualizationHash)
+}
+
+// topUpRecoveryLookupTiming is the recovery-lookup counterpart: it tops up both
+// operands equalizeRecoveryCodeLookupTiming spends at full cost, each against
+// its own placeholder, so a rejection costs the same whether the address has no
+// account or the account's stored hashes predate the current cost. The code is
+// normalized exactly as the real comparison normalizes it.
+var topUpRecoveryLookupTiming = func(recoveryHash string, code string, passwordHash string, password string) {
+	spendBcryptCostTopUp(recoveryHash, NormalizeRecoveryCode(code), recoveryCodeTimingEqualizationHash)
+	spendBcryptCostTopUp(passwordHash, password, credentialsTimingEqualizationHash)
 }
 
 // ResetPasswordAndRotateRecoveryCodeCAS is the single-use variant of
