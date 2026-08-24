@@ -13,9 +13,18 @@ rendered markup, status code or error key changes.
 The new barrier holds every exported field of a view-model struct, and every
 type declared in `internal/api`, to a reader in an embedded template or in
 production Go — a class `deadcode` cannot report, since it analyses functions
-only. The six `calendar-tag-*` utilities the removed field composed stay in
-`web/src/css/input.css` for now: removing a utility is not finished until a
-rebuild shows it left the embedded bundle.
+only. A template read is attributed to the type that is actually rendered
+there, by binding a page-data key to the view model its value carries and
+reading only the block that ranges over it; matching field names across every
+template would call a field live because some other type renders a field of
+the same name.
+
+The six `calendar-tag-*` utilities the removed field composed are gone from
+`web/src/css/input.css` too. Tailwind emits a rule only for a class name it
+finds in the sources, so the stylesheet had already stopped carrying them when
+the Go-side literals went; deleting their definitions leaves the built bundle
+byte-identical, which is the only proof that a utility's removal changes
+nothing that ships.
 
 The export range now resolves through the one lookup that already covered both
 a query string and a form body, with the framework resolution order it depends
