@@ -18,10 +18,6 @@ func mapLocalPasswordSetupReauthError(err error) APIErrorSpec {
 		return settingsOIDCReauthStaleErrorSpec()
 	case errors.Is(err, services.ErrOIDCReauthIdentityMismatch):
 		return settingsOIDCReauthMismatchErrorSpec()
-	case errors.Is(err, services.ErrOIDCCallbackInvalid):
-		return authOIDCAuthenticationFailedErrorSpec()
-	case errors.Is(err, services.ErrOIDCAuthenticationFailed):
-		return authOIDCAuthenticationFailedErrorSpec()
 	case errors.Is(err, services.ErrOIDCDisabled), errors.Is(err, services.ErrOIDCUnavailable):
 		return authOIDCUnavailableErrorSpec()
 	default:
@@ -53,8 +49,10 @@ func mapSettingsPasswordChangeError(err error) APIErrorSpec {
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, services.SettingsPasswordChangeKeyWeakPassword)
 	case errors.Is(err, services.ErrSettingsPasswordHashFailed), errors.Is(err, services.ErrSettingsRecoveryCodeGenerateFailed):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to secure password")
-	case errors.Is(err, services.ErrSettingsPasswordUpdateFailed):
-		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update password")
+	// services.ErrSettingsPasswordUpdateFailed and an unrecognized error share
+	// the default: past the refusals above the change can only have failed on
+	// the way to storage, and a finer message would describe the account state
+	// the write left behind.
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update password")
 	}

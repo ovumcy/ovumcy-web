@@ -57,8 +57,8 @@ func statsFetchErrorSpec() APIErrorSpec {
 func respondNotFoundMappedError(c fiber.Ctx) error {
 	spec := notFoundErrorSpec()
 	if isHTMX(c) {
-		message := translateMessage(currentMessages(c), "not_found.title")
-		if message == "not_found.title" {
+		message, translated := lookupMessage(currentMessages(c), "not_found.title")
+		if !translated {
 			message = "Page not found"
 		}
 		return c.Status(spec.Status).SendString(httpx.StatusErrorMarkup(message, "not_found.title"))

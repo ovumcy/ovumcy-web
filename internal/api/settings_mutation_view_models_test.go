@@ -108,10 +108,13 @@ func TestBuildSettingsSymptomIconOptions_CustomIconIsPrependedAsCustom(t *testin
 }
 
 // TestSettingsSymptomIconInCatalog_ReportsMembership guards the membership helper
-// directly on both branches so the equality check keeps its meaning.
+// directly on both branches so the equality check keeps its meaning. The
+// positive glyph is read out of the catalog rather than spelled again, so
+// editing the catalogue cannot leave this test asserting membership for a glyph
+// that is no longer in it.
 func TestSettingsSymptomIconInCatalog_ReportsMembership(t *testing.T) {
-	if !settingsSymptomIconInCatalog("💧") {
-		t.Errorf("💧 is a catalog icon and must be reported as present")
+	if !settingsSymptomIconInCatalog(settingsSymptomIconCatalog[0]) {
+		t.Errorf("%q is a catalog icon and must be reported as present", settingsSymptomIconCatalog[0])
 	}
 	if settingsSymptomIconInCatalog("🦄") {
 		t.Errorf("🦄 is not a catalog icon and must be reported as absent")

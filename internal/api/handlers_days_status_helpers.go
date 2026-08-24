@@ -23,16 +23,16 @@ func htmxDismissibleSuccessStatusMarkup(messages map[string]string, message stri
 func htmxSettingsSuccessMarkup(c fiber.Ctx, status string, defaultMessage string) string {
 	messages := currentMessages(c)
 	messageKey := services.SettingsStatusTranslationKey(status)
-	message := translateMessage(messages, messageKey)
-	if message == "" || message == messageKey {
+	message, translated := lookupMessage(messages, messageKey)
+	if !translated {
 		message = defaultMessage
 	}
 	return htmxDismissibleSuccessStatusMarkup(messages, message)
 }
 
 func localizedStatusDismissLabel(messages map[string]string) string {
-	closeLabel := translateMessage(messages, "common.close")
-	if closeLabel == "" || closeLabel == "common.close" {
+	closeLabel, translated := lookupMessage(messages, "common.close")
+	if !translated {
 		return "Close"
 	}
 	return closeLabel
@@ -64,8 +64,8 @@ func (handler *Handler) sendDaySaveStatus(c fiber.Ctx, messageKey string) error 
 	if patternKey == "" {
 		patternKey = "common.saved_at"
 	}
-	pattern := translateMessage(currentMessages(c), patternKey)
-	if pattern == "" || pattern == patternKey {
+	pattern, translated := lookupMessage(currentMessages(c), patternKey)
+	if !translated {
 		if patternKey == "common.saved_at" {
 			pattern = "Saved at %s"
 		} else {

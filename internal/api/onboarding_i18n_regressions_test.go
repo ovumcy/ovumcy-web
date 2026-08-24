@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 	"golang.org/x/net/html"
 )
 
@@ -19,25 +20,24 @@ import (
 // attribute (not markup order), so a legitimate reorder does not false-fail.
 // The picking behavior itself (clicking a day fills the value) is browser-side
 // and covered by the Playwright onboarding spec, not here.
+//
+// Both the locale list and the expected text come from the i18n manager at
+// runtime rather than from a table of copy: what this test owes is that each
+// button is wired to its own catalogue key and renders that key's text
+// non-empty in every supported locale. A table restating 24 strings from
+// internal/i18n/locales/*.json turned every wording change in six files into a
+// red api package, while proving nothing this derivation does not — the wording
+// itself belongs to the locale files and to the Playwright onboarding spec.
 func TestOnboardingDatePickerLocalizesAccessibilityLabels(t *testing.T) {
-	cases := []struct {
-		lang          string
-		today         string
-		yesterday     string
-		previousMonth string
-		nextMonth     string
-	}{
-		{"en", "Today", "Yesterday", "Previous month", "Next month"},
-		{"ru", "Сегодня", "Вчера", "Предыдущий месяц", "Следующий месяц"},
-		{"es", "Hoy", "Ayer", "Mes anterior", "Mes siguiente"},
-		{"fr", "Aujourd'hui", "Hier", "Mois précédent", "Mois suivant"},
-		{"de", "Heute", "Gestern", "Vorheriger Monat", "Nächster Monat"},
-		{"it", "Oggi", "Ieri", "Mese precedente", "Mese successivo"},
+	manager, err := i18n.NewManager("en")
+	if err != nil {
+		t.Fatalf("init i18n: %v", err)
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.lang, func(t *testing.T) {
-			document := renderOnboardingForLanguage(t, tc.lang)
+	for _, language := range manager.SupportedLanguages() {
+		t.Run(language, func(t *testing.T) {
+			messages := manager.Messages(language)
+			document := renderOnboardingForLanguage(t, language)
 
 			transport := htmlElementByID(document, "last-period-start")
 			if transport == nil {
@@ -66,12 +66,26 @@ func TestOnboardingDatePickerLocalizesAccessibilityLabels(t *testing.T) {
 				t.Fatalf("onboarding picker [data-onboarding-picker] not found")
 			}
 
-			assertShortcutLabel(t, picker, "today", tc.today)
-			assertShortcutLabel(t, picker, "yesterday", tc.yesterday)
-			assertMonthNavLabel(t, picker, "data-onboarding-month-prev", tc.previousMonth)
-			assertMonthNavLabel(t, picker, "data-onboarding-month-next", tc.nextMonth)
+			assertShortcutLabel(t, picker, "today", onboardingLabelFor(t, messages, "onboarding.step1.today"))
+			assertShortcutLabel(t, picker, "yesterday", onboardingLabelFor(t, messages, "onboarding.step1.yesterday"))
+			assertMonthNavLabel(t, picker, "data-onboarding-month-prev", onboardingLabelFor(t, messages, "onboarding.step1.previous_month"))
+			assertMonthNavLabel(t, picker, "data-onboarding-month-next", onboardingLabelFor(t, messages, "onboarding.step1.next_month"))
 		})
 	}
+}
+
+// onboardingLabelFor answers the catalogue entry the picker is expected to
+// render for one key, and refuses to hand back an empty expectation: a missing
+// entry must fail here rather than turn the comparison below into "" == "",
+// which an unlocalized button would satisfy.
+func onboardingLabelFor(t *testing.T, messages map[string]string, key string) string {
+	t.Helper()
+
+	value := strings.TrimSpace(messages[key])
+	if value == "" {
+		t.Fatalf("locale catalogue has no text for %q", key)
+	}
+	return value
 }
 
 func renderOnboardingForLanguage(t *testing.T, lang string) *html.Node {

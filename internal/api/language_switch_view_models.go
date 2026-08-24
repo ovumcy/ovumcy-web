@@ -29,8 +29,8 @@ func buildLanguageSwitchOptions(messages map[string]string, currentLanguage stri
 
 func localizedLanguageSwitchLabel(messages map[string]string, code string) string {
 	key := fmt.Sprintf("lang.%s", code)
-	localized := translateMessage(messages, key)
-	if localized == key || strings.TrimSpace(localized) == "" {
+	localized, translated := lookupMessage(messages, key)
+	if !translated {
 		return strings.ToUpper(code)
 	}
 	return localized

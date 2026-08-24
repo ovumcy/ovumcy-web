@@ -94,8 +94,8 @@ func buildStatsCycleChartSummary(messages map[string]string, viewData services.S
 	}
 
 	if viewData.ChartBaseline > 0 {
-		pattern := translateMessage(messages, "stats.cycle_chart_summary")
-		if pattern == "" || pattern == "stats.cycle_chart_summary" {
+		pattern, translated := lookupMessage(messages, "stats.cycle_chart_summary")
+		if !translated {
 			pattern = "%d completed cycles shown. Latest cycle %d %s. Average %d %s. Range %d to %d %s."
 		}
 		return fmt.Sprintf(
@@ -111,8 +111,8 @@ func buildStatsCycleChartSummary(messages map[string]string, viewData services.S
 		)
 	}
 
-	pattern := translateMessage(messages, "stats.cycle_chart_summary_no_baseline")
-	if pattern == "" || pattern == "stats.cycle_chart_summary_no_baseline" {
+	pattern, translated := lookupMessage(messages, "stats.cycle_chart_summary_no_baseline")
+	if !translated {
 		pattern = "%d completed cycles shown. Latest cycle %d %s. Range %d to %d %s."
 	}
 	return fmt.Sprintf(
@@ -138,8 +138,8 @@ func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsB
 	}
 
 	if !chart.HasBaseline {
-		pattern := translateMessage(messages, "stats.bbt_chart_summary_no_shift")
-		if pattern == "" || pattern == "stats.bbt_chart_summary_no_shift" {
+		pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary_no_shift")
+		if !translated {
 			pattern = "%d readings this cycle. No temperature shift detected yet."
 		}
 		return fmt.Sprintf(pattern, readingsCount)
@@ -147,23 +147,23 @@ func buildStatsBBTChartSummary(messages map[string]string, chart services.StatsB
 
 	unit := translateMessage(messages, "stats.bbt_unit")
 	if chart.HasMarker && chart.MarkerLabelKey != "" {
-		pattern := translateMessage(messages, "stats.bbt_chart_summary_with_marker")
-		if pattern == "" || pattern == "stats.bbt_chart_summary_with_marker" {
+		pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary_with_marker")
+		if !translated {
 			pattern = "%d readings this cycle. Coverline %.2f %s. Marker: %s."
 		}
 		return fmt.Sprintf(pattern, readingsCount, chart.Baseline, unit, translateMessage(messages, chart.MarkerLabelKey))
 	}
 
-	pattern := translateMessage(messages, "stats.bbt_chart_summary")
-	if pattern == "" || pattern == "stats.bbt_chart_summary" {
+	pattern, translated := lookupMessage(messages, "stats.bbt_chart_summary")
+	if !translated {
 		pattern = "%d readings this cycle. Coverline %.2f %s."
 	}
 	return fmt.Sprintf(pattern, readingsCount, chart.Baseline, unit)
 }
 
 func (handler *Handler) buildStatsPageData(ctx context.Context, user *models.User, language string, messages map[string]string, now time.Time, location *time.Location) (fiber.Map, error) {
-	cycleLabelPattern := translateMessage(messages, "stats.cycle_label")
-	if cycleLabelPattern == "stats.cycle_label" {
+	cycleLabelPattern, translated := lookupMessage(messages, "stats.cycle_label")
+	if !translated {
 		cycleLabelPattern = ""
 	}
 

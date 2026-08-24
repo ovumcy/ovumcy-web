@@ -2,9 +2,14 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +42,138 @@ import (
 // present (so a re-issue stops reverting a mid-session switch), and the cookie's
 // own lifecycle — retracted when a session ends on purpose, kept when one is
 // refused.
+
+// TestNoCallerReDerivesATranslationMissByIdentity sweeps every non-test file in
+// the package for a caller that reads a catalogue miss out of translateMessage
+// by comparing its result to something — the key variable, or a second copy of
+// the key literal. translateMessage signals a miss by returning the key itself,
+// which is a value indistinguishable from a legitimate translation, so a call
+// site that wants its own fallback must ask lookupMessage for the second
+// return value instead of restating the convention. Restating it as a repeated
+// literal is the worse half: renaming the key in the catalogue then disables
+// that site's fallback silently, and the compiler cannot see the second copy,
+// so the owner is shown a raw dotted key where a page title belongs.
+//
+// Comparing against "" stays legal: that is an emptiness check, not the miss.
+func TestNoCallerReDerivesATranslationMissByIdentity(t *testing.T) {
+	t.Run("the sweep can tell the two shapes apart", func(t *testing.T) {
+		missed := `package api
+
+func offender(messages map[string]string, key string) string {
+	title := translateMessage(messages, key)
+	if title == key {
+		return "fallback"
+	}
+	return title
+}
+`
+		fixed := `package api
+
+func compliant(messages map[string]string, key string) string {
+	title, ok := lookupMessage(messages, key)
+	if !ok || title == "" {
+		return "fallback"
+	}
+	return title
+}
+`
+		if findings := translationMissIdentityChecks(t, "offender.go", missed); len(findings) != 1 {
+			t.Fatalf("expected the identity re-derivation to be reported once, got %v", findings)
+		}
+		if findings := translationMissIdentityChecks(t, "compliant.go", fixed); len(findings) != 0 {
+			t.Fatalf("expected the two-value form to pass, got %v", findings)
+		}
+	})
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		for _, finding := range translationMissIdentityChecks(t, name, nil) {
+			t.Errorf("%s: %s — read the miss from lookupMessage's second value instead", name, finding)
+		}
+	}
+}
+
+// translationMissIdentityChecks reports every comparison, in one file, between
+// a translateMessage result and a non-empty operand. source is nil to read the
+// file from disk, or the Go text to scan.
+func translationMissIdentityChecks(t *testing.T, name string, source any) []string {
+	t.Helper()
+
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, name, source, 0)
+	if err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+
+	findings := []string{}
+	ast.Inspect(parsed, func(node ast.Node) bool {
+		funcDecl, ok := node.(*ast.FuncDecl)
+		if !ok || funcDecl.Body == nil {
+			return true
+		}
+		translated := map[string]bool{}
+		ast.Inspect(funcDecl.Body, func(inner ast.Node) bool {
+			assignment, ok := inner.(*ast.AssignStmt)
+			if !ok || len(assignment.Rhs) != 1 || !isTranslateMessageCall(assignment.Rhs[0]) {
+				return true
+			}
+			for _, target := range assignment.Lhs {
+				if ident, ok := target.(*ast.Ident); ok {
+					translated[ident.Name] = true
+				}
+			}
+			return true
+		})
+		ast.Inspect(funcDecl.Body, func(inner ast.Node) bool {
+			comparison, ok := inner.(*ast.BinaryExpr)
+			if !ok || (comparison.Op != token.EQL && comparison.Op != token.NEQ) {
+				return true
+			}
+			for index, operand := range []ast.Expr{comparison.X, comparison.Y} {
+				other := comparison.Y
+				if index == 1 {
+					other = comparison.X
+				}
+				if isEmptyStringLiteral(other) {
+					continue
+				}
+				ident, isIdent := operand.(*ast.Ident)
+				if isTranslateMessageCall(operand) || (isIdent && translated[ident.Name]) {
+					findings = append(findings, fmt.Sprintf(
+						"%s compares a translateMessage result at line %d",
+						funcDecl.Name.Name,
+						fileSet.Position(comparison.OpPos).Line,
+					))
+					return true
+				}
+			}
+			return true
+		})
+		return true
+	})
+	return findings
+}
+
+func isTranslateMessageCall(expression ast.Expr) bool {
+	call, ok := expression.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	callee, ok := call.Fun.(*ast.Ident)
+	return ok && callee.Name == "translateMessage"
+}
+
+func isEmptyStringLiteral(expression ast.Expr) bool {
+	literal, ok := expression.(*ast.BasicLit)
+	return ok && literal.Kind == token.STRING && literal.Value == `""`
+}
 
 func seedStoredInterfaceLanguage(t *testing.T, database *gorm.DB, userID uint, language string) {
 	t.Helper()

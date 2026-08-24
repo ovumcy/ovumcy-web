@@ -5,6 +5,7 @@ import (
 	"errors"
 	"go/ast"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"io"
 	"net/http"
@@ -50,6 +51,119 @@ func TestErrorMappingSwitchesLiveInErrorMappingFiles(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestNoSwitchDefaultRepeatsAnExplicitCase sweeps every non-test file in the
+// package for an error-classifying switch — a tagless switch whose every case
+// predicate is an errors.Is call — with a default arm byte-identical to one of
+// its own explicit cases. Such an arm cannot be regression-pinned: a
+// table-driven mapper test that asserts the spec for its sentinel stays green
+// after the arm is deleted, so a reader cannot tell which arms classify an
+// error and which are decoration, and every new sentinel has to be triaged
+// against mappers where the classification and the fallback are the same edit.
+// Fold the arm into the default — saying in a comment that the shared outcome
+// is deliberate — rather than restating it.
+//
+// Two shapes are deliberately out of scope, and both are why the sweep asks
+// for errors.Is rather than for any duplicated body. A switch on a *value*
+// (respondAuthError's per-path redirects) enumerates known inputs in the case
+// values themselves, with the default as the forward-compat net for the ones
+// nobody enumerated yet. A chain of *shape predicates* (sanitizeRequestLogSegment)
+// is ordered, so an early arm returning its input unchanged short-circuits the
+// masking rules below it and is load-bearing however the default reads. Error
+// sentinels are mutually exclusive, so neither excuse applies to them. No
+// allowlist: a future offender fails here by file and line.
+func TestNoSwitchDefaultRepeatsAnExplicitCase(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package dir: %v", err)
+	}
+	fileSet := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(fileSet, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			switchStmt, ok := node.(*ast.SwitchStmt)
+			if !ok || switchStmt.Body == nil || switchStmt.Tag != nil {
+				return true
+			}
+			defaultBody := ""
+			haveDefault := false
+			caseBodies := map[string]token.Pos{}
+			for _, statement := range switchStmt.Body.List {
+				clause, ok := statement.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				rendered := renderCaseClauseBody(t, fileSet, clause)
+				if clause.List == nil {
+					defaultBody, haveDefault = rendered, true
+					continue
+				}
+				if !classifiesErrorSentinels(clause) {
+					return true
+				}
+				if _, seen := caseBodies[rendered]; !seen {
+					caseBodies[rendered] = clause.Case
+				}
+			}
+			if !haveDefault {
+				return true
+			}
+			if casePos, duplicated := caseBodies[defaultBody]; duplicated {
+				t.Errorf(
+					"%s: the case at line %d repeats the default of the switch at line %d verbatim; fold it into the default",
+					name,
+					fileSet.Position(casePos).Line,
+					fileSet.Position(switchStmt.Switch).Line,
+				)
+			}
+			return true
+		})
+	}
+}
+
+// classifiesErrorSentinels reports whether every predicate of one case arm is
+// an errors.Is call, which is how this package spells "classify a domain
+// sentinel" and what makes the arms of a switch mutually exclusive.
+func classifiesErrorSentinels(clause *ast.CaseClause) bool {
+	for _, predicate := range clause.List {
+		call, ok := predicate.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "Is" {
+			return false
+		}
+		pkg, ok := selector.X.(*ast.Ident)
+		if !ok || pkg.Name != "errors" {
+			return false
+		}
+	}
+	return len(clause.List) > 0
+}
+
+// renderCaseClauseBody prints a case clause's statements without their
+// comments, so two arms that differ only in formatting or in an explanatory
+// comment still compare equal.
+func renderCaseClauseBody(t *testing.T, fileSet *token.FileSet, clause *ast.CaseClause) string {
+	t.Helper()
+
+	rendered := &strings.Builder{}
+	for _, statement := range clause.Body {
+		if err := printer.Fprint(rendered, fileSet, statement); err != nil {
+			t.Fatalf("print case clause body: %v", err)
+		}
+		rendered.WriteString("\n")
+	}
+	return strings.TrimSpace(rendered.String())
 }
 
 func TestCommonErrorSpecs(t *testing.T) {

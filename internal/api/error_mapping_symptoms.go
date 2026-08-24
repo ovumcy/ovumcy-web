@@ -27,16 +27,14 @@ func mapSymptomNameValidationError(err error) (APIErrorSpec, bool) {
 	}
 }
 
+// mapSymptomCreateError has one non-validation outcome by construction:
+// services.ErrCreateSymptomFailed is the only failure the create path reports
+// past name validation, and an unrecognized error is answered the same way.
 func mapSymptomCreateError(err error) APIErrorSpec {
 	if spec, ok := mapSymptomNameValidationError(err); ok {
 		return spec
 	}
-	switch {
-	case errors.Is(err, services.ErrCreateSymptomFailed):
-		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create symptom")
-	default:
-		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create symptom")
-	}
+	return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create symptom")
 }
 
 func mapSymptomUpdateError(err error) APIErrorSpec {
@@ -48,8 +46,9 @@ func mapSymptomUpdateError(err error) APIErrorSpec {
 		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "symptom not found")
 	case errors.Is(err, services.ErrBuiltinSymptomEditForbidden):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "built-in symptom cannot be edited")
-	case errors.Is(err, services.ErrUpdateSymptomFailed):
-		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update symptom")
+	// services.ErrUpdateSymptomFailed and an unrecognized error share the
+	// default: past the refusals above, the update can only have failed on the
+	// way to storage.
 	default:
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to update symptom")
 	}
@@ -61,8 +60,9 @@ func mapSymptomArchiveError(err error) APIErrorSpec {
 		return settingsFormErrorSpec(fiber.StatusNotFound, APIErrorCategoryNotFound, "symptom not found")
 	case errors.Is(err, services.ErrBuiltinSymptomHideForbidden):
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "built-in symptom cannot be hidden")
-	case errors.Is(err, services.ErrArchiveSymptomFailed):
-		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to hide symptom")
+	// services.ErrArchiveSymptomFailed and an unrecognized error share the
+	// default: past the refusals above, the archive can only have failed on the
+	// way to storage.
 	default:
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to hide symptom")
 	}
@@ -76,8 +76,9 @@ func mapSymptomRestoreError(err error) APIErrorSpec {
 		return settingsFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "built-in symptom cannot be restored")
 	case errors.Is(err, services.ErrSymptomNameAlreadyExists):
 		return settingsFormErrorSpec(fiber.StatusConflict, APIErrorCategoryConflict, "symptom name already exists")
-	case errors.Is(err, services.ErrRestoreSymptomFailed):
-		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to restore symptom")
+	// services.ErrRestoreSymptomFailed and an unrecognized error share the
+	// default: past the refusals above, the restore can only have failed on the
+	// way to storage.
 	default:
 		return settingsFormErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to restore symptom")
 	}

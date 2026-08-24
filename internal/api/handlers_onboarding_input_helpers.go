@@ -59,8 +59,9 @@ func (handler *Handler) parseOnboardingStep1Values(c fiber.Ctx, today time.Time,
 			return onboardingStep1Values{}, "date is required"
 		case errors.Is(err, services.ErrOnboardingStartDateInvalid):
 			return onboardingStep1Values{}, "invalid last period start"
-		case errors.Is(err, services.ErrOnboardingStartDateOutOfRange):
-			return onboardingStep1Values{}, "last period start must be within last 60 days"
+		// The out-of-range sentinel and an unrecognized error share the
+		// default: the range is the last thing step 1 validates, so any
+		// remaining failure is answered as the range refusal.
 		default:
 			return onboardingStep1Values{}, "last period start must be within last 60 days"
 		}

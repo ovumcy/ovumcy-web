@@ -63,8 +63,9 @@ func mapAuthRegisterError(err error) APIErrorSpec {
 		return authFormErrorSpec(fiber.StatusBadRequest, APIErrorCategoryValidation, "invalid input")
 	case errors.Is(err, services.ErrRegistrationSeedSymptoms):
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to seed symptoms")
-	case errors.Is(err, services.ErrAuthRegisterFailed):
-		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create account")
+	// services.ErrAuthRegisterFailed and an unrecognized error share the
+	// default: registration reports one internal outcome, and narrowing it
+	// further would tell an unauthenticated caller where the flow stopped.
 	default:
 		return globalErrorSpec(fiber.StatusInternalServerError, APIErrorCategoryInternal, "failed to create account")
 	}
@@ -78,19 +79,23 @@ func mapAuthLoginError(err error) APIErrorSpec {
 		return authWebSignInUnavailableErrorSpec()
 	case errors.Is(err, services.ErrLoginResetTokenIssue):
 		return authResetTokenCreateErrorSpec()
-	case errors.Is(err, services.ErrAuthInvalidCreds):
-		return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
+	// services.ErrAuthInvalidCreds and an unrecognized error share the default
+	// deliberately: any login failure the arms above did not name answers as
+	// "invalid credentials", so no login response reveals account existence or
+	// which factor failed.
 	default:
 		return authFormErrorSpec(fiber.StatusUnauthorized, APIErrorCategoryUnauthorized, "invalid credentials")
 	}
 }
 
+// mapAuthOIDCError narrows only the outcomes the owner can act on; the
+// callback-invalid and authentication-failed sentinels share the default with
+// an unrecognized error, so provider state never leaks through error
+// granularity.
 func mapAuthOIDCError(err error) APIErrorSpec {
 	switch {
 	case errors.Is(err, services.ErrOIDCDisabled), errors.Is(err, services.ErrOIDCUnavailable):
 		return authOIDCUnavailableErrorSpec()
-	case errors.Is(err, services.ErrOIDCCallbackInvalid), errors.Is(err, services.ErrOIDCAuthenticationFailed):
-		return authOIDCAuthenticationFailedErrorSpec()
 	case errors.Is(err, services.ErrOIDCAccountUnavailable):
 		return authOIDCAccountUnavailableErrorSpec()
 	case errors.Is(err, services.ErrOIDCIdentityResolveFailed), errors.Is(err, services.ErrOIDCLinkFailed), errors.Is(err, services.ErrOIDCProvisionFailed):
