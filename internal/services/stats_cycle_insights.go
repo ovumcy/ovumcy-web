@@ -346,21 +346,20 @@ func completedCycleDayNumber(day time.Time, completedCycles []completedCycleSpan
 	return 0, false
 }
 
+// uniqueKnownSymptomIDs narrows a day's symptom ids to the ones the caller's
+// symptom map knows, deduplicated by uniqueSymptomIDs first so the two helpers
+// cannot disagree about what "once per day" means.
 func uniqueKnownSymptomIDs(symptomIDs []uint, symptomByID map[uint]models.SymptomType) []uint {
 	if len(symptomIDs) == 0 || len(symptomByID) == 0 {
 		return nil
 	}
 
-	unique := make([]uint, 0, len(symptomIDs))
-	seen := make(map[uint]struct{}, len(symptomIDs))
-	for _, symptomID := range symptomIDs {
+	deduped := uniqueSymptomIDs(symptomIDs)
+	unique := make([]uint, 0, len(deduped))
+	for _, symptomID := range deduped {
 		if _, exists := symptomByID[symptomID]; !exists {
 			continue
 		}
-		if _, duplicate := seen[symptomID]; duplicate {
-			continue
-		}
-		seen[symptomID] = struct{}{}
 		unique = append(unique, symptomID)
 	}
 	return unique

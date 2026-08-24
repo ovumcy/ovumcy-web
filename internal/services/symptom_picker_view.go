@@ -15,7 +15,7 @@ func RankSymptomsForEntryPicker(symptoms []models.SymptomType, logs []models.Dai
 
 	counts := make(map[uint]int, len(symptoms))
 	for _, logEntry := range logs {
-		for _, symptomID := range logEntry.SymptomIDs {
+		for _, symptomID := range uniqueSymptomIDs(logEntry.SymptomIDs) {
 			counts[symptomID]++
 		}
 	}
