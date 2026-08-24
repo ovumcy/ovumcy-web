@@ -159,10 +159,6 @@ func TestBuildCalendarDaysMapsStateToTemplateClasses(t *testing.T) {
 	if !strings.Contains(days[0].CellClass, "calendar-cell-period") {
 		t.Fatalf("expected period class for first day, got %q", days[0].CellClass)
 	}
-	if days[0].BadgeClass != "calendar-tag calendar-tag-period" {
-		t.Fatalf("expected period badge class, got %q", days[0].BadgeClass)
-	}
-
 	if !strings.Contains(days[1].CellClass, "calendar-cell-fertile") {
 		t.Fatalf("expected fertile class for ovulation day, got %q", days[1].CellClass)
 	}
@@ -174,9 +170,6 @@ func TestBuildCalendarDaysMapsStateToTemplateClasses(t *testing.T) {
 	}
 	if !strings.Contains(days[1].TextClass, "calendar-day-out") {
 		t.Fatalf("expected out-of-month text class, got %q", days[1].TextClass)
-	}
-	if days[1].BadgeClass != "calendar-tag calendar-tag-ovulation" {
-		t.Fatalf("expected ovulation badge class, got %q", days[1].BadgeClass)
 	}
 	if !days[1].OvulationDot {
 		t.Fatalf("expected ovulation dot for second day")

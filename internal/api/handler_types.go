@@ -57,27 +57,23 @@ type Handler struct {
 	assetVersion         string
 }
 
+// CalendarDay is one cell of the calendar grid. Every field on it is one the
+// calendar template interpolates: the day's own state is carried as the three
+// rendered forms (CellClass, TextClass, StateKey) rather than as the flags they
+// were derived from, so there is one place to read for what a cell looks like.
+// Re-exposing a raw predicate here means a template or a handler is about to
+// re-decide something buildCalendarDays already decided; the barrier in
+// declaration_reachability_barrier_test.go refuses a field nothing reads.
 type CalendarDay struct {
 	Date                   time.Time
 	DateString             string
 	Day                    int
-	InMonth                bool
 	IsToday                bool
 	OpenEditDirectly       bool
-	IsPeriod               bool
-	IsPredicted            bool
-	IsPredictedStartWindow bool
-	IsPreFertile           bool
-	IsFertility            bool
-	IsFertilityPeak        bool
-	IsFertilityEdge        bool
-	IsOvulation            bool
-	IsTentativeOvulation   bool
 	HasData                bool
 	HasSex                 bool
 	CellClass              string
 	TextClass              string
-	BadgeClass             string
 	StateKey               string
 	OvulationDot           bool
 	TentativeOvulationMark bool
