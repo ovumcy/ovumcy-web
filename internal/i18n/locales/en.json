@@ -527,6 +527,7 @@
   "stats.data_notice": "Data is still limited. The picture will sharpen as you log more cycles.",
   "stats.cycle_stack_title": "Your recent cycles, side by side",
   "stats.cycle_stack_subtitle": "One row per completed cycle, on a shared scale: a longer row is a longer cycle.",
+  "stats.cycle_stack_truncated": "A cycle longer than the scale has its band cut off at the edge: read that row's length from the number beside it.",
   "stats.cycle_trend": "Cycle length trend",
   "stats.recent_cycles": "Recent cycles",
   "stats.cycle_length_card": "Cycle length",

@@ -527,6 +527,7 @@
   "stats.data_notice": "Aún hay pocos datos. La imagen se aclarará a medida que registres más ciclos.",
   "stats.cycle_stack_title": "Tus últimos ciclos, uno junto a otro",
   "stats.cycle_stack_subtitle": "Una fila por ciclo completado, en la misma escala: una fila más larga es un ciclo más largo.",
+  "stats.cycle_stack_truncated": "Un ciclo más largo que la escala se corta en el borde: lee la duración de esa fila en el número que aparece al lado.",
   "stats.cycle_trend": "Tendencia de la duración del ciclo",
   "stats.recent_cycles": "Ciclos recientes",
   "stats.cycle_length_card": "Duración del ciclo",

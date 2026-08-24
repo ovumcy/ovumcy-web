@@ -2986,6 +2986,7 @@
 }
 
 @utility stats-cycle-stack-band {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: 1px;
@@ -2993,6 +2994,25 @@
   border-radius: var(--radius-mark);
   overflow: hidden;
   background: var(--surface-quiet);
+
+  /* A cycle longer than the axis stops at the cap, not at its own end, so two
+     such rows are drawn the same width whatever their lengths. The hatched
+     trailing edge says the drawing was cut rather than finished — the same
+     disclosure the notice under the stack carries in words, for the reader who
+     compares by eye. Both tokens are theme-scoped, so the mark follows the
+     theme and this component keeps no dark-side block of its own. */
+  &[data-truncated='true']::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 0.45rem;
+    border-radius: 0 var(--radius-mark) var(--radius-mark) 0;
+    background: repeating-linear-gradient(
+      135deg,
+      var(--surface-quiet) 0 2px,
+      var(--ink-muted) 2px 4px
+    );
+  }
 }
 
 @utility stats-cycle-stack-day {

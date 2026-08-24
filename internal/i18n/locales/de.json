@@ -527,6 +527,7 @@
   "stats.data_notice": "Die Datenmenge ist noch begrenzt. Das Bild wird klarer, je mehr Zyklen Sie protokollieren.",
   "stats.cycle_stack_title": "Ihre letzten Zyklen nebeneinander",
   "stats.cycle_stack_subtitle": "Eine Zeile je abgeschlossenem Zyklus, im gleichen Maßstab: eine längere Zeile ist ein längerer Zyklus.",
+  "stats.cycle_stack_truncated": "Ein Zyklus, der länger als die Skala ist, wird am Rand abgeschnitten: Lesen Sie die Länge dieser Zeile an der Zahl daneben ab.",
   "stats.cycle_trend": "Trend der Zykluslänge",
   "stats.recent_cycles": "Aktuelle Zyklen",
   "stats.cycle_length_card": "Zykluslänge",

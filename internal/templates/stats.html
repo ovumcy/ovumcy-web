@@ -342,7 +342,7 @@
         {{range .CycleRibbon.Rows}}
         <li class="stats-cycle-stack-row" data-cycle-stack-row>
           <span class="stats-cycle-stack-label">{{formatLocalizedDate $.Lang .Start "display"}}</span>
-          <span class="stats-cycle-stack-band" aria-hidden="true">
+          <span class="stats-cycle-stack-band" aria-hidden="true" {{if .Truncated}}data-truncated="true"{{end}}>
             {{range .Days}}
             <span
               class="stats-cycle-stack-day"
@@ -359,6 +359,13 @@
         </li>
         {{end}}
       </ol>
+      {{/* The axis is capped, so a cycle longer than it has its band stop at
+           the cap rather than at its own end — and two such rows are drawn the
+           same width whatever their lengths. The bands are aria-hidden
+           decoration; this notice is the disclosure and is not, since a reader
+           who cannot see the equal widths needs it most. The true length is
+           printed beside every row either way. */}}
+      {{if .CycleRibbon.AxisTruncated}}<p class="journal-muted mt-3 text-xs" data-cycle-stack-truncated-notice>{{t .Messages "stats.cycle_stack_truncated"}}</p>{{end}}
     </section>
     {{end}}
 
