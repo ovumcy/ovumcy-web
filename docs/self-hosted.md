@@ -157,6 +157,11 @@ The supported reverse proxy path is intentionally narrow:
 - Ovumcy continues to listen on plain HTTP at `:8080` inside that private network.
 - `COOKIE_SECURE=true` is mandatory once the public site is HTTPS-only.
 - `TRUST_PROXY_ENABLED=true` is valid only when every trusted proxy IP or internal proxy subnet is explicitly listed in `TRUSTED_PROXIES`.
+  Each entry must be a literal IP in canonical form (`10.0.0.1`, `2001:db8::1`) or a CIDR range (`10.0.0.0/8`); with trust-proxy enabled,
+  an entry the app cannot use refuses the boot, naming the rejected entry, rather than being dropped from the trusted set.
+- A value this app cannot parse for `COOKIE_SECURE`, `HSTS_ENABLED`, `TRUST_PROXY_ENABLED` or `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` also
+  refuses the boot, naming the key and the value — a typo in one of these no longer starts the instance on the insecure default.
+  Accepted spellings are `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`; leaving a key unset still means its documented default.
 - Keep `PROXY_HEADER=X-Real-IP`; the example proxies set it to the real client IP. Do not use `X-Forwarded-For` for per-IP rate limiting — the proxy appends the client value and the app keys on the leftmost (spoofable) entry.
 
 The example stacks below use dedicated internal subnets and set `TRUSTED_PROXIES` to those exact ranges. If you adapt the stacks, keep the trusted proxy range as small as the network design allows. If the sample subnet collides with your environment, change both the Docker subnet and `TRUSTED_PROXIES` together.
@@ -509,7 +514,9 @@ curl -fsS http://127.0.0.1:8080/healthz
 Typical failure split:
 
 - App issue: container exits, the container healthcheck fails, or `/healthz` fails inside the intended deployment path.
-- Config issue: container runs but startup logs show invalid env values or trusted-proxy configuration errors.
+- Config issue: startup logs show invalid env values or trusted-proxy configuration errors. Most invalid values fall back to the
+  documented default and the container keeps running; an unparseable security toggle or `TRUSTED_PROXIES` entry exits instead, with
+  the last log line naming the key and the rejected value.
 - Proxy issue: `ovumcy` is healthy, but public requests fail, loop, or lose the real client IP.
 
 ### `431 Request Header Fields Too Large`

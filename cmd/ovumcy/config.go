@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -115,12 +116,22 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		return runtimeConfig{}, err
 	}
 
-	cookieSecure := getEnvBool("COOKIE_SECURE", false)
+	cookieSecure, err := getEnvBoolStrict("COOKIE_SECURE", false)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
 	// HSTS defaults to COOKIE_SECURE (preserving the historical coupling where
 	// enabling secure cookies also pinned HTTPS) but is an independent switch:
 	// HSTS_ENABLED=false lets an operator run secure cookies without pinning
 	// browsers to HTTPS for a year, and HSTS_ENABLED=true opts in explicitly.
-	hstsEnabled := getEnvBool("HSTS_ENABLED", cookieSecure)
+	hstsEnabled, err := getEnvBoolStrict("HSTS_ENABLED", cookieSecure)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
+	webhookBlockPrivate, err := getEnvBoolStrict("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false)
+	if err != nil {
+		return runtimeConfig{}, err
+	}
 	oidcConfig, err := resolveOIDCConfig(cookieSecure, registrationMode)
 	if err != nil {
 		return runtimeConfig{}, err
@@ -152,7 +163,7 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 		},
 		Proxy:               proxy,
 		AuditLogEnabled:     getEnvBool("AUDIT_LOG_ENABLED", false),
-		WebhookBlockPrivate: getEnvBool("WEBHOOK_BLOCK_PRIVATE_ADDRESSES", false),
+		WebhookBlockPrivate: webhookBlockPrivate,
 		ReminderScheduler: reminderSchedulerSettings{
 			Enabled: getEnvBool("REMINDER_SCHEDULER_ENABLED", false),
 			// getEnvInt rejects values <1, so hour 0 (valid) would be lost; use a
@@ -192,8 +203,13 @@ func resolveOIDCConfig(cookieSecure bool, registrationMode services.Registration
 }
 
 func resolveProxySettings() (proxySettings, error) {
+	enabled, err := getEnvBoolStrict("TRUST_PROXY_ENABLED", false)
+	if err != nil {
+		return proxySettings{}, err
+	}
+
 	settings := proxySettings{
-		Enabled:        getEnvBool("TRUST_PROXY_ENABLED", false),
+		Enabled:        enabled,
 		Header:         strings.TrimSpace(getEnv("PROXY_HEADER", fiber.HeaderXForwardedFor)),
 		TrustedProxies: parseCSV(getEnv("TRUSTED_PROXIES", "127.0.0.1,::1")),
 	}
@@ -207,7 +223,42 @@ func resolveProxySettings() (proxySettings, error) {
 	if len(settings.TrustedProxies) == 0 {
 		return proxySettings{}, fmt.Errorf("TRUST_PROXY_ENABLED=true requires at least one TRUSTED_PROXIES entry")
 	}
+	if err := validateTrustedProxies(settings.TrustedProxies); err != nil {
+		return proxySettings{}, err
+	}
 	return settings, nil
+}
+
+// validateTrustedProxies refuses a TRUSTED_PROXIES entry the trust boundary
+// could never use, so the boot fails loudly instead of running on a smaller
+// trusted set than the operator wrote.
+//
+// The rules are the ones newTrustedProxyMatcher (and fiber's own
+// handleTrustedProxy) apply: an entry containing "/" is a CIDR range, anything
+// else is matched by exact net.IP string — hence the canonical-spelling check,
+// since "2001:DB8::1" parses fine yet never equals the "2001:db8::1" the
+// matcher looks up. An entry that fails either rule used to be dropped (bad
+// CIDR) or stored where nothing can match it (everything else): the proxy then
+// stayed untrusted, every client behind it fell back to the socket peer and
+// shared one rate-limit bucket, while the startup banner counted the raw CSV
+// and reported the typo as configured.
+func validateTrustedProxies(entries []string) error {
+	for _, entry := range entries {
+		if strings.Contains(entry, "/") {
+			if _, _, err := net.ParseCIDR(entry); err != nil {
+				return fmt.Errorf("invalid TRUSTED_PROXIES entry %q: not a CIDR range (for example 10.0.0.0/8)", entry)
+			}
+			continue
+		}
+		parsed := net.ParseIP(entry)
+		if parsed == nil {
+			return fmt.Errorf("invalid TRUSTED_PROXIES entry %q: not an IP address or CIDR range", entry)
+		}
+		if canonical := parsed.String(); canonical != entry {
+			return fmt.Errorf("invalid TRUSTED_PROXIES entry %q: an IP is matched literally, so it must be written in canonical form (%q)", entry, canonical)
+		}
+	}
+	return nil
 }
 
 func resolveDatabaseConfig() (db.Config, error) {
