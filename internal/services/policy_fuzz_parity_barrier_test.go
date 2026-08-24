@@ -52,7 +52,7 @@ const (
 // TestPolicyFuzzHarnessesDeclareTheSameTargets fails when the native harness and
 // the gofuzz-tagged harness stop declaring the same set of fuzz targets.
 func TestPolicyFuzzHarnessesDeclareTheSameTargets(t *testing.T) {
-	root := fuzzParityRepoRoot(t)
+	root := servicesSourceBarrierRoot(t)
 	native := parseFuzzParityFile(t, filepath.Join(root, filepath.FromSlash(fuzzParityNativeFile)))
 	tagged := parseFuzzParityFile(t, filepath.Join(root, filepath.FromSlash(fuzzParityLibFuzzerFile)))
 
@@ -71,7 +71,7 @@ func TestPolicyFuzzHarnessesDeclareTheSameTargets(t *testing.T) {
 // TestPolicyFuzzHarnessesShareTheirSeedsAndOracles fails when a target body or a
 // shared helper is corrected in one harness and left stale in the other.
 func TestPolicyFuzzHarnessesShareTheirSeedsAndOracles(t *testing.T) {
-	root := fuzzParityRepoRoot(t)
+	root := servicesSourceBarrierRoot(t)
 	native := parseFuzzParityFile(t, filepath.Join(root, filepath.FromSlash(fuzzParityNativeFile)))
 	tagged := parseFuzzParityFile(t, filepath.Join(root, filepath.FromSlash(fuzzParityLibFuzzerFile)))
 
@@ -100,7 +100,7 @@ func TestPolicyFuzzHarnessesShareTheirSeedsAndOracles(t *testing.T) {
 // TestClusterFuzzLiteBuildsEveryDeclaredFuzzTarget fails when the build script's
 // hand-written target list stops matching the harnesses.
 func TestClusterFuzzLiteBuildsEveryDeclaredFuzzTarget(t *testing.T) {
-	root := fuzzParityRepoRoot(t)
+	root := servicesSourceBarrierRoot(t)
 	native := parseFuzzParityFile(t, filepath.Join(root, filepath.FromSlash(fuzzParityNativeFile)))
 	scripted := parseClusterFuzzLiteTargets(t, filepath.Join(root, filepath.FromSlash(fuzzParityBuildScript)))
 
@@ -290,7 +290,10 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-func fuzzParityRepoRoot(t *testing.T) string {
+// servicesSourceBarrierRoot locates the module root, so a barrier in this
+// package can read the source it judges — including the files outside
+// internal/services that have to agree with it.
+func servicesSourceBarrierRoot(t *testing.T) string {
 	t.Helper()
 
 	dir, err := os.Getwd()

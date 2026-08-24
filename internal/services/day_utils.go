@@ -197,6 +197,12 @@ func DayHasData(entry models.DailyLog) bool {
 // inside the auto-fill window for clearing purposes. This is the parity
 // counterpart of `isAutoFilledPeriodCandidate` in ovumcy-app, where auto-fill
 // does not propagate flow.
+//
+// The manual-signal fields it tests mirror DayHasData's, and
+// day_field_mirror_barrier_test.go holds the two together: a field wired into
+// one of them alone fails there, naming the field and which side is missing.
+// Flow, CycleStart and IsUncertain are the only asymmetry, each carried in that
+// barrier's exception sets with the reason above.
 func IsAutoFilledPeriodCandidate(entry models.DailyLog) bool {
 	if !entry.IsPeriod || entry.CycleStart || entry.IsUncertain {
 		return false
