@@ -62,14 +62,13 @@ func setExportAttachmentHeaders(c fiber.Ctx, contentType string, filename string
 	c.Set(fiber.HeaderContentDisposition, fmt.Sprintf("attachment; filename=%s", filename))
 }
 
+// exportRangeInputValues reads the requested range from wherever the caller put
+// it. One lookup covers both: fiber's FormValue searches the query string
+// before the body, so a GET's `?from=` and a POST's form field arrive through
+// the same call and an empty answer means neither carried a value. An explicit
+// c.Query fallback behind it could only reassign the empty string over itself.
+// That resolution order belongs to the framework, so it is pinned rather than
+// assumed: handlers_export_request_helpers_seam_test.go.
 func exportRangeInputValues(c fiber.Ctx) (string, string) {
-	from := strings.TrimSpace(c.FormValue("from"))
-	to := strings.TrimSpace(c.FormValue("to"))
-	if from == "" {
-		from = strings.TrimSpace(c.Query("from"))
-	}
-	if to == "" {
-		to = strings.TrimSpace(c.Query("to"))
-	}
-	return from, to
+	return strings.TrimSpace(c.FormValue("from")), strings.TrimSpace(c.FormValue("to"))
 }
