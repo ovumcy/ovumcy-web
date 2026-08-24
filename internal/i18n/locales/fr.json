@@ -472,7 +472,6 @@
 
   "dashboard.high_fertility_badge": "Fertilité élevée",
   "dashboard.fertility_badge_warning": "Période fertile",
-  "dashboard.fertile_window": "Fenêtre fertile",
   "dashboard.fertile_window_after_first_cycle": "Votre fenêtre fertile apparaîtra après votre premier cycle terminé",
   "dashboard.fertility_badge_positive": "Période fertile, meilleur moment",
   "dashboard.ovulation": "Ovulation",
@@ -508,6 +507,7 @@
   "dashboard.mood.very_good": "Très bonne",
   "dashboard.flow": "Flux",
   "dashboard.symptoms": "Symptômes",
+  "dashboard.owner_only_details": "Les détails ne sont visibles que par le propriétaire du compte.",
   "dashboard.sex": "Rapports sexuels",
   "dashboard.sex.none": "Aucun",
   "dashboard.sex.protected": "Protégé",
@@ -814,6 +814,7 @@
   "settings.2fa.description": "Protégez votre compte avec une application d'authentification (TOTP).",
   "settings.2fa.manage_button": "Gérer l'authentification à deux facteurs",
   "settings.2fa.status_enabled_label": "L'authentification à deux facteurs est activée",
+  "settings.2fa.status_enabled_hint": "À la connexion, un code de votre application d'authentification est demandé en plus de votre mot de passe.",
   "settings.2fa.status_disabled_label": "L'authentification à deux facteurs n'est pas activée",
   "settings.2fa.setup_title": "Configurer l'authentification à deux facteurs",
   "settings.2fa.setup_instructions": "Scannez le QR code avec votre application d'authentification (Google Authenticator, Authy, Aegis, etc.), puis saisissez le code à 6 chiffres pour confirmer.",
