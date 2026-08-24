@@ -26,8 +26,10 @@ import (
 // the early-return equalizer, which must spend BOTH operands' compute.
 //
 // What it cannot see: a `return` inserted between the two assignments, or a
-// compare hidden behind a helper call. Neither is invisible to the enumeration
-// guards in internal/api, which compare the answers themselves.
+// compare hidden behind a helper it does not name. Neither is invisible to the
+// enumeration guards in internal/api, which compare the answers themselves. The
+// two helpers this route DOES spend bcrypt work through are named and counted
+// at the end of the test.
 func TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit(t *testing.T) {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, "auth_service.go", nil, parser.ParseComments)
@@ -86,6 +88,40 @@ func TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit(t *testin
 		}
 		return true
 	})
+
+	// The inline comparisons above are only half the story: two rejection paths
+	// spend their bcrypt work through a helper instead, and deleting either call
+	// is invisible both to a compare count and to the work ledgers in
+	// auth_service_timing_cost_topup_test.go, which read the unknown-address
+	// baseline off the placeholder constants rather than measuring it. Pin the
+	// calls themselves. Two equalizer calls: the unknown-address branch and the
+	// no-local-auth/empty-hash branch. One top-up call: the branch where both
+	// comparisons ran, against stored hashes that may predate passwordHashCost.
+	helperCalls := map[string]int{}
+	ast.Inspect(bodies["FindUserByEmailRecoveryCodeAndPassword"], func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := call.Fun.(*ast.Ident); ok {
+			helperCalls[ident.Name]++
+		}
+		return true
+	})
+
+	for _, want := range []struct {
+		helper string
+		calls  int
+		why    string
+	}{
+		{"equalizeRecoveryCodeLookupTiming", 2, "an unknown address would then be refused with no bcrypt work at all — the loudest account-enumeration signal this route can emit"},
+		{"topUpRecoveryLookupTiming", 1, "a row whose stored hashes predate passwordHashCost would then be refused more cheaply than an unknown address"},
+	} {
+		if got := helperCalls[want.helper]; got != want.calls {
+			t.Fatalf("FindUserByEmailRecoveryCodeAndPassword calls %s %d times, want %d: %s",
+				want.helper, got, want.calls, want.why)
+		}
+	}
 }
 
 func isBcryptCompareCall(call *ast.CallExpr) bool {

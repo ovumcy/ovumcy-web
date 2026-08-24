@@ -356,8 +356,15 @@ func (service *AuthService) rehashPasswordIfStale(ctx context.Context, user *mod
 // captured secret can no longer rewrite the password and mint a session.
 //
 // Every rejection returns the one ErrRecoveryCodeNotFound, and every rejection
-// spends the SAME bcrypt work as a success — two cost-12 comparisons. The
-// operands are therefore never short-circuited against each other: when the row
+// spends the same bcrypt work as every OTHER rejection — two comparisons at
+// passwordHashCost. Where the row exists and its stored hashes were minted
+// below that cost, topUpRecoveryLookupTiming buys the shortfall back, so a
+// wrong code costs what an address with no account at all costs. A SUCCESS is
+// deliberately not held to that total: it runs no top-up, so an account still
+// carrying pre-raise hashes verifies more cheaply than it is rejected. Nothing
+// leaks by that — reaching the success path already requires both secrets.
+//
+// The operands are therefore never short-circuited against each other: when the row
 // exists, both comparisons run and only their combined result decides, and when
 // it does not, equalizeRecoveryCodeLookupTiming spends both against the fixed
 // placeholders. A password compare skipped after a failed code compare (or the
@@ -605,6 +612,17 @@ func bcryptCostTopUpSchedule(storedCost int) []int {
 	return schedule
 }
 
+// timingTopUpCompare is the single point at which the top-up spends bcrypt
+// work. Declared as a var for the same test-substitution reason as the
+// equalize* helpers, but used differently: a guard WRAPS it to account the work
+// spendBcryptCostTopUp actually spends, rather than recomputing that work from
+// bcryptCostTopUpSchedule. Recomputing it would only prove the schedule is
+// consistent with itself, and would stay green if the loop below stopped
+// comparing altogether. Production code never reassigns it.
+var timingTopUpCompare = func(hash []byte, operand []byte) {
+	_ = bcrypt.CompareHashAndPassword(hash, operand)
+}
+
 // spendBcryptCostTopUp pays, against placeholder hashes, the bcrypt work a real
 // comparison against storedHash left unspent relative to passwordHashCost. Like
 // the equalize* helpers it never authenticates anyone: every result is
@@ -618,7 +636,7 @@ func bcryptCostTopUpSchedule(storedCost int) []int {
 func spendBcryptCostTopUp(storedHash string, operand string, fullCostPlaceholder string) {
 	storedCost, err := bcrypt.Cost([]byte(storedHash))
 	if err != nil {
-		_ = bcrypt.CompareHashAndPassword([]byte(fullCostPlaceholder), []byte(operand))
+		timingTopUpCompare([]byte(fullCostPlaceholder), []byte(operand))
 		return
 	}
 
@@ -628,10 +646,10 @@ func spendBcryptCostTopUp(storedHash string, operand string, fullCostPlaceholder
 			// Unreachable: the table covers every cost a schedule can name.
 			// If it ever does not, overpay by a full comparison instead of
 			// silently skipping the work.
-			_ = bcrypt.CompareHashAndPassword([]byte(fullCostPlaceholder), []byte(operand)) // codecov:ignore -- unreachable while the table covers bcrypt.MinCost..passwordHashCost-1
+			timingTopUpCompare([]byte(fullCostPlaceholder), []byte(operand)) // codecov:ignore -- unreachable while the table covers bcrypt.MinCost..passwordHashCost-1
 			return
 		}
-		_ = bcrypt.CompareHashAndPassword(placeholder, []byte(operand))
+		timingTopUpCompare(placeholder, []byte(operand))
 	}
 }
 

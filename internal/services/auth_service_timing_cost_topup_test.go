@@ -42,21 +42,23 @@ func mintBcryptHashAtCost(t *testing.T, value string, cost int) string {
 	return string(hash)
 }
 
-// topUpWorkUnits is the work the top-up owes for storedHash: the scheduled
-// dummy comparisons, or one whole passwordHashCost comparison when the stored
-// hash is unparseable and the real comparison therefore ran no KDF at all.
-func topUpWorkUnits(t *testing.T, storedHash string, fullCostPlaceholder string) int64 {
+// withTopUpCompareLedger wraps the single seam through which the shipped
+// spendBcryptCostTopUp spends its bcrypt work, so a test accounts the
+// comparisons the code ACTUALLY makes and reads each one's cost off the hash it
+// was handed.
+//
+// This guard used to recompute the same total from bcryptCostTopUpSchedule
+// instead. That proved only that the schedule agreed with itself: replacing the
+// body of spendBcryptCostTopUp with a bare return left the oracle wide open and
+// every assertion in this file green.
+func withTopUpCompareLedger(t *testing.T, ledger *bcryptWorkLedger) {
 	t.Helper()
-	storedCost, err := bcrypt.Cost([]byte(storedHash))
-	if err != nil {
-		return bcryptWorkUnits(mustBcryptCost(t, fullCostPlaceholder))
+	original := timingTopUpCompare
+	timingTopUpCompare = func(hash []byte, operand []byte) {
+		ledger.units += bcryptWorkUnits(mustBcryptCost(t, string(hash)))
+		original(hash, operand)
 	}
-
-	var units int64
-	for _, cost := range bcryptCostTopUpSchedule(storedCost) {
-		units += bcryptWorkUnits(cost)
-	}
-	return units
+	t.Cleanup(func() { timingTopUpCompare = original })
 }
 
 // bcryptWorkLedger accumulates the work the equalizing helpers spend on a
@@ -92,7 +94,6 @@ func withLoginWorkLedger(t *testing.T) *bcryptWorkLedger {
 	topUpAuthCredentialsTiming = func(storedHash string, password string) {
 		ledger.topUpHashes = append(ledger.topUpHashes, storedHash)
 		ledger.topUpOperands = append(ledger.topUpOperands, password)
-		ledger.units += topUpWorkUnits(t, storedHash, credentialsTimingEqualizationHash)
 		originalTopUp(storedHash, password)
 	}
 
@@ -100,6 +101,8 @@ func withLoginWorkLedger(t *testing.T) *bcryptWorkLedger {
 		equalizeAuthCredentialsTiming = originalEqualize
 		topUpAuthCredentialsTiming = originalTopUp
 	})
+
+	withTopUpCompareLedger(t, ledger)
 	return ledger
 }
 
@@ -217,8 +220,9 @@ func TestAuthenticateCredentialsAccountsFullWorkForAnUnparseableStoredHash(t *te
 		t.Fatalf("expected ErrAuthInvalidCreds for an unparseable stored hash, got %v", err)
 	}
 
-	if want := bcryptWorkUnits(passwordHashCost); ledger.drain() != want {
-		t.Fatalf("unparseable stored hash accounts to %d work units, want %d (2^passwordHashCost)", ledger.units, want)
+	spent := ledger.drain()
+	if want := bcryptWorkUnits(passwordHashCost); spent != want {
+		t.Fatalf("unparseable stored hash accounts to %d work units, want %d (2^passwordHashCost)", spent, want)
 	}
 }
 
@@ -266,17 +270,22 @@ func TestRecoveryLookupAccountsEqualWorkForMissingAccountAndStaleHashes(t *testi
 	originalTopUp := topUpRecoveryLookupTiming
 	topUpRecoveryLookupTiming = func(recoveryHash string, code string, passwordHash string, password string) {
 		ledger.topUpHashes = append(ledger.topUpHashes, recoveryHash, passwordHash)
-		ledger.units += topUpWorkUnits(t, recoveryHash, recoveryCodeTimingEqualizationHash)
-		ledger.units += topUpWorkUnits(t, passwordHash, credentialsTimingEqualizationHash)
 		originalTopUp(recoveryHash, code, passwordHash, password)
 	}
 	t.Cleanup(func() { topUpRecoveryLookupTiming = originalTopUp })
+	withTopUpCompareLedger(t, ledger)
 
-	// The unknown-address branch runs equalizeRecoveryCodeLookupTiming, whose
-	// two placeholder comparisons are pinned to passwordHashCost by
-	// TestTimingEqualizationHashesMatchTargetCost and pinned to both running by
-	// TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit; its
-	// work is read off those same constants here.
+	// The unknown-address baseline is read off the two placeholder constants
+	// rather than measured, because equalizeRecoveryCodeLookupTiming compares
+	// against them with a literal bcrypt call the barrier test requires it to
+	// keep. Three guards make that reading safe, and none of them is this test:
+	// TestTimingEqualizationHashesMatchTargetCost pins both placeholders to
+	// passwordHashCost, and
+	// TestRecoveryLookupSpendsBothCredentialComparesWithoutShortCircuit pins
+	// both comparisons to running unconditionally AND pins both early-return
+	// branches to actually calling the equalizer — without that last check,
+	// deleting the call here would leave an unknown address costing nothing and
+	// this test still green.
 	missing := NewAuthService(&stubAuthUserRepo{})
 	if _, err := missing.FindUserByEmailRecoveryCodeAndPassword(context.Background(), "nobody@example.com", submittedCode, submittedPassword); !errors.Is(err, ErrRecoveryCodeNotFound) {
 		t.Fatalf("expected ErrRecoveryCodeNotFound for an unknown address, got %v", err)
