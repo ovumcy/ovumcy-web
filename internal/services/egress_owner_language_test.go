@@ -38,6 +38,42 @@ func (provider localeCopyProvider) Message(language string, key string) string {
 	return provider.manager.Messages(language)[key]
 }
 
+// titleOnlyCopyProvider answers the reminder TITLE keys and nothing else, which
+// is the shape of a provider whose catalogue lost the sentence entry. It exists
+// because reminderCopy's empty-template arm is otherwise unreachable from a
+// catalogue-backed provider: the sweep above forbids a blank sentence in any
+// shipped locale, so the branch that keeps a missing one from rendering as
+// formatting residue has no locale that can exercise it.
+type titleOnlyCopyProvider struct{}
+
+func (titleOnlyCopyProvider) Disclaimer(string) string { return "" }
+
+func (titleOnlyCopyProvider) Message(_ string, key string) string {
+	if strings.HasSuffix(key, ".title") {
+		return "Reminder"
+	}
+	return ""
+}
+
+// TestReminderCopyWithoutASentenceSendsTheHeadlineAlone pins the arm that keeps
+// a missing catalogue sentence from reaching a webhook consumer as Sprintf
+// residue. Without it, reminderCopy would format the empty template and the
+// payload body would read "%!(EXTRA string=2026-02-10)".
+func TestReminderCopyWithoutASentenceSendsTheHeadlineAlone(t *testing.T) {
+	service := NewWebhookNotifyService(nil, nil, nil, nil, titleOnlyCopyProvider{})
+	eventDate := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
+
+	for _, reminderType := range []string{DueReminderTypePeriod, DueReminderTypeOvulation} {
+		title, message := service.reminderCopy(DueReminder{Type: reminderType, EventDate: eventDate}, "en")
+		if title != "Reminder" {
+			t.Errorf("%s title = %q, want the headline the provider does carry", reminderType, title)
+		}
+		if message != "" {
+			t.Errorf("%s message = %q, want it empty rather than formatted from a missing template", reminderType, message)
+		}
+	}
+}
+
 func (provider localeCopyProvider) messages(t *testing.T, language string) map[string]string {
 	t.Helper()
 	messages := provider.manager.Messages(language)
