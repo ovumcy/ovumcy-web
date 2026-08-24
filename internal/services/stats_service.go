@@ -25,8 +25,18 @@ type StatsService struct {
 const statsOverviewWindowYears = 2
 
 const (
+	// statsMinimumInsightsCycles is the basic-insights tier: the number of
+	// COMPLETED cycles below which the stats page has nothing to compare.
 	statsMinimumInsightsCycles = 2
-	statsReliableTrendCycles   = 3
+	// statsReliableTrendCycles is how many TREND POINTS the cycle-length chart
+	// needs before HasReliableTrend calls its shape reliable. It is not the
+	// pattern minimum: trend points are the trimmed series BuildTrend returns
+	// (TrimTrailingCycleTrendLengths caps them at the caller's maximum), while
+	// minimumPhaseInsightCycles counts completed cycles. The two are both 3
+	// today and answer different questions, so neither is expressed in terms of
+	// the other — TestStatsThresholdsAreNamedPerSurface fails if a change makes
+	// one of them silently move the other's surface.
+	statsReliableTrendCycles = 3
 )
 
 type StatsFlags struct {
