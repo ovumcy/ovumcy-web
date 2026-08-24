@@ -80,12 +80,22 @@ func potentialImplantationGapDays(user *models.User, logs []models.DailyLog, tar
 	filtered := filterLogsNotAfter(logs, targetDay.AddDate(0, 0, -1))
 	stats := BuildCycleStats(filtered, targetDay.Add(-time.Second))
 	cycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
+	// codecov:ignore:start -- unreachable from this caller, kept as a floor for
+	// a future statistic that can report "unknown". stats are computed HERE by
+	// BuildCycleStats, so either there are fewer than two detected cycle starts
+	// (median and average both 0 -> predictedCycleLength returns
+	// models.DefaultCycleLength) or the starts are distinct sorted calendar days
+	// (every observed length >= 1 -> median > 0). Callers that pass CALLER-BUILT
+	// CycleStats can still drive predictedCycleLength to 0 with a fractional
+	// average in (0, 0.5) — applyProjectedBaseline is that shape and its guards
+	// are live — which is why these two are left in place rather than removed.
 	if cycleLength <= 0 {
 		cycleLength = DashboardCycleReferenceLength(user, stats)
 	}
 	if cycleLength <= 0 {
 		return 0, false
 	}
+	// codecov:ignore:end
 
 	window := PredictCycleWindow(previousStart, cycleLength, stats.LutealPhase)
 	if !window.Calculable || window.OvulationDate.IsZero() {

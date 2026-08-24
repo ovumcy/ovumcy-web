@@ -3,6 +3,8 @@ package services
 import (
 	"fmt"
 	"strings"
+
+	"github.com/ovumcy/ovumcy-web/internal/i18n"
 )
 
 var authErrorTranslationKeys = map[string]string{
@@ -198,10 +200,9 @@ func LocalizedSymptomFrequencySummary(language string, count int, days int) stri
 		return fmt.Sprintf("%d Mal (an %d %s)", count, days, dayWord)
 	}
 	if lang == "fr" {
+		// "fois" is invariant in French — the same word for one and many — so
+		// there is no singular form to select here, unlike the es/it/en arms.
 		countWord := "fois"
-		if count == 1 {
-			countWord = "fois"
-		}
 		dayWord := "jours"
 		if days == 1 {
 			dayWord = "jour"
@@ -232,21 +233,15 @@ func LocalizedSymptomFrequencySummary(language string, count int, days int) stri
 	return fmt.Sprintf("%d %s (in %d %s)", count, countWord, days, dayWord)
 }
 
+// russianPluralForm picks the Russian one/few/many wording for value. The CLDR
+// rule itself lives once, in i18n.PluralCategory — this is only the mapping
+// from a category to the caller's three literals, so a correction to Russian
+// pluralization has a single home and cannot be made on one copy alone.
 func russianPluralForm(value int, one string, few string, many string) string {
-	absolute := value
-	if absolute < 0 {
-		absolute = -absolute
-	}
-	lastTwoDigits := absolute % 100
-	if lastTwoDigits >= 11 && lastTwoDigits <= 14 {
-		return many
-	}
-
-	lastDigit := absolute % 10
-	switch {
-	case lastDigit == 1:
+	switch i18n.PluralCategory(i18n.LangRU, value) {
+	case "one":
 		return one
-	case lastDigit >= 2 && lastDigit <= 4:
+	case "few":
 		return few
 	default:
 		return many

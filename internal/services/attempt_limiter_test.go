@@ -14,18 +14,18 @@ func TestAttemptLimiterWindowAndReset(t *testing.T) {
 	window := time.Hour
 	now := time.Now().UTC()
 
-	limiter.AddFailure(key, now.Add(-2*time.Hour), window)
-	if limiter.TooManyRecent(key, now, 1, window) {
+	limiter.AddFailureAll([]string{key}, now.Add(-2*time.Hour), window)
+	if limiter.TooManyRecentAny([]string{key}, now, 1, window) {
 		t.Fatal("expected old attempt to be pruned from active window")
 	}
 
-	limiter.AddFailure(key, now.Add(-30*time.Minute), window)
-	if !limiter.TooManyRecent(key, now, 1, window) {
+	limiter.AddFailureAll([]string{key}, now.Add(-30*time.Minute), window)
+	if !limiter.TooManyRecentAny([]string{key}, now, 1, window) {
 		t.Fatal("expected one recent attempt to hit limit 1")
 	}
 
-	limiter.Reset(key)
-	if limiter.TooManyRecent(key, now, 1, window) {
+	limiter.ResetAll([]string{key})
+	if limiter.TooManyRecentAny([]string{key}, now, 1, window) {
 		t.Fatal("expected no attempts after reset")
 	}
 }
@@ -53,7 +53,7 @@ func TestAttemptLimiterMultiKeyOperations(t *testing.T) {
 }
 
 // TestAttemptLimiterStaleKeyEviction is a regression test for F7 (opportunistic
-// global eviction). After the window elapses, AddFailure on a live key should
+// global eviction). After the window elapses, AddFailureAll on a live key should
 // trigger a sweep that removes all stale keys, leaving only the live one.
 func TestAttemptLimiterStaleKeyEviction(t *testing.T) {
 	t.Parallel()
@@ -65,7 +65,7 @@ func TestAttemptLimiterStaleKeyEviction(t *testing.T) {
 	limiter := NewAttemptLimiter()
 
 	// Force addCallsN to just below the sweep threshold so the next
-	// AddFailure call crosses it and triggers the sweep.
+	// AddFailureAll call crosses it and triggers the sweep.
 	limiter.addCallsN = evictEveryN - 1
 
 	// Populate evictEveryN-1 stale keys (failures recorded at 'past').
@@ -82,7 +82,7 @@ func TestAttemptLimiterStaleKeyEviction(t *testing.T) {
 	// Add a live key via the normal path — this increments addCallsN to
 	// evictEveryN and triggers the sweep.
 	liveKey := "live-key"
-	limiter.AddFailure(liveKey, live, window)
+	limiter.AddFailureAll([]string{liveKey}, live, window)
 
 	// All stale keys should be gone.
 	limiter.mu.Lock()
@@ -98,7 +98,7 @@ func TestAttemptLimiterStaleKeyEviction(t *testing.T) {
 	}
 
 	// Confirm the live key is still recognized as having a recent failure.
-	if !limiter.TooManyRecent(liveKey, live, 1, window) {
+	if !limiter.TooManyRecentAny([]string{liveKey}, live, 1, window) {
 		t.Fatal("live key should still register as having a recent failure after eviction sweep")
 	}
 }
@@ -141,7 +141,7 @@ func TestAttemptLimiterSizeCapUnderFreshKeyFlood(t *testing.T) {
 	// the window so the stale sweep removes none of them.
 	total := evictAboveSize * 2
 	for index := range total {
-		limiter.AddFailure(fmt.Sprintf("identity:flood-%05d", index), now.Add(time.Duration(index)*time.Millisecond), window)
+		limiter.AddFailureAll([]string{fmt.Sprintf("identity:flood-%05d", index)}, now.Add(time.Duration(index)*time.Millisecond), window)
 	}
 
 	limiter.mu.Lock()
@@ -161,13 +161,13 @@ func TestAttemptLimiterSizeCapEvictsColdestKeysFirst(t *testing.T) {
 	window := time.Hour
 
 	// The victim key is the oldest entry but stays inside the window…
-	limiter.AddFailure("identity:victim-hot", base, window)
+	limiter.AddFailureAll([]string{"identity:victim-hot"}, base, window)
 	// …and is refreshed continuously while the flood runs, making it one of
 	// the newest entries by last-failure time.
 	for index := range evictAboveSize + 200 {
-		limiter.AddFailure(fmt.Sprintf("identity:cold-%05d", index), base.Add(time.Duration(index)*time.Millisecond), window)
+		limiter.AddFailureAll([]string{fmt.Sprintf("identity:cold-%05d", index)}, base.Add(time.Duration(index)*time.Millisecond), window)
 		if index%100 == 0 {
-			limiter.AddFailure("identity:victim-hot", base.Add(time.Duration(index)*time.Millisecond+time.Second), window)
+			limiter.AddFailureAll([]string{"identity:victim-hot"}, base.Add(time.Duration(index)*time.Millisecond+time.Second), window)
 		}
 	}
 

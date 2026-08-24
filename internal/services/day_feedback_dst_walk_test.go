@@ -173,7 +173,7 @@ func TestResolveDayFeedbackDoesNotMergeTwoPeriodsAcrossTheDSTMidnightGap(t *test
 			t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
 		}
 	}
-	if stored := users.settings.LongPeriodWarnedAt; stored != nil {
+	if stored := users.settings.LongPeriodWarningCycleStart; stored != nil {
 		t.Fatalf("long_period_warning_cycle_start = %s, want no write at all", stored.Format("2006-01-02"))
 	}
 }

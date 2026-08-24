@@ -209,7 +209,7 @@ func TestResolveDayFeedbackShowsLongPeriodWarningOnlyOncePerCycle(t *testing.T) 
 		t.Fatalf("expected long-period cycle start 2026-03-01, got %s", got)
 	}
 
-	warnedState, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10, LongPeriodWarnedAt: ptrDayFeedbackTime(cycleStart)}, mustParseDayFeedbackDate(t, "2026-03-09"), mustParseDayFeedbackDate(t, "2026-03-09"), time.UTC)
+	warnedState, err := service.ResolveDayFeedback(context.Background(), &models.User{ID: 10, LongPeriodWarningCycleStart: ptrDayFeedbackTime(cycleStart)}, mustParseDayFeedbackDate(t, "2026-03-09"), mustParseDayFeedbackDate(t, "2026-03-09"), time.UTC)
 	if err != nil {
 		t.Fatalf("ResolveDayFeedback() unexpected error after warning acknowledgement: %v", err)
 	}
@@ -226,10 +226,10 @@ func TestAcknowledgeLongPeriodWarningPersistsCycleStart(t *testing.T) {
 	if err := service.AcknowledgeLongPeriodWarning(context.Background(), 10, cycleStart, time.UTC); err != nil {
 		t.Fatalf("AcknowledgeLongPeriodWarning() unexpected error: %v", err)
 	}
-	if users.settings.LongPeriodWarnedAt == nil {
+	if users.settings.LongPeriodWarningCycleStart == nil {
 		t.Fatal("expected long-period warning date to be persisted")
 	}
-	if got := users.settings.LongPeriodWarnedAt.Format("2006-01-02"); got != "2026-03-01" {
+	if got := users.settings.LongPeriodWarningCycleStart.Format("2006-01-02"); got != "2026-03-01" {
 		t.Fatalf("expected persisted warning date 2026-03-01, got %s", got)
 	}
 	// The written map is only half of the claim: the acknowledgement must land

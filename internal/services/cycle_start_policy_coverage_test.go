@@ -8,9 +8,10 @@ package services
 //   61            – AddDate(0,0,-1) offset: anchor search must stop *before* targetDay
 //   80            – filterLogsNotAfter(logs, targetDay.AddDate(0,0,-1)): targetDay log excluded from stats
 //   81            – BuildCycleStats(filtered, targetDay.Add(-time.Second)): equivalent, no test needed
-//   83, 86        – cycleLength <= 0 guards after predictedCycleLength / DashboardCycleReferenceLength:
-//                   equivalent (both callees always return > 0), no test needed
-//   103           – nil-location guard in LatestCycleStartAnchorBeforeOrOn
+//   92, 95        – cycleLength <= 0 guards after predictedCycleLength / DashboardCycleReferenceLength:
+//                   equivalent (unreachable from this caller — the reason is
+//                   recorded at the codecov:ignore block there), no test needed
+//   118           – nil-location guard in LatestCycleStartAnchorBeforeOrOn
 
 import (
 	"testing"

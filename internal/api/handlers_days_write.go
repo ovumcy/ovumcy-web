@@ -121,8 +121,8 @@ func (handler *Handler) applyUpsertDayAcknowledgements(c fiber.Ctx, request upse
 	feedback, feedbackErr := handler.dayService.ResolveDayFeedback(c.Context(), request.user, request.day, time.Now().In(request.location), request.location)
 	if feedbackErr == nil && feedback.ShowLongPeriodWarning && !feedback.LongPeriodCycleStart.IsZero() {
 		if err := handler.dayService.AcknowledgeLongPeriodWarning(c.Context(), request.user.ID, feedback.LongPeriodCycleStart, request.location); err == nil { // codecov:ignore -- best-effort long-period-warning ack; error intentionally swallowed
-			warnedAt := feedback.LongPeriodCycleStart
-			request.user.LongPeriodWarnedAt = &warnedAt
+			acknowledgedCycleStart := feedback.LongPeriodCycleStart
+			request.user.LongPeriodWarningCycleStart = &acknowledgedCycleStart
 		}
 	}
 	return feedback, feedbackErr
