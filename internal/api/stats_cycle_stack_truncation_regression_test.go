@@ -131,11 +131,18 @@ func statsBodyForCycleGaps(t *testing.T, email string, gaps []int) string {
 
 // The template attribute is only half the disclosure: what turns
 // data-truncated into something a reader can see is the stylesheet rule that
-// draws the cut edge. Nothing else in this repository pins that rule, and no CI
-// job rebuilds web/static/css/tailwind.css from web/src/css/input.css — so
-// deleting the rule, or editing the source and not running `npm run build:css`,
-// leaves every Go test and the linter green while the mark silently vanishes
-// and two capped rows are once more the same width with nothing saying so.
+// draws the cut edge, and nothing pinned that rule.
+//
+// CI's stale-bundle guard does not reach it. That step (ci.yml, "Committed
+// bundles must match a fresh build") runs `npm run build` and then
+// `git diff --exit-code -- web/static/`, so it catches a bundle that DIFFERS
+// from its source — a source edit committed without a rebuild. Delete the rule
+// from input.css and rebuild and the two agree perfectly: the guard is green,
+// every Go test is green, the linter is green, and the mark is gone, so two
+// capped rows are once more the same width with nothing saying so.
+// `css-components.md` states that blind spot for the removal direction; this is
+// the dependency direction, where markup carries a hook whose only consumer is
+// a component rule.
 //
 // That is exactly the failure this change exists to close, one layer down: #581
 // computed Truncated and AxisTruncated and shipped them with no consumer, and
