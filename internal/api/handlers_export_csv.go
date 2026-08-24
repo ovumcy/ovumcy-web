@@ -34,7 +34,7 @@ func (handler *Handler) ExportCSV(c fiber.Ctx) error {
 	writer := csv.NewWriter(&output)
 	// The three build branches below are defensive: this csv.Writer writes into a
 	// bytes.Buffer, whose Write never returns an error, so no request reaches them.
-	if err := writer.Write(services.ExportCSVHeaders); err != nil {
+	if err := writer.Write(services.ExportCSVHeaders()); err != nil {
 		return handler.failEgress(c, exportCSVEgress, exportBuildErrorSpec()) // codecov:ignore -- unreachable: bytes.Buffer writes cannot fail
 	}
 

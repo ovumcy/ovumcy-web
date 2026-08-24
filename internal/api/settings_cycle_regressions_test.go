@@ -156,7 +156,11 @@ func TestSettingsPageRendersPersistedCycleValues(t *testing.T) {
 	if !exportInputPattern.MatchString(rendered) {
 		t.Fatalf("expected export date fields to render segmented controls with explicit calendar buttons")
 	}
-	lastPeriodInputAccessibilityPattern := regexp.MustCompile(`(?s)data-date-field-id="settings-last-period-start".*?id="settings-last-period-start".*?lang="en".*?min="\d{4}-01-01".*?aria-label="Day".*?aria-label="Month".*?aria-label="Year"`)
+	// The min attribute is the rolling floor SettingsCycleStartDateBounds
+	// returns — any calendar day, not January 1st: the floor used to be the
+	// start of the current year, which put a December cycle start out of reach
+	// through the whole of January.
+	lastPeriodInputAccessibilityPattern := regexp.MustCompile(`(?s)data-date-field-id="settings-last-period-start".*?id="settings-last-period-start".*?lang="en".*?min="\d{4}-\d{2}-\d{2}".*?aria-label="Day".*?aria-label="Month".*?aria-label="Year"`)
 	if !lastPeriodInputAccessibilityPattern.MatchString(rendered) {
 		t.Fatalf("expected settings last-period-start field to include localized segmented accessibility labels and range attributes")
 	}

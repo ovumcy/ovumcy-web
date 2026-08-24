@@ -12,7 +12,18 @@ import (
 
 const exportDateLayout = "2006-01-02"
 
-var ExportCSVHeaders = []string{
+// ExportCSVHeaders returns the CSV header row as a fresh slice. It is a copy
+// on purpose: the header row is the export's schema, and it used to be an
+// exported package-level slice handed straight to the writer, so one consumer
+// writing into it would have relabelled or malformed every export in the
+// process — concurrent ones included — with no boundary to catch it.
+func ExportCSVHeaders() []string {
+	headers := make([]string, len(exportCSVHeaders))
+	copy(headers, exportCSVHeaders)
+	return headers
+}
+
+var exportCSVHeaders = []string{
 	"Date",
 	"Period",
 	"Flow",
@@ -44,26 +55,29 @@ var ExportCSVHeaders = []string{
 	"Uncertain",
 }
 
-var exportSymptomColumnsByName = map[string]string{
-	"cramps":            "cramps",
-	"headache":          "headache",
-	"acne":              "acne",
-	"mood":              "mood",
-	"mood swings":       "mood",
-	"bloating":          "bloating",
-	"fatigue":           "fatigue",
-	"breast tenderness": "breast_tenderness",
-	"back pain":         "back_pain",
-	"nausea":            "nausea",
-	"spotting":          "spotting",
-	"irritability":      "irritability",
-	"insomnia":          "insomnia",
-	"food cravings":     "food_cravings",
-	"diarrhea":          "diarrhea",
-	"constipation":      "constipation",
-	"swelling":          "swelling",
+// exportSymptomColumnsByName maps a symptom's name onto the built-in KEY whose
+// export column it fills. It is derived from the catalog rather than written
+// out beside it: the hand-written table had one name too many — both "Mood
+// swings" and "Mood" resolved to the built-in Mood column, though only the
+// first is a built-in name and "Mood" is a name an owner's own symptom may
+// carry, since it is not among BuiltinSymptomReservedNames. That symptom was
+// then exported as the built-in AND dropped from other_symptoms (a matched
+// name never reaches that set), so a re-import restored a different symptom
+// with nothing signalling the substitution.
+var exportSymptomColumnsByName = buildExportSymptomColumnIndex()
+
+func buildExportSymptomColumnIndex() map[string]string {
+	builtins := models.DefaultBuiltinSymptoms()
+	index := make(map[string]string, len(builtins))
+	for _, builtin := range builtins {
+		index[strings.ToLower(strings.TrimSpace(builtin.Name))] = builtin.Key
+	}
+	return index
 }
 
+// exportSymptomFlagSetters is keyed on the built-in catalog KEY, one entry per
+// built-in — the bijection TestExportSymptomColumnsAreABijectionOntoTheBuiltin
+// Catalog pins. Anything that is not a built-in key is an other symptom.
 var exportSymptomFlagSetters = map[string]func(*ExportSymptomFlags){
 	"cramps": func(flags *ExportSymptomFlags) {
 		flags.Cramps = true
@@ -74,7 +88,7 @@ var exportSymptomFlagSetters = map[string]func(*ExportSymptomFlags){
 	"acne": func(flags *ExportSymptomFlags) {
 		flags.Acne = true
 	},
-	"mood": func(flags *ExportSymptomFlags) {
+	"mood_swings": func(flags *ExportSymptomFlags) {
 		flags.Mood = true
 	},
 	"bloating": func(flags *ExportSymptomFlags) {
@@ -219,8 +233,42 @@ func (service *ExportService) BuildSummary(ctx context.Context, userID uint, fro
 	if err != nil {
 		return ExportSummary{}, err
 	}
+	return summarizeExportLogs(logs), nil
+}
+
+// BuildSummaryHistoryAndWindow returns two aggregates over ONE read of the
+// owner's entries: the whole history, and the part of it up to and including
+// the `through` calendar day. The settings page needs exactly that pair — the
+// export panel's selectable bounds come from everything the owner has, its
+// default window stops at today — and asking BuildSummary twice fetched and
+// materialized every daily_logs row twice on every settings render, on a page
+// that displays neither figure until the panel is opened. The narrowing is
+// applied here, over rows already in hand, instead of as a second query.
+func (service *ExportService) BuildSummaryHistoryAndWindow(ctx context.Context, userID uint, through time.Time, location *time.Location) (ExportSummary, ExportSummary, error) {
+	logs, err := service.days.FetchLogsForOptionalRange(ctx, userID, nil, nil, location)
+	if err != nil {
+		return ExportSummary{}, ExportSummary{}, err
+	}
+
+	window := make([]models.DailyLog, 0, len(logs))
+	for _, logEntry := range logs {
+		// DailyLog.Date is a UTC-midnight date-only value and `through` is a
+		// calendar day resolved in the request location, so the two are ordered
+		// as calendar days rather than as instants: compared directly, every
+		// non-UTC zone would move the boundary by a day (day_utils.go).
+		if CalendarDaysBetween(logEntry.Date, through) >= 0 {
+			window = append(window, logEntry)
+		}
+	}
+
+	return summarizeExportLogs(logs), summarizeExportLogs(window), nil
+}
+
+// summarizeExportLogs reduces a set of entries to the count and the calendar
+// range the export surfaces quote.
+func summarizeExportLogs(logs []models.DailyLog) ExportSummary {
 	if len(logs) == 0 {
-		return ExportSummary{}, nil
+		return ExportSummary{}
 	}
 
 	first := logs[0].Date
@@ -244,7 +292,7 @@ func (service *ExportService) BuildSummary(ctx context.Context, userID uint, fro
 		HasData:      true,
 		DateFrom:     CalendarDayKey(first),
 		DateTo:       CalendarDayKey(last),
-	}, nil
+	}
 }
 
 func (service *ExportService) BuildJSONEntries(ctx context.Context, userID uint, from *time.Time, to *time.Time, location *time.Location) ([]ExportJSONEntry, error) {

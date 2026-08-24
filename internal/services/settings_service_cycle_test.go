@@ -52,11 +52,15 @@ func TestValidateCycleSettingsLastPeriodStartRules(t *testing.T) {
 		t.Fatalf("expected ErrSettingsCycleStartDateInvalid for parse, got %v", err)
 	}
 
+	// Past the far end of the rolling window. It used to read "2025-12-31",
+	// six weeks before this now — a date the January floor refused and the
+	// window accepts, since a cycle that began in December is the ordinary
+	// answer in the weeks after New Year.
 	_, err = service.ValidateCycleSettings(CycleSettingsValidationInput{
 		CycleLength:        28,
 		PeriodLength:       5,
 		LastPeriodStartSet: true,
-		LastPeriodStartRaw: "2025-12-31",
+		LastPeriodStartRaw: "2024-12-31",
 	}, now, time.UTC)
 	if !errors.Is(err, ErrSettingsCycleStartDateInvalid) {
 		t.Fatalf("expected ErrSettingsCycleStartDateInvalid for out-of-range old date, got %v", err)
@@ -109,6 +113,53 @@ func TestValidateCycleSettingsBuildsUpdate(t *testing.T) {
 	}
 	if cleared.LastPeriodStart != nil {
 		t.Fatalf("expected nil last_period_start, got %#v", cleared.LastPeriodStart)
+	}
+}
+
+// TestValidateCycleSettingsAcceptsAStartInThePrecedingDecember is the January
+// boundary. The accepted window used to start at 1 January of the CURRENT year,
+// so on 2 January the only two answers this form took were 1 and 2 January —
+// while the value it asks for, the cycle start, is the anchor every prediction
+// is measured from, and in early January it lies in December by definition. The
+// window is a rolling one for that reason, the same shape onboarding's twin
+// took (OnboardingDateBounds), and it is measured from today rather than from a
+// calendar boundary that means nothing to a cycle.
+//
+// Both ends are pinned: a date past the window's far end is still refused, so
+// the guard cannot pass by accepting everything.
+func TestValidateCycleSettingsAcceptsAStartInThePrecedingDecember(t *testing.T) {
+	service := NewSettingsService(nil)
+	now := time.Date(2026, time.January, 2, 9, 0, 0, 0, time.UTC)
+
+	update, err := service.ValidateCycleSettings(CycleSettingsValidationInput{
+		CycleLength:        28,
+		PeriodLength:       5,
+		LastPeriodStartSet: true,
+		LastPeriodStartRaw: "2025-12-28",
+	}, now, time.UTC)
+	if err != nil {
+		t.Fatalf("a cycle that began on 28 December is the real anchor on 2 January and must be accepted, got %v", err)
+	}
+	if update.LastPeriodStart == nil || update.LastPeriodStart.Format("2006-01-02") != "2025-12-28" {
+		t.Fatalf("expected the December start stored verbatim, got %#v", update.LastPeriodStart)
+	}
+
+	minDate, maxDate := SettingsCycleStartDateBounds(now, time.UTC)
+	if !minDate.Before(time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("the date picker must offer the December days the validator accepts, min=%s", minDate.Format("2006-01-02"))
+	}
+	if maxDate.Format("2006-01-02") != "2026-01-02" {
+		t.Fatalf("the upper bound stays today, got %s", maxDate.Format("2006-01-02"))
+	}
+
+	_, err = service.ValidateCycleSettings(CycleSettingsValidationInput{
+		CycleLength:        28,
+		PeriodLength:       5,
+		LastPeriodStartSet: true,
+		LastPeriodStartRaw: minDate.AddDate(0, 0, -1).Format("2006-01-02"),
+	}, now, time.UTC)
+	if !errors.Is(err, ErrSettingsCycleStartDateInvalid) {
+		t.Fatalf("the day before the window's floor must still be refused, got %v", err)
 	}
 }
 

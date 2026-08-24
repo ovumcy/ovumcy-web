@@ -415,3 +415,201 @@ func TestBuildStatsCycleRibbonSuppressesInferredFertilityInUnpredictableMode(t *
 		}
 	}
 }
+
+// statscycleribbonStack builds a stack from consecutive cycle starts: every
+// entry is one cycle's first day plus its period days, and the last start only
+// closes the cycle before it. Lengths therefore come out as the gaps between
+// the starts, which is what the ribbon draws.
+func statscycleribbonStack(t *testing.T, cycles []statscycleribbonSpec) []models.DailyLog {
+	t.Helper()
+	logs := []models.DailyLog{}
+	for _, cycle := range cycles {
+		logs = append(logs, statscycleribbonCycle(t, cycle.start, cycle.period)...)
+	}
+	return logs
+}
+
+type statscycleribbonSpec struct {
+	start  string
+	period int
+}
+
+// statscycleribbonRowFertility counts one row's three encodings of a fertility
+// claim, the same three the stack-wide helper counts.
+func statscycleribbonRowFertility(row StatsCycleRibbonRow) (fertile int, peak int, ovulation int) {
+	for _, day := range row.Days {
+		if day.IsFertile {
+			fertile++
+		}
+		if day.IsFertilePeak {
+			peak++
+		}
+		if day.Phase == "ovulation" {
+			ovulation++
+		}
+	}
+	return fertile, peak, ovulation
+}
+
+// TestBuildStatsCycleRibbonSuppressesAClampedOvulationEstimate is the medical-
+// safety floor on this surface. PredictCycleWindow reports OvulationExact=false
+// when the luteal phase had to be SHORTENED to fit the cycle at all — every
+// completed cycle under 19 days — so the ovulation day it returns is a fallback
+// the data does not carry rather than an estimate of it. Display confidence
+// follows data confidence: the row keeps its recorded length and its recorded
+// period days and drops every mark derived from that fallback. The dashboard
+// says "approximate" for the same value; here the cells are colour with no
+// wording to qualify them, so suppression is the floor.
+//
+// The stack is drawn with a cycle whose window IS exact beside it: that anchor
+// proves the marks can appear at all, so the negative half cannot pass against
+// an empty ribbon.
+func TestBuildStatsCycleRibbonSuppressesAClampedOvulationEstimate(t *testing.T) {
+	// 15 days (Jan 1 → Jan 16), then 30 (Jan 16 → Feb 15). A 15-day cycle with
+	// a 14-day luteal phase clamps the phase to 10, i.e. OvulationExact=false.
+	logs := statscycleribbonStack(t, []statscycleribbonSpec{
+		{"2026-01-01", 5},
+		{"2026-01-16", 5},
+		{"2026-02-15", 5},
+	})
+
+	if _, exact := CalcOvulationDay(15, 14); exact {
+		t.Fatal("premise: a 15-day cycle with a 14-day luteal phase must clamp, i.e. report exact=false")
+	}
+	if _, exact := CalcOvulationDay(30, 14); !exact {
+		t.Fatal("anchor premise: a 30-day cycle with a 14-day luteal phase must fit exactly")
+	}
+
+	ribbon := buildStatsCycleRibbon(
+		statscycleribbonOwner(true),
+		CycleStats{LutealPhase: 14},
+		logs,
+		buildCompletedCycleSpans(logs, time.UTC),
+	)
+	if !ribbon.ShowPhases || len(ribbon.Rows) != 2 {
+		t.Fatalf("expected two rows with inferred phases on, got rows=%d showPhases=%v", len(ribbon.Rows), ribbon.ShowPhases)
+	}
+
+	clamped, fitted := ribbon.Rows[0], ribbon.Rows[1]
+	if clamped.CycleLength != 15 || fitted.CycleLength != 30 {
+		t.Fatalf("expected a 15-day row then a 30-day row, got %d and %d", clamped.CycleLength, fitted.CycleLength)
+	}
+
+	anchorFertile, anchorPeak, anchorOvulation := statscycleribbonRowFertility(fitted)
+	if anchorFertile == 0 || anchorPeak != 1 || anchorOvulation != 1 {
+		t.Fatalf("anchor: the 30-day row's window is exact and must carry the marks; got fertile=%d peak=%d ovulation=%d", anchorFertile, anchorPeak, anchorOvulation)
+	}
+
+	fertile, peak, ovulation := statscycleribbonRowFertility(clamped)
+	if fertile != 0 || peak != 0 || ovulation != 0 {
+		t.Fatalf("a clamped ovulation day is a fallback, not an observation: the 15-day row must carry no fertility claim; got fertile=%d peak=%d ovulation=%d", fertile, peak, ovulation)
+	}
+
+	// What must survive the floor: the recorded length and the period days.
+	inCycle := 0
+	for _, day := range clamped.Days {
+		if day.InCycle {
+			inCycle++
+		}
+		if day.Day <= clamped.PeriodLength && (!day.IsPeriod || day.Phase != "menstrual") {
+			t.Fatalf("day %d is a recorded period day: period=%v phase=%q", day.Day, day.IsPeriod, day.Phase)
+		}
+	}
+	if inCycle != 15 {
+		t.Fatalf("the recorded 15-day length is a fact and must still be drawn, got %d cells in cycle", inCycle)
+	}
+}
+
+// TestBuildStatsCycleRibbonNeverMarksAPeakOutsideTheOvulationPhase pins the two
+// axes of one cell against each other. Phase and fertility are orthogonal by
+// design (#416) and a fertile day may legitimately overlap the period — but the
+// peak IS the ovulation day, and the phase taxonomy spends its "ovulation"
+// value on the menstrual branch whenever the two land on the same day. A
+// 21-day cycle with a 7-day period does exactly that: the window is exact and
+// puts ovulation on day 7, which is also the last recorded period day. The cell
+// then said "menstrual" and "fertile peak" at once, and which of the two an
+// owner saw was decided by CSS precedence rather than by this service.
+func TestBuildStatsCycleRibbonNeverMarksAPeakOutsideTheOvulationPhase(t *testing.T) {
+	logs := statscycleribbonStack(t, []statscycleribbonSpec{
+		{"2026-01-01", 7},
+		{"2026-01-22", 7},
+		{"2026-02-19", 7},
+	})
+
+	ovulationDay, exact := CalcOvulationDay(21, 14)
+	if !exact || ovulationDay != 7 {
+		t.Fatalf("premise: a 21-day cycle must place an EXACT ovulation on day 7, got day=%d exact=%v", ovulationDay, exact)
+	}
+
+	ribbon := buildStatsCycleRibbon(
+		statscycleribbonOwner(true),
+		CycleStats{LutealPhase: 14},
+		logs,
+		buildCompletedCycleSpans(logs, time.UTC),
+	)
+	if !ribbon.ShowPhases {
+		t.Fatal("expected inferred phases on")
+	}
+
+	peaks := 0
+	for rowIndex, row := range ribbon.Rows {
+		for _, day := range row.Days {
+			if !day.IsFertilePeak {
+				continue
+			}
+			peaks++
+			if day.Phase != "ovulation" {
+				t.Fatalf("row %d day %d is marked the fertile peak while its phase says %q — one cell making two contradicting claims", rowIndex, day.Day, day.Phase)
+			}
+		}
+	}
+	if peaks == 0 {
+		t.Fatal("anchor: the stack must still mark a peak somewhere, or this guard is green against an empty ribbon")
+	}
+}
+
+// TestBuildStatsCycleRibbonFlagsARowTheAxisCannotHold covers the silent half of
+// the axis cap. The cap is the DOM bound and stays; what must not stay is a row
+// claiming to end where it was merely cut off. Two cycles past the cap were
+// drawn as two identical full-width rows, so the comparison the stack exists
+// for reported them equal while the number beside each row said otherwise.
+func TestBuildStatsCycleRibbonFlagsARowTheAxisCannotHold(t *testing.T) {
+	within := buildStatsCycleRibbon(
+		statscycleribbonOwner(false),
+		CycleStats{LutealPhase: 14},
+		nil,
+		[]completedCycleSpan{
+			{Start: statscycleribbonDay(t, "2026-01-01"), CycleLength: 30, PeriodLength: 5},
+			{Start: statscycleribbonDay(t, "2026-01-31"), CycleLength: 34, PeriodLength: 5},
+		},
+	)
+	for index, row := range within.Rows {
+		if row.Truncated {
+			t.Fatalf("row %d fits the axis (%d of %d) and must not be flagged truncated", index, row.CycleLength, within.AxisDays)
+		}
+	}
+	if within.AxisTruncated {
+		t.Fatal("a stack inside the cap draws every cycle whole")
+	}
+
+	beyond := buildStatsCycleRibbon(
+		statscycleribbonOwner(false),
+		CycleStats{LutealPhase: 14},
+		nil,
+		[]completedCycleSpan{
+			{Start: statscycleribbonDay(t, "2026-01-01"), CycleLength: statsCycleRibbonMaxAxisDays + 15, PeriodLength: 5},
+			{Start: statscycleribbonDay(t, "2026-04-01"), CycleLength: statsCycleRibbonMaxAxisDays + 30, PeriodLength: 5},
+		},
+	)
+	if beyond.AxisDays != statsCycleRibbonMaxAxisDays {
+		t.Fatalf("the axis stays capped at %d, got %d", statsCycleRibbonMaxAxisDays, beyond.AxisDays)
+	}
+	if !beyond.AxisTruncated {
+		t.Fatal("the stack must report that the axis could not hold every cycle")
+	}
+	for index, row := range beyond.Rows {
+		if !row.Truncated {
+			t.Fatalf("row %d is %d days long against a %d-day axis and must say so", index, row.CycleLength, beyond.AxisDays)
+		}
+	}
+}

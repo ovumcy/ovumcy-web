@@ -47,7 +47,7 @@ var importSymptomFlagGetters = map[string]func(ExportSymptomFlags) bool{
 	"cramps":            func(f ExportSymptomFlags) bool { return f.Cramps },
 	"headache":          func(f ExportSymptomFlags) bool { return f.Headache },
 	"acne":              func(f ExportSymptomFlags) bool { return f.Acne },
-	"mood":              func(f ExportSymptomFlags) bool { return f.Mood },
+	"mood_swings":       func(f ExportSymptomFlags) bool { return f.Mood },
 	"bloating":          func(f ExportSymptomFlags) bool { return f.Bloating },
 	"fatigue":           func(f ExportSymptomFlags) bool { return f.Fatigue },
 	"breast_tenderness": func(f ExportSymptomFlags) bool { return f.BreastTenderness },
