@@ -126,8 +126,12 @@ func TestNotifyPayloadCopyResolvesInEveryLocale(t *testing.T) {
 				t.Errorf("locale %q has no entry for %q: the reminder would go out empty", language, key)
 				continue
 			}
-			if strings.HasSuffix(key, ".message") && !strings.Contains(value, "%s") {
-				t.Errorf("locale %q entry %q = %q: the reminder sentence must keep its %%s date placeholder", language, key, value)
+			// Exactly one verb, not merely one present: reminderCopy passes a
+			// single date, so a second %%s renders as %%!s(MISSING) in a payload
+			// that has already left the instance. Both directions are one
+			// translator edit away and neither is visible from the catalogue.
+			if verbs := strings.Count(value, "%s"); strings.HasSuffix(key, ".message") && verbs != 1 {
+				t.Errorf("locale %q entry %q = %q: the reminder sentence must carry exactly one %%s date placeholder, found %d", language, key, value, verbs)
 			}
 		}
 	}
