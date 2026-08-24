@@ -129,6 +129,35 @@ func TestBcryptCostTopUpScheduleClosesTheDeficitExactly(t *testing.T) {
 	}
 }
 
+// TestBcryptCostTopUpScheduleClampsACostBelowTheBcryptMinimum pins the defensive
+// clamp. `bcrypt.Cost` rejects a hash below `bcrypt.MinCost` outright, so nothing
+// in production reaches this branch — but the schedule still has to stay FINITE
+// for whatever does, which is the whole reason the clamp is there.
+//
+// It does not close the deficit exactly, and the assertion below deliberately
+// does not claim it does: clamping storedCost UP shortens the schedule, so a
+// hypothetical cost-2 row would be underpaid by 2^4-2^2 = 12 units against
+// 2^passwordHashCost = 4096. Unreachable, and a rounding error if it were not.
+func TestBcryptCostTopUpScheduleClampsACostBelowTheBcryptMinimum(t *testing.T) {
+	atMinimum := bcryptCostTopUpSchedule(bcrypt.MinCost)
+	if len(atMinimum) == 0 {
+		t.Fatal("the schedule at bcrypt.MinCost is empty — this test would assert nothing")
+	}
+
+	for storedCost := 0; storedCost < bcrypt.MinCost; storedCost++ {
+		got := bcryptCostTopUpSchedule(storedCost)
+		if len(got) != len(atMinimum) {
+			t.Fatalf("stored cost %d: schedule has %d steps, want the %d of bcrypt.MinCost — the clamp did not hold and the schedule is not finite",
+				storedCost, len(got), len(atMinimum))
+		}
+		for step := range got {
+			if got[step] != atMinimum[step] {
+				t.Fatalf("stored cost %d: schedule step %d names cost %d, want %d", storedCost, step, got[step], atMinimum[step])
+			}
+		}
+	}
+}
+
 // TestTimingTopUpPlaceholdersCoverEveryScheduledCost proves the schedule can
 // actually be paid: a named cost with no minted placeholder, or one minted at
 // the wrong cost, would leave the arithmetic above true and the shipped path
