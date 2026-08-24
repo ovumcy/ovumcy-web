@@ -58,124 +58,109 @@ func TestEntryContextLogsNotSkippedForViewerWithTwoSymptoms(t *testing.T) {
 	}
 }
 
-func TestSymptomRankingFirstGuardReordersSymptomsByUsage(t *testing.T) {
-	// 2 symptoms + 2 completed cycles (3 cycle starts) -> ranking runs and orders
-	// symptoms by descending usage. Logs use symptom ID 2 twice and ID 1 never, so
-	// ranked order is [2,1] while the raw input order is [1,2]. Negating or shifting
-	// the first guard (len(symptoms) >= 2) skips ranking, leaving the input order.
-	user := &models.User{ID: 73, Role: models.RoleOwner}
+// TestSymptomRankingGuardsAtTheirBoundaries drives the two-part ranking guard,
+// `len(symptoms) >= 2 && completedCycleCountFromLogs(logs) >= 2`.
+//
+// Four tests stood here before, named for four different boundaries: the first
+// guard's negation, the first guard's boundary at two symptoms, the completed
+// cycle boundary at two, and the second guard's negation. All four built the
+// same two symptoms, the same three cycle starts and the same assertion; only
+// the user ID and the doc comment differed, so they exercised ONE program state
+// four times and no test in the package ever stood below either guard.
+//
+// The rows below are that one state plus the boundary states the names claimed:
+// one completed cycle, which must leave the input order alone, and the two
+// above-boundary states. Ranking is observable through the order of
+// viewData.Symptoms — the logs use symptom 2 twice and symptom 1 never, so
+// ranked is [2,1] against an input order of [1,2].
+func TestSymptomRankingGuardsAtTheirBoundaries(t *testing.T) {
 	now := mustParseDashboardServiceDay(t, "2026-04-01")
-	symptoms := []models.SymptomType{{ID: 1, Name: "Cramps"}, {ID: 2, Name: "Headache"}}
-	logs := []models.DailyLog{
-		{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
-	}
-	svc := NewDashboardViewService(
-		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
-		&stubDashboardDayStateProvider{logs: logs},
-	)
+	cramps := models.SymptomType{ID: 1, Name: "Cramps"}
+	headache := models.SymptomType{ID: 2, Name: "Headache"}
+	bloating := models.SymptomType{ID: 3, Name: "Bloating"}
 
-	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
-	if err != nil {
-		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+	// cycleStartLogs returns `count` cycle starts a month apart; the first two
+	// carry symptom 2, so usage ranking has something to reorder.
+	cycleStartLogs := func(count int) []models.DailyLog {
+		dates := []string{"2026-01-01", "2026-01-29", "2026-02-26", "2026-03-26"}
+		logs := make([]models.DailyLog, 0, count)
+		for index := range count {
+			entry := models.DailyLog{
+				Date:       mustParseDashboardServiceDay(t, dates[index]),
+				IsPeriod:   true,
+				CycleStart: true,
+			}
+			if index < 2 {
+				entry.SymptomIDs = []uint{2}
+			}
+			logs = append(logs, entry)
+		}
+		return logs
 	}
-	if len(vd.Symptoms) != 2 {
-		t.Fatalf("expected 2 symptoms, got %d", len(vd.Symptoms))
-	}
-	if vd.Symptoms[0].ID != 2 || vd.Symptoms[1].ID != 1 {
-		t.Fatalf("expected ranking by usage [2,1], got [%d,%d]", vd.Symptoms[0].ID, vd.Symptoms[1].ID)
-	}
-}
 
-func TestSymptomRankingFirstGuardBoundaryAtTwoSymptoms(t *testing.T) {
-	// Exactly 2 symptoms is the boundary for the first ranking guard. With 2
-	// completed cycles, the original ranks symptoms by usage -> [2,1]; the boundary
-	// mutant (len(symptoms) > 2) skips ranking and preserves the input order [1,2].
-	user := &models.User{ID: 74, Role: models.RoleOwner}
-	now := mustParseDashboardServiceDay(t, "2026-04-01")
-	symptoms := []models.SymptomType{{ID: 1, Name: "Cramps"}, {ID: 2, Name: "Headache"}}
-	logs := []models.DailyLog{
-		{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
+	tests := []struct {
+		name      string
+		userID    uint
+		symptoms  []models.SymptomType
+		starts    int
+		wantOrder []uint
+	}{
+		{
+			name:      "at both boundaries: two symptoms, two completed cycles",
+			userID:    73,
+			symptoms:  []models.SymptomType{cramps, headache},
+			starts:    3,
+			wantOrder: []uint{2, 1},
+		},
+		{
+			name:      "one completed cycle is below the cycle guard",
+			userID:    74,
+			symptoms:  []models.SymptomType{cramps, headache},
+			starts:    2,
+			wantOrder: []uint{1, 2},
+		},
+		{
+			name:      "three completed cycles is above the cycle guard",
+			userID:    75,
+			symptoms:  []models.SymptomType{cramps, headache},
+			starts:    4,
+			wantOrder: []uint{2, 1},
+		},
+		{
+			name:      "three symptoms is above the symptom guard",
+			userID:    76,
+			symptoms:  []models.SymptomType{cramps, headache, bloating},
+			starts:    3,
+			wantOrder: []uint{2, 1, 3},
+		},
 	}
-	svc := NewDashboardViewService(
-		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
-		&stubDashboardDayStateProvider{logs: logs},
-	)
 
-	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
-	if err != nil {
-		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
-	}
-	if len(vd.Symptoms) != 2 {
-		t.Fatalf("expected 2 symptoms, got %d", len(vd.Symptoms))
-	}
-	if vd.Symptoms[0].ID != 2 || vd.Symptoms[1].ID != 1 {
-		t.Fatalf("expected usage ranking [2,1] at the 2-symptom boundary, got [%d,%d]", vd.Symptoms[0].ID, vd.Symptoms[1].ID)
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			user := &models.User{ID: tc.userID, Role: models.RoleOwner}
+			svc := NewDashboardViewService(
+				&stubDashboardStatsProvider{},
+				&stubDashboardViewerProvider{symptoms: tc.symptoms},
+				&stubDashboardDayStateProvider{logs: cycleStartLogs(tc.starts)},
+			)
 
-func TestSymptomRankingCompletedCycleBoundaryAtTwo(t *testing.T) {
-	// 3 cycle starts -> exactly 2 completed cycles, the boundary for the second
-	// ranking guard (completedCycleCountFromLogs(logs) >= 2). Original ranks symptoms
-	// by usage -> [2,1]; the boundary mutant (> 2) skips ranking and keeps input [1,2].
-	user := &models.User{ID: 75, Role: models.RoleOwner}
-	now := mustParseDashboardServiceDay(t, "2026-04-01")
-	symptoms := []models.SymptomType{{ID: 1, Name: "Cramps"}, {ID: 2, Name: "Headache"}}
-	logs := []models.DailyLog{
-		{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
-	}
-	svc := NewDashboardViewService(
-		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
-		&stubDashboardDayStateProvider{logs: logs},
-	)
-
-	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
-	if err != nil {
-		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
-	}
-	if len(vd.Symptoms) != 2 {
-		t.Fatalf("expected 2 symptoms, got %d", len(vd.Symptoms))
-	}
-	if vd.Symptoms[0].ID != 2 || vd.Symptoms[1].ID != 1 {
-		t.Fatalf("expected usage ranking [2,1] at exactly 2 completed cycles, got [%d,%d]", vd.Symptoms[0].ID, vd.Symptoms[1].ID)
-	}
-}
-
-func TestSymptomRankingSecondGuardNegationKeepsRankingAtTwoCycles(t *testing.T) {
-	// Negating the completed-cycle guard (>= becomes <) would skip ranking at 2
-	// completed cycles. Original ranks by usage -> [2,1]; negated mutant keeps the
-	// raw input order [1,2]. viewData.Symptoms order distinguishes them.
-	user := &models.User{ID: 76, Role: models.RoleOwner}
-	now := mustParseDashboardServiceDay(t, "2026-04-01")
-	symptoms := []models.SymptomType{{ID: 1, Name: "Cramps"}, {ID: 2, Name: "Headache"}}
-	logs := []models.DailyLog{
-		{Date: mustParseDashboardServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true, SymptomIDs: []uint{2}},
-		{Date: mustParseDashboardServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
-	}
-	svc := NewDashboardViewService(
-		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
-		&stubDashboardDayStateProvider{logs: logs},
-	)
-
-	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
-	if err != nil {
-		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
-	}
-	if len(vd.Symptoms) != 2 {
-		t.Fatalf("expected 2 symptoms, got %d", len(vd.Symptoms))
-	}
-	if vd.Symptoms[0].ID != 2 || vd.Symptoms[1].ID != 1 {
-		t.Fatalf("expected usage ranking [2,1] with 2 completed cycles, got [%d,%d]", vd.Symptoms[0].ID, vd.Symptoms[1].ID)
+			vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
+			if err != nil {
+				t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
+			}
+			if len(vd.Symptoms) != len(tc.wantOrder) {
+				t.Fatalf("expected %d symptoms, got %d", len(tc.wantOrder), len(vd.Symptoms))
+			}
+			for index, want := range tc.wantOrder {
+				if vd.Symptoms[index].ID != want {
+					got := make([]uint, 0, len(vd.Symptoms))
+					for _, symptom := range vd.Symptoms {
+						got = append(got, symptom.ID)
+					}
+					t.Fatalf("expected symptom order %v, got %v", tc.wantOrder, got)
+				}
+			}
+		})
 	}
 }
 

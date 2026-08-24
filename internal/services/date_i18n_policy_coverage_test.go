@@ -30,7 +30,15 @@ var datei18npolicyCovJanuary = time.Date(2026, time.January, 5, 0, 0, 0, 0, time
 
 // TestDateI18nPolicyMonthYearJanuary ensures that January is formatted with the
 // locale-specific standalone month name — the heading form, title-cased where
-// the language's running-text form is not.
+// the language's running-text form is not. Russian is the language where that
+// distinction is visible: the standalone nominative "Январь", never the
+// genitive "января" the running-text surfaces use. January is also the first
+// index into each language's month table, so this table pins the 0-based
+// conversion for every locale at once.
+//
+// These three tables are the package's only kills for the Russian January
+// outputs; a round-three file restated the same three calls and the same three
+// expected strings, and was removed rather than kept in parallel.
 func TestDateI18nPolicyMonthYearJanuary(t *testing.T) {
 	tests := []struct {
 		lang string

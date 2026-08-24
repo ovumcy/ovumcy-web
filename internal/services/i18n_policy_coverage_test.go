@@ -26,35 +26,40 @@ func TestI18nPolicyRussianPluralNegativeValue(t *testing.T) {
 	}
 }
 
-// TestI18nPolicyRussianPluralTeenBoundary verifies the upper boundary of the
-// teen exception (11–14). Line 164 mutant: `<= 14` might be changed to `<= 13`.
-// Value 14 must return the "many" form (teen exception), not "few" (lastDigit == 4).
+// TestI18nPolicyRussianPluralTeenBoundary verifies the teen exception (11–14),
+// which the last TWO digits decide.
+//
+// The forms are distinct sentinels rather than the natural Russian words. That
+// is not cosmetic: for «раз» the one form and the many form are the SAME word,
+// so a teen assertion written with real copy cannot tell a teen routed to
+// "many" from a teen that fell through to lastDigit == 1 and returned "one".
+// The whole point of a teen case is that distinction, and with real copy every
+// value below passes with the exception removed.
+//
+// 111 is here because the rule reads `n % 100`: it is the same teen two digits
+// up, and it is the input a round-two mutation file contributed that this table
+// did not carry. That file's other two values are covered — 11 here, 21 by the
+// switch-case table below — and a round-three file restated rows from both, so
+// both files were folded in here rather than kept in parallel.
 func TestI18nPolicyRussianPluralTeenBoundary(t *testing.T) {
-	// 14 is in the teen range → many
-	got := russianPluralForm(14, "раз", "раза", "раз")
-	if got != "раз" {
-		t.Fatalf("russianPluralForm(14): expected %q (many/teen), got %q", "раз", got)
-	}
-
-	// 15 is NOT a teen → lastDigit == 5 → many (different path, same result,
-	//   but make sure 14 didn't accidentally fall into the switch)
-	got = russianPluralForm(15, "раз", "раза", "раз")
-	if got != "раз" {
-		t.Fatalf("russianPluralForm(15): expected %q (many), got %q", "раз", got)
-	}
-
-	// 24 has lastDigit==4 → few (NOT a teen), so result differs from 14
-	got = russianPluralForm(24, "раз", "раза", "раз")
-	if got != "раза" {
-		t.Fatalf("russianPluralForm(24): expected %q (few, lastDigit==4), got %q", "раза", got)
-	}
-
-	// 11, 12, 13 are all teens → many
-	for _, v := range []int{11, 12, 13} {
-		got = russianPluralForm(v, "раз", "раза", "раз")
-		if got != "раз" {
-			t.Fatalf("russianPluralForm(%d): expected %q (many/teen), got %q", v, "раз", got)
+	// Teens, upper and lower edge included: `<= 14` → `<= 13` drops 14,
+	// `>= 11` → `> 11` drops 11, and dropping `% 100` drops 111.
+	for _, value := range []int{11, 12, 13, 14, 111} {
+		if got := russianPluralForm(value, "ONE", "FEW", "MANY"); got != "MANY" {
+			t.Fatalf("russianPluralForm(%d): expected MANY (teen exception), got %q", value, got)
 		}
+	}
+
+	// 15 is NOT a teen → lastDigit == 5 → many by the default arm, so it must
+	// not move when the teen range does.
+	if got := russianPluralForm(15, "ONE", "FEW", "MANY"); got != "MANY" {
+		t.Fatalf("russianPluralForm(15): expected MANY (default arm), got %q", got)
+	}
+
+	// 24 has lastDigit == 4 and is not a teen → few, which is where 14 would
+	// land if the exception stopped covering it.
+	if got := russianPluralForm(24, "ONE", "FEW", "MANY"); got != "FEW" {
+		t.Fatalf("russianPluralForm(24): expected FEW (lastDigit 4, not a teen), got %q", got)
 	}
 }
 

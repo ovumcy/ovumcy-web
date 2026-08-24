@@ -24,24 +24,12 @@ func (stub *mutcalendarviewserviceCapturingStatsProvider) BuildCycleStatsForRang
 	return stub.stats, nil, nil
 }
 
-func TestBuildCalendarPageViewDataRequestsStatsRangeStartingTwoYearsBack(t *testing.T) {
-	capturing := &mutcalendarviewserviceCapturingStatsProvider{}
-	service := NewCalendarViewService(&stubCalendarViewDayReader{}, capturing)
-
-	user := &models.User{ID: 1, Role: models.RoleOwner}
-	now := mustParseCalendarViewDay(t, "2026-02-21")
-	monthStart := mustParseCalendarViewDay(t, "2026-02-01")
-
-	if _, err := service.BuildCalendarPageViewData(context.Background(), user, "en", now, monthStart, "", time.UTC); err != nil {
-		t.Fatalf("BuildCalendarPageViewData() unexpected error: %v", err)
-	}
-
-	wantFrom := now.AddDate(-2, 0, 0)
-	if !capturing.capturedFrom.Equal(wantFrom) {
-		t.Fatalf("expected stats range start %s (two years back), got %s", wantFrom.Format("2006-01-02"), capturing.capturedFrom.Format("2006-01-02"))
-	}
-}
-
+// TestBuildCalendarPageViewDataStatsRangeUsesNegativeTwoYearOffset is the only
+// kill for the stats-range start. A second one stated its expectation as
+// `now.AddDate(-2, 0, 0)` — the production expression restated verbatim — which
+// is one edit away from agreeing with any offset the service happens to use.
+// The literal below cannot do that, and the ordering assertion is a strict
+// superset of what the derived form checked.
 func TestBuildCalendarPageViewDataStatsRangeUsesNegativeTwoYearOffset(t *testing.T) {
 	capturing := &mutcalendarviewserviceCapturingStatsProvider{}
 	service := NewCalendarViewService(&stubCalendarViewDayReader{}, capturing)
