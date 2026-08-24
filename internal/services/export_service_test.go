@@ -142,6 +142,30 @@ func TestExportBuildSummaryReturnsEmptyForNoLogs(t *testing.T) {
 	}
 }
 
+// TestBuildSummaryHistoryAndWindowPropagatesTheReadFailure pins the one-read
+// pair's failure path. It reads the owner's entries once and derives both
+// aggregates from that slice, so a failed read must surface as an error rather
+// than as two empty-but-plausible summaries: the settings page would otherwise
+// render "no entries" to an owner whose data simply could not be loaded, and
+// the export bounds would silently narrow to nothing.
+func TestBuildSummaryHistoryAndWindowPropagatesTheReadFailure(t *testing.T) {
+	readErr := errors.New("daily_logs read failed")
+	service := NewExportService(&stubExportDayReader{err: readErr}, &stubExportSymptomReader{})
+
+	history, window, err := service.BuildSummaryHistoryAndWindow(
+		context.Background(), 42, mustParseExportDay(t, "2026-02-18"), time.UTC)
+	if !errors.Is(err, readErr) {
+		t.Fatalf("BuildSummaryHistoryAndWindow() error = %v, want the reader's own error", err)
+	}
+	if history.HasData || window.HasData {
+		t.Errorf("a failed read must not report data: history=%+v window=%+v", history, window)
+	}
+	if history.TotalEntries != 0 || window.TotalEntries != 0 {
+		t.Errorf("a failed read must not report entries: history=%d window=%d",
+			history.TotalEntries, window.TotalEntries)
+	}
+}
+
 // TestExportSymptomColumnsAreABijectionOntoTheBuiltinCatalog pins the export's
 // symptom columns to the catalog they exist for. The mapping used to be a
 // hand-written table keyed on the DISPLAY NAME, with one name too many: both
