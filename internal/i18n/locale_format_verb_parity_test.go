@@ -48,14 +48,25 @@ import (
 // verbAcceptsGoType, and every catalogue value and every fallback is actually
 // run through fmt.Sprintf with arguments built from that column, so a declared
 // type that disagrees with its verb cannot stay green.
+//
+// The key reader follows a variable ONE hop — a local assignment, or a package
+// constant — and no further. A key that reaches its lookup through anything
+// deeper leaves the site with no key of its own, and a site with no key must
+// declare a keyOrigin naming where its key is written. So the failure mode of
+// the reader's shallowness is a table entry, not a silent gap.
 
 // localizedFormatContract is one `fmt.Sprintf` site whose pattern comes from
 // the locale catalogue.
 //
-// Sites are matched to entries by (file, function) and then paired in source
-// order, so a sixth summary added to a function that already holds five fails
-// until it is declared here. That is the point of the table: the recurring cost
-// this barrier exists against is the NEXT summary string, not the ones below.
+// Sites are matched to entries by (file, function), and within that bucket by
+// the KEY each site names — not by table order. Order pairing was the first
+// draft and it is a trap: swapping two entries mispairs them, and where their
+// argument counts happen to agree it fails silently and the arity check then
+// verifies nothing. A bucket holding one site needs no matching at all.
+//
+// A sixth summary added to a function that already holds five fails until it is
+// declared here. That is the point of the table: the recurring cost this
+// barrier exists against is the NEXT summary string, not the ones below.
 type localizedFormatContract struct {
 	// file and function locate the fmt.Sprintf call. line is deliberately
 	// absent: it drifts on every edit above it, and the pairing rule does not
@@ -81,11 +92,17 @@ type localizedFormatContract struct {
 	// catalogue does not answer. Empty when the site has none.
 	fallbacks []string
 
-	// keyArrivesIndirectly marks a site whose key is not a literal at the
-	// lookupMessage call — a parameter, or a variable chosen by a branch. The
-	// barrier then expects to find NO literal key in that function, so the day
-	// someone hardcodes one there, this entry has to be revisited.
-	keyArrivesIndirectly bool
+	// keyOrigin names where the key literals are WRITTEN, for a site that does
+	// not name them itself — a key that arrives as a parameter, or three calls
+	// away in another layer. Nil means the site's own defining lookup carries
+	// them, which the reader resolves directly.
+	//
+	// This field is the whole answer to a repointing: change the key at the
+	// place named here and the set collected there no longer equals the set
+	// declared below. Without it, a site whose function holds no key literal is
+	// a site whose key nothing compares — which is what six of these eleven
+	// keys were.
+	keyOrigin *keyOrigin
 
 	// fallbackArrivesIndirectly marks a site whose fallback is a parameter
 	// rather than a literal assigned in the same function. Its literals are
@@ -96,6 +113,31 @@ type localizedFormatContract struct {
 	// note names the argument expressions, so a reader can check the type
 	// column against the call without opening the file.
 	note string
+}
+
+// keyOrigin locates the call argument that carries a catalogue key for a site
+// that does not name it itself: "the string literal at argument `argument` of
+// every call to `callee`", optionally narrowed to the calls inside one
+// function.
+//
+// One shape covers both cases on this tree. A helper reached with the key as an
+// argument (formatBBTLocalizedMessage) needs no `within`, because every call to
+// it is a call this contract is about. A key looked up in one layer and
+// formatted in another (stats.cycle_label) narrows to the function that does
+// the lookup, since `lookupMessage` itself is called twenty times in
+// internal/api and only one of those calls feeds this site.
+type keyOrigin struct {
+	callee   string
+	argument int
+	within   string // "file#function", empty for every call to callee
+}
+
+func (origin keyOrigin) String() string {
+	where := "anywhere in shipped Go"
+	if origin.within != "" {
+		where = "inside " + origin.within
+	}
+	return fmt.Sprintf("argument %d of %s(...), %s", origin.argument+1, origin.callee, where)
 }
 
 // localizedFormatContracts is the declared set. Measured 2026-08-24: nine
@@ -159,57 +201,65 @@ var localizedFormatContracts = []localizedFormatContract{
 		// twice, with the hint key and the error key, and passes each one's
 		// English fallback as an argument. Both are checked in all six
 		// catalogues, and both fallback literals are checked as literals.
+		//
+		// The key origin is the argument position at those two calls, so
+		// repointing either one at another catalogue key fails here — the case
+		// that was invisible until the review.
 		file:                      "internal/api/page_view_data_helpers.go",
 		function:                  "formatBBTLocalizedMessage",
 		keys:                      []string{"dashboard.bbt_range_hint", "dashboard.bbt_range_error"},
 		verbs:                     []string{"%s", "%s", "%s"},
 		argumentTypes:             []string{"string", "string", "string"},
 		fallbacks:                 []string{"Allowed range: %s-%s %s.", "Enter a value between %s and %s %s."},
-		keyArrivesIndirectly:      true,
+		keyOrigin:                 &keyOrigin{callee: "formatBBTLocalizedMessage", argument: 1},
 		fallbackArrivesIndirectly: true,
 		note:                      "minText, maxText, symbol — all pre-rendered strings, never the float",
 	},
 	{
-		// The key is chosen by a branch into patternKey, so the lookup carries
-		// no literal. The function also assigns a second, verb-free literal
-		// ("Saved.") to the same pattern variable; a literal with no verb
-		// cannot misformat, which is why the rule below tolerates one.
-		file:                 "internal/api/handlers_days_status_helpers.go",
-		function:             "sendDaySaveStatus",
-		keys:                 []string{"common.saved_at"},
-		verbs:                []string{"%s"},
-		argumentTypes:        []string{"string"},
-		fallbacks:            []string{"Saved at %s"},
-		keyArrivesIndirectly: true,
-		note:                 "timestamp, already formatted as 15:04",
+		// The key is chosen by a branch into patternKey, so the lookup call
+		// carries a variable rather than a literal — the reader resolves it
+		// through the local assignment, which is why no key origin is needed.
+		// The function also assigns a second, verb-free literal ("Saved.") to
+		// the same pattern variable; a literal with no verb cannot misformat,
+		// which is why the rule below tolerates one.
+		file:          "internal/api/handlers_days_status_helpers.go",
+		function:      "sendDaySaveStatus",
+		keys:          []string{"common.saved_at"},
+		verbs:         []string{"%s"},
+		argumentTypes: []string{"string"},
+		fallbacks:     []string{"Saved at %s"},
+		note:          "timestamp, already formatted as 15:04",
 	},
 	{
 		// Cross-layer: internal/api/stats_page_helpers.go looks the key up and
 		// hands the pattern to the stats service, which formats it three calls
 		// later. The transport side sees a catalogue value it never formats;
 		// this side formats a value it never looked up. Neither end alone can
-		// state the contract, which is why it is stated here.
-		file:                 "internal/services/stats_view_policy.go",
-		function:             "BuildCycleTrendLabels",
-		keys:                 []string{"stats.cycle_label"},
-		verbs:                []string{"%d"},
-		argumentTypes:        []string{"int"},
-		fallbacks:            []string{"Cycle %d"},
-		keyArrivesIndirectly: true,
-		note:                 "index+1, the 1-based chart point number",
+		// state the contract, which is why it is stated here. The pattern
+		// reaches this function as a parameter, so the key origin points back
+		// at the transport-side lookup that chose it.
+		file:          "internal/services/stats_view_policy.go",
+		function:      "BuildCycleTrendLabels",
+		keys:          []string{"stats.cycle_label"},
+		verbs:         []string{"%d"},
+		argumentTypes: []string{"int"},
+		fallbacks:     []string{"Cycle %d"},
+		keyOrigin:     &keyOrigin{callee: "lookupMessage", argument: 1, within: "internal/api/stats_page_helpers.go#buildStatsPageData"},
+		note:          "index+1, the 1-based chart point number",
 	},
 	{
 		// The reminder body leaves the instance in a webhook payload rather
 		// than on a page, so a formatting error here is read by whatever the
 		// owner pointed the webhook at. There is no fallback literal: an
 		// unanswered key sends the headline alone rather than verb residue.
-		file:                 "internal/services/webhook_notify_service.go",
-		function:             "reminderCopy",
-		keys:                 []string{"webhook.reminder.period.message", "webhook.reminder.ovulation.message"},
-		verbs:                []string{"%s"},
-		argumentTypes:        []string{"string"},
-		keyArrivesIndirectly: true,
-		note:                 "reminder.EventDate formatted as 2006-01-02",
+		// Both keys reach the lookup as package constants; the reader resolves
+		// those, so no key origin is needed.
+		file:          "internal/services/webhook_notify_service.go",
+		function:      "reminderCopy",
+		keys:          []string{"webhook.reminder.period.message", "webhook.reminder.ovulation.message"},
+		verbs:         []string{"%s"},
+		argumentTypes: []string{"string"},
+		note:          "reminder.EventDate formatted as 2006-01-02",
 	},
 }
 
@@ -221,6 +271,12 @@ type goFormatSite struct {
 	function  string
 	pattern   string // the identifier in the format position, "" for any other expression
 	arguments int
+
+	// keys are the catalogue keys the site's OWN defining lookup names,
+	// resolved through local assignments and package constants. Empty when the
+	// pattern arrives from somewhere this reader cannot follow — those sites
+	// declare a keyOrigin instead.
+	keys []string
 }
 
 func (site goFormatSite) String() string {
@@ -228,27 +284,58 @@ func (site goFormatSite) String() string {
 }
 
 // goFormatBody is the surrounding evidence a site needs: the literals its
-// function assigns to the pattern variable, and the literal catalogue keys the
-// function hands lookupMessage.
+// function assigns to the pattern variable.
 type goFormatBody struct {
 	patternLiterals []string
-	lookupKeys      []string
+}
+
+// goKeyOriginLiteral is one string literal found at a call argument some
+// contract's keyOrigin points at.
+type goKeyOriginLiteral struct {
+	callee   string
+	argument int
+	within   string // "file#function" of the enclosing declaration
+	value    string
 }
 
 func goFormatBodyKey(file string, function string) string {
 	return file + "#" + function
 }
 
+// keyOriginCallees is derived from the contract table, so the sweep reads only
+// the calls some contract actually asks about. Deriving it rather than listing
+// it is what keeps a new keyOrigin from pointing at a callee nothing collects —
+// an entry that would then compare its declared keys against an empty set and
+// pass.
+var keyOriginCallees = func() map[string]bool {
+	callees := map[string]bool{}
+	for _, contract := range localizedFormatContracts {
+		if contract.keyOrigin != nil {
+			callees[contract.keyOrigin.callee] = true
+		}
+	}
+	return callees
+}()
+
 // recordGoFormatSites is called for every parsed Go file the shared collector
 // walks (collectFromGoFile in locale_reachability_test.go).
 func recordGoFormatSites(origin goOrigin, file *ast.File, evidence *sourceEvidence) {
+	constants := fileStringConstants(file)
+
 	for _, declaration := range file.Decls {
 		function := ""
 		if typed, ok := declaration.(*ast.FuncDecl); ok {
 			function = typed.Name.Name
+			// Two declarations of one name in one file merge into a single
+			// bucket below, and every finding after that names a function
+			// without saying which. Counted here, refused in the barrier.
+			evidence.goFunctionDeclarations[goFormatBodyKey(origin.file, function)]++
 		}
 
-		sites, body := readGoFormatDeclaration(origin, function, declaration)
+		evidence.goKeyOriginLiterals = append(evidence.goKeyOriginLiterals,
+			readKeyOriginLiterals(origin, function, declaration, constants)...)
+
+		sites, body := readGoFormatDeclaration(origin, function, declaration, constants)
 		if len(sites) == 0 {
 			continue
 		}
@@ -257,9 +344,46 @@ func recordGoFormatSites(origin goOrigin, file *ast.File, evidence *sourceEviden
 		key := goFormatBodyKey(origin.file, function)
 		merged := evidence.goFormatBodies[key]
 		merged.patternLiterals = append(merged.patternLiterals, body.patternLiterals...)
-		merged.lookupKeys = append(merged.lookupKeys, body.lookupKeys...)
 		evidence.goFormatBodies[key] = merged
 	}
+}
+
+// readKeyOriginLiterals collects the string literals sitting at the argument
+// positions of calls to a callee some contract's keyOrigin names.
+//
+// This is the half the first draft of this barrier did not have, and its
+// absence was the review's finding: a site whose key is written at its CALLER
+// had nothing comparing that key to the table, so repointing
+// buildBBTFieldViewData at another catalogue key left the barrier green while
+// the dashboard rendered %!d(string=35.0).
+func readKeyOriginLiterals(origin goOrigin, function string, declaration ast.Decl, constants map[string]string) []goKeyOriginLiteral {
+	if len(keyOriginCallees) == 0 {
+		return nil
+	}
+
+	var found []goKeyOriginLiteral
+	ast.Inspect(declaration, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		callee := calleeName(call)
+		if callee == "" || !keyOriginCallees[callee] {
+			return true
+		}
+		for index, argument := range call.Args {
+			for _, value := range resolveStringValues(argument, nil, constants) {
+				found = append(found, goKeyOriginLiteral{
+					callee:   callee,
+					argument: index,
+					within:   goFormatBodyKey(origin.file, function),
+					value:    value,
+				})
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // readGoFormatDeclaration walks one declaration in two passes: first to find
@@ -267,8 +391,9 @@ func recordGoFormatSites(origin goOrigin, file *ast.File, evidence *sourceEviden
 // literals assigned to THOSE identifiers. Collecting every string assignment in
 // the function instead would sweep up unrelated copy and turn the fallback rule
 // below into noise.
-func readGoFormatDeclaration(origin goOrigin, function string, declaration ast.Decl) ([]goFormatSite, goFormatBody) {
+func readGoFormatDeclaration(origin goOrigin, function string, declaration ast.Decl, constants map[string]string) ([]goFormatSite, goFormatBody) {
 	var sites []goFormatSite
+	sitePositions := []token.Pos{}
 	patternNames := map[string]bool{}
 
 	ast.Inspect(declaration, func(node ast.Node) bool {
@@ -303,6 +428,7 @@ func readGoFormatDeclaration(origin goOrigin, function string, declaration ast.D
 			patternNames[identifier.Name] = true
 		}
 		sites = append(sites, site)
+		sitePositions = append(sitePositions, call.Lparen)
 		return true
 	})
 
@@ -310,38 +436,185 @@ func readGoFormatDeclaration(origin goOrigin, function string, declaration ast.D
 		return nil, goFormatBody{}
 	}
 
+	// Second pass: the local string values of every identifier, and the
+	// literals assigned to a pattern identifier. Local values are collected for
+	// ALL identifiers rather than only the pattern ones, because a key reaches
+	// its lookup through a variable of its own (`patternKey`, `messageKey`).
 	var body goFormatBody
+	locals := map[string][]string{}
+	var definitions []patternDefinition
+
 	ast.Inspect(declaration, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.AssignStmt:
-			for index, target := range typed.Lhs {
-				identifier, ok := target.(*ast.Ident)
-				if !ok || !patternNames[identifier.Name] || index >= len(typed.Rhs) {
-					continue
-				}
-				if text, ok := goStringLiteralOf(typed.Rhs[index]); ok {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for index, target := range assignment.Lhs {
+			identifier, ok := target.(*ast.Ident)
+			if !ok || index >= len(assignment.Rhs) {
+				continue
+			}
+			right := assignment.Rhs[index]
+			if text, ok := goStringLiteralOf(right); ok {
+				locals[identifier.Name] = append(locals[identifier.Name], text)
+				if patternNames[identifier.Name] {
 					body.patternLiterals = append(body.patternLiterals, text)
 				}
+				continue
 			}
-		case *ast.CallExpr:
-			// Only lookupMessage — the fallback-bearing form, the one whose
-			// result a caller may hand to Sprintf. translateMessage renders a
-			// miss as the key itself and is deliberately not read here: it
-			// names catalogue keys all over these same functions that have
-			// nothing to do with the format contract.
-			identifier, ok := typed.Fun.(*ast.Ident)
-			if !ok || identifier.Name != "lookupMessage" || len(typed.Args) < 2 {
-				return true
+			if nested, ok := right.(*ast.Ident); ok {
+				locals[identifier.Name] = append(locals[identifier.Name], locals[nested.Name]...)
+				if value, known := constants[nested.Name]; known {
+					locals[identifier.Name] = append(locals[identifier.Name], value)
+				}
+				continue
 			}
-			if text, ok := goStringLiteralOf(typed.Args[1]); ok {
-				body.lookupKeys = append(body.lookupKeys, text)
+			// A call on the right of a pattern identifier is the lookup that
+			// defines it. Which call defines which site is settled by position
+			// below; a single-result form (`x := f(...)`) lands here too, since
+			// Lhs and Rhs are then the same length.
+			if call, ok := right.(*ast.CallExpr); ok && patternNames[identifier.Name] {
+				definitions = append(definitions, patternDefinition{name: identifier.Name, position: call.Lparen, call: call})
 			}
 		}
 		return true
 	})
+	// Multi-result assignments (`pattern, translated := lookupMessage(...)`)
+	// carry one call for several names. The loop above pairs Lhs[i] with
+	// Rhs[i], so it reaches such a call only for the FIRST name — which is the
+	// pattern today, and would silently stop being it the day a helper returned
+	// them the other way round. This pass binds the call to every pattern name
+	// on the left, whatever its position; the overlap with the loop above is a
+	// repeated identical definition, which definingCallFor collapses.
+	ast.Inspect(declaration, func(node ast.Node) bool {
+		assignment, ok := node.(*ast.AssignStmt)
+		if !ok || len(assignment.Rhs) != 1 || len(assignment.Lhs) < 2 {
+			return true
+		}
+		call, ok := assignment.Rhs[0].(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		for _, target := range assignment.Lhs {
+			identifier, ok := target.(*ast.Ident)
+			if !ok || !patternNames[identifier.Name] {
+				continue
+			}
+			definitions = append(definitions, patternDefinition{name: identifier.Name, position: call.Lparen, call: call})
+		}
+		return true
+	})
 
-	sort.Strings(body.lookupKeys)
+	for index := range sites {
+		definition, found := definingCallFor(definitions, sites[index].pattern, sitePositions[index])
+		if !found {
+			continue
+		}
+		keys := map[string]bool{}
+		for _, argument := range definition.call.Args {
+			for _, value := range resolveStringValues(argument, locals, constants) {
+				keys[value] = true
+			}
+		}
+		for key := range keys {
+			sites[index].keys = append(sites[index].keys, key)
+		}
+		sort.Strings(sites[index].keys)
+	}
+
 	return sites, body
+}
+
+// patternDefinition is one assignment of a call's result to a pattern
+// identifier — the lookup that decides which catalogue key a site formats.
+type patternDefinition struct {
+	name     string
+	position token.Pos
+	call     *ast.CallExpr
+}
+
+// definingCallFor picks the last definition of `pattern` that precedes the
+// site. Go scoping would answer this exactly; position is enough here and is
+// stated as the approximation it is. The shape it must get right is the one
+// buildStatsCycleChartSummary has: two lookups in sibling blocks, both writing
+// a variable named `pattern`, each feeding the Sprintf that follows it.
+func definingCallFor(definitions []patternDefinition, pattern string, site token.Pos) (patternDefinition, bool) {
+	best := patternDefinition{}
+	found := false
+	for _, definition := range definitions {
+		if definition.name != pattern || definition.position >= site {
+			continue
+		}
+		if !found || definition.position > best.position {
+			best = definition
+			found = true
+		}
+	}
+	return best, found
+}
+
+// resolveStringValues answers what string literals an expression can carry: the
+// literal itself, the literals a local variable was assigned, or the value of a
+// package constant. One hop, deliberately — this is a reader that must be
+// obvious, not a dataflow engine. A key it cannot follow leaves the site with
+// no keys, and a site with no keys must declare a keyOrigin, so the failure
+// mode is a table entry rather than a silent gap.
+func resolveStringValues(expression ast.Expr, locals map[string][]string, constants map[string]string) []string {
+	if text, ok := goStringLiteralOf(expression); ok {
+		return []string{text}
+	}
+	identifier, ok := expression.(*ast.Ident)
+	if !ok {
+		return nil
+	}
+	var values []string
+	values = append(values, locals[identifier.Name]...)
+	if value, known := constants[identifier.Name]; known {
+		values = append(values, value)
+	}
+	return values
+}
+
+// fileStringConstants reads the file's package-level string constants and vars,
+// which is how the webhook reminder keys reach their lookup.
+func fileStringConstants(file *ast.File) map[string]string {
+	constants := map[string]string{}
+	for _, declaration := range file.Decls {
+		generic, ok := declaration.(*ast.GenDecl)
+		if !ok || (generic.Tok != token.CONST && generic.Tok != token.VAR) {
+			continue
+		}
+		for _, specification := range generic.Specs {
+			value, ok := specification.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range value.Names {
+				if index >= len(value.Values) {
+					continue
+				}
+				if text, ok := goStringLiteralOf(value.Values[index]); ok {
+					constants[name.Name] = text
+				}
+			}
+		}
+	}
+	return constants
+}
+
+// calleeName is the simple name of a called function, whether it is called
+// bare (`lookupMessage(...)`) or through a receiver or package
+// (`service.localized.Message(...)`).
+func calleeName(call *ast.CallExpr) string {
+	switch typed := call.Fun.(type) {
+	case *ast.Ident:
+		return typed.Name
+	case *ast.SelectorExpr:
+		if typed.Sel != nil {
+			return typed.Sel.Name
+		}
+	}
+	return ""
 }
 
 func sprintfFormatArgument(call *ast.CallExpr) (ast.Expr, bool) {
@@ -420,6 +693,12 @@ func TestEveryLocalizedFormatPatternAgreesWithItsArgumentList(t *testing.T) {
 // Without this, the table is a list of the sites someone remembered, and the
 // eighth summary string added next month is silently uncovered — which is the
 // recurring cost this whole barrier exists against.
+//
+// It is also where each site's KEY is held to the table, at whichever end
+// writes it: the site's own lookup when the reader can resolve it, and the
+// contract's declared keyOrigin when it cannot. Repointing a call at another
+// catalogue key is the defect that closes here, and it is the one the first
+// draft of this barrier could not see for six of its eleven keys.
 func assertTheTableCoversEveryFormatSite(t *testing.T, evidence *sourceEvidence) {
 	t.Helper()
 
@@ -467,36 +746,123 @@ func assertTheTableCoversEveryFormatSite(t *testing.T, evidence *sourceEvidence)
 			t.Errorf("localizedFormatContracts declares %d site(s) at %s and the sweep found none; either the call moved and the entry is stale, or the recogniser stopped seeing it", len(contracts), key)
 			continue
 		}
-		if len(sites) != len(contracts) {
-			t.Errorf("%s holds %d localized fmt.Sprintf site(s) and the table declares %d; the table pairs entries to sites in source order, so an added or removed call has to be declared before this barrier can say anything about it", key, len(sites), len(contracts))
+		// One name declared twice in one file merges two functions into this
+		// bucket, and every message below would name a function without saying
+		// which of the two. reminderCopy is already a method, so the table
+		// addresses methods by bare name; refusing the collision is cheaper and
+		// more honest than carrying a receiver column that has nothing to say
+		// on a tree where no name repeats.
+		if count := evidence.goFunctionDeclarations[key]; count > 1 {
+			t.Errorf("%s is declared %d times in that file, so this barrier cannot tell the two apart: their format sites, pattern literals and keys all merge into one bucket and every finding below would name a function without naming which. Rename one, or give the table a receiver column", key, count)
 			continue
 		}
-		for index, contract := range contracts {
-			site := sites[index]
-			if site.arguments != len(contract.verbs) {
-				t.Errorf("%s:%d passes %d argument(s) to a pattern declared with %d verb(s) (%s); one verb too few renders %%!(EXTRA ...) and one too many renders %%!(MISSING)",
-					site.file, site.line, site.arguments, len(contract.verbs), strings.Join(contract.verbs, " "))
-			}
+		if len(sites) != len(contracts) {
+			t.Errorf("%s holds %d localized fmt.Sprintf site(s) and the table declares %d; an added or removed call has to be declared before this barrier can say anything about it", key, len(sites), len(contracts))
+			continue
 		}
 
-		// The keys the function names at its own lookupMessage calls must be
-		// exactly the ones the table declares for it. A key hardcoded into one
-		// of these functions without a table entry is the same silent gap as an
-		// undeclared call.
-		var wantKeys []string
-		for _, contract := range contracts {
-			if contract.keyArrivesIndirectly {
+		for _, pair := range pairSitesToContracts(t, key, sites, contracts) {
+			site, contract := pair.site, pair.contract
+			named := strings.Join(contract.keys, "/")
+			if site.arguments != len(contract.verbs) {
+				t.Errorf("%s:%d (%s) passes %d argument(s) to a pattern declared with %d verb(s) (%s); one verb too few renders %%!(EXTRA ...) and one too many renders %%!(MISSING)",
+					site.file, site.line, named, site.arguments, len(contract.verbs), strings.Join(contract.verbs, " "))
+			}
+
+			// The keys that can reach THIS site must be exactly the declared
+			// ones. Repointing a call at another catalogue key is the defect
+			// this closes, and it is checked at whichever end writes the key.
+			want := append([]string(nil), contract.keys...)
+			sort.Strings(want)
+			got := site.keys
+			where := site.String()
+			if contract.keyOrigin != nil {
+				got = keysAtOrigin(evidence, *contract.keyOrigin)
+				where = contract.keyOrigin.String()
+				if len(site.keys) > 0 {
+					t.Errorf("%s:%d names the key(s) [%s] itself, yet the table sends this barrier to %s to find them; a site that carries its own key must not declare a key origin, or the two answers can disagree in silence",
+						site.file, site.line, strings.Join(site.keys, ", "), where)
+				}
+			}
+			if strings.Join(got, ",") == strings.Join(want, ",") {
 				continue
 			}
-			wantKeys = append(wantKeys, contract.keys...)
-		}
-		sort.Strings(wantKeys)
-		gotKeys := evidence.goFormatBodies[key].lookupKeys
-		if strings.Join(gotKeys, ",") != strings.Join(wantKeys, ",") {
-			t.Errorf("%s hands lookupMessage the literal key(s) [%s]; the table declares [%s]. A key that reaches a format site without an entry here is a format nothing checks",
-				key, strings.Join(gotKeys, ", "), strings.Join(wantKeys, ", "))
+			t.Errorf("the key(s) reaching %s:%d are [%s] and the table declares [%s], read at %s:\n"+
+				"A call repointed at another catalogue key formats that key's verbs against this site's argument list — "+
+				"three strings against %%d %%.2f %%s renders %%!d(string=...) onto the page. Update the table with the "+
+				"key that is actually formatted here, and check its verb sequence while you are in it.",
+				site.file, site.line, strings.Join(got, ", "), strings.Join(want, ", "), where)
 		}
 	}
+}
+
+// sitePairing is one contract matched to the site it describes.
+type sitePairing struct {
+	site     goFormatSite
+	contract localizedFormatContract
+}
+
+// pairSitesToContracts matches by the keys a site names rather than by table
+// order. Order pairing was the first draft and it is a trap: swapping two table
+// entries mispairs them, and where the two argument counts agree it fails
+// silently and the arity check verifies nothing.
+//
+// A bucket holding a single site needs no matching. Beyond that the site's own
+// resolved key set is the identity; a bucket whose sites carry no keys at all
+// falls back to source order, which is sound only because such a bucket has one
+// site — and that is asserted rather than assumed.
+func pairSitesToContracts(t *testing.T, bucket string, sites []goFormatSite, contracts []localizedFormatContract) []sitePairing {
+	t.Helper()
+
+	if len(sites) == 1 {
+		return []sitePairing{{site: sites[0], contract: contracts[0]}}
+	}
+
+	byKeys := map[string]localizedFormatContract{}
+	for _, contract := range contracts {
+		keys := append([]string(nil), contract.keys...)
+		sort.Strings(keys)
+		identity := strings.Join(keys, ",")
+		if _, clash := byKeys[identity]; clash {
+			t.Errorf("%s declares two entries for the same key set [%s]; the pairing below cannot tell them apart", bucket, identity)
+			return nil
+		}
+		byKeys[identity] = contract
+	}
+
+	var pairs []sitePairing
+	for _, site := range sites {
+		contract, ok := byKeys[strings.Join(site.keys, ",")]
+		if !ok {
+			t.Errorf("%s:%d formats the key(s) [%s] and no table entry for %s declares that set; entries are matched to sites by key rather than by table order, so an entry whose keys the code no longer names cannot be matched at all",
+				site.file, site.line, strings.Join(site.keys, ", "), bucket)
+			continue
+		}
+		pairs = append(pairs, sitePairing{site: site, contract: contract})
+	}
+	return pairs
+}
+
+// keysAtOrigin collects the literals the sweep found at a contract's declared
+// key origin.
+func keysAtOrigin(evidence *sourceEvidence, origin keyOrigin) []string {
+	seen := map[string]bool{}
+	for _, literal := range evidence.goKeyOriginLiterals {
+		if literal.callee != origin.callee || literal.argument != origin.argument {
+			continue
+		}
+		if origin.within != "" && literal.within != origin.within {
+			continue
+		}
+		seen[literal.value] = true
+	}
+
+	var keys []string
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // assertEveryContractIsInternallyConsistent ties the declared type column to
@@ -864,13 +1230,126 @@ func probeNoFormatting(messages map[string]string) string {
 	if strings.Join(body.patternLiterals, "|") != "%d items, %.2f average." {
 		t.Errorf("read the pattern literals as %v; the fallback beside the call is the second copy of the format and is the whole reason this half exists", body.patternLiterals)
 	}
-	if strings.Join(body.lookupKeys, "|") != "probe.summary" {
-		t.Errorf("read the lookup keys as %v; a key the reader cannot see is a key the table is never held to", body.lookupKeys)
+	if strings.Join(site.keys, "|") != "probe.summary" {
+		t.Errorf("resolved the site's key(s) as %v; a key the reader cannot see is a key the table is never held to", site.keys)
 	}
 
 	if _, recorded := evidence.goFormatBodies[goFormatBodyKey("fixture.go", "probeNoFormatting")]; recorded {
-		t.Errorf("recorded a body for a function that formats nothing; lookupMessage keys matter to this barrier only where a Sprintf can reach them")
+		t.Errorf("recorded a body for a function that formats nothing; catalogue keys matter to this barrier only where a Sprintf can reach them")
 	}
+}
+
+// The review's finding in fixture form: a site whose key is written by its
+// CALLER, and a site whose key reaches the lookup through a local variable and
+// a package constant. The first draft of this reader saw none of the three, so
+// six of eleven keys were declared in the table and compared against nothing.
+func TestLocalizedFormatSiteReaderResolvesKeysItDoesNotSeeAtTheLookup(t *testing.T) {
+	const fixture = `package fixture
+
+import "fmt"
+
+const probeConstantKey = "probe.from.constant"
+
+func probeThroughCaller(messages map[string]string, key string, fallback string, value string) string {
+	pattern, translated := lookupMessage(messages, key)
+	if !translated {
+		pattern = fallback
+	}
+	return fmt.Sprintf(pattern, value)
+}
+
+func probeCallerOne(messages map[string]string) string {
+	return probeThroughCaller(messages, "probe.hint", "Hint: %s.", "x")
+}
+
+func probeCallerTwo(messages map[string]string) string {
+	return probeThroughCaller(messages, "probe.error", "Error: %s.", "y")
+}
+
+func probeThroughLocals(messages map[string]string, branch bool) string {
+	messageKey := probeConstantKey
+	if branch {
+		messageKey = "probe.from.literal"
+	}
+	pattern, translated := lookupMessage(messages, messageKey)
+	if !translated {
+		pattern = "%s fallback."
+	}
+	return fmt.Sprintf(pattern, "z")
+}
+`
+
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, "fixture.go", fixture, 0)
+	if err != nil {
+		t.Fatalf("parsing the fixture: %v", err)
+	}
+
+	evidence := newSourceEvidence()
+	collectFromGoFile(goOrigin{file: "fixture.go", fileSet: fileSet}, parsed, evidence)
+
+	var throughLocals goFormatSite
+	for _, site := range evidence.goFormatSites {
+		if site.function == "probeThroughLocals" {
+			throughLocals = site
+		}
+	}
+	if got := strings.Join(throughLocals.keys, ","); got != "probe.from.constant,probe.from.literal" {
+		t.Errorf("resolved the local-variable site's key(s) as [%s], want both the package constant and the literal the branch assigns; a key the reader drops is a key the table is never held to", got)
+	}
+
+	// The key-origin reader answers a narrower question than the site reader:
+	// what literal stands AT the named argument, with no local resolution. A
+	// call that passes a variable there records nothing, which is safe only
+	// because an origin that collects nothing then compares an empty set
+	// against the declared keys and fails by name rather than passing quietly.
+	// That is asserted directly below, since it is the vacuity this shape is
+	// most able to hide.
+	for _, literal := range evidence.goKeyOriginLiterals {
+		if literal.callee == "lookupMessage" && literal.within == goFormatBodyKey("fixture.go", "probeThroughLocals") {
+			t.Errorf("the key-origin reader resolved %q at a call that passes a variable; it must read the literal standing at the argument and nothing else, or two readers with different rules would disagree about the same call", literal.value)
+		}
+	}
+	if got := keysAtOrigin(evidence, keyOrigin{callee: "lookupMessage", argument: 1, within: goFormatBodyKey("fixture.go", "probeThroughLocals")}); len(got) != 0 {
+		t.Errorf("an origin pointed at a variable argument collected %v; it must collect nothing, so the comparison against the declared keys fails instead of passing about an empty set", got)
+	}
+
+	evidence = newSourceEvidence()
+	withFixtureKeyOriginCallee(t, "probeThroughCaller", func() {
+		collectFromGoFile(goOrigin{file: "fixture.go", fileSet: fileSet}, parsed, evidence)
+	})
+
+	var keys []string
+	for _, literal := range evidence.goKeyOriginLiterals {
+		if literal.callee == "probeThroughCaller" && literal.argument == 1 {
+			keys = append(keys, literal.value)
+		}
+	}
+	sort.Strings(keys)
+	if strings.Join(keys, ",") != "probe.error,probe.hint" {
+		t.Errorf("collected the caller-written key(s) as [%s], want [probe.error, probe.hint]; this is exactly the repointing the barrier missed before the review — the key lives at the call, not at the lookup", strings.Join(keys, ", "))
+	}
+
+	// And the fallbacks travel with them, which is why fallbackArrivesIndirectly
+	// looks in the shipped-Go literal set rather than in the callee's body.
+	if !evidence.literals["Hint: %s."] || !evidence.literals["Error: %s."] {
+		t.Errorf("the caller-written fallback literals were not collected; a fallback the sweep cannot see is a fallback the table can quietly outlive")
+	}
+}
+
+// withFixtureKeyOriginCallee widens the derived callee set for one fixture run.
+// The set is derived from the shipped table on purpose, so a self-test that
+// needs another callee has to say so here rather than by adding a fake contract
+// to the table the barrier judges the repository with.
+func withFixtureKeyOriginCallee(t *testing.T, callee string, run func()) {
+	t.Helper()
+
+	if keyOriginCallees[callee] {
+		t.Fatalf("%q is already a derived key-origin callee; this helper would hide a real entry rather than add a fixture one", callee)
+	}
+	keyOriginCallees[callee] = true
+	defer delete(keyOriginCallees, callee)
+	run()
 }
 
 // lineContaining is the fixture's own line lookup, so the expected line number
