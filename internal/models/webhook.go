@@ -31,7 +31,9 @@ type WebhookSettingsColumns struct {
 // webhook reminders, and nothing else. EncryptedURL is CIPHERTEXT (decrypt via
 // WebhookSettingsService.DecryptWebhookURL, aad-bound to ID). The two
 // *LastSentCycleStart watermarks gate at most one reminder of each kind per
-// cycle. Timezone lets the pass resolve "today" without a browser request.
+// cycle. Timezone lets the pass resolve "today" without a browser request, and
+// InterfaceLanguage lets it render the payload in the language the owner chose
+// — both are the request-free pass's substitute for a browser it never sees.
 //
 // It is intentionally NOT models.User: LoadSettingsByID stays the single
 // settings whitelist, and this projection is scoped to the notify use case so
@@ -47,6 +49,13 @@ type WebhookNotifyRecord struct {
 	UnpredictableCycle bool       `gorm:"column:unpredictable_cycle"`
 	LastPeriodStart    *time.Time `gorm:"column:last_period_start;type:date"`
 	Timezone           string     `gorm:"column:timezone"`
+
+	// InterfaceLanguage is the UI language the owner chose (users.interface_language,
+	// empty when they never chose one). It is the durable carrier of that choice,
+	// so the notify pass resolves every localized payload field at it instead of
+	// at the server default. Not a credential and not a health specific: it names
+	// a language, nothing about the account.
+	InterfaceLanguage string `gorm:"column:interface_language"`
 
 	// Webhook settings.
 	WebhookEnabled         bool   `gorm:"column:webhook_enabled"`

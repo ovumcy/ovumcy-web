@@ -149,10 +149,28 @@ func (echoDecryptor) DecryptWebhookURL(_ uint, encryptedURL string) (string, err
 	return encryptedURL, nil
 }
 
+// fixedDisclaimer is the notify pass's localized-copy seam, answered with fixed
+// English text. These cases are about idempotency, not language, so the entries
+// are returned regardless of the language asked for.
 type fixedDisclaimer struct{}
 
 func (fixedDisclaimer) Disclaimer(string) string {
 	return "Predictions are estimates, not medical advice or a method of contraception."
+}
+
+func (fixedDisclaimer) Message(_ string, key string) string {
+	switch key {
+	case "webhook.reminder.period.title":
+		return "Period reminder"
+	case "webhook.reminder.period.message":
+		return "Estimated next period around %s."
+	case "webhook.reminder.ovulation.title":
+		return "Ovulation reminder"
+	case "webhook.reminder.ovulation.message":
+		return "Estimated ovulation around %s."
+	default:
+		return ""
+	}
 }
 
 // dueRecord builds a period-due record for a regular 28-day owner whose last

@@ -332,17 +332,9 @@ func (service *WebhookSettingsService) BuildWebhookURLDisplay(userID uint, encry
 	if err != nil {
 		return WebhookURLDisplay{Configured: true}
 	}
-	return WebhookURLDisplay{Configured: true, Host: webhookURLHost(plaintext)}
-}
-
-// webhookURLHost returns the hostname component of a stored webhook URL and
-// nothing else — no scheme, port, path, query, or userinfo — so a token embedded
-// anywhere but the host can never reach a render surface. An unparseable value
-// yields an empty host (the caller still shows "configured").
-func webhookURLHost(raw string) string {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return ""
-	}
-	return parsed.Hostname()
+	// hostOnly is the package's single URL-hostname redaction rule — the same one
+	// the notify pass and the CLI print through. Keeping one implementation is
+	// what makes a hardening of "what is safe to show" reach every surface at
+	// once; this display used to carry its own byte-identical copy.
+	return WebhookURLDisplay{Configured: true, Host: hostOnly(plaintext)}
 }

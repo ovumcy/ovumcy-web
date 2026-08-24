@@ -395,6 +395,11 @@
   "settings.webhook.notify_ovulation": "Prévenir avant l'ovulation",
   "settings.webhook.remove_url": "Supprimer l'URL enregistrée",
   "settings.webhook.save": "Enregistrer le webhook",
+
+  "webhook.reminder.period.title": "Rappel de règles",
+  "webhook.reminder.period.message": "Prochaines règles estimées autour du %s.",
+  "webhook.reminder.ovulation.title": "Rappel d'ovulation",
+  "webhook.reminder.ovulation.message": "Ovulation estimée autour du %s.",
   "settings.success.calendar_feed_generated": "Flux de calendrier activé. Copiez votre lien d'abonnement maintenant : il ne s'affiche qu'une seule fois.",
   "settings.success.calendar_feed_rotated": "Lien du flux de calendrier renouvelé. L'ancien lien ne fonctionne plus ; copiez le nouveau maintenant.",
   "settings.success.calendar_feed_revoked": "Flux de calendrier désactivé. Tout lien d'abonnement existant ne fonctionne plus.",

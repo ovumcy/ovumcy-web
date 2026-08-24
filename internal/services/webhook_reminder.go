@@ -152,8 +152,25 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 // banner): a webhook consumer can act on each independently. Period precedes
 // ovulation in the returned slice.
 func DecideDueReminders(user *models.User, settings WebhookReminderSettings, logs []models.DailyLog, now time.Time, location *time.Location) []DueReminder {
+	reminders, _ := decideDueReminders(user, settings, logs, now, location)
+	return reminders
+}
+
+// decideDueReminders is the single traversal behind DecideDueReminders. It
+// returns the due set AND watermarkSuppressed: how many reminders this owner
+// would have received but for a watermark that already covers them — the count
+// the notify pass reports as SkippedIdempotent.
+//
+// The count comes from the same pass that builds the due set because the
+// traversal is not cheap: it rebuilds the owner's cycle statistics from their
+// whole logged history, so deriving the counter by deciding a second time with
+// the watermarks cleared made the observability cost equal the cost of the work
+// it observes. Nothing about the authoritative decision changes: a kind is
+// counted exactly when its own watermark is what withheld it, which is the
+// definition the second decision approximated by subtraction.
+func decideDueReminders(user *models.User, settings WebhookReminderSettings, logs []models.DailyLog, now time.Time, location *time.Location) ([]DueReminder, int) {
 	if !settings.Enabled {
-		return nil
+		return nil, 0
 	}
 
 	// Reuse the exact dashboard prediction path. BuildCycleStatsFromLogs is a
@@ -165,7 +182,7 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// Medical-safety gate: if the app suppresses predictions, emit nothing. The
 	// three signals are read through the predicate every surface shares.
 	if PredictionsSuppressed(user, stats) {
-		return nil
+		return nil, 0
 	}
 
 	today := DateAtLocation(now, location)
@@ -174,9 +191,14 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	prediction := DashboardUpcomingPredictions(stats, user, today, cycleLength)
 
 	reminders := make([]DueReminder, 0, 2)
+	watermarkSuppressed := 0
 
-	if due, ok := decidePeriodReminder(settings, prediction, today, leadDays); ok {
+	due, ok, watermarked := decidePeriodReminder(settings, prediction, today, leadDays)
+	if ok {
 		reminders = append(reminders, due)
+	}
+	if watermarked {
+		watermarkSuppressed++
 	}
 	// The ovulation reminder carries the extra first-cycle floor: before one
 	// cycle has been observed its date comes from the onboarding slider alone,
@@ -184,31 +206,40 @@ func DecideDueReminders(user *models.User, settings WebhookReminderSettings, log
 	// (FertilityProjectionSuppressed). The period reminder keeps its own path —
 	// it is anchored on a recorded cycle start and rides the estimate flag.
 	if !FertilityProjectionSuppressed(user, stats) {
-		if due, ok := decideOvulationReminder(stats, settings, prediction, today, cycleLength, leadDays); ok {
+		due, ok, watermarked := decideOvulationReminder(stats, settings, prediction, today, cycleLength, leadDays)
+		if ok {
 			reminders = append(reminders, due)
+		}
+		if watermarked {
+			watermarkSuppressed++
 		}
 	}
 
 	if len(reminders) == 0 {
-		return nil
+		return nil, watermarkSuppressed
 	}
-	return reminders
+	return reminders, watermarkSuppressed
 }
 
 // decidePeriodReminder applies the period-soon rule. The next period start is
 // the anchor of the upcoming cycle, so it doubles as the event date and the
 // watermark key.
-func decidePeriodReminder(settings WebhookReminderSettings, prediction DashboardUpcomingPrediction, today time.Time, leadDays int) (DueReminder, bool) {
+//
+// The second result says the reminder is due; the third says it was withheld by
+// its OWN watermark — an already-sent reminder, not an absent one. Only that
+// case is idempotency: a reminder outside the lead window, or of a kind the
+// owner turned off, is simply not due and must never be reported as skipped.
+func decidePeriodReminder(settings WebhookReminderSettings, prediction DashboardUpcomingPrediction, today time.Time, leadDays int) (reminder DueReminder, due bool, watermarkSuppressed bool) {
 	if !settings.NotifyPeriod {
-		return DueReminder{}, false
+		return DueReminder{}, false, false
 	}
 	eventDate := prediction.NextPeriodStart
 	if !reminderWithinWindow(today, eventDate, leadDays) {
-		return DueReminder{}, false
+		return DueReminder{}, false, false
 	}
 	anchor := CalendarDay(eventDate, today.Location())
 	if watermarkCoversAnchor(settings.PeriodWatermark, anchor) {
-		return DueReminder{}, false
+		return DueReminder{}, false, true
 	}
 	return DueReminder{
 		Type:        DueReminderTypePeriod,
@@ -216,19 +247,22 @@ func decidePeriodReminder(settings WebhookReminderSettings, prediction Dashboard
 		CycleAnchor: anchor,
 		LeadDays:    leadDays,
 		Estimate:    true,
-	}, true
+	}, true, false
 }
 
 // decideOvulationReminder applies the ovulation-soon rule. The ovulation's cycle
 // anchor is the start of the cycle it belongs to, derived with the same
 // projection helpers DashboardUpcomingPredictions uses so the two never drift.
-func decideOvulationReminder(stats CycleStats, settings WebhookReminderSettings, prediction DashboardUpcomingPrediction, today time.Time, cycleLength int, leadDays int) (DueReminder, bool) {
+//
+// Its three results carry the same meaning as decidePeriodReminder's: due, and
+// separately withheld by its own watermark.
+func decideOvulationReminder(stats CycleStats, settings WebhookReminderSettings, prediction DashboardUpcomingPrediction, today time.Time, cycleLength int, leadDays int) (reminder DueReminder, due bool, watermarkSuppressed bool) {
 	if !settings.NotifyOvulation || prediction.OvulationImpossible {
-		return DueReminder{}, false
+		return DueReminder{}, false, false
 	}
 	eventDate := prediction.OvulationDate
 	if !reminderWithinWindow(today, eventDate, leadDays) {
-		return DueReminder{}, false
+		return DueReminder{}, false, false
 	}
 	anchor := ovulationCycleAnchor(stats, today, cycleLength)
 	// codecov:ignore:start -- defensive and unreachable from this call path: an
@@ -238,11 +272,11 @@ func decideOvulationReminder(stats CycleStats, settings WebhookReminderSettings,
 	// ovulationCycleAnchor needs to return a non-zero anchor. Kept so a reminder
 	// is never emitted without a watermark key the delivery slice can dedupe on.
 	if anchor.IsZero() {
-		return DueReminder{}, false
+		return DueReminder{}, false, false
 	}
 	// codecov:ignore:end
 	if watermarkCoversAnchor(settings.OvulationWatermark, anchor) {
-		return DueReminder{}, false
+		return DueReminder{}, false, true
 	}
 	return DueReminder{
 		Type:        DueReminderTypeOvulation,
@@ -250,7 +284,7 @@ func decideOvulationReminder(stats CycleStats, settings WebhookReminderSettings,
 		CycleAnchor: anchor,
 		LeadDays:    leadDays,
 		Estimate:    true,
-	}, true
+	}, true, false
 }
 
 // reminderWithinWindow reports whether eventDate falls in the inclusive lead

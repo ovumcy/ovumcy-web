@@ -1,6 +1,11 @@
 package services
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+
+	"github.com/ovumcy/ovumcy-web/internal/models"
+)
 
 func TestDomainLabelPolicy(t *testing.T) {
 	cases := []struct {
@@ -27,4 +32,57 @@ func TestDomainLabelPolicy(t *testing.T) {
 			t.Fatalf("%s: got %q, want %q", tc.name, tc.got, tc.want)
 		}
 	}
+}
+
+// domainLabelTranslationKeys feeds every enum value the day-entry validator
+// accepts through its label function and returns the resulting catalogue keys,
+// spec-labelled so a failure names the value that produced the key.
+//
+// The switch-based key functions sit OUTSIDE the map sweep in i18n_policy_test.go
+// — that helper was written as "the guard for the defect CLASS", but it takes a
+// map[string]string, and these keys are produced by switch statements — so a key
+// added with a typo, or renamed in the catalogue alone, passes both the switch
+// test above and the map sweep while rendering as the raw key
+// ("dashboard.mood.very_low") on the dashboard and the calendar in all six
+// languages: the #287 failure the sweep exists to stop.
+func domainLabelTranslationKeys(t *testing.T) map[string]string {
+	t.Helper()
+
+	keys := map[string]string{}
+	add := func(spec string, key string) {
+		if key == "" {
+			t.Fatalf("%s resolved to no key at all", spec)
+		}
+		keys[spec] = key
+	}
+
+	for _, phase := range []string{"menstrual", "follicular", "ovulation", "luteal", "unrecognized"} {
+		add("phase "+phase, PhaseTranslationKey(phase))
+	}
+	for _, flow := range []string{models.FlowNone, models.FlowSpotting, models.FlowLight, models.FlowMedium, models.FlowHeavy, "unrecognized"} {
+		add("flow "+flow, FlowTranslationKey(flow))
+	}
+	for _, activity := range []string{models.SexActivityNone, models.SexActivityProtected, models.SexActivityUnprotected, "unrecognized"} {
+		add("sex activity "+activity, SexActivityTranslationKey(activity))
+	}
+	for _, mucus := range []string{models.CervicalMucusNone, models.CervicalMucusDry, models.CervicalMucusMoist, models.CervicalMucusCreamy, models.CervicalMucusEggWhite, "unrecognized"} {
+		add("cervical mucus "+mucus, CervicalMucusTranslationKey(mucus))
+	}
+	for _, result := range []string{models.PregnancyTestNone, models.PregnancyTestNegative, models.PregnancyTestPositive, "unrecognized"} {
+		add("pregnancy test "+result, PregnancyTestTranslationKey(result))
+	}
+	for _, step := range DayMoodScale().Steps {
+		add(fmt.Sprintf("mood step %d", step), MoodTranslationKey(step))
+	}
+	return keys
+}
+
+// TestDomainLabelTranslationKeysResolveInEveryLocale is the switch-statement
+// sibling of the authErrorTranslationKeys / settingsStatusTranslationKeys
+// sweeps: every key a day-field label function can produce must exist in every
+// SupportedLanguages() catalogue. A locale-parity test in internal/i18n catches
+// a key missing from ONE locale; only this sweep catches a key present in NO
+// locale, which is exactly what a typo in a switch arm produces.
+func TestDomainLabelTranslationKeysResolveInEveryLocale(t *testing.T) {
+	assertMappedTranslationKeysResolveInEveryLocale(t, "domain label switch functions", domainLabelTranslationKeys(t))
 }

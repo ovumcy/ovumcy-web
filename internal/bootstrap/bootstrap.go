@@ -45,14 +45,15 @@ type Options struct {
 	AuditLogEnabled bool
 }
 
-// i18nDisclaimerProvider adapts the i18n Manager to services.DisclaimerProvider:
-// it returns the localized medical-safety disclaimer (i18n key
-// medical.disclaimer — the single catalogue entry every predictive surface
-// renders) for a language, falling back to the manager's
-// default language (Messages merges the default over the target). It is the seam
-// the request-free webhook notify pass uses so every payload carries the
-// owner-localized "estimates, not medical advice or a method of contraception"
-// string without importing the whole Manager into internal/services.
+// i18nDisclaimerProvider adapts the i18n Manager to services.NotifyCopyProvider:
+// it answers any catalogue key for a language, and names the medical-safety
+// disclaimer (i18n key medical.disclaimer — the single catalogue entry every
+// predictive surface renders) through its own method, falling back to the
+// manager's default language (Messages merges the default over the target). It
+// is the seam the request-free egress passes use so every payload carries
+// owner-localized copy — the reminder headline and sentence as well as the
+// "estimates, not medical advice or a method of contraception" string — without
+// importing the whole Manager into internal/services.
 type i18nDisclaimerProvider struct {
 	manager *i18n.Manager
 }
@@ -60,10 +61,17 @@ type i18nDisclaimerProvider struct {
 const disclaimerMessageKey = "medical.disclaimer"
 
 func (provider i18nDisclaimerProvider) Disclaimer(language string) string {
+	return provider.Message(language, disclaimerMessageKey)
+}
+
+// Message returns the catalogue entry for key at language. A nil manager (never
+// production, only a partially wired test) yields the empty string rather than
+// panicking, matching Disclaimer's original behavior.
+func (provider i18nDisclaimerProvider) Message(language string, key string) string {
 	if provider.manager == nil {
 		return ""
 	}
-	return provider.manager.Messages(language)[disclaimerMessageKey]
+	return provider.manager.Messages(language)[key]
 }
 
 // BuildNotifyService assembles the request-free webhook notify pass (issue #124,

@@ -655,6 +655,11 @@
   "settings.webhook.notify_ovulation": "Avvisa prima dell'ovulazione",
   "settings.webhook.remove_url": "Rimuovi l'URL salvato",
   "settings.webhook.save": "Salva webhook",
+
+  "webhook.reminder.period.title": "Promemoria del ciclo",
+  "webhook.reminder.period.message": "Prossimo ciclo stimato intorno al %s.",
+  "webhook.reminder.ovulation.title": "Promemoria dell'ovulazione",
+  "webhook.reminder.ovulation.message": "Ovulazione stimata intorno al %s.",
   "settings.success.calendar_feed_generated": "Feed del calendario attivato. Copia subito il tuo link di iscrizione: viene mostrato solo una volta.",
   "settings.success.calendar_feed_rotated": "Link del feed del calendario ruotato. Il link precedente ha smesso di funzionare; copia ora quello nuovo.",
   "settings.success.calendar_feed_revoked": "Feed del calendario disattivato. Qualsiasi link di iscrizione esistente non funziona più.",
