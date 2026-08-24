@@ -4,12 +4,16 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
+// buildCalendarDays turns the service's day states into the cells the calendar
+// template renders. The ladder below is a precedence order, not a set: each day
+// resolves to exactly one state, and the two outputs that state produces are the
+// classes the cell paints with and the stable key tests and the browser address
+// it by.
 func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []CalendarDay {
 	days := make([]CalendarDay, 0, len(states))
 	for _, state := range states {
 		cellClass := "calendar-cell"
 		textClass := "calendar-day-number"
-		badgeClass := "calendar-tag"
 		stateKey := "default"
 		if state.IsPeriod {
 			// A period entry is always a recorded fact, even when dated in the
@@ -17,7 +21,6 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// is a manual log (the day editor already warns about future dates).
 			// Rendering it as a projection would misstate the record.
 			cellClass += " calendar-cell-period"
-			badgeClass += " calendar-tag-period"
 			stateKey = "period"
 		} else if state.IsPredictedStartWindow {
 			// The window the next period may START in outranks the projected
@@ -26,35 +29,27 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			// "Next period: X — Y" line names. One class, so the graded fill can
 			// never tie with the hatched one on the same cell.
 			cellClass += " calendar-cell-start-window"
-			badgeClass += " calendar-tag-start-window"
 			stateKey = "predicted-start-window"
 		} else if state.IsPredicted {
 			cellClass += " calendar-cell-predicted"
-			badgeClass += " calendar-tag-predicted"
 			stateKey = "predicted-period"
 		} else if state.IsTentativeOvulation {
 			cellClass += " calendar-cell-ovulation-tentative"
-			badgeClass += " calendar-tag-ovulation-tentative"
 			stateKey = "tentative-ovulation"
 		} else if state.IsOvulation {
 			cellClass += " calendar-cell-fertile"
-			badgeClass += " calendar-tag-ovulation"
 			stateKey = "ovulation"
 		} else if state.IsFertilityPeak {
 			cellClass += " calendar-cell-fertile calendar-cell-fertile-peak"
-			badgeClass += " calendar-tag-fertile"
 			stateKey = "fertile-peak"
 		} else if state.IsFertilityEdge {
 			cellClass += " calendar-cell-fertile calendar-cell-fertile-edge"
-			badgeClass += " calendar-tag-fertile"
 			stateKey = "fertile-edge"
 		} else if state.IsFertility {
 			cellClass += " calendar-cell-fertile"
-			badgeClass += " calendar-tag-fertile"
 			stateKey = "fertile"
 		} else if state.IsPreFertile {
 			cellClass += " calendar-cell-pre-fertile"
-			badgeClass += " calendar-tag-pre-fertile"
 			stateKey = "pre-fertile"
 		}
 		if !state.InMonth {
@@ -69,23 +64,12 @@ func (handler *Handler) buildCalendarDays(states []services.CalendarDayState) []
 			Date:                   state.Date,
 			DateString:             state.DateString,
 			Day:                    state.Day,
-			InMonth:                state.InMonth,
 			IsToday:                state.IsToday,
 			OpenEditDirectly:       state.OpenEditDirectly,
-			IsPeriod:               state.IsPeriod,
-			IsPredicted:            state.IsPredicted,
-			IsPredictedStartWindow: state.IsPredictedStartWindow,
-			IsPreFertile:           state.IsPreFertile,
-			IsFertility:            state.IsFertility,
-			IsFertilityPeak:        state.IsFertilityPeak,
-			IsFertilityEdge:        state.IsFertilityEdge,
-			IsOvulation:            state.IsOvulation,
-			IsTentativeOvulation:   state.IsTentativeOvulation,
 			HasData:                state.HasData,
 			HasSex:                 state.HasSex,
 			CellClass:              cellClass,
 			TextClass:              textClass,
-			BadgeClass:             badgeClass,
 			StateKey:               stateKey,
 			OvulationDot:           state.IsOvulation,
 			TentativeOvulationMark: state.IsTentativeOvulation,
