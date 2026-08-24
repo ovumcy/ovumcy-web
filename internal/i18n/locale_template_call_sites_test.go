@@ -111,25 +111,41 @@ func TestEveryTemplateTranslationKeyResolvesInTheCatalogue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building the locale manager: %v", err)
 	}
-	english := manager.Messages(i18n.LangEN)
+	// EVERY shipped catalogue, not just the reference one. Key parity compares
+	// key SETS and never reads a value, so a key present in all six but left
+	// BLANK in one of them passes parity, passes an English-only barrier, and
+	// still puts a raw identifier on that one language's page — lookupMessage
+	// counts a blank entry as a miss. Checking the reference alone would leave
+	// this barrier's own rule enforced in one catalogue out of six.
+	//
+	// No floor on the language count is needed here: NewManager refuses to
+	// build at all unless every required locale loaded, so a manager in hand is
+	// already proof that the full set is being read. A second count would be a
+	// copy of that list living where it cannot be kept in step.
+	languages := manager.SupportedLanguages()
 
-	literalSites, unresolved := unresolvedTemplateKeys(evidence.templateKeyCallSites, english)
-	if literalSites < 500 {
-		t.Fatalf("only %d call site(s) passed a plain string literal; the key-position reader stopped seeing literals, so the barrier is checking almost nothing", literalSites)
+	var report strings.Builder
+	findings := 0
+	for _, language := range languages {
+		literalSites, unresolved := unresolvedTemplateKeys(evidence.templateKeyCallSites, manager.Messages(language))
+		if literalSites < 500 {
+			t.Fatalf("only %d call site(s) passed a plain string literal; the key-position reader stopped seeing literals, so the barrier is checking almost nothing", literalSites)
+		}
+		for _, site := range unresolved {
+			fmt.Fprintf(&report, "  %s: %s\n", language, site)
+			findings++
+		}
 	}
-	if len(unresolved) == 0 {
+	if findings == 0 {
 		return
 	}
 
-	var report strings.Builder
-	for _, site := range unresolved {
-		fmt.Fprintf(&report, "  %s\n", site)
-	}
-	t.Fatalf("%d translation key(s) a shipped template renders that the English catalogue does not answer:\n%s\n"+
-		"translateMessage renders a miss as the key itself, so each of these puts a raw identifier on the page in every "+
-		"language. A blank catalogue value counts as a miss here because lookupMessage counts it as one. Add the key to "+
-		"all six catalogues; do not silence this by removing the call site unless the surface itself is going away.",
-		len(unresolved), report.String())
+	t.Fatalf("%d translation key(s) a shipped template renders that a catalogue does not answer:\n%s\n"+
+		"translateMessage renders a miss as the key itself, so each of these puts a raw identifier on the page in the "+
+		"language named beside it. A blank catalogue value counts as a miss here because lookupMessage counts it as one, "+
+		"which is why a key that key-parity considers present can still appear below. Define the key, with real text, in "+
+		"every catalogue; do not silence this by removing the call site unless the surface itself is going away.",
+		findings, report.String())
 }
 
 // unresolvedTemplateKeys reports how many call sites carried a plain literal
@@ -155,7 +171,15 @@ func unresolvedTemplateKeys(sites []templateKeyCallSite, catalogue map[string]st
 		// need not exist. TranslatePlural resolves key+"."+category first, so
 		// a base whose variants are all present is answerable even though the
 		// base itself is absent.
-		if bases[site.key] {
+		//
+		// This holds for `tn` ONLY. `t` is wired to translateMessage
+		// (internal/api/handlers_template_helpers.go), a flat messages[key]
+		// lookup with no category resolution in it, so a `t` site naming a
+		// plural base renders the base verbatim. Exempting it by the key alone
+		// would let this barrier pass the very defect it exists to catch — and
+		// since no shipped template calls `tn` today, every site the exemption
+		// could fire on is a `t` site where it is wrong.
+		if site.function == "tn" && bases[site.key] {
 			continue
 		}
 		unresolved = append(unresolved, site)
@@ -204,6 +228,7 @@ func TestTemplateKeyCallSiteReaderFindsTheKeyPosition(t *testing.T) {
 <p>{{t .Messages "probe.absent"}}</p>
 <p>{{t .Messages "probe.blank"}}</p>
 <p>{{tn .Messages .Lang "probe.counted" .N}}</p>
+<p>{{t .Messages "probe.plural.base"}}</p>
 <p>{{t .Messages (printf "probe.built.%s" .Kind)}}</p>
 <p>{{if .Flag}}{{t .Messages "probe.in.branch"}}{{else}}{{t .Messages "probe.in.else"}}{{end}}</p>
 <p>{{notATranslator .Messages "probe.other.func"}}</p>
@@ -245,16 +270,18 @@ func TestTemplateKeyCallSiteReaderFindsTheKeyPosition(t *testing.T) {
 	// The verdict half: the same call sites against a catalogue that answers
 	// only some of them.
 	catalogue := map[string]string{
-		"probe.present":       "Present",
-		"probe.blank":         "   ",
-		"probe.counted.one":   "1 day",
-		"probe.counted.other": "%d days",
-		"probe.in.branch":     "Branch",
-		"probe.in.else":       "Else",
+		"probe.present":           "Present",
+		"probe.blank":             "   ",
+		"probe.counted.one":       "1 day",
+		"probe.counted.other":     "%d days",
+		"probe.plural.base.one":   "1 thing",
+		"probe.plural.base.other": "%d things",
+		"probe.in.branch":         "Branch",
+		"probe.in.else":           "Else",
 	}
 	literalSites, unresolved := unresolvedTemplateKeys(evidence.templateKeyCallSites, catalogue)
-	if literalSites != 6 {
-		t.Errorf("counted %d literal call site(s); the fixture ships six", literalSites)
+	if literalSites != 7 {
+		t.Errorf("counted %d literal call site(s); the fixture ships seven", literalSites)
 	}
 
 	var names []string
@@ -262,9 +289,9 @@ func TestTemplateKeyCallSiteReaderFindsTheKeyPosition(t *testing.T) {
 		names = append(names, site.key)
 	}
 	sort.Strings(names)
-	want := []string{"probe.absent", "probe.blank"}
+	want := []string{"probe.absent", "probe.blank", "probe.plural.base"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
-		t.Errorf("the verdict named %v, want %v; a missing key must fail, a blank value must fail because lookupMessage counts it as a miss, and a plural base carried by its categories must pass", names, want)
+		t.Errorf("the verdict named %v, want %v; a missing key must fail, a blank value must fail because lookupMessage counts it as a miss, a plural base reached through tn must pass, and the SAME base reached through t must fail because t is a flat lookup that cannot resolve a category", names, want)
 	}
 }
 

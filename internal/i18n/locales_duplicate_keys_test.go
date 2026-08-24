@@ -77,8 +77,16 @@ func TestNoLocaleFileDeclaresAKeyTwice(t *testing.T) {
 
 	// The sweep must have read the catalogues it exists for; a run that found
 	// no file would report a clean bill of health about nothing.
-	if checked != len(requiredLocales) {
-		t.Fatalf("scanned %d embedded locale file(s), expected %d; this check passed without reading the catalogues", checked, len(requiredLocales))
+	//
+	// A FLOOR, not an equality. Scanning more files than the required set is
+	// this check doing more work, not less — an extra catalogue in the
+	// directory is still scanned for duplicates, and whether that file belongs
+	// here is TestLocaleKeysParity's question, not this one. Written as `!=`,
+	// an unregistered locale file would fail here with "passed without reading
+	// the catalogues" while every catalogue had in fact been read, sending the
+	// reader to look for a sweep that skipped a directory.
+	if checked < len(requiredLocales) {
+		t.Fatalf("scanned %d embedded locale file(s), fewer than the %d this build requires; the sweep missed catalogues rather than clearing them", checked, len(requiredLocales))
 	}
 	if len(failures) == 0 {
 		return

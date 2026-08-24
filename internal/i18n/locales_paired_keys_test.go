@@ -50,8 +50,11 @@ func TestPairedOnboardingAndSettingsStringsAgreeInEveryLocale(t *testing.T) {
 	}
 	sort.Strings(languages)
 
-	if len(languages) != len(requiredLocales) {
-		t.Fatalf("loaded %d locale(s), expected %d; this check would pass by simply not reading the catalogues", len(languages), len(requiredLocales))
+	// A floor, for the same reason the duplicate-key sweep uses one: reading
+	// more catalogues than the required set is this check covering more
+	// ground, and an extra locale file is parity's business, not this one's.
+	if len(languages) < len(requiredLocales) {
+		t.Fatalf("loaded %d locale(s), fewer than the %d this build requires; this check would pass by simply not reading the catalogues", len(languages), len(requiredLocales))
 	}
 
 	var failures []string
