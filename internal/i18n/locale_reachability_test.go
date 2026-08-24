@@ -104,6 +104,12 @@ type sourceEvidence struct {
 	// list, and nothing else in the build reads both ends.
 	goFormatSites  []goFormatSite
 	goFormatBodies map[string]goFormatBody
+	// goKeyOriginLiterals holds the literals found at the call arguments a
+	// format contract points at when the site itself does not name its key,
+	// and goFunctionDeclarations counts declarations per name so two functions
+	// of one name in one file cannot merge into a single bucket unnoticed.
+	goKeyOriginLiterals    []goKeyOriginLiteral
+	goFunctionDeclarations map[string]int
 
 	goFiles       int
 	templateFiles int
@@ -111,12 +117,13 @@ type sourceEvidence struct {
 
 func newSourceEvidence() *sourceEvidence {
 	return &sourceEvidence{
-		literals:       map[string]bool{},
-		stringVars:     map[string][]string{},
-		funcReturns:    map[string][]string{},
-		declCounts:     map[string]int{},
-		goDirs:         map[string]bool{},
-		goFormatBodies: map[string]goFormatBody{},
+		literals:               map[string]bool{},
+		stringVars:             map[string][]string{},
+		funcReturns:            map[string][]string{},
+		declCounts:             map[string]int{},
+		goDirs:                 map[string]bool{},
+		goFormatBodies:         map[string]goFormatBody{},
+		goFunctionDeclarations: map[string]int{},
 	}
 }
 
