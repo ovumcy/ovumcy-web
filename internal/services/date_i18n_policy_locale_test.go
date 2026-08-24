@@ -1,6 +1,7 @@
 package services
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -71,6 +72,39 @@ func TestLocalizedDateFormsCoverEveryRequiredLocale(t *testing.T) {
 			english := render(i18n.LangEN, value)
 			if got := render(language, value); got == english {
 				t.Errorf("%s: locale %q renders the English form %q", name, language, english)
+			}
+		}
+	}
+}
+
+// TestLocalizedDateFormsFallBackToEnglishForAnUnknownLanguage pins the arm the
+// sweep above cannot reach: every language it walks has a table entry, so the
+// lookup's miss branch is only taken by a language that is not in the table at
+// all. The tables replaced per-form length checks and stdlib fallbacks, so this
+// one branch is now the whole safety net — a language string that reaches these
+// renderers from outside the supported set must render English words, never the
+// zero value of a fixed-size array.
+func TestLocalizedDateFormsFallBackToEnglishForAnUnknownLanguage(t *testing.T) {
+	value := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
+	renderers := map[string]func(string, time.Time) string{
+		"LocalizedMonthYear":     LocalizedMonthYear,
+		"LocalizedDateLabel":     LocalizedDateLabel,
+		"LocalizedDashboardDate": LocalizedDashboardDate,
+		"LocalizedDateDisplay":   LocalizedDateDisplay,
+		"LocalizedDateShort":     LocalizedDateShort,
+	}
+
+	// "" is the unset language every request-free surface can carry; "zz" is a
+	// well-formed code no catalogue defines.
+	for _, language := range []string{"", "zz", "en-GB"} {
+		for name, render := range renderers {
+			want := render(i18n.LangEN, value)
+			got := render(language, value)
+			if got != want {
+				t.Errorf("%s(%q) = %q, want the English rendering %q", name, language, got, want)
+			}
+			if strings.TrimSpace(got) == "" {
+				t.Errorf("%s(%q) rendered blank: the lookup returned a zero-valued table", name, language)
 			}
 		}
 	}
