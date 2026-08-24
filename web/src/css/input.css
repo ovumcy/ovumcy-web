@@ -3652,32 +3652,12 @@
   color: var(--text-muted);
 }
 
-@utility calendar-tag {
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--radius-pill);
-  padding: 0.08rem 0.3rem;
-  font-size: var(--text-3xs);
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: uppercase;
-  color: #fff;
-  line-height: 1.05;
-  white-space: nowrap;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-
-  /* Same as the today pill: the size step is already --text-3xs, so the mobile
-     block only compacts the box. */
-  @media (max-width: 640px) {
-    display: inline-flex;
-    padding: 0 0.14rem;
-    line-height: 1;
-    max-width: 100%;
-  }
-}
+/* calendar-tag and its five colour variants are gone with the view-model field
+   that composed them: the calendar paints a day from calendar-cell-*, and the
+   textual badge they styled has not been rendered for some time. The two
+   calendar-tag-label-* utilities below and at the bottom of this file are NOT
+   part of that set — they are the today pill's responsive label pair, they
+   declare only `display`, and they compose with nothing. */
 
 @utility calendar-tag-label-short {
   display: none;
@@ -3685,28 +3665,6 @@
   @media (max-width: 640px) {
     display: inline;
   }
-}
-
-/* The day tags read the same tokens as the cells and the legend swatches:
-   before wave 3 each of the three declared its own "fertile". */
-@utility calendar-tag-period {
-  background: rgb(var(--cal-period));
-}
-
-@utility calendar-tag-predicted {
-  background: rgb(var(--cal-predicted));
-}
-
-@utility calendar-tag-start-window {
-  background: rgb(var(--cal-predicted));
-}
-
-@utility calendar-tag-ovulation {
-  background: rgb(var(--cal-ovulation-solid));
-}
-
-@utility calendar-tag-fertile {
-  background: rgb(var(--cal-fertile-solid));
 }
 
 @utility legend-item {
