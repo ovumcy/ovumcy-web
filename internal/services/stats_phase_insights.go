@@ -8,6 +8,19 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+// minimumPhaseInsightCycles is the PATTERN minimum: the number of completed
+// cycles below which a stats surface may not claim a pattern rather than a
+// single observation. It is named for the phase insights it was introduced
+// for, and it now gates every such surface — the phase mood and symptom
+// insights, the symptom-recurrence statements, the irregular-spread reading,
+// the reliability label, and the cycle-length trend sentence, whose window is
+// counted in completed cycles like the rest.
+//
+// It is deliberately NOT the same name as statsReliableTrendCycles, which
+// counts trend POINTS for the chart's reliability flag. Both are 3 today and a
+// reader may collapse them on that basis; they answer different questions, and
+// TestStatsThresholdsAreNamedPerSurface fails if one starts moving the other's
+// surface.
 const minimumPhaseInsightCycles = 3
 
 var phaseInsightOrder = []string{"menstrual", "follicular", "ovulation", "luteal"}

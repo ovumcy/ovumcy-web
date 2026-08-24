@@ -48,27 +48,36 @@ const (
 )
 
 type User struct {
-	ID                   uint   `gorm:"primaryKey"`
-	DisplayName          string `gorm:"size:80"`
-	Email                string `gorm:"uniqueIndex;not null"`
-	PasswordHash         string `gorm:"not null"`
-	RecoveryCodeHash     string `gorm:"column:recovery_code_hash"`
-	LocalAuthEnabled     bool   `gorm:"column:local_auth_enabled;not null"`
-	AuthSessionVersion   int    `gorm:"column:auth_session_version;not null;default:1"`
-	MustChangePassword   bool   `gorm:"column:must_change_password;not null;default:false"`
-	Role                 string `gorm:"not null;default:owner"`
-	OnboardingCompleted  bool   `gorm:"not null;default:false"`
-	CycleLength          int    `gorm:"not null;default:28"`
-	PeriodLength         int    `gorm:"not null;default:5"`
-	LutealPhase          int    `gorm:"column:luteal_phase;not null;default:14"`
-	AutoPeriodFill       bool   `gorm:"column:auto_period_fill;not null;default:false"`
-	IrregularCycle       bool   `gorm:"column:irregular_cycle;not null;default:false"`
-	TrackBBT             bool   `gorm:"column:track_bbt;not null;default:false"`
-	TemperatureUnit      string `gorm:"column:temperature_unit;not null;default:c"`
-	TrackCervicalMucus   bool   `gorm:"column:track_cervical_mucus;not null;default:false"`
-	HideSexChip          bool   `gorm:"column:hide_sex_chip;not null;default:false"`
-	HideCycleFactors     bool   `gorm:"column:hide_cycle_factors;not null;default:false"`
-	HideNotesField       bool   `gorm:"column:hide_notes_field;not null;default:false"`
+	ID                  uint   `gorm:"primaryKey"`
+	DisplayName         string `gorm:"size:80"`
+	Email               string `gorm:"uniqueIndex;not null"`
+	PasswordHash        string `gorm:"not null"`
+	RecoveryCodeHash    string `gorm:"column:recovery_code_hash"`
+	LocalAuthEnabled    bool   `gorm:"column:local_auth_enabled;not null"`
+	AuthSessionVersion  int    `gorm:"column:auth_session_version;not null;default:1"`
+	MustChangePassword  bool   `gorm:"column:must_change_password;not null;default:false"`
+	Role                string `gorm:"not null;default:owner"`
+	OnboardingCompleted bool   `gorm:"not null;default:false"`
+	CycleLength         int    `gorm:"not null;default:28"`
+	PeriodLength        int    `gorm:"not null;default:5"`
+	LutealPhase         int    `gorm:"column:luteal_phase;not null;default:14"`
+	AutoPeriodFill      bool   `gorm:"column:auto_period_fill;not null;default:false"`
+	IrregularCycle      bool   `gorm:"column:irregular_cycle;not null;default:false"`
+	TrackBBT            bool   `gorm:"column:track_bbt;not null;default:false"`
+	TemperatureUnit     string `gorm:"column:temperature_unit;not null;default:c"`
+	TrackCervicalMucus  bool   `gorm:"column:track_cervical_mucus;not null;default:false"`
+	HideSexChip         bool   `gorm:"column:hide_sex_chip;not null;default:false"`
+	HideCycleFactors    bool   `gorm:"column:hide_cycle_factors;not null;default:false"`
+	HideNotesField      bool   `gorm:"column:hide_notes_field;not null;default:false"`
+	// ShowHistoricalPhases governs the DRAWN phase markers on completed cycles:
+	// the calendar's historical pass and the stats cycle stack, which shares the
+	// calendar's encoding. Its settings copy promises exactly that scope.
+	//
+	// It does not reach the stats prose that groups moods and symptoms by
+	// inferred phase — those derive phases for their own gate (owner, plus the
+	// completed-cycle pattern minimum) and take no user at all in two of the
+	// three cases. That is deliberate, not an oversight; the scope is pinned in
+	// both directions by TestShowHistoricalPhasesGovernsTheDrawnMarkersOnly.
 	ShowHistoricalPhases bool   `gorm:"column:show_historical_phases;not null;default:false"`
 	WeekStartsOn         string `gorm:"column:week_starts_on;not null;default:sunday"`
 	ShownPeriodTip       bool   `gorm:"column:shown_period_tip;not null;default:false"`
