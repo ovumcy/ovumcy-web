@@ -173,7 +173,11 @@ func TestSettingsSymptomsHTMXUpdateTooLongDoesNotEchoDraftName(t *testing.T) {
 	authCookie := loginAndExtractAuthCookieWithCSRF(t, app, user.Email, "StrongPass1")
 	csrfCookie, csrfToken := loadSettingsCSRFContext(t, app, authCookie)
 
-	existing := models.SymptomType{UserID: user.ID, Name: "Cramps", Icon: "✨", Color: "#334455"}
+	// A name of its own rather than a builtin's: registration seeds the builtin
+	// catalogue for this account, and the per-owner unique index on
+	// (user_id, lower(name)) refuses a second "Cramps" for the same owner. The
+	// fixture only needs a custom symptom to PATCH.
+	existing := models.SymptomType{UserID: user.ID, Name: "Knee stiffness", Icon: "✨", Color: "#334455"}
 	if err := database.Create(&existing).Error; err != nil {
 		t.Fatalf("create symptom: %v", err)
 	}
