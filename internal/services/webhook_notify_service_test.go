@@ -61,10 +61,29 @@ func (stub stubDecryptor) DecryptWebhookURL(userID uint, encryptedURL string) (s
 	return encryptedURL, nil
 }
 
-// stubDisclaimer returns a fixed disclaimer, standing in for the i18n adapter.
+// stubDisclaimer stands in for the i18n adapter: a fixed disclaimer plus the
+// English reminder copy for the four catalogue keys the payload names. Language
+// is ignored on purpose — that the pass resolves at the OWNER's language is
+// guarded against the real catalogue in egress_owner_language_test.go, which
+// keeps every other test of the pass free of the locale files.
 type stubDisclaimer struct{ text string }
 
 func (stub stubDisclaimer) Disclaimer(string) string { return stub.text }
+
+func (stub stubDisclaimer) Message(_ string, key string) string {
+	switch key {
+	case reminderPeriodTitleKey:
+		return "Period reminder"
+	case reminderPeriodMessageKey:
+		return "Estimated next period around %s."
+	case reminderOvulationTitleKey:
+		return "Ovulation reminder"
+	case reminderOvulationMessageKey:
+		return "Estimated ovulation around %s."
+	default:
+		return ""
+	}
+}
 
 // watermarkWrite records one watermark advance.
 type watermarkWrite struct {

@@ -173,10 +173,15 @@ func (service *CalendarFeedService) ResolveFeed(ctx context.Context, token strin
 
 	disclaimer := ""
 	if service.disclaimer != nil {
-		// No per-owner language is persisted (mirrors the webhook notify pass):
-		// resolve the disclaimer at the server-default language. Messages merges
-		// the default over an empty/unknown target, so "" yields the default copy.
-		disclaimer = service.disclaimer.Disclaimer("")
+		// Resolve at the OWNER's chosen language (users.interface_language, the
+		// durable carrier of that choice), not at the server default: a calendar
+		// client sends no Accept-Language and no cookie, so the stored column is the
+		// only thing that knows which language this owner reads — exactly as
+		// users.timezone is the only thing that knows their calendar day. The
+		// webhook notify pass resolves the same field the same way. An owner who
+		// never chose a language stores "", and Messages merges the default over an
+		// empty or unknown target, so "" still yields the server-default copy.
+		disclaimer = service.disclaimer.Disclaimer(user.InterfaceLanguage)
 	}
 
 	feedUser := user

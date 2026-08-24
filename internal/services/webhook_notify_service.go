@@ -91,12 +91,37 @@ type WebhookURLDecryptor interface {
 }
 
 // DisclaimerProvider yields the medical-safety disclaimer for a language. It is
-// satisfied by an i18n adapter; the notify pass uses it so every payload carries
-// the owner-localized (or server-default) "estimates, not medical advice"
-// string without importing the whole i18n Manager.
+// satisfied by an i18n adapter; the egress surfaces use it so every payload
+// carries the owner-localized "estimates, not medical advice" string without
+// importing the whole i18n Manager.
 type DisclaimerProvider interface {
 	Disclaimer(language string) string
 }
+
+// NotifyCopyProvider is the whole localized-copy seam of the notify pass: the
+// medical-safety disclaimer plus any catalogue entry by key. The reminder
+// headline and sentence are catalogue entries rather than Go literals precisely
+// so they follow the same language the disclaimer does — a payload written half
+// in the owner's language and half in the server's is what the split produced.
+// Both halves resolve at the owner's users.interface_language.
+type NotifyCopyProvider interface {
+	DisclaimerProvider
+	// Message returns the catalogue entry for key at language, or "" when the key
+	// is unknown. An empty or unsupported language yields the server default (the
+	// i18n Manager merges the default over the target).
+	Message(language string, key string) string
+}
+
+// The reminder copy keys. They are whole literals on purpose: the locale
+// reachability sweep recognises a key only by the literal that names it, so a
+// key assembled from parts would read as unreachable and be deleted by the next
+// catalogue cleanup.
+const (
+	reminderPeriodTitleKey      = "webhook.reminder.period.title"
+	reminderPeriodMessageKey    = "webhook.reminder.period.message"
+	reminderOvulationTitleKey   = "webhook.reminder.ovulation.title"
+	reminderOvulationMessageKey = "webhook.reminder.ovulation.message"
+)
 
 // NotifyReport is the transport-free result of one notify pass. It never carries
 // a URL, token, or payload — a destination appears as a HOST at most.
@@ -154,11 +179,11 @@ type NotifyPreviewLine struct {
 // WebhookNotifyService runs the notify pass. It holds only narrow seams so it is
 // fully unit-testable with stubs and never reaches for a real socket or clock.
 type WebhookNotifyService struct {
-	users      NotifyUserRepository
-	logs       NotifyLogReader
-	decryptor  WebhookURLDecryptor
-	deliverer  WebhookDeliverer
-	disclaimer DisclaimerProvider
+	users     NotifyUserRepository
+	logs      NotifyLogReader
+	decryptor WebhookURLDecryptor
+	deliverer WebhookDeliverer
+	localized NotifyCopyProvider
 }
 
 // NewWebhookNotifyService assembles the notify service from its collaborators.
@@ -167,14 +192,14 @@ func NewWebhookNotifyService(
 	logs NotifyLogReader,
 	decryptor WebhookURLDecryptor,
 	deliverer WebhookDeliverer,
-	disclaimer DisclaimerProvider,
+	localized NotifyCopyProvider,
 ) *WebhookNotifyService {
 	return &WebhookNotifyService{
-		users:      users,
-		logs:       logs,
-		decryptor:  decryptor,
-		deliverer:  deliverer,
-		disclaimer: disclaimer,
+		users:     users,
+		logs:      logs,
+		decryptor: decryptor,
+		deliverer: deliverer,
+		localized: localized,
 	}
 }
 
@@ -242,16 +267,14 @@ func (service *WebhookNotifyService) processOwner(
 
 	user := userFromNotifyRecord(record)
 	settings := WebhookReminderSettingsFromNotifyRecord(record)
-	due := DecideDueReminders(&user, settings, dayLogs, now, ownerLocation)
-
-	// Idempotency observability: the pure decision already hides reminders whose
-	// watermark covers them, so re-run the SAME decision with the watermarks
-	// cleared to learn how many candidates existed, and attribute the difference
-	// (candidates that were suppressed purely by an existing watermark) to
-	// SkippedIdempotent. This is a second pure, I/O-free decision call — no store,
-	// no clock — kept so the Report can prove "sent once, then skipped" without
-	// changing the authoritative (watermarked) decision above.
-	report.SkippedIdempotent += countWatermarkSuppressed(&user, settings, dayLogs, now, ownerLocation, due)
+	// One traversal yields both the authoritative due set and the idempotency
+	// counter: the decision already knows which reminders its own watermark
+	// withheld, so the Report can prove "sent once, then skipped" without the pass
+	// deciding a second time. That second decision was pure and I/O-free but not
+	// cheap — it rebuilt the owner's cycle statistics from their whole logged
+	// history, so the counter cost as much as the work it counted.
+	due, watermarkSuppressed := decideDueReminders(&user, settings, dayLogs, now, ownerLocation)
+	report.SkippedIdempotent += watermarkSuppressed
 
 	// Destination HOST only, for the dry-run preview and any host-scoped logging.
 	// Never keep or print more of the URL than this.
@@ -259,7 +282,7 @@ func (service *WebhookNotifyService) processOwner(
 
 	for _, reminder := range due {
 		report.Due++
-		payload := service.buildPayload(reminder)
+		payload := service.buildPayload(reminder, record.InterfaceLanguage)
 
 		if dryRun {
 			// Compute-only: no outbound request, no watermark. Record what WOULD be
@@ -330,12 +353,15 @@ func watermarkForReminderType(settings WebhookReminderSettings, reminderType str
 }
 
 // buildPayload turns a due reminder into the transport-free notification body.
-// It resolves the disclaimer at the server-default language (no per-owner
-// language is persisted) and minimizes health specifics to type + estimated date
-// + lead days.
-func (service *WebhookNotifyService) buildPayload(reminder DueReminder) WebhookPayload {
-	disclaimer := service.disclaimer.Disclaimer("")
-	title, message := reminderCopy(reminder)
+// Every localized field — the headline, the sentence, and the medical-safety
+// disclaimer — resolves at ONE language: the owner's persisted
+// users.interface_language, which the projection carries because a request-free
+// pass has no browser to ask. An owner who never chose a language stores "",
+// which the provider answers at the server default. Health specifics stay
+// minimized to type + estimated date + lead days.
+func (service *WebhookNotifyService) buildPayload(reminder DueReminder, language string) WebhookPayload {
+	disclaimer := service.localized.Disclaimer(language)
+	title, message := service.reminderCopy(reminder, language)
 	return WebhookPayload{
 		Title:      title,
 		Message:    message,
@@ -346,62 +372,38 @@ func (service *WebhookNotifyService) buildPayload(reminder DueReminder) WebhookP
 	}
 }
 
-// reminderCopy returns a neutral, secret-free title and message for a reminder.
-// The copy is intentionally minimal and English-neutral machine text; the
-// disclaimer field carries the localized medical-safety string.
-func reminderCopy(reminder DueReminder) (string, string) {
-	date := reminder.EventDate.Format("2006-01-02")
-	switch reminder.Type {
-	case DueReminderTypeOvulation:
-		return "Ovulation reminder", fmt.Sprintf("Estimated ovulation around %s.", date)
-	default:
-		return "Period reminder", fmt.Sprintf("Estimated next period around %s.", date)
+// reminderCopy returns the minimal, secret-free title and message for a
+// reminder, resolved at language. Both come from the locale catalogue: the copy
+// used to be English literals here, which put the reminder body outside the
+// six-file locale contract (no translator ever saw a key for it) and sent an
+// owner a headline in one language beside a disclaimer in another. The sentence
+// template carries a single %s for the ISO event date.
+func (service *WebhookNotifyService) reminderCopy(reminder DueReminder, language string) (string, string) {
+	titleKey, messageKey := reminderPeriodTitleKey, reminderPeriodMessageKey
+	if reminder.Type == DueReminderTypeOvulation {
+		titleKey, messageKey = reminderOvulationTitleKey, reminderOvulationMessageKey
 	}
+	title := service.localized.Message(language, titleKey)
+	template := service.localized.Message(language, messageKey)
+	if template == "" {
+		// No catalogue entry (a provider without the key): send the headline alone
+		// rather than a body of formatting-verb residue.
+		return title, ""
+	}
+	return title, fmt.Sprintf(template, reminder.EventDate.Format("2006-01-02"))
 }
 
-// countWatermarkSuppressed reports how many reminders WOULD be due for this
-// owner if no watermark existed but are absent from due (i.e. were suppressed
-// purely because an incoming watermark already covered them). It re-runs the
-// pure decision with both watermarks cleared and subtracts, by type, the
-// reminders that actually surfaced. It performs no I/O.
-func countWatermarkSuppressed(
-	user *models.User,
-	settings WebhookReminderSettings,
-	logs []models.DailyLog,
-	now time.Time,
-	location *time.Location,
-	due []DueReminder,
-) int {
-	unwatermarked := settings
-	unwatermarked.PeriodWatermark = nil
-	unwatermarked.OvulationWatermark = nil
-	candidates := DecideDueReminders(user, unwatermarked, logs, now, location)
-
-	dueTypes := make(map[string]bool, len(due))
-	for _, reminder := range due {
-		dueTypes[reminder.Type] = true
-	}
-
-	suppressed := 0
-	for _, candidate := range candidates {
-		if !dueTypes[candidate.Type] {
-			suppressed++
-		}
-	}
-	return suppressed
-}
-
-// hostOnly returns the hostname of a URL and nothing else — no scheme, path,
-// query, or userinfo (which may carry a notification token). It is the only form
-// of a webhook URL that may appear in a preview or log. Returns "" when the URL
-// cannot be parsed.
+// hostOnly returns the hostname of a URL and nothing else — no scheme, port,
+// path, query, or userinfo (which may carry a notification token). It is the
+// only form of a webhook URL that may appear in a preview, a settings page, or a
+// log, and it is the package's ONLY implementation of that rule: the notify
+// pass, the CLI status view, and BuildWebhookURLDisplay all print through it, so
+// a hardening of "what is safe to show" reaches every surface at once. Returns
+// "" when the URL cannot be parsed, which the settings display renders as
+// configured-but-hostless rather than as an error.
 func hostOnly(rawURL string) string {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
-		// codecov:ignore -- unreachable from the notify path: processOwner only
-		// reaches here for a URL the decryptor returned, which slice-1 save-time
-		// validation already parsed; kept as a fail-safe so a malformed value yields
-		// an empty host rather than leaking anything.
 		return ""
 	}
 	return parsed.Hostname()

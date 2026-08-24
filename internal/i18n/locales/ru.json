@@ -671,6 +671,11 @@
   "settings.webhook.notify_ovulation": "Уведомлять перед овуляцией",
   "settings.webhook.remove_url": "Удалить сохранённый URL",
   "settings.webhook.save": "Сохранить веб-хук",
+
+  "webhook.reminder.period.title": "Напоминание о месячных",
+  "webhook.reminder.period.message": "Следующие месячные ожидаются около %s.",
+  "webhook.reminder.ovulation.title": "Напоминание об овуляции",
+  "webhook.reminder.ovulation.message": "Овуляция ожидается около %s.",
   "settings.success.calendar_feed_generated": "Календарная лента включена. Скопируйте ссылку сейчас — она показывается только один раз.",
   "settings.success.calendar_feed_rotated": "Ссылка календарной ленты обновлена. Старая ссылка больше не работает; скопируйте новую сейчас.",
   "settings.success.calendar_feed_revoked": "Календарная лента отключена. Любая существующая ссылка больше не работает.",

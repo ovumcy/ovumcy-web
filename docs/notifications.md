@@ -367,7 +367,8 @@ Operator-relevant summary (the full, test-backed claim list lives in
 - **Disclaimer in every payload.** Every delivered JSON body includes a
   `disclaimer` field carrying the exact medical-safety string shown elsewhere
   in the app: *"Predictions are estimates, not medical advice or a method of
-  contraception."*
+  contraception."* — in the owner's own interface language, the same one the
+  title and message are written in.
 - **URL encrypted at rest.** The stored webhook URL is AES-256-GCM ciphertext,
   bound to the owning user's id, exactly like a TOTP secret. If `SECRET_KEY`
   is rotated, existing stored URLs can no longer be decrypted; delivery fails
@@ -399,6 +400,15 @@ Operator-relevant summary (the full, test-backed claim list lives in
 consumer (an ntfy topic rule, a Gotify filter, a home-automation flow) can
 route on it without parsing `message`. `disclaimer` is present on every
 payload, unconditionally.
+
+The three text fields — `title`, `message` and `disclaimer` — are written in the
+**interface language the owner chose in settings**, all three in the same one
+(the example above is an owner on English). A pass runs without a browser, so
+the stored language is the only thing that knows which one to use, exactly as
+the stored timezone is the only thing that knows which calendar day the owner is
+on. An owner who never picked a language gets the server default
+(`DEFAULT_LANGUAGE`). `type`, `event_date` and `lead_days` never change with the
+language — route on those, not on the prose.
 
 ## 3. Calendar (.ics) subscription
 

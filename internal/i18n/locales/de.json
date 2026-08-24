@@ -655,6 +655,11 @@
   "settings.webhook.notify_ovulation": "Vor dem Eisprung benachrichtigen",
   "settings.webhook.remove_url": "Gespeicherte URL entfernen",
   "settings.webhook.save": "Webhook speichern",
+
+  "webhook.reminder.period.title": "Erinnerung an die Periode",
+  "webhook.reminder.period.message": "Nächste Periode voraussichtlich um den %s.",
+  "webhook.reminder.ovulation.title": "Erinnerung an den Eisprung",
+  "webhook.reminder.ovulation.message": "Eisprung voraussichtlich um den %s.",
   "settings.success.calendar_feed_generated": "Kalender-Feed aktiviert. Kopiere jetzt deinen Abo-Link — er wird nur einmal angezeigt.",
   "settings.success.calendar_feed_rotated": "Kalender-Feed-Link erneuert. Der alte Link funktioniert nicht mehr; kopiere jetzt den neuen.",
   "settings.success.calendar_feed_revoked": "Kalender-Feed deaktiviert. Ein vorhandener Abo-Link funktioniert nicht mehr.",

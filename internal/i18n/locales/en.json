@@ -655,6 +655,11 @@
   "settings.webhook.notify_ovulation": "Notify before ovulation",
   "settings.webhook.remove_url": "Remove saved URL",
   "settings.webhook.save": "Save webhook",
+
+  "webhook.reminder.period.title": "Period reminder",
+  "webhook.reminder.period.message": "Estimated next period around %s.",
+  "webhook.reminder.ovulation.title": "Ovulation reminder",
+  "webhook.reminder.ovulation.message": "Estimated ovulation around %s.",
   "settings.success.calendar_feed_generated": "Calendar feed enabled. Copy your subscribe link now — it is shown only once.",
   "settings.success.calendar_feed_rotated": "Calendar feed link rotated. The old link stopped working; copy the new one now.",
   "settings.success.calendar_feed_revoked": "Calendar feed turned off. Any existing subscribe link no longer works.",

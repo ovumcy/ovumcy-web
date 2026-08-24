@@ -583,7 +583,7 @@ func TestBuildWebhookURLDisplay(t *testing.T) {
 }
 
 // TestBuildWebhookURLDisplayUnparseableStoredURLHasNoHost covers the
-// webhookURLHost parse-error branch: a stored (decryptable) value that url.Parse
+// hostOnly parse-error branch: a stored (decryptable) value that url.Parse
 // rejects yields configured-but-hostless rather than leaking or crashing. A
 // control character makes url.Parse fail.
 func TestBuildWebhookURLDisplayUnparseableStoredURLHasNoHost(t *testing.T) {

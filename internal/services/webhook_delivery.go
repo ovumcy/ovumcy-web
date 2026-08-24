@@ -92,13 +92,18 @@ type ipResolver interface {
 // recovery code) and no health specifics beyond the reminder type, estimated
 // date, and lead days already summarized into Title/Message.
 type WebhookPayload struct {
-	// Title is a short reminder headline (e.g. "Period reminder").
+	// Title is a short reminder headline, owner-localized from the catalogue
+	// (i18n keys webhook.reminder.{period,ovulation}.title).
 	Title string `json:"title"`
-	// Message is the human-readable reminder line (type + estimated date + lead).
+	// Message is the human-readable reminder line (type + estimated date),
+	// owner-localized from the catalogue (i18n keys
+	// webhook.reminder.{period,ovulation}.message).
 	Message string `json:"message"`
 	// Disclaimer is the medical-safety qualifier, MANDATORY in every payload. It
 	// is the owner-localized "estimates, not medical advice or a method of
-	// contraception" string (i18n key medical.disclaimer).
+	// contraception" string (i18n key medical.disclaimer). All three localized
+	// fields resolve at ONE language — the owner's users.interface_language — so a
+	// payload is never half in the owner's language and half in the server's.
 	Disclaimer string `json:"disclaimer"`
 	// Type is the machine-readable reminder kind (DueReminderType*), so a webhook
 	// consumer can route on it without parsing Message.

@@ -238,8 +238,11 @@ func (repo *UserRepository) SaveWebhookSettings(ctx context.Context, userID uint
 // ListAllForNotify returns the per-owner projection a future request-free batch
 // pass needs to decide and send webhook reminders (issue #124). It selects a
 // deliberately narrow column whitelist — cycle-prediction inputs, the webhook
-// settings, the per-kind watermarks, the encrypted URL, and the timezone — and
-// nothing else, so the batch query never over-reads sensitive per-account data.
+// settings, the per-kind watermarks, the encrypted URL, the timezone, and the
+// chosen interface language — and nothing else, so the batch query never
+// over-reads sensitive per-account data. The last two are what a request-free
+// pass has instead of a browser: they decide which calendar day the owner is on
+// and which language the payload is written in.
 // This is a dedicated method, NOT an overload of LoadSettingsByID (which stays
 // the single settings whitelist). webhook_url is returned as CIPHERTEXT;
 // decrypt via WebhookSettingsService.DecryptWebhookURL.
@@ -256,6 +259,7 @@ func (repo *UserRepository) ListAllForNotify(ctx context.Context) ([]models.Webh
 			"unpredictable_cycle",
 			"last_period_start",
 			"timezone",
+			"interface_language",
 			"webhook_enabled",
 			"webhook_url",
 			"webhook_notify_period",
