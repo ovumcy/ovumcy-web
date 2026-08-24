@@ -155,5 +155,12 @@ func settingsFormRequestWithCSRF(t *testing.T, ctx settingsSecurityTestContext, 
 	if err != nil {
 		t.Fatalf("settings request %s %s failed: %v", method, path, err)
 	}
+	// The helper that opens the body closes it, exactly as mustAppResponse
+	// does — the choice is not left to ninety call sites, where an unclosed
+	// body reads as an oversight and as intent equally well. Regression:
+	// TestSettingsFormRequestWithCSRFClosesItsResponseBody.
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
 	return response
 }

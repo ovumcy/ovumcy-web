@@ -367,18 +367,17 @@ func TestUpsertDayAutoFillPreservesManualNeighborsWhenAnchorToggledOff(t *testin
 		t.Fatalf("update user cycle settings: %v", err)
 	}
 
-	onPayload := map[string]any{
+	// The setup write goes through the same helper the sibling tests use, so a
+	// setup that does not land fails here, at its cause. Written inline with a
+	// discarded app.Test error it failed ten lines later as a foreign-key
+	// error on the fixture save — a message about the wrong thing, and a nil
+	// response away from a panic.
+	putDayPayloadExpectOK(t, app, authCookie, "2026-02-10", map[string]any{
 		"is_period":   true,
 		"flow":        models.FlowMedium,
 		"symptom_ids": []uint{},
 		"notes":       "",
-	}
-	onBody, _ := json.Marshal(onPayload)
-	onRequest := httptest.NewRequest(http.MethodPut, "/api/v1/days/2026-02-10", bytes.NewReader(onBody))
-	onRequest.Header.Set("Content-Type", fiber.MIMEApplicationJSON)
-	onRequest.Header.Set("Cookie", authCookie)
-	onResponse, _ := app.Test(onRequest, testConfigNoTimeout)
-	defer func() { _ = onResponse.Body.Close() }()
+	}, "toggle on")
 
 	manualDay, _ := services.ParseDayDate("2026-02-12", time.UTC)
 	manualEntry, err := fetchLogByDateForTest(database, user.ID, manualDay, time.UTC)

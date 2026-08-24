@@ -156,7 +156,19 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 		return handler.failMutation(c, cycleStartMarkMutation, invalidDateErrorSpec())
 	}
 
-	cycleStartPolicy, _ := handler.dayService.ResolveManualCycleStartPolicy(c.Context(), user, day, time.Now().In(location), location)
+	// The policy decides whether this mark gets the implantation caution. When
+	// it cannot be resolved the zero value suppresses the caution, which is the
+	// safe direction for a prediction claim — but a suppressed caution and a
+	// caution that was never warranted look identical from outside. The
+	// outcome therefore rides the audit line this handler already emits
+	// (no new action, no new stream), so an operator can see that the check
+	// did not run on a request that still answers 204. Regression:
+	// TestMarkCycleStartAuditsAnUnresolvedImplantationPolicy.
+	cycleStartPolicy, policyErr := handler.dayService.ResolveManualCycleStartPolicy(c.Context(), user, day, time.Now().In(location), location)
+	var auditFields []SecurityEventField
+	if policyErr != nil {
+		auditFields = append(auditFields, securityEventField("cycle_start_policy", "unresolved"))
+	}
 
 	if err := handler.dayService.MarkCycleStartManually(
 		c.Context(),
@@ -177,7 +189,7 @@ func (handler *Handler) MarkCycleStart(c fiber.Ctx) error {
 		}
 	}
 
-	handler.logMutationSuccess(c, cycleStartMarkMutation)
+	handler.logMutationSuccess(c, cycleStartMarkMutation, auditFields...)
 
 	if isHTMX(c) {
 		c.Set("HX-Trigger", "calendar-day-updated")

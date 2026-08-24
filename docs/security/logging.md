@@ -55,7 +55,8 @@ The startup banner reflects the current setting (`audit_log=true|false`) so oper
 A handful of lines outside both streams above report that an internal operation could not complete. They are always enabled, and **five of them name an owner by `user_id`**, so `AUDIT_LOG_ENABLED=false` does not mean "no account identifier ever reaches the log":
 
 - the derived-cycle refresh that follows a day write, when it cannot load that owner's logs or store the recomputed luteal phase (`refreshDerivedCycleSettings: … for user N failed: …`) — the only two lines here that also carry the raw driver error, which does not pass through `SafeLogError`;
-- the webhook reminder pass, when an owner's stored endpoint cannot be decrypted, their logs cannot be loaded, or the sent-watermark write fails after delivery (`webhook notify: … owner id=N`).
+- the webhook reminder pass, when an owner's stored endpoint cannot be decrypted, their logs cannot be loaded, or the sent-watermark write fails after delivery (`webhook notify: … owner id=N`);
+- the flash cookie, when the message that explains an error cannot be encoded or sealed (`flash cookie: sealed write failed: …`) — the request still redirects, so without this line an operator would see only users reporting unexplained redirects. It names no account: the reason only, through `SafeLogError`, never the payload it was carrying.
 
 None of them carries health data, an email, a URL, or a token — the identifier and the reason only. The first pair is a symptom of write contention (see *Concurrency on the SQLite baseline* in [docs/self-hosted.md](../self-hosted.md#concurrency-on-the-sqlite-baseline)); the second is how a `SECRET_KEY` rotation surfaces for webhook owners, and is the signal the reminder pass's own summary does not carry.
 
