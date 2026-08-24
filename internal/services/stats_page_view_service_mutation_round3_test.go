@@ -18,6 +18,13 @@ func mr3statsRegularStats() CycleStats {
 }
 
 // --- buildStatsPredictionReliability ---------------------------------------
+//
+// These three drive the private buildStatsPredictionReliability at the
+// thresholds themselves — 3 and 6 completed cycles. The coverage file's
+// reliability cases drive the public BuildStatsPageViewData end to end with 6
+// and 4, which is a different layer and a different sample: they overlap in
+// outcome, not in what they exercise. Kept for that reason when the sibling
+// round-three files were folded into their coverage tables.
 
 // TestMR3Stats_ReliabilityVariableAtThreeCycles pins line 337
 // (variablePattern && sampleCount >= minimumPhaseInsightCycles). A variable

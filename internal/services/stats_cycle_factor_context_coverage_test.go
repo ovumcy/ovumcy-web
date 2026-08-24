@@ -138,6 +138,28 @@ func TestClassifyStatsCycleFactorComparisonShorterAndLonger(t *testing.T) {
 	}
 }
 
+// TestClassifyStatsCycleFactorComparisonWithNoBaselineAtAll pins the `baseline
+// > 0` guards on both arms. With neither a median nor an average the baseline
+// resolves to 0, and every cycle length must classify as "variable" — without
+// the guards a very negative length would satisfy `<= baseline-delta` and a
+// large one `>= baseline+delta`, so an account with no cycle history would read
+// as a firm "shorter" or "longer".
+//
+// This case came from a round-three mutation file whose other four tests
+// restated rows of the table above (26 → shorter, 30 → longer, 28 → variable);
+// it is the one input that table did not carry, so it moved here and the file
+// was removed.
+func TestClassifyStatsCycleFactorComparisonWithNoBaselineAtAll(t *testing.T) {
+	stats := CycleStats{MedianCycleLength: 0, AverageCycleLength: 0}
+
+	if got := classifyStatsCycleFactorComparison(stats, -5); got != "variable" {
+		t.Errorf("expected variable for a negative cycle length with no baseline, got %q", got)
+	}
+	if got := classifyStatsCycleFactorComparison(stats, 100); got != "variable" {
+		t.Errorf("expected variable for a large cycle length with no baseline, got %q", got)
+	}
+}
+
 // TestClassifyStatsCycleFactorComparisonFallsBackToAverage verifies that when
 // MedianCycleLength is zero the function uses AverageCycleLength as the
 // baseline (line 142–143 fallback).

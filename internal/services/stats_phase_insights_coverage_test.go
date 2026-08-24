@@ -214,13 +214,20 @@ func TestStatsPhaseInsightsPhaseForCompletedCycleDayOvulation(t *testing.T) {
 
 // TestStatsPhaseInsightsPhaseForCompletedCycleDayFollicular covers line 101:
 // dayNumber < cycle.OvulationDay (and > PeriodLength) → "follicular".
+//
+// Day 13 is the follicular side of the ovulation boundary — the case a
+// round-three mutation file contributed that this file did not carry; its other
+// assertions (day 5 menstrual, day 6 follicular, day 14 ovulation, day 15
+// luteal) restated the tests around this one, so it moved here and the file was
+// removed.
 func TestStatsPhaseInsightsPhaseForCompletedCycleDayFollicular(t *testing.T) {
 	cycle := statsphaseinsightsCovMakeCycle(t, "2026-01-01")
 	// Day 6 is after PeriodLength(5) and before OvulationDay(14) → follicular.
-	day := statsphaseinsightsCovDay(t, "2026-01-06")
-	got := phaseForCompletedCycleDay(day, cycle, statsphaseinsightsCovLocation)
-	if got != "follicular" {
-		t.Fatalf("expected follicular for day 6, got %q", got)
+	for _, day := range []string{"2026-01-06", "2026-01-13"} {
+		got := phaseForCompletedCycleDay(statsphaseinsightsCovDay(t, day), cycle, statsphaseinsightsCovLocation)
+		if got != "follicular" {
+			t.Fatalf("expected follicular for %s, got %q", day, got)
+		}
 	}
 }
 
