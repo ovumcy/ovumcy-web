@@ -89,6 +89,13 @@ type sourceEvidence struct {
 	// plausible file count.
 	goDirs map[string]bool
 
+	// templateKeyCallSites records every `t`/`tn` command the shipped
+	// templates contain, which is what the reverse barrier
+	// (locale_template_call_sites_test.go) measures: literals answer "is this
+	// catalogue key still named anywhere", call sites answer "does the key
+	// this template renders exist at all".
+	templateKeyCallSites []templateKeyCallSite
+
 	goFiles       int
 	templateFiles int
 }
@@ -543,28 +550,53 @@ func collectFromShippedTemplates(evidence *sourceEvidence) error {
 		if readErr != nil {
 			return readErr
 		}
-
-		// A fresh tree set per file: two files may legitimately define the
-		// same name, and a shared set turns that into a redefinition error.
-		trees := map[string]*parse.Tree{}
-		tree := parse.New(path)
-		tree.Mode = parse.SkipFuncCheck
-		if _, parseErr := tree.Parse(string(source), "", "", trees); parseErr != nil {
-			return fmt.Errorf("parsing %s: %w", path, parseErr)
-		}
-
-		collectFromTemplateNode(tree.Root, evidence)
-		for _, associated := range trees {
-			if associated.Root != nil {
-				collectFromTemplateNode(associated.Root, evidence)
-			}
-		}
-		evidence.templateFiles++
-		return nil
+		return collectFromTemplateSource(path, string(source), evidence)
 	})
 }
 
-func collectFromTemplateNode(node parse.Node, evidence *sourceEvidence) {
+// collectFromTemplateSource parses one template and feeds the evidence set.
+//
+// Split out of the walk above so a fixture template can be run through exactly
+// the collector the barriers use, rather than through a second copy of it that
+// would drift.
+func collectFromTemplateSource(path string, source string, evidence *sourceEvidence) error {
+	// A fresh tree set per file: two files may legitimately define the
+	// same name, and a shared set turns that into a redefinition error.
+	trees := map[string]*parse.Tree{}
+	tree := parse.New(path)
+	tree.Mode = parse.SkipFuncCheck
+	if _, parseErr := tree.Parse(source, "", "", trees); parseErr != nil {
+		return fmt.Errorf("parsing %s: %w", path, parseErr)
+	}
+
+	origin := templateOrigin{file: path, source: source}
+	collectFromTemplateNode(tree.Root, origin, evidence)
+	for _, associated := range trees {
+		if associated.Root != nil {
+			collectFromTemplateNode(associated.Root, origin, evidence)
+		}
+	}
+	evidence.templateFiles++
+	return nil
+}
+
+// templateOrigin carries the file a node came from and the text it was parsed
+// from, so a finding can name a place a reader can open. Node positions are
+// byte offsets into that same text, including inside `{{define}}` bodies.
+type templateOrigin struct {
+	file   string
+	source string
+}
+
+func (origin templateOrigin) lineOf(position parse.Pos) int {
+	offset := int(position)
+	if offset < 0 || offset > len(origin.source) {
+		return 0
+	}
+	return 1 + strings.Count(origin.source[:offset], "\n")
+}
+
+func collectFromTemplateNode(node parse.Node, origin templateOrigin, evidence *sourceEvidence) {
 	switch typed := node.(type) {
 	case nil:
 		return
@@ -573,38 +605,39 @@ func collectFromTemplateNode(node parse.Node, evidence *sourceEvidence) {
 			return
 		}
 		for _, child := range typed.Nodes {
-			collectFromTemplateNode(child, evidence)
+			collectFromTemplateNode(child, origin, evidence)
 		}
 	case *parse.ActionNode:
-		collectFromTemplateNode(typed.Pipe, evidence)
+		collectFromTemplateNode(typed.Pipe, origin, evidence)
 	case *parse.PipeNode:
 		if typed == nil {
 			return
 		}
 		for _, command := range typed.Cmds {
-			collectFromTemplateNode(command, evidence)
+			collectFromTemplateNode(command, origin, evidence)
 		}
 	case *parse.CommandNode:
+		recordTemplateKeyCallSite(typed, origin, evidence)
 		for _, argument := range typed.Args {
-			collectFromTemplateNode(argument, evidence)
+			collectFromTemplateNode(argument, origin, evidence)
 		}
 	case *parse.StringNode:
 		evidence.literals[typed.Text] = true
 	case *parse.IfNode:
-		collectFromTemplateBranch(&typed.BranchNode, evidence)
+		collectFromTemplateBranch(&typed.BranchNode, origin, evidence)
 	case *parse.RangeNode:
-		collectFromTemplateBranch(&typed.BranchNode, evidence)
+		collectFromTemplateBranch(&typed.BranchNode, origin, evidence)
 	case *parse.WithNode:
-		collectFromTemplateBranch(&typed.BranchNode, evidence)
+		collectFromTemplateBranch(&typed.BranchNode, origin, evidence)
 	case *parse.TemplateNode:
-		collectFromTemplateNode(typed.Pipe, evidence)
+		collectFromTemplateNode(typed.Pipe, origin, evidence)
 	}
 }
 
-func collectFromTemplateBranch(branch *parse.BranchNode, evidence *sourceEvidence) {
-	collectFromTemplateNode(branch.Pipe, evidence)
-	collectFromTemplateNode(branch.List, evidence)
-	collectFromTemplateNode(branch.ElseList, evidence)
+func collectFromTemplateBranch(branch *parse.BranchNode, origin templateOrigin, evidence *sourceEvidence) {
+	collectFromTemplateNode(branch.Pipe, origin, evidence)
+	collectFromTemplateNode(branch.List, origin, evidence)
+	collectFromTemplateNode(branch.ElseList, origin, evidence)
 }
 
 // describeUnreachable lists each unreachable key with whatever the test layer
