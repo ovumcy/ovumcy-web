@@ -242,7 +242,15 @@ func resolveProxySettings() (proxySettings, error) {
 // stayed untrusted, every client behind it fell back to the socket peer and
 // shared one rate-limit bucket, while the startup banner counted the raw CSV
 // and reported the typo as configured.
+//
+// A repeated IP is refused for the same reason though both spellings are well
+// formed: the matcher keys its exact set by the entry and collapses the pair
+// into one, so the banner would count a trusted proxy the matcher does not
+// hold — the same lie the typo told, minted by a copy-paste instead. A repeated
+// CIDR is left alone: ranges are appended to a slice, so both copies survive
+// and the two counts still agree.
 func validateTrustedProxies(entries []string) error {
+	seen := make(map[string]struct{}, len(entries))
 	for _, entry := range entries {
 		if strings.Contains(entry, "/") {
 			if _, _, err := net.ParseCIDR(entry); err != nil {
@@ -257,6 +265,10 @@ func validateTrustedProxies(entries []string) error {
 		if canonical := parsed.String(); canonical != entry {
 			return fmt.Errorf("invalid TRUSTED_PROXIES entry %q: an IP is matched literally, so it must be written in canonical form (%q)", entry, canonical)
 		}
+		if _, duplicate := seen[entry]; duplicate {
+			return fmt.Errorf("invalid TRUSTED_PROXIES entry %q: listed more than once", entry)
+		}
+		seen[entry] = struct{}{}
 	}
 	return nil
 }
