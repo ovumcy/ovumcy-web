@@ -43,8 +43,18 @@ type SymptomService struct {
 	reservedNameKeys map[string]struct{}
 }
 
+// legacyEntryPickerHiddenSymptoms names the builtins the day-entry picker keeps
+// out of the list unless the day already carries them.
+//
+// It is keyed on models.BuiltinSymptom.Key — the identity the catalogue itself
+// carries — rather than on a spelling of the display name. Keyed on a spelling
+// it was silently short: the entry "moodswings" was looked up through a
+// normalizer that lowercases and collapses whitespace runs but never removes
+// them, so it matched nothing at all, and the set declared four symptoms hidden
+// while three were. A key that names no builtin now fails
+// TestEveryEntryPickerHiddenKeyNamesABuiltinSymptom instead of hiding nothing.
 var legacyEntryPickerHiddenSymptoms = map[string]struct{}{
-	"moodswings":   {},
+	"mood_swings":  {},
 	"fatigue":      {},
 	"irritability": {},
 	"insomnia":     {},
@@ -74,9 +84,28 @@ func (service *SymptomService) CreateSymptomForUser(ctx context.Context, userID 
 	}
 
 	if err := service.symptoms.Create(ctx, &normalized); err != nil {
+		if isSymptomNameConstraintViolation(err) {
+			return models.SymptomType{}, ErrSymptomNameAlreadyExists
+		}
 		return models.SymptomType{}, fmt.Errorf("%w: %v", ErrCreateSymptomFailed, err)
 	}
 	return normalized, nil
+}
+
+// isSymptomNameConstraintViolation reports whether a symptom write was refused
+// by the database's own per-owner name index.
+//
+// ensureSymptomNameAvailable reads the catalogue and the write happens after
+// it, so between the two another request can claim the name — the loser then
+// arrives at storage with a decision that was true when it was made. The index
+// added in migration 037 is what refuses it, and symptom_types carries no other
+// unique constraint besides its primary key, whose values this layer never
+// supplies. The shape of the error is the persistence layer's, matched
+// structurally the way the registration path already matches it, so this
+// package keeps its distance from the driver.
+func isSymptomNameConstraintViolation(err error) bool {
+	var uniqueErr interface{ UniqueConstraint() string }
+	return errors.As(err, &uniqueErr)
 }
 
 func (service *SymptomService) UpdateSymptomForUser(ctx context.Context, userID uint, symptomID uint, name string, icon string, color string) (models.SymptomType, error) {
@@ -100,6 +129,9 @@ func (service *SymptomService) UpdateSymptomForUser(ctx context.Context, userID 
 	symptom.Icon = normalized.Icon
 	symptom.Color = normalized.Color
 	if err := service.symptoms.Update(ctx, &symptom); err != nil {
+		if isSymptomNameConstraintViolation(err) {
+			return models.SymptomType{}, ErrSymptomNameAlreadyExists
+		}
 		return models.SymptomType{}, fmt.Errorf("%w: %v", ErrUpdateSymptomFailed, err)
 	}
 	return symptom, nil
@@ -145,6 +177,9 @@ func (service *SymptomService) RestoreSymptomForUser(ctx context.Context, userID
 
 	symptom.ArchivedAt = nil
 	if err := service.symptoms.Update(ctx, &symptom); err != nil {
+		if isSymptomNameConstraintViolation(err) {
+			return ErrSymptomNameAlreadyExists
+		}
 		return fmt.Errorf("%w: %v", ErrRestoreSymptomFailed, err)
 	}
 	return nil
@@ -219,7 +254,17 @@ func (service *SymptomService) SeedBuiltinSymptoms(ctx context.Context, userID u
 	if count > 0 {
 		return nil
 	}
-	return service.symptoms.CreateBatch(ctx, BuiltinSymptomRecordsForUser(userID))
+	if err := service.symptoms.CreateBatch(ctx, BuiltinSymptomRecordsForUser(userID)); err != nil {
+		if isSymptomNameConstraintViolation(err) {
+			// A concurrent seed of the same account got there first. The
+			// catalogue this call was asked to create is present either way,
+			// and the count above is a read the other writer can invalidate at
+			// any point before this insert.
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (service *SymptomService) EnsureBuiltinSymptoms(ctx context.Context, userID uint) error {
@@ -248,7 +293,17 @@ func (service *SymptomService) ensureBuiltinSymptomsListed(ctx context.Context, 
 		return existing, nil
 	}
 	if err := service.symptoms.CreateBatch(ctx, missing); err != nil {
-		return nil, err
+		// This is a READ path — a page load that happens to notice a builtin is
+		// absent — and it is the most reachable half of the duplicate-name
+		// class: two loads for one account both list, both compute the same
+		// missing set and both insert it. The loser is refused by the per-owner
+		// name index, and the right answer for it is the catalogue the winner
+		// wrote, not an error on a request that only wanted to read. Both
+		// callers derive the missing set from the same builtin table, so the
+		// winner's insert covers this one exactly.
+		if !isSymptomNameConstraintViolation(err) {
+			return nil, err
+		}
 	}
 	return service.symptoms.ListByUser(ctx, userID)
 }
@@ -384,7 +439,11 @@ func shouldHideSymptomFromEntryPicker(symptom models.SymptomType) bool {
 	if !symptom.IsBuiltin {
 		return false
 	}
-	_, hidden := legacyEntryPickerHiddenSymptoms[normalizeSymptomNameKey(symptom.Name)]
+	builtin, known := builtinSymptomByName(symptom.Name)
+	if !known {
+		return false
+	}
+	_, hidden := legacyEntryPickerHiddenSymptoms[builtin.Key]
 	return hidden
 }
 

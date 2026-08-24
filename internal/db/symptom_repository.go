@@ -43,15 +43,25 @@ func (repo *SymptomRepository) ListByUser(ctx context.Context, userID uint) ([]m
 	return symptoms, nil
 }
 
+// classifySymptomWriteError names the one unique constraint symptom_types
+// carries besides its primary key: migration 037's per-owner index on
+// (user_id, lower(name)). Every symptom write goes through it, so the service
+// sees the database's refusal of a duplicate name as a unique-constraint error
+// it can map onto its own "name already exists", rather than as a driver
+// message it would report as an internal failure.
+func classifySymptomWriteError(err error) error {
+	return classifyUniqueConstraintError(err, "symptom_types.user_id_name")
+}
+
 func (repo *SymptomRepository) Create(ctx context.Context, symptom *models.SymptomType) error {
-	return repo.database.WithContext(ctx).Create(symptom).Error
+	return classifySymptomWriteError(repo.database.WithContext(ctx).Create(symptom).Error)
 }
 
 func (repo *SymptomRepository) CreateBatch(ctx context.Context, symptoms []models.SymptomType) error {
 	if len(symptoms) == 0 {
 		return nil
 	}
-	return repo.database.WithContext(ctx).Create(&symptoms).Error
+	return classifySymptomWriteError(repo.database.WithContext(ctx).Create(&symptoms).Error)
 }
 
 func (repo *SymptomRepository) FindByIDForUser(ctx context.Context, symptomID uint, userID uint) (models.SymptomType, error) {
@@ -71,9 +81,9 @@ func (repo *SymptomRepository) FindByIDForUser(ctx context.Context, symptomID ui
 // ArchivedAt=nil clears the column. Every caller sources symptom from
 // FindByIDForUser first, so a legitimate write always matches its row.
 func (repo *SymptomRepository) Update(ctx context.Context, symptom *models.SymptomType) error {
-	return repo.database.WithContext(ctx).
+	return classifySymptomWriteError(repo.database.WithContext(ctx).
 		Model(symptom).
 		Where("user_id = ?", symptom.UserID).
 		Select("*").
-		Updates(symptom).Error
+		Updates(symptom).Error)
 }

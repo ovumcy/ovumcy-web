@@ -1,0 +1,41 @@
+-- Postgres mirror of migrations/037_symptom_name_uniqueness.sql (per-owner
+-- uniqueness for symptom names). Same version number and basename so schema
+-- history stays aligned across engines.
+--
+-- WHAT THIS INDEX GUARANTEES: for one user_id, at most one row per lower(name).
+-- It is keyed per owner, so two accounts on one instance keep their own
+-- "Cramps" independently.
+--
+-- WHAT IT DOES NOT: it is a backstop STRICTLY WEAKER than the application rule,
+-- and the service check stays in front of it. The service also collapses runs of
+-- internal whitespace to a single space and drops invalid UTF-8, and portable
+-- SQL can do neither, so "Mood  swings" and "Mood swings" are one name to the
+-- service and two keys here. The lower() half is where the two engines part:
+-- Postgres folds by locale and covers a case-only variant of a non-ASCII name,
+-- SQLite folds ASCII only and does not. The SQL text is identical in both trees
+-- and the guarantee is not, which is why the application rule stays in front on
+-- both.
+--
+-- IT COVERS EVERY ROW, INCLUDING ARCHIVED ONES, on purpose. The service lists
+-- archived symptoms alongside active ones, so an archived name has always been
+-- taken for its owner, and restoring an archived symptom re-checks it. A partial
+-- index over the unarchived rows would be weaker still, and would admit a pair
+-- that can never be restored.
+--
+-- On a database that already holds duplicates the runner REFUSES this migration
+-- and names every conflicting (user_id, lower(name)) group instead of creating
+-- the index. It never deletes, merges or rewrites a row to make room: a person's
+-- symptom history is theirs, and a loud, diagnosable refusal is the only
+-- acceptable outcome here. Nothing is executed and the database is left exactly
+-- as it was.
+--
+-- Rollback: DROP INDEX idx_symptom_types_user_name_unique. This migration
+-- touches no data at all, so dropping the index restores the previous state
+-- exactly.
+--
+-- NOTE: keep prose in this file free of semicolons -- the migration runner
+-- splits statements on the semicolon character without stripping SQL comments,
+-- so a semicolon inside a comment is mis-parsed as a statement boundary.
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_symptom_types_user_name_unique
+    ON symptom_types (user_id, lower(name));

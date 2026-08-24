@@ -33,6 +33,12 @@ var dropTableStatementPattern = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+
 var dropColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+DROP\s+(?:COLUMN\s+)?(?:IF\s+EXISTS\s+)?([^\s;]+)`)
 var renameColumnStatementPattern = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+([^\s]+)\s+RENAME\s+(?:COLUMN\s+)?([^\s;]+)\s+TO\s+([^\s;]+)`)
 var removedTableMarkerPattern = regexp.MustCompile(`(?im)^[ \t]*--[ \t]*` + regexp.QuoteMeta(removedTableMarker) + `[ \t]+([^\s;]+)[ \t]*$`)
+var createUniqueIndexStatementPattern = regexp.MustCompile(`(?i)^CREATE\s+UNIQUE\s+INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(\S+)\s+ON\s+([^\s(]+)\s*\(`)
+
+// duplicateGroupReportLimit caps how many conflicting groups a refusal spells
+// out. An operator needs enough to see the shape of the problem and to start
+// fixing it, not a dump of the table.
+const duplicateGroupReportLimit = 5
 
 type embeddedMigration struct {
 	Version string
@@ -188,6 +194,10 @@ func applyMigration(database *gorm.DB, migration embeddedMigration) error {
 				continue
 			}
 
+			if err := refuseUniqueIndexOverExistingDuplicates(tx, migration, statement); err != nil {
+				return err
+			}
+
 			if err := tx.Exec(statement).Error; err != nil {
 				return fmt.Errorf("execute migration %s statement %q: %w", migration.Name, statement, err)
 			}
@@ -276,6 +286,207 @@ func highestAppliedVersionAfter(appliedVersions map[string]struct{}, order int) 
 		}
 	}
 	return highestVersion, highestVersion != ""
+}
+
+// uniqueIndexIntent is a `CREATE UNIQUE INDEX` statement read back as what it
+// asks the database for: an index name, a table, and the key expressions that
+// have to be unique together.
+type uniqueIndexIntent struct {
+	IndexName   string
+	Table       string
+	KeyExprs    []string
+	Recognized  bool
+	KeyExprList string
+}
+
+// duplicateGroup is one conflicting key, rendered as text by the engine, with
+// the number of rows that share it.
+type duplicateGroup struct {
+	ConflictKey string `gorm:"column:conflict_key"`
+	RowCount    int64  `gorm:"column:row_count"`
+}
+
+// refuseUniqueIndexOverExistingDuplicates stops a migration that adds a UNIQUE
+// index to a table that already holds rows the index cannot cover, and names
+// the conflicting groups.
+//
+// Left to the engine, the same situation is a bare `UNIQUE constraint failed`
+// (or `could not create unique index`) with nothing an operator can act on:
+// neither engine says which rows collided, and the application that wrote them
+// is the only thing that knows what the key means. The alternative — having the
+// migration delete or merge the extra rows itself — is not available here. This
+// instance stores one person's health history, and a schema change is not
+// consent to lose part of it. So the migration refuses, prints the groups, and
+// leaves every row exactly where it was for the owner to resolve.
+//
+// The check derives its query from the statement rather than from a list of
+// migrations, so it covers the next unique index as well as this one, and it
+// runs only for a statement that actually asks for one. NULL keys are excluded
+// because both engines treat NULLs as distinct in a unique index: grouping them
+// would report a conflict the index would have accepted.
+//
+// A statement it cannot read — a partial index, or anything trailing the key
+// list — is left alone rather than guessed at: the engine still refuses the
+// migration on a genuine conflict, only with its own opaque message.
+func refuseUniqueIndexOverExistingDuplicates(database *gorm.DB, migration embeddedMigration, statement string) error {
+	intent := parseCreateUniqueIndexStatement(statement)
+	if !intent.Recognized {
+		return nil
+	}
+	if !database.Migrator().HasTable(intent.Table) {
+		return nil
+	}
+
+	groups, err := loadDuplicateKeyGroups(database, intent)
+	if err != nil {
+		return fmt.Errorf("inspect migration %s: %w", migration.Name, err)
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+
+	rendered := make([]string, 0, duplicateGroupReportLimit)
+	for _, group := range groups {
+		if len(rendered) == duplicateGroupReportLimit {
+			rendered = append(rendered, "and more")
+			break
+		}
+		rendered = append(rendered, fmt.Sprintf("%s -> %d rows", group.ConflictKey, group.RowCount))
+	}
+
+	return fmt.Errorf(
+		"refusing migration %s: table %s already holds rows that unique index %s on (%s) cannot cover, and this migration never deletes, merges or rewrites a row to make room for it. Conflicting group(s), keyed as (%s): %s. Nothing was written: the migration was rolled back and the database is unchanged. Resolve each group by renaming or removing the extra rows through the application, then start it again",
+		migration.Name,
+		intent.Table,
+		intent.IndexName,
+		intent.KeyExprList,
+		intent.KeyExprList,
+		strings.Join(rendered, "; "),
+	)
+}
+
+// loadDuplicateKeyGroups asks the database which key values already repeat,
+// building the query out of the index's own key expressions so the grouping and
+// the index agree by construction. The key is rendered as text by the engine —
+// `CAST(... AS TEXT)` and `||` are the two spellings both engines share — so
+// one reader serves both.
+func loadDuplicateKeyGroups(database *gorm.DB, intent uniqueIndexIntent) ([]duplicateGroup, error) {
+	renderedKeys := make([]string, 0, len(intent.KeyExprs))
+	notNullTerms := make([]string, 0, len(intent.KeyExprs))
+	for _, expression := range intent.KeyExprs {
+		renderedKeys = append(renderedKeys, "CAST("+expression+" AS TEXT)")
+		notNullTerms = append(notNullTerms, "("+expression+") IS NOT NULL")
+	}
+
+	query := fmt.Sprintf(
+		"SELECT %s AS conflict_key, COUNT(*) AS row_count FROM %s WHERE %s GROUP BY %s HAVING COUNT(*) > 1 ORDER BY conflict_key LIMIT %d",
+		strings.Join(renderedKeys, " || ' | ' || "),
+		intent.Table,
+		strings.Join(notNullTerms, " AND "),
+		intent.KeyExprList,
+		duplicateGroupReportLimit+1,
+	)
+
+	groups := make([]duplicateGroup, 0)
+	if err := database.Raw(query).Scan(&groups).Error; err != nil {
+		return nil, fmt.Errorf("check table %s for rows that would collide under unique index %s: %w", intent.Table, intent.IndexName, err)
+	}
+	return groups, nil
+}
+
+// parseCreateUniqueIndexStatement reads a statement chunk as a
+// `CREATE UNIQUE INDEX`. Like the ADD COLUMN and DROP TABLE detections it looks
+// past the prose header splitSQLStatements leaves attached to the first chunk
+// of a file. Recognized is false for anything else, and for a unique index
+// whose key list is followed by more SQL (a partial index's WHERE, an engine
+// option): the key list alone would not describe what the index covers, and a
+// guess there would refuse a migration the engine would have accepted.
+func parseCreateUniqueIndexStatement(statement string) uniqueIndexIntent {
+	body := stripLeadingSQLComments(statement)
+	match := createUniqueIndexStatementPattern.FindStringSubmatchIndex(body)
+	if match == nil {
+		return uniqueIndexIntent{}
+	}
+
+	openParen := match[1] - 1
+	closeParen := matchingCloseParenIndex(body, openParen)
+	if closeParen < 0 {
+		return uniqueIndexIntent{}
+	}
+	if strings.TrimSpace(body[closeParen+1:]) != "" {
+		return uniqueIndexIntent{}
+	}
+
+	keyExprs := splitTopLevelCommas(body[openParen+1 : closeParen])
+	if len(keyExprs) == 0 {
+		return uniqueIndexIntent{}
+	}
+
+	return uniqueIndexIntent{
+		IndexName:   normalizeSQLIdentifier(body[match[2]:match[3]]),
+		Table:       normalizeSQLIdentifier(body[match[4]:match[5]]),
+		KeyExprs:    keyExprs,
+		Recognized:  true,
+		KeyExprList: strings.Join(keyExprs, ", "),
+	}
+}
+
+// matchingCloseParenIndex returns the index of the parenthesis closing the one
+// at openParen, or -1 when it is never closed.
+func matchingCloseParenIndex(text string, openParen int) int {
+	depth := 0
+	for index := openParen; index < len(text); index++ {
+		switch text[index] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return index
+			}
+		}
+	}
+	return -1
+}
+
+// splitTopLevelCommas splits an index key list on the commas that separate its
+// entries, leaving the commas inside a function call where they are. An empty
+// entry makes the whole list unreadable and returns nothing, so the caller
+// leaves the statement to the engine rather than building a query around a hole.
+func splitTopLevelCommas(list string) []string {
+	parts := make([]string, 0)
+	depth := 0
+	start := 0
+
+	appendPart := func(end int) bool {
+		part := strings.TrimSpace(list[start:end])
+		if part == "" {
+			return false
+		}
+		parts = append(parts, part)
+		return true
+	}
+
+	for index := range len(list) {
+		switch list[index] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		case ',':
+			if depth != 0 {
+				continue
+			}
+			if !appendPart(index) {
+				return nil
+			}
+			start = index + 1
+		}
+	}
+	if !appendPart(len(list)) {
+		return nil
+	}
+	return parts
 }
 
 // snapshotEveryTableColumns records the columns of EVERY table there is, read
