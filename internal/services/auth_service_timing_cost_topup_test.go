@@ -144,7 +144,7 @@ func TestBcryptCostTopUpScheduleClampsACostBelowTheBcryptMinimum(t *testing.T) {
 		t.Fatal("the schedule at bcrypt.MinCost is empty — this test would assert nothing")
 	}
 
-	for storedCost := 0; storedCost < bcrypt.MinCost; storedCost++ {
+	for storedCost := range bcrypt.MinCost {
 		got := bcryptCostTopUpSchedule(storedCost)
 		if len(got) != len(atMinimum) {
 			t.Fatalf("stored cost %d: schedule has %d steps, want the %d of bcrypt.MinCost — the clamp did not hold and the schedule is not finite",
