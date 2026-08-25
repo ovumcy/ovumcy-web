@@ -380,6 +380,108 @@ func TestDashboardAndStatsAgreeOnPhaseAndFertilityOnAFertileWindowDay(t *testing
 	}
 }
 
+// TestStatsFertileWindowCardIsSuppressedByAPregnancyPause is the render
+// regression for the one prediction surface the pregnancy pause did not reach.
+// /stats resolved the flag its phase card gates on from
+// DashboardPredictionDisabled — the owner's unpredictable-cycle setting alone —
+// while the calendar grid, the .ics feed and the webhook pass all gate on the
+// shared suppression predicate, so an owner whose latest fertility signal is a
+// positive pregnancy test still read "Fertile window" on /stats: a claim
+// projected from the onboarding cycle-length slider, which the medical-safety
+// invariant says must be suppressed rather than captioned.
+//
+// Both accounts sit on day 12 of a 28-day baseline with two completed cycles
+// behind them — the tier the card lives in (HasInsights, >= 2) and a
+// fertile-window day by the same math the test above uses — and differ only in
+// the positive pregnancy test. The unpaused case is the positive anchor for the
+// paused one: it proves the two hooks asserted absent under the pause are the
+// hooks this surface actually renders, so the suppression case cannot pass by
+// naming an attribute that no longer exists.
+//
+// Deliberately narrower than its subject: it pins the pregnancy pause only. The
+// zero-completed-cycle tier never reaches this card (HasInsights excludes it)
+// and an overdue cycle is already caught by the stronger CycleDataStale branch
+// above the card's fertility line.
+func TestStatsFertileWindowCardIsSuppressedByAPregnancyPause(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		account         string
+		pregnancyPaused bool
+	}{
+		"no pregnancy test: the fertile-window claim renders": {account: "unpaused"},
+		"positive pregnancy test: the claim is withheld":      {account: "paused", pregnancyPaused: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			app, database := newOnboardingTestApp(t)
+			user := createOnboardingTestUser(t, database, "stats-pregnancy-pause-"+testCase.account+"@example.com", "StrongPass1", true)
+			today := services.DateAtLocation(time.Now().UTC(), time.UTC)
+			if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
+				"cycle_length":      28,
+				"period_length":     5,
+				"last_period_start": today.AddDate(0, 0, -11),
+			}).Error; err != nil {
+				t.Fatalf("seed cycle baseline: %v", err)
+			}
+			// Three recorded starts 28 days apart: two completed cycles, and the
+			// running one on day 12 — inside the fertile window (ovulation day 14,
+			// window days 9-14) with a day of timezone slack on either side.
+			for _, offsetDays := range []int{-67, -39, -11} {
+				if err := database.Create(&models.DailyLog{
+					UserID:     user.ID,
+					Date:       today.AddDate(0, 0, offsetDays),
+					IsPeriod:   true,
+					CycleStart: true,
+				}).Error; err != nil {
+					t.Fatalf("seed cycle start %d: %v", offsetDays, err)
+				}
+			}
+			if testCase.pregnancyPaused {
+				// Positive test after the running cycle's start, with no later cycle
+				// start: ResolvePregnancyPause reports an active pause.
+				if err := database.Create(&models.DailyLog{
+					UserID:        user.ID,
+					Date:          today.AddDate(0, 0, -2),
+					PregnancyTest: models.PregnancyTestPositive,
+				}).Error; err != nil {
+					t.Fatalf("seed positive pregnancy test: %v", err)
+				}
+			}
+
+			authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+			request := httptest.NewRequest(http.MethodGet, "/stats", nil)
+			request.Header.Set("Accept-Language", "en")
+			request.Header.Set("Cookie", authCookie)
+			response, err := app.Test(request, testConfigNoTimeout)
+			if err != nil {
+				t.Fatalf("stats request failed: %v", err)
+			}
+			defer func() { _ = response.Body.Close() }()
+
+			document := mustParseHTMLDocument(t, mustReadBodyString(t, response.Body))
+			fertilityStatus := ""
+			if statusValue := dashboardElementByDataAttr(document, "data-fertility-status"); statusValue != nil {
+				fertilityStatus = htmlAttr(statusValue, "data-fertility-status")
+			}
+			fertileWindowLine := dashboardElementByDataAttr(document, "data-fertile-window")
+
+			if !testCase.pregnancyPaused {
+				if fertilityStatus != "fertile" {
+					t.Errorf("anchor: expected /stats to declare fertility %q on a fertile-window day, got %q", "fertile", fertilityStatus)
+				}
+				if fertileWindowLine == nil {
+					t.Error("anchor: expected /stats to render the fertile-window line on a fertile-window day")
+				}
+				return
+			}
+			if fertilityStatus == "fertile" {
+				t.Errorf("expected /stats to withhold the fertility status under a pregnancy pause, got data-fertility-status=%q", fertilityStatus)
+			}
+			if fertileWindowLine != nil {
+				t.Error("expected /stats to withhold the fertile-window line under a pregnancy pause, got data-fertile-window rendered")
+			}
+		})
+	}
+}
+
 // TestDashboardHeaderWithholdsFertilityUntilTheFirstCompletedCycle is the
 // render regression for the first reliability tier. Both accounts below sit on
 // cycle day 12 of a 28-day baseline — a fertile-window day by the same math the
