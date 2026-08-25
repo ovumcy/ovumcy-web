@@ -20,6 +20,22 @@ func TestIsValidDayBBTAcceptsUpperBoundCelsius(t *testing.T) {
 	}
 }
 
+// TestIsValidDayBBTRejectsOutsideThePhysiologicalRange is the rejecting half of
+// the range check. Both endpoints were accepted by their own anchors and the
+// only refusal anywhere was an above-maximum stored value, so removing
+// `*value >= MinDayBBTCelsius` left every BBT test green: nothing submitted a
+// reading below the range, which is what a Fahrenheit value entered on a
+// Celsius form looks like.
+func TestIsValidDayBBTRejectsOutsideThePhysiologicalRange(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []float64{MinDayBBTCelsius - 0.1, 20.0, MaxDayBBTCelsius + 0.1, 200.0} {
+		if IsValidDayBBT(bbtPtr(value)) {
+			t.Fatalf("expected IsValidDayBBT(%.2f) = false outside [%.2f, %.2f], got true", value, MinDayBBTCelsius, MaxDayBBTCelsius)
+		}
+	}
+}
+
 func TestIsValidDayBBTNilIsUnmeasured(t *testing.T) {
 	t.Parallel()
 

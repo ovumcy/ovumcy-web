@@ -125,13 +125,27 @@ func TestDayServiceFetchLogByDateNilsOutOfRangeStoredBBT(t *testing.T) {
 	}
 }
 
+// TestMergePreservedDayEntryInputDropsOutOfRangeExistingBBT covers both ends of
+// the stored range. Only the above-maximum value was checked, here and on the
+// read path, so the lower bound could be dropped from IsValidDayBBT and a
+// stored value no thermometer produced — a Fahrenheit reading saved on a
+// Celsius form, say — would be carried forward into the next save untouched.
 func TestMergePreservedDayEntryInputDropsOutOfRangeExistingBBT(t *testing.T) {
-	outOfRange := 200.0
-	existing := models.DailyLog{BBT: &outOfRange}
+	for _, outOfRange := range []float64{200.0, 20.0} {
+		existing := models.DailyLog{BBT: &outOfRange}
 
-	merged := mergePreservedDayEntryInput(existing, DayEntryInput{PreserveBBT: true})
-	if merged.BBT != nil {
-		t.Fatalf("expected preserved out-of-range bbt to be dropped to nil, got %v", *merged.BBT)
+		merged := mergePreservedDayEntryInput(existing, DayEntryInput{PreserveBBT: true})
+		if merged.BBT != nil {
+			t.Fatalf("expected preserved out-of-range bbt %.2f to be dropped to nil, got %v", outOfRange, *merged.BBT)
+		}
+	}
+
+	// Positive control: a real reading must still be preserved, so the guard is
+	// not simply dropping every stored temperature.
+	inRange := 36.6
+	merged := mergePreservedDayEntryInput(models.DailyLog{BBT: &inRange}, DayEntryInput{PreserveBBT: true})
+	if merged.BBT == nil || *merged.BBT != inRange {
+		t.Fatalf("expected an in-range stored bbt to be preserved, got %v", merged.BBT)
 	}
 }
 
