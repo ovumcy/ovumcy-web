@@ -250,9 +250,15 @@ func TestRestoreSymptomRejectsDuplicateActiveName(t *testing.T) {
 	user := createOnboardingTestUser(t, database, "restore-symptom-duplicate@example.com", "StrongPass1", true)
 	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
 
+	// The two rows differ by one space, which is exactly the gap between the
+	// two name rules: the service collapses runs of internal whitespace before
+	// it compares, so these are one name to it, while the per-owner unique
+	// index on (user_id, lower(name)) sees two keys and admits both. That gap
+	// is what still makes this collision constructible — the index alone would
+	// refuse an exact pair — and the restore path must answer it the same way.
 	activeSymptom := models.SymptomType{
 		UserID: user.ID,
-		Name:   "Joint stiffness",
+		Name:   "Joint  stiffness",
 		Icon:   "x",
 		Color:  "#123456",
 	}
