@@ -2,6 +2,9 @@
 {{$dayLabel := t .Messages "date_field.day"}}
 {{$monthLabel := t .Messages "date_field.month"}}
 {{$yearLabel := t .Messages "date_field.year"}}
+{{$dayPlaceholder := t .Messages "date_field.day_placeholder"}}
+{{$monthPlaceholder := t .Messages "date_field.month_placeholder"}}
+{{$yearPlaceholder := t .Messages "date_field.year_placeholder"}}
 {{$invalidMessage := .InvalidMessage}}
 {{if not $invalidMessage}}{{$invalidMessage = t .Messages "date_field.invalid"}}{{end}}
 {{$requiredMessage := .RequiredMessage}}
@@ -44,7 +47,7 @@
         pattern="[0-9]*"
         maxlength="2"
         autocomplete="off"
-        placeholder="DD"
+        placeholder="{{$dayPlaceholder}}"
         class="input-field"
         aria-label="{{$dayLabel}}"
         data-date-field-part="day">
@@ -58,7 +61,7 @@
         pattern="[0-9]*"
         maxlength="2"
         autocomplete="off"
-        placeholder="MM"
+        placeholder="{{$monthPlaceholder}}"
         class="input-field"
         aria-label="{{$monthLabel}}"
         data-date-field-part="month">
@@ -72,7 +75,7 @@
         pattern="[0-9]*"
         maxlength="4"
         autocomplete="off"
-        placeholder="YYYY"
+        placeholder="{{$yearPlaceholder}}"
         class="input-field"
         aria-label="{{$yearLabel}}"
         data-date-field-part="year">
