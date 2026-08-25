@@ -170,6 +170,47 @@ func TestLoginServiceAuthenticateRateLimitsByIdentityAcrossIPs(t *testing.T) {
 	}
 }
 
+// TestLoginServiceAuthenticateClearsTheIdentityCounterOnASuccessfulSignIn pins
+// the counter reset that follows a correct password. Every rate-limit test
+// drives failures only and asserts the lock, so deleting the Reset call left
+// them all green — and an owner who mistypes on Monday, signs in, and mistypes
+// again on Tuesday would be locked out of their own instance by attempts that
+// were already answered correctly.
+func TestLoginServiceAuthenticateClearsTheIdentityCounterOnASuccessfulSignIn(t *testing.T) {
+	auth := &stubLoginAuthService{user: models.User{ID: 31}, err: ErrAuthInvalidCreds}
+	service := NewLoginService(auth, &stubLoginResetTokenIssuer{}, NewAttemptLimiter())
+	service.ConfigureAttemptLimits(2, time.Hour)
+
+	secret := []byte("secret")
+	const clientKey = "10.0.0.1"
+	const email = "owner@example.com"
+
+	if _, err := service.Authenticate(context.Background(), secret, clientKey, email, "wrong", loginServiceTestTTL, loginServiceTestNow); !errors.Is(err, ErrAuthInvalidCreds) {
+		t.Fatalf("expected invalid credentials on the first attempt, got %v", err)
+	}
+
+	auth.err = nil
+	if _, err := service.Authenticate(context.Background(), secret, clientKey, email, "StrongPass1", loginServiceTestTTL, loginServiceTestNow.Add(time.Minute)); err != nil {
+		t.Fatalf("Authenticate() with the correct password: unexpected error: %v", err)
+	}
+
+	// One more failure. With the counter cleared this is the FIRST recent
+	// failure and the next attempt still reaches the credential check; without
+	// the reset it is the second and the identity is locked.
+	auth.err = ErrAuthInvalidCreds
+	if _, err := service.Authenticate(context.Background(), secret, clientKey, email, "wrong", loginServiceTestTTL, loginServiceTestNow.Add(2*time.Minute)); !errors.Is(err, ErrAuthInvalidCreds) {
+		t.Fatalf("expected invalid credentials after the successful sign-in, got %v", err)
+	}
+
+	callsBefore := auth.calls
+	if _, err := service.Authenticate(context.Background(), secret, clientKey, email, "wrong", loginServiceTestTTL, loginServiceTestNow.Add(3*time.Minute)); !errors.Is(err, ErrAuthInvalidCreds) {
+		t.Fatalf("expected the successful sign-in to have cleared the earlier failure, got %v", err)
+	}
+	if auth.calls != callsBefore+1 {
+		t.Fatalf("expected the credential check to run again after the reset, got %d calls", auth.calls-callsBefore)
+	}
+}
+
 func TestLoginServiceAuthenticateMapsResetTokenIssueError(t *testing.T) {
 	auth := &stubLoginAuthService{user: models.User{ID: 12, MustChangePassword: true}}
 	reset := &stubLoginResetTokenIssuer{err: errors.New("sign failed")}

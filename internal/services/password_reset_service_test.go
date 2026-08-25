@@ -111,6 +111,75 @@ func TestPasswordResetServiceStartRecoveryWrongPasswordAddsFailure(t *testing.T)
 	}
 }
 
+// TestPasswordResetServiceStartRecoveryAnswersAnUnknownAddressLikeAKnownOne
+// pins the enumeration-safe collapse on the branch a MALFORMED code never
+// reaches. Both negative cases in this file submit "invalid", which
+// ValidateRecoveryCodeFormat refuses before the lookup runs, so the not-found
+// mapping and the attempt it books were exercised by nothing: an unknown
+// address could start answering differently — or for free, outside the attempt
+// budget — and this file stayed green. The two calls below differ only in
+// whether the account exists, and everything observable about them must match.
+func TestPasswordResetServiceStartRecoveryAnswersAnUnknownAddressLikeAKnownOne(t *testing.T) {
+	recoveryCode, recoveryHash, err := GenerateRecoveryCodeHash()
+	if err != nil {
+		t.Fatalf("GenerateRecoveryCodeHash() unexpected error: %v", err)
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("StrongPass1"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+
+	newService := func() *PasswordResetService {
+		repo := &stubAuthUserRepo{
+			findByEmailOptionalEmail: "owner@example.com",
+			findByEmailOptionalFound: true,
+			findByEmailOptionalUser: models.User{
+				ID:               77,
+				Email:            "owner@example.com",
+				PasswordHash:     string(passwordHash),
+				RecoveryCodeHash: recoveryHash,
+				LocalAuthEnabled: true,
+				Role:             models.RoleOwner,
+			},
+		}
+		service := NewPasswordResetService(NewAuthService(repo), NewAttemptLimiter())
+		service.ConfigureRecoveryAttemptLimits(1, DefaultRecoveryAttemptsWindow)
+		return service
+	}
+
+	secretKey := []byte("test-secret")
+	now := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	key := "127.0.0.1"
+
+	// A well-formed code the format check accepts, so both calls reach the
+	// lookup. The known address gets the wrong code; the unknown address gets
+	// the right one and does not exist.
+	unknownService := newService()
+	_, unknownErr := unknownService.StartRecovery(context.Background(), secretKey, key, "stranger@example.com", recoveryCode, "StrongPass1", now, 30*time.Minute)
+
+	knownService := newService()
+	_, knownErr := knownService.StartRecovery(context.Background(), secretKey, key, "owner@example.com", "OVUM-ABCD-2345-EFGH", "StrongPass1", now, 30*time.Minute)
+
+	if !errors.Is(unknownErr, ErrPasswordRecoveryCodeInvalid) {
+		t.Fatalf("an unknown address must answer with ErrPasswordRecoveryCodeInvalid, got %v", unknownErr)
+	}
+	if !errors.Is(knownErr, ErrPasswordRecoveryCodeInvalid) {
+		t.Fatalf("a known address with a wrong code must answer with ErrPasswordRecoveryCodeInvalid, got %v", knownErr)
+	}
+	if unknownErr != knownErr {
+		t.Fatalf("the two answers must be the same value, got %v and %v", unknownErr, knownErr)
+	}
+
+	// Both must also cost an attempt: an unmetered miss on a non-existent
+	// address is a free oracle even when the error text matches.
+	if !unknownService.recoveryPolicy.TooManyRecent(secretKey, key, "stranger@example.com", now) {
+		t.Fatal("expected the unknown-address attempt to be booked against the limiter")
+	}
+	if !knownService.recoveryPolicy.TooManyRecent(secretKey, key, "owner@example.com", now) {
+		t.Fatal("expected the wrong-code attempt to be booked against the limiter")
+	}
+}
+
 func TestPasswordResetServiceStartRecoveryRateLimitsByIdentityAcrossIPs(t *testing.T) {
 	repo := &stubAuthUserRepo{}
 	authService := NewAuthService(repo)
