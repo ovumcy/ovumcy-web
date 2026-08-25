@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,6 +57,155 @@ func TestSymptomNameUniqueIndexIsCreatedAndCoversEveryRow(t *testing.T) {
 	}
 	if err := insert(owner, "joint stiffness"); err == nil {
 		t.Fatal("expected the index to refuse a case-only duplicate for one owner")
+	}
+}
+
+// TestParseCreateUniqueIndexStatementReadsOnlyWhatItCanDescribe covers the
+// decision that precedes the refusal: whether a statement is one whose coverage
+// the runner can state exactly.
+//
+// Every "not recognized" case here is a statement the engine still executes and
+// still refuses on a genuine conflict — only the diagnostic degrades. That is
+// the deliberate trade: a key list the runner half-understands would build a
+// duplicate query around a hole and could refuse a migration the engine would
+// have accepted, which is worse than a poor message.
+func TestParseCreateUniqueIndexStatementReadsOnlyWhatItCanDescribe(t *testing.T) {
+	for _, testCase := range []struct {
+		Name       string
+		Statement  string
+		Recognized bool
+		Table      string
+		KeyExprs   []string
+	}{
+		{
+			Name:       "the shipped statement, key expressions and all",
+			Statement:  "CREATE UNIQUE INDEX IF NOT EXISTS idx_symptom_types_user_name_unique\n    ON symptom_types (user_id, lower(name))",
+			Recognized: true,
+			Table:      "symptom_types",
+			KeyExprs:   []string{"user_id", "lower(name)"},
+		},
+		{
+			Name:       "a prose header does not hide the statement under it",
+			Statement:  "-- Per-owner uniqueness.\n--\n-- More prose.\nCREATE UNIQUE INDEX idx_x ON t (a, b)",
+			Recognized: true,
+			Table:      "t",
+			KeyExprs:   []string{"a", "b"},
+		},
+		{
+			Name:       "a comma inside a function call does not split the key list",
+			Statement:  "CREATE UNIQUE INDEX idx_x ON t (a, coalesce(b, c))",
+			Recognized: true,
+			Table:      "t",
+			KeyExprs:   []string{"a", "coalesce(b, c)"},
+		},
+		{
+			Name:       "a partial index is left to the engine",
+			Statement:  "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_calendar_feed_selector\n    ON users (calendar_feed_selector)\n    WHERE calendar_feed_selector <> ''",
+			Recognized: false,
+		},
+		{
+			Name:       "an unclosed key list is left to the engine",
+			Statement:  "CREATE UNIQUE INDEX idx_x ON t (a, b",
+			Recognized: false,
+		},
+		{
+			Name:       "an empty entry in the middle of the key list is left to the engine",
+			Statement:  "CREATE UNIQUE INDEX idx_x ON t (a, , b)",
+			Recognized: false,
+		},
+		{
+			Name:       "an empty entry at the end of the key list is left to the engine",
+			Statement:  "CREATE UNIQUE INDEX idx_x ON t (a, b,)",
+			Recognized: false,
+		},
+		{
+			Name:       "a non-unique index is not this check's business",
+			Statement:  "CREATE INDEX idx_x ON t (a)",
+			Recognized: false,
+		},
+	} {
+		intent := parseCreateUniqueIndexStatement(testCase.Statement)
+		if intent.Recognized != testCase.Recognized {
+			t.Errorf("%s: Recognized = %t, want %t", testCase.Name, intent.Recognized, testCase.Recognized)
+			continue
+		}
+		if !testCase.Recognized {
+			continue
+		}
+		if intent.Table != testCase.Table {
+			t.Errorf("%s: Table = %q, want %q", testCase.Name, intent.Table, testCase.Table)
+		}
+		if strings.Join(intent.KeyExprs, "|") != strings.Join(testCase.KeyExprs, "|") {
+			t.Errorf("%s: KeyExprs = %v, want %v", testCase.Name, intent.KeyExprs, testCase.KeyExprs)
+		}
+	}
+}
+
+// probeMigration is a migration this test owns, used to drive the refusal
+// against statements the embedded set does not contain. Its version is far
+// above the tree's so it can never be confused with a real one.
+func probeMigration() embeddedMigration {
+	return embeddedMigration{Version: "900", Order: 900, Name: "900_probe.sql"}
+}
+
+// TestUniqueIndexRefusalOnStatementsTheEmbeddedSetDoesNotContain covers the
+// three answers the refusal gives besides "these rows conflict".
+func TestUniqueIndexRefusalOnStatementsTheEmbeddedSetDoesNotContain(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "symptom-name-probe.db"))
+
+	// A table this migration is about to create is not there when the check
+	// runs, and an index over no rows can conflict with nothing.
+	if err := refuseUniqueIndexOverExistingDuplicates(database, probeMigration(), "CREATE UNIQUE INDEX idx_probe ON not_a_table (a)"); err != nil {
+		t.Fatalf("a table that does not exist yet must not refuse the migration: %v", err)
+	}
+
+	// A key expression the engine rejects is a fault in the check, reported as
+	// one, rather than a verdict about the rows.
+	err := refuseUniqueIndexOverExistingDuplicates(database, probeMigration(), "CREATE UNIQUE INDEX idx_probe ON symptom_types (no_such_column)")
+	if err == nil {
+		t.Fatal("a duplicate query the engine cannot run must be reported, not passed over")
+	}
+	for _, fragment := range []string{"900_probe.sql", "symptom_types", "idx_probe"} {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Fatalf("the inspection failure must name %q, got: %v", fragment, err)
+		}
+	}
+}
+
+// TestUniqueIndexRefusalNamesAtMostFiveGroupsAndSaysThereAreMore pins the
+// report's bound. An operator needs the shape of the problem, not a dump of the
+// table, and a truncated list that did not say it was truncated would read as a
+// complete one.
+func TestUniqueIndexRefusalNamesAtMostFiveGroupsAndSaysThereAreMore(t *testing.T) {
+	database := openSQLiteForMigrationBootstrapTest(t, filepath.Join(t.TempDir(), "symptom-name-groups.db"))
+	owner := createDailyLogTestUser(t, database, "symptom-groups-owner@example.com")
+
+	// Six icons, each on two rows: six groups under an index keyed on icon, one
+	// more than the report lists. The names stay distinct so the shipped index
+	// on (user_id, lower(name)) is untouched.
+	for group := range 6 {
+		for copyIndex := range 2 {
+			if err := database.Exec(
+				`INSERT INTO symptom_types (user_id, name, icon, color, is_builtin) VALUES (?, ?, ?, '#FF0000', 0)`,
+				owner,
+				fmt.Sprintf("Probe %d-%d", group, copyIndex),
+				fmt.Sprintf("i%d", group),
+			).Error; err != nil {
+				t.Fatalf("seed probe row %d-%d: %v", group, copyIndex, err)
+			}
+		}
+	}
+
+	err := refuseUniqueIndexOverExistingDuplicates(database, probeMigration(), "CREATE UNIQUE INDEX idx_probe ON symptom_types (icon)")
+	if err == nil {
+		t.Fatal("six conflicting groups must refuse the migration")
+	}
+	message := err.Error()
+	if groups := strings.Count(message, " -> "); groups != duplicateGroupReportLimit {
+		t.Fatalf("expected %d named groups, got %d in: %s", duplicateGroupReportLimit, groups, message)
+	}
+	if !strings.Contains(message, "and more") {
+		t.Fatalf("a truncated list must say it is truncated, got: %s", message)
 	}
 }
 

@@ -85,3 +85,31 @@ func TestEveryEntryPickerHiddenKeyActuallyHidesItsSymptom(t *testing.T) {
 		}
 	}
 }
+
+// TestARowFlaggedBuiltinWithNoCatalogueEntryStaysInThePicker covers the state a
+// rename of the catalogue leaves behind.
+//
+// The lookup resolves a stored row to its catalogue entry by name, so a row
+// still marked builtin whose name no longer appears in the table — an account
+// migrated across a release that renamed a builtin, before any backfill — has
+// no key to test against. It stays visible rather than being hidden by a lookup
+// that found nothing: an unrecognized symptom is not evidence that the owner
+// asked for it to be hidden, and a person can always hide a symptom they can
+// see.
+//
+// The early return it covers is deliberately belt-and-braces: the zero-valued
+// catalogue entry a failed lookup returns carries an empty key, which the hide
+// set can never contain, so removing the branch would not change the answer and
+// this case cannot kill it. The branch stays because the rule should be legible
+// in the function rather than deduced from what the set happens not to hold,
+// and the case stays because the ANSWER is the invariant, whichever line gives
+// it.
+func TestARowFlaggedBuiltinWithNoCatalogueEntryStaysInThePicker(t *testing.T) {
+	orphan := models.SymptomType{Name: "Mood swings (retired spelling)", IsBuiltin: true}
+	if _, known := builtinSymptomByName(orphan.Name); known {
+		t.Fatalf("fixture is stale: %q is in the builtin catalogue and cannot stand for a row that is not", orphan.Name)
+	}
+	if shouldHideSymptomFromEntryPicker(orphan) {
+		t.Fatalf("expected a builtin row with no catalogue entry to stay in the picker, %q was hidden", orphan.Name)
+	}
+}

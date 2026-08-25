@@ -693,6 +693,137 @@ func sortedMigrationKeys(files map[string]string) []string {
 	return keys
 }
 
+// TestNoEmbeddedMigrationCutsItsOwnProseInHalf holds the one convention every
+// migration file in this tree depends on and nothing enforced.
+//
+// splitSQLStatements splits the raw SQL on `;` WITHOUT stripping comments, so a
+// semicolon inside comment text ends the chunk there. What happens next depends
+// on what follows it ON THAT LINE, and only one of the two outcomes is a defect:
+//
+//   - nothing follows it. The chunk that ends is comment-only, both engines
+//     accept a comment-only statement, and the next chunk starts on the next
+//     line — which is either more comment or the real SQL. Three shipped files
+//     already do this at the end of a `-- Rollback: …;` line and are correct.
+//   - text follows it. The `--` that opened the comment went with the previous
+//     chunk, so the remainder of the sentence starts the next one as bare SQL,
+//     and the engine answers `near "…": syntax error` naming words the author
+//     wrote as English, on a migration that read fine in review.
+//
+// The second is one ordinary compound sentence away in every file, now that
+// every file opens with a long prose header, and until this sweep the rule
+// lived only in the closing paragraph of the files that happened to repeat it.
+//
+// The fix belongs in the runner or in the file, and this guard deliberately
+// takes the file's side: making the splitter comment-aware changes how every
+// migration that has already run on every installation is parsed, which is a
+// larger blast radius than the convention it would replace. It is also why the
+// guard is written to the narrow rule rather than to "no semicolon in prose" —
+// applied migrations are immutable, so a sweep that condemned the three
+// harmless ones could never be made to pass.
+func TestNoEmbeddedMigrationCutsItsOwnProseInHalf(t *testing.T) {
+	assertCommentSemicolonScannerAnswersBothWays(t)
+
+	filesRead := 0
+	for _, driver := range []Driver{DriverSQLite, DriverPostgres} {
+		migrations, err := loadEmbeddedMigrations(driver)
+		if err != nil {
+			t.Fatalf("load embedded %s migrations: %v", driver, err)
+		}
+		for _, migration := range migrations {
+			filesRead++
+			lines := commentSemicolonLines(migration.SQL)
+			if len(lines) == 0 {
+				continue
+			}
+			t.Errorf("migration %s/%s cuts a comment line in half on line(s) %v: the runner splits statements on every `;` without stripping comments, so the words after that semicolon start the next chunk as bare SQL and the engine reports a syntax error naming prose — rewrite the sentence without the semicolon, or end the line there", driver, migration.Name, lines)
+		}
+	}
+	if filesRead == 0 {
+		t.Fatal("read no embedded migration files at all — the loader is broken, not the migrations")
+	}
+}
+
+// assertCommentSemicolonScannerAnswersBothWays anchors the scanner on fixtures
+// this test owns, before either live tree is read. The set it judges is
+// expected to be clean forever, so an anchor taken from the live files would
+// stop measuring anything the moment the sweep started passing — which is
+// immediately.
+func assertCommentSemicolonScannerAnswersBothWays(t *testing.T) {
+	t.Helper()
+
+	for _, fixture := range []struct {
+		Name    string
+		SQL     string
+		Flagged []int
+	}{
+		{
+			Name:    "a compound sentence in a prose header is found",
+			SQL:     "-- Adds the column; and explains why.\n\nSELECT 1;\n",
+			Flagged: []int{1},
+		},
+		{
+			Name:    "ordinary prose is left alone",
+			SQL:     "-- Adds the column and explains why.\n\nSELECT 1;\n",
+			Flagged: []int{},
+		},
+		{
+			Name:    "a semicolon that ends a comment line is left alone",
+			SQL:     "-- Rollback: CREATE INDEX idx ON daily_logs(date);\n\nDROP INDEX idx;\n",
+			Flagged: []int{},
+		},
+		{
+			Name:    "a compound sentence in a trailing note is found",
+			SQL:     "SELECT 1; -- and a note; with more after it\n",
+			Flagged: []int{1},
+		},
+		{
+			Name:    "two dashes inside a string literal are not a comment",
+			SQL:     "UPDATE users SET email = '--a;b' WHERE id = 1;\n",
+			Flagged: []int{},
+		},
+	} {
+		got := commentSemicolonLines(fixture.SQL)
+		if len(got) == len(fixture.Flagged) && (len(got) == 0 || got[0] == fixture.Flagged[0]) {
+			continue
+		}
+		t.Fatalf("scanner anchor %q: commentSemicolonLines() = %v, want %v — the scanner no longer answers both ways, so the sweep below measures nothing", fixture.Name, got, fixture.Flagged)
+	}
+}
+
+// commentSemicolonLines returns the 1-based lines on which comment text carries
+// a `;` with more text after it on the same line — the form that turns the rest
+// of the sentence into the next chunk's opening SQL. A semicolon that ends the
+// line is not reported: it only closes the chunk early, and what closes is
+// comment-only.
+//
+// A `--` inside a single-quoted literal starts no comment, which is what keeps
+// a data-fixing migration from being reported for the contents of a string it
+// writes.
+func commentSemicolonLines(sqlText string) []int {
+	flagged := make([]int, 0)
+	for offset, line := range strings.Split(sqlText, "\n") {
+		inLiteral := false
+		for index := range len(line) {
+			if line[index] == '\'' {
+				inLiteral = !inLiteral
+				continue
+			}
+			if inLiteral || line[index] != '-' {
+				continue
+			}
+			if index+1 >= len(line) || line[index+1] != '-' {
+				continue
+			}
+			comment := line[index:]
+			if cut := strings.Index(comment, ";"); cut >= 0 && strings.TrimSpace(comment[cut+1:]) != "" {
+				flagged = append(flagged, offset+1)
+			}
+			break
+		}
+	}
+	return flagged
+}
+
 func countOIDCLogoutStatesWithNullUser(t *testing.T, database *gorm.DB) int64 {
 	t.Helper()
 
