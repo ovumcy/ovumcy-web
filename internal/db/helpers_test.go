@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,10 +113,17 @@ func TestClassifyUniqueConstraintError(t *testing.T) {
 		t.Fatalf("expected duplicated-key sentinel to become UniqueConstraintError, got %T %v", duplicated, duplicated)
 	}
 
-	sqliteStyle := errors.New("UNIQUE constraint failed: users.email")
-	sqliteClassified := classifyUniqueConstraintError(sqliteStyle, "fallback")
-	if !errors.As(sqliteClassified, &uniqueErr) || uniqueErr.Constraint != "users.email" {
-		t.Fatalf("expected sqlite-style error to extract users.email, got %T %v", sqliteClassified, sqliteClassified)
+	// What the postgres driver actually hands us: the sentinel wrapped around
+	// the pgconn error, never the bare sentinel (gorm.io/driver/postgres
+	// error_translator.go returns fmt.Errorf("%w: %w", …)). Classification must
+	// see through the wrap, because it is the only thing it looks at.
+	wrapped := fmt.Errorf(
+		"%w: ERROR: duplicate key value violates unique constraint \"idx_users_email\" (SQLSTATE 23505)",
+		gorm.ErrDuplicatedKey,
+	)
+	wrappedClassified := classifyUniqueConstraintError(wrapped, "users.email")
+	if !errors.As(wrappedClassified, &uniqueErr) || uniqueErr.Constraint != "users.email" {
+		t.Fatalf("expected wrapped duplicated-key error to become UniqueConstraintError, got %T %v", wrappedClassified, wrappedClassified)
 	}
 
 	rawErr := errors.New("other failure")
@@ -124,18 +132,50 @@ func TestClassifyUniqueConstraintError(t *testing.T) {
 	}
 }
 
+// TestClassifyUniqueConstraintErrorIgnoresDriverMessageText pins the deletion of
+// the driver-message fallback: classification is driven by gorm.ErrDuplicatedKey
+// alone — i.e. by TranslateError in newGORMConfig — and never by sniffing the
+// driver's wording. A message-only error carries no translated sentinel, so it
+// is not a unique-constraint violation as far as this layer is concerned and
+// passes through untouched.
+//
+// Sniffing a message was dialect-asymmetric and could never be right for both
+// drivers at once: "UNIQUE constraint failed:" is SQLite's wording, which
+// postgres does not emit, and the glebarez sqlite translator replaces the
+// driver error outright with the bare sentinel, so the wording never survives
+// to be matched anyway.
+func TestClassifyUniqueConstraintErrorIgnoresDriverMessageText(t *testing.T) {
+	t.Parallel()
+
+	driverWorded := errors.New("UNIQUE constraint failed: users.email")
+	classified := classifyUniqueConstraintError(driverWorded, "symptom_types.user_id_name")
+
+	var uniqueErr *UniqueConstraintError
+	if errors.As(classified, &uniqueErr) {
+		t.Fatalf("expected driver message text to be ignored, got UniqueConstraintError %q", uniqueErr.Constraint)
+	}
+	if !errors.Is(classified, driverWorded) {
+		t.Fatalf("expected untranslated driver error to pass through unchanged, got %T %v", classified, classified)
+	}
+}
+
 func TestClassifyCreateErrorsUseExpectedConstraints(t *testing.T) {
 	t.Parallel()
 
-	userErr := classifyUserCreateError(errors.New("UNIQUE constraint failed: users.email"))
+	userErr := classifyUserCreateError(gorm.ErrDuplicatedKey)
 	var uniqueErr *UniqueConstraintError
 	if !errors.As(userErr, &uniqueErr) || uniqueErr.Constraint != "users.email" {
 		t.Fatalf("expected user create error to classify users.email, got %T %v", userErr, userErr)
 	}
 
-	oidcErr := classifyOIDCIdentityCreateError(errors.New("UNIQUE constraint failed: oidc_identities.issuer_subject"))
+	oidcErr := classifyOIDCIdentityCreateError(gorm.ErrDuplicatedKey)
 	if !errors.As(oidcErr, &uniqueErr) || uniqueErr.Constraint != "oidc_identities.issuer_subject" {
 		t.Fatalf("expected oidc identity create error to classify issuer_subject, got %T %v", oidcErr, oidcErr)
+	}
+
+	symptomErr := classifySymptomWriteError(gorm.ErrDuplicatedKey)
+	if !errors.As(symptomErr, &uniqueErr) || uniqueErr.Constraint != "symptom_types.user_id_name" {
+		t.Fatalf("expected symptom write error to classify user_id_name, got %T %v", symptomErr, symptomErr)
 	}
 }
 
