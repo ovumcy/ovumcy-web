@@ -104,6 +104,18 @@ type sourceEvidence struct {
 	// list, and nothing else in the build reads both ends.
 	goFormatSites  []goFormatSite
 	goFormatBodies map[string]goFormatBody
+
+	// pendingTemplateTextSpans holds, for the file currently being parsed, the
+	// source regions the parser attributed to literal text rather than to a
+	// template action. templateLiteralCopySites is what the literal-copy
+	// barrier (locale_template_literal_copy_test.go) derives from them: those
+	// spans are the only part of a template no `t` call can ever have reached,
+	// so they are where untranslated copy hides. The counters beside them are
+	// the barrier's proof that its reader still reads.
+	pendingTemplateTextSpans      []templateTextSpan
+	templateLiteralCopySites      []templateLiteralCopySite
+	templateHumanReadableAttrs    int
+	templateMarkupElementsScanned int
 	// goKeyOriginLiterals holds the literals found at the call arguments a
 	// format contract points at when the site itself does not name its key,
 	// and goFunctionDeclarations counts declarations per name so two functions
@@ -614,6 +626,11 @@ func collectFromTemplateSource(path string, source string, evidence *sourceEvide
 			collectFromTemplateNode(associated.Root, origin, evidence)
 		}
 	}
+	// Runs after the whole file has been walked, because the literal-copy
+	// reader needs every text span of the file at once: it reads the source
+	// with the action spans masked out, and a span it has not been told about
+	// would read as an action.
+	recordTemplateLiteralCopy(origin, evidence)
 	evidence.templateFiles++
 	return nil
 }
@@ -661,6 +678,8 @@ func collectFromTemplateNode(node parse.Node, origin templateOrigin, evidence *s
 		}
 	case *parse.StringNode:
 		evidence.literals[typed.Text] = true
+	case *parse.TextNode:
+		recordTemplateTextSpan(typed, evidence)
 	case *parse.IfNode:
 		collectFromTemplateBranch(&typed.BranchNode, origin, evidence)
 	case *parse.RangeNode:
