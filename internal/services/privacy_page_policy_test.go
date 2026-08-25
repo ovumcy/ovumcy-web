@@ -49,6 +49,50 @@ func TestBuildPrivacyBackNavigationUsesCalendarBackLabelWhenRequested(t *testing
 	}
 }
 
+// TestBuildPrivacyBackNavigationLabelsEveryBackDestination table-drives the
+// breadcrumb label over all six arms of the mapping. Three of them — insights,
+// settings, and the generic "/" arm that splits on the session — were reached
+// by no test, so they could be deleted or reordered and the page would send an
+// owner back to their insights under a "Home" breadcrumb. The generic arm is
+// driven from both sides of isAuthenticated, since that is the only thing that
+// distinguishes its two answers.
+func TestBuildPrivacyBackNavigationLabelsEveryBackDestination(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		back            string
+		isAuthenticated bool
+		wantPath        string
+		wantLabelKey    string
+	}{
+		{name: "calendar", back: "/calendar", isAuthenticated: true, wantPath: "/calendar", wantLabelKey: "nav.calendar"},
+		{name: "stats", back: "/stats", isAuthenticated: true, wantPath: "/stats", wantLabelKey: "nav.insights"},
+		{name: "settings", back: "/settings", isAuthenticated: true, wantPath: "/settings", wantLabelKey: "nav.settings"},
+		{name: "dashboard", back: "/dashboard", isAuthenticated: true, wantPath: "/dashboard", wantLabelKey: "nav.dashboard"},
+		{name: "login", back: "/login", isAuthenticated: false, wantPath: "/login", wantLabelKey: "common.home"},
+		{name: "register", back: "/register", isAuthenticated: false, wantPath: "/register", wantLabelKey: "common.home"},
+		// Any other local path falls to the generic arm, which answers by
+		// session state rather than by destination.
+		{name: "other local path signed in", back: "/help", isAuthenticated: true, wantPath: "/help", wantLabelKey: "nav.dashboard"},
+		{name: "other local path signed out", back: "/help", isAuthenticated: false, wantPath: "/help", wantLabelKey: "common.home"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			navigation := BuildPrivacyBackNavigation(testCase.back, testCase.isAuthenticated)
+			if navigation.BackPath != testCase.wantPath {
+				t.Fatalf("BuildPrivacyBackNavigation(%q, %v).BackPath = %q, want %q", testCase.back, testCase.isAuthenticated, navigation.BackPath, testCase.wantPath)
+			}
+			if navigation.BreadcrumbBackLabelKey != testCase.wantLabelKey {
+				t.Fatalf("BuildPrivacyBackNavigation(%q, %v).BreadcrumbBackLabelKey = %q, want %q", testCase.back, testCase.isAuthenticated, navigation.BreadcrumbBackLabelKey, testCase.wantLabelKey)
+			}
+		})
+	}
+}
+
 // TestBuildPrivacyBackNavigationFiltersTheQueryOfTheBackPath pins the second
 // surface that echoes a caller-supplied query into the markup: the privacy
 // page's own back link. SanitizeRedirectPath accepts any local path, so without
