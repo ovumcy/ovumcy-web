@@ -54,9 +54,19 @@ interface DayPUTInterceptor {
  * this file breaks produces them by construction, so they are tolerated where
  * the breakage is armed rather than suppressed suite-wide — a save failing
  * anywhere else still fails its test.
+ *
+ * The refusal log names the URL, so the allowance is scoped to the very path
+ * the interception is breaking. Left as a bare `Response Status Error Code `
+ * prefix it would also swallow an htmx-reported failure from an unrelated
+ * endpoint during the same test — a real 500 elsewhere would merge green here,
+ * because these tests assert about the day form and nothing else. The
+ * connection-drop logs carry no URL and stay as they are; `route.abort` is the
+ * only thing in these tests that drops a connection.
  */
-const HTMX_REQUEST_FAILURE_LOG =
-  /^console\.error: (?:htmx:(?:sendError|afterRequest)|Response Status Error Code )/;
+const HTMX_CONNECTION_DROP_LOG = /^console\.error: htmx:(?:sendError|afterRequest)/;
+
+const htmxRefusalLogFor = (path: string): RegExp =>
+  new RegExp(`^console\\.error: Response Status Error Code \\d+ from ${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 
 /**
  * Routes the day-entry PUT for one date. The outcome is switchable so a single
@@ -69,8 +79,12 @@ async function interceptDayPUT(
   browserErrors: BrowserErrorWatcher
 ): Promise<DayPUTInterceptor> {
   browserErrors.allow(
-    HTMX_REQUEST_FAILURE_LOG,
-    `this test forces PUT /api/v1/days/${isoDate} to fail, and htmx logging the failure is the behaviour under test`
+    HTMX_CONNECTION_DROP_LOG,
+    `this test aborts PUT /api/v1/days/${isoDate}, and htmx logging the dropped connection is the behaviour under test`
+  );
+  browserErrors.allow(
+    htmxRefusalLogFor(`/api/v1/days/${isoDate}`),
+    `this test forces PUT /api/v1/days/${isoDate} to be refused, and htmx logging that refusal is the behaviour under test`
   );
 
   let outcome: SaveOutcome = 'server-error';
