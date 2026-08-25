@@ -16,9 +16,9 @@ import (
 // tests full control over write capture and error injection.
 //
 // Entries are keyed by the canonical UTC-midnight calendar date of the stored
-// Date value. Writes emulate models.DailyLog.BeforeSave (re-anchor the value's
-// own y/m/d to UTC-midnight), which is the on-disk convention DayRange queries
-// against. This keeps the stub coherent under non-UTC request locations.
+// Date value, and writes canonicalize it through canonicalStoredDayDate
+// (day_service_workflow_test.go), the package's single mirror of
+// models.DailyLog.BeforeSave.
 type mr3dayLogStub struct {
 	entries map[string]models.DailyLog
 	nextID  uint
@@ -39,18 +39,8 @@ func newMr3dayLogStub() *mr3dayLogStub {
 	}
 }
 
-// mr3canonicalDate mirrors models.DailyLog.BeforeSave: take the calendar
-// components of value in its own location and re-anchor them to UTC-midnight.
-func mr3canonicalDate(value time.Time) time.Time {
-	if value.IsZero() {
-		return value
-	}
-	y, m, d := value.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-}
-
 func mr3dayKey(value time.Time) string {
-	return mr3canonicalDate(value).Format("2006-01-02")
+	return canonicalStoredDayDate(value).Format("2006-01-02")
 }
 
 func (s *mr3dayLogStub) ListByUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
@@ -114,7 +104,7 @@ func (s *mr3dayLogStub) Create(ctx context.Context, entry *models.DailyLog) erro
 		entry.ID = s.nextID
 		s.nextID++
 	}
-	entry.Date = mr3canonicalDate(entry.Date)
+	entry.Date = canonicalStoredDayDate(entry.Date)
 	s.entries[mr3dayKey(entry.Date)] = *entry
 	return nil
 }
@@ -132,7 +122,7 @@ func (s *mr3dayLogStub) Save(ctx context.Context, entry *models.DailyLog) error 
 	if s.failSaveWhenCycleStart != nil && entry.CycleStart {
 		return s.failSaveWhenCycleStart
 	}
-	entry.Date = mr3canonicalDate(entry.Date)
+	entry.Date = canonicalStoredDayDate(entry.Date)
 	key := mr3dayKey(entry.Date)
 	prev, existed := s.entries[key]
 	if existed && prev.IsPeriod && !entry.IsPeriod {

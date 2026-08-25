@@ -42,8 +42,25 @@ func newDayLogRepositoryStub() *dayLogRepositoryStub {
 	}
 }
 
+// canonicalStoredDayDate mirrors models.DailyLog.BeforeSave: take the calendar
+// components of a value in its own location and re-anchor them to UTC-midnight.
+// That is the only shape a daily_logs row ever has on disk (migration 019 +
+// BeforeSave), and it is the shape DayRange queries against, so every day-log
+// stub in this package canonicalizes on write. A stub that stores the caller's
+// zone instead is coherent only while the request location happens to be UTC:
+// under any offset zone its rows sit hours away from the bounds the service
+// asks for, and the tests written against it agree with a database that cannot
+// exist.
+func canonicalStoredDayDate(value time.Time) time.Time {
+	if value.IsZero() {
+		return value
+	}
+	year, month, day := value.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+}
+
 func (stub *dayLogRepositoryStub) dayKey(value time.Time) string {
-	return value.Format("2006-01-02")
+	return canonicalStoredDayDate(value).Format("2006-01-02")
 }
 
 func (stub *dayLogRepositoryStub) ListByUser(ctx context.Context, userID uint) ([]models.DailyLog, error) {
@@ -131,6 +148,7 @@ func (stub *dayLogRepositoryStub) Create(ctx context.Context, entry *models.Dail
 		entry.ID = stub.nextID
 		stub.nextID++
 	}
+	entry.Date = canonicalStoredDayDate(entry.Date)
 	stub.entries[key] = *entry
 	return nil
 }
@@ -152,6 +170,7 @@ func (stub *dayLogRepositoryStub) Save(ctx context.Context, entry *models.DailyL
 			return err
 		}
 	}
+	entry.Date = canonicalStoredDayDate(entry.Date)
 	stub.entries[key] = *entry
 	return nil
 }
@@ -226,6 +245,40 @@ func (stub *dayUserRepositoryStub) UpdateByID(ctx context.Context, userID uint, 
 		}
 	}
 	return nil
+}
+
+// TestUpsertDayEntryWithAutoFillReReadsItsOwnWriteFromAnOffsetZone drives one
+// save and one read of the same calendar day under a request zone east of UTC.
+// It is the case the shared stub was silently unable to represent: it stored
+// the caller's local midnight, which is the previous day in UTC, while the
+// service asks for the [UTC-midnight, +24h) bounds a real row occupies — so the
+// day the owner had just saved read back as empty. Every other workflow test
+// passes time.UTC, where the two shapes coincide and the difference is
+// invisible.
+func TestUpsertDayEntryWithAutoFillReReadsItsOwnWriteFromAnOffsetZone(t *testing.T) {
+	logs := newDayLogRepositoryStub()
+	service := NewDayService(logs, &dayUserRepositoryStub{})
+
+	// East of UTC, so local midnight lands on the previous UTC day.
+	zone := time.FixedZone("test+03", 3*60*60)
+	day := time.Date(2026, time.March, 10, 9, 30, 0, 0, zone)
+
+	saved, err := service.UpsertDayEntryWithAutoFill(context.Background(), 10, day,
+		DayEntryInput{Flow: models.FlowNone, Notes: "saved from +03"}, zone)
+	if err != nil {
+		t.Fatalf("UpsertDayEntryWithAutoFill() unexpected error: %v", err)
+	}
+	if want := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC); !saved.Date.Equal(want) {
+		t.Fatalf("expected the stored day to be anchored at %s, got %s", want, saved.Date)
+	}
+
+	entry, err := service.FetchLogByDate(context.Background(), 10, day, zone)
+	if err != nil {
+		t.Fatalf("FetchLogByDate() unexpected error: %v", err)
+	}
+	if entry.Notes != "saved from +03" {
+		t.Fatalf("expected the day just saved to read back, got notes %q", entry.Notes)
+	}
 }
 
 func TestUpsertDayEntryWithAutoFillNormalizesNonPeriodInput(t *testing.T) {
