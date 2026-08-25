@@ -327,7 +327,10 @@ Operator-relevant summary (the full, test-backed claim list lives in
   hardened: a 10-second hard timeout, no connection keep-alive/pooling, zero
   redirects, a capped response read, and `http`/`https` schemes only.
 - **Optional hardening.** Set `WEBHOOK_BLOCK_PRIVATE_ADDRESSES=true` (default:
-  `false`) to refuse delivery to loopback/private/link-local targets. Leave it
+  `false`) to refuse delivery to loopback/private/link-local targets, and to any
+  other address the IANA special-purpose registries record as not globally
+  reachable (benchmarking, documentation, reserved and multicast space among
+  them). Leave it
   unset/`false` for the common self-hosted-on-LAN case (a webhook URL like
   `http://ntfy.local` or `http://192.168.1.20:8080/...`). Turn it on only if
   your threat model specifically requires blocking private-network egress from

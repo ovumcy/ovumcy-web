@@ -23,9 +23,10 @@ import (
 //
 // Envelope hardening (all mandatory, none configurable away):
 //
-//   - Hard total timeout via context.WithTimeout plus a matching dialer timeout
-//     and client Timeout, so a slow or hung endpoint cannot stall the notify
-//     pass.
+//   - Hard total timeout via context.WithTimeout plus a matching client Timeout,
+//     so a slow or hung endpoint cannot stall the notify pass; underneath it each
+//     phase — dial, TLS handshake, response headers — carries its own smaller
+//     budget so none can eat the whole of it.
 //   - DisableKeepAlives: each delivery is a one-shot connection; we never pool to
 //     an owner-controlled host.
 //   - ZERO redirects: CheckRedirect always returns an error, so a 3xx response
@@ -56,9 +57,9 @@ const (
 	// default. A webhook acknowledgement needs a status line and a handful of
 	// headers; 16 KiB is generous for that and still bounded.
 	webhookResponseHeaderLimit = 16 * 1024
-	// webhookPhaseTimeout bounds the TLS handshake and the wait for response
-	// headers individually. The total client budget still applies on top; this
-	// stops one phase from spending all of it.
+	// webhookPhaseTimeout bounds the dial (DNS + TCP connect), the TLS handshake
+	// and the wait for response headers individually. The total client budget still
+	// applies on top; this stops one phase from spending all of it.
 	webhookPhaseTimeout = 5 * time.Second
 	// webhookUserAgent identifies our POSTs without revealing anything sensitive.
 	webhookUserAgent = "ovumcy-webhook/1"
@@ -160,7 +161,12 @@ func newWebhookDelivererWithResolver(blockPrivateAddresses bool, resolver ipReso
 // blockPrivateAddresses is on is the resolve-and-check DialContext installed; the
 // default (gate-off) path keeps the plain stock dialer, byte-for-byte unchanged.
 func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http.Client {
-	baseDialer := &net.Dialer{Timeout: webhookDeliveryTimeout}
+	// The dial (DNS + TCP connect) is a phase like the two below, not the whole
+	// budget: at webhookDeliveryTimeout a single hung connect consumed all 10s and
+	// left the handshake and the header wait nothing, which is exactly what the
+	// per-phase comment further down claims cannot happen. The total stays bounded
+	// by the client Timeout and the request context regardless.
+	baseDialer := &net.Dialer{Timeout: webhookPhaseTimeout}
 	dialContext := baseDialer.DialContext
 	if blockPrivateAddresses {
 		dialContext = guardedDialContext(baseDialer.DialContext, resolver)
@@ -177,7 +183,8 @@ func newWebhookHTTPClient(blockPrivateAddresses bool, resolver ipResolver) *http
 			MaxResponseHeaderBytes: webhookResponseHeaderLimit,
 			// The client Timeout already covers handshake and headers as part of the
 			// total budget. These bound each phase on its own, so one slow phase
-			// cannot consume the whole budget and starve the rest.
+			// cannot consume the whole budget and starve the rest — the dial phase
+			// that runs before them is bounded by the same value on baseDialer above.
 			TLSHandshakeTimeout:   webhookPhaseTimeout,
 			ResponseHeaderTimeout: webhookPhaseTimeout,
 		},
@@ -379,6 +386,57 @@ var thisNetworkNet = mustParseWebhookCIDR("0.0.0.0/8")
 // both simpler and stricter than decoding six layouts.
 var nat64LocalUseNet = mustParseWebhookCIDR("64:ff9b:1::/48")
 
+// specialPurposeNets are the IANA special-purpose prefixes that are NOT globally
+// reachable and that none of the named rules above already covers. The gate used
+// to know only the ranges someone had reported, so the ones nobody had named were
+// delivered to as if they were the public internet — RFC 2544 benchmarking space
+// and the reserved 240.0.0.0/4 route on real networks, and 192.0.0.0/24 carries
+// live protocol machinery. Each is terminal: the whole prefix is refused, no
+// unwrapping, because no owner endpoint can legitimately live inside one.
+//
+//   - 192.0.0.0/24 IETF protocol assignments (RFC 6890), which contains DS-Lite
+//     192.0.0.0/29, the RFC 7600 dummy address and the NAT64/DNS64 discovery
+//     pair. The two globally reachable anycast addresses inside it (192.0.0.9
+//     PCP, 192.0.0.10 TURN) are refused with the rest rather than carved out: an
+//     egress gate errs toward refusal, and no webhook endpoint lives on an
+//     address reserved for a UDP protocol's anycast rendezvous.
+//   - 192.88.99.0/24, the 6to4 relay anycast prefix deprecated by RFC 7526 — the
+//     IPv4 side of the 2002::/16 form the classifier already decodes.
+//   - 198.18.0.0/15 benchmarking (RFC 2544): lab and vendor networks answer here.
+//   - 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24 documentation (RFC 5737) and
+//     2001:db8::/32, 3fff::/20 (RFC 3849, RFC 9637). Reserved so they never
+//     appear on the public internet, which is precisely why a host that answers
+//     one is inside somebody's network.
+//   - 240.0.0.0/4 reserved (RFC 1112), which also contains the limited broadcast
+//     address 255.255.255.255.
+//   - 100::/64 discard-only (RFC 6666), 2001:2::/48 benchmarking (RFC 5180),
+//     2001:20::/28 ORCHIDv2 (RFC 7343), 2001:30::/28 drone remote ID (RFC 9374),
+//     and 5f00::/16 SRv6 SIDs (RFC 9602) — the last is by construction internal
+//     to one routing domain.
+//
+// Deliberately NOT here: the special-purpose prefixes the registry marks
+// globally reachable, which must keep resolving as public — AS112
+// (192.31.196.0/24, 192.175.48.0/24, 2001:4:112::/48), AMT (192.52.193.0/24,
+// 2001:3::/32) and the 2001:1::1-3 anycast trio. The registry walk in
+// TestIsPrivateIPWalksTheSpecialPurposeRegistries pins both sides, so a later
+// widening that swallows one of those fails there.
+var specialPurposeNets = []*net.IPNet{
+	mustParseWebhookCIDR("192.0.0.0/24"),
+	mustParseWebhookCIDR("192.0.2.0/24"),
+	mustParseWebhookCIDR("192.88.99.0/24"),
+	mustParseWebhookCIDR("198.18.0.0/15"),
+	mustParseWebhookCIDR("198.51.100.0/24"),
+	mustParseWebhookCIDR("203.0.113.0/24"),
+	mustParseWebhookCIDR("240.0.0.0/4"),
+	mustParseWebhookCIDR("100::/64"),
+	mustParseWebhookCIDR("2001:2::/48"),
+	mustParseWebhookCIDR("2001:20::/28"),
+	mustParseWebhookCIDR("2001:30::/28"),
+	mustParseWebhookCIDR("2001:db8::/32"),
+	mustParseWebhookCIDR("3fff::/20"),
+	mustParseWebhookCIDR("5f00::/16"),
+}
+
 // The IPv6 transition prefixes whose addresses EMBED an IPv4 destination. On a
 // network that routes the form, the packet reaches the embedded IPv4 — so the
 // embedded address, not the IPv6 wrapper, decides internal reachability, exactly as
@@ -448,11 +506,14 @@ func embeddedIPv4s(ip net.IP) []net.IP {
 
 // isPrivateIP is the core address classifier shared by the literal pre-check and
 // the guarded dialer. Private means: loopback, RFC1918/ULA private, link-local
-// (unicast and multicast), the unspecified address, RFC 6598 CGNAT space
-// (100.64.0.0/10, which net.IP.IsPrivate() omits), RFC 1122 "this network"
-// (0.0.0.0/8), deprecated IPv6 site-local (fec0::/10), the RFC 8215 local-use NAT64
-// block, and any IPv6 transition form (embeddedIPv4s) wrapping an IPv4 that is
-// itself private.
+// unicast, multicast (all of it, not only the link-local scope: an interface- or
+// site-local group is inside the operator's network by definition), the
+// unspecified address, RFC 6598 CGNAT space (100.64.0.0/10, which
+// net.IP.IsPrivate() omits), RFC 1122 "this network" (0.0.0.0/8), deprecated IPv6
+// site-local (fec0::/10), the RFC 8215 local-use NAT64 block, every remaining IANA
+// special-purpose prefix that is not globally reachable (specialPurposeNets), and
+// any IPv6 transition form (embeddedIPv4s) wrapping an IPv4 that is itself
+// private.
 //
 // The terminal classifications run FIRST and unwrapping only afterwards, because
 // :: and ::1 sit inside the IPv4-compatible prefix ::/96: an unwrap-first
@@ -466,10 +527,10 @@ func embeddedIPv4s(ip net.IP) []net.IP {
 // that /8 rule is ever narrowed. Keep both; neither alone is the guarantee.
 func isPrivateIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsLinkLocalUnicast() || ip.IsMulticast() ||
 		ip.IsUnspecified() || cgnatNet.Contains(ip) ||
 		thisNetworkNet.Contains(ip) || siteLocalNet.Contains(ip) ||
-		nat64LocalUseNet.Contains(ip) {
+		nat64LocalUseNet.Contains(ip) || isSpecialPurposeAddress(ip) {
 		return true
 	}
 	// A wrapper around a PRIVATE v4 (64:ff9b::a00:1 or 2002:a00:1:: → 10.0.0.1) is
@@ -478,6 +539,19 @@ func isPrivateIP(ip net.IP) bool {
 	// v4, which embeds nothing further, so this recurses exactly once.
 	for _, embedded := range embeddedIPv4s(ip) {
 		if isPrivateIP(embedded) {
+			return true
+		}
+	}
+	return false
+}
+
+// isSpecialPurposeAddress reports whether ip sits in one of the non-globally-
+// reachable IANA special-purpose prefixes (specialPurposeNets). Kept as a loop
+// over a table rather than another chain of named vars: the registry is a list
+// that grows, and a new entry should be one line beside its neighbours.
+func isSpecialPurposeAddress(ip net.IP) bool {
+	for _, network := range specialPurposeNets {
+		if network.Contains(ip) {
 			return true
 		}
 	}
