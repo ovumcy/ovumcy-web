@@ -105,8 +105,13 @@ test("the shipped theme control is the settings-interface hook", () => {
     panel.includes(LIVE_HOOK),
     "the settings-interface panel must render the live theme hook",
   );
+  // Match the bare attribute name. `data-settings-interface-theme-option` does
+  // not contain `data-theme-option` as a substring, so no delimiter is needed
+  // to tell them apart — and any delimiter added for that purpose (a quote, a
+  // space) is one the rendered attribute never carries, which would make this
+  // assertion pass on exactly the markup it exists to reject.
   assert.ok(
-    !panel.includes(`"${RETIRED_HOOK}`),
+    !panel.includes(RETIRED_HOOK),
     "the settings-interface panel must not resurrect the retired theme hook",
   );
 });
