@@ -51,6 +51,9 @@
 // this package never starts the application, it writes the volume and reads it
 // back itself — and the operator-side checklist in Post-Restore Verification,
 // which is performed against a running instance and cannot be seen from here.
+// Its ONE property that can be seen from here is checked:
+// TestPostRestoreVerificationPointsAtTheCalendarFeedNote holds the checklist to
+// the cross-reference an operator needs and nothing else enforces.
 package backuprestoredoc
 
 import (
@@ -70,6 +73,16 @@ const (
 	// the page.
 	runbookPath     = "docs/self-hosted.md"
 	postgresSection = "## Backup and Restore Contract"
+
+	// postRestoreSection is the checklist an operator works through after a
+	// restore, and the two constants under it are the ends of the one
+	// cross-reference it has to carry. The link itself is DERIVED from the
+	// heading rather than written out a second time, so a heading that is
+	// reworded takes the expected anchor with it instead of leaving a link that
+	// still matches a section that no longer exists.
+	postRestoreSection      = "## Post-Restore Verification"
+	calendarFeedNoteDoc     = "docs/gdpr.md"
+	calendarFeedNoteHeading = "## Backup Restore and the Calendar Feed"
 
 	// composeExecPrefix is how the runbook reaches the database: the bundled
 	// compose stack's postgres service, without a TTY. It is the ONE part of a
@@ -298,6 +311,35 @@ func TestChangeDetectionRunsTheGoLanesForARunbookOnlyDiff(t *testing.T) {
 		if !strings.Contains(string(workflow), required.fragment) {
 			t.Errorf(".github/workflows/ci.yml no longer carries %q: %s, and this guard would not run on a change to %s", required.fragment, required.why, runbookPath)
 		}
+	}
+}
+
+// TestPostRestoreVerificationPointsAtTheCalendarFeedNote holds the restore
+// checklist to the one consequence of a restore that is invisible from inside
+// it: the calendar-feed columns come back with everything else, so a
+// subscription an owner revoked or rotated AFTER the backup was taken is armed
+// again at its old subscribe URL. docs/gdpr.md records that — confirmed in a
+// live restore drill — and an operator who follows this runbook alone never
+// opens that page, which is why the checklist has to carry the pointer itself.
+//
+// Both ends of the link are checked, because either one rotting leaves the same
+// operator uninformed: the pointer has to be in the section being read, and the
+// section it points at has to still exist under the anchor it resolves to.
+func TestPostRestoreVerificationPointsAtTheCalendarFeedNote(t *testing.T) {
+	anchor := strings.ToLower(strings.ReplaceAll(strings.TrimPrefix(calendarFeedNoteHeading, "## "), " ", "-"))
+	link := strings.TrimPrefix(calendarFeedNoteDoc, "docs/") + "#" + anchor
+
+	checklist := runbookSectionText(t, postRestoreSection)
+	if !strings.Contains(checklist, link) {
+		t.Errorf("%s: section %q does not link %q — an operator following only the runbook is never told that a revoked or rotated calendar feed comes back with the restored data", runbookPath, postRestoreSection, link)
+	}
+
+	content, err := os.ReadFile(filepath.Join(repoRoot(t), filepath.FromSlash(calendarFeedNoteDoc)))
+	if err != nil {
+		t.Fatalf("read %s: %v", calendarFeedNoteDoc, err)
+	}
+	if !strings.Contains(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n"+calendarFeedNoteHeading+"\n") {
+		t.Errorf("%s: heading %q is gone, so the runbook's cross-reference resolves to nothing", calendarFeedNoteDoc, calendarFeedNoteHeading)
 	}
 }
 
