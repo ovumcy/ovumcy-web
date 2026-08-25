@@ -4,8 +4,10 @@
 // due reminders, delivering, and writing each per-reminder watermark — is
 // unchanged and remains the authoritative idempotency guard. This package adds
 // ONLY the trigger: when to call the pass, a once-per-local-day "ran today"
-// marker for restart safety and current-day catch-up, panic isolation so a bad
-// pass cannot crash the web process, and a bounded drain on shutdown.
+// marker for restart safety and current-day catch-up, a bounded retry when a
+// pass fails outright (so a transient failure costs minutes, not the whole
+// day), panic isolation so a bad pass cannot crash the web process, and a
+// bounded drain on shutdown.
 //
 // Why here and not in cmd/ovumcy: keeping the schedule math (nextRun),
 // catch-up, marker handling, and drain in an internal package makes them fully
@@ -38,6 +40,21 @@ import (
 // dates (not instants) is what makes "already ran today" independent of the
 // wall-clock time within the day.
 const dateLayout = "2006-01-02"
+
+// maxPassAttempts bounds how many times ONE scheduled slot may attempt the
+// notify pass before it gives up for the day. A pass-level error aborts the pass
+// before any owner is processed (the owner listing is what fails), so the whole
+// day's reminders are still unsent and only another attempt can save them. The
+// budget is what preserves the anti-busy-loop property the day marker used to
+// provide on its own: a permanently broken database costs a bounded number of
+// attempts per slot, never an unbounded spin.
+const maxPassAttempts = 3
+
+// passRetryDelay is the wait between two attempts inside one slot. Long enough
+// that a transient outage (a database restart, a lock storm) has plausibly
+// passed by the next attempt, short enough that the whole budget is spent well
+// inside the local day the slot belongs to.
+const passRetryDelay = 5 * time.Minute
 
 // PassRunner is the single behavior the scheduler needs from the notify service:
 // run one pass. It is satisfied by *services.WebhookNotifyService.RunOnce, kept
@@ -129,7 +146,8 @@ func New(runner PassRunner, marker MarkerStore, config Config) *Scheduler {
 //     (covers "the process was down when the scheduled hour passed"). A marker
 //     equal to today means a same-day restart — skip, do not re-fire.
 //  2. Loop: arm a timer to the next instant whose local hour == Hour, wait for
-//     it (or ctx), run one pass, mark today, and recompute the next instant.
+//     it (or ctx), run one pass (with the bounded in-slot retry runScheduledPass
+//     describes), mark today, and recompute the next instant.
 //     Recomputing each cycle (rather than a fixed 24h ticker) keeps the fire
 //     pinned to the wall-clock hour across DST transitions.
 //
@@ -160,7 +178,8 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 // runCatchUp performs the current-day catch-up described on Run. It runs at most
-// one pass and only for TODAY — it never backfills historical missed days.
+// one slot — one pass plus that slot's bounded retries — and only for TODAY: it
+// never backfills historical missed days.
 func (s *Scheduler) runCatchUp(ctx context.Context) {
 	now := s.now()
 	today := now.In(s.config.Location).Format(dateLayout)
@@ -185,43 +204,97 @@ func (s *Scheduler) runCatchUp(ctx context.Context) {
 	s.runScheduledPass(ctx)
 }
 
-// runScheduledPass runs exactly one notify pass with panic isolation, then marks
-// today ON SUCCESS ONLY. A panic is recovered so the scheduler survives; the day
-// is NOT marked on panic so the next fire retries (and #124's per-reminder
-// watermark still prevents any double-send). now is resolved once so the pass
-// clock and the marked date agree.
+// runScheduledPass runs the notify pass for one scheduled slot, with panic
+// isolation, and marks today ON SUCCESS or once the retry budget is spent.
+//
+// A pass-level error is NOT a completed day: the only error RunOnce raises at
+// pass level is the owner listing failing, which returns before a single owner
+// is processed, so zero reminders went out. Marking the day on it recorded an
+// attempt as a success — the local day was then closed for good, and a same-day
+// restart hit the marker-equals-today early return and made no call at all.
+// Instead the marker is left alone and the pass is retried after
+// passRetryDelay, up to maxPassAttempts attempts in this slot. Marking the day
+// after the LAST failed attempt is what keeps the original anti-busy-loop
+// property: a broken database costs a bounded number of attempts, then the
+// scheduler waits for the next scheduled fire rather than spinning. #124's
+// per-reminder watermark remains the authoritative idempotency guard, so an
+// attempt that overlaps a partially delivered earlier one still sends nothing
+// twice.
+//
+// A panic is a different failure class and keeps its own semantics: recovered so
+// the scheduler survives, day NOT marked so the next fire retries, and it does
+// not spend the error budget — an attempt is only worth repeating immediately
+// when the failure is the transient shape a returned error describes.
+//
+// now is resolved once per attempt so each attempt's pass clock and the date it
+// would mark agree.
 func (s *Scheduler) runScheduledPass(ctx context.Context) {
-	now := s.now()
-	if !s.runPassRecovered(ctx, now) {
-		// Panicked: leave the marker untouched so a retry is allowed.
-		return
+	for attempt := 1; ; attempt++ {
+		now := s.now()
+		completed, err := s.runPassRecovered(ctx, now)
+		if !completed {
+			// Panicked: leave the marker untouched so the next fire retries.
+			return
+		}
+		if err == nil {
+			s.markRan(ctx, now)
+			return
+		}
+		// The error itself is logged by reason only; RunOnce already logged the
+		// per-owner detail and never surfaces reminder contents.
+		if attempt >= maxPassAttempts {
+			log.Printf("reminder scheduler: notify pass failed %d times (see prior notify logs), marking today and giving up until the next scheduled run", attempt)
+			s.markRan(ctx, now)
+			return
+		}
+		log.Printf("reminder scheduler: notify pass returned an error (see prior notify logs), attempt %d of %d, retrying in %s", attempt, maxPassAttempts, passRetryDelay)
+		if !s.waitBeforeRetry(ctx) {
+			// Shutting down mid-backoff: leave the marker untouched so the next
+			// start's catch-up re-runs today's pass.
+			return
+		}
 	}
-	s.markRan(ctx, now)
+}
+
+// waitBeforeRetry waits passRetryDelay before the next attempt in this slot,
+// through the same injected timer seam the main loop uses, and reports whether
+// the retry may proceed. It returns false when the signal context is cancelled
+// during (or in the same round as) the backoff, so a shutdown never starts a
+// pass the caller is trying to drain.
+func (s *Scheduler) waitBeforeRetry(ctx context.Context) bool {
+	timer := s.newTimer(passRetryDelay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C():
+	}
+	// The same re-check the main loop makes after its own fire, for the same
+	// reason: a backoff elapsing in the round that cancels must not start a pass.
+	return ctx.Err() == nil
 }
 
 // runPassRecovered calls RunOnce inside a recover() so a panic in the batch pass
 // (or anything it calls) is contained to this goroutine instead of crashing the
 // process — fiber's recover middleware only covers request handlers. It returns
-// true when the pass completed without panicking (a returned error is a normal,
-// logged pass outcome, not a panic). The recovery logs only a stable reason and
-// a scrubbed stack — NEVER per-owner reminder contents (RunOnce itself never
-// surfaces them).
-func (s *Scheduler) runPassRecovered(ctx context.Context, now time.Time) (completed bool) {
+// completed=true when the pass ran to completion without panicking, together
+// with whatever error the pass itself returned: a pass-level error is an
+// expected-transient outcome, and what to do about it (retry, then give up for
+// the day) is the caller's decision, not this function's. The recovery logs only
+// a stable reason and a scrubbed stack — NEVER per-owner reminder contents
+// (RunOnce itself never surfaces them).
+func (s *Scheduler) runPassRecovered(ctx context.Context, now time.Time) (completed bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			completed = false
+			err = nil
 			log.Printf("reminder scheduler: notify pass panicked, recovered and continuing; stack:\n%s", debug.Stack())
 		}
 	}()
 
-	if _, err := s.runner.RunOnce(ctx, now, s.config.Location, false); err != nil {
-		// A pass-level error (e.g. listing owners failed) is expected-transient and
-		// safe to log by reason; RunOnce already contains per-owner failures. We
-		// still mark today so a broken DB does not busy-loop the scheduler — the
-		// watermark guarantees no double-send if it recovers before the next day.
-		log.Printf("reminder scheduler: notify pass returned an error (see prior notify logs)")
-	}
-	return true
+	_, err = s.runner.RunOnce(ctx, now, s.config.Location, false)
+	return true, err
 }
 
 // markRan records today's local date as the last successful run. A write failure

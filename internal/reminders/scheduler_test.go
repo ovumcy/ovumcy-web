@@ -15,10 +15,14 @@ import (
 // told to panic on the Nth call, and signals every call on a channel so a test
 // can block until a pass has actually run without sleeping.
 type fakeRunner struct {
-	mu         sync.Mutex
-	calls      int
-	panicOn    int // 1-based call index to panic on; 0 = never
-	returnErr  error
+	mu        sync.Mutex
+	calls     int
+	panicOn   int // 1-based call index to panic on; 0 = never
+	returnErr error
+	// errCalls limits returnErr to the FIRST n calls, so a test can make a pass
+	// fail and then recover on a retry. 0 (the zero value) means returnErr is
+	// returned by every call — a permanently broken pass.
+	errCalls   int
 	called     chan struct{}
 	perCallNow []time.Time
 }
@@ -33,6 +37,9 @@ func (r *fakeRunner) RunOnce(_ context.Context, now time.Time, _ *time.Location,
 	current := r.calls
 	shouldPanic := r.panicOn == current
 	err := r.returnErr
+	if r.errCalls > 0 && current > r.errCalls {
+		err = nil
+	}
 	r.perCallNow = append(r.perCallNow, now)
 	r.mu.Unlock()
 
@@ -593,5 +600,250 @@ func TestMarkerWriteFailureIsLoggedNotFatal(t *testing.T) {
 	// we exercised the error branch rather than a silent success.
 	if _, ok := marker.get(markerKey + "::written"); ok {
 		t.Fatal("unexpected sentinel")
+	}
+}
+
+// retryTimerCeiling separates the two kinds of timer the scheduler arms from its
+// single newTimer seam. The next-run timer is always the hours from now to the
+// next local run hour (every fixture below sits at least three hours from its
+// run hour); the in-slot retry timer is passRetryDelay, minutes. Anything at or
+// below this ceiling is therefore a retry timer, which lets one factory drive
+// retries deterministically without a wall-clock wait.
+const retryTimerCeiling = time.Hour
+
+// slotTimerFactory is a schedulerTimer factory that tells the two timers apart by
+// their duration (see retryTimerCeiling). Retry timers fire IMMEDIATELY when
+// fireRetries is set — that is how a retry test runs in microseconds instead of
+// passRetryDelay — and stay parked otherwise, which is the "shutdown arrives
+// mid-backoff" case. Next-run timers never fire, so every pass a test observes is
+// one it drove itself. Each armed duration is recorded and announced on armed.
+type slotTimerFactory struct {
+	fireRetries bool
+
+	mu        sync.Mutex
+	durations []time.Duration
+	armed     chan time.Duration
+}
+
+func newSlotTimerFactory(fireRetries bool) *slotTimerFactory {
+	return &slotTimerFactory{fireRetries: fireRetries, armed: make(chan time.Duration, 16)}
+}
+
+func (f *slotTimerFactory) newTimer(d time.Duration) schedulerTimer {
+	f.mu.Lock()
+	f.durations = append(f.durations, d)
+	f.mu.Unlock()
+
+	ch := make(chan time.Time, 1)
+	if d <= retryTimerCeiling && f.fireRetries {
+		ch <- time.Now()
+	}
+	select {
+	case f.armed <- d:
+	default:
+	}
+	return fakeTimer{ch: ch}
+}
+
+// retryDelays returns every armed duration the ceiling classifies as a retry
+// backoff, in arming order.
+func (f *slotTimerFactory) retryDelays() []time.Duration {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []time.Duration
+	for _, d := range f.durations {
+		if d <= retryTimerCeiling {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// waitForRetryTimer blocks until the factory has armed a timer the ceiling
+// classifies as a retry backoff, or the deadline elapses.
+func (f *slotTimerFactory) waitForRetryTimer(t *testing.T, within time.Duration) {
+	t.Helper()
+	deadline := time.After(within)
+	for {
+		select {
+		case d := <-f.armed:
+			if d <= retryTimerCeiling {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for the scheduler to arm a retry timer; armed so far: %v", f.durations)
+		}
+	}
+}
+
+// TestPassErrorRetriesInTheSameSlotAndMarksOnlyOnceItSucceeds is the core guard
+// for the record's claim: a pass-level error (the owner listing failed, so ZERO
+// reminders went out) must not be recorded as today's completed run. The first
+// attempt errors, the in-slot retry succeeds, and only that success advances the
+// marker — exactly one marker write for the day.
+func TestPassErrorRetriesInTheSameSlotAndMarksOnlyOnceItSucceeds(t *testing.T) {
+	utc := time.UTC
+	today := time.Date(2026, 7, 6, 12, 0, 0, 0, utc) // H=9, so catch-up fires
+	runner := newFakeRunner()
+	runner.returnErr = errors.New("listing owners failed")
+	runner.errCalls = 1 // only the first attempt fails; the retry succeeds
+	marker := newFakeMarker()
+	marker.values[markerKey] = "2026-07-05" // yesterday
+
+	timers := newSlotTimerFactory(true)
+	scheduler := newTestScheduler(runner, marker, 9, utc, func() time.Time { return today }, timers.newTimer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := scheduler.Start(ctx)
+
+	waitForCalls(t, runner, 2, 2*time.Second)
+	cancel()
+	<-done
+
+	if got := runner.callCount(); got != 2 {
+		t.Fatalf("expected the failed pass to be retried once inside its slot (2 attempts), got %d", got)
+	}
+	if v, ok := marker.get(markerKey); !ok || v != "2026-07-06" {
+		t.Fatalf("expected the successful retry to mark today 2026-07-06, got %q ok=%v", v, ok)
+	}
+	if marker.setCalls != 1 {
+		t.Fatalf("expected exactly one marker write, made by the retry that actually succeeded, got %d", marker.setCalls)
+	}
+}
+
+// TestRestartBeforeTheRetryStillCatchesUpToday is the record's second half: a
+// process that dies between a failed attempt and its retry must not have left
+// today marked, so the next start's catch-up re-runs the day. The first
+// scheduler's retry timer never fires and the context is cancelled while the
+// backoff is pending; a fresh scheduler over the SAME marker store then fires a
+// catch-up pass.
+func TestRestartBeforeTheRetryStillCatchesUpToday(t *testing.T) {
+	utc := time.UTC
+	today := time.Date(2026, 7, 6, 12, 0, 0, 0, utc)
+	clock := func() time.Time { return today }
+	marker := newFakeMarker()
+	marker.values[markerKey] = "2026-07-05" // yesterday -> catch-up fires
+
+	failing := newFakeRunner()
+	failing.returnErr = errors.New("listing owners failed")
+	timers := newSlotTimerFactory(false) // the retry backoff stays pending
+
+	first := newTestScheduler(failing, marker, 9, utc, clock, timers.newTimer)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := first.Start(ctx)
+
+	waitForCalls(t, failing, 1, 2*time.Second)
+	timers.waitForRetryTimer(t, 2*time.Second)
+	cancel() // the process dies while the retry is still waiting
+	<-done
+
+	if v, ok := marker.get(markerKey); !ok || v != "2026-07-05" {
+		t.Fatalf("a pass that failed and has not retried yet must leave the marker at yesterday, got %q ok=%v", v, ok)
+	}
+
+	// The restart: a new scheduler over the same marker store, same local day.
+	recovered := newFakeRunner()
+	second := newTestScheduler(recovered, marker, 9, utc, clock, neverFireTimerFactory())
+	restartCtx, restartCancel := context.WithCancel(context.Background())
+	restartDone := second.Start(restartCtx)
+
+	waitForCalls(t, recovered, 1, 2*time.Second)
+	restartCancel()
+	<-restartDone
+
+	if got := recovered.callCount(); got != 1 {
+		t.Fatalf("expected the restart to catch up today's unfinished pass exactly once, got %d", got)
+	}
+	if v, ok := marker.get(markerKey); !ok || v != "2026-07-06" {
+		t.Fatalf("expected the caught-up pass to mark today 2026-07-06, got %q ok=%v", v, ok)
+	}
+}
+
+// TestRetryBudgetIsBoundedThenTheDayIsMarked guards the other half of the trade:
+// the retry is BOUNDED. A permanently failing pass is attempted exactly
+// maxPassAttempts times in its slot, each attempt separated by a non-zero
+// backoff, and only then is the day marked — so a broken database can never
+// busy-loop the scheduler, which is the property the pre-existing "mark on
+// error" behaviour bought at the cost of the whole day's reminders.
+func TestRetryBudgetIsBoundedThenTheDayIsMarked(t *testing.T) {
+	utc := time.UTC
+	today := time.Date(2026, 7, 6, 12, 0, 0, 0, utc)
+	runner := newFakeRunner()
+	runner.returnErr = errors.New("listing owners failed") // errCalls 0 -> every attempt fails
+	marker := newFakeMarker()
+	marker.values[markerKey] = "2026-07-05" // yesterday -> catch-up fires
+
+	timers := newSlotTimerFactory(true)
+	scheduler := newTestScheduler(runner, marker, 9, utc, func() time.Time { return today }, timers.newTimer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := scheduler.Start(ctx)
+
+	waitForCalls(t, runner, maxPassAttempts, 2*time.Second)
+	cancel()
+	<-done
+
+	if got := runner.callCount(); got != maxPassAttempts {
+		t.Fatalf("expected exactly %d attempts in one slot, got %d", maxPassAttempts, got)
+	}
+	if v, ok := marker.get(markerKey); !ok || v != "2026-07-06" {
+		t.Fatalf("expected the spent budget to mark today 2026-07-06 (anti-busy-loop), got %q ok=%v", v, ok)
+	}
+	delays := timers.retryDelays()
+	if len(delays) != maxPassAttempts-1 {
+		t.Fatalf("expected %d retry backoffs between %d attempts, got %d (%v)", maxPassAttempts-1, maxPassAttempts, len(delays), delays)
+	}
+	for i, d := range delays {
+		if d <= 0 {
+			t.Fatalf("retry backoff %d was %s: a zero delay is the busy loop the budget exists to prevent", i+1, d)
+		}
+	}
+}
+
+// TestPanickingPassDoesNotSpendTheErrorRetryBudget keeps the two failure classes
+// distinct. A panic leaves the pass in a state the in-slot retry cannot reason
+// about, so it keeps its original semantics — recovered, day not marked, retried
+// by the NEXT fire — and must not be re-entered immediately as a transient error
+// would be. Retry timers here fire instantly, so an in-slot retry would show up
+// as a second call; the next-run timer never fires, so nothing else can.
+func TestPanickingPassDoesNotSpendTheErrorRetryBudget(t *testing.T) {
+	utc := time.UTC
+	today := time.Date(2026, 7, 6, 12, 0, 0, 0, utc)
+	runner := newFakeRunner()
+	runner.panicOn = 1 // the catch-up pass panics
+	marker := newFakeMarker()
+	marker.values[markerKey] = "2026-07-05" // yesterday -> catch-up fires
+
+	timers := newSlotTimerFactory(true)
+	scheduler := newTestScheduler(runner, marker, 9, utc, func() time.Time { return today }, timers.newTimer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := scheduler.Start(ctx)
+
+	// Wait until the loop has armed its next-run timer: that happens strictly
+	// after the panicking catch-up pass returned, so any in-slot retry would
+	// already have been armed and (firing instantly) already have called RunOnce.
+	deadline := time.After(2 * time.Second)
+	for armedNextRun := false; !armedNextRun; {
+		select {
+		case d := <-timers.armed:
+			if d > retryTimerCeiling {
+				armedNextRun = true
+			}
+		case <-deadline:
+			t.Fatal("scheduler never reached its next-run timer after the panicking pass")
+		}
+	}
+	cancel()
+	<-done
+
+	if got := runner.callCount(); got != 1 {
+		t.Fatalf("a panicking pass must not be retried inside its slot; expected 1 attempt, got %d", got)
+	}
+	if delays := timers.retryDelays(); len(delays) != 0 {
+		t.Fatalf("a panicking pass must arm no retry backoff, got %v", delays)
+	}
+	if marker.setCalls != 0 {
+		t.Fatalf("a panicking pass must leave the marker untouched so the next fire retries, got %d write(s)", marker.setCalls)
 	}
 }
