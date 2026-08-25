@@ -26,6 +26,15 @@ func TestIsOnboardingPath(t *testing.T) {
 		//     unnormalized value and no other route matches it, but it is the
 		//     one row here that fails OPEN. If path cleaning is ever introduced
 		//     upstream, this row is the decision to revisit.
+		//
+		// That last row is half an argument: it pins what this string function
+		// answers, and the safety rests on what the ROUTER does with the same
+		// string — which lives outside this repository and cannot be seen from
+		// here. The other half is
+		// TestRouterDoesNotNormalizeATraversalSegmentIntoAGatedRoute
+		// (internal/api), which fails the release the assumption stops holding.
+		// Change either row without the other and the pair stops meaning
+		// anything.
 		{name: "bare collection path", path: "/api/v1/onboarding", want: false},
 		{name: "upper cased prefix", path: "/API/v1/onboarding/steps/1", want: false},
 		{name: "traversal segment under the prefix", path: "/api/v1/onboarding/../days/2026-03-01", want: true},
