@@ -194,15 +194,23 @@ func buildStatsCycleFactorRecentCycles(snapshots []statsCycleFactorCycleSnapshot
 		return nil
 	}
 
-	sort.Slice(snapshots, func(i, j int) bool {
-		return snapshots[i].Start.After(snapshots[j].Start)
+	// Sort a COPY. The caller hands the same slice to
+	// buildStatsCycleFactorPatternSummaries inside one composite literal, so
+	// sorting the argument in place would reorder what that builder sees and
+	// make the order of two struct fields load-bearing — an edit that reads as
+	// pure formatting. Regression:
+	// TestBuildStatsCycleFactorRecentCyclesLeavesItsArgumentUntouched.
+	ordered := make([]statsCycleFactorCycleSnapshot, len(snapshots))
+	copy(ordered, snapshots)
+	sort.Slice(ordered, func(i, j int) bool {
+		return ordered[i].Start.After(ordered[j].Start)
 	})
-	if len(snapshots) > statsCycleFactorRecentCycleLimit {
-		snapshots = snapshots[:statsCycleFactorRecentCycleLimit]
+	if len(ordered) > statsCycleFactorRecentCycleLimit {
+		ordered = ordered[:statsCycleFactorRecentCycleLimit]
 	}
 
-	summaries := make([]StatsCycleFactorRecentCycleSummary, 0, len(snapshots))
-	for _, snapshot := range snapshots {
+	summaries := make([]StatsCycleFactorRecentCycleSummary, 0, len(ordered))
+	for _, snapshot := range ordered {
 		summaries = append(summaries, StatsCycleFactorRecentCycleSummary{
 			Start:          snapshot.Start,
 			End:            snapshot.End,

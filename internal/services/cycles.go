@@ -103,6 +103,10 @@ func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 	ovulationExact := true
 	maxSupportedLutealPhase := cycleLen - minOvulationCycleDay
 	if maxSupportedLutealPhase < minLutealPhaseDays {
+		// codecov:ignore -- defensive invariant: the guard above admits only
+		// cycleLen >= minLutealPhaseDays+minOvulationCycleDay, so
+		// maxSupportedLutealPhase is always at least minLutealPhaseDays.
+		// Regression: TestCalcOvulationDayAlwaysProducesADayOnceAdmitted.
 		return 0, false
 	}
 	if resolvedLutealPhase > maxSupportedLutealPhase {
@@ -112,6 +116,10 @@ func CalcOvulationDay(cycleLen, lutealPhase int) (int, bool) {
 
 	ovDay := cycleLen - resolvedLutealPhase
 	if ovDay < minOvulationCycleDay {
+		// codecov:ignore -- defensive invariant: the clamp above caps
+		// resolvedLutealPhase at maxSupportedLutealPhase = cycleLen-minOvulationCycleDay,
+		// so ovDay is always at least minOvulationCycleDay.
+		// Regression: TestCalcOvulationDayAlwaysProducesADayOnceAdmitted.
 		return 0, false
 	}
 	return ovDay, ovulationExact
@@ -188,7 +196,13 @@ func DetectCycleStarts(logs []models.DailyLog) []time.Time {
 			continue
 		}
 
-		gapDays := int(day.Sub(previousPeriodDay).Hours()/24) - 1
+		// The gap is the count of clear days BETWEEN the two period days, so
+		// the calendar-day span minus one. CalendarDaysBetween rather than a
+		// spelled-out hour difference: the operands are dateOnly values today,
+		// but nothing at this site says so, and an hour difference reads a
+		// DST-shortened day, or a location midnight against a UTC one, as one
+		// day fewer than it is.
+		gapDays := CalendarDaysBetween(previousPeriodDay, day) - 1
 		if gapDays >= 5 {
 			starts = append(starts, day)
 		}
@@ -265,7 +279,9 @@ func buildPeriodClusters(logs []models.DailyLog) []periodCluster {
 			clusters = append(clusters, periodCluster{Start: day, End: day})
 		} else {
 			lastIndex := len(clusters) - 1
-			gapDays := int(day.Sub(clusters[lastIndex].End).Hours()/24) - 1
+			// Same clear-days-between count as in DetectCycleStarts, against
+			// the running cluster's last day.
+			gapDays := CalendarDaysBetween(clusters[lastIndex].End, day) - 1
 			if gapDays >= 5 {
 				clusters = append(clusters, periodCluster{Start: day, End: day})
 			} else if day.After(clusters[lastIndex].End) {
@@ -364,6 +380,13 @@ func predictedCycleLength(median int, average float64) int {
 	// and push every downstream prediction late, but leaves the median unmoved.
 	// The mean is only a fallback for the degenerate case where no median is
 	// available (it never is when at least one cycle length exists).
+	//
+	// A ZERO return is part of the contract, not an accident: the average branch
+	// tests the raw average but returns the ROUNDED one, so an average under 0.5
+	// yields 0, and applyProjectedBaseline (cycle_baseline.go) reads that 0 as
+	// "no usable length" and falls back to the owner's configured cycle length
+	// before declining to project at all. A caller that instead STEPS by this
+	// value must guard it for itself — appendPredictedCycles does.
 	if median > 0 {
 		return median
 	}
@@ -515,6 +538,13 @@ func buildCycles(starts []time.Time, logs []models.DailyLog) []detectedCycle {
 	return cycles
 }
 
+// cycleLengths returns the calendar-day span between each pair of consecutive
+// cycle starts. The anchor of the supplied instants is the caller's business --
+// they arrive as a parameter, unlike the two gap sites above -- so the span is
+// measured with CalendarDaysBetween, which re-anchors both operands first. An
+// hour difference would report a DST-crossing two-day span as one day
+// (Europe/Berlin 2026-03-28 -> 2026-03-30 is 47 hours) and every span between a
+// location midnight and a UTC one as a day short.
 func cycleLengths(starts []time.Time) []int {
 	if len(starts) < 2 {
 		return nil
@@ -522,7 +552,7 @@ func cycleLengths(starts []time.Time) []int {
 
 	lengths := make([]int, 0, len(starts)-1)
 	for i := 1; i < len(starts); i++ {
-		lengths = append(lengths, int(starts[i].Sub(starts[i-1]).Hours()/24))
+		lengths = append(lengths, CalendarDaysBetween(starts[i-1], starts[i]))
 	}
 	return lengths
 }

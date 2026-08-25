@@ -118,9 +118,14 @@ func parseCalendarDayParam(raw string, location *time.Location) (time.Time, erro
 	return ParseDayDate(raw, location)
 }
 
+// clampCalendarMonthToMinimum raises monthStart to minMonth when it falls
+// before it. location is always non-nil: the sole caller,
+// ResolveCalendarMonthAndSelectedDateWithinBounds, substitutes time.UTC for a
+// nil one before any of this runs, so the clamped month is anchored in the
+// request zone and never in minMonth's own.
 func clampCalendarMonthToMinimum(monthStart time.Time, minMonth time.Time, location *time.Location) time.Time {
 	if calendarMonthBefore(monthStart, minMonth) {
-		return calendarMonthAnchor(minMonth, resolveCalendarLocation(location, minMonth))
+		return calendarMonthAnchor(minMonth, location)
 	}
 	return monthStart
 }
@@ -136,14 +141,4 @@ func calendarMonthBefore(month time.Time, minMonth time.Time) bool {
 		return monthYear < minYear
 	}
 	return monthNumber < minNumber
-}
-
-func resolveCalendarLocation(location *time.Location, fallback time.Time) *time.Location {
-	if location != nil {
-		return location
-	}
-	if fallback.Location() != nil {
-		return fallback.Location()
-	}
-	return time.UTC
 }

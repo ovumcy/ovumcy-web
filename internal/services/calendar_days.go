@@ -305,6 +305,22 @@ func appendPredictedCycles(predictedPeriodMap map[string]bool, preFertileMap map
 	}
 
 	predictedCycleLength := predictedCycleLength(stats.MedianCycleLength, stats.AverageCycleLength)
+	if predictedCycleLength <= 0 {
+		// The loop below advances the cursor by exactly this value, so a
+		// non-positive step never moves it, never falsifies the bound, and
+		// fills the prediction maps until the process dies. Zero is a real
+		// return of predictedCycleLength (an average under 0.5 rounds to it),
+		// and its other stepping caller, applyProjectedBaseline, guards it too
+		// — the termination of this loop is this function's business, not the
+		// callee's.
+		//
+		// codecov:ignore -- defensive: unreachable from production stats today.
+		// Both writers of NextPeriodStart derive median and average from the
+		// same observed lengths, so either both are zero (and the default
+		// applies) or both describe at least one real cycle.
+		// Regression: TestAppendPredictedCyclesTerminatesOnANonPositiveStep.
+		return
+	}
 	predictedPeriodLength := predictedPeriodLength(stats.AveragePeriodLength)
 	// The bound is a CALENDAR-DAY comparison, not an instant one: cycleStart
 	// comes from CalendarDay and gridEnd from plain AddDate arithmetic, and in
