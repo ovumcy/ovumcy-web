@@ -87,7 +87,7 @@
                 {{else if .DisplayOvulationDate.IsZero}}
                   {{.NoDataLabel}}
                 {{else}}
-                  {{printf (t .Messages "dashboard.ovulation_estimate") (formatLocalizedDate .Lang .DisplayOvulationDate "display")}}{{if not .DisplayOvulationExact}} <span class="journal-muted">{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
+                  {{printf (t .Messages "dashboard.ovulation_estimate") (formatLocalizedDate .Lang .DisplayOvulationDate "display")}}{{if not .DisplayOvulationExact}} <span class="journal-muted" data-dashboard-ovulation-approximate>{{t .Messages "dashboard.ovulation_approximate"}}</span>{{end}}
                 {{end}}
               </span>
             </span>
