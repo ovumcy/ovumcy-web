@@ -226,25 +226,36 @@ func (s *Scheduler) runCatchUp(ctx context.Context) {
 // not spend the error budget — an attempt is only worth repeating immediately
 // when the failure is the transient shape a returned error describes.
 //
-// now is resolved once per attempt so each attempt's pass clock and the date it
-// would mark agree.
+// Each attempt resolves its own clock, so a pass always computes due reminders
+// against the moment it actually runs. The MARKED day is not that clock: it is
+// the slot's own day, resolved once below. The two differ whenever a slot's
+// backoff crosses local midnight — reachable because runCatchUp fires at any
+// hour, so a late-evening start can spend its whole budget past midnight — and
+// marking the last attempt's day would then close TOMORROW, a day whose pass has
+// not run and whose scheduled hour has not arrived. A restart on that day reads
+// marker == today and skips its catch-up, losing exactly the day this retry
+// exists to save. Guard: TestSpentBudgetMarksTheSlotsOwnDayNotTheDayItsRetriesRanInto.
 func (s *Scheduler) runScheduledPass(ctx context.Context) {
+	slotNow := s.now()
 	for attempt := 1; ; attempt++ {
-		now := s.now()
+		now := slotNow
+		if attempt > 1 {
+			now = s.now()
+		}
 		completed, err := s.runPassRecovered(ctx, now)
 		if !completed {
 			// Panicked: leave the marker untouched so the next fire retries.
 			return
 		}
 		if err == nil {
-			s.markRan(ctx, now)
+			s.markRan(ctx, slotNow)
 			return
 		}
 		// The error itself is logged by reason only; RunOnce already logged the
 		// per-owner detail and never surfaces reminder contents.
 		if attempt >= maxPassAttempts {
 			log.Printf("reminder scheduler: notify pass failed %d times (see prior notify logs), marking today and giving up until the next scheduled run", attempt)
-			s.markRan(ctx, now)
+			s.markRan(ctx, slotNow)
 			return
 		}
 		log.Printf("reminder scheduler: notify pass returned an error (see prior notify logs), attempt %d of %d, retrying in %s", attempt, maxPassAttempts, passRetryDelay)
