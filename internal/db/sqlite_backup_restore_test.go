@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ovumcy/ovumcy-web/internal/models"
+	"gorm.io/gorm"
 )
 
 // TestSQLiteBackupRestorePreservesHealthData proves that the standard self-host
@@ -187,5 +189,195 @@ func copyFileForBackupTest(t *testing.T, src, dst string) {
 	}
 	if err := out.Close(); err != nil {
 		t.Fatalf("close backup file: %v", err)
+	}
+}
+
+// sqliteVolumeDatabaseFile is the database file inside the data volume, the one
+// docs/self-hosted.md names beside its two WAL sidecars.
+const sqliteVolumeDatabaseFile = "ovumcy.db"
+
+// TestLiveWholeVolumeCaptureLosesACommitToACheckpointMidCapture takes the
+// documented whole-volume archive apart at the one seam a sequential archiver
+// has. `tar czf` reads `ovumcy.db`, then `ovumcy.db-shm`, then `ovumcy.db-wal`,
+// one after another, and nothing holds the three still between those reads. A
+// checkpoint landing in that window folds the WAL into the main database file
+// AFTER the main file was read, and empties the WAL BEFORE the WAL is read — so
+// the archive carries all three files, which is the property the runbook states,
+// and still misses a commit that was in the database before the backup began.
+//
+// The test captures one database twice, and the only difference between the two
+// captures is whether the app was stopped first:
+//
+//   - live, with a checkpoint in the window: the WAL-resident day is gone from
+//     the restore, while the day written before the previous checkpoint is still
+//     there — a partial archive, not an empty one;
+//   - stopped, the way the runbook now tells an operator to take it: every day
+//     reads back.
+//
+// The first half characterizes filesystem and WAL semantics, not a defect this
+// repository can fix. If it ever goes green, a whole-volume archive no longer
+// needs the stop step and docs/self-hosted.md should be relaxed back.
+func TestLiveWholeVolumeCaptureLosesACommitToACheckpointMidCapture(t *testing.T) {
+	sourceDir := t.TempDir()
+	livePath := filepath.Join(sourceDir, sqliteVolumeDatabaseFile)
+
+	liveDB, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: livePath})
+	if err != nil {
+		t.Fatalf("open live database: %v", err)
+	}
+	repos := NewRepositories(liveDB)
+	user := createBackupRaceOwner(t, repos)
+
+	createBackupRaceDay(t, repos, user.ID, "2026-03-01")
+	checkpointWALTruncate(t, liveDB)
+
+	// The commit the operator already has when the backup starts: written after
+	// the previous checkpoint, so it lives in `ovumcy.db-wal` and nowhere else.
+	createBackupRaceDay(t, repos, user.ID, "2026-03-02")
+	assertWALCarriesBytes(t, livePath)
+
+	liveCapture := filepath.Join(t.TempDir(), "live")
+	captureWALSet(t, sourceDir, liveCapture, func() { checkpointWALTruncate(t, liveDB) })
+
+	liveDays := restoredDayList(t, filepath.Join(liveCapture, sqliteVolumeDatabaseFile), user.ID)
+	if !slices.Contains(liveDays, "2026-03-01") {
+		t.Fatalf("the live capture restored %v — an archive that lost everything says nothing about the checkpoint window this test is about", liveDays)
+	}
+	if slices.Contains(liveDays, "2026-03-02") {
+		t.Fatalf("the live capture restored %v, the WAL-resident commit included: a checkpoint between the main-file read and the sidecar reads no longer loses it here, so the whole-volume archive in docs/self-hosted.md can drop its stop step again", liveDays)
+	}
+
+	// The same database, in the same WAL-resident shape, captured after the app
+	// was stopped — which is what the runbook requires.
+	createBackupRaceDay(t, repos, user.ID, "2026-03-03")
+	closeBackupTestDatabase(t, liveDB)
+
+	stoppedCapture := filepath.Join(t.TempDir(), "stopped")
+	captureWALSet(t, sourceDir, stoppedCapture, nil)
+
+	stoppedDays := restoredDayList(t, filepath.Join(stoppedCapture, sqliteVolumeDatabaseFile), user.ID)
+	for _, day := range []string{"2026-03-01", "2026-03-02", "2026-03-03"} {
+		if !slices.Contains(stoppedDays, day) {
+			t.Fatalf("the capture taken with the app stopped restored %v, missing %s: stopping first is the requirement docs/self-hosted.md states, so it has to be sufficient", stoppedDays, day)
+		}
+	}
+}
+
+// captureWALSet copies the WAL set the way a sequential archiver reads it: the
+// main database file first, then the sidecars, with the database live and free
+// to move in between. betweenReads, when set, runs in exactly that window.
+func captureWALSet(t *testing.T, sourceDir, targetDir string, betweenReads func()) {
+	t.Helper()
+
+	if err := os.MkdirAll(targetDir, 0o750); err != nil {
+		t.Fatalf("create the capture directory: %v", err)
+	}
+	copyFileForBackupTest(t,
+		filepath.Join(sourceDir, sqliteVolumeDatabaseFile),
+		filepath.Join(targetDir, sqliteVolumeDatabaseFile))
+
+	if betweenReads != nil {
+		betweenReads()
+	}
+
+	for _, sidecar := range []string{sqliteVolumeDatabaseFile + "-shm", sqliteVolumeDatabaseFile + "-wal"} {
+		source := filepath.Join(sourceDir, sidecar)
+		if _, err := os.Stat(source); errors.Is(err, os.ErrNotExist) {
+			continue // an archiver carries a sidecar only when it is there
+		}
+		copyFileForBackupTest(t, source, filepath.Join(targetDir, sidecar))
+	}
+}
+
+// checkpointWALTruncate folds the WAL into the main database file and truncates
+// it — the checkpoint SQLite runs on its own once the WAL passes its threshold,
+// and on the last connection closing.
+func checkpointWALTruncate(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
+	var busy, walPages, checkpointed int
+	if err := database.Raw("PRAGMA wal_checkpoint(TRUNCATE)").Row().Scan(&busy, &walPages, &checkpointed); err != nil {
+		t.Fatalf("checkpoint the WAL: %v", err)
+	}
+	if busy != 0 {
+		t.Fatalf("the checkpoint was blocked (busy=%d), so the window this test needs never opened", busy)
+	}
+}
+
+// assertWALCarriesBytes proves the commit under test really is WAL-resident when
+// the capture starts; without it the whole test could pass on a database that
+// had already checkpointed itself.
+func assertWALCarriesBytes(t *testing.T, databasePath string) {
+	t.Helper()
+
+	info, err := os.Stat(databasePath + "-wal")
+	if err != nil {
+		t.Fatalf("stat the write-ahead log: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatal("the write-ahead log is empty, so the commit this test is about already sits in the main database file")
+	}
+}
+
+// restoredDayList opens a captured database and returns the days it holds for
+// one owner, sorted.
+func restoredDayList(t *testing.T, databasePath string, userID uint) []string {
+	t.Helper()
+
+	restored, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: databasePath})
+	if err != nil {
+		t.Fatalf("open the restored database: %v", err)
+	}
+	defer closeBackupTestDatabase(t, restored)
+
+	logs, err := NewRepositories(restored).DailyLogs.ListByUser(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("list restored logs: %v", err)
+	}
+
+	days := make([]string, 0, len(logs))
+	for _, entry := range logs {
+		days = append(days, entry.Date.Format("2006-01-02"))
+	}
+	slices.Sort(days)
+	return days
+}
+
+func createBackupRaceOwner(t *testing.T, repos *Repositories) *models.User {
+	t.Helper()
+
+	user := &models.User{
+		Email:            "race-owner@example.com",
+		PasswordHash:     "hash",
+		RecoveryCodeHash: "recovery",
+		Role:             models.RoleOwner,
+		CycleLength:      models.DefaultCycleLength,
+		PeriodLength:     models.DefaultPeriodLength,
+		CreatedAt:        time.Now().UTC(),
+	}
+	if err := repos.Users.Create(context.Background(), user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	return user
+}
+
+func createBackupRaceDay(t *testing.T, repos *Repositories, userID uint, day string) {
+	t.Helper()
+
+	entry := &models.DailyLog{UserID: userID, Date: backupRestoreDay(t, day), IsPeriod: true, Flow: "medium"}
+	if err := repos.DailyLogs.Create(context.Background(), entry); err != nil {
+		t.Fatalf("create day log %s: %v", day, err)
+	}
+}
+
+func closeBackupTestDatabase(t *testing.T, database *gorm.DB) {
+	t.Helper()
+
+	sqlDB, err := database.DB()
+	if err != nil {
+		t.Fatalf("reach the sql.DB handle: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
 	}
 }
