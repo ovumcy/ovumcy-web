@@ -78,10 +78,9 @@ async function interceptDayPUT(
   isoDate: string,
   browserErrors: BrowserErrorWatcher
 ): Promise<DayPUTInterceptor> {
-  browserErrors.allow(
-    HTMX_CONNECTION_DROP_LOG,
-    `this test aborts PUT /api/v1/days/${isoDate}, and htmx logging the dropped connection is the behaviour under test`
-  );
+  // Armed from construction, because `outcome` starts at `server-error`: this
+  // interceptor can refuse from its first request, so the refusal it will log is
+  // already the behaviour under test.
   browserErrors.allow(
     htmxRefusalLogFor(`/api/v1/days/${isoDate}`),
     `this test forces PUT /api/v1/days/${isoDate} to be refused, and htmx logging that refusal is the behaviour under test`
@@ -89,6 +88,7 @@ async function interceptDayPUT(
 
   let outcome: SaveOutcome = 'server-error';
   let attempts = 0;
+  let dropTolerated = false;
 
   await page.route(`**/api/v1/days/${isoDate}`, async (route) => {
     if (route.request().method() !== 'PUT') {
@@ -113,6 +113,19 @@ async function interceptDayPUT(
   return {
     attempts: () => attempts,
     set: (next: SaveOutcome) => {
+      // The connection-drop log carries no URL, so it cannot be scoped by path
+      // the way the refusal is. It is scoped by ARMING instead: a test that
+      // never switches this interceptor to `network-failure` never drops a
+      // connection, and must not tolerate one — a real drop elsewhere would
+      // otherwise pass unreported, since these tests assert about the day form
+      // and nothing else.
+      if (next === 'network-failure' && !dropTolerated) {
+        browserErrors.allow(
+          HTMX_CONNECTION_DROP_LOG,
+          `this test aborts PUT /api/v1/days/${isoDate}, and htmx logging the dropped connection is the behaviour under test`
+        );
+        dropTolerated = true;
+      }
       outcome = next;
     },
   };
