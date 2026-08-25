@@ -62,6 +62,15 @@ func (r *fakeRunner) callCount() int {
 	return r.calls
 }
 
+// passInstants returns the clock each pass was handed, in call order — what a
+// case needs when the question is not only HOW MANY passes ran but WHICH instant
+// each one ran for.
+func (r *fakeRunner) passInstants() []time.Time {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]time.Time(nil), r.perCallNow...)
+}
+
 // fakeMarker is an in-memory MarkerStore. It optionally fails reads to exercise
 // the fail-safe catch-up skip.
 type fakeMarker struct {
@@ -69,6 +78,7 @@ type fakeMarker struct {
 	values   map[string]string
 	getErr   error
 	setErr   error
+	getCalls int
 	setCalls int
 }
 
@@ -79,6 +89,7 @@ func newFakeMarker() *fakeMarker {
 func (m *fakeMarker) Get(_ context.Context, key string) (string, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.getCalls++
 	if m.getErr != nil {
 		return "", false, m.getErr
 	}
@@ -95,6 +106,15 @@ func (m *fakeMarker) Set(_ context.Context, key string, value string) error {
 	}
 	m.values[key] = value
 	return nil
+}
+
+// getCount returns how many times the scheduler asked the store for the marker.
+// It is what lets a case assert WHICH code path consults the marker, not merely
+// what the marker holds afterwards.
+func (m *fakeMarker) getCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getCalls
 }
 
 func (m *fakeMarker) get(key string) (string, bool) {
@@ -894,5 +914,147 @@ func TestSpentBudgetMarksTheSlotsOwnDayNotTheDayItsRetriesRanInto(t *testing.T) 
 
 	if v, ok := marker.get(markerKey); !ok || v != "2026-07-06" {
 		t.Fatalf("expected the spent budget to mark the slot's own day 2026-07-06, got %q ok=%v — marking 2026-07-07 closes a day that never ran", v, ok)
+	}
+}
+
+// virtualClock is a clock the scheduler moves itself. Reading it never advances
+// it (unlike advancingClock above); only a fired timer does, by exactly the
+// delay the scheduler asked that timer for. Every instant the scheduler then
+// sees is one its own schedule math produced, which is what lets a case walk the
+// timer loop across a real DST transition in microseconds.
+type virtualClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *virtualClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.at
+}
+
+// advance moves the clock forward by d and returns the instant it lands on.
+func (c *virtualClock) advance(d time.Duration) time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
+	return c.at
+}
+
+// virtualTimerFactory fires every timer the scheduler arms, having first moved
+// the virtualClock forward by that timer's own delay — until the next fire would
+// carry the clock past horizon, or the fire budget is spent. It then parks (a
+// timer that never fires) and announces the park, which is a case's signal that
+// the loop has left the window under test and can be cancelled.
+//
+// maxFires is not decoration: a schedule that returns an instant NOT strictly
+// after now arms a ZERO delay, which never passes any horizon, so without a
+// budget that shape would spin here instead of failing the case.
+type virtualTimerFactory struct {
+	clock    *virtualClock
+	horizon  time.Time
+	maxFires int
+
+	mu     sync.Mutex
+	fires  int
+	parked chan struct{}
+}
+
+func newVirtualTimerFactory(clock *virtualClock, horizon time.Time, maxFires int) *virtualTimerFactory {
+	return &virtualTimerFactory{
+		clock:    clock,
+		horizon:  horizon,
+		maxFires: maxFires,
+		parked:   make(chan struct{}, 1),
+	}
+}
+
+func (f *virtualTimerFactory) newTimer(d time.Duration) schedulerTimer {
+	f.mu.Lock()
+	fire := f.fires < f.maxFires && !f.clock.now().Add(d).After(f.horizon)
+	if fire {
+		f.fires++
+	}
+	f.mu.Unlock()
+
+	ch := make(chan time.Time, 1)
+	if !fire {
+		select {
+		case f.parked <- struct{}{}:
+		default:
+		}
+		return fakeTimer{ch: ch}
+	}
+	ch <- f.clock.advance(d)
+	return fakeTimer{ch: ch}
+}
+
+// TestSchedulerLoopFiresOnceAcrossTheRepeatedFallBackHour drives the SCHEDULER
+// LOOP — not nextRun in isolation, not runCatchUp — across a local hour that
+// occurs twice, and pins that exactly one pass fires for it.
+//
+// The zone is America/New_York on 2026-11-01, where clocks fall 02:00 -> 01:00,
+// so local 01:00 happens once at -04:00 and again an hour later at -05:00. The
+// run hour is 1. The loop walks a virtual clock that only its own armed delays
+// move, so every instant under test comes from the schedule math itself.
+//
+// What makes the second occurrence a non-event is nextRun's STRICT rollover:
+// recomputed from the instant that just fired, today's candidate is not
+// After(now), so it is rebuilt on the next calendar day (25h out, past this
+// case's horizon). The once-per-local-day marker is NOT what does it — the loop
+// never reads it (asserted below), and this case starts before the run hour, so
+// runCatchUp, the only marker reader, returns without a pass whatever the marker
+// holds. Induced red: relaxing next_run.go's `!candidate.After(now)` to
+// `candidate.Before(now)` re-fires the same hour and fails this case; making
+// markRan a no-op leaves it green.
+func TestSchedulerLoopFiresOnceAcrossTheRepeatedFallBackHour(t *testing.T) {
+	ny := mustLoadLocation(t, "America/New_York")
+
+	// Premise, asserted rather than assumed: both halves come from tzdata and the
+	// stdlib, and a change in either must fail loudly here instead of quietly
+	// turning this case into a non-DST one. time.Date answers the ambiguous wall
+	// clock with its FIRST occurrence, and an hour later the clock reads 01:00
+	// again.
+	firstFire := time.Date(2026, 11, 1, 1, 0, 0, 0, ny)
+	if _, offset := firstFire.Zone(); offset != -4*60*60 {
+		t.Fatalf("premise broken: time.Date resolved local 01:00 to offset %ds, want -14400 (the pre-transition occurrence)", offset)
+	}
+	if hour := firstFire.Add(time.Hour).In(ny).Hour(); hour != 1 {
+		t.Fatalf("premise broken: an hour after the first local 01:00 the clock reads %02d:00, so this date is no longer a fall-back edge", hour)
+	}
+
+	start := time.Date(2026, 11, 1, 0, 15, 0, 0, ny) // before the run hour: no catch-up
+	// The window ends before the next legitimate fire (2026-11-02 01:00, 25h after
+	// the first), so ANY second fire inside it is the repeated hour firing twice.
+	horizon := time.Date(2026, 11, 1, 23, 59, 0, 0, ny)
+	clock := &virtualClock{at: start}
+	timers := newVirtualTimerFactory(clock, horizon, 4)
+
+	runner := newFakeRunner()
+	marker := newFakeMarker()
+	scheduler := newTestScheduler(runner, marker, 1, ny, clock.now, timers.newTimer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := scheduler.Start(ctx)
+
+	select {
+	case <-timers.parked:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the loop never armed a fire beyond the fall-back day, so it is still firing inside it")
+	}
+	cancel()
+	<-done
+
+	instants := runner.passInstants()
+	if len(instants) != 1 {
+		t.Fatalf("the repeated local hour must drive exactly ONE scheduled pass, got %d at %v — the strict rollover in nextRun is what prevents the second fire", len(instants), instants)
+	}
+	if !instants[0].Equal(firstFire) {
+		t.Fatalf("expected the single pass at the first occurrence of local 01:00 (%s), got %s", firstFire.Format(time.RFC3339), instants[0].In(ny).Format(time.RFC3339))
+	}
+	// The other half of the claim: the timer loop does not gate on the marker. The
+	// only read is runCatchUp's, at startup.
+	if got := marker.getCount(); got != 1 {
+		t.Fatalf("the marker must be read exactly once, by runCatchUp at startup, got %d read(s) — the timer loop does not consult it", got)
 	}
 }

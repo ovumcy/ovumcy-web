@@ -10,13 +10,16 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/services"
 )
 
-// This file proves the idempotency LAYERING the design mandates: the once-per-
-// local-day marker stops the TRIGGER from firing more than once per day, but
-// #124's per-reminder watermark is the authoritative backstop — even if two
-// passes run in the same fake day (marker failed, or an operator `ovumcy notify`
-// cron ran alongside), each reminder ships at most once. It drives the REAL
-// services.WebhookNotifyService (not the scheduler's stub PassRunner) so the
-// actual claim-before-delivery + decision-suppression path is exercised.
+// This file proves the idempotency LAYERING the design mandates: the TRIGGER
+// aims at one pass per local day — the timer loop recomputes its next fire
+// strictly after the instant that just fired (nextRun), and the once-per-local-
+// day marker adds restart safety on top, being read by runCatchUp only — but
+// #124's per-reminder watermark is the authoritative backstop. Even if two
+// passes run in the same fake day (a restart the marker did not cover, or an
+// operator `ovumcy notify` cron running alongside), each reminder ships at most
+// once. It drives the REAL services.WebhookNotifyService (not the scheduler's
+// stub PassRunner) so the actual claim-before-delivery + decision-suppression
+// path is exercised.
 //
 // Two shapes of "twice" live here and neither implies the other: the passes may
 // run one after the other (the second reads what the first wrote), or they may
@@ -202,8 +205,8 @@ func (s stubLogReader) ListByUser(_ context.Context, userID uint) ([]models.Dail
 }
 
 // TestIdempotencyLayeringTwoFiresSameDaySendOnce is the layering proof: the
-// scheduler fires the notify pass TWICE within one fake day (simulating a marker
-// that failed to persist, or a concurrent operator cron). The real service's
+// notify pass is run TWICE within one fake day (simulating a restart the marker
+// did not cover, or a concurrent operator cron). The real service's
 // per-reminder watermark must ensure the owner's period reminder ships exactly
 // ONCE across both fires — never twice.
 func TestIdempotencyLayeringTwoFiresSameDaySendOnce(t *testing.T) {
@@ -225,8 +228,10 @@ func TestIdempotencyLayeringTwoFiresSameDaySendOnce(t *testing.T) {
 		t.Fatalf("first pass should send exactly one reminder, sent=%d", report1.Sent)
 	}
 
-	// Fire 2 in the SAME day: the marker did NOT stop this (we bypass it here on
-	// purpose). The watermark, now advanced, must suppress the second send.
+	// Fire 2 in the SAME day: the trigger's once-per-day layer is bypassed here on
+	// purpose — this case calls the service directly, so neither the loop's
+	// rollover nor the marker is in the path. The watermark, now advanced, must
+	// suppress the second send.
 	report2, err := service.RunOnce(context.Background(), now, time.UTC, false)
 	if err != nil {
 		t.Fatalf("second pass: %v", err)
