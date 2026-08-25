@@ -194,9 +194,12 @@ func TestNextRunDSTSpringForward(t *testing.T) {
 
 // TestNextRunDSTFallBack pins the fall-back edge in America/New_York: on
 // 2026-11-01 local clocks fall 02:00 -> 01:00, so local 01:00 occurs twice.
-// nextRun must resolve the target to ONE concrete future instant (the once-per-
-// local-day marker, tested elsewhere, prevents the repeated hour from firing a
-// second pass).
+// nextRun must resolve the target to ONE concrete future instant, and — the
+// second half below — must roll to the next calendar day once that instant has
+// passed, which is what keeps the repeated hour from firing a second pass. This
+// case tests nextRun alone; the same property driven through the scheduler loop
+// is TestSchedulerLoopFiresOnceAcrossTheRepeatedFallBackHour. The once-per-local-
+// day marker is not involved in either: the timer loop never reads it.
 func TestNextRunDSTFallBack(t *testing.T) {
 	ny := mustLoadLocation(t, "America/New_York")
 

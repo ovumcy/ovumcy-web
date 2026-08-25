@@ -37,9 +37,16 @@ const markerKey = models.AppStateKeyLastReminderRunDate
 //     fires at once, and a full notify pass over every owner repeats until the
 //     transition. fireOnCalendarDay keeps the pass on its intended day instead.
 //   - Fall-back (a local hour repeats, e.g. 02:00 occurs twice): time.Date
-//     resolves the target to one concrete instant; the pass fires once for that
-//     local date. The once-per-local-day marker guarantees the repeated wall-
-//     clock hour cannot trigger a second pass.
+//     resolves the target to one concrete instant — the FIRST occurrence, at the
+//     offset in effect before the transition — and the pass fires there. What
+//     stops the second occurrence from firing again is the loop below being
+//     STRICT: recomputed from the instant that just fired, today's candidate is
+//     not After(now), so it is rebuilt one calendar day later. The scheduler's
+//     once-per-local-day marker does NOT do this and cannot: it is read only by
+//     runCatchUp, on startup, and the timer loop never consults it. The marker
+//     covers a different case on the same day — a RESTART during the repeated
+//     hour, where catch-up would otherwise re-fire a day that already ran.
+//     Guard: TestSchedulerLoopFiresOnceAcrossTheRepeatedFallBackHour.
 //
 // Because each call recomputes from the actual current instant in location, a
 // scheduler that recomputes every cycle stays pinned to the local hour across a
