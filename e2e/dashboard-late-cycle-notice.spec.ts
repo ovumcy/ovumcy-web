@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/fixtures';
 import { saveSettingsLanguage } from './support/language-helpers';
 import { localeText, localeTextByLocale, type Locale } from './support/locale-helpers';
 import {

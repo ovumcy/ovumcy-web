@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import {
   apiOriginHeader,
   completeOnboardingIfPresent,
@@ -239,13 +239,10 @@ test.describe('Auth: register, login, logout', () => {
   });
 
   test('register form rejects emoji email via client validation', async ({ page }) => {
-    const consoleErrors: string[] = [];
-    page.on('console', (message) => {
-      if (message.type() === 'error') {
-        consoleErrors.push(message.text());
-      }
-    });
-
+    // The `page.on('console')` collector that used to live here — the suite's
+    // only error handler — is now the shared fixture's job, and it is
+    // stricter: it fails this test on ANY unallowlisted console error, not
+    // just on the invalid-pattern one below. One mechanism, every spec.
     await page.goto('/register');
     await expect(page).toHaveURL(/\/register(?:\?.*)?$/);
 
@@ -274,9 +271,9 @@ test.describe('Auth: register, login, logout', () => {
     await expect(page.locator('#register-client-status .status-error')).toContainText(
       declaredEmailMessage
     );
-    expect(
-      consoleErrors.some((text) => /Pattern attribute value .* is not a valid regular expression/i.test(text))
-    ).toBe(false);
+    // The "Pattern attribute value ... is not a valid regular expression"
+    // console error this test used to look for is covered by the fixture,
+    // which is why the local collector is gone.
   });
 
   test('register empty submit validates in top-down order and places the error next to the active field', async ({

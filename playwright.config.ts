@@ -27,6 +27,13 @@ export default defineConfig({
     trace: 'retain-on-failure',
     video: 'retain-on-failure',
   },
+  // Three projects are DEFINED here; the gating pipeline does not run three.
+  // Every `e2e*` script pins `--project=chromium`, and the sharded CI job
+  // installs chromium alone, so the full suite is a chromium result. Firefox
+  // and WebKit are exercised by `npm run e2e:cross-browser`, which is scoped
+  // to `e2e/cross-browser-smoke.spec.ts`. Running all specs on all three would
+  // roughly triple e2e wall-clock, so the narrow lane is the accepted trade —
+  // stated here because this list on its own reads like coverage that exists.
   projects: [
     {
       name: 'chromium',

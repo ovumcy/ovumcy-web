@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { displayDatesIn } from './support/date-field-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import { localeText } from './support/locale-helpers';

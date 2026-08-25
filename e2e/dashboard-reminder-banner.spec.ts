@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { registerAndOnboardWithStartDaysAgo } from './support/stats-helpers';
 
 // Onboarding seeds a single cycle (last_period_start + the default 28-day

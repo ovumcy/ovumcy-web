@@ -86,5 +86,29 @@ export default [
       // what makes the failure legible.
       "@typescript-eslint/no-non-null-assertion": "off"
     }
+  },
+  {
+    // Every spec runs on the suite's own `test`, which fails a test on an
+    // unallowlisted console error or an uncaught page exception. A spec that
+    // imports Playwright's stock `test` instead opts out of that guard
+    // silently, and a half-converted suite is worse than an unconverted one:
+    // the two halves diverge and nobody can tell which spec is watched. The
+    // fixture module re-exports `expect` and the types the specs use, so the
+    // conversion is a one-line import swap.
+    files: ["e2e/**/*.spec.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@playwright/test",
+              message:
+                "Import { expect, test } from './support/fixtures' instead — it fails a test on console errors and page errors."
+            }
+          ]
+        }
+      ]
+    }
   }
 ];

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { logoutViaAPI } from './support/auth-helpers';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import { displayDatesIn, fillDateField } from './support/date-field-helpers';
