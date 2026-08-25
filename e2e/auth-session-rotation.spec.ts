@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './support/fixtures';
 import {
   completeOnboardingIfPresent,
   confirmRecoveryCode,
@@ -39,6 +39,7 @@ async function registerOwnerAndOpenSettings(page: Page, prefix: string) {
 test.describe('Auth session rotation', () => {
   test('regenerating recovery code revokes other active sessions but keeps the originating one', async ({
     browser,
+    browserErrors,
     page,
   }) => {
     const state = await registerOwnerAndOpenSettings(page, 'session-rotation');
@@ -46,6 +47,10 @@ test.describe('Auth session rotation', () => {
     // Open a second, isolated browser context and sign in with the same
     // credentials. Two contexts means two separate cookie jars / "devices".
     const otherContext = await browser.newContext();
+    // The fixture watches the built-in context; a context the spec makes
+    // itself has to be handed over, or the second "device" is the one place
+    // in the suite where a crash goes unreported.
+    browserErrors.watch(otherContext);
     const otherPage = await otherContext.newPage();
     try {
       await loginViaUI(otherPage, { email: state.email, password: state.password });

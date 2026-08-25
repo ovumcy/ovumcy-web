@@ -1,4 +1,10 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import {
+  expect,
+  test,
+  type BrowserErrorWatcher,
+  type Locator,
+  type Page,
+} from './support/fixtures';
 import {
   completeOnboardingIfPresent,
   continueFromRecoveryCode,
@@ -42,11 +48,31 @@ interface DayPUTInterceptor {
 }
 
 /**
+ * htmx logs its own request-failure events on the console: `htmx:sendError`
+ * and `htmx:afterRequest` when the connection drops, and
+ * `Response Status Error Code NNN from …` when the server refuses. Every save
+ * this file breaks produces them by construction, so they are tolerated where
+ * the breakage is armed rather than suppressed suite-wide — a save failing
+ * anywhere else still fails its test.
+ */
+const HTMX_REQUEST_FAILURE_LOG =
+  /^console\.error: (?:htmx:(?:sendError|afterRequest)|Response Status Error Code )/;
+
+/**
  * Routes the day-entry PUT for one date. The outcome is switchable so a single
  * test can fail a save, fail its retry, and then let the retry through — the
  * three phases of the flow under test — without re-registering the route.
  */
-async function interceptDayPUT(page: Page, isoDate: string): Promise<DayPUTInterceptor> {
+async function interceptDayPUT(
+  page: Page,
+  isoDate: string,
+  browserErrors: BrowserErrorWatcher
+): Promise<DayPUTInterceptor> {
+  browserErrors.allow(
+    HTMX_REQUEST_FAILURE_LOG,
+    `this test forces PUT /api/v1/days/${isoDate} to fail, and htmx logging the failure is the behaviour under test`
+  );
+
   let outcome: SaveOutcome = 'server-error';
   let attempts = 0;
 
@@ -115,12 +141,12 @@ async function expectDayEntryStillTyped(form: Locator, note: string): Promise<vo
 }
 
 test.describe('day-entry save resilience', () => {
-  test('a rejected save keeps the typed entry and no save is announced', async ({ page }) => {
+  test('a rejected save keeps the typed entry and no save is announced', async ({ browserErrors, page }) => {
     const todayISO = await registerOwnerOnCalendar(page, 'day-save-rejected');
     const targetISO = shiftISODate(todayISO, -20);
     const note = 'slept badly, headache since morning';
 
-    const interceptor = await interceptDayPUT(page, targetISO);
+    const interceptor = await interceptDayPUT(page, targetISO, browserErrors);
     const form = await openCalendarDayEditor(page, targetISO);
     await fillDayEntry(form, note);
 
@@ -156,13 +182,14 @@ test.describe('day-entry save resilience', () => {
   });
 
   test('a network failure is announced calmly and the retry resends the same entry', async ({
+    browserErrors,
     page,
   }) => {
     const todayISO = await registerOwnerOnCalendar(page, 'day-save-offline');
     const targetISO = shiftISODate(todayISO, -22);
     const note = 'cramps in the evening';
 
-    const interceptor = await interceptDayPUT(page, targetISO);
+    const interceptor = await interceptDayPUT(page, targetISO, browserErrors);
     interceptor.set('network-failure');
     const form = await openCalendarDayEditor(page, targetISO);
     await fillDayEntry(form, note);
@@ -215,12 +242,13 @@ test.describe('day-entry save resilience', () => {
   });
 
   test('the failure notice is neutral, readable and localized, not a health alarm', async ({
+    browserErrors,
     page,
   }) => {
     const todayISO = await registerOwnerOnCalendar(page, 'day-save-notice');
     const targetISO = shiftISODate(todayISO, -24);
 
-    const interceptor = await interceptDayPUT(page, targetISO);
+    const interceptor = await interceptDayPUT(page, targetISO, browserErrors);
     interceptor.set('network-failure');
     const form = await openCalendarDayEditor(page, targetISO);
     await fillDayEntry(form, 'quiet day');
@@ -251,7 +279,7 @@ test.describe('day-entry save resilience', () => {
     await saveSettingsLanguage(page, 'ru');
 
     const localizedISO = shiftISODate(todayISO, -26);
-    const localizedInterceptor = await interceptDayPUT(page, localizedISO);
+    const localizedInterceptor = await interceptDayPUT(page, localizedISO, browserErrors);
     localizedInterceptor.set('network-failure');
     const localizedForm = await openCalendarDayEditor(page, localizedISO);
     await fillDayEntry(localizedForm, 'тихий день');
@@ -289,12 +317,13 @@ async function registerOwnerOnDashboard(page: Page, prefix: string): Promise<str
 
 test.describe('dashboard autosave resilience', () => {
   test('an autosave that never lands keeps the entry and offers the same retry', async ({
+    browserErrors,
     page,
   }) => {
     const todayISO = await registerOwnerOnDashboard(page, 'dashboard-autosave-offline');
     const note = 'walked in the evening';
 
-    const interceptor = await interceptDayPUT(page, todayISO);
+    const interceptor = await interceptDayPUT(page, todayISO, browserErrors);
     interceptor.set('network-failure');
 
     const notes = await ensureNotesFieldVisible(page, '#today-notes');

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from './support/fixtures';
 import { generateSync } from 'otplib';
 import {
   completeOnboardingIfPresent,
@@ -19,7 +19,7 @@ const DISABLE_2FA_SUBMIT =
 
 // Reads the raw TOTP secret from the visible manual-entry element on the
 // enrollment page (the same string the user copies into their authenticator).
-async function readTOTPSecret(page: import('@playwright/test').Page): Promise<string> {
+async function readTOTPSecret(page: Page): Promise<string> {
   const el = page.locator('[data-totp-manual-secret]');
   await expect(el).toBeVisible();
   const secret = (await el.textContent())?.trim() ?? '';

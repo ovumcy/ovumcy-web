@@ -1,4 +1,4 @@
-import { expect, test, type Frame, type Page } from '@playwright/test';
+import { expect, test, type Frame, type Page } from './support/fixtures';
 import { expectDashboardStatusHeader } from './support/dashboard-helpers';
 import { cancelConfirmDialog } from './support/confirm-dialog-helpers';
 import { saveInterfaceSettingsForm } from './support/settings-interface-helpers';

@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './support/fixtures';
 import { dashboardNextPeriodText } from './support/dashboard-helpers';
 import {
   apiOriginHeader,
@@ -116,7 +116,18 @@ test.describe('Onboarding flow', () => {
     await expect(page).toHaveURL(/\/dashboard$/);
   });
 
-  test('step 1 blocks an empty submit and the today shortcut fills the date', async ({ page }) => {
+  test('step 1 blocks an empty submit and the today shortcut fills the date', async ({
+    browserErrors,
+    page,
+  }) => {
+    // The empty submit below is meant to reach the server and be refused, so
+    // htmx logs the 400 on the console. That log is the subject here, not a
+    // fault: the assertion two lines down is that the refusal rendered.
+    browserErrors.allow(
+      /^console\.error: Response Status Error Code 400 from \/api\/v1\/onboarding\/steps\/1/,
+      'this test submits step 1 empty on purpose and asserts the rejection is rendered'
+    );
+
     await registerAndOpenOnboarding(page, 'onboarding-step1-quickpick');
 
     const transport = page.locator('#last-period-start');

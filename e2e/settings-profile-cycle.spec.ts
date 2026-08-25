@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from './support/fixtures';
 import { fillDateField } from './support/date-field-helpers';
 import {
   dashboardNextPeriodText,

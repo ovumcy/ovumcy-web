@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './support/fixtures';
 import { apiOriginHeader } from './support/auth-helpers';
 import { cancelConfirmDialog, mutatingRequestsDuring } from './support/confirm-dialog-helpers';
 import { localeText } from './support/locale-helpers';
