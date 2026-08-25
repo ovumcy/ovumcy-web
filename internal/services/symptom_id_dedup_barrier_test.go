@@ -254,6 +254,44 @@ func exemptedFixture(logEntry L, counts map[uint]int) {
 			wantVerdict: symptomLoopViolation,
 			wantSource:  "logEntry.OtherSymptomIDs",
 		},
+		{
+			// `m[k]++` is one spelling of counting and `m[k] = m[k] + 1` is
+			// another. An exemption states that a repeated id changes no
+			// output, so the check behind it has to read the meaning rather
+			// than the operator: a recogniser that knows one spelling clears a
+			// loop that counts in the other.
+			name: "an exempted loop that counts by assignment is still counting",
+			source: `package p
+func exemptedFixture(logEntry L, counts map[uint]int) {
+	for _, id := range logEntry.SymptomIDs {
+		counts[id] = counts[id] + 1
+	}
+}`,
+			wantVerdict: symptomLoopExemptButCounts,
+			wantSource:  "logEntry.SymptomIDs",
+		},
+		{
+			// Alias resolution counts assignments to decide whether a local
+			// still denotes what it was assigned. Two `:=` bindings of one name
+			// in sibling scopes are two locals, not one assigned twice, and
+			// reading them as one silently drops the resolution — so the
+			// counting loop below stops being recognised.
+			name: "a same-named local in a sibling scope does not blind the resolution",
+			source: `package p
+func f(logEntry L, counts map[uint]int, other []uint, flag bool) {
+	if flag {
+		ids := logEntry.SymptomIDs
+		for _, id := range ids {
+			counts[id]++
+		}
+	} else {
+		ids := other
+		_ = ids
+	}
+}`,
+			wantVerdict: symptomLoopViolation,
+			wantSource:  "logEntry.SymptomIDs",
+		},
 	}
 
 	for _, tc := range tests {
@@ -381,7 +419,7 @@ func symptomIDLoopFindings(t *testing.T, fset *token.FileSet, file *ast.File, ex
 			continue
 		}
 
-		aliases := singleAssignmentLocals(fn.Body)
+		aliases := resolveBlockAliases(fn.Body)
 		ast.Inspect(fn.Body, func(node ast.Node) bool {
 			loop, ok := node.(*ast.RangeStmt)
 			if !ok {
@@ -390,10 +428,8 @@ func symptomIDLoopFindings(t *testing.T, fset *token.FileSet, file *ast.File, ex
 
 			written := symptomLoopSource(t, fset, loop.X)
 			expr := loop.X
-			if ident, isIdent := loop.X.(*ast.Ident); isIdent {
-				if resolved, known := aliases[ident.Name]; known {
-					expr = resolved
-				}
+			if resolved, known := aliases[loop.X]; known {
+				expr = resolved
 			}
 			source := symptomLoopSource(t, fset, expr)
 
@@ -441,6 +477,56 @@ func symptomIDLoopFindings(t *testing.T, fset *token.FileSet, file *ast.File, ex
 // body to the expression it was assigned from. Assigned twice, or assigned by a
 // `range` clause, and it is left unresolved: this is one dataflow step, enough
 // for the extract-a-local refactor and deliberately not more.
+// singleAssignmentLocals reads ONE block's own statements, not the whole
+// function: a name bound in a sibling branch is a different local, and reading
+// the function flat treated the two as one local assigned twice, dropped the
+// resolution for both, and quietly stopped recognising a counting loop whose
+// slice happened to sit in a variable named like another. resolveBlockAliases
+// walks the blocks and lets an inner binding shadow an outer one.
+//
+// Nested blocks are skipped here rather than flattened, for the same reason.
+// `ast.Object` would answer this directly and is deprecated precisely because
+// it cannot be trusted without type information, which this sweep does not
+// have.
+// resolveBlockAliases maps each `range` expression written as a bare name to
+// the expression that name was assigned from, resolved in the block that binds
+// it. Walking block by block is what keeps two same-named locals in sibling
+// branches apart; an inner binding shadows an outer one, as it does in Go.
+func resolveBlockAliases(body *ast.BlockStmt) map[ast.Expr]ast.Expr {
+	resolved := map[ast.Expr]ast.Expr{}
+
+	var walk func(block *ast.BlockStmt, outer map[string]ast.Expr)
+	walk = func(block *ast.BlockStmt, outer map[string]ast.Expr) {
+		aliases := make(map[string]ast.Expr, len(outer))
+		for name, expr := range outer {
+			aliases[name] = expr
+		}
+		for name, expr := range singleAssignmentLocals(block) {
+			aliases[name] = expr
+		}
+
+		ast.Inspect(block, func(node ast.Node) bool {
+			if nested, ok := node.(*ast.BlockStmt); ok && nested != block {
+				walk(nested, aliases)
+				return false
+			}
+			loop, ok := node.(*ast.RangeStmt)
+			if !ok {
+				return true
+			}
+			if ident, isIdent := loop.X.(*ast.Ident); isIdent {
+				if expr, known := aliases[ident.Name]; known {
+					resolved[loop.X] = expr
+				}
+			}
+			return true
+		})
+	}
+
+	walk(body, nil)
+	return resolved
+}
+
 func singleAssignmentLocals(body *ast.BlockStmt) map[string]ast.Expr {
 	assignments := map[string]int{}
 	candidates := map[string]ast.Expr{}
@@ -455,6 +541,11 @@ func singleAssignmentLocals(body *ast.BlockStmt) map[string]ast.Expr {
 	}
 
 	ast.Inspect(body, func(node ast.Node) bool {
+		if block, nested := node.(*ast.BlockStmt); nested && block != body {
+			// A nested block owns its own bindings; resolveBlockAliases visits
+			// it separately with this block's map as the outer one.
+			return false
+		}
 		switch stmt := node.(type) {
 		case *ast.AssignStmt:
 			for _, lhs := range stmt.Lhs {
@@ -472,6 +563,9 @@ func singleAssignmentLocals(body *ast.BlockStmt) map[string]ast.Expr {
 			note(stmt.X)
 		case *ast.ValueSpec:
 			for index, name := range stmt.Names {
+				if name.Name == "_" {
+					continue
+				}
 				assignments[name.Name]++
 				if len(stmt.Names) == 1 && len(stmt.Values) == 1 {
 					candidates[name.Name] = stmt.Values[index]
@@ -490,9 +584,12 @@ func singleAssignmentLocals(body *ast.BlockStmt) map[string]ast.Expr {
 	return resolved
 }
 
-// loopBodyIncrements reports whether the loop counts anything — `x++`, `x--` or
-// a `+=`/`-=`. An exemption is a statement that a repeated id changes no
-// output, and a counter is the one construct that always makes that false.
+// loopBodyIncrements reports whether the loop counts anything — `x++`, `x--`,
+// a `+=`/`-=`, or the same step written out as `x = x + 1`. An exemption is a
+// statement that a repeated id changes no output, and a counter is the one
+// construct that always makes that false, so this has to read the step rather
+// than the operator: knowing `m[k]++` and not `m[k] = m[k] + 1` clears a loop
+// that counts, which is the whole thing the exemption promises it does not do.
 func loopBodyIncrements(body *ast.BlockStmt) bool {
 	counts := false
 	ast.Inspect(body, func(node ast.Node) bool {
@@ -500,13 +597,55 @@ func loopBodyIncrements(body *ast.BlockStmt) bool {
 		case *ast.IncDecStmt:
 			counts = true
 		case *ast.AssignStmt:
-			if stmt.Tok == token.ADD_ASSIGN || stmt.Tok == token.SUB_ASSIGN {
+			switch stmt.Tok {
+			case token.ADD_ASSIGN, token.SUB_ASSIGN:
 				counts = true
+			case token.ASSIGN:
+				for index, lhs := range stmt.Lhs {
+					if index < len(stmt.Rhs) && assignmentStepsItsOwnTarget(lhs, stmt.Rhs[index]) {
+						counts = true
+					}
+				}
 			}
 		}
 		return !counts
 	})
 	return counts
+}
+
+// assignmentStepsItsOwnTarget reports whether `target = value` adds to or
+// subtracts from target itself, in either operand order (`n = n + 1` and
+// `n = 1 + n` are the same step).
+func assignmentStepsItsOwnTarget(target ast.Expr, value ast.Expr) bool {
+	binary, ok := value.(*ast.BinaryExpr)
+	if !ok || (binary.Op != token.ADD && binary.Op != token.SUB) {
+		return false
+	}
+	if sameSyntacticExpr(target, binary.X) {
+		return true
+	}
+	// `n = 1 - n` is not a step, it is a reflection; only addition commutes.
+	return binary.Op == token.ADD && sameSyntacticExpr(target, binary.Y)
+}
+
+// sameSyntacticExpr compares the shapes this barrier can meet on the left of an
+// assignment — a plain name, a field, and a map or slice index. It is
+// deliberately syntactic: the sweep parses without type information, so two
+// expressions that read the same are treated as the same target.
+func sameSyntacticExpr(left ast.Expr, right ast.Expr) bool {
+	switch typed := left.(type) {
+	case *ast.Ident:
+		other, ok := right.(*ast.Ident)
+		return ok && typed.Name == other.Name
+	case *ast.SelectorExpr:
+		other, ok := right.(*ast.SelectorExpr)
+		return ok && typed.Sel.Name == other.Sel.Name && sameSyntacticExpr(typed.X, other.X)
+	case *ast.IndexExpr:
+		other, ok := right.(*ast.IndexExpr)
+		return ok && sameSyntacticExpr(typed.X, other.X) && sameSyntacticExpr(typed.Index, other.Index)
+	default:
+		return false
+	}
 }
 
 func symptomLoopAliasNote(finding symptomIDLoopFinding) string {
