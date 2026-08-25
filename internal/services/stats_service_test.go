@@ -327,6 +327,46 @@ func TestBuildSymptomFrequenciesForUserPropagatesErrors(t *testing.T) {
 	}
 }
 
+// TestStatsServiceBuildCycleStatsFromLogsIsThePackageFunction pins that the
+// method the dashboard's interface seam depends on adds nothing to the
+// package-level derivation. The repository-free callers (the webhook decision
+// pass, the .ics feed) now call the function directly; a method that started
+// computing something of its own would silently give the dashboard a different
+// prediction from the two egress surfaces.
+//
+// It also pins that the function needs no service at all — it is called here on
+// a receiver-less path, which is the "consults no repositories" property the
+// egress callers used to assert in a comment and buy with NewStatsService(nil,
+// nil).
+func TestStatsServiceBuildCycleStatsFromLogsIsThePackageFunction(t *testing.T) {
+	// The fixture drives all three steps of the derivation, so agreeing on it is
+	// not the same as agreeing on raw BuildCycleStats: the owner's non-default
+	// luteal phase only reaches the stats through ApplyUserCycleBaseline, and the
+	// pregnancy flag only through ResolvePregnancyPause.
+	logs := []models.DailyLog{
+		{Date: mustParseStatsServiceDay(t, "2026-01-01"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-01-29"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-02-26"), IsPeriod: true, CycleStart: true},
+		{Date: mustParseStatsServiceDay(t, "2026-03-08"), PregnancyTest: models.PregnancyTestPositive},
+	}
+	user := &models.User{ID: 9, Role: models.RoleOwner, CycleLength: 28, LutealPhase: 11}
+	now := mustParseStatsServiceDay(t, "2026-03-10")
+
+	direct := BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	raw := BuildCycleStats(logs, now)
+	if direct == raw {
+		t.Fatalf("anchor: the fixture must exercise the baseline and pause steps, got the raw derivation %+v", raw)
+	}
+	if !direct.PregnancyPaused || direct.LutealPhase != 11 {
+		t.Fatalf("anchor: expected the pause flag and the owner's luteal phase, got %+v", direct)
+	}
+
+	viaMethod := NewStatsService(&stubStatsDayReader{}, &stubStatsSymptomReader{}).BuildCycleStatsFromLogs(user, logs, now, time.UTC)
+	if viaMethod != direct {
+		t.Fatalf("method result %+v differs from the package function's %+v", viaMethod, direct)
+	}
+}
+
 func mustParseStatsServiceDay(t *testing.T, raw string) time.Time {
 	t.Helper()
 	parsed, err := time.ParseInLocation("2006-01-02", raw, time.UTC)

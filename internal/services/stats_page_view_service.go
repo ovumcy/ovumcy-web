@@ -150,7 +150,7 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 
 	return StatsPageViewData{
-		Stats:                               baseData.stats,
+		Stats:                               publishedStatsForOwner(user, baseData.stats),
 		ChartData:                           baseData.chartData,
 		ChartBaseline:                       baseData.chartBaseline,
 		TrendPointCount:                     baseData.trendPointCount,
@@ -195,6 +195,46 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 		IsIrregularMode:                     isIrregularMode,
 		IsOwner:                             isOwner,
 	}, nil
+}
+
+// publishedStatsForOwner returns the CycleStats this page PUBLISHES: the
+// computed stats with every forward-looking value the display policy refuses
+// cleared, so the data cannot outlive the decision. Suppression on this surface
+// used to be a template obligation — one boolean beside the full CycleStats it
+// was supposed to hide — and a template that forgets the boolean, a new partial,
+// a JSON view or a debug dump of the struct then publishes a claim the product
+// has decided it must not make. Cleared here, the same forgetful template
+// renders nothing instead of a suppressed estimate.
+//
+// The two shared predicates decide, never a signal recombined here, and they
+// clear different sets because they answer different questions:
+// FertilityProjectionSuppressed also covers the zero-cycles floor, where the
+// projected next period legitimately stays because its anchor is a recorded
+// start and only the length falls back.
+//
+// RECORDED history — observed cycle lengths, the last period start, the current
+// cycle day — is never touched: it is fact, not projection, and the page's
+// "facts only" mode exists precisely to keep showing it. Only the PUBLISHED copy
+// is cleared; every builder above reads the full stats, because the ribbon, the
+// factor context and the cycle context each apply their own suppression rule to
+// it.
+func publishedStatsForOwner(user *models.User, stats CycleStats) CycleStats {
+	// Both verdicts are read off the UNCLEARED stats, so the second predicate
+	// cannot be answered from fields the first one has already emptied.
+	fertilitySuppressed := FertilityProjectionSuppressed(user, stats)
+	predictionsSuppressed := PredictionsSuppressed(user, stats)
+
+	if fertilitySuppressed {
+		stats.OvulationDate = time.Time{}
+		stats.OvulationExact = false
+		stats.FertilityWindowStart = time.Time{}
+		stats.FertilityWindowEnd = time.Time{}
+		stats.CurrentFertility = FertilityStatusUnknown
+	}
+	if predictionsSuppressed {
+		stats.NextPeriodStart = time.Time{}
+	}
+	return stats
 }
 
 func (service *StatsService) buildStatsPageBaseData(ctx context.Context, user *models.User, cycleLabelPattern string, now time.Time, location *time.Location, maxTrendPoints int) (statsPageBaseData, error) {
@@ -334,12 +374,22 @@ func shouldShowStatsLongCycleNotice(user *models.User, completedCycleLengths []i
 	return long >= shortCycleNoticeMinimumOccurrences
 }
 
-// shouldShowStatsPerimenopauseHint surfaces a STRAW+10-aligned educational
-// note for users aged 45+, where within-individual cycle variability rises
-// sharply (Gibson et al., npj Digital Medicine 2023, Apple Women's Health
-// Study, n=12,608) and persistent ≥7-day differences between consecutive
-// cycles mark entry into the menopausal transition (Harlow et al., the
-// ReSTAGE collaboration, median entry age 45.5 years).
+// shouldShowStatsPerimenopauseHint surfaces a STRAW+10-aligned educational note
+// for users aged 45+, where within-individual cycle variability rises sharply
+// (Gibson et al., npj Digital Medicine 2023, Apple Women's Health Study,
+// n=12,608).
+//
+// THE AGE BRACKET IS THE WHOLE RULE — no cycle data is consulted, and that is
+// deliberate, not an omission. The copy is an invitation to look, not a verdict:
+// it tells the owner that persistent ≥7-day differences between consecutive
+// cycles are what marks entry into the menopausal transition (Harlow et al., the
+// ReSTAGE collaboration, median entry age 45.5 years) and asks them to notice
+// it. Gating the hint on that criterion would turn the invitation into a claim
+// the app makes about the account, and would withhold it from exactly the owners
+// with too little history to measure variability at all. It is why this function
+// is unlike the two siblings above it, which DO make pattern statements and are
+// therefore gated at 3 occurrences. Regression:
+// TestStatsPerimenopauseHintFollowsTheAgeBracketAlone.
 func shouldShowStatsPerimenopauseHint(user *models.User) bool {
 	return user != nil && NormalizeAgeGroup(user.AgeGroup) == models.AgeGroup45Plus
 }
@@ -361,21 +411,47 @@ func buildStatsPredictionReliability(user *models.User, flags StatsFlags, stats 
 	}
 
 	variablePattern := user != nil && (user.IrregularCycle || (flags.CompletedCycleCount >= minimumPhaseInsightCycles && IsIrregularCycleSpread(stats)))
-	labelKey := "stats.reliability.early"
+	tier := resolveStatsReliabilityTier(variablePattern, sampleCount)
 
+	return sampleCount, usesRecentWindow, tier.labelKey, tier.hintKey, true
+}
+
+// statsReliabilityTier is the single reliability verdict the card renders. The
+// heading and the hint are two sentences about ONE state of the account, so
+// they are read off one tier rather than derived from two independent
+// expressions: the label was gated at minimumPhaseInsightCycles and the hint was
+// not, which paired "the pattern is still early" with the hint written for a
+// variable pattern for an irregular-cycle owner at exactly two completed cycles
+// — the case HasPersonalCycleRange admits and both statements describe
+// differently.
+type statsReliabilityTier struct {
+	labelKey string
+	hintKey  string
+}
+
+var (
+	// statsReliabilityEarly is the floor: enough cycles for basic insights, not
+	// enough to characterize a pattern. It says nothing about variability in
+	// either sentence, which is what "conservative with sparse data" means here.
+	statsReliabilityEarly    = statsReliabilityTier{labelKey: "stats.reliability.early", hintKey: "stats.reliability.hint"}
+	statsReliabilityBuilding = statsReliabilityTier{labelKey: "stats.reliability.building", hintKey: "stats.reliability.hint"}
+	statsReliabilityStable   = statsReliabilityTier{labelKey: "stats.reliability.stable", hintKey: "stats.reliability.hint"}
+	statsReliabilityVariable = statsReliabilityTier{labelKey: "stats.reliability.variable", hintKey: "stats.reliability.hint_variable"}
+)
+
+// resolveStatsReliabilityTier picks the tier from the sample the card is about.
+// A variable pattern needs minimumPhaseInsightCycles behind it exactly as every
+// other pattern claim on this page does; below that the account is early,
+// whichever mode it is in.
+func resolveStatsReliabilityTier(variablePattern bool, sampleCount int) statsReliabilityTier {
 	switch {
 	case variablePattern && sampleCount >= minimumPhaseInsightCycles:
-		labelKey = "stats.reliability.variable"
+		return statsReliabilityVariable
 	case sampleCount >= cyclePredictionWindow:
-		labelKey = "stats.reliability.stable"
+		return statsReliabilityStable
 	case sampleCount >= minimumPhaseInsightCycles:
-		labelKey = "stats.reliability.building"
+		return statsReliabilityBuilding
+	default:
+		return statsReliabilityEarly
 	}
-
-	hintKey := "stats.reliability.hint"
-	if variablePattern {
-		hintKey = "stats.reliability.hint_variable"
-	}
-
-	return sampleCount, usesRecentWindow, labelKey, hintKey, true
 }

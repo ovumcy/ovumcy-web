@@ -65,15 +65,34 @@ func (service *StatsService) BuildCycleStatsForRange(ctx context.Context, user *
 }
 
 // BuildCycleStatsFromLogs computes cycle stats from already-fetched logs, for
-// callers that have the relevant range in memory and want to avoid a
-// redundant daily_logs query.
-func (service *StatsService) BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
+// callers that have the relevant range in memory and want to avoid a redundant
+// daily_logs query.
+//
+// It is package-level because it consults NO repositories: the whole derivation
+// is BuildCycleStats + ApplyUserCycleBaseline + ResolvePregnancyPause over the
+// logs it is handed. The repository-free callers — the webhook decision pass and
+// the .ics feed — used to say that in a comment and reach it through
+// NewStatsService(nil, nil), a service whose two fields exist only to be not
+// dereferenced. Here the property is structural: there is no receiver to hold a
+// nil store, so a future line that needs one cannot compile into this function
+// unnoticed.
+func BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
 	stats := BuildCycleStats(logs, now)
 	stats = ApplyUserCycleBaseline(user, logs, stats, now, location)
 	if _, paused := ResolvePregnancyPause(logs); paused {
 		stats.PregnancyPaused = true
 	}
 	return stats
+}
+
+// BuildCycleStatsFromLogs is the method form, kept because the dashboard view
+// service depends on this derivation through an interface seam
+// (DashboardStatsProvider) that its tests substitute. It adds nothing: the
+// method IS the package function, so the two can never disagree about what the
+// dashboard's stats are. Regression:
+// TestStatsServiceBuildCycleStatsFromLogsIsThePackageFunction.
+func (service *StatsService) BuildCycleStatsFromLogs(user *models.User, logs []models.DailyLog, now time.Time, location *time.Location) CycleStats {
+	return BuildCycleStatsFromLogs(user, logs, now, location)
 }
 
 func StatsOverviewRange(now time.Time) (time.Time, time.Time) {

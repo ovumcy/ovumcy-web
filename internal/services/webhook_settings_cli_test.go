@@ -399,3 +399,62 @@ func TestApplyWebhookSettingsDryRunDisabledNoURL(t *testing.T) {
 		t.Fatalf("expected a disabled, not-configured view, got %+v", view)
 	}
 }
+
+// TestWebhookSettingsViewsReportTheLeadWindowInForce pins that `show` and `set`
+// print the SAME lead window, the clamped one the decision layer actually uses.
+// The show path used to publish the raw stored column, so a value outside
+// [MinReminderLeadDays, MaxReminderLeadDays] — a hand-edited row, a restored
+// backup, a row written before the bound existed — made `show` report a window
+// no reminder would ever fire on, and a no-op `set` look like a change.
+func TestWebhookSettingsViewsReportTheLeadWindowInForce(t *testing.T) {
+	testCases := []struct {
+		name   string
+		stored int
+		want   int
+	}{
+		{name: "below the lower bound", stored: -5, want: MinReminderLeadDays},
+		{name: "above the upper bound", stored: 90, want: MaxReminderLeadDays},
+		{name: "inside the bound is untouched", stored: 3, want: 3},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			const userID = uint(77)
+			reader := &stubWebhookReader{
+				found: true,
+				user: models.User{
+					ID:                  userID,
+					WebhookEnabled:      true,
+					WebhookURL:          encryptTestWebhookURL(t, "https://ntfy.example.io/topic", userID),
+					WebhookNotifyPeriod: true,
+					ReminderLeadDays:    testCase.stored,
+				},
+			}
+			svc, _ := newWebhookCLIServiceForTest(reader)
+
+			shown, err := svc.ResolveWebhookSettings(context.Background(), "owner@example.com")
+			if err != nil {
+				t.Fatalf("ResolveWebhookSettings: %v", err)
+			}
+			if shown.ReminderLeadDays != testCase.want {
+				t.Fatalf("show reported lead window %d, want the clamped %d", shown.ReminderLeadDays, testCase.want)
+			}
+			// The value in force, straight from the decision layer's own clamp.
+			inForce := NormalizeReminderLeadDays(reader.user.ReminderLeadDays)
+			if shown.ReminderLeadDays != inForce {
+				t.Fatalf("show reported %d, but the lead window in force is %d", shown.ReminderLeadDays, inForce)
+			}
+
+			// A flag-only patch that leaves the lead day alone must print the same
+			// number the show path just printed.
+			enabled := true
+			applied, err := svc.ApplyWebhookSettings(context.Background(), "owner@example.com", WebhookSettingsPatch{Enabled: &enabled}, true)
+			if err != nil {
+				t.Fatalf("ApplyWebhookSettings: %v", err)
+			}
+			if applied.ReminderLeadDays != shown.ReminderLeadDays {
+				t.Fatalf("set reported lead window %d, show reported %d", applied.ReminderLeadDays, shown.ReminderLeadDays)
+			}
+		})
+	}
+}

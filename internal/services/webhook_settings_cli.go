@@ -37,8 +37,12 @@ type WebhookSettingsView struct {
 	// no endpoint is configured. It is the single form of a webhook URL that may
 	// appear in operator output — never the scheme/path/query/token.
 	Host             string
-	NotifyPeriod     bool
-	NotifyOvulation  bool
+	NotifyPeriod    bool
+	NotifyOvulation bool
+	// ReminderLeadDays is the lead window IN FORCE — always clamped through
+	// NormalizeReminderLeadDays, the same value DecideDueReminders applies —
+	// never the raw stored column. Both builders of this struct clamp, so `show`
+	// and `set` cannot report two different readings of one window.
 	ReminderLeadDays int
 }
 
@@ -205,12 +209,17 @@ func (service *WebhookSettingsCLIService) resolveOwner(ctx context.Context, emai
 	}
 
 	view := WebhookSettingsView{
-		Configured:       configured,
-		Enabled:          owner.WebhookEnabled,
-		Host:             host,
-		NotifyPeriod:     owner.WebhookNotifyPeriod,
-		NotifyOvulation:  owner.WebhookNotifyOvulation,
-		ReminderLeadDays: owner.ReminderLeadDays,
+		Configured:      configured,
+		Enabled:         owner.WebhookEnabled,
+		Host:            host,
+		NotifyPeriod:    owner.WebhookNotifyPeriod,
+		NotifyOvulation: owner.WebhookNotifyOvulation,
+		// Clamped, exactly as viewFromUpdate and DecideDueReminders clamp it: the
+		// view reports the window IN FORCE, never the raw stored column. A row
+		// outside the bound — hand-edited, restored from a backup, or written
+		// before the bound existed — otherwise made `show` print a window no
+		// reminder can fire on, and a no-op `set` look like a change.
+		ReminderLeadDays: NormalizeReminderLeadDays(owner.ReminderLeadDays),
 	}
 	return owner, view, plaintextURL, nil
 }

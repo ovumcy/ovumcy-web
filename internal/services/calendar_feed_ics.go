@@ -92,7 +92,7 @@ type calendarFeedEvent struct {
 //
 // The decision, in order (mirrors DecideDueReminders' medical-safety gate):
 //   - Build cycle stats from the owner's logs via the SAME path the dashboard
-//     uses (StatsService.BuildCycleStatsFromLogs, which needs no repositories).
+//     uses (BuildCycleStatsFromLogs, which needs no repositories).
 //   - If in-app predictions are suppressed (DashboardPredictionDisabled — the
 //     owner's unpredictable-cycle mode — stats.PregnancyPaused, or
 //     DashboardCycleOverdue), emit ZERO events. This is the hard medical-safety
@@ -116,10 +116,11 @@ func calendarFeedEvents(input CalendarFeedICSInput) []calendarFeedEvent {
 		return nil
 	}
 
-	// Reuse the exact dashboard prediction path — a zero-dependency StatsService
-	// runs precisely the dashboard's stats derivation (baseline + pregnancy-pause
-	// resolution) without a store, exactly as DecideDueReminders does.
-	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, input.Logs, input.Now, input.Location)
+	// Reuse the exact dashboard prediction path — package-level
+	// BuildCycleStatsFromLogs runs precisely the dashboard's stats derivation
+	// (baseline + pregnancy-pause resolution) without a store, exactly as
+	// DecideDueReminders does.
+	stats := BuildCycleStatsFromLogs(user, input.Logs, input.Now, input.Location)
 
 	// Medical-safety suppression gate: if the app suppresses predictions, emit
 	// nothing. Unpredictable-cycle mode, a pregnancy pause, OR an overdue cycle

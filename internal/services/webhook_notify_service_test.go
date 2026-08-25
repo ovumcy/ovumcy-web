@@ -334,12 +334,26 @@ func TestNotifyCrossOwnerHealthDataStaysScoped(t *testing.T) {
 }
 
 // TestNotifyDisclaimerPresentInEveryPayload proves the mandatory medical-safety
-// disclaimer rides in every delivered payload.
+// disclaimer rides in every delivered payload. It is the invariant's only
+// carrier — buildPayload sets Disclaimer unconditionally, and there is no
+// per-reminder flag a producer could forget — so it drives BOTH reminder kinds:
+// one owner whose next period is inside the lead window and one whose ovulation
+// is, with the kinds asserted present so the sweep cannot go quiet by delivering
+// only one of them.
 func TestNotifyDisclaimerPresentInEveryPayload(t *testing.T) {
 	now := time.Date(2026, 3, 12, 9, 0, 0, 0, time.UTC)
-	record := dueRecord(1, "https://a.example/hook", now, 26)
-	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{record}}
-	logs := stubLogReader{byUser: map[uint][]models.DailyLog{1: {periodStartLog(1, *record.LastPeriodStart)}}}
+	periodOwner := dueRecord(1, "https://a.example/hook", now, 26)
+	periodOwner.WebhookNotifyOvulation = true
+	ovulationOwner := dueRecord(2, "https://b.example/hook", now, 12)
+	ovulationOwner.WebhookNotifyOvulation = true
+
+	repo := &stubNotifyRepo{records: []models.WebhookNotifyRecord{periodOwner, ovulationOwner}}
+	logs := stubLogReader{byUser: map[uint][]models.DailyLog{
+		1: {periodStartLog(1, *periodOwner.LastPeriodStart)},
+		// The ovulation reminder is withheld until one cycle has been observed
+		// (FertilityProjectionSuppressed), so this owner carries a completed one.
+		2: completedCycleStartLogs(2, *ovulationOwner.LastPeriodStart),
+	}}
 	deliverer := &stubDeliverer{}
 	service := newTestNotifyService(repo, logs, stubDecryptor{}, deliverer)
 
@@ -347,12 +361,16 @@ func TestNotifyDisclaimerPresentInEveryPayload(t *testing.T) {
 		t.Fatalf("RunOnce: %v", err)
 	}
 	deliveries := deliverer.deliveries()
-	if len(deliveries) == 0 {
-		t.Fatal("expected at least one delivery")
-	}
+	seenKinds := map[string]bool{}
 	for _, delivery := range deliveries {
+		seenKinds[delivery.payload.Type] = true
 		if !strings.Contains(delivery.payload.Disclaimer, "not medical advice or a method of contraception") {
-			t.Fatalf("payload missing disclaimer: %q", delivery.payload.Disclaimer)
+			t.Fatalf("payload of type %q missing disclaimer: %q", delivery.payload.Type, delivery.payload.Disclaimer)
+		}
+	}
+	for _, kind := range []string{DueReminderTypePeriod, DueReminderTypeOvulation} {
+		if !seenKinds[kind] {
+			t.Fatalf("anchor: expected a %q delivery, got kinds %v", kind, seenKinds)
 		}
 	}
 }

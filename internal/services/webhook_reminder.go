@@ -45,15 +45,21 @@ const (
 //     watermark already equals it.
 //   - LeadDays echoes the window that was in force (settings.ReminderLeadDays,
 //     clamped), for observability by the caller.
-//   - Estimate is always true: a predicted period/ovulation date is an estimate,
-//     never fact (medical-safety invariant), so any surface rendering this must
-//     carry the estimate qualifier + non-medical-advice disclaimer.
+//
+// EVERY EventDate here is an estimate, never fact (medical-safety invariant), so
+// every surface rendering one must carry the estimate qualifier and the
+// non-medical-advice disclaimer. That obligation used to be spelled as an
+// Estimate field set to a literal true by both producers and read by nothing: a
+// constant cannot distinguish a case, so no consumer could branch on it and the
+// invariant travelled as prose wearing the shape of data. It travels as data
+// where it is actually enforced — buildPayload sets WebhookPayload.Disclaimer on
+// every payload unconditionally, and reminderCopy words the date as an estimate.
+// Regression: TestNotifyDisclaimerPresentInEveryPayload.
 type DueReminder struct {
 	Type        string
 	EventDate   time.Time
 	CycleAnchor time.Time
 	LeadDays    int
-	Estimate    bool
 }
 
 // WebhookReminderSettings is the transport-free webhook decision input: the
@@ -111,7 +117,7 @@ func WebhookReminderSettingsFromNotifyRecord(record models.WebhookNotifyRecord) 
 //
 //   - Webhook delivery disabled ⇒ nothing.
 //   - Build cycle stats from the owner's logs via the SAME path the dashboard
-//     uses (StatsService.BuildCycleStatsFromLogs, which needs no repositories).
+//     uses (BuildCycleStatsFromLogs, which needs no repositories).
 //   - In-app predictions suppressed (DashboardPredictionDisabled — the owner's
 //     unpredictable-cycle mode — stats.PregnancyPaused, or DashboardCycleOverdue
 //     — the running cycle is past the account's reference length by more than a
@@ -173,11 +179,12 @@ func decideDueReminders(user *models.User, settings WebhookReminderSettings, log
 		return nil, 0
 	}
 
-	// Reuse the exact dashboard prediction path. BuildCycleStatsFromLogs is a
-	// StatsService method but consults no repositories, so a zero-dependency
-	// service is the pure, allocation-cheap way to run precisely the dashboard's
-	// stats derivation (baseline + pregnancy-pause resolution) without a store.
-	stats := NewStatsService(nil, nil).BuildCycleStatsFromLogs(user, logs, now, location)
+	// Reuse the exact dashboard prediction path. BuildCycleStatsFromLogs is
+	// package-level precisely because it consults no repositories, so this pass
+	// runs the dashboard's stats derivation (baseline + pregnancy-pause
+	// resolution) without constructing — and without depending on never
+	// dereferencing — a store-less service.
+	stats := BuildCycleStatsFromLogs(user, logs, now, location)
 
 	// Medical-safety gate: if the app suppresses predictions, emit nothing. The
 	// three signals are read through the predicate every surface shares.
@@ -246,7 +253,6 @@ func decidePeriodReminder(settings WebhookReminderSettings, prediction Dashboard
 		EventDate:   eventDate,
 		CycleAnchor: anchor,
 		LeadDays:    leadDays,
-		Estimate:    true,
 	}, true, false
 }
 
@@ -283,7 +289,6 @@ func decideOvulationReminder(stats CycleStats, settings WebhookReminderSettings,
 		EventDate:   eventDate,
 		CycleAnchor: anchor,
 		LeadDays:    leadDays,
-		Estimate:    true,
 	}, true, false
 }
 
