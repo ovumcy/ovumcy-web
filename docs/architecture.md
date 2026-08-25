@@ -26,6 +26,7 @@ flowchart TB
         browser["Browser / PWA<br/>server-rendered HTML + HTMX + JS"]
         ical["Calendar client<br/>read-only .ics subscription"]
         idp["OIDC provider<br/>optional SSO"]
+        operator["Operator shell<br/>ovumcy CLI subcommands"]
     end
 
     proxy["Reverse proxy (optional)<br/>TLS termination"]
@@ -33,20 +34,28 @@ flowchart TB
     subgraph app["Ovumcy server — single Go binary"]
         direction TB
         api["internal/api — transport only<br/>routing · auth · role · CSRF · HTMX / JSON / HTML"]
-        services["internal/services — domain logic<br/>cycle · stats · dashboard · settings · export · onboarding"]
+        cli["internal/cli — operator commands<br/>users · reset-password · notify · webhook · healthcheck"]
+        reminders["internal/reminders — background scheduler<br/>trigger for the request-free webhook notify pass"]
+        services["internal/services — domain logic<br/>cycle · stats · dashboard · settings · export · onboarding · webhook delivery"]
         db["internal/db — persistence<br/>repositories · forward-only migrations"]
         models["internal/models — transport-free types"]
         cross["cross-cutting: internal/security · i18n · templates · httpx · bootstrap"]
     end
 
     store[("SQLite (default)<br/>or PostgreSQL (advanced)")]
+    hook["Owner-configured webhook URL<br/>outbound reminder delivery"]
 
     browser --> proxy
     ical --> proxy
     proxy --> api
-    idp -. "form_post callback" .-> api
+    idp -. "callback: POST (form_post) or GET (query mode)" .-> api
+    operator --> cli
     api --> services
+    cli --> services
+    cli --> db
+    reminders --> services
     services --> db
+    services -. "outbound POST" .-> hook
     db --> store
     api -. "reads/writes" .-> models
     services -. "returns" .-> models
@@ -68,6 +77,28 @@ flowchart TB
 - **Cross-cutting** (`internal/security`, `i18n`, `templates`, `httpx`,
   `bootstrap`): AEAD sealing and token logic, localization, HTMX status-markup
   wrappers, and one dependency-wiring recipe shared by production and tests.
+- **`internal/reminders` (background scheduler).** The one caller that reaches the
+  domain layer with neither a request nor an operator behind it: a lifecycle-tied
+  trigger, started from `cmd/ovumcy` when the off-by-default
+  `REMINDER_SCHEDULER_ENABLED` is on, that decides *when* to run the daily webhook
+  notify pass. The pass itself — listing owners, deciding due reminders,
+  delivering, and writing each per-reminder watermark — stays in
+  `internal/services`, and the outbound POST it makes is the only call the app
+  places that no one asked it for; everything else it dials (OIDC discovery, JWKS,
+  token exchange) happens inside a request it is answering. Because the pass runs
+  outside a request it has no session and no CSRF token: its owner scoping comes
+  from the same per-`user_id` repository calls the request path uses.
+- **`internal/cli` (operator commands).** The second entry point of the binary
+  (`ovumcy users`, `reset-password`, `notify`, `webhook`, `healthcheck`). It is
+  not transport and does not pass through the authorization boundary below —
+  it reaches `internal/services` and `internal/db` directly, and is gated by
+  shell or container access to the host instead. Operator use is documented in
+  the [README](../README.md#architecture) and
+  [`docs/self-hosted.md`](self-hosted.md).
+
+`internal/apideps` (the dependency-wiring struct and ports shared by the server
+and the CLI) and `internal/testdb` (a PostgreSQL test harness) are wiring rather
+than layers and are deliberately left off this map.
 
 ## Trust boundaries
 
@@ -100,10 +131,14 @@ flowchart LR
     end
 
     secrets["No secret in transport:<br/>AEAD-sealed cookies · bcrypt / hashed<br/>tokens &amp; recovery codes at rest"]
+    sched["internal/reminders scheduler<br/>no request · no session · no CSRF token"]
+    hook["Owner-configured webhook URL<br/>bounded outbound POST · opt-in private-address block"]
 
     ub --> rl --> csrf --> auth --> owner --> domain --> data
-    ui -. "sealed state + PKCE" .-> auth
+    ui -. "sealed state + PKCE · POST form_post · GET query mode" .-> auth
     uc -. "404-no-oracle · hashed · rate-limited" .-> domain
+    sched --> domain
+    domain -. "reminder delivery" .-> hook
     hdr -.- csrf
     secrets -.- auth
 ```
@@ -113,9 +148,18 @@ Load-bearing invariants (see [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS
 - **Privacy boundary.** No account, surface, or export may expose another
   account's data. A resource id from the request is always combined with the
   session `user_id`, never trusted alone.
-- **Endpoint defense-in-depth.** Every state-mutating `/api/v1/*` endpoint
-  declares `OwnerOnly` **and** is CSRF-protected. The single CSRF exemption is
-  `POST /auth/oidc/callback`, protected by the sealed one-time state cookie.
+- **Endpoint defense-in-depth.** Every state-mutating `/api/v1/*` endpoint is
+  CSRF-protected — the pre-session ones (register, login, password reset)
+  included, since the CSRF middleware is mounted globally, ahead of routing, and
+  does not care whether a session exists. Every such endpoint that sits behind
+  `AuthRequired` **additionally** declares `OwnerOnly`; the endpoints that run
+  before any session exists have no role to enforce, and that exclusion set —
+  which applies to `OwnerOnly` alone, never to CSRF — is named in full in
+  [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md) rather than restated
+  here. The single CSRF exemption is the OIDC callback — `POST
+  /auth/oidc/callback`, plus `GET` on the same path under
+  `OIDC_RESPONSE_MODE=query`, a safe method the middleware never validates —
+  protected by the sealed one-time state cookie.
 - **No secret in transport.** Secrets, auth/recovery/reset tokens, recovery
   codes and passwords never appear in URLs, JSON, HTML or logs. The one
   sanctioned carve-out is the read-only calendar-feed capability token (hashed at
