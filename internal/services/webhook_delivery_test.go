@@ -18,6 +18,16 @@ import (
 	"time"
 )
 
+// webhookExternalSentinelIP is this suite's stand-in for "a destination out on
+// the public internet", used by every over-block guard. It has to satisfy two
+// things at once: globally reachable per the IANA special-purpose registry, so
+// the private-address gate must let it through, and no TCP listener anywhere, so
+// a test that really dials reaches nobody. RFC 5737 documentation space used to
+// serve this role; the gate refuses it now, so the sentinel is the RFC 7723 port
+// control protocol anycast address — registered globally reachable, reserved for
+// a UDP protocol, and not announced by ordinary networks.
+const webhookExternalSentinelIP = "2001:1::1"
+
 // fakeResolver is the injected ipResolver seam: it maps hostnames to fixed
 // answers so the resolve-and-check dialer can be tested without live DNS.
 type fakeResolver struct {
@@ -372,7 +382,8 @@ func TestIsPrivateHost(t *testing.T) {
 		"ntfy.example.io": false,
 		"100.64.0.1":      true,  // RFC 6598 CGNAT literal (net.IP.IsPrivate omits it)
 		"64:ff9b::a00:1":  true,  // RFC 6052 NAT64 literal wrapping 10.0.0.1
-		"203.0.113.10":    false, // TEST-NET-3 stays external (over-block guard)
+		"203.0.113.10":    true,  // TEST-NET-3: documentation space is not globally reachable
+		"192.31.196.1":    false, // AS112-v4 anycast: special-purpose but globally reachable (over-block guard)
 	}
 	for host, want := range cases {
 		if got := isPrivateHost(host); got != want {
@@ -419,26 +430,31 @@ func TestWebhookDeliveryBlocksHostnameResolvingToPrivate(t *testing.T) {
 }
 
 // TestWebhookDeliveryAllowsHostnameResolvingToPublic proves the gate does not
-// over-block: with the gate ON, a hostname resolving to a PUBLIC address passes
-// the private-address guard (it fails later only because the documentation-range
-// IP is unroutable). The failure must NOT be the private-address sentinel.
+// over-block: with the gate ON, a hostname resolving to a globally reachable
+// address passes the private-address guard and fails later only on the dial
+// itself (nothing listens on the sentinel).
+//
+// The verdict is read from the LOG, not from errors.Is: Deliver deliberately
+// returns a host-only, non-wrapping error so the URL cannot leak through an error
+// chain, so errors.Is(err, errWebhookPrivateAddress) is false for a blocked
+// target too — this assertion used to be unable to fail.
 func TestWebhookDeliveryAllowsHostnameResolvingToPublic(t *testing.T) {
 	const hostname = "ntfy.example.io"
-	// 192.0.2.1 is TEST-NET-1 (RFC 5737): classified public, guaranteed unroutable.
-	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, "192.0.2.1"))
+	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, webhookExternalSentinelIP))
 	target := "http://" + hostname + "/hook"
 
-	// A short deadline so the unroutable dial aborts quickly instead of waiting the
-	// full 10s envelope.
+	// A short deadline so the dial to the unanswered sentinel aborts quickly
+	// instead of waiting the full 10s envelope.
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	err := deliverer.Deliver(ctx, target, samplePayload())
-	if err == nil {
-		t.Fatal("expected the unroutable public target to fail the dial")
-	}
-	if errors.Is(err, errWebhookPrivateAddress) {
-		t.Fatalf("public-resolving hostname was wrongly blocked as private: %v", err)
+	output := captureLogOutput(t, func() {
+		if err := deliverer.Deliver(ctx, target, samplePayload()); err == nil {
+			t.Fatal("expected the unanswered public target to fail the dial")
+		}
+	})
+	if strings.Contains(output, "reason=private_address_blocked") {
+		t.Fatalf("public-resolving hostname was wrongly blocked as private: %q", output)
 	}
 }
 
@@ -457,7 +473,7 @@ func TestWebhookDeliveryBlocksMixedPublicPrivateAnswer(t *testing.T) {
 	target := hostnameTargetFor(t, server.URL, hostname)
 	// Public first, then the loopback server IP: the guard must reject on the private
 	// record regardless of order and never reach the server.
-	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, "192.0.2.1", "127.0.0.1"))
+	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, webhookExternalSentinelIP, "127.0.0.1"))
 
 	err := deliverer.Deliver(context.Background(), target, samplePayload())
 	if err == nil {
@@ -513,27 +529,46 @@ func TestWebhookDeliveryBlocksHostnameResolvingToCarrierRanges(t *testing.T) {
 	}
 }
 
-// TestWebhookDeliveryAllowsHostnameResolvingToTestNet3 is the over-block guard
-// for the exact sentinel the suite treats as external: 203.0.113.10 (TEST-NET-3)
-// must stay allowed even with the gate ON. It passes the private-address guard
-// and fails later only because the documentation-range IP is unroutable — so the
-// logged reason must NOT be private_address_blocked (which is what a wrongful
-// over-block would record).
-func TestWebhookDeliveryAllowsHostnameResolvingToTestNet3(t *testing.T) {
-	const hostname = "public.example"
-	deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, "203.0.113.10"))
-	target := "http://" + hostname + "/hook"
+// TestWebhookDeliveryBlocksHostnameResolvingToSpecialPurposeRanges is the
+// delivery-level half of the registry widening: the ranges below used to reach
+// the dialer with the gate ON, because the classifier only knew the ranges
+// somebody had reported. reason=private_address_blocked is logged ONLY when the
+// guarded dialer refuses before dialing, so that reason proves no packet left;
+// against the old classifier each case fell through to a real dial and logged
+// transport_error instead.
+//
+// TestIsPrivateIPWalksTheSpecialPurposeRegistries covers the whole registry at
+// the classifier; these four are the ones an operator can actually be pointed at.
+func TestWebhookDeliveryBlocksHostnameResolvingToSpecialPurposeRanges(t *testing.T) {
+	cases := map[string]string{
+		"benchmarking_rfc2544":         "198.18.0.1",
+		"protocol_assignments_rfc6890": "192.0.0.1",
+		"reserved_rfc1112":             "240.0.0.1",
+		"documentation_rfc5737":        "203.0.113.10",
+	}
+	for name, resolvedIP := range cases {
+		t.Run(name, func(t *testing.T) {
+			const hostname = "special.example"
+			target := "http://" + hostname + "/hook"
+			deliverer := newWebhookDelivererWithResolver(true, resolverFor(hostname, resolvedIP))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
+			// A short deadline bounds the regression path only: a classifier missing
+			// the range would fall through to a real dial. The fixed one never dials.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
 
-	output := captureLogOutput(t, func() {
-		if err := deliverer.Deliver(ctx, target, samplePayload()); err == nil {
-			t.Fatal("expected the unroutable TEST-NET-3 target to fail the dial")
-		}
-	})
-	if strings.Contains(output, "reason=private_address_blocked") {
-		t.Fatalf("TEST-NET-3 (203.0.113.10) was wrongly blocked as private: %q", output)
+			output := captureLogOutput(t, func() {
+				if err := deliverer.Deliver(ctx, target, samplePayload()); err == nil {
+					t.Fatalf("expected hostname resolving to %s to be refused when gated on", resolvedIP)
+				}
+			})
+			if !strings.Contains(output, "reason=private_address_blocked") {
+				t.Fatalf("expected private_address_blocked (guard fired before any dial), got: %q", output)
+			}
+			if strings.Contains(output, resolvedIP) {
+				t.Fatalf("log leaked the resolved IP %q: %q", resolvedIP, output)
+			}
+		})
 	}
 }
 
@@ -561,8 +596,13 @@ func TestIsPrivateIP(t *testing.T) {
 		"0.0.0.0":          true, // unspecified
 		"::":               true, // IPv6 unspecified
 		"8.8.8.8":          false,
-		"192.0.2.1":        false, // TEST-NET-1, public-classified
 		"2606:4700::1":     false, // public IPv6
+		// The IANA special-purpose registries decide the rest; the walk over every
+		// entry is TestIsPrivateIPWalksTheSpecialPurposeRegistries. Two samples stay
+		// here so this map's own picture is not misleading: documentation space is
+		// refused, globally reachable special-purpose space is not.
+		"192.0.2.1":    true,  // TEST-NET-1 (RFC 5737), not globally reachable
+		"192.31.196.1": false, // AS112-v4 anycast (RFC 7535), globally reachable
 		// RFC 6598 CGNAT (100.64.0.0/10): internal/carrier space that Go's
 		// net.IP.IsPrivate() omits, so the gate must still block it — with the /10
 		// boundaries staying public to guard against over-block.
@@ -591,9 +631,12 @@ func TestIsPrivateIP(t *testing.T) {
 		"::ffff:0:8.8.8.8":   false, // same form, public v4
 		// Teredo (RFC 4380) embeds TWO v4 addresses. Each half is pinned alone, or a
 		// classifier that decoded only one of them would still pass this map.
-		"2001:0:a00:1:0:0:f5ff:fffe":           true,  // server v4 = 10.0.0.1
-		"2001:0:808:808:0:0:f5ff:fffe":         true,  // public server, client ^0x0afffffe = 10.0.0.1
-		"2001:0:4136:e378:8000:63bf:3fff:fdd2": false, // both halves public
+		"2001:0:a00:1:0:0:f5ff:fffe":   true, // server v4 = 10.0.0.1
+		"2001:0:808:808:0:0:f5ff:fffe": true, // public server, client ^0x0afffffe = 10.0.0.1
+		// Server 65.54.227.120, client 8.8.8.8 (stored inverted as f7f7:f7f7). The
+		// textbook example ends 3fff:fdd2 — client 192.0.2.45, documentation space —
+		// which is now refused, so it can no longer stand for "both halves public".
+		"2001:0:4136:e378:8000:63bf:f7f7:f7f7": false, // both halves public
 		// Ranges that are internal without wrapping anything, each with the boundary
 		// just outside it pinned so the fix cannot widen into an over-block.
 		"fec0::1":            true,  // deprecated IPv6 site-local (RFC 3879)
@@ -605,8 +648,10 @@ func TestIsPrivateIP(t *testing.T) {
 		"64:ff9b:1::a00:1":   true,  // RFC 8215 local-use NAT64, private wholesale
 		"64:ff9b:1::808:808": true,  // ... including a public-looking wrap: the BLOCK is local-use
 		"64:ff9b:2::808:808": false, // just outside the /48
-		// TEST-NET-3 must stay external — the positive delivery path relies on it.
-		"203.0.113.10": false,
+		// TEST-NET-3 is refused with the other documentation prefixes; the suite's
+		// external sentinel is now a globally reachable address (see
+		// webhookExternalSentinelIP).
+		"203.0.113.10": true,
 	}
 	for literal, want := range cases {
 		ip := net.ParseIP(literal)
@@ -649,14 +694,14 @@ func TestGuardedDialContext(t *testing.T) {
 		stub := &stubDial{conn: client}
 		dialFn := guardedDialContext(stub.dial, fakeResolver{})
 
-		conn, err := dialFn(ctx, "tcp", "192.0.2.1:443")
+		conn, err := dialFn(ctx, "tcp", "8.8.8.8:443")
 		if err != nil {
 			t.Fatalf("expected a public literal to dial, got %v", err)
 		}
 		if conn != client {
 			t.Fatal("guarded dialer did not return the dialed conn")
 		}
-		if stub.lastAddr != "192.0.2.1:443" {
+		if stub.lastAddr != "8.8.8.8:443" {
 			t.Fatalf("dialed the wrong address: %q", stub.lastAddr)
 		}
 	})
@@ -679,12 +724,12 @@ func TestGuardedDialContext(t *testing.T) {
 		defer func() { _ = client.Close() }()
 		defer func() { _ = server.Close() }()
 		stub := &stubDial{conn: client}
-		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "192.0.2.1"))
+		dialFn := guardedDialContext(stub.dial, resolverFor("ntfy.example.io", "8.8.8.8"))
 
 		if _, err := dialFn(ctx, "tcp", "ntfy.example.io:443"); err != nil {
 			t.Fatalf("expected resolved public host to dial, got %v", err)
 		}
-		if stub.lastAddr != "192.0.2.1:443" {
+		if stub.lastAddr != "8.8.8.8:443" {
 			t.Fatalf("expected the resolved IP to be dialed, got %q", stub.lastAddr)
 		}
 	})
@@ -718,7 +763,7 @@ func TestGuardedDialContext(t *testing.T) {
 		stub := &stubDial{err: wantErr}
 		dialFn := guardedDialContext(stub.dial, fakeResolver{})
 
-		if _, err := dialFn(ctx, "tcp", "192.0.2.1:443"); !errors.Is(err, wantErr) {
+		if _, err := dialFn(ctx, "tcp", "8.8.8.8:443"); !errors.Is(err, wantErr) {
 			t.Fatalf("expected the dial error to surface, got %v", err)
 		}
 	})
