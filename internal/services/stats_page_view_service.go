@@ -131,12 +131,22 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	showShortCycleNotice := shouldShowStatsShortCycleNotice(user, completedCycleLengths)
 	showLongCycleNotice := shouldShowStatsLongCycleNotice(user, completedCycleLengths)
 	showPerimenopauseHint := shouldShowStatsPerimenopauseHint(user)
-	predictionDisabled := DashboardPredictionDisabled(user)
+	cycleContext := BuildDashboardCycleContext(user, baseData.stats, DateAtLocation(now, location), location)
+	// The stats phase card reads the suppression the cycle context already
+	// resolved, not DashboardPredictionDisabled(user) on its own: the
+	// unpredictable-cycle setting is one signal among several, and a pregnancy
+	// pause left this surface — the last prediction surface without the gate the
+	// calendar grid, the .ics feed and the webhook pass all carry — still
+	// claiming a fertile window whose only source is the onboarding
+	// cycle-length slider. Reading the resolved decision rather than
+	// recombining the signals here keeps /stats moving with the dashboard on
+	// every later reliability change. Regression:
+	// TestStatsFertileWindowCardIsSuppressedByAPregnancyPause.
+	predictionDisabled := cycleContext.PredictionDisabled
 	isIrregularMode := isStatsIrregularMode(user)
 	isOwner := IsOwnerUser(user)
 	predictionSampleCount, predictionSampleUsesRecentWindow, predictionReliabilityLabelKey, predictionReliabilityHintKey, showPredictionReliability := buildStatsPredictionReliability(user, baseData.flags, baseData.stats)
 	cycleFactorExplanation, hasCycleFactorExplanation := buildStatsCycleFactorExplanation(user, baseData.logs, baseData.stats, now, location)
-	cycleContext := BuildDashboardCycleContext(user, baseData.stats, DateAtLocation(now, location), location)
 	predictionExplanation := BuildOwnerPredictionExplanation(user, cycleContext, hasCycleFactorExplanation && len(cycleFactorExplanation.HintFactorKeys) > 0)
 
 	return StatsPageViewData{
