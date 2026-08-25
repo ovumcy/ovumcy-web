@@ -129,7 +129,7 @@ func eggWhiteLutealLogs(lutealLength int) []models.DailyLog {
 
 	origin := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
 	logs := make([]models.DailyLog, 0, cycleCount*3)
-	for cycle := 0; cycle < cycleCount; cycle++ {
+	for cycle := range cycleCount {
 		start := origin.AddDate(0, 0, cycle*cycleLength)
 		logs = append(logs,
 			models.DailyLog{Date: start, IsPeriod: true, CycleStart: true},
