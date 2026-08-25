@@ -40,11 +40,19 @@ type DashboardViewService struct {
 
 // DashboardViewData is everything the dashboard page renders.
 //
-// ShowFertilityStatus gates the slider-derived fertility half of the status
-// header — the fertile-window item and the status the header declares — on the
-// first completed cycle (DashboardAwaitingFirstCycle), for every goal: until one
-// cycle has been observed that window is the onboarding cycle length projected
-// forward, whatever the account is tracking for.
+// ShowFertilityStatus gates the fertility half of the status header — the
+// fertile-window item and the status the header declares — on the decision the
+// cycle context already resolved (DashboardCycleContext.FertilitySuppressed,
+// which is FertilityProjectionSuppressed). It used to name the first-cycle
+// floor alone, one disjunct of the four, so unpredictable-cycle mode, a
+// pregnancy pause and an overdue cycle all rendered "Fertile window" — the last
+// two beside the very notice saying the account's predictions are off.
+//
+// Stats is the PUBLISHED copy, cleared by publishedStatsForOwner: the gate and
+// the data behind it move together, so a partial that forgets the gate renders
+// nothing rather than the raw classification. Every builder in
+// BuildDashboardViewData still reads the uncleared stats, because each applies
+// its own suppression rule to them.
 type DashboardViewData struct {
 	Stats                             CycleStats
 	CycleContext                      DashboardCycleContext
@@ -172,8 +180,13 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		reminderBanner = BuildDashboardReminderBanner(cycleContext, today, user.ReminderLeadDays)
 	}
 
+	// The same helper the stats page publishes through, so the two surfaces
+	// cannot drift apart on what a suppressed tier is allowed to carry. Every
+	// builder above still reads the uncleared stats.
+	publishedStats := publishedStatsForOwner(user, stats)
+
 	return DashboardViewData{
-		Stats:                             stats,
+		Stats:                             publishedStats,
 		CycleContext:                      cycleContext,
 		CycleHero:                         BuildDashboardCycleHero(user, stats, cycleContext, dashboardCycleHeroInput{Logs: logs, Today: today, Location: location}),
 		ReminderBanner:                    reminderBanner,
@@ -198,7 +211,7 @@ func (service *DashboardViewService) BuildDashboardViewData(ctx context.Context,
 		MoreFieldsOpen:                    dashboardMoreFieldsHoldData(todayLog, visibility, timingFrame.BBTInVisibleTier),
 		ShowOvulationEstimate:             timingFrame.ShowOvulationEstimate,
 		ShowFirstCycleBridge:              timingFrame.ShowFirstCycleBridge,
-		ShowFertilityStatus:               !cycleContext.AwaitingFirstCycle,
+		ShowFertilityStatus:               !cycleContext.FertilitySuppressed,
 		ShowBBTInVisibleTier:              timingFrame.BBTInVisibleTier,
 		AllowManualCycleStart:             visibility.AllowManualCycleStart,
 		ManualCycleStartPolicy:            cycleStart.Policy,
@@ -264,13 +277,22 @@ type dashboardTimingFrame struct {
 // only where the tracking settings grant it, and its placement is a property of
 // the goal alone: a late cycle is when a morning reading matters most, so
 // nothing about the cycle demotes the field.
+//
+// The two items read DIFFERENT gates on purpose. The ovulation estimate is a
+// fertility claim, so it reads the decision the context already resolved
+// (FertilitySuppressed = FertilityProjectionSuppressed) rather than rebuilding
+// it from PredictionDisabled/NextPeriodEstimatePaused/AwaitingFirstCycle. The
+// bridge line needs the three shared signals WITHOUT the first-cycle floor —
+// it is the line shown IN that floor, so a gate that included it would gate the
+// bridge on its own state — and the context carries no field for that half, so
+// the pair below is still resolved here.
 func resolveDashboardTimingFrame(user *models.User, cycleContext DashboardCycleContext, visibility dashboardOwnerVisibility) dashboardTimingFrame {
 	if !IsOwnerUser(user) || NormalizeUsageGoal(user.UsageGoal) != models.UsageGoalTrying {
 		return dashboardTimingFrame{}
 	}
 	predictionSuppressed := cycleContext.PredictionDisabled || cycleContext.NextPeriodEstimatePaused
 	return dashboardTimingFrame{
-		ShowOvulationEstimate: !predictionSuppressed && !cycleContext.AwaitingFirstCycle,
+		ShowOvulationEstimate: !cycleContext.FertilitySuppressed,
 		ShowFirstCycleBridge:  !predictionSuppressed && cycleContext.AwaitingFirstCycle,
 		BBTInVisibleTier:      visibility.ShowBBTField,
 	}
