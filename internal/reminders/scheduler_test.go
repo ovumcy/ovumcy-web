@@ -847,3 +847,52 @@ func TestPanickingPassDoesNotSpendTheErrorRetryBudget(t *testing.T) {
 		t.Fatalf("a panicking pass must leave the marker untouched so the next fire retries, got %d write(s)", marker.setCalls)
 	}
 }
+
+// advancingClock is a now() seam that moves forward by step on every call, so a
+// test can put the wall clock across local midnight WHILE one slot is retrying.
+// The scheduler runs in its own goroutine, hence the mutex.
+type advancingClock struct {
+	mu   sync.Mutex
+	at   time.Time
+	step time.Duration
+}
+
+func (c *advancingClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	at := c.at
+	c.at = c.at.Add(c.step)
+	return at
+}
+
+// TestSpentBudgetMarksTheSlotsOwnDayNotTheDayItsRetriesRanInto pins the date the
+// spent budget writes. Marking is a giving-up record for the slot that failed,
+// so it must name THAT slot's local day. Resolving it from the last attempt's
+// clock instead lets a slot whose retries cross local midnight mark TOMORROW —
+// a day whose pass has not run and whose scheduled hour has not arrived — and a
+// restart on that day then reads marker == today and skips its catch-up, losing
+// the very day of reminders this retry exists to save.
+func TestSpentBudgetMarksTheSlotsOwnDayNotTheDayItsRetriesRanInto(t *testing.T) {
+	utc := time.UTC
+	// 23:50 on 2026-07-06: the run hour (9) is long past, so catch-up fires, and
+	// the slot's remaining backoff lands the later attempts on 2026-07-07.
+	clock := &advancingClock{at: time.Date(2026, 7, 6, 23, 50, 0, 0, utc), step: passRetryDelay}
+	runner := newFakeRunner()
+	runner.returnErr = errors.New("listing owners failed") // every attempt fails
+	marker := newFakeMarker()
+	marker.values[markerKey] = "2026-07-05" // yesterday -> catch-up fires
+
+	timers := newSlotTimerFactory(true)
+	scheduler := newTestScheduler(runner, marker, 9, utc, clock.now, timers.newTimer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := scheduler.Start(ctx)
+
+	waitForCalls(t, runner, maxPassAttempts, 2*time.Second)
+	cancel()
+	<-done
+
+	if v, ok := marker.get(markerKey); !ok || v != "2026-07-06" {
+		t.Fatalf("expected the spent budget to mark the slot's own day 2026-07-06, got %q ok=%v — marking 2026-07-07 closes a day that never ran", v, ok)
+	}
+}
