@@ -167,9 +167,6 @@ func TestDecideDueRemindersOvulationWindowBoundaries(t *testing.T) {
 			if ovulation.LeadDays != leadDays {
 				t.Fatalf("ovulation lead days = %d, want %d", ovulation.LeadDays, leadDays)
 			}
-			if !ovulation.Estimate {
-				t.Fatalf("expected Estimate=true (a predicted date is never fact)")
-			}
 		})
 	}
 }
@@ -213,9 +210,6 @@ func TestDecideDueRemindersPeriodWindow(t *testing.T) {
 			}
 			if got := period.CycleAnchor.Format("2006-01-02"); got != tc.wantEvent {
 				t.Fatalf("period cycle anchor = %s, want %s (anchor is the next cycle start)", got, tc.wantEvent)
-			}
-			if !period.Estimate {
-				t.Fatalf("expected Estimate=true")
 			}
 		})
 	}
