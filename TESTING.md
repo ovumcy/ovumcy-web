@@ -16,8 +16,19 @@ worth anything. Every claim here is backed by code in the repository and by CI.
 | **Fuzz** | Robustness of parsers/validators against arbitrary/invalid input | `internal/services/policy_fuzz_test.go` (native Go fuzzing) |
 | **Reference vectors** | Cycle predictions match the documented algorithm, number for number | `internal/services/cycles_reference_test.go` |
 
-Currently **2,300+ Go test functions** across `internal/` and **29 Playwright
-specs** (full suite on Chromium; cross-engine smoke on Firefox and WebKit).
+The Go suite runs to thousands of test functions across `internal/`, and the
+browser suite is every `e2e/*.spec.ts` file — `playwright.config.ts` declares
+only `testDir: 'e2e'`, with no `testMatch` or `testIgnore`, so the file listing
+*is* the suite (full suite on Chromium; cross-engine smoke on Firefox and
+WebKit). Exact figures are deliberately not written here: a number in prose
+goes stale on the next batch of tests and nothing re-derives it. Ask the tree
+instead:
+
+```bash
+grep -rE '^func Test[A-Z]' --include='*_test.go' internal | wc -l
+find e2e -name '*.spec.ts' | wc -l
+```
+
 Tests favor behavior and persisted state over markup or implementation details.
 
 ## We test our tests
@@ -30,7 +41,7 @@ fails ("kills" the mutant). Surviving mutants reveal weak assertions.
 - Run it locally: `scripts/mutation.sh baseline` (full) or `scripts/mutation.sh diff <ref>` (changed code only).
 - A weekly CI job tracks the trend; it is advisory and never blocks a merge.
 - Baseline scope now covers business-logic, security, and transport: `internal/services`, `internal/security`, and `internal/api`.
-- **Mutation efficacy** (gremlins, killed / (killed + survived); tracked weekly): `internal/services` **93.3%** (1529/1638), `internal/security` **97.8%** (134/137), and `internal/api` **97.3%** (649/667), measured on a clean-Linux CI run. Efficacy dipped from an earlier ~99% as v1.8.0 landed large new subsystems (webhooks, `.ics` feed, reminders) whose mutants were then triaged. An exhaustive per-mutant pass re-verified **every** survivor against a broad covering suite — the coverage-guided run over-reports survivors (Go leaves `const`/`case` lines uninstrumented, and its test selection can skip the killing test, so a mutant an existing test already kills can still show as survived) — closing the genuine gaps and documenting the residual as equivalents or coverage-attribution artifacts. `internal/api` is the slowest package to mutate — not the largest (`internal/services` is some 40% bigger in source lines) but the one whose tests are heavy DB integration — and it exceeds CI's 3h job timeout unsharded, so it runs as 5 file-subset shards (`internal_api_1`..`5`, a deterministic partition of the package's own files — see `scripts/mutation.sh`) merged into one `internal_api.json`. `internal/services` is sharded 5 ways on the same mechanism. Canonical efficacy comes only from the weekly clean-Linux job, never a local Windows run; per-package breakdowns live in [`.mutation/`](.mutation/).
+- **Mutation efficacy** (gremlins, killed / (killed + survived); tracked weekly): `internal/services` **93.3%** (1529/1638), `internal/security` **97.8%** (134/137), and `internal/api` **97.3%** (649/667), measured on a clean-Linux CI run. Efficacy dipped from an earlier ~99% as v1.8.0 landed large new subsystems (webhooks, `.ics` feed, reminders) whose mutants were then triaged. An exhaustive per-mutant pass re-verified **every** survivor against a broad covering suite — the coverage-guided run over-reports survivors (Go leaves `const`/`case` lines uninstrumented, and its test selection can skip the killing test, so a mutant an existing test already kills can still show as survived) — closing the genuine gaps and documenting the residual as equivalents or coverage-attribution artifacts. `internal/api` is the slowest package to mutate — not the largest (`internal/services` has more non-test source lines) but the one whose tests are heavy DB integration — and it exceeds CI's 3h job timeout unsharded, so it runs as 5 file-subset shards (`internal_api_1`..`5`, a deterministic partition of the package's own files — see `scripts/mutation.sh`) merged into one `internal_api.json`. `internal/services` is sharded 5 ways on the same mechanism. Canonical efficacy comes only from the weekly clean-Linux job, never a local Windows run; per-package breakdowns live in [`.mutation/`](.mutation/).
 - Statement coverage is lower than efficacy by design: mutation testing checks whether a test *fails when the code breaks*, not merely whether a line ran. The "not covered" mutants are dominated by package-level `const`/`var` declarations (which Go coverage never instruments) and the network-facing OIDC client (covered end-to-end).
 
 Surviving mutants are triaged honestly: a *real* gap gets a new behavior test; an
@@ -98,7 +109,11 @@ verify it against the numbers.
 # Go: unit + integration + property + fuzz seeds.
 # Scoped to the module's Go trees (not ./...) so a local node_modules/ — where a
 # vendored JS dependency ships a .go file — isn't swept into the wildcard.
-go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
+# -timeout 20m declares the same budget CI does: Go's default is 10 minutes PER
+# PACKAGE, and internal/api's DB-integration suite sits at that edge, so the
+# default run dies as `panic: test timed out after 10m0s` with a goroutine dump
+# that reads like a product bug. Read that panic as the budget, not as a defect.
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m
 
 # Active fuzzing of a single target
 go test ./internal/services/ -run '^$' -fuzz FuzzParseDayDate -fuzztime 30s
@@ -135,6 +150,7 @@ end to end. The two steps that matter are `go clean -testcache` and
 rm -f coverage.out
 go clean -testcache
 go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... \
+  -timeout 20m \
   -coverprofile=coverage.out -covermode=atomic \
   -coverpkg=./cmd/...,./internal/...,./migrations/...,./scripts/...,./web/... \
   -count=1
