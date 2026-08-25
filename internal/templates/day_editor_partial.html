@@ -126,33 +126,22 @@
   </form>
 
   {{if .AllowManualCycleStart}}
-  <form
-    hx-post="/api/v1/days/{{.DateString}}/cycle-start?source=calendar"
-    hx-target="#calendar-save-status"
-    hx-swap="innerHTML"
-    class="pt-3"
-    data-cycle-start-confirm-form
-    data-day-cycle-start-form
-    data-day-cycle-start-date="{{.DateString}}">
-    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
-    <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
-    <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
-    <button type="submit" class="{{if .Log.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
-  </form>
-  <div
-    hidden
-    data-cycle-start-policy
-    data-cycle-start-conflict="{{if .ManualCycleStartConflict}}true{{else}}false{{end}}"
-    data-cycle-start-conflict-date="{{if .ManualCycleStartConflict}}{{formatLocalizedDate .Lang .ManualCycleStartConflictDate "display"}}{{end}}"
-    data-cycle-start-target-date="{{formatLocalizedDate .Lang .Date "display"}}"
-    data-cycle-start-short-gap="{{.ManualCycleStartShortGap}}"
-    data-cycle-start-previous-date="{{if gt .ManualCycleStartShortGap 0}}{{formatLocalizedDate .Lang .ManualCycleStartPreviousDate "display"}}{{end}}"
-    data-cycle-start-implantation="{{if .ManualCycleStartPotentialImplantation}}true{{else}}false{{end}}"
-    data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
-    data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
-    data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
-    data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
+  {{template "cycle_start_form" (dict
+    "Messages" .Messages
+    "Lang" .Lang
+    "CSRFToken" .CSRFToken
+    "Surface" "calendar"
+    "Endpoint" (printf "/api/v1/days/%s/cycle-start?source=calendar" .DateString)
+    "Target" "#calendar-save-status"
+    "FormClass" "pt-3"
+    "DateParam" .DateString
+    "TargetDate" .Date
+    "Active" .Log.CycleStart
+    "Conflict" .ManualCycleStartConflict
+    "ConflictDate" .ManualCycleStartConflictDate
+    "ShortGap" .ManualCycleStartShortGap
+    "PreviousDate" .ManualCycleStartPreviousDate
+    "Implantation" .ManualCycleStartPotentialImplantation)}}
   {{if .ShowFutureCycleStartNotice}}
   <p class="journal-muted text-sm" data-future-cycle-start-notice data-notice-key="warning.future_cycle_start">{{t .Messages "warning.future_cycle_start"}}</p>
   {{end}}
@@ -186,32 +175,22 @@
     <div class="flex flex-wrap items-center gap-3">
       <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}" data-action-weight="primary">{{t .Messages "calendar.edit_entry"}}</button>
       {{if .AllowManualCycleStart}}
-      <form
-        hx-post="/api/v1/days/{{.DateString}}/cycle-start?source=calendar"
-        hx-target="#day-editor"
-        hx-swap="innerHTML"
-        data-cycle-start-confirm-form
-        data-day-cycle-start-form
-        data-day-cycle-start-date="{{.DateString}}">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
-        <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
-        <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
-        <button type="submit" class="{{if .Log.CycleStart}}btn-primary{{else}}btn-secondary{{end}}" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
-      </form>
-      <div
-        hidden
-        data-cycle-start-policy
-        data-cycle-start-conflict="{{if .ManualCycleStartConflict}}true{{else}}false{{end}}"
-        data-cycle-start-conflict-date="{{if .ManualCycleStartConflict}}{{formatLocalizedDate .Lang .ManualCycleStartConflictDate "display"}}{{end}}"
-        data-cycle-start-target-date="{{formatLocalizedDate .Lang .Date "display"}}"
-        data-cycle-start-short-gap="{{.ManualCycleStartShortGap}}"
-        data-cycle-start-previous-date="{{if gt .ManualCycleStartShortGap 0}}{{formatLocalizedDate .Lang .ManualCycleStartPreviousDate "display"}}{{end}}"
-        data-cycle-start-implantation="{{if .ManualCycleStartPotentialImplantation}}true{{else}}false{{end}}"
-        data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
-        data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
-        data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
-        data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
+      {{template "cycle_start_form" (dict
+        "Messages" .Messages
+        "Lang" .Lang
+        "CSRFToken" .CSRFToken
+        "Surface" "calendar"
+        "Endpoint" (printf "/api/v1/days/%s/cycle-start?source=calendar" .DateString)
+        "Target" "#day-editor"
+        "FormClass" ""
+        "DateParam" .DateString
+        "TargetDate" .Date
+        "Active" .Log.CycleStart
+        "Conflict" .ManualCycleStartConflict
+        "ConflictDate" .ManualCycleStartConflictDate
+        "ShortGap" .ManualCycleStartShortGap
+        "PreviousDate" .ManualCycleStartPreviousDate
+        "Implantation" .ManualCycleStartPotentialImplantation)}}
       {{end}}
     </div>
     {{if .ShowFutureCycleStartNotice}}
@@ -229,32 +208,24 @@
       <div class="flex flex-wrap items-center gap-3">
         <button type="button" class="btn-primary" hx-get="/calendar/day/{{.DateString}}?mode=edit" hx-target="#day-editor" hx-swap="innerHTML" data-day-editor-open="{{.DateString}}" data-action-weight="primary">{{t .Messages "calendar.add_entry"}}</button>
         {{if .AllowManualCycleStart}}
-        <form
-          hx-post="/api/v1/days/{{.DateString}}/cycle-start?source=calendar"
-          hx-target="#day-editor"
-          hx-swap="innerHTML"
-          data-cycle-start-confirm-form
-          data-day-cycle-start-form
-          data-day-cycle-start-date="{{.DateString}}">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
-          <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
-          <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
-          <button type="submit" class="btn-secondary" data-day-cycle-start-button>{{t .Messages "dashboard.manual_cycle_start"}}</button>
-        </form>
-        <div
-          hidden
-          data-cycle-start-policy
-          data-cycle-start-conflict="{{if .ManualCycleStartConflict}}true{{else}}false{{end}}"
-          data-cycle-start-conflict-date="{{if .ManualCycleStartConflict}}{{formatLocalizedDate .Lang .ManualCycleStartConflictDate "display"}}{{end}}"
-          data-cycle-start-target-date="{{formatLocalizedDate .Lang .Date "display"}}"
-          data-cycle-start-short-gap="{{.ManualCycleStartShortGap}}"
-          data-cycle-start-previous-date="{{if gt .ManualCycleStartShortGap 0}}{{formatLocalizedDate .Lang .ManualCycleStartPreviousDate "display"}}{{end}}"
-          data-cycle-start-implantation="{{if .ManualCycleStartPotentialImplantation}}true{{else}}false{{end}}"
-          data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
-          data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
-          data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
-          data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
+        {{/* No entry exists on this day yet, so the control stays secondary
+             whatever the day's own flag says. */}}
+        {{template "cycle_start_form" (dict
+          "Messages" .Messages
+          "Lang" .Lang
+          "CSRFToken" .CSRFToken
+          "Surface" "calendar"
+          "Endpoint" (printf "/api/v1/days/%s/cycle-start?source=calendar" .DateString)
+          "Target" "#day-editor"
+          "FormClass" ""
+          "DateParam" .DateString
+          "TargetDate" .Date
+          "Active" false
+          "Conflict" .ManualCycleStartConflict
+          "ConflictDate" .ManualCycleStartConflictDate
+          "ShortGap" .ManualCycleStartShortGap
+          "PreviousDate" .ManualCycleStartPreviousDate
+          "Implantation" .ManualCycleStartPotentialImplantation)}}
         {{end}}
       </div>
       {{if .ShowFutureCycleStartNotice}}
