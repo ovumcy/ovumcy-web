@@ -276,27 +276,29 @@ func TestDayService_ShouldAutoFill_ReturnsFalseWhenWasPeriod(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Line 554 — ShouldAutoFillPeriodDays: previousDay offset
+// ShouldAutoFillPeriodDays with a period the day before
 //
-//   previousDay := dayStart.AddDate(0, 0, -1)
+//	return !previousEntry.IsPeriod && !hasRecentPeriod, nil
 //
-// A mutant changing -1 to 0 (or 1) would make the check look at the wrong
-// day. We need a test where the EXACT previous day is a period but no other
-// nearby day is, so the correct day being checked matters.
+// A period on day-1 makes BOTH terms refuse, so this fixture pins the
+// behaviour and not the previousDay offset that produces it: hasPeriodInRecentDays
+// already covers day-1..day-3, so it answers false whether the offset reads
+// -1, -2, -3 or 0. Any fixture that would separate -1 from -2 has to put a
+// period in that span, which re-arms the lookback and forces false on both
+// sides — -2 and -3 are equivalent mutants of this function. The offset is
+// pinned instead by TestDayService_ShouldAutoFill_UsesPreviousDayNotFollowingDay
+// (day_service_mutation_test.go), whose fixture keeps the lookback empty and
+// puts the periods on dayStart and day+1 so only offset -1 answers true.
 // ---------------------------------------------------------------------------
 
-// TestDayService_ShouldAutoFill_ChecksExactPreviousDay verifies that the
-// function looks at day-1 (not day itself or day-2) when deciding whether to
-// autofill.
-func TestDayService_ShouldAutoFill_ChecksExactPreviousDay(t *testing.T) {
+// TestDayService_ShouldAutoFill_RefusesWhenThePreviousDayIsAPeriod verifies
+// that a day whose predecessor is already a period day does not start a second
+// auto-fill run.
+func TestDayService_ShouldAutoFill_RefusesWhenThePreviousDayIsAPeriod(t *testing.T) {
 	logs := newDayLogRepositoryStub()
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	day := time.Date(2026, time.February, 10, 0, 0, 0, 0, time.UTC)
 
-	// Put a period entry exactly one day before dayStart. If the function
-	// looks at the right day it should detect previousEntry.IsPeriod=true and
-	// return false. If it uses offset 0 (checks dayStart itself, which has no
-	// entry) or -2 it would return true.
 	logs.entries["2026-02-09"] = models.DailyLog{
 		ID:       1,
 		UserID:   10,
@@ -309,7 +311,7 @@ func TestDayService_ShouldAutoFill_ChecksExactPreviousDay(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if should {
-		t.Fatal("expected false because the exact previous day is a period day")
+		t.Fatal("expected false because the previous day is already a period day")
 	}
 }
 
@@ -415,14 +417,18 @@ func TestDayService_AutoFill_SaveErrorPropagatesForExistingEntry(t *testing.T) {
 		SexActivity: models.SexActivityNone,
 	}
 	// Inject the Save error for that day.
-	logs.saveErrByDay["2026-02-11"] = errors.New("save failed")
+	saveErr := errors.New("save failed")
+	logs.saveErrByDay["2026-02-11"] = saveErr
 
 	service := dayserviceCovNewService(logs, &dayserviceCovUserStub{})
 	now := start.AddDate(0, 0, 5)
 
 	err := service.AutoFillFollowingPeriodDays(context.Background(), 10, start, 3, models.FlowLight, now, time.UTC)
-	if err == nil {
-		t.Fatal("expected error to propagate from Save, got nil")
+	// The Save error itself, not merely some error: this path has a Fetch
+	// above it and a Create below it that can each fail too, and an opaque
+	// sentinel in its place would hide which one refused.
+	if !errors.Is(err, saveErr) {
+		t.Fatalf("expected the injected Save error to propagate, got: %v", err)
 	}
 }
 
@@ -735,10 +741,13 @@ func TestDayService_MarkCycleStartManually_TxErrorPropagates(t *testing.T) {
 	service := NewDayServiceWithTx(logs, users, failingRunner)
 
 	err := service.MarkCycleStartManually(context.Background(), 10, targetDay, targetDay, time.UTC, ManualCycleStartOptions{})
-	// The error wraps txErr (via wrapManualCycleStartFailure if it reaches the
-	// inner return, or directly if it short-circuits earlier). Either way,
-	// we expect a non-nil error.
-	if err == nil {
-		t.Fatal("expected error from failing TxRunner, got nil")
+	// The injected error itself must come back. `err != nil` would also be
+	// satisfied by the pre-transaction refusals this function can return
+	// before the runner is ever reached (ErrManualCycleStartDateInvalid,
+	// ErrDayEntryLoadFailed, ErrManualCycleStartReplaceRequired), so it would
+	// pass on a fixture that never exercised the runner at all — and by any
+	// wrapping that drops the cause.
+	if !errors.Is(err, txErr) {
+		t.Fatalf("expected the injected TxRunner error to propagate, got: %v", err)
 	}
 }

@@ -49,11 +49,15 @@ func ResolveManualCycleStartPolicy(user *models.User, logs []models.DailyLog, da
 		location = time.UTC
 	}
 
-	targetDay := DateAtLocation(day.In(location), location)
-	if targetDay.IsZero() {
+	// The refusal reads the RAW input, like IsAllowedManualCycleStartDate
+	// above: DateAtLocation has no zero short-circuit, so a projected zero day
+	// is an ordinary year-1 calendar day in every zone with a non-zero offset
+	// and IsZero() answers false there.
+	if day.IsZero() {
 		return ManualCycleStartPolicy{}
 	}
 
+	targetDay := DateAtLocation(day, location)
 	policy := ManualCycleStartPolicy{
 		ConflictDate: findCompetingCycleStart(logs, targetDay, location),
 	}
