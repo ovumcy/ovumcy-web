@@ -9,7 +9,9 @@
   public internet — the first three of those route on real networks. All of them are refused now,
   along with the IPv6 discard-only, benchmarking, ORCHIDv2, drone-remote-ID and SRv6-SID blocks. The
   special-purpose prefixes the registries do record as globally reachable — AS112, AMT and the
-  `2001:1::1-3` anycast addresses — stay deliverable, as does the rest of the public internet. An
+  `2001:1::1-3` anycast addresses — stay deliverable, as does the rest of the public internet; the
+  one deliberate exception is the PCP/TURN anycast pair `192.0.0.9`/`192.0.0.10`, refused together
+  with the `192.0.0.0/24` block that contains them. An
   operator who had the gate on and a webhook endpoint inside one of those ranges will see that
   endpoint refused from this release; the gate remains off by default, so nothing changes for
   anyone who has not opted in.
