@@ -223,3 +223,47 @@ func TestPotentialImplantationGapDays_CrossTimezone(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveManualCycleStartPolicy_ZeroDayIsRefusedInEveryLocation pins the
+// zero-day guard onto the RAW input, the way IsAllowedManualCycleStartDate
+// already tests it. The guard used to run on the projected day, and
+// DateAtLocation has no zero short-circuit: a zero time.Time is 0001-01-01 in
+// UTC, but projected into any zone with a non-zero offset it is an ordinary
+// calendar day (0001-01-01 east of UTC, 0000-12-31 west of it) whose IsZero()
+// is false. The refusal therefore fired only in UTC, and everywhere else the
+// policy was computed against a year-1 calendar — empty by accident whenever
+// no log sits there, and, as the fixture below shows, not empty when one does.
+func TestResolveManualCycleStartPolicy_ZeroDayIsRefusedInEveryLocation(t *testing.T) {
+	// Two period days at the very start of the calendar, the second one a
+	// cycle start: the only fixture a year-1 target day can reach.
+	logs := []models.DailyLog{
+		{Date: time.Date(1, time.January, 1, 0, 0, 0, 0, time.UTC), IsPeriod: true},
+		{Date: time.Date(1, time.January, 2, 0, 0, 0, 0, time.UTC), IsPeriod: true, CycleStart: true},
+	}
+	now := mustParseCycleStartPolicyDay(t, "2026-03-03")
+
+	cases := []struct {
+		name     string
+		location *time.Location
+	}{
+		{"UTC", time.UTC},
+		{"east of UTC", time.FixedZone("UTC+1", 1*60*60)},
+		{"west of UTC", time.FixedZone("UTC-5", -5*60*60)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			policy := ResolveManualCycleStartPolicy(&models.User{}, logs, time.Time{}, now, tc.location)
+			if !policy.ConflictDate.IsZero() {
+				t.Fatalf("zero day yielded a conflict date %s", CalendarDayKey(policy.ConflictDate))
+			}
+			if !policy.PreviousStart.IsZero() || policy.ShortGapDays != 0 {
+				t.Fatalf("zero day yielded a previous start %s / short gap %d",
+					CalendarDayKey(policy.PreviousStart), policy.ShortGapDays)
+			}
+			if policy.PotentialImplantation || policy.ImplantationGapDays != 0 {
+				t.Fatalf("zero day yielded an implantation flag (%t, %d days)",
+					policy.PotentialImplantation, policy.ImplantationGapDays)
+			}
+		})
+	}
+}
