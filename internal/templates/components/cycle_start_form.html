@@ -1,0 +1,57 @@
+{{/* cycle_start_form renders the manual cycle-start control together with the
+     hidden policy node the confirm script reads. The two are one unit on
+     purpose: the script resolves the node through the form's parent element, so
+     a surface that renders the form without its policy sibling — or with a copy
+     of it missing an attribute — submits straight past the confirmation that
+     stands between a mis-tap and replacing a recorded cycle start.
+
+     Parameters (dict):
+       Messages, Lang, CSRFToken — page context.
+       Surface     — "dashboard" or "calendar"; picks the form/button hooks the
+                     browser scripts and the browser specs address.
+       Endpoint    — the cycle-start URL, source query included.
+       Target      — hx-target of this surface's status or panel container.
+       FormClass   — optional class on the form; omitted when empty.
+       DateParam   — the ISO day the surface acts on, mirrored into its hook.
+       TargetDate  — the same day as a date value, for the localized dialog copy.
+       Active      — whether the control paints as the primary action; the
+                     empty-day branch passes false rather than the day's flag.
+       Conflict, ConflictDate, ShortGap, PreviousDate, Implantation — the
+                     manual cycle-start policy this day was evaluated under. */}}
+{{define "cycle_start_form"}}
+<form
+  hx-post="{{.Endpoint}}"
+  hx-target="{{.Target}}"
+  hx-swap="innerHTML"
+{{- if .FormClass}}
+  class="{{.FormClass}}"
+{{- end}}
+  data-cycle-start-confirm-form
+{{- if eq .Surface "dashboard"}}
+  data-dashboard-cycle-start-form
+  data-dashboard-date="{{.DateParam}}"
+{{- else}}
+  data-day-cycle-start-form
+  data-day-cycle-start-date="{{.DateParam}}"
+{{- end}}>
+
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="ack_period_tip" value="false" data-period-tip-ack>
+  <input type="hidden" name="replace_existing" value="false" data-cycle-start-replace-input>
+  <input type="hidden" name="mark_uncertain" value="false" data-cycle-start-uncertain-input>
+  <button type="submit" class="{{if .Active}}btn-primary{{else}}btn-secondary{{end}}" {{if eq .Surface "dashboard"}}data-dashboard-cycle-start-button{{else}}data-day-cycle-start-button{{end}}>{{t .Messages "dashboard.manual_cycle_start"}}</button>
+</form>
+<div
+  hidden
+  data-cycle-start-policy
+  data-cycle-start-conflict="{{if .Conflict}}true{{else}}false{{end}}"
+  data-cycle-start-conflict-date="{{if .Conflict}}{{formatLocalizedDate .Lang .ConflictDate "display"}}{{end}}"
+  data-cycle-start-target-date="{{formatLocalizedDate .Lang .TargetDate "display"}}"
+  data-cycle-start-short-gap="{{.ShortGap}}"
+  data-cycle-start-previous-date="{{if gt .ShortGap 0}}{{formatLocalizedDate .Lang .PreviousDate "display"}}{{end}}"
+  data-cycle-start-implantation="{{if .Implantation}}true{{else}}false{{end}}"
+  data-cycle-start-replace-message="{{t .Messages "dashboard.cycle_start_replace_message"}}"
+  data-cycle-start-replace-accept="{{t .Messages "dashboard.cycle_start_replace_accept"}}"
+  data-cycle-start-short-gap-message="{{t .Messages "dashboard.cycle_start_short_gap_message"}}"
+  data-cycle-start-short-gap-accept="{{t .Messages "dashboard.cycle_start_short_gap_accept"}}"></div>
+{{end}}
