@@ -382,6 +382,107 @@ func TestExportBuildCSVRowsNeutralizesFormulaLikeCells(t *testing.T) {
 	}
 }
 
+// TestExportBuildCSVRowsNeutralizesEveryDangerousPrefix drives every prefix the
+// policy treats as dangerous through the finished CSV column, not through the
+// helper. Only '=' and '@' were ever exercised, so the other five switch cases
+// could be deleted together and the export still looked neutralized: a note
+// opening with '+', '-', a tab or a bare CR/LF went into the file as a live
+// formula for whatever spreadsheet the owner opens their own health export in.
+//
+// The leading-space variants matter separately — the check trims spaces before
+// reading the first byte, which is exactly the disguise a hostile value uses.
+func TestExportBuildCSVRowsNeutralizesEveryDangerousPrefix(t *testing.T) {
+	dangerous := []struct {
+		name   string
+		prefix string
+		// printable marks the prefixes a symptom NAME can still carry: names
+		// reach the cell through TrimSpace (export_service.go), which strips a
+		// tab or a bare CR/LF along with the padding. Notes are stored verbatim
+		// and carry all seven.
+		printable bool
+	}{
+		{name: "equals", prefix: "=", printable: true},
+		{name: "plus", prefix: "+", printable: true},
+		{name: "minus", prefix: "-", printable: true},
+		{name: "at", prefix: "@", printable: true},
+		{name: "tab", prefix: "\t"},
+		{name: "carriage return", prefix: "\r"},
+		{name: "line feed", prefix: "\n"},
+	}
+
+	for _, entry := range dangerous {
+		for _, lead := range []struct {
+			name  string
+			value string
+		}{
+			{name: "bare", value: ""},
+			{name: "space padded", value: "  "},
+		} {
+			t.Run(entry.name+" "+lead.name, func(t *testing.T) {
+				note := lead.value + entry.prefix + `cmd|' /C calc'!A0`
+				symptom := entry.prefix + "Doctor export"
+
+				columns, indexByHeader := exportCSVColumnsForCell(t, note, symptom)
+
+				if got := columns[indexByHeader["Notes"]]; got != "'"+note {
+					t.Fatalf("expected the notes cell to be neutralized, got %q", got)
+				}
+				if !entry.printable {
+					return
+				}
+				if got := columns[indexByHeader["Other"]]; got != "'"+symptom {
+					t.Fatalf("expected the other-symptom cell to be neutralized, got %q", got)
+				}
+			})
+		}
+	}
+
+	// Positive control: an ordinary note must reach the file unchanged, so the
+	// guard is not simply quoting every cell.
+	t.Run("ordinary text is untouched", func(t *testing.T) {
+		columns, indexByHeader := exportCSVColumnsForCell(t, "cramps in the evening", "Doctor export")
+
+		if got := columns[indexByHeader["Notes"]]; got != "cramps in the evening" {
+			t.Fatalf("expected an ordinary note to survive unquoted, got %q", got)
+		}
+		if got := columns[indexByHeader["Other"]]; got != "Doctor export" {
+			t.Fatalf("expected an ordinary symptom name to survive unquoted, got %q", got)
+		}
+	})
+}
+
+// exportCSVColumnsForCell builds the single CSV row of a day carrying `note`
+// and one custom symptom named `symptom`.
+func exportCSVColumnsForCell(t *testing.T, note string, symptom string) ([]string, map[string]int) {
+	t.Helper()
+
+	service := NewExportService(
+		&stubExportDayReader{
+			logs: []models.DailyLog{
+				{
+					Date:       mustParseExportDay(t, "2026-02-18"),
+					SymptomIDs: []uint{1},
+					Notes:      note,
+				},
+			},
+		},
+		&stubExportSymptomReader{
+			symptoms: []models.SymptomType{
+				{ID: 1, Name: symptom},
+			},
+		},
+	)
+
+	rows, err := service.BuildCSVRows(context.Background(), 42, nil, nil, time.UTC)
+	if err != nil {
+		t.Fatalf("BuildCSVRows() unexpected error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one row, got %d", len(rows))
+	}
+	return rows[0].Columns(), exportCSVIndexByHeader()
+}
+
 func TestExportServicePropagatesDependencyErrors(t *testing.T) {
 	dayErrService := NewExportService(
 		&stubExportDayReader{err: errors.New("load failed")},
