@@ -23,6 +23,69 @@ func TestNormalizeDayEntryInputRejectsInvalidFlow(t *testing.T) {
 	}
 }
 
+// TestNormalizeDayEntryInputRejectsEachFieldWithItsOwnSentinel pins the whole
+// rejection mapping of NormalizeDayEntryInput, not one arm of it: every tracked
+// field has its own sentinel, and an invalid value must surface THAT sentinel.
+// The guards run in a fixed order, so a field whose check is deleted does not
+// stop rejecting — the value falls through to the next check and is reported
+// under a neighbour's error, which the API's error mapping then renders as the
+// wrong field. Three of these sentinels (sex activity, BBT, cervical mucus)
+// were produced by no test in this package at all.
+func TestNormalizeDayEntryInputRejectsEachFieldWithItsOwnSentinel(t *testing.T) {
+	outOfRangeBBT := 50.0
+
+	tests := []struct {
+		name  string
+		input DayEntryInput
+		want  error
+	}{
+		{
+			name:  "flow",
+			input: DayEntryInput{IsPeriod: true, Flow: "bad-flow"},
+			want:  ErrInvalidDayFlow,
+		},
+		{
+			name:  "mood",
+			input: DayEntryInput{Flow: models.FlowNone, Mood: MaxDayMood + 1},
+			want:  ErrInvalidDayMood,
+		},
+		{
+			name:  "sex activity",
+			input: DayEntryInput{Flow: models.FlowNone, SexActivity: "bad-activity"},
+			want:  ErrInvalidDaySexActivity,
+		},
+		{
+			name:  "bbt",
+			input: DayEntryInput{Flow: models.FlowNone, BBT: &outOfRangeBBT},
+			want:  ErrInvalidDayBBT,
+		},
+		{
+			name:  "cervical mucus",
+			input: DayEntryInput{Flow: models.FlowNone, CervicalMucus: "bad-mucus"},
+			want:  ErrInvalidDayCervicalMucus,
+		},
+		{
+			name:  "pregnancy test",
+			input: DayEntryInput{Flow: models.FlowNone, PregnancyTest: "bad-test"},
+			want:  ErrInvalidDayPregnancyTest,
+		},
+		{
+			name:  "cycle factors",
+			input: DayEntryInput{Flow: models.FlowNone, CycleFactorKeys: []string{"unknown"}},
+			want:  ErrInvalidDayCycleFactors,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NormalizeDayEntryInput(tt.input)
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("NormalizeDayEntryInput() = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeDayEntryInputNormalizesNonPeriodDay(t *testing.T) {
 	normalized, err := NormalizeDayEntryInput(DayEntryInput{
 		IsPeriod:   false,

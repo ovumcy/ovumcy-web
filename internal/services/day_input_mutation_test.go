@@ -54,6 +54,48 @@ func TestNormalizeDayEntryInputRejectsNegativeMood(t *testing.T) {
 	}
 }
 
+// TestNormalizeDayEntryInputRejectsMoodAboveMaximum is the upper-bound twin of
+// the negative-mood anchor. Every other mood case feeds MinDayMood, MaxDayMood
+// or a negative value, so deleting `value <= MaxDayMood` from IsValidDayMood
+// left the whole suite green: nothing ever submitted a mood one step above the
+// scale the mood control offers.
+func TestNormalizeDayEntryInputRejectsMoodAboveMaximum(t *testing.T) {
+	if _, err := NormalizeDayEntryInput(DayEntryInput{
+		Flow: models.FlowNone,
+		Mood: MaxDayMood + 1,
+	}); !errors.Is(err, ErrInvalidDayMood) {
+		t.Fatalf("expected ErrInvalidDayMood for mood %d, got %v", MaxDayMood+1, err)
+	}
+	// In-range maximum mood must still be accepted, so the guard is not merely
+	// rejecting everything at the top of the scale.
+	if _, err := NormalizeDayEntryInput(DayEntryInput{
+		Flow: models.FlowNone,
+		Mood: MaxDayMood,
+	}); err != nil {
+		t.Fatalf("NormalizeDayEntryInput() with maximum mood %d: unexpected error: %v", MaxDayMood, err)
+	}
+}
+
+// TestDayInputBoundsAreExactValues pins the notes cap and the mood scale to the
+// numbers themselves. Every other reference to them is symbolic — the input is
+// built from the constant and the expectation is read from the same constant —
+// so an ARITHMETIC mutant on a bound moves the fixture and the assertion
+// together and survives.
+//
+// The template cross-check in day_input_test.go catches a lone move of
+// MaxDayNotesLength, because the textareas still declare maxlength="2000". It
+// cannot catch the two sides moving TOGETHER: agreement is what it asserts, and a pair that agrees on
+// 500 satisfies it while silently cutting notes owners already typed. The mood
+// scale has no such second reader at all.
+func TestDayInputBoundsAreExactValues(t *testing.T) {
+	if MaxDayNotesLength != 2000 {
+		t.Fatalf("MaxDayNotesLength = %d, want 2000: the day-notes trim bound is the number the notes textareas declare as maxlength", MaxDayNotesLength)
+	}
+	if MinDayMood != 1 || MaxDayMood != 5 {
+		t.Fatalf("mood scale = [%d, %d], want [1, 5]: the mood control offers exactly five steps", MinDayMood, MaxDayMood)
+	}
+}
+
 // TestTrimDayNotesCapsCraftedInvalidUTF8 pins the character-counting loop in
 // TrimDayNotes (day_input.go) on crafted invalid input, which is reachable from
 // the untrusted day-notes field and which the valid-UTF-8 cases never produce.
