@@ -59,7 +59,13 @@ func (handler *Handler) OnboardingStep2(c fiber.Ctx) error {
 		return redirectOrJSON(c, "/dashboard")
 	}
 
-	_ = handler.requestLocationFromOnboardingForm(c)
+	// Resolved before the refusals below, not at the CompleteOnboardingForUser
+	// call site: requestLocationFromOnboardingForm also writes the ovumcy_tz
+	// cookie, and the client that submitted client_timezone keeps it even when
+	// the step is refused. Resolving once also keeps the urlencoded path from
+	// re-materializing and re-parsing the request body a second time.
+	// Regression: TestOnboardingStep2SetsTheFormFallbackTimezoneCookieOnARefusedStep.
+	location := handler.requestLocationFromOnboardingForm(c)
 
 	values, validationError := handler.parseOnboardingStep2Input(c)
 	if validationError != "" {
@@ -77,7 +83,7 @@ func (handler *Handler) OnboardingStep2(c fiber.Ctx) error {
 	if err != nil {
 		return handler.failMutation(c, onboardingCycleMutation, onboardingSaveStepErrorSpec())
 	}
-	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, handler.requestLocationFromOnboardingForm(c)); err != nil {
+	if _, err := handler.onboardingSvc.CompleteOnboardingForUser(c.Context(), user.ID, location); err != nil {
 		if errors.Is(err, services.ErrOnboardingStepsRequired) {
 			// The step-2 columns are persisted at this point; only the completion
 			// (which seeds the first period's day entries) did not run, so the
