@@ -224,7 +224,7 @@ func recordTemplateLiteralCopy(origin templateOrigin, evidence *sourceEvidence) 
 				continue
 			}
 			text := strings.TrimSpace(string(tokenizer.Text()))
-			if !containsLetter(withoutReviewedSymbols(text)) {
+			if !containsLetter(withoutReviewedSymbols(text, evidence.reviewedSymbolsSeen)) {
 				continue
 			}
 			evidence.templateLiteralCopySites = append(evidence.templateLiteralCopySites, templateLiteralCopySite{
@@ -267,11 +267,37 @@ func containsLetter(text string) bool {
 	return false
 }
 
-func withoutReviewedSymbols(text string) string {
+// withoutReviewedSymbols blanks every allow-listed symbol out of a text node
+// and records which ones it actually found. The record is what lets the text
+// barrier refuse an entry that matches nothing: the attribute list already
+// treats a stale exemption as a hole nobody is looking through, and an entry
+// here reaches further than one there — it is keyed by the symbol rather than
+// by the site, so it allows that symbol in every template at once.
+//
+// seen may be nil, which is what the fixture self-tests pass when they are
+// measuring the reader rather than the allow-list.
+func withoutReviewedSymbols(text string, seen map[string]bool) string {
 	for symbol := range reviewedLanguageIndependentText {
+		if !strings.Contains(text, symbol) {
+			continue
+		}
+		if seen != nil {
+			seen[symbol] = true
+		}
 		text = strings.ReplaceAll(text, symbol, " ")
 	}
 	return text
+}
+
+// sortedReviewedSymbols keeps the staleness report deterministic; map order
+// would shuffle two failures that must read the same on every run.
+func sortedReviewedSymbols() []string {
+	symbols := make([]string, 0, len(reviewedLanguageIndependentText))
+	for symbol := range reviewedLanguageIndependentText {
+		symbols = append(symbols, symbol)
+	}
+	sort.Strings(symbols)
+	return symbols
 }
 
 // literalCopyFindings splits the collected sites into the ones each barrier
@@ -355,6 +381,20 @@ func TestShippedTemplatesLeaveNoUntranslatedVisibleText(t *testing.T) {
 	}
 	if err := literalCopySweepIsUnderfed(evidence); err != nil {
 		t.Fatalf("%v", err)
+	}
+
+	// Same refusal the attribute barrier applies to a stale exemption. An
+	// entry here reaches further than one there — it is keyed by the symbol,
+	// not by the site, so it allows that symbol in every template at once —
+	// which makes an entry describing markup the tree no longer carries the
+	// wider hole of the two, and the reason written beside it the more
+	// misleading claim.
+	for _, symbol := range sortedReviewedSymbols() {
+		if evidence.reviewedSymbolsSeen[symbol] {
+			continue
+		}
+		t.Errorf("the reviewed-symbol allow-list entry %q (%s) matched no visible text in the shipped templates; a stale entry allows that symbol everywhere on the strength of a site that is gone, so delete it or fix the text it names",
+			symbol, reviewedLanguageIndependentText[symbol])
 	}
 
 	findings, _ := literalCopyFindings(evidence.templateLiteralCopySites, literalCopyText)

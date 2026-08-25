@@ -116,6 +116,11 @@ type sourceEvidence struct {
 	templateLiteralCopySites      []templateLiteralCopySite
 	templateHumanReadableAttrs    int
 	templateMarkupElementsScanned int
+	// reviewedSymbolsSeen records which entries of
+	// reviewedLanguageIndependentText a text node actually carried, so the
+	// text barrier can refuse an entry that matches nothing on the same
+	// grounds the attribute barrier already refuses a stale exemption.
+	reviewedSymbolsSeen map[string]bool
 	// goKeyOriginLiterals holds the literals found at the call arguments a
 	// format contract points at when the site itself does not name its key,
 	// and goFunctionDeclarations counts declarations per name so two functions
@@ -136,6 +141,7 @@ func newSourceEvidence() *sourceEvidence {
 		goDirs:                 map[string]bool{},
 		goFormatBodies:         map[string]goFormatBody{},
 		goFunctionDeclarations: map[string]int{},
+		reviewedSymbolsSeen:    map[string]bool{},
 	}
 }
 

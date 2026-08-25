@@ -11,8 +11,10 @@
 ### Internal
 
 - **A template barrier fails on human-readable copy typed into the markup.** It reports an `alt`,
-  `title`, `placeholder` or `aria-*` value, and any visible text node, whose text carries letters
-  and no template action — the one class neither existing locale sweep can see, since both start
+  `title`, `placeholder`, `aria-label`, `aria-description` or `aria-placeholder` value — the closed
+  set of attributes a person reads, named one by one rather than matched by shape, since `class`,
+  `data-*`, `id` and `pattern` may hold English forever — and any visible text node, whose text
+  carries letters and no template action — the one class neither existing locale sweep can see, since both start
   from a `t`/`tn` call and this copy never went through one. The reader works on the source regions
   the template parser attributed to text with every action masked out, so a value assembled from
   the catalogue leaves no letters behind to find. Two exceptions are declared with their reasons:
