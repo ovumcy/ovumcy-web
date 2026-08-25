@@ -399,16 +399,15 @@
     }
   }
 
-  function finalizeDashboardManualSave(form, successful) {
+  // Outcome-independent by design: the indicator row reports save state, and a
+  // failure is reported by the save-status swap instead. The finalizer only
+  // stands the row down.
+  function finalizeDashboardManualSave(form) {
     if (!form) {
       return;
     }
     clearDashboardAutosaveTimers(form);
     delete form.dataset.autosaveDirty;
-    if (!successful) {
-      setDashboardAutosaveIndicator(form, "idle");
-      return;
-    }
     setDashboardAutosaveIndicator(form, "idle");
   }
 

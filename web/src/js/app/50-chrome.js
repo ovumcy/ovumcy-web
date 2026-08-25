@@ -1,14 +1,3 @@
-  function themeMessagesFromDataset() {
-    var body = document.body;
-    var dataset = body && body.dataset ? body.dataset : {};
-    return {
-      toggleToDark: String(dataset.themeLabelDark || "Switch to dark mode"),
-      toggleToLight: String(dataset.themeLabelLight || "Switch to light mode"),
-      modeDark: String(dataset.themeNameDark || "Dark"),
-      modeLight: String(dataset.themeNameLight || "Light")
-    };
-  }
-
   function clampInteger(value, fallback, minValue, maxValue) {
     var numeric = Number(value);
     if (!isFinite(numeric)) {
@@ -58,47 +47,6 @@
       setNodeHidden(fieldsets[index], !isPeriod);
     }
     setDisabledByPeriod(root, isPeriod);
-  }
-
-  function syncThemeToggleButtons() {
-    var buttons = document.querySelectorAll("[data-theme-option]");
-    var theme = currentTheme();
-    var messages = themeMessagesFromDataset();
-
-    for (var index = 0; index < buttons.length; index++) {
-      var button = buttons[index];
-      var optionTheme = normalizeTheme(button.getAttribute("data-theme-option"));
-      var selected = optionTheme !== "" && optionTheme === theme;
-      var toggleLabel = optionTheme === THEME_DARK ? messages.toggleToDark : messages.toggleToLight;
-      var currentLabel = optionTheme === THEME_DARK ? messages.modeDark : messages.modeLight;
-
-      button.dataset.selected = selected ? "true" : "false";
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-      button.setAttribute("aria-label", selected ? currentLabel : toggleLabel);
-      button.setAttribute("title", selected ? currentLabel : toggleLabel);
-    }
-  }
-
-  function bindThemeToggleButtons() {
-    var buttons = document.querySelectorAll("[data-theme-option]");
-    for (var index = 0; index < buttons.length; index++) {
-      var button = buttons[index];
-      if (button.dataset.themeToggleBound === "1") {
-        continue;
-      }
-
-      button.dataset.themeToggleBound = "1";
-      button.addEventListener("click", function () {
-        var nextTheme = normalizeTheme(this.getAttribute("data-theme-option"));
-        if (!nextTheme) {
-          return;
-        }
-        setThemePreference(nextTheme);
-        syncThemeToggleButtons();
-      });
-    }
-
-    syncThemeToggleButtons();
   }
 
   function syncMobileMenu(button, menu) {

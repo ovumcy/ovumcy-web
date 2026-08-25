@@ -415,7 +415,7 @@
       setSaveButtonState(form, false);
       showResponseNotice(xhr);
       if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
-        window.__ovumcyFinalizeDashboardManualSave(form, !!(event && event.detail && event.detail.successful));
+        window.__ovumcyFinalizeDashboardManualSave(form);
       }
     });
 
@@ -502,7 +502,7 @@
       }
       if (!target || !target.classList || !target.classList.contains("save-status")) {
         if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
-          window.__ovumcyFinalizeDashboardManualSave(form, false);
+          window.__ovumcyFinalizeDashboardManualSave(form);
         }
         return;
       }
@@ -523,7 +523,7 @@
       var fallback = document.body.getAttribute("data-request-failed") || "Request failed. Please try again.";
       renderErrorStatus(target, fallback);
       if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
-        window.__ovumcyFinalizeDashboardManualSave(form, false);
+        window.__ovumcyFinalizeDashboardManualSave(form);
       }
     });
   }
