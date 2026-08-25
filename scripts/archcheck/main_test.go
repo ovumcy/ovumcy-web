@@ -167,6 +167,151 @@ func TestTransportProductionCodeMayNotImportPersistence(t *testing.T) {
 	}
 }
 
+// The layering rule, one direction per case. The negatives carry the weight
+// here: this rule denies upward edges and says nothing about the cross-cutting
+// packages or about net/http, and a rule that quietly widened to either would
+// refuse work the contract permits.
+func TestTheLayersImportInOneDirectionOnly(t *testing.T) {
+	cases := []struct {
+		name string
+		path string
+		body string
+		want bool
+	}{
+		{
+			name: "services reaching up into transport",
+			path: "internal/services/cycle.go",
+			body: "package services\n\nimport \"github.com/ovumcy/ovumcy-web/internal/api\"\n\nvar _ = api.New\n",
+			want: true,
+		},
+		{
+			name: "services reaching up into the port surface",
+			path: "internal/services/cycle.go",
+			body: "package services\n\nimport \"github.com/ovumcy/ovumcy-web/internal/apideps\"\n\nvar _ = apideps.X\n",
+			want: true,
+		},
+		{
+			name: "persistence reaching up into domain logic",
+			path: "internal/db/repo.go",
+			body: "package db\n\nimport \"github.com/ovumcy/ovumcy-web/internal/services\"\n\nvar _ = services.New\n",
+			want: true,
+		},
+		{
+			name: "persistence reaching up into transport",
+			path: "internal/db/repo.go",
+			body: "package db\n\nimport \"github.com/ovumcy/ovumcy-web/internal/api\"\n\nvar _ = api.New\n",
+			want: true,
+		},
+		{
+			name: "a persisted type reaching sideways into a cross-cutting package",
+			path: "internal/models/day.go",
+			body: "package models\n\nimport \"github.com/ovumcy/ovumcy-web/internal/security\"\n\nvar _ = security.Seal\n",
+			want: true,
+		},
+		{
+			name: "a persisted type reaching down into the migrations",
+			path: "internal/models/day.go",
+			body: "package models\n\nimport \"github.com/ovumcy/ovumcy-web/migrations\"\n\nvar _ = migrations.FS\n",
+			want: true,
+		},
+		{
+			name: "the direction the contract allows: transport calls a service",
+			path: "internal/api/handler.go",
+			body: "package api\n\nimport \"github.com/ovumcy/ovumcy-web/internal/services\"\n\nvar _ = services.New\n",
+			want: false,
+		},
+		{
+			name: "the direction the contract allows: persistence maps rows to models",
+			path: "internal/db/repo.go",
+			body: "package db\n\nimport \"github.com/ovumcy/ovumcy-web/internal/models\"\n\nvar _ models.Day\n",
+			want: false,
+		},
+		{
+			name: "a cross-cutting package, which the layering does not order",
+			path: "internal/services/locale.go",
+			body: "package services\n\nimport \"github.com/ovumcy/ovumcy-web/internal/i18n\"\n\nvar _ = i18n.T\n",
+			want: false,
+		},
+		{
+			name: "the standard library, which the rule is not about",
+			path: "internal/services/webhook.go",
+			body: "package services\n\nimport \"net/http\"\n\nvar _ = http.Post\n",
+			want: false,
+		},
+		{
+			name: "another module whose path merely begins with this one",
+			path: "internal/models/day.go",
+			body: "package models\n\nimport \"github.com/ovumcy/ovumcy-web-extras/thing\"\n\nvar _ = thing.X\n",
+			want: false,
+		},
+		{
+			name: "a test file, where a repository is proved against its own service",
+			path: "internal/db/repo_test.go",
+			body: "package db\n\nimport \"github.com/ovumcy/ovumcy-web/internal/services\"\n\nvar _ = services.New\n",
+			want: false,
+		},
+		{
+			name: "a test file on the other side of the same seam",
+			path: "internal/services/cycle_test.go",
+			body: "package services\n\nimport \"github.com/ovumcy/ovumcy-web/internal/api\"\n\nvar _ = api.New\n",
+			want: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := scan(t, writeTree(t, map[string]string{tc.path: tc.body}))
+			if tc.want && len(got) == 0 {
+				t.Fatalf("expected a %s finding, got none", ruleLayerImports)
+			}
+			if !tc.want && len(got) != 0 {
+				t.Fatalf("expected no finding, got %v: %v", rulesIn(got), got)
+			}
+			for _, f := range got {
+				if f.rule != ruleLayerImports {
+					t.Fatalf("expected only %s findings, got %s: %v", ruleLayerImports, f.rule, f)
+				}
+			}
+		})
+	}
+}
+
+// A build-tagged file is the hole a package-listing instrument cannot see:
+// `go list` answers about the build it was asked for, and internal/services
+// really does hold a file (the gofuzz libFuzzer harness) that no ordinary GOOS
+// selects. The parse-every-file pass is what closes it, so the closure is
+// asserted rather than assumed.
+func TestAFileBehindABuildTagIsStillRead(t *testing.T) {
+	dir := writeTree(t, map[string]string{
+		"internal/services/harness.go": "//go:build gofuzz\n\npackage services\n\nimport \"github.com/ovumcy/ovumcy-web/internal/api\"\n\nvar _ = api.New\n",
+	})
+	got := scan(t, dir)
+	if len(got) != 1 || got[0].rule != ruleLayerImports {
+		t.Fatalf("expected one %s finding behind the build tag, got %v: %v", ruleLayerImports, rulesIn(got), got)
+	}
+}
+
+// A finding has to say which direction was crossed and what to do instead: the
+// reader of the refusal is someone who just wrote the import and believes it is
+// reasonable.
+func TestALayerFindingNamesTheDirectionAndTheRemedy(t *testing.T) {
+	dir := writeTree(t, map[string]string{
+		"internal/db/repo.go": "package db\n\nimport \"github.com/ovumcy/ovumcy-web/internal/services\"\n\nvar _ = services.New\n",
+	})
+	got := scan(t, dir)
+	if len(got) != 1 {
+		t.Fatalf("expected one finding, got %v: %v", rulesIn(got), got)
+	}
+	for _, want := range []string{
+		"internal/db must not import github.com/ovumcy/ovumcy-web/internal/services",
+		"internal/services is what calls it",
+	} {
+		if !strings.Contains(got[0].msg, want) {
+			t.Fatalf("the finding should carry %q, got %q", want, got[0].msg)
+		}
+	}
+}
+
 // The class this command exists for. Each half of the file, taken alone, is text
 // no pattern for the forbidden import can match — which is exactly what an
 // event-shaped rule sees when the two halves arrive as two edits. The tree is

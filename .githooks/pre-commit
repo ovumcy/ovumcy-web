@@ -9,8 +9,8 @@
 # can disappear without a diff is the failure mode this whole surface exists to
 # close.
 #
-# This is the REFUSING surface of three. An edit-time guard flags the same two
-# invariants as they are written and cannot refuse a fragment it never sees
+# This is the REFUSING surface of three. An edit-time guard flags two of the
+# same invariants as they are written and cannot refuse a fragment it never sees
 # whole; CI is the backstop that no local skip reaches. The decision behind the
 # split, and the instrument all three run, are in scripts/archcheck.
 #

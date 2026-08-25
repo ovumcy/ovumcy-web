@@ -18,7 +18,10 @@ the source of truth.
 ## Layered architecture
 
 Strict one-directional layering. Transport never reaches the database; domain
-logic never depends on HTTP; persisted types stay transport-free.
+logic never depends on HTTP; persisted types stay transport-free. All three are
+checked mechanically against the whole tree by `scripts/archcheck`, which CI
+runs on every change; test files are outside the check, because a fixture
+legitimately reaches across a layer boundary to prove the layer below it.
 
 ```mermaid
 flowchart TB

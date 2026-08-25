@@ -21,11 +21,17 @@ npm run lint:js
 npm run build
 ```
 
-`scripts/archcheck` reads the whole tree and answers two architecture
+`scripts/archcheck` reads the whole tree and answers three architecture
 questions: nothing under `internal/api` or `internal/apideps` imports
-persistence, and no schema is migrated at runtime. It asks about the tree
-rather than about a diff, so it answers the same way however the code got
-there. CI runs it too.
+persistence, the layers of [docs/architecture.md](docs/architecture.md) import
+in one direction only (`internal/services` and `internal/db` never reach up into
+transport, `internal/db` never reaches up into `internal/services`, and
+`internal/models` depends on no other package in the module), and no schema is
+migrated at runtime. It asks about the tree rather than about a diff, so it
+answers the same way however the code got there — including for a file behind a
+build tag your platform does not select, which a package listing would not see.
+Test files are outside the two import rules on purpose: a fixture proves a
+repository against the service that owns it, and the reverse. CI runs it too.
 
 The same check refuses a commit, through `.githooks/pre-commit`. That file is
 tracked but git hooks are not, so it has to be installed once per clone:

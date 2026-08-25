@@ -534,12 +534,12 @@ jobs:
         run: go vet ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
 
       # The architecture contract asked of the TREE: transport imports no
-      # persistence, and no schema is migrated at runtime. The same two
-      # invariants are also refused at the moment of an edit and again at
-      # commit, and this is the backstop neither a local skip nor a hook that
-      # was never installed reaches. What it decides, and why syntax answers one
-      # invariant while types are needed for the other, is in the command's own
-      # doc comment.
+      # persistence, the layers import in one direction only, and no schema is
+      # migrated at runtime. Two of those are also refused at the moment of an
+      # edit and all three again at commit, and this is the backstop neither a
+      # local skip nor a hook that was never installed reaches. What it decides,
+      # and why syntax answers the import rules while types are needed for the
+      # schema one, is in the command's own doc comment.
       - name: Architecture invariants
         run: go run ./scripts/archcheck
 

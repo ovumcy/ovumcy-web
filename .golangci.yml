@@ -15,6 +15,9 @@
 #     at the default, matching the codebase's existing spelling.
 #   - unconvert: removes type conversions that are no-ops; they only obscure
 #     the actual types in security-relevant code.
+#   - nolintlint: the zero-suppression line below, asked of the tree rather
+#     than of a reviewer. What it reaches and what it does not is in the
+#     paragraph on that line, further down.
 #
 # Evaluated against the codebase and deliberately NOT enabled:
 #   - gocritic: its default set flags intentional test patterns here (mapKey
@@ -28,6 +31,22 @@
 # The repo carries zero //nolint directives; keep it that way. If a new
 # finding is a false positive, prefer narrowing the linter's settings here
 # (with a comment) over inline suppressions.
+#
+# nolintlint is what now stands behind that line, and being exact about how far
+# it reaches matters more than the fact it is on. It reports a directive that is
+# bare, that carries no explanation, or that is unused — and "unused" is judged
+# against the linters THIS config runs. Two consequences follow, both measured
+# against v2.12.2 rather than read off the documentation:
+#   - a well-formed directive for an enabled linter that really does suppress a
+#     finding passes; there is no setting that refuses one.
+#   - a directive naming a linter golangci-lint does not run is invisible to it.
+#     `//nolint:gosec` is that case here: gosec is not enabled below, it runs in
+#     its own workflow, and two such directives had accumulated in the tree
+#     suppressing nothing on either path. They were removed by hand in the same
+#     change that added this linter, because the linter would not have found
+#     them.
+# So the last step from "no junk suppressions" to "none at all" stays a reading
+# of the diff. What is no longer a reading of the diff is everything below it.
 version: "2"
 
 linters:
@@ -36,6 +55,7 @@ linters:
     - copyloopvar
     - intrange
     - misspell
+    - nolintlint
     - unconvert
   exclusions:
     # `npm ci` installs at least one package that ships Go sources of its own
@@ -48,6 +68,16 @@ linters:
     paths:
       - node_modules
   settings:
+    nolintlint:
+      # Every knob the linter has, all pointing the same way: a directive must
+      # name its linters, explain itself, and actually suppress something.
+      # allow-unused stays at its default rather than being dropped as noise: a
+      # directive that suppresses nothing is the shape an inline suppression
+      # decays into once the finding it was written for is fixed elsewhere, and
+      # it outlives the reviewer who would have caught it going in.
+      require-specific: true
+      require-explanation: true
+      allow-unused: false
     misspell:
       # Localized copy asserted by backend regressions is not English prose:
       # "successivo" is Italian for "next" (it.json month-navigation label),

@@ -314,7 +314,9 @@ func domAttrConsumerTemplateHooks(t *testing.T, templateDir, root string) map[st
 		if entry.IsDir() || filepath.Ext(path) != ".html" {
 			return nil
 		}
-		content, readErr := os.ReadFile(path) //nolint:gosec // walked path under the repository's own template tree
+		// The path is one WalkDir handed back from the repository's own template
+		// tree, not input.
+		content, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return readErr
 		}
@@ -384,7 +386,9 @@ func domAttrConsumerConsumerIndex(t *testing.T, root string) (map[string]bool, m
 		if !domAttrConsumerSourceExtensions[extension] {
 			return nil
 		}
-		content, readErr := os.ReadFile(path) //nolint:gosec // walked path under the repository root
+		// The path is one WalkDir handed back from under the repository root,
+		// not input.
+		content, readErr := os.ReadFile(path)
 		if readErr != nil {
 			return readErr
 		}

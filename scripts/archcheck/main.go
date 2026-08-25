@@ -1,7 +1,9 @@
-// Command archcheck answers two architecture questions about the TREE, not
-// about one edit.
+// Command archcheck answers three architecture questions about the TREE, not
+// about one edit: transport imports no persistence, the layers of
+// docs/architecture.md import in one direction only, and no schema is migrated
+// at runtime.
 //
-// The distinction is the whole reason it exists. The same two invariants are
+// The distinction is the whole reason it exists. Two of those invariants are
 // also guarded at the moment of an edit, and that guard sees one tool call and
 // never the file the call produced: `db.AutoMigr` plus `ate(...)` written as two
 // edits passes any pattern, and so does an import split across two. Widening the
@@ -13,8 +15,12 @@
 // Two passes, cheapest first:
 //
 //   - Syntax (go/parser), over every Go file in the module. This alone decides
-//     the import rule exactly — an import graph IS syntax — and it is what makes
-//     the common case cost a parse and nothing more.
+//     the two import rules exactly — an import graph IS syntax — and it is what
+//     makes the common case cost a parse and nothing more. Parsing the files
+//     rather than listing the packages is also what makes those rules see a
+//     file behind a build tag this platform does not select: internal/services
+//     holds one (the `gofuzz` libFuzzer harness), and `go list` answers about
+//     the build it was asked for, never about the tree.
 //   - Types (golang.org/x/tools/go/packages), over only those packages the
 //     syntactic pass found a candidate in. It is what makes the AutoMigrate rule
 //     exact rather than name-matched: a local variable named db with an
@@ -55,10 +61,15 @@ import (
 // handle a rule file, a test or a message can name — the text of a message may
 // be improved, the identifier may not.
 const (
-	ruleAPIImports  = "api-imports"
-	ruleAutoMigrate = "automigrate"
-	ruleUnreadable  = "unreadable"
+	ruleAPIImports   = "api-imports"
+	ruleLayerImports = "layer-imports"
+	ruleAutoMigrate  = "automigrate"
+	ruleUnreadable   = "unreadable"
 )
+
+// modulePath is this module's import prefix. The layer rules deny package paths
+// under it, so it is spelled once here rather than once per entry.
+const modulePath = "github.com/ovumcy/ovumcy-web"
 
 // gormPkgPath is compared against the package that DECLARES the method reached
 // by the call, never against the spelling of the receiver.
@@ -87,6 +98,54 @@ var forbiddenImports = []string{
 var transportDirs = []string{
 	"internal/api",
 	"internal/apideps",
+}
+
+// layerRule is one direction of the layering drawn in docs/architecture.md:
+// the package tree it constrains, and the module-local packages that tree may
+// not import. api -> services -> db -> models runs one way, so each layer's
+// rule is the set of layers ABOVE it.
+//
+// Denials, not an allow-list of what a layer may reach. The allowed set grows
+// with ordinary work — internal/services imports internal/i18n today, which it
+// did not when the layers were first drawn — so a list transcribed from the
+// graph as it stands would refuse the first legitimate edge someone adds, and
+// the refusal would land on a contributor who did nothing wrong. What the
+// contract fixes is the direction; a denial states the direction and nothing
+// else.
+//
+// Only module-local paths, and that is the division of labour with
+// ruleAPIImports above rather than an omission: transport is denied the
+// persistence surface itself (gorm, the drivers, database/sql) because
+// "transport never reaches the database" is about the database. "Domain logic
+// never depends on HTTP" and "persisted types stay transport-free" are about
+// this module's own layers — internal/services legitimately dials net/http to
+// deliver a webhook, and denying it that would be a rule the contract does not
+// state.
+type layerRule struct {
+	dir    string   // the package tree the rule constrains, relative to the module root
+	denied []string // package paths it may not import; each covers its own subtree
+	remedy string   // what to do instead, printed with every finding
+}
+
+var layerRules = []layerRule{
+	{
+		dir:    "internal/services",
+		denied: []string{modulePath + "/internal/api", modulePath + "/internal/apideps"},
+		remedy: "domain logic sits below transport: transport calls a service, and a service answers with domain data and sentinel errors.",
+	},
+	{
+		dir:    "internal/db",
+		denied: []string{modulePath + "/internal/api", modulePath + "/internal/apideps", modulePath + "/internal/services"},
+		remedy: "persistence sits below domain logic: a repository takes what it needs as arguments and returns models, and internal/services is what calls it.",
+	},
+	{
+		// The bottom of the layering, which is why its denial is the module
+		// itself: internal/models has no outgoing edge inside this module at
+		// all, and that is the property "transport-free types" names.
+		dir:    "internal/models",
+		denied: []string{modulePath},
+		remedy: "persisted types depend on no other layer: keep the type here and put the behaviour that needs a neighbour in internal/services.",
+	},
 }
 
 // skippedDirs never hold source this module builds. testdata is excluded by the
@@ -184,6 +243,7 @@ func run(root string) ([]finding, error) {
 			return nil
 		}
 		findings = append(findings, importFindings(fset, abs, path, file)...)
+		findings = append(findings, layerFindings(fset, abs, path, file)...)
 		if hasAutoMigrateCall(file) {
 			candidates = append(candidates, path)
 		}
@@ -275,17 +335,50 @@ func importFindings(fset *token.FileSet, root, path string, file *ast.File) []fi
 	return out
 }
 
+// layerFindings applies the one-directional layering to one parsed file.
+//
+// Test files are exempt, on the same reading that exempts them from
+// ruleAPIImports, and here the exemption is load-bearing rather than a courtesy:
+// internal/db's tests import internal/services and internal/services' tests
+// import internal/db, both by construction — a repository is proved against the
+// service that owns it and vice versa. A rule covering them would refuse
+// ordinary test work on its first day, and the way out of it would be to route
+// tests around the database, which costs more than the rule is worth.
+func layerFindings(fset *token.FileSet, root, path string, file *ast.File) []finding {
+	rel, ok := productionFile(root, path)
+	if !ok {
+		return nil
+	}
+	var out []finding
+	for _, rule := range layerRules {
+		if !strings.HasPrefix(rel, rule.dir+"/") {
+			continue
+		}
+		for _, spec := range file.Imports {
+			imported, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				continue
+			}
+			if !matchesAny(imported, rule.denied) {
+				continue
+			}
+			out = append(out, finding{
+				rule: ruleLayerImports,
+				pos:  fset.Position(spec.Pos()),
+				msg:  rule.dir + " must not import " + imported + ". " + rule.remedy,
+			})
+		}
+	}
+	return out
+}
+
 // inTransportLayer reports whether path is production source under a
 // transport-only package. The comparison runs on the path relative to the module
 // root and in slash form, so the same file answers the same way whichever
 // platform and whichever checkout it is read from.
 func inTransportLayer(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return false
-	}
-	rel = filepath.ToSlash(rel)
-	if strings.HasSuffix(rel, "_test.go") {
+	rel, ok := productionFile(root, path)
+	if !ok {
 		return false
 	}
 	for _, dir := range transportDirs {
@@ -296,9 +389,35 @@ func inTransportLayer(root, path string) bool {
 	return false
 }
 
+// productionFile names path the way a reader at the module root would — relative
+// and in slash form — and reports false for a file no import rule covers: one
+// outside the root, or a test file.
+//
+// Both import rules ask this single question, and they have to answer it the
+// same way. Two copies of the test-file check is how one of them ends up
+// covering _test.go by accident on the day the other is edited.
+func productionFile(root, path string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return "", false
+	}
+	rel = filepath.ToSlash(rel)
+	if strings.HasSuffix(rel, "_test.go") {
+		return "", false
+	}
+	return rel, true
+}
+
 func isForbiddenImport(imported string) bool {
-	for _, f := range forbiddenImports {
-		if imported == f || strings.HasPrefix(imported, f+"/") {
+	return matchesAny(imported, forbiddenImports)
+}
+
+// matchesAny reports whether imported is one of paths or lives under one. The
+// prefix is taken on a path SEGMENT and never on the raw string, so
+// "database/sqlx" is not "database/sql".
+func matchesAny(imported string, paths []string) bool {
+	for _, p := range paths {
+		if imported == p || strings.HasPrefix(imported, p+"/") {
 			return true
 		}
 	}
