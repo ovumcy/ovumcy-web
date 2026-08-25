@@ -254,3 +254,190 @@ func TestSymptomNameUniquenessIsPerOwnerAndSurvivesArchival(t *testing.T) {
 		t.Fatalf("expected an archived name to stay reserved for its owner, got %v", err)
 	}
 }
+
+// scriptedBuiltinSeedRepository answers ListByUser from a script and fails
+// CreateBatch with a fixed error, so the two readings of one refusal can be
+// driven apart.
+//
+// The embedded interface is nil on purpose: ensureBuiltinSymptomsListed touches
+// only these two methods, and a call to any other would panic loudly rather
+// than pass silently through a stub that answers everything with a zero value.
+type scriptedBuiltinSeedRepository struct {
+	SymptomRepository
+	lists     [][]models.SymptomType
+	listErrs  []error
+	listCalls int
+	batchErr  error
+}
+
+func (repo *scriptedBuiltinSeedRepository) ListByUser(context.Context, uint) ([]models.SymptomType, error) {
+	index := repo.listCalls
+	if index >= len(repo.lists) {
+		index = len(repo.lists) - 1
+	}
+	repo.listCalls++
+	if index < len(repo.listErrs) && repo.listErrs[index] != nil {
+		return nil, repo.listErrs[index]
+	}
+	result := make([]models.SymptomType, len(repo.lists[index]))
+	copy(result, repo.lists[index])
+	return result, nil
+}
+
+func (repo *scriptedBuiltinSeedRepository) CreateBatch(context.Context, []models.SymptomType) error {
+	return repo.batchErr
+}
+
+// builtinCatalogueRows renders the builtin catalogue as stored rows, optionally
+// leaving one out by key.
+func builtinCatalogueRows(userID uint, omitKey string) []models.SymptomType {
+	rows := make([]models.SymptomType, 0)
+	for index, builtin := range models.DefaultBuiltinSymptoms() {
+		if builtin.Key == omitKey {
+			continue
+		}
+		rows = append(rows, models.SymptomType{
+			ID:        uint(index + 1),
+			UserID:    userID,
+			Name:      builtin.Name,
+			Icon:      builtin.Icon,
+			Color:     builtin.Color,
+			IsBuiltin: true,
+		})
+	}
+	return rows
+}
+
+// TestBuiltinSeedingSwallowsARefusalTheRelistExplains is the benign half, and
+// the positive anchor for the case below: the insert was refused because a
+// concurrent load wrote the same builtins first, the re-list shows them, and a
+// page load that only wanted to read is answered with the catalogue.
+func TestBuiltinSeedingSwallowsARefusalTheRelistExplains(t *testing.T) {
+	repo := &scriptedBuiltinSeedRepository{
+		lists: [][]models.SymptomType{
+			builtinCatalogueRows(7, "insomnia"),
+			builtinCatalogueRows(7, ""),
+		},
+		batchErr: fakeUniqueConstraintError{},
+	}
+	service := NewSymptomService(repo)
+
+	symptoms, err := service.FetchSymptoms(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("a refusal the re-list explains must not surface: %v", err)
+	}
+	if len(symptoms) != len(models.DefaultBuiltinSymptoms()) {
+		t.Fatalf("expected the full catalogue after the winning writer, got %d rows", len(symptoms))
+	}
+}
+
+// TestBuiltinSeedingReportsARefusalItCannotExplain is the half that made the
+// swallow unsafe.
+//
+// Discarding every unique-constraint refusal from the seeding insert assumes
+// the only way to hit one is a concurrent writer that wrote exactly this set.
+// Any other collision is permanent, and this is a READ path: it would repeat on
+// every page load, return a catalogue silently short a builtin, and report
+// nothing at all — where before the index existed the write error surfaced. The
+// refusal is swallowed only when the re-list shows the assumption held.
+func TestBuiltinSeedingReportsARefusalItCannotExplain(t *testing.T) {
+	repo := &scriptedBuiltinSeedRepository{
+		lists: [][]models.SymptomType{
+			builtinCatalogueRows(7, "insomnia"),
+			builtinCatalogueRows(7, "insomnia"),
+		},
+		batchErr: fakeUniqueConstraintError{},
+	}
+	service := NewSymptomService(repo)
+
+	symptoms, err := service.FetchSymptoms(context.Background(), 7)
+	if err == nil {
+		t.Fatalf("a refusal the re-list does NOT explain must surface, got a %d-row catalogue and no error", len(symptoms))
+	}
+	var uniqueErr interface{ UniqueConstraint() string }
+	if !errors.As(err, &uniqueErr) {
+		t.Fatalf("expected the constraint refusal itself, got %v", err)
+	}
+}
+
+// TestBuiltinSeedingReportsAFailedRelist covers the read the swallow now
+// depends on. The re-list is what decides whether a constraint refusal was the
+// benign race, so a re-list that fails leaves the question unanswered — and an
+// unanswered question is not permission to report success.
+func TestBuiltinSeedingReportsAFailedRelist(t *testing.T) {
+	relistFailed := errors.New("relist failed")
+	repo := &scriptedBuiltinSeedRepository{
+		lists:    [][]models.SymptomType{builtinCatalogueRows(7, "insomnia"), nil},
+		listErrs: []error{nil, relistFailed},
+		batchErr: fakeUniqueConstraintError{},
+	}
+
+	if _, err := NewSymptomService(repo).FetchSymptoms(context.Background(), 7); !errors.Is(err, relistFailed) {
+		t.Fatalf("expected the failed re-list to surface, got %v", err)
+	}
+}
+
+// TestConcurrentRenamesToOneNameLeaveExactlyOneWinner is the rename path's half
+// of the class, and the one a person actually meets: two tabs renaming two
+// different symptoms to the same new name. Neither list can see the other's new
+// name, because neither has been written yet, so both availability checks pass
+// and the index is the only thing left to refuse the second write.
+func TestConcurrentRenamesToOneNameLeaveExactlyOneWinner(t *testing.T) {
+	_, database := newDayServiceIntegration(t)
+	user := createDayServiceTestUser(t, database, "symptom-rename-race@example.com")
+	first := createSymptomServiceTestCustomSymptom(t, database, user.ID, "Alpha", "a", "#334455")
+	second := createSymptomServiceTestCustomSymptom(t, database, user.ID, "Beta", "b", "#334455")
+
+	repositories := db.NewRepositories(database)
+	service := NewSymptomService(barrieredSymptomRepository{
+		SymptomRepository: repositories.Symptoms,
+		afterList:         newSymptomListRendezvous(2),
+	})
+
+	targets := []uint{first.ID, second.ID}
+	errs := symptomUniquenessRace(2, func(index int) error {
+		_, err := service.UpdateSymptomForUser(context.Background(), user.ID, targets[index], "Gamma", "g", "#334455")
+		return err
+	})
+
+	renamed := 0
+	for index, err := range errs {
+		switch {
+		case err == nil:
+			renamed++
+		case errors.Is(err, ErrSymptomNameAlreadyExists):
+		default:
+			t.Fatalf("concurrent rename %d returned an unexpected error: %v", index, err)
+		}
+	}
+	if renamed != 1 {
+		t.Fatalf("expected exactly one concurrent rename to succeed, got %d (errors: %v)", renamed, errs)
+	}
+	if rows := countSymptomRowsNamed(t, database, user.ID, "Gamma"); rows != 1 {
+		t.Fatalf("expected exactly one stored row named %q, got %d", "Gamma", rows)
+	}
+}
+
+// TestRestoreMapsAConstraintRefusalOntoTheNameConflict pins the restore path's
+// mapping as POLICY, and says plainly that it is not a reachable state today.
+//
+// A restore can only collide with a row that already carries the name, and
+// ensureSymptomNameAvailable lists archived rows alongside active ones, so it
+// sees that row and refuses before the write. The mapping exists because the
+// index is the authority and the check is not: were the availability check ever
+// narrowed to active rows — the reading this schema change was very nearly
+// built on — the restore would start meeting the index, and a person renaming
+// in two tabs would get a 500 instead of the conflict every other path gives.
+// A stub supplies the refusal, since the schema will not.
+func TestRestoreMapsAConstraintRefusalOntoTheNameConflict(t *testing.T) {
+	archivedAt := time.Now().UTC()
+	repo := &stubSymptomRepo{
+		findResult: models.SymptomType{ID: 4, UserID: 7, Name: "Delta", ArchivedAt: &archivedAt},
+		updateErr:  fakeUniqueConstraintError{},
+	}
+	service := NewSymptomService(repo)
+
+	if err := service.RestoreSymptomForUser(context.Background(), 7, 4); !errors.Is(err, ErrSymptomNameAlreadyExists) {
+		t.Fatalf("expected a constraint refusal on restore to read as a name conflict, got %v", err)
+	}
+}

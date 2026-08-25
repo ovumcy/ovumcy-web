@@ -13,8 +13,10 @@
   `symptom_types` now carries a unique index on `(user_id, lower(name))`, so the second writer
   is refused by the database rather than by a check it had already passed. A refused create or
   rename answers with the same "symptom name already exists" conflict a duplicate has always
-  produced. A refused built-in seeding does not surface at all: the request that lost the race
-  only wanted to read, and it is answered with the catalogue the other one wrote.
+  produced. A refused built-in seeding does not surface at all — the request that lost the race
+  only wanted to read, and it is answered with the catalogue the other one wrote — but only once
+  a re-read confirms those built-ins are in fact there now. A refusal that leaves the catalogue
+  short is reported, rather than repeating in silence on every page load.
 
   The index is keyed per account, so two accounts on one instance each keep their own "Cramps",
   and it covers archived symptoms as well as active ones — an archived name has always stayed
@@ -54,6 +56,15 @@
 
   Rolling this migration back is `DROP INDEX idx_symptom_types_user_name_unique`. It writes no
   data at all, so dropping the index restores the previous state exactly.
+
+- **A migration can no longer cut its own prose in half.** The runner splits statements on every
+  `;` without stripping comments, so a semicolon in the middle of a comment line turns the rest
+  of that sentence into the next statement, and the engine answers with a syntax error naming
+  English. Every migration file opens with a long prose header, and the rule against it lived
+  only in the closing paragraph of the files that happened to repeat it. A sweep over both
+  dialect trees now enforces it, narrowed to the form that actually breaks: a semicolon that ends
+  a comment line is harmless and three shipped files rely on that, so only a semicolon with text
+  after it on the same line is refused.
 
 - **The duplicate-name class is held by a barrier test rather than by timing.** Two goroutines
   are released together and rendezvous on the return of the catalogue read, so both hold a

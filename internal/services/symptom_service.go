@@ -246,6 +246,14 @@ func (service *SymptomService) CalculateFrequencies(ctx context.Context, userID 
 	return result, nil
 }
 
+// SeedBuiltinSymptoms has no caller in the application: registration seeds the
+// catalogue with the account row in one transaction, and every later path goes
+// through EnsureBuiltinSymptoms and ensureBuiltinSymptomsListed. It is left
+// exactly as it was rather than taught the per-owner name index's refusal
+// policy, because unreachable handling is handling nobody can hold to anything
+// — a caller wired in later has to adopt ensureBuiltinSymptomsListed's rule
+// (swallow a constraint refusal only once a re-read shows the work is done) as
+// part of wiring it.
 func (service *SymptomService) SeedBuiltinSymptoms(ctx context.Context, userID uint) error {
 	count, err := service.symptoms.CountBuiltinByUser(ctx, userID)
 	if err != nil {
@@ -254,17 +262,7 @@ func (service *SymptomService) SeedBuiltinSymptoms(ctx context.Context, userID u
 	if count > 0 {
 		return nil
 	}
-	if err := service.symptoms.CreateBatch(ctx, BuiltinSymptomRecordsForUser(userID)); err != nil {
-		if isSymptomNameConstraintViolation(err) {
-			// A concurrent seed of the same account got there first. The
-			// catalogue this call was asked to create is present either way,
-			// and the count above is a read the other writer can invalidate at
-			// any point before this insert.
-			return nil
-		}
-		return err
-	}
-	return nil
+	return service.symptoms.CreateBatch(ctx, BuiltinSymptomRecordsForUser(userID))
 }
 
 func (service *SymptomService) EnsureBuiltinSymptoms(ctx context.Context, userID uint) error {
@@ -280,32 +278,54 @@ func (service *SymptomService) ensureBuiltinSymptomsListed(ctx context.Context, 
 	if err != nil {
 		return nil, err
 	}
-	existingByName := make(map[string]struct{}, len(existing))
-	for _, symptom := range existing {
-		key := normalizeSymptomNameKey(symptom.Name)
-		if key != "" {
-			existingByName[key] = struct{}{}
-		}
-	}
 
-	missing := MissingBuiltinSymptomsForUser(userID, existingByName)
+	missing := MissingBuiltinSymptomsForUser(userID, symptomNameKeySet(existing))
 	if len(missing) == 0 {
 		return existing, nil
 	}
-	if err := service.symptoms.CreateBatch(ctx, missing); err != nil {
-		// This is a READ path — a page load that happens to notice a builtin is
-		// absent — and it is the most reachable half of the duplicate-name
-		// class: two loads for one account both list, both compute the same
-		// missing set and both insert it. The loser is refused by the per-owner
-		// name index, and the right answer for it is the catalogue the winner
-		// wrote, not an error on a request that only wanted to read. Both
-		// callers derive the missing set from the same builtin table, so the
-		// winner's insert covers this one exactly.
-		if !isSymptomNameConstraintViolation(err) {
-			return nil, err
+	createErr := service.symptoms.CreateBatch(ctx, missing)
+	if createErr != nil && !isSymptomNameConstraintViolation(createErr) {
+		return nil, createErr
+	}
+
+	refreshed, err := service.symptoms.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if createErr == nil {
+		return refreshed, nil
+	}
+
+	// This is a READ path — a page load that happens to notice a builtin is
+	// absent — and it is the most reachable half of the duplicate-name class:
+	// two loads for one account both list, both compute the same missing set
+	// and both insert it. The loser is refused by the per-owner name index, and
+	// the right answer for it is the catalogue the winner wrote, not an error
+	// on a request that only wanted to read.
+	//
+	// That is the ONLY refusal this path may swallow, and the re-list is what
+	// tells the two apart. A collision it cannot explain — a builtin whose name
+	// the schema will never accept for this account — is permanent, and
+	// discarding it here would repeat on every page load, return a catalogue
+	// silently short that builtin, and report nothing at all, where before the
+	// index existed the write error surfaced.
+	if len(MissingBuiltinSymptomsForUser(userID, symptomNameKeySet(refreshed))) > 0 {
+		return nil, createErr
+	}
+	return refreshed, nil
+}
+
+// symptomNameKeySet indexes a stored catalogue by the service's normalized name
+// key, which is what decides whether a builtin counts as already present.
+func symptomNameKeySet(symptoms []models.SymptomType) map[string]struct{} {
+	keys := make(map[string]struct{}, len(symptoms))
+	for _, symptom := range symptoms {
+		key := normalizeSymptomNameKey(symptom.Name)
+		if key != "" {
+			keys[key] = struct{}{}
 		}
 	}
-	return service.symptoms.ListByUser(ctx, userID)
+	return keys
 }
 
 func (service *SymptomService) FetchSymptoms(ctx context.Context, userID uint) ([]models.SymptomType, error) {
