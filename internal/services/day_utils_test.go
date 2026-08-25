@@ -7,6 +7,10 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
+func dayHasDataBBT(value float64) *float64 {
+	return &value
+}
+
 func TestDayHasData(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -42,6 +46,35 @@ func TestDayHasData(t *testing.T) {
 			name:  "pregnancy test present",
 			entry: models.DailyLog{PregnancyTest: models.PregnancyTestPositive},
 			want:  true,
+		},
+		// One row per tracked field, each carrying nothing else: a day whose
+		// only content is intimacy, a temperature or a mucus observation is a
+		// day with data. Without these three the corresponding branches could
+		// all be deleted at once and the table stayed green, which meant an
+		// empty-looking day could be cleared out from under a value the owner
+		// had entered.
+		{
+			name:  "sex activity present",
+			entry: models.DailyLog{SexActivity: models.SexActivityProtected},
+			want:  true,
+		},
+		{
+			name:  "bbt present",
+			entry: models.DailyLog{BBT: dayHasDataBBT(36.6)},
+			want:  true,
+		},
+		{
+			name:  "cervical mucus present",
+			entry: models.DailyLog{CervicalMucus: models.CervicalMucusCreamy},
+			want:  true,
+		},
+		// An out-of-range stored temperature is not a reading: DayHasData asks
+		// IsValidDayBBT, so this row keeps the branch from degrading into a
+		// bare nil check.
+		{
+			name:  "out of range bbt is not data",
+			entry: models.DailyLog{Flow: models.FlowNone, BBT: dayHasDataBBT(200)},
+			want:  false,
 		},
 		{
 			name:  "empty entry",
