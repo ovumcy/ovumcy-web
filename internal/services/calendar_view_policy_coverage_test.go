@@ -200,19 +200,18 @@ func TestCalendarViewPolicyMonthBeforeSameYearLaterMonth(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Line 119 — location != nil guard in resolveCalendarLocation
-// Line 122 — fallback.Location() return path (not covered)
+// Which zone a CLAMPED month is anchored in
 // ---------------------------------------------------------------------------
 
-// resolveCalendarLocation is an unexported function; we exercise it indirectly
-// through clampCalendarMonthToMinimum, which is called inside
-// ResolveCalendarMonthAndSelectedDateWithinBounds when the month is before minMonth.
+// The three tests below fix the zone of a clamped month at the public entry
+// point, ResolveCalendarMonthAndSelectedDateWithinBounds, which substitutes UTC
+// for a nil location before clamping runs. minMonth carries a zone of its own
+// (it is built from the account's CreatedAt), and it must never be the one the
+// result is anchored in.
 //
-// calendarviewpolicyCovResolveLocationNonNilReturnsIt verifies that when a
-// non-nil location is supplied alongside a minMonth that has a different
-// embedded location, the non-nil explicit location wins.
-// Mutation on line 119: changing != nil to == nil would invert this, returning
-// the fallback location instead of the supplied one — the result location would differ.
+// TestCalendarViewPolicyResolveLocationNonNilReturnsIt: a supplied location wins
+// over the zone embedded in minMonth. A clamp that anchored in minMonth's zone
+// instead would fail here.
 func TestCalendarViewPolicyResolveLocationNonNilReturnsIt(t *testing.T) {
 	berlinLoc := time.FixedZone("Berlin", 2*60*60)
 	tokyoLoc := time.FixedZone("Tokyo", 9*60*60)
@@ -235,26 +234,19 @@ func TestCalendarViewPolicyResolveLocationNonNilReturnsIt(t *testing.T) {
 	}
 }
 
-// calendarviewpolicyCovResolveLocationNilUseFallback exercises line 122:
-// resolveCalendarLocation is called with a nil location; the fallback time has a
-// non-UTC location embedded in it, so the fallback's Location() must be returned.
-// This is the NOT COVERED path on line 122.
-//
-// This test pins the wrapper's behaviour: line 18's nil guard converts nil → UTC
-// *before* clamping runs, so the public entry point always hands
-// resolveCalendarLocation a non-nil (UTC) location and the clamped month carries
-// UTC. The unexported helper's own fallback branch (line 122) is reachable
-// directly in a white-box test and is covered by
-// TestCalendarViewPolicyResolveLocationNilDirectFallback below.
+// TestCalendarViewPolicyResolveLocationNilUseFallback pins the nil-location
+// contract: the entry point's own guard converts nil → UTC *before* clamping
+// runs, so a clamped month carries UTC and not the Tokyo zone embedded in
+// minMonth. This is the only nil-location path there is — clamping is reached
+// from nowhere else.
 func TestCalendarViewPolicyResolveLocationNilUseFallback(t *testing.T) {
 	tokyoLoc := time.FixedZone("Tokyo", 9*60*60)
 	minMonth := time.Date(2023, time.June, 1, 0, 0, 0, 0, tokyoLoc)
 	now := time.Date(2026, time.February, 21, 0, 0, 0, 0, time.UTC)
 
-	// Pass nil location — line 18 guard replaces it with UTC.
-	// Month 2022-01 is before minMonth, so clamping fires.
-	// resolveCalendarLocation receives UTC (not nil) so line 122 is not reached
-	// in this path; the returned month must carry UTC.
+	// Pass nil location — the entry point's guard replaces it with UTC.
+	// Month 2022-01 is before minMonth, so clamping fires and the returned
+	// month must carry UTC, not minMonth's Tokyo zone.
 	gotMonth, _, err := ResolveCalendarMonthAndSelectedDateWithinBounds("2022-01", "", now, nil, minMonth)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -268,9 +260,9 @@ func TestCalendarViewPolicyResolveLocationNilUseFallback(t *testing.T) {
 	}
 }
 
-// calendarviewpolicyCovResolveLocationNonNilPreferred confirms the non-nil branch
-// (line 119–120) with a concrete timezone change so a mutation flipping the
-// condition from != to == would return the wrong location and fail this assertion.
+// TestCalendarViewPolicyResolveLocationNonNilPreferred repeats the check with a
+// second, opposite-sign zone, so a clamp that anchored in minMonth's zone rather
+// than the request's fails on a concrete offset rather than by luck.
 func TestCalendarViewPolicyResolveLocationNonNilPreferred(t *testing.T) {
 	tokyoLoc := time.FixedZone("Tokyo", 9*60*60)
 	pacificLoc := time.FixedZone("PST", -8*60*60)
@@ -285,25 +277,11 @@ func TestCalendarViewPolicyResolveLocationNonNilPreferred(t *testing.T) {
 	}
 	// The explicit pacificLoc must win over the Tokyo location embedded in minMonth.
 	if gotMonth.Location() != pacificLoc {
-		t.Errorf("resolveCalendarLocation should prefer non-nil explicit location: got %v, want PST",
+		t.Errorf("clamped month should carry the supplied location: got %v, want PST",
 			gotMonth.Location())
 	}
 	// And the clamped month itself must be 2023-06.
 	if gotMonth.Format("2006-01") != "2023-06" {
 		t.Errorf("clamped month = %s, want 2023-06", gotMonth.Format("2006-01"))
-	}
-}
-
-// TestCalendarViewPolicyResolveLocationNilDirectFallback exercises line 122
-// directly: resolveCalendarLocation is an unexported helper this white-box test
-// can call with a nil location. The fallback time carries a concrete zone, so
-// its Location() must be returned (line 123). A mutation flipping line 122's
-// `!= nil` to `== nil` would fall through to the time.UTC default and fail here.
-func TestCalendarViewPolicyResolveLocationNilDirectFallback(t *testing.T) {
-	tokyo := time.FixedZone("Tokyo", 9*60*60)
-	fallback := time.Date(2024, time.January, 1, 0, 0, 0, 0, tokyo)
-
-	if got := resolveCalendarLocation(nil, fallback); got != tokyo {
-		t.Fatalf("resolveCalendarLocation(nil, fallback) = %v, want %v (fallback zone)", got, tokyo)
 	}
 }

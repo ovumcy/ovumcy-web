@@ -25,6 +25,18 @@ const (
 	bbtThirdDayMarginCelsius = 0.2
 )
 
+// maxPlausibleLutealPhaseDays is the ceiling of the plausibility window the
+// observed-luteal inference filters its per-cycle samples through; the floor is
+// minLutealPhaseDays. It belongs to this file rather than to the luteal-phase
+// const family in cycles.go because it is an outlier-rejection threshold owned
+// by the inference, not a property of the cycle model: a length past it means
+// the ovulation signal was misread (a stray egg-white day early in the cycle, a
+// thermal shift picked up from a disturbed reading), so the cycle is dropped
+// from the sample rather than clamped into it. The prediction-time bound is a
+// different quantity — maxSupportedLutealPhase (cycles.go), computed from the
+// cycle length.
+const maxPlausibleLutealPhaseDays = 20
+
 func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int, bool) {
 	if location == nil {
 		location = time.UTC
@@ -45,7 +57,7 @@ func InferUserLutealPhase(logs []models.DailyLog, location *time.Location) (int,
 		}
 
 		lutealLength := CalendarDaysBetween(ovulationDate, nextStart)
-		if lutealLength < minLutealPhaseDays || lutealLength > 20 {
+		if lutealLength < minLutealPhaseDays || lutealLength > maxPlausibleLutealPhaseDays {
 			continue
 		}
 		lutealLengths = append(lutealLengths, lutealLength)
