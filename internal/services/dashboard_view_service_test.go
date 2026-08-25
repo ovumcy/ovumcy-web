@@ -551,6 +551,31 @@ func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(
 			wantEstimate: false,
 			wantBridge:   false,
 		},
+		// The two rows below are the bridge's own boundary, and they are here
+		// because a shared boolean moved under it. The bridge names NO date —
+		// it says the window arrives after the first cycle closes — so a paused
+		// projection has nothing to withhold from it, and an overdue first cycle
+		// is exactly when the owner most needs to be told that. Both the
+		// irregular and the regular account reach it: they differ only in which
+		// branch of buildDashboardPredictionDisplay claims the display, which is
+		// not a fact about the copy.
+		"awaiting the first cycle, overdue": {
+			mutateStats: func(stats *CycleStats) {
+				stats.CompletedCycleCount = 0
+				stats.CurrentCycleDay = 54
+			},
+			wantEstimate: false,
+			wantBridge:   true,
+		},
+		"awaiting the first cycle, overdue, irregular": {
+			mutateUser: func(user *models.User) { user.IrregularCycle = true },
+			mutateStats: func(stats *CycleStats) {
+				stats.CompletedCycleCount = 0
+				stats.CurrentCycleDay = 54
+			},
+			wantEstimate: false,
+			wantBridge:   true,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			user := &models.User{ID: 13, Role: models.RoleOwner, UsageGoal: models.UsageGoalTrying, CycleLength: 28, PeriodLength: 5, LutealPhase: 14}

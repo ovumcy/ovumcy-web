@@ -263,37 +263,44 @@ type dashboardTimingFrame struct {
 }
 
 // resolveDashboardTimingFrame decides that frame from the resolved usage goal.
-// The ovulation estimate follows the next-period item's gating exactly: a
-// suppressed prediction (unpredictable cycle, pregnancy pause) stays suppressed
-// here too, and so does a cycle overdue enough that the next-period window is
-// withheld (NextPeriodEstimatePaused) — the ovulation estimate is derived from
-// the same projection, so an account trying to conceive would otherwise be the
-// one cohort still reading a placeholder where the window used to be. The third
-// condition is of the same kind and answers the same question from the other
-// end: before the first completed cycle (AwaitingFirstCycle) the projection has
-// nothing but the onboarding slider to project from, so the estimate is
-// manufactured rather than measured. That state alone gets the bridge line in
-// place of the estimate — a promise about data, not a date. BBT keeps existing
-// only where the tracking settings grant it, and its placement is a property of
-// the goal alone: a late cycle is when a morning reading matters most, so
-// nothing about the cycle demotes the field.
+// The ovulation estimate is withheld wherever the next-period window is: an
+// unpredictable cycle, a pregnancy pause, and a cycle overdue past its own
+// reference length — it is derived from the same projection, so an account
+// trying to conceive would otherwise be the one cohort still reading a
+// placeholder where the window used to be. Before the first completed cycle
+// (AwaitingFirstCycle) the projection has nothing but the onboarding slider to
+// project from, so the estimate is manufactured rather than measured; that state
+// gets the bridge line in place of the estimate — a promise about data, not a
+// date. BBT keeps existing only where the tracking settings grant it, and its
+// placement is a property of the goal alone: a late cycle is when a morning
+// reading matters most, so nothing about the cycle demotes the field.
 //
-// The two items read DIFFERENT gates on purpose. The ovulation estimate is a
-// fertility claim, so it reads the decision the context already resolved
-// (FertilitySuppressed = FertilityProjectionSuppressed) rather than rebuilding
-// it from PredictionDisabled/NextPeriodEstimatePaused/AwaitingFirstCycle. The
-// bridge line needs the three shared signals WITHOUT the first-cycle floor —
-// it is the line shown IN that floor, so a gate that included it would gate the
-// bridge on its own state — and the context carries no field for that half, so
-// the pair below is still resolved here.
+// The two items read DIFFERENT gates, and the difference is about what each one
+// SAYS, not about which signals happen to be at hand.
+//
+// The ovulation estimate names a date, so it is a fertility claim and reads the
+// decision the context already resolved (FertilitySuppressed =
+// FertilityProjectionSuppressed) rather than rebuilding it from the disjuncts.
+//
+// The bridge line names NO date — it says the fertile window arrives once the
+// first cycle closes. Suppression exists to withhold a claim, and there is no
+// claim here to withhold, so the bridge asks only whether the account has
+// predictions at all: PredictionDisabled (unpredictable-cycle mode, pregnancy
+// pause), where a line promising a future window would contradict the page. It
+// deliberately does NOT read NextPeriodEstimatePaused. That flag means "this
+// projection is paused", which is a fact about a date the bridge does not name;
+// reading it withdrew the line for an account whose FIRST cycle had run past the
+// reference length — the moment the owner most needs to be told when the window
+// arrives — and left the status slot empty instead. Nor does it read
+// FertilitySuppressed: the bridge is the line shown IN the first-cycle floor, so
+// a gate carrying that floor would gate the bridge on its own state.
 func resolveDashboardTimingFrame(user *models.User, cycleContext DashboardCycleContext, visibility dashboardOwnerVisibility) dashboardTimingFrame {
 	if !IsOwnerUser(user) || NormalizeUsageGoal(user.UsageGoal) != models.UsageGoalTrying {
 		return dashboardTimingFrame{}
 	}
-	predictionSuppressed := cycleContext.PredictionDisabled || cycleContext.NextPeriodEstimatePaused
 	return dashboardTimingFrame{
 		ShowOvulationEstimate: !cycleContext.FertilitySuppressed,
-		ShowFirstCycleBridge:  !predictionSuppressed && cycleContext.AwaitingFirstCycle,
+		ShowFirstCycleBridge:  !cycleContext.PredictionDisabled && cycleContext.AwaitingFirstCycle,
 		BBTInVisibleTier:      visibility.ShowBBTField,
 	}
 }
