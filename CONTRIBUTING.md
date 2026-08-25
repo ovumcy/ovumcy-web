@@ -14,8 +14,11 @@ npm ci
 3. Run checks locally:
 
 ```bash
-# scoped past node_modules/, where a vendored JS dep ships a .go file
-go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/...
+# scoped past node_modules/, where a vendored JS dep ships a .go file;
+# -timeout 20m is the budget CI declares too — internal/api runs close enough to
+# Go's 10-minute PER PACKAGE default that the default aborts the run with
+# `panic: test timed out after 10m0s` (see TESTING.md)
+go test ./cmd/... ./internal/... ./migrations/... ./scripts/... ./web/... -timeout 20m
 go run ./scripts/archcheck
 npm run lint:js
 npm run build
