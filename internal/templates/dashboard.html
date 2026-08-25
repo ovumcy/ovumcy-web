@@ -3,11 +3,20 @@
   <h1 class="sr-only" data-title-key="nav.dashboard">{{t .Messages "nav.dashboard"}}</h1>
   <section class="space-y-3" data-dashboard-shell data-phase="{{.Stats.CurrentPhase}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
     {{$phase := .Stats.CurrentPhase}}{{if .CycleDataStale}}{{$phase = "unknown"}}{{else if .CycleHero.Visible}}{{$phase = .CycleHero.CurrentPhase}}{{end}}
+    {{/* The page's ONE fertility verdict, resolved once and read by every site
+         that publishes it below. The classification arrives already cleared for
+         the tiers the shared gate suppresses (ShowFertilityStatus is read too,
+         so gate and data must both fail before a claim escapes); a stale anchor
+         is the extra display signal the gate does not carry, and it is the
+         reason the phase above reads "unknown" as well. Written out per site,
+         this expression disagreed with itself: the journal grid carried no gate
+         at all and published the raw classification for every suppressed tier. */}}
+    {{$fertilityStatus := .Stats.CurrentFertility}}{{if or .CycleDataStale (not .ShowFertilityStatus)}}{{$fertilityStatus = "unknown"}}{{end}}
     <section
       class="card dashboard-status-header reveal"
       data-dashboard-status-header
       data-dashboard-phase="{{$phase}}"
-      data-fertility-status="{{if or .CycleDataStale (not .ShowFertilityStatus)}}unknown{{else}}{{.Stats.CurrentFertility}}{{end}}"
+      data-fertility-status="{{$fertilityStatus}}"
       {{if .CycleHero.Approximate}}data-cycle-hero-approximate="true"{{end}}>
       <div class="dashboard-status-top">
         <p class="dashboard-cycle-lead">
@@ -20,10 +29,11 @@
             <span aria-hidden="true">{{template "icon" (phaseIcon $phase)}}</span>
             <span>{{phaseLabel .Messages $phase}}</span>
           </span>
-          {{/* The fertile window is read off the projected cycle, so before the
-               first completed cycle it says the onboarding slider back to the
-               owner. It waits for the data that makes it a measurement. */}}
-          {{if and .ShowFertilityStatus (not .CycleDataStale) (eq .Stats.CurrentFertility "fertile")}}
+          {{/* The fertile window is read off the projected cycle, so it says
+               the onboarding slider back to the owner wherever the projection
+               has nothing observed behind it. It waits for the data that makes
+               it a measurement — the verdict resolved above already knows. */}}
+          {{if eq $fertilityStatus "fertile"}}
           <span class="dashboard-status-separator" aria-hidden="true">·</span>
           <span class="dashboard-status-item" data-fertile-window>{{t .Messages "dashboard.fertile_window"}}</span>
           {{end}}
@@ -233,7 +243,7 @@
     </section>
   </section>
 
-  <div class="grid gap-6" data-dashboard-editor data-phase="{{.Stats.CurrentPhase}}" data-fertility="{{.Stats.CurrentFertility}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
+  <div class="grid gap-6" data-dashboard-editor data-phase="{{.Stats.CurrentPhase}}" data-fertility="{{$fertilityStatus}}" data-usage-goal="{{.CurrentUser.UsageGoal}}">
     <section class="card p-4 sm:p-5">
       {{/* The title and the day it edits are one line: the date is what the
            title is about, not a second heading. */}}

@@ -197,14 +197,20 @@ func (service *StatsService) BuildStatsPageViewData(ctx context.Context, user *m
 	}, nil
 }
 
-// publishedStatsForOwner returns the CycleStats this page PUBLISHES: the
-// computed stats with every forward-looking value the display policy refuses
-// cleared, so the data cannot outlive the decision. Suppression on this surface
-// used to be a template obligation — one boolean beside the full CycleStats it
-// was supposed to hide — and a template that forgets the boolean, a new partial,
-// a JSON view or a debug dump of the struct then publishes a claim the product
-// has decided it must not make. Cleared here, the same forgetful template
-// renders nothing instead of a suppressed estimate.
+// publishedStatsForOwner returns the CycleStats a page PUBLISHES: the computed
+// stats with every forward-looking value the display policy refuses cleared, so
+// the data cannot outlive the decision. Suppression on these surfaces used to be
+// a template obligation — one boolean beside the full CycleStats it was supposed
+// to hide — and a template that forgets the boolean, a new partial, a JSON view
+// or a debug dump of the struct then publishes a claim the product has decided
+// it must not make. Cleared here, the same forgetful template renders nothing
+// instead of a suppressed estimate.
+//
+// It serves BOTH owner surfaces that hand a CycleStats to a template — /stats
+// and the dashboard, whose journal grid republished the raw classification with
+// no gate on it at all. It stays one function rather than one per surface: a
+// second implementation of the clearing rule is precisely how the two came to
+// disagree in the first place.
 //
 // The two shared predicates decide, never a signal recombined here, and they
 // clear different sets because they answer different questions:

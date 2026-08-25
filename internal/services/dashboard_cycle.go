@@ -408,11 +408,26 @@ func buildDashboardPredictionDisplay(user *models.User, stats CycleStats, today 
 		ovulationExact:      prediction.OvulationExact,
 		ovulationImpossible: prediction.OvulationImpossible,
 	}
-	if display.nextPeriodPrompt || display.nextPeriodNeedsData {
+	// The prompt is not a projection: with no recorded start there is no date
+	// to withhold and nothing for the overdue signal to be about, so it answers
+	// first — and DashboardCycleOverdue reads false there anyway, the cycle day
+	// being derived from the same absent anchor.
+	if display.nextPeriodPrompt {
 		return finalizeDashboardPredictionDisplay(display)
 	}
+	// Suppression is the floor, so overdue outranks the thin-history branch
+	// below rather than following it. Both describe a weak estimate, but they
+	// answer with different strengths: nextPeriodNeedsData still NAMES the
+	// projected date and captions it "needs more cycles", which is exactly the
+	// qualifier the medical-safety invariant refuses to accept in place of
+	// withholding. Ordered the other way round, the one cohort that met both —
+	// an irregular account with fewer than three completed cycles, overdue —
+	// was the only one still reading a date past its own reference length.
 	if DashboardCycleOverdue(user, stats) {
 		return pauseDashboardPredictionDisplay(display)
+	}
+	if display.nextPeriodNeedsData {
+		return finalizeDashboardPredictionDisplay(display)
 	}
 	return finalizeDashboardPredictionDisplay(applyDashboardPredictionRanges(display, user, stats, location))
 }

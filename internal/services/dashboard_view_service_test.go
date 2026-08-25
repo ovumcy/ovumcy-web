@@ -504,42 +504,64 @@ func TestFirstMissingTrackedDayFindsTrackedGap(t *testing.T) {
 // answers a question about the goal, but the estimate it adds is a prediction:
 // it must disappear wherever the next-period window does — an unpredictable
 // cycle, a pregnancy pause, and a cycle overdue past reference + 7, where the
-// projection has nothing left to say. The temperature's placement answers the
-// goal question alone and is unmoved by any of them.
+// projection has nothing left to say — and also before the first completed
+// cycle, where the bridge line stands in for it. The temperature's placement
+// answers the goal question alone and is unmoved by any of them.
+//
+// The cases feed a (user, stats) pair through BuildDashboardCycleContext rather
+// than hand-building the context, because the frame no longer recombines the
+// suppression signals: the ovulation estimate reads the FertilitySuppressed
+// decision the context resolved once. A hand-built context can set
+// PredictionDisabled without the decision that follows from it, which is a state
+// the builder never emits — asserting against one would pin the frame to a
+// fixture rather than to the policy.
 func TestResolveDashboardTimingFrameGatesTheOvulationEstimateOnEverySuppression(t *testing.T) {
-	user := &models.User{Role: models.RoleOwner, UsageGoal: models.UsageGoalTrying}
+	today := mustParseDashboardServiceDay(t, dashboardSuppressionDay)
 	visibility := dashboardOwnerVisibility{ShowBBTField: true}
 
 	for name, testCase := range map[string]struct {
-		cycleContext DashboardCycleContext
+		mutateUser   func(*models.User)
+		mutateStats  func(*CycleStats)
 		wantEstimate bool
 		wantBridge   bool
 	}{
 		"stable cycle": {
-			cycleContext: DashboardCycleContext{},
 			wantEstimate: true,
 		},
 		"predictions suppressed": {
-			cycleContext: DashboardCycleContext{PredictionDisabled: true},
+			mutateUser:   func(user *models.User) { user.UnpredictableCycle = true },
+			wantEstimate: false,
+		},
+		"pregnancy pause": {
+			mutateStats:  func(stats *CycleStats) { stats.PregnancyPaused = true },
 			wantEstimate: false,
 		},
 		"cycle overdue": {
-			cycleContext: DashboardCycleContext{NextPeriodEstimatePaused: true},
+			mutateStats:  func(stats *CycleStats) { stats.CurrentCycleDay = 54 },
 			wantEstimate: false,
 		},
 		"awaiting the first completed cycle": {
-			cycleContext: DashboardCycleContext{AwaitingFirstCycle: true},
+			mutateStats:  func(stats *CycleStats) { stats.CompletedCycleCount = 0 },
 			wantEstimate: false,
 			wantBridge:   true,
 		},
 		"awaiting the first cycle with predictions off": {
-			cycleContext: DashboardCycleContext{AwaitingFirstCycle: true, PredictionDisabled: true},
+			mutateUser:   func(user *models.User) { user.UnpredictableCycle = true },
+			mutateStats:  func(stats *CycleStats) { stats.CompletedCycleCount = 0 },
 			wantEstimate: false,
 			wantBridge:   false,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			frame := resolveDashboardTimingFrame(user, testCase.cycleContext, visibility)
+			user := &models.User{ID: 13, Role: models.RoleOwner, UsageGoal: models.UsageGoalTrying, CycleLength: 28, PeriodLength: 5, LutealPhase: 14}
+			if testCase.mutateUser != nil {
+				testCase.mutateUser(user)
+			}
+			stats := dashboardSuppressionStats(t)
+			if testCase.mutateStats != nil {
+				testCase.mutateStats(&stats)
+			}
+			frame := resolveDashboardTimingFrame(user, BuildDashboardCycleContext(user, stats, today, time.UTC), visibility)
 			if frame.ShowOvulationEstimate != testCase.wantEstimate {
 				t.Fatalf("expected ovulation estimate=%v, got %v", testCase.wantEstimate, frame.ShowOvulationEstimate)
 			}
