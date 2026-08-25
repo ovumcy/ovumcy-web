@@ -20,3 +20,11 @@
   should already have started. That owner now gets the same "estimate paused" notice everyone else
   past that point gets. Owners inside their reference length still see the estimate with its
   caption.
+- **An owner tracking to conceive whose first cycle runs long is told when the fertile window
+  arrives, instead of nothing.** Before the first completed cycle the status line carries one
+  dateless sentence — "your fertile window appears after your first completed cycle" — in place of
+  an ovulation estimate. Once that first cycle passed the reference length the sentence disappeared
+  too and the slot was simply empty, at the point the owner has the most reason to wonder. Pausing
+  a projection withholds a date; this line names none, so it now stays for as long as the first
+  cycle is open. It still goes when predictions are off altogether — unpredictable-cycle mode or a
+  pregnancy pause — where promising a future window would contradict the rest of the page.
