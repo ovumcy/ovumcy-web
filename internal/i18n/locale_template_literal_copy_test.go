@@ -149,7 +149,7 @@ func recordTemplateTextSpan(node *parse.TextNode, evidence *sourceEvidence) {
 // into the markup survives with its letters.
 func maskTemplateActions(source string, spans []templateTextSpan) string {
 	masked := make([]byte, len(source))
-	for index := 0; index < len(source); index++ {
+	for index := range len(source) {
 		if source[index] == '\n' {
 			masked[index] = '\n'
 			continue
