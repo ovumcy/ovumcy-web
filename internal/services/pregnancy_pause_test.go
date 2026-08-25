@@ -81,6 +81,84 @@ func TestResolvePregnancyPauseUsesLatestPositive(t *testing.T) {
 	}
 }
 
+// TestResolvePregnancyPauseIsIndependentOfLogOrder pins that the two scans pick
+// the LATEST matching day rather than the last entry they happen to see. Every
+// other fixture in this file places the decisive event last, so replacing both
+// date comparisons with plain last-entry-wins assignments changed nothing —
+// while a repository that returns rows in a different order (or a caller that
+// appends a backdated entry) would silently unpause a pregnancy, or pause on a
+// stale positive test that a later cycle start has already lifted.
+func TestResolvePregnancyPauseIsIndependentOfLogOrder(t *testing.T) {
+	tests := []struct {
+		name      string
+		logs      []models.DailyLog
+		wantPause bool
+		wantDate  time.Time
+	}{
+		{
+			name: "latest positive with no cycle start after it",
+			logs: []models.DailyLog{
+				{Date: ppDay(2026, time.March, 1), IsPeriod: true, CycleStart: true},
+				{Date: ppDay(2026, time.March, 5), PregnancyTest: models.PregnancyTestPositive},
+				{Date: ppDay(2026, time.March, 20), PregnancyTest: models.PregnancyTestPositive},
+			},
+			wantPause: true,
+			wantDate:  ppDay(2026, time.March, 20),
+		},
+		{
+			name: "a later cycle start lifts the pause",
+			logs: []models.DailyLog{
+				// One cycle start on each side of the positive test, so an
+				// order-dependent scan can pick the earlier one and conclude
+				// the pause is still on.
+				{Date: ppDay(2026, time.March, 5), IsPeriod: true, CycleStart: true},
+				{Date: ppDay(2026, time.March, 10), PregnancyTest: models.PregnancyTestPositive},
+				{Date: ppDay(2026, time.April, 5), IsPeriod: true, CycleStart: true},
+			},
+			wantPause: false,
+		},
+	}
+
+	orders := []struct {
+		name    string
+		reorder func([]models.DailyLog) []models.DailyLog
+	}{
+		{name: "ascending", reorder: func(logs []models.DailyLog) []models.DailyLog { return logs }},
+		{name: "descending", reorder: reversedDailyLogs},
+		// A fixed rotation stands in for "shuffled": it is deterministic, so a
+		// failure here is reproducible, and it puts a middle entry last, which
+		// is what a last-entry-wins scan reads as the decision.
+		{name: "rotated", reorder: func(logs []models.DailyLog) []models.DailyLog {
+			return append(append([]models.DailyLog{}, logs[len(logs)-1]), logs[:len(logs)-1]...)
+		}},
+	}
+
+	for _, testCase := range tests {
+		for _, order := range orders {
+			t.Run(testCase.name+" "+order.name, func(t *testing.T) {
+				date, paused := ResolvePregnancyPause(order.reorder(append([]models.DailyLog{}, testCase.logs...)))
+				if paused != testCase.wantPause {
+					t.Fatalf("ResolvePregnancyPause() paused = %v, want %v", paused, testCase.wantPause)
+				}
+				if !testCase.wantPause {
+					return
+				}
+				if !date.Equal(testCase.wantDate) {
+					t.Fatalf("ResolvePregnancyPause() date = %s, want %s", date, testCase.wantDate)
+				}
+			})
+		}
+	}
+}
+
+func reversedDailyLogs(logs []models.DailyLog) []models.DailyLog {
+	reversed := make([]models.DailyLog, 0, len(logs))
+	for index := len(logs) - 1; index >= 0; index-- {
+		reversed = append(reversed, logs[index])
+	}
+	return reversed
+}
+
 func TestResolvePregnancyPauseIgnoresCycleStartWithoutPeriod(t *testing.T) {
 	positive := ppDay(2026, time.March, 10)
 	logs := []models.DailyLog{
