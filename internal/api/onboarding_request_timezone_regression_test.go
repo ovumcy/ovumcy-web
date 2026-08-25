@@ -136,6 +136,41 @@ func TestOnboardingPersistsLastPeriodStartUsingFormTimezoneFallback(t *testing.T
 	}
 }
 
+// TestOnboardingStep2SetsTheFormFallbackTimezoneCookieOnARefusedStep pins the
+// side effect that keeps step 2's timezone resolution at the TOP of the handler
+// rather than at the CompleteOnboardingForUser call site: the resolver writes
+// the ovumcy_tz cookie, and it has to run before the validation refusal
+// returns, not only on the success path that consumes the location. Deleting
+// the resolution (it reads as an unused result) or inlining it into the
+// CompleteOnboardingForUser argument drops the cookie on every early return
+// out of step 2.
+//
+// Form-fallback case, deliberately narrower than the default both-signals
+// convention: neither X-Ovumcy-Timezone nor an ovumcy_tz cookie is sent, so
+// client_timezone is the only source and the cookie write is the only
+// observable trace the resolver leaves. It says nothing about the header or
+// cookie branches, which never write on this path.
+func TestOnboardingStep2SetsTheFormFallbackTimezoneCookieOnARefusedStep(t *testing.T) {
+	app, database := newOnboardingTestApp(t)
+	user := createOnboardingTestUser(t, database, "step2-refused-tz@example.com", "StrongPass1", false)
+	authCookie := loginAndExtractAuthCookie(t, app, user.Email, "StrongPass1")
+
+	timezoneName, _ := timezoneWithDifferentCalendarDay(t, time.Now().UTC())
+
+	refusedForm := url.Values{
+		"cycle_length":              {"not-a-number"},
+		"period_length":             {"5"},
+		onboardingTimezoneFieldName: {timezoneName},
+	}
+	response := onboardingHTMXResponse(t, app, http.MethodPost, "/api/v1/onboarding/steps/2", authCookie, "", refusedForm)
+	assertStatusCode(t, response, http.StatusBadRequest)
+
+	timezoneCookie := responseCookie(response.Cookies(), timezoneCookieName)
+	if timezoneCookie == nil || strings.TrimSpace(timezoneCookie.Value) != timezoneName {
+		t.Fatalf("expected timezone cookie %q=%q on the refused step-2 submission, got %#v", timezoneCookieName, timezoneName, timezoneCookie)
+	}
+}
+
 func submitOnboardingStep1WithTimezone(t *testing.T, app *fiber.App, authCookie string, timezoneName string, form url.Values) {
 	t.Helper()
 
