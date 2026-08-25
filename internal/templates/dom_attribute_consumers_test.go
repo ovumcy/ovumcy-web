@@ -104,6 +104,7 @@ var domAttrConsumerResidual = map[string]string{
 	"data-cycle-start-implantation": "the only unread field of the cycle-start confirm island: its siblings (conflict-date, short-gap, replace-message) are all read, so the implantation warning the server computes reaches no dialog",
 	"data-next-period-paused-key":   "the state key beside data-dashboard-next-period-paused, which is asserted while its key is not",
 	"data-projected":                "the only ribbon-day flag with no reader; data-today, data-fertile and the rest are all addressed",
+	"data-period":                   "the cycle-stack day flag beside data-fertile, data-fertile-peak and data-logged, which are all addressed while it is not (stats.html:352)",
 }
 
 // domAttrConsumerSourceExtensions are the file kinds that can name a hook:
@@ -140,7 +141,15 @@ var domAttrConsumerSkipDirectories = map[string]bool{
 var (
 	domAttrConsumerAttrPattern    = regexp.MustCompile(`\bdata-[a-z0-9-]*[a-z0-9]`)
 	domAttrConsumerCommentPattern = regexp.MustCompile(`(?s)\{\{/\*.*?\*/\}\}|<!--.*?-->`)
-	domAttrConsumerDatasetPattern = regexp.MustCompile(`dataset\.([A-Za-z0-9_$]+)|["']([A-Za-z][A-Za-z0-9]*)["']`)
+	// The second alternative is the bare-key spelling: a script that passes a
+	// dataset name as a string rather than reading it through `dataset.`. It
+	// requires a lower-case first letter followed by an upper-case one, which
+	// is what a multi-segment hook's dataset name looks like and what an
+	// ordinary English word does not. Accepting any quoted word instead made a
+	// hook whose name IS an ordinary word live on a coincidence:
+	// `data-period` (stats.html) has no consumer at all, and `case "period":`
+	// in the autosave script classified it as read.
+	domAttrConsumerDatasetPattern = regexp.MustCompile(`dataset\.([A-Za-z0-9_$]+)|["']([a-z][a-z0-9]*[A-Z][A-Za-z0-9]*)["']`)
 )
 
 // TestEveryTemplateDataHookIsNamedOutsideTheTemplates is the DOM contract's
@@ -234,6 +243,21 @@ func TestDomAttrConsumerScanClassifiesItsOwnFixtures(t *testing.T) {
 	domAttrConsumerIndexSource(`page.locator('[data-fixture-live-hook="on"]')`, ".ts", literals, datasets)
 	if !domAttrConsumerNamed("data-fixture-live-hook", literals, datasets) {
 		t.Fatal("a hook named by a spec selector must classify as named")
+	}
+
+	// The bare-key spelling, both halves. Without the second assertion the
+	// alternative could be widened back to any quoted word and stay green,
+	// which is how data-period — a hook with no consumer at all — classified
+	// as read on the strength of `case "period":` in an unrelated script.
+	bareLiterals := map[string]bool{}
+	bareDatasets := map[string]bool{}
+	domAttrConsumerIndexSource(`notify(form, "fixtureBareKey");`, ".js", bareLiterals, bareDatasets)
+	domAttrConsumerIndexSource(`switch (kind) { case "fixture": break; }`, ".js", bareLiterals, bareDatasets)
+	if !domAttrConsumerNamed("data-fixture-bare-key", bareLiterals, bareDatasets) {
+		t.Fatal("a hook whose dataset name is passed as a bare quoted key must classify as named")
+	}
+	if domAttrConsumerNamed("data-fixture", bareLiterals, bareDatasets) {
+		t.Fatal("a quoted ordinary word must not classify a single-segment hook of the same name as named")
 	}
 
 	if got := domAttrConsumerDatasetName("data-fixture-dataset-hook"); got != "fixtureDatasetHook" {
