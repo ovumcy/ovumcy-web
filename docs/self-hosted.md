@@ -392,6 +392,10 @@ Stop the app first — `docker compose stop`, then `docker compose start` once t
 A portable manual backup flow is:
 
 ```bash
+# Stop the app first, or take the archive from an atomic snapshot of the volume:
+# archiving the live volume can drop a commit that was already in the database,
+# and the run reports nothing. The stop/start commands are in the paragraph
+# above this block, under "Docker Named Volume Backup".
 mkdir -p backups
 BACKUP_FILE="ovumcy-data-backup.tgz"
 
@@ -446,7 +450,7 @@ After restore:
 4. Sign in and confirm the records are there: open the calendar on a month you know had entries before the backup, or download `Settings → Export` and compare it against an export taken before the restore. Do this even when the app looks perfectly healthy — every signal above stays green on an empty database.
 5. Confirm the records are the ones **from the backup**, not the ones that were already in place. Before starting the restore, name a signal that is known to differ between the current database and the backup — the entry count for a month you edited since the dump was taken, a specific entry that exists in only one of the two — and check that signal afterwards. Phrase it so it can fail: "the calendar still shows entries" passes on a restore that did nothing, while "July shows 12 entries, not the 3 it showed an hour ago" does not. If you cannot name a differing signal, take a `Settings → Export` immediately before the restore and diff it against one taken after; an export that comes back unchanged after restoring a different generation of data is the failure, not a reassurance.
 6. If you restored with a different `SECRET_KEY`, expect existing auth sessions and sealed cookies to be invalid and require a fresh sign-in. Read that expectation carefully against step 4, because the two failures look similar for one screen and mean opposite things: with a changed key your **password still works** (password hashes do not depend on `SECRET_KEY`) and you are merely signed out — 2FA is the part that breaks, and the recovery path for it is in [Secret Handling and Rotation](#secret-handling-and-rotation). A sign-in that is rejected as *wrong credentials* is not a key symptom at all; it means the account is not in the restored database, which is step 4 failing.
-7. Re-check `Settings → Calendar feed` for every owner. A restore also returns the feed columns to their state at backup time, so a subscription an owner revoked or rotated *after* that backup was taken comes back live at its old subscribe URL — revoke or regenerate it again if it should no longer be armed. This is a different trigger from the `SECRET_KEY` rotation above, which disarms feeds instead: [docs/gdpr.md → Backup Restore and the Calendar Feed](gdpr.md#backup-restore-and-the-calendar-feed).
+7. Re-check your own `Settings → Calendar feed`, and tell every other owner on this instance to re-check theirs. A restore also returns the feed columns to their state at backup time, so a subscription an owner revoked or rotated *after* that backup was taken comes back live at its old subscribe URL — it has to be revoked or regenerated again if it should no longer be armed. Only the account itself can see or change that: every account is the sole owner of its own data, so there is no operator surface that shows another owner's feed, and an owner nobody tells keeps a live subscription they believe they revoked. This is a different trigger from the `SECRET_KEY` rotation above, which disarms feeds instead: [docs/gdpr.md → Backup Restore and the Calendar Feed](gdpr.md#backup-restore-and-the-calendar-feed).
 
 ## Safe Upgrade Procedure
 

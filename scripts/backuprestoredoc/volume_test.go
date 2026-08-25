@@ -55,10 +55,29 @@ const (
 	composeDownCommand = "docker compose down"
 	composeUpCommand   = "docker compose up -d"
 
+	// composeStopCommand stops the app before the volume is archived. The
+	// section's prose has to spell it out; the block beside it may NOT, because
+	// runScript refuses to execute any script containing `docker compose` and
+	// that refusal is what keeps a developer's `go test ./...` away from a real
+	// deployment. So the block carries stopBeforeArchiveMarker instead, and the
+	// two halves are checked together by
+	// TestVolumeBackupBlockCarriesTheStopRequirement.
+	composeStopCommand = "docker compose stop"
+
+	// stopBeforeArchiveMarker is how the requirement travels with the block
+	// itself: a comment, which every shell ignores and every operator who
+	// copies the block still reads.
+	stopBeforeArchiveMarker = "Stop the app first"
+
 	// sqliteDatabaseFile is the database inside the data volume. The two
-	// sidecars beside it are what `docs/self-hosted.md` promises the
-	// whole-volume archive captures together with it — the claim
-	// assertArchiveCarriesTheWholeWALSet checks.
+	// sidecars beside it are the NECESSARY half of what `docs/self-hosted.md`
+	// asks of an archive — the claim assertArchiveCarriesTheWholeWALSet checks,
+	// and all this package can check, since it never runs the application. The
+	// sufficiency half is not here and is not implied: capturing all three from
+	// a LIVE volume still loses a commit to a checkpoint landing mid-capture,
+	// which is why the runbook requires a stopped app or an atomic snapshot.
+	// internal/db's TestLiveWholeVolumeCaptureLosesACommitToACheckpointMidCapture
+	// is where that half is proven.
 	sqliteDatabaseFile = "ovumcy.db"
 
 	dockerCommandTimeout = 3 * time.Minute
@@ -68,6 +87,8 @@ const (
 // written live in the `-wal` file until a checkpoint, which is exactly why an
 // archive that carries only `ovumcy.db` restores an instance that boots clean
 // and empty — the failure the runbook's Post-Restore Verification describes.
+// Carrying all three is where that failure stops, not where the contract ends:
+// see sqliteDatabaseFile above for the half proven elsewhere.
 var walSetFiles = []string{sqliteDatabaseFile, sqliteDatabaseFile + "-wal", sqliteDatabaseFile + "-shm"}
 
 var (
@@ -184,6 +205,45 @@ func agreedValue(t *testing.T, name string, pattern *regexp.Regexp, blocks ...st
 		}
 	}
 	return agreed
+}
+
+// TestVolumeBackupBlockCarriesTheStopRequirement keeps the one requirement that
+// decides whether the archive is complete inside the artefact an operator
+// actually takes away. A fenced block in a runbook is copied — into a cron job,
+// into a wiki, into a shell — and the prose around it is not; an operator who
+// copies this block and never re-reads the section archives a live volume, and
+// a checkpoint landing between tar's read of `ovumcy.db` and its read of
+// `ovumcy.db-wal` drops a commit that was already in the database, with nothing
+// in the run reporting a problem.
+//
+// The requirement stays a COMMENT, and one that does not name the compose
+// command: this package executes the block verbatim, and runScript refuses any
+// script containing `docker compose` — the refusal that keeps a developer's
+// `go test ./...` from addressing a real deployment. Weakening it to let a
+// comment through would trade a live-deployment guard for a doc convenience.
+// So the block carries the marker and the section's prose carries the command,
+// and both ends are checked here: a block whose comment was dropped stops
+// travelling with the requirement, and prose that lost the command leaves the
+// comment pointing at nothing.
+func TestVolumeBackupBlockCarriesTheStopRequirement(t *testing.T) {
+	block := singleShellBlock(t, volumeBackupSection)
+
+	marked := false
+	for _, line := range strings.Split(block, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") && strings.Contains(trimmed, stopBeforeArchiveMarker) {
+			marked = true
+			break
+		}
+	}
+	if !marked {
+		t.Errorf("%s: the %s block carries no comment saying %q, so an operator who copies the block without the prose around it archives a live volume and can lose a commit that was already in the database:\n%s",
+			runbookPath, volumeBackupSection, stopBeforeArchiveMarker, block)
+	}
+
+	if section := runbookSectionText(t, volumeBackupSection); !strings.Contains(section, composeStopCommand) {
+		t.Errorf("%s: section %q no longer names %q, so the block's comment sends the operator to a paragraph that no longer tells them how to stop the app", runbookPath, volumeBackupSection, composeStopCommand)
+	}
 }
 
 // singleShellBlock returns the one fenced shell block of a runbook section.
