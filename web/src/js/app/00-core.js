@@ -175,15 +175,6 @@
     bindSystemThemeChanges();
   }
 
-  function setThemePreference(theme) {
-    var normalized = normalizeThemePreference(theme);
-    if (!normalized) {
-      return currentTheme();
-    }
-    writeStoredTheme(normalized);
-    return applyTheme(normalized);
-  }
-
   function isSafeClientTimezone(value) {
     if (!value || value.length > 128) {
       return false;

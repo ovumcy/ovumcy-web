@@ -1,5 +1,4 @@
   function initCSPFriendlyComponents() {
-    bindThemeToggleButtons();
     bindMobileMenu();
     bindPWAInstallOffer();
     bindPWAInstallSettingsRow();

@@ -175,15 +175,6 @@
     bindSystemThemeChanges();
   }
 
-  function setThemePreference(theme) {
-    var normalized = normalizeThemePreference(theme);
-    if (!normalized) {
-      return currentTheme();
-    }
-    writeStoredTheme(normalized);
-    return applyTheme(normalized);
-  }
-
   function isSafeClientTimezone(value) {
     if (!value || value.length > 128) {
       return false;
@@ -2063,7 +2054,7 @@
       setSaveButtonState(form, false);
       showResponseNotice(xhr);
       if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
-        window.__ovumcyFinalizeDashboardManualSave(form, !!(event && event.detail && event.detail.successful));
+        window.__ovumcyFinalizeDashboardManualSave(form);
       }
     });
 
@@ -2150,7 +2141,7 @@
       }
       if (!target || !target.classList || !target.classList.contains("save-status")) {
         if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
-          window.__ovumcyFinalizeDashboardManualSave(form, false);
+          window.__ovumcyFinalizeDashboardManualSave(form);
         }
         return;
       }
@@ -2171,7 +2162,7 @@
       var fallback = document.body.getAttribute("data-request-failed") || "Request failed. Please try again.";
       renderErrorStatus(target, fallback);
       if (form && form.matches && form.matches("[data-dashboard-save-form]") && typeof window.__ovumcyFinalizeDashboardManualSave === "function") {
-        window.__ovumcyFinalizeDashboardManualSave(form, false);
+        window.__ovumcyFinalizeDashboardManualSave(form);
       }
     });
   }
@@ -2623,17 +2614,6 @@
     return node ? String(node.textContent || "").trim() : "";
   }
 
-  function themeMessagesFromDataset() {
-    var body = document.body;
-    var dataset = body && body.dataset ? body.dataset : {};
-    return {
-      toggleToDark: String(dataset.themeLabelDark || "Switch to dark mode"),
-      toggleToLight: String(dataset.themeLabelLight || "Switch to light mode"),
-      modeDark: String(dataset.themeNameDark || "Dark"),
-      modeLight: String(dataset.themeNameLight || "Light")
-    };
-  }
-
   function clampInteger(value, fallback, minValue, maxValue) {
     var numeric = Number(value);
     if (!isFinite(numeric)) {
@@ -2683,47 +2663,6 @@
       setNodeHidden(fieldsets[index], !isPeriod);
     }
     setDisabledByPeriod(root, isPeriod);
-  }
-
-  function syncThemeToggleButtons() {
-    var buttons = document.querySelectorAll("[data-theme-option]");
-    var theme = currentTheme();
-    var messages = themeMessagesFromDataset();
-
-    for (var index = 0; index < buttons.length; index++) {
-      var button = buttons[index];
-      var optionTheme = normalizeTheme(button.getAttribute("data-theme-option"));
-      var selected = optionTheme !== "" && optionTheme === theme;
-      var toggleLabel = optionTheme === THEME_DARK ? messages.toggleToDark : messages.toggleToLight;
-      var currentLabel = optionTheme === THEME_DARK ? messages.modeDark : messages.modeLight;
-
-      button.dataset.selected = selected ? "true" : "false";
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-      button.setAttribute("aria-label", selected ? currentLabel : toggleLabel);
-      button.setAttribute("title", selected ? currentLabel : toggleLabel);
-    }
-  }
-
-  function bindThemeToggleButtons() {
-    var buttons = document.querySelectorAll("[data-theme-option]");
-    for (var index = 0; index < buttons.length; index++) {
-      var button = buttons[index];
-      if (button.dataset.themeToggleBound === "1") {
-        continue;
-      }
-
-      button.dataset.themeToggleBound = "1";
-      button.addEventListener("click", function () {
-        var nextTheme = normalizeTheme(this.getAttribute("data-theme-option"));
-        if (!nextTheme) {
-          return;
-        }
-        setThemePreference(nextTheme);
-        syncThemeToggleButtons();
-      });
-    }
-
-    syncThemeToggleButtons();
   }
 
   function syncMobileMenu(button, menu) {
@@ -3897,16 +3836,15 @@
     }
   }
 
-  function finalizeDashboardManualSave(form, successful) {
+  // Outcome-independent by design: the indicator row reports save state, and a
+  // failure is reported by the save-status swap instead. The finalizer only
+  // stands the row down.
+  function finalizeDashboardManualSave(form) {
     if (!form) {
       return;
     }
     clearDashboardAutosaveTimers(form);
     delete form.dataset.autosaveDirty;
-    if (!successful) {
-      setDashboardAutosaveIndicator(form, "idle");
-      return;
-    }
     setDashboardAutosaveIndicator(form, "idle");
   }
 
@@ -5889,7 +5827,6 @@
   }
 
   function initCSPFriendlyComponents() {
-    bindThemeToggleButtons();
     bindMobileMenu();
     bindPWAInstallOffer();
     bindPWAInstallSettingsRow();
