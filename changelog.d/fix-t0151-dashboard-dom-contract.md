@@ -21,10 +21,14 @@ stylesheet. A hook nothing names is markup that reads like a contract and
 promises coverage that does not exist. The check counts both spellings a
 consumer can use, the literal attribute and the camel-cased `dataset` name, and
 tokenizes rather than substring-matches: three hooks looked consumed while the
-only names in the tree were their longer siblings. Thirty hooks render with no
+only names in the tree were their longer siblings, and a fourth — the cycle-stack
+period flag — looked consumed because its one-word `dataset` name is an ordinary
+English word some unrelated script happens to quote, which is why the bare-key
+spelling is accepted only where a hook's name actually looks like one.
+Thirty-one hooks render with no
 consumer today; each is recorded with the reason it is still there, and the list
 can only shrink — an entry whose hook has since gained a reader, or left the
-templates, fails as loudly as a new dead hook. Two of the thirty are not
+templates, fails as loudly as a new dead hook. Two of the thirty-one are not
 decoration and are named as such: the cycle-start confirm island renders an
 implantation flag no dialog reads while all its siblings are read, and the
 paused-estimate line carries a state key that is never asserted beside a hook
