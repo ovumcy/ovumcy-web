@@ -171,6 +171,10 @@ func TestSymptomIDSweepMatcherFlagsAKnownViolation(t *testing.T) {
 		source      string
 		wantVerdict string
 		wantSource  string
+		// wantSilence marks a fixture the sweep must NOT report at all —
+		// a shape it cannot read is worth nothing said rather than the wrong
+		// thing said.
+		wantSilence bool
 	}{
 		{
 			name: "a bare loop is a violation",
@@ -292,6 +296,59 @@ func f(logEntry L, counts map[uint]int, other []uint, flag bool) {
 			wantVerdict: symptomLoopViolation,
 			wantSource:  "logEntry.SymptomIDs",
 		},
+		{
+			// The other half of scoping, and the one that costs more when it is
+			// wrong: an inner block that REASSIGNS an outer name has changed
+			// what the name denotes. Carrying the outer expression in would
+			// report this loop as ranging over logEntry.SymptomIDs, which it
+			// does not — an over-report fails a correct tree, and that is worse
+			// for a barrier than staying quiet. Staying quiet is the right
+			// answer here: `other` is a plain slice and the sweep cannot know
+			// what it holds.
+			name: "an inner reassignment retires the outer alias rather than outliving it",
+			source: `package p
+func f(logEntry L, counts map[uint]int, other []uint, flag bool) {
+	ids := logEntry.SymptomIDs
+	if flag {
+		ids = other
+		for _, id := range ids {
+			counts[id]++
+		}
+	}
+	_ = ids
+}`,
+			wantSilence: true,
+		},
+		{
+			// An exemption's reason here is that the loop collects into a set.
+			// Appending to a slice is how that stops being true, and it is a
+			// likelier edit than adding a counter: a repeated id then emits the
+			// same name twice into the export column.
+			name: "an exempted loop that appends is no longer repeat-proof",
+			source: `package p
+func exemptedFixture(logEntry L, names []string, lookup map[uint]string) []string {
+	for _, id := range logEntry.SymptomIDs {
+		names = append(names, lookup[id])
+	}
+	return names
+}`,
+			wantVerdict: symptomLoopExemptButCounts,
+			wantSource:  "logEntry.SymptomIDs",
+		},
+		{
+			// `*total = *total + 1` is a counter written through a pointer and
+			// `n = (n) + 1` survives gofmt; both step their own target.
+			name: "a step through a pointer or a paren is still a step",
+			source: `package p
+func exemptedFixture(logEntry L, total *int) {
+	for _, id := range logEntry.SymptomIDs {
+		_ = id
+		*total = *total + 1
+	}
+}`,
+			wantVerdict: symptomLoopExemptButCounts,
+			wantSource:  "logEntry.SymptomIDs",
+		},
 	}
 
 	for _, tc := range tests {
@@ -303,6 +360,12 @@ func f(logEntry L, counts map[uint]int, other []uint, flag bool) {
 			}
 
 			findings := symptomIDLoopFindings(t, fset, parsed, exemptions)
+			if tc.wantSilence {
+				if len(findings) != 0 {
+					t.Fatalf("the sweep reported %+v; this shape is one it cannot read, and naming an expression the loop does not range over fails a correct tree", findings)
+				}
+				return
+			}
 			matched := 0
 			for _, finding := range findings {
 				if finding.source != tc.wantSource {
@@ -497,11 +560,21 @@ func resolveBlockAliases(body *ast.BlockStmt) map[ast.Expr]ast.Expr {
 
 	var walk func(block *ast.BlockStmt, outer map[string]ast.Expr)
 	walk = func(block *ast.BlockStmt, outer map[string]ast.Expr) {
+		bound, assigned := singleAssignmentLocals(block)
+
 		aliases := make(map[string]ast.Expr, len(outer))
 		for name, expr := range outer {
+			// A name this block writes no longer denotes what the outer block
+			// assigned it, whether the write rebinds it or reassigns it.
+			// Carrying the outer expression past a reassignment would report a
+			// loop against an expression it does not range over, and an
+			// over-report fails a correct tree.
+			if assigned[name] {
+				continue
+			}
 			aliases[name] = expr
 		}
-		for name, expr := range singleAssignmentLocals(block) {
+		for name, expr := range bound {
 			aliases[name] = expr
 		}
 
@@ -527,7 +600,10 @@ func resolveBlockAliases(body *ast.BlockStmt) map[ast.Expr]ast.Expr {
 	return resolved
 }
 
-func singleAssignmentLocals(body *ast.BlockStmt) map[string]ast.Expr {
+// It returns both the names this block binds exactly once, with the expression
+// each was bound from, and every name it writes at all — the caller needs the
+// second set to retire an outer alias the block has invalidated.
+func singleAssignmentLocals(body *ast.BlockStmt) (map[string]ast.Expr, map[string]bool) {
 	assignments := map[string]int{}
 	candidates := map[string]ast.Expr{}
 
@@ -576,12 +652,16 @@ func singleAssignmentLocals(body *ast.BlockStmt) map[string]ast.Expr {
 	})
 
 	resolved := map[string]ast.Expr{}
-	for name, expr := range candidates {
-		if assignments[name] == 1 {
-			resolved[name] = expr
+	written := make(map[string]bool, len(assignments))
+	for name, count := range assignments {
+		written[name] = true
+		if count == 1 {
+			if expr, bound := candidates[name]; bound {
+				resolved[name] = expr
+			}
 		}
 	}
-	return resolved
+	return resolved, written
 }
 
 // loopBodyIncrements reports whether the loop counts anything — `x++`, `x--`,
@@ -602,7 +682,11 @@ func loopBodyIncrements(body *ast.BlockStmt) bool {
 				counts = true
 			case token.ASSIGN:
 				for index, lhs := range stmt.Lhs {
-					if index < len(stmt.Rhs) && assignmentStepsItsOwnTarget(lhs, stmt.Rhs[index]) {
+					if index >= len(stmt.Rhs) {
+						continue
+					}
+					if assignmentStepsItsOwnTarget(lhs, stmt.Rhs[index]) ||
+						assignmentAppendsToItsOwnTarget(lhs, stmt.Rhs[index]) {
 						counts = true
 					}
 				}
@@ -628,11 +712,32 @@ func assignmentStepsItsOwnTarget(target ast.Expr, value ast.Expr) bool {
 	return binary.Op == token.ADD && sameSyntacticExpr(target, binary.Y)
 }
 
+// assignmentAppendsToItsOwnTarget reports whether `target = append(target, …)`
+// grows target in place. An exemption on this tree reads "collects names into a
+// set, so a repeated id changes no output", and dropping the set for a slice is
+// the likelier way that stops being true — a repeated id then emits the same
+// name twice into the export column, which no counter is involved in.
+func assignmentAppendsToItsOwnTarget(target ast.Expr, value ast.Expr) bool {
+	call, ok := value.(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
+		return false
+	}
+	ident, ok := call.Fun.(*ast.Ident)
+	if !ok || ident.Name != "append" {
+		return false
+	}
+	return sameSyntacticExpr(target, call.Args[0])
+}
+
 // sameSyntacticExpr compares the shapes this barrier can meet on the left of an
-// assignment — a plain name, a field, and a map or slice index. It is
-// deliberately syntactic: the sweep parses without type information, so two
-// expressions that read the same are treated as the same target.
+// assignment — a plain name, a field, a map or slice index, and a pointer
+// dereference. Parentheses are unwrapped first: `n = (n) + 1` survives gofmt
+// and steps its target exactly as the bare form does. It is deliberately
+// syntactic: the sweep parses without type information, so two expressions that
+// read the same are treated as the same target.
 func sameSyntacticExpr(left ast.Expr, right ast.Expr) bool {
+	left, right = unwrapParens(left), unwrapParens(right)
+
 	switch typed := left.(type) {
 	case *ast.Ident:
 		other, ok := right.(*ast.Ident)
@@ -643,8 +748,21 @@ func sameSyntacticExpr(left ast.Expr, right ast.Expr) bool {
 	case *ast.IndexExpr:
 		other, ok := right.(*ast.IndexExpr)
 		return ok && sameSyntacticExpr(typed.X, other.X) && sameSyntacticExpr(typed.Index, other.Index)
+	case *ast.StarExpr:
+		other, ok := right.(*ast.StarExpr)
+		return ok && sameSyntacticExpr(typed.X, other.X)
 	default:
 		return false
+	}
+}
+
+func unwrapParens(expr ast.Expr) ast.Expr {
+	for {
+		paren, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			return expr
+		}
+		expr = paren.X
 	}
 }
 
