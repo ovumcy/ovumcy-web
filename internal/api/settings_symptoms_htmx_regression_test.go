@@ -220,7 +220,7 @@ func TestSettingsSymptomsHTMXUpdateTooLongDoesNotEchoDraftName(t *testing.T) {
 	if err := database.First(&stored, existing.ID).Error; err != nil {
 		t.Fatalf("reload symptom after too-long update: %v", err)
 	}
-	if stored.Name != "Cramps" {
+	if stored.Name != "Knee stiffness" {
 		t.Fatalf("expected persisted symptom name unchanged, got %q", stored.Name)
 	}
 }
