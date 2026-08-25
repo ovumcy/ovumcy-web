@@ -210,6 +210,12 @@ Notes:
 - If the process was down when the scheduled hour passed, it catches up with
   **at most one pass for the current day** on the next start — it never
   backfills multiple missed days.
+- If a pass fails before it can send anything (the database was unreachable, so
+  the list of owners could not be read), the day is **not** counted as done: the
+  pass is retried a few minutes later, up to three attempts, and only then does
+  the scheduler give up until the next day's hour. A restart in between still
+  catches the day up, and the idempotency watermark below means a retry never
+  re-sends a reminder an earlier attempt already delivered.
 - On graceful shutdown (`SIGINT`/`SIGTERM`), the server waits briefly for an
   in-flight pass to finish before closing the database.
 - It reuses the exact same delivery path, idempotency watermark, and security
