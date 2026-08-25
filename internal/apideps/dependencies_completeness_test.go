@@ -2,6 +2,7 @@ package apideps
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,14 @@ import (
 //     so rows and fields are in bijection. A row answering for two fields shows
 //     up as a repeated message, a duplicated or otherwise stale row as a count
 //     mismatch, and an empty sweep as a count mismatch too.
+//
+// Residual, stated rather than asserted: this proves one row per field, not
+// that a row carries its own field's name. Two rows whose messages are mutually
+// swapped stay distinct and keep the count, so they pass — the startup error
+// would then name the wrong service. Pinning message to field would need a
+// per-row override table (three rows do not name their field verbatim), and the
+// drift that actually happens — a message copy-pasted onto a second row — is a
+// repeat, which is caught.
 
 // exemptDependencyFields names the Dependencies fields Validate deliberately
 // does not check, each with the reason it cannot be a requirement. A field that
@@ -61,20 +70,34 @@ func interfacePortStubs() map[reflect.Type]reflect.Value {
 }
 
 // dependencyFiller returns a non-nil stand-in for a dependency field of the
-// given type, or the reason it cannot build one. Pointer fields are allocated
-// outright, so a new *services.X dependency needs no entry anywhere. Refusing
-// is a failure of the sweep, never a skip — a field the sweep cannot wire is
-// exactly the field whose validation nobody would notice missing.
+// given type, or the reason it cannot build one. Pointer, map and slice fields
+// are allocated outright, so a new *services.X dependency needs no entry
+// anywhere. Refusing is a failure of the sweep, never a skip — a field the
+// sweep cannot wire is exactly the field whose validation nobody would notice
+// missing.
+//
+// The kinds handled here are the ones missing() nil-checks, and the two
+// refusals say which side the maintainer has to act on. A kind missing() DOES
+// nil-check is a requirement whatever the sweep can build, so its refusal asks
+// for a stand-in and never for an exemption: exempting such a field would drop
+// a validated dependency out of the sweep, which is the failure this guard
+// exists to prevent.
 func dependencyFiller(fieldType reflect.Type) (reflect.Value, string) {
 	switch fieldType.Kind() {
 	case reflect.Pointer:
 		return reflect.New(fieldType.Elem()), ""
+	case reflect.Map:
+		return reflect.MakeMap(fieldType), ""
+	case reflect.Slice:
+		return reflect.MakeSlice(fieldType, 0, 0), ""
 	case reflect.Interface:
 		stub, known := interfacePortStubs()[fieldType]
 		if !known {
 			return reflect.Value{}, "it is an interface port with no stand-in; add one to interfacePortStubs so the field stays swept"
 		}
 		return stub, ""
+	case reflect.Chan, reflect.Func:
+		return reflect.Value{}, "Validate DOES nil-check this kind, so the field is a requirement and must not be exempted; teach dependencyFiller to build a non-nil stand-in for it instead"
 	default:
 		return reflect.Value{}, "Validate detects a missing dependency by its nil, and a value of this kind is never nil; validate it another way or record it in exemptDependencyFields with the reason"
 	}
@@ -145,7 +168,7 @@ func TestEveryDependencyFieldHasItsOwnRequirement(t *testing.T) {
 // that silently exempts nothing, and the next field to take that name would
 // inherit the exemption without anyone deciding it should.
 func TestDependencyExemptionsNameLiveFields(t *testing.T) {
-	dependencyType := reflect.TypeOf(Dependencies{})
+	dependencyType := reflect.TypeFor[Dependencies]()
 	for name, reason := range exemptDependencyFields {
 		if _, live := dependencyType.FieldByName(name); !live {
 			t.Errorf("exemptDependencyFields names %q, which Dependencies no longer declares; drop the entry rather than leaving it to exempt a future field of that name", name)
@@ -157,11 +180,17 @@ func TestDependencyExemptionsNameLiveFields(t *testing.T) {
 }
 
 // TestDependencyFillerRefusesAFieldItCannotWire anchors the sweep on fixtures
-// it owns, in both directions: the two shapes a dependency can take must be
-// wired to a non-nil value, and the two shapes the guard cannot honestly wire
-// must be refused rather than passed over. Without this, a filler that returned
-// "no problem" for everything would leave the sweep nilling fields that were
-// never wired in the first place.
+// it owns, in both directions: the shapes a dependency can take must be wired
+// to a non-nil value, and the shapes the guard cannot honestly wire must be
+// refused rather than passed over. Without this, a filler that returned "no
+// problem" for everything would leave the sweep nilling fields that were never
+// wired in the first place.
+//
+// Each case also carries a check derived from missing() itself rather than from
+// the table, so the filler cannot drift away from what Validate actually does:
+// a kind whose zero value missing() reports as absent IS a requirement, so
+// refusing it may only ask for a stand-in — pointing such a field at
+// exemptDependencyFields would drop a validated dependency out of the sweep.
 func TestDependencyFillerRefusesAFieldItCannotWire(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -170,20 +199,32 @@ func TestDependencyFillerRefusesAFieldItCannotWire(t *testing.T) {
 	}{
 		{"service pointer", reflect.TypeFor[*Dependencies](), false},
 		{"known interface port", reflect.TypeFor[RegisterPickupTokenStore](), false},
+		{"slice field", reflect.TypeFor[[]string](), false},
+		{"map field", reflect.TypeFor[map[string]string](), false},
 		{"unknown interface port", reflect.TypeFor[interface{ Unwired() }](), true},
+		{"channel field", reflect.TypeFor[chan struct{}](), true},
+		{"func field", reflect.TypeFor[func()](), true},
 		{"non-nilable field", reflect.TypeFor[string](), true},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
+			zeroIsMissing := (dependencyRequirement{value: reflect.Zero(testCase.fieldType).Interface()}).missing()
+
 			filler, refusal := dependencyFiller(testCase.fieldType)
 			if testCase.wantRefusal {
 				if refusal == "" {
 					t.Fatalf("dependencyFiller(%s) wired the field instead of refusing it", testCase.fieldType)
 				}
+				if zeroIsMissing && strings.Contains(refusal, "exemptDependencyFields") {
+					t.Fatalf("dependencyFiller(%s) refuses a kind Validate DOES nil-check by offering an exemption: %s — exempting it would drop a validated dependency out of the sweep; the refusal has to ask for a stand-in", testCase.fieldType, refusal)
+				}
 				return
 			}
 			if refusal != "" {
 				t.Fatalf("dependencyFiller(%s) refused a field it can wire: %s", testCase.fieldType, refusal)
+			}
+			if !zeroIsMissing {
+				t.Fatalf("dependencyFiller(%s) wired a kind whose zero value Validate already accepts; nilling such a field proves nothing, so it must be refused instead", testCase.fieldType)
 			}
 			if (dependencyRequirement{value: filler.Interface()}).missing() {
 				t.Fatalf("dependencyFiller(%s) returned a value Validate still reads as missing", testCase.fieldType)
