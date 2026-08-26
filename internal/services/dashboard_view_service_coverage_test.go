@@ -50,7 +50,7 @@ func TestDashboardViewServiceStatsRangeIsTwoYears(t *testing.T) {
 	capturing := &dashboardviewserviceCovCapturingStatsProvider{}
 	svc := NewDashboardViewService(
 		capturing,
-		&stubDashboardViewerProvider{},
+		&stubDashboardDayLogProvider{},
 		&stubDashboardDayStateProvider{logs: []models.DailyLog{outsideWindow, insideWindow}},
 	)
 	if _, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
@@ -73,7 +73,7 @@ func TestDashboardViewServiceYesterdayIsOneDayBack(t *testing.T) {
 
 	svc := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{},
+		&stubDashboardDayLogProvider{},
 		&stubDashboardDayStateProvider{},
 	)
 	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
@@ -99,7 +99,7 @@ func TestDashboardViewServiceTodayEntryExistsWithID(t *testing.T) {
 
 	svcWithID := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{logEntry: models.DailyLog{ID: 42, Date: now, IsPeriod: true}},
+		&stubDashboardDayLogProvider{logEntry: models.DailyLog{ID: 42, Date: now, IsPeriod: true}},
 		&stubDashboardDayStateProvider{},
 	)
 	vd, err := svcWithID.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
@@ -112,7 +112,7 @@ func TestDashboardViewServiceTodayEntryExistsWithID(t *testing.T) {
 
 	svcNoID := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{logEntry: models.DailyLog{ID: 0, Date: now}},
+		&stubDashboardDayLogProvider{logEntry: models.DailyLog{ID: 0, Date: now}},
 		&stubDashboardDayStateProvider{},
 	)
 	vd2, err := svcNoID.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
@@ -146,7 +146,7 @@ func TestDashboardViewServiceHasExtraSymptomsPopulatedInDashboard(t *testing.T) 
 	}
 	svc := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
+		&stubDashboardDayLogProvider{symptoms: symptoms},
 		&stubDashboardDayStateProvider{},
 	)
 	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
@@ -163,7 +163,7 @@ func TestDashboardViewServiceHasExtraSymptomsPopulatedInDashboard(t *testing.T) 
 	// With ≤ 8 symptoms HasExtraSymptoms must be false.
 	svcFew := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms[:3]},
+		&stubDashboardDayLogProvider{symptoms: symptoms[:3]},
 		&stubDashboardDayStateProvider{},
 	)
 	vdFew, err := svcFew.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
@@ -229,7 +229,7 @@ func TestDashboardViewServiceHasExtraSymptomsPopulatedInDayEditor(t *testing.T) 
 	}
 	svc := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
+		&stubDashboardDayLogProvider{symptoms: symptoms},
 		&stubDashboardDayStateProvider{},
 	)
 	vd, err := svc.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC)
@@ -242,7 +242,7 @@ func TestDashboardViewServiceHasExtraSymptomsPopulatedInDayEditor(t *testing.T) 
 
 	svcFew := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms[:2]},
+		&stubDashboardDayLogProvider{symptoms: symptoms[:2]},
 		&stubDashboardDayStateProvider{},
 	)
 	vdFew, err := svcFew.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC)
@@ -274,7 +274,7 @@ func TestDashboardViewServiceEntryContextLogsLoadedForTwoSymptoms(t *testing.T) 
 	}
 	svc := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
+		&stubDashboardDayLogProvider{symptoms: symptoms},
 		dayState,
 	)
 	vd, err := svc.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC)
@@ -291,7 +291,7 @@ func TestDashboardViewServiceEntryContextLogsLoadedForTwoSymptoms(t *testing.T) 
 	// We inject an error in FetchAllLogsForUser to detect if it is called.
 	svcOneSymptom := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms[:1]},
+		&stubDashboardDayLogProvider{symptoms: symptoms[:1]},
 		&stubDashboardDayStateProvider{logs: []models.DailyLog{sentinel}},
 	)
 	// Should succeed even though FetchAllLogsForUser would be a no-op.
@@ -324,7 +324,7 @@ func TestDashboardViewServiceSymptomRankingRequiresTwoSymptomsAndTwoCycles(t *te
 	}
 	svc := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms},
+		&stubDashboardDayLogProvider{symptoms: symptoms},
 		&stubDashboardDayStateProvider{logs: logsWithTwoCycles},
 	)
 	vd, err := svc.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
@@ -339,7 +339,7 @@ func TestDashboardViewServiceSymptomRankingRequiresTwoSymptomsAndTwoCycles(t *te
 	// With only 1 symptom the guard short-circuits – no ranking.
 	svcOne := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{symptoms: symptoms[:1]},
+		&stubDashboardDayLogProvider{symptoms: symptoms[:1]},
 		&stubDashboardDayStateProvider{logs: logsWithTwoCycles},
 	)
 	vdOne, err := svcOne.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC)
@@ -479,7 +479,7 @@ func TestDashboardViewServiceStatsFallsBackToRangedQueryWhenLogsNotRequired(t *t
 	capturing := &dashboardviewserviceCovCapturingStatsProvider{}
 	svc := NewDashboardViewService(
 		capturing,
-		&stubDashboardViewerProvider{symptoms: []models.SymptomType{{ID: 1, Name: "Cramps"}}},
+		&stubDashboardDayLogProvider{symptoms: []models.SymptomType{{ID: 1, Name: "Cramps"}}},
 		&stubDashboardDayStateProvider{logs: []models.DailyLog{
 			{Date: now, IsPeriod: true},
 		}},

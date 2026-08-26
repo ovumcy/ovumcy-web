@@ -18,7 +18,7 @@ func (handler *Handler) withDependencies(dependencies Dependencies) *Handler {
 	handler.oidcLogoutStateSvc = dependencies.OIDCLogoutStateSvc
 	handler.dayService = dependencies.DayService
 	handler.symptomService = dependencies.SymptomService
-	handler.viewerService = dependencies.ViewerService
+	handler.ownerDayReadService = dependencies.OwnerDayReadService
 	handler.statsService = dependencies.StatsService
 	handler.calendarViewService = dependencies.CalendarViewService
 	handler.calendarFeedService = dependencies.CalendarFeedService

@@ -42,7 +42,7 @@ func TestMR3Dash_FactorHintSuppressedWhenHintKeysEmpty(t *testing.T) {
 			LastPeriodStart:     mr3dashDay(t, "2026-04-20"),
 			NextPeriodStart:     mr3dashDay(t, "2026-05-21"),
 		}},
-		&stubDashboardViewerProvider{
+		&stubDashboardDayLogProvider{
 			logEntry: models.DailyLog{Date: today},
 			symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
 		},

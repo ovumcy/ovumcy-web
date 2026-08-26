@@ -19,7 +19,7 @@ type Dependencies struct {
 	OIDCLogoutStateSvc     *services.OIDCLogoutStateService
 	DayService             *services.DayService
 	SymptomService         *services.SymptomService
-	ViewerService          *services.ViewerService
+	OwnerDayReadService    *services.OwnerDayReadService
 	StatsService           *services.StatsService
 	CalendarViewService    *services.CalendarViewService
 	CalendarFeedService    *services.CalendarFeedService
@@ -68,7 +68,7 @@ func (dependencies Dependencies) requirements() []dependencyRequirement {
 		{value: dependencies.OIDCLogoutStateSvc, message: "oidc logout state service is required"},
 		{value: dependencies.DayService, message: "day service is required"},
 		{value: dependencies.SymptomService, message: "symptom service is required"},
-		{value: dependencies.ViewerService, message: "viewer service is required"},
+		{value: dependencies.OwnerDayReadService, message: "owner day read service is required"},
 		{value: dependencies.StatsService, message: "stats service is required"},
 		{value: dependencies.CalendarViewService, message: "calendar view service is required"},
 		{value: dependencies.CalendarFeedService, message: "calendar feed service is required"},

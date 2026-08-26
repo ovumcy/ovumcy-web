@@ -9,7 +9,7 @@ import (
 	"github.com/ovumcy/ovumcy-web/internal/models"
 )
 
-type stubViewerDayReader struct {
+type stubOwnerDayReader struct {
 	entry models.DailyLog
 	logs  []models.DailyLog
 	err   error
@@ -22,7 +22,7 @@ type stubViewerDayReader struct {
 	calls int
 }
 
-func (stub *stubViewerDayReader) FetchLogByDate(_ context.Context, userID uint, _ time.Time, _ *time.Location) (models.DailyLog, error) {
+func (stub *stubOwnerDayReader) FetchLogByDate(_ context.Context, userID uint, _ time.Time, _ *time.Location) (models.DailyLog, error) {
 	stub.calls++
 	stub.byDateUserID = userID
 	if stub.err != nil {
@@ -31,7 +31,7 @@ func (stub *stubViewerDayReader) FetchLogByDate(_ context.Context, userID uint, 
 	return stub.entry, nil
 }
 
-func (stub *stubViewerDayReader) FetchLogsForUser(_ context.Context, userID uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
+func (stub *stubOwnerDayReader) FetchLogsForUser(_ context.Context, userID uint, _ time.Time, _ time.Time, _ *time.Location) ([]models.DailyLog, error) {
 	stub.calls++
 	stub.forUserUserID = userID
 	if stub.err != nil {
@@ -42,18 +42,18 @@ func (stub *stubViewerDayReader) FetchLogsForUser(_ context.Context, userID uint
 	return result, nil
 }
 
-type stubViewerSymptomReader struct {
+type stubOwnerSymptomReader struct {
 	symptoms        []models.SymptomType
 	lastSelectedIDs []uint
 	err             error
 
 	// Captured userID argument — used to prove reads are owner-scoped.
 	symptomUserID uint
-	// Call counter, for the same reason as stubViewerDayReader.calls.
+	// Call counter, for the same reason as stubOwnerDayReader.calls.
 	calls int
 }
 
-func (stub *stubViewerSymptomReader) FetchPickerSymptoms(_ context.Context, userID uint, selectedIDs []uint) ([]models.SymptomType, error) {
+func (stub *stubOwnerSymptomReader) FetchPickerSymptoms(_ context.Context, userID uint, selectedIDs []uint) ([]models.SymptomType, error) {
 	stub.calls++
 	stub.symptomUserID = userID
 	if stub.err != nil {
@@ -65,7 +65,7 @@ func (stub *stubViewerSymptomReader) FetchPickerSymptoms(_ context.Context, user
 	return result, nil
 }
 
-// TestViewerServiceRefusesANilUser pins the precondition every method here
+// TestOwnerDayReadServiceRefusesANilUser pins the precondition every method here
 // carries: the acting owner is resolved before the service is reached. Each
 // one used to dereference user.ID with no branch in front of it, so the
 // unreachable transport path — a handler that reached a read with no resolved
@@ -73,33 +73,33 @@ func (stub *stubViewerSymptomReader) FetchPickerSymptoms(_ context.Context, user
 // empty data instead would read as "this owner has nothing", which is the one
 // answer a read scoped to a missing id must never give. The collaborators must
 // not be touched at all: a read issued for user_id 0 is an unscoped read.
-func TestViewerServiceRefusesANilUser(t *testing.T) {
-	dayReader := &stubViewerDayReader{
+func TestOwnerDayReadServiceRefusesANilUser(t *testing.T) {
+	dayReader := &stubOwnerDayReader{
 		entry: models.DailyLog{Notes: "owner-note"},
 		logs:  []models.DailyLog{{Notes: "n1"}},
 	}
-	symptomReader := &stubViewerSymptomReader{symptoms: []models.SymptomType{{Name: "Headache"}}}
-	service := NewViewerService(dayReader, symptomReader)
+	symptomReader := &stubOwnerSymptomReader{symptoms: []models.SymptomType{{Name: "Headache"}}}
+	service := NewOwnerDayReadService(dayReader, symptomReader)
 	moment := time.Now().UTC()
 
 	cases := []struct {
 		name string
 		call func() error
 	}{
-		{"FetchSymptomsForViewer", func() error {
-			_, err := service.FetchSymptomsForViewer(context.Background(), nil, []uint{4})
+		{"FetchSymptomsForOwner", func() error {
+			_, err := service.FetchSymptomsForOwner(context.Background(), nil, []uint{4})
 			return err
 		}},
-		{"FetchLogsForViewer", func() error {
-			_, err := service.FetchLogsForViewer(context.Background(), nil, moment, moment, time.UTC)
+		{"FetchLogsForOwner", func() error {
+			_, err := service.FetchLogsForOwner(context.Background(), nil, moment, moment, time.UTC)
 			return err
 		}},
-		{"FetchLogByDateForViewer", func() error {
-			_, err := service.FetchLogByDateForViewer(context.Background(), nil, moment, time.UTC)
+		{"FetchLogByDateForOwner", func() error {
+			_, err := service.FetchLogByDateForOwner(context.Background(), nil, moment, time.UTC)
 			return err
 		}},
-		{"FetchDayLogForViewer", func() error {
-			_, _, err := service.FetchDayLogForViewer(context.Background(), nil, moment, time.UTC)
+		{"FetchDayLogForOwner", func() error {
+			_, _, err := service.FetchDayLogForOwner(context.Background(), nil, moment, time.UTC)
 			return err
 		}},
 	}
@@ -107,8 +107,8 @@ func TestViewerServiceRefusesANilUser(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			dayReader.calls = 0
 			symptomReader.calls = 0
-			if err := testCase.call(); !errors.Is(err, ErrViewerUserRequired) {
-				t.Fatalf("%s(nil user) error = %v, want ErrViewerUserRequired", testCase.name, err)
+			if err := testCase.call(); !errors.Is(err, ErrDayReadOwnerRequired) {
+				t.Fatalf("%s(nil user) error = %v, want ErrDayReadOwnerRequired", testCase.name, err)
 			}
 			if dayReader.calls != 0 || symptomReader.calls != 0 {
 				t.Fatalf("%s(nil user) reached its collaborators: %d day reads, %d symptom reads",
@@ -118,16 +118,16 @@ func TestViewerServiceRefusesANilUser(t *testing.T) {
 	}
 }
 
-func TestViewerServiceFetchSymptomsForViewerLoadsOwnerSymptoms(t *testing.T) {
-	symptomReader := &stubViewerSymptomReader{
+func TestOwnerDayReadServiceFetchSymptomsForOwnerLoadsOwnerSymptoms(t *testing.T) {
+	symptomReader := &stubOwnerSymptomReader{
 		symptoms: []models.SymptomType{{Name: "Headache"}},
 	}
-	service := NewViewerService(&stubViewerDayReader{}, symptomReader)
+	service := NewOwnerDayReadService(&stubOwnerDayReader{}, symptomReader)
 
 	owner := &models.User{ID: 10, Role: models.RoleOwner}
-	ownerSymptoms, err := service.FetchSymptomsForViewer(context.Background(), owner, []uint{4})
+	ownerSymptoms, err := service.FetchSymptomsForOwner(context.Background(), owner, []uint{4})
 	if err != nil {
-		t.Fatalf("FetchSymptomsForViewer(owner) unexpected error: %v", err)
+		t.Fatalf("FetchSymptomsForOwner(owner) unexpected error: %v", err)
 	}
 	if len(ownerSymptoms) != 1 {
 		t.Fatalf("expected owner symptoms to load, got %#v", ownerSymptoms)
@@ -138,14 +138,14 @@ func TestViewerServiceFetchSymptomsForViewerLoadsOwnerSymptoms(t *testing.T) {
 	}
 }
 
-func TestViewerServiceFetchLogsForViewerReturnsOwnerLogs(t *testing.T) {
-	dayReader := &stubViewerDayReader{logs: []models.DailyLog{{Notes: "n1"}, {Notes: "n2"}}}
-	service := NewViewerService(dayReader, &stubViewerSymptomReader{})
+func TestOwnerDayReadServiceFetchLogsForOwnerReturnsOwnerLogs(t *testing.T) {
+	dayReader := &stubOwnerDayReader{logs: []models.DailyLog{{Notes: "n1"}, {Notes: "n2"}}}
+	service := NewOwnerDayReadService(dayReader, &stubOwnerSymptomReader{})
 
 	owner := &models.User{ID: 10, Role: models.RoleOwner}
-	logs, err := service.FetchLogsForViewer(context.Background(), owner, time.Now().UTC(), time.Now().UTC(), time.UTC)
+	logs, err := service.FetchLogsForOwner(context.Background(), owner, time.Now().UTC(), time.Now().UTC(), time.UTC)
 	if err != nil {
-		t.Fatalf("FetchLogsForViewer(owner) unexpected error: %v", err)
+		t.Fatalf("FetchLogsForOwner(owner) unexpected error: %v", err)
 	}
 	if len(logs) != 2 {
 		t.Fatalf("expected two owner logs, got %#v", logs)
@@ -156,44 +156,44 @@ func TestViewerServiceFetchLogsForViewerReturnsOwnerLogs(t *testing.T) {
 	}
 }
 
-func TestViewerServiceFetchDayLogForViewer_PropagatesErrors(t *testing.T) {
+func TestOwnerDayReadServiceFetchDayLogForOwner_PropagatesErrors(t *testing.T) {
 	dayErr := errors.New("day fetch failed")
-	service := NewViewerService(&stubViewerDayReader{err: dayErr}, &stubViewerSymptomReader{})
+	service := NewOwnerDayReadService(&stubOwnerDayReader{err: dayErr}, &stubOwnerSymptomReader{})
 
-	_, _, err := service.FetchDayLogForViewer(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
+	_, _, err := service.FetchDayLogForOwner(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
 	if !errors.Is(err, dayErr) {
 		t.Fatalf("expected day fetch error, got %v", err)
 	}
 
 	symptomErr := errors.New("symptom fetch failed")
-	service = NewViewerService(
-		&stubViewerDayReader{
+	service = NewOwnerDayReadService(
+		&stubOwnerDayReader{
 			entry: models.DailyLog{Notes: "owner-note"},
 		},
-		&stubViewerSymptomReader{err: symptomErr},
+		&stubOwnerSymptomReader{err: symptomErr},
 	)
 
-	_, _, err = service.FetchDayLogForViewer(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
+	_, _, err = service.FetchDayLogForOwner(context.Background(), &models.User{ID: 10, Role: models.RoleOwner}, time.Now().UTC(), time.UTC)
 	if !errors.Is(err, symptomErr) {
 		t.Fatalf("expected symptom fetch error, got %v", err)
 	}
 }
 
-func TestViewerServiceFetchDayLogForViewer_PassesSelectedIDsToPicker(t *testing.T) {
-	dayReader := &stubViewerDayReader{
+func TestOwnerDayReadServiceFetchDayLogForOwner_PassesSelectedIDsToPicker(t *testing.T) {
+	dayReader := &stubOwnerDayReader{
 		entry: models.DailyLog{
 			SymptomIDs: []uint{8, 3},
 		},
 	}
-	symptomReader := &stubViewerSymptomReader{
+	symptomReader := &stubOwnerSymptomReader{
 		symptoms: []models.SymptomType{{ID: 8, Name: "Custom"}},
 	}
-	service := NewViewerService(dayReader, symptomReader)
+	service := NewOwnerDayReadService(dayReader, symptomReader)
 
 	owner := &models.User{ID: 10, Role: models.RoleOwner}
-	_, _, err := service.FetchDayLogForViewer(context.Background(), owner, time.Now().UTC(), time.UTC)
+	_, _, err := service.FetchDayLogForOwner(context.Background(), owner, time.Now().UTC(), time.UTC)
 	if err != nil {
-		t.Fatalf("FetchDayLogForViewer(owner) unexpected error: %v", err)
+		t.Fatalf("FetchDayLogForOwner(owner) unexpected error: %v", err)
 	}
 	if len(symptomReader.lastSelectedIDs) != 2 || symptomReader.lastSelectedIDs[0] != 8 || symptomReader.lastSelectedIDs[1] != 3 {
 		t.Fatalf("expected picker selected IDs [8 3], got %#v", symptomReader.lastSelectedIDs)

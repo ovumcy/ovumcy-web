@@ -118,12 +118,12 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 	}
 	symptomService := services.NewSymptomService(repositories.Symptoms, reservedSymptomNames...)
 	registrationService := services.NewRegistrationService(authService, repositories.Users, opts.RegistrationMode)
-	viewerService := services.NewViewerService(dayService, symptomService)
+	ownerDayReadService := services.NewOwnerDayReadService(dayService, symptomService)
 	statsService := services.NewStatsService(dayService, symptomService)
 	calendarViewService := services.NewCalendarViewService(dayService, statsService)
 	calendarFeedService := services.NewCalendarFeedService(repositories.Users, dayService, i18nDisclaimerProvider{manager: i18nManager}, secretKey)
 	calendarFeedSettingsService := services.NewCalendarFeedSettingsService(repositories.Users, secretKey)
-	dashboardViewService := services.NewDashboardViewService(statsService, viewerService, dayService)
+	dashboardViewService := services.NewDashboardViewService(statsService, ownerDayReadService, dayService)
 	exportService := services.NewExportService(dayService, symptomService)
 	importService := services.NewImportService(dailyLogs, repositories.Users, symptomService, dayLogTxRunner)
 	settingsService := services.NewSettingsService(repositories.Users)
@@ -161,7 +161,7 @@ func BuildDependencies(repositories *db.Repositories, secretKey []byte, i18nMana
 		OIDCLogoutStateSvc:     oidcLogoutStateService,
 		DayService:             dayService,
 		SymptomService:         symptomService,
-		ViewerService:          viewerService,
+		OwnerDayReadService:    ownerDayReadService,
 		StatsService:           statsService,
 		CalendarViewService:    calendarViewService,
 		CalendarFeedService:    calendarFeedService,

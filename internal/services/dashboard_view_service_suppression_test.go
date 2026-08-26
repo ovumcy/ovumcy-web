@@ -102,7 +102,7 @@ func TestBuildDashboardViewDataWithholdsEveryFertilityClaimTheSharedGateSuppress
 
 			service := NewDashboardViewService(
 				&stubDashboardStatsProvider{stats: stats},
-				&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today}},
+				&stubDashboardDayLogProvider{logEntry: models.DailyLog{Date: today}},
 				&stubDashboardDayStateProvider{},
 			)
 			viewData, err := service.BuildDashboardViewData(context.Background(), user, "en", today, time.UTC)

@@ -21,7 +21,7 @@ func TestEntryContextLogsFetchedForViewerWithExactlyTwoSymptoms(t *testing.T) {
 	spottingDay := models.DailyLog{Date: today, IsPeriod: true, Flow: models.FlowSpotting}
 	svc := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{logEntry: spottingDay, symptoms: symptoms},
+		&stubDashboardDayLogProvider{logEntry: spottingDay, symptoms: symptoms},
 		&stubDashboardDayStateProvider{logs: []models.DailyLog{spottingDay}},
 	)
 
@@ -45,7 +45,7 @@ func TestEntryContextLogsNotSkippedForViewerWithTwoSymptoms(t *testing.T) {
 	spottingDay := models.DailyLog{Date: today, IsPeriod: true, Flow: models.FlowSpotting}
 	svc := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{logEntry: spottingDay, symptoms: symptoms},
+		&stubDashboardDayLogProvider{logEntry: spottingDay, symptoms: symptoms},
 		&stubDashboardDayStateProvider{logs: []models.DailyLog{spottingDay}},
 	)
 
@@ -140,7 +140,7 @@ func TestSymptomRankingGuardsAtTheirBoundaries(t *testing.T) {
 			user := &models.User{ID: tc.userID, Role: models.RoleOwner}
 			svc := NewDashboardViewService(
 				&stubDashboardStatsProvider{},
-				&stubDashboardViewerProvider{symptoms: tc.symptoms},
+				&stubDashboardDayLogProvider{symptoms: tc.symptoms},
 				&stubDashboardDayStateProvider{logs: cycleStartLogs(tc.starts)},
 			)
 

@@ -32,17 +32,17 @@ func (stub *stubDashboardStatsProvider) BuildCycleStatsFromLogs(user *models.Use
 	return stub.stats
 }
 
-type stubDashboardViewerProvider struct {
+type stubDashboardDayLogProvider struct {
 	logEntry models.DailyLog
 	symptoms []models.SymptomType
 	err      error
 
 	// Captured user arguments — used to prove reads carry the session owner.
-	viewerUsers []*models.User
+	observedUsers []*models.User
 }
 
-func (stub *stubDashboardViewerProvider) FetchDayLogForViewer(ctx context.Context, user *models.User, _ time.Time, _ *time.Location) (models.DailyLog, []models.SymptomType, error) {
-	stub.viewerUsers = append(stub.viewerUsers, user)
+func (stub *stubDashboardDayLogProvider) FetchDayLogForOwner(ctx context.Context, user *models.User, _ time.Time, _ *time.Location) (models.DailyLog, []models.SymptomType, error) {
+	stub.observedUsers = append(stub.observedUsers, user)
 	if stub.err != nil {
 		return models.DailyLog{}, nil, stub.err
 	}
@@ -89,7 +89,7 @@ func TestBuildDashboardViewData(t *testing.T) {
 
 	service := NewDashboardViewService(
 		&stubDashboardStatsProvider{stats: stats},
-		&stubDashboardViewerProvider{
+		&stubDashboardDayLogProvider{
 			logEntry: models.DailyLog{
 				Date:       today,
 				IsPeriod:   false,
@@ -135,7 +135,7 @@ func TestBuildDashboardViewDataReturnsTypedErrors(t *testing.T) {
 	nonOwner := &models.User{ID: 20, Role: "viewer"}
 	statsErrService := NewDashboardViewService(
 		&stubDashboardStatsProvider{err: errors.New("stats fail")},
-		&stubDashboardViewerProvider{},
+		&stubDashboardDayLogProvider{},
 		&stubDashboardDayStateProvider{},
 	)
 	if _, err := statsErrService.BuildDashboardViewData(context.Background(), nonOwner, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadStats) {
@@ -147,7 +147,7 @@ func TestBuildDashboardViewDataReturnsTypedErrors(t *testing.T) {
 	// ErrDashboardViewLoadLogs instead of ErrDashboardViewLoadStats.
 	logsErrService := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{},
+		&stubDashboardDayLogProvider{},
 		&stubDashboardDayStateProvider{err: errors.New("logs fail")},
 	)
 	if _, err := logsErrService.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadLogs) {
@@ -156,7 +156,7 @@ func TestBuildDashboardViewDataReturnsTypedErrors(t *testing.T) {
 
 	dayErrService := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{err: errors.New("day fail")},
+		&stubDashboardDayLogProvider{err: errors.New("day fail")},
 		&stubDashboardDayStateProvider{},
 	)
 	if _, err := dayErrService.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); !errors.Is(err, ErrDashboardViewLoadTodayLog) {
@@ -171,7 +171,7 @@ func TestBuildDayEditorViewData(t *testing.T) {
 
 	service := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{
+		&stubDashboardDayLogProvider{
 			logEntry: models.DailyLog{
 				Date:       day,
 				IsPeriod:   true,
@@ -213,7 +213,7 @@ func TestBuildDashboardViewDataSuggestsManualCycleStartAfterLongGap(t *testing.T
 
 	service := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{
+		&stubDashboardDayLogProvider{
 			logEntry: models.DailyLog{
 				Date:     today,
 				IsPeriod: true,
@@ -244,7 +244,7 @@ func TestBuildDashboardViewDataShowsHighFertilityBadgeForEggWhiteMucus(t *testin
 
 	service := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{
+		&stubDashboardDayLogProvider{
 			logEntry: models.DailyLog{
 				Date:          today,
 				CervicalMucus: models.CervicalMucusEggWhite,
@@ -275,7 +275,7 @@ func TestBuildDashboardViewDataAddsPredictionFactorHintForVariablePatterns(t *te
 			LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-04-20"),
 			NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-05-21"),
 		}},
-		&stubDashboardViewerProvider{
+		&stubDashboardDayLogProvider{
 			logEntry: models.DailyLog{Date: today},
 			symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
 		},
@@ -318,7 +318,7 @@ func TestBuildDashboardViewDataAddsSharedIrregularSparseExplanation(t *testing.T
 			NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-03-05"),
 			MedianCycleLength:   32,
 		}},
-		&stubDashboardViewerProvider{
+		&stubDashboardDayLogProvider{
 			logEntry: models.DailyLog{Date: today},
 			symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
 		},
@@ -341,7 +341,7 @@ func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 
 	dayStateErrService := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{},
+		&stubDashboardDayLogProvider{},
 		&stubDashboardDayStateProvider{err: errors.New("state fail")},
 	)
 	if _, err := dayStateErrService.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC); !errors.Is(err, ErrDashboardViewLoadDayState) {
@@ -350,7 +350,7 @@ func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 
 	dayLogErrService := NewDashboardViewService(
 		&stubDashboardStatsProvider{},
-		&stubDashboardViewerProvider{err: errors.New("day log fail")},
+		&stubDashboardDayLogProvider{err: errors.New("day log fail")},
 		&stubDashboardDayStateProvider{},
 	)
 	if _, err := dayLogErrService.BuildDayEditorViewData(context.Background(), user, "en", day, now, time.UTC); !errors.Is(err, ErrDashboardViewLoadDayLog) {
@@ -361,7 +361,7 @@ func TestBuildDayEditorViewDataReturnsTypedErrors(t *testing.T) {
 // TestDashboardViewProvidersReadOnlyTheSessionOwner pins owner propagation on
 // the dashboard's whole read path. Every provider call these two builders make
 // reads special-category health data, so each must carry the acting session
-// owner and nothing else: the viewer fetch takes the user itself, the day-state
+// owner and nothing else: the day-log fetch takes the user itself, the day-state
 // reads take its id. The stubs record what they were handed, and the account id
 // is deliberately not 1 — an unscoped or hard-coded read would otherwise agree
 // with the fixture by accident. Each provider is asserted to have been reached
@@ -374,7 +374,7 @@ func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
 	now := mustParseDashboardServiceDay(t, "2026-02-21")
 	day := mustParseDashboardServiceDay(t, "2026-02-20")
 
-	viewer := &stubDashboardViewerProvider{
+	dayLogs := &stubDashboardDayLogProvider{
 		logEntry: models.DailyLog{Date: now, Notes: "owner-note"},
 		symptoms: []models.SymptomType{{ID: 3, Name: "Headache"}},
 	}
@@ -386,7 +386,7 @@ func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
 		},
 	}
 	stats := &stubDashboardStatsProvider{stats: CycleStats{MedianCycleLength: 28}}
-	service := NewDashboardViewService(stats, viewer, days)
+	service := NewDashboardViewService(stats, dayLogs, days)
 
 	if _, err := service.BuildDashboardViewData(context.Background(), user, "en", now, time.UTC); err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error: %v", err)
@@ -395,15 +395,15 @@ func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
 		t.Fatalf("BuildDayEditorViewData() unexpected error: %v", err)
 	}
 
-	if len(viewer.viewerUsers) == 0 {
-		t.Fatal("expected the viewer provider to be reached; it recorded no call")
+	if len(dayLogs.observedUsers) == 0 {
+		t.Fatal("expected the day-log provider to be reached; it recorded no call")
 	}
-	for index, captured := range viewer.viewerUsers {
+	for index, captured := range dayLogs.observedUsers {
 		if captured == nil {
-			t.Fatalf("viewer call %d received no user at all", index)
+			t.Fatalf("day-log call %d received no user at all", index)
 		}
 		if captured.ID != sessionOwnerID {
-			t.Fatalf("viewer call %d read owner id %d, want the session owner %d", index, captured.ID, sessionOwnerID)
+			t.Fatalf("day-log call %d read owner id %d, want the session owner %d", index, captured.ID, sessionOwnerID)
 		}
 	}
 
@@ -449,7 +449,7 @@ func TestDashboardViewProvidersReadOnlyTheSessionOwner(t *testing.T) {
 
 	rangeStats := &stubDashboardStatsProvider{stats: CycleStats{MedianCycleLength: 28}}
 	rangeSession := &models.User{ID: rangeSessionID, Role: "viewer", CycleLength: 28}
-	rangeService := NewDashboardViewService(rangeStats, &stubDashboardViewerProvider{}, &stubDashboardDayStateProvider{})
+	rangeService := NewDashboardViewService(rangeStats, &stubDashboardDayLogProvider{}, &stubDashboardDayStateProvider{})
 	if _, err := rangeService.BuildDashboardViewData(context.Background(), rangeSession, "en", now, time.UTC); err != nil {
 		t.Fatalf("BuildDashboardViewData() unexpected error on the ranged stats path: %v", err)
 	}
@@ -652,7 +652,7 @@ func TestBuildDashboardViewDataHoldsFertilityBackUntilTheFirstCompletedCycle(t *
 					LastPeriodStart:     mustParseDashboardServiceDay(t, "2026-02-17"),
 					NextPeriodStart:     mustParseDashboardServiceDay(t, "2026-03-17"),
 				}},
-				&stubDashboardViewerProvider{logEntry: models.DailyLog{Date: today}},
+				&stubDashboardDayLogProvider{logEntry: models.DailyLog{Date: today}},
 				&stubDashboardDayStateProvider{},
 			)
 

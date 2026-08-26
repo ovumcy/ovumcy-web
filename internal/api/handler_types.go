@@ -37,7 +37,7 @@ type Handler struct {
 	oidcLogoutStateSvc   *services.OIDCLogoutStateService
 	dayService           *services.DayService
 	symptomService       *services.SymptomService
-	viewerService        *services.ViewerService
+	ownerDayReadService  *services.OwnerDayReadService
 	statsService         *services.StatsService
 	calendarViewService  *services.CalendarViewService
 	calendarFeedService  *services.CalendarFeedService
