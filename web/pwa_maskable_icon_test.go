@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"path"
 	"strconv"
 	"strings"
 	"testing"
@@ -28,9 +29,8 @@ import (
 const maskableSafeZoneFraction = 0.8
 
 // manifestPath is where the web app manifest sits inside the embed FS. Icon
-// `src` values in it are absolute URLs ("/static/pwa/icon-512.png") and the
-// embed FS is rooted at "static/", so a leading slash is all that separates the
-// two spellings.
+// `src` values are resolved against it by resolveEmbeddedIconPath, exactly as a
+// browser resolves them against the manifest's own URL.
 const manifestPath = "static/manifest.webmanifest"
 
 type manifestIcon struct {
@@ -47,43 +47,88 @@ type webManifest struct {
 // hasPurpose reports whether the icon declares the given purpose. `purpose` is a
 // space-separated list per the manifest spec ("any maskable" is legal), so a
 // substring match would also fire on a hypothetical "maskable-ish" and an
-// equality match would miss the list form.
+// equality match would miss the list form. The comparison is ASCII
+// case-insensitive because the spec's keyword matching is: a browser honours
+// "Maskable", and a case-sensitive sweep would skip the very icon it exists to
+// judge while the maskable-count anchor below stayed satisfied by a second,
+// correctly-cased entry.
 func (icon manifestIcon) hasPurpose(want string) bool {
-	return strings.Contains(" "+strings.Join(strings.Fields(icon.Purpose), " ")+" ", " "+want+" ")
+	for _, token := range strings.Fields(icon.Purpose) {
+		if strings.EqualFold(token, want) {
+			return true
+		}
+	}
+	return false
 }
 
-// declaredSizes parses the `sizes` string into pixel dimensions. "any" (the
-// vector form) yields no dimensions and is reported as such by the caller.
-func (icon manifestIcon) declaredSizes() []image.Point {
-	var sizes []image.Point
-	for _, token := range strings.Fields(icon.Sizes) {
+// parseDeclaredSizes splits a manifest `sizes` string into pixel dimensions,
+// returning the tokens it could not read alongside them. The unreadable tokens
+// are returned rather than dropped on purpose: a `sizes` value this function
+// cannot parse is a defect to report, never an absence of constraint. Silently
+// yielding an empty set would let `"512"` (the `x` typo'd away) or the vector
+// form `"any"` switch the size clause off, and a 192x192 asset shipped under a
+// 512 declaration would then pass.
+func parseDeclaredSizes(sizes string) ([]image.Point, []string) {
+	var (
+		parsed   []image.Point
+		unparsed []string
+	)
+	for _, token := range strings.Fields(sizes) {
 		width, height, found := strings.Cut(strings.ToLower(token), "x")
 		if !found {
+			unparsed = append(unparsed, token)
 			continue
 		}
 		parsedWidth, widthErr := strconv.Atoi(width)
 		parsedHeight, heightErr := strconv.Atoi(height)
 		if widthErr != nil || heightErr != nil {
+			unparsed = append(unparsed, token)
 			continue
 		}
-		sizes = append(sizes, image.Point{X: parsedWidth, Y: parsedHeight})
+		parsed = append(parsed, image.Point{X: parsedWidth, Y: parsedHeight})
 	}
-	return sizes
+	return parsed, unparsed
+}
+
+// resolveEmbeddedIconPath maps a manifest icon `src` onto its path inside the
+// embed FS. A browser resolves `src` against the manifest's own URL, so
+// "/static/pwa/icon-512.png" and "pwa/icon-512.png" name the same asset; only
+// the absolute spelling appears in this repo today, and a guard that understood
+// only that one would accuse a correct manifest of not embedding its icon and
+// send the reader to the wrong file. An absolute URL names something outside the
+// binary and is reported as such rather than mangled into a nonsense path.
+func resolveEmbeddedIconPath(src string) (string, error) {
+	if strings.HasPrefix(src, "//") || strings.Contains(src, "://") {
+		return "", fmt.Errorf(
+			"src %q points off-origin; this guard only judges assets embedded in the binary", src)
+	}
+	if strings.HasPrefix(src, "/") {
+		return strings.TrimPrefix(path.Clean(src), "/"), nil
+	}
+	return path.Join(path.Dir(manifestPath), src), nil
 }
 
 // maskableIconDefects returns one line per way the decoded image fails the
 // maskable contract, and nil when it holds. Returning findings rather than
 // calling t.Errorf keeps the predicate feedable from the fixture test below,
 // which is what proves each clause can fail at all.
-func maskableIconDefects(img image.Image, declared []image.Point) []string {
+func maskableIconDefects(img image.Image, declaredSizes string) []string {
 	var defects []string
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
-	if width != height {
-		defects = append(defects, fmt.Sprintf("not square: decoded %dx%d", width, height))
+	declared, unparsed := parseDeclaredSizes(declaredSizes)
+	if len(unparsed) > 0 {
+		defects = append(defects, fmt.Sprintf(
+			`declaring sizes %v, which are not WxH pixel dimensions ("any" is the vector form and does not describe a raster PNG)`,
+			unparsed))
 	}
-	if len(declared) > 0 {
+	switch {
+	case len(declared) == 0:
+		defects = append(defects, fmt.Sprintf(
+			"declaring sizes %q, which yields no pixel dimensions, leaving the decoded %dx%d unconstrained",
+			declaredSizes, width, height))
+	default:
 		matched := false
 		for _, size := range declared {
 			if size.X == width && size.Y == height {
@@ -93,22 +138,36 @@ func maskableIconDefects(img image.Image, declared []image.Point) []string {
 		}
 		if !matched {
 			defects = append(defects, fmt.Sprintf(
-				"decoded %dx%d matches none of the declared sizes %v", width, height, declared))
+				"decoded %dx%d, which matches none of the declared sizes %v", width, height, declared))
 		}
 	}
 
-	centreX, centreY := float64(width)/2, float64(height)/2
+	// Every clause below needs a square canvas to mean anything: the safe zone is
+	// a circle inscribed by the icon's own edge, and on a 512x256 image a radius
+	// taken from either side describes a region no mask has. Reporting one clear
+	// defect beats following it with a percentage that is arithmetic about
+	// nothing.
+	if width != height {
+		return append(defects, fmt.Sprintf("not square: decoded %dx%d", width, height))
+	}
+
+	centre := float64(width) / 2
 	radius := maskableSafeZoneFraction / 2 * float64(width)
 	radiusSquared := radius * radius
 	var outside, transparent, partial int
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			deltaX := float64(x-bounds.Min.X) + 0.5 - centreX
-			deltaY := float64(y-bounds.Min.Y) + 0.5 - centreY
+			deltaX := float64(x-bounds.Min.X) + 0.5 - centre
+			deltaY := float64(y-bounds.Min.Y) + 0.5 - centre
 			if deltaX*deltaX+deltaY*deltaY <= radiusSquared {
 				continue
 			}
 			outside++
+			// Both arms matter, and the second is the one a real defect trips:
+			// a pre-rounded corner arc is antialiased by construction, so its
+			// edge is partially transparent rather than empty. The icon this
+			// file was written against carried 597 such pixels beside its 10168
+			// empty ones.
 			switch _, _, _, alpha := img.At(x, y).RGBA(); {
 			case alpha == 0:
 				transparent++
@@ -156,23 +215,29 @@ func TestEveryMaskableManifestIconIsSquareFullSizeAndFullBleed(t *testing.T) {
 		}
 		maskable++
 
-		assetPath := strings.TrimPrefix(icon.Src, "/")
+		assetPath, resolveErr := resolveEmbeddedIconPath(icon.Src)
+		if resolveErr != nil {
+			t.Errorf("icon %q declared in %s: %v", icon.Src, manifestPath, resolveErr)
+			continue
+		}
 		file, err := Files.Open(assetPath)
 		if err != nil {
 			t.Errorf("icon %q declared in the manifest is not embedded at %q: %v", icon.Src, assetPath, err)
 			continue
 		}
 		img, decodeErr := png.Decode(file)
-		closeErr := file.Close()
+		// Closed and reported before the decode verdict is acted on: when an
+		// embedded file is truncated both errors exist, and the close error is
+		// the one pointing at the embed FS rather than at the artwork.
+		if closeErr := file.Close(); closeErr != nil {
+			t.Errorf("close %s: %v", icon.Src, closeErr)
+		}
 		if decodeErr != nil {
 			t.Errorf("decode %s: %v", icon.Src, decodeErr)
 			continue
 		}
-		if closeErr != nil {
-			t.Errorf("close %s: %v", icon.Src, closeErr)
-		}
 
-		for _, defect := range maskableIconDefects(img, icon.declaredSizes()) {
+		for _, defect := range maskableIconDefects(img, icon.Sizes) {
 			t.Errorf("%s declares purpose %q but is %s\n"+
 				"\tFix the asset (full-bleed opaque background, artwork inside the safe circle) "+
 				"or stop declaring the icon maskable in %s.", icon.Src, icon.Purpose, defect, manifestPath)
@@ -189,7 +254,7 @@ func TestEveryMaskableManifestIconIsSquareFullSizeAndFullBleed(t *testing.T) {
 	}
 }
 
-// solidIcon paints a fully opaque square — the shape a correct maskable asset
+// solidIcon paints a fully opaque rectangle — the shape a correct maskable asset
 // has before any artwork is drawn on it.
 func solidIcon(width, height int) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
@@ -202,8 +267,11 @@ func solidIcon(width, height int) *image.NRGBA {
 }
 
 // roundedCornerIcon is the defect this file exists to catch: a pre-rounded
-// background whose four corner arcs are transparent.
-func roundedCornerIcon(size, cornerRadius int) *image.NRGBA {
+// background whose four corner arcs fall short of opaque. cornerAlpha selects
+// which arm of the opacity scan the fixture exercises — 0 for the empty corners
+// of a flat pre-rounded plate, an intermediate value for the antialiased edge a
+// real rounded corner carries.
+func roundedCornerIcon(size, cornerRadius int, cornerAlpha uint8) *image.NRGBA {
 	img := solidIcon(size, size)
 	for y := range size {
 		for x := range size {
@@ -220,7 +288,7 @@ func roundedCornerIcon(size, cornerRadius int) *image.NRGBA {
 			}
 			deltaX, deltaY := x-cornerX, y-cornerY
 			if deltaX*deltaX+deltaY*deltaY > cornerRadius*cornerRadius {
-				img.SetNRGBA(x, y, color.NRGBA{})
+				img.SetNRGBA(x, y, color.NRGBA{A: cornerAlpha})
 			}
 		}
 	}
@@ -231,34 +299,143 @@ func roundedCornerIcon(size, cornerRadius int) *image.NRGBA {
 // input per clause it asserts, so no clause can go green by being unreachable.
 // The manifest sweep above then applies a predicate already known to bite.
 func TestMaskableIconDefectsRejectsEachWayAnIconCanFail(t *testing.T) {
-	declared512 := []image.Point{{X: 512, Y: 512}}
-
 	t.Run("a full-bleed opaque square passes", func(t *testing.T) {
-		if defects := maskableIconDefects(solidIcon(512, 512), declared512); len(defects) != 0 {
+		if defects := maskableIconDefects(solidIcon(512, 512), "512x512"); len(defects) != 0 {
 			t.Fatalf("a correct maskable icon was rejected: %v", defects)
 		}
 	})
 
-	t.Run("transparent corners are rejected", func(t *testing.T) {
-		defects := maskableIconDefects(roundedCornerIcon(512, 109), declared512)
+	t.Run("empty corners are rejected", func(t *testing.T) {
+		defects := maskableIconDefects(roundedCornerIcon(512, 109, 0), "512x512")
 		if !anyDefectContains(defects, "not full-bleed") {
-			t.Fatalf("transparent corners went unreported: %v", defects)
+			t.Fatalf("fully transparent corners went unreported: %v", defects)
 		}
 	})
 
-	t.Run("a non-square icon is rejected", func(t *testing.T) {
-		defects := maskableIconDefects(solidIcon(512, 256), []image.Point{{X: 512, Y: 256}})
+	// Separate from the case above because it isolates the second arm of the
+	// opacity scan: these corners are partially opaque, never empty, so the
+	// report must name zero fully transparent pixels and still fail. Narrowing
+	// the partial arm (`alpha < 0xffff` → `alpha < 1`) leaves the empty-corner
+	// case green and reddens only here.
+	t.Run("antialiased partly transparent corners are rejected", func(t *testing.T) {
+		defects := maskableIconDefects(roundedCornerIcon(512, 109, 128), "512x512")
+		if !anyDefectContains(defects, "not full-bleed") {
+			t.Fatalf("partially transparent corners went unreported: %v", defects)
+		}
+		if !anyDefectContains(defects, "0 are fully transparent") {
+			t.Fatalf("expected the report to rest on partial opacity alone: %v", defects)
+		}
+	})
+
+	// The fixture is non-square AND carries non-opaque pixels, which is what
+	// makes the second half of this case bite: a fully opaque oblong produces no
+	// safe-zone line whether or not the scan is reached, so it would prove
+	// nothing about the early return. With transparency present, dropping the
+	// return prints a percentage measured over a circle that overflows the image
+	// — arithmetic about a region no mask has.
+	t.Run("a non-square icon is rejected without a bogus safe-zone claim", func(t *testing.T) {
+		oblong := solidIcon(512, 256)
+		oblong.SetNRGBA(0, 0, color.NRGBA{})
+		oblong.SetNRGBA(511, 255, color.NRGBA{})
+
+		defects := maskableIconDefects(oblong, "512x256")
 		if !anyDefectContains(defects, "not square") {
 			t.Fatalf("a 512x256 icon went unreported: %v", defects)
+		}
+		if len(defects) != 1 {
+			t.Fatalf("a non-square icon must not also carry a safe-zone percentage: %v", defects)
 		}
 	})
 
 	t.Run("an icon smaller than its declared size is rejected", func(t *testing.T) {
-		defects := maskableIconDefects(solidIcon(192, 192), declared512)
+		defects := maskableIconDefects(solidIcon(192, 192), "512x512")
 		if !anyDefectContains(defects, "matches none of the declared sizes") {
 			t.Fatalf("a 192x192 icon declared as 512x512 went unreported: %v", defects)
 		}
 	})
+
+	// The three cases below are the point of finding 1: an unreadable `sizes`
+	// string must be reported, never treated as "no constraint declared".
+	t.Run("a sizes token that is not WxH is reported", func(t *testing.T) {
+		defects := maskableIconDefects(solidIcon(192, 192), "512")
+		if !anyDefectContains(defects, "not WxH pixel dimensions") {
+			t.Fatalf(`the unparseable token "512" went unreported: %v`, defects)
+		}
+		if !anyDefectContains(defects, "yields no pixel dimensions") {
+			t.Fatalf("an unreadable sizes string must not silently disable the size clause: %v", defects)
+		}
+	})
+
+	t.Run("the vector sizes form is reported on a raster icon", func(t *testing.T) {
+		defects := maskableIconDefects(solidIcon(512, 512), "any")
+		if !anyDefectContains(defects, "not WxH pixel dimensions") {
+			t.Fatalf(`"any" went unreported on a PNG: %v`, defects)
+		}
+	})
+
+	t.Run("an absent sizes string is reported", func(t *testing.T) {
+		defects := maskableIconDefects(solidIcon(512, 512), "")
+		if !anyDefectContains(defects, "yields no pixel dimensions") {
+			t.Fatalf("a missing sizes declaration went unreported: %v", defects)
+		}
+	})
+}
+
+// TestHasPurposeMatchesTheManifestSpecsTokenRules pins the two ways the purpose
+// match can go wrong in opposite directions: missing a legal spelling, and
+// firing on a word that merely starts with the keyword.
+func TestHasPurposeMatchesTheManifestSpecsTokenRules(t *testing.T) {
+	for _, testCase := range []struct {
+		purpose string
+		want    bool
+	}{
+		{purpose: "maskable", want: true},
+		{purpose: "any maskable", want: true},
+		{purpose: "maskable any", want: true},
+		{purpose: "  maskable  ", want: true},
+		{purpose: "Maskable", want: true},
+		{purpose: "ANY MASKABLE", want: true},
+		{purpose: "any", want: false},
+		{purpose: "maskable-ish", want: false},
+		{purpose: "unmaskable", want: false},
+		{purpose: "", want: false},
+	} {
+		icon := manifestIcon{Purpose: testCase.purpose}
+		if got := icon.hasPurpose("maskable"); got != testCase.want {
+			t.Errorf("hasPurpose(%q) = %v, want %v", testCase.purpose, got, testCase.want)
+		}
+	}
+}
+
+// TestResolveEmbeddedIconPathFollowsTheManifestsOwnURL pins that both legal
+// spellings of an icon `src` reach the same embedded file, so a relative one is
+// never misreported as a missing asset.
+func TestResolveEmbeddedIconPathFollowsTheManifestsOwnURL(t *testing.T) {
+	const want = "static/pwa/icon-512-maskable.png"
+
+	for _, src := range []string{
+		"/static/pwa/icon-512-maskable.png",
+		"pwa/icon-512-maskable.png",
+		"./pwa/icon-512-maskable.png",
+	} {
+		got, err := resolveEmbeddedIconPath(src)
+		if err != nil {
+			t.Errorf("resolveEmbeddedIconPath(%q) errored: %v", src, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("resolveEmbeddedIconPath(%q) = %q, want %q", src, got, want)
+		}
+	}
+
+	for _, src := range []string{
+		"https://cdn.example/icon.png",
+		"//cdn.example/icon.png",
+	} {
+		if got, err := resolveEmbeddedIconPath(src); err == nil {
+			t.Errorf("resolveEmbeddedIconPath(%q) = %q, want an off-origin error", src, got)
+		}
+	}
 }
 
 func anyDefectContains(defects []string, want string) bool {
