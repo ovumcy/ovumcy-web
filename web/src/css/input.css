@@ -3979,10 +3979,6 @@
   font-weight: 600;
 }
 
-@utility status-transient {
-  animation: none;
-}
-
 @utility toast-stack {
   position: fixed;
   right: 1rem;
@@ -4391,7 +4387,6 @@
   :root {
     --bg-primary: #fff9f0;
     --bg-card: #ffffff;
-    --bg-soft: #fff4e8;
     --bg-soft-strong: rgba(255, 248, 240, 0.82);
     --text-primary: #5a4a3a;
     --text-muted: #6f5f50;
@@ -4428,12 +4423,10 @@
     --cal-fertile-peak: 142 203 134;
     --cal-ovulation: 244 213 141;
     --cal-today: 212 165 116;
-    /* A day tag paints white text on a solid fill, so ovulation and fertile
-       need the deeper reading of the same two concepts; the washes above are
-       mixed for dark text on a card. Theme-independent on purpose — the tag is
-       an opaque chip, not a wash over the surface. */
-    --cal-ovulation-solid: 210 167 79;
-    --cal-fertile-solid: 123 159 135;
+    /* The two `-solid` readings of ovulation and fertile went with the
+       calendar-tag utilities that were their only readers: the day tag painted
+       white text on an opaque chip and needed a deeper mix than these washes,
+       which are made for dark text over a card. Nothing renders that tag now. */
     --cal-fill-period: rgb(var(--cal-period) / 0.2);
     --cal-fill-predicted: repeating-linear-gradient(
       45deg,
@@ -4696,7 +4689,6 @@
   :root[data-theme="dark"] {
     --bg-primary: #18141f;
     --bg-card: #241f2f;
-    --bg-soft: #2b2439;
     --bg-soft-strong: rgba(39, 31, 52, 0.86);
     --text-primary: #efe6df;
     --text-muted: #cbbfb7;
