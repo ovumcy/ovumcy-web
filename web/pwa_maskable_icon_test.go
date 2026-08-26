@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/png"
+	_ "image/png" // registers PNG with image.Decode, which names the format it read
 	"path"
 	"strconv"
 	"strings"
@@ -97,15 +97,48 @@ func parseDeclaredSizes(sizes string) ([]image.Point, []string) {
 // only that one would accuse a correct manifest of not embedding its icon and
 // send the reader to the wrong file. An absolute URL names something outside the
 // binary and is reported as such rather than mangled into a nonsense path.
+//
+// The result is confined to the manifest's own directory. Both spellings clean
+// their input, and cleaning resolves `..` rather than refusing it:
+// path.Join("static", "../pwa/x.png") is "pwa/x.png" and path.Clean of
+// "/static/../../x.png" is "/x.png". The embed FS would refuse to open either,
+// so nothing is read — but the caller's message would then read "not embedded at
+// x.png", which describes neither the manifest's mistake nor this resolver's
+// part in it. Naming the traversal here keeps every failure pointing at its own
+// cause.
 func resolveEmbeddedIconPath(src string) (string, error) {
 	if strings.HasPrefix(src, "//") || strings.Contains(src, "://") {
 		return "", fmt.Errorf(
 			"src %q points off-origin; this guard only judges assets embedded in the binary", src)
 	}
+
+	root := path.Dir(manifestPath)
+	resolved := path.Join(root, src)
 	if strings.HasPrefix(src, "/") {
-		return strings.TrimPrefix(path.Clean(src), "/"), nil
+		resolved = strings.TrimPrefix(path.Clean(src), "/")
 	}
-	return path.Join(path.Dir(manifestPath), src), nil
+	if !strings.HasPrefix(resolved, root+"/") {
+		return "", fmt.Errorf(
+			"src %q resolves to %q, which escapes %s/ — a path traversal, not a missing asset",
+			src, resolved, root)
+	}
+	return resolved, nil
+}
+
+// iconTypeDefect compares an icon's declared media type against the format its
+// bytes actually decoded as, and returns "" when they agree or when the manifest
+// declares no type (the field is optional per the spec).
+//
+// Without this, an icon declaring "image/svg+xml" beside purpose=maskable
+// reaches the decoder and fails with a message about bytes — "not a PNG file" —
+// when the defect is that the manifest promises a media type the asset is not.
+// Every other failure in this file names its own cause; this one did not, and a
+// parsed-but-unused Type field suggested a check that never happened.
+func iconTypeDefect(declaredType, decodedFormat string) string {
+	if declaredType == "" || strings.EqualFold(declaredType, "image/"+decodedFormat) {
+		return ""
+	}
+	return fmt.Sprintf("declaring type %q while its bytes decode as %s", declaredType, decodedFormat)
 }
 
 // maskableIconDefects returns one line per way the decoded image fails the
@@ -117,18 +150,22 @@ func maskableIconDefects(img image.Image, declaredSizes string) []string {
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 
+	// One bad attribute, one complaint. An unreadable token and "no dimensions
+	// came out of it" are the same defect said twice, so the unreadable-token
+	// line carries the consequence itself and the no-dimensions line is reserved
+	// for the case it alone describes: a `sizes` that is absent or whitespace.
 	declared, unparsed := parseDeclaredSizes(declaredSizes)
 	if len(unparsed) > 0 {
+		consequence := "the tokens that did parse still constrain the decoded size"
+		if len(declared) == 0 {
+			consequence = fmt.Sprintf("leaving the decoded %dx%d unconstrained", width, height)
+		}
 		defects = append(defects, fmt.Sprintf(
-			`declaring sizes %v, which are not WxH pixel dimensions ("any" is the vector form and does not describe a raster PNG)`,
-			unparsed))
+			`declaring sizes %v, which are not WxH pixel dimensions ("any" is the vector form and does not describe a raster PNG) — %s`,
+			unparsed, consequence))
 	}
 	switch {
-	case len(declared) == 0:
-		defects = append(defects, fmt.Sprintf(
-			"declaring sizes %q, which yields no pixel dimensions, leaving the decoded %dx%d unconstrained",
-			declaredSizes, width, height))
-	default:
+	case len(declared) > 0:
 		matched := false
 		for _, size := range declared {
 			if size.X == width && size.Y == height {
@@ -140,6 +177,10 @@ func maskableIconDefects(img image.Image, declaredSizes string) []string {
 			defects = append(defects, fmt.Sprintf(
 				"decoded %dx%d, which matches none of the declared sizes %v", width, height, declared))
 		}
+	case len(unparsed) == 0:
+		defects = append(defects, fmt.Sprintf(
+			"declaring no sizes at all (%q), leaving the decoded %dx%d unconstrained",
+			declaredSizes, width, height))
 	}
 
 	// Every clause below needs a square canvas to mean anything: the safe zone is
@@ -208,12 +249,12 @@ func readManifest(t *testing.T) webManifest {
 func TestEveryMaskableManifestIconIsSquareFullSizeAndFullBleed(t *testing.T) {
 	manifest := readManifest(t)
 
-	maskable := 0
+	declaredMaskable := 0
 	for _, icon := range manifest.Icons {
 		if !icon.hasPurpose("maskable") {
 			continue
 		}
-		maskable++
+		declaredMaskable++
 
 		assetPath, resolveErr := resolveEmbeddedIconPath(icon.Src)
 		if resolveErr != nil {
@@ -225,7 +266,9 @@ func TestEveryMaskableManifestIconIsSquareFullSizeAndFullBleed(t *testing.T) {
 			t.Errorf("icon %q declared in the manifest is not embedded at %q: %v", icon.Src, assetPath, err)
 			continue
 		}
-		img, decodeErr := png.Decode(file)
+		// image.Decode rather than png.Decode so the format is named: it is what
+		// the declared `type` is checked against below.
+		img, format, decodeErr := image.Decode(file)
 		// Closed and reported before the decode verdict is acted on: when an
 		// embedded file is truncated both errors exist, and the close error is
 		// the one pointing at the embed FS rather than at the artwork.
@@ -233,23 +276,34 @@ func TestEveryMaskableManifestIconIsSquareFullSizeAndFullBleed(t *testing.T) {
 			t.Errorf("close %s: %v", icon.Src, closeErr)
 		}
 		if decodeErr != nil {
-			t.Errorf("decode %s: %v", icon.Src, decodeErr)
+			t.Errorf("decode %s (manifest declares type %q): %v", icon.Src, icon.Type, decodeErr)
 			continue
 		}
 
-		for _, defect := range maskableIconDefects(img, icon.Sizes) {
+		defects := maskableIconDefects(img, icon.Sizes)
+		if defect := iconTypeDefect(icon.Type, format); defect != "" {
+			defects = append(defects, defect)
+		}
+		for _, defect := range defects {
 			t.Errorf("%s declares purpose %q but is %s\n"+
 				"\tFix the asset (full-bleed opaque background, artwork inside the safe circle) "+
 				"or stop declaring the icon maskable in %s.", icon.Src, icon.Purpose, defect, manifestPath)
 		}
 	}
 
-	// Not an anti-vacuity anchor — that is the fixture test below, which owns its
-	// inputs. This is the product claim the manifest makes: install surfaces get a
-	// purpose-built maskable icon rather than the platform's shrink-and-plate
-	// fallback. Dropping the declaration is a legitimate choice; making it
-	// deliberately means deleting this assertion with it.
-	if maskable == 0 {
+	// This counts DECLARATIONS, not icons judged — it is incremented before the
+	// resolve, open and decode attempts, and each of those three failure paths
+	// reports its own t.Errorf before it continues. So a run can reach zero
+	// judged icons only by already being red, and the counter needs no second
+	// branch for it; what it uniquely catches is a manifest that stopped
+	// declaring a maskable icon at all, which nothing else here would notice.
+	//
+	// Not an anti-vacuity anchor either — that is the fixture test below, which
+	// owns its inputs. This is the product claim the manifest makes: install
+	// surfaces get a purpose-built maskable icon rather than the platform's
+	// shrink-and-plate fallback. Dropping the declaration is a legitimate choice;
+	// making it deliberately means deleting this assertion with it.
+	if declaredMaskable == 0 {
 		t.Errorf("%s declares no icon with purpose=maskable, so this sweep examined nothing", manifestPath)
 	}
 }
@@ -342,8 +396,12 @@ func TestMaskableIconDefectsRejectsEachWayAnIconCanFail(t *testing.T) {
 		if !anyDefectContains(defects, "not square") {
 			t.Fatalf("a 512x256 icon went unreported: %v", defects)
 		}
-		if len(defects) != 1 {
-			t.Fatalf("a non-square icon must not also carry a safe-zone percentage: %v", defects)
+		// The absence of the safe-zone line, not a total defect count: a count
+		// also moves when an unrelated clause starts firing (widen this case to
+		// declare "512x512" and it becomes 2), and would then fail with a message
+		// about a safe-zone claim that is correctly absent.
+		if anyDefectContains(defects, "not full-bleed") {
+			t.Fatalf("a non-square icon must not carry a safe-zone percentage: %v", defects)
 		}
 	})
 
@@ -356,13 +414,19 @@ func TestMaskableIconDefectsRejectsEachWayAnIconCanFail(t *testing.T) {
 
 	// The three cases below are the point of finding 1: an unreadable `sizes`
 	// string must be reported, never treated as "no constraint declared".
-	t.Run("a sizes token that is not WxH is reported", func(t *testing.T) {
+	t.Run("a sizes token that is not WxH is reported once", func(t *testing.T) {
 		defects := maskableIconDefects(solidIcon(192, 192), "512")
 		if !anyDefectContains(defects, "not WxH pixel dimensions") {
 			t.Fatalf(`the unparseable token "512" went unreported: %v`, defects)
 		}
-		if !anyDefectContains(defects, "yields no pixel dimensions") {
+		if !anyDefectContains(defects, "unconstrained") {
 			t.Fatalf("an unreadable sizes string must not silently disable the size clause: %v", defects)
+		}
+		// One bad attribute, one complaint: the reader is fixing a single
+		// `sizes` value and should not have to work out that two lines are the
+		// same defect.
+		if len(defects) != 1 {
+			t.Fatalf("one unreadable sizes string produced %d defects: %v", len(defects), defects)
 		}
 	})
 
@@ -373,9 +437,19 @@ func TestMaskableIconDefectsRejectsEachWayAnIconCanFail(t *testing.T) {
 		}
 	})
 
+	t.Run("a partly unreadable sizes string still checks the tokens that parsed", func(t *testing.T) {
+		defects := maskableIconDefects(solidIcon(192, 192), "512x512 nonsense")
+		if !anyDefectContains(defects, "not WxH pixel dimensions") {
+			t.Fatalf(`the token "nonsense" went unreported: %v`, defects)
+		}
+		if !anyDefectContains(defects, "matches none of the declared sizes") {
+			t.Fatalf("a readable token beside an unreadable one must still constrain the size: %v", defects)
+		}
+	})
+
 	t.Run("an absent sizes string is reported", func(t *testing.T) {
 		defects := maskableIconDefects(solidIcon(512, 512), "")
-		if !anyDefectContains(defects, "yields no pixel dimensions") {
+		if !anyDefectContains(defects, "declaring no sizes at all") {
 			t.Fatalf("a missing sizes declaration went unreported: %v", defects)
 		}
 	})
@@ -434,6 +508,49 @@ func TestResolveEmbeddedIconPathFollowsTheManifestsOwnURL(t *testing.T) {
 	} {
 		if got, err := resolveEmbeddedIconPath(src); err == nil {
 			t.Errorf("resolveEmbeddedIconPath(%q) = %q, want an off-origin error", src, got)
+		}
+	}
+
+	// Cleaning resolves `..` rather than refusing it, so without an explicit
+	// confinement each of these yields a path outside static/ that the embed FS
+	// would reject with a message naming neither the manifest's mistake nor the
+	// resolver's part in it.
+	for _, src := range []string{
+		"../pwa/icon-512-maskable.png",
+		"/static/../../icon.png",
+		"/../icon.png",
+		"/icon.png",
+		"/static",
+	} {
+		got, err := resolveEmbeddedIconPath(src)
+		if err == nil {
+			t.Errorf("resolveEmbeddedIconPath(%q) = %q, want a traversal error", src, got)
+			continue
+		}
+		if !strings.Contains(err.Error(), "escapes static/") {
+			t.Errorf("resolveEmbeddedIconPath(%q) error %q does not name the traversal", src, err)
+		}
+	}
+}
+
+// TestIconTypeDefectComparesTheDeclaredTypeWithTheDecodedFormat pins that the
+// manifest's `type` is checked rather than merely parsed.
+func TestIconTypeDefectComparesTheDeclaredTypeWithTheDecodedFormat(t *testing.T) {
+	for _, testCase := range []struct {
+		declared string
+		format   string
+		wantHit  bool
+	}{
+		{declared: "image/png", format: "png", wantHit: false},
+		{declared: "IMAGE/PNG", format: "png", wantHit: false},
+		{declared: "", format: "png", wantHit: false},
+		{declared: "image/svg+xml", format: "png", wantHit: true},
+		{declared: "image/jpeg", format: "png", wantHit: true},
+	} {
+		defect := iconTypeDefect(testCase.declared, testCase.format)
+		if gotHit := defect != ""; gotHit != testCase.wantHit {
+			t.Errorf("iconTypeDefect(%q, %q) = %q, want a defect: %v",
+				testCase.declared, testCase.format, defect, testCase.wantHit)
 		}
 	}
 }
