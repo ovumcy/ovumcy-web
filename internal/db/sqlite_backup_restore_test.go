@@ -263,6 +263,77 @@ func TestLiveWholeVolumeCaptureLosesACommitToACheckpointMidCapture(t *testing.T)
 	}
 }
 
+// TestAHotCopyOfTheMainDatabaseFileAloneRestoresWithoutTheWALResidentDay pins
+// the other hazard docs/self-hosted.md warns about, the one an operator reaches
+// for when the whole-volume archive feels like too much: copying `ovumcy.db` on
+// its own while the app is running.
+//
+// It is NOT the checkpoint race the test above takes apart, and it needs no
+// race at all. Under WAL every commit lands in `ovumcy.db-wal` and reaches
+// `ovumcy.db` only at a checkpoint, so the main file on its own is always a
+// consistent database as of the LAST checkpoint — never the database as of the
+// copy. Whatever was committed since is simply not in the bytes that were
+// copied. Nothing reports it: the copy is not corrupt, it opens cleanly, it
+// answers every query, and it is missing health records the owner entered.
+// That is the loss docs/self-hosted.md closes with — "the same applies, for the
+// same reason, if you copy individual files instead; stopping the app also
+// checkpoints the WAL into the main database file" — and this is the arm that
+// makes the sentence measurable.
+//
+// Like its neighbour, this characterizes SQLite and filesystem semantics rather
+// than a defect this repository can fix, so it is written to be read as a known
+// property. If the ABSENCE below ever fails, a single-file copy no longer loses
+// the WAL and that sentence in the runbook can be relaxed.
+func TestAHotCopyOfTheMainDatabaseFileAloneRestoresWithoutTheWALResidentDay(t *testing.T) {
+	sourceDir := t.TempDir()
+	livePath := filepath.Join(sourceDir, sqliteVolumeDatabaseFile)
+
+	liveDB, err := OpenDatabase(Config{Driver: DriverSQLite, SQLitePath: livePath})
+	if err != nil {
+		t.Fatalf("open live database: %v", err)
+	}
+	defer closeBackupTestDatabase(t, liveDB)
+
+	repos := NewRepositories(liveDB)
+	user := createBackupRaceOwner(t, repos)
+
+	// One day on each side of the last checkpoint: the first is inside
+	// `ovumcy.db` itself, the second is only in the WAL beside it.
+	createBackupRaceDay(t, repos, user.ID, "2026-04-01")
+	checkpointWALTruncate(t, liveDB)
+	createBackupRaceDay(t, repos, user.ID, "2026-04-02")
+	assertWALCarriesBytes(t, livePath)
+
+	// The copy an operator takes when they treat the database as one file: the
+	// main file only, no sidecars, app still running.
+	copyPath := filepath.Join(t.TempDir(), sqliteVolumeDatabaseFile)
+	copyFileForBackupTest(t, livePath, copyPath)
+	assertNoWALSidecarsBesideTheCopy(t, copyPath)
+
+	restoredDays := restoredDayList(t, copyPath, user.ID)
+	if !slices.Contains(restoredDays, "2026-04-01") {
+		t.Fatalf("the hot single-file copy restored %v — a copy that lost everything says nothing about the WAL-resident commit this test is about", restoredDays)
+	}
+	if slices.Contains(restoredDays, "2026-04-02") {
+		t.Fatalf("the hot single-file copy restored %v, the WAL-resident day included: copying ovumcy.db alone on a running instance no longer loses the commits still in ovumcy.db-wal, so the last bullet of the Backup and Restore Contract in docs/self-hosted.md can be relaxed", restoredDays)
+	}
+}
+
+// assertNoWALSidecarsBesideTheCopy is what keeps the test above about the copy
+// it names. The hazard is copying the main file ALONE; a sidecar carried along
+// beside it — by an edit here, or by a future helper — would restore the very
+// commit the absence assertion expects to be gone, and the test would then be
+// green about a procedure nobody performs.
+func assertNoWALSidecarsBesideTheCopy(t *testing.T, copyPath string) {
+	t.Helper()
+
+	for _, sidecar := range []string{copyPath + "-wal", copyPath + "-shm"} {
+		if _, err := os.Stat(sidecar); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("%s is beside the copy (stat error: %v): this test is about copying the main database file alone", filepath.Base(sidecar), err)
+		}
+	}
+}
+
 // captureWALSet copies the WAL set the way a sequential archiver reads it: the
 // main database file first, then the sidecars, with the database live and free
 // to move in between. betweenReads, when set, runs in exactly that window.
