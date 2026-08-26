@@ -310,12 +310,21 @@ func TestAHotCopyOfTheMainDatabaseFileAloneRestoresWithoutTheWALResidentDay(t *t
 	copyFileForBackupTest(t, livePath, copyPath)
 	assertNoWALSidecarsBesideTheCopy(t, copyPath)
 
+	// Nothing holds the WAL still across the residency check and the read of the
+	// main file, and a checkpoint landing in that window would fold 2026-04-02
+	// into the bytes just copied. Re-reading the WAL afterwards is what rules
+	// that out: nothing writes to this database between the two checks, so a WAL
+	// that still carries bytes was never folded away. Without it the absence
+	// below could fail on a race while telling the reader to go and relax a
+	// sentence in the runbook.
+	assertWALCarriesBytes(t, livePath)
+
 	restoredDays := restoredDayList(t, copyPath, user.ID)
 	if !slices.Contains(restoredDays, "2026-04-01") {
 		t.Fatalf("the hot single-file copy restored %v — a copy that lost everything says nothing about the WAL-resident commit this test is about", restoredDays)
 	}
 	if slices.Contains(restoredDays, "2026-04-02") {
-		t.Fatalf("the hot single-file copy restored %v, the WAL-resident day included: copying ovumcy.db alone on a running instance no longer loses the commits still in ovumcy.db-wal, so the last bullet of the Backup and Restore Contract in docs/self-hosted.md can be relaxed", restoredDays)
+		t.Fatalf("the hot single-file copy restored %v, the WAL-resident day included, with the write-ahead log still carrying bytes on both sides of the copy: copying ovumcy.db alone on a running instance no longer loses the commits still in ovumcy.db-wal, so the last bullet of the Backup and Restore Contract in docs/self-hosted.md can be relaxed", restoredDays)
 	}
 }
 
