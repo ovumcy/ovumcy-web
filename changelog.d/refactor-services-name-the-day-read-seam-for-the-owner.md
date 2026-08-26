@@ -19,6 +19,8 @@ transport-only and may never hold a repository handle, so a thin boundary is
 what the architecture asks for. The nil-owner refusals in front of each read are
 untouched.
 
-A new sweep in `internal/services` fails when a production identifier there
-names a role the product does not declare, so the old name cannot return
-unnoticed.
+A new sweep fails when a production identifier anywhere under `internal/` names
+a role the product does not declare, so the old name cannot return unnoticed —
+in the day-read layer or in any other. The roles it treats as absent are
+anchored on the role line in `docs/architecture.md` and on the role constants in
+`internal/models`, so the check cannot drift from what the product documents.

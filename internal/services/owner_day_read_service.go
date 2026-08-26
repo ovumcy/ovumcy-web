@@ -1,19 +1,5 @@
 package services
 
-// OwnerDayReadService is the day-read seam between internal/api and the day and
-// symptom repositories. It exists as a boundary, not as a decision: internal/api
-// is transport-only and may never hold a repository handle, so the thinness of
-// the methods below is the point of them rather than an argument against them.
-//
-// It was called ViewerService until this rename, and each method carried a
-// ForViewer suffix. That name outlived its subject — release 1.4.0 removed the
-// never-shipped non-owner "viewer" sanitization path — and what it left behind
-// named a role the product declares absent: the security constitution states
-// there is no viewer or partner role, and internal/models declares exactly one,
-// RoleOwner. Every method here takes the acting owner and reads nothing but
-// user.ID, so "owner" is what the names now say. The barrier that keeps the old
-// name from coming back is absent_role_naming_barrier_test.go.
-
 import (
 	"context"
 	"errors"
@@ -39,6 +25,19 @@ type OwnerSymptomReader interface {
 	FetchPickerSymptoms(ctx context.Context, userID uint, selectedIDs []uint) ([]models.SymptomType, error)
 }
 
+// OwnerDayReadService is the day-read seam between internal/api and the day and
+// symptom repositories. It exists as a boundary, not as a decision: internal/api
+// is transport-only and may never hold a repository handle, so the thinness of
+// the methods below is the point of them rather than an argument against them.
+//
+// It was called ViewerService until this rename, and each method carried a
+// ForViewer suffix. That name outlived its subject — release 1.4.0 removed the
+// never-shipped non-owner "viewer" sanitization path — and what it left behind
+// named a role the product declares absent: docs/architecture.md states there is
+// no viewer or partner role, and internal/models declares exactly one, RoleOwner.
+// Every method here takes the acting owner and reads nothing but user.ID, so
+// "owner" is what the names now say. The barrier that keeps the old name from
+// coming back is absent_role_naming_barrier_test.go.
 type OwnerDayReadService struct {
 	days     OwnerDayReader
 	symptoms OwnerSymptomReader
