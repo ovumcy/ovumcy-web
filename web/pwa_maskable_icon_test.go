@@ -104,8 +104,9 @@ func parseDeclaredSizes(sizes string) ([]image.Point, []string) {
 // "/static/../../x.png" is "/x.png". The embed FS would refuse to open either,
 // so nothing is read — but the caller's message would then read "not embedded at
 // x.png", which describes neither the manifest's mistake nor this resolver's
-// part in it. Naming the traversal here keeps every failure pointing at its own
-// cause.
+// part in it. The three ways a src can fail to name an embedded file — no file
+// at all, the asset directory itself, a path leaving the tree — therefore get
+// three distinct messages, so every failure still points at its own cause.
 func resolveEmbeddedIconPath(src string) (string, error) {
 	if strings.HasPrefix(src, "//") || strings.Contains(src, "://") {
 		return "", fmt.Errorf(
@@ -113,13 +114,28 @@ func resolveEmbeddedIconPath(src string) (string, error) {
 	}
 
 	root := path.Dir(manifestPath)
+
+	// A src that names no file must not borrow the escape message below.
+	// path.Join("static", "") is "static", which fails the confinement check and
+	// would report a malformed declaration as a path leaving the tree, sending
+	// the reader hunting for a `..` that is not there.
+	if cleaned := path.Clean(strings.TrimSpace(src)); strings.TrimSpace(src) == "" || cleaned == "." || cleaned == "/" {
+		return "", fmt.Errorf("src %q names no file", src)
+	}
+
 	resolved := path.Join(root, src)
 	if strings.HasPrefix(src, "/") {
 		resolved = strings.TrimPrefix(path.Clean(src), "/")
 	}
+	// Likewise the asset directory itself: "/static" is inside the tree, not
+	// outside it, so it is a src pointing at a directory rather than an escape.
+	if resolved == root {
+		return "", fmt.Errorf(
+			"src %q resolves to the asset directory %q itself, not to a file inside it", src, root)
+	}
 	if !strings.HasPrefix(resolved, root+"/") {
 		return "", fmt.Errorf(
-			"src %q resolves to %q, which escapes %s/ — a path traversal, not a missing asset",
+			"src %q resolves to %q, which escapes %s/ — not a missing asset but a path leaving the embedded tree",
 			src, resolved, root)
 	}
 	return resolved, nil
@@ -129,16 +145,41 @@ func resolveEmbeddedIconPath(src string) (string, error) {
 // bytes actually decoded as, and returns "" when they agree or when the manifest
 // declares no type (the field is optional per the spec).
 //
-// Without this, an icon declaring "image/svg+xml" beside purpose=maskable
-// reaches the decoder and fails with a message about bytes — "not a PNG file" —
-// when the defect is that the manifest promises a media type the asset is not.
-// Every other failure in this file names its own cause; this one did not, and a
-// parsed-but-unused Type field suggested a check that never happened.
+// What it catches is a DECODABLE image under a declaration that does not match
+// it — PNG bytes declared "image/svg+xml" or "image/jpeg". It deliberately does
+// not catch bytes no registered decoder can read: only PNG is registered, so
+// genuinely SVG bytes fail inside image.Decode and never reach this comparison.
+// Registering further raster decoders would not change that, because no vector
+// format decodes into an image.Image at all. That path is covered instead by the
+// decode error carrying the declared type, so a reader who hits it still learns
+// what the manifest promised. The check exists because a parsed-but-unused Type
+// field suggested a comparison that never happened.
 func iconTypeDefect(declaredType, decodedFormat string) string {
-	if declaredType == "" || strings.EqualFold(declaredType, "image/"+decodedFormat) {
+	declared := normalizeMediaType(declaredType)
+	if declared == "" || declared == "image/"+strings.ToLower(decodedFormat) {
 		return ""
 	}
+	// The message quotes the declaration as written, not as normalized: the
+	// reader is going to search the manifest for it.
 	return fmt.Sprintf("declaring type %q while its bytes decode as %s", declaredType, decodedFormat)
+}
+
+// normalizeMediaType reduces a declared media type to its lowercase essence,
+// dropping any parameter and surrounding whitespace and folding the legacy
+// spellings onto the canonical one.
+//
+// Comparing the raw string would report an honest "image/x-png" or
+// "image/png; charset=binary" as a mismatch — a spurious defect line about a
+// manifest that is correct. This is the same shape as hasPurpose above: honour
+// the tolerance the format allows rather than one spelling of it.
+func normalizeMediaType(mediaType string) string {
+	essence, _, _ := strings.Cut(mediaType, ";")
+	switch essence = strings.ToLower(strings.TrimSpace(essence)); essence {
+	case "image/x-png":
+		return "image/png"
+	default:
+		return essence
+	}
 }
 
 // maskableIconDefects returns one line per way the decoded image fails the
@@ -520,7 +561,6 @@ func TestResolveEmbeddedIconPathFollowsTheManifestsOwnURL(t *testing.T) {
 		"/static/../../icon.png",
 		"/../icon.png",
 		"/icon.png",
-		"/static",
 	} {
 		got, err := resolveEmbeddedIconPath(src)
 		if err == nil {
@@ -530,6 +570,27 @@ func TestResolveEmbeddedIconPathFollowsTheManifestsOwnURL(t *testing.T) {
 		if !strings.Contains(err.Error(), "escapes static/") {
 			t.Errorf("resolveEmbeddedIconPath(%q) error %q does not name the traversal", src, err)
 		}
+	}
+
+	// A src that names no file is a malformed declaration, not an escape, and
+	// must not be reported as one — path.Join("static", "") is "static", which
+	// fails the confinement check for a reason the reader would misread.
+	for _, src := range []string{"", " ", ".", "./", "/"} {
+		got, err := resolveEmbeddedIconPath(src)
+		if err == nil {
+			t.Errorf("resolveEmbeddedIconPath(%q) = %q, want a malformed-src error", src, got)
+			continue
+		}
+		if !strings.Contains(err.Error(), "names no file") {
+			t.Errorf("resolveEmbeddedIconPath(%q) error %q should say the src names no file", src, err)
+		}
+	}
+
+	// The asset directory itself is inside the tree, so it is neither an escape
+	// nor a missing file.
+	if _, err := resolveEmbeddedIconPath("/static"); err == nil ||
+		!strings.Contains(err.Error(), "asset directory") {
+		t.Errorf(`resolveEmbeddedIconPath("/static") error %v should name the asset directory`, err)
 	}
 }
 
@@ -546,6 +607,14 @@ func TestIconTypeDefectComparesTheDeclaredTypeWithTheDecodedFormat(t *testing.T)
 		{declared: "", format: "png", wantHit: false},
 		{declared: "image/svg+xml", format: "png", wantHit: true},
 		{declared: "image/jpeg", format: "png", wantHit: true},
+		// Spellings the spec tolerates: a parameter, stray whitespace, and the
+		// legacy x- prefix are honest declarations, not mismatches.
+		{declared: "image/png; charset=binary", format: "png", wantHit: false},
+		{declared: "  image/png  ", format: "png", wantHit: false},
+		{declared: "image/x-png", format: "png", wantHit: false},
+		{declared: "  IMAGE/X-PNG ; q=0.9", format: "png", wantHit: false},
+		// Normalizing must not collapse genuinely different types.
+		{declared: "image/x-icon", format: "png", wantHit: true},
 	} {
 		defect := iconTypeDefect(testCase.declared, testCase.format)
 		if gotHit := defect != ""; gotHit != testCase.wantHit {
