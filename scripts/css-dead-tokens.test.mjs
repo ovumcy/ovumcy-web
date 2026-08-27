@@ -34,6 +34,7 @@ import {
   isTestSource,
   languageOf,
   readCssGraph,
+  sameMembers,
   stripSourceComments,
   tokenize,
   walkSourceTree
@@ -98,7 +99,11 @@ test("a Go comment naming a token does not keep it alive", () => {
     "/* The same claim in a block comment, naming widget-retired again. */",
     'const markup = "<div class=\\"widget-live\\" style=\\"color:var(--widget-live-ink)\\"></div>"'
   ].join("\n");
-  const report = findDeadCssTokens({ css: COMMENT_CSS, sources: [{ path: "internal/httpx/markup.go", text: goSource }] });
+  const report = findDeadCssTokens({
+    css: COMMENT_CSS,
+    sources: [{ path: "internal/httpx/markup.go", text: goSource }],
+    testSources: []
+  });
   assert.deepEqual(report.deadUtilities, ["widget-retired"]);
   assert.deepEqual(report.deadProperties, ["--widget-retired-ink"]);
 });
@@ -143,7 +148,7 @@ test("a JS regex literal is not mistaken for a comment", () => {
   assert.equal(fellBack, false);
   assert.ok(text.includes("widget-live"), "code after the regex literals must survive");
 
-  const report = findDeadCssTokens({ css: COMMENT_CSS, sources: [{ path: "web/src/js/x.js", text: jsSource }] });
+  const report = findDeadCssTokens({ css: COMMENT_CSS, sources: [{ path: "web/src/js/x.js", text: jsSource }], testSources: [] });
   assert.ok(report.deadUtilities.includes("widget-retired"));
   assert.ok(!report.deadUtilities.includes("widget-live"));
 });
@@ -185,7 +190,8 @@ const FUNCTIONAL_CSS = `
 test("a functional @utility is live from any suffixed use, not from its bare stem", () => {
   const report = findDeadCssTokens({
     css: FUNCTIONAL_CSS,
-    sources: [{ path: "internal/templates/x.html", text: '<div class="tab-4"></div>' }]
+    sources: [{ path: "internal/templates/x.html", text: '<div class="tab-4"></div>' }],
+    testSources: []
   });
   // `tab-*` is consumed as `tab-4`; matching the stem `tab-` with identifier
   // boundaries needs a non-identifier character after the hyphen, which no real
@@ -195,7 +201,7 @@ test("a functional @utility is live from any suffixed use, not from its bare ste
 });
 
 test("the `*` survives into the report so the reader can find the declaration", () => {
-  const report = findDeadCssTokens({ css: FUNCTIONAL_CSS, sources: [] });
+  const report = findDeadCssTokens({ css: FUNCTIONAL_CSS, sources: [], testSources: [] });
   assert.deepEqual(report.deadUtilities, ["tab-*", "pane-*"]);
   assert.ok(formatReport(report).startsWith("@utility tab-* —"));
 });
@@ -227,7 +233,8 @@ test("a chain of properties read only by each other collapses in one run", () =>
   // three tokens, with a green report between each.
   const report = findDeadCssTokens({
     css: CHAIN_CSS,
-    sources: [{ path: "internal/templates/x.html", text: '<div class="widget-live"></div>' }]
+    sources: [{ path: "internal/templates/x.html", text: '<div class="widget-live"></div>' }],
+    testSources: []
   });
   assert.deepEqual(report.deadUtilities, ["widget-retired"]);
   assert.deepEqual(report.deadProperties.sort(), ["--only-the-dead-utility-reads-me"]);
@@ -237,7 +244,7 @@ test("a property read only from inside a dead utility is dead in the same run", 
   // This is the lag that produced the fourth finding of the first pass:
   // 0282f024 deleted `@utility calendar-tag-ovulation`, whose body held the only
   // `rgb(var(--cal-ovulation-solid))`, and left the property for a later wave.
-  const report = findDeadCssTokens({ css: CHAIN_CSS, sources: [] });
+  const report = findDeadCssTokens({ css: CHAIN_CSS, sources: [], testSources: [] });
   assert.ok(report.deadUtilities.includes("widget-retired"));
   assert.ok(report.deadProperties.includes("--only-the-dead-utility-reads-me"));
   // With `widget-live` dead too, the whole chain behind it goes in the same run.
@@ -255,7 +262,8 @@ test("an @apply inside a dead utility does not keep its target alive", () => {
 @utility widget-base { color: red; }
 @utility widget-retired { @apply widget-base; }
 `,
-    sources: []
+    sources: [],
+    testSources: []
   });
   assert.deepEqual(report.deadUtilities.sort(), ["widget-base", "widget-retired"]);
 });
@@ -266,7 +274,8 @@ test("an @apply inside a live utility does keep its target alive", () => {
 @utility widget-base { color: red; }
 @utility widget-live { @apply widget-base; }
 `,
-    sources: [{ path: "internal/templates/x.html", text: '<div class="widget-live"></div>' }]
+    sources: [{ path: "internal/templates/x.html", text: '<div class="widget-live"></div>' }],
+    testSources: []
   });
   assert.deepEqual(report.deadUtilities, []);
 });
@@ -298,7 +307,8 @@ const CHART_JS = `
 test("a property read only through cssVar()/getPropertyValue is live, and its neighbour is not", () => {
   const report = findDeadCssTokens({
     css: CHART_CSS,
-    sources: [{ path: "web/static/js/chart-lite.js", text: CHART_JS }]
+    sources: [{ path: "web/static/js/chart-lite.js", text: CHART_JS }],
+    testSources: []
   });
   // Both halves matter. --chart-grid and --chart-line are invisible to a var()
   // scan and must not be reported; --chart-abandoned differs from them in
@@ -327,7 +337,8 @@ const NEIGHBOUR_CSS = `
 test("a property whose name prefixes a live one is still reported", () => {
   const report = findDeadCssTokens({
     css: NEIGHBOUR_CSS,
-    sources: [{ path: "x.html", text: `class="card-quiet"` }]
+    sources: [{ path: "x.html", text: `class="card-quiet"` }],
+    testSources: []
   });
   assert.deepEqual(report.deadProperties, ["--bg-soft"]);
   assert.deepEqual(report.deadUtilities, []);
@@ -338,7 +349,8 @@ test("a property declared in two theme blocks is not read by its own second decl
   // token look live — which is every colour token in the file.
   const report = findDeadCssTokens({
     css: NEIGHBOUR_CSS.replace("var(--bg-soft-strong)", "transparent"),
-    sources: []
+    sources: [],
+    testSources: []
   });
   assert.deepEqual(report.deadProperties.sort(), ["--bg-soft", "--bg-soft-strong"]);
 });
@@ -404,7 +416,8 @@ test("test sources are separated from production ones by path, and the real tree
 test("a token named only in a stylesheet comment is not a consumer", () => {
   const report = findDeadCssTokens({
     css: `/* --bg-soft and widget-retired are described here */\n:root { --bg-soft: #fff4e8; }\n@utility widget-retired { animation: none; }`,
-    sources: []
+    sources: [],
+    testSources: []
   });
   assert.deepEqual(report.deadProperties, ["--bg-soft"]);
   assert.deepEqual(report.deadUtilities, ["widget-retired"]);
@@ -420,7 +433,8 @@ test("a bare selector naming a class is not a consumer, but markup is", () => {
 `;
   const report = findDeadCssTokens({
     css,
-    sources: [{ path: "internal/templates/x.html", text: '<div class="widget-live widget-host"></div>' }]
+    sources: [{ path: "internal/templates/x.html", text: '<div class="widget-live widget-host"></div>' }],
+    testSources: []
   });
   // A rule inside a live component that names a dead class survives the class's
   // death and can never match — the exact residue this report hunts, so it
@@ -477,4 +491,57 @@ test("a symlink cycle under a source tree terminates instead of exhausting the s
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// The convergence test, the required field, and the postfix-operator position
+// ---------------------------------------------------------------------------
+
+test("a fixed point converges on membership, not on how many members are left", () => {
+  // No edge in the report today can produce a round that swaps one member for
+  // another — every round is a subset of the one before it — so this cannot be
+  // asserted through the report, and the helper is tested directly instead. That
+  // is precisely the point: the subset property is a fact about today's three
+  // edges, and the loops are where a fourth gets added. A size comparison exits
+  // on the middle set below and computes the report from a half-converged state
+  // with nothing red.
+  assert.equal(sameMembers(new Set(["a", "b"]), new Set(["a", "b"])), true);
+  assert.equal(sameMembers(new Set(["a", "b"]), new Set(["b", "a"])), true);
+  assert.equal(sameMembers(new Set(["a", "b"]), new Set(["a", "c"])), false);
+  assert.equal(sameMembers(new Set(["a"]), new Set(["a", "b"])), false);
+  assert.equal(sameMembers(new Set(), new Set()), true);
+});
+
+test("testSources is required, because its absence is the wrong message rather than no message", () => {
+  assert.throws(
+    () => findDeadCssTokens({ css: "@utility widget-retired { color: red; }", sources: [] }),
+    (error) => {
+      assert.match(error.message, /testSources is required/);
+      return true;
+    }
+  );
+  // An explicit empty list is a claim and is accepted as one.
+  const report = findDeadCssTokens({ css: "@utility widget-retired { color: red; }", sources: [], testSources: [] });
+  assert.deepEqual(report.deadUtilities, ["widget-retired"]);
+});
+
+test("a slash after ++ or -- is division, so the comment behind it is still stripped", () => {
+  // `+`, `-` and `*` all legitimately precede a regex, so the character set alone
+  // permits one after `a++` and the scan runs off to the next unescaped slash —
+  // which is the `//` opener, leaving the comment in place and its tokens live.
+  for (const operator of ["++", "--"]) {
+    const source = `var n = a${operator} / b; // widget-retired was removed in 1.4.0\n`;
+    const { text, fellBack } = stripSourceComments(source, "js");
+    assert.equal(fellBack, false);
+    assert.ok(!text.includes("widget-retired"), `the comment after \`a${operator} / b\` must still be stripped`);
+  }
+});
+
+test("a slash after a single + is still a regex position", () => {
+  // The control for the exclusion above: closing the `++` case must not close
+  // `a + /re/`, where the literal really does follow the operator. The apostrophe
+  // inside the literal is the observable — read as a string opener it runs to the
+  // end of the line and the file stops resolving.
+  const { fellBack } = stripSourceComments("var x = 1 + /'/.test(s);\nvar cls = \"widget-live\";\n", "js");
+  assert.equal(fellBack, false);
 });

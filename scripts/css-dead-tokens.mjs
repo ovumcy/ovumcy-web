@@ -75,6 +75,20 @@ function union(target, source) {
   return target;
 }
 
+// The fixed points below exit when a round changes nothing. They compare
+// MEMBERSHIP rather than size on purpose: today every round is a subset of the
+// one before it, so size would do — but that guarantee lives in prose, and these
+// loops are exactly where a future consumer edge gets added. A round that drops
+// one member and adds another exits immediately on an equal-sized DIFFERENT set,
+// and the report is then computed from a half-converged state with nothing red.
+export function sameMembers(left, right) {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Comment stripping, per language
 // ---------------------------------------------------------------------------
@@ -97,11 +111,35 @@ function union(target, source) {
 // live. That is the safe direction, and `readCssGraph` reports the fallback
 // rather than swallowing it.
 
+// Telling `/re/` from division needs the token before the slash, which is the
+// one place in this file that is a heuristic rather than a decision.
+//
+// WHICH WAY IT FAILS, since the rest of this file names that for everything
+// else. Both errors land on the SAFE side, under-reporting rather than
+// over-reporting:
+//   - Read as division when it was a regex: the literal's contents are scanned
+//     for comment and string openers they were never meant to be. Worst case the
+//     file stops resolving and falls back to raw text, where every token counts
+//     as live.
+//   - Read as a regex when it was division: the scanner's cursor jumps past a
+//     stretch of real code without examining it, so a comment inside that
+//     stretch survives and the tokens it names stay live.
+// Neither can delete a live token, which is why this is a heuristic at all. What
+// it must not do is silently swallow a file, and `scanRegexLiteral` bounds that:
+// a regex cannot span a line, so a scan that runs off the end gives up.
+//
+// `++` and `--` are the operator positions the character set alone gets wrong —
+// it holds `+`, `-` and `*`, so the tail after `a++` reads as regex-permitting
+// and `a++ / b` sends the scan off to the next unescaped slash. They are the only
+// postfix operators in the language, so excluding the doubled forms closes the
+// case exactly, without touching `a + /re/.source`.
 const REGEX_MAY_FOLLOW = new Set([..."(,=:[!&|?{};+-*%~^<>"]);
 const REGEX_MAY_FOLLOW_WORD = /(?:^|[^A-Za-z0-9_$])(return|typeof|instanceof|in|of|new|delete|void|case|do|else|yield|await)$/;
+const POSTFIX_OPERATOR = /(\+\+|--)$/;
 
 function regexMayStartHere(tail) {
   if (tail === "") return true;
+  if (POSTFIX_OPERATOR.test(tail)) return false;
   if (REGEX_MAY_FOLLOW.has(tail[tail.length - 1])) return true;
   return REGEX_MAY_FOLLOW_WORD.test(tail);
 }
@@ -350,6 +388,19 @@ function applyTokensOf(chunk) {
   return tokenize((chunk.match(/@apply[^;}]*/g) || []).join("\n"));
 }
 
+// Tokenise every chunk ONCE, up front. The strings a fixed point walks never
+// change between rounds — only the membership sets do — so re-tokenising inside
+// the loop would rebuild the same Sets per round, which is the pattern the
+// single tokenising pass was introduced to remove, one level down.
+function withTokens(part) {
+  return {
+    ...part,
+    readTokens: tokenize(part.readSide),
+    applyTokens: applyTokensOf(part.readSide),
+    declarations: part.declarations.map((declaration) => ({ ...declaration, valueTokens: tokenize(declaration.value) }))
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The report
 // ---------------------------------------------------------------------------
@@ -358,9 +409,22 @@ function applyTokensOf(chunk) {
  * Pure core: given the component stylesheet and the texts of the files its
  * `@source` list covers, report the tokens with no consumer.
  *
- * @param {{css: string, sources: Array<{path: string, text: string}>, testSources?: Array<{path: string, text: string}>}} input
+ * `testSources` is REQUIRED, with no default. The test-only category exists
+ * because "named by no source" is false for a token a test names, and a reader
+ * acting on that wording deletes the utility and reddens a test; defaulting the
+ * field to `[]` would restore that exact wrong sentence for any caller who
+ * omitted it. Pass `[]` to state that there are none — the empty list is a
+ * claim, not an absence.
+ *
+ * @param {{css: string, sources: Array<{path: string, text: string}>, testSources: Array<{path: string, text: string}>}} input
  */
-export function findDeadCssTokens({ css, sources, testSources = [] }) {
+export function findDeadCssTokens({ css, sources, testSources }) {
+  if (!Array.isArray(testSources)) {
+    throw new Error(
+      "findDeadCssTokens: testSources is required. Pass the test files the @source set covers, or [] to state there are none — " +
+        "defaulting it would report a token a test names as if no source named it."
+    );
+  }
   const stylesheet = stripCssComments(css);
   const { blocks, globalCss } = splitUtilityBlocks(stylesheet);
 
@@ -375,8 +439,8 @@ export function findDeadCssTokens({ css, sources, testSources = [] }) {
     tokens: tokenize(stripSourceComments(source.text, languageOf(source.path)).text)
   }));
 
-  const globals = liftCustomProperties(globalCss);
-  const blockParts = blocks.map((block) => ({ ...block, ...liftCustomProperties(block.body) }));
+  const globals = withTokens(liftCustomProperties(globalCss));
+  const blockParts = blocks.map((block) => ({ ...block, ...withTokens(liftCustomProperties(block.body)) }));
 
   // A utility's consumers are the SOURCES — markup, Go class literals, JS — plus
   // an `@apply` that composes it into another rule. A bare selector reference
@@ -385,20 +449,21 @@ export function findDeadCssTokens({ css, sources, testSources = [] }) {
   // never match, which is the exact residue this report hunts.
   //
   // Iterated, because an `@apply` inside a utility that is itself dead is not a
-  // consumer either. Each round can only shrink the live set, so it terminates.
-  const globalApplies = applyTokensOf(globals.readSide);
+  // consumer either. Each round is a subset of the one before it — dropping a
+  // utility only removes applies — so it terminates; the exit still compares
+  // membership, for the reason `sameMembers` gives.
   let liveUtilities = new Set(blockParts.map((block) => block.name));
   for (;;) {
-    const applies = new Set(globalApplies);
+    const applies = new Set(globals.applyTokens);
     for (const block of blockParts) {
-      if (liveUtilities.has(block.name)) union(applies, applyTokensOf(block.readSide));
+      if (liveUtilities.has(block.name)) union(applies, block.applyTokens);
     }
     const next = new Set(
       blockParts
         .filter((block) => hasConsumer(sourceTokens, block.name, block.functional) || hasConsumer(applies, block.name, block.functional))
         .map((block) => block.name)
     );
-    if (next.size === liveUtilities.size) break;
+    if (sameMembers(next, liveUtilities)) break;
     liveUtilities = next;
   }
 
@@ -416,43 +481,47 @@ export function findDeadCssTokens({ css, sources, testSources = [] }) {
   // style.setProperty(). No `var()` scan of the stylesheet can see either one, so
   // a bare occurrence of the name in a source file counts as a read.
   const staticReads = new Set(sourceTokens);
-  union(staticReads, tokenize(globals.readSide));
+  union(staticReads, globals.readTokens);
+  const ownedDeclarations = [
+    [null, globals.declarations],
+    ...blockParts.map((block) => [block.name, block.declarations])
+  ];
   let liveProperties = new Set(declaredNames);
   for (;;) {
     const reads = new Set(staticReads);
     for (const block of blockParts) {
       if (!liveUtilities.has(block.name)) continue;
-      union(reads, tokenize(block.readSide));
+      union(reads, block.readTokens);
     }
-    for (const [owner, declarations] of [
-      [null, globals.declarations],
-      ...blockParts.map((block) => [block.name, block.declarations])
-    ]) {
+    for (const [owner, declarations] of ownedDeclarations) {
       if (owner !== null && !liveUtilities.has(owner)) continue;
       for (const declaration of declarations) {
         if (!liveProperties.has(declaration.name)) continue;
-        union(reads, tokenize(declaration.value));
+        union(reads, declaration.valueTokens);
       }
     }
     const next = new Set(declaredNames.filter((name) => reads.has(name)));
-    if (next.size === liveProperties.size) break;
+    if (sameMembers(next, liveProperties)) break;
     liveProperties = next;
   }
 
-  const namedOnlyByTest = (name, functional) =>
+  // Named for what it checks. It does NOT check the "only": both call sites
+  // below have already skipped everything live, and that precondition is theirs
+  // to hold, not this helper's to promise.
+  const testFilesNaming = (name, functional) =>
     testTokensByFile.filter((file) => hasConsumer(file.tokens, name, functional)).map((file) => file.path);
 
   const report = { deadUtilities: [], deadProperties: [], testOnlyUtilities: [], testOnlyProperties: [] };
   for (const block of blockParts) {
     if (liveUtilities.has(block.name)) continue;
     const name = block.name + (block.functional ? "*" : "");
-    const tests = namedOnlyByTest(block.name, block.functional);
+    const tests = testFilesNaming(block.name, block.functional);
     if (tests.length > 0) report.testOnlyUtilities.push({ name, tests });
     else report.deadUtilities.push(name);
   }
   for (const name of declaredNames) {
     if (liveProperties.has(name)) continue;
-    const tests = namedOnlyByTest(name, false);
+    const tests = testFilesNaming(name, false);
     if (tests.length > 0) report.testOnlyProperties.push({ name, tests });
     else report.deadProperties.push(name);
   }
