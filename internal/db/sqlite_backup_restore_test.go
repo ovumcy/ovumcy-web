@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -301,6 +303,11 @@ func TestAHotCopyOfTheMainDatabaseFileAloneRestoresWithoutTheWALResidentDay(t *t
 	// `ovumcy.db` itself, the second is only in the WAL beside it.
 	createBackupRaceDay(t, repos, user.ID, "2026-04-01")
 	checkpointWALTruncate(t, liveDB)
+
+	// `ovumcy.db` as it stands with 2026-04-01 folded in and nothing after it.
+	// The copy taken below has to still be exactly these bytes.
+	mainFileAtLastCheckpoint := hashFileForBackupTest(t, livePath)
+
 	createBackupRaceDay(t, repos, user.ID, "2026-04-02")
 	assertWALCarriesBytes(t, livePath)
 
@@ -310,14 +317,32 @@ func TestAHotCopyOfTheMainDatabaseFileAloneRestoresWithoutTheWALResidentDay(t *t
 	copyFileForBackupTest(t, livePath, copyPath)
 	assertNoWALSidecarsBesideTheCopy(t, copyPath)
 
-	// Nothing holds the WAL still across the residency check and the read of the
-	// main file, and a checkpoint landing in that window would fold 2026-04-02
-	// into the bytes just copied. Re-reading the WAL afterwards is what rules
-	// that out: nothing writes to this database between the two checks, so a WAL
-	// that still carries bytes was never folded away. Without it the absence
-	// below could fail on a race while telling the reader to go and relax a
-	// sentence in the runbook.
-	assertWALCarriesBytes(t, livePath)
+	// Nothing holds the database still across the residency check and the read
+	// of the main file, and a checkpoint landing in that window would fold
+	// 2026-04-02 into the bytes just copied — firing the absence assertion below
+	// on a race, with a message that sends the reader off to relax a sentence in
+	// the runbook.
+	//
+	// What this rules out, and no more: the copied bytes are byte-for-byte
+	// `ovumcy.db` as it stood at the last checkpoint, before 2026-04-02 was
+	// committed. A checkpoint anywhere in the window — before the copy, or torn
+	// across it — writes the write-ahead log's frames INTO the main file and
+	// changes those bytes, so equality is what says no checkpoint reached the
+	// copy.
+	//
+	// The write-ahead log's own size cannot say this, which is why re-reading it
+	// here would be worth nothing. SQLite's automatic checkpoint is PASSIVE: it
+	// copies frames into the main file and restarts the log at its beginning,
+	// REUSING the file at the size it already has. Only wal_checkpoint(TRUNCATE)
+	// — what this test calls deliberately, above — resets it to zero bytes. So a
+	// `-wal` that still carries bytes is exactly as consistent with a checkpoint
+	// having just run as without one.
+	if copied := hashFileForBackupTest(t, copyPath); copied != mainFileAtLastCheckpoint {
+		t.Fatalf(
+			"the copied ovumcy.db is not the file as it stood at the last checkpoint (sha256 %s, want %s): something wrote the main database file while the app was live — a checkpoint folding the write-ahead log into it, or a commit now reaching it directly — so what the restore below shows says nothing about copying a WAL-mode database's main file alone",
+			copied, mainFileAtLastCheckpoint,
+		)
+	}
 
 	restoredDays := restoredDayList(t, copyPath, user.ID)
 	if !slices.Contains(restoredDays, "2026-04-01") {
@@ -326,6 +351,19 @@ func TestAHotCopyOfTheMainDatabaseFileAloneRestoresWithoutTheWALResidentDay(t *t
 	if slices.Contains(restoredDays, "2026-04-02") {
 		t.Fatalf("the hot single-file copy restored %v, the WAL-resident day included, with the write-ahead log still carrying bytes on both sides of the copy: copying ovumcy.db alone on a running instance no longer loses the commits still in ovumcy.db-wal, so the last bullet of the Backup and Restore Contract in docs/self-hosted.md can be relaxed", restoredDays)
 	}
+}
+
+// hashFileForBackupTest is a file's exact content as a hex digest, so a case can
+// say "these are the same bytes" about a file the running application is free to
+// write to underneath it.
+func hashFileForBackupTest(t *testing.T, path string) string {
+	t.Helper()
+
+	content, err := os.ReadFile(path) // #nosec G304 -- a path this test built under t.TempDir()
+	if err != nil {
+		t.Fatalf("read %s to hash it: %v", filepath.Base(path), err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(content))
 }
 
 // assertNoWALSidecarsBesideTheCopy is what keeps the test above about the copy

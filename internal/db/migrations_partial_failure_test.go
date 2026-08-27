@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"gorm.io/gorm"
@@ -29,7 +30,7 @@ import (
 //     a health field of the seeded sentinel day, which is why this file seeds
 //     one at all — a rollback that reverts a fixture's own two tables while
 //     leaving a rewritten health row behind is the failure worth catching, and
-//     assertSentinelDayIntact is the sibling helper that names it);
+//     assertSentinelDayIntactOn is the sibling helper that names it);
 //   - the LEDGER is untouched — no row for this migration, and no row lost or
 //     gained anywhere else in it. The second half is not decoration: a rollback
 //     that reverted everything above while dropping the rows of the migrations
@@ -64,16 +65,22 @@ const (
 	// into schema_migrations and the version counted afterwards cannot drift
 	// apart. Spelling the number a second time would let the failing case count
 	// rows for a version nobody wrote and pass on a zero it earned by asking the
-	// wrong question. It is above every embedded version so nothing in the
-	// embedded set can collide with it.
+	// wrong question.
+	//
+	// It has to be a version the embedded set does not contain, or the seeded
+	// database already holds a ledger row for it and the case would read that
+	// row as this fixture's own. partialFailureFixtureMigration CHECKS that
+	// rather than trusting this sentence.
 	partialFailureFixtureName = "900_partial_failure.sql"
 
-	// The two tables bracket the failure: the first statement's table proves the
-	// rollback undid what had already executed, the last statement's table
+	// The three tables bracket the failure: the first statement's table proves
+	// the rollback undid what had already executed, the middle one belongs to
+	// the statement that separates the two cases, and the last statement's table
 	// proves the runner stopped at the failing statement instead of running past
 	// it.
-	partialFailureFirstTable = "partial_failure_first"
-	partialFailureLastTable  = "partial_failure_last"
+	partialFailureFirstTable  = "partial_failure_first"
+	partialFailureMiddleTable = "partial_failure_middle"
+	partialFailureLastTable   = "partial_failure_last"
 
 	// partialFailureRewrittenMood is what the fixture's data statement writes
 	// over every daily_logs row. It differs from the sentinel's own mood, so the
@@ -89,7 +96,7 @@ const (
 	// searches the migration for.
 	partialFailureMissingTable    = "partial_failure_no_such_table"
 	partialFailureBreakingMiddle  = "INSERT INTO " + partialFailureMissingTable + " (id) VALUES (1)"
-	partialFailureCompletedMiddle = "CREATE TABLE partial_failure_middle (id INTEGER)"
+	partialFailureCompletedMiddle = "CREATE TABLE " + partialFailureMiddleTable + " (id INTEGER)"
 )
 
 // partialFailureFixtureSQL is the four-statement migration: create a table,
@@ -145,7 +152,7 @@ func TestAMigrationThatFailsPartWayRecordsNeitherItsSchemaChangeNorItsLedgerRow(
 
 		// The health row the failed migration had already rewritten, read back
 		// through the sibling helper that names every column a bad replay costs.
-		assertSentinelDayIntact(t, databasePath)
+		assertSentinelDayIntactOn(t, reader)
 	})
 
 	t.Run("anchor: the same migration with a middle statement that works", func(t *testing.T) {
@@ -160,6 +167,12 @@ func TestAMigrationThatFailsPartWayRecordsNeitherItsSchemaChangeNorItsLedgerRow(
 
 		assertFixtureTablePresence(t, reader, partialFailureFirstTable, true,
 			"statement 1 left nothing behind even though the migration succeeded — the failing case above would then be asserting nothing")
+		// The statement in the position under test. Without this the anchor
+		// proves every statement of the fixture lands EXCEPT the one the two
+		// cases differ in, and a runner that silently skipped it — an off-by-one
+		// in the loop, a splitter dropping a chunk — would stay green here.
+		assertFixtureTablePresence(t, reader, partialFailureMiddleTable, true,
+			"the third statement of four left nothing behind even though the migration succeeded: the runner skipped the very statement the failing case relies on reaching")
 		assertFixtureTablePresence(t, reader, partialFailureLastTable, true,
 			"the last statement left nothing behind even though the migration succeeded — the failing case above would then be asserting nothing")
 		assertLedgerRowCount(t, reader, fixture.Version, 1,
@@ -184,6 +197,12 @@ func TestAMigrationThatFailsPartWayRecordsNeitherItsSchemaChangeNorItsLedgerRow(
 // its version and order out of the file name with migrationFilePattern — the
 // runner's own detection, so the fixture is versioned exactly as an embedded
 // migration would be and the caller has one value to both run and query.
+//
+// It also refuses a version the embedded set already uses. The database every
+// case here starts from is fully migrated, so a collision would have the ledger
+// assertions counting a row the seed wrote as if the fixture had written it: the
+// failing case would report a migration recorded that never was, and the total
+// would be off beside it. That was a sentence in a comment until it was this.
 func partialFailureFixtureMigration(t *testing.T, sqlText string) embeddedMigration {
 	t.Helper()
 
@@ -191,10 +210,20 @@ func partialFailureFixtureMigration(t *testing.T, sqlText string) embeddedMigrat
 	if len(matches) != 2 {
 		t.Fatalf("the fixture name %q is not one the runner would load as a migration", partialFailureFixtureName)
 	}
-	order, err := strconv.Atoi(matches[1])
+	version := matches[1]
+	order, err := strconv.Atoi(version)
 	requireNoErr(t, err, "read the fixture's order out of its name")
 
-	return embeddedMigration{Version: matches[1], Order: order, Name: partialFailureFixtureName, SQL: sqlText}
+	for _, embedded := range embeddedSQLiteMigrations(t) {
+		if embedded.Version == version {
+			t.Fatalf(
+				"the fixture's version %s is now taken by embedded migration %s: the seeded database already holds a ledger row for it, so this case would read that row as the fixture's own and report a failure that never happened — renumber %s above the embedded set",
+				version, embedded.Name, partialFailureFixtureName,
+			)
+		}
+	}
+
+	return embeddedMigration{Version: version, Order: order, Name: partialFailureFixtureName, SQL: sqlText}
 }
 
 // applyPartialFailureFixture runs the fixture through the real applyMigration on
@@ -233,21 +262,35 @@ func assertLedgerRowCount(t *testing.T, reader *gorm.DB, version string, want in
 
 // assertLedgerHoldsOnlyTheEmbeddedSet pins the rest of the ledger, which the
 // per-version count above cannot see. The expected total is DERIVED from the
-// embedded migration set at runtime rather than written down: the database was
-// seeded by booting the real opener, so it holds one row per embedded migration,
-// plus extra for whatever the case under test is expected to have added.
+// embedded migration set rather than written down: the database was seeded by
+// booting the real opener, so it holds one row per embedded migration, plus
+// extra for whatever the case under test is expected to have added.
 func assertLedgerHoldsOnlyTheEmbeddedSet(t *testing.T, reader *gorm.DB, extra int64, complaint string) {
 	t.Helper()
 
-	embedded, err := loadEmbeddedMigrations(DriverSQLite)
-	requireNoErr(t, err, "load the embedded sqlite migration set")
-	if len(embedded) == 0 {
-		t.Fatal("loaded no embedded migrations — the expected ledger total would assert nothing")
-	}
-
 	var total int64
 	requireNoErr(t, reader.Raw(`SELECT COUNT(*) FROM schema_migrations`).Scan(&total).Error, "count schema_migrations rows")
-	if want := int64(len(embedded)) + extra; total != want {
+	if want := int64(len(embeddedSQLiteMigrations(t))) + extra; total != want {
 		t.Errorf("schema_migrations holds %d row(s) in total, want %d: %s", total, want, complaint)
 	}
+}
+
+// embeddedSQLiteMigrationSet reads and parses the embedded SQLite tree once per
+// process. Deriving both the collision check and the expected ledger total from
+// the live set is the point — a written-down count would agree with itself — but
+// the set does not change while a test binary runs, and this file asks for it
+// three times per case.
+var embeddedSQLiteMigrationSet = sync.OnceValues(func() ([]embeddedMigration, error) {
+	return loadEmbeddedMigrations(DriverSQLite)
+})
+
+func embeddedSQLiteMigrations(t *testing.T) []embeddedMigration {
+	t.Helper()
+
+	migrations, err := embeddedSQLiteMigrationSet()
+	requireNoErr(t, err, "load the embedded sqlite migration set")
+	if len(migrations) == 0 {
+		t.Fatal("loaded no embedded migrations — every expectation derived from the set would assert nothing")
+	}
+	return migrations
 }

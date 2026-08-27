@@ -748,6 +748,15 @@ func assertSentinelDayIntact(t *testing.T, databasePath string) {
 	reader := openSQLiteFileForReplayTest(t, databasePath)
 	defer closeReplayDatabase(t, reader)
 
+	assertSentinelDayIntactOn(t, reader)
+}
+
+// assertSentinelDayIntactOn is the same check against a non-migrating reader the
+// caller already holds. A case that has opened one to read the schema back does
+// not need a second connection to read the row.
+func assertSentinelDayIntactOn(t *testing.T, reader *gorm.DB) {
+	t.Helper()
+
 	rows := readDailyLogRowsForReplayTest(t, reader)
 	if len(rows) != 1 {
 		t.Fatalf("expected the seeded day to survive, found %d daily_logs rows", len(rows))
