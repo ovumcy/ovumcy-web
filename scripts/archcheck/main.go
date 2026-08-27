@@ -1,7 +1,7 @@
-// Command archcheck answers three architecture questions about the TREE, not
+// Command archcheck answers four architecture questions about the TREE, not
 // about one edit: transport imports no persistence, the layers of
-// docs/architecture.md import in one direction only, and no schema is migrated
-// at runtime.
+// docs/architecture.md import in one direction only, no schema is migrated
+// at runtime, and no identifier names a role the product does not have.
 //
 // The distinction is the whole reason it exists. Two of those invariants are
 // also guarded at the moment of an edit, and that guard sees one tool call and
@@ -64,6 +64,7 @@ const (
 	ruleAPIImports   = "api-imports"
 	ruleLayerImports = "layer-imports"
 	ruleAutoMigrate  = "automigrate"
+	ruleAbsentRole   = "absent-role"
 	ruleUnreadable   = "unreadable"
 )
 
@@ -146,6 +147,42 @@ var layerRules = []layerRule{
 		denied: []string{modulePath},
 		remedy: "persisted types depend on no other layer: keep the type here and put the behaviour that needs a neighbour in internal/services.",
 	},
+}
+
+// absentRoleWords are account-role nouns from the multi-user vocabularies this
+// product does not implement. docs/architecture.md states the role model in one
+// line — owner-role-only, and "there is no viewer or partner role" — and
+// internal/models declares exactly one Role constant, RoleOwner. An identifier
+// naming some OTHER role describes a thing the product does not have, and is
+// read as a design statement by everyone who meets it. Release 1.4.0 removed
+// "the never-shipped non-owner 'viewer' sanitization path" and the day-read
+// service it left behind kept the name for a year: ViewerService,
+// ViewerDayReader, FetchDayLogForViewer, each reading nothing but user.ID.
+//
+// This is a NAMING rule, not an enforcement one, so it is asked of the whole
+// module rather than of the layer the defect was last found in: a ViewerPageData
+// in internal/api, a ViewerRepository in internal/db and a partnerMode in
+// cmd/ovumcy are the identical claim, and a class fixed at N of N+1 sites is a
+// new defect rather than a partial fix.
+//
+// The list is kept to nouns that can only mean "an account with a role", which
+// is why "member" and "collaborator" are absent — both already carry a non-role
+// meaning in this tree (a member of a set, an injected collaborator), and
+// flagging them would teach the reader to suppress the rule rather than fix a
+// name. "viewer" and "partner" are pinned to the role line in
+// docs/architecture.md by TestTheAbsentRoleWordsKeepTheRolesTheArchitectureDeclaresAbsent;
+// every word, including the rest, is held down by a realistic identifier in
+// TestEveryAbsentRoleWordIsProvedByARealisticIdentifier, so a word cannot be
+// removed, misspelled, or left here inert without a test going red.
+var absentRoleWords = []string{
+	"viewer",
+	"partner",
+	"admin",
+	"administrator",
+	"guest",
+	"moderator",
+	"subscriber",
+	"tenant",
 }
 
 // skippedDirs never hold source this module builds. testdata is excluded by the
@@ -244,6 +281,7 @@ func run(root string) ([]finding, error) {
 		}
 		findings = append(findings, importFindings(fset, abs, path, file)...)
 		findings = append(findings, layerFindings(fset, abs, path, file)...)
+		findings = append(findings, absentRoleFindings(fset, abs, path, file)...)
 		if hasAutoMigrateCall(file) {
 			candidates = append(candidates, path)
 		}
@@ -371,6 +409,140 @@ func layerFindings(fset *token.FileSet, root, path string, file *ast.File) []fin
 	}
 	return out
 }
+
+// absentRoleFindings applies the absent-role naming rule to one parsed file.
+//
+// Test files are exempt, on the same reading that exempts them from the import
+// rules, and here the exemption is the point rather than a courtesy: a test
+// legitimately NAMES an absent role in order to prove it is refused — fixtures
+// across internal/services and internal/api drive accounts whose Role is
+// "viewer" or "legacy_viewer" precisely to make the owner predicate false — and
+// a rule covering them would push the tree toward deleting the proof.
+//
+// It reads DECLARED identifiers only: type, func and method names, const and var
+// names, struct fields, interface methods, parameters and results, short
+// variable declarations and range clauses. Comments and string literals are
+// invisible to it, which is why a role VALUE like "legacy_viewer" and prose
+// explaining the absence of a viewer role do not trip it.
+func absentRoleFindings(fset *token.FileSet, root, path string, file *ast.File) []finding {
+	if _, ok := productionFile(root, path); !ok {
+		return nil
+	}
+
+	var out []finding
+	report := func(node ast.Node) {
+		ident, ok := node.(*ast.Ident)
+		if !ok || ident == nil || ident.Name == "_" {
+			return
+		}
+		word, found := absentRoleWordIn(ident.Name)
+		if !found {
+			return
+		}
+		out = append(out, finding{
+			rule: ruleAbsentRole,
+			pos:  fset.Position(ident.Pos()),
+			msg: fmt.Sprintf("%s names %q, a role this product does not have. The only role it declares is models.RoleOwner; "+
+				"docs/architecture.md states there is no viewer or partner role. Rename it for the CONCERN it serves — "+
+				"the day-read seam that used to be ViewerService is OwnerDayReadService. Do not add the word to absentRoleWords.",
+				ident.Name, word),
+		})
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch typed := n.(type) {
+		case *ast.TypeSpec:
+			report(typed.Name)
+		case *ast.FuncDecl:
+			report(typed.Name)
+		case *ast.ValueSpec:
+			for _, name := range typed.Names {
+				report(name)
+			}
+		case *ast.Field:
+			// Struct fields, interface methods, parameters and results.
+			for _, name := range typed.Names {
+				report(name)
+			}
+		case *ast.AssignStmt:
+			if typed.Tok != token.DEFINE {
+				return true
+			}
+			for _, expr := range typed.Lhs {
+				report(expr)
+			}
+		case *ast.RangeStmt:
+			// `for k, v := range …` declares k and v with :=, but carries them
+			// on RangeStmt rather than on an AssignStmt.
+			if typed.Tok != token.DEFINE {
+				return true
+			}
+			report(typed.Key)
+			report(typed.Value)
+		}
+		return true
+	})
+	return out
+}
+
+// absentRoleWordIn reports the forbidden role noun an identifier carries as a
+// whole camel/snake token, if any.
+//
+// A trailing "s" is folded before comparing: a list-of-role accessor names its
+// subject in the plural, which is the likeliest shape of this defect and the one
+// a singular-only match misses.
+//
+// Whole tokens are the unit, never substrings. "reviewer" is one token and is
+// not "viewer"; mapDashboardViewError spells the letters of "viewer" across its
+// View|Error boundary and is not one either. A substring match would flag both,
+// and would then be silenced by an exemption list — which is the failure mode
+// this rule has none of.
+func absentRoleWordIn(identifier string) (string, bool) {
+	tokens := identifierTokens(identifier)
+	for _, word := range absentRoleWords {
+		for _, candidate := range tokens {
+			if candidate == word || strings.TrimSuffix(candidate, "s") == word {
+				return word, true
+			}
+		}
+	}
+	return "", false
+}
+
+// identifierTokens splits an identifier into lower-cased camelCase and
+// snake_case tokens.
+func identifierTokens(identifier string) []string {
+	var tokens []string
+	var current strings.Builder
+	flush := func() {
+		if current.Len() > 0 {
+			tokens = append(tokens, strings.ToLower(current.String()))
+			current.Reset()
+		}
+	}
+
+	runes := []rune(identifier)
+	for i, r := range runes {
+		switch {
+		case r == '_':
+			flush()
+			continue
+		case i > 0 && isUpper(r) && !isUpper(runes[i-1]):
+			// lower→UPPER: "dayLog" → "day", "Log".
+			flush()
+		case i > 0 && isUpper(r) && i+1 < len(runes) && isLower(runes[i+1]):
+			// UPPER→Upperlower: "HTTPViewer" → "HTTP", "Viewer".
+			flush()
+		}
+		current.WriteRune(r)
+	}
+	flush()
+	return tokens
+}
+
+func isUpper(r rune) bool { return r >= 'A' && r <= 'Z' }
+
+func isLower(r rune) bool { return r >= 'a' && r <= 'z' }
 
 // inTransportLayer reports whether path is production source under a
 // transport-only package. The comparison runs on the path relative to the module

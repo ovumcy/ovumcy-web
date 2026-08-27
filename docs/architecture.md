@@ -23,6 +23,10 @@ checked mechanically against the whole tree by `scripts/archcheck`, which CI
 runs on every change; test files are outside the check, because a fixture
 legitimately reaches across a layer boundary to prove the layer below it.
 
+The same command also holds the role model above to the tree's own names: no
+identifier may be called after a role this product does not have. The rule is a
+naming one, so it is asked of every package rather than of one layer.
+
 ```mermaid
 flowchart TB
     subgraph clients["Clients"]
