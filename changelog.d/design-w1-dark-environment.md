@@ -14,9 +14,11 @@
   dissolved into the card in the dark; this pass raised it to 3.38:1/3.95:1. Wave 4 later replaced
   the ring itself with a cycle ribbon — one cell per day carrying the phase, the fertile window and
   entry marks along the band — which carries its own contrast: only the period and ovulation cells,
-  the two a reader looks for, are held to the 3:1 floor; the recessive follicular/luteal pair
-  deliberately isn't, since the ribbon is redundant to the day marks and status text around it. This
-  ring's numbers describe a track this release no longer contains.
+  the two a reader looks for, are held to the 3:1 floor. The recessive follicular/luteal pair is
+  deliberately exempt against the light card, where it sits under the floor; on the dark card it
+  happens to clear it anyway. The ribbon as a whole is redundant to the day marks and status text
+  around it, which is why the floor is scoped to those two cells at all. This ring's numbers
+  describe a track this release no longer contains.
 - **The dark cycle card no longer carried a pale smudge in its top-right corner from the
   light-theme glow tints.** Two decorative corner glows kept their warm light-theme paper tints on
   the dark card, lifting it by up to **3.27:1** and 1.71:1 — a decoration painted as loudly as a
