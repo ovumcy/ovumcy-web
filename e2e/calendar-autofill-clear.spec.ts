@@ -44,14 +44,26 @@ async function todayISOFromCalendar(page: Page): Promise<string> {
   return todayISO!;
 }
 
+// Anchor on the 5th of the month that holds today-30: far from both
+// lastPeriodStart=today-3 (set by completeOnboardingIfPresent) and the
+// predicted next period, so the new period block has no interference — and,
+// because the whole auto-fill window (anchor..anchor+4) then sits mid-month,
+// never split across a month boundary. The previous bare today-30 anchor was
+// a date bomb: from the 28th of a month onward its +1..+4 neighbors spill
+// into the next month, whose day cells the anchor month's grid does not
+// always render (2026-08-28: anchor Jul 29, neighbor Aug 2 — July's
+// Sunday-start grid ends Aug 1, so the neighbor's button does not exist and
+// every retry fails the same way).
+function autofillAnchorISO(todayISO: string): string {
+  return `${shiftISODate(todayISO, -30).slice(0, 7)}-05`;
+}
+
 test.describe('calendar auto-fill clear-on-toggle-off', () => {
   test('clears bare auto-filled neighbors when the anchor period day is toggled off', async ({ page }) => {
     await registerOwnerOnCalendar(page, 'calendar-autofill-clear');
 
     const todayISO = await todayISOFromCalendar(page);
-    // Pick a date far from both lastPeriodStart=today-3 (set by completeOnboardingIfPresent)
-    // and the predicted next period so the new period block has no interference.
-    const anchorISO = shiftISODate(todayISO, -30);
+    const anchorISO = autofillAnchorISO(todayISO);
     const neighborISOs = [1, 2, 3, 4].map((offset) => shiftISODate(anchorISO, offset));
 
     const onForm = await openCalendarDayEditor(page, anchorISO);
@@ -83,7 +95,7 @@ test.describe('calendar auto-fill clear-on-toggle-off', () => {
     await registerOwnerOnCalendar(page, 'calendar-autofill-preserve');
 
     const todayISO = await todayISOFromCalendar(page);
-    const anchorISO = shiftISODate(todayISO, -30);
+    const anchorISO = autofillAnchorISO(todayISO);
     const manualISO = shiftISODate(anchorISO, 2);
     const earlyNeighborISO = shiftISODate(anchorISO, 1);
     const lateNeighborISOs = [3, 4].map((offset) => shiftISODate(anchorISO, offset));
