@@ -77,27 +77,27 @@ type SettingsSymptomsViewData struct {
 }
 
 type SettingsPageViewData struct {
-	CurrentUser             models.User
-	ErrorKey                string
-	ChangePasswordErrorKey  string
-	SuccessKey              string
-	CycleLength             int
-	PeriodLength            int
-	AutoPeriodFill          bool
-	IrregularCycle          bool
-	UnpredictableCycle      bool
-	AgeGroup                string
-	UsageGoal               string
-	ShownPeriodTip          bool
-	TrackBBT                bool
-	TemperatureUnit         string
-	TrackCervicalMucus      bool
+	CurrentUser            models.User
+	ErrorKey               string
+	ChangePasswordErrorKey string
+	SuccessKey             string
+	CycleLength            int
+	PeriodLength           int
+	AutoPeriodFill         bool
+	IrregularCycle         bool
+	UnpredictableCycle     bool
+	AgeGroup               string
+	UsageGoal              string
+	ShownPeriodTip         bool
+	TrackBBT               bool
+	TemperatureUnit        string
+	TrackCervicalMucus     bool
 	// The three section toggles are rendered positively; the stored columns are
 	// inverted and are converted exactly once, in tracking_visibility.go.
-	ShowSexChip          bool
-	ShowCycleFactors     bool
-	ShowNotesField       bool
-	ShowHistoricalPhases bool
+	ShowSexChip             bool
+	ShowCycleFactors        bool
+	ShowNotesField          bool
+	ShowHistoricalPhases    bool
 	WeekStartsOn            string
 	ReminderLeadDays        int
 	LastPeriodStart         string

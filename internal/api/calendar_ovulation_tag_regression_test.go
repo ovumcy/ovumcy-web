@@ -24,7 +24,7 @@ import (
 func TestCalendarRendersOvulationTagWithoutFertileOverride(t *testing.T) {
 	app, database := newOnboardingTestApp(t)
 	user := createOnboardingTestUser(t, database, "calendar-ovulation-tag@example.com", "StrongPass1", true)
-	periodStart := time.Now().UTC().Truncate(24 * time.Hour).AddDate(0, 0, -4)
+	periodStart := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -4)
 
 	if err := database.Model(&models.User{}).Where("id = ?", user.ID).Updates(map[string]any{
 		"cycle_length":      28,

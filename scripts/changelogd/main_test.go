@@ -202,7 +202,7 @@ func TestAddsReleaseHeadingReadsAddedLinesOnly(t *testing.T) {
 		"+++ b/CHANGELOG.md\n+## [1.2.3] - 2026-02-02\n":  true,
 		"+++ b/CHANGELOG.md\n+- **An ordinary entry.**\n": false,
 		"+++ b/CHANGELOG.md\n-## [1.2.3] - 2026-02-02\n":  false,
-		"":                                               false,
+		"": false,
 	}
 	for diff, want := range cases {
 		if got := addsReleaseHeading(diff); got != want {

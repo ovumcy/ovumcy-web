@@ -75,7 +75,7 @@ func TestUnsupportedRoleRejectedAcrossEveryAuthedV1Route(t *testing.T) {
 		// cookie changes nothing and gets the ordinary answer; that is pinned by
 		// TestUnsupportedRoleLanguageSwitchStoresNothing
 		// (account_language_regressions_test.go), not by this cookie-role matrix.
-		"POST /lang": {},
+		"POST /lang":                          {},
 		"GET /login":                          {},
 		"GET /auth/oidc/start":                {},
 		"GET " + oidcLogoutBridgePath:         {},
