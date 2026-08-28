@@ -133,7 +133,7 @@ flowchart LR
         data[("Per-owner data<br/>isolated by user_id")]
     end
 
-    secrets["No secret in transport:<br/>AEAD-sealed cookies · bcrypt / hashed<br/>tokens &amp; recovery codes at rest"]
+    secrets["No usable secret in transport:<br/>AEAD-sealed cookies · bcrypt / hashed<br/>tokens &amp; recovery codes at rest"]
     sched["internal/reminders scheduler<br/>no request · no session · no CSRF token"]
     hook["Owner-configured webhook URL<br/>bounded outbound POST · opt-in private-address block"]
 
@@ -164,7 +164,7 @@ Load-bearing invariants (see [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS
   `OIDC_RESPONSE_MODE=query`, a safe method the middleware never validates —
   protected by the sealed one-time state cookie.
 - **No usable secret in transport.** Passwords, auth/recovery/reset tokens and
-  stored secrets never appear in URLs, JSON, or logs. The exception ledger is
+  stored secrets never appear in URLs, JSON, HTML or logs. The exception ledger is
   [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md)'s, not this file's:
   the read-only calendar-feed capability token (hashed at rest,
   one-click-revocable, 404-no-oracle, rate-limited, log-redacted) is the one
