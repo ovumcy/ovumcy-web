@@ -41,7 +41,7 @@ fails ("kills" the mutant). Surviving mutants reveal weak assertions.
 - Run it locally: `scripts/mutation.sh baseline` (full) or `scripts/mutation.sh diff <ref>` (changed code only).
 - A weekly CI job tracks the trend; it is advisory and never blocks a merge.
 - Baseline scope now covers business-logic, security, and transport: `internal/services`, `internal/security`, and `internal/api`.
-- **Mutation efficacy** (gremlins, killed / (killed + survived); tracked weekly): `internal/services` **93.3%** (1529/1638), `internal/security` **97.8%** (134/137), and `internal/api` **97.3%** (649/667), measured on a clean-Linux CI run. Efficacy dipped from an earlier ~99% as v1.8.0 landed large new subsystems (webhooks, `.ics` feed, reminders) whose mutants were then triaged. An exhaustive per-mutant pass re-verified **every** survivor against a broad covering suite — the coverage-guided run over-reports survivors (Go leaves `const`/`case` lines uninstrumented, and its test selection can skip the killing test, so a mutant an existing test already kills can still show as survived) — closing the genuine gaps and documenting the residual as equivalents or coverage-attribution artifacts. `internal/api` is the slowest package to mutate — not the largest (`internal/services` has more non-test source lines) but the one whose tests are heavy DB integration — and it exceeds CI's 3h job timeout unsharded, so it runs as 5 file-subset shards (`internal_api_1`..`5`, a deterministic partition of the package's own files — see `scripts/mutation.sh`) merged into one `internal_api.json`. `internal/services` is sharded 5 ways on the same mechanism. Canonical efficacy comes only from the weekly clean-Linux job, never a local Windows run; per-package breakdowns live in [`.mutation/`](.mutation/).
+- **Mutation efficacy** (gremlins, killed / (killed + survived); tracked weekly): `internal/services` **93.3%** (1529/1638), `internal/security` **97.8%** (134/137), and `internal/api` **97.3%** (649/667), measured on a clean-Linux CI run. `internal/services` dipped from an earlier ~99% as v1.8.0 landed large new subsystems (webhooks, `.ics` feed, reminders) whose mutants were then triaged; `internal/security` and `internal/api` rose to the figures above through the same hardening pass, from 93.4% and 79.2%. An exhaustive per-mutant pass re-verified **every** survivor against a broad covering suite — the coverage-guided run over-reports survivors (Go leaves `const`/`case` lines uninstrumented, and its test selection can skip the killing test, so a mutant an existing test already kills can still show as survived) — closing the genuine gaps and documenting the residual as equivalents or coverage-attribution artifacts. `internal/api` is the slowest package to mutate — not the largest (`internal/services` has more non-test source lines) but the one whose tests are heavy DB integration — and it exceeds CI's 3h job timeout unsharded, so it runs as 5 file-subset shards (`internal_api_1`..`5`, a deterministic partition of the package's own files — see `scripts/mutation.sh`) merged into one `internal_api.json`. `internal/services` is sharded 5 ways on the same mechanism. Canonical efficacy comes only from the weekly clean-Linux job, never a local Windows run; per-package breakdowns live in [`.mutation/`](.mutation/).
 - Statement coverage is lower than efficacy by design: mutation testing checks whether a test *fails when the code breaks*, not merely whether a line ran. The "not covered" mutants are dominated by package-level `const`/`var` declarations (which Go coverage never instruments) and the network-facing OIDC client (covered end-to-end).
 
 Surviving mutants are triaged honestly: a *real* gap gets a new behavior test; an
@@ -121,7 +121,7 @@ go test ./internal/services/ -run '^$' -fuzz FuzzParseDayDate -fuzztime 30s
 # End-to-end (Playwright)
 npm run e2e
 
-# Mutation testing (slow; local or nightly)
+# Mutation testing (slow; local, or the weekly CI job)
 bash scripts/mutation.sh baseline
 ```
 
@@ -133,13 +133,13 @@ coverable Go line in your diff against `origin/main` must be exercised by a test
 the comment at the top of `scripts/patchcov/main.go`).
 
 **Warning: running `patchcov` against a stale `coverage.out` gives a false pass.**
-`go test -coverprofile` is subject to Go's test result cache — if you edit a file
-and re-run the coverage command without also touching its test, `go test` can
-silently reuse a cached run from *before* your latest edit. `coverage.out` then
-reflects the old code, `patchcov` reports your newest lines as covered, and CI
-(which always starts from a clean checkout with an empty test cache) fails on the
-same diff. This has bitten contributors more than once — always regenerate the
-profile fresh before trusting a local "gate OK".
+The gate reads whatever profile is on disk and never checks how it was produced.
+A `coverage.out` left over from before your latest edit — or written by a run over
+a narrower package set than the diff touches — still names your newest lines as
+covered, and CI, which always starts from a clean checkout and regenerates the
+profile over the whole scoped tree, fails on the same diff. This has bitten
+contributors more than once — always regenerate the profile fresh, over the full
+command below, before trusting a local "gate OK".
 
 This isn't enforced by a local hook — CI's `patch-coverage` job is the gate,
 run on every PR. To check before pushing, reproduce CI's coverage condition
