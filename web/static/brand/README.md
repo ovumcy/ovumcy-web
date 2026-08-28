@@ -6,10 +6,15 @@ Files:
 - `ovumcy-logo-horizontal.svg`: lockup (symbol + wordmark) for light backgrounds
 - `ovumcy-logo-horizontal-dark.svg`: lockup for dark backgrounds
 
-Core palette:
+Core palette (the light-background assets):
 - Lavender: `#A989E7`
 - Coral accent: `#FF7F93`
 - Wordmark (light bg): `#4A3D6A`
+
+On dark backgrounds the two brand colors are lightened and the wordmark inverts —
+the `-dark.svg` assets use these, and nothing else:
+- Lavender: `#CFBBFF`
+- Coral accent: `#FFA2AF`
 - Wordmark (dark bg): `#F6F3FF`
 
 Usage notes:

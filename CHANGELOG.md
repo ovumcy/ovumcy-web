@@ -29,6 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leave the container health check where it is. See *Health Checks by Deployment
   Mode* in [docs/self-hosted.md](docs/self-hosted.md).
 
+- **An account signed in through an identity provider can now erase its own
+  data.** `Clear data` and `Delete account` require a fresh re-authentication,
+  and that had exactly one accepted form: the current local password. An owner
+  provisioned through OIDC has none, so both flows answered `403 local password
+  required` — while `SECURITY.md` and the GDPR cross-reference described the
+  right to erasure without qualification. The workaround (enrol a local password
+  through the step-up flow, then erase) worked but was documented nowhere near
+  the claim it qualified.
+
+  Such an account now confirms an erasure where it already authenticates. The
+  danger zone offers the action directly; confirming it starts the same
+  purpose-bound step-up that gates local-password enrollment, and the erasure
+  runs when the provider sends the browser back — never before. Which erasure
+  was confirmed travels inside the sealed step-up state, not in the callback
+  request, so nothing observable between the two can turn a data wipe into an
+  account deletion.
+
+  The re-authentication requirement itself is unchanged, and it does not
+  downgrade: an account that **has** a local password is refused this route and
+  keeps confirming with its password.
+
 ### Changed
 
 - **The calendar feed verifies its subscribe token with a keyed MAC instead of
@@ -87,29 +108,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged for both — the commands in
   [SECURITY.md](SECURITY.md#verifying-release-authenticity) still apply as
   written.
-
-### Added
-
-- **An account signed in through an identity provider can now erase its own
-  data.** `Clear data` and `Delete account` require a fresh re-authentication,
-  and that had exactly one accepted form: the current local password. An owner
-  provisioned through OIDC has none, so both flows answered `403 local password
-  required` — while `SECURITY.md` and the GDPR cross-reference described the
-  right to erasure without qualification. The workaround (enrol a local password
-  through the step-up flow, then erase) worked but was documented nowhere near
-  the claim it qualified.
-
-  Such an account now confirms an erasure where it already authenticates. The
-  danger zone offers the action directly; confirming it starts the same
-  purpose-bound step-up that gates local-password enrollment, and the erasure
-  runs when the provider sends the browser back — never before. Which erasure
-  was confirmed travels inside the sealed step-up state, not in the callback
-  request, so nothing observable between the two can turn a data wipe into an
-  account deletion.
-
-  The re-authentication requirement itself is unchanged, and it does not
-  downgrade: an account that **has** a local password is refused this route and
-  keeps confirming with its password.
 
 ### Fixed
 
@@ -1203,7 +1201,7 @@ self-hosting. No database migrations; no breaking API changes.
 
 - Removed the never-shipped non-owner "viewer" sanitization path; the day-read service now returns owner data directly. The role-integrity guard (`ValidateSupportedWebUser`) is retained.
 
-## [1.3.0] - 2026-06-13
+## [1.3.0] - 2026-06-15
 
 A large security-and-quality release: a multi-phase security audit follow-up
 across auth, sessions, OIDC, privacy, and accessibility; medically-aligned
@@ -1701,7 +1699,9 @@ build-hardening work. No database migrations; no breaking API changes.
   - CSV/JSON export,
   - Russian/English localization.
 
-[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.2...HEAD
+[1.9.2]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.1...v1.9.2
+[1.9.1]: https://github.com/ovumcy/ovumcy-web/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/ovumcy/ovumcy-web/compare/v1.6.0...v1.7.0
