@@ -97,7 +97,7 @@ asks for has happened, and neither the 128 count nor the 79.22% describes the tr
 
 Unlike `internal-services.md`/`internal-security.md`, the 128 survivors here were
 **not** individually triaged into "real gap" vs. "documented equivalent mutant"
-yet — that requires a source-level equivalence review per mutant (apply the
+at the time — that requires a source-level equivalence review per mutant (apply the
 mutation, confirm no test fails, judge whether it's reachable), which is a
 separate follow-up, not implied by getting real numbers out of CI for the first
 time. Do not read the raw 79.22% efficacy as "21% of behavior is untested" —
