@@ -20,8 +20,11 @@
   a persistent one-hour cookie refreshed per response, not a browser-session cookie; the
   total-secret-loss paragraph stops claiming an OIDC-only account loses self-service — the
   `(issuer, subject)` link is plaintext and the state cookies are minted under the current key, so
-  a fresh provider sign-in still keeps access (a broken TOTP enrollment stays operator work: both
-  2FA controls are password-gated) — and now also names the other casualties of a lost key (armed
-  feed MACs, the feed key epoch, the in-memory limiter counters). `SECURITY.md`'s
+  a fresh provider sign-in still works, and such an account even clears a dead TOTP enrollment
+  itself by minting a local password behind a provider step-up; the operator path remains for
+  local-auth accounts whose password and recovery code are both gone — and now also names the
+  other casualties of a lost key (armed feed MACs, the feed key epoch, the in-memory rate-limit
+  identity counters). The same correction lands in `docs/self-hosted.md`'s secret-loss and
+  rotation bullets, which asserted the retired claim in the operator runbook. `SECURITY.md`'s
   known-disclosures index gains the moved entry, and the single-document-era "see *Threat Model*
   below" pointer becomes a file link. No behaviour changes.
