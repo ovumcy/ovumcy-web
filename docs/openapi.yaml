@@ -272,19 +272,18 @@ components:
         a wrong verifier and a disabled feed alike (see
         [docs/SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) → *Calendar feed
         subscription*). The feed's per-IP `429` is not part of the exemption:
-        its limiter answers the shared envelope with `retry_after_seconds`,
-        exactly as on every other route. None of the three is part of this
+        its limiter refuses through the application's shared rate-limit path,
+        as on every other route — the exemption covers the not-found answer,
+        never a route wholesale. None of the three is part of this
         specification (`/healthz` and `/readyz` are documented below as a
         courtesy; the feed is a page route), and none is consumed by a client
         of this API — the probes are parsed by an operator's health check, the
         feed by a calendar application. The envelope negotiates its shape from
         the caller's `Accept`/`HX-Request` headers and carries localized copy,
-        so putting it on a public cookieless surface would let an anonymous
-        caller choose the shape of the answer; the feed's `404` is additionally
-        required to stay one identical, cause-free answer whatever refused the
-        token. The exemption covers the not-found answer, never a route
-        wholesale: the feed serves `text/calendar` on success and the one fixed
-        `404` body on refusal, and its `429` keeps the app-wide limiter shape.
+        so putting it on the probes or on the feed's not-found path would let
+        an anonymous caller choose the shape of those fixed answers; the
+        feed's `404` must additionally stay identical whatever refused the
+        token.
       required: [error, error_detail]
       properties:
         error:
