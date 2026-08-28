@@ -26,7 +26,7 @@ Ovumcy processes menstrual and reproductive health information. Under Art. 9(1) 
 | Household / partner | Art. 6(1)(a) consent | Art. 9(2)(a) explicit consent — captured in writing |
 | Small group | Art. 6(1)(a) or (b) | Art. 9(2)(a) — explicit, granular, revocable, capturable |
 
-The `/privacy` page renders a public-facing privacy notice that states what is stored and that data leaves the server only through integrations the owner enables; the canonical, complete egress enumeration — including the owner-armed `.ics` calendar feed a third-party calendar client polls — is the Data Inventory preamble of [`docs/security/data-handling.md`](security/data-handling.md#data-inventory). Operators running Ovumcy for anyone other than themselves should layer a deployment-specific privacy notice on top — naming the controller, lawful basis, and Data Subject contact route.
+The `/privacy` page renders a public-facing privacy notice that states what is stored and that data leaves the server only through integrations the owner enables; the canonical egress statement — the authoritative enumeration of the paths data can leave by, the owner-armed `.ics` calendar feed among the surfaces it governs — is the Data Inventory preamble of [`docs/security/data-handling.md`](security/data-handling.md#data-inventory). Operators running Ovumcy for anyone other than themselves should layer a deployment-specific privacy notice on top — naming the controller, lawful basis, and Data Subject contact route.
 
 ## Data Inventory
 

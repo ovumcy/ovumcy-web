@@ -318,9 +318,9 @@ func TestChangeDetectionRunsTheGoLanesForARunbookOnlyDiff(t *testing.T) {
 // checklist to the one consequence of a restore that is invisible from inside
 // it: the calendar-feed columns come back with everything else, so a
 // subscription an owner revoked or rotated AFTER the backup was taken is armed
-// again at its old subscribe URL. docs/gdpr.md records that — confirmed in a
-// live restore drill — and an operator who follows this runbook alone never
-// opens that page, which is why the checklist has to carry the pointer itself.
+// again at its old subscribe URL. docs/gdpr.md records that consequence, and an
+// operator who follows this runbook alone never opens that page, which is why
+// the checklist has to carry the pointer itself.
 //
 // Both ends of the link are checked, because either one rotting leaves the same
 // operator uninformed: the pointer has to be in the section being read, and the
