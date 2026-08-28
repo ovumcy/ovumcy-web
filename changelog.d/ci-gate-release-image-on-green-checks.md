@@ -18,4 +18,7 @@
   from `go.mod` (1.26.6), and `GOTOOLCHAIN` only ever upgrades — so the published binary was
   compiled by a release candidate that no unit, race or browser test had ever run under. The builder
   is pinned back to `golang:1.26.6-alpine3.24`. CI now fails when the builder tag and the `go.mod`
-  directive disagree, and Dependabot no longer offers pre-release tags of that image.
+  directive disagree. Dependabot still offers a pre-release bump of that image — a docker `ignore`
+  condition takes version requirements and cannot express "no `rc` tags", and an invalid one would
+  stop Dependabot for every ecosystem in the repository — so this CI check is what catches it,
+  documented next to the `dependabot.yml` entry it explains.

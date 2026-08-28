@@ -14,5 +14,5 @@
   two commands that re-derive them, plus the fact that makes the spec listing authoritative
   (`playwright.config.ts` sets only `testDir: 'e2e'`, with no `testMatch`/`testIgnore`).
   The mutation section's "`internal/services` is some 40% bigger in source lines" —
-  measured at 18,245 non-test lines against `internal/api`'s 11,417, so nearer 60% — loses
+  measured at 18,582 non-test lines against `internal/api`'s 11,453, so nearer 62% — loses
   the percentage for the ordering claim the sentence actually rests on.

@@ -17,4 +17,3 @@
   and its locale list from the i18n catalogue, and the settings-symptoms HTMX
   test now reads the mutated row back out of the rerendered section. No rendered
   string, status code or error key changes.
-</content>
