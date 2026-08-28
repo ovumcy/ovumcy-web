@@ -20,7 +20,7 @@ _Part of the [Ovumcy security policy](../../SECURITY.md)._
 **Session tokens:**
 
 - `ovumcy_auth` payload is sealed (AES-256-GCM under an HKDF-derived key, see *Cookies* in [docs/security/cryptography.md](cryptography.md#cookies)) and verified per request against `users.auth_session_version`.
-- Issued by `setAuthCookie`; reissued inline on the originating device whenever `auth_session_version` is bumped (see *Session Invalidation on Credential Rotation* in [docs/security/oidc-and-sessions.md](oidc-and-sessions.md)).
+- Issued by `setAuthCookie`; reissued inline on the originating device whenever `auth_session_version` is bumped (see *Session Invalidation on Credential Rotation* in [docs/security/oidc-and-sessions.md](oidc-and-sessions.md#session-invalidation-on-credential-rotation)).
 
 **TOTP 2FA:**
 
@@ -60,6 +60,6 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
 - Logout attempts: 20 failures / 15 minutes (account-scoped).
 - TOTP login challenge: 5 failures / 15 minutes.
 - TOTP disable: 5 failures / 15 minutes.
-- Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, `PUT …/password`, `PUT …/2fa` (the TOTP-enrollment confirmation), and `POST …/recovery-code` (recovery-code regeneration). Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.
+- Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action except the TOTP disable, whose password check draws its own budget above — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, `PUT …/password`, `PUT …/2fa` (the TOTP-enrollment confirmation), and `POST …/recovery-code` (recovery-code regeneration). Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.
 
 Per-account budgets are keyed by `HMAC-SHA256(SECRET_KEY, "ovumcy.auth-attempt.identity.v1:" || identity)`, so the limiter never persists the raw identifier.
