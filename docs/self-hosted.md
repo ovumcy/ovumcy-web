@@ -287,7 +287,7 @@ For the public reverse-proxy stacks, do not treat a missing host-level `127.0.0.
 
 The SQLite baseline is sized for a household, and it has a ceiling worth knowing before you meet it. SQLite allows one writer at a time. Reads scale fine — eight clients browsing the dashboard, calendar, stats and exports at once stay in the tens of milliseconds — but **concurrent writers serialize**, and a writer that cannot take the lock waits out the five-second busy timeout before the app retries.
 
-Measured on a release image, mixed traffic with 40% day saves, per-request latency for `PUT /api/v1/days/{date}`:
+Measured 2026-07-28 on the release image current that day (v1.9.2, tagged 2026-07-24) — mixed traffic with 40% day saves, per-request latency for `PUT /api/v1/days/{date}`. The numbers are a dated drill, not a guarantee; re-run them before sizing on a different host or a later release:
 
 | Clients writing at once | Median save | 95th percentile |
 | --- | --- | --- |
@@ -535,15 +535,20 @@ Clearing them fixes it immediately, which is also how you confirm the diagnosis.
 The whole **head** of a request — start line plus every header, cookies included — must fit in a
 4 KB read buffer.
 
-A normal signed-in request carries about **450 B** of Ovumcy cookies (measured from the running app:
-`ovumcy_auth` 350 B, `ovumcy_csrf` 55 B, plus the language and timezone cookies). The largest single
+A normal signed-in request carries about **450 B** of Ovumcy cookies (measured from the running app
+on 2026-07-25, against v1.9.2: `ovumcy_auth` 350 B, `ovumcy_csrf` 55 B, plus the language and
+timezone cookies). Cookie payloads change with the code, so treat every byte count in this section
+as that dated measurement rather than a current fact. The largest single
 cookies are `ovumcy_oidc_stepup` at 514 B, `ovumcy_reset_password` at 460 B and `ovumcy_auth` — the
 three that carry a signed token or a password hash.
 
 Summing **every** cookie the app can define reaches roughly 2.9 KB, which with a browser's own
 0.6–1.2 KB of headers would sit close to the limit. That total is arithmetic rather than a reachable
 state: the transient cookies in it are mutually exclusive by lifecycle — a password-reset cookie and a
-2FA-setup cookie never coexist, and the two OIDC cookies only apply on the callback path. Ovumcy on
+2FA-setup cookie never coexist — and the four OIDC cookies are each `Path`-scoped to the one
+endpoint that consumes them, so none of them rides on an ordinary page request at all:
+`ovumcy_oidc_auth` and `ovumcy_oidc_stepup` on `/auth/oidc/callback`, `ovumcy_oidc_link_pending`
+on `/auth/oidc/link-confirm`, and `ovumcy_oidc_logout_bridge` on `/auth/oidc/logout`. Ovumcy on
 its own therefore stays far below the buffer in every state a real flow produces, but the margin comes
 from those exclusions, not from a large absolute gap.
 
