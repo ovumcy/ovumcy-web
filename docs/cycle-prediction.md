@@ -178,8 +178,9 @@ The next-period estimate survives this floor, with its own estimate qualifier â€
 its anchor is a date the owner actually recorded.
 
 Three further signals withhold **every** projected date, the next period included,
-on every one of those surfaces: predictions switched off for the account, a
-pregnancy pause, and a cycle overdue past its own reference length. The floor is
+on every one of those surfaces: unpredictable-cycle mode (the settings toggle
+"My cycle is unpredictable"), a pregnancy pause, and a cycle overdue past its own
+reference length. The floor is
 the fourth signal and the only partial one. Predicates:
 `FertilityProjectionSuppressed` over `PredictionsSuppressed`
 (`internal/services/dashboard_cycle.go`) â€” one predicate rather than a copy per
