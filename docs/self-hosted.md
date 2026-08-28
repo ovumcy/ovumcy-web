@@ -97,7 +97,7 @@ These settings are valid, but they are not required for a safe first deployment:
 - rate-limit variables if you need stricter or looser local policy — every endpoint's default and its two variable names are tabulated in [docs/security/auth-policy-and-rate-limits.md](security/auth-policy-and-rate-limits.md)
 - `AUDIT_LOG_ENABLED` (default `false`) if you want per-action security-event lines for incident investigation. They stay on the host and never leave it, but they carry `user_id` and role, so treat the resulting stream as the same sensitivity class as the database and plan retention for it. Full contract in [docs/security/logging.md](security/logging.md).
 - optional OIDC variables when you want the login page to offer external sign-in: `OIDC_ENABLED`, `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URL`, `OIDC_CA_FILE`, `OIDC_LOGIN_MODE`, `OIDC_RESPONSE_MODE`, `OIDC_AUTO_PROVISION`, `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS`, `OIDC_LOGOUT_MODE`, and `OIDC_POST_LOGOUT_REDIRECT_URL`. Leave `OIDC_RESPONSE_MODE` at its `form_post` default; set it to `query` only for providers that cannot form-post the callback (Dex, better-auth, Pocket ID <2.7) — the code then travels in the callback URL, inert without the PKCE verifier but logged by proxies. See [docs/oidc.md → Response mode](oidc.md#response-mode).
-- `PROXY_HEADER` only if your trusted proxy publishes the real client IP under a header other than `X-Real-IP`
+- `PROXY_HEADER` (default `X-Forwarded-For`) — set it to the header your trusted proxy overwrites with the real client IP; the example stacks set `X-Real-IP`
 - `DB_DRIVER=postgres` plus `DATABASE_URL=...` when you intentionally move the app runtime to Postgres, either through the bundled local/private Postgres stack or an operator-managed database service
 - `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` (default `false`) only if you want the scheduled `ovumcy notify` webhook-reminder pass to refuse delivery to private/loopback/link-local targets (including RFC 6598 CGNAT `100.64.0.0/10`, `0.0.0.0/8`, `fec0::/10`, `64:ff9b:1::/48`, every IPv6 transition form wrapping a private IPv4 — NAT64, 6to4, Teredo, IPv4-compatible and IPv4-translated — and every other range the IANA special-purpose registries record as not globally reachable, such as RFC 2544 benchmarking space, the documentation prefixes and the reserved `240.0.0.0/4`); leave it unset for the common case of a self-hosted ntfy/Gotify instance on the same LAN. See [docs/notifications.md](notifications.md) for enabling and scheduling webhook notifications.
 - `REMINDER_SCHEDULER_ENABLED` (default `false`) and `REMINDER_SCHEDULER_HOUR` (default `9`, local hour 0-23) only if you want the server process itself to run the daily webhook-reminder pass on a schedule, instead of (or in addition to) scheduling `ovumcy notify` externally. See [docs/notifications.md](notifications.md#the-built-in-daily-scheduler) for the full contract.
@@ -109,13 +109,11 @@ OIDC is supported in two public login modes:
 - `OIDC_LOGIN_MODE=hybrid` keeps the local username/password flow alongside SSO;
 - `OIDC_LOGIN_MODE=oidc_only` removes public local login, register, and forgot-password entry points from the browser UX.
 
-The current account contract is:
+[docs/oidc.md](oidc.md#current-contract) owns the account contract; what an operator has to decide here is:
 
-- Ovumcy prefers an existing `(issuer, subject)` identity link when present;
-- otherwise the first successful OIDC sign-in falls back to a verified email match;
-- `OIDC_AUTO_PROVISION=true` may create a new `owner` account only when `REGISTRATION_MODE=open`;
-- `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` can restrict that creation to a domain allowlist;
-- auto-provisioned users start without a local password and must set one later in `Settings` if they want recovery codes or password-confirmed sensitive actions.
+- **A verified email claim never signs anyone in on its own.** Ovumcy uses an existing `(issuer, subject)` link when there is one; an email that merely matches an existing account sends the user to a confirmation step that demands that account's own password, plus its TOTP code when 2FA is on, before the link is stored. Nothing you can configure relaxes that — it is what stops a provider that can assert an email address from taking over the account.
+- `OIDC_AUTO_PROVISION=true` may create a new `owner` account only when `REGISTRATION_MODE=open`, and `OIDC_AUTO_PROVISION_ALLOWED_DOMAINS` narrows that to a domain allowlist.
+- Auto-provisioned users start without a local password and must set one later in `Settings` if they want recovery codes or password-confirmed sensitive actions.
 
 Operator checklist for OIDC:
 
@@ -162,7 +160,7 @@ The supported reverse proxy path is intentionally narrow:
 - A value this app cannot parse for `COOKIE_SECURE`, `HSTS_ENABLED`, `TRUST_PROXY_ENABLED` or `WEBHOOK_BLOCK_PRIVATE_ADDRESSES` also
   refuses the boot, naming the key and the value — a typo in one of these no longer starts the instance on the insecure default.
   Accepted spellings are `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`; leaving a key unset still means its documented default.
-- Keep `PROXY_HEADER=X-Real-IP`; the example proxies set it to the real client IP. Do not use `X-Forwarded-For` for per-IP rate limiting — the proxy appends the client value and the app keys on the leftmost (spoofable) entry.
+- Keep `PROXY_HEADER=X-Real-IP`; the example proxies set it to the real client IP. The app's own default is `X-Forwarded-For`, which the edge rate limiters handle safely — they key on the **rightmost untrusted** hop, so a spoofed prefix cannot defeat them, and the app prints an operator note at boot when trust-proxy is on with that header. What stays client-controlled under `X-Forwarded-For` is the leftmost entry that fiber's `c.IP()` returns, which feeds the secondary per-client auth-attempt buckets; the per-identity buckets that actually cap brute force are unaffected. A header your proxy overwrites gives you spoof-proof values everywhere.
 
 The example stacks below use dedicated internal subnets and set `TRUSTED_PROXIES` to those exact ranges. If you adapt the stacks, keep the trusted proxy range as small as the network design allows. If the sample subnet collides with your environment, change both the Docker subnet and `TRUSTED_PROXIES` together.
 
@@ -247,7 +245,7 @@ The app exposes two probes, and they answer different questions:
 
 `/healthz` deliberately never queries the database. That is what makes it safe as the container health check: a database that is slow for ten seconds, or a Postgres container restarting under the app, must not turn into a killed and restarted app container. It also means `/healthz` alone cannot tell you the app is *working* — it stays green with storage completely gone, which is exactly the case `/readyz` exists to catch.
 
-`/readyz` runs one trivial query against the configured engine and answers `200` when it succeeds, `503` when it does not. Both responses are a fixed one-word body; neither reveals the engine, the database path, or the error. Reach for it when the container is healthy but the app is misbehaving, and use it as the drain signal in front of a load balancer.
+`/readyz` runs one trivial query against the configured engine and answers `200` when it succeeds, `503` when it does not. Both responses are a fixed one-word JSON status — `{"status":"ok"}` and `{"status":"unavailable"}` — and neither reveals the engine, the database path, or the error. Reach for it when the container is healthy but the app is misbehaving, and use it as the drain signal in front of a load balancer.
 
 The probe is bounded at **one second**, and it reports the same `503` whether storage is gone or merely too busy to answer in time — it deliberately cannot tell you which. Read a `503` on a container that is otherwise healthy as *"the app cannot serve right now"*, and check load before you go looking at the volume. On the SQLite baseline a handful of clients saving days at the same moment is enough to make the probe flap while ordinary requests still succeed, slowly (see [Concurrency on the SQLite baseline](#concurrency-on-the-sqlite-baseline)). The distinguishing signal is elsewhere: if requests are still completing — check the request log for `200`s with multi-second latencies — the storage layer is present and the answer is contention, not an outage.
 

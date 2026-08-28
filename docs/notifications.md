@@ -5,9 +5,13 @@ independent, self-hosted channels: an in-app dashboard banner, an outbound
 webhook (for example a self-hosted [ntfy](https://ntfy.sh/) or
 [Gotify](https://gotify.net/) instance), and a private, read-only calendar
 (`.ics`) subscription. All three read the same underlying prediction and the
-same per-owner lead-time setting. There is no third-party notification service
-involved in any of them: this is a zero-cost, fully self-hosted notification
-model, consistent with Ovumcy's single-tenant, operator-controlled design.
+same per-owner lead-time setting. No third-party notification service is required or built in: this is a
+zero-cost, self-hosted notification model, consistent with Ovumcy's
+single-tenant, operator-controlled design. The endpoints and calendar clients an
+owner chooses may themselves be third-party services — a hosted webhook target,
+or a calendar account at Google or Apple subscribed to the feed — and those then
+receive the reminder data. Which third party, if any, sees it is the owner's
+choice, not something Ovumcy arranges.
 
 > [!IMPORTANT]
 > Every reminder is an estimate, never a fact. The in-app banner, every
