@@ -143,8 +143,10 @@ command below, before trusting a local "gate OK".
 
 This isn't enforced by a local hook — CI's `patch-coverage` job is the gate,
 run on every PR. To check before pushing, reproduce CI's coverage condition
-end to end. The two steps that matter are `go clean -testcache` and
-`-count=1`; either alone defeats the cache, run both for good measure:
+end to end: delete the old profile and regenerate it over the whole scoped
+package set. `go clean -testcache` and `-count=1` are belt and braces — an
+edited file already invalidates its own cached result — but the recipe keeps
+both so a partial local rerun cannot leave any of the profile stale:
 
 ```bash
 rm -f coverage.out

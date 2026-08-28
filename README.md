@@ -118,7 +118,7 @@ No — you run it yourself, on your own server, with no vendor account in the mi
 
 ### Where is the data stored?
 
-On the server you deploy Ovumcy to. SQLite is the default and works out of the box; PostgreSQL is there when you want it for a more involved setup. Nothing leaves that server unless you switch it on yourself: the optional webhook reminders POST the predicted dates to a URL you choose, and a calendar app you point at the `.ics` feed fetches those dates onto whatever servers it runs on.
+On the server you deploy Ovumcy to. SQLite is the default and works out of the box; PostgreSQL is there when you want it for a more involved setup. Nothing leaves that server unless you switch it on yourself: the optional webhook reminders POST the predicted dates to a URL you choose, and a calendar app you subscribe to the `.ics` feed fetches those dates wherever it runs — onto Google's or Apple's servers if that is where your calendar lives.
 
 ### Does Ovumcy use analytics or ad trackers?
 
@@ -485,7 +485,7 @@ Project structure:
 - `web/` - templates, JavaScript, and CSS assets
 
 CI runs staticcheck, `go vet`, tests, and the frontend build on pull requests and on the merge queue's validation of the commit that lands.
-The post-merge run on `main` deliberately skips that work — the queue already proved this exact commit — and executes only the lanes the queue does not: cross-browser e2e, image smoke, and the Postgres smoke test.
+The post-merge run on `main` deliberately skips that work — the queue already proved this exact commit — and executes only the work the queue does not: the cross-browser e2e, image-smoke and Postgres-smoke lanes, and the image publish.
 Dedicated security workflows run CodeQL plus `gosec`, `govulncheck`, Trivy filesystem/container scanning, and publish a CycloneDX image SBOM artifact for each scan run.
 
 Beyond plain unit and integration tests, the suite uses property-based tests,
