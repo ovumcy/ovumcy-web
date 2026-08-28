@@ -54,14 +54,7 @@ func main() {
 	// request can observe a half-repaired identity.
 	mustEnforceCalendarFeedKeyRotation(repositories, []byte(config.SecretKey))
 	mustRenormalizeAuthEmails(repositories)
-	dependencies := bootstrap.BuildDependencies(repositories, []byte(config.SecretKey), i18nManager, bootstrap.Options{
-		RegistrationMode: config.RegistrationMode,
-		OIDCConfig:       config.OIDC,
-		LoginAttempts:    bootstrap.AttemptLimit{Max: config.RateLimits.LoginMax, Window: config.RateLimits.LoginWindow},
-		RecoveryAttempts: bootstrap.AttemptLimit{Max: config.RateLimits.ForgotPasswordMax, Window: config.RateLimits.ForgotPasswordWindow},
-		LogoutAttempts:   &bootstrap.AttemptLimit{Max: config.RateLimits.LogoutMax, Window: config.RateLimits.LogoutWindow},
-		AuditLogEnabled:  config.AuditLogEnabled,
-	})
+	dependencies := bootstrap.BuildDependencies(repositories, []byte(config.SecretKey), i18nManager, bootstrapOptions(config))
 	handler := mustNewHandler(config, i18nManager, dependencies)
 	app := newFiberApp(config, handler)
 	served := make(chan struct{})
@@ -304,5 +297,23 @@ func retryShutdownFunc(shutdown func(context.Context) error, ctx context.Context
 			return
 		case <-ticker.C:
 		}
+	}
+}
+
+// bootstrapOptions maps the runtime configuration onto the dependency-build
+// options. It is its own function so the mapping is testable: the two logout
+// budgets read from two different configuration pairs, and wiring the
+// per-account limiter from the per-IP pair is exactly the defect this
+// separation closes (docs/security/auth-policy-and-rate-limits.md).
+func bootstrapOptions(config runtimeConfig) bootstrap.Options {
+	return bootstrap.Options{
+		RegistrationMode: config.RegistrationMode,
+		OIDCConfig:       config.OIDC,
+		LoginAttempts:    bootstrap.AttemptLimit{Max: config.RateLimits.LoginMax, Window: config.RateLimits.LoginWindow},
+		RecoveryAttempts: bootstrap.AttemptLimit{Max: config.RateLimits.ForgotPasswordMax, Window: config.RateLimits.ForgotPasswordWindow},
+		// The ACCOUNT pair, never LogoutMax/LogoutWindow: those size the per-IP
+		// edge limiter in server.go.
+		LogoutAttempts:  &bootstrap.AttemptLimit{Max: config.RateLimits.LogoutAccountMax, Window: config.RateLimits.LogoutAccountWindow},
+		AuditLogEnabled: config.AuditLogEnabled,
 	}
 }

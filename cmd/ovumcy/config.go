@@ -54,10 +54,20 @@ type rateLimitSettings struct {
 	ForgotPasswordWindow time.Duration
 	RegisterMax          int
 	RegisterWindow       time.Duration
-	LogoutMax            int
-	LogoutWindow         time.Duration
-	APIMax               int
-	APIWindow            time.Duration
+	// LogoutMax/LogoutWindow size the per-IP edge limiter in front of
+	// DELETE /api/v1/sessions/current. LogoutAccountMax/LogoutAccountWindow
+	// size the per-account, identity-keyed budget AuthService enforces behind
+	// it. They are deliberately separate pairs: one bounds requests from an
+	// address, the other bounds failures against one account, and a household
+	// instance behind one address needs the first wide while the second stays
+	// tight. Wiring both from one pair — which is what shipped until this split
+	// — silently ran the account budget at the per-IP number.
+	LogoutMax           int
+	LogoutWindow        time.Duration
+	LogoutAccountMax    int
+	LogoutAccountWindow time.Duration
+	APIMax              int
+	APIWindow           time.Duration
 	// CalendarFeed is deliberately NOT the API budget. The feed is the only
 	// unauthenticated endpoint that pays a bcrypt compare per request (the
 	// selector-miss equalization in ResolveFeed), so the API budget — sized for
@@ -156,10 +166,14 @@ func loadRuntimeConfig(location *time.Location) (runtimeConfig, error) {
 			ForgotPasswordWindow: getEnvDuration("RATE_LIMIT_FORGOT_PASSWORD_WINDOW", time.Hour),
 			LogoutMax:            getEnvInt("RATE_LIMIT_LOGOUT_MAX", 60),
 			LogoutWindow:         getEnvDuration("RATE_LIMIT_LOGOUT_WINDOW", 15*time.Minute),
-			APIMax:               getEnvInt("RATE_LIMIT_API_MAX", 300),
-			APIWindow:            getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
-			CalendarFeedMax:      getEnvInt("RATE_LIMIT_CALENDAR_FEED_MAX", 20),
-			CalendarFeedWindow:   getEnvDuration("RATE_LIMIT_CALENDAR_FEED_WINDOW", time.Minute),
+			// Defaulted from the service constants so the documented account
+			// budget and the code cannot drift apart.
+			LogoutAccountMax:    getEnvInt("RATE_LIMIT_LOGOUT_ACCOUNT_MAX", services.DefaultLogoutAttemptsLimit),
+			LogoutAccountWindow: getEnvDuration("RATE_LIMIT_LOGOUT_ACCOUNT_WINDOW", services.DefaultLogoutAttemptsWindow),
+			APIMax:              getEnvInt("RATE_LIMIT_API_MAX", 300),
+			APIWindow:           getEnvDuration("RATE_LIMIT_API_WINDOW", time.Minute),
+			CalendarFeedMax:     getEnvInt("RATE_LIMIT_CALENDAR_FEED_MAX", 20),
+			CalendarFeedWindow:  getEnvDuration("RATE_LIMIT_CALENDAR_FEED_WINDOW", time.Minute),
 		},
 		Proxy:               proxy,
 		AuditLogEnabled:     getEnvBool("AUDIT_LOG_ENABLED", false),
