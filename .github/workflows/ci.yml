@@ -1139,12 +1139,19 @@ jobs:
             fi
             # Browser-spec-only: the e2e allowlist plus the docs/meta one.
             beyond_specs="$(printf '%s\n' "$files" | grep -vE '^(e2e/|docs/|\.clusterfuzzlite/|LICENSE$|\.gitignore$|\.gitattributes$|.*\.md$)' || true)"
+            # THIRD_PARTY_LICENSES.md matches the `.*\.md$` excuse, but it is
+            # the one markdown file a Go lane GUARDS: test-go-analysis
+            # regenerates the licenses report and refuses a stale committed
+            # block. An edit to the inventory alone must therefore still run
+            # the lane that judges it, or a hand edit lands ungated.
+            licenses_changes="$(printf '%s\n' "$files" | grep -E '^THIRD_PARTY_LICENSES\.md$' || true)"
             # The runbook force above reaches `run_core`, and this slice would
             # take it straight back: `beyond_specs` excuses every `^docs/`
             # path, so without the second half of this condition a
             # runbook-only diff would clear the Go lanes again — the very
-            # lanes that run the guard reading it.
-            if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ]; then
+            # lanes that run the guard reading it. The licenses inventory is
+            # the same shape for `run_unit` specifically.
+            if [ -z "$beyond_specs" ] && [ -z "${runbook_changes:-}" ] && [ -z "$licenses_changes" ]; then
               run_unit=false
               echo "browser specs only: the Go suite reports success without running."
             fi
