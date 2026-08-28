@@ -22,7 +22,8 @@
   `(issuer, subject)` link is plaintext and the state cookies are minted under the current key, so
   a fresh provider sign-in still works, and such an account even clears a dead TOTP enrollment
   itself by minting a local password behind a provider step-up; the operator path remains for
-  local-auth accounts whose password and recovery code are both gone — and now also names the
+  local-auth accounts that can no longer present both operands `/forgot-password` requires — and
+  now also names the
   other casualties of a lost key (armed feed MACs, the feed key epoch, the in-memory rate-limit
   identity counters). The same correction lands in `docs/self-hosted.md`'s secret-loss and
   rotation bullets, which asserted the retired claim in the operator runbook. `SECURITY.md`'s
