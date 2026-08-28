@@ -163,10 +163,16 @@ Load-bearing invariants (see [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS
   /auth/oidc/callback`, plus `GET` on the same path under
   `OIDC_RESPONSE_MODE=query`, a safe method the middleware never validates —
   protected by the sealed one-time state cookie.
-- **No secret in transport.** Secrets, auth/recovery/reset tokens, recovery
-  codes and passwords never appear in URLs, JSON, HTML or logs. The one
-  sanctioned carve-out is the read-only calendar-feed capability token (hashed at
-  rest, one-click-revocable, 404-no-oracle, rate-limited, log-redacted).
+- **No usable secret in transport.** Passwords, auth/recovery/reset tokens and
+  stored secrets never appear in URLs, JSON, or logs. The exception ledger is
+  [`docs/SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md)'s, not this file's:
+  the read-only calendar-feed capability token (hashed at rest,
+  one-click-revocable, 404-no-oracle, rate-limited, log-redacted) is the one
+  exception for a value usable on its own; the TOTP enrollment seed rendered
+  into the enrollment page's HTML is the second, narrower declared exception
+  (minted fresh per visit, inert until the first code verifies); and the
+  one-time HTML reveals — the recovery code and the feed subscribe URL — are
+  sanctioned shown-once displays, consumed server-side and never re-rendered.
 - **Session invalidation.** Any credential or security-posture change bumps
   `AuthSessionVersion` in the same atomic update, so stale sessions stop working.
 - **Sealed cookies.** All auth/recovery/reset/flash cookies are AEAD-sealed
