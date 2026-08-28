@@ -5,7 +5,8 @@ window, and the next period. It exists so that anyone — users, contributors,
 auditors — can read exactly what the app computes and verify it against the
 code. It covers what is computed; whether a given estimate is *shown* is a
 separate gate, and the one that withholds the whole fertility half until the
-account completes its first cycle is described under "First cycle" below. The worked examples below are mirrored 1:1 by automated reference tests
+account completes its first cycle is described under "First cycle" below.
+The worked examples below are mirrored 1:1 by automated reference tests
 (`internal/services/cycles_reference_test.go`), so the documentation and the
 implementation cannot silently drift apart.
 
@@ -173,11 +174,17 @@ completed cycles"), the whole fertility half of the projection is withheld:
 - the ovulation reminder in the webhook pass;
 - the ovulation banner on the dashboard.
 
-The next-period estimate survives, with its own estimate qualifier — its anchor is
-a date the owner actually recorded. The same suppression applies whenever
-predictions are switched off for the account. Predicate:
-`FertilityProjectionSuppressed` (`internal/services/dashboard_cycle.go`); every one
-of the four surfaces is pinned by
+The next-period estimate survives this floor, with its own estimate qualifier —
+its anchor is a date the owner actually recorded.
+
+Three further signals withhold **every** projected date, the next period included,
+on every one of those surfaces: predictions switched off for the account, a
+pregnancy pause, and a cycle overdue past its own reference length. The floor is
+the fourth signal and the only partial one. Predicates:
+`FertilityProjectionSuppressed` over `PredictionsSuppressed`
+(`internal/services/dashboard_cycle.go`) — one predicate rather than a copy per
+surface, precisely because the floor had once been missed at one of four sites.
+All four surfaces are pinned by
 `TestFirstCycleFloorSuppressesFertilityOnEverySurface`.
 
 Everything below and above describes the numbers themselves — the floor decides
