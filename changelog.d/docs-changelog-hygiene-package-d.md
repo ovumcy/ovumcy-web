@@ -9,12 +9,13 @@
   `[Unreleased]` section moves that `429` onto the shared envelope, leaving only the feed's `404`
   path exempt. In `changelog.d/`: a stray `</content>` tag dropped from the API-duplication sweep's
   fragment; a fragment whose entry had become moot rewritten to the bare `none` marker; a
-  plain-paragraph entry wrapped as a bullet to match every sibling entry's form; two cross-reference
-  fixed to name their target instead of a filename-order-dependent "next entry" / "the entry below"
-  (one of which pointed the wrong direction once fragments are sorted by filename); the release-image
-  gate's Dependabot claim corrected — the pre-release-tag gap is closed by a CI check, not a
-  Dependabot `ignore` clause, which `dependabot.yml`'s own comment explains cannot express "no `rc`
-  tags" without risking every ecosystem's feed; three source-line counts re-measured against the
+  plain-paragraph entry wrapped as a bullet to match every sibling entry's form; two positional
+  cross-references ("as the next entry describes", "the entry below") replaced by naming the target
+  entry's own title instead — one of the two pointed the wrong direction once fragments are sorted
+  by filename for release assembly; the release-image gate's Dependabot claim corrected — the
+  pre-release-tag gap is closed by a CI check, not a Dependabot `ignore` clause, which
+  `dependabot.yml`'s own comment explains cannot express "no `rc` tags" without risking every
+  ecosystem's feed; two source-line counts and the ratio derived from them re-measured against the
   current tree; and a dark-theme fix's cycle-ring contrast numbers marked superseded by the wave-4
   cycle ribbon that replaced the ring, with its corner-glow claim corrected now that a later pass
   gave the dark theme its own tinted glow instead of leaving the corner bare. No response, template,
