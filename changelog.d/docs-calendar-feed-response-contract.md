@@ -3,11 +3,11 @@
 - **The security documents now state the calendar feed's real response contract.**
   `docs/SECURITY_INVARIANTS.md`, the `SECURITY.md` matrix and `docs/openapi.yaml` all claimed the
   feed answers its rejections as a bare status with no body — a body-less `404`, and a bare `429`
-  carrying only `Retry-After`. The code has never matched the second half and stopped matching the
-  first: the `404` is a fixed, cause-free status-text body (`Not Found`, identical for a malformed
-  token, an unknown selector, a wrong verifier and a disabled feed — pinned by
-  `TestCalendarFeedReturnsBare404WithoutOracleForBadTokens`), and the per-IP `429` answers the
-  shared limiter envelope with `retry_after_seconds` like every other route
+  carrying only `Retry-After`. The code never matched the first half in its detail — `c.SendStatus`
+  has always filled the fixed status text, so the `404` is a cause-free `Not Found` body, identical
+  for a malformed token, an unknown selector, a wrong verifier and a disabled feed (pinned by
+  `TestCalendarFeedReturnsBare404WithoutOracleForBadTokens`) — and deliberately stopped matching
+  the second when the feed's `429` joined the shared limiter path like every other route
   (`RespondCalendarFeedRateLimited`, required by the rate-limit envelope regressions). The three
   documents, the `envelopeExemptRoutes` reason string and the test comments now describe that
   contract: the envelope exemption covers the feed's not-found answer, never the route wholesale.

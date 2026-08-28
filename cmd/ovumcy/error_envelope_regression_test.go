@@ -246,10 +246,10 @@ func TestLanguageSwitchRejectionAnswersThroughTheEnvelope(t *testing.T) {
 // the 404 must stay one fixed, cause-free status-text body ("Not Found") for a
 // malformed token, an unknown selector, a wrong verifier and a disabled feed
 // alike, so it cannot take an envelope that varies with the caller's headers.
-// Its per-IP 429 is the opposite case — a 429 keeps one shape app-wide, so the
-// feed's limiter answers the shared envelope with retry_after_seconds like
-// every other (RespondCalendarFeedRateLimited), and this sweep never sees it:
-// the probe token provokes only the 404.
+// Its per-IP 429 is the opposite case — a limiter refusal answers through the
+// same negotiated path on every route (RespondCalendarFeedRateLimited), pinned
+// by the rate-limit envelope regressions — and this sweep never sees it: the
+// probe token provokes only the 404.
 var envelopeExemptRoutes = map[string]string{
 	"GET /healthz": "liveness probe: a fixed one-word JSON body in both outcomes, parsed by the container health check",
 	"GET /readyz":  "readiness probe: a fixed one-word JSON body in both outcomes, and it must never name the engine, the path, or the error",
@@ -264,7 +264,9 @@ var envelopeExemptRoutes = map[string]string{
 // handler that answers with c.SendStatus and reaches no ErrorHandler at all.
 // docs/openapi.yaml claimed the envelope covered every rejection the server
 // emits; the calendar feed's 404 and its rate-limited 429 were both bare status
-// text, and no status-driven test could have noticed.
+// text at the time, and no status-driven test could have noticed. (The 429 has
+// since joined the shared limiter path; the 404's fixed text is the declared
+// exemption.)
 //
 // The sweep is routes, not call sites, so a route added later inherits the
 // assertion by existing. It requires both halves to be observed — at least one
@@ -310,7 +312,7 @@ func TestEveryRejectionOutsideTheDeclaredExemptionsCarriesTheEnvelope(t *testing
 		if isExempt {
 			exempt++
 			if bytes.Contains(body, []byte("error_detail")) {
-				t.Errorf("%s answered %d with the mapped envelope, but it is declared exempt (%s) — remove the exemption or the envelope", key, response.StatusCode, reason)
+				t.Errorf("%s answered %d with the mapped envelope, but it is declared exempt (%s) — if this is the feed's rate-limit 429 the envelope is correct and the sweep gained a probe it never had (see the exemption comment); otherwise remove the exemption or the envelope", key, response.StatusCode, reason)
 			}
 			continue
 		}
