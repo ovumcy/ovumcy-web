@@ -8,16 +8,21 @@
 
 ### Fixed
 
-- **The dashboard cycle ring is visible in the dark theme again.** Its track — the rest of the
-  cycle the coloured phase segments are drawn on — measured **1.34:1** against the card behind it,
-  where WCAG 1.4.11 puts a meaningful graphic at 3:1, so the ring dissolved into the card in the
-  dark. It measures 3.38:1 at the card's light end and 3.95:1 at its dark end now, still far below
-  the phase segments (5.4:1–7.2:1) so it stays the backdrop rather than data.
-- **The dark cycle card no longer carries a pale smudge in its top-right corner.** Two decorative
-  corner glows kept their warm light-theme paper tints on the dark card, lifting it by up to
-  **3.27:1** and 1.71:1 — a decoration painted as loudly as a meaningful graphic, which is why the
-  brighter one read as a render artifact. The dark theme drops both; the light theme keeps them at
-  the 1.09:1–1.13:1 they were drawn for.
+- **The dashboard cycle ring was made visible in the dark theme again — since superseded.** Its
+  track — the rest of the cycle the coloured phase segments were drawn on — measured **1.34:1**
+  against the card behind it, where WCAG 1.4.11 puts a meaningful graphic at 3:1, so the ring
+  dissolved into the card in the dark; this pass raised it to 3.38:1/3.95:1. Wave 4 later replaced
+  the ring itself with the cycle ribbon (see the wave-4 cycle-ribbon entry), which carries its own
+  contrast: the phase band is explicitly *not* held to 3:1 (it is redundant to the day marks and
+  status text around it), so this ring's numbers describe a component this release no longer
+  contains.
+- **The dark cycle card no longer carried a pale smudge in its top-right corner from the
+  light-theme glow tints.** Two decorative corner glows kept their warm light-theme paper tints on
+  the dark card, lifting it by up to **3.27:1** and 1.71:1 — a decoration painted as loudly as a
+  meaningful graphic, which is why the brighter one read as a render artifact. This pass dropped
+  both from the dark theme; a later pass gave dark its own tinted pair instead, so the corner is no
+  longer bare there either — only the light-era light tint this fix removed stays gone. The light
+  theme keeps its original pair at the 1.09:1–1.13:1 they were drawn for.
 
 ### Internal
 

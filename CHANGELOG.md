@@ -103,8 +103,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Operator-visible effect: `:latest` now trails a push to `main` by a full CI run
   instead of a couple of minutes, and stays on the previous commit whenever a
-  check fails. Release tags publish from their own tag push as before, now with
-  the same pre-publish scan, and the signer identity to verify with `cosign` is
+  check fails. Release tags no longer publish from their own tag push alone:
+  the tagged commit must be contained in `main` with the same checks `latest`
+  waits on already passed there, and the image gets the same pre-publish scan
+  before it is pushed. The signer identity to verify with `cosign` is
   unchanged for both — the commands in
   [SECURITY.md](SECURITY.md#verifying-release-authenticity) still apply as
   written.
@@ -449,15 +451,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before that point and are unaffected.
 - **The API specification no longer claims an error format the calendar feed
   does not use.** `docs/openapi.yaml` stated that every rejection the server
-  emits carries the `{error, error_detail}` envelope. The read-only `.ics` feed
-  does not and should not: it answers a bare `404` for any unknown token and a
-  bare `429` past its per-IP budget, because it is a public cookieless endpoint
-  read by calendar applications, and the envelope negotiates its shape from the
-  caller's headers and carries localized copy. `/healthz` and `/readyz` already
-  held the same carve-out. The spec now names all three exemptions instead of
-  overstating the rule, and a route sweep over the real application fails if a
-  fourth appears — or if a declared one quietly starts using the envelope after
-  all. No response changed.
+  emits carries the `{error, error_detail}` envelope. The read-only `.ics`
+  feed's not-found path does not and should not: it answers the fixed body
+  `Not Found` for a malformed token, an unknown selector, a wrong verifier and
+  a disabled feed alike, because it is a public cookieless endpoint read by
+  calendar applications, and the envelope negotiates its shape from the
+  caller's headers and carries localized copy. `/healthz` and `/readyz`
+  already held the same carve-out for their fixed one-word body. The spec now
+  names all three fixed-body exemptions instead of overstating the rule — the
+  feed's per-IP `429` is explicitly not among them and answers the shared
+  envelope like every other route — and a route sweep over the real
+  application fails if a fourth appears, or if a declared one quietly starts
+  using the envelope after all. No response changed.
 - **The 60-second request budget no longer justifies itself with a timeout that
   does not bound it.** The comment on `RequestBudget` derived the value from the
   server's `WriteTimeout`, on the reasoning that a handler outliving the write
