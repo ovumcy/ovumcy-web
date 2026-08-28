@@ -49,11 +49,12 @@ async function todayISOFromCalendar(page: Page): Promise<string> {
 // predicted next period, so the new period block has no interference — and,
 // because the whole auto-fill window (anchor..anchor+4) then sits mid-month,
 // never split across a month boundary. The previous bare today-30 anchor was
-// a date bomb: from the 28th of a month onward its +1..+4 neighbors spill
-// into the next month, whose day cells the anchor month's grid does not
-// always render (2026-08-28: anchor Jul 29, neighbor Aug 2 — July's
-// Sunday-start grid ends Aug 1, so the neighbor's button does not exist and
-// every retry fails the same way).
+// a date bomb: near month end (the 28th onward in a 31-day month, as early
+// as the 25th in February) its +1..+4 neighbors spill into the next month,
+// whose day cells the anchor month's grid does not always render
+// (2026-08-28: anchor Jul 29, neighbor Aug 2 — July's Sunday-start grid
+// ends Aug 1, so the neighbor's button does not exist and every retry fails
+// the same way).
 function autofillAnchorISO(todayISO: string): string {
   return `${shiftISODate(todayISO, -30).slice(0, 7)}-05`;
 }
