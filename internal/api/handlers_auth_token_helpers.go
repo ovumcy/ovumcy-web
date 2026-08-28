@@ -91,13 +91,13 @@ func (handler *Handler) clearAuthCookie(c fiber.Ctx) {
 // Cookies whose flow completes outside a session are deliberately absent: the
 // OIDC one-time state and step-up cookies and the register-pickup handle are
 // consumed by their own flow, and `ovumcy_flash` carries no secret. `ovumcy_lang`
-// is absent for a different reason, and it is not an oversight: it is neither
-// sealed nor session-scoped, and this helper also runs where a session is
-// REJECTED rather than ended — an expired cookie on an ordinary request, or an
+// and `ovumcy_tz` are absent for a different reason, and it is not an oversight:
+// neither is sealed or session-scoped, and this helper also runs where a session
+// is REJECTED rather than ended — an expired cookie on an ordinary request, or an
 // unauthenticated probe. Retracting the language there would take the login
 // page's language away from a visitor whose session merely lapsed, and would let
 // anyone reset a browser's rendering language with one unauthenticated request.
-// The deliberate ends clear it through clearSessionEndCookies below.
+// The deliberate ends clear both through clearSessionEndCookies below.
 func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 	handler.clearAuthCookie(c)
 	handler.clearOIDCLogoutBridgeCookie(c)
@@ -109,21 +109,32 @@ func (handler *Handler) clearAuthRelatedCookies(c fiber.Ctx) {
 }
 
 // clearSessionEndCookies retracts everything clearAuthRelatedCookies does, plus
-// the plaintext `ovumcy_lang` preference cache. It is the helper for the paths
-// where the owner ends the session ON PURPOSE — logout and account deletion —
-// as opposed to the paths where the server refuses one it was handed.
+// the two plaintext preference caches `ovumcy_lang` and `ovumcy_tz`. It is the
+// helper for the paths where the owner ends the session ON PURPOSE — logout and
+// account deletion — as opposed to the paths where the server refuses one it was
+// handed.
 //
-// The split is the whole point. `ovumcy_lang` is not sealed and not scoped to a
-// session: it is a pre-auth cache of the account column, re-issued from it by
-// setAuthCookie at every session issue. Left behind by a sign-out it discloses,
-// on a shared or borrowed browser, that this app is used here and in which
-// language — before anyone has authenticated. Cleared on a session REJECTION it
-// would instead be a nuisance an unauthenticated caller controls, and would cost
-// a visitor whose session expired mid-use the language of the page they are
-// looking at. Deliberate end clears it; refusal leaves it alone.
+// The split is the whole point. Neither cookie is sealed or scoped to a session:
+// `ovumcy_lang` is a pre-auth cache of the account column, re-issued from it by
+// setAuthCookie at every session issue, and `ovumcy_tz` is the browser's own
+// timezone, re-issued by LanguageMiddleware from the request header. Left behind
+// by a sign-out they disclose, on a shared or borrowed browser, that this app is
+// used here, in which language, and from which region — before anyone has
+// authenticated. Cleared on a session REJECTION they would instead be a nuisance
+// an unauthenticated caller controls, and would cost a visitor whose session
+// expired mid-use the language of the page they are looking at. Deliberate end
+// clears them; refusal leaves them alone.
+//
+// The retraction of `ovumcy_tz` holds only because the client stops volunteering
+// the timezone while signed out: app.js writes the cookie and attaches the
+// X-Ovumcy-Timezone header only on a page rendered for a session (see
+// signedInPage in web/src/js/app/00-core.js). Without that half the next page
+// load — the login page this very sign-out redirects to — would put the cookie
+// straight back, and this retraction would be theatre.
 func (handler *Handler) clearSessionEndCookies(c fiber.Ctx) {
 	handler.clearAuthRelatedCookies(c)
 	handler.clearLanguageCookie(c)
+	handler.clearTimezoneCookie(c)
 }
 
 func (handler *Handler) buildTokenWithSessionID(user *models.User, ttl time.Duration) (string, string, error) {

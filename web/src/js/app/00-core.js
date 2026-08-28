@@ -182,6 +182,18 @@
     return /^[A-Za-z0-9_+/-]+$/.test(value);
   }
 
+  // The timezone is an owner-scoped rendering preference, so nothing about it
+  // is written or sent while nobody is signed in. base.html emits
+  // data-persisted-timezone only for a rendered session, and it is the only
+  // template that owns <body>, so its presence is the signed-in signal. Without
+  // this gate the server's retraction of ovumcy_tz at sign-out would be undone
+  // by the very next page load: the bootstrap re-wrote the cookie on every
+  // render, and every htmx request carried the header the middleware re-issues
+  // it from.
+  function signedInPage() {
+    return !!(document.body && document.body.hasAttribute("data-persisted-timezone"));
+  }
+
   function detectClientTimezone() {
     try {
       var formatter = Intl && Intl.DateTimeFormat ? Intl.DateTimeFormat() : null;
@@ -211,6 +223,9 @@
   }
 
   function initClientTimezone() {
+    if (!signedInPage()) {
+      return;
+    }
     var timezone = detectClientTimezone();
     if (!timezone) {
       return;
@@ -220,6 +235,9 @@
   }
 
   function currentClientTimezone() {
+    if (!signedInPage()) {
+      return "";
+    }
     var known = String(window.__ovumcyTimezone || "").trim();
     if (known && isSafeClientTimezone(known)) {
       return known;

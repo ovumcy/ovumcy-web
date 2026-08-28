@@ -92,6 +92,25 @@ func (handler *Handler) clearLanguageCookie(c fiber.Ctx) {
 	})
 }
 
+// clearTimezoneCookie retracts the timezone cookie with the same attributes
+// setTimezoneCookie writes, so the browser drops it rather than keeping a value
+// whose Set-Cookie differed in path or scope. It runs beside clearLanguageCookie
+// on the deliberate session ends (see clearSessionEndCookies) and for the same
+// reason: neither cookie is sealed or session-scoped, and left behind on a
+// shared browser ovumcy_tz tells the next visitor which region the previous
+// owner lives in — a weaker disclosure than the language, in the same class.
+func (handler *Handler) clearTimezoneCookie(c fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     timezoneCookieName,
+		Value:    "",
+		Path:     "/",
+		HTTPOnly: false,
+		Secure:   handler.cookieSecure,
+		SameSite: "Lax",
+		Expires:  time.Now().Add(-1 * time.Hour),
+	})
+}
+
 func (handler *Handler) setTimezoneCookie(c fiber.Ctx, timezone string) {
 	c.Cookie(&fiber.Cookie{
 		Name:     timezoneCookieName,
