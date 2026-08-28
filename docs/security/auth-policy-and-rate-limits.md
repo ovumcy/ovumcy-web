@@ -15,17 +15,17 @@ _Part of the [Ovumcy security policy](../../SECURITY.md)._
 
 - Shape: `OVUM-XXXX-XXXX-XXXX`, 12 characters drawn uniformly via `crypto/rand` from a 32-symbol Crockford-style base32 alphabet (`A`–`Z` without `I`/`O`, digits `2`–`9`) — 60 bits of effective entropy (`GenerateRecoveryCode`, `internal/services/auth_reset_policy.go`).
 - Storage: bcrypt-hashed in `users.recovery_code_hash`. The plaintext is shown to the user exactly once at issuance and is never retrievable server-side afterwards.
-- Online guessing is bounded by the per-account rate limiter (`Rate Limits`, below); the bcrypt cost bounds offline guessing if the database and `SECRET_KEY` leak together.
+- Online guessing is bounded by the per-account rate limiter (`Rate Limits`, below); the code's 60 bits of entropy and the bcrypt cost bound offline guessing if the database leaks. Recovery-code hashing involves no `SECRET_KEY` — `GenerateRecoveryCodeHash` is plain bcrypt and verification is a direct compare against `users.recovery_code_hash` — so a database leak **on its own** already permits offline candidate testing; treat any database compromise as a reason to regenerate outstanding recovery codes.
 
 **Session tokens:**
 
-- `ovumcy_auth` payload is sealed (AES-256-GCM under an HKDF-derived key, see *Cookies* above) and verified per request against `users.auth_session_version`.
-- Issued by `setAuthCookie`; reissued inline on the originating device whenever `auth_session_version` is bumped (see *Session Invalidation on Credential Rotation*).
+- `ovumcy_auth` payload is sealed (AES-256-GCM under an HKDF-derived key, see *Cookies* in [docs/security/cryptography.md](cryptography.md#cookies)) and verified per request against `users.auth_session_version`.
+- Issued by `setAuthCookie`; reissued inline on the originating device whenever `auth_session_version` is bumped (see *Session Invalidation on Credential Rotation* in [docs/security/oidc-and-sessions.md](oidc-and-sessions.md)).
 
 **TOTP 2FA:**
 
 - RFC 6238 with a 30-second step.
-- Secrets are AES-256-GCM encrypted at rest with per-row AAD binding (see *Field-Level Encryption*).
+- Secrets are AES-256-GCM encrypted at rest with per-row AAD binding (see *Field-Level Encryption* in [docs/security/cryptography.md](cryptography.md#field-level-encryption)).
 - Replay protection: `users.totp_last_used_step` carries the RFC 6238 step index of the last successfully consumed code. `ClaimTOTPStep` performs an atomic `UPDATE … WHERE totp_last_used_step < ?`, so the same code cannot be consumed twice and concurrent submissions of the same step collapse to a single winner.
 
 ## Rate Limits
@@ -60,6 +60,6 @@ Plus per-account, identity-keyed budgets enforced by `AuthAttemptPolicy` (`inter
 - Logout attempts: 20 failures / 15 minutes (account-scoped).
 - TOTP login challenge: 5 failures / 15 minutes.
 - TOTP disable: 5 failures / 15 minutes.
-- Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, and `PUT …/password`. Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.
+- Settings re-authentication: 5 failures / 15 minutes, covering every password-gated settings action — `POST /api/v1/users/current/data-wipe/validate`, `POST …/data-wipe`, `DELETE /api/v1/users/current`, `PUT …/password`, `PUT …/2fa` (the TOTP-enrollment confirmation), and `POST …/recovery-code` (recovery-code regeneration). Without it these would be faster password oracles than the login form (the `/api` catch-all allows 300 requests per minute against login's 8 per 15 minutes), and `/data-wipe/validate` changes no state, which makes it a pure oracle. Once the budget is spent the endpoints answer `429` even for the correct password. The budget is keyed on `(client, account)` and on the account alone, deliberately **not** on the client address by itself: several independent owners share one address on a household instance, and one owner mistyping must not lock out the others, while the account-wide bucket still caps an attacker rotating addresses.
 
 Per-account budgets are keyed by `HMAC-SHA256(SECRET_KEY, "ovumcy.auth-attempt.identity.v1:" || identity)`, so the limiter never persists the raw identifier.
