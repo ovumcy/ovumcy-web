@@ -448,10 +448,12 @@ func TestAPIRateLimitHandlerReturnsJSONForGenericBrowserRequests(t *testing.T) {
 }
 
 // TestCalendarFeedRateLimitHandlerReturnsBare429AndRedactsToken drives the
-// calendar-feed LimitReached handler (newCalendarFeedRateLimitHandler). The feed
-// has no UI, so the handler must return a bare 429; and because it logs the hit
-// via logRateLimitHit → SafeRequestLogPath, the log line must carry the masked
-// route template, never the token value.
+// calendar-feed LimitReached handler (newCalendarFeedRateLimitHandler). The
+// feed has no UI, so the handler answers 429 through the shared limiter
+// envelope — never a calendar body a client would try to parse (the name's
+// "bare" predates the envelope; body shape is owned by the envelope tests
+// above); and because it logs the hit via logRateLimitHit → SafeRequestLogPath,
+// the log line must carry the masked route template, never the token value.
 func TestCalendarFeedRateLimitHandlerReturnsBare429AndRedactsToken(t *testing.T) {
 	originalWriter := log.Writer()
 	defer log.SetOutput(originalWriter)
